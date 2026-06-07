@@ -17,6 +17,9 @@ pub enum ConfidentialTokenError {
     /// Confidential mint profile fields are unusable.
     #[msg("Confidential mint config is invalid")]
     InvalidMintConfig,
+    /// Mint authority did not match signer.
+    #[msg("Confidential mint authority does not match signer")]
+    MintAuthorityMismatch,
     /// The instruction included undeclared trailing account metas.
     #[msg("instruction has unexpected remaining accounts")]
     UnexpectedRemainingAccounts,
@@ -47,12 +50,6 @@ pub enum ConfidentialTokenError {
     /// Current ACL record account did not match token account state.
     #[msg("current ACL record does not match token account state")]
     CurrentAclRecordMismatch,
-    /// Operator authorization row did not match the requested transfer.
-    #[msg("operator record does not match")]
-    OperatorRecordMismatch,
-    /// Operator authorization is missing or expired.
-    #[msg("operator authorization is expired")]
-    OperatorExpired,
     /// Transfer amount handle does not carry the expected confidential balance type.
     #[msg("transfer amount handle type is invalid")]
     AmountHandleTypeMismatch,
@@ -65,6 +62,21 @@ pub enum ConfidentialTokenError {
     /// Disclosure certificate was not signed by the mint KMS verifier authority.
     #[msg("disclosure proof signature is missing or invalid")]
     DisclosureProofSignatureMissing,
+    /// Threshold verifier set account is invalid for this token flow.
+    #[msg("verifier set account is invalid")]
+    VerifierSetMismatch,
+    /// The Ed25519 verifier quorum did not satisfy the verifier-set threshold.
+    #[msg("verifier-set proof threshold was not met")]
+    VerifierThresholdNotMet,
+    /// The Ed25519 verifier proof repeated one signer.
+    #[msg("verifier-set proof contains a duplicate signer")]
+    DuplicateVerifierSignature,
+    /// Account-backed request witness does not match the disclosure or redemption.
+    #[msg("request witness does not match")]
+    RequestWitnessMismatch,
+    /// Account-backed request witness is expired or already consumed.
+    #[msg("request witness is expired or already consumed")]
+    RequestWitnessUnavailable,
     /// Material commitment witness did not match the disclosed handle.
     #[msg("material commitment witness does not match")]
     MaterialCommitmentMismatch,

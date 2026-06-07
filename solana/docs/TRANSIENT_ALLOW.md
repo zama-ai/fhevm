@@ -106,13 +106,18 @@ transient inputs must pass an explicit output policy binding:
 - output ACL domain;
 - app account;
 - allowed subject roles;
-- public decrypt permission;
+- public decrypt flag permission;
 - source-origin restrictions from every transient input.
 
 If the policy does not explicitly allow durable output, the host must reject.
-If the policy allows public-decrypt propagation, the derived durable output may grant
-`ACL_ROLE_PUBLIC_DECRYPT` to the permitted subject, but the durable record still starts with
-`public_decrypt = false`; a later role-aware instruction must set the flag explicitly.
+The current PoC does not let a transient capability carry public-decrypt authority or set the
+durable output's `public_decrypt` flag. Ordinary app-authorized eval outputs may still grant
+`ACL_ROLE_PUBLIC_DECRYPT` as ACL role metadata so the owner can later request disclosure, but every
+durable record starts with `public_decrypt = false`; a later role-aware instruction must set the flag
+explicitly.
+If no input propagated the public-decrypt role, the host only accepts that future-disclosure role on
+derived durable outputs when the output authority is an initialized non-system app account. Direct
+system-owned callers cannot manufacture public-decrypt role metadata from compute/use-only inputs.
 
 ## Final Position
 

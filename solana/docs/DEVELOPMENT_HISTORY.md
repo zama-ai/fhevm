@@ -87,10 +87,10 @@ rejection tests; the design rationale for most of them is in `DESIGN_DECISIONS.m
   same-slot double-updates, and bump a counter. `[0xff; 32]` is reserved as the *wildcard
   app-context* row key and is explicitly rejected as a *delegate identity*.
 - **Token fidelity to ERC-7984.** Self-transfer is a no-op (no wasted historical handles). Transfer
-  amounts are caller-scoped — a direct transfer binds the amount to the owner, an operator transfer
-  to the operator (mirroring how EVM binds the external input to `msg.sender`). Disclosure is
-  label-scoped (a generic "amount" path can't be used to disclose a balance or total supply).
-  Minting is modeled as wrapping a real SPL token; burn has a matching underlying-redeem leg.
+  amounts are owner-scoped, while payer is only a rent/fee account; operator/delegated transfer
+  parity is intentionally not preserved. Disclosure is label-scoped (a generic "amount" path can't
+  be used to disclose a balance or total supply). Minting is modeled as wrapping a real SPL token;
+  burn has a matching underlying-redeem leg.
 - **Transfer-and-call is split.** A single-instruction callback blows the SBF heap/CPI budget, so
   it became hook → prepare → finalize, with explicit hook causality and one-shot replay markers.
 - **Operator-specific FHE type gates.** Add/Sub follow the LHS type, Ge returns Bool, unbounded
@@ -108,9 +108,10 @@ rejection tests; the design rationale for most of them is in `DESIGN_DECISIONS.m
 ### Solid
 
 The ACL core, handle derivation and byte-layout, transient capabilities, delegation lifecycle,
-material commitment, operand-ACL discipline, the full ERC-7984 token surface, and the
-account-meta ABI are implemented, faithful to the EVM design (often *stricter*), and backed by an
-extensive rejection-test suite. `anchor build` and `cargo test --workspace` are green.
+material commitment, operand-ACL discipline, the selected ERC7984-inspired owner-authorized token
+surface, and the account-meta ABI are implemented, faithful to the useful EVM invariants (often
+*stricter*), and backed by an extensive rejection-test suite. The missing ERC7984 operator/delegated
+transfer surface is intentional Solana API design, not unfinished parity work.
 
 ### PoC scope — deliberately minimal, not Solana-limited
 

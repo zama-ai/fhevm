@@ -228,9 +228,8 @@ Use this checklist to see where the branch stands. Keep it updated when a PR cha
       refund graph: prepare computes and debits the encrypted refund from the recipient, finalize
       credits the original sender and records the final encrypted transferred amount.
 - [x] Confidential token can call an arbitrary receiver hook program between transfer and callback
-      settlement through owner-gated and active-operator-gated split instructions, then verify the
-      hook's Solana return data binds the encrypted callback-success handle and ACL record to the
-      prior transfer.
+      settlement through the owner-gated split instruction, then verify the hook's Solana return
+      data binds the encrypted callback-success handle and ACL record to the prior transfer.
 - [x] `confidential-token-receiver-sdk` packages the reusable receiver-hook return ABI
       (`TransferReceiverReturn`, `TRANSFER_RECEIVER_RETURN_MAGIC`,
       `transfer_receiver_return_data`, and a return-data setter) for external receiver programs.
@@ -238,10 +237,11 @@ Use this checklist to see where the branch stands. Keep it updated when a PR cha
       `confidential-token-receiver` sample program uses the SDK in runtime tests.
 - [x] Confidential token can burn through the same all-or-zero graph, rotating the holder balance
       and mint-level encrypted total supply while emitting the encrypted burned amount.
-- [x] Confidential token supports expiring operator PDAs and operator `transfer_from` without the
-      holder signing the transfer instruction. Revoked or expired operator PDAs can be closed by
-      anyone, while active operator PDAs require the token owner to close; rent always refunds to
-      the token owner.
+- [x] Confidential token intentionally omits operator/delegated-transfer APIs. Transfers are
+      owner-authorized, with a separate payer account for rent/fees.
+- [x] Confidential token mints can rotate disclosure/redemption verifier-set pointers through a
+      mint-authority instruction; pending requests remain bound to the verifier set captured in the
+      request witness unless that set is disabled.
 - [x] Confidential token emits local balance-history events for app/front-end indexing. These
       events are not consumed by the generic coprocessor listener.
 - [x] Confidential token emits local total-supply history events for app/front-end indexing.
@@ -293,7 +293,7 @@ Use this checklist to see where the branch stands. Keep it updated when a PR cha
       same-slot double updates so signed witness counters cannot be invalidated twice in one slot.
 - [x] Negative tests cover wrong signer, wrong ACL record, wrong handle, wrong domain key, stale
       current ACL, wrong output ACL, reused output ACL, scalar RHS account behavior, and
-      unauthorized public decrypt, revoked operators, delegation counter updates, and same-slot
+      unauthorized public decrypt, delegation counter updates, and same-slot
       delegation double updates.
 - [x] Scalar RHS host behavior is modeled: encrypted RHS requires an ACL record; scalar RHS does
       not.
@@ -335,9 +335,10 @@ Use this checklist to see where the branch stands. Keep it updated when a PR cha
 - [x] The KMS connector has a native-v0 response verifier for accepted-request binding, response
       body hashes, release-pinned signer-set hashes, certificate thresholds, sorted signer
       identities, and Ed25519 KMS response signatures.
-- [x] The KMS connector has a worker-side native-v0 live-flow boundary that parses signed native
+- [x] The KMS connector has a worker-side native-v0 library boundary that parses signed native
       request bytes, fetches and admits Solana witnesses, rechecks non-finalized reads before
-      release, verifies native KMS response certificates, and returns routed response metadata.
+      release, verifies native KMS response certificates, and returns routed response metadata. This
+      boundary is not yet connected to the production worker loop.
 - [x] The KMS connector has durable native-v0 Solana decryption request/response tables plus a
       store boundary for inserting parsed request bytes, picking pending native requests, recording
       release metadata, and publishing verified native response rows.
@@ -346,19 +347,21 @@ Use this checklist to see where the branch stands. Keep it updated when a PR cha
 - [x] tx-sender has a separate native-v0 Solana response row picker/status/publisher boundary for
       `solana_native_decryption_responses_v0`, so verified native responses are not routed through
       the EVM Gateway response sender.
-- [x] The KMS connector can consume a branch-local Gateway-PoC `extraData` witness envelope for
-      public, direct user, and delegated user Solana decryption checks. This is end-to-end PoC
-      wiring, not the production native-v0 request format.
+- [x] The KMS connector keeps Solana Gateway decryption fail-closed instead of trusting
+      requester-supplied `extraData` witnesses. Branch-local Gateway-PoC witness helpers remain as
+      tests/scaffolding; production decryption is the RPC-verified native-v0 path above.
 
 ### Partly Modeled
 
-- [ ] KMS Solana verification for live event processing is wired only through a Gateway-PoC
-      `extraData` envelope. The worker-side native-v0 request/response flow exists, but production
-      still needs KMS Core native work-item dispatch and a concrete tx-sender
-      `SolanaNativeResponsePublisher` target from `acl_storage_spec.md`.
+- [ ] Native-v0 Solana verification exists at the library/store/picker boundary, but production
+      live processing still needs KMS Core native work-item dispatch and a concrete tx-sender
+      `SolanaNativeResponsePublisher` target from `acl_storage_spec.md`. Gateway-PoC `extraData`
+      witness helpers remain branch-local scaffolding, not the live trust path.
 - [ ] `verify_input_and_bind` checks the Solana account/transaction witness shape for external
-      encrypted inputs, but threshold verifier policy and real proof/transciphering validation still
-      live outside this program. The old mock shim remains authority-gated test glue.
+      encrypted inputs and enforces the active input verifier-set threshold, but real
+      proof/transciphering validation behind those verifier signatures still lives outside this
+      program. The mock shim remains PoC-chain-gated test glue and requires a signer from the active
+      input verifier set.
 - [ ] ACL records are created already initialized through Anchor `init`; there is no stored
       `Empty -> Bound` enum in the PoC.
 - [ ] Role names and production governance for public decrypt are still subject to product review,
@@ -382,7 +385,8 @@ Use this checklist to see where the branch stands. Keep it updated when a PR cha
 
 ### Missing Next
 
-- [ ] Connect `verify_input_and_bind` to the real input verifier service and threshold policy.
+- [ ] Connect the active input verifier-set signatures to the real proof/transciphering service that
+      produces them.
 - [ ] Finalize client/app SDK ergonomics for transient allow sessions on top of the one-shot
       session convention. `zama-fhe::EvalBuilder` covers instruction-local mixed eval assembly,
       dynamic account role generation, and resolved-account CPI execution; automatic
@@ -673,9 +677,9 @@ durable ACL state.
 host_config = PDA("host-config")
 ```
 
-It stores the host-chain id used in handle derivation, admin authority, input verifier authority,
-test-shim authority, pause state, and feature gates for the mock input path, test event shims, and
-grant deny-list checks.
+It stores the host-chain id used in handle derivation, admin authority, active input verifier set,
+material authority, test-shim authority, pause state, and feature gates for the mock input path,
+test event shims, and grant deny-list checks.
 
 Production-shaped instructions read `host_config` and reject while paused. The PoC test-only
 instructions are explicitly gated:
@@ -683,7 +687,7 @@ instructions are explicitly gated:
 ```text
 mock_input_verified_and_bind
   requires host_config.mock_input_enabled
-  requires input_verifier_authority signer
+  requires the PoC feature and local PoC chain id
 
 test_emit_*
   requires host_config.test_shims_enabled
@@ -910,21 +914,12 @@ confidential-token::confidential_transfer(amount = hX)
 ```
 
 The transfer amount handle ACL can be created through the signed input path or through token-level
-random amount creation. For direct holder transfers the amount is scoped to the sender owner. For
-active-operator `confidential_transfer_from`, the amount must be scoped to the operator that signs
-the transfer instruction:
+random amount creation. Transfer authority is the sender owner; the separate payer only pays rent
+and fees and never becomes transfer authority:
 
 ```text
-direct transfer:
   ACL domain key = confidential mint
   app account    = sender owner
-  label          = "transfer_amount"
-  subjects       = [compute_signer: compute/use]
-  handle         = hX selected from SolanaInputProof.handles[]
-
-transfer_from:
-  ACL domain key = confidential mint
-  app account    = active operator
   label          = "transfer_amount"
   subjects       = [compute_signer: compute/use]
   handle         = hX selected from SolanaInputProof.handles[]
@@ -937,12 +932,9 @@ For randomized token amounts, `confidential-token::create_random_amount` and
 token-aware indexers.
 
 The token program rejects transfer amount handles whose FHE type byte is not the confidential
-balance type (`euint64` in this PoC) and rejects amount ACL records outside that
-`(mint, current transfer authority, transfer_amount)` scope. For `confidential_transfer_from`, the
-current transfer authority is the active operator, matching ERC7984's `FHE.fromExternal` caller
-binding. Operator-scoped amount input authority is only an input-use bridge to the token compute
-signer; the transferred amount output still grants durable user/public-decrypt roles only to the
-sender, recipient, and compute signer.
+balance type (`euint64` in this PoC) and rejects amount ACL records outside the
+`(mint, owner, transfer_amount)` scope. Payer-supplied rent does not grant use, transfer, or decrypt
+authority.
 
 The input ACL record uses an explicit test nonce sequence. It must not derive placement from the
 handle bytes; handles are opaque even in tests.
@@ -973,16 +965,16 @@ signed message =
   (host program id, chain id, proof fields, bind intent fields)
 ```
 
-The transaction must place a native Ed25519 verifier instruction immediately before the host
-instruction. `verify_input_and_bind` inspects the instructions sysvar, requires that Ed25519
-instruction to contain a signature by `HostConfig.input_verifier_authority` over the canonical
-`input_proof_message`, checks that `handles[handle_index]` equals the requested input handle, and
+The transaction must place native Ed25519 verifier instructions immediately before the host
+instruction. `verify_input_and_bind` inspects the instructions sysvar, requires a quorum from the
+active `HostConfig.input_verifier_set` over the canonical verifier-set-bound message, rejects
+duplicate signer counts, checks that `handles[handle_index]` equals the requested input handle, and
 then writes the same canonical ACL record as the mock path. Input handles must carry the host chain
 id, a supported FHE type byte, the handle version byte, and the proof index in byte 21.
 
-Remaining production work is threshold verifier policy and real proof/transciphering validation by
-the external input verifier service. The Solana host now has the account and transaction witness
-shape needed for that service instead of a generic allow API.
+Remaining production work is real proof/transciphering validation by the external input verifier
+service. The Solana host now has the account and transaction witness shape needed for that service
+instead of a generic allow API.
 
 ## Confidential Burn
 
@@ -1033,31 +1025,16 @@ The redemption marker makes the cleartext vault transfer one-shot for each burne
 
 ### Operators
 
-The token PoC mirrors the ERC7984 operator idea with a Solana account row:
-
-```text
-ConfidentialOperator
-  address = PDA("operator", token_account, operator)
-  token_account = AliceTokenAccount
-  owner = Alice
-  operator = Carol
-  expiration_slot = 123
-```
-
-`set_operator` is signed by the token account owner and writes or revokes that row. An active
-operator can call `confidential_transfer_from` and pay rent for the output ACL records without Alice
-signing the transfer instruction. The encrypted transfer amount must be scoped to the current
-transfer authority: Alice for direct transfers, or the active operator for
-`confidential_transfer_from`. This matches the ERC7984 external-input overload while preserving
-Solana's durable ACL boundary. Token balances still rotate through the same ZamaHost CPI path, so
-operator authority never becomes a host ACL grant or KMS decrypt permission.
+Operator/delegated-transfer APIs are intentionally removed from the Solana token surface. The
+production API keeps one transfer authority model: the token-account owner signs the transfer, while
+an independent payer may fund rent and fees. This is a deliberate simplification and no longer aims
+to mirror ERC7984 operator parity.
 
 ### Receiver Hook Interface
 
-`confidential_call_transfer_receiver` and `confidential_call_transfer_receiver_from` invoke the
-caller-supplied receiver program with caller-supplied instruction data and remaining accounts. The
-token program clears Solana return data before the CPI and requires the receiver program to be the
-return-data writer.
+`confidential_call_transfer_receiver` invokes the caller-supplied receiver program with
+caller-supplied instruction data and remaining accounts. The token program clears Solana return data
+before the CPI and requires the receiver program to be the return-data writer.
 
 External receiver programs should use `confidential-token-receiver-sdk`; the token crate re-exports
 the same ABI for compatibility:
@@ -1344,32 +1321,41 @@ sides to agree.
 
 `confidential-token` now has the token-local equivalent of ERC7984
 `discloseEncryptedAmount`: `disclose_balance` and `disclose_amount` emit cleartext events only when
-the disclosed ACL record has already been released for public decrypt, the immediately preceding
-native Ed25519 instruction is signed by the mint's `kms_verifier_authority`, and the disclosed
-handle has a committed host material witness sealed onto the ACL record.
+the disclosed ACL record has already been released for public decrypt, a finalized
+`DisclosureRequest` witness matches the handle/material/verifier-set context, and the preceding
+native Ed25519 verifier instructions prove a quorum from the mint's disclosure verifier set.
 
 `disclose_amount` is limited to token amount labels: wrapped amounts, transfer inputs, burn inputs,
 burned amounts, transferred amounts, and callback refund amounts. Current balance handles must use
 the balance disclosure path, and total-supply/callback-success handles are not accepted as
 disclosable token amounts.
 
-The signed message is:
+The v2 signed message binds:
 
 ```text
-"zama-confidential-token-disclosure-v1"
 token_program_id
+host_program_id
+host_config
+chain_id
 mint
+mode
+verifier_set
+verifier_set_version
+request_account
+request_hash
+acl_record
+material_commitment_hash
+material_key_id
 handle
 cleartext_amount_le_u64
 ```
 
 This does not replace the Gateway/KMS request protocol. It is the Solana-side app verification
 surface for a KMS response certificate once the Gateway request path carries native Solana
-ACL/material witnesses. The same certificate shape is used by `redeem_burned_amount`; redeem
-additionally checks the burned-amount ACL public-decrypt release flag, sealed host material
-commitment, vault constraints, owner destination, and burn-redemption replay marker. Negative
-Mollusk tests cover missing public release, missing material, unsealed material, mismatched
-cleartext messages, and the wrong KMS signer.
+request/ACL/material witnesses. `redeem_burned_amount` uses a separate redemption verifier set and
+certificate domain that also binds the owner, token account, underlying mint, destination owner, and
+destination account. Negative Mollusk tests cover missing public release, missing material, unsealed
+material, mismatched cleartext messages, and wrong verifier-set signatures.
 
 ## Operator Encoding Notes
 
@@ -1453,7 +1439,10 @@ LogTfhe
 listener_db.insert_tfhe_event(...)
 ```
 
-When Solana ACL events appear in the same transaction as TFHE events, the adapter marks the TFHE output as allowed before inserting it. This mirrors the EVM listener shape:
+When Solana ACL events appear in the same transaction as TFHE events, the adapter does not treat the
+log payload alone as sufficient to mark the TFHE output allowed. It inserts the TFHE row as pending
+and schedules finalized account fetches for the ACL/material/request witnesses; finalized account
+data is what later proves decryptability and allowance.
 
 ```text
 tx:
@@ -1461,8 +1450,9 @@ tx:
   creates/binds ACL record allowing h1
 
 DB:
-  allowed_handles(h1, subject)
-  computations(output_handle = h1, is_allowed = true)
+  finalized_account_fetches(acl/material/request witness PDAs)
+  computations(output_handle = h1, is_allowed = false)
+  witness rows become usable only after finalized fetch completion
 ```
 
 Future Solana poller boundary:

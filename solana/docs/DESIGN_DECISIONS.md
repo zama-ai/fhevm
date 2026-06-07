@@ -239,38 +239,31 @@ Transient capability consume must prove a matching earlier top-level creation in
 same transaction. Same-slot expiry is defense in depth, not the transaction boundary. See
 [`TRANSIENT_ALLOW.md`](TRANSIENT_ALLOW.md) for the detailed design.
 
-## DD-009: Operator Transfer Amounts Are Caller-Scoped
+## DD-009: Operator Transfer Model Removed
 
-Status: adopted
+Status: superseded
 
 Context:
 
-ERC7984 `transferFrom` external input verification is bound to `msg.sender`, which is the operator
-in an operator transfer. A Solana operator must not spend an amount input that was scoped to the
-token owner.
+The earlier PoC mirrored ERC7984 operator/delegated transfer APIs with operator-scoped amount ACLs.
+That improved parity, but it also added a second transfer authority model, operator PDA lifecycle
+state, extra receiver-hook validation branches, and stale-approval/rent-cleanup cases.
 
 Decision:
 
-Direct holder transfers use owner-scoped transfer amount ACLs. Active-operator
-`confidential_transfer_from` requires operator-scoped transfer amount ACLs.
+Remove the production operator model. Direct holder transfers use owner-scoped transfer amount ACLs,
+and the transfer payer is only a rent/fee payer. `confidential_transfer_from`, operator rows, and
+operator receiver-hook paths are intentionally absent from the production token API.
 
 Rationale:
 
-The signer using an external input should match the authority the input was verified for.
+One transfer authority model is easier to audit and harder to misuse. Splitting `owner` from `payer`
+keeps fee funding flexible without turning payer identity into transfer authority.
 
 Consequences:
 
-Operator-scoped amount input authority is only an input-use bridge into the token compute signer.
-The transferred amount output still grants durable roles according to token semantics.
-
-Divergence from ERC7984 (recorded, not a bug): ERC7984 `transferFrom` ends with
-`FHE.allowTransient(transferred, msg.sender)` so the operator can read the *actually transferred*
-amount in the same transaction. The PoC does **not** grant the operator that handle: the transferred
-output's subjects are the `from`/`to` owners plus the compute signer, and operator continuation flows
-read the `sent` handle plus the `ConfidentialTransfer` event, not a separately operator-allowed
-transferred handle. No current flow needs operator visibility of the transferred handle. If a future
-operator flow does, the host already has the one-shot transient-session primitive (DD-008) to grant it
-narrowly; wiring that is the tracked alternative rather than adding the operator as a durable subject.
+This is an intentional ERC7984 parity gap. Clients that need delegated spend must add a separate
+product design instead of relying on hidden operator compatibility in the Solana token surface.
 
 ## DD-010: Token Disclosure Paths Are Label-Scoped
 
@@ -412,38 +405,34 @@ negative test runs on the PoC chain with `test_shims_enabled = false` to exercis
 cannot enable them on a deployed chain; they should still be compiled out for mainnet as defense in
 depth.
 
-## DD-015: Handle Birth Entropy Is PoC Bank-Hash-Seeded; Native-v0 Is Deterministic
+## DD-015: Handle Birth Entropy Policy Remains Open
 
 Status: product-open
 
 Context:
 
 Computed handles currently mix `previous_bank_hash` and `clock.unix_timestamp` into the digest, so the
-same operation over the same inputs yields different handles across slots. The native-v0
-`BirthContextV0` model is the opposite: a purely structural, deterministic commitment (chain id,
-config/program ids, executor authority, record seed hash, operation id, input-handle hash, output ACL
-record account, fhe type, handle version) with no bank hash and no timestamp, and birth is idempotent.
+same operation over the same inputs yields different handles across slots. Durable outputs are also
+bound to `(output_nonce_key, output_nonce_sequence)` (DD-001), and the external 32-byte handle layout
+is already fixed by version, chain id, FHE type, and computed-marker bytes.
 
 Decision:
 
-Keep the entropy-seeded derivation for the PoC, but record that the production direction is
-deterministic `BirthContextV0` birth. The output handle is already bound to
-`(output_nonce_key, output_nonce_sequence)` (DD-001), which alone provides per-output uniqueness, so
-the runtime entropy is redundant for uniqueness and is the sole source of the fail-closed
-`PreviousBankHashUnavailable` surface (DD-014).
+Keep the entropy-seeded derivation for now. Do not make deterministic handle birth part of the
+current hardening plan. Any future native-v0 encoding freeze must decide the collision-resistance,
+retry-idempotency, and KMS-reconstruction tradeoff explicitly.
 
 Rationale:
 
-Deterministic birth removes a fail-prone runtime dependency and matches the native-v0 spec's
-idempotent-birth and KMS-trust model. Switching now would change every handle value and break the test
-handle-predictors, so it is deferred to the native-v0 encoding freeze rather than changed unilaterally.
+Entropy helps avoid target collisions and preserves the current operational behavior. Switching now
+would change every handle value and break test fixtures, client predictors, listener assumptions, and
+any downstream material keyed by handle.
 
 Consequences:
 
-When the native-v0 encoding is frozen, drop bank-hash/timestamp from the digest in favor of the
-structural `BirthContextV0` fields, and fold the resolved output ACL record pubkey into the digest
-(rather than binding indirectly through the PDA seeds) so a connector can reconstruct it without
-re-running `find_program_address`.
+Handle byte layout remains stable, but handle birth is not idempotent across slots. The
+`PreviousBankHashUnavailable` fail-closed surface remains part of the current design until a separate
+handle-birth decision replaces it.
 
 ## DD-016: Confidential Balances Use The Immediate-Available-Balance Profile
 
@@ -454,9 +443,9 @@ Context:
 `acl_storage_rationale.md` Part 5 describes two Solana token profiles: a staged inbound-credit profile
 (recommended default for public-receivable tokens, where the recipient applies pending funds under
 their own transaction timing) and an immediate available-balance profile (EVM-style, where the sender
-updates the recipient's balance directly). The latter lets a sender/operator force a write into the
-recipient's balance handle and ACL record, which can invalidate a transaction the recipient already
-built against their prior balance record.
+updates the recipient's balance directly). The latter lets a sender force a write into the recipient's
+balance handle and ACL record, which can invalidate a transaction the recipient already built against
+their prior balance record.
 
 Decision:
 
@@ -527,12 +516,11 @@ composition with transient/durable outputs when a single CPI is required.
 
 Consequences:
 
-This contradicts the RFC-024 `execute_frame` section and its "app_account_authority removed" note;
-RFC-024 should be re-synced to the per-op + validated-signer model. Multi-account atomic effects (e.g.
-ERC7984 transfer crediting both sender and receiver) are expressed as one eval frame with per-output
-authority witnesses rather than one frame with `authorized_app_accounts[]`. Future multi-app eval
-extensions should keep that signer-witness model and should not resurrect unsigned
-`authorized_app_accounts[]`.
+This supersedes the older RFC-024 `execute_frame` sketch and its "app_account_authority removed"
+note. Multi-account atomic effects (e.g. ERC7984 transfer crediting both sender and receiver) are
+expressed as one eval frame with per-output authority witnesses rather than one frame with
+`authorized_app_accounts[]`. Future multi-app eval extensions should keep that signer-witness model
+and should not resurrect unsigned `authorized_app_accounts[]`.
 
 ## DD-018: Transfer-And-Call Refund Finalize Is Recoverable, Not Atomic With Prepare
 
@@ -572,7 +560,7 @@ Status: adopted
 
 Context:
 
-A successful direct/operator confidential transfer needs five FHE results: `ge(balance, amount)`,
+A successful direct confidential transfer needs five FHE results: `ge(balance, amount)`,
 `sub(balance, amount)`, `if_then_else(success, debit_candidate, balance)`, `sub(balance, new_from)`,
 and `add(to_balance, transferred)`. The first implementation bound every result into a durable ACL
 record because `fhe_eval` was binary-only and the ternary select needed durable inputs. That made one
@@ -588,8 +576,8 @@ amount, and then credits the recipient in the same frame using a per-output reci
 witness. The helper crate exposes typed durable handles, scalar helpers, `DurableSlot`,
 `AccessPolicy`, `EvalBuilder`, and plan-driven CPI resolution, so app code assembles this shape
 without hand-maintaining raw producer indices, raw account indices, signer flags, writable flags,
-nonce keys, ACL record addresses, or repeated output type bytes for common operations. A successful direct or
-operator transfer therefore binds exactly three durable ACL records:
+nonce keys, ACL record addresses, or repeated output type bytes for common operations. A successful
+direct transfer therefore binds exactly three durable ACL records:
 
 - sender balance output
 - transferred amount
@@ -618,7 +606,7 @@ product issue.
 
 These are not settled by the PoC design decisions above:
 
-- Whether to converge handle birth to deterministic `BirthContextV0` (DD-015) at the native-v0 freeze.
+- Whether to change handle birth entropy/idempotency policy at the native-v0 freeze (DD-015).
 - Whether confidential balances move to the staged inbound-credit profile (DD-016).
 - Fusing or same-transaction-binding transfer-and-call prepare/finalize (DD-018).
 - Reclaiming rent for superseded durable `AclRecord` PDAs: there is no `close_acl_record` instruction
@@ -628,8 +616,9 @@ These are not settled by the PoC design decisions above:
   relaxations already fail closed on every non-sentinel chain id; a compile-time `poc` cargo feature
   that both refuses 12345 at init and compiles out the mock/zero-entropy/`test_emit_*` paths would
   remove the residual misconfiguration risk entirely.
-- `HostConfig` versioning (a native-v0 `config_version` field and rotation semantics are not yet modeled).
-- Whether operator flows ever need same-transaction visibility of the transferred handle (DD-009).
+- `HostConfig` now stores the active input verifier set and version, with a one-time migration for
+  legacy accounts. General config-version rotation semantics beyond verifier-set pointers remain
+  product-open.
 - Compiling out (not just chain-confining) the remaining `test_emit_*` shim for mainnet builds.
 
 - External input verifier service integration, threshold policy, and real proof/transciphering.

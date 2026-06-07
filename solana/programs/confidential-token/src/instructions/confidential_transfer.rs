@@ -7,8 +7,10 @@ use super::*;
 #[event_cpi]
 pub struct ConfidentialTransfer<'info> {
     /// Sender and transfer authority.
-    #[account(mut)]
     pub owner: Signer<'info>,
+    /// Pays rent for output ACL records.
+    #[account(mut)]
+    pub payer: Signer<'info>,
     /// Confidential mint.
     pub mint: Box<Account<'info, ConfidentialMint>>,
     /// Sender token account.
@@ -48,14 +50,15 @@ pub struct ConfidentialTransfer<'info> {
 
 impl<'info> ConfidentialTransfer<'info> {
     pub(crate) const OWNER_ACCOUNT_INDEX: usize = 0;
-    pub(crate) const MINT_ACCOUNT_INDEX: usize = 1;
-    pub(crate) const FROM_ACCOUNT_INDEX: usize = 2;
-    pub(crate) const TO_ACCOUNT_INDEX: usize = 3;
-    pub(crate) const TRANSFERRED_AMOUNT_ACL_INDEX: usize = 9;
+    pub(crate) const MINT_ACCOUNT_INDEX: usize = 2;
+    pub(crate) const FROM_ACCOUNT_INDEX: usize = 3;
+    pub(crate) const TO_ACCOUNT_INDEX: usize = 4;
+    pub(crate) const TRANSFERRED_AMOUNT_ACL_INDEX: usize = 10;
 
     pub(crate) fn as_transfer_accounts(&mut self) -> TransferAccounts<'_, 'info> {
         TransferAccounts {
-            payer: &self.owner,
+            payer: &self.payer,
+            transfer_authority: self.owner.key(),
             mint: &self.mint,
             from_account: &mut self.from_account,
             to_account: &mut self.to_account,

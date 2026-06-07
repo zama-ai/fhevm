@@ -4953,6 +4953,7 @@ dependencies = [
  "confidential-token-receiver",
  "mollusk-svm",
  "mollusk-svm-programs-token",
+ "serde_json",
  "solana-compute-budget-interface",
  "solana-program",
  "solana-sdk",

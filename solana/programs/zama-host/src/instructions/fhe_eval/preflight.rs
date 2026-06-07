@@ -123,8 +123,13 @@ fn preflight_eval_step(
         FheEvalStep::TrivialEncrypt { output, .. } | FheEvalStep::Rand { output, .. } => {
             preflight_output(output, preflight)?;
         }
-        FheEvalStep::Input { output, .. } => {
+        FheEvalStep::Input {
+            verifier_set_index,
+            output,
+            ..
+        } => {
             preflight.require_instructions_sysvar();
+            preflight.mark_account(*verifier_set_index)?;
             if !matches!(output, FheEvalOutput::Durable { .. }) {
                 return Err(error!(ZamaHostError::InvalidFheEvalAccount));
             }
@@ -207,10 +212,14 @@ mod tests {
             steps: vec![FheEvalStep::Input {
                 input_handle: [1; 32],
                 proof: input_proof(),
+                verifier_set_index: 1,
                 output: durable_output_with_subjects(1),
             }],
         };
-        let accounts = vec![test_account(Pubkey::new_unique())];
+        let accounts = vec![
+            test_account(Pubkey::new_unique()),
+            test_account(Pubkey::new_unique()),
+        ];
         let sysvar = test_account(INSTRUCTIONS_SYSVAR_ID);
         let wrong_sysvar = test_account(Pubkey::new_unique());
 
@@ -242,6 +251,7 @@ mod tests {
             steps: vec![FheEvalStep::Input {
                 input_handle: [1; 32],
                 proof: input_proof(),
+                verifier_set_index: 0,
                 output: FheEvalOutput::Transient,
             }],
         };

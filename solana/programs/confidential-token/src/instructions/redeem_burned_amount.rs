@@ -37,6 +37,11 @@ pub struct RedeemBurnedAmount<'info> {
     pub burned_amount_acl: Box<Account<'info, zama_host::AclRecord>>,
     /// Material commitment witness for the burned handle.
     pub burned_material_commitment: Box<Account<'info, zama_host::HandleMaterialCommitment>>,
+    /// Account-backed redemption request witness.
+    #[account(mut)]
+    pub redemption_request: Box<Account<'info, BurnRedemptionRequest>>,
+    /// Threshold verifier set whose quorum signs the redemption certificate.
+    pub redemption_verifier_set: Box<Account<'info, zama_host::VerifierSet>>,
     /// Replay marker for this burned handle.
     #[account(
         init,
@@ -48,6 +53,8 @@ pub struct RedeemBurnedAmount<'info> {
     pub redemption_record: Account<'info, BurnRedemption>,
     /// CHECK: Solana instructions sysvar; handler verifies its address and previous Ed25519 ix.
     pub instructions_sysvar: UncheckedAccount<'info>,
+    /// ZamaHost config bound into the request and certificate.
+    pub host_config: Box<Account<'info, zama_host::HostConfig>>,
     /// SPL token program.
     pub token_program: Program<'info, Token>,
     /// System program used for the replay marker.
@@ -62,6 +69,7 @@ pub fn redeem_burned_amount(
 ) -> Result<()> {
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
     assert_confidential_mint_shape(&ctx.accounts.mint)?;
+    assert_host_config_allows_token_response(&ctx.accounts.host_config)?;
     let mint_key = ctx.accounts.mint.key();
     let token_account_key = ctx.accounts.token_account.key();
     require_keys_eq!(
@@ -104,12 +112,54 @@ pub fn redeem_burned_amount(
         burned_handle,
     )?;
     assert_public_decrypt_released(&ctx.accounts.burned_amount_acl)?;
-    assert_disclosure_signature(
-        &ctx.accounts.instructions_sysvar.to_account_info(),
-        ctx.accounts.mint.kms_verifier_authority,
+    assert_active_verifier_set(
+        &ctx.accounts.redemption_verifier_set,
+        ctx.accounts.redemption_verifier_set.key(),
+        zama_host::VERIFIER_SET_KIND_TOKEN_REDEMPTION,
         mint_key,
+    )?;
+    assert_burn_redemption_request_witness(
+        &ctx.accounts.redemption_request,
+        ctx.accounts.redemption_request.key(),
+        mint_key,
+        ctx.accounts.owner.key(),
+        token_account_key,
+        ctx.accounts.underlying_mint.key(),
+        ctx.accounts.destination_usdc.owner,
+        ctx.accounts.destination_usdc.key(),
+        burned_handle,
+        ctx.accounts.burned_amount_acl.key(),
+        &ctx.accounts.burned_material_commitment,
+        ctx.accounts.host_config.key(),
+        &ctx.accounts.redemption_verifier_set,
+    )?;
+    let message = redemption_proof_message_v2(
+        crate::ID,
+        zama_host::ID,
+        ctx.accounts.host_config.key(),
+        ctx.accounts.redemption_request.chain_id,
+        mint_key,
+        ctx.accounts.redemption_verifier_set.key(),
+        ctx.accounts.redemption_verifier_set.version,
+        ctx.accounts.redemption_request.key(),
+        ctx.accounts.redemption_request.request_hash,
+        ctx.accounts.burned_amount_acl.key(),
+        ctx.accounts
+            .burned_material_commitment
+            .material_commitment_hash,
+        ctx.accounts.burned_material_commitment.key_id,
         burned_handle,
         cleartext_amount,
+        ctx.accounts.owner.key(),
+        token_account_key,
+        ctx.accounts.underlying_mint.key(),
+        ctx.accounts.destination_usdc.owner,
+        ctx.accounts.destination_usdc.key(),
+    );
+    assert_threshold_verifier_signature(
+        &ctx.accounts.instructions_sysvar.to_account_info(),
+        &ctx.accounts.redemption_verifier_set,
+        &message,
     )?;
 
     let vault_authority_bump = [ctx.bumps.vault_authority];
@@ -138,6 +188,7 @@ pub fn redeem_burned_amount(
     redemption.burned_acl_record = ctx.accounts.burned_amount_acl.key();
     redemption.cleartext_amount = cleartext_amount;
     redemption.bump = ctx.bumps.redemption_record;
+    ctx.accounts.redemption_request.status = REQUEST_STATUS_CONSUMED;
 
     emit_cpi!(BurnRedeemedEvent {
         version: APP_EVENT_VERSION,
@@ -147,6 +198,8 @@ pub fn redeem_burned_amount(
         burned_handle,
         burned_acl_record: ctx.accounts.burned_amount_acl.key(),
         destination_usdc: ctx.accounts.destination_usdc.key(),
+        request: ctx.accounts.redemption_request.key(),
+        request_hash: ctx.accounts.redemption_request.request_hash,
         cleartext_amount,
     });
     Ok(())

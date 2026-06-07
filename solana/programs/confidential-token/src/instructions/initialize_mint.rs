@@ -11,17 +11,19 @@ pub struct InitializeMint<'info> {
     pub authority: Signer<'info>,
     /// Confidential mint account created by this instruction.
     #[account(init, payer = authority, space = 8 + ConfidentialMint::SPACE)]
-    pub mint: Account<'info, ConfidentialMint>,
+    pub mint: Box<Account<'info, ConfidentialMint>>,
     /// Underlying SPL mint wrapped by this confidential mint.
-    pub underlying_mint: Account<'info, SplMint>,
+    pub underlying_mint: Box<Account<'info, SplMint>>,
     /// CHECK: Program-controlled compute signer PDA.
     #[account(seeds = [b"fhe-compute", mint.key().as_ref()], bump)]
     pub compute_signer: UncheckedAccount<'info>,
     /// CHECK: Mint-scoped app authority for total-supply handles.
     #[account(seeds = [b"total-supply", mint.key().as_ref()], bump)]
     pub total_supply_authority: UncheckedAccount<'info>,
-    /// CHECK: Ed25519 authority whose KMS response certificates disclose cleartexts.
-    pub kms_verifier_authority: UncheckedAccount<'info>,
+    /// Threshold verifier set whose quorum certifies disclosure responses.
+    pub disclosure_verifier_set: Box<Account<'info, zama_host::VerifierSet>>,
+    /// Threshold verifier set whose quorum certifies burn-redemption responses.
+    pub redemption_verifier_set: Box<Account<'info, zama_host::VerifierSet>>,
     /// CHECK: initialized and validated by the Zama host program CPI.
     #[account(mut)]
     pub total_supply_acl_record: UncheckedAccount<'info>,
@@ -30,7 +32,7 @@ pub struct InitializeMint<'info> {
     /// ZamaHost program used to create the initial total-supply handle.
     pub zama_program: Program<'info, ZamaHost>,
     /// ZamaHost config used for handle derivation.
-    pub host_config: Account<'info, zama_host::HostConfig>,
+    pub host_config: Box<Account<'info, zama_host::HostConfig>>,
     /// System program used for account creation.
     pub system_program: Program<'info, System>,
 }
@@ -45,10 +47,18 @@ pub fn initialize_mint(ctx: Context<InitializeMint>) -> Result<()> {
         compute_signer,
         ConfidentialTokenError::ComputeSignerMismatch
     );
-    require!(
-        ctx.accounts.kms_verifier_authority.key() != Pubkey::default(),
-        ConfidentialTokenError::InvalidMintConfig
-    );
+    assert_active_verifier_set(
+        &ctx.accounts.disclosure_verifier_set,
+        ctx.accounts.disclosure_verifier_set.key(),
+        zama_host::VERIFIER_SET_KIND_TOKEN_DISCLOSURE,
+        mint_key,
+    )?;
+    assert_active_verifier_set(
+        &ctx.accounts.redemption_verifier_set,
+        ctx.accounts.redemption_verifier_set.key(),
+        zama_host::VERIFIER_SET_KIND_TOKEN_REDEMPTION,
+        mint_key,
+    )?;
     let total_supply_authority = ctx.accounts.total_supply_authority.key();
     require_keys_eq!(
         total_supply_authority,
@@ -112,7 +122,8 @@ pub fn initialize_mint(ctx: Context<InitializeMint>) -> Result<()> {
     mint.acl_domain_key = mint_key;
     mint.compute_signer = compute_signer;
     mint.underlying_mint = ctx.accounts.underlying_mint.key();
-    mint.kms_verifier_authority = ctx.accounts.kms_verifier_authority.key();
+    mint.disclosure_verifier_set = ctx.accounts.disclosure_verifier_set.key();
+    mint.redemption_verifier_set = ctx.accounts.redemption_verifier_set.key();
     mint.decimals = ctx.accounts.underlying_mint.decimals;
     mint.total_supply_handle = total_supply_handle;
     mint.total_supply_acl_record = total_supply_acl_record;

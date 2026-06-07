@@ -1,16 +1,18 @@
 //! Account layouts, PDA helpers, and token-domain labels.
 
 pub mod burn_redemption;
+pub mod burn_redemption_request;
 pub mod confidential_mint;
-pub mod confidential_operator;
 pub mod confidential_token_account;
+pub mod disclosure_request;
 pub mod transfer_callback_settlement;
 pub mod transfer_receiver_hook_call;
 
 pub use burn_redemption::*;
+pub use burn_redemption_request::*;
 pub use confidential_mint::*;
-pub use confidential_operator::*;
 pub use confidential_token_account::*;
+pub use disclosure_request::*;
 pub use transfer_callback_settlement::*;
 pub use transfer_receiver_hook_call::*;
 
@@ -51,14 +53,6 @@ pub fn vault_token_account_address(mint: Pubkey, underlying_mint: Pubkey) -> Pub
         &vault_authority_address(mint).0,
         &underlying_mint,
         &spl_token::ID,
-    )
-}
-
-/// Returns the operator authorization PDA for one token account and operator.
-pub fn operator_record_address(token_account: Pubkey, operator: Pubkey) -> (Pubkey, u8) {
-    Pubkey::find_program_address(
-        &[b"operator", token_account.as_ref(), operator.as_ref()],
-        &crate::ID,
     )
 }
 
@@ -159,11 +153,6 @@ pub fn callback_success_label() -> [u8; 32] {
 /// Fixed encrypted value label for callback-settlement zero constants.
 pub fn callback_zero_label() -> [u8; 32] {
     *b"callback_zero___________________"
-}
-
-/// Fixed encrypted value label for callback-requested refunds.
-pub fn callback_refund_request_label() -> [u8; 32] {
-    *b"callback_refund_request_________"
 }
 
 /// Fixed encrypted value label for callback refund balance checks.

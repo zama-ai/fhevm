@@ -37,7 +37,8 @@ the behavior observable.
 From `solana/`:
 
 ```bash
-# Build all three programs to BPF and verify the listener IDL snapshot.
+# Verify the production IDL/ABI snapshot, then rebuild local PoC SBF
+# artifacts used by Mollusk runtime tests.
 bash scripts/check-zama-host-idl.sh
 
 # The whole Solana workspace (this is what `anchor test` runs — see Anchor.toml [scripts]).
@@ -65,9 +66,12 @@ cd ../coprocessor/fhevm-engine && SQLX_OFFLINE=true cargo test -p host-listener 
 
 ## Traps & gotchas (read before you lose an afternoon)
 
-- **Stale SBF artifacts.** After changing an Anchor program, **rebuild** before running runtime
-  tests — a stale `.so` will make tests pass or fail against old code. (`anchor build`, or
-  `anchor build --ignore-keys` if you don't want the program-id check.)
+- **Stale or wrong-feature SBF artifacts.** After changing an Anchor program, **rebuild** before
+  running runtime tests — a stale `.so` will make tests pass or fail against old code. Prefer
+  `bash scripts/check-zama-host-idl.sh`: it checks the default production IDL/ABI surface, then
+  rebuilds the ignored `target/deploy` artifacts with the PoC-only host/token features that Mollusk
+  tests exercise. Plain `anchor build` is fine for production artifacts, but it does not include the
+  local-only runtime-test shims.
 - **SPL Token CPIs in token tests.** `token_mollusk` executes real SPL Token CPIs through the
   matching `mollusk-svm-programs-token` program fixture.
 - **`anchor build` vs program ids.** `anchor build` checks that each program's declared id matches

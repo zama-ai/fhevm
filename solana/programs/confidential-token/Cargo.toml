@@ -17,6 +17,7 @@ no-entrypoint = []
 no-idl = []
 no-log-ix-name = []
 idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build", "zama-host/idl-build"]
+poc = []
 
 [dependencies]
 anchor-lang = "1.0.2"

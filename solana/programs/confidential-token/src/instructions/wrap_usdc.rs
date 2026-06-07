@@ -46,9 +46,6 @@ pub struct WrapUsdc<'info> {
     pub current_total_supply_acl: Box<Account<'info, zama_host::AclRecord>>,
     /// CHECK: initialized and validated by the Zama host program CPI.
     #[account(mut)]
-    pub amount_compute_acl: UncheckedAccount<'info>,
-    /// CHECK: initialized and validated by the Zama host program CPI.
-    #[account(mut)]
     pub output_acl: UncheckedAccount<'info>,
     /// CHECK: initialized and validated by the Zama host program CPI.
     #[account(mut)]
@@ -107,11 +104,12 @@ pub fn wrap_usdc(ctx: Context<WrapUsdc>, amount: u64) -> Result<()> {
         compute_signer,
         ConfidentialTokenError::ComputeSignerMismatch
     );
-    require_keys_eq!(
+    assert_current_balance_acl(
+        &ctx.accounts.current_compute_acl,
         ctx.accounts.current_compute_acl.key(),
-        token_account.balance_acl_record,
-        ConfidentialTokenError::CurrentAclRecordMismatch
-    );
+        &ctx.accounts.token_account,
+        mint_key,
+    )?;
     require_keys_eq!(
         total_supply_authority,
         total_supply_authority_address(mint_key).0,
@@ -123,16 +121,6 @@ pub fn wrap_usdc(ctx: Context<WrapUsdc>, amount: u64) -> Result<()> {
         ctx.accounts.mint.as_ref(),
         mint_key,
         total_supply_authority,
-    )?;
-    let amount_output = fhe::DurableOutput::new(
-        ctx.accounts.amount_compute_acl.to_account_info(),
-        durable_slot(
-            mint_key,
-            token_account.key(),
-            wrap_amount_label(),
-            nonce_sequence,
-        ),
-        zama_fhe::AccessPolicy::for_compute(compute_signer).map_err(invalid_eval_plan)?,
     )?;
     let balance_output = fhe::DurableOutput::new(
         ctx.accounts.output_acl.to_account_info(),
@@ -194,7 +182,7 @@ pub fn wrap_usdc(ctx: Context<WrapUsdc>, amount: u64) -> Result<()> {
         zama_fhe::EvalAppAuthority::new(token_account.key()),
     );
     let encrypted_amount = builder
-        .trivial_encrypt_u64(amount, amount_output.output())
+        .trivial_encrypt_u64(amount, zama_fhe::Output::transient())
         .map_err(invalid_eval_plan)?;
     builder
         .add(balance, encrypted_amount, balance_output.output())
@@ -214,7 +202,6 @@ pub fn wrap_usdc(ctx: Context<WrapUsdc>, amount: u64) -> Result<()> {
         [
             ctx.accounts.current_compute_acl.to_account_info(),
             ctx.accounts.current_total_supply_acl.to_account_info(),
-            amount_output.account_info(),
             balance_output.account_info(),
             total_supply_output.account_info(),
         ],

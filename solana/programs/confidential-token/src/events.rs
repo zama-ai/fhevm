@@ -126,38 +126,52 @@ pub struct RandomAmountCreatedEvent {
     pub nonce_sequence: u64,
 }
 
-/// Emitted when a holder changes a confidential-token operator row.
+/// Emitted when a mint rotates the token-scoped verifier sets used for new KMS requests.
 #[event]
-pub struct OperatorSetEvent {
+pub struct MintVerifierSetsUpdatedEvent {
     /// Event schema version.
     pub version: u8,
     /// Confidential mint.
     pub mint: Pubkey,
-    /// Token account controlled by the operator row.
-    pub token_account: Pubkey,
-    /// Token account owner.
-    pub owner: Pubkey,
-    /// Operator signer.
-    pub operator: Pubkey,
-    /// Last active slot, or zero when revoked.
-    pub expiration_slot: u64,
+    /// Mint authority that authorized the update.
+    pub authority: Pubkey,
+    /// Previous disclosure verifier set.
+    pub old_disclosure_verifier_set: Pubkey,
+    /// New disclosure verifier set.
+    pub new_disclosure_verifier_set: Pubkey,
+    /// Previous burn-redemption verifier set.
+    pub old_redemption_verifier_set: Pubkey,
+    /// New burn-redemption verifier set.
+    pub new_redemption_verifier_set: Pubkey,
+    /// New disclosure verifier-set version.
+    pub disclosure_verifier_set_version: u64,
+    /// New redemption verifier-set version.
+    pub redemption_verifier_set_version: u64,
+    /// Slot in which the mint pointers changed.
+    pub updated_slot: u64,
 }
 
-/// Emitted when an operator row is closed and its rent is refunded.
+/// Emitted when a legacy mint is migrated to split verifier-set pointers.
 #[event]
-pub struct OperatorClosedEvent {
+pub struct ConfidentialMintMigratedEvent {
     /// Event schema version.
     pub version: u8,
     /// Confidential mint.
     pub mint: Pubkey,
-    /// Token account controlled by the closed row.
-    pub token_account: Pubkey,
-    /// Token account owner receiving the rent refund.
-    pub owner: Pubkey,
-    /// Closed operator signer.
-    pub operator: Pubkey,
-    /// True when the owner explicitly closed an active row.
-    pub closed_while_active: bool,
+    /// Mint authority that authorized the migration.
+    pub authority: Pubkey,
+    /// Legacy single KMS verifier authority retained for auditability.
+    pub legacy_kms_verifier_authority: Pubkey,
+    /// Active disclosure verifier set after migration.
+    pub disclosure_verifier_set: Pubkey,
+    /// Active burn-redemption verifier set after migration.
+    pub redemption_verifier_set: Pubkey,
+    /// Disclosure verifier-set version after migration.
+    pub disclosure_verifier_set_version: u64,
+    /// Burn-redemption verifier-set version after migration.
+    pub redemption_verifier_set_version: u64,
+    /// Slot in which the mint was migrated.
+    pub migrated_slot: u64,
 }
 
 /// Emitted when the owner requests public disclosure of the current balance.
@@ -175,6 +189,16 @@ pub struct BalanceDisclosureRequestedEvent {
     pub handle: [u8; 32],
     /// ZamaHost ACL record updated by the request.
     pub acl_record: Pubkey,
+    /// Account-backed request witness.
+    pub request: Pubkey,
+    /// Canonical request hash stored in the witness.
+    pub request_hash: [u8; 32],
+    /// Verifier set expected to certify the response.
+    pub verifier_set: Pubkey,
+    /// Verifier-set version expected to certify the response.
+    pub verifier_set_version: u64,
+    /// Last slot in which this request can be consumed.
+    pub expires_slot: u64,
 }
 
 /// Emitted when a requester asks to publicly disclose a token-scoped amount.
@@ -190,6 +214,16 @@ pub struct AmountDisclosureRequestedEvent {
     pub handle: [u8; 32],
     /// ZamaHost ACL record updated by the request.
     pub acl_record: Pubkey,
+    /// Account-backed request witness.
+    pub request: Pubkey,
+    /// Canonical request hash stored in the witness.
+    pub request_hash: [u8; 32],
+    /// Verifier set expected to certify the response.
+    pub verifier_set: Pubkey,
+    /// Verifier-set version expected to certify the response.
+    pub verifier_set_version: u64,
+    /// Last slot in which this request can be consumed.
+    pub expires_slot: u64,
 }
 
 /// Emitted when a KMS certificate discloses the current balance cleartext.
@@ -205,6 +239,10 @@ pub struct BalanceDisclosedEvent {
     pub token_account: Pubkey,
     /// Disclosed balance handle.
     pub handle: [u8; 32],
+    /// Consumed request witness.
+    pub request: Pubkey,
+    /// Canonical request hash stored in the witness.
+    pub request_hash: [u8; 32],
     /// KMS-certified cleartext amount.
     pub cleartext_amount: u64,
 }
@@ -218,8 +256,43 @@ pub struct AmountDisclosedEvent {
     pub mint: Pubkey,
     /// Disclosed encrypted amount handle.
     pub handle: [u8; 32],
+    /// Consumed request witness.
+    pub request: Pubkey,
+    /// Canonical request hash stored in the witness.
+    pub request_hash: [u8; 32],
     /// KMS-certified cleartext amount.
     pub cleartext_amount: u64,
+}
+
+/// Emitted when a holder requests redemption of a burned amount.
+#[event]
+pub struct BurnRedemptionRequestedEvent {
+    /// Event schema version.
+    pub version: u8,
+    /// Confidential mint.
+    pub mint: Pubkey,
+    /// Token account owner.
+    pub owner: Pubkey,
+    /// Confidential token account that produced the burned amount.
+    pub token_account: Pubkey,
+    /// Burned amount handle.
+    pub burned_handle: [u8; 32],
+    /// ACL record for `burned_handle`.
+    pub burned_acl_record: Pubkey,
+    /// Underlying token destination owner.
+    pub destination_owner: Pubkey,
+    /// Underlying token destination account.
+    pub destination_account: Pubkey,
+    /// Account-backed request witness.
+    pub request: Pubkey,
+    /// Canonical request hash stored in the witness.
+    pub request_hash: [u8; 32],
+    /// Verifier set expected to certify the response.
+    pub verifier_set: Pubkey,
+    /// Verifier-set version expected to certify the response.
+    pub verifier_set_version: u64,
+    /// Last slot in which this request can be consumed.
+    pub expires_slot: u64,
 }
 
 /// Emitted when a KMS-certified burned amount is redeemed from the vault.
@@ -239,6 +312,10 @@ pub struct BurnRedeemedEvent {
     pub burned_acl_record: Pubkey,
     /// Underlying token destination account.
     pub destination_usdc: Pubkey,
+    /// Consumed request witness.
+    pub request: Pubkey,
+    /// Canonical request hash stored in the witness.
+    pub request_hash: [u8; 32],
     /// KMS-certified cleartext amount released from the vault.
     pub cleartext_amount: u64,
 }

@@ -4,9 +4,11 @@ use super::*;
 
 /// Accounts for requesting public disclosure of the current balance handle.
 #[derive(Accounts)]
+#[instruction(request_nonce: [u8; 32], expires_slot: u64)]
 #[event_cpi]
 pub struct RequestDiscloseBalance<'info> {
     /// Token account owner and disclosure authority.
+    #[account(mut)]
     pub owner: Signer<'info>,
     /// Confidential mint.
     pub mint: Box<Account<'info, ConfidentialMint>>,
@@ -15,6 +17,25 @@ pub struct RequestDiscloseBalance<'info> {
     /// Current balance ACL record. Updated by ZamaHost CPI.
     #[account(mut)]
     pub balance_acl_record: Box<Account<'info, zama_host::AclRecord>>,
+    /// Material commitment witness for the disclosed handle.
+    pub balance_material_commitment: Box<Account<'info, zama_host::HandleMaterialCommitment>>,
+    /// Account-backed request witness consumed by the KMS response path.
+    #[account(
+        init,
+        payer = owner,
+        space = 8 + DisclosureRequest::SPACE,
+        seeds = [
+            b"disclosure-request",
+            mint.key().as_ref(),
+            owner.key().as_ref(),
+            token_account.balance_handle.as_ref(),
+            request_nonce.as_ref()
+        ],
+        bump
+    )]
+    pub disclosure_request: Box<Account<'info, DisclosureRequest>>,
+    /// Threshold verifier set expected to certify the disclosure response.
+    pub disclosure_verifier_set: Box<Account<'info, zama_host::VerifierSet>>,
     /// CHECK: optional overflow permission witness for the owner authority.
     pub authority_permission_record: Option<UncheckedAccount<'info>>,
     /// CHECK: optional deny-list witness when host deny-lists are enabled.
@@ -25,12 +46,23 @@ pub struct RequestDiscloseBalance<'info> {
     pub zama_program: Program<'info, ZamaHost>,
     /// ZamaHost config used for pause and deny-list checks.
     pub host_config: Box<Account<'info, zama_host::HostConfig>>,
+    /// System program used for request witness creation.
+    pub system_program: Program<'info, System>,
 }
 
 /// Requests public disclosure for the current confidential balance handle.
-pub fn request_disclose_balance(ctx: Context<RequestDiscloseBalance>) -> Result<()> {
+pub fn request_disclose_balance(
+    ctx: Context<RequestDiscloseBalance>,
+    request_nonce: [u8; 32],
+    expires_slot: u64,
+) -> Result<()> {
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
     assert_confidential_mint_shape(&ctx.accounts.mint)?;
+    let clock = Clock::get()?;
+    require!(
+        expires_slot >= clock.slot,
+        ConfidentialTokenError::RequestWitnessUnavailable
+    );
     require_keys_eq!(
         ctx.accounts.token_account.owner,
         ctx.accounts.owner.key(),
@@ -52,9 +84,49 @@ pub fn request_disclose_balance(ctx: Context<RequestDiscloseBalance>) -> Result<
         &ctx.accounts.token_account,
         ctx.accounts.mint.key(),
     )?;
-
     let handle = ctx.accounts.token_account.balance_handle;
+    assert_material_commitment(
+        &ctx.accounts.balance_material_commitment,
+        ctx.accounts.balance_material_commitment.key(),
+        &ctx.accounts.balance_acl_record,
+        handle,
+    )?;
+    require_keys_eq!(
+        ctx.accounts.mint.disclosure_verifier_set,
+        ctx.accounts.disclosure_verifier_set.key(),
+        ConfidentialTokenError::VerifierSetMismatch
+    );
+    assert_active_verifier_set(
+        &ctx.accounts.disclosure_verifier_set,
+        ctx.accounts.disclosure_verifier_set.key(),
+        zama_host::VERIFIER_SET_KIND_TOKEN_DISCLOSURE,
+        ctx.accounts.mint.key(),
+    )?;
+
     let acl_record = ctx.accounts.balance_acl_record.key();
+    let request_key = ctx.accounts.disclosure_request.key();
+    let request_hash = disclosure_request_hash(
+        crate::ID,
+        request_key,
+        ctx.accounts.mint.key(),
+        ctx.accounts.owner.key(),
+        ctx.accounts.token_account.key(),
+        ctx.accounts.token_account.key(),
+        handle,
+        acl_record,
+        ctx.accounts.balance_material_commitment.key(),
+        ctx.accounts
+            .balance_material_commitment
+            .material_commitment_hash,
+        ctx.accounts.balance_material_commitment.key_id,
+        ctx.accounts.host_config.key(),
+        ctx.accounts.disclosure_verifier_set.key(),
+        ctx.accounts.disclosure_verifier_set.version,
+        request_nonce,
+        ctx.accounts.host_config.chain_id,
+        expires_slot,
+        DISCLOSURE_REQUEST_MODE_BALANCE,
+    );
     fhe::allow_public_decrypt(fhe::AllowPublicDecrypt {
         authority: &ctx.accounts.owner,
         authority_permission_record: ctx
@@ -73,6 +145,29 @@ pub fn request_disclose_balance(ctx: Context<RequestDiscloseBalance>) -> Result<
         zama_program: &ctx.accounts.zama_program,
         handle,
     })?;
+    let request = &mut ctx.accounts.disclosure_request;
+    request.mint = ctx.accounts.mint.key();
+    request.requester = ctx.accounts.owner.key();
+    request.token_account = ctx.accounts.token_account.key();
+    request.app_account = ctx.accounts.token_account.key();
+    request.handle = handle;
+    request.acl_record = acl_record;
+    request.material_commitment = ctx.accounts.balance_material_commitment.key();
+    request.material_commitment_hash = ctx
+        .accounts
+        .balance_material_commitment
+        .material_commitment_hash;
+    request.material_key_id = ctx.accounts.balance_material_commitment.key_id;
+    request.host_config = ctx.accounts.host_config.key();
+    request.verifier_set = ctx.accounts.disclosure_verifier_set.key();
+    request.verifier_set_version = ctx.accounts.disclosure_verifier_set.version;
+    request.request_nonce = request_nonce;
+    request.request_hash = request_hash;
+    request.chain_id = ctx.accounts.host_config.chain_id;
+    request.expires_slot = expires_slot;
+    request.mode = DISCLOSURE_REQUEST_MODE_BALANCE;
+    request.status = REQUEST_STATUS_PENDING;
+    request.bump = ctx.bumps.disclosure_request;
     emit_cpi!(BalanceDisclosureRequestedEvent {
         version: APP_EVENT_VERSION,
         mint: ctx.accounts.mint.key(),
@@ -80,6 +175,11 @@ pub fn request_disclose_balance(ctx: Context<RequestDiscloseBalance>) -> Result<
         token_account: ctx.accounts.token_account.key(),
         handle,
         acl_record,
+        request: request_key,
+        request_hash,
+        verifier_set: ctx.accounts.disclosure_verifier_set.key(),
+        verifier_set_version: ctx.accounts.disclosure_verifier_set.version,
+        expires_slot,
     });
     Ok(())
 }

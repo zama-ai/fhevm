@@ -52,20 +52,40 @@ pub mod zama_host {
         instructions::initialize_host_config(ctx, args)
     }
 
+    pub fn migrate_host_config_verifier_set(
+        ctx: Context<MigrateHostConfigVerifierSet>,
+        args: CreateVerifierSetArgs,
+    ) -> Result<()> {
+        instructions::migrate_host_config_verifier_set(ctx, args)
+    }
+
     pub fn set_host_pause(ctx: Context<HostAdmin>, paused: bool) -> Result<()> {
         instructions::set_host_pause(ctx, paused)
     }
 
+    #[cfg(feature = "poc")]
     pub fn set_test_shims_enabled(ctx: Context<HostAdmin>, enabled: bool) -> Result<()> {
         instructions::set_test_shims_enabled(ctx, enabled)
     }
 
+    #[cfg(feature = "poc")]
     pub fn set_mock_input_enabled(ctx: Context<HostAdmin>, enabled: bool) -> Result<()> {
         instructions::set_mock_input_enabled(ctx, enabled)
     }
 
     pub fn set_grant_deny_list_enabled(ctx: Context<HostAdmin>, enabled: bool) -> Result<()> {
         instructions::set_grant_deny_list_enabled(ctx, enabled)
+    }
+
+    pub fn create_verifier_set(
+        ctx: Context<CreateVerifierSet>,
+        args: CreateVerifierSetArgs,
+    ) -> Result<()> {
+        instructions::create_verifier_set(ctx, args)
+    }
+
+    pub fn disable_verifier_set(ctx: Context<DisableVerifierSet>) -> Result<()> {
+        instructions::disable_verifier_set(ctx)
     }
 
     pub fn set_deny_subject(
@@ -91,6 +111,7 @@ pub mod zama_host {
         instructions::revoke_delegation_for_user_decryption(ctx)
     }
 
+    #[cfg(feature = "poc")]
     pub fn test_emit_acl_allowed(
         ctx: Context<TestEmitProtocolEvent>,
         handle: [u8; 32],
@@ -209,6 +230,7 @@ pub mod zama_host {
         )
     }
 
+    #[cfg(feature = "poc")]
     pub fn mock_input_verified_and_bind(
         ctx: Context<MockInputVerifiedAndBind>,
         input_handle: [u8; 32],
@@ -395,6 +417,7 @@ pub mod zama_host {
         )
     }
 
+    #[cfg(feature = "poc")]
     pub fn test_emit_trivial_encrypt(
         ctx: Context<TestEmitProtocolEvent>,
         subject: Pubkey,
@@ -405,6 +428,7 @@ pub mod zama_host {
         instructions::test_emit_trivial_encrypt(ctx, subject, plaintext, fhe_type, result)
     }
 
+    #[cfg(feature = "poc")]
     pub fn test_emit_fhe_rand(
         ctx: Context<TestEmitProtocolEvent>,
         subject: Pubkey,
@@ -415,6 +439,7 @@ pub mod zama_host {
         instructions::test_emit_fhe_rand(ctx, subject, seed, fhe_type, result)
     }
 
+    #[cfg(feature = "poc")]
     pub fn test_emit_input_verified(
         ctx: Context<TestEmitProtocolEvent>,
         input_handle: [u8; 32],

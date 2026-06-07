@@ -4,7 +4,7 @@ use super::super::common::{
 };
 use super::handles::{
     expected_binary_eval_result, expected_rand_eval_seed, expected_ternary_eval_result,
-    expected_trivial_eval_result,
+    expected_trivial_eval_result, EvalHandleContext,
 };
 use super::*;
 
@@ -14,9 +14,8 @@ pub(super) fn admit_eval_frame<'info>(
     args: &FheEvalArgs,
     subject: Pubkey,
     session_authority: Pubkey,
-    previous_bank_hash: [u8; 32],
     current_slot: u64,
-    unix_timestamp: i64,
+    handle_context: &EvalHandleContext<'_>,
     instructions_sysvar: Option<&AccountInfo<'info>>,
 ) -> Result<()> {
     let mut admission = AdmissionState::new(args.steps.len());
@@ -34,7 +33,7 @@ pub(super) fn admit_eval_frame<'info>(
                     lhs,
                     subject,
                     session_authority,
-                    ctx.accounts.host_config.chain_id,
+                    handle_context.chain_id,
                     current_slot,
                     instructions_sysvar,
                 )?;
@@ -43,7 +42,7 @@ pub(super) fn admit_eval_frame<'info>(
                     rhs,
                     subject,
                     session_authority,
-                    ctx.accounts.host_config.chain_id,
+                    handle_context.chain_id,
                     current_slot,
                     instructions_sysvar,
                 )?;
@@ -60,10 +59,7 @@ pub(super) fn admit_eval_frame<'info>(
                     rhs.handle,
                     rhs.scalar,
                     *output_fhe_type,
-                    ctx.accounts.host_config.chain_id,
-                    previous_bank_hash,
-                    unix_timestamp,
-                    args.context_id,
+                    handle_context,
                     index as u16,
                     output,
                 );
@@ -90,7 +86,7 @@ pub(super) fn admit_eval_frame<'info>(
                     control,
                     subject,
                     session_authority,
-                    ctx.accounts.host_config.chain_id,
+                    handle_context.chain_id,
                     current_slot,
                     instructions_sysvar,
                 )?;
@@ -99,7 +95,7 @@ pub(super) fn admit_eval_frame<'info>(
                     if_true,
                     subject,
                     session_authority,
-                    ctx.accounts.host_config.chain_id,
+                    handle_context.chain_id,
                     current_slot,
                     instructions_sysvar,
                 )?;
@@ -108,7 +104,7 @@ pub(super) fn admit_eval_frame<'info>(
                     if_false,
                     subject,
                     session_authority,
-                    ctx.accounts.host_config.chain_id,
+                    handle_context.chain_id,
                     current_slot,
                     instructions_sysvar,
                 )?;
@@ -124,10 +120,7 @@ pub(super) fn admit_eval_frame<'info>(
                     if_true.handle,
                     if_false.handle,
                     *output_fhe_type,
-                    ctx.accounts.host_config.chain_id,
-                    previous_bank_hash,
-                    unix_timestamp,
-                    args.context_id,
+                    handle_context,
                     index as u16,
                     output,
                 );
@@ -150,10 +143,7 @@ pub(super) fn admit_eval_frame<'info>(
                 let result = expected_trivial_eval_result(
                     *plaintext,
                     *fhe_type,
-                    ctx.accounts.host_config.chain_id,
-                    previous_bank_hash,
-                    unix_timestamp,
-                    args.context_id,
+                    handle_context,
                     index as u16,
                     output,
                 );
@@ -169,16 +159,8 @@ pub(super) fn admit_eval_frame<'info>(
             }
             FheEvalStep::Rand { fhe_type, output } => {
                 assert_supported_rand_type(*fhe_type)?;
-                let seed = expected_rand_eval_seed(
-                    ctx.accounts.host_config.chain_id,
-                    previous_bank_hash,
-                    unix_timestamp,
-                    args.context_id,
-                    index as u16,
-                    output,
-                );
-                let result =
-                    computed_rand_handle(seed, *fhe_type, ctx.accounts.host_config.chain_id);
+                let seed = expected_rand_eval_seed(handle_context, index as u16, output);
+                let result = computed_rand_handle(seed, *fhe_type, handle_context.chain_id);
                 admission.accept_output(
                     ctx,
                     result,
@@ -192,10 +174,17 @@ pub(super) fn admit_eval_frame<'info>(
             FheEvalStep::Input {
                 input_handle,
                 proof,
+                verifier_set_index,
                 output,
             } => {
-                let output_public_decrypt_allowed =
-                    admit_input_signature(ctx, *input_handle, proof, output, instructions_sysvar)?;
+                let output_public_decrypt_allowed = admit_input_signature(
+                    ctx,
+                    *input_handle,
+                    proof,
+                    *verifier_set_index,
+                    output,
+                    instructions_sysvar,
+                )?;
                 admission.accept_output(
                     ctx,
                     *input_handle,
@@ -411,19 +400,20 @@ impl AdmissionState {
                     output_subjects,
                     *output_public_decrypt,
                 )?;
-                if enforce_public_decrypt_role_propagation {
-                    assert_public_decrypt_roles_allowed(
-                        output_subjects,
-                        output_public_decrypt_allowed,
-                    )?;
-                }
                 let app_account_authority = admit_durable_output_authority(
                     ctx,
                     *output_app_account_authority_index,
                     *output_app_account,
                 )?;
+                if enforce_public_decrypt_role_propagation {
+                    assert_derived_public_decrypt_roles_allowed(
+                        output_subjects,
+                        output_public_decrypt_allowed,
+                        &app_account_authority,
+                    )?;
+                }
                 assert_output_acl_metadata(
-                    app_account_authority,
+                    app_account_authority.key(),
                     *output_nonce_key,
                     *output_acl_domain_key,
                     *output_app_account,
@@ -559,7 +549,7 @@ fn admit_durable_output_authority<'info>(
     ctx: &Context<'info, FheEval<'info>>,
     authority_index: Option<u16>,
     output_app_account: Pubkey,
-) -> Result<Pubkey> {
+) -> Result<AccountInfo<'info>> {
     match authority_index {
         Some(index) => {
             let authority = account_at(ctx.remaining_accounts, index)?;
@@ -569,9 +559,9 @@ fn admit_durable_output_authority<'info>(
                 output_app_account,
                 ZamaHostError::AppAccountAuthorityMismatch
             );
-            Ok(authority.key())
+            Ok(authority.clone())
         }
-        None => Ok(ctx.accounts.app_account_authority.key()),
+        None => Ok(ctx.accounts.app_account_authority.to_account_info()),
     }
 }
 
@@ -579,6 +569,7 @@ fn admit_input_signature<'info>(
     ctx: &Context<'info, FheEval<'info>>,
     input_handle: [u8; 32],
     proof: &SolanaInputProof,
+    verifier_set_index: u16,
     output: &FheEvalOutput,
     instructions_sysvar: Option<&AccountInfo<'info>>,
 ) -> Result<bool> {
@@ -599,19 +590,21 @@ fn admit_input_signature<'info>(
         output_subjects: durable.output_subjects.to_vec(),
         output_public_decrypt: durable.output_public_decrypt,
     };
-    let proof_message = input_proof_message(
+    let verifier_set_info = account_at(ctx.remaining_accounts, verifier_set_index)?;
+    let verifier_set = read_input_verifier_set(&ctx.accounts.host_config, verifier_set_info)?;
+    let proof_message = input_proof_message_for_verifier_set(
         proof,
         &bind_intent,
         crate::ID,
         ctx.accounts.host_config.chain_id,
+        verifier_set.key(),
+        verifier_set.kind,
+        verifier_set.scope,
+        verifier_set.version,
     );
     let instructions_sysvar =
         instructions_sysvar.ok_or(ZamaHostError::InputProofSignatureMissing)?;
-    assert_previous_ed25519_instruction(
-        instructions_sysvar,
-        ctx.accounts.host_config.input_verifier_authority,
-        &proof_message,
-    )?;
+    assert_threshold_ed25519_instructions(instructions_sysvar, &verifier_set, &proof_message)?;
     Ok(output_subjects_grant_public_decrypt(
         durable.output_subjects,
     ))

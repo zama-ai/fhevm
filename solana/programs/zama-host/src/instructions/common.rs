@@ -1,7 +1,7 @@
 //! Shared account contexts and validation helpers for instruction modules.
 
 use anchor_lang::prelude::*;
-use anchor_lang::solana_program::{program::invoke_signed, system_instruction};
+use anchor_lang::solana_program::{program::invoke_signed, system_instruction, system_program};
 use solana_instructions_sysvar::{
     load_current_index_checked, load_instruction_at_checked, ID as INSTRUCTIONS_SYSVAR_ID,
 };
@@ -14,11 +14,11 @@ use crate::{
         acl_nonce_key, acl_permission_address, acl_record_address,
         acl_record_subject_slots_are_canonical, assert_handle_for_chain, deny_subject_address,
         host_config_address, role_flags_are_known, subject_has_role, transient_session_address,
-        AclPermission, AclRecord, AclSubjectEntry, DenySubjectRecord, HostConfig,
-        TransientCapability, TransientCapabilityGrant, TransientSession, ACL_PERMISSION_SEED,
-        ACL_ROLE_COMPUTE, ACL_ROLE_USE, EVENT_VERSION, MAX_ACL_SUBJECTS,
-        MAX_ACL_SUBJECT_GRANTS_PER_CALL, MAX_TRANSIENT_CAPABILITIES, TRANSIENT_SESSION_STATE_OPEN,
-        TRANSIENT_SESSION_STATE_SEALED,
+        verifier_set_address, AclPermission, AclRecord, AclSubjectEntry, DenySubjectRecord,
+        HostConfig, TransientCapability, TransientCapabilityGrant, TransientSession, VerifierSet,
+        ACL_PERMISSION_SEED, ACL_ROLE_COMPUTE, ACL_ROLE_PUBLIC_DECRYPT, ACL_ROLE_USE,
+        EVENT_VERSION, MAX_ACL_SUBJECTS, MAX_ACL_SUBJECT_GRANTS_PER_CALL,
+        MAX_TRANSIENT_CAPABILITIES, TRANSIENT_SESSION_STATE_OPEN, TRANSIENT_SESSION_STATE_SEALED,
     },
 };
 
@@ -60,6 +60,37 @@ pub(super) fn assert_not_paused(config: &Account<HostConfig>) -> Result<()> {
     Ok(())
 }
 
+pub(super) fn assert_verifier_set_shape(
+    verifier_set: &Account<VerifierSet>,
+    kind: u8,
+    scope: Pubkey,
+    version: u64,
+) -> Result<()> {
+    let (expected_key, expected_bump) = verifier_set_address(kind, scope, version);
+    require_keys_eq!(
+        verifier_set.key(),
+        expected_key,
+        ZamaHostError::VerifierSetMismatch
+    );
+    require!(
+        verifier_set.to_account_info().data_len() == 8 + VerifierSet::SPACE,
+        ZamaHostError::VerifierSetMismatch
+    );
+    require!(
+        verifier_set.bump == expected_bump,
+        ZamaHostError::VerifierSetMismatch
+    );
+    require!(
+        verifier_set.kind == kind
+            && verifier_set.scope == scope
+            && verifier_set.version == version
+            && verifier_set.validate_shape(),
+        ZamaHostError::VerifierSetMismatch
+    );
+    Ok(())
+}
+
+#[cfg(feature = "poc")]
 pub(super) fn assert_test_shim_authority(
     config: &Account<HostConfig>,
     authority: Pubkey,
@@ -87,6 +118,8 @@ pub(super) fn emit_config_updated(config: &HostConfig, admin: Pubkey) {
         version: EVENT_VERSION,
         config: crate::state::host_config_address().0,
         admin,
+        input_verifier_set: config.input_verifier_set,
+        input_verifier_set_version: config.input_verifier_set_version,
         paused: config.paused,
         mock_input_enabled: config.mock_input_enabled,
         test_shims_enabled: config.test_shims_enabled,
@@ -261,6 +294,26 @@ pub(super) fn assert_public_decrypt_not_set_at_birth(output_public_decrypt: bool
     require!(
         !output_public_decrypt,
         ZamaHostError::PublicDecryptAtBirthUnsupported
+    );
+    Ok(())
+}
+
+pub(super) fn assert_derived_public_decrypt_roles_allowed(
+    subjects: &[AclSubjectEntry],
+    propagated_public_decrypt_allowed: bool,
+    app_account_authority: &AccountInfo,
+) -> Result<()> {
+    let grants_public_decrypt = subjects
+        .iter()
+        .any(|subject| subject_has_role(subject.role_flags, ACL_ROLE_PUBLIC_DECRYPT));
+    if !grants_public_decrypt || propagated_public_decrypt_allowed {
+        return Ok(());
+    }
+    require!(
+        *app_account_authority.owner != system_program::ID
+            && !app_account_authority.executable
+            && !app_account_authority.data_is_empty(),
+        ZamaHostError::TransientCapabilityPublicDecryptDenied
     );
     Ok(())
 }

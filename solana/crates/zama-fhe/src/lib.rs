@@ -13,8 +13,11 @@
 //! only [`Output::durable`] creates ACL state. Binary, ternary, trivial-encrypt,
 //! rand, and verified input steps can be composed in one eval frame.
 
+#![allow(unexpected_cfgs)]
+
 use anchor_lang::prelude::Pubkey;
 use std::marker::PhantomData;
+#[cfg(not(target_os = "solana"))]
 use std::sync::atomic::{AtomicU64, Ordering};
 
 #[cfg(feature = "cpi")]
@@ -429,11 +432,15 @@ impl InputProof {
 pub struct EncryptedInput<T> {
     handle: [u8; 32],
     proof: SolanaInputProof,
+    verifier_set: Pubkey,
     marker: PhantomData<T>,
 }
 
 impl<T: FheTyped> EncryptedInput<T> {
-    pub fn from_proof(proof: InputProof) -> Result<Self> {
+    pub fn from_proof(proof: InputProof, verifier_set: Pubkey) -> Result<Self> {
+        if verifier_set == Pubkey::default() {
+            return Err(EvalBuildError::InvalidInputProof);
+        }
         let handle = proof.selected_handle;
         if handle_fhe_type(handle) != T::FHE_TYPE.byte() {
             return Err(EvalBuildError::UnsupportedFheType);
@@ -441,6 +448,7 @@ impl<T: FheTyped> EncryptedInput<T> {
         Ok(Self {
             handle,
             proof: proof.proof,
+            verifier_set,
             marker: PhantomData,
         })
     }
@@ -545,10 +553,17 @@ impl TryFrom<[u8; 32]> for EvalContextId {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct EvalBuilderScope(u64);
 
+#[cfg(not(target_os = "solana"))]
 static NEXT_EVAL_BUILDER_SCOPE: AtomicU64 = AtomicU64::new(1);
 
+#[cfg(not(target_os = "solana"))]
 fn next_eval_builder_scope() -> EvalBuilderScope {
     EvalBuilderScope(NEXT_EVAL_BUILDER_SCOPE.fetch_add(1, Ordering::Relaxed))
+}
+
+#[cfg(target_os = "solana")]
+fn next_eval_builder_scope() -> EvalBuilderScope {
+    EvalBuilderScope(1)
 }
 
 /// App-domain encrypted field label.
@@ -877,6 +892,7 @@ impl Output {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EvalAccountPurpose {
     DurableInputAcl,
+    InputVerifierSet,
     PermissionRecord,
     TransientSession,
     DurableOutputAcl,
@@ -1565,6 +1581,10 @@ impl EvalBuilder {
         }
         let step_index = u16::try_from(self.steps.len()).map_err(|_| EvalBuildError::TooManyOps)?;
         let mut remaining_accounts = self.remaining_accounts.clone();
+        let verifier_set_index = account_index(
+            &mut remaining_accounts,
+            EvalAccountMeta::readonly(input.verifier_set, EvalAccountPurpose::InputVerifierSet),
+        )?;
         let output = lower_output(
             &mut remaining_accounts,
             self.app_authority,
@@ -1574,6 +1594,7 @@ impl EvalBuilder {
         self.steps.push(FheEvalStep::Input {
             input_handle: input.handle,
             proof: input.proof,
+            verifier_set_index,
             output,
         });
         self.produced_types.push(T::FHE_TYPE.byte());
@@ -1685,10 +1706,15 @@ fn validate_lowered_step(
         FheEvalStep::TrivialEncrypt { output, .. } | FheEvalStep::Rand { output, .. } => {
             validate_lowered_output(output, used_accounts)?;
         }
-        FheEvalStep::Input { output, .. } => {
+        FheEvalStep::Input {
+            verifier_set_index,
+            output,
+            ..
+        } => {
             if !matches!(output, FheEvalOutput::Durable { .. }) {
                 return Err(EvalBuildError::InvalidRemainingAccountReference);
             }
+            mark_lowered_account(used_accounts, *verifier_set_index)?;
             validate_lowered_output(output, used_accounts)?;
         }
     }
@@ -3250,7 +3276,8 @@ mod tests {
             vec![7, 8, 9],
         )
         .unwrap();
-        let input = EncryptedInput::<Uint<64>>::from_proof(proof).unwrap();
+        let verifier_set = Pubkey::new_unique();
+        let input = EncryptedInput::<Uint<64>>::from_proof(proof, verifier_set).unwrap();
         let output_slot = durable_slot(primary_authority, 11);
         let output_acl = output_slot.address();
         let mut builder = EvalBuilder::new(context_id(9), app_authority(primary_authority));
@@ -3268,15 +3295,16 @@ mod tests {
 
         assert_eq!(
             plan.remaining_accounts,
-            vec![EvalAccountMeta::writable(
-                output_acl,
-                EvalAccountPurpose::DurableOutputAcl
-            )]
+            vec![
+                EvalAccountMeta::readonly(verifier_set, EvalAccountPurpose::InputVerifierSet),
+                EvalAccountMeta::writable(output_acl, EvalAccountPurpose::DurableOutputAcl),
+            ]
         );
         match &plan.args.steps[0] {
             FheEvalStep::Input {
                 input_handle: lowered_handle,
                 proof,
+                verifier_set_index,
                 output,
             } => {
                 assert_eq!(*lowered_handle, selected_input_handle);
@@ -3285,13 +3313,14 @@ mod tests {
                 assert_eq!(proof.app_account, primary_authority);
                 assert_eq!(proof.acl_domain_key, namespace);
                 assert_eq!(proof.extra_data, vec![7, 8, 9]);
+                assert_eq!(*verifier_set_index, 0);
                 match output {
                     FheEvalOutput::Durable {
                         output_acl_record_index,
                         output_public_decrypt,
                         ..
                     } => {
-                        assert_eq!(*output_acl_record_index, 0);
+                        assert_eq!(*output_acl_record_index, 1);
                         assert!(!*output_public_decrypt);
                     }
                     other => panic!("unexpected output: {other:?}"),
@@ -3523,7 +3552,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            EncryptedInput::<Uint<64>>::from_proof(proof).unwrap_err(),
+            EncryptedInput::<Uint<64>>::from_proof(proof, Pubkey::new_unique()).unwrap_err(),
             EvalBuildError::UnsupportedFheType
         );
     }

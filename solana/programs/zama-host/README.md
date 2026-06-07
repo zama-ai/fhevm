@@ -84,19 +84,25 @@ Admission invariants for `fhe_eval`:
 - Durable outputs must be born with `public_decrypt = false`; public decrypt is granted later through
   the dedicated role-aware instruction path. `ACL_ROLE_PUBLIC_DECRYPT` in output subjects authorizes
   that later explicit path; it does not set the durable record's `public_decrypt` flag at birth.
+- When a derived durable output grants `ACL_ROLE_PUBLIC_DECRYPT` without any input carrying that role,
+  the output authority must be an initialized non-system app account. This blocks direct/system-owned
+  callers from laundering compute/use permission into future disclosure authority while preserving
+  app-owned token output policies.
 
 ## External Inputs
 
 `verify_input_and_bind` is the production-shaped encrypted-input birth path. It accepts a
 `SolanaInputProof`, requires the immediately preceding transaction instruction to be Solana's native
-Ed25519 verifier, and checks that `HostConfig::input_verifier_authority` signed the canonical
-`input_proof_message` bytes for the proof and `SolanaInputBindIntent`. The selected proof handle
-must match the requested input handle, and every proof handle must carry this host chain id, a
-supported FHE type, its proof index in byte 21, and the current handle version before the instruction
-writes the canonical ACL record named by the signed bind intent.
+Ed25519 verifier, and checks that the active `HostConfig::input_verifier_set` met its threshold over
+the canonical verifier-set-bound `input_proof_message` bytes for the proof and
+`SolanaInputBindIntent`. The selected proof handle must match the requested input handle, and every
+proof handle must carry this host chain id, a supported FHE type, its proof index in byte 21, and the
+current handle version before the instruction writes the canonical ACL record named by the signed
+bind intent.
 
-`mock_input_verified_and_bind` remains test-only glue for cases that do not need verifier
-transaction witnesses.
+`mock_input_verified_and_bind` remains local-PoC test-only glue for cases that do not need verifier
+transaction witnesses. It is still constrained to the active verifier set by requiring a signer from
+that set.
 
 ## Roles
 
@@ -121,7 +127,7 @@ remain full ACL subjects. Persistent grants require `ACL_ROLE_GRANT`. Public dec
 feature gates and the configured authority signer:
 
 ```text
-mock_input_verified_and_bind -> mock_input_enabled + input_verifier_authority signer
+mock_input_verified_and_bind -> mock_input_enabled + local PoC chain id + active verifier-set signer
 test_emit_*                  -> test_shims_enabled + test_authority
 ```
 

@@ -15,6 +15,7 @@ pub(crate) fn assert_no_remaining_accounts(remaining_accounts: &[AccountInfo]) -
 
 pub(crate) struct TransferAccounts<'a, 'info> {
     pub(crate) payer: &'a Signer<'info>,
+    pub(crate) transfer_authority: Pubkey,
     pub(crate) mint: &'a Account<'info, ConfidentialMint>,
     pub(crate) from_account: &'a mut Box<Account<'info, ConfidentialTokenAccount>>,
     pub(crate) to_account: &'a mut Box<Account<'info, ConfidentialTokenAccount>>,
@@ -61,7 +62,6 @@ pub(crate) struct PrepareTransferCallbackAccounts<'a, 'info> {
     pub(crate) callback_success_acl: &'a Account<'info, zama_host::AclRecord>,
     pub(crate) hook_record: &'a Account<'info, TransferReceiverHookCall>,
     pub(crate) settlement_record: &'a mut Account<'info, TransferCallbackSettlement>,
-    pub(crate) requested_refund_acl: AccountInfo<'info>,
     pub(crate) to_output_acl: AccountInfo<'info>,
     pub(crate) refund_amount_acl: AccountInfo<'info>,
     pub(crate) zama_event_authority: &'a UncheckedAccount<'info>,
@@ -133,7 +133,7 @@ pub(crate) fn execute_transfer<'info>(
         accounts.amount_compute_acl,
         amount_handle,
         mint_key,
-        accounts.payer.key(),
+        accounts.transfer_authority,
         compute_signer,
     )?;
     require_keys_eq!(from.mint, mint_key, ConfidentialTokenError::MintMismatch);
@@ -563,16 +563,6 @@ pub(crate) fn prepare_transfer_callback_settlement<'info>(
         to_nonce_sequence,
         to_nonce_sequence,
     )?;
-    let requested_refund_output = fhe::DurableOutput::new(
-        accounts.requested_refund_acl.clone(),
-        durable_slot(
-            mint_key,
-            to_token_account,
-            callback_refund_request_label(),
-            to_nonce_sequence,
-        ),
-        access_policy_from_subjects(amount_subjects.clone())?,
-    )?;
     let to_output = fhe::DurableOutput::new(
         accounts.to_output_acl.clone(),
         durable_slot(
@@ -606,7 +596,7 @@ pub(crate) fn prepare_transfer_callback_settlement<'info>(
             callback_success,
             zero,
             sent_amount,
-            requested_refund_output.output(),
+            zama_fhe::Output::transient(),
         )
         .map_err(invalid_eval_plan)?;
     let refund_success = builder
@@ -635,7 +625,6 @@ pub(crate) fn prepare_transfer_callback_settlement<'info>(
             accounts.to_current_compute_acl.to_account_info(),
             accounts.sent_amount_acl.to_account_info(),
             accounts.callback_success_acl.to_account_info(),
-            requested_refund_output.account_info(),
             to_output.account_info(),
             refund_amount_output.account_info(),
         ],
@@ -656,12 +645,10 @@ pub(crate) fn prepare_transfer_callback_settlement<'info>(
         plan,
     })?;
 
-    let requested_refund_handle = requested_refund_output.handle()?;
     let new_to_handle = to_output.handle()?;
     let refund_handle = refund_amount_output.handle()?;
 
     let new_to_acl_record = accounts.to_output_acl.key();
-    let requested_refund_acl_record = accounts.requested_refund_acl.key();
     let refund_acl_record = accounts.refund_amount_acl.key();
 
     let to = accounts.to_account.as_mut();
@@ -681,8 +668,6 @@ pub(crate) fn prepare_transfer_callback_settlement<'info>(
     settlement.sent_acl_record = accounts.sent_amount_acl.key();
     settlement.callback_success_handle = callback_success_handle;
     settlement.callback_success_acl_record = accounts.callback_success_acl.key();
-    settlement.requested_refund_handle = requested_refund_handle;
-    settlement.requested_refund_acl_record = requested_refund_acl_record;
     settlement.refund_handle = refund_handle;
     settlement.refund_acl_record = refund_acl_record;
     settlement.to_balance_handle = new_to_handle;
@@ -703,68 +688,6 @@ pub(crate) fn prepare_transfer_callback_settlement<'info>(
         new_to_handle,
         new_to_acl_record,
     })
-}
-
-pub(crate) fn assert_active_operator_record(
-    operator_record: &Account<ConfidentialOperator>,
-    token_account: &Account<ConfidentialTokenAccount>,
-    operator: Pubkey,
-) -> Result<()> {
-    assert_confidential_token_account_shape(
-        token_account,
-        token_account.mint,
-        token_account.owner,
-    )?;
-    assert_operator_record_shape(
-        operator_record,
-        token_account.key(),
-        token_account.owner,
-        operator,
-    )?;
-    let slot = Clock::get()?.slot;
-    require!(
-        operator_record.expiration_slot != 0 && operator_record.expiration_slot >= slot,
-        ConfidentialTokenError::OperatorExpired
-    );
-    Ok(())
-}
-
-pub(crate) fn assert_operator_record_shape(
-    operator_record: &Account<ConfidentialOperator>,
-    token_account: Pubkey,
-    owner: Pubkey,
-    operator: Pubkey,
-) -> Result<()> {
-    let (expected_key, expected_bump) = operator_record_address(token_account, operator);
-    require_keys_eq!(
-        operator_record.key(),
-        expected_key,
-        ConfidentialTokenError::OperatorRecordMismatch
-    );
-    require!(
-        operator_record.to_account_info().data_len() == 8 + ConfidentialOperator::SPACE,
-        ConfidentialTokenError::OperatorRecordMismatch
-    );
-    require!(
-        operator_record.bump == expected_bump,
-        ConfidentialTokenError::OperatorRecordMismatch
-    );
-    require_keys_eq!(
-        operator_record.token_account,
-        token_account,
-        ConfidentialTokenError::OperatorRecordMismatch
-    );
-    require_keys_eq!(
-        operator_record.owner,
-        owner,
-        ConfidentialTokenError::OperatorRecordMismatch
-    );
-    require_keys_eq!(
-        operator_record.operator,
-        operator,
-        ConfidentialTokenError::OperatorRecordMismatch
-    );
-    Ok(())
 }
 
 pub(crate) fn call_transfer_receiver_hook<'info>(
@@ -944,43 +867,12 @@ pub(crate) fn assert_previous_transfer_for_receiver_hook(
                 &transfer_ix.accounts,
                 PreviousTransferAccountIndexes {
                     authority: ConfidentialTransfer::OWNER_ACCOUNT_INDEX,
-                    operator_record: None,
                     mint: ConfidentialTransfer::MINT_ACCOUNT_INDEX,
                     from_token_account: ConfidentialTransfer::FROM_ACCOUNT_INDEX,
                     to_token_account: ConfidentialTransfer::TO_ACCOUNT_INDEX,
                     sent_acl_record: ConfidentialTransfer::TRANSFERRED_AMOUNT_ACL_INDEX,
                 },
-                PreviousTransferAuthority {
-                    authority: owner,
-                    operator_record: None,
-                },
-                mint,
-                from_token_account,
-                to_token_account,
-                sent_acl_record,
-            )
-        }
-        (
-            discriminator,
-            PreviousTransferIntent::Operator {
-                operator,
-                operator_record,
-            },
-        ) if discriminator == crate::instruction::ConfidentialTransferFrom::DISCRIMINATOR => {
-            assert_previous_transfer_accounts(
-                &transfer_ix.accounts,
-                PreviousTransferAccountIndexes {
-                    authority: ConfidentialTransferFrom::OPERATOR_ACCOUNT_INDEX,
-                    operator_record: Some(ConfidentialTransferFrom::OPERATOR_RECORD_ACCOUNT_INDEX),
-                    mint: ConfidentialTransferFrom::MINT_ACCOUNT_INDEX,
-                    from_token_account: ConfidentialTransferFrom::FROM_ACCOUNT_INDEX,
-                    to_token_account: ConfidentialTransferFrom::TO_ACCOUNT_INDEX,
-                    sent_acl_record: ConfidentialTransferFrom::TRANSFERRED_AMOUNT_ACL_INDEX,
-                },
-                PreviousTransferAuthority {
-                    authority: operator,
-                    operator_record: Some(operator_record),
-                },
+                owner,
                 mint,
                 from_token_account,
                 to_token_account,
@@ -992,23 +884,11 @@ pub(crate) fn assert_previous_transfer_for_receiver_hook(
 }
 
 pub(crate) enum PreviousTransferIntent {
-    Direct {
-        owner: Pubkey,
-    },
-    Operator {
-        operator: Pubkey,
-        operator_record: Pubkey,
-    },
-}
-
-struct PreviousTransferAuthority {
-    authority: Pubkey,
-    operator_record: Option<Pubkey>,
+    Direct { owner: Pubkey },
 }
 
 struct PreviousTransferAccountIndexes {
     authority: usize,
-    operator_record: Option<usize>,
     mint: usize,
     from_token_account: usize,
     to_token_account: usize,
@@ -1018,7 +898,7 @@ struct PreviousTransferAccountIndexes {
 fn assert_previous_transfer_accounts(
     accounts: &[AccountMeta],
     indexes: PreviousTransferAccountIndexes,
-    authority: PreviousTransferAuthority,
+    authority: Pubkey,
     mint: Pubkey,
     from_token_account: Pubkey,
     to_token_account: Pubkey,
@@ -1041,29 +921,13 @@ fn assert_previous_transfer_accounts(
         .ok_or(ConfidentialTokenError::ReceiverHookMismatch)?;
     require_keys_eq!(
         authority_meta.pubkey,
-        authority.authority,
+        authority,
         ConfidentialTokenError::ReceiverHookMismatch
     );
     require!(
-        authority_meta.is_signer && authority_meta.is_writable,
+        authority_meta.is_signer,
         ConfidentialTokenError::ReceiverHookMismatch
     );
-    if let (Some(index), Some(expected_operator_record)) =
-        (indexes.operator_record, authority.operator_record)
-    {
-        let operator_record_meta = accounts
-            .get(index)
-            .ok_or(ConfidentialTokenError::ReceiverHookMismatch)?;
-        require_keys_eq!(
-            operator_record_meta.pubkey,
-            expected_operator_record,
-            ConfidentialTokenError::ReceiverHookMismatch
-        );
-        require!(
-            !operator_record_meta.is_signer && !operator_record_meta.is_writable,
-            ConfidentialTokenError::ReceiverHookMismatch
-        );
-    }
     require_keys_eq!(
         mint_meta.pubkey,
         mint,
@@ -1711,6 +1575,7 @@ pub(crate) fn is_token_amount_label(encrypted_value_label: [u8; 32]) -> bool {
         || encrypted_value_label == burned_amount_label()
         || encrypted_value_label == transferred_amount_label()
         || encrypted_value_label == callback_refund_amount_label()
+        || encrypted_value_label == callback_final_transferred_label()
 }
 
 pub(crate) fn assert_burned_amount_acl(
@@ -1829,6 +1694,24 @@ pub(crate) fn assert_public_decrypt_released(
     Ok(())
 }
 
+pub(crate) fn assert_host_config_allows_token_response(
+    host_config: &Account<zama_host::HostConfig>,
+) -> Result<()> {
+    let (expected_key, expected_bump) = zama_host::host_config_address();
+    require_keys_eq!(
+        host_config.key(),
+        expected_key,
+        ConfidentialTokenError::RequestWitnessMismatch
+    );
+    require!(
+        host_config.to_account_info().data_len() == 8 + zama_host::HostConfig::SPACE
+            && host_config.bump == expected_bump
+            && !host_config.paused,
+        ConfidentialTokenError::RequestWitnessUnavailable
+    );
+    Ok(())
+}
+
 pub(crate) fn assert_canonical_vault_token_account(
     vault_usdc: Pubkey,
     vault_authority: Pubkey,
@@ -1874,6 +1757,11 @@ pub(crate) fn assert_confidential_mint_shape(mint: &Account<ConfidentialMint>) -
         compute_signer_address(mint.key()).0,
         ConfidentialTokenError::ComputeSignerMismatch
     );
+    require!(
+        mint.disclosure_verifier_set != Pubkey::default()
+            && mint.redemption_verifier_set != Pubkey::default(),
+        ConfidentialTokenError::MintAccountMismatch
+    );
     Ok(())
 }
 
@@ -1905,57 +1793,323 @@ pub(crate) fn assert_confidential_token_account_shape(
     Ok(())
 }
 
-pub(crate) fn assert_disclosure_signature(
+pub(crate) fn assert_active_verifier_set(
+    verifier_set: &Account<zama_host::VerifierSet>,
+    verifier_set_key: Pubkey,
+    kind: u8,
+    scope: Pubkey,
+) -> Result<()> {
+    let (expected_key, expected_bump) =
+        zama_host::verifier_set_address(kind, scope, verifier_set.version);
+    require_keys_eq!(
+        verifier_set_key,
+        expected_key,
+        ConfidentialTokenError::VerifierSetMismatch
+    );
+    require!(
+        verifier_set.to_account_info().data_len() == 8 + zama_host::VerifierSet::SPACE,
+        ConfidentialTokenError::VerifierSetMismatch
+    );
+    require!(
+        verifier_set.bump == expected_bump,
+        ConfidentialTokenError::VerifierSetMismatch
+    );
+    require!(
+        verifier_set.kind == kind && verifier_set.scope == scope && verifier_set.is_active(),
+        ConfidentialTokenError::VerifierSetMismatch
+    );
+    require!(
+        verifier_set.validate_shape(),
+        ConfidentialTokenError::VerifierSetMismatch
+    );
+    Ok(())
+}
+
+pub(crate) fn assert_threshold_verifier_signature(
     instructions_sysvar: &AccountInfo,
-    verifier: Pubkey,
-    mint: Pubkey,
-    handle: [u8; 32],
-    cleartext_amount: u64,
+    verifier_set: &Account<zama_host::VerifierSet>,
+    message: &[u8],
 ) -> Result<()> {
     require_keys_eq!(
         instructions_sysvar.key(),
         INSTRUCTIONS_SYSVAR_ID,
         ConfidentialTokenError::DisclosureProofSignatureMissing
     );
-    let message = disclosure_proof_message(mint, handle, cleartext_amount, crate::ID);
     let current_index = load_current_index_checked(instructions_sysvar)
         .map_err(|_| error!(ConfidentialTokenError::DisclosureProofSignatureMissing))?;
-    let verifier_index = current_index
-        .checked_sub(1)
-        .ok_or(ConfidentialTokenError::DisclosureProofSignatureMissing)?;
-    let verifier_ix = load_instruction_at_checked(verifier_index as usize, instructions_sysvar)
-        .map_err(|_| error!(ConfidentialTokenError::DisclosureProofSignatureMissing))?;
+    let signer_pubkeys: Vec<&[u8]> = verifier_set
+        .signer_slice()
+        .iter()
+        .map(|signer| signer.as_ref())
+        .collect();
+    let mut matched_mask = 0u128;
+    let mut verifier_index = current_index;
+    while verifier_index > 0 {
+        verifier_index -= 1;
+        let verifier_ix = load_instruction_at_checked(verifier_index as usize, instructions_sysvar)
+            .map_err(|_| error!(ConfidentialTokenError::DisclosureProofSignatureMissing))?;
+        if verifier_ix.program_id != ED25519_PROGRAM_ID {
+            break;
+        }
+        let instruction_mask = solana_ed25519_instruction::matching_signer_bitmask(
+            &verifier_ix.data,
+            &signer_pubkeys,
+            message,
+        )
+        .map_err(|err| match err {
+            solana_ed25519_instruction::MatchingSignerError::DuplicateSigner => {
+                error!(ConfidentialTokenError::DuplicateVerifierSignature)
+            }
+            solana_ed25519_instruction::MatchingSignerError::TooManyExpectedPubkeys => {
+                error!(ConfidentialTokenError::VerifierSetMismatch)
+            }
+        })?;
+        require!(
+            matched_mask & instruction_mask == 0,
+            ConfidentialTokenError::DuplicateVerifierSignature
+        );
+        matched_mask |= instruction_mask;
+        if matched_mask.count_ones() >= verifier_set.threshold as u32 {
+            return Ok(());
+        }
+    }
+    Err(error!(ConfidentialTokenError::VerifierThresholdNotMet))
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn assert_disclosure_request_witness(
+    request: &Account<DisclosureRequest>,
+    request_key: Pubkey,
+    mode: u8,
+    mint: Pubkey,
+    token_account: Pubkey,
+    app_account: Pubkey,
+    handle: [u8; 32],
+    acl_record: Pubkey,
+    material_commitment: &Account<zama_host::HandleMaterialCommitment>,
+    host_config: Pubkey,
+    verifier_set: &Account<zama_host::VerifierSet>,
+) -> Result<()> {
+    let (expected_key, expected_bump) =
+        disclosure_request_address(mint, request.requester, handle, request.request_nonce);
     require_keys_eq!(
-        verifier_ix.program_id,
-        ED25519_PROGRAM_ID,
-        ConfidentialTokenError::DisclosureProofSignatureMissing
+        request_key,
+        expected_key,
+        ConfidentialTokenError::RequestWitnessMismatch
     );
     require!(
-        solana_ed25519_instruction::instruction_contains_message(
-            &verifier_ix.data,
-            verifier.as_ref(),
-            &message,
-        ),
-        ConfidentialTokenError::DisclosureProofSignatureMissing
+        request.to_account_info().data_len() == 8 + DisclosureRequest::SPACE
+            && request.bump == expected_bump,
+        ConfidentialTokenError::RequestWitnessMismatch
+    );
+    require!(
+        request.status == REQUEST_STATUS_PENDING && request.expires_slot >= Clock::get()?.slot,
+        ConfidentialTokenError::RequestWitnessUnavailable
+    );
+    require!(
+        request.mode == mode
+            && request.mint == mint
+            && request.token_account == token_account
+            && request.app_account == app_account
+            && request.handle == handle
+            && request.acl_record == acl_record
+            && request.material_commitment == material_commitment.key()
+            && request.material_commitment_hash == material_commitment.material_commitment_hash
+            && request.material_key_id == material_commitment.key_id
+            && request.host_config == host_config
+            && request.verifier_set == verifier_set.key()
+            && request.verifier_set_version == verifier_set.version
+            && request.chain_id != 0,
+        ConfidentialTokenError::RequestWitnessMismatch
+    );
+    let recomputed_hash = disclosure_request_hash(
+        crate::ID,
+        request_key,
+        request.mint,
+        request.requester,
+        request.token_account,
+        request.app_account,
+        request.handle,
+        request.acl_record,
+        request.material_commitment,
+        request.material_commitment_hash,
+        request.material_key_id,
+        request.host_config,
+        request.verifier_set,
+        request.verifier_set_version,
+        request.request_nonce,
+        request.chain_id,
+        request.expires_slot,
+        request.mode,
+    );
+    require!(
+        request.request_hash == recomputed_hash,
+        ConfidentialTokenError::RequestWitnessMismatch
     );
     Ok(())
 }
 
-/// Builds the message that a KMS disclosure response signs for this token PoC.
-pub fn disclosure_proof_message(
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn assert_burn_redemption_request_witness(
+    request: &Account<BurnRedemptionRequest>,
+    request_key: Pubkey,
     mint: Pubkey,
+    owner: Pubkey,
+    token_account: Pubkey,
+    underlying_mint: Pubkey,
+    destination_owner: Pubkey,
+    destination_account: Pubkey,
+    burned_handle: [u8; 32],
+    burned_acl_record: Pubkey,
+    material_commitment: &Account<zama_host::HandleMaterialCommitment>,
+    host_config: Pubkey,
+    verifier_set: &Account<zama_host::VerifierSet>,
+) -> Result<()> {
+    let (expected_key, expected_bump) =
+        burn_redemption_request_address(mint, owner, burned_handle, request.request_nonce);
+    require_keys_eq!(
+        request_key,
+        expected_key,
+        ConfidentialTokenError::RequestWitnessMismatch
+    );
+    require!(
+        request.to_account_info().data_len() == 8 + BurnRedemptionRequest::SPACE
+            && request.bump == expected_bump,
+        ConfidentialTokenError::RequestWitnessMismatch
+    );
+    require!(
+        request.status == REQUEST_STATUS_PENDING && request.expires_slot >= Clock::get()?.slot,
+        ConfidentialTokenError::RequestWitnessUnavailable
+    );
+    require!(
+        request.mint == mint
+            && request.owner == owner
+            && request.token_account == token_account
+            && request.underlying_mint == underlying_mint
+            && request.destination_owner == destination_owner
+            && request.destination_account == destination_account
+            && request.burned_handle == burned_handle
+            && request.burned_acl_record == burned_acl_record
+            && request.material_commitment == material_commitment.key()
+            && request.material_commitment_hash == material_commitment.material_commitment_hash
+            && request.material_key_id == material_commitment.key_id
+            && request.host_config == host_config
+            && request.verifier_set == verifier_set.key()
+            && request.verifier_set_version == verifier_set.version
+            && request.chain_id != 0,
+        ConfidentialTokenError::RequestWitnessMismatch
+    );
+    let recomputed_hash = burn_redemption_request_hash(
+        crate::ID,
+        request_key,
+        request.mint,
+        request.owner,
+        request.token_account,
+        request.underlying_mint,
+        request.destination_owner,
+        request.destination_account,
+        request.burned_handle,
+        request.burned_acl_record,
+        request.material_commitment,
+        request.material_commitment_hash,
+        request.material_key_id,
+        request.host_config,
+        request.verifier_set,
+        request.verifier_set_version,
+        request.request_nonce,
+        request.chain_id,
+        request.expires_slot,
+    );
+    require!(
+        request.request_hash == recomputed_hash,
+        ConfidentialTokenError::RequestWitnessMismatch
+    );
+    Ok(())
+}
+
+/// Builds the v2 message that a verifier-set quorum signs for disclosure responses.
+#[allow(clippy::too_many_arguments)]
+pub fn disclosure_proof_message_v2(
+    token_program_id: Pubkey,
+    host_program_id: Pubkey,
+    host_config: Pubkey,
+    chain_id: u64,
+    mint: Pubkey,
+    mode: u8,
+    verifier_set: Pubkey,
+    verifier_set_version: u64,
+    request_account: Pubkey,
+    request_hash: [u8; 32],
+    acl_record: Pubkey,
+    material_commitment_hash: [u8; 32],
+    material_key_id: [u8; 32],
     handle: [u8; 32],
     cleartext_amount: u64,
-    program_id: Pubkey,
 ) -> Vec<u8> {
-    let mut message = Vec::with_capacity(
-        DISCLOSURE_PROOF_DOMAIN_SEPARATOR.len() + 32 + 32 + 32 + std::mem::size_of::<u64>(),
-    );
-    message.extend_from_slice(DISCLOSURE_PROOF_DOMAIN_SEPARATOR);
-    message.extend_from_slice(program_id.as_ref());
+    let mut message = Vec::new();
+    message.extend_from_slice(DISCLOSURE_PROOF_V2_DOMAIN_SEPARATOR);
+    message.extend_from_slice(token_program_id.as_ref());
+    message.extend_from_slice(host_program_id.as_ref());
+    message.extend_from_slice(host_config.as_ref());
+    message.extend_from_slice(&chain_id.to_le_bytes());
     message.extend_from_slice(mint.as_ref());
+    message.push(mode);
+    message.extend_from_slice(verifier_set.as_ref());
+    message.extend_from_slice(&verifier_set_version.to_le_bytes());
+    message.extend_from_slice(request_account.as_ref());
+    message.extend_from_slice(&request_hash);
+    message.extend_from_slice(acl_record.as_ref());
+    message.extend_from_slice(&material_commitment_hash);
+    message.extend_from_slice(&material_key_id);
     message.extend_from_slice(&handle);
     message.extend_from_slice(&cleartext_amount.to_le_bytes());
+    message
+}
+
+/// Builds the v2 message that a verifier-set quorum signs for burn redemptions.
+#[allow(clippy::too_many_arguments)]
+pub fn redemption_proof_message_v2(
+    token_program_id: Pubkey,
+    host_program_id: Pubkey,
+    host_config: Pubkey,
+    chain_id: u64,
+    mint: Pubkey,
+    verifier_set: Pubkey,
+    verifier_set_version: u64,
+    request_account: Pubkey,
+    request_hash: [u8; 32],
+    burned_acl_record: Pubkey,
+    material_commitment_hash: [u8; 32],
+    material_key_id: [u8; 32],
+    burned_handle: [u8; 32],
+    cleartext_amount: u64,
+    owner: Pubkey,
+    token_account: Pubkey,
+    underlying_mint: Pubkey,
+    destination_owner: Pubkey,
+    destination_account: Pubkey,
+) -> Vec<u8> {
+    let mut message = Vec::new();
+    message.extend_from_slice(REDEMPTION_PROOF_V2_DOMAIN_SEPARATOR);
+    message.extend_from_slice(token_program_id.as_ref());
+    message.extend_from_slice(host_program_id.as_ref());
+    message.extend_from_slice(host_config.as_ref());
+    message.extend_from_slice(&chain_id.to_le_bytes());
+    message.extend_from_slice(mint.as_ref());
+    message.extend_from_slice(verifier_set.as_ref());
+    message.extend_from_slice(&verifier_set_version.to_le_bytes());
+    message.extend_from_slice(request_account.as_ref());
+    message.extend_from_slice(&request_hash);
+    message.extend_from_slice(burned_acl_record.as_ref());
+    message.extend_from_slice(&material_commitment_hash);
+    message.extend_from_slice(&material_key_id);
+    message.extend_from_slice(&burned_handle);
+    message.extend_from_slice(&cleartext_amount.to_le_bytes());
+    message.extend_from_slice(owner.as_ref());
+    message.extend_from_slice(token_account.as_ref());
+    message.extend_from_slice(underlying_mint.as_ref());
+    message.extend_from_slice(destination_owner.as_ref());
+    message.extend_from_slice(destination_account.as_ref());
     message
 }
 
@@ -1991,6 +2145,44 @@ pub(crate) fn assert_current_balance_acl(
     );
     require!(
         balance_acl.nonce_key == balance_nonce_key(mint, token_account.key()),
+        ConfidentialTokenError::CurrentAclRecordMismatch
+    );
+    Ok(())
+}
+
+pub(crate) fn assert_balance_acl_for_request(
+    balance_acl: &Account<zama_host::AclRecord>,
+    balance_acl_key: Pubkey,
+    token_account: Pubkey,
+    mint: Pubkey,
+    handle: [u8; 32],
+) -> Result<()> {
+    assert_current_acl_record_shape(balance_acl)?;
+    require_keys_eq!(
+        balance_acl_key,
+        balance_acl.key(),
+        ConfidentialTokenError::CurrentAclRecordMismatch
+    );
+    require!(
+        balance_acl.handle == handle,
+        ConfidentialTokenError::CurrentAclRecordMismatch
+    );
+    require_keys_eq!(
+        balance_acl.acl_domain_key,
+        mint,
+        ConfidentialTokenError::CurrentAclRecordMismatch
+    );
+    require_keys_eq!(
+        balance_acl.app_account,
+        token_account,
+        ConfidentialTokenError::CurrentAclRecordMismatch
+    );
+    require!(
+        balance_acl.encrypted_value_label == balance_label(),
+        ConfidentialTokenError::CurrentAclRecordMismatch
+    );
+    require!(
+        balance_acl.nonce_key == balance_nonce_key(mint, token_account),
         ConfidentialTokenError::CurrentAclRecordMismatch
     );
     Ok(())
@@ -2081,120 +2273,6 @@ pub(crate) fn assert_amount_acl_record_shape(
         zama_host::acl_record_subject_slots_are_canonical(acl_record),
         ConfidentialTokenError::AmountAclMismatch
     );
-    Ok(())
-}
-
-pub(crate) fn create_operator_record_if_needed<'info>(
-    payer: &AccountInfo<'info>,
-    operator_record: &AccountInfo<'info>,
-    system_program: &AccountInfo<'info>,
-    token_account: Pubkey,
-    owner: Pubkey,
-    operator: Pubkey,
-    bump: u8,
-) -> Result<()> {
-    if operator_record.owner == &crate::ID {
-        assert_existing_operator_record(operator_record, token_account, owner, operator, bump)?;
-        return Ok(());
-    }
-    require_keys_eq!(
-        *operator_record.owner,
-        System::id(),
-        ConfidentialTokenError::OperatorRecordMismatch
-    );
-    require!(
-        operator_record.data_is_empty(),
-        ConfidentialTokenError::OperatorRecordMismatch
-    );
-    require!(
-        !operator_record.executable,
-        ConfidentialTokenError::OperatorRecordMismatch
-    );
-    let rent = Rent::get()?.minimum_balance(8 + ConfidentialOperator::SPACE);
-    invoke_signed(
-        &system_instruction::create_account(
-            payer.key,
-            operator_record.key,
-            rent,
-            (8 + ConfidentialOperator::SPACE) as u64,
-            &crate::ID,
-        ),
-        &[
-            payer.clone(),
-            operator_record.clone(),
-            system_program.clone(),
-        ],
-        &[&[
-            b"operator",
-            token_account.as_ref(),
-            operator.as_ref(),
-            &[bump],
-        ]],
-    )?;
-    require_keys_eq!(
-        *operator_record.owner,
-        crate::ID,
-        ConfidentialTokenError::OperatorRecordMismatch
-    );
-    require!(
-        !operator_record.executable,
-        ConfidentialTokenError::OperatorRecordMismatch
-    );
-    require!(
-        operator_record.data_len() == 8 + ConfidentialOperator::SPACE,
-        ConfidentialTokenError::OperatorRecordMismatch
-    );
-    require!(
-        operator_record.lamports() >= rent,
-        ConfidentialTokenError::OperatorRecordMismatch
-    );
-    Ok(())
-}
-
-pub(crate) fn assert_existing_operator_record(
-    operator_record: &AccountInfo,
-    token_account: Pubkey,
-    owner: Pubkey,
-    operator: Pubkey,
-    bump: u8,
-) -> Result<()> {
-    require!(
-        operator_record.data_len() == 8 + ConfidentialOperator::SPACE,
-        ConfidentialTokenError::OperatorRecordMismatch
-    );
-    let data = operator_record.try_borrow_data()?;
-    let mut cursor = &data[..];
-    let existing = ConfidentialOperator::try_deserialize(&mut cursor)
-        .map_err(|_| error!(ConfidentialTokenError::OperatorRecordMismatch))?;
-    require_keys_eq!(
-        existing.token_account,
-        token_account,
-        ConfidentialTokenError::OperatorRecordMismatch
-    );
-    require_keys_eq!(
-        existing.owner,
-        owner,
-        ConfidentialTokenError::OperatorRecordMismatch
-    );
-    require_keys_eq!(
-        existing.operator,
-        operator,
-        ConfidentialTokenError::OperatorRecordMismatch
-    );
-    require!(
-        existing.bump == bump,
-        ConfidentialTokenError::OperatorRecordMismatch
-    );
-    Ok(())
-}
-
-pub(crate) fn write_operator_record(
-    info: &AccountInfo,
-    record: &ConfidentialOperator,
-) -> Result<()> {
-    let mut data = info.try_borrow_mut_data()?;
-    let mut cursor = &mut data[..];
-    record.try_serialize(&mut cursor)?;
     Ok(())
 }
 

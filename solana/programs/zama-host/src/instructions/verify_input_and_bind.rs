@@ -28,15 +28,13 @@ pub struct VerifyInputAndBind<'info> {
     /// Pays rent for the output ACL record.
     #[account(mut)]
     pub payer: Signer<'info>,
-    /// CHECK: This account is only used for its pubkey. The handler requires it
-    /// to match `HostConfig::input_verifier_authority` and verifies the matching
-    /// Ed25519 pre-instruction over the canonical proof message.
-    pub input_verifier_authority: UncheckedAccount<'info>,
+    /// Active threshold verifier set for input proofs.
+    pub input_verifier_set: Box<Account<'info, VerifierSet>>,
     /// App account signer authorizing the ACL metadata.
     pub app_account_authority: Signer<'info>,
     /// Singleton config PDA.
     #[account(seeds = [HOST_CONFIG_SEED], bump = host_config.bump)]
-    pub host_config: Account<'info, HostConfig>,
+    pub host_config: Box<Account<'info, HostConfig>>,
     /// Canonical output ACL record created by this instruction.
     #[account(
         init,
@@ -45,7 +43,7 @@ pub struct VerifyInputAndBind<'info> {
         seeds = [ACL_RECORD_SEED, output_nonce_key.as_ref(), &output_nonce_sequence.to_le_bytes()],
         bump
     )]
-    pub output_acl_record: Account<'info, AclRecord>,
+    pub output_acl_record: Box<Account<'info, AclRecord>>,
     /// CHECK: Constrained to the instructions sysvar address and only read
     /// through `solana_instructions_sysvar`.
     #[account(address = INSTRUCTIONS_SYSVAR_ID)]
@@ -69,11 +67,7 @@ pub fn verify_input_and_bind(
 ) -> Result<()> {
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
     assert_not_paused(&ctx.accounts.host_config)?;
-    require_keys_eq!(
-        ctx.accounts.input_verifier_authority.key(),
-        ctx.accounts.host_config.input_verifier_authority,
-        ZamaHostError::InputVerifierMismatch
-    );
+    assert_input_verifier_set(&ctx.accounts.host_config, &ctx.accounts.input_verifier_set)?;
     let bind_intent = SolanaInputBindIntent {
         output_nonce_key,
         output_nonce_sequence,
@@ -100,15 +94,19 @@ pub fn verify_input_and_bind(
     )?;
     assert_public_decrypt_not_set_at_birth(output_public_decrypt)?;
 
-    let proof_message = input_proof_message(
+    let proof_message = input_proof_message_for_verifier_set(
         &proof,
         &bind_intent,
         crate::ID,
         ctx.accounts.host_config.chain_id,
+        ctx.accounts.input_verifier_set.key(),
+        ctx.accounts.input_verifier_set.kind,
+        ctx.accounts.input_verifier_set.scope,
+        ctx.accounts.input_verifier_set.version,
     );
-    assert_previous_ed25519_instruction(
+    assert_threshold_ed25519_instructions(
         &ctx.accounts.instructions_sysvar.to_account_info(),
-        ctx.accounts.input_verifier_authority.key(),
+        &ctx.accounts.input_verifier_set,
         &proof_message,
     )?;
 
@@ -193,9 +191,43 @@ pub(super) fn assert_input_proof(
     Ok(())
 }
 
-pub(super) fn assert_previous_ed25519_instruction(
+pub(super) fn assert_input_verifier_set(
+    host_config: &Account<HostConfig>,
+    verifier_set: &Account<VerifierSet>,
+) -> Result<()> {
+    require_keys_eq!(
+        verifier_set.key(),
+        host_config.input_verifier_set,
+        ZamaHostError::InputVerifierMismatch
+    );
+    require!(
+        host_config.input_verifier_set != Pubkey::default()
+            && verifier_set.version == host_config.input_verifier_set_version,
+        ZamaHostError::InputVerifierMismatch
+    );
+    assert_verifier_set_shape(
+        verifier_set,
+        VERIFIER_SET_KIND_INPUT,
+        host_config.key(),
+        verifier_set.version,
+    )?;
+    require!(verifier_set.is_active(), ZamaHostError::VerifierSetDisabled);
+    Ok(())
+}
+
+pub(super) fn read_input_verifier_set<'info>(
+    host_config: &Account<HostConfig>,
+    verifier_set_info: &'info AccountInfo<'info>,
+) -> Result<Account<'info, VerifierSet>> {
+    let verifier_set = Account::<VerifierSet>::try_from(verifier_set_info)
+        .map_err(|_| error!(ZamaHostError::VerifierSetMismatch))?;
+    assert_input_verifier_set(host_config, &verifier_set)?;
+    Ok(verifier_set)
+}
+
+pub(super) fn assert_threshold_ed25519_instructions(
     instructions_sysvar: &AccountInfo,
-    verifier: Pubkey,
+    verifier_set: &VerifierSet,
     message: &[u8],
 ) -> Result<()> {
     require_keys_eq!(
@@ -205,23 +237,63 @@ pub(super) fn assert_previous_ed25519_instruction(
     );
     let current_index = load_current_index_checked(instructions_sysvar)
         .map_err(|_| error!(ZamaHostError::InputProofSignatureMissing))?;
-    let verifier_index = current_index
+    let signer_refs: Vec<&[u8]> = verifier_set
+        .signer_slice()
+        .iter()
+        .map(Pubkey::as_ref)
+        .collect();
+    let mut matched = 0u128;
+    let mut saw_adjacent_ed25519 = false;
+    let mut instruction_index = current_index
         .checked_sub(1)
         .ok_or(ZamaHostError::InputProofSignatureMissing)?;
-    let verifier_ix = load_instruction_at_checked(verifier_index as usize, instructions_sysvar)
-        .map_err(|_| error!(ZamaHostError::InputProofSignatureMissing))?;
-    require_keys_eq!(
-        verifier_ix.program_id,
-        ED25519_PROGRAM_ID,
+    loop {
+        let verifier_ix =
+            load_instruction_at_checked(instruction_index as usize, instructions_sysvar)
+                .map_err(|_| error!(ZamaHostError::InputProofSignatureMissing))?;
+        msg!(
+            "threshold scan ix {} program {}",
+            instruction_index,
+            verifier_ix.program_id
+        );
+        if verifier_ix.program_id != ED25519_PROGRAM_ID {
+            break;
+        }
+        saw_adjacent_ed25519 = true;
+        let bitmask = solana_ed25519_instruction::matching_signer_bitmask(
+            &verifier_ix.data,
+            &signer_refs,
+            message,
+        )
+        .map_err(|error| match error {
+            solana_ed25519_instruction::MatchingSignerError::DuplicateSigner => {
+                ZamaHostError::VerifierSetDuplicateSigner
+            }
+            solana_ed25519_instruction::MatchingSignerError::TooManyExpectedPubkeys => {
+                ZamaHostError::VerifierSetMismatch
+            }
+        })?;
+        msg!("threshold bitmask {}", bitmask);
+        require!(
+            matched & bitmask == 0,
+            ZamaHostError::VerifierSetDuplicateSigner
+        );
+        matched |= bitmask;
+        if matched.count_ones() as u8 >= verifier_set.threshold {
+            return Ok(());
+        }
+        if instruction_index == 0 {
+            break;
+        }
+        instruction_index -= 1;
+    }
+    require!(
+        saw_adjacent_ed25519,
         ZamaHostError::InputProofSignatureMissing
     );
     require!(
-        solana_ed25519_instruction::instruction_contains_message(
-            &verifier_ix.data,
-            verifier.as_ref(),
-            message,
-        ),
-        ZamaHostError::InputProofSignatureMissing
+        matched.count_ones() as u8 >= verifier_set.threshold,
+        ZamaHostError::VerifierSetThresholdNotMet
     );
     Ok(())
 }

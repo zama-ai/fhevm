@@ -23,10 +23,6 @@ pub struct TransferCallbackSettlement {
     pub callback_success_handle: [u8; 32],
     /// ACL record for `callback_success_handle`.
     pub callback_success_acl_record: Pubkey,
-    /// Encrypted refund requested by the callback result.
-    pub requested_refund_handle: [u8; 32],
-    /// ACL record for `requested_refund_handle`.
-    pub requested_refund_acl_record: Pubkey,
     /// Encrypted amount actually refunded.
     pub refund_handle: [u8; 32],
     /// ACL record for `refund_handle`.
@@ -51,5 +47,5 @@ pub struct TransferCallbackSettlement {
 
 impl TransferCallbackSettlement {
     /// Serialized size of the account body, excluding Anchor discriminator.
-    pub const SPACE: usize = (32 * 19) + 2;
+    pub const SPACE: usize = (32 * 17) + 2;
 }

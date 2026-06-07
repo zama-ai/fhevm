@@ -49,9 +49,6 @@ pub struct ConfidentialPrepareTransferCallback<'info> {
     pub settlement_record: Account<'info, TransferCallbackSettlement>,
     /// CHECK: initialized and validated by the Zama host program CPI.
     #[account(mut)]
-    pub requested_refund_acl: UncheckedAccount<'info>,
-    /// CHECK: initialized and validated by the Zama host program CPI.
-    #[account(mut)]
     pub to_output_acl: UncheckedAccount<'info>,
     /// CHECK: initialized and validated by the Zama host program CPI.
     #[account(mut)]
@@ -82,7 +79,6 @@ impl<'info> ConfidentialPrepareTransferCallback<'info> {
             callback_success_acl: &self.callback_success_acl,
             hook_record: &self.hook_record,
             settlement_record: &mut self.settlement_record,
-            requested_refund_acl: self.requested_refund_acl.to_account_info(),
             to_output_acl: self.to_output_acl.to_account_info(),
             refund_amount_acl: self.refund_amount_acl.to_account_info(),
             zama_event_authority: &self.zama_event_authority,

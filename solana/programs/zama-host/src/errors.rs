@@ -33,6 +33,21 @@ pub enum ZamaHostError {
     /// The input verifier authority account does not match host config.
     #[msg("input verifier authority does not match config")]
     InputVerifierMismatch,
+    /// A verifier set account is not canonical or has invalid contents.
+    #[msg("verifier set account is invalid")]
+    VerifierSetMismatch,
+    /// A verifier set creation request has invalid fields.
+    #[msg("verifier set fields are invalid")]
+    InvalidVerifierSet,
+    /// The verifier set is disabled.
+    #[msg("verifier set is disabled")]
+    VerifierSetDisabled,
+    /// The Ed25519 threshold proof did not contain enough distinct valid signers.
+    #[msg("verifier set threshold was not met")]
+    VerifierSetThresholdNotMet,
+    /// The Ed25519 threshold proof repeated a signer.
+    #[msg("verifier set proof includes a duplicate signer")]
+    VerifierSetDuplicateSigner,
     /// The material commitment authority account does not match host config.
     #[msg("material authority does not match config")]
     MaterialAuthorityMismatch,
