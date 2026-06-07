@@ -45,6 +45,13 @@ async fn run() -> anyhow::Result<()> {
             let monitoring_endpoint = config.monitoring_endpoint;
 
             info!("Starting KmsWorker");
+            // Spawn the Model-2 Solana user-decryption runner (no-op unless a Solana host chain
+            // is configured). Runs alongside the gateway event loop on the native request queue.
+            kms_worker::core::solana_user_decrypt_runner::spawn_solana_user_decrypt_runner(
+                &config,
+                cancel_token.clone(),
+            )
+            .await?;
             let (kms_worker, state) = KmsWorker::from_config(config).await?;
             start_monitoring_server(monitoring_endpoint, state, cancel_token.clone());
             kms_worker.start(cancel_token).await;

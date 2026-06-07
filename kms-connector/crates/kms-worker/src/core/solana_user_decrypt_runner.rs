@@ -269,6 +269,77 @@ where
     }
 }
 
+/// Constructs and spawns the Model-2 Solana user-decryption runner if a Solana host chain
+/// (with a host program id) is configured. No-op otherwise. Called from the kms-worker
+/// startup alongside the gateway event loop.
+///
+/// Coprocessor S3 source addresses come from `SOLANA_NATIVE_COPROCESSOR_ADDRESSES` (comma-
+/// separated `0x` EVM addresses) — the coprocessor tx-senders whose S3 buckets hold the SNS
+/// ciphertext material (resolved to URLs by the gateway registry at fetch time).
+pub async fn spawn_solana_user_decrypt_runner(
+    config: &crate::core::Config,
+    cancel_token: CancellationToken,
+) -> anyhow::Result<()> {
+    use connector_utils::conn::{connect_to_db, connect_to_rpc_node};
+
+    let Some(solana) = config.host_chains.iter().find(|h| {
+        h.chain_kind == crate::core::config::HostChainKind::Solana
+            && h.solana_host_program_id.is_some()
+    }) else {
+        info!("No Solana host chain with a program id configured; user-decrypt runner not started");
+        return Ok(());
+    };
+    let program_id = solana
+        .solana_host_program_id
+        .expect("checked is_some above");
+
+    let db_pool = connect_to_db(&config.database_url, config.database_pool_size).await?;
+    let verifier = SolanaAclVerifier::new(program_id);
+    let replay_store = crate::core::solana_replay::DbSolanaNativeReplayStore::new(db_pool.clone());
+    let processor = build_solana_user_decrypt_processor(
+        verifier,
+        replay_store,
+        SolanaNativeRequestLimits::default(),
+        SolanaNativeLiveRequestPolicy::default(),
+        solana.url.to_string(),
+    );
+    let store = DbSolanaNativeDecryptionStore::new(db_pool.clone());
+    let kms_client = KmsClient::connect(config).await?;
+    let provider =
+        connect_to_rpc_node(config.gateway_url.clone(), config.gateway_chain_id).await?;
+    let s3_client = reqwest::Client::builder()
+        .connect_timeout(config.s3_connect_timeout)
+        .build()?;
+    let s3_service = S3Service::new(config, provider, s3_client);
+
+    let coprocessor_tx_sender_addresses = std::env::var("SOLANA_NATIVE_COPROCESSOR_ADDRESSES")
+        .ok()
+        .map(|raw| {
+            raw.split(',')
+                .filter(|s| !s.trim().is_empty())
+                .filter_map(|s| s.trim().parse::<alloy::primitives::Address>().ok())
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    let runner = SolanaUserDecryptRunner::new(
+        store,
+        processor,
+        kms_client,
+        s3_service,
+        coprocessor_tx_sender_addresses,
+        db_pool,
+        std::time::Duration::from_secs(2),
+    );
+    tokio::spawn(runner.start(cancel_token));
+    info!(
+        "Spawned Solana user-decryption runner for host chain {} (program {})",
+        solana.chain_id,
+        alloy::hex::encode(program_id)
+    );
+    Ok(())
+}
+
 /// Builds the request admission processor from the live Solana ACL config.
 pub fn build_solana_user_decrypt_processor(
     verifier: SolanaAclVerifier,
