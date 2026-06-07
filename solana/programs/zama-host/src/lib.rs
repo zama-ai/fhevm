@@ -252,31 +252,6 @@ pub mod zama_host {
         )
     }
 
-    pub fn verify_input_and_bind(
-        ctx: Context<VerifyInputAndBind>,
-        input_handle: [u8; 32],
-        proof: SolanaInputProof,
-        output_nonce_key: [u8; 32],
-        output_nonce_sequence: u64,
-        output_acl_domain_key: Pubkey,
-        output_app_account: Pubkey,
-        output_encrypted_value_label: [u8; 32],
-        output_subjects: Vec<AclSubjectEntry>,
-        output_public_decrypt: bool,
-    ) -> Result<()> {
-        instructions::verify_input_and_bind(
-            ctx,
-            input_handle,
-            proof,
-            output_nonce_key,
-            output_nonce_sequence,
-            output_acl_domain_key,
-            output_app_account,
-            output_encrypted_value_label,
-            output_subjects,
-            output_public_decrypt,
-        )
-    }
 
     #[allow(clippy::too_many_arguments)]
     pub fn verify_coprocessor_input_and_bind(
