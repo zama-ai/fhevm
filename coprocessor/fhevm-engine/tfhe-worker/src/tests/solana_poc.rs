@@ -741,7 +741,7 @@ fn seed_host_config(
     svm: &mut LiteSVM,
     program_id: Pubkey,
     admin: Pubkey,
-    input_verifier_authority: Pubkey,
+    input_verifier_set: Pubkey,
     test_authority: Pubkey,
 ) -> Pubkey {
     let (host_config, bump) = Pubkey::find_program_address(&[host::HOST_CONFIG_SEED], &program_id);
@@ -752,7 +752,8 @@ fn seed_host_config(
             data: serialized_account(HostConfig {
                 admin,
                 chain_id: host::SOLANA_POC_CHAIN_ID,
-                input_verifier_authority,
+                input_verifier_set,
+                input_verifier_set_version: 1,
                 material_authority: admin,
                 test_authority,
                 paused: false,

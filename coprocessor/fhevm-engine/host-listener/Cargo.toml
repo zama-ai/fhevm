@@ -26,6 +26,12 @@ name = "host_listener_consumer"
 test = false
 bench = false
 
+[[bin]]
+path = "src/bin/solana_finalized_account_fetcher.rs"
+name = "solana_finalized_account_fetcher"
+test = false
+bench = false
+
 [dependencies]
 # workspace dependencies
 anyhow = { workspace = true }
@@ -37,10 +43,12 @@ aws-credential-types = { workspace = true }
 aws-sdk-s3 = { workspace = true }
 base64 = "0.22.1"
 bigdecimal = { workspace = true }
+bs58 = "0.5.1"
 clap = { workspace = true }
 futures-util = { workspace = true }
 lru = { workspace = true }
 prometheus = { workspace = true }
+reqwest = { workspace = true }
 rustls = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
