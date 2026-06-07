@@ -25,7 +25,9 @@ use connector_utils::types::{KmsGrpcRequest, KmsGrpcResponse};
 
 use crate::core::event_processor::s3::S3Service;
 use crate::core::event_processor::KmsClient;
-use crate::core::solana_acl::{SolanaAclVerifier, SolanaNativeRequestLimits};
+use crate::core::solana_acl::{
+    decode_handle_material_commitment_witness, SolanaAclVerifier, SolanaNativeRequestLimits,
+};
 use crate::core::solana_flow::{SolanaNativeLiveRequestProcessor, SolanaNativeLiveRequestReleaseV0};
 use crate::core::solana_live::{SolanaNativeLiveRequestPolicy, SolanaNativeAccountFetcher};
 use crate::core::solana_native::SolanaNativeRequestAdmission;
@@ -119,7 +121,7 @@ where
             .await?;
 
         // Fetch the SNS ciphertext material for each handle from S3, then assemble the request.
-        let sns_materials = self.build_sns_materials(&release);
+        let sns_materials = self.build_sns_materials(&release)?;
         let typed_ciphertexts = self
             .s3_service
             .retrieve_sns_ciphertext_materials(&sns_materials)
@@ -148,23 +150,49 @@ where
         Ok(())
     }
 
-    /// SNS ciphertext material per handle: handle + the witness-committed key_id/sns digest +
-    /// the configured coprocessor tx-sender S3 sources.
+    /// SNS ciphertext material per handle: handle + the key_id/sns digest decoded from the
+    /// handle's on-chain HandleMaterialCommitment (carried in the request's account witnesses,
+    /// already fetched + integrity-checked by admission) + the configured coprocessor tx-sender
+    /// S3 sources. The digest must be the real `sns_ciphertext_digest` (the S3 object key), not
+    /// the commitment hash.
     fn build_sns_materials(
         &self,
         release: &SolanaNativeLiveRequestReleaseV0,
-    ) -> Vec<SnsCiphertextMaterial> {
+    ) -> anyhow::Result<Vec<SnsCiphertextMaterial>> {
+        let witnesses_by_key: std::collections::HashMap<_, _> = release
+            .final_admission
+            .account_witnesses
+            .iter()
+            .map(|w| (w.account_key, w))
+            .collect();
+
         release
             .parsed_request
             .entries
             .iter()
-            .map(|entry| SnsCiphertextMaterial {
-                ctHandle: alloy::primitives::FixedBytes::<32>::from(entry.handle),
-                keyId: alloy::primitives::U256::from_be_bytes(entry.expected_key_id),
-                snsCiphertextDigest: alloy::primitives::FixedBytes::<32>::from(
-                    entry.material_commitment_hash,
-                ),
-                coprocessorTxSenderAddresses: self.coprocessor_tx_sender_addresses.clone(),
+            .map(|entry| {
+                let witness = witnesses_by_key
+                    .get(&entry.material_commitment_account)
+                    .ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "missing material-commitment account witness for handle {}",
+                            alloy::hex::encode(entry.handle)
+                        )
+                    })?;
+                let material = decode_handle_material_commitment_witness(
+                    witness.account_key,
+                    witness.owner,
+                    &witness.data,
+                )
+                .map_err(|e| anyhow::anyhow!("decode material commitment: {e:?}"))?;
+                Ok(SnsCiphertextMaterial {
+                    ctHandle: alloy::primitives::FixedBytes::<32>::from(entry.handle),
+                    keyId: alloy::primitives::U256::from_be_bytes(material.key_id),
+                    snsCiphertextDigest: alloy::primitives::FixedBytes::<32>::from(
+                        material.sns_ciphertext_digest,
+                    ),
+                    coprocessorTxSenderAddresses: self.coprocessor_tx_sender_addresses.clone(),
+                })
             })
             .collect()
     }
