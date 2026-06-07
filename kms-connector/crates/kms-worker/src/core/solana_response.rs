@@ -419,6 +419,11 @@ mod tests {
             expiration_slot: 20,
             nonce,
             extra_data_hash: [10; 32],
+            allowed_acl_domain_keys: if request_mode == SOLANA_NATIVE_REQUEST_MODE_PUBLIC {
+                Vec::new()
+            } else {
+                vec![[1; 32]]
+            },
             entries_hash: [11; 32],
         }
     }
@@ -650,6 +655,70 @@ mod tests {
     }
 
     #[test]
+    fn rejects_response_domain_field_mismatches() {
+        let payload = request_payload(SOLANA_NATIVE_REQUEST_MODE_DIRECT_SCOPED);
+        let accepted = accepted_request(&payload);
+        let raw_response_body = b"reencrypted-share";
+        let key_pairs = sorted_key_pairs();
+        let config = verification_config(&key_pairs, payload.kms_context_id, 2);
+
+        let mutators: [fn(&mut SolanaKmsResponsePayloadV0); 9] = [
+            |response: &mut SolanaKmsResponsePayloadV0| response.domain_separator = [99; 32],
+            |response: &mut SolanaKmsResponsePayloadV0| response.host_chain_id += 1,
+            |response: &mut SolanaKmsResponsePayloadV0| response.config_version += 1,
+            |response: &mut SolanaKmsResponsePayloadV0| response.solana_cluster_id = [99; 32],
+            |response: &mut SolanaKmsResponsePayloadV0| response.kms_context_id = [99; 32],
+            |response: &mut SolanaKmsResponsePayloadV0| response.nonce = [99; 32],
+            |response: &mut SolanaKmsResponsePayloadV0| response.entries_hash = [99; 32],
+            |response: &mut SolanaKmsResponsePayloadV0| response.extra_data_hash = [99; 32],
+            |response: &mut SolanaKmsResponsePayloadV0| {
+                response.user_reencryption_pubkey_hash = [99; 32]
+            },
+        ];
+        for mutate in mutators {
+            let mut response = response_payload(&payload, &accepted, raw_response_body);
+            mutate(&mut response);
+            let certificate = certificate(&key_pairs, &config, &response, 2);
+
+            assert_eq!(
+                verify_solana_kms_response_v0(
+                    &config,
+                    &accepted,
+                    &payload,
+                    &response,
+                    raw_response_body,
+                    &certificate,
+                ),
+                Err(SolanaKmsResponseVerificationError::ResponseBindingMismatch)
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_response_kind_that_does_not_match_request_mode() {
+        let payload = request_payload(SOLANA_NATIVE_REQUEST_MODE_DIRECT_SCOPED);
+        let accepted = accepted_request(&payload);
+        let raw_response_body = b"reencrypted-share";
+        let mut response = response_payload(&payload, &accepted, raw_response_body);
+        response.response_kind = SOLANA_NATIVE_RESPONSE_KIND_PUBLIC;
+        let key_pairs = sorted_key_pairs();
+        let config = verification_config(&key_pairs, payload.kms_context_id, 2);
+        let certificate = certificate(&key_pairs, &config, &response, 2);
+
+        assert_eq!(
+            verify_solana_kms_response_v0(
+                &config,
+                &accepted,
+                &payload,
+                &response,
+                raw_response_body,
+                &certificate,
+            ),
+            Err(SolanaKmsResponseVerificationError::InvalidResponseKind)
+        );
+    }
+
+    #[test]
     fn rejects_accepted_request_hash_not_derived_from_payload() {
         let payload = request_payload(SOLANA_NATIVE_REQUEST_MODE_DIRECT_SCOPED);
         let mut accepted = accepted_request(&payload);
@@ -771,6 +840,84 @@ mod tests {
                 &certificate,
             ),
             Err(SolanaKmsResponseVerificationError::SignatureThresholdNotReached)
+        );
+    }
+
+    #[test]
+    fn rejects_certificate_metadata_mismatches() {
+        let payload = request_payload(SOLANA_NATIVE_REQUEST_MODE_DIRECT_SCOPED);
+        let accepted = accepted_request(&payload);
+        let raw_response_body = b"reencrypted-share";
+        let response = response_payload(&payload, &accepted, raw_response_body);
+        let key_pairs = sorted_key_pairs();
+        let config = verification_config(&key_pairs, payload.kms_context_id, 2);
+
+        let mut wrong_context = certificate(&key_pairs, &config, &response, 2);
+        wrong_context.kms_context_id = [99; 32];
+        assert_eq!(
+            verify_solana_kms_response_v0(
+                &config,
+                &accepted,
+                &payload,
+                &response,
+                raw_response_body,
+                &wrong_context,
+            ),
+            Err(SolanaKmsResponseVerificationError::CertificateContextMismatch)
+        );
+
+        let mut wrong_threshold = certificate(&key_pairs, &config, &response, 2);
+        wrong_threshold.threshold += 1;
+        assert_eq!(
+            verify_solana_kms_response_v0(
+                &config,
+                &accepted,
+                &payload,
+                &response,
+                raw_response_body,
+                &wrong_threshold,
+            ),
+            Err(SolanaKmsResponseVerificationError::CertificateThresholdMismatch)
+        );
+
+        let mut wrong_signer_set = certificate(&key_pairs, &config, &response, 2);
+        wrong_signer_set.signer_set_hash = [99; 32];
+        assert_eq!(
+            verify_solana_kms_response_v0(
+                &config,
+                &accepted,
+                &payload,
+                &response,
+                raw_response_body,
+                &wrong_signer_set,
+            ),
+            Err(SolanaKmsResponseVerificationError::CertificateSignerSetHashMismatch)
+        );
+    }
+
+    #[test]
+    fn rejects_duplicate_response_signer() {
+        let payload = request_payload(SOLANA_NATIVE_REQUEST_MODE_DIRECT_SCOPED);
+        let accepted = accepted_request(&payload);
+        let raw_response_body = b"reencrypted-share";
+        let response = response_payload(&payload, &accepted, raw_response_body);
+        let key_pairs = sorted_key_pairs();
+        let config = verification_config(&key_pairs, payload.kms_context_id, 2);
+        let mut certificate = certificate(&key_pairs, &config, &response, 1);
+        certificate
+            .signatures
+            .push(certificate.signatures[0].clone());
+
+        assert_eq!(
+            verify_solana_kms_response_v0(
+                &config,
+                &accepted,
+                &payload,
+                &response,
+                raw_response_body,
+                &certificate,
+            ),
+            Err(SolanaKmsResponseVerificationError::SignaturesNotSorted)
         );
     }
 

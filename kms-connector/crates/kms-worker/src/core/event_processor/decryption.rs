@@ -11,9 +11,7 @@ use alloy::{
 };
 use anyhow::anyhow;
 use connector_utils::types::{
-    KmsGrpcRequest,
-    extra_data::parse_extra_data,
-    handle::extract_chain_id_from_handle,
+    KmsGrpcRequest, extra_data::parse_extra_data, handle::extract_chain_id_from_handle,
     u256_to_request_id,
 };
 use fhevm_gateway_bindings::decryption::Decryption::{
@@ -740,7 +738,10 @@ mod tests {
         let processor = solana_processor(ct_chain_id);
 
         let result = processor
-            .check_ciphertexts_allowed_for_public_decryption(&[sns_ct], &Bytes::from(vec![1u8; 256]))
+            .check_ciphertexts_allowed_for_public_decryption(
+                &[sns_ct],
+                &Bytes::from(vec![1u8; 256]),
+            )
             .await;
 
         assert_fails_closed(result);

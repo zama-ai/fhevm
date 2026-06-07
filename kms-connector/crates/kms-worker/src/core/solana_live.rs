@@ -495,6 +495,24 @@ mod tests {
         }
     }
 
+    #[derive(Clone)]
+    struct NonFinalizedRecheckFetcher {
+        snapshot: SolanaNativeAccountSnapshotV0,
+    }
+
+    impl SolanaNativeAccountFetcher for NonFinalizedRecheckFetcher {
+        fn fetch_accounts(
+            &self,
+            _account_keys: &[SolanaPubkeyBytes],
+            _commitment_level: u8,
+        ) -> impl std::future::Future<
+            Output = Result<SolanaNativeAccountSnapshotV0, SolanaNativeAccountFetchError>,
+        > + Send {
+            let snapshot = self.snapshot.clone();
+            async move { Ok(snapshot) }
+        }
+    }
+
     fn confirmed_policy() -> SolanaNativeLiveRequestPolicy {
         SolanaNativeLiveRequestPolicy {
             min_commitment_level: SOLANA_NATIVE_COMMITMENT_CONFIRMED,
@@ -641,6 +659,7 @@ mod tests {
             expiration_slot: OBSERVED_SLOT + 20,
             nonce: [77; 32],
             extra_data_hash: solana_native_extra_data_hash(&raw_extra_data),
+            allowed_acl_domain_keys: vec![DOMAIN],
             entries_hash: [0; 32],
         };
         let hash_entry = crate::core::solana_acl::SolanaNativeHandleEntryV0 {
@@ -1233,6 +1252,38 @@ mod tests {
             )
             .await,
             Err(SolanaNativeLiveAdmissionError::FinalityRecheckAccountMismatch)
+        ));
+    }
+
+    #[tokio::test]
+    async fn finality_recheck_rejects_non_finalized_refetch() {
+        let (parsed_request, snapshot, _) = parsed_request_fixture();
+        let admission = SolanaNativeRequestAdmission::new(
+            SolanaAclVerifier::new(HOST_PROGRAM_ID),
+            InMemoryReplayStore::default(),
+            SolanaNativeRequestLimits::default(),
+        );
+        let initial = admit_live_solana_native_request_v0(
+            &parsed_request,
+            &admission,
+            &StaticAccountFetcher {
+                snapshot: snapshot.clone(),
+            },
+            confirmed_policy(),
+        )
+        .await
+        .unwrap();
+
+        assert!(matches!(
+            recheck_live_solana_native_request_before_release_v0(
+                &parsed_request,
+                &initial,
+                &admission,
+                &NonFinalizedRecheckFetcher { snapshot },
+                confirmed_policy(),
+            )
+            .await,
+            Err(SolanaNativeLiveAdmissionError::FinalityRecheckNotFinalized)
         ));
     }
 }
