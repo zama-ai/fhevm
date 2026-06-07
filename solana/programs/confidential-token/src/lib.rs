@@ -37,11 +37,11 @@ pub use events::*;
 use instructions::*;
 /// Re-export instruction account contexts for compatibility with existing tests.
 pub use instructions::{
-    disclosure_proof_message, CloseOperator, ConfidentialBurn, ConfidentialCallTransferReceiver,
+    CloseOperator, ConfidentialBurn, ConfidentialCallTransferReceiver,
     ConfidentialCallTransferReceiverFrom, ConfidentialFinalizeTransferCallback,
     ConfidentialPrepareTransferCallback, ConfidentialTransfer, ConfidentialTransferFrom,
-    CreateRandomAmount, DiscloseAmount, DiscloseBalance, InitializeMint, InitializeTokenAccount,
-    RedeemBurnedAmount, RedeemBurnedAmountSecp, RequestDiscloseAmount, RequestDiscloseBalance,
+    CreateRandomAmount, DiscloseAmountSecp, DiscloseBalanceSecp, InitializeMint,
+    InitializeTokenAccount, RedeemBurnedAmountSecp, RequestDiscloseAmount, RequestDiscloseBalance,
     SetOperator, TestReceiverReturnCallback, WrapUsdc,
 };
 /// Re-export account layouts and helper functions used by clients and tests.
@@ -213,11 +213,6 @@ pub mod confidential_token {
         instructions::request_disclose_amount(ctx, amount_handle)
     }
 
-    /// Emits a KMS-certified cleartext for the current balance handle.
-    pub fn disclose_balance(ctx: Context<DiscloseBalance>, cleartext_amount: u64) -> Result<()> {
-        instructions::disclose_balance(ctx, cleartext_amount)
-    }
-
     /// Gateway-compatible balance disclosure: verifies the KMS `PublicDecryptVerification`
     /// EIP-712 certificate on-chain via secp256k1_recover against the HostConfig KMS signer.
     pub fn disclose_balance_secp(
@@ -227,15 +222,6 @@ pub mod confidential_token {
         extra_data: Vec<u8>,
     ) -> Result<()> {
         instructions::disclose_balance_secp(ctx, cleartext_amount, signatures, extra_data)
-    }
-
-    /// Emits a KMS-certified cleartext for any token-scoped encrypted amount.
-    pub fn disclose_amount(
-        ctx: Context<DiscloseAmount>,
-        amount_handle: [u8; 32],
-        cleartext_amount: u64,
-    ) -> Result<()> {
-        instructions::disclose_amount(ctx, amount_handle, cleartext_amount)
     }
 
     /// Gateway-compatible amount disclosure: verifies the KMS `PublicDecryptVerification`
@@ -254,15 +240,6 @@ pub mod confidential_token {
             signatures,
             extra_data,
         )
-    }
-
-    /// Redeems a previously burned encrypted amount from the underlying-token vault.
-    pub fn redeem_burned_amount(
-        ctx: Context<RedeemBurnedAmount>,
-        burned_handle: [u8; 32],
-        cleartext_amount: u64,
-    ) -> Result<()> {
-        instructions::redeem_burned_amount(ctx, burned_handle, cleartext_amount)
     }
 
     /// Gateway-compatible redemption: verifies the KMS `PublicDecryptVerification`

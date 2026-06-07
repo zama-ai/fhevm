@@ -1785,60 +1785,6 @@ pub(crate) fn assert_confidential_token_account_shape(
     Ok(())
 }
 
-pub(crate) fn assert_disclosure_signature(
-    instructions_sysvar: &AccountInfo,
-    verifier: Pubkey,
-    mint: Pubkey,
-    handle: [u8; 32],
-    cleartext_amount: u64,
-) -> Result<()> {
-    require_keys_eq!(
-        instructions_sysvar.key(),
-        INSTRUCTIONS_SYSVAR_ID,
-        ConfidentialTokenError::DisclosureProofSignatureMissing
-    );
-    let message = disclosure_proof_message(mint, handle, cleartext_amount, crate::ID);
-    let current_index = load_current_index_checked(instructions_sysvar)
-        .map_err(|_| error!(ConfidentialTokenError::DisclosureProofSignatureMissing))?;
-    let verifier_index = current_index
-        .checked_sub(1)
-        .ok_or(ConfidentialTokenError::DisclosureProofSignatureMissing)?;
-    let verifier_ix = load_instruction_at_checked(verifier_index as usize, instructions_sysvar)
-        .map_err(|_| error!(ConfidentialTokenError::DisclosureProofSignatureMissing))?;
-    require_keys_eq!(
-        verifier_ix.program_id,
-        ED25519_PROGRAM_ID,
-        ConfidentialTokenError::DisclosureProofSignatureMissing
-    );
-    require!(
-        solana_ed25519_instruction::instruction_contains_message(
-            &verifier_ix.data,
-            verifier.as_ref(),
-            &message,
-        ),
-        ConfidentialTokenError::DisclosureProofSignatureMissing
-    );
-    Ok(())
-}
-
-/// Builds the message that a KMS disclosure response signs for this token PoC.
-pub fn disclosure_proof_message(
-    mint: Pubkey,
-    handle: [u8; 32],
-    cleartext_amount: u64,
-    program_id: Pubkey,
-) -> Vec<u8> {
-    let mut message = Vec::with_capacity(
-        DISCLOSURE_PROOF_DOMAIN_SEPARATOR.len() + 32 + 32 + 32 + std::mem::size_of::<u64>(),
-    );
-    message.extend_from_slice(DISCLOSURE_PROOF_DOMAIN_SEPARATOR);
-    message.extend_from_slice(program_id.as_ref());
-    message.extend_from_slice(mint.as_ref());
-    message.extend_from_slice(&handle);
-    message.extend_from_slice(&cleartext_amount.to_le_bytes());
-    message
-}
-
 pub(crate) fn assert_current_balance_acl(
     balance_acl: &Account<zama_host::AclRecord>,
     balance_acl_key: Pubkey,
