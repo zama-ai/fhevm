@@ -99,9 +99,18 @@ commonConfig:
     periodSeconds: 10
     failureThreshold: 30
 
-  # Gateway chain configuration. Consumed by gwListener and txSender.
+  # Gateway chain configuration.
   # Each field accepts either a literal `value` or a `valueFrom` block
   # (secretKeyRef or configMapKeyRef). Leave unset to inject nothing.
+  # gatewayHttpUrl is used by HTTP-capable gwListener and txSender images and
+  # should point to the gateway HTTP RPC.
+  gatewayHttpUrl: {}
+  # gatewayWsUrl is used by legacy websocket gwListener and txSender images.
+  # commonConfig.gatewayUrl is still accepted as the legacy alias for this key.
+  # If only gatewayHttpUrl.value is set, the chart derives ws:// or wss:// by
+  # replacing the HTTP scheme for legacy images.
+  gatewayWsUrl: {}
+  # Legacy alias for gatewayWsUrl. Prefer gatewayWsUrl in new values.
   gatewayUrl: {}
   gatewayContractAddresses:
     inputVerification: {}     # required by gwListener, txSender
@@ -816,6 +825,12 @@ gwListener:
 
   # Component-specific configuration
   config:
+    # Selects the RPC transport for GATEWAY_URL. "auto" uses websocket for
+    # released v0.12.x and older images, and HTTP for v0.13+ or custom tags.
+    # Set explicitly to "http" or "ws" when using a custom image tag whose
+    # transport cannot be inferred from semver.
+    gatewayTransport: auto
+
     # Host chain ID. Rendered as the CHAIN_ID env var, consumed by the
     # gw_listener binary (also settable via --host-chain-id arg).
     # Leave unset/empty to inject nothing.
@@ -839,8 +854,8 @@ gwListener:
   #     --verify-proof-req-database-channel=event_zkpok_new_work
   #     --error-sleep-initial-secs=1
   #     --error-sleep-max-secs=10
-  #     --health-check-timeout=4s
-  #     --provider-max-retries=4294967295
+  #     --health-check-timeout=70s
+  #     --provider-max-retries=15
   #     --provider-retry-interval=4s
   #     --log-level=INFO
   #     --host-chain-id=1                        # or set CHAIN_ID in env
@@ -895,6 +910,7 @@ gwListener:
         port: healthcheck
       initialDelaySeconds: 5
       periodSeconds: 10
+      timeoutSeconds: 75
 
   # Distributed tracing (inherits from commonConfig but can be overridden)
   tracing:
@@ -1390,6 +1406,12 @@ txSender:
 
   # Component-specific configuration
   config:
+    # Selects the RPC transport for GATEWAY_URL. "auto" uses websocket for
+    # released v0.12.x and older images, and HTTP for v0.13+ or custom tags.
+    # Set explicitly to "http" or "ws" when using a custom image tag whose
+    # transport cannot be inferred from semver.
+    gatewayTransport: auto
+
     # Host chain RPC URL for v0.11 delegation management. Rendered as
     # HOST_CHAIN_URL and referenced by the built-in --host-chain-url arg when
     # set. Accepts `value` or `valueFrom` (secretKeyRef/configMapKeyRef).
@@ -1440,11 +1462,11 @@ txSender:
   #     --add-ciphertexts-max-retries=2147483647
   #     --error-sleep-initial-secs=1
   #     --error-sleep-max-secs=4
-  #     --send-txn-sync-timeout-secs=4           # alias: --txn-receipt-timeout-secs
+  #     --send-txn-sync-timeout-secs=70           # alias: --txn-receipt-timeout-secs
   #     --review-after-unlimited-retries=30
   #     --provider-max-retries=10               # finite: alloy retries internally, so we exit on BackendGone
   #     --provider-retry-interval=4s
-  #     --health-check-timeout=4s
+  #     --health-check-timeout=70s
   #     --log-level=INFO
   #     --gas-limit-overprovision-percent=120
   #     --graceful-shutdown-timeout=8s
@@ -1496,6 +1518,7 @@ txSender:
         port: healthcheck
       initialDelaySeconds: 5
       periodSeconds: 10
+      timeoutSeconds: 75
 
   # Distributed tracing (inherits from commonConfig but can be overridden)
   tracing:
