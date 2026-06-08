@@ -219,6 +219,25 @@ impl UserDecryptHandler {
             .into_response();
         }
 
+        // RFC-021 (Solana) auth seam: verify the user's ed25519 signMessage authorization here,
+        // since the gateway cannot ecrecover ed25519. EVM requests instead carry an EIP-712
+        // signature verified on-chain by the gateway, so they skip this branch.
+        if let Some(solana_user_address) = user_decrypt_request.solana_user_address {
+            if let Err(err) =
+                crate::http::utils::solana_user_decrypt_auth::verify_solana_user_decrypt_auth(
+                    &user_decrypt_request,
+                    &solana_user_address.0,
+                    &user_decrypt_request.signature,
+                )
+            {
+                return RelayerV2ResponseFailed::request_error(
+                    &format!("Solana user-decryption authorization failed: {err}"),
+                    &request_id.to_string(),
+                )
+                .into_response();
+            }
+        }
+
         let int_job_id: JobId = user_decrypt_request.content_hash().into();
 
         // Queue full Bouncing logic.

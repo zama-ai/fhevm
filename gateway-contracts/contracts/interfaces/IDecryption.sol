@@ -102,6 +102,26 @@ interface IDecryption {
     );
 
     /**
+     * @notice Emitted when a user decryption request is made for an RFC-021 (Solana) host chain.
+     * @dev Counterpart of {UserDecryptionRequest} where the user identity is a 32-byte Solana
+     * pubkey instead of a 20-byte EVM address. The user's ed25519 signMessage authorization is
+     * verified off-chain by the relayer (the sanctioned Solana auth seam); the response-side
+     * EIP712 validation is identical to the EVM path (it binds only publicKey + ctHandles).
+     * @param decryptionId The decryption request ID.
+     * @param snsCtMaterials The handles, key IDs and SNS ciphertexts to decrypt.
+     * @param userAddress The user's 32-byte Solana pubkey.
+     * @param publicKey The user's public key for used reencryption.
+     * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
+     */
+    event UserDecryptionRequestSolana(
+        uint256 indexed decryptionId,
+        SnsCiphertextMaterial[] snsCtMaterials,
+        bytes32 userAddress,
+        bytes publicKey,
+        bytes extraData
+    );
+
+    /**
      * @notice Emitted when an public decryption response is made.
      * @param decryptionId The decryption request ID associated with the response.
      * @param indexShare The index of the share associated with the decryption.
@@ -292,6 +312,30 @@ interface IDecryption {
         address userAddress,
         bytes calldata publicKey,
         bytes calldata signature,
+        bytes calldata extraData
+    ) external;
+
+    /**
+     * @notice Requests a user decryption for an RFC-021 (Solana) host chain.
+     * @dev Counterpart of {userDecryptionRequest} where the user identity is a 32-byte Solana
+     * pubkey. There is no on-chain user signature: the user's ed25519 signMessage authorization is
+     * verified off-chain by the relayer (the sanctioned Solana auth seam) before this call. The
+     * ciphertext-handle ACL is enforced authoritatively by the KMS (solana_acl witnesses), so no
+     * EVM contract-address list is carried. The response-side EIP712 validation is shared with the
+     * EVM path (it binds only publicKey + ctHandles, no user identity).
+     * @param ctHandles The ciphertext handles to decrypt (each carries the Solana host chain id).
+     * @param requestValidity The validity period of the user decryption request.
+     * @param contractsChainId The Solana host chain id the handles belong to.
+     * @param userAddress The user's 32-byte Solana pubkey.
+     * @param publicKey The user's public key to reencrypt the decryption shares.
+     * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
+     */
+    function userDecryptionRequestSolana(
+        bytes32[] calldata ctHandles,
+        RequestValidity calldata requestValidity,
+        uint256 contractsChainId,
+        bytes32 userAddress,
+        bytes calldata publicKey,
         bytes calldata extraData
     ) external;
 

@@ -30,6 +30,13 @@ impl ContentHasher for UserDecryptRequest {
         hasher.update(b"user_address:"); // 6
         hasher.update(self.user_address.as_slice());
 
+        // 7: the 32-byte Solana pubkey on RFC-021 requests (the EVM user_address above is zero in
+        // that case), so distinct Solana users do not collide in request dedup.
+        if let Some(solana_user_address) = &self.solana_user_address {
+            hasher.update(b"solana_user_address:");
+            hasher.update(solana_user_address.as_slice());
+        }
+
         // NOTE: signature and request_validity are excluded from content hash
         // because these are only used on-chain prior to receiving a decryption-id.
 
@@ -98,6 +105,7 @@ mod tests {
             signature: Bytes::from(vec![0xde, 0xad, 0xbe, 0xef]),
             public_key: Bytes::from(vec![0xab, 0xcd]),
             extra_data: Bytes::from(vec![0x00]),
+            solana_user_address: None,
         };
 
         let id1 = request.content_hash();
@@ -124,6 +132,7 @@ mod tests {
             signature: Bytes::from(vec![0xde, 0xad, 0xbe, 0xef]),
             public_key: Bytes::from(vec![0xab, 0xcd]),
             extra_data: Bytes::from(vec![0x00]),
+            solana_user_address: None,
         };
 
         let mut request2 = request1.clone();
@@ -155,6 +164,7 @@ mod tests {
             signature: Bytes::from(vec![0xde, 0xad, 0xbe, 0xef]),
             public_key: Bytes::from(vec![0xab, 0xcd]),
             extra_data: Bytes::from(vec![0x00]),
+            solana_user_address: None,
         };
 
         let mut request2 = request1.clone();

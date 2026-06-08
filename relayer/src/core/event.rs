@@ -569,6 +569,19 @@ pub struct UserDecryptRequest {
     pub signature: Bytes,
     pub public_key: Bytes,
     pub extra_data: Bytes,
+    /// 32-byte Solana pubkey, set only when `contracts_chain_id` carries the Solana chain-type
+    /// high bit. EVM requests leave this `None` and use the 20-byte `user_address`. When set, the
+    /// relayer has already verified the user's ed25519 signMessage authorization (the sanctioned
+    /// Solana auth seam) and dispatches via `userDecryptionRequestSolana`.
+    #[serde(default)]
+    pub solana_user_address: Option<FixedBytes<32>>,
+}
+
+impl UserDecryptRequest {
+    /// True when this request targets an RFC-021 (Solana) host chain.
+    pub fn is_solana(&self) -> bool {
+        self.solana_user_address.is_some()
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Hash)]
@@ -633,6 +646,13 @@ impl TryFrom<UserDecryptRequestJson> for UserDecryptRequest {
     fn try_from(value: UserDecryptRequestJson) -> Result<Self, Self::Error> {
         info!("Converting UserDecryptRequestJson to UserDecryptRequest");
 
+        // Parse the contract chain ID first: it selects the EVM vs RFC-021 (Solana) identity shapes.
+        let contracts_chain_id = parse_chain_id(&value.contracts_chain_id)?;
+        let is_solana = is_solana_host_chain_id(contracts_chain_id);
+
+        // Parse handle/contract pairs. Handles are 32-byte values on both paths; on Solana the
+        // per-pair contract identity is off-gateway (enforced by the KMS solana_acl), so it is not
+        // an EVM address and is left zero.
         let mut ct_handle_contract_pairs = Vec::new();
         for json_data in &value.handle_contract_pairs {
             let ct_handle = if json_data.handle.starts_with("0x") {
@@ -643,8 +663,12 @@ impl TryFrom<UserDecryptRequestJson> for UserDecryptRequest {
             }
             .map_err(|e| anyhow::anyhow!("Failed to parse ctHandle: {}", e))?;
 
-            let contract_address = Address::from_str(&json_data.contract_address)
-                .map_err(|e| anyhow::anyhow!("Failed to parse contractAddress: {}", e))?;
+            let contract_address = if is_solana {
+                Address::ZERO
+            } else {
+                Address::from_str(&json_data.contract_address)
+                    .map_err(|e| anyhow::anyhow!("Failed to parse contractAddress: {}", e))?
+            };
 
             ct_handle_contract_pairs.push(HandleContractPair {
                 ct_handle,
@@ -671,28 +695,47 @@ impl TryFrom<UserDecryptRequestJson> for UserDecryptRequest {
             duration_days,
         };
 
-        // Parse contract chain ID
-        let contracts_chain_id = parse_chain_id(&value.contracts_chain_id)?;
-
-        let contract_addresses = &value
-            .contract_addresses
-            .iter()
-            .map(|addr| Address::from_str(addr))
-            .collect::<Result<Vec<_>, _>>()?;
-
         // Parse extraData (validated at HTTP layer)
         let extra_data = Bytes::from_str(&value.extra_data)?;
+        let signature = Bytes::from_str(&value.signature)?;
+        let public_key = Bytes::from_str(&value.public_key)?;
 
-        Ok(UserDecryptRequest {
-            ct_handle_contract_pairs,
-            request_validity,
-            contracts_chain_id,
-            contract_addresses: contract_addresses.clone(),
-            user_address: Address::from_str(&value.user_address)?,
-            signature: Bytes::from_str(&value.signature)?,
-            public_key: Bytes::from_str(&value.public_key)?,
-            extra_data,
-        })
+        if is_solana {
+            // RFC-021: the user identity is a 32-byte Solana pubkey (base58). The ed25519
+            // signMessage authorization carried in `signature` is verified by the relayer before
+            // the request is enqueued (see the HTTP handler). No EVM contract-address list applies.
+            let pubkey =
+                crate::http::utils::solana_address::decode_solana_address(&value.user_address)
+                    .map_err(|e| anyhow::anyhow!("Failed to parse Solana userAddress: {:?}", e))?;
+            Ok(UserDecryptRequest {
+                ct_handle_contract_pairs,
+                request_validity,
+                contracts_chain_id,
+                contract_addresses: Vec::new(),
+                user_address: Address::ZERO,
+                signature,
+                public_key,
+                extra_data,
+                solana_user_address: Some(FixedBytes::<32>::from(pubkey)),
+            })
+        } else {
+            let contract_addresses = value
+                .contract_addresses
+                .iter()
+                .map(|addr| Address::from_str(addr))
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(UserDecryptRequest {
+                ct_handle_contract_pairs,
+                request_validity,
+                contracts_chain_id,
+                contract_addresses,
+                user_address: Address::from_str(&value.user_address)?,
+                signature,
+                public_key,
+                extra_data,
+                solana_user_address: None,
+            })
+        }
     }
 }
 

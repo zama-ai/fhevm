@@ -365,7 +365,15 @@ impl GatewayHandler {
 
         let job_id_hash = decrypt_request.content_hash();
 
-        let calldata_bytes = ComputeCalldata::user_decryption_req(decrypt_request.clone())?;
+        // RFC-021 (Solana) hosts dispatch via `userDecryptionRequestSolana` with the 32-byte
+        // identity; the user's ed25519 authorization was verified by the HTTP handler. EVM hosts
+        // use the 20-byte address path.
+        let calldata_bytes = match decrypt_request.solana_user_address {
+            Some(solana_user_address) => {
+                ComputeCalldata::user_decryption_req_solana(&decrypt_request, solana_user_address)?
+            }
+            None => ComputeCalldata::user_decryption_req(decrypt_request.clone())?,
+        };
 
         self.send_to_gateway(calldata_bytes, job_id_hash).await?;
         info!(

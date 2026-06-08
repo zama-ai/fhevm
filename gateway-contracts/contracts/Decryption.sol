@@ -495,6 +495,64 @@ contract Decryption is
     }
 
     /**
+     * @notice See {IDecryption-userDecryptionRequestSolana}.
+     * @dev RFC-021 (Solana host) counterpart of {userDecryptionRequest}. Identical lifecycle, payload
+     * storage and fee collection; the user identity is a 32-byte Solana pubkey and there is no on-chain
+     * user signature (the relayer verifies the user's ed25519 signMessage before this call — the
+     * sanctioned Solana auth seam). The ciphertext-handle ACL is enforced by the KMS (solana_acl), so
+     * no EVM contract-address list is required. Shares the userDecryptionCounter and the response-side
+     * EIP712 validation with the EVM path, which binds only publicKey + ctHandles (no user identity).
+     */
+    function userDecryptionRequestSolana(
+        bytes32[] calldata ctHandles,
+        RequestValidity calldata requestValidity,
+        uint256 contractsChainId,
+        bytes32 userAddress,
+        bytes calldata publicKey,
+        bytes calldata extraData
+    ) external virtual whenNotPaused onlyRegisteredHostChain(contractsChainId) {
+        if (ctHandles.length == 0) {
+            revert EmptyCtHandles();
+        }
+
+        // Check the user decryption request is valid.
+        _checkUserDecryptionRequestValidity(requestValidity);
+
+        // Conformance: each handle must belong to the given Solana host chain, and the batch must not
+        // exceed the maximum decryption bit size. Mirrors {_extractCtHandlesCheckConformanceUser} minus
+        // the EVM contract-address coupling (the Solana ACL is enforced off-gateway by the KMS).
+        uint256 totalBitSize = 0;
+        for (uint256 i = 0; i < ctHandles.length; i++) {
+            uint256 chainId = HandleOps.extractChainId(ctHandles[i]);
+            if (chainId != contractsChainId) {
+                revert CtHandleChainIdDiffersFromContractChainId(ctHandles[i], chainId, contractsChainId);
+            }
+            totalBitSize += FHETypeBitSizes.getBitSize(HandleOps.extractFheType(ctHandles[i]));
+        }
+        if (totalBitSize > MAX_DECRYPTION_REQUEST_BITS) {
+            revert MaxDecryptionRequestBitSizeExceeded(MAX_DECRYPTION_REQUEST_BITS, totalBitSize);
+        }
+
+        // Fetch the ciphertexts from the CiphertextCommits contract (reverts if any handle is unknown).
+        SnsCiphertextMaterial[] memory snsCtMaterials = CIPHERTEXT_COMMITS.getSnsCiphertextMaterials(ctHandles);
+        _checkCtMaterialKeyIds(snsCtMaterials);
+
+        DecryptionStorage storage $ = _getDecryptionStorage();
+
+        // Shares the user decryption counter/ID space with the EVM path.
+        $.userDecryptionCounter++;
+        uint256 userDecryptionId = $.userDecryptionCounter;
+
+        // The publicKey and ctHandles are used during response calls for the EIP712 signature validation.
+        $.userDecryptionPayloads[userDecryptionId] = UserDecryptionPayload(publicKey, ctHandles);
+
+        // Collect the fee from the transaction sender (the relayer) for this user decryption request.
+        _collectUserDecryptionFee(msg.sender);
+
+        emit UserDecryptionRequestSolana(userDecryptionId, snsCtMaterials, userAddress, publicKey, extraData);
+    }
+
+    /**
      * @notice See {IDecryption-delegatedUserDecryptionRequest}.
      */
     function delegatedUserDecryptionRequest(

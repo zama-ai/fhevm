@@ -4,6 +4,7 @@ pub mod redact;
 pub mod responses;
 pub mod serialization;
 pub mod solana_address;
+pub mod solana_user_decrypt_auth;
 pub mod validations;
 
 // Re-export all utilities for convenient access

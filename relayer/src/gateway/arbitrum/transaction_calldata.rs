@@ -83,6 +83,46 @@ impl ComputeCalldata {
         Ok(Bytes::from(calldata))
     }
 
+    /// Computes calldata for an RFC-021 (Solana host) user decryption request.
+    ///
+    /// Counterpart of [`Self::user_decryption_req`] where the user identity is a 32-byte Solana
+    /// pubkey. The user's ed25519 signMessage authorization is verified by the relayer before this
+    /// calldata is built (the sanctioned Solana auth seam), so the gateway call carries no on-chain
+    /// signature. The ciphertext-handle ACL is enforced by the KMS (solana_acl), so no EVM
+    /// contract-address list is sent. The ciphertext handles are 32-byte values shared with the EVM
+    /// representation; only the dapp/user identities differ.
+    pub fn user_decryption_req_solana(
+        user_decrypt_request: &UserDecryptRequest,
+        user_address: FixedBytes<32>,
+    ) -> Result<Bytes, EventProcessingError> {
+        let ct_handles = user_decrypt_request
+            .ct_handle_contract_pairs
+            .iter()
+            .map(|pair| pair.ct_handle.into())
+            .collect::<Vec<FixedBytes<32>>>();
+
+        let validity = RequestValidity {
+            startTimestamp: user_decrypt_request.request_validity.start_timestamp,
+            durationDays: user_decrypt_request.request_validity.duration_days,
+        };
+
+        let request_call = Decryption::userDecryptionRequestSolanaCall {
+            ctHandles: ct_handles,
+            requestValidity: validity,
+            contractsChainId: U256::from(user_decrypt_request.contracts_chain_id),
+            userAddress: user_address,
+            publicKey: user_decrypt_request.public_key.clone(),
+            extraData: user_decrypt_request.extra_data.clone(),
+        };
+
+        let calldata = request_call.abi_encode();
+        info!(
+            "UserDecryptionRequestSolana calldata: 0x{}",
+            hex::encode(&calldata)
+        );
+        Ok(Bytes::from(calldata))
+    }
+
     /// Computes calldata for the delegated user decryption request
     pub fn delegated_user_decryption_req(
         delegated_user_decrypt_request: DelegatedUserDecryptRequest,
