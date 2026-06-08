@@ -179,7 +179,7 @@ services:
     command:
       - transaction_sender
       - --database-url=${DATABASE_URL}
-      - --gateway-url=${GATEWAY_WS_URL}
+      - --gateway-url=${GATEWAY_HTTP_URL}
       - --private-key=${TX_SENDER_PRIVATE_KEY}
       - --ciphertext-commits-address=${CIPHERTEXT_COMMITS_ADDRESS}
       - --input-verification-address=${INPUT_VERIFICATION_ADDRESS}

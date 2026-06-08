@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use crate::{
+    is_backend_gone_transport_error,
     metrics::{ADD_CIPHERTEXT_MATERIAL_FAIL_COUNTER, ADD_CIPHERTEXT_MATERIAL_SUCCESS_COUNTER},
     nonce_managed_provider::NonceManagedProvider,
     REVIEW,
@@ -80,9 +81,9 @@ where
                 return Ok(());
             }
             Err(e) => {
-                // Consider transport retryable errors, BackendGone and local usage errors as something that must be retried infinitely.
+                // Consider transport retryable errors, exhausted provider retries, BackendGone and local usage errors as something that must be retried infinitely.
                 // Local usage are included as they might be transient due to external AWS KMS signers.
-                if matches!(&e, RpcError::Transport(inner) if inner.is_retry_err() || matches!(inner, TransportErrorKind::BackendGone))
+                if matches!(&e, RpcError::Transport(inner) if inner.is_retry_err() || is_backend_gone_transport_error(inner))
                     || matches!(&e, RpcError::LocalUsageError(_))
                 {
                     ADD_CIPHERTEXT_MATERIAL_FAIL_COUNTER.inc();

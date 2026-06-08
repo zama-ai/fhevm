@@ -68,9 +68,8 @@ commonConfig:
   # Gateway chain configuration.
   # Each field accepts either a literal `value` or a `valueFrom` block
   # (secretKeyRef or configMapKeyRef). Leave unset to inject nothing.
-  # gatewayUrl is used by txSender and should point to the gateway WebSocket RPC.
-  gatewayUrl: {}
-  # gatewayHttpUrl is used by gwListener and should point to the gateway HTTP RPC.
+  # gatewayHttpUrl is used by gwListener and txSender and should point to the
+  # gateway HTTP RPC.
   gatewayHttpUrl: {}
   gatewayContractAddresses:
     inputVerification: {}     # required by gwListener, txSender

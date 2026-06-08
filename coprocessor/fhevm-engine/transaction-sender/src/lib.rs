@@ -11,10 +11,11 @@ use std::time::Duration;
 use alloy::network::TxSigner;
 use alloy::providers::Provider;
 use alloy::providers::ProviderBuilder;
-use alloy::providers::WsConnect;
+use alloy::rpc::client::RpcClient;
 use alloy::signers::Signature;
 use alloy::signers::Signer;
 use alloy::transports::http::reqwest::Url;
+use alloy::transports::layers::{RateLimitRetryPolicy, RetryBackoffLayer};
 use alloy::transports::TransportError;
 use alloy::transports::TransportErrorKind;
 use anyhow::Error;
@@ -77,30 +78,38 @@ impl HealthStatus {
     }
 }
 
-// Gets the chain ID from the given WebSocket URL.
+pub fn gateway_http_client(url: &Url, max_retries: u32, retry_interval: Duration) -> RpcClient {
+    let retry_interval_ms = retry_interval.as_millis();
+    let retry_interval_ms = u64::try_from(retry_interval_ms).unwrap_or(u64::MAX);
+    let retry_policy = RateLimitRetryPolicy::default().or(|err| {
+        matches!(
+            err,
+            TransportError::Transport(TransportErrorKind::Custom(_))
+        )
+    });
+    let retry_layer =
+        RetryBackoffLayer::new_with_policy(max_retries, retry_interval_ms, 100, retry_policy);
+    RpcClient::builder().layer(retry_layer).http(url.clone())
+}
+
+pub fn is_backend_gone_transport_error(inner: &TransportErrorKind) -> bool {
+    matches!(inner, TransportErrorKind::BackendGone)
+        || matches!(
+            inner,
+            TransportErrorKind::Custom(err)
+                if err.to_string().starts_with("Max retries exceeded ")
+        )
+}
+
+// Gets the chain ID from the given Gateway HTTP RPC URL.
 // This is a utility function that will try to connect until it succeeds.
-pub async fn get_chain_id(ws_url: Url, retry_interval: Duration) -> u64 {
+pub async fn get_chain_id(gateway_url: Url, retry_interval: Duration) -> u64 {
     loop {
-        let provider = match ProviderBuilder::new()
-            .connect_ws(
-                WsConnect::new(ws_url.clone())
-                    .with_max_retries(1)
-                    .with_retry_interval(retry_interval),
-            )
-            .await
-        {
-            Ok(provider) => provider,
-            Err(e) => {
-                error!(
-                    ws_url = %ws_url,
-                    error = %e,
-                    retry_interval = ?retry_interval,
-                    "Failed to connect to Gateway, retrying"
-                );
-                tokio::time::sleep(retry_interval).await;
-                continue;
-            }
-        };
+        let provider = ProviderBuilder::new().connect_client(gateway_http_client(
+            &gateway_url,
+            1,
+            retry_interval,
+        ));
 
         match provider.get_chain_id().await {
             Ok(chain_id) => {
@@ -109,7 +118,7 @@ pub async fn get_chain_id(ws_url: Url, retry_interval: Duration) -> u64 {
             }
             Err(e) => {
                 error!(
-                    ws_url = %ws_url,
+                    gateway_url = %gateway_url,
                     error = %e,
                     retry_interval = ?retry_interval,
                     "Failed to get chain ID from Gateway, retrying"
@@ -123,10 +132,7 @@ pub async fn get_chain_id(ws_url: Url, retry_interval: Duration) -> u64 {
 pub fn is_backend_gone(err: &Error) -> bool {
     err.chain().any(|cause| {
         if let Some(t) = cause.downcast_ref::<TransportError>() {
-            matches!(
-                t,
-                TransportError::Transport(TransportErrorKind::BackendGone)
-            )
+            matches!(t, TransportError::Transport(inner) if is_backend_gone_transport_error(inner))
         } else {
             false
         }
