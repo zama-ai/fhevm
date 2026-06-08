@@ -81,6 +81,16 @@ pub fn validate_host_address(address: &str) -> Result<(), ValidationError> {
     validate_blockchain_address(address)
 }
 
+/// Validates a list of host-chain account identities (each EVM 0x-hex or RFC-021 Solana base58).
+/// An empty list is permitted (RFC-021 Solana user-decryption carries none; the per-mode
+/// requirement — EVM needs >=1 — is enforced downstream).
+pub fn validate_host_addresses(addresses: &Vec<String>) -> Result<(), ValidationError> {
+    for address in addresses {
+        validate_host_address(address)?;
+    }
+    Ok(())
+}
+
 pub fn validate_no_0x_hex(hex_str: &str) -> Result<(), ValidationError> {
     if hex_str.starts_with("0x") {
         return Err(ValidationError::new("validation_error")
@@ -92,6 +102,19 @@ pub fn validate_no_0x_hex(hex_str: &str) -> Result<(), ValidationError> {
             .with_message(validation_messages::HEX_INVALID_STRING.into()));
     }
     Ok(())
+}
+
+/// Validates a user-decryption request signature. 130 hex chars for an EVM EIP-712 (65-byte)
+/// signature, or 128 hex chars for an RFC-021 Solana ed25519 (64-byte) `signMessage` signature.
+/// Both are accepted at the HTTP layer (the chain id selects which is expected); the ed25519 case
+/// is verified by the relayer before forwarding, and the EVM case on-chain by the gateway.
+pub fn validate_user_decrypt_signature(sig: &str) -> Result<(), ValidationError> {
+    if sig.len() != 130 && sig.len() != 128 {
+        return Err(ValidationError::new("validation_error").with_message(
+            "signature must be 130 (EIP-712) or 128 (Solana ed25519) hex characters".into(),
+        ));
+    }
+    validate_no_0x_hex(sig)
 }
 
 pub fn validate_0x_hex(hex_str: &str) -> Result<(), ValidationError> {
@@ -216,8 +239,9 @@ pub fn validate_handle_contract_pairs(
                 .with_message(validation_messages::LENGTH_MUST_BE_64_CHARACTERS.into()));
         }
 
-        // Validate contract address
-        validate_blockchain_address(&pair.contract_address)?;
+        // Validate contract address: EVM 0x-hex or RFC-021 Solana base58 (the chain id decides
+        // interpretation downstream).
+        validate_host_address(&pair.contract_address)?;
     }
     Ok(())
 }
