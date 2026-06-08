@@ -96,7 +96,7 @@ services:
       - --database-url=${DATABASE_URL}
       - --database-pool-size=16
       - --verify-proof-req-database-channel=event_zkpok_new_work
-      - --gw-url=${GATEWAY_WS_URL}
+      - --gw-url=${GATEWAY_HTTP_URL}
       - --input-verification-address=${INPUT_VERIFICATION_ADDRESS}
       - --ciphertext-commits-address=${CIPHERTEXT_COMMITS_ADDRESS}
       - --gateway-config-address=${GATEWAY_CONFIG_ADDRESS}

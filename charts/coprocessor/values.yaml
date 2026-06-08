@@ -65,10 +65,13 @@ commonConfig:
   fhevmExecutorContractAddress: {}  # required — e.g. 0x...
   kmsGenerationContractAddress: {}  # optional — e.g. 0x...
 
-  # Gateway chain configuration. Consumed by gwListener and txSender.
+  # Gateway chain configuration.
   # Each field accepts either a literal `value` or a `valueFrom` block
   # (secretKeyRef or configMapKeyRef). Leave unset to inject nothing.
+  # gatewayUrl is used by txSender and should point to the gateway WebSocket RPC.
   gatewayUrl: {}
+  # gatewayHttpUrl is used by gwListener and should point to the gateway HTTP RPC.
+  gatewayHttpUrl: {}
   gatewayContractAddresses:
     inputVerification: {}     # required by gwListener, txSender
     ciphertextCommits: {}     # required by txSender; optional for gwListener (drift detection)

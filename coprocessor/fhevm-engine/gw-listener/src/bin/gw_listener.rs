@@ -1,6 +1,8 @@
 use std::time::Duration;
 
-use alloy::providers::{ProviderBuilder, WsConnect};
+use alloy::providers::ProviderBuilder;
+use alloy::rpc::client::RpcClient;
+use alloy::transports::layers::RetryBackoffLayer;
 use alloy::{primitives::Address, transports::http::reqwest::Url};
 use clap::Parser;
 use fhevm_engine_common::database::{connect_pool_with_options, resolve_database_url_from_option};
@@ -19,7 +21,7 @@ use humantime::parse_duration;
 use sqlx::postgres::PgPoolOptions;
 use tokio::signal::unix::{signal, SignalKind};
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info, Level};
+use tracing::{info, Level};
 
 /// Parse `drift_auto_revert_grace_period` and reject values below
 /// `MIN_GRACE_PERIOD_MULTIPLIER * DRIFT_REVERT_DB_DOWN_LIMIT`.
@@ -47,7 +49,7 @@ struct Conf {
     #[arg(long, default_value = "event_zkpok_new_work")]
     verify_proof_req_database_channel: String,
 
-    #[arg(long)]
+    #[arg(long, help = "Gateway HTTP JSON-RPC URL")]
     gw_url: Url,
 
     #[arg(short, long)]
@@ -170,33 +172,23 @@ async fn main() -> anyhow::Result<()> {
         "otlp-layer",
     );
 
-    info!(gateway_url = %conf.gw_url, max_retries = %conf.provider_max_retries,
-         retry_interval = ?conf.provider_retry_interval, "Connecting to Gateway");
+    info!(
+        gateway_rpc_url = %conf.gw_url,
+        max_retries = %conf.provider_max_retries,
+        retry_interval = ?conf.provider_retry_interval,
+        "Creating Gateway HTTP RPC provider"
+    );
 
-    let provider = loop {
-        match ProviderBuilder::new()
-            .connect_ws(
-                WsConnect::new(conf.gw_url.clone())
-                    .with_max_retries(conf.provider_max_retries)
-                    .with_retry_interval(conf.provider_retry_interval),
-            )
-            .await
-        {
-            Ok(provider) => {
-                info!(gateway_url = %conf.gw_url, "Connected to Gateway");
-                break provider;
-            }
-            Err(e) => {
-                error!(
-                    gateway_url = %conf.gw_url,
-                    error = %e,
-                    provider_retry_interval = ?conf.provider_retry_interval,
-                    "Failed to connect to Gateway"
-                );
-                tokio::time::sleep(conf.provider_retry_interval).await;
-            }
-        }
-    };
+    let provider_retry_interval_ms = conf.provider_retry_interval.as_millis();
+    let provider_retry_interval_ms = u64::try_from(provider_retry_interval_ms).unwrap_or(u64::MAX);
+    let retry_layer =
+        RetryBackoffLayer::new(conf.provider_max_retries, provider_retry_interval_ms, 100);
+    let client = RpcClient::builder()
+        .layer(retry_layer)
+        .http(conf.gw_url.clone());
+    let provider = ProviderBuilder::new().connect_client(client);
+
+    info!(gateway_rpc_url = %conf.gw_url, "Created Gateway HTTP RPC provider");
 
     let cancel_token = CancellationToken::new();
 
