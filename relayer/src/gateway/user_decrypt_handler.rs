@@ -1216,13 +1216,26 @@ impl TxLifecycleHooks for GatewayHandler {
         job_id: &JobId,
         receipt: &TxResult,
     ) -> Result<(), EventProcessingError> {
+        // RFC-021 Solana user-decrypt requests emit `UserDecryptionRequestSolana` (bytes32
+        // userAddress) instead of `UserDecryptionRequest`; the `decryptionId` field and the
+        // response side are shared, so accept either request event when extracting the gateway
+        // reference id (mirrors the input-proof path's VerifyProofRequest/...Solana fallback).
         let gw_reference_id = TransactionHelper::extract_gateway_id_from_receipt::<
             Decryption::UserDecryptionRequest,
         >(
             receipt,
             Decryption::UserDecryptionRequest::SIGNATURE_HASH,
             |event| event.decryptionId,
-        )?;
+        )
+        .or_else(|_| {
+            TransactionHelper::extract_gateway_id_from_receipt::<
+                Decryption::UserDecryptionRequestSolana,
+            >(
+                receipt,
+                Decryption::UserDecryptionRequestSolana::SIGNATURE_HASH,
+                |event| event.decryptionId,
+            )
+        })?;
 
         let tx_hash = format!("{:?}", receipt.transaction_hash);
 
