@@ -67,7 +67,8 @@ pub struct LivenessResponse {
 }
 
 /// The commit hash (shor 7 chars format) used during the build of the service.
-pub const GIT_COMMIT_HASH: &str = git_version::git_version!(args = ["--always", "--exclude", "*"]);
+pub const GIT_COMMIT_HASH: &str =
+    git_version::git_version!(args = ["--always", "--exclude", "*"], fallback = "unknown");
 
 /// Responder used to provide version and build information of the service.
 async fn version_responder<S: Healthcheck>() -> impl actix_web::Responder {
