@@ -156,6 +156,8 @@ impl From<&ProtocolEventKind> for EventType {
         match value {
             ProtocolEventKind::PublicDecryption(_) => Self::PublicDecryptionRequest,
             ProtocolEventKind::UserDecryption(_) => Self::UserDecryptionRequest,
+            // Solana user decryptions are stored/picked via the same user_decryption path.
+            ProtocolEventKind::UserDecryptionSolana(_) => Self::UserDecryptionRequest,
             ProtocolEventKind::PrepKeygen(_) => Self::PrepKeygenRequest,
             ProtocolEventKind::Keygen(_) => Self::KeygenRequest,
             ProtocolEventKind::Crsgen(_) => Self::CrsgenRequest,

@@ -2,10 +2,11 @@ use crate::{
     monitoring::otlp::PropagationContext,
     types::db::{OperationStatus, ParamsTypeDb, SnsCiphertextMaterialDbItem},
 };
-use alloy::primitives::{FixedBytes, U256};
+use alloy::primitives::{Address, FixedBytes, U256};
 use anyhow::anyhow;
 use fhevm_gateway_bindings::decryption::Decryption::{
     DecryptionEvents, PublicDecryptionRequest, SnsCiphertextMaterial, UserDecryptionRequest,
+    UserDecryptionRequestSolana,
 };
 use fhevm_host_bindings::kms_generation::KMSGeneration::{
     CrsgenRequest, KMSGenerationEvents, KeygenRequest, PrepKeygenRequest,
@@ -76,6 +77,11 @@ impl ProtocolEvent {
                 update_user_decryption_status(db, e.decryptionId, status, already_sent, err_count)
                     .await
             }
+            // Solana user decryptions share the user_decryption_requests table/status path.
+            ProtocolEventKind::UserDecryptionSolana(e) => {
+                update_user_decryption_status(db, e.decryptionId, status, already_sent, err_count)
+                    .await
+            }
             ProtocolEventKind::PrepKeygen(e) => {
                 update_prep_keygen_status(db, e.prepKeygenId, status, already_sent).await
             }
@@ -93,6 +99,10 @@ impl ProtocolEvent {
 pub enum ProtocolEventKind {
     PublicDecryption(PublicDecryptionRequest),
     UserDecryption(UserDecryptionRequest),
+    /// RFC-021 (Solana host) user decryption: the user identity is a 32-byte Solana pubkey. Stored
+    /// in the same `user_decryption_requests` table as the EVM variant, discriminated by the
+    /// `user_address` byte length (20 = EVM, 32 = Solana).
+    UserDecryptionSolana(UserDecryptionRequestSolana),
     PrepKeygen(PrepKeygenRequest),
     Keygen(KeygenRequest),
     Crsgen(CrsgenRequest),
@@ -130,13 +140,30 @@ pub fn from_user_decryption_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
         .map(SnsCiphertextMaterial::from)
         .collect();
 
-    let kind = ProtocolEventKind::UserDecryption(UserDecryptionRequest {
-        decryptionId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("decryption_id")?),
-        snsCtMaterials: sns_ct_materials,
-        userAddress: row.try_get::<[u8; 20], _>("user_address")?.into(),
-        publicKey: row.try_get::<Vec<u8>, _>("public_key")?.into(),
-        extraData: row.try_get::<Vec<u8>, _>("extra_data")?.into(),
-    });
+    let decryption_id = U256::from_le_bytes(row.try_get::<[u8; 32], _>("decryption_id")?);
+    let public_key = row.try_get::<Vec<u8>, _>("public_key")?;
+    let extra_data = row.try_get::<Vec<u8>, _>("extra_data")?;
+    let user_address = row.try_get::<Vec<u8>, _>("user_address")?;
+
+    // The same table stores both EVM (20-byte address) and RFC-021 Solana (32-byte pubkey)
+    // user-decryption requests; the `user_address` byte length discriminates the two.
+    let kind = if user_address.len() == 32 {
+        ProtocolEventKind::UserDecryptionSolana(UserDecryptionRequestSolana {
+            decryptionId: decryption_id,
+            snsCtMaterials: sns_ct_materials,
+            userAddress: FixedBytes::<32>::from_slice(&user_address),
+            publicKey: public_key.into(),
+            extraData: extra_data.into(),
+        })
+    } else {
+        ProtocolEventKind::UserDecryption(UserDecryptionRequest {
+            decryptionId: decryption_id,
+            snsCtMaterials: sns_ct_materials,
+            userAddress: Address::from_slice(&user_address),
+            publicKey: public_key.into(),
+            extraData: extra_data.into(),
+        })
+    };
 
     Ok(ProtocolEvent {
         kind,
@@ -324,6 +351,9 @@ impl Display for ProtocolEventKind {
             ProtocolEventKind::UserDecryption(e) => {
                 write!(f, "UserDecryptionRequest #{}", e.decryptionId)
             }
+            ProtocolEventKind::UserDecryptionSolana(e) => {
+                write!(f, "UserDecryptionRequestSolana #{}", e.decryptionId)
+            }
             ProtocolEventKind::PrepKeygen(e) => {
                 write!(f, "PrepKeygenRequest #{}", e.prepKeygenId)
             }
@@ -342,6 +372,12 @@ impl From<PublicDecryptionRequest> for ProtocolEventKind {
 impl From<UserDecryptionRequest> for ProtocolEventKind {
     fn from(value: UserDecryptionRequest) -> Self {
         Self::UserDecryption(value)
+    }
+}
+
+impl From<UserDecryptionRequestSolana> for ProtocolEventKind {
+    fn from(value: UserDecryptionRequestSolana) -> Self {
+        Self::UserDecryptionSolana(value)
     }
 }
 
@@ -370,6 +406,7 @@ impl TryFrom<DecryptionEvents> for ProtocolEventKind {
         match value {
             DecryptionEvents::PublicDecryptionRequest(e) => Ok(e.into()),
             DecryptionEvents::UserDecryptionRequest(e) => Ok(e.into()),
+            DecryptionEvents::UserDecryptionRequestSolana(e) => Ok(e.into()),
             _ => Err(anyhow!("Unexpected Decryption event: {value:?}")),
         }
     }

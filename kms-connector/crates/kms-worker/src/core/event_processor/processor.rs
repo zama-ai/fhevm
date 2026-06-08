@@ -66,7 +66,9 @@ impl<GP: Provider, HP: Provider, C: ContextManager> EventProcessor for DbEventPr
             // key management operation at all cost.
             (
                 Err(ProcessingError::Recoverable(e)),
-                ProtocolEventKind::PublicDecryption(_) | ProtocolEventKind::UserDecryption(_),
+                ProtocolEventKind::PublicDecryption(_)
+                | ProtocolEventKind::UserDecryption(_)
+                | ProtocolEventKind::UserDecryptionSolana(_),
             ) if event.error_counter as u16 >= self.max_decryption_attempts => {
                 error!(
                     "{}. Maximum number of decryption attempts reached: {}",
@@ -157,6 +159,23 @@ impl<GP: Provider, HP: Provider, C: ContextManager> DbEventProcessor<GP, HP, C> 
                         &req.snsCtMaterials,
                         &req.extraData,
                         Some(UserDecryptionExtraData::new(
+                            req.userAddress,
+                            req.publicKey.clone(),
+                        )),
+                    )
+                    .await
+            }
+            ProtocolEventKind::UserDecryptionSolana(req) => {
+                // RFC-021: the ciphertext-handle ACL is enforced authoritatively by the KMS
+                // (solana_acl witnesses) and the user's ed25519 authorization was verified by the
+                // relayer, so there is no EVM calldata ACL pre-check here (mirrors the relayer,
+                // which skips the eth_call ACL for Solana hosts).
+                self.decryption_processor
+                    .prepare_decryption_request(
+                        req.decryptionId,
+                        &req.snsCtMaterials,
+                        &req.extraData,
+                        Some(UserDecryptionExtraData::new_solana(
                             req.userAddress,
                             req.publicKey.clone(),
                         )),

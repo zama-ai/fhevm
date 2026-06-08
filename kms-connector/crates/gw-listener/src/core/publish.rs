@@ -8,7 +8,7 @@ use connector_utils::{
     },
 };
 use fhevm_gateway_bindings::decryption::Decryption::{
-    PublicDecryptionRequest, UserDecryptionRequest,
+    PublicDecryptionRequest, UserDecryptionRequest, UserDecryptionRequestSolana,
 };
 use fhevm_host_bindings::kms_generation::KMSGeneration::{
     CrsgenRequest, KeygenRequest, PrepKeygenRequest,
@@ -53,6 +53,9 @@ async fn publish_event_inner<'e>(
         }
         ProtocolEventKind::UserDecryption(e) => {
             publish_user_decryption(executor, e, tx_hash, created_at, otlp_ctx).await
+        }
+        ProtocolEventKind::UserDecryptionSolana(e) => {
+            publish_user_decryption_solana(executor, e, tx_hash, created_at, otlp_ctx).await
         }
         ProtocolEventKind::PrepKeygen(e) => {
             let params_type: ParamsTypeDb = e.paramsType.try_into()?;
@@ -111,6 +114,42 @@ async fn publish_public_decryption<'e>(
 async fn publish_user_decryption<'e>(
     executor: impl PgExecutor<'e>,
     request: UserDecryptionRequest,
+    tx_hash: Option<FixedBytes<32>>,
+    created_at: DateTime<Utc>,
+    otlp_ctx: PropagationContext,
+) -> anyhow::Result<PgQueryResult> {
+    let sns_ciphertexts_db = request
+        .snsCtMaterials
+        .iter()
+        .map(SnsCiphertextMaterialDbItem::from)
+        .collect::<Vec<SnsCiphertextMaterialDbItem>>();
+
+    sqlx::query!(
+        "INSERT INTO user_decryption_requests(\
+            decryption_id, sns_ct_materials, user_address, public_key, extra_data, tx_hash,\
+            created_at, otlp_context\
+        ) \
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT DO NOTHING",
+        request.decryptionId.as_le_slice(),
+        sns_ciphertexts_db as Vec<SnsCiphertextMaterialDbItem>,
+        request.userAddress.as_slice(),
+        request.publicKey.as_ref(),
+        request.extraData.as_ref(),
+        tx_hash.map(|h| h.to_vec()),
+        created_at,
+        bc2wrap::serialize(&otlp_ctx)?,
+    )
+    .execute(executor)
+    .await
+    .map_err(anyhow::Error::from)
+}
+
+/// RFC-021 (Solana host) user decryption. Stored in the same `user_decryption_requests` table as
+/// the EVM variant; the 32-byte `user_address` (a Solana pubkey) discriminates it from the 20-byte
+/// EVM address on read. The reused INSERT string shares sqlx's cached query metadata.
+async fn publish_user_decryption_solana<'e>(
+    executor: impl PgExecutor<'e>,
+    request: UserDecryptionRequestSolana,
     tx_hash: Option<FixedBytes<32>>,
     created_at: DateTime<Utc>,
     otlp_ctx: PropagationContext,

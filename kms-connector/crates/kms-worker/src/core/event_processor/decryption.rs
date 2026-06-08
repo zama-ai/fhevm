@@ -470,7 +470,15 @@ where
         let request_id = Some(u256_to_request_id(decryption_id));
 
         if let Some(user_decrypt_data) = user_decrypt_data {
-            let client_address = user_decrypt_data.user_address.to_checksum(None);
+            // RFC-021: a Solana user identity is encoded as "solana:<hex pubkey>", which the KMS
+            // parses to route through its Solana branch (compute_link_solana + solana_acl). EVM
+            // identities use the checksummed 20-byte address.
+            let client_address = match user_decrypt_data.solana_user_address {
+                Some(solana_user_address) => {
+                    format!("solana:{}", hex::encode(solana_user_address))
+                }
+                None => user_decrypt_data.user_address.to_checksum(None),
+            };
             let enc_key = user_decrypt_data.public_key.to_vec();
             let user_decryption_request = UserDecryptionRequest {
                 request_id,
@@ -551,6 +559,10 @@ where
 pub struct UserDecryptionExtraData {
     pub user_address: Address,
     pub public_key: Bytes,
+    /// Set for RFC-021 (Solana) user decryptions: the 32-byte Solana pubkey. When present, the
+    /// gRPC `client_address` is built as `"solana:<hex>"` so the KMS routes through its Solana
+    /// branch (compute_link_solana + solana_acl); the 20-byte `user_address` is then unused.
+    pub solana_user_address: Option<FixedBytes<32>>,
 }
 
 impl UserDecryptionExtraData {
@@ -558,6 +570,16 @@ impl UserDecryptionExtraData {
         Self {
             user_address,
             public_key,
+            solana_user_address: None,
+        }
+    }
+
+    /// Constructor for an RFC-021 (Solana) user decryption carrying the 32-byte Solana pubkey.
+    pub fn new_solana(solana_user_address: FixedBytes<32>, public_key: Bytes) -> Self {
+        Self {
+            user_address: Address::ZERO,
+            public_key,
+            solana_user_address: Some(solana_user_address),
         }
     }
 }
