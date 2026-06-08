@@ -557,25 +557,18 @@ async fn upload_ciphertexts(
             ct_type = "ct128",
             exists = tracing::field::Empty,
         );
-        let exists = match check_ct128_objects_exist(
-            client,
-            &conf.bucket_ct128,
-            &key,
-            &digest_key,
-            &expected_attestation,
-        )
-        .instrument(ct128_check_span.clone())
-        .await
-        {
-            Ok(v) => v,
-            Err(err) => {
-                ct128_check_span
-                    .context()
-                    .span()
-                    .set_status(Status::error(err.to_string()));
-                false // assume no
-            }
-        };
+        let exists = object_check_result(
+            &ct128_check_span,
+            check_ct128_objects_exist(
+                client,
+                &conf.bucket_ct128,
+                &key,
+                &digest_key,
+                &expected_attestation,
+            )
+            .instrument(ct128_check_span.clone())
+            .await,
+        )?;
         ct128_check_span.record("exists", tracing::field::display(exists));
         drop(ct128_check_span);
 
@@ -649,24 +642,12 @@ async fn upload_ciphertexts(
             ct_type = "ct64",
             exists = tracing::field::Empty,
         );
-        let exists = match check_attested_object_exists(
-            client,
-            &conf.bucket_ct64,
-            &key,
-            &expected_attestation,
-        )
-        .instrument(ct64_check_span.clone())
-        .await
-        {
-            Ok(v) => v,
-            Err(err) => {
-                ct64_check_span
-                    .context()
-                    .span()
-                    .set_status(Status::error(err.to_string()));
-                false // assume no
-            }
-        };
+        let exists = object_check_result(
+            &ct64_check_span,
+            check_attested_object_exists(client, &conf.bucket_ct64, &key, &expected_attestation)
+                .instrument(ct64_check_span.clone())
+                .await,
+        )?;
         ct64_check_span.record("exists", tracing::field::display(exists));
         drop(ct64_check_span);
 
@@ -1103,6 +1084,21 @@ async fn check_attested_object_exists(
         Err(err) => {
             error!(error = %err, "Failed to check object existence");
             Err(ExecutionError::S3TransientError(err.to_string()))
+        }
+    }
+}
+
+fn object_check_result(
+    span: &Span,
+    result: Result<bool, ExecutionError>,
+) -> Result<bool, ExecutionError> {
+    match result {
+        Ok(exists) => Ok(exists),
+        Err(err) => {
+            span.context()
+                .span()
+                .set_status(Status::error(err.to_string()));
+            Err(err)
         }
     }
 }
