@@ -7,7 +7,7 @@
 //! transaction's inner instructions, and decodes the `emit_cpi!` self-invocations
 //! into [`SolanaHostEvent`]s. Decoding and database insertion are shared with the
 //! in-process integration path via [`crate::solana_adapter`]; only the transport
-//! (real RPC vs. LiteSVM) differs, so the two stay behaviourally identical.
+//! (real RPC vs. LiteSVM) differs, so the two stay behaviorally identical.
 
 use std::str::FromStr;
 use std::time::Duration;

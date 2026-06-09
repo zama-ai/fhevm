@@ -1033,12 +1033,11 @@ impl TryFrom<InputProofRequestJson> for InputProofRequest {
         // strings are interpreted: Solana hosts carry 32-byte base58 identities,
         // EVM hosts the usual 20-byte 0x-hex addresses.
         if is_solana_host_chain_id(contract_chain_id) {
-            let contract_address = crate::http::utils::solana_address::decode_solana_address(
-                &json.contract_address,
-            )
-            .map_err(|e| {
-                anyhow::anyhow!("Error parsing Solana contractAddress: {:?}", e.message)
-            })?;
+            let contract_address =
+                crate::http::utils::solana_address::decode_solana_address(&json.contract_address)
+                    .map_err(|e| {
+                    anyhow::anyhow!("Error parsing Solana contractAddress: {:?}", e.message)
+                })?;
             let user_address =
                 crate::http::utils::solana_address::decode_solana_address(&json.user_address)
                     .map_err(|e| {
