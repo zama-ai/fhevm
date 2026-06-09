@@ -134,6 +134,38 @@ PY
   done
 fi
 
+echo "==> [4c/5] register Solana host chain in the kms-connector config + recreate kms-worker"
+# The connector's PUBLIC-decrypt ACL check routes by host_chain_kind from KMS_CONNECTOR_HOST_CHAINS
+# (user-decrypt is event-driven and needs no config). Add a Solana entry: chain_kind=solana,
+# solana_host_program_id=zama-host (base58), url=validator over host.docker.internal (bound 0.0.0.0
+# above so the dockerized worker can read the on-chain ACL record). acl_address is a placeholder
+# (ignored for Solana). The env_file is read at container create, so recreate the kms-worker.
+CONNECTOR_ENV="$ROOT/.fhevm/runtime/env/kms-connector.env"
+if [ -f "$CONNECTOR_ENV" ] && ! grep -q "$SID_U64" "$CONNECTOR_ENV"; then
+  python3 - "$CONNECTOR_ENV" "$SID_U64" "$ZAMA_HOST_ID" <<'PY'
+import sys, json, re
+path, sid, zama = sys.argv[1], int(sys.argv[2]), sys.argv[3]
+lines = open(path).read().splitlines(keepends=True)
+out = []
+for ln in lines:
+    if ln.startswith("KMS_CONNECTOR_HOST_CHAINS="):
+        raw = ln.split("=", 1)[1].strip().strip("'\"\n")
+        arr = json.loads(raw)
+        arr.append({"url": "http://host.docker.internal:8899", "chain_id": sid,
+                    "chain_kind": "solana",
+                    "acl_address": "0x0000000000000000000000000000000000000000",
+                    "solana_host_program_id": zama})
+        out.append("KMS_CONNECTOR_HOST_CHAINS='" + json.dumps(arr) + "'\n")
+    else:
+        out.append(ln)
+open(path, "w").write("".join(out))
+print(f"[kms-connector] added Solana host chain {sid} ({zama})")
+PY
+  ( cd "$FHEVM" && bun run solana-recreate-kms-worker.ts )
+else
+  echo "[kms-connector] Solana host chain already present"
+fi
+
 echo "==> [5/5] run Solana host-listener"
 pkill -f solana_host_listener 2>/dev/null || true
 sleep 1
