@@ -30,8 +30,17 @@ COPROCESSOR_SIGNER="$(cast call "$GATEWAY_CONFIG_ADDRESS" 'getCoprocessorSigners
 
 echo "==> [input] REAL ZK proof via js-sdk -> relayer /v2/input-proof -> zama-host secp256k1 bind"
 ( cd "$ROOT/sdk/js-sdk" && [ -d node_modules/ethers ] || npm install ethers --no-audit --no-fund --silent )
-ipost="$(cd "$ROOT/sdk/js-sdk" && node solana-input-client.mjs 2>/dev/null | grep -oE '"jobId":"[^"]+"' | head -1 | cut -d'"' -f4)"
-[ -n "$ipost" ] || fail "input-proof POST failed"
+# The relayer was just restarted with the Solana host chain (clean-e2e step 4b); wait until it
+# accepts input-proof POSTs before submitting (curl returns 0 on any HTTP reply, non-zero only
+# when the connection is refused).
+for _ in $(seq 1 30); do
+  curl -s -m3 -o /dev/null localhost:3000/v2/input-proof -X POST -H 'content-type: application/json' -d '{}' && break
+  sleep 2
+done
+# Capture the client output first (piping node directly into head/grep under pipefail can SIGPIPE).
+iout="$(cd "$ROOT/sdk/js-sdk" && node solana-input-client.mjs 2>/dev/null || true)"
+ipost="$(printf '%s\n' "$iout" | grep -oE '"jobId":"[^"]+"' | head -1 | cut -d'"' -f4 || true)"
+[ -n "$ipost" ] || fail "input-proof POST failed (last client output: $(printf '%s\n' "$iout" | tail -2))"
 for i in $(seq 1 40); do
   ir="$(curl -s -m10 "localhost:3000/v2/input-proof/$ipost")"
   ist="$(echo "$ir" | python3 -c "import sys,json;print(json.load(sys.stdin).get('status',''))" 2>/dev/null)"
@@ -100,10 +109,12 @@ MINT="$(echo "$minit" | grep -oE 'confidential mint  [A-Za-z0-9]+' | awk '{print
 echo "    confidential MINT=$MINT underlying USDC=$UNDER"
 export MINT UNDERLYING_MINT="$UNDER"
 
-# Initialize the confidential token account (wrap draws from it); idempotent.
-lc CONSUME_AMOUNT=1 | grep -qE 'OK initialize_token_account|already initialized' || fail "initialize_token_account"
-lc CONSUME_WRAP=1 WRAP_AMOUNT=1000 | grep -q 'OK wrap_usdc' || fail "wrap_usdc"
-bout="$(lc CONSUME_BURN=1 BURN_BOUND=256)"
+# Wrap USDC into the confidential balance (consume_wrap self-initializes the token account).
+# Capture-then-grep: the live-client exits 0 on success, but piping it straight into grep -q
+# under `set -o pipefail` lets a late SIGPIPE mask the match, so grep the captured output.
+wout="$(lc CONSUME_WRAP=1 WRAP_AMOUNT=1000)" || true
+echo "$wout" | grep -q 'OK wrap_usdc' || fail "wrap_usdc: $(echo "$wout" | tail -3)"
+bout="$(lc CONSUME_BURN=1 BURN_BOUND=256)" || true
 BURNED_ACL="$(echo "$bout" | grep -oE 'burned amount ACL [A-Za-z0-9]+' | awk '{print $4}')"
 BURNED_HANDLE="$(echo "$bout" | grep -oE 'burned handle 0x[0-9a-f]+' | awk '{print $3}')"
 [ -n "$BURNED_HANDLE" ] && [ -n "$BURNED_ACL" ] || fail "confidential_burn: $bout"
@@ -116,8 +127,8 @@ for i in $(seq 1 40); do
 done
 
 # Release the burned amount for public decrypt (owner is inline ACL_ROLE_ALL in the burned ACL).
-lc SEAL_RELEASE_ONLY=1 CONSUME_SEAL=1 TS_ACL="$BURNED_ACL" TS_HANDLE="$BURNED_HANDLE" \
-  | grep -q 'OK request_disclose_amount' || fail "release burned amount"
+relout="$(lc SEAL_RELEASE_ONLY=1 CONSUME_SEAL=1 TS_ACL="$BURNED_ACL" TS_HANDLE="$BURNED_HANDLE")" || true
+echo "$relout" | grep -q 'OK request_disclose_amount' || fail "release burned amount: $(echo "$relout" | tail -3)"
 
 # Public-decrypt the burned handle -> cleartext + KMS PublicDecryptVerification cert.
 cjob="$(curl -s -m15 localhost:3000/v2/public-decrypt -H 'content-type: application/json' \
@@ -142,16 +153,16 @@ CT128="0x$(ctdig "SELECT encode(ciphertext128,'hex') FROM ciphertext_digest WHER
 COPROC_SET_DIGEST="$(cast keccak "$(cast abi-encode 'f(address[])' "[$COPROCESSOR_SIGNER]")")"
 
 # Redeem: commit material + on-chain secp256k1 verify of the KMS cert + SPL vault release.
-lc CONSUME_REDEEM=1 BURNED_ACL="$BURNED_ACL" BURNED_HANDLE="$BURNED_HANDLE" CLEARTEXT="$CLEARTEXT" \
+redout="$(lc CONSUME_REDEEM=1 BURNED_ACL="$BURNED_ACL" BURNED_HANDLE="$BURNED_HANDLE" CLEARTEXT="$CLEARTEXT" \
    KMS_SIG="$KMS_SIG" EXTRA="$CEXTRA" KEY_ID="$KEY_ID" CT64_DIGEST="$CT64" CT128_DIGEST="$CT128" \
-   COPROC_SET_DIGEST="$COPROC_SET_DIGEST" KMS_CTX_ID=1 \
-  | grep -q 'OK redeem_burned_amount_secp' || fail "redeem_burned_amount_secp"
+   COPROC_SET_DIGEST="$COPROC_SET_DIGEST" KMS_CTX_ID=1)" || true
+echo "$redout" | grep -q 'OK redeem_burned_amount_secp' || fail "redeem_burned_amount_secp: $(echo "$redout" | tail -3)"
 echo "    redeem_burned_amount_secp OK -- on-chain secp256k1 KMS-cert verify released $CLEARTEXT USDC base units"
 
 # Disclose: on-chain secp256k1 verify of the same KMS cert + emit the cleartext on-chain.
-lc CONSUME_DISCLOSE=1 TS_ACL="$BURNED_ACL" TS_HANDLE="$BURNED_HANDLE" CLEARTEXT="$CLEARTEXT" \
-   KMS_SIG="$KMS_SIG" EXTRA="$CEXTRA" KMS_CTX_ID=1 \
-  | grep -q 'OK disclose_amount_secp' || fail "disclose_amount_secp"
+disout="$(lc CONSUME_DISCLOSE=1 TS_ACL="$BURNED_ACL" TS_HANDLE="$BURNED_HANDLE" CLEARTEXT="$CLEARTEXT" \
+   KMS_SIG="$KMS_SIG" EXTRA="$CEXTRA" KMS_CTX_ID=1)" || true
+echo "$disout" | grep -q 'OK disclose_amount_secp' || fail "disclose_amount_secp: $(echo "$disout" | tail -3)"
 echo "    disclose_amount_secp OK -- on-chain secp256k1 KMS-cert verify emitted cleartext $CLEARTEXT"
 
 echo "==> FULL VERTICAL GREEN: input(ZK+secp bind) -> compute -> public-decrypt($VALUE) + user-decrypt($VALUE) -> consume redeem($CLEARTEXT)+disclose($CLEARTEXT) [secp256k1 KMS cert]"

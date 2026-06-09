@@ -526,6 +526,29 @@ fn consume_wrap(
     let (token_evt, _) =
         Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &confidential_token::ID);
 
+    // The confidential token account (balance ACL at sequence 0) must exist before wrap draws
+    // from it; create it (idempotent) if missing.
+    if token.rpc().get_account(&token_account).is_err() {
+        let init_sig = token
+            .request()
+            .accounts(confidential_token::accounts::InitializeTokenAccount {
+                owner,
+                mint,
+                compute_signer,
+                token_account,
+                acl_record: current_balance_acl,
+                zama_event_authority: zama_evt,
+                zama_program: zama_host::ID,
+                host_config,
+                system_program: system_program::ID,
+                event_authority: token_evt,
+                program: confidential_token::ID,
+            })
+            .args(confidential_token::instruction::InitializeTokenAccount { initial_balance: 0 })
+            .send()?;
+        println!("OK initialize_token_account: {init_sig}");
+    }
+
     // The vault's USDC ATA must exist before wrap; create it (idempotent) if missing.
     if token.rpc().get_account(&vault_usdc).is_err() {
         let ata_ix = Instruction {
