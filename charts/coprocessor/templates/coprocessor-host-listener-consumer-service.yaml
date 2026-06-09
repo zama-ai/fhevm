@@ -1,0 +1,27 @@
+{{- range $i, $chain := .Values.chains }}
+{{- if (($chain.hostListenerConsumer).enabled) }}
+{{- $useLegacyName := $chain.hostListenerConsumer.useLegacyName | default false -}}
+{{- $deploymentName := ternary (printf "%s-host-listener-consumer" $.Release.Name) (printf "%s-host-listener-consumer-%s" $.Release.Name $chain.name) $useLegacyName -}}
+{{- $appLabel := ternary "coprocessor-host-listener-consumer" (printf "coprocessor-host-listener-consumer-%s" $chain.name) $useLegacyName -}}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: {{ $appLabel }}
+    app.kubernetes.io/name: {{ $deploymentName }}
+  name: {{ $deploymentName }}
+spec:
+  ports:
+    - name: metrics
+      port: {{ $.Values.hostListenerConsumerShared.ports.metrics }}
+      targetPort: metrics
+    - name: healthcheck
+      port: {{ $.Values.hostListenerConsumerShared.ports.healthcheck }}
+      targetPort: healthcheck
+  selector:
+    app: {{ $appLabel }}
+    app.kubernetes.io/name: {{ $deploymentName }}
+  type: ClusterIP
+{{- end }}
+{{- end }}

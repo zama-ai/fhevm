@@ -52,16 +52,22 @@ export {
 } from './fetchVerifiedInputProof.js';
 
 export {
+  type FetchEncryptedValuesParameters,
+  type FetchEncryptedValuesReturnType,
+  fetchEncryptedValues,
+} from './fetchEncryptedValues.js';
+
+export {
   type VerifyZkProofCoprocessorSignaturesParameters,
   verifyZkProofCoprocessorSignatures,
 } from './verifyZkProofCoprocessorSignatures.js';
 
 export {
-  type FetchSelfKmsSignedcryptedSharesParameters,
-  type FetchDelegatedKmsSignedcryptedSharesParameters,
-  type FetchKmsSignedcryptedSharesReturnType,
-  fetchKmsSignedcryptedShares,
-} from './fetchKmsSignedcryptedShares.js';
+  type FetchSelfKmsSigncryptedSharesParameters,
+  type FetchDelegatedKmsSigncryptedSharesParameters,
+  type FetchKmsSigncryptedSharesReturnType,
+  fetchKmsSigncryptedShares,
+} from './fetchKmsSigncryptedShares.js';
 
 export {
   type VerifyHandlesCoprocessorSignaturesParameters,

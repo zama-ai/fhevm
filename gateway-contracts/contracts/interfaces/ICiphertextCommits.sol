@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import "../shared/Structs.sol";
+import { CiphertextMaterial, SnsCiphertextMaterial } from "../shared/Structs.sol";
 
 /**
  * @title Interface for the CiphertextCommits contract.

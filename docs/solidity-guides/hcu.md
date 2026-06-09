@@ -8,21 +8,35 @@ FHE operations in FHEVM are computationally intensive compared to standard Ether
 
 To represent this complexity, we introduced the **Homomorphic Complexity Unit ("HCU")**. In Solidity, each FHE operation consumes a set amount of HCU based on the operational computational complexity for hardware computation. Since FHE transactions are symbolic, this helps preventing resource exhaustion outside of the blockchain.
 
-To do so, there is a contract named `HCULimit`, which monitors HCU consumption for each transaction and enforces two key limits:
+To do so, there is a contract named `HCULimit`, which monitors HCU consumption and enforces three key limits:
 
-- **Sequential homomorphic operations depth limit per transaction**: Controls HCU usage for operations that must be processed in order.
-- **Global homomorphic operations complexity per transaction**: Controls HCU usage for operations that can be processed in parallel.
+- **Sequential homomorphic operations depth limit per transaction**: Controls HCU usage for operations that must be processed in order. Exceeding it reverts with `HCUTransactionDepthLimitExceeded`.
+- **Global homomorphic operations complexity per transaction**: Controls HCU usage for operations that can be processed in parallel. Exceeding it reverts with `HCUTransactionLimitExceeded`.
+- **Global homomorphic operations complexity per block**: Caps the total HCU consumed across all transactions from non-whitelisted callers in the same block. Exceeding it reverts with `HCUBlockLimitExceeded`.
 
-If either limit is exceeded, the transaction will revert.
+If any of these limits is exceeded, the transaction will revert.
 
 ## HCU limit
 
-The current devnet has an HCU limit of **20,000,000** per transaction and an HCU depth limit of **5,000,000** per transaction. If either HCU limit is exceeded, the transaction will revert.
+The current devnet has an HCU limit of **20,000,000** per transaction and an HCU depth limit of **5,000,000** per transaction. The global per-block HCU cap is set on-chain by governance (via `HCULimit.setHCUPerBlock`) and is always greater than or equal to the per-transaction limit; you can read its current value from the deployed `HCULimit` contract (`getGlobalHCUCapPerBlock()`), and the current block's running total via `getBlockMeter()`. If any HCU limit is exceeded, the transaction will revert.
 
-To resolve this, you must do one of the following:
+To resolve a per-transaction revert, you must do one of the following:
 
 - Refactor your code to reduce the number of FHE operations in your transaction.
 - Split your FHE operations across multiple independent transactions.
+
+### Block-level limit and transaction estimation
+
+Unlike the per-transaction limits, the per-block cap depends on the **other transactions included in the same block**, not just on your own. The contract keeps a counter (`usedBlockHCU`) that resets every new block and aggregates HCU spent by every transaction from a non-whitelisted caller in that block. Here, the caller is the dApp contract address passed by `FHEVMExecutor`, not the user's EOA. As a result:
+
+- A transaction that estimates successfully (e.g. via `eth_estimateGas` or a static call) can still revert with `HCUBlockLimitExceeded` at execution time if other FHE-heavy transactions are mined in the same block ahead of it.
+- This revert is **non-deterministic from the sender's perspective**: it is a function of block-inclusion ordering, not of the transaction's own payload.
+
+If you hit `HCUBlockLimitExceeded`, options include:
+
+- **Retry** the transaction in a later block, optionally with adjusted gas/priority so it is included when block HCU usage is lower.
+- **Reduce the HCU footprint** of the transaction so it is more likely to fit alongside others (same techniques as for per-transaction reverts).
+- **Request a whitelist entry** (`addToBlockHCUWhitelist`) for caller contracts that have a justified need to bypass the block cap; this is governed on-chain and is not available to arbitrary callers.
 
 ## HCU costs for common operations
 
@@ -222,4 +236,3 @@ When using `eaddress` (internally represented as `euint160`), the HCU costs for 
 | ---------------- | ------------- |
 | `cast`           | 32            |
 | `trivialEncrypt` | 32            |
-| `randBounded`    | 23,000-30,000 |

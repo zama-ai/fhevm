@@ -18,7 +18,7 @@ jobs:
     name: gateway-contracts-integrity-checks/check-changes
     permissions:
       contents: 'read' # Required to checkout repository code
-    runs-on: ubuntu-latest
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
     outputs:
       changes-gw-contracts: ${{ steps.filter.outputs.gw-contracts }}
     steps:
@@ -40,7 +40,7 @@ jobs:
     if: ${{ needs.check-changes.outputs.changes-gw-contracts == 'true' }}
     permissions:
       contents: 'read' # Required to checkout repository code
-    runs-on: ubuntu-latest
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
     steps:
       - name: Checkout project
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2

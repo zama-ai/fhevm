@@ -48,9 +48,9 @@ where
     ) -> Result<KmsGrpcRequest, ProcessingError> {
         let parsed_extra_data = parse_extra_data(&prep_keygen_request.extraData)
             .map_err(ProcessingError::Irrecoverable)?;
-        self.context_manager
-            .validate_context(parsed_extra_data.context_id)
-            .await?;
+        if let Some(context_id) = parsed_extra_data.context_id {
+            self.context_manager.validate_context(context_id).await?;
+        }
         // TODO: validation of epoch_id during RFC-005 implementation
 
         Ok(KmsGrpcRequest::PrepKeygen(KeyGenPreprocRequest {
@@ -58,7 +58,7 @@ where
             domain: Some(self.domain.clone()),
             params: prep_keygen_request.paramsType as i32,
             epoch_id: parsed_extra_data.epoch_id.map(u256_to_request_id),
-            context_id: Some(u256_to_request_id(parsed_extra_data.context_id)),
+            context_id: parsed_extra_data.context_id.map(u256_to_request_id),
             extra_data: prep_keygen_request.extraData.to_vec(),
             // Used to generate other types of key, but not planned to be supported by the Gateway
             keyset_config: Some(UNCOMPRESSED_KEY_SET_CONFIG),
@@ -71,9 +71,9 @@ where
     ) -> Result<KmsGrpcRequest, ProcessingError> {
         let parsed_extra_data =
             parse_extra_data(&keygen_request.extraData).map_err(ProcessingError::Irrecoverable)?;
-        self.context_manager
-            .validate_context(parsed_extra_data.context_id)
-            .await?;
+        if let Some(context_id) = parsed_extra_data.context_id {
+            self.context_manager.validate_context(context_id).await?;
+        }
         // TODO: validation of epoch_id during RFC-005 implementation
 
         Ok(KmsGrpcRequest::Keygen(KeyGenRequest {
@@ -82,7 +82,7 @@ where
             domain: Some(self.domain.clone()),
             params: None,
             epoch_id: parsed_extra_data.epoch_id.map(u256_to_request_id),
-            context_id: Some(u256_to_request_id(parsed_extra_data.context_id)),
+            context_id: parsed_extra_data.context_id.map(u256_to_request_id),
             extra_data: keygen_request.extraData.to_vec(),
             // Used to generate other types of key, but not planned to be supported by the Gateway
             keyset_config: Some(UNCOMPRESSED_KEY_SET_CONFIG),
@@ -96,9 +96,9 @@ where
     ) -> Result<KmsGrpcRequest, ProcessingError> {
         let parsed_extra_data =
             parse_extra_data(&crsgen_request.extraData).map_err(ProcessingError::Irrecoverable)?;
-        self.context_manager
-            .validate_context(parsed_extra_data.context_id)
-            .await?;
+        if let Some(context_id) = parsed_extra_data.context_id {
+            self.context_manager.validate_context(context_id).await?;
+        }
         // TODO: validation of epoch_id during RFC-005 implementation
 
         let max_num_bits = crsgen_request
@@ -119,7 +119,7 @@ where
             extra_data: crsgen_request.extraData.to_vec(),
             max_num_bits,
             epoch_id: parsed_extra_data.epoch_id.map(u256_to_request_id),
-            context_id: Some(u256_to_request_id(parsed_extra_data.context_id)),
+            context_id: parsed_extra_data.context_id.map(u256_to_request_id),
         }))
     }
 }

@@ -1,3 +1,12 @@
+import { describe, it, expect, beforeAll } from 'vitest';
+import { createFhevmBaseClient, setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
+import { createPublicClient, http } from 'viem';
+import { sepolia as viemSepolia } from 'viem/chains';
+import { getViemTestConfig, type FheTestViemConfig } from './setup.js';
+import { clearKeyCache, readKeyFromCache, writeKeyToCache } from '../keyCache.js';
+import { isCleartext } from '../setupCommon.js';
+
+////////////////////////////////////////////////////////////////////////////////
 //
 // Sepolia Testnet:
 // ----------------
@@ -11,14 +20,9 @@
 // ----------------
 // CHAIN=localhostFhevm npx vitest run --config test/fheTest/vitest.config.ts viem/clientBase.test.ts
 //
-import { describe, it, expect, beforeAll } from 'vitest';
-import { createFhevmBaseClient, setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
-import { createPublicClient, http } from 'viem';
-import { sepolia as viemSepolia } from 'viem/chains';
-import { getViemTestConfig, type FheTestViemConfig } from './setup.js';
-import { clearKeyCache, readKeyFromCache, writeKeyToCache } from '../keyCache.js';
+////////////////////////////////////////////////////////////////////////////////
 
-describe('createFhevmBaseClient', () => {
+describe.runIf(!isCleartext(getViemTestConfig().chainName))('createFhevmBaseClient', () => {
   let config: FheTestViemConfig;
 
   beforeAll(() => {
@@ -43,7 +47,7 @@ describe('createFhevmBaseClient', () => {
     });
     expect(client).toBeDefined();
     expect(client.chain).toBe(config.fhevmChain);
-    expect(client.chain.id).toBe(11_155_111);
+    expect(client.chain.id).toBe(config.fhevmChain.id);
     expect(client.client).toBe(config.publicClient);
   });
 
@@ -56,7 +60,7 @@ describe('createFhevmBaseClient', () => {
     expect(typeof client.readPublicValues).toBe('function');
     expect(typeof client.readPublicValuesWithSignatures).toBe('function');
     expect(typeof client.signDecryptionPermit).toBe('function');
-    expect(typeof client.parseTransportKeypair).toBe('function');
+    expect(typeof client.parseTransportKeyPair).toBe('function');
     expect(typeof client.fetchFheEncryptionKeyBytes).toBe('function');
   });
 
@@ -100,7 +104,7 @@ describe('createFhevmBaseClient', () => {
       publicClient: customPublicClient,
     });
     expect(client).toBeDefined();
-    expect(client.chain.id).toBe(11_155_111);
+    expect(client.chain.id).toBe(config.fhevmChain.id);
     expect(client.client).toBe(customPublicClient);
   });
 

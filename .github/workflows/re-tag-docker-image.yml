@@ -21,7 +21,7 @@ permissions: {}
 jobs:
   prepare-image-tags:
     name: prepare-image-tags
-    runs-on: ubuntu-latest
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
     permissions:
       actions: 'read' # Required to read workflow run information
       contents: 'read' # Required to checkout repository code
@@ -60,23 +60,28 @@ jobs:
       actions: 'read' # Required to read workflow run information
       packages: 'write' # Required to publish Docker images
       id-token: 'write' # Required for OIDC authentication
-    runs-on: ubuntu-latest
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
     steps:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@d70bba72b1f3fd22344832f00baa16ece964efeb # v3.3.0
 
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        uses: zama-ai/ci-templates/.github/actions/retry@542103e14b9ae6a9aea27787b8724b3b35bb3918 # v1.0.9
+        env:
+          GHCR_USERNAME: ${{ github.actor }}
+          GHCR_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          command: |
+            echo "Logging into ghcr.io..."
+            echo "$GHCR_PASSWORD" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
 
       - name: Re-tag docker image
+        uses: zama-ai/ci-templates/.github/actions/retry@542103e14b9ae6a9aea27787b8724b3b35bb3918 # v1.0.9
         env:
           IMAGE_NAME: ${{ inputs.image-name }}
           PREVIOUS_TAG: ${{ needs.prepare-image-tags.outputs.previous-tag }}
           NEW_TAG: ${{ needs.prepare-image-tags.outputs.new-tag }}
-        run: |
-          echo "Creating new tag $NEW_TAG for existing image $IMAGE_NAME:$PREVIOUS_TAG"
-          docker buildx imagetools create "ghcr.io/zama-ai/$IMAGE_NAME:$PREVIOUS_TAG" --tag "ghcr.io/zama-ai/$IMAGE_NAME:$NEW_TAG"
+        with:
+          command: |
+            echo "Creating new tag $NEW_TAG for existing image $IMAGE_NAME:$PREVIOUS_TAG"
+            docker buildx imagetools create "ghcr.io/zama-ai/$IMAGE_NAME:$PREVIOUS_TAG" --tag "ghcr.io/zama-ai/$IMAGE_NAME:$NEW_TAG"

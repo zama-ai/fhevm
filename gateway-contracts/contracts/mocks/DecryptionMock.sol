@@ -13,6 +13,20 @@ contract DecryptionMock {
         uint256 durationDays;
     }
 
+    struct RequestValiditySeconds {
+        uint256 startTimestamp;
+        uint256 durationSeconds;
+    }
+
+    struct UserDecryptionRequestPayload {
+        address userAddress;
+        bytes publicKey;
+        address[] allowedContracts;
+        RequestValiditySeconds requestValidity;
+        bytes extraData;
+        bytes signature;
+    }
+
     struct DelegationAccounts {
         address delegatorAddress;
         address delegateAddress;
@@ -80,6 +94,13 @@ contract DecryptionMock {
         address userAddress,
         bytes publicKey,
         bytes extraData
+    );
+
+    event UserDecryptionRequest(
+        uint256 indexed decryptionId,
+        SnsCiphertextMaterial[] snsCtMaterials,
+        HandleEntry[] handles,
+        UserDecryptionRequestPayload payload
     );
 
     event UserDecryptionResponse(

@@ -14,6 +14,11 @@ on:
         description: "The github.event.before sha of the caller workflow"
         type: string
         required: true
+      path-filter-base-commit:
+        description: "Optional commit SHA used only as the dorny/paths-filter base"
+        type: string
+        default: ""
+        required: false
       docker-image:
         description: "The name of the docker image of the service"
         type: string
@@ -44,7 +49,7 @@ jobs:
       actions: 'read' # Required to read workflow run information
       contents: 'read' # Required to checkout repository code
       pull-requests: 'read' # Required to read pull request information
-    runs-on: ubuntu-latest
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
     outputs:
       changes: ${{ steps.set-changes-output.outputs.changes }}
       base-commit: ${{ steps.set-base-commit.outputs.base-commit }}
@@ -60,11 +65,14 @@ jobs:
 
       - name: Login to GitHub Container Registry (push only)
         if: inputs.caller-workflow-event-name == 'push'
-        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        uses: zama-ai/ci-templates/.github/actions/retry@542103e14b9ae6a9aea27787b8724b3b35bb3918 # v1.0.9
+        env:
+          GHCR_USERNAME: ${{ github.actor }}
+          GHCR_PASSWORD: ${{ secrets.GHCR_READ_TOKEN }}
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GHCR_READ_TOKEN }}
+          command: |
+            echo "Logging into ghcr.io..."
+            echo "$GHCR_PASSWORD" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
 
       - name: Find latest commit with existing image (push only)
         id: find-latest-image-commit
@@ -110,7 +118,7 @@ jobs:
       - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
         id: filter
         with:
-          base: ${{ steps.set-base-commit.outputs.base-commit }}
+          base: ${{ inputs.path-filter-base-commit || steps.set-base-commit.outputs.base-commit }}
           filters: ${{ inputs.filters }}
 
       - id: set-changes-output
