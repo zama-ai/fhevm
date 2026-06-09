@@ -792,6 +792,9 @@ async fn assert_ciphertext_uploaded(
     let ciphertext_key = crate::aws_upload::s3_ciphertext_key(handle, COPROCESSOR_CONTEXT_ID);
     use crate::S3_FORMAT_VERSION_V1;
 
+    let (ciphertext_digest, sns_ciphertext_digest, s3_format_version) =
+        wait_for_ciphertext_digest_upload_state(&test_env.pool, handle, 100).await?;
+
     s3_utils::assert_key_exists(
         test_env.s3_client.to_owned(),
         bucket,
@@ -817,8 +820,6 @@ async fn assert_ciphertext_uploaded(
     let attestation: CiphertextAttestation = serde_json::from_str(attestation_json)?;
     attestation.verify(B256::from_slice(handle), COPROCESSOR_CONTEXT_ID)?;
 
-    let (ciphertext_digest, sns_ciphertext_digest, s3_format_version) =
-        wait_for_ciphertext_digest_upload_state(&test_env.pool, handle, 100).await?;
     let signer = PrivateKeySigner::from_str(&hex::encode(&test_env.private_key))?;
 
     assert_eq!(
@@ -869,11 +870,21 @@ async fn assert_ciphertext_uploaded(
             "ciphertext128 object should include Ct-Format metadata"
         );
 
+        let digest_key = hex::encode(&sns_ciphertext_digest);
+        s3_utils::assert_key_exists(
+            test_env.s3_client.to_owned(),
+            bucket,
+            &digest_key,
+            expected_ct_len,
+            100,
+        )
+        .await;
+
         let digest_output = test_env
             .s3_client
             .head_object()
             .bucket(bucket)
-            .key(hex::encode(&sns_ciphertext_digest))
+            .key(digest_key)
             .send()
             .await
             .expect("head ciphertext128 digest object");
