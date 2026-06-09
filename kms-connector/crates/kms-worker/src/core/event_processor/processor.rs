@@ -166,10 +166,17 @@ impl<GP: Provider, HP: Provider, C: ContextManager> DbEventProcessor<GP, HP, C> 
                     .await
             }
             ProtocolEventKind::UserDecryptionSolana(req) => {
-                // RFC-021: the ciphertext-handle ACL is enforced authoritatively by the KMS
-                // (solana_acl witnesses) and the user's ed25519 authorization was verified by the
-                // relayer, so there is no EVM calldata ACL pre-check here (mirrors the relayer,
-                // which skips the eth_call ACL for Solana hosts).
+                // RFC-021: authorize against the handle's on-chain Solana ACL record, read directly
+                // from the validator (the trusted source) — the requesting ed25519 user must hold
+                // the USE role on every handle. The relayer's ed25519 signMessage proves request
+                // ownership, not decrypt permission, and the gateway `extraData` witness is
+                // attacker-controlled, so the ACL is enforced here (RPC-verified), not deferred.
+                self.decryption_processor
+                    .check_ciphertexts_allowed_for_solana_user_decryption(
+                        &req.snsCtMaterials,
+                        req.userAddress.0,
+                    )
+                    .await?;
                 self.decryption_processor
                     .prepare_decryption_request(
                         req.decryptionId,

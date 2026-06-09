@@ -394,6 +394,24 @@ impl SolanaAclVerifier {
         self.verify_subject_role(record, overflow_permissions, subject, ACL_ROLE_USE)
     }
 
+    /// Verifies `subject` holds the USE role for `handle` on its on-chain ACL record, without the
+    /// `allowed_acl_domain_keys` scoping that [`Self::verify_user_decrypt`] applies. The Solana
+    /// user-decrypt request does not yet carry the user's authorized domains (the EVM
+    /// `allowedContracts` analog), so this enforces the essential authorization — that the
+    /// requester was granted access to the handle — which closes the "decrypt any handle" gap.
+    /// Restricting to the user's authorized domains is a follow-up, tied to carrying and
+    /// ed25519-signing those domains in the Solana user-decrypt request.
+    pub fn verify_user_decrypt_subject(
+        &self,
+        record: &AclRecordWitness,
+        overflow_permissions: &[AclPermissionWitness],
+        handle: HandleBytes,
+        subject: SolanaPubkeyBytes,
+    ) -> Result<(), SolanaAclVerificationError> {
+        self.verify_acl_record(record, handle)?;
+        self.verify_subject_role(record, overflow_permissions, subject, ACL_ROLE_USE)
+    }
+
     pub fn verify_user_decrypt_with_material(
         &self,
         record: &AclRecordWitness,

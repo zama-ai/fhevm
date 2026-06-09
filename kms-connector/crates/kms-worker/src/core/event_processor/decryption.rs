@@ -285,6 +285,72 @@ where
         Ok(())
     }
 
+    /// ACL check for Solana user decryption: every handle must grant `subject` (the requesting
+    /// ed25519 user) the USE role on its on-chain `zama-host` ACL record, read directly from the
+    /// validator and verified with the program-bound [`SolanaAclVerifier`]. The relayer's ed25519
+    /// `signMessage` proves request ownership, not decrypt permission, and the gateway `extraData`
+    /// witness is attacker-controlled, so authorization must be enforced here. Fail-closed: a
+    /// non-Solana handle, missing ACL config, or an absent grant rejects the whole request.
+    pub async fn check_ciphertexts_allowed_for_solana_user_decryption(
+        &self,
+        sns_ciphertexts: &[SnsCiphertextMaterial],
+        subject: SolanaPubkeyBytes,
+    ) -> Result<(), ProcessingError> {
+        info!(
+            "Starting Solana user-decrypt ACL check for {} handles...",
+            sns_ciphertexts.len()
+        );
+        for ct in sns_ciphertexts {
+            let ct_chain_id = extract_chain_id_from_handle(ct.ctHandle.as_slice())
+                .map_err(ProcessingError::Irrecoverable)?;
+            if self.host_chain_kind(ct_chain_id) != HostChainKind::Solana {
+                return Err(ProcessingError::Irrecoverable(anyhow!(
+                    "UserDecryptionSolana handle {} is not on a Solana host chain ({ct_chain_id})",
+                    hex::encode(ct.ctHandle)
+                )));
+            }
+            self.verify_solana_user_decrypt_allowed(ct_chain_id, ct.ctHandle.0, subject)
+                .await?;
+        }
+        info!(
+            "Solana user-decrypt ACL check passed for {} handles!",
+            sns_ciphertexts.len()
+        );
+        Ok(())
+    }
+
+    /// Authorizes a Solana user decryption by reading the handle's `zama-host` ACL record directly
+    /// from the validator (trusted) and verifying it grants `subject` the USE role with the
+    /// program-bound [`SolanaAclVerifier`] — the RPC-verified authorization the gateway `extraData`
+    /// cannot supply, mirroring [`Self::verify_solana_public_decrypt_allowed`].
+    async fn verify_solana_user_decrypt_allowed(
+        &self,
+        chain_id: u64,
+        handle: SolanaPubkeyBytes,
+        subject: SolanaPubkeyBytes,
+    ) -> Result<(), ProcessingError> {
+        let cfg = self.solana_acl.get(&chain_id).ok_or_else(|| {
+            ProcessingError::Irrecoverable(anyhow!(
+                "No Solana ACL config (rpc/program id) for host chain {chain_id}"
+            ))
+        })?;
+        let (account_key, owner, data) = Self::fetch_solana_acl_record(cfg, handle)
+            .await
+            .map_err(ProcessingError::Recoverable)?;
+        let record = decode_acl_record_witness(account_key, owner, &data)
+            .map_err(|e| ProcessingError::Recoverable(anyhow!("decode Solana ACL record: {e}")))?;
+        cfg.verifier
+            .verify_user_decrypt_subject(&record, &[], handle, subject)
+            .map_err(|e| {
+                ProcessingError::Recoverable(anyhow!(
+                    "user {} is not allowed to user-decrypt {} on Solana: {e}",
+                    hex::encode(subject),
+                    hex::encode(handle)
+                ))
+            })?;
+        Ok(())
+    }
+
     /// Fetches the canonical `zama-host` ACL record for `handle` via `getProgramAccounts`,
     /// filtering on the record's `handle` field (offset 8, after the 8-byte Anchor
     /// discriminator). Returns (account key, owner, raw account data).
