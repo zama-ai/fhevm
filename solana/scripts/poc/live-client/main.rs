@@ -334,6 +334,9 @@ fn consume_seal(
             requester: payer.pubkey(),
             mint,
             amount_acl_record: ts_acl,
+            // The disclosable amount (e.g. a confidential_burn burned amount) grants the owner
+            // ACL_ROLE_ALL inline, so the requester is found inline — assert_record_subject_role
+            // requires the overflow permission witness to be absent in that case.
             authority_permission_record: None,
             deny_subject_record: None,
             zama_event_authority: zama_evt,

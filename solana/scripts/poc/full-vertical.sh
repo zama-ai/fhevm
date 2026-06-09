@@ -21,6 +21,12 @@ LC="$ROOT/solana/scripts/poc/live-client/target/debug/poc-live-client"
 SID=9223372036854788153
 CONTRACT=0x7d6c42046bfdeae9834fa3e94370d5fcb819025ce76ec90e99eb057dc54f2c9e
 USER=0x1f6f8fbf847ad9e4ebad6dcabd9529035a622d6ba245ef25fbd6e17e850f6e36
+RPC=http://127.0.0.1:8899
+GW_RPC="${GW_RPC:-http://127.0.0.1:8546}"
+# Live coprocessor signer set (ProtocolConfig-mirrored) for the consume material commitment.
+# shellcheck disable=SC1091
+source "$ROOT/.fhevm/runtime/addresses/gateway/.env.gateway"
+COPROCESSOR_SIGNER="$(cast call "$GATEWAY_CONFIG_ADDRESS" 'getCoprocessorSigners()(address[])' --rpc-url "$GW_RPC" | tr -d '[]' | tr ',' '\n' | head -1 | tr -d ' ')"
 
 echo "==> [input] REAL ZK proof via js-sdk -> relayer /v2/input-proof -> zama-host secp256k1 bind"
 ( cd "$ROOT/sdk/js-sdk" && [ -d node_modules/ethers ] || npm install ethers --no-audit --no-fund --silent )
@@ -77,4 +83,75 @@ echo "==> [user-decrypt] relayer /v2/user-decrypt (ed25519 auth) + de-signcrypt"
   || fail "user-decrypt test failed"
 echo "    user-decrypt cleartext=$VALUE OK"
 
-echo "==> FULL DECRYPT VERTICAL GREEN: compute -> public-decrypt($VALUE) + user-decrypt($VALUE)"
+echo "==> [consume] confidential mint + USDC; wrap -> burn -> release -> public-decrypt -> redeem(secp) + disclose(secp)"
+LCDIR="$ROOT/solana/scripts/poc/live-client"
+lc() { ( cd "$LCDIR" && env "$@" ./target/debug/poc-live-client 2>&1 ); }
+ctdig() { docker exec coprocessor-and-kms-db psql -U postgres -d coprocessor -tAc "$1" 2>/dev/null | tr -d '[:space:]'; }
+
+# Underlying SPL USDC mint (payer is mint authority) + provision the owner.
+UNDER="$(spl-token create-token --decimals 9 -u "$RPC" 2>/dev/null | grep -oiE 'creating token [A-Za-z0-9]+' | awk '{print $3}')"
+[ -n "$UNDER" ] || fail "create underlying USDC mint"
+spl-token create-account "$UNDER" -u "$RPC" >/dev/null 2>&1 || true
+spl-token mint "$UNDER" 1000000 -u "$RPC" >/dev/null 2>&1 || fail "mint USDC"
+# Confidential mint (live-client default init reads UNDERLYING_MINT).
+minit="$(lc UNDERLYING_MINT="$UNDER")"
+MINT="$(echo "$minit" | grep -oE 'confidential mint  [A-Za-z0-9]+' | awk '{print $3}')"
+[ -n "$MINT" ] || fail "init confidential mint: $minit"
+echo "    confidential MINT=$MINT underlying USDC=$UNDER"
+export MINT UNDERLYING_MINT="$UNDER"
+
+# Initialize the confidential token account (wrap draws from it); idempotent.
+lc CONSUME_AMOUNT=1 | grep -qE 'OK initialize_token_account|already initialized' || fail "initialize_token_account"
+lc CONSUME_WRAP=1 WRAP_AMOUNT=1000 | grep -q 'OK wrap_usdc' || fail "wrap_usdc"
+bout="$(lc CONSUME_BURN=1 BURN_BOUND=256)"
+BURNED_ACL="$(echo "$bout" | grep -oE 'burned amount ACL [A-Za-z0-9]+' | awk '{print $4}')"
+BURNED_HANDLE="$(echo "$bout" | grep -oE 'burned handle 0x[0-9a-f]+' | awk '{print $3}')"
+[ -n "$BURNED_HANDLE" ] && [ -n "$BURNED_ACL" ] || fail "confidential_burn: $bout"
+echo "    burned handle=$BURNED_HANDLE  acl=$BURNED_ACL"
+
+BHH="${BURNED_HANDLE#0x}"
+for i in $(seq 1 40); do
+  [ "$(ctdig "SELECT ciphertext IS NOT NULL, ciphertext128 IS NOT NULL FROM ciphertext_digest WHERE handle=decode('$BHH','hex')")" = "t|t" ] && break
+  [ "$i" = 40 ] && fail "burned-handle SNS commit timed out"; sleep 6
+done
+
+# Release the burned amount for public decrypt (owner is inline ACL_ROLE_ALL in the burned ACL).
+lc SEAL_RELEASE_ONLY=1 CONSUME_SEAL=1 TS_ACL="$BURNED_ACL" TS_HANDLE="$BURNED_HANDLE" \
+  | grep -q 'OK request_disclose_amount' || fail "release burned amount"
+
+# Public-decrypt the burned handle -> cleartext + KMS PublicDecryptVerification cert.
+cjob="$(curl -s -m15 localhost:3000/v2/public-decrypt -H 'content-type: application/json' \
+  -d "{\"ciphertextHandles\":[\"$BURNED_HANDLE\"],\"extraData\":\"$EXTRA\"}" \
+  | python3 -c "import sys,json;print(json.load(sys.stdin)['result']['jobId'])")"
+for i in $(seq 1 50); do
+  cr="$(curl -s -m10 "localhost:3000/v2/public-decrypt/$cjob")"
+  cst="$(echo "$cr" | python3 -c "import sys,json;print(json.load(sys.stdin).get('status',''))" 2>/dev/null)"
+  [ "$cst" = succeeded ] && break
+  [ "$cst" = failed ] && fail "burned public-decrypt failed: $cr"
+  [ "$i" = 50 ] && fail "burned public-decrypt timed out"; sleep 3
+done
+CLEARTEXT="$(echo "$cr" | python3 -c "import sys,json;print(int(json.load(sys.stdin)['result']['decryptedValue'],16))")"
+KMS_SIG="0x$(echo "$cr" | python3 -c "import sys,json;print(json.load(sys.stdin)['result']['signatures'][0])")"
+CEXTRA="$(echo "$cr" | python3 -c "import sys,json;print(json.load(sys.stdin)['result'].get('extraData','$EXTRA'))")"
+echo "    burned amount cleartext=$CLEARTEXT (KMS PublicDecryptVerification cert)"
+
+# Real material digests for commit_handle_material (ProtocolConfig-mirrored coprocessor set).
+KEY_ID="0x$(ctdig "SELECT encode(key_id_gw,'hex') FROM ciphertext_digest WHERE handle=decode('$BHH','hex')")"
+CT64="0x$(ctdig "SELECT encode(ciphertext,'hex') FROM ciphertext_digest WHERE handle=decode('$BHH','hex')")"
+CT128="0x$(ctdig "SELECT encode(ciphertext128,'hex') FROM ciphertext_digest WHERE handle=decode('$BHH','hex')")"
+COPROC_SET_DIGEST="$(cast keccak "$(cast abi-encode 'f(address[])' "[$COPROCESSOR_SIGNER]")")"
+
+# Redeem: commit material + on-chain secp256k1 verify of the KMS cert + SPL vault release.
+lc CONSUME_REDEEM=1 BURNED_ACL="$BURNED_ACL" BURNED_HANDLE="$BURNED_HANDLE" CLEARTEXT="$CLEARTEXT" \
+   KMS_SIG="$KMS_SIG" EXTRA="$CEXTRA" KEY_ID="$KEY_ID" CT64_DIGEST="$CT64" CT128_DIGEST="$CT128" \
+   COPROC_SET_DIGEST="$COPROC_SET_DIGEST" KMS_CTX_ID=1 \
+  | grep -q 'OK redeem_burned_amount_secp' || fail "redeem_burned_amount_secp"
+echo "    redeem_burned_amount_secp OK -- on-chain secp256k1 KMS-cert verify released $CLEARTEXT USDC base units"
+
+# Disclose: on-chain secp256k1 verify of the same KMS cert + emit the cleartext on-chain.
+lc CONSUME_DISCLOSE=1 TS_ACL="$BURNED_ACL" TS_HANDLE="$BURNED_HANDLE" CLEARTEXT="$CLEARTEXT" \
+   KMS_SIG="$KMS_SIG" EXTRA="$CEXTRA" KMS_CTX_ID=1 \
+  | grep -q 'OK disclose_amount_secp' || fail "disclose_amount_secp"
+echo "    disclose_amount_secp OK -- on-chain secp256k1 KMS-cert verify emitted cleartext $CLEARTEXT"
+
+echo "==> FULL VERTICAL GREEN: input(ZK+secp bind) -> compute -> public-decrypt($VALUE) + user-decrypt($VALUE) -> consume redeem($CLEARTEXT)+disclose($CLEARTEXT) [secp256k1 KMS cert]"
