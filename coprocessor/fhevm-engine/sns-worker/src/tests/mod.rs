@@ -40,8 +40,6 @@ use tokio::{
 use tracing::{info, Level};
 
 const LISTEN_CHANNEL: &str = "sns_worker_chan";
-const COPROCESSOR_CONTEXT_ID: U256 = U256::ZERO;
-
 static TRACING_INIT: OnceLock<()> = OnceLock::new();
 
 pub fn init_tracing() {
@@ -789,7 +787,8 @@ async fn assert_ciphertext_uploaded(
     expected_ct_len: Option<i64>,
     expected_ct_format: Option<(&str, CiphertextFormat)>,
 ) -> anyhow::Result<()> {
-    let ciphertext_key = crate::aws_upload::s3_ciphertext_key(handle, COPROCESSOR_CONTEXT_ID);
+    let ciphertext_key =
+        crate::aws_upload::s3_ciphertext_key(handle, crate::aws_upload::COPROCESSOR_CONTEXT_ID_1);
     use crate::S3_FORMAT_VERSION_V1;
 
     let (ciphertext_digest, sns_ciphertext_digest, s3_format_version) =
@@ -818,7 +817,10 @@ async fn assert_ciphertext_uploaded(
         .get(S3_METADATA_ATTESTATION_KEY)
         .expect("ciphertext object should include ct-attestation metadata");
     let attestation: CiphertextAttestation = serde_json::from_str(attestation_json)?;
-    attestation.verify(B256::from_slice(handle), COPROCESSOR_CONTEXT_ID)?;
+    attestation.verify(
+        B256::from_slice(handle),
+        crate::aws_upload::COPROCESSOR_CONTEXT_ID_1,
+    )?;
 
     let signer = PrivateKeySigner::from_str(&hex::encode(&test_env.private_key))?;
 

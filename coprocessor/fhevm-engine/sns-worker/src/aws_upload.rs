@@ -40,7 +40,7 @@ pub const EVENT_CIPHERTEXTS_UPLOADED: &str = "event_ciphertexts_uploaded";
 // There might be pending uploads in the database
 // with sizes of 32MiB so the batch size is set to 10
 const DEFAULT_BATCH_SIZE: usize = 10;
-const COPROCESSOR_CONTEXT_ID_1: U256 = U256::ONE;
+pub(crate) const COPROCESSOR_CONTEXT_ID_1: U256 = U256::ONE;
 const NO_SNS_CIPHERTEXT_DIGEST: [u8; 32] = [0; 32];
 
 pub(crate) async fn spawn_resubmit_task(
