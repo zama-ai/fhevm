@@ -1221,7 +1221,7 @@ mod tests {
     #[tokio::test]
     async fn expected_attestation_rejects_wrong_context_metadata() {
         let (mut expected, attestation) = sample_attestation().await;
-        expected.coprocessor_context_id = U256::ONE;
+        expected.coprocessor_context_id = U256::ZERO;
 
         let err = validate_existing_attestation(&expected, &attestation).unwrap_err();
         assert!(err.contains("handle/context/signature mismatch"));
