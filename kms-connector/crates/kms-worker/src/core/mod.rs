@@ -12,7 +12,6 @@ pub mod solana_request;
 pub mod solana_response;
 pub mod solana_rpc;
 pub mod solana_store;
-pub mod solana_user_decrypt_runner;
 
 pub use config::Config;
 pub use event_picker::{DbEventPicker, EventPicker};
