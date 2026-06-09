@@ -3,8 +3,6 @@ use crate::core::{
     event_processor::{ProcessingError, context::ContextManager, s3::S3Service},
     solana_acl::{SolanaAclVerifier, SolanaPubkeyBytes, decode_acl_record_witness},
 };
-use base64::Engine as _;
-use std::str::FromStr;
 use alloy::{
     consensus::Transaction,
     hex,
@@ -13,10 +11,9 @@ use alloy::{
     sol_types::SolCall,
 };
 use anyhow::anyhow;
+use base64::Engine as _;
 use connector_utils::types::{
-    KmsGrpcRequest,
-    extra_data::parse_extra_data,
-    handle::extract_chain_id_from_handle,
+    KmsGrpcRequest, extra_data::parse_extra_data, handle::extract_chain_id_from_handle,
     u256_to_request_id,
 };
 use fhevm_gateway_bindings::decryption::Decryption::{
@@ -28,6 +25,7 @@ use kms_grpc::kms::v1::{
     Eip712DomainMsg, PublicDecryptionRequest, RequestId, TypedCiphertext, UserDecryptionRequest,
 };
 use std::collections::HashMap;
+use std::str::FromStr;
 use tracing::info;
 
 #[derive(Clone)]
@@ -906,12 +904,16 @@ mod tests {
         let processor = solana_processor(ct_chain_id);
 
         let result = processor
-            .check_ciphertexts_allowed_for_public_decryption(&[sns_ct], &Bytes::from(vec![1u8; 256]))
+            .check_ciphertexts_allowed_for_public_decryption(
+                &[sns_ct],
+                &Bytes::from(vec![1u8; 256]),
+            )
             .await;
 
         let err = result.expect_err("no reachable validator, so the RPC-verified ACL check errors");
         assert!(
-            !err.to_string().contains("not a trusted authorization source"),
+            !err.to_string()
+                .contains("not a trusted authorization source"),
             "public decrypt must take the RPC-verified ACL path, not the gateway fail-closed \
              refusal; got: {err}"
         );

@@ -13,7 +13,9 @@ use connector_utils::{
     monitoring::otlp::PropagationContext,
     types::{ProtocolEvent, db::EventType},
 };
-use fhevm_gateway_bindings::decryption::Decryption::{DecryptionEvents, UserDecryptionRequestSolana};
+use fhevm_gateway_bindings::decryption::Decryption::{
+    DecryptionEvents, UserDecryptionRequestSolana,
+};
 use sqlx::{Pool, Postgres};
 use tokio::select;
 use tokio_util::sync::CancellationToken;
