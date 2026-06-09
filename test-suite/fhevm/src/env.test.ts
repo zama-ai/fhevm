@@ -156,6 +156,7 @@ describe("env", () => {
     const rendered = await renderEnvMaps({ discovery: state.discovery }, stackSpecForState(state), templateEnvs, deriveWallet);
 
     expect(rendered.componentEnvs["coprocessor"].GATEWAY_HTTP_URL).toBe("http://gateway-node:8546");
+    expect(rendered.componentEnvs["coprocessor"].GATEWAY_WS_URL).toBe("ws://gateway-node:8546");
     expect(rendered.componentEnvs["coprocessor"].KMS_GENERATION_ADDRESS).toBe("");
     expect(rendered.componentEnvs["kms-connector"].KMS_CONNECTOR_KMS_GENERATION_CONTRACT__ADDRESS).toBe("");
   });

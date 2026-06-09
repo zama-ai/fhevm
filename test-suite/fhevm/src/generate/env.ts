@@ -383,6 +383,8 @@ export const renderEnvMaps = async (
   envs["coprocessor"].RPC_WS_URL = `ws://${defaultChain.node}:${defaultChain.rpcPort}`;
   envs["coprocessor"].GATEWAY_HTTP_URL =
     state.discovery?.endpoints.gateway.http ?? envs["coprocessor"].GATEWAY_URL;
+  envs["coprocessor"].GATEWAY_WS_URL =
+    state.discovery?.endpoints.gateway.ws ?? envs["coprocessor"].GATEWAY_WS_URL;
   envs["kms-connector"].KMS_CONNECTOR_ETHEREUM_URL = `http://${defaultChain.node}:${defaultChain.rpcPort}`;
   envs["kms-connector"].KMS_CONNECTOR_ETHEREUM_CHAIN_ID = defaultChain.chainId;
   envs["test-suite"].RPC_URL = `http://${defaultChain.node}:${defaultChain.rpcPort}`;
