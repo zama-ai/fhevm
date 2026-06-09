@@ -23,92 +23,6 @@ Design rationale for the divergences below is recorded in
 
 ---
 
-## 0. Live e2e status — proven on the unmodified `fhevm-cli` backend
-
-The legs below were exercised end-to-end against a real `fhevm-cli up` stack
-(gateway + coprocessor + KMS + relayer + Postgres, unmodified) and a live
-`solana-test-validator` with deployed `zama-host` + `confidential-token` and a running
-Solana host-listener. No stubs/seeded rows/hand-fed ciphertexts on these paths.
-
-| Leg | Proven-live evidence | Sanctioned seam exercised |
-|---|---|---|
-| **Input → Bind** | relayer-sdk → gateway InputVerification (real ZK proof) → zkproof-worker → tx-sender → `zama-host` binds the handle via on-chain `secp256k1_recover` of the coprocessor `CiphertextVerification` EIP-712 cert (bytes32 RFC-021 form) | (b) on-chain secp256k1 of a Zama-party EIP-712 cert |
-| **Compute** | `zama-host` FHE ops (`trivial_encrypt`, `add`, `sub`, `ge`, `select`) → `emit_cpi` → live host-listener (`solana_adapter`) → coprocessor DB → tfhe/sns-worker materializes ct64/ct128 | — |
-| **public-Decrypt** | relayer `/v2/public-decrypt` → gateway Decryption → KMS authorizes by reading the Solana ACL **directly via RPC** (`verify_solana_public_decrypt_allowed`) → cleartext + KMS secp256k1 cert (cleartext `0x63`=99) | (b) |
-| **Consume / disclose** | `disclose_amount_secp` verifies the KMS `PublicDecryptVerification` EIP-712 cert on-chain via `secp256k1_recover` against the active gateway KMS-context signer set | (b) |
-| **Consume / redeem** | wrap → `confidential_burn` (5-CPI FHE) → release → KMS public-decrypt (real cert) → `commit_handle_material` → `redeem_burned_amount_secp` verifies the cert on-chain and **released exactly 53 USDC base units** from the vault (owner balance +53, verified) | (b) |
-
-Public-decrypt authorization is the **RPC-verified on-chain ACL record** (the trusted
-source), not the gateway-conveyed `extraData` witnesses — those are forgeable, so the
-connector's gateway path fail-closes for any non-public Solana authorization
-(`decryption.rs::reject_solana_gateway_decryption`).
-
-### User-decrypt (seam a, signMessage) — BLOCKED on the KMS core (kms-internal)
-
-User-decrypt is the one functional leg **not achievable in this repo**. The connector
-native-v0 flow (`solana_{request,live,native,response,flow,store,replay}.rs`) can verify
-the user's Solana `signMessage` (ed25519) authorization itself, but the actual
-re-encryption to the user's key **must** be performed by the KMS core (a connector-side
-decrypt-then-reencrypt would expose plaintext to the connector — a confidentiality
-defect, not a sanctioned seam). The KMS core gRPC service
-(`zama-ai/kms-internal`, `core/grpc/proto/*.proto`) exposes only
-`UserDecrypt(UserDecryptionRequest)`, whose `UserDecryptionRequest`:
-
-- requires `client_address` as an **EIP-55 EVM address** (no 32-byte Solana pubkey field);
-- requires an **EIP-712 `domain` (MUST be present)** + an EIP-712 `external_signature`,
-  verified against `client_address` (`compute_external_user_decrypt_signature`).
-
-There is **no Solana / ed25519 / signMessage path** anywhere in the KMS core's
-user-decrypt validation (verified: zero matches in `core/service/src` and the proto).
-So a Solana user (who authenticates with signMessage, not an EVM EIP-712 wallet
-signature) cannot be authorized by the KMS core as-is.
-
-**Cross-team requirement (acceptance #5) — IMPLEMENTED + TESTED upstream, not stubbed.**
-The required KMS-core change has been written and unit-tested on the kms repo (a separate
-service) on branch `feat/solana-native-user-decrypt-link`:
-
-- `c9b7dd4a` — `kms_grpc::rpc_types::compute_link_solana`: the Solana request↔response
-  link binding (32-byte ed25519 identity + handles + enc_key under the host chain id, via
-  keccak), the counterpart of the EVM EIP-712 `UserDecryptionLinker` which cannot represent
-  a non-EVM identity / absent verifying-contract.
-- `2bd22dc7` — `validate_user_decrypt_req` branch: a Solana request carries its identity as
-  `client_address = "solana:" + hex(32-byte pubkey)`; the core extracts the host chain id
-  from the handle (`[22..30]` BE), binds via `compute_link_solana`, derives the signcryption
-  `client_id` as `keccak256(pubkey)[12..]`, and uses a placeholder domain. The EVM path is
-  untouched; the full `kms` crate compiles and the new tests pass.
-
-Why this is safe and is the *real* change (not a shortcut): the running KMS core is
-**centralized** (`kms-centralized`), whose user-decryption signcryption binds on the
-*opaque* `link` and does not enforce the user ACL — authorization is the connector's job on
-**both** the EVM and Solana paths (RPC-verified on-chain ACL + the ed25519 `signMessage`,
-already implemented + unit-tested in the connector). So the Solana branch adds no
-auth-bypass surface; it only lets the core bind a response for a non-EVM identity.
-
-**Why it is not yet live, and why that is correct rather than a stub:** the deployed
-backend pins `ghcr.io/zama-ai/kms/core-service:c57f52f` (an externally-built release image).
-Acceptance #1 requires the backend run **unmodified** — *no forked/patched services* — so
-hot-swapping a locally-rebuilt kms-core to demo user-decrypt would itself violate #1 (and,
-practically, the local `main` is ~5 weeks ahead of the pinned image with the deployed commit
-unfetchable, risking protocol/key incompatibility that would break the working public-decrypt).
-The mandate-compliant path is therefore to **upstream** this change: the KMS team reviews +
-merges branch `feat/solana-native-user-decrypt-link`, cuts a release, and `fhevm-cli` pins the
-new image — after which the unmodified backend supports Solana user-decrypt. The remaining
-in-repo wiring (kms-connector `solana_flow` runtime loop → KMS-core call; relayer native
-endpoint; js-sdk signMessage builder + de-signcrypt) then completes the live leg.
-
-**Empirically confirmed (a local rebuild/swap is not a workaround).** The change was built
-into a release/dev image (`core-service:solana-ud-dev`) and that image was swapped into the
-running stack to test a live demo. It fails to start: the pinned backend image is `c57f52f`
-(built 2026-04-27) and the local `kms` `main` is ~5 weeks newer with breaking interface drift
-— the stack's kms-core entrypoint calls `kms-gen-keys --cmd signing-keys centralized`, but the
-newer `kms-gen-keys` has dropped `--cmd` (it is now a positional command), so signing-key
-generation errors and `kms-server` never starts. The deployed commit is unfetchable, so a
-*compatible* image cannot be built locally. The swap was rolled back to `c57f52f` and
-public-decrypt re-verified green. This is why the change must land upstream in a coherent
-kms-core release rather than be hot-patched — confirming the acceptance-#1 reading above.
-
----
-
 ## 1. ERC7984 confidential token → `confidential-token`
 
 | ERC7984 capability | Semantics | Solana equivalent | Status |
@@ -121,7 +35,7 @@ kms-core release rather than be hot-patched — confirming the acceptance-#1 rea
 | `setOperator(operator, until)` | time-bounded operator approval (`uint48` deadline); `OperatorSet` event | `set_operator(operator, expiration_slot)` + `close_operator` (rent refund) | **MET** (DIVERGENCE: slot deadline vs `block.timestamp`; explicit PDA row + close) |
 | `isOperator(holder, spender)` | `holder==spender \|\| now <= until` | `Operator` PDA `expiration_slot >= slot` (holder==spender implicit by owner-signed paths) | **MET** |
 | `requestDiscloseEncryptedAmount(euint64)` | `makePubliclyDecryptable` + event; `require isAllowed(amount, sender)` | `request_disclose_balance` / `request_disclose_amount` → host `allow_for_decryption`; emits `*DisclosureRequestedEvent` | **MET** (DD-010: label-scoped — balance vs amount paths distinct) |
-| `discloseEncryptedAmount(euint64, cleartext, proof)` | `FHE.checkSignatures` + `AmountDisclosed` event | `disclose_amount_secp` / `disclose_balance_secp` — verify ACL + material commitment + `public_decrypt` + **on-chain `secp256k1_recover` of the KMS `PublicDecryptVerification` EIP-712 cert** against the gateway KMS-context signer set (proven live). Legacy `disclose_*` (Ed25519 instructions-sysvar) retained, off the live path | **MET** — sanctioned seam (b), EIP-712 cert verified on-chain exactly as `FHE.checkSignatures` |
+| `discloseEncryptedAmount(euint64, cleartext, proof)` | `FHE.checkSignatures` + `AmountDisclosed` event | `disclose_balance` / `disclose_amount(cleartext)` — verify ACL + material commitment + `public_decrypt` + a preceding Ed25519 KMS-cert instruction | **MET** (DIVERGENCE: Ed25519 instructions-sysvar cert vs EIP-712 `checkSignatures`) |
 | `confidentialTotalSupply()` view | encrypted total supply handle | `Mint` state total-supply handle (born in `initialize_mint`; rotated by `confidential_burn`) — read off-chain | **MET** (DIVERGENCE: account read, not a view call) |
 | `confidentialBalanceOf(account)` view | encrypted balance handle | `ConfidentialTokenAccount.balance_handle` (+ `balance_acl_record`, `next_balance_nonce_sequence`; RFC 024 token shape) — read off-chain | **MET** (DIVERGENCE: account read) |
 | `name/symbol/decimals(=6)/contractURI` views | metadata | mint/app config; `wrap_usdc` ties decimals to the underlying SPL mint | **DIVERGENCE** (app config / off-chain reads) |
@@ -164,7 +78,7 @@ fromExternal** — all implemented. The confidential token is therefore **op-com
 | compute identity = `msg.sender` | implicit caller | explicit `compute_subject: Signer` checked `is_signer && is_allowed` | **DIVERGENCE** (no `msg.sender`; RFC 024 compute-signer) |
 | `FHEVMExecutor` op breadth: Mul/Div/Rem/BitAnd/Or/Xor/Shl/Shr/Rotl/Rotr/Eq/Ne/Gt/Lt/Le/Min/Max, Neg/Not, cast, Sum/IsIn | full opcode catalog | only Add/Sub/Ge/IfThenElse shipped | **SCOPE** — not Solana-constrained; mechanically extensible (enum + per-op type-gate table + handle hash already op-parametrized + coprocessor map arm + tests); **not used by ERC7984** |
 | `HCULimit` (per-op/tx/block/depth homomorphic-compute caps) | gas-like metering | none on-chain; relies on Solana compute-budget + op-count/collection caps | **DIVERGENCE** (compute-budget) — see fragility #3 |
-| `KMSVerifier` (on-chain decrypt-sig threshold verify) | verify KMS sigs on-chain | `zama_host::eip712::verify_kms_public_decrypt` — on-chain `secp256k1_recover` of the `PublicDecryptVerification` EIP-712 cert against the `KmsContext` signer set + `verify_threshold` (distinct-recover ≥ threshold), consumed by `disclose_*_secp` / `redeem_burned_amount_secp` (**proven live**) | **MET** via sanctioned seam (b) |
+| `KMSVerifier` (on-chain decrypt-sig threshold verify) | verify KMS sigs on-chain | none on-chain; host exposes witnesses (ACL record + material commitment + `public_decrypt`) for an external verifier | **PRODUCT-OPEN** (DD-012) |
 | `ProtocolConfig` / `KMSGeneration` / `PauserSet` (role set) | KMS node/threshold registry, keygen, pauser role set | none (subset in `HostConfig`: authorities/chain_id/flags) | **PRODUCT-OPEN** |
 | `FheType` (86 variants) | type enum | supported set Bool/Uint8..Uint256 (covers token + shipped ops) | **MET (partial)** / **SCOPE** (signed/large/string types) |
 
@@ -174,7 +88,7 @@ fromExternal** — all implemented. The confidential token is therefore **op-com
 
 | EVM gateway capability | Semantics | Solana equivalent | Status |
 |---|---|---|---|
-| `Decryption.publicDecryptionRequest/Response` | request + threshold-consensus public decrypt | token `request_disclose_*` (sets `public_decrypt`); KMS authorizes via RPC-verified Solana ACL; on-chain `disclose_*_secp` / `redeem_burned_amount_secp` verify the KMS `PublicDecryptVerification` EIP-712 cert via `secp256k1_recover` against the gateway KMS-context signer set (**proven live**). Legacy `disclose_*` (Ed25519) retained but off the live path | **MET** via sanctioned seam (b); legacy Ed25519 variant is **DIVERGENCE** (DD-012) |
+| `Decryption.publicDecryptionRequest/Response` | request + threshold-consensus public decrypt | token `request_disclose_*` (sets `public_decrypt`); connector native-v0 PUBLIC mode + `verify_solana_kms_response_v0`; on-chain `disclose_*` consumes Ed25519 cert | **DIVERGENCE** (DD-012) |
 | `Decryption.userDecryptionRequest` + EIP-712 | user-signed, contract-scoped, validity window | connector native-v0 DIRECT_SCOPED (`verify_native_direct_request`) — owner-signed, ACL-domain-scoped | **DIVERGENCE** (Ed25519 over keccak domain-sep vs EIP-712) |
 | `Decryption.delegatedUserDecryptionRequest` + RFC-017 wildcard | delegate-signed; wildcard contract scope | native-v0 DELEGATED_SCOPED / DELEGATED_WILDCARD_SCOPED; `UserDecryptionDelegation` PDA; wildcard = `[0xff;32]` app-context sentinel | **MET** (semantics) / **DIVERGENCE** (mechanism) |
 | `Decryption.userDecryptionResponse` (per-share sigs → threshold) | threshold response | native-v0 `verify_response_certificate` (sorted distinct Ed25519 signer set, signer-set hash, request binding) | **DIVERGENCE** |
@@ -239,11 +153,9 @@ connector's canonical-PDA + material-binding verification.
 3. **No on-chain HCU / complexity metering** (the EVM `HCULimit` plane has no analogue). Off-chain
    workers get no on-chain cost signal beyond the CU budget + op-count/collection caps. Largest
    semantic gap by surface area; relevant to DoS/cost-bounding.
-4. **On-chain disclosure now verifies the KMS cert via `secp256k1_recover`** (`disclose_*_secp`,
-   `redeem_burned_amount_secp`) against the gateway KMS-context signer set held in the on-chain
-   `KmsContext` (mirrors the ProtocolConfig signer set; threshold-capable via `verify_threshold`) —
-   the protocol-faithful path, proven live. The legacy single-key Ed25519 `disclose_*` instructions
-   remain in the program but are **off the live path** and slated for removal (acceptance #3).
+4. **On-chain disclosure trusts a single preceding Ed25519 instruction**, not a threshold cert
+   (threshold lives off-chain in `solana_response.rs`, which is not on the disclose path);
+   `kms_verifier_authority` is an `UncheckedAccount`. Single-key on-chain trust for `disclose_*`.
 5. **Two connector verifier entrypoints** (Gateway-PoC `extraData` vs native-v0) have subtly
    different app-context handling — a maintenance hazard until one is retired.
 6. **Hand-mirrored, version-pinned ABI across repos with no compile-time link** (connector decoders +
