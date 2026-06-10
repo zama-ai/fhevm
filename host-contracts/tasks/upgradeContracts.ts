@@ -92,6 +92,9 @@ async function upgradeCurrentToNew(
   }
 }
 
+// Relies on incremental compilation: run only on a clean working tree whose generated
+// addresses/FHEVMHostAddresses.sol matches the target environment, otherwise the implementation
+// embeds the wrong addresses.
 async function deployImplementationForPreparedUpgrade(
   proxyAddress: string,
   expectedArtifactName: string,
@@ -100,13 +103,7 @@ async function deployImplementationForPreparedUpgrade(
   verifyContract: boolean,
   hre: HardhatRuntimeEnvironment,
   reinitializeArgs: unknown[] = [],
-  forceClean = false,
 ): Promise<void> {
-  if (forceClean) {
-    // FHEVMExecutor pulls in generated host addresses, so force a clean rebuild to avoid
-    // reusing artifacts compiled against another environment.
-    await hre.run('clean');
-  }
   await compileImplementations(currentImplementation, newImplementation, hre);
 
   await checkImplementationArtifacts(expectedArtifactName, currentImplementation, newImplementation, hre);
@@ -233,7 +230,6 @@ async function prepareUpgradeContract(
   taskArgs: TaskArguments,
   hre: HardhatRuntimeEnvironment,
   reinitializeArgs: unknown[] = [],
-  forceClean = false,
 ) {
   if (taskArgs.useInternalProxyAddress) {
     loadHostAddresses();
@@ -248,7 +244,6 @@ async function prepareUpgradeContract(
     taskArgs.verifyContract,
     hre,
     reinitializeArgs,
-    forceClean,
   );
 }
 
@@ -324,7 +319,7 @@ task('task:prepareUpgradeFHEVMExecutor')
     types.boolean,
   )
   .setAction(async function (taskArgs: TaskArguments, hre) {
-    await prepareUpgradeContract('FHEVMExecutor', 'FHEVM_EXECUTOR_CONTRACT_ADDRESS', taskArgs, hre, [], true);
+    await prepareUpgradeContract('FHEVMExecutor', 'FHEVM_EXECUTOR_CONTRACT_ADDRESS', taskArgs, hre);
   });
 
 task('task:prepareUpgradeACL')
