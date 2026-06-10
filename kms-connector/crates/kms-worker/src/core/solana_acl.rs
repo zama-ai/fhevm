@@ -416,6 +416,7 @@ impl SolanaAclVerifier {
         self.verify_material_commitment(record, material, handle)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn verify_delegated_user_decrypt(
         &self,
         record: &AclRecordWitness,
@@ -444,6 +445,7 @@ impl SolanaAclVerifier {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn verify_delegated_user_decrypt_with_material(
         &self,
         record: &AclRecordWitness,
@@ -998,9 +1000,9 @@ impl SolanaAclVerifier {
             return require_role(inline.role_flags, required_role);
         }
 
-        for permission in overflow_permissions
+        if let Some(permission) = overflow_permissions
             .iter()
-            .filter(|permission| permission.subject == subject)
+            .find(|permission| permission.subject == subject)
         {
             self.verify_overflow_permission(record, permission)?;
             return require_role(permission.role_flags, required_role);
@@ -1656,6 +1658,7 @@ mod tests {
     const DELEGATE: SolanaPubkeyBytes = [5; 32];
     const OBSERVED_SLOT: u64 = 500;
     const LABEL: [u8; 32] = *b"balance_________________________";
+    type NativeRequestMutator = fn(&mut SolanaNativeDecryptionRequestV0);
 
     fn hex32(value: &str) -> [u8; 32] {
         assert_eq!(value.len(), 64);
@@ -3012,7 +3015,7 @@ mod tests {
     #[test]
     fn native_v0_rejects_material_entry_binding_mismatches() {
         let verifier = SolanaAclVerifier::new(HOST_PROGRAM_ID);
-        let cases: [(&str, fn(&mut SolanaNativeDecryptionRequestV0)); 3] = [
+        let cases: [(&str, NativeRequestMutator); 3] = [
             ("material account", |request| {
                 request.entries[0].material_commitment_account = [31; 32];
             }),

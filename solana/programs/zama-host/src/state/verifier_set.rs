@@ -45,7 +45,7 @@ impl VerifierSet {
     }
 
     pub fn contains_signer(&self, signer: Pubkey) -> bool {
-        self.signer_slice().iter().any(|entry| *entry == signer)
+        self.signer_slice().contains(&signer)
     }
 
     pub fn validate_shape(&self) -> bool {
@@ -84,7 +84,7 @@ pub fn verifier_set_fields_are_valid(
         if signer == Pubkey::default() {
             return false;
         }
-        if signers[..index].iter().any(|previous| *previous == signer) {
+        if signers[..index].contains(&signer) {
             return false;
         }
     }

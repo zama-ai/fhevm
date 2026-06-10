@@ -332,7 +332,7 @@ fn verify_response_certificate(
 }
 
 fn is_strictly_sorted_nonzero(pubkeys: &[SolanaPubkeyBytes]) -> bool {
-    if pubkeys.iter().any(|pubkey| *pubkey == [0; 32]) {
+    if pubkeys.contains(&[0; 32]) {
         return false;
     }
     pubkeys.windows(2).all(|window| window[0] < window[1])

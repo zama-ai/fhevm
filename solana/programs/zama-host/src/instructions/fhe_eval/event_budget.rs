@@ -149,7 +149,7 @@ fn anchor_program_data_log_bytes(payload_bytes: usize) -> usize {
 }
 
 fn base64_encoded_len(bytes: usize) -> usize {
-    ((bytes + 2) / 3) * 4
+    bytes.div_ceil(3) * 4
 }
 
 #[cfg(test)]

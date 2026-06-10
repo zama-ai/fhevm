@@ -4356,7 +4356,7 @@ fn mollusk_fhe_eval_rejects_system_account_public_decrypt_role_grant_without_inp
                     output: FheEvalOutput::Durable {
                         output_acl_record_index: 1,
                         output_app_account_authority_index: None,
-                        output_nonce_key: output_nonce_key,
+                        output_nonce_key,
                         output_nonce_sequence: 0,
                         output_acl_domain_key: acl_domain_key,
                         output_app_account: app_account,
@@ -5706,7 +5706,7 @@ fn mollusk_fhe_eval_verifies_signed_input_and_feeds_later_step() {
                         output: FheEvalOutput::Durable {
                             output_acl_record_index: 2,
                             output_app_account_authority_index: None,
-                            output_nonce_key: output_nonce_key,
+                            output_nonce_key,
                             output_nonce_sequence: 41,
                             output_acl_domain_key: acl_domain_key,
                             output_app_account: app_account,

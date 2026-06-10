@@ -1789,6 +1789,7 @@ fn mark_lowered_account(used_accounts: &mut [bool], index: u16) -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn validate_binary_step<F>(
     op: FheBinaryOpCode,
     lhs: &Operand,
@@ -1832,6 +1833,7 @@ where
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn validate_ternary_step<F>(
     control: &Operand,
     if_true: &Operand,

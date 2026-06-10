@@ -628,7 +628,7 @@ pub(crate) fn prepare_transfer_callback_settlement<'info>(
             to_output.account_info(),
             refund_amount_output.account_info(),
         ],
-        [fhe::OutputAuthority::token_account(&**accounts.to_account)?],
+        [fhe::OutputAuthority::token_account(accounts.to_account)?],
     )?;
 
     fhe::eval(fhe::Eval {
@@ -1150,9 +1150,7 @@ pub(crate) fn finalize_transfer_callback_settlement<'info>(
             from_output.account_info(),
             transferred_output.account_info(),
         ],
-        [fhe::OutputAuthority::token_account(
-            &**accounts.from_account,
-        )?],
+        [fhe::OutputAuthority::token_account(accounts.from_account)?],
     )?;
 
     fhe::eval(fhe::Eval {

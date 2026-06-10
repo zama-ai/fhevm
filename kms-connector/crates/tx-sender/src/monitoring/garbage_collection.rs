@@ -299,6 +299,28 @@ pub async fn unlock_public_decryption_responses(
     }
 }
 
+pub async fn unlock_user_decryption_responses(
+    db_pool: &Pool<Postgres>,
+    under_process_limit: PgInterval,
+) {
+    match sqlx::query!(
+        "
+            UPDATE user_decryption_responses SET status = 'pending'
+            WHERE status = 'under_process' AND NOW() - updated_at > $1
+        ",
+        under_process_limit
+    )
+    .execute(db_pool)
+    .await
+    {
+        Ok(result) => info!(
+            "Successfully unlocked {} user decryption responses",
+            result.rows_affected()
+        ),
+        Err(e) => error!("Failed to unlock user decryption responses: {e}"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -336,27 +358,5 @@ mod tests {
         );
         assert!(UNLOCK_SOLANA_NATIVE_DECRYPTION_REQUESTS_SQL.contains("status = 'under_process'"));
         assert!(UNLOCK_SOLANA_NATIVE_DECRYPTION_RESPONSES_SQL.contains("status = 'under_process'"));
-    }
-}
-
-pub async fn unlock_user_decryption_responses(
-    db_pool: &Pool<Postgres>,
-    under_process_limit: PgInterval,
-) {
-    match sqlx::query!(
-        "
-            UPDATE user_decryption_responses SET status = 'pending'
-            WHERE status = 'under_process' AND NOW() - updated_at > $1
-        ",
-        under_process_limit
-    )
-    .execute(db_pool)
-    .await
-    {
-        Ok(result) => info!(
-            "Successfully unlocked {} user decryption responses",
-            result.rows_affected()
-        ),
-        Err(e) => error!("Failed to unlock user decryption responses: {e}"),
     }
 }

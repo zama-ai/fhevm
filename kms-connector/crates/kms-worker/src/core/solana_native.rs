@@ -119,6 +119,7 @@ mod tests {
     }
 
     impl SolanaNativeReplayStore for InMemoryReplayStore {
+        #[allow(clippy::manual_async_fn)]
         fn reserve_accepted_request(
             &self,
             accepted: &SolanaNativeAcceptedRequestV0,

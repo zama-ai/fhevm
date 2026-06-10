@@ -54,9 +54,10 @@ jobs:
         with:
           persist-credentials: 'false'
 
+      - name: Setup Rust toolchain file
+        run: cp rust-toolchain.toml ..
+
       - uses: dsherret/rust-toolchain-file@3551321aa44dd44a0393eb3b6bdfbc5d25ecf621 # v1
-        with:
-          toolchain-file: solana/rust-toolchain.toml
 
       - name: Cache Solana CLI and AVM
         uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
@@ -69,7 +70,7 @@ jobs:
       - name: Install Solana CLI
         run: |
           if ! command -v solana >/dev/null; then
-            sh -c "$(curl -sSfL https://release.anza.xyz/v${SOLANA_VERSION}/install)"
+            sh -c "$(curl -sSfL "https://release.anza.xyz/v${SOLANA_VERSION}/install")"
           fi
           echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
 

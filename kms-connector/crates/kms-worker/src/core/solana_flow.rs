@@ -231,6 +231,7 @@ mod tests {
     }
 
     impl SolanaNativeAccountFetcher for CountingFetcher {
+        #[allow(clippy::manual_async_fn)]
         fn fetch_accounts(
             &self,
             _account_keys: &[SolanaPubkeyBytes],
@@ -252,6 +253,7 @@ mod tests {
     struct NoopReplayStore;
 
     impl SolanaNativeReplayStore for NoopReplayStore {
+        #[allow(clippy::manual_async_fn)]
         fn reserve_accepted_request(
             &self,
             _accepted: &SolanaNativeAcceptedRequestV0,

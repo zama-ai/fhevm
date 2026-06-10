@@ -417,6 +417,7 @@ mod tests {
     }
 
     impl SolanaNativeReplayStore for InMemoryReplayStore {
+        #[allow(clippy::manual_async_fn)]
         fn reserve_accepted_request(
             &self,
             accepted: &SolanaNativeAcceptedRequestV0,
@@ -447,6 +448,7 @@ mod tests {
     }
 
     impl SolanaNativeAccountFetcher for StaticAccountFetcher {
+        #[allow(clippy::manual_async_fn)]
         fn fetch_accounts(
             &self,
             account_keys: &[SolanaPubkeyBytes],
@@ -480,6 +482,7 @@ mod tests {
     struct UnexpectedAccountFetcher;
 
     impl SolanaNativeAccountFetcher for UnexpectedAccountFetcher {
+        #[allow(clippy::manual_async_fn)]
         fn fetch_accounts(
             &self,
             _account_keys: &[SolanaPubkeyBytes],
@@ -501,6 +504,7 @@ mod tests {
     }
 
     impl SolanaNativeAccountFetcher for NonFinalizedRecheckFetcher {
+        #[allow(clippy::manual_async_fn)]
         fn fetch_accounts(
             &self,
             _account_keys: &[SolanaPubkeyBytes],

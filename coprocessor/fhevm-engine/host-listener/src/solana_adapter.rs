@@ -378,7 +378,7 @@ fn parse_program_exit(log: &str) -> Option<&str> {
         .map(|(program_id, _)| program_id)
 }
 
-fn pop_program_stack<'a>(stack: &mut Vec<&'a str>, program_id: &str) {
+fn pop_program_stack(stack: &mut Vec<&str>, program_id: &str) {
     if stack.last().copied() == Some(program_id) {
         stack.pop();
         return;
@@ -1482,10 +1482,10 @@ mod tests {
                 payload.extend_from_slice(&[8; 32]);
                 payload
             }),
-            anchor_event("AclAllowedEvent", {
-                let payload = acl_allowed_payload([7; 32], [8; 32]);
-                payload
-            }),
+            anchor_event(
+                "AclAllowedEvent",
+                acl_allowed_payload([7; 32], [8; 32]),
+            ),
             anchor_event("AclRecordBoundEvent", {
                 let mut payload = vec![EVENT_VERSION];
                 payload.extend_from_slice(&[1; 32]);

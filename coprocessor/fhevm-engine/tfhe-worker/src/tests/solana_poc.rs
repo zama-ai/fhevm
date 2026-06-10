@@ -21,7 +21,7 @@ use host_listener::{
     solana_adapter::{
         decode_anchor_cpi_events, decode_anchor_log_events, decode_solana_transaction_events,
         insert_solana_events, normalize_solana_events_for_db, solana_transaction_id,
-        SolanaAclAllowedEvent, SolanaBlockMeta, SolanaHostEvent,
+        SolanaAclAllowedEvent, SolanaBlockMeta, SolanaFinalizedAccountFetchKind, SolanaHostEvent,
     },
 };
 use litesvm::{types::TransactionMetadata, LiteSVM};
@@ -38,7 +38,8 @@ use solana_sdk::{
 use tfhe::prelude::FheTryEncrypt;
 use time::{Date, Month, PrimitiveDateTime, Time};
 use zama_host::{
-    AclRecord, AclSubjectEntry, FheEvalArgs, FheEvalOperand, FheEvalOutput, FheEvalStep, HostConfig,
+    AclRecord, AclSubjectEntry, FheEvalArgs, FheEvalOperand, FheEvalOutput, FheEvalStep,
+    HostConfig, VerifierSet,
 };
 
 use crate::tests::{
@@ -226,10 +227,10 @@ fn solana_fhe_eval_replays_threshold_logs_from_litesvm_metadata() {
                         output_app_account: app_account,
                         output_encrypted_value_label: output_label,
                         output_subjects: vec![
-                            AclSubjectEntry::user(fixture.payer.pubkey()),
-                            AclSubjectEntry::user(Pubkey::new_unique()),
-                            AclSubjectEntry::user(Pubkey::new_unique()),
-                            AclSubjectEntry::user(Pubkey::new_unique()),
+                            AclSubjectEntry::use_only(fixture.payer.pubkey()),
+                            AclSubjectEntry::use_only(Pubkey::new_unique()),
+                            AclSubjectEntry::use_only(Pubkey::new_unique()),
+                            AclSubjectEntry::use_only(Pubkey::new_unique()),
                         ],
                         output_public_decrypt: false,
                     },
@@ -278,16 +279,26 @@ fn solana_fhe_eval_replays_threshold_logs_from_litesvm_metadata() {
             Time::MIDNIGHT,
         ),
     };
-    let (tfhe_logs, acl_events) =
+    let (tfhe_logs, account_fetches) =
         normalize_solana_events_for_db(host_events, transaction_id, block);
 
     assert_eq!(tfhe_logs.len(), 1);
-    assert_eq!(acl_events.len(), 4);
-    assert!(tfhe_logs[0].is_allowed);
+    assert_eq!(account_fetches.len(), 1);
+    assert_eq!(account_fetches[0].account_key, output_acl_record.to_bytes());
+    assert_eq!(
+        account_fetches[0].kind,
+        SolanaFinalizedAccountFetchKind::AclRecord
+    );
+    assert_eq!(account_fetches[0].reason, "acl_record_bound");
+    assert_eq!(
+        account_fetches[0].handle,
+        tfhe_result_handle(&tfhe_logs[0].event.data)
+    );
+    assert!(!tfhe_logs[0].is_allowed);
 }
 
 #[test]
-fn solana_worker_replay_shape_preserves_eval_dependencies_and_acl_allowance() {
+fn solana_worker_replay_shape_preserves_eval_dependencies_and_ignores_same_tx_acl_allowance() {
     let comparison = typed_handle(0x60, 0);
     let alice_balance = typed_balance_handle(0x61);
     let transfer_amount = typed_balance_handle(0x62);
@@ -351,9 +362,9 @@ fn solana_worker_replay_shape_preserves_eval_dependencies_and_acl_allowance() {
     assert_eq!(count_tfhe_events(&events), 4);
     assert_eq!(count_acl_events(&events), 2);
 
-    let (tfhe_logs, acl_events) = normalize_solana_events_for_db(events, tx_id, block);
+    let (tfhe_logs, account_fetches) = normalize_solana_events_for_db(events, tx_id, block);
 
-    assert_eq!(acl_events.len(), 2);
+    assert!(account_fetches.is_empty());
     assert_eq!(tfhe_logs.len(), 4);
     assert_eq!(
         tfhe_logs
@@ -367,7 +378,7 @@ fn solana_worker_replay_shape_preserves_eval_dependencies_and_acl_allowance() {
             .iter()
             .map(|log| log.is_allowed)
             .collect::<Vec<_>>(),
-        vec![false, false, true, true]
+        vec![false, false, false, false]
     );
     assert_eq!(
         tfhe_logs
@@ -658,6 +669,7 @@ struct TokenFixture {
     svm: LiteSVM,
     host_program_id: Pubkey,
     host_config: Pubkey,
+    input_verifier_set: Pubkey,
     token_program_id: Pubkey,
     alice: Keypair,
     bob: Keypair,
@@ -722,11 +734,20 @@ fn host_fixture() -> HostFixture {
         .unwrap();
     let payer = Keypair::new();
     svm.airdrop(&payer.pubkey(), 1_000_000_000).unwrap();
+    let host_config = Pubkey::find_program_address(&[host::HOST_CONFIG_SEED], &host_program_id).0;
+    let input_verifier_set = seed_verifier_set(
+        &mut svm,
+        host_program_id,
+        payer.pubkey(),
+        host::VERIFIER_SET_KIND_INPUT,
+        host_config,
+        payer.pubkey(),
+    );
     let _host_config = seed_host_config(
         &mut svm,
         host_program_id,
         payer.pubkey(),
-        payer.pubkey(),
+        input_verifier_set,
         payer.pubkey(),
     );
 
@@ -772,6 +793,43 @@ fn seed_host_config(
     host_config
 }
 
+fn seed_verifier_set(
+    svm: &mut LiteSVM,
+    program_id: Pubkey,
+    admin: Pubkey,
+    kind: u8,
+    scope: Pubkey,
+    signer: Pubkey,
+) -> Pubkey {
+    let (address, bump) = host::verifier_set_address(kind, scope, 1);
+    let mut signers = [Pubkey::default(); host::MAX_VERIFIER_SET_SIGNERS];
+    signers[0] = signer;
+    svm.set_account(
+        address,
+        Account {
+            lamports: 1_000_000_000,
+            data: serialized_account(VerifierSet {
+                admin,
+                kind,
+                scope,
+                version: 1,
+                threshold: 1,
+                signer_count: 1,
+                signers,
+                state: host::VERIFIER_SET_STATE_ACTIVE,
+                created_slot: 0,
+                updated_slot: 0,
+                bump,
+            }),
+            owner: program_id,
+            executable: false,
+            rent_epoch: 0,
+        },
+    )
+    .unwrap();
+    address
+}
+
 fn token_fixture() -> TokenFixture {
     token_fixture_with_initial_balances(125, 20)
 }
@@ -807,11 +865,37 @@ fn token_fixture_with_initial_balances(
     let underlying_mint = Keypair::new();
     svm.airdrop(&alice.pubkey(), 2_000_000_000).unwrap();
     svm.airdrop(&bob.pubkey(), 1_000_000_000).unwrap();
+    let host_config_address =
+        Pubkey::find_program_address(&[host::HOST_CONFIG_SEED], &host_program_id).0;
+    let input_verifier_set = seed_verifier_set(
+        &mut svm,
+        host_program_id,
+        alice.pubkey(),
+        host::VERIFIER_SET_KIND_INPUT,
+        host_config_address,
+        alice.pubkey(),
+    );
     let host_config = seed_host_config(
         &mut svm,
         host_program_id,
         alice.pubkey(),
+        input_verifier_set,
         alice.pubkey(),
+    );
+    let disclosure_verifier_set = seed_verifier_set(
+        &mut svm,
+        host_program_id,
+        alice.pubkey(),
+        host::VERIFIER_SET_KIND_TOKEN_DISCLOSURE,
+        mint.pubkey(),
+        alice.pubkey(),
+    );
+    let redemption_verifier_set = seed_verifier_set(
+        &mut svm,
+        host_program_id,
+        alice.pubkey(),
+        host::VERIFIER_SET_KIND_TOKEN_REDEMPTION,
+        mint.pubkey(),
         alice.pubkey(),
     );
     create_spl_mint(&mut svm, &alice, &underlying_mint, 6);
@@ -834,7 +918,8 @@ fn token_fixture_with_initial_balances(
                 underlying_mint: underlying_mint.pubkey(),
                 compute_signer,
                 total_supply_authority,
-                kms_verifier_authority: alice.pubkey(),
+                disclosure_verifier_set,
+                redemption_verifier_set,
                 total_supply_acl_record,
                 zama_event_authority: event_authority(host_program_id),
                 zama_program: host_program_id,
@@ -895,6 +980,7 @@ fn token_fixture_with_initial_balances(
         svm,
         host_program_id,
         host_config,
+        input_verifier_set,
         token_program_id,
         alice,
         bob,
@@ -1005,6 +1091,7 @@ fn authorize_input_compute_acl(fixture: &mut TokenFixture, handle: [u8; 32]) {
             accounts: host::accounts::MockInputVerifiedAndBind {
                 payer: fixture.alice.pubkey(),
                 input_verifier_authority: fixture.alice.pubkey(),
+                input_verifier_set: fixture.input_verifier_set,
                 app_account_authority: app_account,
                 host_config: fixture.host_config,
                 output_acl_record: acl_record,
@@ -1038,6 +1125,7 @@ fn transfer_ix(
         program_id: fixture.token_program_id,
         accounts: token::accounts::ConfidentialTransfer {
             owner: fixture.alice.pubkey(),
+            payer: fixture.alice.pubkey(),
             mint: fixture.mint.pubkey(),
             from_account: fixture.alice_token,
             to_account: fixture.bob_token,
@@ -1398,6 +1486,7 @@ fn read_acl_record(svm: &LiteSVM, address: Pubkey) -> Option<AclRecord> {
     AclRecord::try_deserialize(&mut data).ok()
 }
 
+#[allow(clippy::too_many_arguments)]
 fn seed_authorizing_acl_record(
     svm: &mut LiteSVM,
     nonce_key: [u8; 32],
