@@ -6,16 +6,14 @@ use alloy::{
     network::Ethereum,
     providers::Provider,
     rpc::types::{Filter, Log},
-    sol_types::{SolEvent, SolEventInterface},
+    sol_types::SolEventInterface,
 };
 use anyhow::anyhow;
 use connector_utils::{
     monitoring::otlp::PropagationContext,
     types::{ProtocolEvent, db::EventType},
 };
-use fhevm_gateway_bindings::decryption::Decryption::{
-    DecryptionEvents, UserDecryptionRequestSolana,
-};
+use fhevm_gateway_bindings::decryption::Decryption::DecryptionEvents;
 use sqlx::{Pool, Postgres};
 use tokio::select;
 use tokio_util::sync::CancellationToken;
@@ -86,14 +84,13 @@ where
         let from_block_config = self.config.decryption_from_block_number;
         let event_types = DECRYPTION_EVENT_TYPES.as_slice();
 
-        let mut event_signatures = event_types
+        // `UserDecryptionRequest` contributes both the legacy and the RFC016 topic0 hashes, which
+        // is why we flat-map over `signature_hashes()` instead of collecting a single hash per
+        // event type.
+        let event_signatures = event_types
             .iter()
-            .map(|e| e.signature_hash())
+            .flat_map(|e| e.signature_hashes())
             .collect::<Vec<_>>();
-        // RFC-021 Solana user-decryption shares the user_decryption_requests storage + picker with
-        // the EVM variant (discriminated by user_address length), so it has no distinct EventType.
-        // Subscribe to its event signature directly so the listener decodes it.
-        event_signatures.push(UserDecryptionRequestSolana::SIGNATURE_HASH);
         let base_filter = Filter::new()
             .address(contract_address)
             .event_signature(event_signatures);

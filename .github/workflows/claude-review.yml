@@ -1,5 +1,4 @@
 name: claude-review
-
 # Triggered by @claude mention in PR comments.
 # The prompt is extracted as the text after "@claude" in the comment body.
 #
@@ -7,6 +6,9 @@ name: claude-review
 #   - Only write/admin/maintain users can trigger (enforced by explicit collaborator permission gate)
 #   - Network sandbox: Squid proxy (L7 domain allowlist) + iptables (host OUTPUT + DOCKER-USER container egress block)
 #   - Claude CLI installed before network lockdown
+#   - CODEOWNERS + Branch Protection are mandatory as HITL protection
+#   - Only pinned and authorized Skills can be used
+#   - Modifications in workflow should be reviewed by Security Team before merging
 #
 # Secrets:
 #   - CLAUDE_CODE_OAUTH_TOKEN: Anthropic API auth (from `claude setup-token`)
@@ -19,8 +21,15 @@ on:
 permissions: {}
 
 concurrency:
-  group: claude-review-${{ github.repository }}-${{ github.event.issue.number }}
-  cancel-in-progress: false # In PROD, set true to cancel previous build
+  # Only human @claude comments share the per-PR group, so a new @claude cancels an in-progress one.
+  # Bot comments are routed to a unique noop group even if their body contains '@claude'
+  # (e.g. rejection messages with usage examples, or Claude responses quoting the request).
+  # This matters because concurrency cancellation fires at queue time, before job-level `if:`
+  # conditions are evaluated — so without the user.type guard, a bot comment whose body contains
+  # '@claude' would cancel the still-running job before its tail steps (iptables reset, token
+  # revocation) complete.
+  group: ${{ (github.event.comment.user.type == 'User' && contains(github.event.comment.body, '@claude')) && format('claude-review-{0}-{1}', github.repository, github.event.issue.number) || format('claude-review-noop-{0}', github.event.comment.id) }}
+  cancel-in-progress: true
 
 jobs:
   claude-review:
@@ -32,35 +41,79 @@ jobs:
       github.actor != 'claude[bot]' &&
       github.actor != 'github-actions[bot]' &&
       github.event.comment.user.type == 'User'
-    runs-on: ubuntu-latest
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
     timeout-minutes: 60
     env:
       # Pin Squid image to a specific digest to prevent supply-chain attacks.
       # To update: docker pull ubuntu/squid:latest && docker inspect --format='{{index .RepoDigests 0}}' ubuntu/squid:latest
       SQUID_IMAGE: ubuntu/squid@sha256:6a097f68bae708cedbabd6188d68c7e2e7a38cedd05a176e1cc0ba29e3bbe029
-      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      # Require the PR author to have write/admin/maintain permission before allowing Claude to review.
+      # Set to "false" only if your organisation intentionally reviews external-contributor PRs with Claude.
+      # Changing this default requires security team review (file is CODEOWNERS-protected).
+      REQUIRE_PR_AUTHOR_PERMISSION: "true"
     permissions:
       contents: read        # Checkout repository code and read files
       pull-requests: write  # Post review comments and update PR status
       issues: write         # Respond to @claude mentions in issue comments
       id-token: write       # OIDC token for GitHub App token exchange
     steps:
+      # TODO: remove once GitHub runner images ship the CVE-2026-31431 kernel fix
+      - name: Workaround CVE-2026-31431 (copy.fail)
+        run: |
+          echo "install algif_aead /bin/false" | sudo tee /etc/modprobe.d/disable-algif-aead.conf
+          if lsmod | grep -q algif_aead; then
+            sudo rmmod algif_aead || echo "WARNING: rmmod failed - module may be in use"
+          elif modinfo algif_aead 2>/dev/null | grep -q builtin; then
+            echo "WARNING: algif_aead built-in - modprobe.d blacklist has no effect"
+          fi
 
       # ── Phase 1: Setup (full network) ──────────────────────────────────
 
       - name: Repo checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           # Always use default branch contents for workflow runtime files.
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
-          fetch-depth: 0
+          fetch-depth: 1
+
+      - name: Define shell helpers
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/helpers"
+          cat > "$RUNNER_TEMP/helpers/safe-env.sh" << 'HELPER_EOF'
+          # safe_set_env VAR_NAME CONTENT
+          # Safely writes a multi-line variable to $GITHUB_ENV using a heredoc
+          # with high-entropy delimiter and collision checking.
+          safe_set_env() {
+            local var_name="$1"
+            local content="$2"
+            local delim attempts=0 max_attempts=5
+
+            while true; do
+              delim="GHENV_$(openssl rand -hex 16)"
+              if ! printf '%s' "$content" | grep -qF "$delim"; then
+                break
+              fi
+              attempts=$((attempts + 1))
+              if [ "$attempts" -ge "$max_attempts" ]; then
+                echo "::error::safe_set_env: delimiter collision after ${max_attempts} attempts for ${var_name}"
+                exit 1
+              fi
+            done
+
+            printf '%s<<%s\n%s\n%s\n' "$var_name" "$delim" "$content" "$delim" >> "$GITHUB_ENV"
+          }
+          HELPER_EOF
 
       - name: Install uv # Required by internal skill scripts
         uses: astral-sh/setup-uv@5a095e7a2014a4212f075830d4f7277575a9d098   # v7.3.1
         with:
           version: "0.6.14"
           enable-cache: false
+
+      - name: Install safe-chain (Aikido malicious-package guard)
+        run: curl -fsSL https://github.com/AikidoSec/safe-chain/releases/download/1.5.3/install-safe-chain.sh | sh -s -- --ci
 
       - name: Enforce actor repository permissions
         id: actor-permission
@@ -82,6 +135,34 @@ jobs:
           REPO: ${{ github.repository }}
           ACTOR: ${{ github.actor }}
 
+      - name: Enforce PR author repository permissions
+        id: pr-author-permission
+        if: env.REQUIRE_PR_AUTHOR_PERMISSION == 'true'
+        run: |
+          PR_AUTHOR=$(gh api "repos/${REPO}/pulls/${PR_NUMBER}" --jq '.user.login' 2>/dev/null || echo "")
+          if [ -z "$PR_AUTHOR" ]; then
+            echo "::error::Could not determine PR author for PR #${PR_NUMBER}"
+            exit 1
+          fi
+
+          AUTHOR_PERMISSION=$(gh api "repos/${REPO}/collaborators/${PR_AUTHOR}/permission" --jq '.permission' 2>/dev/null || echo "none")
+          echo "PR author '${PR_AUTHOR}' permission level: ${AUTHOR_PERMISSION}"
+          echo "pr_author=${PR_AUTHOR}" >> "$GITHUB_OUTPUT"
+          echo "permission=${AUTHOR_PERMISSION}" >> "$GITHUB_OUTPUT"
+
+          case "$AUTHOR_PERMISSION" in
+            admin|write|maintain)
+              ;;
+            *)
+              echo "::error::PR author '${PR_AUTHOR}' must have write/admin/maintain permission for Claude to review this PR (got '${AUTHOR_PERMISSION}'). To allow Claude to review PRs from external contributors, set REQUIRE_PR_AUTHOR_PERMISSION: \"false\" in the job env (requires security team review — file is CODEOWNERS-protected)."
+              exit 1
+              ;;
+          esac
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+
       - name: Clone ci-skills plugin (sparse checkout)
         run: |
           git clone --no-checkout --depth 1 \
@@ -96,39 +177,37 @@ jobs:
 
       - name: Fetch PR/issue metadata
         run: |
-          CONTEXT_EOF="CTX_$(openssl rand -hex 8)"
+          source "$RUNNER_TEMP/helpers/safe-env.sh"
 
           # Sanitize attacker-controlled fields: strip non-printable chars, XML-like tags, cap length
           sanitize() {
-            echo "$1" | tr -cd '[:print:]' | head -c 200 | sed 's/<[^>]*>//g'
+            printf '%s' "$1" | tr -cd '[:print:]' | head -c 200 | sed 's/<[^>]*>//g'
           }
 
           if [[ -n "$ISSUE_PR_URL" ]]; then
             PR_NUMBER="$ISSUE_NUMBER_INPUT"
             PR_DATA=$(gh pr view "$PR_NUMBER" --json title,author,headRefName,baseRefName,state,additions,deletions,commits,files)
 
-            {
-              echo "FORMATTED_CONTEXT<<${CONTEXT_EOF}"
-              echo "PR Title: $(sanitize "$(echo "$PR_DATA" | jq -r '.title')")"
-              echo "PR Author: $(sanitize "$(echo "$PR_DATA" | jq -r '.author.login')")"
-              echo "PR Number: ${PR_NUMBER}"
-              echo "PR Branch: $(sanitize "$(echo "$PR_DATA" | jq -r '.headRefName')") -> $(sanitize "$(echo "$PR_DATA" | jq -r '.baseRefName')")"
-              echo "PR State: $(echo "$PR_DATA" | jq -r '.state | ascii_upcase')"
-              echo "PR Additions: $(echo "$PR_DATA" | jq -r '.additions')"
-              echo "PR Deletions: $(echo "$PR_DATA" | jq -r '.deletions')"
-              echo "Total Commits: $(echo "$PR_DATA" | jq -r '.commits | length')"
-              echo "Changed Files: $(echo "$PR_DATA" | jq '.files | length') files"
-              echo "${CONTEXT_EOF}"
-            } >> "$GITHUB_ENV"
+            CONTENT=$(printf '%s\n' \
+              "PR Title: $(sanitize "$(printf '%s' "$PR_DATA" | jq -r '.title')")" \
+              "PR Author: $(sanitize "$(printf '%s' "$PR_DATA" | jq -r '.author.login')")" \
+              "PR Number: ${PR_NUMBER}" \
+              "PR Branch: $(sanitize "$(printf '%s' "$PR_DATA" | jq -r '.headRefName')") -> $(sanitize "$(printf '%s' "$PR_DATA" | jq -r '.baseRefName')")" \
+              "PR State: $(printf '%s' "$PR_DATA" | jq -r '.state | ascii_upcase')" \
+              "PR Additions: $(printf '%s' "$PR_DATA" | jq -r '.additions')" \
+              "PR Deletions: $(printf '%s' "$PR_DATA" | jq -r '.deletions')" \
+              "Total Commits: $(printf '%s' "$PR_DATA" | jq -r '.commits | length')" \
+              "Changed Files: $(printf '%s' "$PR_DATA" | jq '.files | length') files" \
+            )
           else
-            {
-              echo "FORMATTED_CONTEXT<<${CONTEXT_EOF}"
-              echo "Issue Title: $(sanitize "${ISSUE_TITLE_INPUT}")"
-              echo "Issue Author: $(sanitize "${ISSUE_AUTHOR_INPUT}")"
-              echo "Issue State: ${ISSUE_STATE_INPUT^^}"
-              echo "${CONTEXT_EOF}"
-            } >> "$GITHUB_ENV"
+            CONTENT=$(printf '%s\n' \
+              "Issue Title: $(sanitize "${ISSUE_TITLE_INPUT}")" \
+              "Issue Author: $(sanitize "${ISSUE_AUTHOR_INPUT}")" \
+              "Issue State: $(sanitize "${ISSUE_STATE_INPUT^^}")" \
+            )
           fi
+
+          safe_set_env "FORMATTED_CONTEXT" "$CONTENT"
         env:
           GH_TOKEN: ${{ github.token }}
           ISSUE_PR_URL: ${{ github.event.issue.pull_request.url || github.event.pull_request.url || '' }}
@@ -139,6 +218,8 @@ jobs:
 
       - name: Build custom system prompt
         run: |
+          source "$RUNNER_TEMP/helpers/safe-env.sh"
+
           SYSTEM_PROMPT="You are Claude, an AI assistant running in a non-interactive CI environment. You MUST act autonomously: never ask for confirmation, never ask follow-up questions, never wait for user input. Execute the requested task completely and stop.
 
           <security_policy>
@@ -166,21 +247,12 @@ jobs:
           <formatted_context>
           ${FORMATTED_CONTEXT}
           </formatted_context>"
-          PROMPT_EOF="PROMPT_$(openssl rand -hex 8)"
 
-          {
-            echo "CUSTOM_SYSTEM_PROMPT<<${PROMPT_EOF}"
-            echo "$SYSTEM_PROMPT"
-            echo "${PROMPT_EOF}"
-          } >> "$GITHUB_ENV"
+          safe_set_env "CUSTOM_SYSTEM_PROMPT" "$SYSTEM_PROMPT"
 
       # ── Phase 2: Authenticate & install CLI (before lockdown) ──────────
 
       - name: Enforce PR is open
-        env:
-          PR_NUMBER: ${{ github.event.issue.number }}
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
         run: |
           STATE=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json state --jq '.state')
 
@@ -190,29 +262,34 @@ jobs:
             echo "::error::PR must be OPEN (got $STATE)"
             exit 1
           fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.issue.number }}
 
       - name: Exchange OIDC for GitHub App token
         id: oidc-exchange
         run: |
-          OIDC_TOKEN=$(curl -sf \
+          # OIDC avoids storing a long-lived PAT: GitHub issues a short-lived JWT scoped to this run.
+          ACTIONS_OIDC_JWT=$(curl -sf \
             -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
             "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=claude-code-github-action" | jq -r '.value')
-          if [ -z "$OIDC_TOKEN" ] || [ "$OIDC_TOKEN" = "null" ]; then
+          if [ -z "$ACTIONS_OIDC_JWT" ] || [ "$ACTIONS_OIDC_JWT" = "null" ]; then
             echo "::error::OIDC token request failed"; exit 1
           fi
 
           # Minimal permissions: remove contents:write to reduce blast radius.
-          APP_TOKEN=$(curl -sf -X POST \
-            -H "Authorization: Bearer $OIDC_TOKEN" \
+          GH_APP_INSTALL_TOKEN=$(curl -sf -X POST \
+            -H "Authorization: Bearer $ACTIONS_OIDC_JWT" \
             -H "Content-Type: application/json" \
             -d '{"permissions":{"contents":"read","pull_requests":"write","issues":"write"}}' \
             "https://api.anthropic.com/api/github/github-app-token-exchange" | jq -r '.token')
-          if [ -z "$APP_TOKEN" ] || [ "$APP_TOKEN" = "null" ]; then
+          if [ -z "$GH_APP_INSTALL_TOKEN" ] || [ "$GH_APP_INSTALL_TOKEN" = "null" ]; then
             echo "::error::Token exchange failed"; exit 1
           fi
 
-          echo "::add-mask::$APP_TOKEN"
-          echo "app_token=$APP_TOKEN" >> "$GITHUB_OUTPUT"
+          echo "::add-mask::$GH_APP_INSTALL_TOKEN"
+          echo "gh_app_install_token=$GH_APP_INSTALL_TOKEN" >> "$GITHUB_OUTPUT"
 
       - name: Install Claude Code CLI
         run: |
@@ -254,11 +331,9 @@ jobs:
           fi
 
       - name: Start Squid proxy
-        env:
-          GH_WORKSPACE: ${{ github.workspace }}
         run: |
           docker run -d --name sandbox-proxy -p 3128:3128 \
-            -v "$GH_WORKSPACE/.github/squid/sandbox-proxy-rules.conf:/etc/squid/conf.d/00-sandbox-proxy-rules.conf:ro" \
+            -v "${{ github.workspace }}/.github/squid/sandbox-proxy-rules.conf:/etc/squid/conf.d/00-sandbox-proxy-rules.conf:ro" \
             "$SQUID_IMAGE"
 
           # Wait for readiness (api.github.com returns 200 without auth, unlike api.anthropic.com)
@@ -286,7 +361,9 @@ jobs:
           fi
           echo "Squid IP: $SQUID_IP"
 
-          # IPv4: allow only proxy traffic, then block all runner egress paths.
+          # IPv4: flush first to ensure deny-by-default rules are not shadowed by
+          # any pre-existing ACCEPT rules on the runner OUTPUT chain.
+          sudo iptables -F OUTPUT
           sudo iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
           sudo iptables -A OUTPUT -o lo -p tcp --dport 3128 -j ACCEPT
 
@@ -300,6 +377,7 @@ jobs:
 
           # IPv6: mirror egress restrictions if IPv6 tooling is present on the runner.
           if command -v ip6tables >/dev/null 2>&1; then
+            sudo ip6tables -F OUTPUT
             sudo ip6tables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
             sudo ip6tables -A OUTPUT -o lo -p tcp --dport 3128 -j ACCEPT
             sudo ip6tables -A OUTPUT -p tcp --syn -j REJECT --reject-with tcp-reset
@@ -338,7 +416,7 @@ jobs:
           fi
 
           # Verify: containers cannot bypass proxy
-          if docker run --rm --entrypoint /bin/bash "$SQUID_IMAGE" -lc "timeout 5 openssl s_client -connect google.com:443 -brief </dev/null" >/dev/null 2>&1; then
+          if docker run --rm --entrypoint /bin/sh "$SQUID_IMAGE" -lc "timeout 5 openssl s_client -connect google.com:443 -brief </dev/null" >/dev/null 2>&1; then
             echo "::error::Container egress bypass detected (google.com reachable directly)"; exit 1
           fi
 
@@ -348,6 +426,7 @@ jobs:
         id: command-router
         run: |
           set -euo pipefail
+          source "$RUNNER_TEMP/helpers/safe-env.sh"
 
           RAW_COMMENT="${COMMENT_BODY}"
 
@@ -383,31 +462,26 @@ jobs:
           echo "User prompt extracted (${#USER_PROMPT} chars)"
           echo "route=run" >> "$GITHUB_OUTPUT"
 
-          PROMPT_EOF="PROMPT_$(openssl rand -hex 8)"
-          {
-            echo "CLAUDE_PROMPT<<${PROMPT_EOF}"
-            echo "$USER_PROMPT"
-            echo "${PROMPT_EOF}"
-          } >> "$GITHUB_ENV"
+          safe_set_env "CLAUDE_PROMPT" "$USER_PROMPT"
         env:
           COMMENT_BODY: ${{ github.event.comment.body }}
 
       - name: Post tracking comment
         if: steps.command-router.outputs.route == 'run'
         id: tracking-comment
+        run: |
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          ISSUE_NUMBER="${{ github.event.issue.number || github.event.pull_request.number }}"
+          BODY="**Claude is working on @${ACTOR}'s request...** — [View run]($RUN_URL)"
+          COMMENT_ID=$(gh api "repos/${{ github.repository }}/issues/${ISSUE_NUMBER}/comments" \
+            -X POST -f body="$BODY" --jq '.id')
+          echo "comment_id=$COMMENT_ID" >> "$GITHUB_OUTPUT"
         env:
-          GH_REPOSITORY: ${{ github.repository }}
-          GH_ISSUE_NUMBER: ${{ github.event.issue.number || github.event.pull_request.number }}
-          GH_TOKEN: ${{ steps.oidc-exchange.outputs.app_token }}
+          GH_TOKEN: ${{ steps.oidc-exchange.outputs.gh_app_install_token }}
           ACTOR: ${{ github.actor }}
           HTTP_PROXY: http://127.0.0.1:3128
           HTTPS_PROXY: http://127.0.0.1:3128
           NO_PROXY: 127.0.0.1,localhost
-        run: |
-          BODY="**Claude is working on @${ACTOR}'s request...** — [View run]($RUN_URL)"
-          COMMENT_ID=$(gh api "repos/$GH_REPOSITORY/issues/$GH_ISSUE_NUMBER/comments" \
-            -X POST -f body="$BODY" --jq '.id')
-          echo "comment_id=$COMMENT_ID" >> "$GITHUB_OUTPUT"
 
       - name: Post rejection message
         if: steps.command-router.outputs.route == 'rejected'
@@ -425,7 +499,7 @@ jobs:
 
           gh pr comment "$PR_NUMBER" --body "$BODY"
         env:
-          GH_TOKEN: ${{ steps.oidc-exchange.outputs.app_token }}
+          GH_TOKEN: ${{ steps.oidc-exchange.outputs.gh_app_install_token }}
           PR_NUMBER: ${{ github.event.issue.number }}
           REJECT_REASON: ${{ steps.command-router.outputs.reject_reason }}
           HTTP_PROXY: http://127.0.0.1:3128
@@ -447,12 +521,11 @@ jobs:
           claude plugin marketplace add /tmp/zama-marketplace
           claude plugin install ci-skills@zama-marketplace
 
-          # Execute Claude with a hard timeout (10 minutes)
+          # Execute Claude with a hard timeout (15 minutes)
           set +e
-          timeout 600 claude -p "$CLAUDE_PROMPT" \
+          timeout 900 claude -p "$CLAUDE_PROMPT" \
             --model opus \
             --dangerously-skip-permissions \
-            --verbose \
             --system-prompt "$CUSTOM_SYSTEM_PROMPT" > /tmp/claude-response.md
           EXIT_CODE=$?
           set -e
@@ -468,12 +541,15 @@ jobs:
 
         env:
           CLAUDE_PROMPT: ${{ env.CLAUDE_PROMPT }}
-          GITHUB_TOKEN: ${{ steps.oidc-exchange.outputs.app_token }}
-          GH_TOKEN: ${{ steps.oidc-exchange.outputs.app_token }}
+          GITHUB_TOKEN: ${{ steps.oidc-exchange.outputs.gh_app_install_token }}
+          GH_TOKEN: ${{ steps.oidc-exchange.outputs.gh_app_install_token }}
           HTTP_PROXY: http://127.0.0.1:3128
           HTTPS_PROXY: http://127.0.0.1:3128
           NO_PROXY: 127.0.0.1,localhost
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Disable telemetry and auto-plugin fetch. Claude is used exclusively for PR review;
+          # no additional plugins or background network calls are needed or wanted.
+          CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
 
       - name: Post Claude response
         if: steps.run-claude.outputs.claude_status == 'success' && steps.command-router.outputs.route == 'run'
@@ -489,22 +565,23 @@ jobs:
           MAX_CHARS=60000
           ORIGINAL_SIZE=$(wc -c < /tmp/claude-response.md)
           if [ "$ORIGINAL_SIZE" -gt "$MAX_CHARS" ]; then
-            head -c "$MAX_CHARS" /tmp/claude-response.md > /tmp/claude-response-validated.md
+            python3 -c "data=open('/tmp/claude-response.md','rb').read(); out=data[:$MAX_CHARS].decode('utf-8','ignore').encode('utf-8'); open('/tmp/claude-response-validated.md','wb').write(out)"
             printf '\n\n---\n*Response truncated (%s bytes, limit %s).*\n' "$ORIGINAL_SIZE" "$MAX_CHARS" >> /tmp/claude-response-validated.md
           else
             cp /tmp/claude-response.md /tmp/claude-response-validated.md
           fi
 
           # Block responses containing potential secrets
-          if grep -qiE '(ghp_[a-zA-Z0-9]{36}|gho_[a-zA-Z0-9]{36}|github_pat_|sk-ant-|AKIA[0-9A-Z]{16}|-----BEGIN (RSA |EC )?PRIVATE KEY)' /tmp/claude-response-validated.md; then
+          if grep -qiE '(ghp_[a-zA-Z0-9]{36}|gho_[a-zA-Z0-9]{36}|ghs_[a-zA-Z0-9]{36}|ghr_[a-zA-Z0-9]{36}|github_pat_|sk-ant-|AKIA[0-9A-Z]{16}|-----BEGIN (RSA |EC |DSA |OPENSSH )?PRIVATE KEY|-----BEGIN PRIVATE KEY)' /tmp/claude-response-validated.md; then
             echo "::error::Response appears to contain secrets — refusing to post"
             echo "Claude's response was blocked because it appeared to contain sensitive data. See [workflow logs](${RUN_URL})." > /tmp/claude-response-validated.md
           fi
 
           gh pr comment "$PR_NUMBER" --body-file /tmp/claude-response-validated.md
         env:
-          GH_TOKEN: ${{ steps.oidc-exchange.outputs.app_token }}
+          GH_TOKEN: ${{ steps.oidc-exchange.outputs.gh_app_install_token }}
           PR_NUMBER: ${{ github.event.issue.number }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           HTTP_PROXY: http://127.0.0.1:3128
           HTTPS_PROXY: http://127.0.0.1:3128
           NO_PROXY: 127.0.0.1,localhost
@@ -512,6 +589,8 @@ jobs:
       - name: Update tracking comment
         if: always() && steps.tracking-comment.outputs.comment_id != ''
         run: |
+          RUN_URL="${SERVER_URL}/${REPO}/actions/runs/${RUN_ID}"
+
           case "$CLAUDE_STATUS" in
             success)
               BODY="**Claude finished @${ACTOR}'s request.** — [View run]($RUN_URL)"
@@ -530,10 +609,12 @@ jobs:
           gh api "repos/${REPO}/issues/comments/${COMMENT_ID}" \
             -X PATCH -f body="$BODY"
         env:
-          GH_TOKEN: ${{ steps.oidc-exchange.outputs.app_token }}
+          GH_TOKEN: ${{ steps.oidc-exchange.outputs.gh_app_install_token }}
           HTTPS_PROXY: http://127.0.0.1:3128
           ACTOR: ${{ github.actor }}
+          SERVER_URL: ${{ github.server_url }}
           REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
           CLAUDE_STATUS: ${{ steps.run-claude.outputs.claude_status || '' }}
           CLAUDE_EXIT_CODE: ${{ steps.run-claude.outputs.claude_exit_code || '' }}
           COMMENT_ID: ${{ steps.tracking-comment.outputs.comment_id }}
@@ -554,13 +635,13 @@ jobs:
           fi
 
       - name: Revoke GitHub App token
-        if: always() && steps.oidc-exchange.outputs.app_token != ''
+        if: always() && steps.oidc-exchange.outputs.gh_app_install_token != ''
         run: |
           gh api "installation/token" -X DELETE || {
             echo "::warning::Token revocation failed"
           }
         env:
-          GH_TOKEN: ${{ steps.oidc-exchange.outputs.app_token }}
+          GH_TOKEN: ${{ steps.oidc-exchange.outputs.gh_app_install_token }}
 
       - name: Print Squid logs
         if: always() && runner.debug == '1'

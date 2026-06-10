@@ -117,7 +117,7 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain
 
     /// @custom:storage-location erc7201:fhevm.storage.InputVerifier
     struct InputVerifierStorage {
-        mapping(address => bool) isSigner; /// @notice Mapping to keep track of addresses that are signers
+        mapping(address signer => bool isSigner) isSigner; /// @notice Mapping to keep track of addresses that are signers
         address[] signers; /// @notice Array to keep track of all signers
         uint256 threshold; /// @notice The threshold for the number of signers required for a signature to be valid
     }

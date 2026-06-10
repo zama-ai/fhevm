@@ -1,4 +1,5 @@
 import '@nomicfoundation/hardhat-toolbox';
+import 'chai-as-promised';
 import dotenv from 'dotenv';
 import type { HardhatUserConfig } from 'hardhat/config';
 import { task, vars } from 'hardhat/config';
@@ -33,7 +34,7 @@ task('coverage').setAction(async (taskArgs, hre, runSuper) => {
 
 task('test', async (taskArgs, hre, runSuper) => {
   // Run modified test task
-  if (network.name === 'hardhat') {
+  if (hre.network.name === 'hardhat') {
     const privKeyFhevmDeployer = process.env.PRIVATE_KEY_FHEVM_DEPLOYER;
     // await hre.run('task:faucetToPrivate', { privateKey: privKeyFhevmDeployer });
     // await hre.run('task:faucetToPrivate', { privateKey: privKeyFhevmRelayer });
@@ -79,6 +80,7 @@ const chainIds = {
   zwsDev: 1337,
   sepolia: 11155111,
   mainnet: 1,
+  polygonAmoy: 80002,
   localCoprocessorL1: 123456,
   localCoprocessorL2: 654321,
   composeCoprocessorL1: 123456,
@@ -87,7 +89,7 @@ const chainIds = {
 };
 
 function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
-  let jsonRpcUrl: string;
+  let jsonRpcUrl: string | undefined;
   const defaultRpcUrl = 'http://localhost:8545';
   const requestedNetwork = (() => {
     const idx = process.argv.indexOf('--network');
@@ -122,6 +124,15 @@ function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
           throw new Error('MAINNET_ETH_RPC_URL (or RPC_URL) is required for mainnet network');
         }
         jsonRpcUrl = 'https://eth.llamarpc.com'; // placeholder for config validation
+      }
+      break;
+    case 'polygonAmoy':
+      jsonRpcUrl = process.env.POLYGON_AMOY_RPC_URL || vars.get('POLYGON_AMOY_RPC_URL', '') || process.env.RPC_URL;
+      if (!jsonRpcUrl) {
+        if (shouldWarn) {
+          throw new Error('POLYGON_AMOY_RPC_URL (or RPC_URL) is required for polygonAmoy network');
+        }
+        jsonRpcUrl = 'https://rpc-amoy.polygon.technology'; // placeholder for config validation
       }
       break;
     case 'localCoprocessor':
@@ -190,6 +201,7 @@ const config: HardhatUserConfig = {
     zwsDev: getChainConfig('zwsDev'),
     sepolia: getChainConfig('sepolia'),
     mainnet: getChainConfig('mainnet'),
+    polygonAmoy: getChainConfig('polygonAmoy'),
     localNative: getChainConfig('localNative'),
     localCoprocessor: getChainConfig('localCoprocessor'),
     localCoprocessorL1: getChainConfig('localCoprocessorL1'),
@@ -242,11 +254,11 @@ const config: HardhatUserConfig = {
       },
     ],
   },
-  warnings: {
-    '*': {
-      'transient-storage': false,
-    },
-  },
+  // warnings: {
+  //   "*": {
+  //     "transient-storage": false,
+  //   },
+  // },
   typechain: {
     outDir: 'types',
     target: 'ethers-v6',

@@ -494,4 +494,21 @@ export const ALL_OPERATORS_PRICES: PriceData = {
       Uint256: { le10: 321000, le30: 586000, le60: 943000 },
     },
   },
+  // fheMulDiv[T] = fheMul[2T] + fheDiv[2T] (tfhe-rs widens to 2T internally).
+  fheMulDiv: {
+    supportScalar: true,
+    numberInputs: 2,
+    scalar: {
+      Uint8: 495000,
+      Uint16: 703000,
+      Uint32: 1080000,
+      Uint64: 1921000,
+    },
+    nonScalar: {
+      Uint8: 524000,
+      Uint16: 766000,
+      Uint32: 1311000,
+      Uint64: 2911000,
+    },
+  },
 };

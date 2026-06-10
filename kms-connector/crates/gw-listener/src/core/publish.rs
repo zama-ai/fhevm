@@ -8,7 +8,8 @@ use connector_utils::{
     },
 };
 use fhevm_gateway_bindings::decryption::Decryption::{
-    PublicDecryptionRequest, UserDecryptionRequest, UserDecryptionRequestSolana,
+    PublicDecryptionRequest, UserDecryptionRequest_0 as UserDecryptionRequest,
+    UserDecryptionRequest_1 as UserDecryptionRequestV2,
 };
 use fhevm_host_bindings::kms_generation::KMSGeneration::{
     CrsgenRequest, KeygenRequest, PrepKeygenRequest,
@@ -54,8 +55,8 @@ async fn publish_event_inner<'e>(
         ProtocolEventKind::UserDecryption(e) => {
             publish_user_decryption(executor, e, tx_hash, created_at, otlp_ctx).await
         }
-        ProtocolEventKind::UserDecryptionSolana(e) => {
-            publish_user_decryption_solana(executor, e, tx_hash, created_at, otlp_ctx).await
+        ProtocolEventKind::UserDecryptionV2(e) => {
+            publish_user_decryption_v2(executor, e, tx_hash, created_at, otlp_ctx).await
         }
         ProtocolEventKind::PrepKeygen(e) => {
             let params_type: ParamsTypeDb = e.paramsType.try_into()?;
@@ -124,6 +125,9 @@ async fn publish_user_decryption<'e>(
         .map(SnsCiphertextMaterialDbItem::from)
         .collect::<Vec<SnsCiphertextMaterialDbItem>>();
 
+    // RFC016-specific columns (`handle_owner_addresses`, `handle_contract_addresses`,
+    // `allowed_contracts`, `start_timestamp`, `duration_seconds`, `signature`) are left unset —
+    // they default to NULL for legacy rows, which is what the reader uses to identify the variant.
     sqlx::query!(
         "INSERT INTO user_decryption_requests(\
             decryption_id, sns_ct_materials, user_address, public_key, extra_data, tx_hash,\
@@ -144,12 +148,9 @@ async fn publish_user_decryption<'e>(
     .map_err(anyhow::Error::from)
 }
 
-/// RFC-021 (Solana host) user decryption. Stored in the same `user_decryption_requests` table as
-/// the EVM variant; the 32-byte `user_address` (a Solana pubkey) discriminates it from the 20-byte
-/// EVM address on read. The reused INSERT string shares sqlx's cached query metadata.
-async fn publish_user_decryption_solana<'e>(
+async fn publish_user_decryption_v2<'e>(
     executor: impl PgExecutor<'e>,
-    request: UserDecryptionRequestSolana,
+    request: UserDecryptionRequestV2,
     tx_hash: Option<FixedBytes<32>>,
     created_at: DateTime<Utc>,
     otlp_ctx: PropagationContext,
@@ -160,20 +161,59 @@ async fn publish_user_decryption_solana<'e>(
         .map(SnsCiphertextMaterialDbItem::from)
         .collect::<Vec<SnsCiphertextMaterialDbItem>>();
 
+    let handle_owner_addresses: Vec<Vec<u8>> = request
+        .handles
+        .iter()
+        .map(|h| h.ownerAddress.to_vec())
+        .collect();
+    let handle_contract_addresses: Vec<Vec<u8>> = request
+        .handles
+        .iter()
+        .map(|h| h.contractAddress.to_vec())
+        .collect();
+    let payload = &request.payload;
+    let allowed_contracts: Vec<Vec<u8>> = payload
+        .allowedContracts
+        .iter()
+        .map(|a| a.to_vec())
+        .collect();
+
+    // `startTimestamp` and `durationSeconds` are `uint256` on-chain but Unix-epoch seconds in
+    // practice, so they fit easily in `BIGINT`. A Gateway emitting values past i64::MAX would be
+    // broken; we surface that as an error rather than silently truncating.
+    let start_timestamp: i64 = payload
+        .requestValidity
+        .startTimestamp
+        .try_into()
+        .map_err(|_| anyhow!("RFC016 startTimestamp does not fit in i64"))?;
+    let duration_seconds: i64 = payload
+        .requestValidity
+        .durationSeconds
+        .try_into()
+        .map_err(|_| anyhow!("RFC016 durationSeconds does not fit in i64"))?;
+
     sqlx::query!(
         "INSERT INTO user_decryption_requests(\
             decryption_id, sns_ct_materials, user_address, public_key, extra_data, tx_hash,\
-            created_at, otlp_context\
+            created_at, otlp_context, handle_owner_addresses, handle_contract_addresses,\
+            allowed_contracts, start_timestamp, duration_seconds, signature\
         ) \
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT DO NOTHING",
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) \
+        ON CONFLICT DO NOTHING",
         request.decryptionId.as_le_slice(),
         sns_ciphertexts_db as Vec<SnsCiphertextMaterialDbItem>,
-        request.userAddress.as_slice(),
-        request.publicKey.as_ref(),
-        request.extraData.as_ref(),
+        payload.userAddress.as_slice(),
+        payload.publicKey.as_ref(),
+        payload.extraData.as_ref(),
         tx_hash.map(|h| h.to_vec()),
         created_at,
         bc2wrap::serialize(&otlp_ctx)?,
+        &handle_owner_addresses,
+        &handle_contract_addresses,
+        &allowed_contracts,
+        start_timestamp,
+        duration_seconds,
+        payload.signature.as_ref(),
     )
     .execute(executor)
     .await

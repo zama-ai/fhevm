@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use alloy::primitives::Address;
+use anyhow::Context;
 use clap::Parser;
 use tokio_util::sync::CancellationToken;
 use tracing::Level;
@@ -29,8 +30,12 @@ struct Args {
     #[arg(long, help = "TFHE contract address to monitor")]
     tfhe_contract_address: Address,
 
-    #[arg(long, help = "KMS generation contract address to monitor")]
-    pub kms_generation_address: Address,
+    #[arg(
+        long,
+        default_value = "",
+        help = "Optional KMS generation contract address to monitor"
+    )]
+    pub kms_generation_address: String,
 
     #[arg(long, help = "PostgreSQL connection URL")]
     database_url: DatabaseURL,
@@ -125,6 +130,21 @@ struct Args {
     pub dependent_ops_max_per_chain: u32,
 }
 
+fn parse_optional_address(
+    value: &str,
+    name: &str,
+) -> anyhow::Result<Option<Address>> {
+    let value = value.trim();
+    if value.is_empty() {
+        Ok(None)
+    } else {
+        value
+            .parse::<Address>()
+            .with_context(|| format!("Invalid {name} address: {value}"))
+            .map(Some)
+    }
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
@@ -147,7 +167,10 @@ async fn main() -> anyhow::Result<()> {
         url: args.url,
         acl_address: args.acl_contract_address,
         tfhe_address: args.tfhe_contract_address,
-        kms_generation_address: args.kms_generation_address,
+        kms_generation_address: parse_optional_address(
+            &args.kms_generation_address,
+            "KMS generation contract",
+        )?,
         database_url: args.database_url,
         finality_lag: args.finality_lag,
         batch_size: args.batch_size,

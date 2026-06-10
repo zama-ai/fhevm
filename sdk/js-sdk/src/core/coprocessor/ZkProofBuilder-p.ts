@@ -1,4 +1,4 @@
-import type { ChecksummedAddress, UintNumber } from '../types/primitives.js';
+import type { Bytes20, Bytes32, BytesHex, ChecksummedAddress, UintNumber } from '../types/primitives.js';
 import type { ZkProof } from '../types/zkProof-p.js';
 import type { EncryptionBits, FheType } from '../types/fheType.js';
 import type { ZkProofBuilder } from '../types/zkProofBuilder.js';
@@ -16,7 +16,9 @@ import type {
   AddressValueLike,
 } from '../types/primitives.js';
 import { assert } from '../base/errors/InternalError.js';
-import { isUint64 } from '../base/uint.js';
+import { isUint64, uint256ToBytes32 } from '../base/uint.js';
+import { isAddress } from '../base/address.js';
+import { asBytesHex, hexToBytes20 } from '../base/bytes.js';
 import { ZkProofError } from '../errors/ZkProofError.js';
 import { buildInputProofMetaData, isSolanaHostChainId } from './buildInputProofMetaData-p.js';
 import { toSolanaZkProof } from './SolanaZkProof-p.js';
@@ -143,9 +145,11 @@ class ZkProofBuilderImpl implements ZkProofBuilder {
     {
       contractAddress,
       userAddress,
+      extraData,
     }: {
       readonly contractAddress: string;
       readonly userAddress: string;
+      readonly extraData: string;
     },
   ): Promise<ZkProof> {
     const { chainId, aclContractAddress, ciphertextWithZkProof } = await this.#encodeAndProve(
@@ -265,13 +269,48 @@ class ZkProofBuilderImpl implements ZkProofBuilder {
       aclContractAddress,
     });
 
-    const ciphertextWithZkProof: Uint8Array = await context.runtime.encrypt.buildWithProofPacked({
-      typedValues: [...this.#builder.build()],
-      fheEncryptionKey: fheEncryptionKeyWasm,
-      metaData,
-    });
+    // Bytes20
+    const contractAddressBytes20: Bytes20 = hexToBytes20(contractAddress);
 
-    return { chainId, aclContractAddress, ciphertextWithZkProof };
+    // Bytes20
+    const userAddressBytes20: Bytes20 = hexToBytes20(userAddress);
+
+    // Bytes20
+    const aclContractAddressBytes20: Bytes20 = hexToBytes20(aclContractAddress);
+
+    // Bytes32
+    const chainIdBytes32: Bytes32 = uint256ToBytes32(chainId);
+
+    const metaDataLength = 3 * 20 + 32;
+    const metaData = new Uint8Array(metaDataLength);
+
+    metaData.set(contractAddressBytes20, 0);
+    metaData.set(userAddressBytes20, 20);
+    metaData.set(aclContractAddressBytes20, 40);
+    metaData.set(chainIdBytes32, 60);
+
+    assert(metaData.length - chainIdBytes32.length === 60);
+
+    const { ciphertextWithZKProofBytes, extraData: finalExtraData } =
+      await context.runtime.encrypt.buildWithProofPacked({
+        typedValues: [...this.#builder.build()],
+        fheEncryptionKey: fheEncryptionKeyWasm,
+        metaData,
+        extraData: asBytesHex(extraData),
+      });
+
+    return toZkProof(
+      {
+        chainId: BigInt(chainId),
+        aclContractAddress,
+        contractAddress,
+        userAddress,
+        ciphertextWithZkProof: ciphertextWithZKProofBytes,
+        encryptionBits: this.#bits,
+      },
+      finalExtraData,
+      { copy: false }, // Take ownership
+    );
   }
 
   #checkLimit(encryptionBits: EncryptionBits): void {
@@ -313,9 +352,10 @@ export async function createZkProof(
     readonly values: readonly TypedValue[];
     readonly contractAddress: ChecksummedAddress;
     readonly userAddress: ChecksummedAddress;
+    readonly extraData: BytesHex;
   },
 ): Promise<ZkProof> {
-  const { contractAddress, userAddress, values } = parameters;
+  const { contractAddress, userAddress, values, extraData } = parameters;
 
   const builder = new ZkProofBuilderImpl(PRIVATE_TOKEN, {
     ciphertextCapacity: TFHE_ZKPROOF_CIPHERTEXT_CAPACITY,
@@ -329,6 +369,7 @@ export async function createZkProof(
   const zkProof = await builder.build(context, {
     contractAddress,
     userAddress,
+    extraData,
   });
 
   return zkProof;

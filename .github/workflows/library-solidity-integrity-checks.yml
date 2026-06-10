@@ -16,7 +16,7 @@ jobs:
     name: library-solidity-integrity-checks/check-changes
     permissions:
       contents: 'read' # Required to checkout repository code
-    runs-on: ubuntu-latest
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
     outputs:
       changes-library-solidity: ${{ steps.filter.outputs.library-solidity }}
     steps:
@@ -38,7 +38,7 @@ jobs:
     if: ${{ needs.check-changes.outputs.changes-library-solidity == 'true' }}
     permissions:
       contents: 'read' # Required to checkout repository code
-    runs-on: ubuntu-latest
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
     steps:
       - name: Checkout project
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2

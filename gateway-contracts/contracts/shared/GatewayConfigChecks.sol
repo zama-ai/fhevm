@@ -40,22 +40,10 @@ abstract contract GatewayConfigChecks {
     error NotCoprocessorSigner(address signerAddress);
 
     /**
-     * @notice Error emitted when an address is not a custodian transaction sender.
-     * @param txSenderAddress The address that is not a custodian transaction sender.
-     */
-    error NotCustodianTxSender(address txSenderAddress);
-
-    /**
-     * @notice Error emitted when an address is not a custodian signer.
-     * @param signerAddress The address that is not a custodian signer.
-     */
-    error NotCustodianSigner(address signerAddress);
-
-    /**
      * @notice Error emitted when a host chain is not registered in the GatewayConfig contract.
      * @param chainId The host chain's chain ID.
      */
-    error HostChainNotRegistered(uint256 chainId);
+    error HostChainDisabled(uint256 chainId);
 
     /**
      * @notice Error emitted when the KMS signer does not correspond to the KMS transaction sender.
@@ -92,33 +80,43 @@ abstract contract GatewayConfigChecks {
     }
 
     /**
-     * @notice Checks if the chain ID corresponds to a registered host chain.
+     * @notice Checks if the chain ID corresponds to a registered and enabled host chain.
+     * @dev Reverts with `HostChainNotRegistered` for unknown chains and with `HostChainDisabled`
+     *      for registered-but-disabled chains, so callers can distinguish the two cases.
      */
     modifier onlyRegisteredHostChain(uint256 chainId) {
         if (!GATEWAY_CONFIG.isHostChainRegistered(chainId)) {
-            revert HostChainNotRegistered(chainId);
+            revert IGatewayConfig.HostChainNotRegistered(chainId);
+        }
+        if (GATEWAY_CONFIG.isHostChainDisabled(chainId)) {
+            revert HostChainDisabled(chainId);
         }
         _;
     }
 
     /**
-     * @notice Checks if the chain ID extracted from the handle corresponds to a registered host chain.
+     * @notice Checks if the chain ID extracted from the handle corresponds to a registered and
+     *         enabled host chain.
+     * @dev Reverts with `HostChainNotRegistered` for unknown chains and with `HostChainDisabled`
+     *      for registered-but-disabled chains.
      */
     modifier onlyHandleFromRegisteredHostChain(bytes32 handle) {
-        uint256 handleChainId = HandleOps.extractChainId(handle);
-        if (!GATEWAY_CONFIG.isHostChainRegistered(handleChainId)) {
-            revert HostChainNotRegistered(handleChainId);
-        }
+        _checkHandleFromRegisteredHostChain(handle);
         _;
     }
 
     /**
-     * @notice Checks if the address is a KMS signer.
-     * @param signerAddress The address to check.
+     * @notice Internal variant of `onlyHandleFromRegisteredHostChain` callable from loops where a
+     *         per-iteration modifier isn't available (e.g., `CiphertextCommits.getSnsCiphertextMaterials`).
+     * @dev Reverts with the same errors as the modifier.
      */
-    function _checkIsKmsSigner(address signerAddress) internal view {
-        if (!GATEWAY_CONFIG.isKmsSigner(signerAddress)) {
-            revert NotKmsSigner(signerAddress);
+    function _checkHandleFromRegisteredHostChain(bytes32 handle) internal view {
+        uint256 handleChainId = HandleOps.extractChainId(handle);
+        if (!GATEWAY_CONFIG.isHostChainRegistered(handleChainId)) {
+            revert IGatewayConfig.HostChainNotRegistered(handleChainId);
+        }
+        if (GATEWAY_CONFIG.isHostChainDisabled(handleChainId)) {
+            revert HostChainDisabled(handleChainId);
         }
     }
 
@@ -129,20 +127,6 @@ abstract contract GatewayConfigChecks {
     function _checkIsCoprocessorSigner(address signerAddress) internal view {
         if (!GATEWAY_CONFIG.isCoprocessorSigner(signerAddress)) {
             revert NotCoprocessorSigner(signerAddress);
-        }
-    }
-
-    /**
-     * @notice Checks if the signer is a KMS signer, and that it corresponds to the transaction
-     * sender of the same KMS node.
-     * @param signerAddress The signer address to check.
-     * @param txSenderAddress The address of the KMS transaction sender.
-     */
-    function _checkKmsSignerMatchesTxSender(address signerAddress, address txSenderAddress) internal view {
-        _checkIsKmsSigner(signerAddress);
-
-        if (GATEWAY_CONFIG.getKmsNode(txSenderAddress).signerAddress != signerAddress) {
-            revert KmsSignerDoesNotMatchTxSender(signerAddress, txSenderAddress);
         }
     }
 

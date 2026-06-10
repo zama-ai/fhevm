@@ -16,7 +16,7 @@ import { FHETypeBitSizes } from "./libraries/FHETypeBitSizes.sol";
 import { HandleOps } from "./libraries/HandleOps.sol";
 import { GatewayOwnable } from "./shared/GatewayOwnable.sol";
 import { ProtocolPaymentUtils } from "./shared/ProtocolPaymentUtils.sol";
-import { SnsCiphertextMaterial, CtHandleContractPair } from "./shared/Structs.sol";
+import { SnsCiphertextMaterial, CtHandleContractPair, HandleEntry } from "./shared/Structs.sol";
 import { PUBLIC_DECRYPT_COUNTER_BASE, USER_DECRYPT_COUNTER_BASE } from "./shared/KMSRequestCounters.sol";
 
 /**
@@ -51,6 +51,9 @@ contract Decryption is
      * @notice The typed data structure for the EIP712 signature to validate in user decryption requests.
      * @dev The name of this struct is not relevant for the signature validation, only the one defined
      * EIP712_USER_DECRYPT_REQUEST_TYPE is, but we keep it the same for clarity.
+     * @custom:deprecated Used only by the legacy `userDecryptionRequest(CtHandleContractPair[], ...)`
+     * path. Removed when the relayer-sdk deprecation window for old-format signatures closes. The
+     * unified EIP-712 path does not verify signatures on-chain, so it does not use this struct.
      */
     struct UserDecryptRequestVerification {
         /// @notice The user's public key to be used for reencryption.
@@ -69,6 +72,9 @@ contract Decryption is
      * @notice The typed data structure for the EIP712 signature to validate in delegated user decryption requests.
      * @dev The name of this struct is not relevant for the signature validation, only the one defined as
      * EIP712_DELEGATED_USER_DECRYPT_REQUEST_TYPE is.
+     * @custom:deprecated Used only by the legacy `delegatedUserDecryptionRequest` path. Removed when the
+     * relayer-sdk deprecation window for old-format signatures closes. The unified EIP-712 format subsumes delegation into
+     * the per-handle `ownerAddress` of `HandleEntry`.
      */
     struct DelegatedUserDecryptRequestVerification {
         /// @notice The user's public key to be used for reencryption.
@@ -123,8 +129,16 @@ contract Decryption is
 
     /**
      * @notice The maximum number of duration days that can be requested for a user decryption.
+     * @custom:deprecated Used only by the legacy user decryption paths. Use
+     * `MAX_USER_DECRYPT_DURATION_SECONDS` for the unified EIP-712 path.
      */
     uint16 internal constant MAX_USER_DECRYPT_DURATION_DAYS = 365;
+
+    /**
+     * @notice The maximum duration in seconds that can be requested for a unified EIP-712 user decryption.
+     * @dev Equivalent to `MAX_USER_DECRYPT_DURATION_DAYS` expressed in seconds.
+     */
+    uint256 internal constant MAX_USER_DECRYPT_DURATION_SECONDS = uint256(MAX_USER_DECRYPT_DURATION_DAYS) * 1 days;
 
     /**
      * @notice The maximum number of contracts that can request for user decryption at once.
@@ -156,6 +170,9 @@ contract Decryption is
 
     /**
      * @notice The definition of the UserDecryptRequestVerification structure typed data.
+     * @custom:deprecated Used only by the legacy user decryption path. Removed when the
+     * relayer-sdk deprecation window for old-format signatures closes. The unified EIP-712 path
+     * does not verify signatures on-chain, so no equivalent type hash is declared for it.
      */
     string private constant EIP712_USER_DECRYPT_REQUEST_TYPE =
         "UserDecryptRequestVerification(bytes publicKey,address[] contractAddresses,uint256 startTimestamp,"
@@ -164,11 +181,14 @@ contract Decryption is
     /**
      * @notice The hash of the UserDecryptRequestVerification structure typed data definition
      * used for signature validation in user decryption requests.
+     * @custom:deprecated See `EIP712_USER_DECRYPT_REQUEST_TYPE`.
      */
     bytes32 private constant EIP712_USER_DECRYPT_REQUEST_TYPE_HASH = keccak256(bytes(EIP712_USER_DECRYPT_REQUEST_TYPE));
 
     /**
      * @notice The definition of the DelegatedUserDecryptRequestVerification structure typed data.
+     * @custom:deprecated Used only by the legacy delegated user decryption path. Removed when the
+     * relayer-sdk deprecation window for old-format signatures closes.
      */
     string private constant EIP712_DELEGATED_USER_DECRYPT_REQUEST_TYPE =
         "DelegatedUserDecryptRequestVerification(bytes publicKey,address[] contractAddresses,address delegatorAddress,"
@@ -177,6 +197,7 @@ contract Decryption is
     /**
      * @notice The hash of the DelegatedUserDecryptRequestVerification structure typed data definition
      * used for signature validation in delegated user decryption requests.
+     * @custom:deprecated See `EIP712_DELEGATED_USER_DECRYPT_REQUEST_TYPE`.
      */
     bytes32 private constant EIP712_DELEGATED_USER_DECRYPT_REQUEST_TYPE_HASH =
         keccak256(bytes(EIP712_DELEGATED_USER_DECRYPT_REQUEST_TYPE));
@@ -201,7 +222,7 @@ contract Decryption is
      */
     string private constant CONTRACT_NAME = "Decryption";
     uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 4;
+    uint256 private constant MINOR_VERSION = 6;
     uint256 private constant PATCH_VERSION = 0;
 
     /**
@@ -210,7 +231,7 @@ contract Decryption is
      * This constant does not represent the number of time a specific contract have been upgraded,
      * as a contract deployed from version VX will have a REINITIALIZER_VERSION > 2.
      */
-    uint64 private constant REINITIALIZER_VERSION = 5;
+    uint64 private constant REINITIALIZER_VERSION = 7;
 
     /**
      * @notice The contract's variable storage struct (@dev see ERC-7201)
@@ -257,6 +278,15 @@ contract Decryption is
         /// @notice The number of user decryption requests, used to generate request IDs (`decryptionId`)
         /// @notice (including delegated user decryption requests).
         uint256 userDecryptionCounter;
+        /// @notice The KMS context ID pinned to a decryption request at request time.
+        /// @dev Pinning the context at request time prevents responses signed by KMS nodes from a
+        /// different context (e.g. across a context rotation) from being accumulated together in the
+        /// `consensusTxSenderAddresses` bucket and silently crossing the threshold with a quorum that
+        /// does not actually share a single threshold-FHE keyset.
+        /// @dev A value of 0 marks a request that was recorded before context pinning was introduced;
+        /// response handlers fall back to the context declared in the response's extraData in that
+        /// case, preserving the pre-pinning behavior for such in-flight requests.
+        mapping(uint256 decryptionId => uint256 contextId) decryptionContextId;
     }
 
     /**
@@ -290,11 +320,11 @@ contract Decryption is
     }
 
     /**
-     * @notice Re-initializes the contract from V3.
+     * @notice Re-initializes the contract from V5.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV4() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    function reinitializeV6() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /**
      * @notice See {IDecryption-publicDecryptionRequest}.
@@ -337,6 +367,9 @@ contract Decryption is
         // The handles are used during response calls for the EIP712 signature validation.
         $.publicCtHandles[publicDecryptionId] = ctHandles;
 
+        // Pin the KMS context at request time. See `decryptionContextId` storage docs.
+        $.decryptionContextId[publicDecryptionId] = _extractContextId(extraData);
+
         // Collect the fee from the transaction sender for this public decryption request.
         _collectPublicDecryptionFee(msg.sender);
 
@@ -373,12 +406,20 @@ contract Decryption is
         // Compute the digest of the PublicDecryptVerification structure.
         bytes32 digest = _hashPublicDecryptVerification(publicDecryptVerification);
 
-        // Extract the context ID from the extraData for context-aware verification.
-        uint256 contextId = _extractContextId(extraData);
+        // Validate the response's context against the one pinned at request time, falling back
+        // to the response's declared context for requests recorded before context pinning.
+        // See `decryptionContextId` storage docs.
+        uint256 requestContextId = $.decryptionContextId[decryptionId];
+        uint256 responseContextId = _extractContextId(extraData);
+        if (requestContextId == 0) {
+            requestContextId = responseContextId;
+        } else if (responseContextId != requestContextId) {
+            revert DecryptionContextMismatch(decryptionId, requestContextId, responseContextId);
+        }
 
         // Recover the signer address from the signature and validate that corresponds to a
         // KMS node that has not already signed.
-        _validateDecryptionResponseEIP712Signature(contextId, decryptionId, digest, signature);
+        _validateDecryptionResponseEIP712Signature(requestContextId, decryptionId, digest, signature);
 
         // Store the signature for the public decryption response.
         // This list is then used to check the consensus. Important: the mapping considers
@@ -398,7 +439,7 @@ contract Decryption is
 
         // Send the event if and only if the consensus is reached in the current response call.
         // This means a "late" response will not be reverted, just ignored and no event will be emitted
-        if (!$.decryptionDone[decryptionId] && _isConsensusReachedPublic(contextId, verifiedSignatures.length)) {
+        if (!$.decryptionDone[decryptionId] && _isConsensusReachedPublic(requestContextId, verifiedSignatures.length)) {
             $.decryptionDone[decryptionId] = true;
 
             // A "late" valid KMS could still see its transaction sender address be added to the list
@@ -413,6 +454,8 @@ contract Decryption is
 
     /**
      * @notice See {IDecryption-userDecryptionRequest}.
+     * @custom:deprecated Legacy path retained for the relayer-sdk deprecation window. See the
+     * interface NatSpec for details.
      */
     function userDecryptionRequest(
         CtHandleContractPair[] calldata ctHandleContractPairs,
@@ -488,6 +531,9 @@ contract Decryption is
         // The publicKey and ctHandles are used during response calls for the EIP712 signature validation.
         $.userDecryptionPayloads[userDecryptionId] = UserDecryptionPayload(publicKey, ctHandles);
 
+        // Pin the KMS context at request time. See `decryptionContextId` storage docs.
+        $.decryptionContextId[userDecryptionId] = _extractContextId(extraData);
+
         // Collect the fee from the transaction sender for this user decryption request.
         _collectUserDecryptionFee(msg.sender);
 
@@ -495,65 +541,9 @@ contract Decryption is
     }
 
     /**
-     * @notice See {IDecryption-userDecryptionRequestSolana}.
-     * @dev RFC-021 (Solana host) counterpart of {userDecryptionRequest}. Identical lifecycle, payload
-     * storage and fee collection; the user identity is a 32-byte Solana pubkey and there is no on-chain
-     * user signature (the relayer verifies the user's ed25519 signMessage before this call — the
-     * sanctioned Solana auth seam). The ciphertext-handle ACL is enforced by the KMS (solana_acl), so
-     * no EVM contract-address list is required. Shares the userDecryptionCounter and the response-side
-     * EIP712 validation with the EVM path, which binds only publicKey + ctHandles (no user identity).
-     */
-    function userDecryptionRequestSolana(
-        bytes32[] calldata ctHandles,
-        RequestValidity calldata requestValidity,
-        uint256 contractsChainId,
-        bytes32 userAddress,
-        bytes calldata publicKey,
-        bytes calldata extraData
-    ) external virtual whenNotPaused onlyRegisteredHostChain(contractsChainId) {
-        if (ctHandles.length == 0) {
-            revert EmptyCtHandles();
-        }
-
-        // Check the user decryption request is valid.
-        _checkUserDecryptionRequestValidity(requestValidity);
-
-        // Conformance: each handle must belong to the given Solana host chain, and the batch must not
-        // exceed the maximum decryption bit size. Mirrors {_extractCtHandlesCheckConformanceUser} minus
-        // the EVM contract-address coupling (the Solana ACL is enforced off-gateway by the KMS).
-        uint256 totalBitSize = 0;
-        for (uint256 i = 0; i < ctHandles.length; i++) {
-            uint256 chainId = HandleOps.extractChainId(ctHandles[i]);
-            if (chainId != contractsChainId) {
-                revert CtHandleChainIdDiffersFromContractChainId(ctHandles[i], chainId, contractsChainId);
-            }
-            totalBitSize += FHETypeBitSizes.getBitSize(HandleOps.extractFheType(ctHandles[i]));
-        }
-        if (totalBitSize > MAX_DECRYPTION_REQUEST_BITS) {
-            revert MaxDecryptionRequestBitSizeExceeded(MAX_DECRYPTION_REQUEST_BITS, totalBitSize);
-        }
-
-        // Fetch the ciphertexts from the CiphertextCommits contract (reverts if any handle is unknown).
-        SnsCiphertextMaterial[] memory snsCtMaterials = CIPHERTEXT_COMMITS.getSnsCiphertextMaterials(ctHandles);
-        _checkCtMaterialKeyIds(snsCtMaterials);
-
-        DecryptionStorage storage $ = _getDecryptionStorage();
-
-        // Shares the user decryption counter/ID space with the EVM path.
-        $.userDecryptionCounter++;
-        uint256 userDecryptionId = $.userDecryptionCounter;
-
-        // The publicKey and ctHandles are used during response calls for the EIP712 signature validation.
-        $.userDecryptionPayloads[userDecryptionId] = UserDecryptionPayload(publicKey, ctHandles);
-
-        // Collect the fee from the transaction sender (the relayer) for this user decryption request.
-        _collectUserDecryptionFee(msg.sender);
-
-        emit UserDecryptionRequestSolana(userDecryptionId, snsCtMaterials, userAddress, publicKey, extraData);
-    }
-
-    /**
      * @notice See {IDecryption-delegatedUserDecryptionRequest}.
+     * @custom:deprecated Legacy path retained for the relayer-sdk deprecation window. See the
+     * interface NatSpec for details.
      */
     function delegatedUserDecryptionRequest(
         CtHandleContractPair[] calldata ctHandleContractPairs,
@@ -635,6 +625,9 @@ contract Decryption is
         // The publicKey and ctHandles are used during response calls for the EIP712 signature validation.
         $.userDecryptionPayloads[userDecryptionId] = UserDecryptionPayload(publicKey, ctHandles);
 
+        // Pin the KMS context at request time. See `decryptionContextId` storage docs.
+        $.decryptionContextId[userDecryptionId] = _extractContextId(extraData);
+
         // Collect the fee from the transaction sender for this delegated user decryption request.
         _collectUserDecryptionFee(msg.sender);
 
@@ -645,6 +638,84 @@ contract Decryption is
             publicKey,
             extraData
         );
+    }
+
+    /**
+     * @notice See {IDecryption-userDecryptionRequest} (unified EIP-712 path).
+     */
+    function userDecryptionRequest(
+        HandleEntry[] calldata handles,
+        address userAddress,
+        bytes calldata publicKey,
+        address[] calldata allowedContracts,
+        RequestValiditySeconds calldata requestValidity,
+        bytes calldata signature,
+        bytes calldata extraData
+    ) external virtual whenNotPaused {
+        if (handles.length == 0) {
+            revert EmptyHandles();
+        }
+        // Empty `allowedContracts` is valid (permissive mode); only the upper bound is enforced.
+        if (allowedContracts.length > MAX_USER_DECRYPT_CONTRACT_ADDRESSES) {
+            revert ContractAddressesMaxLengthExceeded(MAX_USER_DECRYPT_CONTRACT_ADDRESSES, allowedContracts.length);
+        }
+        _checkUserDecryptionRequestValiditySeconds(requestValidity);
+
+        // Pack the signed EIP-712 fields and the signature into a single memory struct. Doing so
+        // consolidates six calldata refs into one memory pointer and keeps the subsequent emit
+        // under Solidity's stack-depth limit without requiring `viaIR`.
+        UserDecryptionRequestPayload memory payload;
+        payload.userAddress = userAddress;
+        payload.publicKey = publicKey;
+        payload.allowedContracts = allowedContracts;
+        payload.requestValidity = requestValidity;
+        payload.extraData = extraData;
+        payload.signature = signature;
+
+        uint256 contextId = _extractContextId(extraData);
+
+        _collectUserDecryptionFee(msg.sender);
+
+        _executeUnifiedUserDecryptionRequest(handles, payload, contextId);
+    }
+
+    /**
+     * @notice Executes the post-validation body of the unified-path `userDecryptionRequest`:
+     * extracts and conformance-checks the handles, fetches the SNS ciphertexts, updates storage,
+     * and emits the unified `UserDecryptionRequest` event.
+     * @dev Runs in a dedicated internal frame so the external caller's calldata args drop out of
+     * scope before the emit, keeping stack depth under Solidity's limit without `viaIR`.
+     * The per-request contract-allowlist check from the legacy path is NOT performed here —
+     * authorization moves to the KMS Connector.
+     */
+    function _executeUnifiedUserDecryptionRequest(
+        HandleEntry[] calldata handles,
+        UserDecryptionRequestPayload memory payload,
+        uint256 contextId
+    ) internal virtual {
+        bytes32[] memory ctHandles = _extractCtHandlesCheckConformanceHandleEntry(handles);
+
+        // Reverts on any unknown handle.
+        SnsCiphertextMaterial[] memory snsCtMaterials = CIPHERTEXT_COMMITS.getSnsCiphertextMaterials(ctHandles);
+
+        // TODO: remove when batched decryption requests with different keys is supported by the
+        // KMS (see https://github.com/zama-ai/fhevm-internal/issues/376).
+        _checkCtMaterialKeyIds(snsCtMaterials);
+
+        DecryptionStorage storage $ = _getDecryptionStorage();
+
+        // Reuses the shared `userDecryptionCounter` so IDs are stable across legacy and unified
+        // paths (`userDecryptionResponse` is oblivious to which path a request came from).
+        $.userDecryptionCounter++;
+        uint256 userDecryptionId = $.userDecryptionCounter;
+
+        // The publicKey and ctHandles are used during response calls for the EIP712 signature validation.
+        $.userDecryptionPayloads[userDecryptionId] = UserDecryptionPayload(payload.publicKey, ctHandles);
+
+        // Pin the KMS context at request time. See `decryptionContextId` storage docs.
+        $.decryptionContextId[userDecryptionId] = contextId;
+
+        emit UserDecryptionRequest(userDecryptionId, snsCtMaterials, handles, payload);
     }
 
     /**
@@ -680,12 +751,22 @@ contract Decryption is
         // Compute the digest of the UserDecryptResponseVerification structure.
         bytes32 digest = _hashUserDecryptResponseVerification(userDecryptResponseVerification);
 
-        // Extract the context ID from the extraData for context-aware verification.
-        uint256 contextId = _extractContextId(extraData);
+        // Validate the response's context against the one pinned at request time, falling back
+        // to the response's declared context for requests recorded before context pinning.
+        // See `decryptionContextId` storage docs.
+        uint256 requestContextId = $.decryptionContextId[decryptionId];
+        {
+            uint256 responseContextId = _extractContextId(extraData);
+            if (requestContextId == 0) {
+                requestContextId = responseContextId;
+            } else if (responseContextId != requestContextId) {
+                revert DecryptionContextMismatch(decryptionId, requestContextId, responseContextId);
+            }
+        }
 
         // Recover the signer address from the signature and validate that it corresponds to a
         // KMS node that has not already signed.
-        _validateDecryptionResponseEIP712Signature(contextId, decryptionId, digest, signature);
+        _validateDecryptionResponseEIP712Signature(requestContextId, decryptionId, digest, signature);
 
         // Store the KMS transaction sender address for the public decryption response
         // It is important to consider the same mapping fields used for the consensus
@@ -708,7 +789,7 @@ contract Decryption is
 
         // Send the event if and only if the consensus is reached in the current response call.
         // This means a "late" response will not be reverted, just ignored and no event will be emitted
-        if (!$.decryptionDone[decryptionId] && _isThresholdReachedUser(contextId, txSenderAddresses.length)) {
+        if (!$.decryptionDone[decryptionId] && _isThresholdReachedUser(requestContextId, txSenderAddresses.length)) {
             $.decryptionDone[decryptionId] = true;
 
             // Since we use the default value for `bytes32`, this means we do not need to store the
@@ -742,6 +823,8 @@ contract Decryption is
 
     /**
      * @dev See {IDecryption-isUserDecryptionReady}.
+     * @custom:deprecated Legacy input shape retained for the relayer-sdk deprecation window. See
+     * the interface NatSpec for details.
      */
     function isUserDecryptionReady(
         CtHandleContractPair[] calldata ctHandleContractPairs,
@@ -755,6 +838,27 @@ contract Decryption is
         // Check that ciphertext material has been added for each cthandle.
         for (uint256 i = 0; i < ctHandleContractPairs.length; i++) {
             if (!CIPHERTEXT_COMMITS.isCiphertextMaterialAdded(ctHandleContractPairs[i].ctHandle)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * @dev See {IDecryption-isUserDecryptionReady} (unified EIP-712 input shape).
+     */
+    function isUserDecryptionReady(
+        HandleEntry[] calldata handles,
+        bytes calldata /* extraData */
+    ) public view virtual returns (bool) {
+        // Return false if the list of handles is empty.
+        if (handles.length == 0) {
+            return false;
+        }
+
+        // Check that ciphertext material has been added for each handle.
+        for (uint256 i = 0; i < handles.length; i++) {
+            if (!CIPHERTEXT_COMMITS.isCiphertextMaterialAdded(handles[i].handle)) {
                 return false;
             }
         }
@@ -858,7 +962,13 @@ contract Decryption is
             if (extraData.length < 33) {
                 revert InvalidExtraDataLength(extraData.length, 33);
             }
-            return uint256(bytes32(extraData[1:33]));
+            contextId = uint256(bytes32(extraData[1:33]));
+            // Reject the all-zeros payload: contextId 0 is reserved for the pre-pinning
+            // legacy fallback and must not be reachable from caller-supplied extraData.
+            if (contextId == 0) {
+                revert InvalidNullContextId();
+            }
+            return contextId;
         }
 
         // Unsupported version
@@ -906,6 +1016,10 @@ contract Decryption is
      * @param userAddress The address of the user.
      * @param signature The signature to be validated
      * @param contractsChainId The chain ID of the contracts.
+     * @custom:deprecated Used only by the legacy `userDecryptionRequest(CtHandleContractPair[], ...)`
+     * path. Removed when the relayer-sdk deprecation window for old-format signatures closes.
+     * The unified EIP-712 path does not verify signatures on-chain — verification moves to the
+     * KMS Connector per the unified EIP-712 specification.
      */
     function _validateUserDecryptRequestEIP712Signature(
         UserDecryptRequestVerification memory userDecryptRequestVerification,
@@ -927,6 +1041,8 @@ contract Decryption is
      * @param delegateAddress The address of the account that has delegation granted.
      * @param signature The signature to be validated.
      * @param contractsChainId The chain ID of the contracts.
+     * @custom:deprecated Used only by the legacy `delegatedUserDecryptionRequest` path. Removed
+     * when the relayer-sdk deprecation window for old-format signatures closes.
      */
     function _validateDelegatedUserDecryptRequestEIP712Signature(
         DelegatedUserDecryptRequestVerification memory delegatedUserDecryptRequestVerification,
@@ -1113,6 +1229,8 @@ contract Decryption is
      * @param ctHandleContractPairs The list of ciphertext handles and contract addresses
      * @param contractsInfo The contracts' information (chain ID, addresses).
      * @return ctHandles The list of ciphertext handles
+     * @custom:deprecated Used only by the legacy user decryption paths. Use
+     * `_extractCtHandlesCheckConformanceHandleEntry` for the unified EIP-712 path.
      */
     function _extractCtHandlesCheckConformanceUser(
         CtHandleContractPair[] calldata ctHandleContractPairs,
@@ -1158,8 +1276,52 @@ contract Decryption is
     }
 
     /**
+     * @notice Extracts the handles from a `HandleEntry[]` input and checks per-handle conformance.
+     * @dev Checks include:
+     * @dev - Same host-chain ID across the batch (derived from the first handle).
+     * @dev - That host-chain is registered in the GatewayConfig.
+     * @dev - FHE type validity for each handle.
+     * @dev - Total bit size bound.
+     * @dev The per-request contract-allowlist check is NOT performed here — it moves to the KMS
+     * Connector on the unified path.
+     * @param handles The input `HandleEntry[]` (non-empty; caller guarantees).
+     * @return ctHandles The list of ciphertext handles.
+     */
+    function _extractCtHandlesCheckConformanceHandleEntry(
+        HandleEntry[] calldata handles
+    ) internal view virtual returns (bytes32[] memory ctHandles) {
+        ctHandles = new bytes32[](handles.length);
+
+        uint256 chainId = HandleOps.extractChainId(handles[0].handle);
+        if (!GATEWAY_CONFIG.isHostChainRegistered(chainId)) {
+            revert IGatewayConfig.HostChainNotRegistered(chainId);
+        }
+
+        uint256 totalBitSize = 0;
+        for (uint256 i = 0; i < handles.length; i++) {
+            bytes32 ctHandle = handles[i].handle;
+
+            uint256 handleChainId = HandleOps.extractChainId(ctHandle);
+            if (handleChainId != chainId) {
+                revert CtHandleChainIdDiffersFromContractChainId(ctHandle, handleChainId, chainId);
+            }
+
+            FheType fheType = HandleOps.extractFheType(ctHandle);
+            totalBitSize += FHETypeBitSizes.getBitSize(fheType);
+
+            ctHandles[i] = ctHandle;
+        }
+
+        if (totalBitSize > MAX_DECRYPTION_REQUEST_BITS) {
+            revert MaxDecryptionRequestBitSizeExceeded(MAX_DECRYPTION_REQUEST_BITS, totalBitSize);
+        }
+    }
+
+    /**
      * @notice Checks if a user decryption request's start timestamp and duration days are valid.
      * @param requestValidity The RequestValidity structure
+     * @custom:deprecated Used only by the legacy user decryption paths. Use
+     * `_checkUserDecryptionRequestValiditySeconds` for the unified EIP-712 path.
      */
     function _checkUserDecryptionRequestValidity(RequestValidity memory requestValidity) internal view virtual {
         // Check the durationDays is not null.
@@ -1182,6 +1344,27 @@ contract Decryption is
         // from startTimestamp for a number of days equal to durationDays.
         if (requestValidity.startTimestamp + requestValidity.durationDays * 1 days < block.timestamp) {
             revert UserDecryptionRequestExpired(block.timestamp, requestValidity);
+        }
+    }
+
+    /**
+     * @notice Checks a unified-path user decryption request's start timestamp and `durationSeconds`.
+     * @param requestValidity The `RequestValiditySeconds` struct.
+     */
+    function _checkUserDecryptionRequestValiditySeconds(
+        RequestValiditySeconds memory requestValidity
+    ) internal view virtual {
+        if (requestValidity.durationSeconds == 0) {
+            revert InvalidNullDurationSeconds();
+        }
+        if (requestValidity.durationSeconds > MAX_USER_DECRYPT_DURATION_SECONDS) {
+            revert MaxDurationSecondsExceeded(MAX_USER_DECRYPT_DURATION_SECONDS, requestValidity.durationSeconds);
+        }
+        if (requestValidity.startTimestamp > block.timestamp) {
+            revert StartTimestampInFuture(block.timestamp, requestValidity.startTimestamp);
+        }
+        if (requestValidity.startTimestamp + requestValidity.durationSeconds < block.timestamp) {
+            revert UserDecryptionRequestExpiredSeconds(block.timestamp, requestValidity);
         }
     }
 

@@ -40,20 +40,18 @@ impl<P: Provider> State<P> {
 
 impl<P: Provider> Healthcheck for State<P> {
     async fn healthcheck(&self) -> actix_web::HttpResponse {
+        let (db_res, gw_res, kms_healthcheck_results) = tokio::join!(
+            database_healthcheck(&self.db_pool, self.healthcheck_timeout),
+            rpc_node_healthcheck(&self.provider, self.healthcheck_timeout, "Gateway"),
+            self.kms_health_client.check(self.healthcheck_timeout),
+        );
+
         let mut errors = vec![];
-        let database_connected =
-            database_healthcheck(&self.db_pool, self.healthcheck_timeout, &mut errors).await;
-        let gateway_connected = rpc_node_healthcheck(
-            &self.provider,
-            self.healthcheck_timeout,
-            "Gateway",
-            &mut errors,
-        )
-        .await;
+        let database_connected = db_res.map_err(|e| errors.push(e)).is_ok();
+        let gateway_connected = gw_res.map_err(|e| errors.push(e)).is_ok();
 
         let mut kms_core_connected = true;
-        let kms_healtcheck_results = self.kms_health_client.check(self.healthcheck_timeout).await;
-        for (i, kms_shard_connected) in kms_healtcheck_results.iter().enumerate() {
+        for (i, kms_shard_connected) in kms_healthcheck_results.iter().enumerate() {
             match kms_shard_connected {
                 Ok(Ok(_)) => (),
                 Ok(Err(e)) => {

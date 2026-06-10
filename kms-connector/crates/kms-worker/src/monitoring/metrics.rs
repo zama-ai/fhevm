@@ -97,7 +97,7 @@ pub fn register_event_latency(event: &ProtocolEvent) {
         event.kind,
         ProtocolEventKind::PublicDecryption(_)
             | ProtocolEventKind::UserDecryption(_)
-            | ProtocolEventKind::UserDecryptionSolana(_)
+            | ProtocolEventKind::UserDecryptionV2(_)
     ) {
         let elapsed = Utc::now() - event.created_at;
         DECRYPTION_LATENCY_HISTOGRAM

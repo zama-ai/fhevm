@@ -42,7 +42,7 @@ on:
 
 permissions: {}
 
-# Allow to run multiple instances of the same workflow in parallel when triggered manually 
+# Allow to run multiple instances of the same workflow in parallel when triggered manually
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || 'auto' }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
@@ -50,7 +50,7 @@ concurrency:
 jobs:
   setup-instance:
     name: test-suite-e2e-operators-tests/setup-instance
-    runs-on: ubuntu-latest
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
     permissions:
       contents: 'read' # Required to checkout repository code
     outputs:
@@ -122,11 +122,14 @@ jobs:
         uses: foundry-rs/foundry-toolchain@82dee4ba654bd2146511f85f0d013af94670c4de # v1.4.0
 
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        uses: zama-ai/ci-templates/.github/actions/retry@542103e14b9ae6a9aea27787b8724b3b35bb3918 # v1.0.9
+        env:
+          GHCR_USERNAME: ${{ github.actor }}
+          GHCR_PASSWORD: ${{ secrets.GHCR_READ_TOKEN }}
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GHCR_READ_TOKEN }}
+          command: |
+            echo "Logging into ghcr.io..."
+            echo "$GHCR_PASSWORD" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
 
       - name: Login to Chainguard Registry
         uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
@@ -220,7 +223,7 @@ jobs:
     name: test-suite-e2e-operators-tests/teardown
     if: ${{ always() && needs.setup-instance.result == 'success' }}
     needs: [ setup-instance, operators-e2e-test]
-    runs-on: ubuntu-latest
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
     permissions:
       contents: 'read' # Required to checkout repository code
     steps:

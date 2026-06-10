@@ -99,6 +99,25 @@ export type KmsPublicDecryptEip712Message = Readonly<{
   extraData: BytesHex;
 }>;
 
+export type KmsDecryptEip712Like = {
+  readonly domain: {
+    readonly name: string;
+    readonly version: string;
+    readonly chainId: number | bigint;
+    readonly verifyingContract: string;
+  };
+  readonly primaryType?: string | undefined;
+  readonly types: Record<string, ReadonlyArray<{ readonly name: string; readonly type: string }>>;
+  readonly message: {
+    readonly publicKey: string | Uint8Array;
+    readonly contractAddresses: string[];
+    readonly startTimestamp: number;
+    readonly durationDays: number;
+    readonly extraData: string | Uint8Array;
+    readonly delegatorAddress?: string | undefined;
+  };
+};
+
 export type KmsUserDecryptEip712 = Prettify<{
   readonly domain: KmsEip712Domain;
   readonly types: KmsUserDecryptEip712Types;

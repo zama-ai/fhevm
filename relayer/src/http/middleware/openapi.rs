@@ -36,6 +36,9 @@ use crate::http::endpoints::v2::types::{
         UserDecryptSucceededStatusResponse as UserDecryptSucceededStatusResponseV2,
     },
 };
+use crate::http::endpoints::v3::types::{
+    AttestedUserDecryptRequestJson, Eip712UnifiedUserDecryptPayloadJson,
+};
 use crate::http::openapi::expected_labels::{
     has_details, labels_for_status, to_pascal_case, ERROR_LABEL_DEFS,
 };
@@ -150,6 +153,9 @@ paths(
     // Public Decrypt
     crate::http::endpoints::v2::handlers::public_decrypt::public_decrypt_post_v2,
     crate::http::endpoints::v2::handlers::public_decrypt::public_decrypt_get_v2,
+    // v3 User Decrypt (unified EIP-712)
+    crate::http::endpoints::v3::handlers::user_decrypt::user_decrypt_post_v3,
+    crate::http::endpoints::v3::handlers::user_decrypt::user_decrypt_get_v3,
     // Health
     crate::http::endpoints::health::liveness_handler,
     crate::http::endpoints::health::health_handler,
@@ -173,8 +179,11 @@ components(
     schemas(V2ErrorResponseBody, V2ApiError, V2ApiErrorWithDetails, V2ErrorLabel, RelayerV2ErrorDetail),
     // V2 response wrappers (failed POST, per-status-code GET)
     schemas(RelayerV2ResponseFailed, V2StatusQueued, V2StatusFailed),
+    // v3 User Decrypt types (unified EIP-712)
+    schemas(AttestedUserDecryptRequestJson, Eip712UnifiedUserDecryptPayloadJson),
     // Common types
     schemas(crate::http::endpoints::common::types::HandleContractPairJson, crate::http::endpoints::common::types::RequestValidityJson),
+    schemas(crate::http::endpoints::common::types::HandleEntryJson, crate::http::endpoints::common::types::RequestValiditySecondsJson),
     schemas(crate::http::endpoints::common::types::ChainId),
 ),
 tags(
@@ -182,6 +191,7 @@ tags(
     (name = "Input Proof", description = "Verify input proofs for encrypted computations"),
     (name = "User Decrypt", description = "Decrypt ciphertexts with user-provided key shares"),
     (name = "Delegated User Decrypt", description = "Decrypt ciphertexts via delegated key shares"),
+    (name = "User Decrypt v3", description = "unified EIP-712 user-decryption (direct + delegated under one endpoint)"),
     (name = "Public Decrypt", description = "Decrypt ciphertexts using the network public key"),
     (name = "Health", description = "Liveness, readiness, and version probes")
 ),

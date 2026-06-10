@@ -43,7 +43,27 @@ function formatError(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-async function assertContractMatchesVersionPrefix(
+export async function waitForTaskReady(
+  hre: HardhatRuntimeEnvironment,
+  taskName: string,
+  timeoutMs = 60_000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+
+  while (true) {
+    try {
+      await hre.run(taskName);
+      return;
+    } catch (err) {
+      if (Date.now() >= deadline) {
+        throw new Error(`${taskName} did not become ready after ${timeoutMs}ms: ${formatError(err)}`);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+  }
+}
+
+export async function assertContractMatchesVersionPrefix(
   hre: HardhatRuntimeEnvironment,
   address: string,
   versionPrefix: string,
@@ -68,32 +88,12 @@ async function assertContractMatchesVersionPrefix(
   }
 }
 
-// OZ upgrades' upgradeProxy can return before the upgradeToAndCall tx is mined on
-// interval-mining networks. Poll until the new implementation answers a
-// state-dependent view.
-async function waitForProtocolConfigUpgradeLanded(hre: HardhatRuntimeEnvironment, proxyAddress: string): Promise<void> {
-  const proxy = new hre.ethers.Contract(
-    proxyAddress,
-    ['function getCurrentKmsContextId() view returns (uint256)'],
-    hre.ethers.provider,
-  );
-  const deadline = Date.now() + 30_000;
-  let lastError: unknown;
-  while (Date.now() < deadline) {
-    try {
-      await proxy.getCurrentKmsContextId();
-      return;
-    } catch (err) {
-      lastError = err;
-      await new Promise((resolve) => setTimeout(resolve, 500));
-    }
-  }
-  throw new Error(`ProtocolConfig upgrade did not land after 30s of polling`);
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 // All Host Contracts
 ////////////////////////////////////////////////////////////////////////////////
+
+const PROTOCOL_CONFIG_SOURCES = ['fresh', 'migration'] as const;
+type ProtocolConfigSource = (typeof PROTOCOL_CONFIG_SOURCES)[number];
 
 task('task:deployAllHostContracts')
   .addParam(
@@ -102,7 +102,22 @@ task('task:deployAllHostContracts')
     undefined,
     types.boolean,
   )
-  .setAction(async function ({ withKmsGeneration }: { withKmsGeneration: boolean }, hre) {
+  .addOptionalParam(
+    'protocolConfigSource',
+    "How to initialize ProtocolConfig: 'fresh' (default) calls initializeFromEmptyProxy with env-driven KMS nodes/thresholds; 'migration' calls initializeFromMigration consuming MIGRATION_CONTEXT_ID / MIGRATION_KMS_NODES / MIGRATION_KMS_THRESHOLDS.",
+    'fresh',
+    types.string,
+  )
+  .setAction(async function (
+    { withKmsGeneration, protocolConfigSource }: { withKmsGeneration: boolean; protocolConfigSource: string },
+    hre,
+  ) {
+    if (!PROTOCOL_CONFIG_SOURCES.includes(protocolConfigSource as ProtocolConfigSource)) {
+      throw new Error(
+        `Invalid --protocol-config-source "${protocolConfigSource}". Allowed values: ${PROTOCOL_CONFIG_SOURCES.join(', ')}.`,
+      );
+    }
+
     if (process.env.SOLIDITY_COVERAGE !== 'true') {
       await hre.run('clean');
     }
@@ -118,7 +133,11 @@ task('task:deployAllHostContracts')
 
     await hre.run('task:deployACL');
     await hre.run('task:deployFHEVMExecutor');
-    await hre.run('task:deployProtocolConfig');
+    if (protocolConfigSource === 'migration') {
+      await hre.run('task:deployProtocolConfigFromMigration');
+    } else {
+      await hre.run('task:deployProtocolConfig');
+    }
     if (withKmsGeneration) {
       await hre.run('task:deployKMSGeneration');
     }
@@ -512,11 +531,8 @@ task('task:deployProtocolConfig').setAction(async function (_taskArguments: Task
       args: [initialKmsNodes, thresholds],
     },
   });
-  // upgrades.upgradeProxy can return before the upgradeToAndCall tx is mined on interval-mining
-  // networks (e.g. anvil --block-time). Poll a state-dependent view so the task only returns
-  // once the new implementation is live, otherwise downstream tasks (assertProtocolConfigReady)
-  // hit a revert against the still-empty proxy.
-  await waitForProtocolConfigUpgradeLanded(hre, proxyAddress);
+  // On interval-mining networks, upgradeProxy can return before the tx is mined.
+  await waitForTaskReady(hre, 'task:assertProtocolConfigReady');
   console.log('ProtocolConfig code set successfully at address:', proxyAddress);
 });
 

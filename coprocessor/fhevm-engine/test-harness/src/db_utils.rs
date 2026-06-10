@@ -1,6 +1,7 @@
 use alloy::primitives::U256;
 use fhevm_engine_common::db_keys::write_large_object_in_chunks;
 use fhevm_engine_common::tfhe_ops::current_ciphertext_version;
+use fhevm_engine_common::utils::{safe_deserialize_key, safe_serialize_key};
 use rand::distr::Alphanumeric;
 use rand::Rng;
 use sqlx::postgres::types::Oid;
@@ -31,6 +32,84 @@ pub async fn import_file_into_db(pool: &PgPool, file_path: &str) -> Result<Oid, 
     info!("Uploaded large object with Oid: {:?}", oid);
 
     Ok(oid)
+}
+
+struct PreparedXofFixture {
+    pks: Vec<u8>,
+    sks: Vec<u8>,
+    sns_pk: Option<Vec<u8>>,
+    compressed_xof_keyset: Vec<u8>,
+}
+
+fn serialize_server_key_without_ns(server_key: tfhe::ServerKey) -> anyhow::Result<Vec<u8>> {
+    let (
+        sks,
+        kskm,
+        compression_key,
+        decompression_key,
+        noise_squashing_key,
+        noise_squashing_compression_key,
+        re_randomization_keyswitching_key,
+        oprf_key,
+        tag,
+    ) = server_key.into_raw_parts();
+
+    if noise_squashing_key.is_none() {
+        anyhow::bail!("Server key is missing the noise squashing key");
+    }
+    if noise_squashing_compression_key.is_none() {
+        anyhow::bail!("Server key is missing the noise squashing compression key");
+    }
+    if re_randomization_keyswitching_key.is_none() {
+        anyhow::bail!("Server key is missing rerandomisation keyswitching key");
+    }
+
+    Ok(safe_serialize_key(&tfhe::ServerKey::from_raw_parts(
+        sks,
+        kskm,
+        compression_key,
+        decompression_key,
+        None,
+        None,
+        re_randomization_keyswitching_key,
+        oprf_key,
+        tag,
+    )))
+}
+
+/// Loads a real kms-core-shaped `CompressedXofKeySet` fixture and derives the
+/// legacy columns from the same full-keyset decompression path used in
+/// production.
+async fn prepare_xof_fixture_for_db(
+    compressed_xof_keyset_path: &str,
+    with_sns_pk: bool,
+) -> anyhow::Result<PreparedXofFixture> {
+    let compressed_xof_keyset = tokio::fs::read(compressed_xof_keyset_path)
+        .await
+        .map_err(|err| anyhow::anyhow!("can't read {compressed_xof_keyset_path}: {err}"))?;
+    let keyset_bytes = compressed_xof_keyset.clone();
+
+    let (pks, sks, sns_pk) = tokio::task::spawn_blocking(move || -> anyhow::Result<_> {
+        let keyset: tfhe::xof_key_set::CompressedXofKeySet = safe_deserialize_key(&keyset_bytes)
+            .map_err(|err| anyhow::anyhow!("deserialize CompressedXofKeySet: {err}"))?;
+        let (public_key, server_key) = keyset.decompress()?.into_raw_parts();
+        let pks = safe_serialize_key(&public_key);
+        let sns_pk = if with_sns_pk {
+            Some(safe_serialize_key(&server_key))
+        } else {
+            None
+        };
+        let sks = serialize_server_key_without_ns(server_key)?;
+        Ok((pks, sks, sns_pk))
+    })
+    .await??;
+
+    Ok(PreparedXofFixture {
+        pks,
+        sks,
+        sns_pk,
+        compressed_xof_keyset,
+    })
 }
 
 pub async fn insert_ciphertext64(
@@ -140,35 +219,29 @@ pub async fn setup_test_key(
     let gpu_enabled = cfg!(feature = "gpu");
     info!(gpu_enabled, "Setting up test key...");
 
-    let (sks, cks, pks, pp, sns_pk) = if !cfg!(feature = "gpu") {
-        (
-            "../fhevm-keys/sks",
-            "../fhevm-keys/cks",
-            "../fhevm-keys/pks",
-            "../fhevm-keys/pp",
-            "../fhevm-keys/sns_pk",
-        )
-    } else {
-        (
-            "../fhevm-keys/gpu-csks",
-            "../fhevm-keys/gpu-cks",
-            "../fhevm-keys/gpu-pks",
-            "../fhevm-keys/gpu-pp",
-            "../fhevm-keys/gpu-csks",
-        )
-    };
-    let sks = tokio::fs::read(sks).await.expect("can't read sks key");
-    let pks = tokio::fs::read(pks).await.expect("can't read pks key");
-    let cks = tokio::fs::read(cks).await.expect("can't read cks key");
-    let public_params = tokio::fs::read(pp).await.expect("can't read public params");
+    // Same XofKeySet fixture for CPU and GPU: keygen parameters are
+    // identical between the two builds, and the production read path
+    // (kxs.decompress() / kxs.decompress_to_gpu()) consumes the same
+    // raw blob.
+    let prepared_xof = prepare_xof_fixture_for_db("../fhevm-keys/xof-keyset", with_sns_pk).await?;
+    let cks = tokio::fs::read("../fhevm-keys/xof-cks")
+        .await
+        .expect("can't read cks key");
+    let public_params = tokio::fs::read("../fhevm-keys/pp")
+        .await
+        .expect("can't read public params");
 
-    let sns_pk_oid = if with_sns_pk {
-        import_file_into_db(pool, sns_pk).await?
+    let sns_pk_oid = if let Some(sns_pk) = prepared_xof.sns_pk.as_deref() {
+        Some(write_large_object_in_chunks(pool, sns_pk, 16 * 1024).await?)
     } else {
-        Oid::default()
+        None
     };
 
     info!("Uploaded sns_pk with Oid: {:?}", sns_pk_oid);
+    info!(
+        "Set compressed_xof_keyset BYTEA len: {:?}",
+        Some(prepared_xof.compressed_xof_keyset.len())
+    );
 
     let key_id: i32 = rand::rng().random_range(1..10000);
     let key_id = U256::from(key_id).to_be_bytes::<32>();
@@ -178,22 +251,27 @@ pub async fn setup_test_key(
 
     sqlx::query!(
         "
-            INSERT INTO keys(key_id, key_id_gw, pks_key, sks_key, cks_key, sns_pk)
+            INSERT INTO keys(
+                key_id, key_id_gw, pks_key, sks_key, cks_key, sns_pk,
+                compressed_xof_keyset
+            )
             VALUES (
                 $1,
                 $2,
                 $3,
                 $4,
                 $5,
-                $6
+                $6,
+                $7
             )
         ",
         &key_id,
         &key_id_gw,
-        &pks,
-        &sks,
+        &prepared_xof.pks,
+        &prepared_xof.sks,
         &cks,
-        sns_pk_oid
+        sns_pk_oid,
+        prepared_xof.compressed_xof_keyset.as_slice(),
     )
     .execute(pool)
     .await?;
