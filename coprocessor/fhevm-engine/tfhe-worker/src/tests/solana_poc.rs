@@ -152,6 +152,7 @@ async fn solana_confidential_transfer_with_real_ciphertexts_computes_and_decrypt
 }
 
 #[test]
+#[ignore = "requires built Solana PoC programs; validates FHE eval replay from LiteSVM metadata"]
 fn solana_fhe_eval_replays_threshold_logs_from_litesvm_metadata() {
     let mut fixture = host_fixture();
     let lhs_handle = typed_balance_handle(0x51);
@@ -1254,10 +1255,7 @@ async fn seed_real_fast_ciphertexts(
     let ciphertexts =
         tokio::task::spawn_blocking(move || -> Result<Vec<SeededCiphertext>, String> {
             let client_key = key.cks.expect("test key must include a client key");
-            #[cfg(not(feature = "gpu"))]
             tfhe::set_server_key(key.sks);
-            #[cfg(feature = "gpu")]
-            tfhe::set_server_key(key.csks.decompress());
 
             values
                 .into_iter()
