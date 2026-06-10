@@ -237,4 +237,13 @@ pub enum ZamaHostError {
     /// A transient capability requires the instructions sysvar for receiver validation.
     #[msg("transient capability receiver cannot be verified")]
     TransientCapabilityReceiverMissing,
+    /// A KMS context was defined with a duplicate signer address.
+    #[msg("KMS context signer set contains a duplicate address")]
+    DuplicateKmsSigner,
+    /// The coprocessor-attested contract does not match the output ACL app account.
+    #[msg("attested contract address does not match the output app account")]
+    InputBindContractMismatch,
+    /// The coprocessor-attested user is not among the output ACL subjects.
+    #[msg("attested user address is not an output ACL subject")]
+    InputBindUserNotSubject,
 }

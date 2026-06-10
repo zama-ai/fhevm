@@ -4905,8 +4905,13 @@ fn mollusk_verify_coprocessor_input_and_bind_accepts_real_secp256k1_attestation(
 
     let input_handle = input_handle_for_chain(0x01, 0, 5);
     let ct_handles = vec![input_handle];
-    let user_address = [0x07u8; 32];
-    let contract_address = [0x08u8; 32];
+    // Identity-consistent with the bound ACL: the coprocessor attests the handle for `user`
+    // under contract `authority` (the app account that binds it). verify_coprocessor_input_and_bind
+    // requires contract_address == output_app_account and user_address among the subjects, so the
+    // attested identity must match what is written into the ACL record.
+    let user = Pubkey::new_unique();
+    let user_address = user.to_bytes();
+    let contract_address = authority.to_bytes();
     let extra_data = vec![0x00u8];
 
     let digest = host::eip712::typed_data_digest(
@@ -4948,7 +4953,7 @@ fn mollusk_verify_coprocessor_input_and_bind_accepts_real_secp256k1_attestation(
         acl_domain_key,
         authority,
         label,
-        vec![AclSubjectEntry::user(authority)],
+        vec![AclSubjectEntry::user(user)],
     );
 
     context.process_and_validate_instruction(&ix, &[Check::success()]);
@@ -5026,6 +5031,158 @@ fn mollusk_verify_coprocessor_input_and_bind_rejects_unauthorized_signer() {
     let result = context.process_instruction(&ix);
 
     assert!(result.raw_result.is_err());
+    assert!(read_acl_record(&context, output_acl_record).is_none());
+}
+
+/// SECURITY (input-bind identity): a VALID coprocessor attestation for contract X must not be
+/// bindable into a DIFFERENT app account's ACL domain. Before the identity-binding check, any
+/// caller could staple a genuine attestation onto an ACL domain they control (the observed
+/// attestation is public). Here the signer is authorized and the signature verifies, so the
+/// rejection is due solely to contract_address != output_app_account.
+#[test]
+fn mollusk_verify_coprocessor_input_and_bind_rejects_contract_app_account_mismatch() {
+    let program_id = host::id();
+    let authority = Pubkey::new_unique();
+    let key = k256::ecdsa::SigningKey::from_bytes(&[0x44u8; 32].into()).unwrap();
+    let (host_config, host_config_account) =
+        host_config_account_with_verifier(authority, evm_address_of(&key));
+
+    let acl_domain_key = Pubkey::new_unique();
+    let label = label("balance");
+    let nonce_key = host::acl_nonce_key(acl_domain_key, authority, label);
+    let output_acl_record = host::acl_record_address(nonce_key, 0).0;
+
+    let input_handle = input_handle_for_chain(0x01, 0, 5);
+    let ct_handles = vec![input_handle];
+    let user = Pubkey::new_unique();
+    let user_address = user.to_bytes();
+    // Attested for a contract DIFFERENT from the binding app account (authority).
+    let attested_contract = Pubkey::new_unique();
+    let contract_address = attested_contract.to_bytes();
+    let extra_data = vec![0x00u8];
+
+    let digest = host::eip712::typed_data_digest(
+        &host::eip712::domain_separator(
+            b"InputVerification",
+            b"1",
+            GATEWAY_CHAIN_ID,
+            &INPUT_VERIFICATION_CONTRACT,
+        ),
+        &host::eip712::ciphertext_verification_struct_hash(
+            &ct_handles,
+            &user_address,
+            &contract_address,
+            12345,
+            &extra_data,
+        ),
+    );
+    let signatures = vec![sign_eip712(&key, &digest)];
+
+    let context = transient_context(
+        authority,
+        vec![
+            (host_config, host_config_account),
+            (output_acl_record, system_account(0)),
+        ],
+    );
+    let ix = verify_coprocessor_input_and_bind_ix(
+        program_id,
+        authority,
+        host_config,
+        output_acl_record,
+        input_handle,
+        ct_handles,
+        user_address,
+        contract_address,
+        extra_data,
+        signatures,
+        nonce_key,
+        acl_domain_key,
+        authority,
+        label,
+        vec![AclSubjectEntry::user(user)],
+    );
+
+    let result = context.process_instruction(&ix);
+    assert!(
+        result.raw_result.is_err(),
+        "an attestation for a different contract must not bind into authority's ACL domain"
+    );
+    assert!(read_acl_record(&context, output_acl_record).is_none());
+}
+
+/// SECURITY (input-bind identity): the attested user must appear among the output ACL subjects,
+/// so a valid attestation for user A cannot be bound as a grant to an unrelated subject set.
+/// Contract matches the app account here, so the rejection is due solely to the missing user.
+#[test]
+fn mollusk_verify_coprocessor_input_and_bind_rejects_user_not_in_subjects() {
+    let program_id = host::id();
+    let authority = Pubkey::new_unique();
+    let key = k256::ecdsa::SigningKey::from_bytes(&[0x44u8; 32].into()).unwrap();
+    let (host_config, host_config_account) =
+        host_config_account_with_verifier(authority, evm_address_of(&key));
+
+    let acl_domain_key = Pubkey::new_unique();
+    let label = label("balance");
+    let nonce_key = host::acl_nonce_key(acl_domain_key, authority, label);
+    let output_acl_record = host::acl_record_address(nonce_key, 0).0;
+
+    let input_handle = input_handle_for_chain(0x01, 0, 5);
+    let ct_handles = vec![input_handle];
+    let user = Pubkey::new_unique();
+    let user_address = user.to_bytes();
+    let contract_address = authority.to_bytes(); // contract matches the app account (passes that check)
+    let extra_data = vec![0x00u8];
+
+    let digest = host::eip712::typed_data_digest(
+        &host::eip712::domain_separator(
+            b"InputVerification",
+            b"1",
+            GATEWAY_CHAIN_ID,
+            &INPUT_VERIFICATION_CONTRACT,
+        ),
+        &host::eip712::ciphertext_verification_struct_hash(
+            &ct_handles,
+            &user_address,
+            &contract_address,
+            12345,
+            &extra_data,
+        ),
+    );
+    let signatures = vec![sign_eip712(&key, &digest)];
+
+    let context = transient_context(
+        authority,
+        vec![
+            (host_config, host_config_account),
+            (output_acl_record, system_account(0)),
+        ],
+    );
+    // Subjects deliberately exclude the attested `user`.
+    let other = Pubkey::new_unique();
+    let ix = verify_coprocessor_input_and_bind_ix(
+        program_id,
+        authority,
+        host_config,
+        output_acl_record,
+        input_handle,
+        ct_handles,
+        user_address,
+        contract_address,
+        extra_data,
+        signatures,
+        nonce_key,
+        acl_domain_key,
+        authority,
+        label,
+        vec![AclSubjectEntry::user(other)],
+    );
+
+    let result = context.process_instruction(&ix);
+    assert!(
+        result.raw_result.is_err(),
+        "an attested user absent from the subject set must not bind"
+    );
     assert!(read_acl_record(&context, output_acl_record).is_none());
 }
 
@@ -5134,6 +5291,43 @@ fn mollusk_define_kms_context_records_signers_and_advances_current() {
             .current_kms_context_id,
         1
     );
+}
+
+/// SECURITY (KMS context): a signer set containing a duplicate address is rejected. Threshold
+/// verification counts DISTINCT recovered addresses, so a duplicate would silently raise the
+/// effective quorum (a 2-of-[A, A] set can never be satisfied). EVM KMS signer sets are distinct;
+/// thresholds here are individually valid, so the rejection is due solely to the duplicate.
+#[test]
+fn mollusk_define_kms_context_rejects_duplicate_signers() {
+    let program_id = host::id();
+    let admin = Pubkey::new_unique();
+    let (host_config, host_config_account) =
+        host_config_account_with_options(admin, admin, false, false, false);
+    let (kms_context, _) = host::kms_context_address(1);
+    let context = transient_context(
+        admin,
+        vec![
+            (host_config, host_config_account),
+            (kms_context, system_account(0)),
+        ],
+    );
+    let signers = vec![[0x11u8; 20], [0x11u8; 20]];
+    let thresholds = host::KmsThresholds {
+        public_decryption: 1,
+        user_decryption: 1,
+        kms_gen: 1,
+        mpc: 1,
+    };
+
+    let ix = define_kms_context_ix(
+        program_id, admin, host_config, kms_context, 1, signers, thresholds,
+    );
+    let result = context.process_instruction(&ix);
+    assert!(
+        result.raw_result.is_err(),
+        "a KMS context with duplicate signers must be rejected"
+    );
+    assert!(read_kms_context(&context, kms_context).is_none());
 }
 
 #[test]

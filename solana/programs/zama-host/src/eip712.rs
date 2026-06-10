@@ -99,11 +99,24 @@ pub fn ciphertext_verification_struct_hash(
     ])
 }
 
+/// secp256k1 group order n divided by 2, big-endian. A signature is malleable
+/// (has a valid sibling with `n - s`) unless `s <= n/2`; OpenZeppelin's `ECDSA.recover`,
+/// which both EVM verifiers use, rejects the upper half. We mirror that here so a
+/// recovered address cannot be produced from a malleated copy of another signature.
+const SECP256K1_HALF_ORDER: [u8; 32] = [
+    0x7f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+    0x5d, 0x57, 0x6e, 0x73, 0x57, 0xa4, 0x50, 0x1d, 0xdf, 0xe9, 0x2f, 0x46, 0x68, 0x1b, 0x20, 0xa0,
+];
+
 /// Recover the EVM signer address from a 65-byte `r||s||v` signature over `digest`.
 pub fn recover_evm_address(digest: &[u8; 32], signature: &[u8; 65]) -> Option<[u8; 20]> {
     // EVM EIP-712 signatures use v = 27/28 (recovery id 0/1).
     let recovery_id = signature[64].checked_sub(27)?;
     if recovery_id > 3 {
+        return None;
+    }
+    // Reject high-s (malleable) signatures for EVM parity with OpenZeppelin ECDSA.
+    if signature[32..64] > SECP256K1_HALF_ORDER[..] {
         return None;
     }
     let pubkey =
@@ -214,6 +227,59 @@ mod tests {
         out[..64].copy_from_slice(&signature.to_bytes());
         out[64] = 27 + recovery_id.to_byte();
         out
+    }
+
+    /// The malleable sibling of a signature: `(r, n - s, v ^ 1)`. It recovers to the
+    /// SAME public key as the original — that is exactly the malleability a low-s rule
+    /// exists to prevent. Used to prove `recover_evm_address` rejects high-s inputs.
+    fn high_s_sibling(sig: &[u8; 65]) -> [u8; 65] {
+        // secp256k1 group order n, big-endian.
+        const N: [u8; 32] = [
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xfe, 0xba, 0xae, 0xdc, 0xe6, 0xaf, 0x48, 0xa0, 0x3b, 0xbf, 0xd2, 0x5e, 0x8c,
+            0xd0, 0x36, 0x41, 0x41,
+        ];
+        let mut out_s = [0u8; 32];
+        let mut borrow = 0i16;
+        for i in (0..32).rev() {
+            let diff = N[i] as i16 - sig[32 + i] as i16 - borrow;
+            if diff < 0 {
+                out_s[i] = (diff + 256) as u8;
+                borrow = 1;
+            } else {
+                out_s[i] = diff as u8;
+                borrow = 0;
+            }
+        }
+        let mut out = *sig;
+        out[32..64].copy_from_slice(&out_s);
+        out[64] ^= 1; // flip 27 <-> 28
+        out
+    }
+
+    #[test]
+    fn rejects_high_s_malleable_signature() {
+        let key = SigningKey::from_bytes(&[0x44u8; 32].into()).expect("valid signing key");
+        let signer = evm_address_of(&key);
+        let ds = domain_separator(b"Decryption", b"1", 31337, &[0xAAu8; 20]);
+        let digest =
+            typed_data_digest(&ds, &public_decrypt_struct_hash(&[[1u8; 32]], &[7u8; 8], &[0x00]));
+        // k256 emits a low-s signature, which must verify.
+        let low = sign(&key, &digest);
+        assert!(low[32..64] <= SECP256K1_HALF_ORDER[..], "k256 should emit low-s");
+        assert_eq!(recover_evm_address(&digest, &low), Some(signer));
+
+        // The high-s sibling recovers to the same key mathematically, but the malleability
+        // guard must reject it outright (matching OpenZeppelin ECDSA / both EVM verifiers).
+        let high = high_s_sibling(&low);
+        assert!(high[32..64] > SECP256K1_HALF_ORDER[..], "sibling must be high-s");
+        assert_eq!(
+            recover_evm_address(&digest, &high),
+            None,
+            "high-s signature must be rejected"
+        );
+        // A signer cannot be double-counted toward a threshold by pairing a sig with its sibling.
+        assert!(!verify_threshold(&digest, &[low, high], &[signer], 2));
     }
 
     #[test]

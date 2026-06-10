@@ -58,6 +58,14 @@ pub fn define_kms_context(
         thresholds.kms_gen as usize <= signer_count && thresholds.mpc as usize <= signer_count,
         ZamaHostError::InvalidKmsThreshold
     );
+    // Reject duplicate signers: threshold verification counts DISTINCT recovered addresses,
+    // so a duplicate would silently raise the effective quorum (a 2-of-[A,A,B] set cannot be
+    // satisfied by A+B). EVM KMS signer sets are distinct; enforce the same here.
+    for i in 0..signer_count {
+        for j in (i + 1)..signer_count {
+            require!(signers[i] != signers[j], ZamaHostError::DuplicateKmsSigner);
+        }
+    }
 
     let kms_context = &mut ctx.accounts.kms_context;
     kms_context.context_id = context_id;

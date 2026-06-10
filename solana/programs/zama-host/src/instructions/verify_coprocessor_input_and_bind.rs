@@ -119,6 +119,24 @@ pub fn verify_coprocessor_input_and_bind(
         ZamaHostError::InvalidInputAttestation
     );
 
+    // Bind the ACL output to the identity the coprocessor actually attested (EVM parity:
+    // on EVM the handle is allowed to the attested `contractAddress` for the attested user).
+    // The attestation alone proves "the coprocessor blessed handle H for (user, contract)";
+    // these checks stop a caller from stapling a valid attestation onto an app account or
+    // subject set of their choosing. Combined with the `app_account_authority == output_app_account`
+    // signer check in `assert_output_acl_metadata`, only the attested contract can bind the
+    // handle into its own ACL domain, and only for the attested user.
+    require!(
+        contract_address == output_app_account.to_bytes(),
+        ZamaHostError::InputBindContractMismatch
+    );
+    require!(
+        output_subjects
+            .iter()
+            .any(|subject| subject.pubkey.to_bytes() == user_address),
+        ZamaHostError::InputBindUserNotSubject
+    );
+
     assert_output_acl_metadata(
         ctx.accounts.app_account_authority.key(),
         output_nonce_key,
