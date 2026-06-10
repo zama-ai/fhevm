@@ -139,10 +139,7 @@ impl<GP: Provider, HP: Provider, C: ContextManager> DbEventProcessor<GP, HP, C> 
         match &event.kind {
             ProtocolEventKind::PublicDecryption(req) => {
                 self.decryption_processor
-                    .check_ciphertexts_allowed_for_public_decryption(
-                        &req.snsCtMaterials,
-                        &req.extraData,
-                    )
+                    .check_ciphertexts_allowed_for_public_decryption(&req.snsCtMaterials)
                     .await?;
 
                 self.decryption_processor

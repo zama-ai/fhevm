@@ -116,6 +116,18 @@ pub struct SolanaAclVerifier {
     pub host_program_id: SolanaPubkeyBytes,
 }
 
+/// Request parameters for verifying a delegated Solana user decryption against on-chain witnesses.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DelegatedUserDecryptRequest<'a> {
+    pub handle: HandleBytes,
+    pub delegator: SolanaPubkeyBytes,
+    pub delegate: SolanaPubkeyBytes,
+    pub app_account: SolanaPubkeyBytes,
+    pub expected_delegation_counter: u64,
+    pub observed_slot: u64,
+    pub allowed_acl_domain_keys: &'a [SolanaPubkeyBytes],
+}
+
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum SolanaAclVerificationError {
     #[error("ACL account is not owned by the configured ZamaHost program")]
@@ -172,56 +184,6 @@ pub enum SolanaAclVerificationError {
     AccountDiscriminatorMismatch,
     #[error("account data contains invalid field values")]
     InvalidAccountData,
-}
-
-#[derive(Debug, Error, PartialEq, Eq)]
-pub enum SolanaNativeRequestError {
-    #[error("native Solana request has no handle entries")]
-    EmptyEntries,
-    #[error("native Solana request contains duplicate handle entries")]
-    DuplicateHandle,
-    #[error("native Solana request exceeds configured limits")]
-    RequestTooLarge,
-    #[error("native Solana request has an unsupported request mode")]
-    UnsupportedRequestMode,
-    #[error("native Solana request references a different ACL program id")]
-    AclProgramMismatch,
-    #[error("native Solana request domain separator is invalid")]
-    DomainSeparatorMismatch,
-    #[error("native Solana request entries hash is invalid")]
-    EntriesHashMismatch,
-    #[error("native Solana request extra data is invalid")]
-    InvalidExtraData,
-    #[error("native Solana request extra data hash is invalid")]
-    ExtraDataHashMismatch,
-    #[error("native Solana request KMS context id is invalid")]
-    KmsContextMismatch,
-    #[error("native Solana request reencryption public key is invalid")]
-    ReencryptionPublicKeyMismatch,
-    #[error("native Solana request nonce is invalid for its mode")]
-    InvalidNonce,
-    #[error("native Solana request expired or references a future context slot")]
-    SlotWindowInvalid,
-    #[error("native Solana request signature is missing or invalid")]
-    InvalidRequestSignature,
-    #[error("native Solana request key id is invalid")]
-    InvalidKeyId,
-    #[error("native Solana request profile fields are invalid or unsupported")]
-    InvalidProfile,
-    #[error("native Solana request handle metadata is invalid")]
-    InvalidHandleMetadata,
-    #[error("native Solana request batch fields are not uniform")]
-    BatchNotUniform,
-    #[error("native Solana request role fields are invalid for its mode")]
-    RoleFieldsInvalid,
-    #[error("native Solana request account fields do not match supplied witnesses")]
-    WitnessAccountMismatch,
-    #[error("native Solana request uses an unsupported account layout or material version")]
-    UnsupportedVersion,
-    #[error("native Solana ACL witness verification failed: {0}")]
-    Acl(#[from] SolanaAclVerificationError),
-    #[error("native Solana replay key was already used for a different request")]
-    ReplayDetected,
 }
 
 impl SolanaAclVerifier {
@@ -308,26 +270,23 @@ impl SolanaAclVerifier {
         record: &AclRecordWitness,
         overflow_permissions: &[AclPermissionWitness],
         delegation: &UserDecryptionDelegationWitness,
-        handle: HandleBytes,
-        delegator: SolanaPubkeyBytes,
-        delegate: SolanaPubkeyBytes,
-        app_account: SolanaPubkeyBytes,
-        expected_delegation_counter: u64,
-        observed_slot: u64,
-        allowed_acl_domain_keys: &[SolanaPubkeyBytes],
+        request: DelegatedUserDecryptRequest<'_>,
     ) -> Result<(), SolanaAclVerificationError> {
-        self.verify_acl_record(record, handle)?;
-        if !allowed_acl_domain_keys.contains(&record.acl_domain_key) {
+        self.verify_acl_record(record, request.handle)?;
+        if !request
+            .allowed_acl_domain_keys
+            .contains(&record.acl_domain_key)
+        {
             return Err(SolanaAclVerificationError::DomainNotAllowed);
         }
-        self.verify_subject_role(record, overflow_permissions, delegator, ACL_ROLE_USE)?;
+        self.verify_subject_role(record, overflow_permissions, request.delegator, ACL_ROLE_USE)?;
         self.verify_delegation(
             delegation,
-            delegator,
-            delegate,
-            app_account,
-            expected_delegation_counter,
-            observed_slot,
+            request.delegator,
+            request.delegate,
+            request.app_account,
+            request.expected_delegation_counter,
+            request.observed_slot,
         )
     }
 
@@ -337,26 +296,10 @@ impl SolanaAclVerifier {
         overflow_permissions: &[AclPermissionWitness],
         delegation: &UserDecryptionDelegationWitness,
         material: &HandleMaterialCommitmentWitness,
-        handle: HandleBytes,
-        delegator: SolanaPubkeyBytes,
-        delegate: SolanaPubkeyBytes,
-        app_account: SolanaPubkeyBytes,
-        expected_delegation_counter: u64,
-        observed_slot: u64,
-        allowed_acl_domain_keys: &[SolanaPubkeyBytes],
+        request: DelegatedUserDecryptRequest<'_>,
     ) -> Result<(), SolanaAclVerificationError> {
-        self.verify_delegated_user_decrypt(
-            record,
-            overflow_permissions,
-            delegation,
-            handle,
-            delegator,
-            delegate,
-            app_account,
-            expected_delegation_counter,
-            observed_slot,
-            allowed_acl_domain_keys,
-        )?;
+        let handle = request.handle;
+        self.verify_delegated_user_decrypt(record, overflow_permissions, delegation, request)?;
         self.verify_material_commitment(record, material, handle)
     }
     fn verify_acl_record(
@@ -455,9 +398,9 @@ impl SolanaAclVerifier {
             return require_role(inline.role_flags, required_role);
         }
 
-        for permission in overflow_permissions
+        if let Some(permission) = overflow_permissions
             .iter()
-            .filter(|permission| permission.subject == subject)
+            .find(|permission| permission.subject == subject)
         {
             self.verify_overflow_permission(record, permission)?;
             return require_role(permission.role_flags, required_role);
@@ -1174,13 +1117,15 @@ mod tests {
                 &decoded_record,
                 &[],
                 &decoded_delegation,
-                HANDLE,
-                OWNER,
-                DELEGATE,
-                APP_ACCOUNT,
-                9,
-                OBSERVED_SLOT,
-                &[DOMAIN],
+                DelegatedUserDecryptRequest {
+                    handle: HANDLE,
+                    delegator: OWNER,
+                    delegate: DELEGATE,
+                    app_account: APP_ACCOUNT,
+                    expected_delegation_counter: 9,
+                    observed_slot: OBSERVED_SLOT,
+                    allowed_acl_domain_keys: &[DOMAIN],
+                },
             ),
             Ok(())
         );
@@ -1310,13 +1255,15 @@ mod tests {
                 &base_record(),
                 &[],
                 &delegation(),
-                HANDLE,
-                OWNER,
-                DELEGATE,
-                APP_ACCOUNT,
-                9,
-                OBSERVED_SLOT,
-                &[DOMAIN],
+                DelegatedUserDecryptRequest {
+                    handle: HANDLE,
+                    delegator: OWNER,
+                    delegate: DELEGATE,
+                    app_account: APP_ACCOUNT,
+                    expected_delegation_counter: 9,
+                    observed_slot: OBSERVED_SLOT,
+                    allowed_acl_domain_keys: &[DOMAIN],
+                },
             ),
             Ok(())
         );
@@ -1474,13 +1421,15 @@ mod tests {
                 &base_record(),
                 &[],
                 &wrong_delegate,
-                HANDLE,
-                OWNER,
-                DELEGATE,
-                APP_ACCOUNT,
-                9,
-                OBSERVED_SLOT,
-                &[DOMAIN],
+                DelegatedUserDecryptRequest {
+                    handle: HANDLE,
+                    delegator: OWNER,
+                    delegate: DELEGATE,
+                    app_account: APP_ACCOUNT,
+                    expected_delegation_counter: 9,
+                    observed_slot: OBSERVED_SLOT,
+                    allowed_acl_domain_keys: &[DOMAIN],
+                },
             ),
             Err(SolanaAclVerificationError::DelegationMismatch)
         );
@@ -1500,13 +1449,15 @@ mod tests {
                 &base_record(),
                 &[],
                 &wildcard_delegate,
-                HANDLE,
-                OWNER,
-                WILDCARD_APP_CONTEXT,
-                APP_ACCOUNT,
-                9,
-                OBSERVED_SLOT,
-                &[DOMAIN],
+                DelegatedUserDecryptRequest {
+                    handle: HANDLE,
+                    delegator: OWNER,
+                    delegate: WILDCARD_APP_CONTEXT,
+                    app_account: APP_ACCOUNT,
+                    expected_delegation_counter: 9,
+                    observed_slot: OBSERVED_SLOT,
+                    allowed_acl_domain_keys: &[DOMAIN],
+                },
             ),
             Err(SolanaAclVerificationError::DelegationMismatch)
         );
@@ -1526,13 +1477,15 @@ mod tests {
                 &base_record(),
                 &[],
                 &delegate_is_app,
-                HANDLE,
-                OWNER,
-                APP_ACCOUNT,
-                APP_ACCOUNT,
-                9,
-                OBSERVED_SLOT,
-                &[DOMAIN],
+                DelegatedUserDecryptRequest {
+                    handle: HANDLE,
+                    delegator: OWNER,
+                    delegate: APP_ACCOUNT,
+                    app_account: APP_ACCOUNT,
+                    expected_delegation_counter: 9,
+                    observed_slot: OBSERVED_SLOT,
+                    allowed_acl_domain_keys: &[DOMAIN],
+                },
             ),
             Err(SolanaAclVerificationError::DelegationMismatch)
         );
@@ -1544,13 +1497,15 @@ mod tests {
                 &base_record(),
                 &[],
                 &wrong_pda,
-                HANDLE,
-                OWNER,
-                DELEGATE,
-                APP_ACCOUNT,
-                9,
-                OBSERVED_SLOT,
-                &[DOMAIN],
+                DelegatedUserDecryptRequest {
+                    handle: HANDLE,
+                    delegator: OWNER,
+                    delegate: DELEGATE,
+                    app_account: APP_ACCOUNT,
+                    expected_delegation_counter: 9,
+                    observed_slot: OBSERVED_SLOT,
+                    allowed_acl_domain_keys: &[DOMAIN],
+                },
             ),
             Err(SolanaAclVerificationError::NonCanonicalDelegation)
         );
@@ -1560,13 +1515,15 @@ mod tests {
                 &base_record(),
                 &[],
                 &delegation(),
-                HANDLE,
-                OWNER,
-                DELEGATE,
-                APP_ACCOUNT,
-                8,
-                OBSERVED_SLOT,
-                &[DOMAIN],
+                DelegatedUserDecryptRequest {
+                    handle: HANDLE,
+                    delegator: OWNER,
+                    delegate: DELEGATE,
+                    app_account: APP_ACCOUNT,
+                    expected_delegation_counter: 8,
+                    observed_slot: OBSERVED_SLOT,
+                    allowed_acl_domain_keys: &[DOMAIN],
+                },
             ),
             Err(SolanaAclVerificationError::DelegationCounterMismatch)
         );
@@ -1578,13 +1535,15 @@ mod tests {
                 &base_record(),
                 &[],
                 &revoked,
-                HANDLE,
-                OWNER,
-                DELEGATE,
-                APP_ACCOUNT,
-                9,
-                OBSERVED_SLOT,
-                &[DOMAIN],
+                DelegatedUserDecryptRequest {
+                    handle: HANDLE,
+                    delegator: OWNER,
+                    delegate: DELEGATE,
+                    app_account: APP_ACCOUNT,
+                    expected_delegation_counter: 9,
+                    observed_slot: OBSERVED_SLOT,
+                    allowed_acl_domain_keys: &[DOMAIN],
+                },
             ),
             Err(SolanaAclVerificationError::DelegationNotActive)
         );

@@ -1,7 +1,6 @@
 use crate::core::{
-    config::{Config, HostChainKind},
+    config::Config,
     event_processor::{ProcessingError, context::ContextManager, s3::S3Service},
-    solana_acl::{SolanaAclVerifier, SolanaPubkeyBytes, decode_acl_record_witness},
 };
 use alloy::{
     consensus::Transaction,
@@ -11,7 +10,6 @@ use alloy::{
     sol_types::{Eip712Domain, SolCall},
 };
 use anyhow::anyhow;
-use base64::Engine as _;
 use connector_utils::types::{
     KmsGrpcRequest, extra_data::parse_extra_data, handle::extract_chain_id_from_handle,
     u256_to_request_id,
@@ -28,7 +26,6 @@ use kms_grpc::kms::v1::{
 };
 use sqlx::types::chrono::Utc;
 use std::collections::HashMap;
-use std::str::FromStr;
 use tracing::info;
 use user_decryption_signature::{compute_user_decrypt_digest, verify_signature};
 
@@ -47,30 +44,11 @@ pub struct DecryptionProcessor<GP: Provider, HP: Provider, C> {
     /// The instances of the host chains `ACL` contracts used to check the decryption ACL.
     acl_contracts: HashMap<u64, ACLInstance<HP>>,
 
-    /// The ACL backend configured for each host chain.
-    host_chain_kinds: HashMap<u64, HostChainKind>,
-
-    /// Per-Solana-host RPC + verifier used to authorize decryption by reading the zama-host
-    /// ACL record directly from the validator (the trusted source), rather than trusting the
-    /// gateway-conveyed `extraData` witness.
-    solana_acl: HashMap<u64, SolanaAclChainConfig>,
-
     /// The entity used to collect ciphertexts from S3 buckets.
     s3_service: S3Service<GP>,
 
     /// Gas cap for the `IERC1271.isValidSignature` static call (RFC-012).
     erc1271_gas_limit: u64,
-}
-
-/// RPC endpoint + ACL verifier for a single Solana host chain.
-#[derive(Clone)]
-struct SolanaAclChainConfig {
-    /// Validator JSON-RPC endpoint the worker reads ACL records from.
-    rpc_url: String,
-    /// `zama-host` program id, base58-encoded for `getProgramAccounts`.
-    program_id_base58: String,
-    /// Verifier bound to the expected `zama-host` program id.
-    verifier: SolanaAclVerifier,
 }
 
 impl<GP, HP, C> DecryptionProcessor<GP, HP, C>
@@ -95,38 +73,12 @@ where
         };
         let decryption_contract =
             Decryption::new(config.decryption_contract.address, gateway_provider);
-        let host_chain_kinds = config
-            .host_chains
-            .iter()
-            .map(|host_chain| (host_chain.chain_id, host_chain.chain_kind))
-            .collect();
-        // A Solana host chain authorizes decryption via its on-chain ACL record; record the
-        // validator RPC + the expected program id so the worker can read and verify it.
-        let solana_acl = config
-            .host_chains
-            .iter()
-            .filter(|hc| hc.chain_kind == HostChainKind::Solana)
-            .filter_map(|hc| {
-                hc.solana_host_program_id.map(|program_id| {
-                    (
-                        hc.chain_id,
-                        SolanaAclChainConfig {
-                            rpc_url: hc.url.to_string(),
-                            program_id_base58: solana_pubkey::Pubkey::new_from_array(program_id)
-                                .to_string(),
-                            verifier: SolanaAclVerifier::new(program_id),
-                        },
-                    )
-                })
-            })
-            .collect();
+
         Self {
             domain,
             context_manager,
             decryption_contract,
             acl_contracts,
-            host_chain_kinds,
-            solana_acl,
             s3_service,
             erc1271_gas_limit: config.erc1271_gas_limit,
         }
@@ -136,7 +88,6 @@ where
     pub async fn check_ciphertexts_allowed_for_public_decryption(
         &self,
         sns_ciphertexts: &[SnsCiphertextMaterial],
-        _extra_data: &Bytes,
     ) -> Result<(), ProcessingError> {
         info!(
             "Starting ACL check for {} handles...",
@@ -146,15 +97,6 @@ where
         for ct in sns_ciphertexts {
             let ct_chain_id = extract_chain_id_from_handle(ct.ctHandle.as_slice())
                 .map_err(ProcessingError::Irrecoverable)?;
-            // Solana authorizes public decryption via its on-chain ACL record, read directly
-            // from the validator (the trusted source) and verified with secp/account-witness
-            // semantics — not the gateway-conveyed `extraData`.
-            if self.host_chain_kind(ct_chain_id) == HostChainKind::Solana {
-                self.verify_solana_public_decrypt_allowed(ct_chain_id, ct.ctHandle.0)
-                    .await?;
-                continue;
-            }
-
             let Some(acl_contract) = self.acl_contracts.get(&ct_chain_id) else {
                 return Err(ProcessingError::Recoverable(anyhow!(
                     "No ACL contract config found for chain id {ct_chain_id}"
@@ -190,12 +132,11 @@ where
             sns_ciphertexts.len()
         );
 
-        let (ct_handle_contract_pairs, delegator_address, _extra_data) =
+        let (ct_handle_contract_pairs, delegator_address) =
             match delegatedUserDecryptionRequestCall::abi_decode(calldata.as_slice()) {
                 Ok(parsed_calldata) => (
                     parsed_calldata.ctHandleContractPairs,
                     Some(parsed_calldata.delegationAccounts.delegatorAddress),
-                    parsed_calldata.extraData,
                 ),
                 Err(e) => {
                     let parsed_calldata = userDecryptionRequestCall::abi_decode(
@@ -207,11 +148,7 @@ where
                             and delegatedUserDecryptionRequestCall ({e})!"
                         ))
                     })?;
-                    (
-                        parsed_calldata.ctHandleContractPairs,
-                        None,
-                        parsed_calldata.extraData,
-                    )
+                    (parsed_calldata.ctHandleContractPairs, None)
                 }
             };
 
@@ -223,10 +160,6 @@ where
         for ct in sns_ciphertexts {
             let ct_chain_id = extract_chain_id_from_handle(ct.ctHandle.as_slice())
                 .map_err(ProcessingError::Irrecoverable)?;
-            if self.host_chain_kind(ct_chain_id) == HostChainKind::Solana {
-                return Err(Self::reject_solana_gateway_decryption(ct_chain_id));
-            }
-
             let acl_contract = self.acl_contracts.get(&ct_chain_id).ok_or_else(|| {
                 ProcessingError::Recoverable(anyhow!(
                     "No ACL contract config found for chain id {ct_chain_id}"
@@ -261,197 +194,6 @@ where
 
         info!("ACL check passed for {} handles!", sns_ciphertexts.len());
         Ok(())
-    }
-
-    /// Authorizes a Solana public decryption by reading the handle's `zama-host` ACL record
-    /// directly from the validator (trusted) and verifying it permits public decrypt with the
-    /// program-bound [`SolanaAclVerifier`] — the RPC-verified authorization the gateway path
-    /// cannot supply via `extraData`.
-    async fn verify_solana_public_decrypt_allowed(
-        &self,
-        chain_id: u64,
-        handle: SolanaPubkeyBytes,
-    ) -> Result<(), ProcessingError> {
-        let cfg = self.solana_acl.get(&chain_id).ok_or_else(|| {
-            ProcessingError::Irrecoverable(anyhow!(
-                "No Solana ACL config (rpc/program id) for host chain {chain_id}"
-            ))
-        })?;
-        let (account_key, owner, data) = Self::fetch_solana_acl_record(cfg, handle)
-            .await
-            .map_err(ProcessingError::Recoverable)?;
-        let record = decode_acl_record_witness(account_key, owner, &data)
-            .map_err(|e| ProcessingError::Recoverable(anyhow!("decode Solana ACL record: {e}")))?;
-        cfg.verifier
-            .verify_public_decrypt(&record, handle)
-            .map_err(|e| {
-                ProcessingError::Recoverable(anyhow!(
-                    "{} is not allowed for Solana public decrypt: {e}",
-                    hex::encode(handle)
-                ))
-            })?;
-        Ok(())
-    }
-
-    /// ACL check for Solana user decryption: every handle must grant `subject` (the requesting
-    /// ed25519 user) the USE role on its on-chain `zama-host` ACL record, read directly from the
-    /// validator and verified with the program-bound [`SolanaAclVerifier`]. The relayer's ed25519
-    /// `signMessage` proves request ownership, not decrypt permission, and the gateway `extraData`
-    /// witness is attacker-controlled, so authorization must be enforced here. Fail-closed: a
-    /// non-Solana handle, missing ACL config, or an absent grant rejects the whole request.
-    pub async fn check_ciphertexts_allowed_for_solana_user_decryption(
-        &self,
-        sns_ciphertexts: &[SnsCiphertextMaterial],
-        subject: SolanaPubkeyBytes,
-    ) -> Result<(), ProcessingError> {
-        info!(
-            "Starting Solana user-decrypt ACL check for {} handles...",
-            sns_ciphertexts.len()
-        );
-        for ct in sns_ciphertexts {
-            let ct_chain_id = extract_chain_id_from_handle(ct.ctHandle.as_slice())
-                .map_err(ProcessingError::Irrecoverable)?;
-            if self.host_chain_kind(ct_chain_id) != HostChainKind::Solana {
-                return Err(ProcessingError::Irrecoverable(anyhow!(
-                    "UserDecryptionSolana handle {} is not on a Solana host chain ({ct_chain_id})",
-                    hex::encode(ct.ctHandle)
-                )));
-            }
-            self.verify_solana_user_decrypt_allowed(ct_chain_id, ct.ctHandle.0, subject)
-                .await?;
-        }
-        info!(
-            "Solana user-decrypt ACL check passed for {} handles!",
-            sns_ciphertexts.len()
-        );
-        Ok(())
-    }
-
-    /// Authorizes a Solana user decryption by reading the handle's `zama-host` ACL record directly
-    /// from the validator (trusted) and verifying it grants `subject` the USE role with the
-    /// program-bound [`SolanaAclVerifier`] — the RPC-verified authorization the gateway `extraData`
-    /// cannot supply, mirroring [`Self::verify_solana_public_decrypt_allowed`].
-    async fn verify_solana_user_decrypt_allowed(
-        &self,
-        chain_id: u64,
-        handle: SolanaPubkeyBytes,
-        subject: SolanaPubkeyBytes,
-    ) -> Result<(), ProcessingError> {
-        let cfg = self.solana_acl.get(&chain_id).ok_or_else(|| {
-            ProcessingError::Irrecoverable(anyhow!(
-                "No Solana ACL config (rpc/program id) for host chain {chain_id}"
-            ))
-        })?;
-        let (account_key, owner, data) = Self::fetch_solana_acl_record(cfg, handle)
-            .await
-            .map_err(ProcessingError::Recoverable)?;
-        let record = decode_acl_record_witness(account_key, owner, &data)
-            .map_err(|e| ProcessingError::Recoverable(anyhow!("decode Solana ACL record: {e}")))?;
-        cfg.verifier
-            .verify_user_decrypt_subject(&record, &[], handle, subject)
-            .map_err(|e| {
-                ProcessingError::Recoverable(anyhow!(
-                    "user {} is not allowed to user-decrypt {} on Solana: {e}",
-                    hex::encode(subject),
-                    hex::encode(handle)
-                ))
-            })?;
-        Ok(())
-    }
-
-    /// Fetches the canonical `zama-host` ACL record for `handle` via `getProgramAccounts`,
-    /// filtering on the record's `handle` field (offset 8, after the 8-byte Anchor
-    /// discriminator). Returns (account key, owner, raw account data).
-    async fn fetch_solana_acl_record(
-        cfg: &SolanaAclChainConfig,
-        handle: SolanaPubkeyBytes,
-    ) -> anyhow::Result<(SolanaPubkeyBytes, SolanaPubkeyBytes, Vec<u8>)> {
-        let handle_b64 = base64::engine::general_purpose::STANDARD.encode(handle);
-        let body = serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "getProgramAccounts",
-            "params": [cfg.program_id_base58, {
-                "encoding": "base64",
-                "filters": [{"memcmp": {"offset": 8, "bytes": handle_b64, "encoding": "base64"}}]
-            }]
-        });
-        let resp: serde_json::Value = reqwest::Client::new()
-            .post(&cfg.rpc_url)
-            .json(&body)
-            .send()
-            .await?
-            .json()
-            .await?;
-        let account = resp
-            .get("result")
-            .and_then(|r| r.as_array())
-            .and_then(|a| a.first())
-            .ok_or_else(|| {
-                anyhow!(
-                    "no zama-host ACL record found for handle {}",
-                    hex::encode(handle)
-                )
-            })?;
-        let pubkey = account
-            .get("pubkey")
-            .and_then(|p| p.as_str())
-            .ok_or_else(|| anyhow!("getProgramAccounts: missing pubkey"))?;
-        let inner = account
-            .get("account")
-            .ok_or_else(|| anyhow!("getProgramAccounts: missing account"))?;
-        let owner = inner
-            .get("owner")
-            .and_then(|o| o.as_str())
-            .ok_or_else(|| anyhow!("getProgramAccounts: missing owner"))?;
-        let data_b64 = inner
-            .get("data")
-            .and_then(|d| d.as_array())
-            .and_then(|a| a.first())
-            .and_then(|s| s.as_str())
-            .ok_or_else(|| anyhow!("getProgramAccounts: missing account data"))?;
-        let data = base64::engine::general_purpose::STANDARD.decode(data_b64)?;
-        let account_key = solana_pubkey::Pubkey::from_str(pubkey)
-            .map_err(|e| anyhow!("invalid ACL record pubkey {pubkey}: {e}"))?
-            .to_bytes();
-        let owner = solana_pubkey::Pubkey::from_str(owner)
-            .map_err(|e| anyhow!("invalid ACL record owner {owner}: {e}"))?
-            .to_bytes();
-        Ok((account_key, owner, data))
-    }
-
-    fn host_chain_kind(&self, chain_id: u64) -> HostChainKind {
-        self.host_chain_kinds
-            .get(&chain_id)
-            .copied()
-            .unwrap_or(HostChainKind::Evm)
-    }
-
-    /// Fails Solana decryption authorization closed on the Gateway request path.
-    ///
-    /// The Gateway request carries ACL/material account witnesses inside the
-    /// requester-controlled `extraData`. Those bytes are not on-chain truth: an
-    /// attacker can set the witness `owner` field to the host program id and
-    /// hand-craft an `AclRecord`/`HandleMaterialCommitment` body that names
-    /// themselves as a subject (or sets `public_decrypt = true`), passing every
-    /// self-consistency check (canonical PDA, nonce key, material hash) because
-    /// they are all recomputed from the same attacker-supplied fields. Trusting
-    /// this payload therefore authorizes decryption of any Solana handle.
-    ///
-    /// Solana authorization must instead be verified against account state read
-    /// from the chain by the native-v0 flow (`solana_live`/`solana_flow`), which
-    /// derives `owner`/`data`/`observed_slot` from a finalized RPC snapshot. Until
-    /// that flow is wired into this processor, Solana decryption is refused rather
-    /// than authorized from untrusted witnesses. This mirrors the existing
-    /// fail-closed behavior for Solana host chains configured without a host
-    /// program id (see `KmsWorker::from_config`).
-    fn reject_solana_gateway_decryption(chain_id: u64) -> ProcessingError {
-        ProcessingError::Irrecoverable(anyhow!(
-            "Refusing decryption for Solana host chain {chain_id}: Gateway `extraData` ACL \
-             witnesses are not a trusted authorization source. Solana handles must be authorized \
-             via the RPC-verified native-v0 flow, which is not wired into this processor. Failing \
-             closed."
-        ))
     }
 
     async fn inner_acl_check_for_delegated_user_decryption(
@@ -808,15 +550,7 @@ where
         let kms_extra_data = kms_decryption_extra_data(extra_data);
 
         if let Some(user_decrypt_data) = user_decrypt_data {
-            // RFC-021: a Solana user identity is encoded as "solana:<hex pubkey>", which the KMS
-            // parses to route through its Solana branch (compute_link_solana + solana_acl). EVM
-            // identities use the checksummed 20-byte address.
-            let client_address = match user_decrypt_data.solana_user_address {
-                Some(solana_user_address) => {
-                    format!("solana:{}", hex::encode(solana_user_address))
-                }
-                None => user_decrypt_data.user_address.to_checksum(None),
-            };
+            let client_address = user_decrypt_data.user_address.to_checksum(None);
             let enc_key = user_decrypt_data.public_key.to_vec();
             let user_decryption_request = UserDecryptionRequest {
                 request_id,
@@ -906,10 +640,6 @@ fn kms_decryption_extra_data(extra_data: &Bytes) -> Vec<u8> {
 pub struct UserDecryptionExtraData {
     pub user_address: Address,
     pub public_key: Bytes,
-    /// Set for RFC-021 (Solana) user decryptions: the 32-byte Solana pubkey. When present, the
-    /// gRPC `client_address` is built as `"solana:<hex>"` so the KMS routes through its Solana
-    /// branch (compute_link_solana + solana_acl); the 20-byte `user_address` is then unused.
-    pub solana_user_address: Option<FixedBytes<32>>,
 }
 
 impl UserDecryptionExtraData {
@@ -917,16 +647,6 @@ impl UserDecryptionExtraData {
         Self {
             user_address,
             public_key,
-            solana_user_address: None,
-        }
-    }
-
-    /// Constructor for an RFC-021 (Solana) user decryption carrying the 32-byte Solana pubkey.
-    pub fn new_solana(solana_user_address: FixedBytes<32>, public_key: Bytes) -> Self {
-        Self {
-            user_address: Address::ZERO,
-            public_key,
-            solana_user_address: Some(solana_user_address),
         }
     }
 }
@@ -950,16 +670,6 @@ mod tests {
     use user_decryption_signature::{
         ERC1271_MAGIC_VALUE, compute_user_decrypt_digest, default_user_decrypt_domain,
     };
-
-    const TEST_HOST_PROGRAM_ID: [u8; 32] = [42; 32];
-
-    fn solana_config_for(chain_id: u64) -> Config {
-        let mut config = Config::default();
-        config.host_chains[0].chain_id = chain_id;
-        config.host_chains[0].chain_kind = HostChainKind::Solana;
-        config.host_chains[0].solana_host_program_id = Some(TEST_HOST_PROGRAM_ID);
-        config
-    }
 
     enum ExpectedOutcome {
         Ok,
@@ -1043,7 +753,7 @@ mod tests {
         }
 
         let result = decryption_processor
-            .check_ciphertexts_allowed_for_public_decryption(&sns_ciphertexts, &Bytes::from(vec![]))
+            .check_ciphertexts_allowed_for_public_decryption(&sns_ciphertexts)
             .await;
 
         match expected {
@@ -1202,118 +912,6 @@ mod tests {
                 _ => panic!("Expected Irrecoverable error, got: {:?}", result),
             },
         }
-    }
-
-    /// Builds a processor whose only host chain is a Solana chain.
-    fn solana_processor(
-        ct_chain_id: u64,
-    ) -> DecryptionProcessor<
-        impl alloy::providers::Provider + Clone,
-        impl alloy::providers::Provider + Clone,
-        MockContextManager,
-    > {
-        let mock_provider = ProviderBuilder::new()
-            .disable_recommended_fillers()
-            .connect_mocked_client(Asserter::new());
-        let config = solana_config_for(ct_chain_id);
-        let s3_service = S3Service::new(&config, mock_provider.clone(), reqwest::Client::new());
-        DecryptionProcessor::new(
-            &config,
-            MockContextManager,
-            mock_provider.clone(),
-            HashMap::from([(ct_chain_id, ACL::new(Address::default(), mock_provider))]),
-            s3_service,
-        )
-    }
-
-    fn assert_fails_closed(result: Result<(), ProcessingError>) {
-        match result {
-            // Must be irrecoverable: retrying an unsupported authorization path
-            // cannot succeed, and we must never authorize from untrusted witnesses.
-            Err(ProcessingError::Irrecoverable(e)) => assert!(
-                e.to_string().contains("not a trusted authorization source"),
-                "unexpected error: {e}"
-            ),
-            other => panic!("expected fail-closed Irrecoverable refusal, got {other:?}"),
-        }
-    }
-
-    // The Gateway `extraData` witness path is not a trusted source for Solana ACL
-    // state: an attacker controls those bytes (including the account `owner`
-    // field), so trusting them would authorize decryption of any Solana handle.
-    // These tests pin the fail-closed behavior for the USER-decrypt gateway path:
-    // even a non-empty, attacker-shaped witness payload must be refused without
-    // being inspected. Public decryption, by contrast, is authorized from the
-    // RPC-verified on-chain ACL record (the trusted source) — see below.
-
-    // Public decryption does NOT use the gateway `extraData` witnesses: it authorizes
-    // against the handle's `zama-host` ACL record read directly from the validator. With
-    // a Solana host chain configured, the check therefore takes the RPC-verified path
-    // (`verify_solana_public_decrypt_allowed`) and — with no reachable validator in this
-    // unit test — surfaces the RPC/ACL fetch error rather than the gateway fail-closed
-    // refusal. The point is that it is NOT refused as an untrusted-witness path.
-    #[tokio::test]
-    async fn solana_public_decryption_uses_rpc_verified_acl_not_gateway_witness() {
-        let sns_ct = rand_sns_ct();
-        let ct_chain_id = extract_chain_id_from_handle(sns_ct.ctHandle.as_slice()).unwrap();
-        let processor = solana_processor(ct_chain_id);
-
-        let result = processor
-            .check_ciphertexts_allowed_for_public_decryption(
-                &[sns_ct],
-                &Bytes::from(vec![1u8; 256]),
-            )
-            .await;
-
-        let err = result.expect_err("no reachable validator, so the RPC-verified ACL check errors");
-        assert!(
-            !err.to_string()
-                .contains("not a trusted authorization source"),
-            "public decrypt must take the RPC-verified ACL path, not the gateway fail-closed \
-             refusal; got: {err}"
-        );
-    }
-
-    #[tokio::test]
-    async fn solana_user_decryption_is_refused_fail_closed() {
-        let sns_ct = rand_sns_ct();
-        let ct_chain_id = extract_chain_id_from_handle(sns_ct.ctHandle.as_slice()).unwrap();
-        let processor = solana_processor(ct_chain_id);
-        let calldata = userDecryptionRequestCall {
-            ctHandleContractPairs: vec![CtHandleContractPair {
-                ctHandle: sns_ct.ctHandle,
-                contractAddress: rand_address(),
-            }],
-            ..Default::default()
-        }
-        .abi_encode();
-
-        let result = processor
-            .check_ciphertexts_allowed_for_user_decryption(calldata, &[sns_ct], Address::default())
-            .await;
-
-        assert_fails_closed(result);
-    }
-
-    #[tokio::test]
-    async fn solana_delegated_user_decryption_is_refused_fail_closed() {
-        let sns_ct = rand_sns_ct();
-        let ct_chain_id = extract_chain_id_from_handle(sns_ct.ctHandle.as_slice()).unwrap();
-        let processor = solana_processor(ct_chain_id);
-        let calldata = delegatedUserDecryptionRequestCall {
-            ctHandleContractPairs: vec![CtHandleContractPair {
-                ctHandle: sns_ct.ctHandle,
-                contractAddress: rand_address(),
-            }],
-            ..Default::default()
-        }
-        .abi_encode();
-
-        let result = processor
-            .check_ciphertexts_allowed_for_user_decryption(calldata, &[sns_ct], Address::default())
-            .await;
-
-        assert_fails_closed(result);
     }
 
     /// Builds a `UserDecryptionRequestV2` whose payload carries a valid 65-byte ECDSA signature
