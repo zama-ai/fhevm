@@ -108,6 +108,29 @@ const SECP256K1_HALF_ORDER: [u8; 32] = [
     0x5d, 0x57, 0x6e, 0x73, 0x57, 0xa4, 0x50, 0x1d, 0xdf, 0xe9, 0x2f, 0x46, 0x68, 0x1b, 0x20, 0xa0,
 ];
 
+/// Resolve the KMS context id a public-decrypt certificate is bound to, mirroring the EVM
+/// gateway `_extractContextId`: empty or version-0 `extra_data` selects the current context;
+/// version 1 carries a big-endian context id in `extra_data[1..33]`. Because the KMS signs over
+/// `extra_data`, the returned id is authenticated by the certificate, so a cert minted under
+/// context N cannot be verified against a different context after a rotation. Returns `None` for
+/// an unsupported version, a short version-1 payload, or an id outside the on-chain u64 space.
+pub fn extract_kms_context_id(extra_data: &[u8], current_context_id: u64) -> Option<u64> {
+    match extra_data.first() {
+        None | Some(0) => Some(current_context_id),
+        Some(1) => {
+            let id_bytes = extra_data.get(1..33)?;
+            // Context ids are u64 on-chain; the high 24 bytes of the uint256 must be zero.
+            if id_bytes[..24].iter().any(|&b| b != 0) {
+                return None;
+            }
+            let mut buf = [0u8; 8];
+            buf.copy_from_slice(&id_bytes[24..32]);
+            Some(u64::from_be_bytes(buf))
+        }
+        Some(_) => None,
+    }
+}
+
 /// Recover the EVM signer address from a 65-byte `r||s||v` signature over `digest`.
 pub fn recover_evm_address(digest: &[u8; 32], signature: &[u8; 65]) -> Option<[u8; 20]> {
     // EVM EIP-712 signatures use v = 27/28 (recovery id 0/1).
@@ -280,6 +303,26 @@ mod tests {
         );
         // A signer cannot be double-counted toward a threshold by pairing a sig with its sibling.
         assert!(!verify_threshold(&digest, &[low, high], &[signer], 2));
+    }
+
+    #[test]
+    fn extract_kms_context_id_mirrors_evm_extractcontextid() {
+        // Empty or version-0 extra_data -> current context.
+        assert_eq!(extract_kms_context_id(&[], 7), Some(7));
+        assert_eq!(extract_kms_context_id(&[0u8], 7), Some(7));
+        // Version 1 -> big-endian context id from bytes [1..33].
+        let mut v1 = vec![1u8];
+        v1.extend_from_slice(&[0u8; 24]);
+        v1.extend_from_slice(&42u64.to_be_bytes());
+        assert_eq!(extract_kms_context_id(&v1, 7), Some(42));
+        // Version 1 with an id that overflows u64 -> rejected.
+        let mut overflow = vec![1u8];
+        overflow.extend_from_slice(&[0xffu8; 32]);
+        assert_eq!(extract_kms_context_id(&overflow, 7), None);
+        // Version 1 with a short payload -> rejected.
+        assert_eq!(extract_kms_context_id(&[1u8, 0, 0], 7), None);
+        // Unsupported version -> rejected.
+        assert_eq!(extract_kms_context_id(&[2u8], 7), None);
     }
 
     #[test]
