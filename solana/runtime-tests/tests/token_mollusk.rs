@@ -4347,6 +4347,75 @@ fn mollusk_disclose_balance_secp_accepts_real_kms_certificate() {
     assert_eq!(events[0].cleartext_amount, cleartext_amount);
 }
 
+/// SECURITY (P1#3 context binding): a request whose `extra_data` names a KMS context other than the
+/// passed `kms_context` account is rejected. The context is resolved from `extra_data` (which the
+/// KMS signs over) and checked against the account BEFORE signature verification, so a certificate
+/// minted under one context cannot be verified under another (e.g. the current one after a rotation).
+/// The certificate here is signed over this very `extra_data`, so the only reason for rejection is
+/// the context-id binding.
+#[test]
+fn mollusk_disclose_balance_secp_rejects_context_mismatch_in_extra_data() {
+    let fixture = TokenMolluskFixture::new();
+    let key = k256::ecdsa::SigningKey::from_bytes(&[0x55u8; 32].into()).unwrap();
+    let cleartext_amount = 125;
+    let mut accounts = fixture.base_accounts();
+    accounts.insert(fixture.host_config, kms_host_config_account(fixture.owner));
+    let (kms_ctx, kms_ctx_account) = kms_context_account(secp_evm_address(&key));
+    accounts.insert(kms_ctx, kms_ctx_account);
+    let context = mollusk().with_context(accounts);
+
+    let request_result = process_transaction(&context, &[request_disclose_balance_ix(&fixture)]);
+    assert!(request_result.raw_result.is_ok());
+    seed_material_commitment_for_acl(&context, fixture.alice_current_compute_acl, 120);
+
+    // extra_data (version 1) names context KMS_CONTEXT_ID + 1, but the passed kms_context is for
+    // KMS_CONTEXT_ID. Sign the cert over this extra_data so it is otherwise valid.
+    let mut extra_data = vec![1u8];
+    extra_data.extend_from_slice(&[0u8; 24]);
+    extra_data.extend_from_slice(&(KMS_CONTEXT_ID + 1).to_be_bytes());
+    let digest = host::eip712::typed_data_digest(
+        &host::eip712::domain_separator(
+            b"Decryption",
+            b"1",
+            SECP_GATEWAY_CHAIN_ID,
+            &SECP_DECRYPTION_CONTRACT,
+        ),
+        &host::eip712::public_decrypt_struct_hash(
+            &[fixture.alice_initial],
+            &decrypted_u64_bytes(cleartext_amount),
+            &extra_data,
+        ),
+    );
+    let signatures = vec![secp_sign(&key, &digest)];
+
+    let ix = anchor_ix(
+        token::id(),
+        token::accounts::DiscloseBalanceSecp {
+            mint: fixture.mint,
+            token_account: fixture.alice_token,
+            balance_acl_record: fixture.alice_current_compute_acl,
+            balance_material_commitment: host::handle_material_address(
+                fixture.alice_current_compute_acl,
+            )
+            .0,
+            host_config: fixture.host_config,
+            kms_context: host::kms_context_address(KMS_CONTEXT_ID).0,
+            event_authority: event_authority(token::id()),
+            program: token::id(),
+        },
+        token::instruction::DiscloseBalanceSecp {
+            cleartext_amount,
+            signatures,
+            extra_data,
+        },
+    );
+    let result = process_transaction(&context, &[ix]);
+    assert!(
+        result.raw_result.is_err(),
+        "extra_data naming a context other than the passed kms_context must be rejected"
+    );
+}
+
 #[test]
 fn mollusk_disclose_balance_secp_rejects_unauthorized_signer() {
     let fixture = TokenMolluskFixture::new();

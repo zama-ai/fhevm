@@ -24,12 +24,9 @@ pub struct DiscloseAmountSecp<'info> {
         bump = host_config.bump,
     )]
     pub host_config: Box<Account<'info, zama_host::HostConfig>>,
-    /// Active KMS context (signer set + thresholds) for `host_config.current_kms_context_id`.
-    #[account(
-        seeds = [zama_host::KMS_CONTEXT_SEED, &host_config.current_kms_context_id.to_le_bytes()],
-        seeds::program = zama_host::ID,
-        bump = kms_context.bump,
-    )]
+    /// KMS context the certificate is bound to, resolved from `extra_data` (EVM `_extractContextId`
+    /// parity) and verified in-handler against the canonical PDA — not assumed to be the current
+    /// context, so a cert minted under one context cannot be verified under another after rotation.
     pub kms_context: Box<Account<'info, zama_host::KmsContext>>,
 }
 
@@ -66,6 +63,17 @@ pub fn disclose_amount_secp(
     );
     require!(
         !kms_context.destroyed,
+        ConfidentialTokenError::InvalidKmsContext
+    );
+    // Resolve the context the certificate is bound to from extra_data (which the KMS signs over)
+    // and verify the passed kms_context is the canonical PDA for THAT context, not the current one.
+    // This stops a cert minted under context N from being verified under a rotated context N+1.
+    let expected_context_id =
+        zama_host::eip712::extract_kms_context_id(&extra_data, config.current_kms_context_id)
+            .ok_or(ConfidentialTokenError::InvalidKmsContext)?;
+    require!(
+        kms_context.context_id == expected_context_id
+            && kms_context.key() == zama_host::kms_context_address(expected_context_id).0,
         ConfidentialTokenError::InvalidKmsContext
     );
     let verifier = zama_host::eip712::Eip712VerifierConfig {
