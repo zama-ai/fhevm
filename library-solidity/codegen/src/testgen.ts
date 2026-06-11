@@ -490,6 +490,15 @@ export function generateTypeScriptTestCode(
           })
           .filter((s) => s !== '')
           .join(', ');
+        const inputsAdd = t.inputs
+          .map((v, index) => {
+            if (o.arguments[index].type == ArgumentType.Euint) {
+              return `input.add${o.arguments[index].bits}(${v}n);`;
+            } else {
+              return '';
+            }
+          })
+          .join('\n');
         let expectedOutput = t.output.toString();
         if (typeof t.output === 'bigint' || typeof t.output === 'number') expectedOutput += 'n';
 
@@ -514,11 +523,9 @@ export function generateTypeScriptTestCode(
         } else {
           res.push(`
                 it('${testName} test ${testIndex} (${testArgs})', async function () {
-                    const encryptedAmount = await this.instances.alice.encryptTypedValues({
-                      values: [${typedValues}],
-                      contractAddress: this.contract${os.shardNumber}Address,
-                      userAddress: this.signers.alice.address,
-                    });
+                    const input = this.instances.alice.createEncryptedInput(this.contract${os.shardNumber}Address, this.signers.alice.address);
+                    ${inputsAdd}
+                    const encryptedAmount = await input.encrypt();
                     const tx = await this.contract${os.shardNumber}.${methodName}(${testArgsEncrypted}, encryptedAmount.inputProof);
                     await tx.wait();
                     const res = await decrypt${o.returnType.type === 1 ? o.returnType.bits : 'Bool'}(await this.contract${os.shardNumber}.res${o.returnType.type === 1 ? `Euint${o.returnType.bits}` : 'Ebool'}());
