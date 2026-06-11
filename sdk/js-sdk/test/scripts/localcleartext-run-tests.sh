@@ -5,10 +5,10 @@ set -euo pipefail
 #
 # Run cleartext FHEVM tests against an Anvil node.
 #
-# Usage: run-localcleartext.sh [--ethlib ethers|viem|ethers,viem|none] [--foundry-profile <name>] [--verbose] [--help]
+# Usage: run-localcleartext.sh [--ethlib ethers|viem|ethers,viem|none] --foundry-profile <name> [--verbose] [--help]
 #
 # Flow:
-#   1. Parse --ethlib (default: ethers,viem) and --foundry-profile (default: latest).
+#   1. Parse --ethlib (default: ethers,viem) and the required --foundry-profile.
 #   2. If Anvil is already running on RPC_URL, reuse it; otherwise start one.
 #   3. Deploy the cleartext FHEVM stack (skipped when reusing).
 #   4. Run the requested test suites sequentially against the same node.
@@ -27,17 +27,16 @@ Options:
   --ethlib viem            Run only the viem test suite.
   --ethlib ethers,viem     Run both suites (default).
   --ethlib none            Start Anvil + deploy only; wait for Anvil to exit (no tests run).
-  --foundry-profile <name> Foundry profile to use (default: latest, possible values: v11, v12, v13).
+  --foundry-profile <name> Required Foundry profile to use. Expected: v12 or v13.
   --use-pack               Use vitest-manual-pack.config.ts instead of vitest.config.ts.
   --verbose                Print Anvil logs to the console instead of redirecting to a file.
   --help                   Print this help message and exit.
 
-Environment variables (all optional, CLI flags take precedence):
+Environment variables:
   PORT             Anvil port          (default: 8544)
   RPC_URL          Anvil RPC URL       (default: http://127.0.0.1:\$PORT)
   CHAIN_ID         Anvil chain ID      (default: 31337)
   READY_TIMEOUT    Ready timeout       (default: 30s)
-  FOUNDRY_PROFILE  Foundry profile     (default: latest; overridden by --foundry-profile)
 EOF
 }
 
@@ -112,6 +111,18 @@ case "$LIB" in
         ;;
 esac
 
+case "$PROFILE" in
+    v12|v13) ;;
+    "")
+        echo "Error: --foundry-profile is required. Expected: v12 or v13." >&2
+        exit 1
+        ;;
+    *)
+        echo "Error: unsupported --foundry-profile '$PROFILE'. Expected: v12 or v13." >&2
+        exit 1
+        ;;
+esac
+
 # ------------------------------------------------------------------------------
 # Anvil helpers
 # ------------------------------------------------------------------------------
@@ -130,7 +141,8 @@ anvil_setup_vars() {
     RPC_URL="${RPC_URL:-http://127.0.0.1:${PORT}}"
     CHAIN_ID="${CHAIN_ID:-31337}"
     READY_TIMEOUT="${READY_TIMEOUT:-30}"
-    export FOUNDRY_PROFILE="${FOUNDRY_PROFILE:-latest}"
+    export FOUNDRY_PROFILE="$PROFILE"
+    CLEAR_TEXT_CHAIN="localcleartext_${PROFILE}"
 }
 
 anvil_check_deps() {
@@ -213,8 +225,6 @@ anvil_deploy_cleartext() {
 # ------------------------------------------------------------------------------
 
 anvil_setup_dirs
-# Let --foundry-profile override FOUNDRY_PROFILE before anvil_setup_vars reads it.
-[[ -n "$PROFILE" ]] && FOUNDRY_PROFILE="$PROFILE"
 anvil_setup_vars
 anvil_check_deps
 anvil_check_scripts
@@ -275,7 +285,7 @@ run_suite() {
     echo "🧪 Running cleartext ${lib} tests..."
     (
         cd "$JS_SDK_DIR"
-        CHAIN=localcleartext npx vitest run --config "$config" "test/fheTest/${lib}-cleartext"
+        CHAIN="$CLEAR_TEXT_CHAIN" npx vitest run --config "$config" "test/fheTest/${lib}-cleartext"
     )
     echo "✅ cleartext-${lib} tests passed."
 }

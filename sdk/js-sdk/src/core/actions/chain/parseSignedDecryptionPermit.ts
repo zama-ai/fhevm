@@ -2,7 +2,7 @@ import type { Fhevm } from '../../types/coreFhevmClient.js';
 import type { FhevmChain } from '../../types/fhevmChain.js';
 import type { SignedDecryptionPermit } from '../../types/signedDecryptionPermit.js';
 import type { TransportKeyPair } from '../../kms/TransportKeyPair-p.js';
-import type { KmsDecryptEip712Like } from '../../types/kms.js';
+import type { Eip712Like } from '../../types/kms.js';
 import { parseSignedDecryptionPermit as parseSignedDecryptionPermit_ } from '../../kms/SignedDecryptionPermit-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -10,7 +10,7 @@ import { parseSignedDecryptionPermit as parseSignedDecryptionPermit_ } from '../
 export type ParseSignedDecryptionPermitParameters = {
   /** The serialized permit — a previously parsed permit object. */
   readonly serializedPermit: {
-    readonly eip712: KmsDecryptEip712Like;
+    readonly eip712: Eip712Like;
     readonly signature: string;
     readonly signerAddress: string;
   };
