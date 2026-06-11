@@ -1,7 +1,7 @@
 //! Shared account contexts and validation helpers for instruction modules.
 
 use anchor_lang::prelude::*;
-use anchor_lang::solana_program::{program::invoke_signed, system_instruction};
+use anchor_lang::solana_program::{program::invoke_signed, system_instruction, system_program};
 use solana_instructions_sysvar::{
     load_current_index_checked, load_instruction_at_checked, ID as INSTRUCTIONS_SYSVAR_ID,
 };
@@ -14,11 +14,11 @@ use crate::{
         acl_nonce_key, acl_permission_address, acl_record_address,
         acl_record_subject_slots_are_canonical, assert_handle_for_chain, deny_subject_address,
         host_config_address, role_flags_are_known, subject_has_role, transient_session_address,
-        AclPermission, AclRecord, AclSubjectEntry, DenySubjectRecord, HostConfig,
-        TransientCapability, TransientCapabilityGrant, TransientSession, ACL_PERMISSION_SEED,
-        ACL_ROLE_COMPUTE, ACL_ROLE_USE, EVENT_VERSION, MAX_ACL_SUBJECTS,
-        MAX_ACL_SUBJECT_GRANTS_PER_CALL, MAX_TRANSIENT_CAPABILITIES, TRANSIENT_SESSION_STATE_OPEN,
-        TRANSIENT_SESSION_STATE_SEALED,
+        AclPermission, AclRecord, AclSubjectEntry, DenySubjectRecord,
+        HostConfig, TransientCapability, TransientCapabilityGrant, TransientSession,
+        ACL_PERMISSION_SEED, ACL_ROLE_COMPUTE, ACL_ROLE_PUBLIC_DECRYPT, ACL_ROLE_USE,
+        EVENT_VERSION, MAX_ACL_SUBJECTS, MAX_ACL_SUBJECT_GRANTS_PER_CALL,
+        MAX_TRANSIENT_CAPABILITIES, TRANSIENT_SESSION_STATE_OPEN, TRANSIENT_SESSION_STATE_SEALED,
     },
 };
 
@@ -60,6 +60,7 @@ pub(super) fn assert_not_paused(config: &Account<HostConfig>) -> Result<()> {
     Ok(())
 }
 
+#[cfg(feature = "poc")]
 pub(super) fn assert_test_shim_authority(
     config: &Account<HostConfig>,
     authority: Pubkey,
@@ -261,6 +262,26 @@ pub(super) fn assert_public_decrypt_not_set_at_birth(output_public_decrypt: bool
     require!(
         !output_public_decrypt,
         ZamaHostError::PublicDecryptAtBirthUnsupported
+    );
+    Ok(())
+}
+
+pub(super) fn assert_derived_public_decrypt_roles_allowed(
+    subjects: &[AclSubjectEntry],
+    propagated_public_decrypt_allowed: bool,
+    app_account_authority: &AccountInfo,
+) -> Result<()> {
+    let grants_public_decrypt = subjects
+        .iter()
+        .any(|subject| subject_has_role(subject.role_flags, ACL_ROLE_PUBLIC_DECRYPT));
+    if !grants_public_decrypt || propagated_public_decrypt_allowed {
+        return Ok(());
+    }
+    require!(
+        *app_account_authority.owner != system_program::ID
+            && !app_account_authority.executable
+            && !app_account_authority.data_is_empty(),
+        ZamaHostError::TransientCapabilityPublicDecryptDenied
     );
     Ok(())
 }
@@ -674,6 +695,69 @@ pub(super) fn consume_transient_capability(
         ZamaHostError::InvalidFheEvalAccount
     );
     let mut session = read_transient_session(session_info)?;
+    let consumed = assert_transient_capability_available(
+        *session_info.key,
+        &session,
+        authority,
+        current_slot,
+        handle,
+        subject,
+        role,
+        capability_index,
+        instructions_sysvar,
+    )?;
+    let capability = session
+        .entries
+        .get_mut(capability_index as usize)
+        .ok_or(ZamaHostError::TransientCapabilityMismatch)?;
+    capability.used_count = capability
+        .used_count
+        .checked_add(1)
+        .ok_or(ZamaHostError::TransientCapabilityConsumed)?;
+    write_account(session_info, &session)?;
+    Ok(consumed)
+}
+
+pub(super) fn read_transient_capability_for_eval(
+    session_info: &AccountInfo,
+    authority: Pubkey,
+    current_slot: u64,
+    handle: [u8; 32],
+    subject: Pubkey,
+    role: u8,
+    capability_index: u16,
+    instructions_sysvar: Option<&AccountInfo>,
+) -> Result<TransientCapability> {
+    require!(
+        session_info.is_writable,
+        ZamaHostError::InvalidFheEvalAccount
+    );
+    let session = read_transient_session(session_info)?;
+    assert_transient_capability_available(
+        *session_info.key,
+        &session,
+        authority,
+        current_slot,
+        handle,
+        subject,
+        role,
+        capability_index,
+        instructions_sysvar,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn assert_transient_capability_available(
+    session_key: Pubkey,
+    session: &TransientSession,
+    authority: Pubkey,
+    current_slot: u64,
+    handle: [u8; 32],
+    subject: Pubkey,
+    role: u8,
+    capability_index: u16,
+    instructions_sysvar: Option<&AccountInfo>,
+) -> Result<TransientCapability> {
     require_keys_eq!(
         session.authority,
         authority,
@@ -694,10 +778,7 @@ pub(super) fn consume_transient_capability(
         INSTRUCTIONS_SYSVAR_ID,
         ZamaHostError::TransientCapabilityReceiverMissing
     );
-    assert_transient_session_created_in_current_transaction(
-        instructions_sysvar,
-        *session_info.key,
-    )?;
+    assert_transient_session_created_in_current_transaction(instructions_sysvar, session_key)?;
     require_keys_eq!(
         session.compute_subject,
         subject,
@@ -706,7 +787,7 @@ pub(super) fn consume_transient_capability(
 
     let capability = session
         .entries
-        .get_mut(capability_index as usize)
+        .get(capability_index as usize)
         .ok_or(ZamaHostError::TransientCapabilityMismatch)?;
     require!(
         capability.handle == handle,
@@ -726,17 +807,10 @@ pub(super) fn consume_transient_capability(
         ZamaHostError::TransientCapabilityConsumed
     );
     assert_current_receiver_program(instructions_sysvar, capability.grant.receiver_program)?;
-
-    capability.used_count = capability
-        .used_count
-        .checked_add(1)
-        .ok_or(ZamaHostError::TransientCapabilityConsumed)?;
-    let consumed = *capability;
-    write_account(session_info, &session)?;
-    Ok(consumed)
+    Ok(*capability)
 }
 
-fn assert_transient_grant(
+pub(super) fn assert_transient_grant(
     session: &TransientSession,
     grant: TransientCapabilityGrant,
 ) -> Result<()> {

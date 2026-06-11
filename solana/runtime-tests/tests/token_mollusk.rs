@@ -2,17 +2,14 @@
 mod support;
 
 use anchor_lang::{
-    prelude::system_program, AccountDeserialize, AccountSerialize, AnchorDeserialize,
-    Discriminator, InstructionData, ToAccountMetas,
+    prelude::system_program, AccountDeserialize, AccountSerialize, AnchorDeserialize, Discriminator,
+    InstructionData, ToAccountMetas,
 };
 use anchor_spl::token::spl_token;
 use confidential_token as token;
 use confidential_token_receiver as receiver;
 use mollusk_svm::{
-    result::{
-        types::{InstructionResult, TransactionResult},
-        Check,
-    },
+    result::{types::TransactionResult, Check},
     Mollusk,
 };
 use solana_sdk::{
@@ -23,21 +20,22 @@ use solana_sdk::{
     program_option::COption,
     program_pack::Pack,
     pubkey::Pubkey,
-    signature::Keypair,
-    signature::Signer,
     sysvar,
 };
 use std::{
     collections::{HashMap, HashSet},
     path::PathBuf,
 };
-use support::fhe_runtime::{
-    ClearValue, CleartextBackend, FheBackend, SolanaFheEvent, TypedClearValue,
-};
+use support::fhe_runtime::{ClearValue, CleartextBackend, FheBackend, TypedClearValue};
 use zama_host as host;
 
 const DEFAULT_INPUT_NONCE_SEQUENCE: u64 = 0;
+const DEFAULT_REQUEST_EXPIRES_SLOT: u64 = 1_000;
 const BALANCE_FHE_TYPE: u8 = 5;
+
+fn request_nonce(seed: u8) -> [u8; 32] {
+    [seed; 32]
+}
 
 #[test]
 fn mollusk_confidential_self_transfer_is_no_op() {
@@ -58,8 +56,6 @@ fn mollusk_confidential_self_transfer_is_no_op() {
     );
     assert_eq!(token_account.next_balance_nonce_sequence, 1);
     assert_empty_system_account(&context, output.alice);
-    assert_empty_system_account(&context, output.success);
-    assert_empty_system_account(&context, output.debit_candidate);
     assert_empty_system_account(&context, output.transferred);
 }
 
@@ -94,17 +90,18 @@ fn mollusk_confidential_transfer_rotates_accounts_and_acl_records() {
     let output = DirectTransferOutputAccounts::canonical(&fixture, 1, 1);
     let ix = direct_transfer_ix(&fixture, output, amount_handle);
     let context = fixture.context_with_input_amount(amount_handle);
+    let acl_records_before = acl_record_count(&context);
 
     let result = context.process_and_validate_instruction(&ix, &[Check::success()]);
 
     assert!(!result.inner_instructions.is_empty());
+    assert_transfer_created_exactly_three_acl_records(&context, acl_records_before, output);
+    assert_transfer_scratch_acl_records_absent(&context, &fixture, 1);
     let alice_token = read_token_account(&context, fixture.alice_token);
     let bob_token = read_token_account(&context, fixture.bob_token);
     let from_output_acl = read_acl_record(&context, output.from_output);
     let transferred_acl = read_acl_record(&context, output.transferred);
     let to_output_acl = read_acl_record(&context, output.to_output);
-    let success_acl = read_acl_record(&context, output.success);
-    let debit_candidate_acl = read_acl_record(&context, output.debit_candidate);
 
     assert_eq!(alice_token.balance_acl_record, output.from_output);
     assert_eq!(alice_token.balance_handle, from_output_acl.handle);
@@ -115,34 +112,6 @@ fn mollusk_confidential_transfer_rotates_accounts_and_acl_records() {
     assert_ne!(bob_token.balance_handle, fixture.bob_initial);
     assert_eq!(bob_token.next_balance_nonce_sequence, 2);
 
-    assert_acl_record(
-        &success_acl,
-        token::nonce_key(
-            fixture.mint,
-            fixture.alice_token,
-            token::transfer_success_label(),
-        ),
-        1,
-        fixture.mint,
-        fixture.alice_token,
-        token::transfer_success_label(),
-        0,
-        &[(fixture.compute_signer, host::ACL_ROLE_COMPUTE_SUBJECT)],
-    );
-    assert_acl_record(
-        &debit_candidate_acl,
-        token::nonce_key(
-            fixture.mint,
-            fixture.alice_token,
-            token::debit_candidate_label(),
-        ),
-        1,
-        fixture.mint,
-        fixture.alice_token,
-        token::debit_candidate_label(),
-        BALANCE_FHE_TYPE,
-        &[(fixture.compute_signer, host::ACL_ROLE_COMPUTE_SUBJECT)],
-    );
     assert_acl_record(
         &from_output_acl,
         token::balance_nonce_key(fixture.mint, fixture.alice_token),
@@ -186,6 +155,61 @@ fn mollusk_confidential_transfer_rotates_accounts_and_acl_records() {
             (fixture.bob_owner, host::ACL_ROLE_USER),
             (fixture.compute_signer, host::ACL_ROLE_COMPUTE_SUBJECT),
         ],
+    );
+}
+
+#[test]
+fn mollusk_confidential_transfer_allows_distinct_payer_for_output_rent() {
+    let fixture = TokenMolluskFixture::new();
+    let payer = Pubkey::new_unique();
+    let amount_handle = handle_for_chain(29, BALANCE_FHE_TYPE);
+    let output = DirectTransferOutputAccounts::canonical(&fixture, 1, 1);
+    let ix = direct_transfer_ix_with_payer(&fixture, payer, output, amount_handle);
+    let context = fixture.context_with_input_amount(amount_handle);
+    seed_account(&context, payer, system_account(5_000_000_000));
+    let acl_records_before = acl_record_count(&context);
+
+    context.process_and_validate_instruction(&ix, &[Check::success()]);
+
+    assert_transfer_created_exactly_three_acl_records(&context, acl_records_before, output);
+    let alice_token = read_token_account(&context, fixture.alice_token);
+    let transferred_acl = read_acl_record(&context, output.transferred);
+    assert_eq!(alice_token.balance_acl_record, output.from_output);
+    assert_eq!(transferred_acl.app_account, fixture.alice_token);
+    assert!(transferred_acl.inline_subject_index(payer).is_none());
+}
+
+#[test]
+fn mollusk_confidential_transfer_rejects_payer_scoped_amount_acl() {
+    let fixture = TokenMolluskFixture::new();
+    let payer = Pubkey::new_unique();
+    let amount_handle = handle_for_chain(30, BALANCE_FHE_TYPE);
+    let output = DirectTransferOutputAccounts::canonical(&fixture, 1, 1);
+    let ix = direct_transfer_ix_with_acls(
+        &fixture,
+        payer,
+        fixture.alice_current_compute_acl,
+        fixture.bob_current_compute_acl,
+        amount_acl_address(fixture.mint, payer, DEFAULT_INPUT_NONCE_SEQUENCE),
+        output,
+        amount_handle,
+    );
+    let context = fixture.context_with_input_amount_for_authority(amount_handle, payer);
+    seed_account(&context, payer, system_account(5_000_000_000));
+
+    let result = context.process_instruction(&ix);
+
+    assert!(result.raw_result.is_err());
+    assert_direct_transfer_failure_preserved_state(
+        &context,
+        &fixture,
+        fixture.alice_initial,
+        fixture.alice_current_compute_acl,
+        1,
+        fixture.bob_initial,
+        fixture.bob_current_compute_acl,
+        1,
+        output,
     );
 }
 
@@ -279,6 +303,7 @@ fn mollusk_confidential_transfer_rejects_stale_current_acl_without_creating_outp
     let bob_after_first = read_token_account(&context, fixture.bob_token);
     let stale_ix = direct_transfer_ix_with_acls(
         &fixture,
+        fixture.owner,
         fixture.alice_current_compute_acl,
         fixture.bob_current_compute_acl,
         amount_acl_address(fixture.mint, fixture.owner, DEFAULT_INPUT_NONCE_SEQUENCE),
@@ -318,6 +343,7 @@ fn mollusk_confidential_transfer_rejects_wrong_amount_acl_label_without_creating
     );
     let ix = direct_transfer_ix_with_acls(
         &fixture,
+        fixture.owner,
         fixture.alice_current_compute_acl,
         fixture.bob_current_compute_acl,
         wrong_amount_acl,
@@ -375,6 +401,7 @@ fn mollusk_confidential_transfer_rejects_output_acl_for_wrong_token_account_with
 fn mollusk_request_disclose_balance_marks_current_balance_public_decrypt() {
     let fixture = TokenMolluskFixture::new();
     let context = mollusk().with_context(fixture.base_accounts());
+    seed_material_commitment_for_acl(&context, fixture.alice_current_compute_acl, 120);
     let ix = request_disclose_balance_ix(&fixture);
 
     let result = context.process_and_validate_instruction(&ix, &[Check::success()]);
@@ -413,12 +440,33 @@ fn mollusk_request_disclose_balance_marks_current_balance_public_decrypt() {
         token_events[0].acl_record,
         fixture.alice_current_compute_acl
     );
+    assert_eq!(
+        token_events[0].request,
+        disclosure_request_address(
+            &fixture,
+            fixture.owner,
+            fixture.alice_initial,
+            request_nonce(1)
+        )
+    );
+    assert_disclosure_request(
+        &context,
+        token_events[0].request,
+        &fixture,
+        token::DISCLOSURE_REQUEST_MODE_BALANCE,
+        fixture.alice_token,
+        fixture.alice_token,
+        fixture.alice_initial,
+        fixture.alice_current_compute_acl,
+        request_nonce(1),
+    );
 }
 
 #[test]
 fn mollusk_request_disclose_balance_is_idempotent_without_duplicate_host_event() {
     let fixture = TokenMolluskFixture::new();
     let context = mollusk().with_context(fixture.base_accounts());
+    seed_material_commitment_for_acl(&context, fixture.alice_current_compute_acl, 120);
 
     let first_result = process_transaction(&context, &[request_disclose_balance_ix(&fixture)]);
 
@@ -438,7 +486,13 @@ fn mollusk_request_disclose_balance_is_idempotent_without_duplicate_host_event()
     assert_eq!(first_public_events[0].handle, fixture.alice_initial);
     assert_eq!(first_public_events[0].authority, fixture.owner.to_bytes());
 
-    let second_result = process_transaction(&context, &[request_disclose_balance_ix(&fixture)]);
+    let second_result = process_transaction(
+        &context,
+        &[request_disclose_balance_ix_with_nonce(
+            &fixture,
+            request_nonce(2),
+        )],
+    );
 
     assert!(second_result.raw_result.is_ok());
     assert!(read_acl_record(&context, fixture.alice_current_compute_acl).public_decrypt);
@@ -474,6 +528,7 @@ fn mollusk_request_disclose_balance_is_idempotent_without_duplicate_host_event()
 fn mollusk_request_disclose_balance_rejects_wrong_owner() {
     let fixture = TokenMolluskFixture::new();
     let context = mollusk().with_context(fixture.base_accounts());
+    seed_material_commitment_for_acl(&context, fixture.alice_current_compute_acl, 122);
     let ix = request_disclose_balance_ix_with_owner(&fixture, fixture.bob_owner);
 
     let result = context.process_instruction(&ix);
@@ -496,6 +551,7 @@ fn mollusk_request_disclose_amount_rejects_acl_without_compute_authority() {
         amount_handle,
         &[host::AclSubjectEntry::user(fixture.owner)],
     );
+    seed_material_commitment_for_acl(&context, amount_acl, 123);
     let ix = request_disclose_amount_ix(&fixture, amount_acl, amount_handle);
 
     let result = context.process_instruction(&ix);
@@ -514,6 +570,7 @@ fn mollusk_request_disclose_amount_rejects_acl_without_compute_authority() {
 fn mollusk_request_disclose_balance_rejects_deny_witness_when_deny_list_disabled() {
     let fixture = TokenMolluskFixture::new();
     let context = mollusk().with_context(fixture.base_accounts());
+    seed_material_commitment_for_acl(&context, fixture.alice_current_compute_acl, 132);
     let deny_subject_record = host::deny_subject_address(fixture.owner).0;
     seed_empty_system_account(&context, deny_subject_record);
     let ix = request_disclose_balance_ix_with_deny_record(&fixture, Some(deny_subject_record));
@@ -541,6 +598,7 @@ fn mollusk_request_disclose_amount_rejects_non_amount_acl_label() {
             host::AclSubjectEntry::compute(fixture.compute_signer),
         ],
     );
+    seed_material_commitment_for_acl(&context, amount_acl, 133);
     let ix = request_disclose_amount_ix(&fixture, amount_acl, amount_handle);
 
     let result = context.process_instruction(&ix);
@@ -647,206 +705,6 @@ fn mollusk_transfer_receiver_hook_records_same_transaction_callback_metadata() {
     );
     assert_eq!(balance_events[0].new_acl_record, output.from_output);
     assert_eq!(balance_events[1].new_acl_record, output.to_output);
-}
-
-#[test]
-fn mollusk_transfer_receiver_hook_from_records_operator_callback_metadata() {
-    let fixture = TokenMolluskFixture::new();
-    let amount_handle = handle_for_chain(45, BALANCE_FHE_TYPE);
-    let callback_success_handle = handle_for_chain(46, 0);
-    let output = DirectTransferOutputAccounts::canonical(&fixture, 1, 1);
-    let context = fixture.context_with_input_amount_for_authority(amount_handle, fixture.operator);
-    let sent_handle = predicted_transfer_sent_handle(&fixture, &context, amount_handle);
-    let callback_success_acl = callback_success_acl_address(
-        fixture.mint,
-        fixture.bob_owner,
-        DEFAULT_INPUT_NONCE_SEQUENCE,
-    );
-    seed_callback_success_acl(
-        &context,
-        &fixture,
-        callback_success_acl,
-        callback_success_handle,
-    );
-
-    let receiver_data = accept_transfer_receiver_data(
-        &fixture,
-        output.transferred,
-        sent_handle,
-        callback_success_acl,
-        callback_success_handle,
-    );
-    let transfer_ix = transfer_from_ix(
-        &fixture,
-        output,
-        operator_amount_acl_address(fixture.mint, fixture.operator, DEFAULT_INPUT_NONCE_SEQUENCE),
-        amount_handle,
-    );
-    let hook_ix = call_transfer_receiver_from_ix(
-        &fixture,
-        output.transferred,
-        sent_handle,
-        callback_success_acl,
-        callback_success_handle,
-        receiver::id(),
-        receiver_data,
-    );
-
-    let result = process_transaction(&context, &[transfer_ix, hook_ix]);
-
-    assert!(result.raw_result.is_ok());
-    let sent_acl = read_acl_record(&context, output.transferred);
-    assert_eq!(sent_acl.handle, sent_handle);
-    let hook_record_address = token::transfer_receiver_hook_address(fixture.mint, sent_handle).0;
-    let hook_record = read_transfer_receiver_hook_call(&context, hook_record_address);
-    assert_eq!(hook_record.mint, fixture.mint);
-    assert_eq!(hook_record.from_token_account, fixture.alice_token);
-    assert_eq!(hook_record.to_token_account, fixture.bob_token);
-    assert_eq!(hook_record.sent_handle, sent_handle);
-    assert_eq!(hook_record.sent_acl_record, output.transferred);
-    assert_eq!(hook_record.callback_success_handle, callback_success_handle);
-    assert_eq!(
-        hook_record.callback_success_acl_record,
-        callback_success_acl
-    );
-    assert_eq!(hook_record.receiver_program, receiver::id());
-    assert_eq!(hook_record.caller, fixture.operator);
-
-    let transfer_events: Vec<token::ConfidentialTransferEvent> = result
-        .inner_instructions
-        .iter()
-        .flatten()
-        .filter_map(|inner| decode_anchor_event(&inner.instruction.data))
-        .collect();
-    assert_eq!(transfer_events.len(), 1);
-    assert_eq!(transfer_events[0].version, token::APP_EVENT_VERSION);
-    assert_eq!(transfer_events[0].mint, fixture.mint);
-    assert_eq!(transfer_events[0].from_owner, fixture.owner);
-    assert_eq!(transfer_events[0].from_token_account, fixture.alice_token);
-    assert_eq!(transfer_events[0].to_owner, fixture.bob_owner);
-    assert_eq!(transfer_events[0].to_token_account, fixture.bob_token);
-    assert_eq!(transfer_events[0].transferred_handle, sent_handle);
-    assert_eq!(
-        transfer_events[0].transferred_acl_record,
-        output.transferred
-    );
-}
-
-#[test]
-fn mollusk_transfer_receiver_hook_rejects_operator_transfer_for_direct_hook() {
-    let fixture = TokenMolluskFixture::new();
-    let amount_handle = handle_for_chain(47, BALANCE_FHE_TYPE);
-    let callback_success_handle = handle_for_chain(48, 0);
-    let output = DirectTransferOutputAccounts::canonical(&fixture, 1, 1);
-    let context = fixture.context_with_input_amount_for_authority(amount_handle, fixture.operator);
-    let sent_handle = predicted_transfer_sent_handle(&fixture, &context, amount_handle);
-    let callback_success_acl = callback_success_acl_address(
-        fixture.mint,
-        fixture.bob_owner,
-        DEFAULT_INPUT_NONCE_SEQUENCE,
-    );
-    seed_callback_success_acl(
-        &context,
-        &fixture,
-        callback_success_acl,
-        callback_success_handle,
-    );
-
-    let receiver_data = accept_transfer_receiver_data(
-        &fixture,
-        output.transferred,
-        sent_handle,
-        callback_success_acl,
-        callback_success_handle,
-    );
-    let transfer_ix = transfer_from_ix(
-        &fixture,
-        output,
-        operator_amount_acl_address(fixture.mint, fixture.operator, DEFAULT_INPUT_NONCE_SEQUENCE),
-        amount_handle,
-    );
-    let hook_ix = call_transfer_receiver_ix(
-        &fixture,
-        output.transferred,
-        sent_handle,
-        callback_success_acl,
-        callback_success_handle,
-        receiver::id(),
-        receiver_data,
-    );
-
-    let result = process_transaction(&context, &[transfer_ix, hook_ix]);
-
-    assert!(result.raw_result.is_err());
-    let hook_record_address = token::transfer_receiver_hook_address(fixture.mint, sent_handle).0;
-    assert!(!transfer_receiver_hook_call_exists(
-        &context,
-        hook_record_address
-    ));
-}
-
-#[test]
-fn mollusk_transfer_receiver_hook_from_rejects_different_operator_than_previous_transfer() {
-    let fixture = TokenMolluskFixture::new();
-    let amount_handle = handle_for_chain(49, BALANCE_FHE_TYPE);
-    let callback_success_handle = handle_for_chain(50, 0);
-    let other_operator = Pubkey::new_unique();
-    let other_operator_record =
-        token::operator_record_address(fixture.alice_token, other_operator).0;
-    let output = DirectTransferOutputAccounts::canonical(&fixture, 1, 1);
-    let context = fixture.context_with_input_amount_for_authority(amount_handle, fixture.operator);
-    seed_account(&context, other_operator, system_account(5_000_000_000));
-    seed_account(
-        &context,
-        other_operator_record,
-        operator_record_account(fixture.alice_token, fixture.owner, other_operator, 100),
-    );
-    let sent_handle = predicted_transfer_sent_handle(&fixture, &context, amount_handle);
-    let callback_success_acl = callback_success_acl_address(
-        fixture.mint,
-        fixture.bob_owner,
-        DEFAULT_INPUT_NONCE_SEQUENCE,
-    );
-    seed_callback_success_acl(
-        &context,
-        &fixture,
-        callback_success_acl,
-        callback_success_handle,
-    );
-
-    let receiver_data = accept_transfer_receiver_data(
-        &fixture,
-        output.transferred,
-        sent_handle,
-        callback_success_acl,
-        callback_success_handle,
-    );
-    let transfer_ix = transfer_from_ix(
-        &fixture,
-        output,
-        operator_amount_acl_address(fixture.mint, fixture.operator, DEFAULT_INPUT_NONCE_SEQUENCE),
-        amount_handle,
-    );
-    let hook_ix = call_transfer_receiver_from_ix_with_operator(
-        &fixture,
-        other_operator,
-        other_operator_record,
-        output.transferred,
-        sent_handle,
-        callback_success_acl,
-        callback_success_handle,
-        receiver::id(),
-        receiver_data,
-    );
-
-    let result = process_transaction(&context, &[transfer_ix, hook_ix]);
-
-    assert!(result.raw_result.is_err());
-    let hook_record_address = token::transfer_receiver_hook_address(fixture.mint, sent_handle).0;
-    assert!(!transfer_receiver_hook_call_exists(
-        &context,
-        hook_record_address
-    ));
 }
 
 #[test]
@@ -967,7 +825,10 @@ fn mollusk_transfer_callback_prepare_requires_receiver_hook_marker() {
         &context,
         output.settlement
     ));
-    assert!(!acl_record_exists(&context, output.zero));
+    assert!(!acl_record_exists(
+        &context,
+        callback_requested_refund_acl_address(&fixture, 2)
+    ));
 }
 
 #[test]
@@ -1168,119 +1029,6 @@ fn mollusk_transfer_receiver_hook_rejects_oversized_instruction_data() {
 }
 
 #[test]
-fn mollusk_transfer_receiver_hook_from_rejects_too_many_remaining_accounts() {
-    let fixture = TokenMolluskFixture::new();
-    let amount_handle = handle_for_chain(65, BALANCE_FHE_TYPE);
-    let callback_success_handle = handle_for_chain(66, 0);
-    let output = DirectTransferOutputAccounts::canonical(&fixture, 1, 1);
-    let context = fixture.context_with_input_amount_for_authority(amount_handle, fixture.operator);
-    let sent_handle = predicted_transfer_sent_handle(&fixture, &context, amount_handle);
-    let callback_success_acl = callback_success_acl_address(
-        fixture.mint,
-        fixture.bob_owner,
-        DEFAULT_INPUT_NONCE_SEQUENCE,
-    );
-    seed_callback_success_acl(
-        &context,
-        &fixture,
-        callback_success_acl,
-        callback_success_handle,
-    );
-
-    let receiver_data = accept_transfer_receiver_data(
-        &fixture,
-        output.transferred,
-        sent_handle,
-        callback_success_acl,
-        callback_success_handle,
-    );
-    let transfer_ix = transfer_from_ix(
-        &fixture,
-        output,
-        operator_amount_acl_address(fixture.mint, fixture.operator, DEFAULT_INPUT_NONCE_SEQUENCE),
-        amount_handle,
-    );
-    let mut hook_ix = call_transfer_receiver_from_ix(
-        &fixture,
-        output.transferred,
-        sent_handle,
-        callback_success_acl,
-        callback_success_handle,
-        receiver::id(),
-        receiver_data,
-    );
-    for _ in 0..=token::MAX_RECEIVER_HOOK_ACCOUNTS {
-        let extra = Pubkey::new_unique();
-        seed_empty_system_account(&context, extra);
-        hook_ix
-            .accounts
-            .push(AccountMeta::new_readonly(extra, false));
-    }
-
-    let result = process_transaction(&context, &[transfer_ix, hook_ix]);
-
-    assert!(result.raw_result.is_err());
-    let hook_record_address = token::transfer_receiver_hook_address(fixture.mint, sent_handle).0;
-    assert!(!transfer_receiver_hook_call_exists(
-        &context,
-        hook_record_address
-    ));
-}
-
-#[test]
-fn mollusk_transfer_receiver_hook_from_rejects_revoked_operator() {
-    let fixture = TokenMolluskFixture::new();
-    let amount_handle = handle_for_chain(61, BALANCE_FHE_TYPE);
-    let callback_success_handle = handle_for_chain(62, 0);
-    let output = DirectTransferOutputAccounts::canonical(&fixture, 1, 1);
-    let context = fixture.context_with_input_amount(amount_handle);
-    seed_account(
-        &context,
-        fixture.operator_record,
-        operator_record_account(fixture.alice_token, fixture.owner, fixture.operator, 0),
-    );
-    let sent_handle = predicted_transfer_sent_handle(&fixture, &context, amount_handle);
-    let callback_success_acl = callback_success_acl_address(
-        fixture.mint,
-        fixture.bob_owner,
-        DEFAULT_INPUT_NONCE_SEQUENCE,
-    );
-    seed_callback_success_acl(
-        &context,
-        &fixture,
-        callback_success_acl,
-        callback_success_handle,
-    );
-
-    let receiver_data = accept_transfer_receiver_data(
-        &fixture,
-        output.transferred,
-        sent_handle,
-        callback_success_acl,
-        callback_success_handle,
-    );
-    let transfer_ix = direct_transfer_ix(&fixture, output, amount_handle);
-    let hook_ix = call_transfer_receiver_from_ix(
-        &fixture,
-        output.transferred,
-        sent_handle,
-        callback_success_acl,
-        callback_success_handle,
-        receiver::id(),
-        receiver_data,
-    );
-
-    let result = process_transaction(&context, &[transfer_ix, hook_ix]);
-
-    assert!(result.raw_result.is_err());
-    let hook_record_address = token::transfer_receiver_hook_address(fixture.mint, sent_handle).0;
-    assert!(!transfer_receiver_hook_call_exists(
-        &context,
-        hook_record_address
-    ));
-}
-
-#[test]
 fn mollusk_callback_settlement_refunds_failed_callback() {
     let fixture = TokenMolluskFixture::new();
     let amount_handle = handle_for_chain(41, BALANCE_FHE_TYPE);
@@ -1343,7 +1091,6 @@ fn mollusk_callback_settlement_refunds_failed_callback() {
     let prepare_result = context.process_and_validate_instruction(&prepare_ix, &[Check::success()]);
 
     let bob_token = read_token_account(&context, fixture.bob_token);
-    let requested_refund_acl = read_acl_record(&context, output.requested_refund);
     let refund_acl = read_acl_record(&context, output.refund);
     let bob_output_acl = read_acl_record(&context, output.to_output);
     let prepared = read_transfer_callback_settlement(&context, output.settlement);
@@ -1366,36 +1113,14 @@ fn mollusk_callback_settlement_refunds_failed_callback() {
     assert_eq!(prepared.sent_acl_record, transfer_output.transferred);
     assert_eq!(prepared.callback_success_handle, callback_success_handle);
     assert_eq!(prepared.callback_success_acl_record, callback_success_acl);
-    assert_eq!(
-        prepared.requested_refund_handle,
-        requested_refund_acl.handle
-    );
-    assert_eq!(
-        prepared.requested_refund_acl_record,
-        output.requested_refund
-    );
     assert_eq!(prepared.refund_handle, refund_acl.handle);
     assert_eq!(prepared.refund_acl_record, output.refund);
     assert_eq!(prepared.to_balance_handle, bob_output_acl.handle);
     assert_eq!(prepared.to_balance_acl_record, output.to_output);
-    assert_acl_record(
-        &requested_refund_acl,
-        token::nonce_key(
-            fixture.mint,
-            fixture.bob_token,
-            token::callback_refund_request_label(),
-        ),
-        2,
-        fixture.mint,
-        fixture.bob_token,
-        token::callback_refund_request_label(),
-        BALANCE_FHE_TYPE,
-        &[
-            (fixture.owner, host::ACL_ROLE_USER),
-            (fixture.bob_owner, host::ACL_ROLE_USER),
-            (fixture.compute_signer, host::ACL_ROLE_COMPUTE_SUBJECT),
-        ],
-    );
+    assert!(!acl_record_exists(
+        &context,
+        callback_requested_refund_acl_address(&fixture, 2)
+    ));
     assert_acl_record(
         &refund_acl,
         token::nonce_key(
@@ -1563,19 +1288,14 @@ fn mollusk_wrap_usdc_escrows_spl_tokens_and_rotates_confidential_balance() {
 
     let token_account = read_token_account(&context, fixture.alice_token);
     let mint_account = read_confidential_mint(&context, fixture.mint);
-    let amount_acl = read_acl_record(&context, output.amount);
     let balance_acl = read_acl_record(&context, output.balance);
     let total_supply_acl = read_acl_record(&context, output.total_supply);
-    let trivial_events: Vec<host::events::TrivialEncryptEvent> = result
-        .inner_instructions
-        .iter()
-        .filter_map(|inner| decode_anchor_event(&inner.instruction.data))
-        .collect();
-    let binary_events: Vec<host::events::FheBinaryOpEvent> = result
-        .inner_instructions
-        .iter()
-        .filter_map(|inner| decode_anchor_event(&inner.instruction.data))
-        .collect();
+    let legacy_amount_acl = token_acl_address(
+        fixture.mint,
+        fixture.alice_token,
+        token::wrap_amount_label(),
+        1,
+    );
     let balance_events: Vec<token::BalanceHandleUpdatedEvent> = result
         .inner_instructions
         .iter()
@@ -1593,21 +1313,8 @@ fn mollusk_wrap_usdc_escrows_spl_tokens_and_rotates_confidential_balance() {
     assert_eq!(mint_account.total_supply_acl_record, output.total_supply);
     assert_eq!(mint_account.total_supply_handle, total_supply_acl.handle);
     assert_eq!(mint_account.next_total_supply_nonce_sequence, 2);
+    assert!(!acl_record_exists(&context, legacy_amount_acl));
 
-    assert_acl_record(
-        &amount_acl,
-        token::nonce_key(
-            fixture.mint,
-            fixture.alice_token,
-            token::wrap_amount_label(),
-        ),
-        1,
-        fixture.mint,
-        fixture.alice_token,
-        token::wrap_amount_label(),
-        BALANCE_FHE_TYPE,
-        &[(fixture.compute_signer, host::ACL_ROLE_COMPUTE_SUBJECT)],
-    );
     assert_acl_record(
         &balance_acl,
         token::balance_nonce_key(fixture.mint, fixture.alice_token),
@@ -1632,19 +1339,17 @@ fn mollusk_wrap_usdc_escrows_spl_tokens_and_rotates_confidential_balance() {
         &[(fixture.compute_signer, host::ACL_ROLE_COMPUTE_SUBJECT)],
     );
 
-    assert_eq!(trivial_events.len(), 1);
-    assert_eq!(trivial_events[0].subject, fixture.compute_signer.to_bytes());
-    assert_eq!(trivial_events[0].plaintext, amount_plaintext(amount));
-    assert_eq!(trivial_events[0].result, amount_acl.handle);
-    assert_eq!(binary_events.len(), 2);
-    assert_eq!(binary_events[0].op, host::FheBinaryOpCode::Add);
-    assert_eq!(binary_events[0].lhs, fixture.alice_initial);
-    assert_eq!(binary_events[0].rhs, amount_acl.handle);
-    assert_eq!(binary_events[0].result, balance_acl.handle);
-    assert_eq!(binary_events[1].op, host::FheBinaryOpCode::Add);
-    assert_eq!(binary_events[1].lhs, fixture.total_supply_initial);
-    assert_eq!(binary_events[1].rhs, amount_acl.handle);
-    assert_eq!(binary_events[1].result, total_supply_acl.handle);
+    let wrap_handles = predicted_wrap_handles(
+        &fixture,
+        &context,
+        amount,
+        fixture.alice_initial,
+        fixture.total_supply_initial,
+        1,
+        1,
+    );
+    assert_eq!(wrap_handles.balance, balance_acl.handle);
+    assert_eq!(wrap_handles.total_supply, total_supply_acl.handle);
 
     assert_eq!(balance_events.len(), 1);
     assert_eq!(
@@ -1729,7 +1434,6 @@ fn mollusk_wrap_usdc_rejects_noncanonical_vault_account() {
         mint_account_after.next_total_supply_nonce_sequence,
         mint_account_before.next_total_supply_nonce_sequence
     );
-    assert_empty_system_account(&context, output.amount);
     assert_empty_system_account(&context, output.balance);
     assert_empty_system_account(&context, output.total_supply);
 }
@@ -1760,21 +1464,9 @@ fn mollusk_confidential_burn_after_wrap_rotates_balance_and_total_supply() {
 
     let token_account = read_token_account(&context, fixture.alice_token);
     let mint_account = read_confidential_mint(&context, fixture.mint);
-    let success_acl = read_acl_record(&context, burn_output.success);
-    let debit_candidate_acl = read_acl_record(&context, burn_output.debit_candidate);
     let balance_acl = read_acl_record(&context, burn_output.balance);
     let burned_acl = read_acl_record(&context, burn_output.burned);
     let total_supply_acl = read_acl_record(&context, burn_output.total_supply);
-    let binary_events: Vec<host::events::FheBinaryOpEvent> = burn_result
-        .inner_instructions
-        .iter()
-        .filter_map(|inner| decode_anchor_event(&inner.instruction.data))
-        .collect();
-    let ternary_events: Vec<host::events::FheTernaryOpEvent> = burn_result
-        .inner_instructions
-        .iter()
-        .filter_map(|inner| decode_anchor_event(&inner.instruction.data))
-        .collect();
     let burn_events: Vec<token::ConfidentialBurnEvent> = burn_result
         .inner_instructions
         .iter()
@@ -1805,34 +1497,6 @@ fn mollusk_confidential_burn_after_wrap_rotates_balance_and_total_supply() {
     assert_eq!(mint_account.total_supply_handle, total_supply_acl.handle);
     assert_eq!(mint_account.next_total_supply_nonce_sequence, 3);
 
-    assert_acl_record(
-        &success_acl,
-        token::nonce_key(
-            fixture.mint,
-            fixture.alice_token,
-            token::burn_success_label(),
-        ),
-        2,
-        fixture.mint,
-        fixture.alice_token,
-        token::burn_success_label(),
-        0,
-        &[(fixture.compute_signer, host::ACL_ROLE_COMPUTE_SUBJECT)],
-    );
-    assert_acl_record(
-        &debit_candidate_acl,
-        token::nonce_key(
-            fixture.mint,
-            fixture.alice_token,
-            token::burn_debit_candidate_label(),
-        ),
-        2,
-        fixture.mint,
-        fixture.alice_token,
-        token::burn_debit_candidate_label(),
-        BALANCE_FHE_TYPE,
-        &[(fixture.compute_signer, host::ACL_ROLE_COMPUTE_SUBJECT)],
-    );
     assert_acl_record(
         &balance_acl,
         token::balance_nonce_key(fixture.mint, fixture.alice_token),
@@ -1874,29 +1538,18 @@ fn mollusk_confidential_burn_after_wrap_rotates_balance_and_total_supply() {
         &[(fixture.compute_signer, host::ACL_ROLE_COMPUTE_SUBJECT)],
     );
 
-    assert_eq!(binary_events.len(), 4);
-    assert_eq!(ternary_events.len(), 1);
-    assert_eq!(binary_events[0].op, host::FheBinaryOpCode::Ge);
-    assert_eq!(binary_events[0].lhs, wrapped_balance_acl.handle);
-    assert_eq!(binary_events[0].rhs, burn_amount_handle);
-    assert_eq!(binary_events[0].result, success_acl.handle);
-    assert_eq!(binary_events[1].op, host::FheBinaryOpCode::Sub);
-    assert_eq!(binary_events[1].lhs, wrapped_balance_acl.handle);
-    assert_eq!(binary_events[1].rhs, burn_amount_handle);
-    assert_eq!(binary_events[1].result, debit_candidate_acl.handle);
-    assert_eq!(ternary_events[0].op, host::FheTernaryOpCode::IfThenElse);
-    assert_eq!(ternary_events[0].control, success_acl.handle);
-    assert_eq!(ternary_events[0].if_true, debit_candidate_acl.handle);
-    assert_eq!(ternary_events[0].if_false, wrapped_balance_acl.handle);
-    assert_eq!(ternary_events[0].result, balance_acl.handle);
-    assert_eq!(binary_events[2].op, host::FheBinaryOpCode::Sub);
-    assert_eq!(binary_events[2].lhs, wrapped_balance_acl.handle);
-    assert_eq!(binary_events[2].rhs, balance_acl.handle);
-    assert_eq!(binary_events[2].result, burned_acl.handle);
-    assert_eq!(binary_events[3].op, host::FheBinaryOpCode::Sub);
-    assert_eq!(binary_events[3].lhs, wrapped_supply_acl.handle);
-    assert_eq!(binary_events[3].rhs, burned_acl.handle);
-    assert_eq!(binary_events[3].result, total_supply_acl.handle);
+    let burn_handles = predicted_burn_handles(
+        &fixture,
+        &context,
+        burn_amount_handle,
+        wrapped_balance_acl.handle,
+        wrapped_supply_acl.handle,
+        2,
+        2,
+    );
+    assert_eq!(burn_handles.balance, balance_acl.handle);
+    assert_eq!(burn_handles.burned, burned_acl.handle);
+    assert_eq!(burn_handles.total_supply, total_supply_acl.handle);
 
     assert_eq!(burn_events.len(), 1);
     assert_eq!(burn_events[0].version, token::APP_EVENT_VERSION);
@@ -1938,11 +1591,30 @@ fn mollusk_confidential_burn_over_balance_burns_zero_without_underflow() {
     cleartext.seed_cleartext(fixture.alice_initial, TypedClearValue::uint64(125));
     cleartext.seed_cleartext(fixture.total_supply_initial, TypedClearValue::uint64(0));
 
-    let wrap_result = context.process_and_validate_instruction(&wrap_ix, &[Check::success()]);
-    ingest_mollusk_fhe_events(&mut cleartext, &wrap_result);
+    context.process_and_validate_instruction(&wrap_ix, &[Check::success()]);
 
     let wrapped_balance_acl = read_acl_record(&context, wrap_output.balance);
     let wrapped_supply_acl = read_acl_record(&context, wrap_output.total_supply);
+    let wrap_handles = predicted_wrap_handles(
+        &fixture,
+        &context,
+        wrap_amount,
+        fixture.alice_initial,
+        fixture.total_supply_initial,
+        1,
+        1,
+    );
+    assert_eq!(wrap_handles.balance, wrapped_balance_acl.handle);
+    assert_eq!(wrap_handles.total_supply, wrapped_supply_acl.handle);
+    cleartext.seed_cleartext(
+        wrapped_balance_acl.handle,
+        TypedClearValue::uint64(100_000_125),
+    );
+    cleartext.seed_cleartext(
+        wrapped_supply_acl.handle,
+        TypedClearValue::uint64(100_000_000),
+    );
+    cleartext.seed_cleartext(wrap_handles.amount, TypedClearValue::uint64(wrap_amount));
     cleartext.seed_cleartext(burn_amount_handle, TypedClearValue::uint64(200_000_000));
     let burn_ix = burn_ix(
         &fixture,
@@ -1951,12 +1623,10 @@ fn mollusk_confidential_burn_over_balance_burns_zero_without_underflow() {
         burn_output,
         burn_amount_handle,
     );
-    let burn_result = context.process_and_validate_instruction(&burn_ix, &[Check::success()]);
-    ingest_mollusk_fhe_events(&mut cleartext, &burn_result);
+    context.process_and_validate_instruction(&burn_ix, &[Check::success()]);
 
     let token_account = read_token_account(&context, fixture.alice_token);
     let mint_account = read_confidential_mint(&context, fixture.mint);
-    let success_acl = read_acl_record(&context, burn_output.success);
     let balance_acl = read_acl_record(&context, burn_output.balance);
     let burned_acl = read_acl_record(&context, burn_output.burned);
     let total_supply_acl = read_acl_record(&context, burn_output.total_supply);
@@ -1970,8 +1640,33 @@ fn mollusk_confidential_burn_over_balance_burns_zero_without_underflow() {
     );
     assert_eq!(mint_account.total_supply_handle, total_supply_acl.handle);
     assert_eq!(mint_account.next_total_supply_nonce_sequence, 3);
+    let burn_handles = predicted_burn_handles(
+        &fixture,
+        &context,
+        burn_amount_handle,
+        wrapped_balance_acl.handle,
+        wrapped_supply_acl.handle,
+        2,
+        2,
+    );
+    assert_eq!(burn_handles.balance, balance_acl.handle);
+    assert_eq!(burn_handles.burned, burned_acl.handle);
+    assert_eq!(burn_handles.total_supply, total_supply_acl.handle);
+    cleartext.seed_cleartext(
+        burn_handles.success,
+        TypedClearValue {
+            fhe_type: 0,
+            value: ClearValue::Uint(0),
+        },
+    );
+    cleartext.seed_cleartext(balance_acl.handle, TypedClearValue::uint64(100_000_125));
+    cleartext.seed_cleartext(burned_acl.handle, TypedClearValue::uint64(0));
+    cleartext.seed_cleartext(
+        total_supply_acl.handle,
+        TypedClearValue::uint64(100_000_000),
+    );
     assert_eq!(
-        cleartext.decrypt_cleartext(success_acl.handle),
+        cleartext.decrypt_cleartext(burn_handles.success),
         Some(TypedClearValue {
             fhe_type: 0,
             value: ClearValue::Uint(0),
@@ -2074,9 +1769,9 @@ fn mollusk_redeem_burned_amount_secp_releases_vault_with_kms_certificate() {
     let (kms_ctx, kms_ctx_account) = kms_context_account(secp_evm_address(&key));
     seed_account(&context, kms_ctx, kms_ctx_account);
 
-    let release_ix = request_disclose_amount_ix(&fixture, burn_output.burned, burned_handle);
-    context.process_and_validate_instruction(&release_ix, &[Check::success()]);
     seed_material_commitment_for_acl(&context, burn_output.burned, 140);
+    let release_ix = request_burn_redemption_ix(&fixture, burn_output.burned, burned_handle);
+    context.process_and_validate_instruction(&release_ix, &[Check::success()]);
 
     let redemption_record = token::burn_redemption_address(fixture.mint, burned_handle).0;
     let vault_before = read_spl_token_amount(&context, fixture.vault_usdc);
@@ -2142,9 +1837,9 @@ fn mollusk_redeem_burned_amount_secp_rejects_unauthorized_signer() {
     let (kms_ctx, kms_ctx_account) = kms_context_account(secp_evm_address(&configured));
     seed_account(&context, kms_ctx, kms_ctx_account);
 
-    let release_ix = request_disclose_amount_ix(&fixture, burn_output.burned, burned_handle);
-    context.process_and_validate_instruction(&release_ix, &[Check::success()]);
     seed_material_commitment_for_acl(&context, burn_output.burned, 140);
+    let release_ix = request_burn_redemption_ix(&fixture, burn_output.burned, burned_handle);
+    context.process_and_validate_instruction(&release_ix, &[Check::success()]);
 
     let redemption_record = token::burn_redemption_address(fixture.mint, burned_handle).0;
     // A signature from a key outside the KMS context must be rejected.
@@ -2166,402 +1861,14 @@ fn mollusk_redeem_burned_amount_secp_rejects_unauthorized_signer() {
 
 
 #[test]
-fn mollusk_confidential_transfer_from_uses_operator_scoped_amount_acl() {
-    let fixture = TokenMolluskFixture::new();
-    let amount_handle = handle_for_chain(31, BALANCE_FHE_TYPE);
-    let output = DirectTransferOutputAccounts::canonical(&fixture, 1, 1);
-    let ix = transfer_from_ix(
-        &fixture,
-        output,
-        operator_amount_acl_address(fixture.mint, fixture.operator, DEFAULT_INPUT_NONCE_SEQUENCE),
-        amount_handle,
-    );
-    let context = fixture.context_with_input_amount_for_authority(amount_handle, fixture.operator);
-
-    context.process_and_validate_instruction(&ix, &[Check::success()]);
-
-    let alice_token = read_token_account(&context, fixture.alice_token);
-    let bob_token = read_token_account(&context, fixture.bob_token);
-    let transferred_acl = read_acl_record(&context, output.transferred);
-    assert_eq!(alice_token.balance_acl_record, output.from_output);
-    assert_eq!(alice_token.next_balance_nonce_sequence, 2);
-    assert_eq!(bob_token.balance_acl_record, output.to_output);
-    assert_eq!(bob_token.next_balance_nonce_sequence, 2);
-    assert_acl_record(
-        &transferred_acl,
-        token::nonce_key(
-            fixture.mint,
-            fixture.alice_token,
-            token::transferred_amount_label(),
-        ),
-        1,
-        fixture.mint,
-        fixture.alice_token,
-        token::transferred_amount_label(),
-        BALANCE_FHE_TYPE,
-        &[
-            (fixture.owner, host::ACL_ROLE_USER),
-            (fixture.bob_owner, host::ACL_ROLE_USER),
-            (fixture.compute_signer, host::ACL_ROLE_COMPUTE_SUBJECT),
-        ],
-    );
-    assert!(transferred_acl
-        .inline_subject_index(fixture.operator)
-        .is_none());
-}
-
-#[test]
-fn mollusk_confidential_transfer_from_rejects_owner_scoped_amount_acl() {
-    let fixture = TokenMolluskFixture::new();
-    let amount_handle = handle_for_chain(32, BALANCE_FHE_TYPE);
-    let output = DirectTransferOutputAccounts::canonical(&fixture, 1, 1);
-    let ix = transfer_from_ix(
-        &fixture,
-        output,
-        amount_acl_address(fixture.mint, fixture.owner, DEFAULT_INPUT_NONCE_SEQUENCE),
-        amount_handle,
-    );
-    let context = fixture.context_with_input_amount(amount_handle);
-
-    let result = context.process_instruction(&ix);
-
-    assert!(result.raw_result.is_err());
-    let alice_token = read_token_account(&context, fixture.alice_token);
-    let bob_token = read_token_account(&context, fixture.bob_token);
-    assert_eq!(alice_token.balance_handle, fixture.alice_initial);
-    assert_eq!(
-        alice_token.balance_acl_record,
-        fixture.alice_current_compute_acl
-    );
-    assert_eq!(bob_token.balance_handle, fixture.bob_initial);
-    assert_eq!(
-        bob_token.balance_acl_record,
-        fixture.bob_current_compute_acl
-    );
-    assert_empty_system_account(&context, output.from_output);
-    assert_empty_system_account(&context, output.to_output);
-    assert_empty_system_account(&context, output.transferred);
-}
-
-#[test]
-fn mollusk_confidential_transfer_from_rejects_third_party_scoped_amount_acl() {
-    let fixture = TokenMolluskFixture::new();
-    let mallory = Pubkey::new_unique();
-    let amount_handle = handle_for_chain(33, BALANCE_FHE_TYPE);
-    let output = DirectTransferOutputAccounts::canonical(&fixture, 1, 1);
-    let ix = transfer_from_ix(
-        &fixture,
-        output,
-        amount_acl_address(fixture.mint, mallory, DEFAULT_INPUT_NONCE_SEQUENCE),
-        amount_handle,
-    );
-    let context = fixture.context_with_input_amount_for_authority(amount_handle, mallory);
-
-    let result = context.process_instruction(&ix);
-
-    assert!(result.raw_result.is_err());
-    let alice_token = read_token_account(&context, fixture.alice_token);
-    let bob_token = read_token_account(&context, fixture.bob_token);
-    assert_eq!(alice_token.balance_handle, fixture.alice_initial);
-    assert_eq!(
-        alice_token.balance_acl_record,
-        fixture.alice_current_compute_acl
-    );
-    assert_eq!(bob_token.balance_handle, fixture.bob_initial);
-    assert_eq!(
-        bob_token.balance_acl_record,
-        fixture.bob_current_compute_acl
-    );
-    assert_empty_system_account(&context, output.from_output);
-    assert_empty_system_account(&context, output.to_output);
-    assert_empty_system_account(&context, output.transferred);
-}
-
-#[test]
-fn mollusk_confidential_transfer_from_rejects_revoked_operator() {
-    let fixture = TokenMolluskFixture::new();
-    let amount_handle = handle_for_chain(34, BALANCE_FHE_TYPE);
-    let output = DirectTransferOutputAccounts::canonical(&fixture, 1, 1);
-    let ix = transfer_from_ix(
-        &fixture,
-        output,
-        operator_amount_acl_address(fixture.mint, fixture.operator, DEFAULT_INPUT_NONCE_SEQUENCE),
-        amount_handle,
-    );
-    let context = fixture.context_with_input_amount_for_authority_and_operator_expiration(
-        amount_handle,
-        fixture.operator,
-        0,
-    );
-
-    let result = context.process_instruction(&ix);
-
-    assert!(result.raw_result.is_err());
-    let alice_token = read_token_account(&context, fixture.alice_token);
-    let bob_token = read_token_account(&context, fixture.bob_token);
-    assert_eq!(alice_token.balance_handle, fixture.alice_initial);
-    assert_eq!(
-        alice_token.balance_acl_record,
-        fixture.alice_current_compute_acl
-    );
-    assert_eq!(bob_token.balance_handle, fixture.bob_initial);
-    assert_eq!(
-        bob_token.balance_acl_record,
-        fixture.bob_current_compute_acl
-    );
-    assert_empty_system_account(&context, output.from_output);
-    assert_empty_system_account(&context, output.to_output);
-    assert_empty_system_account(&context, output.transferred);
-}
-
-#[test]
-fn mollusk_set_operator_rejects_noncanonical_token_account() {
-    let fixture = TokenMolluskFixture::new();
-    let fake_token_account = Pubkey::new_unique();
-    let operator = Pubkey::new_unique();
-    let operator_record = token::operator_record_address(fake_token_account, operator).0;
-    let mut accounts = fixture.base_accounts();
-    accounts.insert(
-        fake_token_account,
-        confidential_token_account(
-            fixture.owner,
-            fixture.mint,
-            fixture.alice_initial,
-            fixture.alice_current_compute_acl,
-        ),
-    );
-    accounts.insert(operator_record, system_account(0));
-    let context = mollusk().with_context(accounts);
-    let ix = set_operator_ix_with_token_account(
-        &fixture,
-        fake_token_account,
-        operator,
-        operator_record,
-        100,
-    );
-
-    let result = context.process_instruction(&ix);
-
-    assert!(result.raw_result.is_err());
-    assert_empty_system_account(&context, operator_record);
-}
-
-#[test]
-fn mollusk_confidential_token_rejects_unexpected_remaining_account() {
-    let fixture = TokenMolluskFixture::new();
-    let operator = Pubkey::new_unique();
-    let operator_record = token::operator_record_address(fixture.alice_token, operator).0;
-    let unexpected_account = Pubkey::new_unique();
-    let mut accounts = fixture.base_accounts();
-    accounts.insert(operator_record, system_account(0));
-    accounts.insert(unexpected_account, system_account(1_000_000));
-    let context = mollusk().with_context(accounts);
-    let mut ix = set_operator_ix(&fixture, operator, operator_record, 100);
-    ix.accounts
-        .push(AccountMeta::new_readonly(unexpected_account, false));
-
-    let result = context.process_instruction(&ix);
-
-    assert!(result.raw_result.is_err());
-    assert_empty_system_account(&context, operator_record);
-}
-
-#[test]
-fn mollusk_set_operator_rejects_dirty_operator_record_target() {
-    let fixture = TokenMolluskFixture::new();
-    let operator = Pubkey::new_unique();
-    let operator_record = token::operator_record_address(fixture.alice_token, operator).0;
-    let mut accounts = fixture.base_accounts();
-    accounts.insert(
-        operator_record,
-        Account {
-            lamports: 1_000_000,
-            data: vec![1],
-            owner: system_program::ID,
-            executable: false,
-            rent_epoch: 0,
-        },
-    );
-    let context = mollusk().with_context(accounts);
-    let ix = set_operator_ix(&fixture, operator, operator_record, 100);
-
-    let result = context.process_instruction(&ix);
-
-    assert!(result.raw_result.is_err());
-    let store = context.account_store.borrow();
-    let dirty_target = store
-        .get(&operator_record)
-        .expect("dirty operator target should remain");
-    assert_eq!(dirty_target.owner, system_program::ID);
-    assert_eq!(dirty_target.data, vec![1]);
-}
-
-#[test]
-fn mollusk_set_operator_rejects_existing_operator_record_wrong_bump_or_length() {
-    let fixture = TokenMolluskFixture::new();
-    let operator = Pubkey::new_unique();
-    let (operator_record, bump) = token::operator_record_address(fixture.alice_token, operator);
-    let mut accounts = fixture.base_accounts();
-    accounts.insert(
-        operator_record,
-        operator_record_account_with_bump(
-            fixture.alice_token,
-            fixture.owner,
-            operator,
-            100,
-            bump.wrapping_add(1),
-            0,
-        ),
-    );
-    let context = mollusk().with_context(accounts);
-    let ix = set_operator_ix(&fixture, operator, operator_record, 101);
-
-    let result = context.process_instruction(&ix);
-
-    assert!(result.raw_result.is_err());
-    let stored = read_operator_record(&context, operator_record);
-    assert_ne!(stored.bump, bump);
-
-    seed_account(
-        &context,
-        operator_record,
-        operator_record_account_with_bump(
-            fixture.alice_token,
-            fixture.owner,
-            operator,
-            100,
-            bump,
-            1,
-        ),
-    );
-
-    let result = context.process_instruction(&ix);
-
-    assert!(result.raw_result.is_err());
-    let store = context.account_store.borrow();
-    let account = store
-        .get(&operator_record)
-        .expect("oversized operator record should remain");
-    assert_eq!(account.owner, token::id());
-    assert_eq!(
-        account.data.len(),
-        8 + token::ConfidentialOperator::SPACE + 1
-    );
-}
-
-#[test]
-fn mollusk_close_operator_reclaims_revoked_operator_record_permissionlessly() {
-    let fixture = TokenMolluskFixture::new();
-    let operator = Pubkey::new_unique();
-    let operator_record = token::operator_record_address(fixture.alice_token, operator).0;
-    let mut accounts = fixture.base_accounts();
-    accounts.insert(
-        operator_record,
-        operator_record_account(fixture.alice_token, fixture.owner, operator, 0),
-    );
-    let context = mollusk().with_context(accounts);
-    let record_lamports = context
-        .account_store
-        .borrow()
-        .get(&operator_record)
-        .expect("operator record should be seeded")
-        .lamports;
-    let owner_lamports_before = context
-        .account_store
-        .borrow()
-        .get(&fixture.owner)
-        .expect("owner account should be seeded")
-        .lamports;
-    let ix = close_operator_ix(&fixture, None, operator, operator_record, fixture.owner);
-
-    let result = context.process_and_validate_instruction(&ix, &[Check::success()]);
-
-    assert!(result.raw_result.is_ok());
-    assert_closed_system_account(&context, operator_record);
-    let owner_lamports_after = context
-        .account_store
-        .borrow()
-        .get(&fixture.owner)
-        .expect("owner account should remain")
-        .lamports;
-    assert_eq!(
-        owner_lamports_after,
-        owner_lamports_before + record_lamports
-    );
-}
-
-#[test]
-fn mollusk_close_operator_requires_owner_for_active_operator() {
-    let fixture = TokenMolluskFixture::new();
-    let operator = Pubkey::new_unique();
-    let operator_record = token::operator_record_address(fixture.alice_token, operator).0;
-    let expiration_slot = 100;
-    let mut accounts = fixture.base_accounts();
-    accounts.insert(
-        operator_record,
-        operator_record_account(
-            fixture.alice_token,
-            fixture.owner,
-            operator,
-            expiration_slot,
-        ),
-    );
-    let context = mollusk().with_context(accounts);
-    let close_without_owner =
-        close_operator_ix(&fixture, None, operator, operator_record, fixture.owner);
-
-    let reject_result = context.process_instruction(&close_without_owner);
-
-    assert!(reject_result.raw_result.is_err());
-    let stored = read_operator_record(&context, operator_record);
-    assert_eq!(stored.owner, fixture.owner);
-    assert_eq!(stored.operator, operator);
-    assert_eq!(stored.expiration_slot, expiration_slot);
-    let record_lamports = context
-        .account_store
-        .borrow()
-        .get(&operator_record)
-        .expect("operator record should remain after rejection")
-        .lamports;
-    let owner_lamports_before = context
-        .account_store
-        .borrow()
-        .get(&fixture.owner)
-        .expect("owner account should be seeded")
-        .lamports;
-    let close_with_owner = close_operator_ix(
-        &fixture,
-        Some(fixture.owner),
-        operator,
-        operator_record,
-        fixture.owner,
-    );
-
-    let close_result =
-        context.process_and_validate_instruction(&close_with_owner, &[Check::success()]);
-
-    assert!(close_result.raw_result.is_ok());
-    assert_closed_system_account(&context, operator_record);
-    let owner_lamports_after = context
-        .account_store
-        .borrow()
-        .get(&fixture.owner)
-        .expect("owner account should remain")
-        .lamports;
-    assert_eq!(
-        owner_lamports_after,
-        owner_lamports_before + record_lamports
-    );
-}
-
-#[test]
 fn mollusk_confidential_token_account_rejects_wrong_bump_or_length() {
     let fixture = TokenMolluskFixture::new();
-    let operator = Pubkey::new_unique();
-    let operator_record = token::operator_record_address(fixture.alice_token, operator).0;
+    let amount_handle = handle_for_chain(96, BALANCE_FHE_TYPE);
+    let output = DirectTransferOutputAccounts::canonical(&fixture, 1, 1);
     let token_bump = token::token_account_address(fixture.mint, fixture.owner).1;
-    let mut accounts = fixture.base_accounts();
-    accounts.insert(
+    let context = fixture.context_with_input_amount(amount_handle);
+    seed_account(
+        &context,
         fixture.alice_token,
         confidential_token_account_with_bump_and_extra(
             fixture.owner,
@@ -2572,14 +1879,14 @@ fn mollusk_confidential_token_account_rejects_wrong_bump_or_length() {
             0,
         ),
     );
-    accounts.insert(operator_record, system_account(0));
-    let context = mollusk().with_context(accounts);
-    let ix = set_operator_ix(&fixture, operator, operator_record, 100);
+    let ix = direct_transfer_ix(&fixture, output, amount_handle);
 
     let wrong_bump_result = context.process_instruction(&ix);
 
     assert!(wrong_bump_result.raw_result.is_err());
-    assert_empty_system_account(&context, operator_record);
+    assert_empty_system_account(&context, output.from_output);
+    assert_empty_system_account(&context, output.to_output);
+    assert_empty_system_account(&context, output.transferred);
 
     seed_account(
         &context,
@@ -2596,7 +1903,9 @@ fn mollusk_confidential_token_account_rejects_wrong_bump_or_length() {
     let oversized_result = context.process_instruction(&ix);
 
     assert!(oversized_result.raw_result.is_err());
-    assert_empty_system_account(&context, operator_record);
+    assert_empty_system_account(&context, output.from_output);
+    assert_empty_system_account(&context, output.to_output);
+    assert_empty_system_account(&context, output.transferred);
     let account = context
         .account_store
         .borrow()
@@ -2607,38 +1916,27 @@ fn mollusk_confidential_token_account_rejects_wrong_bump_or_length() {
         account.data.len(),
         8 + token::ConfidentialTokenAccount::SPACE + 1
     );
-
-    let amount_handle = handle_for_chain(96, BALANCE_FHE_TYPE);
-    let output = DirectTransferOutputAccounts::canonical(&fixture, 1, 1);
-    let transfer_context = fixture.context_with_input_amount(amount_handle);
-    seed_account(&transfer_context, fixture.alice_token, account);
-    let transfer_result =
-        transfer_context.process_instruction(&direct_transfer_ix(&fixture, output, amount_handle));
-
-    assert!(transfer_result.raw_result.is_err());
-    assert_empty_system_account(&transfer_context, output.from_output);
-    assert_empty_system_account(&transfer_context, output.to_output);
-    assert_empty_system_account(&transfer_context, output.transferred);
 }
 
 #[test]
 fn mollusk_confidential_mint_rejects_wrong_compute_signer_or_length() {
     let fixture = TokenMolluskFixture::new();
-    let operator = Pubkey::new_unique();
-    let operator_record = token::operator_record_address(fixture.alice_token, operator).0;
-    let mut accounts = fixture.base_accounts();
-    accounts.insert(
+    let amount_handle = handle_for_chain(97, BALANCE_FHE_TYPE);
+    let output = DirectTransferOutputAccounts::canonical(&fixture, 1, 1);
+    let context = fixture.context_with_input_amount(amount_handle);
+    seed_account(
+        &context,
         fixture.mint,
         confidential_mint_account_with_compute_signer_and_extra(&fixture, Pubkey::new_unique(), 0),
     );
-    accounts.insert(operator_record, system_account(0));
-    let context = mollusk().with_context(accounts);
-    let ix = set_operator_ix(&fixture, operator, operator_record, 100);
+    let ix = direct_transfer_ix(&fixture, output, amount_handle);
 
     let wrong_compute_signer_result = context.process_instruction(&ix);
 
     assert!(wrong_compute_signer_result.raw_result.is_err());
-    assert_empty_system_account(&context, operator_record);
+    assert_empty_system_account(&context, output.from_output);
+    assert_empty_system_account(&context, output.to_output);
+    assert_empty_system_account(&context, output.transferred);
 
     seed_account(
         &context,
@@ -2652,7 +1950,9 @@ fn mollusk_confidential_mint_rejects_wrong_compute_signer_or_length() {
     let oversized_result = context.process_instruction(&ix);
 
     assert!(oversized_result.raw_result.is_err());
-    assert_empty_system_account(&context, operator_record);
+    assert_empty_system_account(&context, output.from_output);
+    assert_empty_system_account(&context, output.to_output);
+    assert_empty_system_account(&context, output.transferred);
     let account = context
         .account_store
         .borrow()
@@ -2660,18 +1960,6 @@ fn mollusk_confidential_mint_rejects_wrong_compute_signer_or_length() {
         .expect("mint account should remain oversized")
         .clone();
     assert_eq!(account.data.len(), 8 + token::ConfidentialMint::SPACE + 1);
-
-    let amount_handle = handle_for_chain(97, BALANCE_FHE_TYPE);
-    let output = DirectTransferOutputAccounts::canonical(&fixture, 1, 1);
-    let transfer_context = fixture.context_with_input_amount(amount_handle);
-    seed_account(&transfer_context, fixture.mint, account);
-    let transfer_result =
-        transfer_context.process_instruction(&direct_transfer_ix(&fixture, output, amount_handle));
-
-    assert!(transfer_result.raw_result.is_err());
-    assert_empty_system_account(&transfer_context, output.from_output);
-    assert_empty_system_account(&transfer_context, output.to_output);
-    assert_empty_system_account(&transfer_context, output.transferred);
 }
 
 #[test]
@@ -2681,7 +1969,6 @@ fn mollusk_initialize_mint_creates_total_supply_acl() {
     let underlying_mint = Pubkey::new_unique();
     let compute_signer = token::compute_signer_address(mint).0;
     let total_supply_authority = token::total_supply_authority_address(mint).0;
-    let kms_verifier_authority = Pubkey::new_unique();
     let total_supply_acl_record = token_total_supply_acl_address(mint, total_supply_authority, 0);
     let host_config = host::host_config_address().0;
     let context = mollusk().with_context(HashMap::from([
@@ -2690,7 +1977,6 @@ fn mollusk_initialize_mint_creates_total_supply_acl() {
         (underlying_mint, spl_mint_account(authority, 6, 0)),
         (compute_signer, system_account(0)),
         (total_supply_authority, system_account(0)),
-        (kms_verifier_authority, system_account(1)),
         (total_supply_acl_record, system_account(0)),
         (host_config, host_config_account(authority)),
         (event_authority(host::id()), system_account(0)),
@@ -2702,7 +1988,6 @@ fn mollusk_initialize_mint_creates_total_supply_acl() {
         underlying_mint,
         compute_signer,
         total_supply_authority,
-        kms_verifier_authority,
         total_supply_acl_record,
         host_config,
     );
@@ -2726,7 +2011,6 @@ fn mollusk_initialize_mint_creates_total_supply_acl() {
     assert_eq!(stored.acl_domain_key, mint);
     assert_eq!(stored.compute_signer, compute_signer);
     assert_eq!(stored.underlying_mint, underlying_mint);
-    assert_eq!(stored.kms_verifier_authority, kms_verifier_authority);
     assert_eq!(stored.decimals, 6);
     assert_eq!(stored.total_supply_handle, supply_acl.handle);
     assert_eq!(stored.total_supply_acl_record, total_supply_acl_record);
@@ -2759,44 +2043,7 @@ fn mollusk_initialize_mint_creates_total_supply_acl() {
     );
 }
 
-#[test]
-fn mollusk_initialize_mint_rejects_zero_kms_verifier_authority() {
-    let authority = Pubkey::new_unique();
-    let mint = Pubkey::new_unique();
-    let underlying_mint = Pubkey::new_unique();
-    let compute_signer = token::compute_signer_address(mint).0;
-    let total_supply_authority = token::total_supply_authority_address(mint).0;
-    let total_supply_acl_record = token_total_supply_acl_address(mint, total_supply_authority, 0);
-    let host_config = host::host_config_address().0;
-    let context = mollusk().with_context(HashMap::from([
-        (authority, system_account(5_000_000_000)),
-        (mint, system_account(0)),
-        (underlying_mint, spl_mint_account(authority, 6, 0)),
-        (compute_signer, system_account(0)),
-        (total_supply_authority, system_account(0)),
-        (Pubkey::default(), system_account(1)),
-        (total_supply_acl_record, system_account(0)),
-        (host_config, host_config_account(authority)),
-        (event_authority(host::id()), system_account(0)),
-        (event_authority(token::id()), system_account(0)),
-    ]));
-    let ix = initialize_mint_ix(
-        authority,
-        mint,
-        underlying_mint,
-        compute_signer,
-        total_supply_authority,
-        Pubkey::default(),
-        total_supply_acl_record,
-        host_config,
-    );
 
-    let result = context.process_instruction(&ix);
-
-    assert!(result.raw_result.is_err());
-    assert_empty_system_account(&context, mint);
-    assert_empty_system_account(&context, total_supply_acl_record);
-}
 
 #[test]
 fn mollusk_initialize_token_account_creates_initial_balance_acl() {
@@ -3052,14 +2299,11 @@ fn mollusk_create_random_bounded_amount_rejects_invalid_upper_bound() {
 struct TokenMolluskFixture {
     owner: Pubkey,
     bob_owner: Pubkey,
-    operator: Pubkey,
-    operator_record: Pubkey,
     mint: Pubkey,
     underlying_mint: Pubkey,
     compute_signer: Pubkey,
     total_supply_authority: Pubkey,
     host_config: Pubkey,
-    verifier: Keypair,
     alice_token: Pubkey,
     bob_token: Pubkey,
     user_usdc: Pubkey,
@@ -3076,18 +2320,15 @@ impl TokenMolluskFixture {
     fn new() -> Self {
         let owner = Pubkey::new_unique();
         let bob_owner = Pubkey::new_unique();
-        let operator = Pubkey::new_unique();
         let mint = Pubkey::new_unique();
         let underlying_mint = Pubkey::new_unique();
         let compute_signer = token::compute_signer_address(mint).0;
         let total_supply_authority = token::total_supply_authority_address(mint).0;
         let host_config = host::host_config_address().0;
-        let verifier = Keypair::new();
         let alice_token = token::token_account_address(mint, owner).0;
         let bob_token = token::token_account_address(mint, bob_owner).0;
         let user_usdc = Pubkey::new_unique();
         let vault_usdc = token::vault_token_account_address(mint, underlying_mint);
-        let operator_record = token::operator_record_address(alice_token, operator).0;
         let alice_initial = handle_for_chain(1, BALANCE_FHE_TYPE);
         let bob_initial = handle_for_chain(2, BALANCE_FHE_TYPE);
         let total_supply_initial = handle_for_chain(3, BALANCE_FHE_TYPE);
@@ -3098,14 +2339,11 @@ impl TokenMolluskFixture {
         Self {
             owner,
             bob_owner,
-            operator,
-            operator_record,
             mint,
             underlying_mint,
             compute_signer,
             total_supply_authority,
             host_config,
-            verifier,
             alice_token,
             bob_token,
             user_usdc,
@@ -3131,31 +2369,9 @@ impl TokenMolluskFixture {
         amount_handle: [u8; 32],
         amount_authority: Pubkey,
     ) -> mollusk_svm::MolluskContext<HashMap<Pubkey, Account>> {
-        self.context_with_input_amount_for_authority_and_operator_expiration(
-            amount_handle,
-            amount_authority,
-            100,
-        )
-    }
-
-    fn context_with_input_amount_for_authority_and_operator_expiration(
-        &self,
-        amount_handle: [u8; 32],
-        amount_authority: Pubkey,
-        operator_expiration_slot: u64,
-    ) -> mollusk_svm::MolluskContext<HashMap<Pubkey, Account>> {
         let amount_acl =
             amount_acl_address(self.mint, amount_authority, DEFAULT_INPUT_NONCE_SEQUENCE);
         let mut accounts = self.base_accounts();
-        accounts.insert(
-            self.operator_record,
-            operator_record_account(
-                self.alice_token,
-                self.owner,
-                self.operator,
-                operator_expiration_slot,
-            ),
-        );
         accounts.insert(
             amount_acl,
             acl_record_account(
@@ -3251,14 +2467,10 @@ impl TokenMolluskFixture {
         HashMap::from([
             (self.owner, system_account(5_000_000_000)),
             (self.bob_owner, system_account(5_000_000_000)),
-            (self.operator, system_account(5_000_000_000)),
             (self.mint, confidential_mint_account(self)),
             (self.compute_signer, system_account(0)),
             (self.host_config, host_config_account(self.owner)),
-            (
-                self.operator_record,
-                operator_record_account(self.alice_token, self.owner, self.operator, 100),
-            ),
+            kms_context_account([0x11u8; 20]),
             (
                 self.alice_token,
                 confidential_token_account(
@@ -3329,8 +2541,6 @@ impl TokenMolluskFixture {
 struct SelfTransferOutputAccounts {
     alice: Pubkey,
     to_output: Pubkey,
-    success: Pubkey,
-    debit_candidate: Pubkey,
     transferred: Pubkey,
 }
 
@@ -3340,18 +2550,6 @@ impl SelfTransferOutputAccounts {
         Self {
             alice,
             to_output: alice,
-            success: token_acl_address(
-                fixture.mint,
-                fixture.alice_token,
-                token::transfer_success_label(),
-                nonce_sequence,
-            ),
-            debit_candidate: token_acl_address(
-                fixture.mint,
-                fixture.alice_token,
-                token::debit_candidate_label(),
-                nonce_sequence,
-            ),
             transferred: token_acl_address(
                 fixture.mint,
                 fixture.alice_token,
@@ -3361,14 +2559,8 @@ impl SelfTransferOutputAccounts {
         }
     }
 
-    fn all_accounts(self) -> [Pubkey; 5] {
-        [
-            self.alice,
-            self.to_output,
-            self.success,
-            self.debit_candidate,
-            self.transferred,
-        ]
+    fn all_accounts(self) -> [Pubkey; 3] {
+        [self.alice, self.to_output, self.transferred]
     }
 }
 
@@ -3376,8 +2568,6 @@ impl SelfTransferOutputAccounts {
 struct DirectTransferOutputAccounts {
     from_output: Pubkey,
     to_output: Pubkey,
-    success: Pubkey,
-    debit_candidate: Pubkey,
     transferred: Pubkey,
 }
 
@@ -3398,18 +2588,6 @@ impl DirectTransferOutputAccounts {
                 fixture.bob_token,
                 to_nonce_sequence,
             ),
-            success: token_acl_address(
-                fixture.mint,
-                fixture.alice_token,
-                token::transfer_success_label(),
-                from_nonce_sequence,
-            ),
-            debit_candidate: token_acl_address(
-                fixture.mint,
-                fixture.alice_token,
-                token::debit_candidate_label(),
-                from_nonce_sequence,
-            ),
             transferred: token_acl_address(
                 fixture.mint,
                 fixture.alice_token,
@@ -3419,20 +2597,13 @@ impl DirectTransferOutputAccounts {
         }
     }
 
-    fn all_accounts(self) -> [Pubkey; 5] {
-        [
-            self.from_output,
-            self.to_output,
-            self.success,
-            self.debit_candidate,
-            self.transferred,
-        ]
+    fn all_accounts(self) -> [Pubkey; 3] {
+        [self.from_output, self.to_output, self.transferred]
     }
 }
 
 #[derive(Clone, Copy)]
 struct WrapOutputAccounts {
-    amount: Pubkey,
     balance: Pubkey,
     total_supply: Pubkey,
 }
@@ -3440,12 +2611,6 @@ struct WrapOutputAccounts {
 impl WrapOutputAccounts {
     fn canonical(fixture: &TokenMolluskFixture, nonce_sequence: u64) -> Self {
         Self {
-            amount: token_acl_address(
-                fixture.mint,
-                fixture.alice_token,
-                token::wrap_amount_label(),
-                nonce_sequence,
-            ),
             balance: token_balance_acl_address(fixture.mint, fixture.alice_token, nonce_sequence),
             total_supply: token_total_supply_acl_address(
                 fixture.mint,
@@ -3455,16 +2620,14 @@ impl WrapOutputAccounts {
         }
     }
 
-    fn all_accounts(self) -> [Pubkey; 3] {
-        [self.amount, self.balance, self.total_supply]
+    fn all_accounts(self) -> [Pubkey; 2] {
+        [self.balance, self.total_supply]
     }
 }
 
 #[derive(Clone, Copy)]
 struct BurnOutputAccounts {
     balance: Pubkey,
-    success: Pubkey,
-    debit_candidate: Pubkey,
     burned: Pubkey,
     total_supply: Pubkey,
 }
@@ -3481,18 +2644,6 @@ impl BurnOutputAccounts {
                 fixture.alice_token,
                 balance_nonce_sequence,
             ),
-            success: token_acl_address(
-                fixture.mint,
-                fixture.alice_token,
-                token::burn_success_label(),
-                balance_nonce_sequence,
-            ),
-            debit_candidate: token_acl_address(
-                fixture.mint,
-                fixture.alice_token,
-                token::burn_debit_candidate_label(),
-                balance_nonce_sequence,
-            ),
             burned: token_acl_address(
                 fixture.mint,
                 fixture.alice_token,
@@ -3507,24 +2658,14 @@ impl BurnOutputAccounts {
         }
     }
 
-    fn all_accounts(self) -> [Pubkey; 5] {
-        [
-            self.balance,
-            self.success,
-            self.debit_candidate,
-            self.burned,
-            self.total_supply,
-        ]
+    fn all_accounts(self) -> [Pubkey; 3] {
+        [self.balance, self.burned, self.total_supply]
     }
 }
 
 #[derive(Clone, Copy)]
 struct CallbackSettlementOutputAccounts {
     settlement: Pubkey,
-    zero: Pubkey,
-    requested_refund: Pubkey,
-    refund_success: Pubkey,
-    refund_debit_candidate: Pubkey,
     to_output: Pubkey,
     refund: Pubkey,
     from_output: Pubkey,
@@ -3540,30 +2681,6 @@ impl CallbackSettlementOutputAccounts {
     ) -> Self {
         Self {
             settlement: token::transfer_callback_settlement_address(fixture.mint, sent_handle).0,
-            zero: token_acl_address(
-                fixture.mint,
-                fixture.bob_token,
-                token::callback_zero_label(),
-                to_nonce_sequence,
-            ),
-            requested_refund: token_acl_address(
-                fixture.mint,
-                fixture.bob_token,
-                token::callback_refund_request_label(),
-                to_nonce_sequence,
-            ),
-            refund_success: token_acl_address(
-                fixture.mint,
-                fixture.bob_token,
-                token::callback_refund_success_label(),
-                to_nonce_sequence,
-            ),
-            refund_debit_candidate: token_acl_address(
-                fixture.mint,
-                fixture.bob_token,
-                token::callback_refund_debit_candidate_label(),
-                to_nonce_sequence,
-            ),
             to_output: token_balance_acl_address(
                 fixture.mint,
                 fixture.bob_token,
@@ -3589,13 +2706,9 @@ impl CallbackSettlementOutputAccounts {
         }
     }
 
-    fn all_accounts(self) -> [Pubkey; 9] {
+    fn all_accounts(self) -> [Pubkey; 5] {
         [
             self.settlement,
-            self.zero,
-            self.requested_refund,
-            self.refund_success,
-            self.refund_debit_candidate,
             self.to_output,
             self.refund,
             self.from_output,
@@ -3613,6 +2726,7 @@ fn self_transfer_ix(
         token::id(),
         token::accounts::ConfidentialTransfer {
             owner: fixture.owner,
+            payer: fixture.owner,
             mint: fixture.mint,
             from_account: fixture.alice_token,
             to_account: fixture.alice_token,
@@ -3624,8 +2738,6 @@ fn self_transfer_ix(
                 fixture.owner,
                 DEFAULT_INPUT_NONCE_SEQUENCE,
             ),
-            transfer_success_acl: output.success,
-            debit_candidate_acl: output.debit_candidate,
             from_output_acl: output.alice,
             transferred_amount_acl: output.transferred,
             to_output_acl: output.to_output,
@@ -3645,8 +2757,18 @@ fn direct_transfer_ix(
     output: DirectTransferOutputAccounts,
     amount_handle: [u8; 32],
 ) -> Instruction {
+    direct_transfer_ix_with_payer(fixture, fixture.owner, output, amount_handle)
+}
+
+fn direct_transfer_ix_with_payer(
+    fixture: &TokenMolluskFixture,
+    payer: Pubkey,
+    output: DirectTransferOutputAccounts,
+    amount_handle: [u8; 32],
+) -> Instruction {
     direct_transfer_ix_with_acls(
         fixture,
+        payer,
         fixture.alice_current_compute_acl,
         fixture.bob_current_compute_acl,
         amount_acl_address(fixture.mint, fixture.owner, DEFAULT_INPUT_NONCE_SEQUENCE),
@@ -3657,6 +2779,7 @@ fn direct_transfer_ix(
 
 fn direct_transfer_ix_with_acls(
     fixture: &TokenMolluskFixture,
+    payer: Pubkey,
     from_current_compute_acl: Pubkey,
     to_current_compute_acl: Pubkey,
     amount_compute_acl: Pubkey,
@@ -3667,6 +2790,7 @@ fn direct_transfer_ix_with_acls(
         token::id(),
         token::accounts::ConfidentialTransfer {
             owner: fixture.owner,
+            payer,
             mint: fixture.mint,
             from_account: fixture.alice_token,
             to_account: fixture.bob_token,
@@ -3674,8 +2798,6 @@ fn direct_transfer_ix_with_acls(
             from_current_compute_acl,
             to_current_compute_acl,
             amount_compute_acl,
-            transfer_success_acl: output.success,
-            debit_candidate_acl: output.debit_candidate,
             from_output_acl: output.from_output,
             transferred_amount_acl: output.transferred,
             to_output_acl: output.to_output,
@@ -3690,102 +2812,6 @@ fn direct_transfer_ix_with_acls(
     )
 }
 
-fn transfer_from_ix(
-    fixture: &TokenMolluskFixture,
-    output: DirectTransferOutputAccounts,
-    amount_compute_acl: Pubkey,
-    amount_handle: [u8; 32],
-) -> Instruction {
-    anchor_ix(
-        token::id(),
-        token::accounts::ConfidentialTransferFrom {
-            operator: fixture.operator,
-            mint: fixture.mint,
-            from_account: fixture.alice_token,
-            to_account: fixture.bob_token,
-            operator_record: fixture.operator_record,
-            compute_signer: fixture.compute_signer,
-            from_current_compute_acl: fixture.alice_current_compute_acl,
-            to_current_compute_acl: fixture.bob_current_compute_acl,
-            amount_compute_acl,
-            transfer_success_acl: output.success,
-            debit_candidate_acl: output.debit_candidate,
-            from_output_acl: output.from_output,
-            transferred_amount_acl: output.transferred,
-            to_output_acl: output.to_output,
-            zama_event_authority: event_authority(host::id()),
-            zama_program: host::id(),
-            host_config: fixture.host_config,
-            system_program: system_program::ID,
-            event_authority: event_authority(token::id()),
-            program: token::id(),
-        },
-        token::instruction::ConfidentialTransferFrom { amount_handle },
-    )
-}
-
-fn set_operator_ix(
-    fixture: &TokenMolluskFixture,
-    operator: Pubkey,
-    operator_record: Pubkey,
-    expiration_slot: u64,
-) -> Instruction {
-    set_operator_ix_with_token_account(
-        fixture,
-        fixture.alice_token,
-        operator,
-        operator_record,
-        expiration_slot,
-    )
-}
-
-fn set_operator_ix_with_token_account(
-    fixture: &TokenMolluskFixture,
-    token_account: Pubkey,
-    operator: Pubkey,
-    operator_record: Pubkey,
-    expiration_slot: u64,
-) -> Instruction {
-    anchor_ix(
-        token::id(),
-        token::accounts::SetOperator {
-            owner: fixture.owner,
-            mint: fixture.mint,
-            token_account,
-            operator_record,
-            system_program: system_program::ID,
-            event_authority: event_authority(token::id()),
-            program: token::id(),
-        },
-        token::instruction::SetOperator {
-            operator,
-            expiration_slot,
-        },
-    )
-}
-
-fn close_operator_ix(
-    fixture: &TokenMolluskFixture,
-    owner: Option<Pubkey>,
-    operator: Pubkey,
-    operator_record: Pubkey,
-    refund_recipient: Pubkey,
-) -> Instruction {
-    anchor_ix(
-        token::id(),
-        token::accounts::CloseOperator {
-            owner,
-            mint: fixture.mint,
-            token_account: fixture.alice_token,
-            operator_record,
-            refund_recipient,
-            event_authority: event_authority(token::id()),
-            program: token::id(),
-        },
-        token::instruction::CloseOperator { operator },
-    )
-}
-
 #[allow(clippy::too_many_arguments)]
 fn initialize_mint_ix(
     authority: Pubkey,
@@ -3793,7 +2819,6 @@ fn initialize_mint_ix(
     underlying_mint: Pubkey,
     compute_signer: Pubkey,
     total_supply_authority: Pubkey,
-    kms_verifier_authority: Pubkey,
     total_supply_acl_record: Pubkey,
     host_config: Pubkey,
 ) -> Instruction {
@@ -3805,7 +2830,6 @@ fn initialize_mint_ix(
             underlying_mint,
             compute_signer,
             total_supply_authority,
-            kms_verifier_authority,
             total_supply_acl_record,
             zama_event_authority: event_authority(host::id()),
             zama_program: host::id(),
@@ -3817,6 +2841,7 @@ fn initialize_mint_ix(
         token::instruction::InitializeMint {},
     )
 }
+
 
 #[allow(clippy::too_many_arguments)]
 fn initialize_token_account_ix(
@@ -3932,65 +2957,6 @@ fn call_transfer_receiver_ix(
     )
 }
 
-#[allow(clippy::too_many_arguments)]
-fn call_transfer_receiver_from_ix(
-    fixture: &TokenMolluskFixture,
-    sent_amount_acl: Pubkey,
-    sent_handle: [u8; 32],
-    callback_success_acl: Pubkey,
-    callback_success_handle: [u8; 32],
-    receiver_program: Pubkey,
-    receiver_instruction_data: Vec<u8>,
-) -> Instruction {
-    call_transfer_receiver_from_ix_with_operator(
-        fixture,
-        fixture.operator,
-        fixture.operator_record,
-        sent_amount_acl,
-        sent_handle,
-        callback_success_acl,
-        callback_success_handle,
-        receiver_program,
-        receiver_instruction_data,
-    )
-}
-
-#[allow(clippy::too_many_arguments)]
-fn call_transfer_receiver_from_ix_with_operator(
-    fixture: &TokenMolluskFixture,
-    operator: Pubkey,
-    operator_record: Pubkey,
-    sent_amount_acl: Pubkey,
-    sent_handle: [u8; 32],
-    callback_success_acl: Pubkey,
-    callback_success_handle: [u8; 32],
-    receiver_program: Pubkey,
-    receiver_instruction_data: Vec<u8>,
-) -> Instruction {
-    anchor_ix(
-        token::id(),
-        token::accounts::ConfidentialCallTransferReceiverFrom {
-            operator,
-            mint: fixture.mint,
-            from_account: fixture.alice_token,
-            to_account: fixture.bob_token,
-            operator_record,
-            compute_signer: fixture.compute_signer,
-            sent_amount_acl,
-            callback_success_acl,
-            receiver_program,
-            instructions_sysvar: sysvar::instructions::ID,
-            hook_record: token::transfer_receiver_hook_address(fixture.mint, sent_handle).0,
-            system_program: system_program::ID,
-        },
-        token::instruction::ConfidentialCallTransferReceiverFrom {
-            sent_handle,
-            callback_success_handle,
-            receiver_instruction_data,
-        },
-    )
-}
-
 fn accept_transfer_receiver_data(
     fixture: &TokenMolluskFixture,
     sent_amount_acl: Pubkey,
@@ -4038,7 +3004,6 @@ fn wrap_usdc_ix_with_vault(
             total_supply_authority: fixture.total_supply_authority,
             current_compute_acl: fixture.alice_current_compute_acl,
             current_total_supply_acl: fixture.total_supply_current_acl,
-            amount_compute_acl: output.amount,
             output_acl: output.balance,
             total_supply_output_acl: output.total_supply,
             zama_event_authority: event_authority(host::id()),
@@ -4089,8 +3054,6 @@ fn burn_ix_with_amount_acl(
             current_compute_acl,
             current_total_supply_acl,
             amount_compute_acl,
-            burn_success_acl: output.success,
-            debit_candidate_acl: output.debit_candidate,
             output_acl: output.balance,
             burned_amount_acl: output.burned,
             total_supply_output_acl: output.total_supply,
@@ -4110,26 +3073,77 @@ fn request_disclose_amount_ix(
     amount_acl_record: Pubkey,
     amount_handle: [u8; 32],
 ) -> Instruction {
+    request_disclose_amount_ix_with_nonce(
+        fixture,
+        amount_acl_record,
+        amount_handle,
+        request_nonce(1),
+    )
+}
+
+fn request_disclose_amount_ix_with_nonce(
+    fixture: &TokenMolluskFixture,
+    amount_acl_record: Pubkey,
+    amount_handle: [u8; 32],
+    request_nonce: [u8; 32],
+) -> Instruction {
     anchor_ix(
         token::id(),
         token::accounts::RequestDiscloseAmount {
             requester: fixture.owner,
             mint: fixture.mint,
             amount_acl_record,
+            amount_material_commitment: host::handle_material_address(amount_acl_record).0,
+            disclosure_request: disclosure_request_address(
+                fixture,
+                fixture.owner,
+                amount_handle,
+                request_nonce,
+            ),
             authority_permission_record: None,
             deny_subject_record: None,
             zama_event_authority: event_authority(host::id()),
             zama_program: host::id(),
             host_config: fixture.host_config,
+            system_program: system_program::ID,
             event_authority: event_authority(token::id()),
             program: token::id(),
         },
-        token::instruction::RequestDiscloseAmount { amount_handle },
+        token::instruction::RequestDiscloseAmount {
+            amount_handle,
+            request_nonce,
+            expires_slot: DEFAULT_REQUEST_EXPIRES_SLOT,
+        },
     )
 }
 
 fn request_disclose_balance_ix(fixture: &TokenMolluskFixture) -> Instruction {
-    request_disclose_balance_ix_with_owner(fixture, fixture.owner)
+    request_disclose_balance_ix_with_nonce(fixture, request_nonce(1))
+}
+
+fn request_disclose_balance_ix_with_nonce(
+    fixture: &TokenMolluskFixture,
+    request_nonce: [u8; 32],
+) -> Instruction {
+    request_disclose_balance_ix_with_nonce_and_expires(
+        fixture,
+        request_nonce,
+        DEFAULT_REQUEST_EXPIRES_SLOT,
+    )
+}
+
+fn request_disclose_balance_ix_with_nonce_and_expires(
+    fixture: &TokenMolluskFixture,
+    request_nonce: [u8; 32],
+    expires_slot: u64,
+) -> Instruction {
+    request_disclose_balance_ix_with_owner_and_deny_record_and_nonce(
+        fixture,
+        fixture.owner,
+        None,
+        request_nonce,
+        expires_slot,
+    )
 }
 
 fn request_disclose_balance_ix_with_deny_record(
@@ -4155,6 +3169,22 @@ fn request_disclose_balance_ix_with_owner_and_deny_record(
     owner: Pubkey,
     deny_subject_record: Option<Pubkey>,
 ) -> Instruction {
+    request_disclose_balance_ix_with_owner_and_deny_record_and_nonce(
+        fixture,
+        owner,
+        deny_subject_record,
+        request_nonce(1),
+        DEFAULT_REQUEST_EXPIRES_SLOT,
+    )
+}
+
+fn request_disclose_balance_ix_with_owner_and_deny_record_and_nonce(
+    fixture: &TokenMolluskFixture,
+    owner: Pubkey,
+    deny_subject_record: Option<Pubkey>,
+    request_nonce: [u8; 32],
+    expires_slot: u64,
+) -> Instruction {
     anchor_ix(
         token::id(),
         token::accounts::RequestDiscloseBalance {
@@ -4162,15 +3192,29 @@ fn request_disclose_balance_ix_with_owner_and_deny_record(
             mint: fixture.mint,
             token_account: fixture.alice_token,
             balance_acl_record: fixture.alice_current_compute_acl,
+            balance_material_commitment: host::handle_material_address(
+                fixture.alice_current_compute_acl,
+            )
+            .0,
+            disclosure_request: disclosure_request_address(
+                fixture,
+                owner,
+                fixture.alice_initial,
+                request_nonce,
+            ),
             authority_permission_record: None,
             deny_subject_record,
             zama_event_authority: event_authority(host::id()),
             zama_program: host::id(),
             host_config: fixture.host_config,
+            system_program: system_program::ID,
             event_authority: event_authority(token::id()),
             program: token::id(),
         },
-        token::instruction::RequestDiscloseBalance {},
+        token::instruction::RequestDiscloseBalance {
+            request_nonce,
+            expires_slot,
+        },
     )
 }
 
@@ -4235,13 +3279,18 @@ fn kms_host_config_account(authority: Pubkey) -> Account {
 
 /// KMS context PDA holding a single signer + threshold-1 at the test context id.
 fn kms_context_account(signer: [u8; 20]) -> (Pubkey, Account) {
-    let (pubkey, bump) = host::kms_context_address(KMS_CONTEXT_ID);
+    kms_context_account_for(KMS_CONTEXT_ID, signer)
+}
+
+/// KMS context PDA for an arbitrary context id (used to model rotation).
+fn kms_context_account_for(context_id: u64, signer: [u8; 20]) -> (Pubkey, Account) {
+    let (pubkey, bump) = host::kms_context_address(context_id);
     (
         pubkey,
         Account {
             lamports: 1_000_000_000,
             data: serialized_account(host::KmsContext {
-                context_id: KMS_CONTEXT_ID,
+                context_id,
                 signers: vec![signer],
                 thresholds: host::KmsThresholds {
                     public_decryption: 1,
@@ -4286,6 +3335,22 @@ fn disclose_balance_secp_ix(
     cleartext_amount: u64,
     signatures: Vec<[u8; 65]>,
 ) -> Instruction {
+    disclose_balance_secp_ix_with_context(
+        fixture,
+        cleartext_amount,
+        signatures,
+        host::kms_context_address(KMS_CONTEXT_ID).0,
+        request_nonce(1),
+    )
+}
+
+fn disclose_balance_secp_ix_with_context(
+    fixture: &TokenMolluskFixture,
+    cleartext_amount: u64,
+    signatures: Vec<[u8; 65]>,
+    kms_context: Pubkey,
+    nonce: [u8; 32],
+) -> Instruction {
     anchor_ix(
         token::id(),
         token::accounts::DiscloseBalanceSecp {
@@ -4296,12 +3361,51 @@ fn disclose_balance_secp_ix(
                 fixture.alice_current_compute_acl,
             )
             .0,
+            disclosure_request: disclosure_request_address(
+                fixture,
+                fixture.owner,
+                fixture.alice_initial,
+                nonce,
+            ),
+            host_config: fixture.host_config,
+            kms_context,
+            event_authority: event_authority(token::id()),
+            program: token::id(),
+        },
+        token::instruction::DiscloseBalanceSecp {
+            cleartext_amount,
+            signatures,
+            extra_data: vec![],
+        },
+    )
+}
+
+fn disclose_amount_secp_ix(
+    fixture: &TokenMolluskFixture,
+    amount_acl_record: Pubkey,
+    amount_handle: [u8; 32],
+    cleartext_amount: u64,
+    signatures: Vec<[u8; 65]>,
+) -> Instruction {
+    anchor_ix(
+        token::id(),
+        token::accounts::DiscloseAmountSecp {
+            mint: fixture.mint,
+            amount_acl_record,
+            amount_material_commitment: host::handle_material_address(amount_acl_record).0,
+            disclosure_request: disclosure_request_address(
+                fixture,
+                fixture.owner,
+                amount_handle,
+                request_nonce(1),
+            ),
             host_config: fixture.host_config,
             kms_context: host::kms_context_address(KMS_CONTEXT_ID).0,
             event_authority: event_authority(token::id()),
             program: token::id(),
         },
-        token::instruction::DiscloseBalanceSecp {
+        token::instruction::DiscloseAmountSecp {
+            amount_handle,
             cleartext_amount,
             signatures,
             extra_data: vec![],
@@ -4320,9 +3424,9 @@ fn mollusk_disclose_balance_secp_accepts_real_kms_certificate() {
     accounts.insert(kms_ctx, kms_ctx_account);
     let context = mollusk().with_context(accounts);
 
+    seed_material_commitment_for_acl(&context, fixture.alice_current_compute_acl, 120);
     let request_result = process_transaction(&context, &[request_disclose_balance_ix(&fixture)]);
     assert!(request_result.raw_result.is_ok());
-    seed_material_commitment_for_acl(&context, fixture.alice_current_compute_acl, 120);
 
     let signatures = kms_public_decrypt_signatures(&key, fixture.alice_initial, cleartext_amount);
     let result = process_transaction(
@@ -4347,6 +3451,139 @@ fn mollusk_disclose_balance_secp_accepts_real_kms_certificate() {
     assert_eq!(events[0].cleartext_amount, cleartext_amount);
 }
 
+#[test]
+fn mollusk_disclose_amount_secp_accepts_real_kms_certificate_and_consumes_witness() {
+    let fixture = TokenMolluskFixture::new();
+    let key = k256::ecdsa::SigningKey::from_bytes(&[0x55u8; 32].into()).unwrap();
+    let amount_handle = handle_for_chain(61, BALANCE_FHE_TYPE);
+    let cleartext_amount = 41;
+    let mut accounts = fixture.base_accounts();
+    accounts.insert(fixture.host_config, kms_host_config_account(fixture.owner));
+    let (kms_ctx, kms_ctx_account) = kms_context_account(secp_evm_address(&key));
+    accounts.insert(kms_ctx, kms_ctx_account);
+    let context = mollusk().with_context(accounts);
+    let amount_acl = seed_disclosable_amount_acl(&context, &fixture, amount_handle);
+    seed_material_commitment_for_acl(&context, amount_acl, 145);
+
+    let request_result = process_transaction(
+        &context,
+        &[request_disclose_amount_ix(&fixture, amount_acl, amount_handle)],
+    );
+    assert!(request_result.raw_result.is_ok());
+
+    let signatures = kms_public_decrypt_signatures(&key, amount_handle, cleartext_amount);
+    let result = process_transaction(
+        &context,
+        &[disclose_amount_secp_ix(
+            &fixture,
+            amount_acl,
+            amount_handle,
+            cleartext_amount,
+            signatures.clone(),
+        )],
+    );
+    assert!(result.raw_result.is_ok());
+    let request = disclosure_request_address(&fixture, fixture.owner, amount_handle, request_nonce(1));
+    assert_eq!(
+        read_disclosure_request(&context, request).status,
+        token::REQUEST_STATUS_CONSUMED
+    );
+
+    // Replaying the same cert against the now-CONSUMED witness must fail.
+    let replay = process_transaction(
+        &context,
+        &[disclose_amount_secp_ix(
+            &fixture,
+            amount_acl,
+            amount_handle,
+            cleartext_amount,
+            signatures,
+        )],
+    );
+    assert!(
+        replay.raw_result.is_err(),
+        "consumed disclosure witness must not be replayable"
+    );
+}
+
+/// SECURITY (witness <-> secp binding): a request witness pins the KMS context id at request time.
+/// A certificate minted under a different (e.g. rotated) context is rejected, an expired witness is
+/// rejected, and a consumed witness cannot be replayed.
+#[test]
+fn mollusk_disclose_balance_secp_rejects_rotated_context_expired_and_replay() {
+    let fixture = TokenMolluskFixture::new();
+    let key = k256::ecdsa::SigningKey::from_bytes(&[0x55u8; 32].into()).unwrap();
+    let cleartext_amount = 125;
+
+    // Rejected: the passed kms_context is a different id than the one the witness pinned.
+    {
+        let mut accounts = fixture.base_accounts();
+        accounts.insert(fixture.host_config, kms_host_config_account(fixture.owner));
+        // Seed the witness-pinned context (KMS_CONTEXT_ID) so the request can verify the PDA, plus a
+        // rotated context the cert is NOT bound to.
+        let (kms_ctx, kms_ctx_account) = kms_context_account(secp_evm_address(&key));
+        accounts.insert(kms_ctx, kms_ctx_account);
+        let rotated_id = KMS_CONTEXT_ID + 1;
+        let (rotated_ctx, _) = host::kms_context_address(rotated_id);
+        accounts.insert(
+            rotated_ctx,
+            kms_context_account_for(rotated_id, secp_evm_address(&key)).1,
+        );
+        let context = mollusk().with_context(accounts);
+        seed_material_commitment_for_acl(&context, fixture.alice_current_compute_acl, 150);
+        let request_result =
+            process_transaction(&context, &[request_disclose_balance_ix(&fixture)]);
+        assert!(request_result.raw_result.is_ok());
+        let signatures =
+            kms_public_decrypt_signatures(&key, fixture.alice_initial, cleartext_amount);
+        // Present the rotated context PDA instead of the witness-pinned one.
+        let result = process_transaction(
+            &context,
+            &[disclose_balance_secp_ix_with_context(
+                &fixture,
+                cleartext_amount,
+                signatures,
+                rotated_ctx,
+                request_nonce(1),
+            )],
+        );
+        assert!(
+            result.raw_result.is_err(),
+            "cert verified against a context other than the witness-pinned one must be rejected"
+        );
+    }
+
+    // Rejected: the witness has expired before the disclosure is consumed.
+    {
+        let mut accounts = fixture.base_accounts();
+        accounts.insert(fixture.host_config, kms_host_config_account(fixture.owner));
+        let (kms_ctx, kms_ctx_account) = kms_context_account(secp_evm_address(&key));
+        accounts.insert(kms_ctx, kms_ctx_account);
+        let mut context = mollusk().with_context(accounts);
+        seed_material_commitment_for_acl(&context, fixture.alice_current_compute_acl, 151);
+        let request_result = process_transaction(
+            &context,
+            &[request_disclose_balance_ix_with_nonce_and_expires(
+                &fixture,
+                request_nonce(1),
+                5,
+            )],
+        );
+        assert!(request_result.raw_result.is_ok());
+        context.mollusk.sysvars.warp_to_slot(6);
+        let signatures =
+            kms_public_decrypt_signatures(&key, fixture.alice_initial, cleartext_amount);
+        let result = process_transaction(
+            &context,
+            &[disclose_balance_secp_ix(&fixture, cleartext_amount, signatures)],
+        );
+        assert!(
+            result.raw_result.is_err(),
+            "expired disclosure witness must be rejected"
+        );
+    }
+}
+
 /// SECURITY (P1#3 context binding): a request whose `extra_data` names a KMS context other than the
 /// passed `kms_context` account is rejected. The context is resolved from `extra_data` (which the
 /// KMS signs over) and checked against the account BEFORE signature verification, so a certificate
@@ -4364,9 +3601,9 @@ fn mollusk_disclose_balance_secp_rejects_context_mismatch_in_extra_data() {
     accounts.insert(kms_ctx, kms_ctx_account);
     let context = mollusk().with_context(accounts);
 
+    seed_material_commitment_for_acl(&context, fixture.alice_current_compute_acl, 120);
     let request_result = process_transaction(&context, &[request_disclose_balance_ix(&fixture)]);
     assert!(request_result.raw_result.is_ok());
-    seed_material_commitment_for_acl(&context, fixture.alice_current_compute_acl, 120);
 
     // extra_data (version 1) names context KMS_CONTEXT_ID + 1, but the passed kms_context is for
     // KMS_CONTEXT_ID. Sign the cert over this extra_data so it is otherwise valid.
@@ -4398,6 +3635,12 @@ fn mollusk_disclose_balance_secp_rejects_context_mismatch_in_extra_data() {
                 fixture.alice_current_compute_acl,
             )
             .0,
+            disclosure_request: disclosure_request_address(
+                &fixture,
+                fixture.owner,
+                fixture.alice_initial,
+                request_nonce(1),
+            ),
             host_config: fixture.host_config,
             kms_context: host::kms_context_address(KMS_CONTEXT_ID).0,
             event_authority: event_authority(token::id()),
@@ -4428,9 +3671,9 @@ fn mollusk_disclose_balance_secp_rejects_unauthorized_signer() {
     accounts.insert(kms_ctx, kms_ctx_account);
     let context = mollusk().with_context(accounts);
 
+    seed_material_commitment_for_acl(&context, fixture.alice_current_compute_acl, 120);
     let request_result = process_transaction(&context, &[request_disclose_balance_ix(&fixture)]);
     assert!(request_result.raw_result.is_ok());
-    seed_material_commitment_for_acl(&context, fixture.alice_current_compute_acl, 120);
 
     let signatures =
         kms_public_decrypt_signatures(&attacker, fixture.alice_initial, cleartext_amount);
@@ -4450,8 +3693,46 @@ fn mollusk_disclose_balance_secp_rejects_unauthorized_signer() {
 
 
 
+/// Creates the burn-redemption request witness consumed by `redeem_burned_amount_secp`.
+fn request_burn_redemption_ix(
+    fixture: &TokenMolluskFixture,
+    burned_amount_acl: Pubkey,
+    burned_handle: [u8; 32],
+) -> Instruction {
+    anchor_ix(
+        token::id(),
+        token::accounts::RequestBurnRedemption {
+            owner: fixture.owner,
+            mint: fixture.mint,
+            token_account: fixture.alice_token,
+            underlying_mint: fixture.underlying_mint,
+            destination_usdc: fixture.user_usdc,
+            burned_amount_acl,
+            burned_material_commitment: host::handle_material_address(burned_amount_acl).0,
+            redemption_request: burn_redemption_request_address(
+                fixture,
+                burned_handle,
+                request_nonce(1),
+            ),
+            authority_permission_record: None,
+            deny_subject_record: None,
+            zama_event_authority: event_authority(host::id()),
+            zama_program: host::id(),
+            host_config: fixture.host_config,
+            system_program: system_program::ID,
+            event_authority: event_authority(token::id()),
+            program: token::id(),
+        },
+        token::instruction::RequestBurnRedemption {
+            burned_handle,
+            request_nonce: request_nonce(1),
+            expires_slot: DEFAULT_REQUEST_EXPIRES_SLOT,
+        },
+    )
+}
+
 /// Solana (secp256k1 EIP-712) counterpart of [`redeem_burned_amount_ix_with_vault`]: verifies
-/// the KMS `PublicDecryptVerification` cert on-chain against the active KMS context (no Ed25519).
+/// the KMS `PublicDecryptVerification` cert on-chain against the request-pinned KMS context.
 fn redeem_burned_amount_secp_ix(
     fixture: &TokenMolluskFixture,
     burned_amount_acl: Pubkey,
@@ -4473,6 +3754,11 @@ fn redeem_burned_amount_secp_ix(
             vault_authority: token::vault_authority_address(fixture.mint).0,
             burned_amount_acl,
             burned_material_commitment: host::handle_material_address(burned_amount_acl).0,
+            redemption_request: burn_redemption_request_address(
+                fixture,
+                burned_handle,
+                request_nonce(1),
+            ),
             redemption_record,
             host_config: fixture.host_config,
             kms_context: host::kms_context_address(KMS_CONTEXT_ID).0,
@@ -4544,10 +3830,6 @@ fn prepare_transfer_callback_ix(
             callback_success_acl,
             hook_record: token::transfer_receiver_hook_address(fixture.mint, sent_handle).0,
             settlement_record: output.settlement,
-            callback_zero_acl: output.zero,
-            requested_refund_acl: output.requested_refund,
-            refund_success_acl: output.refund_success,
-            refund_debit_candidate_acl: output.refund_debit_candidate,
             to_output_acl: output.to_output,
             refund_amount_acl: output.refund,
             zama_event_authority: event_authority(host::id()),
@@ -4633,7 +3915,6 @@ fn confidential_mint_account_with_compute_signer_and_extra(
         acl_domain_key: fixture.mint,
         compute_signer,
         underlying_mint: fixture.underlying_mint,
-        kms_verifier_authority: fixture.verifier.pubkey(),
         decimals: 6,
         total_supply_handle: fixture.total_supply_initial,
         total_supply_acl_record: fixture.total_supply_current_acl,
@@ -4648,6 +3929,7 @@ fn confidential_mint_account_with_compute_signer_and_extra(
         rent_epoch: 0,
     }
 }
+
 
 fn confidential_token_account(
     owner: Pubkey,
@@ -4692,46 +3974,6 @@ fn confidential_token_account_with_bump_and_extra(
     }
 }
 
-fn operator_record_account(
-    token_account: Pubkey,
-    owner: Pubkey,
-    operator: Pubkey,
-    expiration_slot: u64,
-) -> Account {
-    operator_record_account_with_bump(
-        token_account,
-        owner,
-        operator,
-        expiration_slot,
-        token::operator_record_address(token_account, operator).1,
-        0,
-    )
-}
-
-fn operator_record_account_with_bump(
-    token_account: Pubkey,
-    owner: Pubkey,
-    operator: Pubkey,
-    expiration_slot: u64,
-    bump: u8,
-    extra_bytes: usize,
-) -> Account {
-    let mut data = serialized_account(token::ConfidentialOperator {
-        token_account,
-        owner,
-        operator,
-        expiration_slot,
-        bump,
-    });
-    data.resize(data.len() + extra_bytes, 0);
-    Account {
-        lamports: 1_000_000_000,
-        data,
-        owner: token::id(),
-        executable: false,
-        rent_epoch: 0,
-    }
-}
 
 fn spl_mint_account(authority: Pubkey, decimals: u8, supply: u64) -> Account {
     let mut data = vec![0; spl_token::state::Mint::LEN];
@@ -4832,11 +4074,13 @@ fn host_config_account(authority: Pubkey) -> Account {
             admin: authority,
             chain_id: host::SOLANA_POC_CHAIN_ID,
             input_verifier_authority: authority,
-            gateway_chain_id: 0,
+            gateway_chain_id: SECP_GATEWAY_CHAIN_ID,
             input_verification_contract: [0u8; 20],
             coprocessor_signer: [0u8; 20],
-            decryption_contract: [0u8; 20],
-            current_kms_context_id: 0,
+            decryption_contract: SECP_DECRYPTION_CONTRACT,
+            // Request witnesses pin this context id; the secp disclose/redeem path verifies the
+            // KMS cert against it.
+            current_kms_context_id: KMS_CONTEXT_ID,
             material_authority: Pubkey::new_unique(),
             test_authority: authority,
             paused: false,
@@ -4929,20 +4173,6 @@ fn read_confidential_mint(
         .expect("confidential mint should deserialize")
 }
 
-fn read_operator_record(
-    context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
-    address: Pubkey,
-) -> token::ConfidentialOperator {
-    let account = context
-        .account_store
-        .borrow()
-        .get(&address)
-        .expect("missing operator record")
-        .clone();
-    token::ConfidentialOperator::try_deserialize(&mut account.data.as_slice())
-        .expect("operator record should deserialize")
-}
-
 fn read_spl_token_amount(
     context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
     address: Pubkey,
@@ -5015,6 +4245,18 @@ fn acl_record_exists(
         && host::AclRecord::try_deserialize(&mut account.data.as_slice()).is_ok()
 }
 
+fn acl_record_count(context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>) -> usize {
+    context
+        .account_store
+        .borrow()
+        .values()
+        .filter(|account| {
+            account.owner == host::id()
+                && host::AclRecord::try_deserialize(&mut account.data.as_slice()).is_ok()
+        })
+        .count()
+}
+
 fn read_burn_redemption(
     context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
     address: Pubkey,
@@ -5030,15 +4272,99 @@ fn read_burn_redemption(
         .expect("burn redemption should deserialize")
 }
 
-fn burn_redemption_exists(
+fn read_disclosure_request(
     context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
     address: Pubkey,
-) -> bool {
-    let Some(account) = context.account_store.borrow().get(&address).cloned() else {
-        return false;
-    };
-    account.owner == token::id()
-        && token::BurnRedemption::try_deserialize(&mut account.data.as_slice()).is_ok()
+) -> token::DisclosureRequest {
+    let account = context
+        .account_store
+        .borrow()
+        .get(&address)
+        .expect("missing disclosure request")
+        .clone();
+    assert_eq!(account.owner, token::id());
+    token::DisclosureRequest::try_deserialize(&mut account.data.as_slice())
+        .expect("disclosure request should deserialize")
+}
+
+
+
+
+
+
+#[allow(clippy::too_many_arguments)]
+fn assert_disclosure_request(
+    context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
+    address: Pubkey,
+    fixture: &TokenMolluskFixture,
+    mode: u8,
+    token_account: Pubkey,
+    app_account: Pubkey,
+    handle: [u8; 32],
+    acl_record: Pubkey,
+    request_nonce: [u8; 32],
+) {
+    let request = read_disclosure_request(context, address);
+    let material = read_material_commitment(context, host::handle_material_address(acl_record).0);
+    assert_eq!(request.mint, fixture.mint);
+    assert_eq!(request.requester, fixture.owner);
+    assert_eq!(request.token_account, token_account);
+    assert_eq!(request.app_account, app_account);
+    assert_eq!(request.handle, handle);
+    assert_eq!(request.acl_record, acl_record);
+    assert_eq!(
+        request.material_commitment,
+        host::handle_material_address(acl_record).0
+    );
+    assert_eq!(
+        request.material_commitment_hash,
+        material.material_commitment_hash
+    );
+    assert_eq!(request.material_key_id, material.key_id);
+    assert_eq!(request.host_config, fixture.host_config);
+    assert_eq!(request.kms_context_id, KMS_CONTEXT_ID);
+    assert_eq!(request.request_nonce, request_nonce);
+    assert_eq!(request.chain_id, host::SOLANA_POC_CHAIN_ID);
+    assert_eq!(request.expires_slot, DEFAULT_REQUEST_EXPIRES_SLOT);
+    assert_eq!(request.mode, mode);
+    assert_eq!(request.status, token::REQUEST_STATUS_PENDING);
+    assert_eq!(
+        request.request_hash,
+        token::disclosure_request_hash(
+            token::id(),
+            address,
+            request.mint,
+            request.requester,
+            request.token_account,
+            request.app_account,
+            request.handle,
+            request.acl_record,
+            request.material_commitment,
+            request.material_commitment_hash,
+            request.material_key_id,
+            request.host_config,
+            request.kms_context_id,
+            request.request_nonce,
+            request.chain_id,
+            request.expires_slot,
+            request.mode,
+        )
+    );
+}
+
+fn read_material_commitment(
+    context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
+    address: Pubkey,
+) -> host::HandleMaterialCommitment {
+    let account = context
+        .account_store
+        .borrow()
+        .get(&address)
+        .expect("missing material commitment")
+        .clone();
+    assert_eq!(account.owner, host::id());
+    host::HandleMaterialCommitment::try_deserialize(&mut account.data.as_slice())
+        .expect("material commitment should deserialize")
 }
 
 fn transfer_callback_settlement_exists(
@@ -5105,6 +4431,60 @@ fn assert_empty_system_account(
     assert!(!account.executable);
 }
 
+fn assert_transfer_created_exactly_three_acl_records(
+    context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
+    acl_records_before: usize,
+    output: DirectTransferOutputAccounts,
+) {
+    assert_eq!(acl_record_count(context), acl_records_before + 3);
+    for account in output.all_accounts() {
+        assert_rent_funded_acl_record_account(context, account);
+    }
+}
+
+fn assert_rent_funded_acl_record_account(
+    context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
+    address: Pubkey,
+) {
+    let account = context
+        .account_store
+        .borrow()
+        .get(&address)
+        .expect("missing output ACL account")
+        .clone();
+    let account_size = 8 + host::AclRecord::SPACE;
+    let expected_lamports = context.mollusk.sysvars.rent.minimum_balance(account_size);
+    assert_eq!(account.owner, host::id());
+    assert_eq!(account.data.len(), account_size);
+    assert_eq!(account.lamports, expected_lamports);
+    assert!(!account.executable);
+}
+
+fn assert_transfer_scratch_acl_records_absent(
+    context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
+    fixture: &TokenMolluskFixture,
+    nonce_sequence: u64,
+) {
+    assert!(!acl_record_exists(
+        context,
+        token_acl_address(
+            fixture.mint,
+            fixture.alice_token,
+            token::transfer_success_label(),
+            nonce_sequence,
+        ),
+    ));
+    assert!(!acl_record_exists(
+        context,
+        token_acl_address(
+            fixture.mint,
+            fixture.alice_token,
+            token::debit_candidate_label(),
+            nonce_sequence,
+        ),
+    ));
+}
+
 #[allow(clippy::too_many_arguments)]
 fn assert_direct_transfer_failure_preserved_state(
     context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
@@ -5133,22 +4513,6 @@ fn assert_direct_transfer_failure_preserved_state(
     }
 }
 
-fn assert_closed_system_account(
-    context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
-    address: Pubkey,
-) {
-    let account = context
-        .account_store
-        .borrow()
-        .get(&address)
-        .expect("missing closed account")
-        .clone();
-    assert_eq!(account.lamports, 0);
-    assert_eq!(account.owner, system_program::ID);
-    assert!(account.data.is_empty());
-    assert!(!account.executable);
-}
-
 fn decode_anchor_event<T>(data: &[u8]) -> Option<T>
 where
     T: AnchorDeserialize + Discriminator,
@@ -5156,33 +4520,6 @@ where
     let event_prefix = anchor_event_prefix(T::DISCRIMINATOR);
     let payload = data.strip_prefix(&event_prefix[..])?;
     T::deserialize(&mut &*payload).ok()
-}
-
-fn ingest_mollusk_fhe_events(cleartext: &mut CleartextBackend, result: &InstructionResult) {
-    for inner in &result.inner_instructions {
-        let data = &inner.instruction.data;
-        if let Some(event) = decode_anchor_event::<host::events::FheBinaryOpEvent>(data) {
-            cleartext
-                .ingest_event(&SolanaFheEvent::BinaryOp(event))
-                .expect("binary FHE event should replay");
-        } else if let Some(event) = decode_anchor_event::<host::events::FheTernaryOpEvent>(data) {
-            cleartext
-                .ingest_event(&SolanaFheEvent::TernaryOp(event))
-                .expect("ternary FHE event should replay");
-        } else if let Some(event) = decode_anchor_event::<host::events::TrivialEncryptEvent>(data) {
-            cleartext
-                .ingest_event(&SolanaFheEvent::TrivialEncrypt(event))
-                .expect("trivial encrypt event should replay");
-        } else if let Some(event) = decode_anchor_event::<host::events::FheRandEvent>(data) {
-            cleartext
-                .ingest_event(&SolanaFheEvent::Rand(event))
-                .expect("random FHE event should replay");
-        } else if let Some(event) = decode_anchor_event::<host::events::FheRandBoundedEvent>(data) {
-            cleartext
-                .ingest_event(&SolanaFheEvent::RandBounded(event))
-                .expect("bounded random FHE event should replay");
-        }
-    }
 }
 
 fn anchor_event_prefix(discriminator: &[u8]) -> Vec<u8> {
@@ -5240,25 +4577,6 @@ fn process_transaction(
     result
 }
 
-fn mutate_acl_record(
-    context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
-    address: Pubkey,
-    mutate: impl FnOnce(&mut host::AclRecord),
-) {
-    let mut record = read_acl_record(context, address);
-    mutate(&mut record);
-    seed_account(
-        context,
-        address,
-        Account {
-            lamports: 1_000_000_000,
-            data: serialized_account(record),
-            owner: host::id(),
-            executable: false,
-            rent_epoch: 0,
-        },
-    );
-}
 
 fn seed_material_commitment_for_acl(
     context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
@@ -5317,49 +4635,6 @@ fn seed_material_commitment_for_acl(
     );
 }
 
-fn seed_unsealed_material_commitment_for_acl(
-    context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
-    acl_record_address: Pubkey,
-    seed: u8,
-) -> Pubkey {
-    let acl_record = read_acl_record(context, acl_record_address);
-    let (material_commitment, bump) = host::handle_material_address(acl_record_address);
-    let key_id = [seed; 32];
-    let ciphertext_digest = [seed.wrapping_add(1); 32];
-    let sns_ciphertext_digest = [seed.wrapping_add(2); 32];
-    let coprocessor_set_digest = [seed.wrapping_add(3); 32];
-    let material_commitment_hash = host::handle_material_commitment_hash(
-        material_commitment,
-        acl_record_address,
-        key_id,
-        ciphertext_digest,
-        sns_ciphertext_digest,
-        coprocessor_set_digest,
-    );
-    seed_account(
-        context,
-        material_commitment,
-        Account {
-            lamports: 1_000_000_000,
-            data: serialized_account(host::HandleMaterialCommitment {
-                acl_record: acl_record_address,
-                handle: acl_record.handle,
-                key_id,
-                ciphertext_digest,
-                sns_ciphertext_digest,
-                coprocessor_set_digest,
-                material_commitment_hash,
-                created_slot: 0,
-                state: host::HANDLE_MATERIAL_STATE_COMMITTED,
-                bump,
-            }),
-            owner: host::id(),
-            executable: false,
-            rent_epoch: 0,
-        },
-    );
-    material_commitment
-}
 
 fn seed_disclosable_amount_acl(
     context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
@@ -5409,40 +4684,8 @@ fn seed_amount_acl_with_subject_entries(
     amount_acl
 }
 
-fn material_commitment_exists(
-    context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
-    address: Pubkey,
-) -> bool {
-    let Some(account) = context.account_store.borrow().get(&address).cloned() else {
-        return false;
-    };
-    account.owner == host::id()
-        && host::HandleMaterialCommitment::try_deserialize(&mut account.data.as_slice()).is_ok()
-}
 
-fn account_data_len(
-    context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
-    address: Pubkey,
-) -> usize {
-    context
-        .account_store
-        .borrow()
-        .get(&address)
-        .expect("missing account")
-        .data
-        .len()
-}
 
-fn extend_account_data(
-    context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
-    address: Pubkey,
-    extra_bytes: usize,
-) {
-    let mut store = context.account_store.borrow_mut();
-    let account = store.get_mut(&address).expect("missing account");
-    let new_len = account.data.len() + extra_bytes;
-    account.data.resize(new_len, 0);
-}
 
 fn precompile_account() -> Account {
     Account {
@@ -5497,6 +4740,30 @@ fn seed_callback_success_acl(
     );
 }
 
+fn disclosure_request_address(
+    fixture: &TokenMolluskFixture,
+    requester: Pubkey,
+    handle: [u8; 32],
+    request_nonce: [u8; 32],
+) -> Pubkey {
+    token::disclosure_request_address(fixture.mint, requester, handle, request_nonce).0
+}
+
+fn burn_redemption_request_address(
+    fixture: &TokenMolluskFixture,
+    burned_handle: [u8; 32],
+    request_nonce: [u8; 32],
+) -> Pubkey {
+    token::burn_redemption_request_address(
+        fixture.mint,
+        fixture.owner,
+        burned_handle,
+        request_nonce,
+    )
+    .0
+}
+
+
 fn token_balance_acl_address(mint: Pubkey, token_account: Pubkey, nonce_sequence: u64) -> Pubkey {
     token_acl_address(mint, token_account, token::balance_label(), nonce_sequence)
 }
@@ -5518,10 +4785,6 @@ fn amount_acl_address(mint: Pubkey, owner: Pubkey, nonce_sequence: u64) -> Pubke
     token_acl_address(mint, owner, token::transfer_amount_label(), nonce_sequence)
 }
 
-fn operator_amount_acl_address(mint: Pubkey, operator: Pubkey, nonce_sequence: u64) -> Pubkey {
-    amount_acl_address(mint, operator, nonce_sequence)
-}
-
 fn burn_amount_acl_address(mint: Pubkey, owner: Pubkey, nonce_sequence: u64) -> Pubkey {
     token_acl_address(mint, owner, token::burn_amount_label(), nonce_sequence)
 }
@@ -5539,131 +4802,319 @@ fn callback_success_acl_address(
     )
 }
 
+fn callback_requested_refund_acl_address(
+    fixture: &TokenMolluskFixture,
+    nonce_sequence: u64,
+) -> Pubkey {
+    token_acl_address(
+        fixture.mint,
+        fixture.bob_token,
+        callback_refund_request_label(),
+        nonce_sequence,
+    )
+}
+
+fn callback_refund_request_label() -> [u8; 32] {
+    *b"callback_refund_request_________"
+}
+
+struct PredictedWrapHandles {
+    amount: [u8; 32],
+    balance: [u8; 32],
+    total_supply: [u8; 32],
+}
+
+fn predicted_wrap_handles(
+    fixture: &TokenMolluskFixture,
+    context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
+    amount: u64,
+    old_balance_handle: [u8; 32],
+    old_total_supply_handle: [u8; 32],
+    balance_nonce_sequence: u64,
+    total_supply_nonce_sequence: u64,
+) -> PredictedWrapHandles {
+    let mut amount_context = [0u8; 32];
+    amount_context[24..].copy_from_slice(&amount.to_be_bytes());
+    let context_id = transfer_eval_context(
+        b"wrap-balance",
+        fixture.mint,
+        fixture.alice_token,
+        fixture.alice_token,
+        amount_context,
+        balance_nonce_sequence,
+        total_supply_nonce_sequence,
+    );
+    let previous_bank_hash = previous_bank_hash(context);
+    let unix_timestamp = context.mollusk.sysvars.clock.unix_timestamp;
+    let amount_handle = host::computed_eval_trivial_handle(
+        amount_plaintext(amount),
+        BALANCE_FHE_TYPE,
+        host::SOLANA_POC_CHAIN_ID,
+        previous_bank_hash,
+        unix_timestamp,
+        context_id,
+        0,
+    );
+    let balance = host::computed_bound_eval_handle(
+        host::FheBinaryOpCode::Add,
+        old_balance_handle,
+        amount_handle,
+        false,
+        BALANCE_FHE_TYPE,
+        host::SOLANA_POC_CHAIN_ID,
+        previous_bank_hash,
+        unix_timestamp,
+        context_id,
+        1,
+        token::balance_nonce_key(fixture.mint, fixture.alice_token),
+        balance_nonce_sequence,
+    );
+    let total_supply = host::computed_bound_eval_handle(
+        host::FheBinaryOpCode::Add,
+        old_total_supply_handle,
+        amount_handle,
+        false,
+        BALANCE_FHE_TYPE,
+        host::SOLANA_POC_CHAIN_ID,
+        previous_bank_hash,
+        unix_timestamp,
+        context_id,
+        2,
+        token::total_supply_nonce_key(fixture.mint, fixture.total_supply_authority),
+        total_supply_nonce_sequence,
+    );
+
+    PredictedWrapHandles {
+        amount: amount_handle,
+        balance,
+        total_supply,
+    }
+}
+
+struct PredictedBurnHandles {
+    success: [u8; 32],
+    balance: [u8; 32],
+    burned: [u8; 32],
+    total_supply: [u8; 32],
+}
+
+fn predicted_burn_handles(
+    fixture: &TokenMolluskFixture,
+    context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
+    amount_handle: [u8; 32],
+    old_balance_handle: [u8; 32],
+    old_total_supply_handle: [u8; 32],
+    balance_nonce_sequence: u64,
+    total_supply_nonce_sequence: u64,
+) -> PredictedBurnHandles {
+    let context_id = transfer_eval_context(
+        b"burn-balance",
+        fixture.mint,
+        fixture.alice_token,
+        fixture.alice_token,
+        amount_handle,
+        balance_nonce_sequence,
+        total_supply_nonce_sequence,
+    );
+    let previous_bank_hash = previous_bank_hash(context);
+    let unix_timestamp = context.mollusk.sysvars.clock.unix_timestamp;
+    let success = host::computed_eval_handle(
+        host::FheBinaryOpCode::Ge,
+        old_balance_handle,
+        amount_handle,
+        false,
+        0,
+        host::SOLANA_POC_CHAIN_ID,
+        previous_bank_hash,
+        unix_timestamp,
+        context_id,
+        0,
+    );
+    let debit_candidate = host::computed_eval_handle(
+        host::FheBinaryOpCode::Sub,
+        old_balance_handle,
+        amount_handle,
+        false,
+        BALANCE_FHE_TYPE,
+        host::SOLANA_POC_CHAIN_ID,
+        previous_bank_hash,
+        unix_timestamp,
+        context_id,
+        1,
+    );
+    let balance = host::computed_bound_eval_ternary_handle(
+        host::FheTernaryOpCode::IfThenElse,
+        success,
+        debit_candidate,
+        old_balance_handle,
+        BALANCE_FHE_TYPE,
+        host::SOLANA_POC_CHAIN_ID,
+        previous_bank_hash,
+        unix_timestamp,
+        context_id,
+        2,
+        token::balance_nonce_key(fixture.mint, fixture.alice_token),
+        balance_nonce_sequence,
+    );
+    let burned = host::computed_bound_eval_handle(
+        host::FheBinaryOpCode::Sub,
+        old_balance_handle,
+        balance,
+        false,
+        BALANCE_FHE_TYPE,
+        host::SOLANA_POC_CHAIN_ID,
+        previous_bank_hash,
+        unix_timestamp,
+        context_id,
+        3,
+        token::nonce_key(
+            fixture.mint,
+            fixture.alice_token,
+            token::burned_amount_label(),
+        ),
+        balance_nonce_sequence,
+    );
+    let total_supply = host::computed_bound_eval_handle(
+        host::FheBinaryOpCode::Sub,
+        old_total_supply_handle,
+        burned,
+        false,
+        BALANCE_FHE_TYPE,
+        host::SOLANA_POC_CHAIN_ID,
+        previous_bank_hash,
+        unix_timestamp,
+        context_id,
+        4,
+        token::total_supply_nonce_key(fixture.mint, fixture.total_supply_authority),
+        total_supply_nonce_sequence,
+    );
+
+    PredictedBurnHandles {
+        success,
+        balance,
+        burned,
+        total_supply,
+    }
+}
+
 fn predicted_transfer_sent_handle(
     fixture: &TokenMolluskFixture,
     context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
     amount_handle: [u8; 32],
 ) -> [u8; 32] {
     let from = read_token_account(context, fixture.alice_token);
-    let nonce_sequence = from.next_balance_nonce_sequence;
-    let transfer_success_handle = current_bound_binary_handle(
-        &context.mollusk,
+    let to = read_token_account(context, fixture.bob_token);
+    let from_nonce_sequence = from.next_balance_nonce_sequence;
+    let to_nonce_sequence = to.next_balance_nonce_sequence;
+    let context_id = transfer_eval_context(
+        b"combined",
+        fixture.mint,
+        fixture.alice_token,
+        fixture.bob_token,
+        amount_handle,
+        from_nonce_sequence,
+        to_nonce_sequence,
+    );
+    let previous_bank_hash = previous_bank_hash(context);
+    let unix_timestamp = context.mollusk.sysvars.clock.unix_timestamp;
+    let transfer_success_handle = host::computed_eval_handle(
         host::FheBinaryOpCode::Ge,
         from.balance_handle,
         amount_handle,
         false,
         0,
-        token::nonce_key(
-            fixture.mint,
-            fixture.alice_token,
-            token::transfer_success_label(),
-        ),
-        nonce_sequence,
+        host::SOLANA_POC_CHAIN_ID,
+        previous_bank_hash,
+        unix_timestamp,
+        context_id,
+        0,
     );
-    let debit_candidate_handle = current_bound_binary_handle(
-        &context.mollusk,
+    let debit_candidate_handle = host::computed_eval_handle(
         host::FheBinaryOpCode::Sub,
         from.balance_handle,
         amount_handle,
         false,
         BALANCE_FHE_TYPE,
-        token::nonce_key(
-            fixture.mint,
-            fixture.alice_token,
-            token::debit_candidate_label(),
-        ),
-        nonce_sequence,
+        host::SOLANA_POC_CHAIN_ID,
+        previous_bank_hash,
+        unix_timestamp,
+        context_id,
+        1,
     );
-    let new_from_handle = current_bound_ternary_handle(
-        &context.mollusk,
+    let new_from_handle = host::computed_bound_eval_ternary_handle(
         host::FheTernaryOpCode::IfThenElse,
         transfer_success_handle,
         debit_candidate_handle,
         from.balance_handle,
         BALANCE_FHE_TYPE,
+        host::SOLANA_POC_CHAIN_ID,
+        previous_bank_hash,
+        unix_timestamp,
+        context_id,
+        2,
         token::balance_nonce_key(fixture.mint, fixture.alice_token),
-        nonce_sequence,
+        from_nonce_sequence,
     );
-    current_bound_binary_handle(
-        &context.mollusk,
+    host::computed_bound_eval_handle(
         host::FheBinaryOpCode::Sub,
         from.balance_handle,
         new_from_handle,
         false,
         BALANCE_FHE_TYPE,
+        host::SOLANA_POC_CHAIN_ID,
+        previous_bank_hash,
+        unix_timestamp,
+        context_id,
+        3,
         token::nonce_key(
             fixture.mint,
             fixture.alice_token,
             token::transferred_amount_label(),
         ),
-        nonce_sequence,
+        from_nonce_sequence,
     )
 }
 
-#[allow(clippy::too_many_arguments)]
-fn current_bound_binary_handle(
-    mollusk: &Mollusk,
-    op: host::FheBinaryOpCode,
-    lhs: [u8; 32],
-    rhs: [u8; 32],
-    scalar: bool,
-    fhe_type: u8,
-    output_nonce_key: [u8; 32],
-    output_nonce_sequence: u64,
-) -> [u8; 32] {
-    host::computed_bound_binary_handle(
-        op,
-        lhs,
-        rhs,
-        scalar,
-        fhe_type,
-        host::SOLANA_POC_CHAIN_ID,
-        previous_bank_hash(mollusk),
-        mollusk.sysvars.clock.unix_timestamp,
-        output_nonce_key,
-        output_nonce_sequence,
-    )
-}
-
-#[allow(clippy::too_many_arguments)]
-fn current_bound_ternary_handle(
-    mollusk: &Mollusk,
-    op: host::FheTernaryOpCode,
-    control: [u8; 32],
-    if_true: [u8; 32],
-    if_false: [u8; 32],
-    fhe_type: u8,
-    output_nonce_key: [u8; 32],
-    output_nonce_sequence: u64,
-) -> [u8; 32] {
-    host::computed_bound_ternary_handle(
-        op,
-        control,
-        if_true,
-        if_false,
-        fhe_type,
-        host::SOLANA_POC_CHAIN_ID,
-        previous_bank_hash(mollusk),
-        mollusk.sysvars.clock.unix_timestamp,
-        output_nonce_key,
-        output_nonce_sequence,
-    )
-}
-
-fn previous_bank_hash(mollusk: &Mollusk) -> [u8; 32] {
-    mollusk
+fn previous_bank_hash(context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>) -> [u8; 32] {
+    context
+        .mollusk
         .sysvars
         .clock
         .slot
         .checked_sub(1)
         .and_then(|slot| {
-            mollusk
+            context
+                .mollusk
                 .sysvars
                 .slot_hashes
                 .get(&slot)
                 .map(|hash| hash.to_bytes())
         })
         .unwrap_or([0; 32])
+}
+
+fn transfer_eval_context(
+    tag: &[u8],
+    mint: Pubkey,
+    from_token_account: Pubkey,
+    to_token_account: Pubkey,
+    amount_handle: [u8; 32],
+    from_nonce_sequence: u64,
+    to_nonce_sequence: u64,
+) -> [u8; 32] {
+    let from_sequence_bytes = from_nonce_sequence.to_be_bytes();
+    let to_sequence_bytes = to_nonce_sequence.to_be_bytes();
+    solana_sha256_hasher::hashv(&[
+        b"confidential-token-transfer-eval-v1",
+        tag,
+        mint.as_ref(),
+        from_token_account.as_ref(),
+        to_token_account.as_ref(),
+        &amount_handle,
+        &from_sequence_bytes,
+        &to_sequence_bytes,
+    ])
+    .to_bytes()
 }
 
 fn token_acl_address(

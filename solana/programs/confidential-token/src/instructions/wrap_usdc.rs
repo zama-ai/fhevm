@@ -46,9 +46,6 @@ pub struct WrapUsdc<'info> {
     pub current_total_supply_acl: Box<Account<'info, zama_host::AclRecord>>,
     /// CHECK: initialized and validated by the Zama host program CPI.
     #[account(mut)]
-    pub amount_compute_acl: UncheckedAccount<'info>,
-    /// CHECK: initialized and validated by the Zama host program CPI.
-    #[account(mut)]
     pub output_acl: UncheckedAccount<'info>,
     /// CHECK: initialized and validated by the Zama host program CPI.
     #[account(mut)]
@@ -107,11 +104,12 @@ pub fn wrap_usdc(ctx: Context<WrapUsdc>, amount: u64) -> Result<()> {
         compute_signer,
         ConfidentialTokenError::ComputeSignerMismatch
     );
-    require_keys_eq!(
+    assert_current_balance_acl(
+        &ctx.accounts.current_compute_acl,
         ctx.accounts.current_compute_acl.key(),
-        token_account.balance_acl_record,
-        ConfidentialTokenError::CurrentAclRecordMismatch
-    );
+        &ctx.accounts.token_account,
+        mint_key,
+    )?;
     require_keys_eq!(
         total_supply_authority,
         total_supply_authority_address(mint_key).0,
@@ -123,6 +121,27 @@ pub fn wrap_usdc(ctx: Context<WrapUsdc>, amount: u64) -> Result<()> {
         ctx.accounts.mint.as_ref(),
         mint_key,
         total_supply_authority,
+    )?;
+    let balance_output = fhe::DurableOutput::new(
+        ctx.accounts.output_acl.to_account_info(),
+        durable_slot(
+            mint_key,
+            token_account.key(),
+            balance_label(),
+            nonce_sequence,
+        ),
+        zama_fhe::AccessPolicy::for_owner_and_compute(token_account.owner, compute_signer)
+            .map_err(invalid_eval_plan)?,
+    )?;
+    let total_supply_output = fhe::DurableOutput::new(
+        ctx.accounts.total_supply_output_acl.to_account_info(),
+        durable_slot(
+            mint_key,
+            total_supply_authority,
+            total_supply_label(),
+            total_supply_nonce_sequence,
+        ),
+        zama_fhe::AccessPolicy::for_compute(compute_signer).map_err(invalid_eval_plan)?,
     )?;
 
     spl_token::transfer_checked(
@@ -139,74 +158,77 @@ pub fn wrap_usdc(ctx: Context<WrapUsdc>, amount: u64) -> Result<()> {
         decimals,
     )?;
 
-    let amount_handle = fhe::trivial_encrypt_u64(fhe::TrivialEncryptU64 {
-        payer: &ctx.accounts.owner,
-        event_authority: &ctx.accounts.zama_event_authority,
-        zama_program: &ctx.accounts.zama_program,
-        host_config: &ctx.accounts.host_config,
-        compute_signer: &ctx.accounts.compute_signer,
-        app_account_authority: token_account,
-        output_acl_record: ctx.accounts.amount_compute_acl.to_account_info(),
-        acl_domain_key: mint_key,
-        compute_signer_bump: ctx.bumps.compute_signer,
-        system_program: &ctx.accounts.system_program,
-        output_nonce_key: nonce_key(mint_key, token_account.key(), wrap_amount_label()),
-        output_nonce_sequence: nonce_sequence,
-        output_encrypted_value_label: wrap_amount_label(),
-        plaintext: amount,
-        fhe_type: BALANCE_FHE_TYPE,
-        output_subjects: compute_acl_subject(compute_signer),
-        output_public_decrypt: false,
-    })?;
-
-    let new_balance_handle = add_balance(
-        &ctx.accounts.owner,
-        &ctx.accounts.zama_event_authority,
-        &ctx.accounts.zama_program,
-        &ctx.accounts.host_config,
-        &ctx.accounts.compute_signer,
-        &ctx.accounts.token_account,
-        ctx.accounts.current_compute_acl.to_account_info(),
+    let balance = uint64_from_acl(
         token_account.balance_handle,
-        ctx.accounts.amount_compute_acl.to_account_info(),
-        amount_handle,
-        ctx.accounts.output_acl.to_account_info(),
+        &ctx.accounts.current_compute_acl,
+    )?;
+    let total_supply = uint64_from_acl(
+        old_total_supply_handle,
+        &ctx.accounts.current_total_supply_acl,
+    )?;
+    let mut amount_context = [0u8; 32];
+    amount_context[24..].copy_from_slice(&amount.to_be_bytes());
+    let context_id = transfer_eval_context(
+        b"wrap-balance",
+        mint_key,
+        token_account.key(),
+        token_account.key(),
+        amount_context,
+        nonce_sequence,
+        total_supply_nonce_sequence,
+    )?;
+    let mut builder = zama_fhe::EvalBuilder::new(
+        context_id,
+        zama_fhe::EvalAppAuthority::new(token_account.key()),
+    );
+    let encrypted_amount = builder
+        .trivial_encrypt_u64(amount, zama_fhe::Output::transient())
+        .map_err(invalid_eval_plan)?;
+    builder
+        .add(balance, encrypted_amount, balance_output.output())
+        .map_err(invalid_eval_plan)?;
+    builder
+        .add(total_supply, encrypted_amount, total_supply_output.output())
+        .map_err(invalid_eval_plan)?;
+    let plan = builder.finish().map_err(invalid_eval_plan)?;
+    let compute_authority = fhe::ComputeAuthority::for_mint(
+        &ctx.accounts.compute_signer,
         mint_key,
         ctx.bumps.compute_signer,
-        &ctx.accounts.system_program,
-        nonce_sequence,
     )?;
-    let total_supply_authority_bump = [ctx.bumps.total_supply_authority];
-    let total_supply_authority_seeds: &[&[u8]] = &[
-        b"total-supply",
-        mint_key.as_ref(),
-        &total_supply_authority_bump,
-    ];
-    let new_total_supply_handle = fhe::add_with_app_pda(fhe::BinaryOpWithAppPda {
-        payer: &ctx.accounts.owner,
-        event_authority: &ctx.accounts.zama_event_authority,
-        zama_program: &ctx.accounts.zama_program,
-        host_config: &ctx.accounts.host_config,
-        compute_signer: &ctx.accounts.compute_signer,
-        app_account_authority: &ctx.accounts.total_supply_authority,
-        app_signer_seeds: total_supply_authority_seeds,
-        output_app_account: total_supply_authority,
-        lhs_acl_record: ctx.accounts.current_total_supply_acl.to_account_info(),
-        lhs: old_total_supply_handle,
-        rhs_acl_record: ctx.accounts.amount_compute_acl.to_account_info(),
-        rhs: amount_handle,
-        scalar: false,
-        output_acl_record: ctx.accounts.total_supply_output_acl.to_account_info(),
-        output_fhe_type: BALANCE_FHE_TYPE,
-        acl_domain_key: mint_key,
-        compute_signer_bump: ctx.bumps.compute_signer,
-        system_program: &ctx.accounts.system_program,
-        output_nonce_key: total_supply_nonce_key(mint_key, total_supply_authority),
-        output_nonce_sequence: total_supply_nonce_sequence,
-        output_encrypted_value_label: total_supply_label(),
-        output_subjects: compute_acl_subject(compute_signer),
-        output_public_decrypt: false,
+    let total_supply_authority_bump = total_supply_authority_address(mint_key).1;
+    let eval_accounts = fhe::EvalAccountSet::for_plan(
+        &plan,
+        [
+            ctx.accounts.current_compute_acl.to_account_info(),
+            ctx.accounts.current_total_supply_acl.to_account_info(),
+            balance_output.account_info(),
+            total_supply_output.account_info(),
+        ],
+        [
+            fhe::OutputAuthority::token_account(&ctx.accounts.token_account)?,
+            fhe::OutputAuthority::total_supply(
+                &ctx.accounts.total_supply_authority,
+                mint_key,
+                total_supply_authority_bump,
+            )?,
+        ],
+    )?;
+    fhe::eval(fhe::Eval {
+        context: fhe::EvalContext {
+            payer: &ctx.accounts.owner,
+            event_authority: &ctx.accounts.zama_event_authority,
+            zama_program: &ctx.accounts.zama_program,
+            host_config: &ctx.accounts.host_config,
+            compute_authority,
+            system_program: &ctx.accounts.system_program,
+            instructions_sysvar: None,
+        },
+        accounts: &eval_accounts,
+        plan,
     })?;
+    let new_balance_handle = balance_output.handle()?;
+    let new_total_supply_handle = total_supply_output.handle()?;
 
     let token_account = &mut ctx.accounts.token_account;
     token_account.balance_handle = new_balance_handle;

@@ -3265,6 +3265,8 @@ dependencies = [
  "confidential-token-receiver-sdk",
  "solana-ed25519-instruction",
  "solana-instructions-sysvar",
+ "solana-sha256-hasher",
+ "zama-fhe",
  "zama-host",
 ]
 
@@ -5230,6 +5232,7 @@ dependencies = [
  "aws-credential-types",
  "aws-sdk-s3",
  "aws-smithy-mocks",
+ "base64 0.22.1",
  "bigdecimal",
  "bs58",
  "clap",
@@ -5241,6 +5244,7 @@ dependencies = [
  "host-listener",
  "lru 0.13.0",
  "prometheus",
+ "reqwest",
  "rustls",
  "semver 1.0.27",
  "serde",
@@ -13935,6 +13939,14 @@ dependencies = [
  "quote",
  "syn 2.0.117",
  "synstructure 0.13.2",
+]
+
+[[package]]
+name = "zama-fhe"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang",
+ "zama-host",
 ]
 
 [[package]]

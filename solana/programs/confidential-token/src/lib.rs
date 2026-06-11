@@ -34,15 +34,18 @@ pub use constants::*;
 pub use errors::*;
 /// Re-export events and instruction argument enums for generated clients and tests.
 pub use events::*;
+#[cfg(feature = "poc")]
+pub use instructions::TestReceiverReturnCallback;
 use instructions::*;
 /// Re-export instruction account contexts for compatibility with existing tests.
 pub use instructions::{
-    CloseOperator, ConfidentialBurn, ConfidentialCallTransferReceiver,
-    ConfidentialCallTransferReceiverFrom, ConfidentialFinalizeTransferCallback,
-    ConfidentialPrepareTransferCallback, ConfidentialTransfer, ConfidentialTransferFrom,
-    CreateRandomAmount, DiscloseAmountSecp, DiscloseBalanceSecp, InitializeMint,
-    InitializeTokenAccount, RedeemBurnedAmountSecp, RequestDiscloseAmount, RequestDiscloseBalance,
-    SetOperator, TestReceiverReturnCallback, WrapUsdc,
+    CloseConsumedBurnRedemptionRequest, CloseConsumedDisclosureRequest,
+    CloseExpiredBurnRedemptionRequest, CloseExpiredDisclosureRequest, ConfidentialBurn,
+    ConfidentialCallTransferReceiver, ConfidentialFinalizeTransferCallback,
+    ConfidentialPrepareTransferCallback, ConfidentialTransfer, CreateRandomAmount,
+    DiscloseAmountSecp, DiscloseBalanceSecp, InitializeMint, InitializeTokenAccount,
+    RedeemBurnedAmountSecp, RequestBurnRedemption, RequestDiscloseAmount, RequestDiscloseBalance,
+    WrapUsdc,
 };
 /// Re-export account layouts and helper functions used by clients and tests.
 pub use state::*;
@@ -120,43 +123,6 @@ pub mod confidential_token {
         )
     }
 
-    /// Calls a receiver hook after an operator-driven confidential transfer.
-    pub fn confidential_call_transfer_receiver_from<'info>(
-        ctx: Context<'info, ConfidentialCallTransferReceiverFrom<'info>>,
-        sent_handle: [u8; 32],
-        callback_success_handle: [u8; 32],
-        receiver_instruction_data: Vec<u8>,
-    ) -> Result<()> {
-        instructions::confidential_call_transfer_receiver_from(
-            ctx,
-            sent_handle,
-            callback_success_handle,
-            receiver_instruction_data,
-        )
-    }
-
-    /// Sets or revokes an operator for this confidential token account.
-    pub fn set_operator(
-        ctx: Context<SetOperator>,
-        operator: Pubkey,
-        expiration_slot: u64,
-    ) -> Result<()> {
-        instructions::set_operator(ctx, operator, expiration_slot)
-    }
-
-    /// Closes a revoked or expired operator row and refunds rent to the token owner.
-    pub fn close_operator(ctx: Context<CloseOperator>, operator: Pubkey) -> Result<()> {
-        instructions::close_operator(ctx, operator)
-    }
-
-    /// Transfers an encrypted amount from a holder through an active operator.
-    pub fn confidential_transfer_from(
-        ctx: Context<ConfidentialTransferFrom>,
-        amount_handle: [u8; 32],
-    ) -> Result<()> {
-        instructions::confidential_transfer_from(ctx, amount_handle)
-    }
-
     /// Prepares receiver callback settlement by computing the encrypted refund.
     pub fn confidential_prepare_transfer_callback(
         ctx: Context<ConfidentialPrepareTransferCallback>,
@@ -178,6 +144,7 @@ pub mod confidential_token {
     }
 
     /// Test-only receiver endpoint that returns the supplied callback-success witness.
+    #[cfg(feature = "poc")]
     pub fn test_receiver_return_callback(
         ctx: Context<TestReceiverReturnCallback>,
         mint: Pubkey,
@@ -201,16 +168,32 @@ pub mod confidential_token {
     }
 
     /// Requests public disclosure for the current confidential balance handle.
-    pub fn request_disclose_balance(ctx: Context<RequestDiscloseBalance>) -> Result<()> {
-        instructions::request_disclose_balance(ctx)
+    pub fn request_disclose_balance(
+        ctx: Context<RequestDiscloseBalance>,
+        request_nonce: [u8; 32],
+        expires_slot: u64,
+    ) -> Result<()> {
+        instructions::request_disclose_balance(ctx, request_nonce, expires_slot)
     }
 
     /// Requests public disclosure for any token-scoped encrypted amount handle.
     pub fn request_disclose_amount(
         ctx: Context<RequestDiscloseAmount>,
         amount_handle: [u8; 32],
+        request_nonce: [u8; 32],
+        expires_slot: u64,
     ) -> Result<()> {
-        instructions::request_disclose_amount(ctx, amount_handle)
+        instructions::request_disclose_amount(ctx, amount_handle, request_nonce, expires_slot)
+    }
+
+    /// Requests KMS certification for redeeming a burned encrypted amount.
+    pub fn request_burn_redemption(
+        ctx: Context<RequestBurnRedemption>,
+        burned_handle: [u8; 32],
+        request_nonce: [u8; 32],
+        expires_slot: u64,
+    ) -> Result<()> {
+        instructions::request_burn_redemption(ctx, burned_handle, request_nonce, expires_slot)
     }
 
     /// Gateway-compatible balance disclosure: verifies the KMS `PublicDecryptVerification`
@@ -258,6 +241,34 @@ pub mod confidential_token {
             signatures,
             extra_data,
         )
+    }
+
+    /// Closes a consumed disclosure request witness.
+    pub fn close_consumed_disclosure_request(
+        ctx: Context<CloseConsumedDisclosureRequest>,
+    ) -> Result<()> {
+        instructions::close_consumed_disclosure_request(ctx)
+    }
+
+    /// Closes a consumed burn-redemption request witness.
+    pub fn close_consumed_burn_redemption_request(
+        ctx: Context<CloseConsumedBurnRedemptionRequest>,
+    ) -> Result<()> {
+        instructions::close_consumed_burn_redemption_request(ctx)
+    }
+
+    /// Closes an expired, unconsumed disclosure request witness.
+    pub fn close_expired_disclosure_request(
+        ctx: Context<CloseExpiredDisclosureRequest>,
+    ) -> Result<()> {
+        instructions::close_expired_disclosure_request(ctx)
+    }
+
+    /// Closes an expired, unconsumed burn-redemption request witness.
+    pub fn close_expired_burn_redemption_request(
+        ctx: Context<CloseExpiredBurnRedemptionRequest>,
+    ) -> Result<()> {
+        instructions::close_expired_burn_redemption_request(ctx)
     }
 }
 

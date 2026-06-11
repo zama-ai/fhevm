@@ -31,6 +31,12 @@ name = "solana_host_listener"
 test = false
 bench = false
 
+[[bin]]
+path = "src/bin/solana_finalized_account_fetcher.rs"
+name = "solana_finalized_account_fetcher"
+test = false
+bench = false
+
 [dependencies]
 # workspace dependencies
 anyhow = { workspace = true }
@@ -40,11 +46,14 @@ async-trait = { workspace = true }
 aws-config = { workspace = true }
 aws-credential-types = { workspace = true }
 aws-sdk-s3 = { workspace = true }
+base64 = "0.22.1"
 bigdecimal = { workspace = true }
+bs58 = "0.5.1"
 clap = { workspace = true }
 futures-util = { workspace = true }
 lru = { workspace = true }
 prometheus = { workspace = true }
+reqwest = { workspace = true }
 rustls = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -60,7 +69,6 @@ tracing-subscriber = { workspace = true }
 union-find = { workspace = true}
 
 url = "2.5.7"
-bs58 = "0.5"
 solana-client = "3.0"
 solana-commitment-config = "3.1"
 solana-sdk = "3.0"

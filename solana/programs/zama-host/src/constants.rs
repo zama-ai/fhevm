@@ -1,13 +1,19 @@
 //! Shared constants, PDA seeds, role flags, and protocol domain separators.
 
 /// Version byte written to host protocol events.
-pub const EVENT_VERSION: u8 = 0;
+pub const EVENT_VERSION: u8 = 1;
 /// Number of subjects embedded directly in an ACL record.
 pub const MAX_ACL_SUBJECTS: usize = 8;
 /// Maximum number of ACL grants accepted by one `allow_acl_subjects` call.
 pub const MAX_ACL_SUBJECT_GRANTS_PER_CALL: usize = 32;
 /// PoC chain id used by tests and helpers that do not receive host config.
 pub const SOLANA_POC_CHAIN_ID: u64 = 12345;
+/// True when local PoC/test-only instruction paths are compiled into the host.
+#[cfg(feature = "poc")]
+pub const POC_FEATURE_ENABLED: bool = true;
+/// True when local PoC/test-only instruction paths are compiled into the host.
+#[cfg(not(feature = "poc"))]
+pub const POC_FEATURE_ENABLED: bool = false;
 
 /// Seed for the singleton host config PDA.
 pub const HOST_CONFIG_SEED: &[u8] = b"host-config";
@@ -65,5 +71,3 @@ pub(crate) const RANDOM_SEED_DOMAIN_SEPARATOR: &[u8] = b"FHE_seed";
 pub(crate) const COMPUTED_HANDLE_MARKER: u8 = 0xff;
 /// Current handle encoding version byte.
 pub const HANDLE_VERSION: u8 = 0;
-
-pub(crate) const INPUT_PROOF_DOMAIN_SEPARATOR: &[u8] = b"zama-solana-input-proof-v1";

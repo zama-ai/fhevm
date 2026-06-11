@@ -17,6 +17,9 @@ pub enum ConfidentialTokenError {
     /// Confidential mint profile fields are unusable.
     #[msg("Confidential mint config is invalid")]
     InvalidMintConfig,
+    /// Mint authority did not match signer.
+    #[msg("Confidential mint authority does not match signer")]
+    MintAuthorityMismatch,
     /// The instruction included undeclared trailing account metas.
     #[msg("instruction has unexpected remaining accounts")]
     UnexpectedRemainingAccounts,
@@ -47,12 +50,6 @@ pub enum ConfidentialTokenError {
     /// Current ACL record account did not match token account state.
     #[msg("current ACL record does not match token account state")]
     CurrentAclRecordMismatch,
-    /// Operator authorization row did not match the requested transfer.
-    #[msg("operator record does not match")]
-    OperatorRecordMismatch,
-    /// Operator authorization is missing or expired.
-    #[msg("operator authorization is expired")]
-    OperatorExpired,
     /// Transfer amount handle does not carry the expected confidential balance type.
     #[msg("transfer amount handle type is invalid")]
     AmountHandleTypeMismatch,
@@ -62,18 +59,21 @@ pub enum ConfidentialTokenError {
     /// Total-supply authority PDA did not match the mint.
     #[msg("total supply authority does not match mint")]
     TotalSupplyAuthorityMismatch,
-    /// Disclosure certificate was not signed by the mint KMS verifier authority.
-    #[msg("disclosure proof signature is missing or invalid")]
-    DisclosureProofSignatureMissing,
     /// The KMS EIP-712 public-decrypt certificate failed secp256k1 threshold verification.
     #[msg("KMS public-decrypt certificate is invalid")]
     InvalidKmsCertificate,
     /// The host gateway verifier config (KMS signer / decryption contract) is unset.
     #[msg("gateway verifier config is not set")]
     GatewayVerifierConfigUnset,
-    /// The provided KMS context is not the active context or has been destroyed.
-    #[msg("KMS context is not active")]
+    /// The provided KMS context is not the request-pinned context or has been destroyed.
+    #[msg("KMS context is not valid for this request")]
     InvalidKmsContext,
+    /// Account-backed request witness does not match the disclosure or redemption.
+    #[msg("request witness does not match")]
+    RequestWitnessMismatch,
+    /// Account-backed request witness is expired or already consumed.
+    #[msg("request witness is expired or already consumed")]
+    RequestWitnessUnavailable,
     /// Material commitment witness did not match the disclosed handle.
     #[msg("material commitment witness does not match")]
     MaterialCommitmentMismatch,
@@ -89,4 +89,28 @@ pub enum ConfidentialTokenError {
     /// Receiver hook payload or account list exceeds program limits.
     #[msg("receiver hook input exceeds program limits")]
     ReceiverHookInputTooLarge,
+    /// Internal FHE eval plan construction failed before the host CPI.
+    #[msg("FHE eval plan is invalid")]
+    InvalidFheEvalPlan,
+    /// The FHE eval candidate account list contains the same account twice.
+    #[msg("FHE eval account list contains a duplicate account")]
+    DuplicateFheEvalAccount,
+    /// The FHE eval candidate account list contains an account the plan does not require.
+    #[msg("FHE eval account list contains an unexpected account")]
+    UnexpectedFheEvalAccount,
+    /// The FHE eval plan requires a dynamic account that was not provided.
+    #[msg("FHE eval plan is missing a required dynamic account")]
+    MissingFheEvalAccount,
+    /// The FHE eval plan requires a writable dynamic account but the provided account is readonly.
+    #[msg("FHE eval dynamic account must be writable")]
+    FheEvalAccountNotWritable,
+    /// The FHE eval output authority list contains the same authority twice.
+    #[msg("FHE eval output authority list contains a duplicate authority")]
+    DuplicateFheOutputAuthority,
+    /// The FHE eval output authority list contains an authority the plan does not require.
+    #[msg("FHE eval output authority list contains an unexpected authority")]
+    UnexpectedFheOutputAuthority,
+    /// The FHE eval plan requires an output authority that was not provided.
+    #[msg("FHE eval plan is missing a required output authority")]
+    MissingFheOutputAuthority,
 }

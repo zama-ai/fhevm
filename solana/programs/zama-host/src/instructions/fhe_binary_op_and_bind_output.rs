@@ -107,6 +107,17 @@ pub fn fhe_binary_op_and_bind_output(
             .map(|account| account.to_account_info())
             .as_ref(),
     )?;
+    let lhs_public_decrypt_allowed = unchecked_acl_record_subject_has_role(
+        &ctx.accounts.lhs_acl_record.to_account_info(),
+        lhs,
+        subject,
+        ACL_ROLE_PUBLIC_DECRYPT,
+        ctx.accounts
+            .lhs_permission_record
+            .as_ref()
+            .map(|account| account.to_account_info())
+            .as_ref(),
+    )?;
     if scalar {
         require!(
             ctx.accounts.rhs_permission_record.is_none(),
@@ -126,6 +137,26 @@ pub fn fhe_binary_op_and_bind_output(
                 .as_ref(),
         )?;
     }
+    let rhs_public_decrypt_allowed = if scalar {
+        true
+    } else {
+        unchecked_acl_record_subject_has_role(
+            &ctx.accounts.rhs_acl_record.to_account_info(),
+            rhs,
+            subject,
+            ACL_ROLE_PUBLIC_DECRYPT,
+            ctx.accounts
+                .rhs_permission_record
+                .as_ref()
+                .map(|account| account.to_account_info())
+                .as_ref(),
+        )?
+    };
+    assert_derived_public_decrypt_roles_allowed(
+        &output_subjects,
+        lhs_public_decrypt_allowed && rhs_public_decrypt_allowed,
+        &ctx.accounts.app_account_authority.to_account_info(),
+    )?;
     let clock = Clock::get()?;
     let previous_bank_hash = previous_bank_hash_with_test_fallback(
         clock.slot,
@@ -147,7 +178,6 @@ pub fn fhe_binary_op_and_bind_output(
         result == expected_result,
         ZamaHostError::ComputedHandleMismatch
     );
-
     emit_cpi!(FheBinaryOpEvent {
         version: EVENT_VERSION,
         op,

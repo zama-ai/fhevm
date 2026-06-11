@@ -15,6 +15,7 @@ pub(crate) fn assert_no_remaining_accounts(remaining_accounts: &[AccountInfo]) -
 
 pub(crate) struct TransferAccounts<'a, 'info> {
     pub(crate) payer: &'a Signer<'info>,
+    pub(crate) transfer_authority: Pubkey,
     pub(crate) mint: &'a Account<'info, ConfidentialMint>,
     pub(crate) from_account: &'a mut Box<Account<'info, ConfidentialTokenAccount>>,
     pub(crate) to_account: &'a mut Box<Account<'info, ConfidentialTokenAccount>>,
@@ -22,8 +23,6 @@ pub(crate) struct TransferAccounts<'a, 'info> {
     pub(crate) from_current_compute_acl: &'a Account<'info, zama_host::AclRecord>,
     pub(crate) to_current_compute_acl: &'a Account<'info, zama_host::AclRecord>,
     pub(crate) amount_compute_acl: &'a Account<'info, zama_host::AclRecord>,
-    pub(crate) transfer_success_acl: AccountInfo<'info>,
-    pub(crate) debit_candidate_acl: AccountInfo<'info>,
     pub(crate) from_output_acl: AccountInfo<'info>,
     pub(crate) transferred_amount_acl: AccountInfo<'info>,
     pub(crate) to_output_acl: AccountInfo<'info>,
@@ -63,10 +62,6 @@ pub(crate) struct PrepareTransferCallbackAccounts<'a, 'info> {
     pub(crate) callback_success_acl: &'a Account<'info, zama_host::AclRecord>,
     pub(crate) hook_record: &'a Account<'info, TransferReceiverHookCall>,
     pub(crate) settlement_record: &'a mut Account<'info, TransferCallbackSettlement>,
-    pub(crate) callback_zero_acl: AccountInfo<'info>,
-    pub(crate) requested_refund_acl: AccountInfo<'info>,
-    pub(crate) refund_success_acl: AccountInfo<'info>,
-    pub(crate) refund_debit_candidate_acl: AccountInfo<'info>,
     pub(crate) to_output_acl: AccountInfo<'info>,
     pub(crate) refund_amount_acl: AccountInfo<'info>,
     pub(crate) zama_event_authority: &'a UncheckedAccount<'info>,
@@ -138,7 +133,7 @@ pub(crate) fn execute_transfer<'info>(
         accounts.amount_compute_acl,
         amount_handle,
         mint_key,
-        accounts.payer.key(),
+        accounts.transfer_authority,
         compute_signer,
     )?;
     require_keys_eq!(from.mint, mint_key, ConfidentialTokenError::MintMismatch);
@@ -167,107 +162,15 @@ pub(crate) fn execute_transfer<'info>(
         return Ok(None);
     }
 
-    let transfer_success_handle = ge_balance(
-        accounts.payer,
-        accounts.zama_event_authority,
-        accounts.zama_program,
-        accounts.host_config,
-        accounts.compute_signer,
-        from,
-        accounts.from_current_compute_acl.to_account_info(),
-        from.balance_handle,
-        accounts.amount_compute_acl.to_account_info(),
+    let (new_from_handle, transferred_handle, new_to_handle) = execute_transfer_eval(
+        &accounts,
+        compute_signer_bump,
         amount_handle,
-        accounts.transfer_success_acl.clone(),
         mint_key,
-        compute_signer_bump,
-        accounts.system_program,
         from_nonce_sequence,
-        transfer_success_label(),
-    )?;
-    let debit_candidate_handle = compute_balance_scratch(
-        fhe::sub,
-        BalanceScratch {
-            payer: accounts.payer,
-            zama_event_authority: accounts.zama_event_authority,
-            zama_program: accounts.zama_program,
-            host_config: accounts.host_config,
-            compute_signer: accounts.compute_signer,
-            token_account: from,
-            lhs_acl_record: accounts.from_current_compute_acl.to_account_info(),
-            lhs: from.balance_handle,
-            rhs_acl_record: accounts.amount_compute_acl.to_account_info(),
-            rhs: amount_handle,
-            output_acl_record: accounts.debit_candidate_acl.clone(),
-            mint: mint_key,
-            compute_signer_bump,
-            system_program: accounts.system_program,
-            output_nonce_sequence: from_nonce_sequence,
-            output_encrypted_value_label: debit_candidate_label(),
-            output_subjects: compute_acl_subject(accounts.compute_signer.key()),
-        },
-    )?;
-    let new_from_handle = select_balance(
-        accounts.payer,
-        accounts.zama_event_authority,
-        accounts.zama_program,
-        accounts.host_config,
-        accounts.compute_signer,
-        from,
-        accounts.transfer_success_acl.clone(),
-        transfer_success_handle,
-        accounts.debit_candidate_acl.clone(),
-        debit_candidate_handle,
-        accounts.from_current_compute_acl.to_account_info(),
-        from.balance_handle,
-        accounts.from_output_acl.clone(),
-        mint_key,
-        compute_signer_bump,
-        accounts.system_program,
-        from_nonce_sequence,
-    )?;
-    let transferred_handle = compute_balance_scratch(
-        fhe::sub,
-        BalanceScratch {
-            payer: accounts.payer,
-            zama_event_authority: accounts.zama_event_authority,
-            zama_program: accounts.zama_program,
-            host_config: accounts.host_config,
-            compute_signer: accounts.compute_signer,
-            token_account: from,
-            lhs_acl_record: accounts.from_current_compute_acl.to_account_info(),
-            lhs: from.balance_handle,
-            rhs_acl_record: accounts.from_output_acl.clone(),
-            rhs: new_from_handle,
-            output_acl_record: accounts.transferred_amount_acl.clone(),
-            mint: mint_key,
-            compute_signer_bump,
-            system_program: accounts.system_program,
-            output_nonce_sequence: from_nonce_sequence,
-            output_encrypted_value_label: transferred_amount_label(),
-            output_subjects: transferred_amount_acl_subjects(
-                from.owner,
-                to.owner,
-                accounts.compute_signer.key(),
-            ),
-        },
-    )?;
-    let new_to_handle = add_balance(
-        accounts.payer,
-        accounts.zama_event_authority,
-        accounts.zama_program,
-        accounts.host_config,
-        accounts.compute_signer,
-        to,
-        accounts.to_current_compute_acl.to_account_info(),
-        to.balance_handle,
-        accounts.transferred_amount_acl.clone(),
-        transferred_handle,
-        accounts.to_output_acl.clone(),
-        mint_key,
-        compute_signer_bump,
-        accounts.system_program,
         to_nonce_sequence,
+        from,
+        to,
     )?;
 
     let from = accounts.from_account.as_mut();
@@ -305,25 +208,226 @@ pub(crate) fn execute_transfer<'info>(
     }))
 }
 
+fn execute_transfer_eval<'info>(
+    accounts: &TransferAccounts<'_, 'info>,
+    compute_signer_bump: u8,
+    amount_handle: [u8; 32],
+    mint_key: Pubkey,
+    from_nonce_sequence: u64,
+    to_nonce_sequence: u64,
+    from: &Account<'info, ConfidentialTokenAccount>,
+    to: &Account<'info, ConfidentialTokenAccount>,
+) -> Result<([u8; 32], [u8; 32], [u8; 32])> {
+    let context_id = transfer_eval_context(
+        b"combined",
+        mint_key,
+        from.key(),
+        to.key(),
+        amount_handle,
+        from_nonce_sequence,
+        to_nonce_sequence,
+    )?;
+    let from_balance = zama_fhe::Uint64Handle::durable(
+        from.balance_handle,
+        durable_slot(
+            mint_key,
+            from.key(),
+            balance_label(),
+            accounts.from_current_compute_acl.nonce_sequence,
+        ),
+    )
+    .map_err(invalid_eval_plan)?;
+    let amount = zama_fhe::Uint64Handle::durable(
+        amount_handle,
+        durable_slot(
+            mint_key,
+            accounts.amount_compute_acl.app_account,
+            transfer_amount_label(),
+            accounts.amount_compute_acl.nonce_sequence,
+        ),
+    )
+    .map_err(invalid_eval_plan)?;
+    let to_balance = zama_fhe::Uint64Handle::durable(
+        to.balance_handle,
+        durable_slot(
+            mint_key,
+            to.key(),
+            balance_label(),
+            accounts.to_current_compute_acl.nonce_sequence,
+        ),
+    )
+    .map_err(invalid_eval_plan)?;
+    let compute_signer = accounts.compute_signer.key();
+    let balance_access = |owner| {
+        zama_fhe::AccessPolicy::for_owner_and_compute(owner, compute_signer)
+            .map_err(invalid_eval_plan)
+    };
+    let transferred_access = {
+        let mut access =
+            zama_fhe::AccessPolicy::for_owner(from.owner).map_err(invalid_eval_plan)?;
+        if to.owner != from.owner {
+            access = access.with_owner(to.owner).map_err(invalid_eval_plan)?;
+        }
+        access
+            .with_compute(compute_signer)
+            .map_err(invalid_eval_plan)?
+    };
+    let from_output = fhe::DurableOutput::new(
+        accounts.from_output_acl.clone(),
+        durable_slot(mint_key, from.key(), balance_label(), from_nonce_sequence),
+        balance_access(from.owner)?,
+    )?;
+    let transferred_output = fhe::DurableOutput::new(
+        accounts.transferred_amount_acl.clone(),
+        durable_slot(
+            mint_key,
+            from.key(),
+            transferred_amount_label(),
+            from_nonce_sequence,
+        ),
+        transferred_access,
+    )?;
+    let to_output = fhe::DurableOutput::new(
+        accounts.to_output_acl.clone(),
+        durable_slot(mint_key, to.key(), balance_label(), to_nonce_sequence),
+        balance_access(to.owner)?,
+    )?;
+    let mut builder =
+        zama_fhe::EvalBuilder::new(context_id, zama_fhe::EvalAppAuthority::new(from.key()));
+    let success = builder
+        .ge(from_balance, amount, zama_fhe::Output::transient())
+        .map_err(invalid_eval_plan)?;
+    let debit_candidate = builder
+        .sub(from_balance, amount, zama_fhe::Output::transient())
+        .map_err(invalid_eval_plan)?;
+    let new_from = builder
+        .if_then_else(success, debit_candidate, from_balance, from_output.output())
+        .map_err(invalid_eval_plan)?;
+    let transferred = builder
+        .sub(from_balance, new_from, transferred_output.output())
+        .map_err(invalid_eval_plan)?;
+    builder
+        .add(to_balance, transferred, to_output.output())
+        .map_err(invalid_eval_plan)?;
+    let plan = builder.finish().map_err(invalid_eval_plan)?;
+    let compute_authority =
+        fhe::ComputeAuthority::for_mint(accounts.compute_signer, mint_key, compute_signer_bump)?;
+    let eval_accounts = fhe::EvalAccountSet::for_plan(
+        &plan,
+        [
+            accounts.from_current_compute_acl.to_account_info(),
+            accounts.amount_compute_acl.to_account_info(),
+            accounts.to_current_compute_acl.to_account_info(),
+            from_output.account_info(),
+            transferred_output.account_info(),
+            to_output.account_info(),
+        ],
+        [
+            fhe::OutputAuthority::token_account(from)?,
+            fhe::OutputAuthority::token_account(to)?,
+        ],
+    )?;
+
+    fhe::eval(fhe::Eval {
+        context: fhe::EvalContext {
+            payer: accounts.payer,
+            event_authority: accounts.zama_event_authority,
+            zama_program: accounts.zama_program,
+            host_config: accounts.host_config,
+            compute_authority,
+            system_program: accounts.system_program,
+            instructions_sysvar: None,
+        },
+        accounts: &eval_accounts,
+        plan,
+    })?;
+
+    Ok((
+        from_output.handle()?,
+        transferred_output.handle()?,
+        to_output.handle()?,
+    ))
+}
+
+pub(crate) fn invalid_eval_plan(error: zama_fhe::EvalBuildError) -> anchor_lang::error::Error {
+    msg!("invalid FHE eval plan: {:?}", error);
+    error!(ConfidentialTokenError::InvalidFheEvalPlan)
+}
+
+pub(crate) fn durable_slot(
+    acl_domain_key: Pubkey,
+    app_account: Pubkey,
+    encrypted_value_label: [u8; 32],
+    nonce_sequence: u64,
+) -> zama_fhe::DurableSlot {
+    zama_fhe::DurableSlot::new(
+        acl_domain_key,
+        app_account,
+        zama_fhe::DurableLabel::new(encrypted_value_label),
+        nonce_sequence,
+    )
+}
+
+pub(crate) fn durable_slot_from_acl(acl: &zama_host::AclRecord) -> zama_fhe::DurableSlot {
+    durable_slot(
+        acl.acl_domain_key,
+        acl.app_account,
+        acl.encrypted_value_label,
+        acl.nonce_sequence,
+    )
+}
+
+pub(crate) fn uint64_from_acl(
+    handle: [u8; 32],
+    acl: &zama_host::AclRecord,
+) -> Result<zama_fhe::Uint64Handle> {
+    zama_fhe::Uint64Handle::durable(handle, durable_slot_from_acl(acl)).map_err(invalid_eval_plan)
+}
+
+pub(crate) fn bool_from_acl(
+    handle: [u8; 32],
+    acl: &zama_host::AclRecord,
+) -> Result<zama_fhe::BoolHandle> {
+    zama_fhe::BoolHandle::durable(handle, durable_slot_from_acl(acl)).map_err(invalid_eval_plan)
+}
+
+pub(crate) fn access_policy_from_subjects(
+    subjects: Vec<zama_fhe::AccessSubject>,
+) -> Result<zama_fhe::AccessPolicy> {
+    zama_fhe::AccessPolicy::from_subjects(subjects).map_err(invalid_eval_plan)
+}
+
+pub(crate) fn transfer_eval_context(
+    tag: &[u8],
+    mint: Pubkey,
+    from_token_account: Pubkey,
+    to_token_account: Pubkey,
+    amount_handle: [u8; 32],
+    from_nonce_sequence: u64,
+    to_nonce_sequence: u64,
+) -> Result<zama_fhe::EvalContextId> {
+    let from_sequence_bytes = from_nonce_sequence.to_be_bytes();
+    let to_sequence_bytes = to_nonce_sequence.to_be_bytes();
+    let context_id = solana_sha256_hasher::hashv(&[
+        b"confidential-token-transfer-eval-v1",
+        tag,
+        mint.as_ref(),
+        from_token_account.as_ref(),
+        to_token_account.as_ref(),
+        &amount_handle,
+        &from_sequence_bytes,
+        &to_sequence_bytes,
+    ])
+    .to_bytes();
+    zama_fhe::EvalContextId::new(context_id).map_err(invalid_eval_plan)
+}
+
 pub(crate) fn assert_self_transfer_output_accounts(
     accounts: &TransferAccounts<'_, '_>,
     mint: Pubkey,
     token_account: Pubkey,
     nonce_sequence: u64,
 ) -> Result<()> {
-    assert_unused_acl_target(
-        &accounts.transfer_success_acl,
-        acl_record_address_for(
-            mint,
-            token_account,
-            transfer_success_label(),
-            nonce_sequence,
-        ),
-    )?;
-    assert_unused_acl_target(
-        &accounts.debit_candidate_acl,
-        acl_record_address_for(mint, token_account, debit_candidate_label(), nonce_sequence),
-    )?;
     let balance_output =
         acl_record_address_for(mint, token_account, balance_label(), nonce_sequence);
     assert_unused_acl_target(&accounts.from_output_acl, balance_output)?;
@@ -447,130 +551,104 @@ pub(crate) fn prepare_transfer_callback_settlement<'info>(
         accounts.callback_success_acl.key(),
     )?;
 
-    let zero_handle = fhe::trivial_encrypt_u64(fhe::TrivialEncryptU64 {
-        payer: accounts.payer,
-        event_authority: accounts.zama_event_authority,
-        zama_program: accounts.zama_program,
-        host_config: accounts.host_config,
-        compute_signer: accounts.compute_signer,
-        app_account_authority: to,
-        output_acl_record: accounts.callback_zero_acl.clone(),
-        acl_domain_key: mint_key,
-        compute_signer_bump,
-        system_program: accounts.system_program,
-        output_nonce_key: nonce_key(mint_key, to_token_account, callback_zero_label()),
-        output_nonce_sequence: to_nonce_sequence,
-        output_encrypted_value_label: callback_zero_label(),
-        plaintext: 0,
-        fhe_type: BALANCE_FHE_TYPE,
-        output_subjects: compute_acl_subject(compute_signer),
-        output_public_decrypt: false,
-    })?;
-    let requested_refund_handle = select_amount_scratch(TernaryScratch {
-        payer: accounts.payer,
-        zama_event_authority: accounts.zama_event_authority,
-        zama_program: accounts.zama_program,
-        host_config: accounts.host_config,
-        compute_signer: accounts.compute_signer,
-        token_account: to,
-        control_acl_record: accounts.callback_success_acl.to_account_info(),
-        control: callback_success_handle,
-        if_true_acl_record: accounts.callback_zero_acl.clone(),
-        if_true: zero_handle,
-        if_false_acl_record: accounts.sent_amount_acl.to_account_info(),
-        if_false: sent_handle,
-        output_acl_record: accounts.requested_refund_acl.clone(),
-        mint: mint_key,
-        compute_signer_bump,
-        system_program: accounts.system_program,
-        output_nonce_sequence: to_nonce_sequence,
-        output_encrypted_value_label: callback_refund_request_label(),
-        output_subjects: amount_subjects.clone(),
-    })?;
-    let refund_success_handle = ge_balance(
-        accounts.payer,
-        accounts.zama_event_authority,
-        accounts.zama_program,
-        accounts.host_config,
-        accounts.compute_signer,
-        to,
-        accounts.to_current_compute_acl.to_account_info(),
-        old_to_handle,
-        accounts.requested_refund_acl.clone(),
-        requested_refund_handle,
-        accounts.refund_success_acl.clone(),
+    let to_balance = uint64_from_acl(old_to_handle, accounts.to_current_compute_acl)?;
+    let sent_amount = uint64_from_acl(sent_handle, accounts.sent_amount_acl)?;
+    let callback_success = bool_from_acl(callback_success_handle, accounts.callback_success_acl)?;
+    let context_id = transfer_eval_context(
+        b"callback-prepare",
         mint_key,
-        compute_signer_bump,
-        accounts.system_program,
+        from_token_account,
+        to_token_account,
+        sent_handle,
         to_nonce_sequence,
-        callback_refund_success_label(),
+        to_nonce_sequence,
     )?;
-    let refund_debit_candidate_handle = compute_balance_scratch(
-        fhe::sub,
-        BalanceScratch {
-            payer: accounts.payer,
-            zama_event_authority: accounts.zama_event_authority,
-            zama_program: accounts.zama_program,
-            host_config: accounts.host_config,
-            compute_signer: accounts.compute_signer,
-            token_account: to,
-            lhs_acl_record: accounts.to_current_compute_acl.to_account_info(),
-            lhs: old_to_handle,
-            rhs_acl_record: accounts.requested_refund_acl.clone(),
-            rhs: requested_refund_handle,
-            output_acl_record: accounts.refund_debit_candidate_acl.clone(),
-            mint: mint_key,
-            compute_signer_bump,
-            system_program: accounts.system_program,
-            output_nonce_sequence: to_nonce_sequence,
-            output_encrypted_value_label: callback_refund_debit_candidate_label(),
-            output_subjects: compute_acl_subject(compute_signer),
-        },
-    )?;
-    let new_to_handle = select_balance(
-        accounts.payer,
-        accounts.zama_event_authority,
-        accounts.zama_program,
-        accounts.host_config,
-        accounts.compute_signer,
-        to,
-        accounts.refund_success_acl.clone(),
-        refund_success_handle,
-        accounts.refund_debit_candidate_acl.clone(),
-        refund_debit_candidate_handle,
-        accounts.to_current_compute_acl.to_account_info(),
-        old_to_handle,
+    let to_output = fhe::DurableOutput::new(
         accounts.to_output_acl.clone(),
-        mint_key,
-        compute_signer_bump,
-        accounts.system_program,
-        to_nonce_sequence,
+        durable_slot(
+            mint_key,
+            to_token_account,
+            balance_label(),
+            to_nonce_sequence,
+        ),
+        zama_fhe::AccessPolicy::for_owner_and_compute(to_owner, compute_signer)
+            .map_err(invalid_eval_plan)?,
     )?;
-    let refund_handle = compute_balance_scratch(
-        fhe::sub,
-        BalanceScratch {
-            payer: accounts.payer,
-            zama_event_authority: accounts.zama_event_authority,
-            zama_program: accounts.zama_program,
-            host_config: accounts.host_config,
-            compute_signer: accounts.compute_signer,
-            token_account: to,
-            lhs_acl_record: accounts.to_current_compute_acl.to_account_info(),
-            lhs: old_to_handle,
-            rhs_acl_record: accounts.to_output_acl.clone(),
-            rhs: new_to_handle,
-            output_acl_record: accounts.refund_amount_acl.clone(),
-            mint: mint_key,
-            compute_signer_bump,
-            system_program: accounts.system_program,
-            output_nonce_sequence: to_nonce_sequence,
-            output_encrypted_value_label: callback_refund_amount_label(),
-            output_subjects: amount_subjects.clone(),
-        },
+    let refund_amount_output = fhe::DurableOutput::new(
+        accounts.refund_amount_acl.clone(),
+        durable_slot(
+            mint_key,
+            to_token_account,
+            callback_refund_amount_label(),
+            to_nonce_sequence,
+        ),
+        access_policy_from_subjects(amount_subjects.clone())?,
+    )?;
+    let mut builder = zama_fhe::EvalBuilder::new(
+        context_id,
+        zama_fhe::EvalAppAuthority::new(to_token_account),
+    );
+    let zero = builder
+        .trivial_encrypt_u64(0, zama_fhe::Output::transient())
+        .map_err(invalid_eval_plan)?;
+    let requested_refund = builder
+        .if_then_else(
+            callback_success,
+            zero,
+            sent_amount,
+            zama_fhe::Output::transient(),
+        )
+        .map_err(invalid_eval_plan)?;
+    let refund_success = builder
+        .ge(to_balance, requested_refund, zama_fhe::Output::transient())
+        .map_err(invalid_eval_plan)?;
+    let refund_debit_candidate = builder
+        .sub(to_balance, requested_refund, zama_fhe::Output::transient())
+        .map_err(invalid_eval_plan)?;
+    let new_to = builder
+        .if_then_else(
+            refund_success,
+            refund_debit_candidate,
+            to_balance,
+            to_output.output(),
+        )
+        .map_err(invalid_eval_plan)?;
+    builder
+        .sub(to_balance, new_to, refund_amount_output.output())
+        .map_err(invalid_eval_plan)?;
+    let plan = builder.finish().map_err(invalid_eval_plan)?;
+    let compute_authority =
+        fhe::ComputeAuthority::for_mint(accounts.compute_signer, mint_key, compute_signer_bump)?;
+    let eval_accounts = fhe::EvalAccountSet::for_plan(
+        &plan,
+        [
+            accounts.to_current_compute_acl.to_account_info(),
+            accounts.sent_amount_acl.to_account_info(),
+            accounts.callback_success_acl.to_account_info(),
+            to_output.account_info(),
+            refund_amount_output.account_info(),
+        ],
+        [fhe::OutputAuthority::token_account(accounts.to_account)?],
     )?;
 
+    fhe::eval(fhe::Eval {
+        context: fhe::EvalContext {
+            payer: accounts.payer,
+            event_authority: accounts.zama_event_authority,
+            zama_program: accounts.zama_program,
+            host_config: accounts.host_config,
+            compute_authority,
+            system_program: accounts.system_program,
+            instructions_sysvar: None,
+        },
+        accounts: &eval_accounts,
+        plan,
+    })?;
+
+    let new_to_handle = to_output.handle()?;
+    let refund_handle = refund_amount_output.handle()?;
+
     let new_to_acl_record = accounts.to_output_acl.key();
-    let requested_refund_acl_record = accounts.requested_refund_acl.key();
     let refund_acl_record = accounts.refund_amount_acl.key();
 
     let to = accounts.to_account.as_mut();
@@ -590,8 +668,6 @@ pub(crate) fn prepare_transfer_callback_settlement<'info>(
     settlement.sent_acl_record = accounts.sent_amount_acl.key();
     settlement.callback_success_handle = callback_success_handle;
     settlement.callback_success_acl_record = accounts.callback_success_acl.key();
-    settlement.requested_refund_handle = requested_refund_handle;
-    settlement.requested_refund_acl_record = requested_refund_acl_record;
     settlement.refund_handle = refund_handle;
     settlement.refund_acl_record = refund_acl_record;
     settlement.to_balance_handle = new_to_handle;
@@ -612,68 +688,6 @@ pub(crate) fn prepare_transfer_callback_settlement<'info>(
         new_to_handle,
         new_to_acl_record,
     })
-}
-
-pub(crate) fn assert_active_operator_record(
-    operator_record: &Account<ConfidentialOperator>,
-    token_account: &Account<ConfidentialTokenAccount>,
-    operator: Pubkey,
-) -> Result<()> {
-    assert_confidential_token_account_shape(
-        token_account,
-        token_account.mint,
-        token_account.owner,
-    )?;
-    assert_operator_record_shape(
-        operator_record,
-        token_account.key(),
-        token_account.owner,
-        operator,
-    )?;
-    let slot = Clock::get()?.slot;
-    require!(
-        operator_record.expiration_slot != 0 && operator_record.expiration_slot >= slot,
-        ConfidentialTokenError::OperatorExpired
-    );
-    Ok(())
-}
-
-pub(crate) fn assert_operator_record_shape(
-    operator_record: &Account<ConfidentialOperator>,
-    token_account: Pubkey,
-    owner: Pubkey,
-    operator: Pubkey,
-) -> Result<()> {
-    let (expected_key, expected_bump) = operator_record_address(token_account, operator);
-    require_keys_eq!(
-        operator_record.key(),
-        expected_key,
-        ConfidentialTokenError::OperatorRecordMismatch
-    );
-    require!(
-        operator_record.to_account_info().data_len() == 8 + ConfidentialOperator::SPACE,
-        ConfidentialTokenError::OperatorRecordMismatch
-    );
-    require!(
-        operator_record.bump == expected_bump,
-        ConfidentialTokenError::OperatorRecordMismatch
-    );
-    require_keys_eq!(
-        operator_record.token_account,
-        token_account,
-        ConfidentialTokenError::OperatorRecordMismatch
-    );
-    require_keys_eq!(
-        operator_record.owner,
-        owner,
-        ConfidentialTokenError::OperatorRecordMismatch
-    );
-    require_keys_eq!(
-        operator_record.operator,
-        operator,
-        ConfidentialTokenError::OperatorRecordMismatch
-    );
-    Ok(())
 }
 
 pub(crate) fn call_transfer_receiver_hook<'info>(
@@ -853,43 +867,12 @@ pub(crate) fn assert_previous_transfer_for_receiver_hook(
                 &transfer_ix.accounts,
                 PreviousTransferAccountIndexes {
                     authority: ConfidentialTransfer::OWNER_ACCOUNT_INDEX,
-                    operator_record: None,
                     mint: ConfidentialTransfer::MINT_ACCOUNT_INDEX,
                     from_token_account: ConfidentialTransfer::FROM_ACCOUNT_INDEX,
                     to_token_account: ConfidentialTransfer::TO_ACCOUNT_INDEX,
                     sent_acl_record: ConfidentialTransfer::TRANSFERRED_AMOUNT_ACL_INDEX,
                 },
-                PreviousTransferAuthority {
-                    authority: owner,
-                    operator_record: None,
-                },
-                mint,
-                from_token_account,
-                to_token_account,
-                sent_acl_record,
-            )
-        }
-        (
-            discriminator,
-            PreviousTransferIntent::Operator {
-                operator,
-                operator_record,
-            },
-        ) if discriminator == crate::instruction::ConfidentialTransferFrom::DISCRIMINATOR => {
-            assert_previous_transfer_accounts(
-                &transfer_ix.accounts,
-                PreviousTransferAccountIndexes {
-                    authority: ConfidentialTransferFrom::OPERATOR_ACCOUNT_INDEX,
-                    operator_record: Some(ConfidentialTransferFrom::OPERATOR_RECORD_ACCOUNT_INDEX),
-                    mint: ConfidentialTransferFrom::MINT_ACCOUNT_INDEX,
-                    from_token_account: ConfidentialTransferFrom::FROM_ACCOUNT_INDEX,
-                    to_token_account: ConfidentialTransferFrom::TO_ACCOUNT_INDEX,
-                    sent_acl_record: ConfidentialTransferFrom::TRANSFERRED_AMOUNT_ACL_INDEX,
-                },
-                PreviousTransferAuthority {
-                    authority: operator,
-                    operator_record: Some(operator_record),
-                },
+                owner,
                 mint,
                 from_token_account,
                 to_token_account,
@@ -901,23 +884,11 @@ pub(crate) fn assert_previous_transfer_for_receiver_hook(
 }
 
 pub(crate) enum PreviousTransferIntent {
-    Direct {
-        owner: Pubkey,
-    },
-    Operator {
-        operator: Pubkey,
-        operator_record: Pubkey,
-    },
-}
-
-struct PreviousTransferAuthority {
-    authority: Pubkey,
-    operator_record: Option<Pubkey>,
+    Direct { owner: Pubkey },
 }
 
 struct PreviousTransferAccountIndexes {
     authority: usize,
-    operator_record: Option<usize>,
     mint: usize,
     from_token_account: usize,
     to_token_account: usize,
@@ -927,7 +898,7 @@ struct PreviousTransferAccountIndexes {
 fn assert_previous_transfer_accounts(
     accounts: &[AccountMeta],
     indexes: PreviousTransferAccountIndexes,
-    authority: PreviousTransferAuthority,
+    authority: Pubkey,
     mint: Pubkey,
     from_token_account: Pubkey,
     to_token_account: Pubkey,
@@ -950,29 +921,13 @@ fn assert_previous_transfer_accounts(
         .ok_or(ConfidentialTokenError::ReceiverHookMismatch)?;
     require_keys_eq!(
         authority_meta.pubkey,
-        authority.authority,
+        authority,
         ConfidentialTokenError::ReceiverHookMismatch
     );
     require!(
-        authority_meta.is_signer && authority_meta.is_writable,
+        authority_meta.is_signer,
         ConfidentialTokenError::ReceiverHookMismatch
     );
-    if let (Some(index), Some(expected_operator_record)) =
-        (indexes.operator_record, authority.operator_record)
-    {
-        let operator_record_meta = accounts
-            .get(index)
-            .ok_or(ConfidentialTokenError::ReceiverHookMismatch)?;
-        require_keys_eq!(
-            operator_record_meta.pubkey,
-            expected_operator_record,
-            ConfidentialTokenError::ReceiverHookMismatch
-        );
-        require!(
-            !operator_record_meta.is_signer && !operator_record_meta.is_writable,
-            ConfidentialTokenError::ReceiverHookMismatch
-        );
-    }
     require_keys_eq!(
         mint_meta.pubkey,
         mint,
@@ -1140,45 +1095,80 @@ pub(crate) fn finalize_transfer_callback_settlement<'info>(
         ConfidentialTokenError::AmountAclMismatch
     );
 
-    let new_from_handle = add_balance(
-        accounts.payer,
-        accounts.zama_event_authority,
-        accounts.zama_program,
-        accounts.host_config,
-        accounts.compute_signer,
-        from,
-        accounts.from_current_compute_acl.to_account_info(),
-        old_from_handle,
-        accounts.refund_amount_acl.to_account_info(),
-        refund_handle,
-        accounts.from_output_acl.clone(),
+    let from_balance = uint64_from_acl(old_from_handle, accounts.from_current_compute_acl)?;
+    let sent_amount = uint64_from_acl(sent_handle, accounts.sent_amount_acl)?;
+    let refund_amount = uint64_from_acl(refund_handle, accounts.refund_amount_acl)?;
+    let context_id = transfer_eval_context(
+        b"callback-finalize",
         mint_key,
-        compute_signer_bump,
-        accounts.system_program,
+        from_token_account,
+        to_token_account,
+        sent_handle,
+        from_nonce_sequence,
         from_nonce_sequence,
     )?;
-    let final_transferred_handle = compute_balance_scratch(
-        fhe::sub,
-        BalanceScratch {
+    let from_output = fhe::DurableOutput::new(
+        accounts.from_output_acl.clone(),
+        durable_slot(
+            mint_key,
+            from_token_account,
+            balance_label(),
+            from_nonce_sequence,
+        ),
+        zama_fhe::AccessPolicy::for_owner_and_compute(from_owner, compute_signer)
+            .map_err(invalid_eval_plan)?,
+    )?;
+    let transferred_output = fhe::DurableOutput::new(
+        accounts.transferred_amount_acl.clone(),
+        durable_slot(
+            mint_key,
+            from_token_account,
+            callback_final_transferred_label(),
+            from_nonce_sequence,
+        ),
+        access_policy_from_subjects(amount_subjects)?,
+    )?;
+    let mut builder = zama_fhe::EvalBuilder::new(
+        context_id,
+        zama_fhe::EvalAppAuthority::new(from_token_account),
+    );
+    builder
+        .add(from_balance, refund_amount, from_output.output())
+        .map_err(invalid_eval_plan)?;
+    builder
+        .sub(sent_amount, refund_amount, transferred_output.output())
+        .map_err(invalid_eval_plan)?;
+    let plan = builder.finish().map_err(invalid_eval_plan)?;
+    let compute_authority =
+        fhe::ComputeAuthority::for_mint(accounts.compute_signer, mint_key, compute_signer_bump)?;
+    let eval_accounts = fhe::EvalAccountSet::for_plan(
+        &plan,
+        [
+            accounts.from_current_compute_acl.to_account_info(),
+            accounts.sent_amount_acl.to_account_info(),
+            accounts.refund_amount_acl.to_account_info(),
+            from_output.account_info(),
+            transferred_output.account_info(),
+        ],
+        [fhe::OutputAuthority::token_account(accounts.from_account)?],
+    )?;
+
+    fhe::eval(fhe::Eval {
+        context: fhe::EvalContext {
             payer: accounts.payer,
-            zama_event_authority: accounts.zama_event_authority,
+            event_authority: accounts.zama_event_authority,
             zama_program: accounts.zama_program,
             host_config: accounts.host_config,
-            compute_signer: accounts.compute_signer,
-            token_account: from,
-            lhs_acl_record: accounts.sent_amount_acl.to_account_info(),
-            lhs: sent_handle,
-            rhs_acl_record: accounts.refund_amount_acl.to_account_info(),
-            rhs: refund_handle,
-            output_acl_record: accounts.transferred_amount_acl.clone(),
-            mint: mint_key,
-            compute_signer_bump,
+            compute_authority,
             system_program: accounts.system_program,
-            output_nonce_sequence: from_nonce_sequence,
-            output_encrypted_value_label: callback_final_transferred_label(),
-            output_subjects: amount_subjects,
+            instructions_sysvar: None,
         },
-    )?;
+        accounts: &eval_accounts,
+        plan,
+    })?;
+
+    let new_from_handle = from_output.handle()?;
+    let final_transferred_handle = transferred_output.handle()?;
 
     let new_from_acl_record = accounts.from_output_acl.key();
     let transferred_acl_record = accounts.transferred_amount_acl.key();
@@ -1583,6 +1573,7 @@ pub(crate) fn is_token_amount_label(encrypted_value_label: [u8; 32]) -> bool {
         || encrypted_value_label == burned_amount_label()
         || encrypted_value_label == transferred_amount_label()
         || encrypted_value_label == callback_refund_amount_label()
+        || encrypted_value_label == callback_final_transferred_label()
 }
 
 pub(crate) fn assert_burned_amount_acl(
@@ -1709,6 +1700,24 @@ pub(crate) fn kms_decrypted_result_bytes(cleartext_amount: u64) -> [u8; 32] {
     decrypted
 }
 
+pub(crate) fn assert_host_config_allows_token_response(
+    host_config: &Account<zama_host::HostConfig>,
+) -> Result<()> {
+    let (expected_key, expected_bump) = zama_host::host_config_address();
+    require_keys_eq!(
+        host_config.key(),
+        expected_key,
+        ConfidentialTokenError::RequestWitnessMismatch
+    );
+    require!(
+        host_config.to_account_info().data_len() == 8 + zama_host::HostConfig::SPACE
+            && host_config.bump == expected_bump
+            && !host_config.paused,
+        ConfidentialTokenError::RequestWitnessUnavailable
+    );
+    Ok(())
+}
+
 pub(crate) fn assert_canonical_vault_token_account(
     vault_usdc: Pubkey,
     vault_authority: Pubkey,
@@ -1781,6 +1790,212 @@ pub(crate) fn assert_confidential_token_account_shape(
         token_account.owner,
         owner,
         ConfidentialTokenError::OwnerMismatch
+    );
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn assert_disclosure_request_witness(
+    request: &Account<DisclosureRequest>,
+    request_key: Pubkey,
+    mode: u8,
+    mint: Pubkey,
+    token_account: Pubkey,
+    app_account: Pubkey,
+    handle: [u8; 32],
+    acl_record: Pubkey,
+    material_commitment: &Account<zama_host::HandleMaterialCommitment>,
+    host_config: Pubkey,
+) -> Result<()> {
+    let (expected_key, expected_bump) =
+        disclosure_request_address(mint, request.requester, handle, request.request_nonce);
+    require_keys_eq!(
+        request_key,
+        expected_key,
+        ConfidentialTokenError::RequestWitnessMismatch
+    );
+    require!(
+        request.to_account_info().data_len() == 8 + DisclosureRequest::SPACE
+            && request.bump == expected_bump,
+        ConfidentialTokenError::RequestWitnessMismatch
+    );
+    require!(
+        request.status == REQUEST_STATUS_PENDING && request.expires_slot >= Clock::get()?.slot,
+        ConfidentialTokenError::RequestWitnessUnavailable
+    );
+    require!(
+        request.mode == mode
+            && request.mint == mint
+            && request.token_account == token_account
+            && request.app_account == app_account
+            && request.handle == handle
+            && request.acl_record == acl_record
+            && request.material_commitment == material_commitment.key()
+            && request.material_commitment_hash == material_commitment.material_commitment_hash
+            && request.material_key_id == material_commitment.key_id
+            && request.host_config == host_config
+            && request.kms_context_id != 0
+            && request.chain_id != 0,
+        ConfidentialTokenError::RequestWitnessMismatch
+    );
+    let recomputed_hash = disclosure_request_hash(
+        crate::ID,
+        request_key,
+        request.mint,
+        request.requester,
+        request.token_account,
+        request.app_account,
+        request.handle,
+        request.acl_record,
+        request.material_commitment,
+        request.material_commitment_hash,
+        request.material_key_id,
+        request.host_config,
+        request.kms_context_id,
+        request.request_nonce,
+        request.chain_id,
+        request.expires_slot,
+        request.mode,
+    );
+    require!(
+        request.request_hash == recomputed_hash,
+        ConfidentialTokenError::RequestWitnessMismatch
+    );
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn assert_burn_redemption_request_witness(
+    request: &Account<BurnRedemptionRequest>,
+    request_key: Pubkey,
+    mint: Pubkey,
+    owner: Pubkey,
+    token_account: Pubkey,
+    underlying_mint: Pubkey,
+    destination_owner: Pubkey,
+    destination_account: Pubkey,
+    burned_handle: [u8; 32],
+    burned_acl_record: Pubkey,
+    material_commitment: &Account<zama_host::HandleMaterialCommitment>,
+    host_config: Pubkey,
+) -> Result<()> {
+    let (expected_key, expected_bump) =
+        burn_redemption_request_address(mint, owner, burned_handle, request.request_nonce);
+    require_keys_eq!(
+        request_key,
+        expected_key,
+        ConfidentialTokenError::RequestWitnessMismatch
+    );
+    require!(
+        request.to_account_info().data_len() == 8 + BurnRedemptionRequest::SPACE
+            && request.bump == expected_bump,
+        ConfidentialTokenError::RequestWitnessMismatch
+    );
+    require!(
+        request.status == REQUEST_STATUS_PENDING && request.expires_slot >= Clock::get()?.slot,
+        ConfidentialTokenError::RequestWitnessUnavailable
+    );
+    require!(
+        request.mint == mint
+            && request.owner == owner
+            && request.token_account == token_account
+            && request.underlying_mint == underlying_mint
+            && request.destination_owner == destination_owner
+            && request.destination_account == destination_account
+            && request.burned_handle == burned_handle
+            && request.burned_acl_record == burned_acl_record
+            && request.material_commitment == material_commitment.key()
+            && request.material_commitment_hash == material_commitment.material_commitment_hash
+            && request.material_key_id == material_commitment.key_id
+            && request.host_config == host_config
+            && request.kms_context_id != 0
+            && request.chain_id != 0,
+        ConfidentialTokenError::RequestWitnessMismatch
+    );
+    let recomputed_hash = burn_redemption_request_hash(
+        crate::ID,
+        request_key,
+        request.mint,
+        request.owner,
+        request.token_account,
+        request.underlying_mint,
+        request.destination_owner,
+        request.destination_account,
+        request.burned_handle,
+        request.burned_acl_record,
+        request.material_commitment,
+        request.material_commitment_hash,
+        request.material_key_id,
+        request.host_config,
+        request.kms_context_id,
+        request.request_nonce,
+        request.chain_id,
+        request.expires_slot,
+    );
+    require!(
+        request.request_hash == recomputed_hash,
+        ConfidentialTokenError::RequestWitnessMismatch
+    );
+    Ok(())
+}
+
+/// Verifies a KMS `PublicDecryptVerification` secp256k1 EIP-712 certificate against the
+/// KMS context a request witness was pinned to at request time.
+///
+/// The context is resolved two ways and required to agree: the passed `kms_context` account
+/// must be the canonical PDA for `request_kms_context_id` (the id stored in the witness), and
+/// the id the certificate itself commits to via `extra_data` (EVM `_extractContextId` parity)
+/// must equal that same id. Binding to the witness id — not the *current* context — is what
+/// closes the rotation-reuse window: a cert minted under context N cannot satisfy a request
+/// pinned to N, then be replayed against a rotated context, nor can a witness be steered to a
+/// different context than the one it was created under.
+pub(crate) fn assert_kms_public_decrypt_cert_for_request(
+    host_config: &Account<zama_host::HostConfig>,
+    kms_context: &Account<zama_host::KmsContext>,
+    request_kms_context_id: u64,
+    ct_handle: [u8; 32],
+    cleartext_amount: u64,
+    signatures: &[[u8; 65]],
+    extra_data: &[u8],
+) -> Result<()> {
+    require!(
+        host_config.decryption_contract != [0u8; 20] && request_kms_context_id != 0,
+        ConfidentialTokenError::GatewayVerifierConfigUnset
+    );
+    require!(
+        !kms_context.destroyed,
+        ConfidentialTokenError::InvalidKmsContext
+    );
+    // The passed context account must be the canonical PDA for the witness-pinned id.
+    require!(
+        kms_context.context_id == request_kms_context_id
+            && kms_context.key() == zama_host::kms_context_address(request_kms_context_id).0,
+        ConfidentialTokenError::InvalidKmsContext
+    );
+    // The id the certificate commits to (via signed extra_data) must equal the witness id, so a
+    // cert minted under a different context cannot be presented against this request.
+    let cert_context_id =
+        zama_host::eip712::extract_kms_context_id(extra_data, request_kms_context_id)
+            .ok_or(ConfidentialTokenError::InvalidKmsContext)?;
+    require!(
+        cert_context_id == request_kms_context_id,
+        ConfidentialTokenError::InvalidKmsContext
+    );
+    let verifier = zama_host::eip712::Eip712VerifierConfig {
+        gateway_chain_id: host_config.gateway_chain_id,
+        verifying_contract: host_config.decryption_contract,
+        signers: &kms_context.signers,
+        threshold: kms_context.thresholds.public_decryption,
+    };
+    require!(
+        zama_host::eip712::verify_kms_public_decrypt(
+            &verifier,
+            &[ct_handle],
+            &kms_decrypted_result_bytes(cleartext_amount),
+            extra_data,
+            signatures,
+        ),
+        ConfidentialTokenError::InvalidKmsCertificate
     );
     Ok(())
 }
@@ -1910,466 +2125,32 @@ pub(crate) fn assert_amount_acl_record_shape(
     Ok(())
 }
 
-pub(crate) fn create_operator_record_if_needed<'info>(
-    payer: &AccountInfo<'info>,
-    operator_record: &AccountInfo<'info>,
-    system_program: &AccountInfo<'info>,
-    token_account: Pubkey,
+pub(crate) fn balance_acl_subjects(
     owner: Pubkey,
-    operator: Pubkey,
-    bump: u8,
-) -> Result<()> {
-    if operator_record.owner == &crate::ID {
-        assert_existing_operator_record(operator_record, token_account, owner, operator, bump)?;
-        return Ok(());
-    }
-    require_keys_eq!(
-        *operator_record.owner,
-        System::id(),
-        ConfidentialTokenError::OperatorRecordMismatch
-    );
-    require!(
-        operator_record.data_is_empty(),
-        ConfidentialTokenError::OperatorRecordMismatch
-    );
-    require!(
-        !operator_record.executable,
-        ConfidentialTokenError::OperatorRecordMismatch
-    );
-    let rent = Rent::get()?.minimum_balance(8 + ConfidentialOperator::SPACE);
-    invoke_signed(
-        &system_instruction::create_account(
-            payer.key,
-            operator_record.key,
-            rent,
-            (8 + ConfidentialOperator::SPACE) as u64,
-            &crate::ID,
-        ),
-        &[
-            payer.clone(),
-            operator_record.clone(),
-            system_program.clone(),
-        ],
-        &[&[
-            b"operator",
-            token_account.as_ref(),
-            operator.as_ref(),
-            &[bump],
-        ]],
-    )?;
-    require_keys_eq!(
-        *operator_record.owner,
-        crate::ID,
-        ConfidentialTokenError::OperatorRecordMismatch
-    );
-    require!(
-        !operator_record.executable,
-        ConfidentialTokenError::OperatorRecordMismatch
-    );
-    require!(
-        operator_record.data_len() == 8 + ConfidentialOperator::SPACE,
-        ConfidentialTokenError::OperatorRecordMismatch
-    );
-    require!(
-        operator_record.lamports() >= rent,
-        ConfidentialTokenError::OperatorRecordMismatch
-    );
-    Ok(())
-}
-
-pub(crate) fn assert_existing_operator_record(
-    operator_record: &AccountInfo,
-    token_account: Pubkey,
-    owner: Pubkey,
-    operator: Pubkey,
-    bump: u8,
-) -> Result<()> {
-    require!(
-        operator_record.data_len() == 8 + ConfidentialOperator::SPACE,
-        ConfidentialTokenError::OperatorRecordMismatch
-    );
-    let data = operator_record.try_borrow_data()?;
-    let mut cursor = &data[..];
-    let existing = ConfidentialOperator::try_deserialize(&mut cursor)
-        .map_err(|_| error!(ConfidentialTokenError::OperatorRecordMismatch))?;
-    require_keys_eq!(
-        existing.token_account,
-        token_account,
-        ConfidentialTokenError::OperatorRecordMismatch
-    );
-    require_keys_eq!(
-        existing.owner,
-        owner,
-        ConfidentialTokenError::OperatorRecordMismatch
-    );
-    require_keys_eq!(
-        existing.operator,
-        operator,
-        ConfidentialTokenError::OperatorRecordMismatch
-    );
-    require!(
-        existing.bump == bump,
-        ConfidentialTokenError::OperatorRecordMismatch
-    );
-    Ok(())
-}
-
-pub(crate) fn write_operator_record(
-    info: &AccountInfo,
-    record: &ConfidentialOperator,
-) -> Result<()> {
-    let mut data = info.try_borrow_mut_data()?;
-    let mut cursor = &mut data[..];
-    record.try_serialize(&mut cursor)?;
-    Ok(())
-}
-
-pub(crate) fn add_balance<'info>(
-    payer: &Signer<'info>,
-    zama_event_authority: &UncheckedAccount<'info>,
-    zama_program: &Program<'info, ZamaHost>,
-    host_config: &Account<'info, zama_host::HostConfig>,
-    compute_signer: &UncheckedAccount<'info>,
-    token_account: &Account<'info, ConfidentialTokenAccount>,
-    lhs_acl_record: AccountInfo<'info>,
-    lhs: [u8; 32],
-    rhs_acl_record: AccountInfo<'info>,
-    rhs: [u8; 32],
-    output_acl_record: AccountInfo<'info>,
-    mint: Pubkey,
-    compute_signer_bump: u8,
-    system_program: &Program<'info, System>,
-    output_nonce_sequence: u64,
-) -> Result<[u8; 32]> {
-    compute_balance_with(
-        fhe::add,
-        BalanceCompute {
-            payer,
-            zama_event_authority,
-            zama_program,
-            host_config,
-            compute_signer,
-            token_account,
-            lhs_acl_record,
-            lhs,
-            rhs_acl_record,
-            rhs,
-            output_acl_record,
-            mint,
-            compute_signer_bump,
-            system_program,
-            output_nonce_sequence,
-        },
-    )
-}
-
-pub(crate) fn ge_balance<'info>(
-    payer: &Signer<'info>,
-    zama_event_authority: &UncheckedAccount<'info>,
-    zama_program: &Program<'info, ZamaHost>,
-    host_config: &Account<'info, zama_host::HostConfig>,
-    compute_signer: &UncheckedAccount<'info>,
-    token_account: &Account<'info, ConfidentialTokenAccount>,
-    lhs_acl_record: AccountInfo<'info>,
-    lhs: [u8; 32],
-    rhs_acl_record: AccountInfo<'info>,
-    rhs: [u8; 32],
-    output_acl_record: AccountInfo<'info>,
-    mint: Pubkey,
-    compute_signer_bump: u8,
-    system_program: &Program<'info, System>,
-    output_nonce_sequence: u64,
-    output_encrypted_value_label: [u8; 32],
-) -> Result<[u8; 32]> {
-    fhe::ge(fhe::BinaryOp {
-        payer,
-        event_authority: zama_event_authority,
-        zama_program,
-        host_config,
-        compute_signer,
-        app_account_authority: token_account,
-        lhs_acl_record,
-        lhs,
-        rhs_acl_record,
-        rhs,
-        scalar: false,
-        output_acl_record,
-        output_fhe_type: 0,
-        acl_domain_key: mint,
-        compute_signer_bump,
-        system_program,
-        output_nonce_key: nonce_key(mint, token_account.key(), output_encrypted_value_label),
-        output_nonce_sequence,
-        output_encrypted_value_label,
-        output_subjects: compute_acl_subject(compute_signer.key()),
-        output_public_decrypt: false,
-    })
-}
-
-pub(crate) fn select_balance<'info>(
-    payer: &Signer<'info>,
-    zama_event_authority: &UncheckedAccount<'info>,
-    zama_program: &Program<'info, ZamaHost>,
-    host_config: &Account<'info, zama_host::HostConfig>,
-    compute_signer: &UncheckedAccount<'info>,
-    token_account: &Account<'info, ConfidentialTokenAccount>,
-    control_acl_record: AccountInfo<'info>,
-    control: [u8; 32],
-    if_true_acl_record: AccountInfo<'info>,
-    if_true: [u8; 32],
-    if_false_acl_record: AccountInfo<'info>,
-    if_false: [u8; 32],
-    output_acl_record: AccountInfo<'info>,
-    mint: Pubkey,
-    compute_signer_bump: u8,
-    system_program: &Program<'info, System>,
-    output_nonce_sequence: u64,
-) -> Result<[u8; 32]> {
-    fhe::if_then_else(fhe::TernaryOp {
-        payer,
-        event_authority: zama_event_authority,
-        zama_program,
-        host_config,
-        compute_signer,
-        app_account_authority: token_account,
-        control_acl_record,
-        control,
-        if_true_acl_record,
-        if_true,
-        if_false_acl_record,
-        if_false,
-        output_acl_record,
-        output_fhe_type: BALANCE_FHE_TYPE,
-        acl_domain_key: mint,
-        compute_signer_bump,
-        system_program,
-        output_nonce_key: balance_nonce_key(mint, token_account.key()),
-        output_nonce_sequence,
-        output_encrypted_value_label: balance_label(),
-        output_subjects: balance_acl_subjects(token_account.owner, compute_signer.key()),
-        output_public_decrypt: false,
-    })
-}
-
-pub(crate) struct BalanceCompute<'a, 'info> {
-    pub(crate) payer: &'a Signer<'info>,
-    pub(crate) zama_event_authority: &'a UncheckedAccount<'info>,
-    pub(crate) zama_program: &'a Program<'info, ZamaHost>,
-    pub(crate) host_config: &'a Account<'info, zama_host::HostConfig>,
-    pub(crate) compute_signer: &'a UncheckedAccount<'info>,
-    pub(crate) token_account: &'a Account<'info, ConfidentialTokenAccount>,
-    pub(crate) lhs_acl_record: AccountInfo<'info>,
-    pub(crate) lhs: [u8; 32],
-    pub(crate) rhs_acl_record: AccountInfo<'info>,
-    pub(crate) rhs: [u8; 32],
-    pub(crate) output_acl_record: AccountInfo<'info>,
-    pub(crate) mint: Pubkey,
-    pub(crate) compute_signer_bump: u8,
-    pub(crate) system_program: &'a Program<'info, System>,
-    pub(crate) output_nonce_sequence: u64,
-}
-
-pub(crate) struct BalanceScratch<'a, 'info> {
-    pub(crate) payer: &'a Signer<'info>,
-    pub(crate) zama_event_authority: &'a UncheckedAccount<'info>,
-    pub(crate) zama_program: &'a Program<'info, ZamaHost>,
-    pub(crate) host_config: &'a Account<'info, zama_host::HostConfig>,
-    pub(crate) compute_signer: &'a UncheckedAccount<'info>,
-    pub(crate) token_account: &'a Account<'info, ConfidentialTokenAccount>,
-    pub(crate) lhs_acl_record: AccountInfo<'info>,
-    pub(crate) lhs: [u8; 32],
-    pub(crate) rhs_acl_record: AccountInfo<'info>,
-    pub(crate) rhs: [u8; 32],
-    pub(crate) output_acl_record: AccountInfo<'info>,
-    pub(crate) mint: Pubkey,
-    pub(crate) compute_signer_bump: u8,
-    pub(crate) system_program: &'a Program<'info, System>,
-    pub(crate) output_nonce_sequence: u64,
-    pub(crate) output_encrypted_value_label: [u8; 32],
-    pub(crate) output_subjects: Vec<AclSubjectEntry>,
-}
-
-pub(crate) struct TernaryScratch<'a, 'info> {
-    pub(crate) payer: &'a Signer<'info>,
-    pub(crate) zama_event_authority: &'a UncheckedAccount<'info>,
-    pub(crate) zama_program: &'a Program<'info, ZamaHost>,
-    pub(crate) host_config: &'a Account<'info, zama_host::HostConfig>,
-    pub(crate) compute_signer: &'a UncheckedAccount<'info>,
-    pub(crate) token_account: &'a Account<'info, ConfidentialTokenAccount>,
-    pub(crate) control_acl_record: AccountInfo<'info>,
-    pub(crate) control: [u8; 32],
-    pub(crate) if_true_acl_record: AccountInfo<'info>,
-    pub(crate) if_true: [u8; 32],
-    pub(crate) if_false_acl_record: AccountInfo<'info>,
-    pub(crate) if_false: [u8; 32],
-    pub(crate) output_acl_record: AccountInfo<'info>,
-    pub(crate) mint: Pubkey,
-    pub(crate) compute_signer_bump: u8,
-    pub(crate) system_program: &'a Program<'info, System>,
-    pub(crate) output_nonce_sequence: u64,
-    pub(crate) output_encrypted_value_label: [u8; 32],
-    pub(crate) output_subjects: Vec<AclSubjectEntry>,
-}
-
-pub(crate) fn compute_balance_with<'info>(
-    op: for<'a> fn(fhe::BinaryOp<'a, 'info>) -> Result<[u8; 32]>,
-    request: BalanceCompute<'_, 'info>,
-) -> Result<[u8; 32]> {
-    let token_account_key = request.token_account.key();
-    op(fhe::BinaryOp {
-        payer: request.payer,
-        event_authority: request.zama_event_authority,
-        zama_program: request.zama_program,
-        host_config: request.host_config,
-        compute_signer: request.compute_signer,
-        app_account_authority: request.token_account,
-        lhs_acl_record: request.lhs_acl_record,
-        lhs: request.lhs,
-        rhs_acl_record: request.rhs_acl_record,
-        rhs: request.rhs,
-        scalar: false,
-        output_acl_record: request.output_acl_record,
-        output_fhe_type: BALANCE_FHE_TYPE,
-        acl_domain_key: request.mint,
-        compute_signer_bump: request.compute_signer_bump,
-        system_program: request.system_program,
-        output_nonce_key: balance_nonce_key(request.mint, token_account_key),
-        output_nonce_sequence: request.output_nonce_sequence,
-        output_encrypted_value_label: balance_label(),
-        output_subjects: balance_acl_subjects(
-            request.token_account.owner,
-            request.compute_signer.key(),
-        ),
-        output_public_decrypt: false,
-    })
-}
-
-pub(crate) fn compute_balance_scratch<'info>(
-    op: for<'a> fn(fhe::BinaryOp<'a, 'info>) -> Result<[u8; 32]>,
-    request: BalanceScratch<'_, 'info>,
-) -> Result<[u8; 32]> {
-    op(fhe::BinaryOp {
-        payer: request.payer,
-        event_authority: request.zama_event_authority,
-        zama_program: request.zama_program,
-        host_config: request.host_config,
-        compute_signer: request.compute_signer,
-        app_account_authority: request.token_account,
-        lhs_acl_record: request.lhs_acl_record,
-        lhs: request.lhs,
-        rhs_acl_record: request.rhs_acl_record,
-        rhs: request.rhs,
-        scalar: false,
-        output_acl_record: request.output_acl_record,
-        output_fhe_type: BALANCE_FHE_TYPE,
-        acl_domain_key: request.mint,
-        compute_signer_bump: request.compute_signer_bump,
-        system_program: request.system_program,
-        output_nonce_key: nonce_key(
-            request.mint,
-            request.token_account.key(),
-            request.output_encrypted_value_label,
-        ),
-        output_nonce_sequence: request.output_nonce_sequence,
-        output_encrypted_value_label: request.output_encrypted_value_label,
-        output_subjects: request.output_subjects,
-        output_public_decrypt: false,
-    })
-}
-
-pub(crate) fn select_amount_scratch<'info>(request: TernaryScratch<'_, 'info>) -> Result<[u8; 32]> {
-    fhe::if_then_else(fhe::TernaryOp {
-        payer: request.payer,
-        event_authority: request.zama_event_authority,
-        zama_program: request.zama_program,
-        host_config: request.host_config,
-        compute_signer: request.compute_signer,
-        app_account_authority: request.token_account,
-        control_acl_record: request.control_acl_record,
-        control: request.control,
-        if_true_acl_record: request.if_true_acl_record,
-        if_true: request.if_true,
-        if_false_acl_record: request.if_false_acl_record,
-        if_false: request.if_false,
-        output_acl_record: request.output_acl_record,
-        output_fhe_type: BALANCE_FHE_TYPE,
-        acl_domain_key: request.mint,
-        compute_signer_bump: request.compute_signer_bump,
-        system_program: request.system_program,
-        output_nonce_key: nonce_key(
-            request.mint,
-            request.token_account.key(),
-            request.output_encrypted_value_label,
-        ),
-        output_nonce_sequence: request.output_nonce_sequence,
-        output_encrypted_value_label: request.output_encrypted_value_label,
-        output_subjects: request.output_subjects,
-        output_public_decrypt: false,
-    })
-}
-
-pub(crate) fn trivial_encrypt_balance_acl<'info>(
-    payer: &Signer<'info>,
-    mint: &Account<'info, ConfidentialMint>,
-    compute_signer: &UncheckedAccount<'info>,
-    token_account: &Account<'info, ConfidentialTokenAccount>,
-    acl_record: AccountInfo<'info>,
-    zama_event_authority: &UncheckedAccount<'info>,
-    zama_program: &Program<'info, ZamaHost>,
-    host_config: &Account<'info, zama_host::HostConfig>,
-    system_program: &Program<'info, System>,
-    compute_signer_bump: u8,
-    nonce_sequence: u64,
-    plaintext: u64,
-) -> Result<[u8; 32]> {
-    fhe::trivial_encrypt_u64(fhe::TrivialEncryptU64 {
-        payer,
-        event_authority: zama_event_authority,
-        zama_program,
-        host_config,
-        compute_signer,
-        app_account_authority: token_account,
-        output_acl_record: acl_record,
-        acl_domain_key: mint.key(),
-        compute_signer_bump,
-        system_program,
-        output_nonce_key: balance_nonce_key(mint.key(), token_account.key()),
-        output_nonce_sequence: nonce_sequence,
-        output_encrypted_value_label: balance_label(),
-        plaintext,
-        fhe_type: BALANCE_FHE_TYPE,
-        output_subjects: balance_acl_subjects(token_account.owner, compute_signer.key()),
-        output_public_decrypt: false,
-    })
-}
-
-pub(crate) fn balance_acl_subjects(owner: Pubkey, compute_signer: Pubkey) -> Vec<AclSubjectEntry> {
+    compute_signer: Pubkey,
+) -> Vec<zama_fhe::AccessSubject> {
     vec![
-        AclSubjectEntry::user(owner),
-        AclSubjectEntry::compute(compute_signer),
+        zama_fhe::AccessSubject::owner(owner),
+        zama_fhe::AccessSubject::compute(compute_signer),
     ]
-}
-
-pub(crate) fn compute_acl_subject(compute_signer: Pubkey) -> Vec<AclSubjectEntry> {
-    vec![AclSubjectEntry::compute(compute_signer)]
 }
 
 pub(crate) fn transferred_amount_acl_subjects(
     from_owner: Pubkey,
     to_owner: Pubkey,
     compute_signer: Pubkey,
-) -> Vec<AclSubjectEntry> {
-    let mut subjects = vec![AclSubjectEntry::user(from_owner)];
+) -> Vec<zama_fhe::AccessSubject> {
+    let mut subjects = vec![zama_fhe::AccessSubject::owner(from_owner)];
     if to_owner != from_owner {
-        subjects.push(AclSubjectEntry::user(to_owner));
+        subjects.push(zama_fhe::AccessSubject::owner(to_owner));
     }
-    subjects.push(AclSubjectEntry::compute(compute_signer));
+    subjects.push(zama_fhe::AccessSubject::compute(compute_signer));
     subjects
 }
 
 pub(crate) fn burned_amount_acl_subjects(
     owner: Pubkey,
     compute_signer: Pubkey,
-) -> Vec<AclSubjectEntry> {
+) -> Vec<zama_fhe::AccessSubject> {
     balance_acl_subjects(owner, compute_signer)
 }

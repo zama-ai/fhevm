@@ -116,6 +116,17 @@ pub fn fhe_ternary_op_and_bind_output(
             .map(|account| account.to_account_info())
             .as_ref(),
     )?;
+    let control_public_decrypt_allowed = unchecked_acl_record_subject_has_role(
+        &ctx.accounts.control_acl_record.to_account_info(),
+        control,
+        subject,
+        ACL_ROLE_PUBLIC_DECRYPT,
+        ctx.accounts
+            .control_permission_record
+            .as_ref()
+            .map(|account| account.to_account_info())
+            .as_ref(),
+    )?;
     assert_canonical_acl_record(
         &ctx.accounts.if_true_acl_record.to_account_info(),
         &ctx.accounts.if_true_acl_record,
@@ -130,6 +141,17 @@ pub fn fhe_ternary_op_and_bind_output(
         if_true,
         subject,
         ACL_ROLE_USE,
+        ctx.accounts
+            .if_true_permission_record
+            .as_ref()
+            .map(|account| account.to_account_info())
+            .as_ref(),
+    )?;
+    let if_true_public_decrypt_allowed = unchecked_acl_record_subject_has_role(
+        &ctx.accounts.if_true_acl_record.to_account_info(),
+        if_true,
+        subject,
+        ACL_ROLE_PUBLIC_DECRYPT,
         ctx.accounts
             .if_true_permission_record
             .as_ref()
@@ -156,6 +178,24 @@ pub fn fhe_ternary_op_and_bind_output(
             .map(|account| account.to_account_info())
             .as_ref(),
     )?;
+    let if_false_public_decrypt_allowed = unchecked_acl_record_subject_has_role(
+        &ctx.accounts.if_false_acl_record.to_account_info(),
+        if_false,
+        subject,
+        ACL_ROLE_PUBLIC_DECRYPT,
+        ctx.accounts
+            .if_false_permission_record
+            .as_ref()
+            .map(|account| account.to_account_info())
+            .as_ref(),
+    )?;
+    assert_derived_public_decrypt_roles_allowed(
+        &output_subjects,
+        control_public_decrypt_allowed
+            && if_true_public_decrypt_allowed
+            && if_false_public_decrypt_allowed,
+        &ctx.accounts.app_account_authority.to_account_info(),
+    )?;
 
     let clock = Clock::get()?;
     let previous_bank_hash = previous_bank_hash_with_test_fallback(
@@ -178,7 +218,6 @@ pub fn fhe_ternary_op_and_bind_output(
         result == expected_result,
         ZamaHostError::ComputedHandleMismatch
     );
-
     emit_cpi!(FheTernaryOpEvent {
         version: EVENT_VERSION,
         op,

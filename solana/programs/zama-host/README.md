@@ -50,24 +50,58 @@ both records and require the sealed ACL fields to agree with the material commit
 
 ## Instruction-Local Transients
 
-`fhe_eval` composes multiple FHE binary operations in one host instruction. Durable operands must
-still be authorized by canonical ACL records, but outputs produced earlier in the same eval can be
-referenced as transient operands by later operations. Transient outputs do not create `AclRecord`,
-`AclPermission`, or `AclAllowedEvent` state. Only outputs marked durable are bound into an ACL record
-with the existing nonce-key model.
+`fhe_eval` composes mixed FHE steps in one host instruction. Binary scratch results can feed ternary
+`if_then_else`, while trivial-encrypt, rand, and verified-input births can participate in the same
+frame. Outputs produced earlier in the eval can be referenced as transient operands by later
+operations.
+Durable operands must still be authorized by canonical ACL records. Transient outputs do not create
+`AclRecord`, `AclPermission`, or `AclAllowedEvent` state. Only outputs marked durable are bound into an
+ACL record with the existing nonce-key model.
+
+This is the supported replacement for the older `execute_frame` prototype, not a port of that ABI.
+Keeping durable output authority on a signer witness (`app_account_authority` or an explicit
+per-output authority account in `remaining_accounts`) preserves the role-aware ACL,
+overflow-permission, material-commitment, and public-decrypt rules enforced by the current host without
+reviving unsigned `authorized_app_accounts`.
+
+For small frames, worker-replay events are emitted through Anchor event CPI. Larger frames emit the
+same replay payloads through Anchor `Program data` logs to avoid self-CPI heap pressure. Durable ACL
+metadata events (`AclRecordBoundEvent` and `AclSubjectAllowedEvent`) are always emitted as logs; the
+listener accepts one replay transport per transaction and rejects mixed host CPI/log replay events.
+
+Admission invariants for `fhe_eval`:
+
+- `context_id` must be nonzero and the frame must contain 1 to 16 steps.
+- Every dynamic account passed through `remaining_accounts` must be unique and referenced by an
+  operand or output, and every referenced account index must be present.
+- The optional instructions sysvar account must be present only for steps that need instruction
+  witness checks, and when present its key must be the canonical instructions sysvar id.
+- Transient operands may only reference outputs produced by earlier steps in the same frame.
+- Only the RHS of a binary operation may be scalar; encrypted operands must match the operator's FHE
+  type rules.
+- Verified input steps must bind a durable output immediately and require the instructions sysvar for
+  the Ed25519 verifier witness.
+- Durable outputs must be born with `public_decrypt = false`; public decrypt is granted later through
+  the dedicated role-aware instruction path. `ACL_ROLE_PUBLIC_DECRYPT` in output subjects authorizes
+  that later explicit path; it does not set the durable record's `public_decrypt` flag at birth.
+- When a derived durable output grants `ACL_ROLE_PUBLIC_DECRYPT` without any input carrying that role,
+  the output authority must be an initialized non-system app account. This blocks direct/system-owned
+  callers from laundering compute/use permission into future disclosure authority while preserving
+  app-owned token output policies.
 
 ## External Inputs
 
 `verify_input_and_bind` is the production-shaped encrypted-input birth path. It accepts a
 `SolanaInputProof`, requires the immediately preceding transaction instruction to be Solana's native
-Ed25519 verifier, and checks that `HostConfig::input_verifier_authority` signed the canonical
-`input_proof_message` bytes for the proof and `SolanaInputBindIntent`. The selected proof handle
-must match the requested input handle, and every proof handle must carry this host chain id, a
-supported FHE type, its proof index in byte 21, and the current handle version before the instruction
-writes the canonical ACL record named by the signed bind intent.
+the canonical verifier-set-bound `input_proof_message` bytes for the proof and
+`SolanaInputBindIntent`. The selected proof handle must match the requested input handle, and every
+proof handle must carry this host chain id, a supported FHE type, its proof index in byte 21, and the
+current handle version before the instruction writes the canonical ACL record named by the signed
+bind intent.
 
-`mock_input_verified_and_bind` remains test-only glue for cases that do not need verifier
-transaction witnesses.
+`mock_input_verified_and_bind` remains local-PoC test-only glue for cases that do not need verifier
+transaction witnesses. It is still constrained to the active verifier set by requiring a signer from
+that set.
 
 ## Roles
 
@@ -92,7 +126,7 @@ remain full ACL subjects. Persistent grants require `ACL_ROLE_GRANT`. Public dec
 feature gates and the configured authority signer:
 
 ```text
-mock_input_verified_and_bind -> mock_input_enabled + input_verifier_authority signer
+mock_input_verified_and_bind -> mock_input_enabled + local PoC chain id + active verifier-set signer
 test_emit_*                  -> test_shims_enabled + test_authority
 ```
 

@@ -13,8 +13,6 @@ pub struct ConfidentialMint {
     pub compute_signer: Pubkey,
     /// Underlying SPL mint wrapped by this confidential mint.
     pub underlying_mint: Pubkey,
-    /// Ed25519 authority accepted for KMS disclosure response certificates.
-    pub kms_verifier_authority: Pubkey,
     /// Decimal precision inherited from the underlying mint.
     pub decimals: u8,
     /// Current encrypted total-supply handle.
@@ -27,5 +25,5 @@ pub struct ConfidentialMint {
 
 impl ConfidentialMint {
     /// Serialized size of the account body, excluding Anchor discriminator.
-    pub const SPACE: usize = 32 + 32 + 32 + 32 + 32 + 1 + 32 + 32 + 8;
+    pub const SPACE: usize = 32 + 32 + 32 + 32 + 1 + 32 + 32 + 8;
 }

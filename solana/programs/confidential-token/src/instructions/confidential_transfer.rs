@@ -7,8 +7,10 @@ use super::*;
 #[event_cpi]
 pub struct ConfidentialTransfer<'info> {
     /// Sender and transfer authority.
-    #[account(mut)]
     pub owner: Signer<'info>,
+    /// Pays rent for output ACL records.
+    #[account(mut)]
+    pub payer: Signer<'info>,
     /// Confidential mint.
     pub mint: Box<Account<'info, ConfidentialMint>>,
     /// Sender token account.
@@ -27,12 +29,6 @@ pub struct ConfidentialTransfer<'info> {
     pub to_current_compute_acl: Box<Account<'info, zama_host::AclRecord>>,
     /// Encrypted amount ACL record.
     pub amount_compute_acl: Box<Account<'info, zama_host::AclRecord>>,
-    /// CHECK: initialized and validated by the Zama host program CPI.
-    #[account(mut)]
-    pub transfer_success_acl: UncheckedAccount<'info>,
-    /// CHECK: initialized and validated by the Zama host program CPI.
-    #[account(mut)]
-    pub debit_candidate_acl: UncheckedAccount<'info>,
     /// CHECK: initialized and validated by the Zama host program CPI.
     #[account(mut)]
     pub from_output_acl: UncheckedAccount<'info>,
@@ -54,14 +50,15 @@ pub struct ConfidentialTransfer<'info> {
 
 impl<'info> ConfidentialTransfer<'info> {
     pub(crate) const OWNER_ACCOUNT_INDEX: usize = 0;
-    pub(crate) const MINT_ACCOUNT_INDEX: usize = 1;
-    pub(crate) const FROM_ACCOUNT_INDEX: usize = 2;
-    pub(crate) const TO_ACCOUNT_INDEX: usize = 3;
-    pub(crate) const TRANSFERRED_AMOUNT_ACL_INDEX: usize = 11;
+    pub(crate) const MINT_ACCOUNT_INDEX: usize = 2;
+    pub(crate) const FROM_ACCOUNT_INDEX: usize = 3;
+    pub(crate) const TO_ACCOUNT_INDEX: usize = 4;
+    pub(crate) const TRANSFERRED_AMOUNT_ACL_INDEX: usize = 10;
 
     pub(crate) fn as_transfer_accounts(&mut self) -> TransferAccounts<'_, 'info> {
         TransferAccounts {
-            payer: &self.owner,
+            payer: &self.payer,
+            transfer_authority: self.owner.key(),
             mint: &self.mint,
             from_account: &mut self.from_account,
             to_account: &mut self.to_account,
@@ -69,8 +66,6 @@ impl<'info> ConfidentialTransfer<'info> {
             from_current_compute_acl: self.from_current_compute_acl.as_ref(),
             to_current_compute_acl: self.to_current_compute_acl.as_ref(),
             amount_compute_acl: &self.amount_compute_acl,
-            transfer_success_acl: self.transfer_success_acl.to_account_info(),
-            debit_candidate_acl: self.debit_candidate_acl.to_account_info(),
             from_output_acl: self.from_output_acl.to_account_info(),
             transferred_amount_acl: self.transferred_amount_acl.to_account_info(),
             to_output_acl: self.to_output_acl.to_account_info(),

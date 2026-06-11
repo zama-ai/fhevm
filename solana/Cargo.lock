@@ -979,6 +979,8 @@ dependencies = [
  "confidential-token-receiver-sdk",
  "solana-ed25519-instruction",
  "solana-instructions-sysvar",
+ "solana-sha256-hasher",
+ "zama-fhe",
  "zama-host",
 ]
 
@@ -4955,9 +4957,11 @@ dependencies = [
  "k256",
  "mollusk-svm",
  "mollusk-svm-programs-token",
+ "serde_json",
  "solana-compute-budget-interface",
  "solana-program",
  "solana-sdk",
+ "solana-sha256-hasher",
  "zama-host",
 ]
 

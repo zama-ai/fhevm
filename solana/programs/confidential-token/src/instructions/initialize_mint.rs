@@ -11,17 +11,15 @@ pub struct InitializeMint<'info> {
     pub authority: Signer<'info>,
     /// Confidential mint account created by this instruction.
     #[account(init, payer = authority, space = 8 + ConfidentialMint::SPACE)]
-    pub mint: Account<'info, ConfidentialMint>,
+    pub mint: Box<Account<'info, ConfidentialMint>>,
     /// Underlying SPL mint wrapped by this confidential mint.
-    pub underlying_mint: Account<'info, SplMint>,
+    pub underlying_mint: Box<Account<'info, SplMint>>,
     /// CHECK: Program-controlled compute signer PDA.
     #[account(seeds = [b"fhe-compute", mint.key().as_ref()], bump)]
     pub compute_signer: UncheckedAccount<'info>,
     /// CHECK: Mint-scoped app authority for total-supply handles.
     #[account(seeds = [b"total-supply", mint.key().as_ref()], bump)]
     pub total_supply_authority: UncheckedAccount<'info>,
-    /// CHECK: Ed25519 authority whose KMS response certificates disclose cleartexts.
-    pub kms_verifier_authority: UncheckedAccount<'info>,
     /// CHECK: initialized and validated by the Zama host program CPI.
     #[account(mut)]
     pub total_supply_acl_record: UncheckedAccount<'info>,
@@ -30,7 +28,7 @@ pub struct InitializeMint<'info> {
     /// ZamaHost program used to create the initial total-supply handle.
     pub zama_program: Program<'info, ZamaHost>,
     /// ZamaHost config used for handle derivation.
-    pub host_config: Account<'info, zama_host::HostConfig>,
+    pub host_config: Box<Account<'info, zama_host::HostConfig>>,
     /// System program used for account creation.
     pub system_program: Program<'info, System>,
 }
@@ -45,46 +43,69 @@ pub fn initialize_mint(ctx: Context<InitializeMint>) -> Result<()> {
         compute_signer,
         ConfidentialTokenError::ComputeSignerMismatch
     );
-    require!(
-        ctx.accounts.kms_verifier_authority.key() != Pubkey::default(),
-        ConfidentialTokenError::InvalidMintConfig
-    );
     let total_supply_authority = ctx.accounts.total_supply_authority.key();
-    let total_supply_authority_bump = [ctx.bumps.total_supply_authority];
-    let total_supply_authority_seeds: &[&[u8]] = &[
-        b"total-supply",
-        mint_key.as_ref(),
-        &total_supply_authority_bump,
-    ];
+    require_keys_eq!(
+        total_supply_authority,
+        total_supply_authority_address(mint_key).0,
+        ConfidentialTokenError::TotalSupplyAuthorityMismatch
+    );
     let total_supply_acl_record = ctx.accounts.total_supply_acl_record.key();
-    let total_supply_handle =
-        fhe::trivial_encrypt_u64_with_app_pda(fhe::TrivialEncryptU64WithAppPda {
+    let total_supply_output = fhe::DurableOutput::new(
+        ctx.accounts.total_supply_acl_record.to_account_info(),
+        durable_slot(mint_key, total_supply_authority, total_supply_label(), 0),
+        zama_fhe::AccessPolicy::for_compute(compute_signer).map_err(invalid_eval_plan)?,
+    )?;
+    let context_id = transfer_eval_context(
+        b"initialize-total-supply",
+        mint_key,
+        total_supply_authority,
+        total_supply_authority,
+        [0; 32],
+        0,
+        0,
+    )?;
+    let mut builder = zama_fhe::EvalBuilder::new(
+        context_id,
+        zama_fhe::EvalAppAuthority::new(total_supply_authority),
+    );
+    builder
+        .trivial_encrypt_u64(0, total_supply_output.output())
+        .map_err(invalid_eval_plan)?;
+    let plan = builder.finish().map_err(invalid_eval_plan)?;
+    let compute_authority = fhe::ComputeAuthority::for_mint(
+        &ctx.accounts.compute_signer,
+        mint_key,
+        ctx.bumps.compute_signer,
+    )?;
+    let total_supply_authority_bump = total_supply_authority_address(mint_key).1;
+    let eval_accounts = fhe::EvalAccountSet::for_plan(
+        &plan,
+        [total_supply_output.account_info()],
+        [fhe::OutputAuthority::total_supply(
+            &ctx.accounts.total_supply_authority,
+            mint_key,
+            total_supply_authority_bump,
+        )?],
+    )?;
+    fhe::eval(fhe::Eval {
+        context: fhe::EvalContext {
             payer: &ctx.accounts.authority,
             event_authority: &ctx.accounts.zama_event_authority,
             zama_program: &ctx.accounts.zama_program,
             host_config: &ctx.accounts.host_config,
-            compute_signer: &ctx.accounts.compute_signer,
-            app_account_authority: &ctx.accounts.total_supply_authority,
-            app_signer_seeds: total_supply_authority_seeds,
-            output_app_account: total_supply_authority,
-            output_acl_record: ctx.accounts.total_supply_acl_record.to_account_info(),
-            acl_domain_key: mint_key,
-            compute_signer_bump: ctx.bumps.compute_signer,
+            compute_authority,
             system_program: &ctx.accounts.system_program,
-            output_nonce_key: total_supply_nonce_key(mint_key, total_supply_authority),
-            output_nonce_sequence: 0,
-            output_encrypted_value_label: total_supply_label(),
-            plaintext: 0,
-            fhe_type: BALANCE_FHE_TYPE,
-            output_subjects: compute_acl_subject(compute_signer),
-            output_public_decrypt: false,
-        })?;
+            instructions_sysvar: None,
+        },
+        accounts: &eval_accounts,
+        plan,
+    })?;
+    let total_supply_handle = total_supply_output.handle()?;
     let mint = &mut ctx.accounts.mint;
     mint.authority = ctx.accounts.authority.key();
     mint.acl_domain_key = mint_key;
     mint.compute_signer = compute_signer;
     mint.underlying_mint = ctx.accounts.underlying_mint.key();
-    mint.kms_verifier_authority = ctx.accounts.kms_verifier_authority.key();
     mint.decimals = ctx.accounts.underlying_mint.decimals;
     mint.total_supply_handle = total_supply_handle;
     mint.total_supply_acl_record = total_supply_acl_record;

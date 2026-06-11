@@ -17,6 +17,7 @@ no-entrypoint = []
 no-idl = []
 no-log-ix-name = []
 idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build", "zama-host/idl-build"]
+poc = []
 
 [dependencies]
 anchor-lang = "1.0.2"
@@ -24,4 +25,6 @@ anchor-spl = { version = "1.0.2", default-features = false, features = ["associa
 confidential-token-receiver-sdk = { path = "../../crates/confidential-token-receiver-sdk" }
 solana-instructions-sysvar = "3.0.1"
 solana-ed25519-instruction = { path = "../../crates/solana-ed25519-instruction" }
+solana-sha256-hasher = "3.1.0"
+zama-fhe = { path = "../../crates/zama-fhe", features = ["cpi"] }
 zama-host = { path = "../zama-host", features = ["cpi"] }

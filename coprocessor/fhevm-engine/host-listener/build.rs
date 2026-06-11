@@ -8,8 +8,28 @@ use serde_json::Value;
 use std::{collections::HashMap, env, fs, path::Path, process::Command};
 
 fn generate_zama_host_events() {
+    generate_anchor_events(
+        "zama_host.json",
+        "zama_host_events.rs",
+        "ZamaHostEvent",
+    );
+}
+
+fn generate_confidential_token_events() {
+    generate_anchor_events(
+        "confidential_token.json",
+        "confidential_token_events.rs",
+        "ConfidentialTokenEvent",
+    );
+}
+
+fn generate_anchor_events(
+    idl_file: &str,
+    output_file: &str,
+    event_enum_name: &str,
+) {
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let idl_path = manifest_dir.join("idl/zama_host.json");
+    let idl_path = manifest_dir.join("idl").join(idl_file);
     println!("cargo:rerun-if-changed={}", idl_path.display());
 
     let idl = fs::read_to_string(&idl_path).unwrap_or_else(|err| {
@@ -29,61 +49,32 @@ fn generate_zama_host_events() {
     let events = idl["events"]
         .as_array()
         .expect("Anchor IDL must contain events");
-    let op_type = types
-        .get("FheBinaryOpCode")
-        .expect("ZamaHost IDL must define FheBinaryOpCode");
-    let op_variants = op_type["type"]["variants"]
-        .as_array()
-        .expect("FheBinaryOpCode must be an enum")
-        .iter()
-        .map(|variant| {
-            variant["name"]
-                .as_str()
-                .expect("enum variant must have a name")
-        })
-        .collect::<Vec<_>>();
-    let ternary_op_type = types
-        .get("FheTernaryOpCode")
-        .expect("ZamaHost IDL must define FheTernaryOpCode");
-    let ternary_op_variants = ternary_op_type["type"]["variants"]
-        .as_array()
-        .expect("FheTernaryOpCode must be an enum")
-        .iter()
-        .map(|variant| {
-            variant["name"]
-                .as_str()
-                .expect("enum variant must have a name")
-        })
-        .collect::<Vec<_>>();
+    let event_enum_types = event_enum_types(&types, events);
 
-    let mut output = String::from(
-        r#"// Generated from `host-listener/idl/zama_host.json` by `host-listener/build.rs`.
+    let mut output = format!(
+        r#"// Generated from `host-listener/idl/{idl_file}` by `host-listener/build.rs`.
 // Do not edit by hand.
 
-use sha2::{Digest, Sha256};
+use sha2::{{Digest, Sha256}};
 
-pub const EVENT_VERSION: u8 = 0;
+pub const EVENT_VERSION: u8 = 1;
 pub const ANCHOR_EVENT_IX_TAG_LE: [u8; 8] = 0x1d9acb512ea545e4_u64.to_le_bytes();
 
 "#,
     );
 
-    output.push_str("#[derive(Clone, Copy, Debug, PartialEq, Eq)]\n");
-    output.push_str("pub enum FheBinaryOpCode {\n");
-    for variant in &op_variants {
-        output.push_str("    ");
-        output.push_str(variant);
-        output.push_str(",\n");
+    for (enum_name, variants) in &event_enum_types {
+        output.push_str("#[derive(Clone, Copy, Debug, PartialEq, Eq)]\n");
+        output.push_str("pub enum ");
+        output.push_str(enum_name);
+        output.push_str(" {\n");
+        for variant in variants {
+            output.push_str("    ");
+            output.push_str(variant);
+            output.push_str(",\n");
+        }
+        output.push_str("}\n\n");
     }
-    output.push_str("}\n\n");
-    output.push_str("#[derive(Clone, Copy, Debug, PartialEq, Eq)]\n");
-    output.push_str("pub enum FheTernaryOpCode {\n");
-    for variant in &ternary_op_variants {
-        output.push_str("    ");
-        output.push_str(variant);
-        output.push_str(",\n");
-    }
-    output.push_str("}\n\n");
 
     for event in events {
         let event_name =
@@ -106,7 +97,9 @@ pub const ANCHOR_EVENT_IX_TAG_LE: [u8; 8] = 0x1d9acb512ea545e4_u64.to_le_bytes()
     }
 
     output.push_str("#[derive(Clone, Debug, PartialEq, Eq)]\n");
-    output.push_str("pub enum ZamaHostEvent {\n");
+    output.push_str("pub enum ");
+    output.push_str(event_enum_name);
+    output.push_str(" {\n");
     for event in events {
         let event_name = event["name"].as_str().unwrap();
         output.push_str("    ");
@@ -117,9 +110,10 @@ pub const ANCHOR_EVENT_IX_TAG_LE: [u8; 8] = 0x1d9acb512ea545e4_u64.to_le_bytes()
     }
     output.push_str("}\n\n");
 
+    output.push_str("pub fn decode_anchor_event(data: &[u8]) -> Option<");
+    output.push_str(event_enum_name);
     output.push_str(
-        r#"pub fn decode_anchor_cpi_event(data: &[u8]) -> Option<ZamaHostEvent> {
-    let data = data.strip_prefix(&ANCHOR_EVENT_IX_TAG_LE)?;
+        r#"> {
     if data.len() < 8 {
         return None;
     }
@@ -136,11 +130,23 @@ pub const ANCHOR_EVENT_IX_TAG_LE: [u8; 8] = 0x1d9acb512ea545e4_u64.to_le_bytes()
         output.push_str(&byte_array(discriminator));
         output.push_str(" {\n        return decode_");
         output.push_str(&snake_case(event_name));
-        output.push_str("(payload).map(ZamaHostEvent::");
+        output.push_str("(payload).map(");
+        output.push_str(event_enum_name);
+        output.push_str("::");
         output.push_str(event_name.trim_end_matches("Event"));
         output.push_str(");\n    }\n");
     }
     output.push_str("\n    None\n}\n\n");
+
+    output.push_str("pub fn decode_anchor_cpi_event(data: &[u8]) -> Option<");
+    output.push_str(event_enum_name);
+    output.push_str(
+        r#"> {
+    decode_anchor_event(data.strip_prefix(&ANCHOR_EVENT_IX_TAG_LE)?)
+}
+
+"#,
+    );
 
     output.push_str(
         r#"pub fn anchor_event_discriminator(name: &str) -> [u8; 8] {
@@ -176,26 +182,24 @@ pub const ANCHOR_EVENT_IX_TAG_LE: [u8; 8] = 0x1d9acb512ea545e4_u64.to_le_bytes()
         );
     }
 
-    output.push_str("fn read_fhe_binary_op_code(cursor: &mut Cursor<'_>) -> Option<FheBinaryOpCode> {\n");
-    output.push_str("    match cursor.read_u8()? {\n");
-    for (index, variant) in op_variants.iter().enumerate() {
-        output.push_str("        ");
-        output.push_str(&index.to_string());
-        output.push_str(" => Some(FheBinaryOpCode::");
-        output.push_str(variant);
-        output.push_str("),\n");
+    for (enum_name, variants) in &event_enum_types {
+        output.push_str("fn read_");
+        output.push_str(&snake_case(enum_name));
+        output.push_str("(cursor: &mut Cursor<'_>) -> Option<");
+        output.push_str(enum_name);
+        output.push_str("> {\n");
+        output.push_str("    match cursor.read_u8()? {\n");
+        for (index, variant) in variants.iter().enumerate() {
+            output.push_str("        ");
+            output.push_str(&index.to_string());
+            output.push_str(" => Some(");
+            output.push_str(enum_name);
+            output.push_str("::");
+            output.push_str(variant);
+            output.push_str("),\n");
+        }
+        output.push_str("        _ => None,\n    }\n}\n\n");
     }
-    output.push_str("        _ => None,\n    }\n}\n\n");
-    output.push_str("fn read_fhe_ternary_op_code(cursor: &mut Cursor<'_>) -> Option<FheTernaryOpCode> {\n");
-    output.push_str("    match cursor.read_u8()? {\n");
-    for (index, variant) in ternary_op_variants.iter().enumerate() {
-        output.push_str("        ");
-        output.push_str(&index.to_string());
-        output.push_str(" => Some(FheTernaryOpCode::");
-        output.push_str(variant);
-        output.push_str("),\n");
-    }
-    output.push_str("        _ => None,\n    }\n}\n\n");
 
     output.push_str(
         r#"struct Cursor<'a> {
@@ -226,6 +230,12 @@ impl<'a> Cursor<'a> {
         }
     }
 
+    // Used only by `read_vec_array`; unused in event modules without a `Vec<[u8; N]>` field.
+    #[allow(dead_code)]
+    fn read_u32(&mut self) -> Option<u32> {
+        Some(u32::from_le_bytes(self.read_array::<4>()?))
+    }
+
     fn read_u64(&mut self) -> Option<u64> {
         Some(u64::from_le_bytes(self.read_array::<8>()?))
     }
@@ -236,16 +246,177 @@ impl<'a> Cursor<'a> {
         self.offset = end;
         bytes.try_into().ok()
     }
+
+    // Borsh `Vec<[u8; N]>`: u32 little-endian length, then `len` fixed-size arrays.
+    // Unused in event modules without a `Vec<[u8; N]>` field (e.g. confidential_token).
+    #[allow(dead_code)]
+    fn read_vec_array<const N: usize>(&mut self) -> Option<Vec<[u8; N]>> {
+        let len = self.read_u32()? as usize;
+        let mut out = Vec::with_capacity(len);
+        for _ in 0..len {
+            out.push(self.read_array::<N>()?);
+        }
+        Some(out)
+    }
 }
 "#,
     );
 
     let out_path =
         Path::new(&env::var("OUT_DIR").expect("OUT_DIR must be set"))
-            .join("zama_host_events.rs");
+            .join(output_file);
     fs::write(&out_path, output).unwrap_or_else(|err| {
         panic!("failed to write {}: {err}", out_path.display())
     });
+}
+
+fn generate_solana_abi_schema_hashes() {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let manifest_path = manifest_dir.join("idl/solana_abi_golden.json");
+    println!("cargo:rerun-if-changed={}", manifest_path.display());
+    let manifest = fs::read_to_string(&manifest_path).unwrap_or_else(|err| {
+        panic!("failed to read {}: {err}", manifest_path.display())
+    });
+    let manifest: Value =
+        serde_json::from_str(&manifest).unwrap_or_else(|err| {
+            panic!("failed to parse {}: {err}", manifest_path.display())
+        });
+    let schemas = manifest["schemas"]
+        .as_array()
+        .expect("Solana ABI manifest must contain schemas");
+    let versions = manifest["event_versions"]
+        .as_object()
+        .expect("Solana ABI manifest must contain event_versions");
+
+    let mut output = String::from(
+        r#"// Generated from `host-listener/idl/solana_abi_golden.json` by `host-listener/build.rs`.
+// Do not edit by hand.
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SolanaAbiSchema {
+    pub program: &'static str,
+    pub category: &'static str,
+    pub name: &'static str,
+    pub schema_hash_hex: &'static str,
+    pub fixture_hex: Option<&'static str>,
+    pub fixture_len: Option<usize>,
+}
+
+"#,
+    );
+    output.push_str("pub const SOLANA_EVENT_VERSIONS: &[(&str, u8)] = &[\n");
+    for (program, version) in versions {
+        output.push_str("    (");
+        output.push_str(&format!("{program:?}"));
+        output.push_str(", ");
+        output.push_str(
+            &version
+                .as_u64()
+                .expect("event version must be an integer")
+                .to_string(),
+        );
+        output.push_str("),\n");
+    }
+    output.push_str("];\n\n");
+    output.push_str("pub const SOLANA_ABI_SCHEMAS: &[SolanaAbiSchema] = &[\n");
+    for schema in schemas {
+        output.push_str("    SolanaAbiSchema {\n");
+        for key in ["program", "category", "name"] {
+            output.push_str("        ");
+            output.push_str(key);
+            output.push_str(": ");
+            output.push_str(&format!(
+                "{:?}",
+                schema[key].as_str().expect("schema field must be string")
+            ));
+            output.push_str(",\n");
+        }
+        output.push_str("        schema_hash_hex: ");
+        output.push_str(&format!(
+            "{:?}",
+            schema["schema_hash"]
+                .as_str()
+                .expect("schema hash must be string")
+        ));
+        output.push_str(",\n");
+        if let Some(fixture_hex) = schema["fixture_hex"].as_str() {
+            output.push_str("        fixture_hex: Some(");
+            output.push_str(&format!("{fixture_hex:?}"));
+            output.push_str("),\n");
+            output.push_str("        fixture_len: Some(");
+            output.push_str(
+                &schema["fixture_len"]
+                    .as_u64()
+                    .expect("fixture_len must be an integer")
+                    .to_string(),
+            );
+            output.push_str("),\n");
+        } else {
+            output.push_str("        fixture_hex: None,\n");
+            output.push_str("        fixture_len: None,\n");
+        }
+        output.push_str("    },\n");
+    }
+    output.push_str("];\n");
+
+    let out_path =
+        Path::new(&env::var("OUT_DIR").expect("OUT_DIR must be set"))
+            .join("solana_abi_schema_hashes.rs");
+    fs::write(&out_path, output).unwrap_or_else(|err| {
+        panic!("failed to write {}: {err}", out_path.display())
+    });
+}
+
+fn event_enum_types<'a>(
+    types: &'a HashMap<&str, &'a Value>,
+    events: &[Value],
+) -> Vec<(&'a str, Vec<&'a str>)> {
+    let mut enum_names = Vec::<&str>::new();
+    for event in events {
+        let event_name = event["name"].as_str().expect("event must have name");
+        for field in fields_for_event(types, event_name) {
+            collect_defined_event_enums(types, &field["type"], &mut enum_names);
+        }
+    }
+    enum_names
+        .into_iter()
+        .map(|name| {
+            let enum_type = types
+                .get(name)
+                .unwrap_or_else(|| panic!("IDL must define enum {name}"));
+            let variants = enum_type["type"]["variants"]
+                .as_array()
+                .unwrap_or_else(|| panic!("IDL type {name} must be an enum"))
+                .iter()
+                .map(|variant| {
+                    if variant.get("fields").is_some() {
+                        panic!("event enum {name} must use fieldless variants")
+                    }
+                    variant["name"]
+                        .as_str()
+                        .expect("enum variant must have a name")
+                })
+                .collect();
+            (name, variants)
+        })
+        .collect()
+}
+
+fn collect_defined_event_enums<'a>(
+    types: &'a HashMap<&str, &'a Value>,
+    idl_type: &'a Value,
+    enum_names: &mut Vec<&'a str>,
+) {
+    if let Some(defined) = idl_type["defined"]["name"].as_str() {
+        let ty = types
+            .get(defined)
+            .unwrap_or_else(|| panic!("IDL must define {defined}"));
+        if ty["type"]["kind"].as_str() == Some("enum")
+            && !enum_names.contains(&defined)
+        {
+            enum_names.push(defined);
+        }
+    }
 }
 
 fn fields_for_event<'a>(
@@ -279,6 +450,18 @@ fn rust_type(idl_type: &Value) -> String {
         }
         return format!("[u8; {len}]");
     }
+    if let Some(vec_inner) = idl_type.get("vec") {
+        if let Some(array) = vec_inner["array"].as_array() {
+            let element =
+                array[0].as_str().expect("vec array element must be primitive");
+            let len = array[1].as_u64().expect("vec array length must be integer");
+            if element != "u8" {
+                panic!("unsupported IDL vec array element type {element}");
+            }
+            return format!("Vec<[u8; {len}]>");
+        }
+        panic!("unsupported IDL vec inner type {vec_inner}");
+    }
     if let Some(defined) = idl_type["defined"]["name"].as_str() {
         return defined.to_string();
     }
@@ -304,16 +487,20 @@ fn read_expr(idl_type: &Value) -> String {
         }
         return format!("cursor.read_array::<{len}>()");
     }
+    if let Some(vec_inner) = idl_type.get("vec") {
+        if let Some(array) = vec_inner["array"].as_array() {
+            let element =
+                array[0].as_str().expect("vec array element must be primitive");
+            let len = array[1].as_u64().expect("vec array length must be integer");
+            if element != "u8" {
+                panic!("unsupported IDL vec array element type {element}");
+            }
+            return format!("cursor.read_vec_array::<{len}>()");
+        }
+        panic!("unsupported IDL vec inner type {vec_inner}");
+    }
     if let Some(defined) = idl_type["defined"]["name"].as_str() {
-        return match defined {
-            "FheBinaryOpCode" => {
-                "read_fhe_binary_op_code(&mut cursor)".to_string()
-            }
-            "FheTernaryOpCode" => {
-                "read_fhe_ternary_op_code(&mut cursor)".to_string()
-            }
-            other => panic!("unsupported IDL defined type {other}"),
-        };
+        return format!("read_{}(&mut cursor)", snake_case(defined));
     }
     panic!("unsupported IDL type {idl_type}");
 }
@@ -418,6 +605,8 @@ fn build_contracts() {
 fn main() {
     println!("cargo::warning=build.rs run ...");
     generate_zama_host_events();
+    generate_confidential_token_events();
+    generate_solana_abi_schema_hashes();
     build_contracts();
     // build tests contracts
     let paths =
