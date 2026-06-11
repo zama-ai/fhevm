@@ -116,6 +116,13 @@ export function isUintBigInt(value: unknown, max?: bigint | number): value is Ui
   return typeof value === 'bigint' && value >= 0 && (max === undefined || value <= max);
 }
 
+export function isUintString(value: unknown, max?: number | bigint): value is string {
+  if (typeof value !== 'string') {
+    return false;
+  }
+  return tryParseUintBigIntString(value, max) !== undefined;
+}
+
 export function isUintForType(value: unknown, typeName?: UintTypeName): value is Uint {
   return isUint(value, typeName !== undefined ? MAX_UINT_FOR_TYPE[typeName] : undefined);
 }
@@ -324,6 +331,22 @@ export function assertIsUintBigInt(
         subject: options.subject,
         type: typeof value,
         expectedType: 'uintBigInt',
+      },
+      options,
+    );
+  }
+}
+
+export function assertIsUintString(
+  value: unknown,
+  options: { max?: bigint | number; subject?: string } & ErrorMetadataParams,
+): asserts value is string {
+  if (!isUintString(value, options.max)) {
+    throw new InvalidTypeError(
+      {
+        subject: options.subject,
+        type: typeof value,
+        expectedType: 'uintString',
       },
       options,
     );
@@ -659,17 +682,23 @@ export function assertRecordUintBigIntProperty<K extends string>(
   }
 }
 
-export function parseUintBigIntString(value: string): bigint | undefined {
+/**
+ * Tries to parse a canonical unsigned decimal string as a bigint.
+ *
+ * Returns `undefined` instead of throwing when `value` is not parseable, is negative, is not in
+ * canonical decimal form, or exceeds `max`.
+ */
+export function tryParseUintBigIntString(value: string, max?: number | bigint): UintBigInt | undefined {
   let parsed: bigint;
   try {
     parsed = BigInt(value);
   } catch {
     return undefined;
   }
-  if (parsed < 0n || parsed.toString() !== value) {
+  if (parsed < 0n || parsed.toString() !== value || (max !== undefined && parsed > BigInt(max))) {
     return undefined;
   }
-  return parsed;
+  return parsed as UintBigInt;
 }
 
 /** Returns `count` unique integers drawn uniformly from [0, n-1]. Mock/debug only. */

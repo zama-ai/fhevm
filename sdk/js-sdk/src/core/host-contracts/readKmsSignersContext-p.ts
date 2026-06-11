@@ -130,13 +130,24 @@ async function _readKmsSignersContextForContextId(
  * - `requestedExtraData` — `kmsSignersContextToExtraData(requestedKmsSignersContext)`.
  * - `relayerKmsContextId` — `fromKmsExtraData(relayerExtraData).kmsContextId`.
  *
+ * ### Host-Contract Compatibility
+ *
+ * `extraData` is versioned independently from the host-contract package. The
+ * currently supported combinations are:
+ *
+ * - host-contracts v11 and v12 support `extraData` v0.
+ * - host-contracts v13 supports `extraData` v0 and v1.
+ * - host-contracts v14 supports `extraData` v0, v1, and v2.
+ *
  * ### Resolution (checked in order)
  *
  * 1. `relayerExtraData === requestedExtraData` → exact byte match, return
  *    `requestedKmsSignersContext`. This is the **only** path that trusts cached data.
- * 2. Serialization version mismatch → **always throw**. The SDK and relayer must
+ * 2. In `'exact'` mode, any byte mismatch → **always throw**. This mode does
+ *    not parse, refresh, or reconcile different `extraData`.
+ * 3. Serialization version mismatch → **always throw**. The SDK and relayer must
  *    agree on the `extraData` encoding format, even if the context ID is the same.
- * 3. Context IDs differ → **full on-chain refetch**. The cached context is never
+ * 4. Context IDs differ → **full on-chain refetch**. The cached context is never
  *    reused, because any mismatch means on-chain state may have diverged
  *    (rotation, destruction, signer changes, etc.).
  *    - Context is **valid** on-chain (current or non-destroyed) → return it.
@@ -144,6 +155,8 @@ async function _readKmsSignersContextForContextId(
  *
  * ### Modes
  *
+ * - `'exact'` — Accept only step 1 (byte-for-byte `extraData` equality).
+ *   Rejects any relayer/context drift without parsing or on-chain recovery.
  * - `'strict'` — Accept step 1 (exact match) or `relayerKmsContextId === currentKmsContextId`.
  *   Rejects valid-but-not-current contexts.
  * - `'loose'` — Accept any on-chain valid context (non-destroyed, in range),
@@ -152,7 +165,7 @@ async function _readKmsSignersContextForContextId(
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export type ReconcileMode = 'strict' | 'loose';
+export type ReconcileMode = 'exact' | 'strict' | 'loose';
 
 export async function reconcileKmsSignersContext(
   context: Context,
@@ -173,6 +186,13 @@ export async function reconcileKmsSignersContext(
   // 1. Exact match — the relayer used the same context as the SDK.
   if (relayerExtraData === requestedExtraData) {
     return requestedKmsSignersContext;
+  }
+
+  if (mode === 'exact') {
+    throw new Error(
+      `Exact reconciliation failed: relayer extraData ${relayerExtraData} ` +
+        `does not match requested extraData ${requestedExtraData}.`,
+    );
   }
 
   // Bytes differ — extract and compare serialization versions.

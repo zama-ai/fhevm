@@ -45,14 +45,14 @@
     "test:localstack:v13": "./test/scripts/localstack-run-tests.sh --chain localstack_v13 --fhevm-cli-profile v0.13.0.json",
     "test:localcleartext:v12": "./test/scripts/localcleartext-run-tests.sh --foundry-profile=v12",
     "test:localcleartext:v13": "./test/scripts/localcleartext-run-tests.sh --foundry-profile=v13",
-    "test:localcleartext": "./test/scripts/localcleartext-run-tests.sh",
-    "test:localcleartext:pack": "./test/scripts/rebuild_sdk_and_pack.sh --build-profile=prod && ./test/scripts/localcleartext-run-tests.sh --use-pack",
     "test:localcleartext:pack:v12": "./test/scripts/rebuild_sdk_and_pack.sh --build-profile=prod && ./test/scripts/localcleartext-run-tests.sh --use-pack --foundry-profile=v12",
     "test:localcleartext:pack:v13": "./test/scripts/rebuild_sdk_and_pack.sh --build-profile=prod && ./test/scripts/localcleartext-run-tests.sh --use-pack --foundry-profile=v13",
-    "test": "npm run test:unit && npm run test:localcleartext:pack && npm run test:browser",
+    "test": "npm run test:unit && npm run test:localcleartext:pack:v12 && npm run test:localcleartext:pack:v13 && npm run test:browser",
     "dod": "node test/scripts/dod.mjs",
     "dod:full": "node test/scripts/dod.mjs --full",
-    "version": "node ./scripts/generate-version.cjs"
+    "version": "node ./scripts/generate-version.cjs",
+    "start:localcleartext:v12": "./test/scripts/fhevm-anvil.sh --ethlib none --foundry-profile=v12",
+    "start:localcleartext:v13": "./test/scripts/fhevm-anvil.sh --ethlib none --foundry-profile=v13"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

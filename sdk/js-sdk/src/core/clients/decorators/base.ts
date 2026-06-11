@@ -1,3 +1,8 @@
+import {
+  assertIsFhevmBaseClient,
+  resolveFhevmProtocolVersion,
+  setResolvedProtocolVersion,
+} from '../../runtime/CoreFhevm-p.js';
 import type { Fhevm, FhevmBase, FhevmExtension } from '../../types/coreFhevmClient.js';
 import type { FhevmChain } from '../../types/fhevmChain.js';
 import type {
@@ -8,7 +13,6 @@ import type {
   SerializeTransportKeyPairParameters,
   SerializeTransportKeyPairReturnType,
 } from '../../actions/chain/serializeTransportKeyPair.js';
-import { assertIsFhevmBaseClient } from '../../runtime/CoreFhevm-p.js';
 import {
   signDecryptionPermit,
   type SignSelfDecryptionPermitParameters,
@@ -193,11 +197,18 @@ function _baseActions(fhevm: Fhevm<FhevmChain>): BaseActions {
 
 ////////////////////////////////////////////////////////////////////////////////
 
+async function _initBase(fhevm: FhevmBase<FhevmChain>): Promise<void> {
+  const protocolVersion = await resolveFhevmProtocolVersion(fhevm);
+  setResolvedProtocolVersion(fhevm, protocolVersion);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
 export function baseActions(fhevm: FhevmBase<FhevmChain>): FhevmExtension<BaseActions> {
   assertIsFhevmBaseClient(fhevm);
   return {
     actions: _baseActions(fhevm),
     runtime: fhevm.runtime,
-    // no init required, no prefetch of the FheEncryptionKey. This is the whole purpose of the fetchFheEncryptionKeyBytes action
+    init: _initBase,
   };
 }

@@ -1,4 +1,9 @@
 import type { FhevmChain } from '@fhevm/sdk/chains';
+import type {
+  createFhevmBaseClient as createViemFhevmBaseClient,
+  createFhevmDecryptClient as createViemFhevmDecryptClient,
+  createFhevmEncryptClient as createViemFhevmEncryptClient,
+} from '@fhevm/sdk/viem';
 import type { FhevmDecryptOptions, FhevmEncryptOptions, FhevmOptions } from '../../src/core/types/coreFhevmClient.js';
 import type { FhevmModuleVersions } from '../../src/core/types/moduleVersions.js';
 import type { FheTestBaseEnv, FheTestChainName } from './setupCommon.js';
@@ -29,6 +34,7 @@ export type FheTestViemConfig = {
   };
   readonly zamaApiKey: string;
   readonly fheTestAddress: string;
+  readonly protocolVersion: FheTestBaseEnv['protocolVersion'];
   readonly fheEncryptionKeyTfheVersion: string;
   readonly moduleVersions?: FhevmModuleVersions | undefined;
 };
@@ -42,19 +48,19 @@ export type CreateViemBaseClientFn = (
   params: CreateViemClientParameters & {
     readonly options?: FhevmOptions | undefined;
   },
-) => any;
+) => ReturnType<typeof createViemFhevmBaseClient>;
 
 export type CreateViemEncryptClientFn = (
   params: CreateViemClientParameters & {
     readonly options?: FhevmEncryptOptions | undefined;
   },
-) => any;
+) => ReturnType<typeof createViemFhevmEncryptClient>;
 
 export type CreateViemDecryptClientFn = (
   params: CreateViemClientParameters & {
     readonly options?: FhevmDecryptOptions | undefined;
   },
-) => any;
+) => ReturnType<typeof createViemFhevmDecryptClient>;
 
 // ---------------------------------------------------------------------------
 // Build config
@@ -100,6 +106,7 @@ function _buildConfig(env: FheTestBaseEnv): FheTestViemConfig {
     },
     zamaApiKey: env.zamaApiKey,
     fheTestAddress: env.fheTestAddress,
+    protocolVersion: env.protocolVersion,
     fheEncryptionKeyTfheVersion: env.fheEncryptionKeyTfheVersion,
     moduleVersions: env.moduleVersions,
   };

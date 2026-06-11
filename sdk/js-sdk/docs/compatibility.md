@@ -11,15 +11,20 @@ There is no on-chain or relayer-side signal that tells the SDK the minimum `tfhe
 
 ## Heuristic
 
-Lacking a direct signal, the SDK derives the right `tfhe.wasm` version from the on-chain `ACL` contract version:
+Lacking a direct signal, the SDK derives the right `tfhe.wasm` version from a protocol context:
 
-1. Read `ACL.version` on the host chain.
-2. Map it to a wasm version:
-   - `ACL.version < 0.4.0` (Protocol ≤ `v0.12.0`) → `tfhe.wasm@v1.5.3`
-   - `ACL.version = 0.4.0` (Protocol ≥ `v0.13.0`) → `tfhe.wasm@v1.6.1`
-   - `ACL.version ≥ 0.5.0` (Protocol ≥ `v0.14.0`) → ?
+1. Read `ACL.version` on the host chain and map it to a protocol version.
+2. Resolve the PubKey/CRS version from what this SDK knows at the time it is written:
+   - for known public relayers, use the PubKey/CRS version they are known to serve at SDK release time;
+   - otherwise, use the PubKey/CRS version expected when fresh key material is generated for that protocol line.
+3. Map `(protocol version, PubKey/CRS version)` to a wasm version:
+   - Protocol `< v0.13.0` with PubKey/CRS `< v1.6.0` → `tfhe.wasm@v1.5.3`
+   - Protocol `≥ v0.13.0` with PubKey/CRS `< v1.6.0` → `tfhe.wasm@v1.6.1` by default, while `v1.5.3` remains compatible for the current legacy public PubKey/CRS.
+   - Protocol `≥ v0.13.0` with PubKey/CRS `≥ v1.6.0` → `tfhe.wasm@v1.6.1`
 
-This works as long as every protocol release bumps at least one host-contract version. See [the open question on this assumption](#open-question) below if it ever breaks.
+The PubKey/CRS part is a release-time snapshot, not a future-proof signal. After the SDK is published, key rotation or CRS removal can change the material served by a relayer. The SDK cannot guess those future changes without a direct on-chain or relayer-side version signal.
+
+The protocol-version part works as long as every protocol release bumps at least one host-contract version. See [the open question on this assumption](#open-question) below if it ever breaks.
 
 **In the future: add view functions in InputVerifier.sol and KMSVerifier.sol or ProtocolConfig.sol**
 

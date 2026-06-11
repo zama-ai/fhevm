@@ -129,6 +129,21 @@ export function defineClientBaseTests(
       expect(readyPromise).toBe(initPromise);
     });
 
+    it('should detect the protocolVersion for the configured chain', async () => {
+      const client = options.createClient({
+        chain: config.fhevmChain,
+        publicClient: config.publicClient,
+        options: getViemClientOptions(config),
+      });
+
+      await client.ready;
+
+      expect(client.protocolVersion).toEqual({
+        version: config.protocolVersion,
+        comparator: 'eq',
+      });
+    });
+
     it('should fetch FheEncryptionKey in bytes format', async () => {
       clearKeyCache(config.chainName);
 
