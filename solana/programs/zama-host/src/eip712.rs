@@ -113,16 +113,22 @@ const SECP256K1_HALF_ORDER: [u8; 32] = [
 /// version 1 carries a big-endian context id in `extra_data[1..33]`. Because the KMS signs over
 /// `extra_data`, the returned id is authenticated by the certificate, so a cert minted under
 /// context N cannot be verified against a different context after a rotation. Returns `None` for
-/// an unsupported version, a short version-1 payload, or an id outside the on-chain u64 space.
+/// an unsupported version or a short version-1 payload.
+///
+/// The protocol KMS context id is a `uint256` whose high bytes carry a chain-type tag (e.g. the
+/// canonical Solana-host context id is `0x07‖..‖<u64>`), while the on-chain `kms_context` is keyed
+/// by the low-64-bit id (the bootstrap `define_kms_context` registers that u64). So the low 8 bytes
+/// are taken as the context id; the high tag bytes are not part of the on-chain id. This does not
+/// weaken context binding: the full `extra_data` is still signed by the KMS, and the resolved id
+/// must equal the on-chain `kms_context.context_id`, so a rotated/mismatched context still fails.
 pub fn extract_kms_context_id(extra_data: &[u8], current_context_id: u64) -> Option<u64> {
     match extra_data.first() {
         None | Some(0) => Some(current_context_id),
         Some(1) => {
             let id_bytes = extra_data.get(1..33)?;
-            // Context ids are u64 on-chain; the high 24 bytes of the uint256 must be zero.
-            if id_bytes[..24].iter().any(|&b| b != 0) {
-                return None;
-            }
+            // On-chain kms_context is keyed by the low-64-bit id; the high bytes carry the
+            // protocol context's chain-type tag (e.g. 0x07 for the Solana host) and are not
+            // part of the u64 id.
             let mut buf = [0u8; 8];
             buf.copy_from_slice(&id_bytes[24..32]);
             Some(u64::from_be_bytes(buf))
@@ -310,15 +316,18 @@ mod tests {
         // Empty or version-0 extra_data -> current context.
         assert_eq!(extract_kms_context_id(&[], 7), Some(7));
         assert_eq!(extract_kms_context_id(&[0u8], 7), Some(7));
-        // Version 1 -> big-endian context id from bytes [1..33].
+        // Version 1 -> low-64-bit context id from bytes [25..33].
         let mut v1 = vec![1u8];
         v1.extend_from_slice(&[0u8; 24]);
         v1.extend_from_slice(&42u64.to_be_bytes());
         assert_eq!(extract_kms_context_id(&v1, 7), Some(42));
-        // Version 1 with an id that overflows u64 -> rejected.
-        let mut overflow = vec![1u8];
-        overflow.extend_from_slice(&[0xffu8; 32]);
-        assert_eq!(extract_kms_context_id(&overflow, 7), None);
+        // Version 1 with a chain-type tag in the high bytes (e.g. the Solana-host protocol context
+        // id `0x07‖..‖1`) -> the low-64-bit id (1). The high tag bytes are not part of the u64 id.
+        let mut tagged = vec![1u8];
+        tagged.push(0x07);
+        tagged.extend_from_slice(&[0u8; 23]);
+        tagged.extend_from_slice(&1u64.to_be_bytes());
+        assert_eq!(extract_kms_context_id(&tagged, 7), Some(1));
         // Version 1 with a short payload -> rejected.
         assert_eq!(extract_kms_context_id(&[1u8, 0, 0], 7), None);
         // Unsupported version -> rejected.

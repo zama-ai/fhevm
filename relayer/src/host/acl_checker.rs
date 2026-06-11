@@ -422,6 +422,11 @@ impl HostAclChecker {
         let mut all_failures = Vec::new();
 
         for (chain_id, chain_entries) in &grouped {
+            // RFC-021 Solana host: ACL enforced authoritatively by the KMS (solana_acl)
+            // and on-chain secp256k1 cert checks; no EVM eth_call pre-check applies.
+            if self.solana_chains.contains(chain_id) {
+                continue;
+            }
             let chain_acl = self
                 .chains
                 .get(chain_id)

@@ -957,8 +957,11 @@ contract Decryption is
             return GATEWAY_CONFIG.getCurrentKmsContextId();
         }
 
-        // Version 1 -> extract contextId from bytes 1..33
-        if (version == 1) {
+        // Version 1 (EVM) and version 3 (Solana RFC-021) share a `version ‖ contextId(32 BE)`
+        // prefix, so the contextId is read from bytes 1..33 for both. The Solana blob carries a
+        // trailing identity/nonce/allowed-domains tail (consumed by the KMS connector from the
+        // emitted event), which the gateway does not need to extract the context.
+        if (version == 1 || version == 3) {
             if (extraData.length < 33) {
                 revert InvalidExtraDataLength(extraData.length, 33);
             }
