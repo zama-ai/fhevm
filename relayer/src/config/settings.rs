@@ -3,7 +3,7 @@ use config::{Config, Environment, File};
 use derivative::Derivative;
 use serde::Deserializer;
 use serde::{de::Error, Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::env;
 use std::fmt;
 use std::time::Duration;
@@ -144,24 +144,53 @@ where
     D: Deserializer<'de>,
     T: Deserialize<'de>,
 {
-    #[derive(Deserialize)]
-    #[serde(untagged)]
-    enum MapOrSeq<T> {
-        List(Vec<T>),
-        Map(HashMap<String, T>),
-    }
+    // A manual Visitor (visit_seq / visit_map via deserialize_any) rather than a
+    // `#[serde(untagged)]` enum. Untagged enums buffer the value into serde's `Content`
+    // before trying each variant, and that buffering cannot round-trip a `u64` above
+    // `i64::MAX` (e.g. an RFC-021 Solana host `chain_id`) through the `config` crate — the
+    // whole list then fails with "data did not match any variant of untagged enum". The
+    // Visitor lets each element deserialize directly from the config value, so the
+    // element's own `deserialize_u64_from_str_or_num` handles large ids correctly.
+    struct VecVisitor<T>(std::marker::PhantomData<T>);
 
-    match MapOrSeq::deserialize(deserializer)? {
-        MapOrSeq::List(list) => Ok(list),
-        MapOrSeq::Map(map) => {
-            let mut items: Vec<(usize, T)> = map
-                .into_iter()
-                .filter_map(|(k, v)| k.parse::<usize>().ok().map(|idx| (idx, v)))
-                .collect();
+    impl<'de, T> serde::de::Visitor<'de> for VecVisitor<T>
+    where
+        T: Deserialize<'de>,
+    {
+        type Value = Vec<T>;
+
+        fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            f.write_str("a sequence, or a map keyed by integer index")
+        }
+
+        fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+        where
+            A: serde::de::SeqAccess<'de>,
+        {
+            let mut out = Vec::with_capacity(seq.size_hint().unwrap_or(0));
+            while let Some(item) = seq.next_element::<T>()? {
+                out.push(item);
+            }
+            Ok(out)
+        }
+
+        fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+        where
+            A: serde::de::MapAccess<'de>,
+        {
+            // Keys are stringified indices ("0", "1", …); order by index, ignore non-numeric keys.
+            let mut items: Vec<(usize, T)> = Vec::new();
+            while let Some((key, value)) = map.next_entry::<String, T>()? {
+                if let Ok(idx) = key.parse::<usize>() {
+                    items.push((idx, value));
+                }
+            }
             items.sort_by_key(|(idx, _)| *idx);
             Ok(items.into_iter().map(|(_, v)| v).collect())
         }
     }
+
+    deserializer.deserialize_any(VecVisitor(std::marker::PhantomData))
 }
 
 /// Unified listener pool configuration
@@ -1452,6 +1481,42 @@ mod tests {
     /// Mirrors the real K8s deployment: YAML base config + env var overrides.
     /// Loads env vars from tests/relayer-test-env-only.env, then calls
     /// Settings::new (same code path as the real app).
+    /// Smoke test: a QUOTED RFC-021 Solana host chain id (> `i64::MAX`) loads through the real
+    /// `Settings::new` path to the exact u64. The `config` crate's numeric value is i64-backed, so
+    /// the id must be a quoted string (as setup-solana-side.sh writes it) to avoid a lossy f64
+    /// coercion. NOTE: this does NOT reproduce the env-specific `host_chains` "untagged MapOrSeq"
+    /// crash observed in the live stack after a config reconcile (not isolable in a unit test — it
+    /// needs the full live env). The manual `Visitor` in `deserialize_vec_from_map_or_seq` removes
+    /// the untagged-enum buffering that error names, but its effect on the live crash is confirmed
+    /// against the running relayer, not by this test (which passes with or without the Visitor).
+    #[test]
+    #[serial] // avoid env var leakage from parallel tests
+    fn test_settings_loads_solana_host_chain_id_above_i64_max() {
+        const SOLANA_CHAIN_ID: u64 = (1u64 << 63) | 12345; // 9223372036854788153 > i64::MAX
+        // Mirror the live config (setup-solana-side.sh writes the Solana host_chains entry with a
+        // QUOTED chain_id, because the `config` crate's numeric value is i64-backed and a bare
+        // number above i64::MAX coerces to a lossy f64). Loading must succeed through the real
+        // Settings::new path; this regresses the untagged-enum crash the Visitor fix removed.
+        let base = std::fs::read_to_string("tests/relayer-test-config.yaml")
+            .expect("read tests/relayer-test-config.yaml");
+        let solana_cfg = base.replace(
+            "  - chain_id: 8009",
+            &format!("  - chain_id: \"{SOLANA_CHAIN_ID}\""),
+        );
+        assert!(
+            solana_cfg.contains(&format!("\"{SOLANA_CHAIN_ID}\"")),
+            "test fixture must contain the quoted Solana chain id"
+        );
+        let path = std::env::temp_dir()
+            .join(format!("relayer-solana-host-{}.yaml", std::process::id()));
+        std::fs::write(&path, solana_cfg).expect("write temp config");
+        let result = Settings::new(Some(path.to_string_lossy().into_owned()));
+        let _ = std::fs::remove_file(&path);
+        let settings = result
+            .expect("Settings::new must load a quoted Solana host chain id above i64::MAX (RFC-021)");
+        assert_eq!(settings.host_chains[0].chain_id, SOLANA_CHAIN_ID);
+    }
+
     /// Values in the env file intentionally differ from the YAML to prove
     /// env vars actually override. This catches map-vs-sequence and other
     /// type issues for any field set via env vars.
