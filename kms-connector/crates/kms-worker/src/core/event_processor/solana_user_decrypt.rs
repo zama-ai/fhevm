@@ -153,6 +153,29 @@ pub async fn check_solana_handles_acl(
     Ok(())
 }
 
+/// Solana public-decryption ACL check: each handle's on-chain ACL record (fetched at `finalized`
+/// with the same owner + canonical-PDA checks as the user-decrypt path) must carry the
+/// `public_decrypt` flag, i.e. the handle was released for public decryption on the host
+/// (`allow_for_decryption`). Unlike user-decrypt there is no subject/domain scope — a publicly
+/// released handle is decryptable by anyone.
+pub async fn check_solana_handles_public_decrypt(
+    host: &SolanaHost,
+    handles: &[HandleBytes],
+) -> Result<(), ProcessingError> {
+    let verifier = SolanaAclVerifier::new(host.program_id);
+
+    for handle in handles {
+        let record = fetch_acl_record_for_handle(host, *handle).await?;
+        verifier.verify_public_decrypt(&record, *handle).map_err(|e| {
+            ProcessingError::Recoverable(anyhow!(
+                "Solana public-decrypt not authorized for handle {}: {e}",
+                hex_handle(handle)
+            ))
+        })?;
+    }
+    Ok(())
+}
+
 /// Fetches and decodes the ACL record for `handle`, enforcing owner + canonical-PDA invariants.
 ///
 /// The ACL-record PDA is derived from the record's nonce metadata, which the connector does not

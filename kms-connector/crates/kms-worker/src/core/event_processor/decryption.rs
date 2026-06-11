@@ -4,7 +4,10 @@ use crate::core::{
         ProcessingError,
         context::ContextManager,
         s3::S3Service,
-        solana_user_decrypt::{SolanaHost, check_solana_handles_acl, verify_solana_user_decrypt_signature},
+        solana_user_decrypt::{
+            SolanaHost, check_solana_handles_acl, check_solana_handles_public_decrypt,
+            verify_solana_user_decrypt_signature,
+        },
     },
     solana_acl::HandleBytes,
     solana_v2_fetcher::SolanaV2Fetcher,
@@ -112,6 +115,15 @@ where
         for ct in sns_ciphertexts {
             let ct_chain_id = extract_chain_id_from_handle(ct.ctHandle.as_slice())
                 .map_err(ProcessingError::Irrecoverable)?;
+
+            // Solana host: the EVM ACL contract does not exist on this chain. Defer to the on-chain
+            // ACL record's `public_decrypt` flag read at `finalized` (released via the host
+            // `allow_for_decryption`), mirroring the Solana user-decrypt ACL phase.
+            if let Some(host) = self.solana_hosts.get(&ct_chain_id) {
+                check_solana_handles_public_decrypt(host, &[ct.ctHandle.0]).await?;
+                continue;
+            }
+
             let Some(acl_contract) = self.acl_contracts.get(&ct_chain_id) else {
                 return Err(ProcessingError::Recoverable(anyhow!(
                     "No ACL contract config found for chain id {ct_chain_id}"
