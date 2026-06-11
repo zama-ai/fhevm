@@ -2379,7 +2379,6 @@ mod tests {
         payload.extend_from_slice(&[4; 32]);
         payload.extend_from_slice(&[request_byte; 32]);
         payload.extend_from_slice(&[6; 32]);
-        payload.extend_from_slice(&[7; 32]);
         payload.extend_from_slice(&8_u64.to_le_bytes());
         payload.extend_from_slice(&9_u64.to_le_bytes());
         payload
@@ -2394,7 +2393,6 @@ mod tests {
         payload.extend_from_slice(&[14; 32]);
         payload.extend_from_slice(&[request_byte; 32]);
         payload.extend_from_slice(&[16; 32]);
-        payload.extend_from_slice(&[17; 32]);
         payload.extend_from_slice(&18_u64.to_le_bytes());
         payload.extend_from_slice(&19_u64.to_le_bytes());
         payload
@@ -2411,7 +2409,6 @@ mod tests {
         payload.extend_from_slice(&[26; 32]);
         payload.extend_from_slice(&[request_byte; 32]);
         payload.extend_from_slice(&[28; 32]);
-        payload.extend_from_slice(&[29; 32]);
         payload.extend_from_slice(&30_u64.to_le_bytes());
         payload.extend_from_slice(&31_u64.to_le_bytes());
         payload
