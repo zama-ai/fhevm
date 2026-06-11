@@ -52,7 +52,9 @@ ih="$(echo "$ir" | python3 -c "import sys,json;print(json.load(sys.stdin)['resul
 isig="$(echo "$ir" | python3 -c "import sys,json;print(json.load(sys.stdin)['result']['signatures'][0])")"
 iextra="$(echo "$ir" | python3 -c "import sys,json;print(json.load(sys.stdin)['result'].get('extraData','0x00'))")"
 echo "    input handle=$ih (coprocessor EIP-712 attestation $isig)"
-BIND_INPUT=1 BIND_HANDLE="$ih" BIND_COPRO_SIG="$isig" BIND_USER="$USER" BIND_CONTRACT="$CONTRACT" \
+# Attested contract == deployer: zama-host binds the input into the signer's own ACL domain
+# (verify_coprocessor_input_and_bind requires attested contract == output app account == signer).
+BIND_INPUT=1 BIND_HANDLE="$ih" BIND_COPRO_SIG="$isig" BIND_USER="$USER" BIND_CONTRACT="$USER" \
   BIND_CHAIN_ID="$SID" BIND_EXTRA="$iextra" "$LC" 2>&1 | grep -E 'verify_coprocessor_input_and_bind|secp256k1' \
   || fail "zama-host bind failed"
 echo "    input bound on zama-host via on-chain secp256k1 verify of coprocessor attestation"
@@ -86,11 +88,16 @@ done
 dv="$(echo "$r" | python3 -c "import sys,json;print(int(json.load(sys.stdin)['result']['decryptedValue'],16))")"
 [ "$dv" = "$VALUE" ] && echo "    public-decrypt cleartext=$dv OK" || fail "public-decrypt $dv != $VALUE"
 
-echo "==> [user-decrypt] relayer /v2/user-decrypt (ed25519 auth) + de-signcrypt"
+echo "==> [user-decrypt] V2 path: js-sdk buildSolanaUserDecryptRequest -> relayer /v3/user-decrypt (ed25519) + de-signcrypt"
+# The js-sdk signs the canonical 'zama-solana-user-decrypt-v1' preimage (ed25519 over the ML-KEM
+# re-encryption key + handles + identity + nonce + allowed ACL domain keys + validity window); the
+# Rust harness owns ML-KEM keygen + de-signcryption (kms-core process_user_decryption_resp_solana,
+# not exposed in the SDK WASM) and POSTs the v3 typed-attestation envelope.
 ( cd "$KMS" && SOLANA_UD_HANDLE="$H" SOLANA_UD_EXPECTED="$VALUE" SOLANA_UD_CONTEXT_ID="$CTX" \
+    SOLANA_UD_CHAIN_ID="$SID" SOLANA_UD_SDK_DIR="$ROOT/sdk/js-sdk" \
     cargo test -p kms --features non-wasm --test solana_user_decrypt_live -- --ignored --nocapture ) \
   || fail "user-decrypt test failed"
-echo "    user-decrypt cleartext=$VALUE OK"
+echo "    user-decrypt cleartext=$VALUE OK (V2 ed25519 via js-sdk)"
 
 echo "==> [consume] confidential mint + USDC; wrap -> burn -> release -> public-decrypt -> redeem(secp) + disclose(secp)"
 LCDIR="$ROOT/solana/scripts/poc/live-client"

@@ -51,7 +51,10 @@ const builder = createZkProofBuilder();
 builder.addTypedValue(createTypedValue({ type: 'uint64', value: 42n }));
 
 console.log('--- building Solana ZK proof (value=42, uint64) ...');
-const proof = await builder.buildSolana(fhevm, { contractAddress: CONTRACT, userAddress: USER });
+// zama-host verify_coprocessor_input_and_bind requires the attested contract to equal the output
+// ACL app account, and the app account must be the authorizing signer (the deployer). So the proof
+// attests the deployer as the contract identity; binding the input into the deployer's ACL domain.
+const proof = await builder.buildSolana(fhevm, { contractAddress: USER, userAddress: USER });
 console.log('proof prototype methods:', Object.getOwnPropertyNames(Object.getPrototypeOf(proof)));
 
 // Inspect the proof's accessors (discover the ciphertext + handles API at runtime).
@@ -62,7 +65,7 @@ console.log('ciphertext bytes len:', ct?.length, 'handles:', handles);
 const ctHex = Buffer.from(ct).toString('hex');
 const body = {
   contractChainId: SID.toString(),
-  contractAddress: CONTRACT_B58,
+  contractAddress: USER_B58, // attested contract == deployer (bound into the deployer's ACL domain)
   userAddress: USER_B58,
   ciphertextWithInputVerification: ctHex,
   extraData: '0x00',

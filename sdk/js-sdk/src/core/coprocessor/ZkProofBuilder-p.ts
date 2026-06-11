@@ -1,4 +1,4 @@
-import type { Bytes20, Bytes32, BytesHex, ChecksummedAddress, UintNumber } from '../types/primitives.js';
+import type { BytesHex, ChecksummedAddress, UintNumber } from '../types/primitives.js';
 import type { ZkProof } from '../types/zkProof-p.js';
 import type { EncryptionBits, FheType } from '../types/fheType.js';
 import type { ZkProofBuilder } from '../types/zkProofBuilder.js';
@@ -16,9 +16,8 @@ import type {
   AddressValueLike,
 } from '../types/primitives.js';
 import { assert } from '../base/errors/InternalError.js';
-import { isUint64, uint256ToBytes32 } from '../base/uint.js';
-import { isAddress } from '../base/address.js';
-import { asBytesHex, hexToBytes20 } from '../base/bytes.js';
+import { isUint64 } from '../base/uint.js';
+import { asBytesHex } from '../base/bytes.js';
 import { ZkProofError } from '../errors/ZkProofError.js';
 import { buildInputProofMetaData, isSolanaHostChainId } from './buildInputProofMetaData-p.js';
 import { toSolanaZkProof } from './SolanaZkProof-p.js';
@@ -152,11 +151,12 @@ class ZkProofBuilderImpl implements ZkProofBuilder {
       readonly extraData: string;
     },
   ): Promise<ZkProof> {
-    const { chainId, aclContractAddress, ciphertextWithZkProof } = await this.#encodeAndProve(
-      context,
-      contractAddress,
-      userAddress,
-    );
+    const {
+      chainId,
+      aclContractAddress,
+      ciphertextWithZkProof,
+      extraData: finalExtraData,
+    } = await this.#encodeAndProve(context, contractAddress, userAddress, asBytesHex(extraData));
 
     if (isSolanaHostChainId(chainId)) {
       throw new ZkProofError({
@@ -173,6 +173,7 @@ class ZkProofBuilderImpl implements ZkProofBuilder {
         ciphertextWithZkProof,
         encryptionBits: this.#bits,
       },
+      finalExtraData,
       { copy: false }, // Take ownership
     );
   }
@@ -193,10 +194,13 @@ class ZkProofBuilderImpl implements ZkProofBuilder {
       readonly userAddress: string;
     },
   ): Promise<SolanaZkProof> {
+    // Solana input-proof extraData is fixed (`0x00`): the host binding lives in the 128-byte aux
+    // (`buildInputProofMetaData`), and SolanaZkProof carries no extraData field.
     const { chainId, aclContractAddress, ciphertextWithZkProof } = await this.#encodeAndProve(
       context,
       contractAddress,
       userAddress,
+      asBytesHex('0x00'),
     );
 
     if (!isSolanaHostChainId(chainId)) {
@@ -232,10 +236,12 @@ class ZkProofBuilderImpl implements ZkProofBuilder {
     context: Context,
     contractAddress: string,
     userAddress: string,
+    extraData: BytesHex,
   ): Promise<{
     readonly chainId: bigint | number;
     readonly aclContractAddress: string;
     readonly ciphertextWithZkProof: Uint8Array;
+    readonly extraData: BytesHex;
   }> {
     // Fetch the FheEncryptionKey (in wasm format) from the global cache.
     const fheEncryptionKeyWasm = await fetchFheEncryptionKeyWasm(context);
@@ -269,48 +275,20 @@ class ZkProofBuilderImpl implements ZkProofBuilder {
       aclContractAddress,
     });
 
-    // Bytes20
-    const contractAddressBytes20: Bytes20 = hexToBytes20(contractAddress);
-
-    // Bytes20
-    const userAddressBytes20: Bytes20 = hexToBytes20(userAddress);
-
-    // Bytes20
-    const aclContractAddressBytes20: Bytes20 = hexToBytes20(aclContractAddress);
-
-    // Bytes32
-    const chainIdBytes32: Bytes32 = uint256ToBytes32(chainId);
-
-    const metaDataLength = 3 * 20 + 32;
-    const metaData = new Uint8Array(metaDataLength);
-
-    metaData.set(contractAddressBytes20, 0);
-    metaData.set(userAddressBytes20, 20);
-    metaData.set(aclContractAddressBytes20, 40);
-    metaData.set(chainIdBytes32, 60);
-
-    assert(metaData.length - chainIdBytes32.length === 60);
-
     const { ciphertextWithZKProofBytes, extraData: finalExtraData } =
       await context.runtime.encrypt.buildWithProofPacked({
         typedValues: [...this.#builder.build()],
         fheEncryptionKey: fheEncryptionKeyWasm,
         metaData,
-        extraData: asBytesHex(extraData),
+        extraData,
       });
 
-    return toZkProof(
-      {
-        chainId: BigInt(chainId),
-        aclContractAddress,
-        contractAddress,
-        userAddress,
-        ciphertextWithZkProof: ciphertextWithZKProofBytes,
-        encryptionBits: this.#bits,
-      },
-      finalExtraData,
-      { copy: false }, // Take ownership
-    );
+    return {
+      chainId,
+      aclContractAddress,
+      ciphertextWithZkProof: ciphertextWithZKProofBytes,
+      extraData: finalExtraData,
+    };
   }
 
   #checkLimit(encryptionBits: EncryptionBits): void {
