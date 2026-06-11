@@ -13,8 +13,14 @@ use alloy::{
 use anyhow::Context;
 use aws_config::BehaviorVersion;
 use clap::{Parser, ValueEnum};
-use fhevm_engine_common::database::{connect_pool_with_options, resolve_database_url_from_option};
-use fhevm_engine_common::drift_revert;
+use fhevm_engine_common::{
+    database::{connect_pool_with_options, resolve_database_url_from_option},
+    drift_revert,
+    gateway_http::{
+        validate_gateway_http_timeout, DEFAULT_GATEWAY_HTTP_MAX_RETRIES,
+        DEFAULT_GATEWAY_HTTP_REQUEST_TIMEOUT_SECS,
+    },
+};
 use tokio::signal::unix::{signal, SignalKind};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, Level};
@@ -98,7 +104,7 @@ struct Conf {
     #[arg(long, default_value_t = 4)]
     error_sleep_max_secs: u16,
 
-    #[arg(long, default_value_t = 4, alias = "txn-receipt-timeout-secs")]
+    #[arg(long, default_value_t = DEFAULT_GATEWAY_HTTP_REQUEST_TIMEOUT_SECS, alias = "txn-receipt-timeout-secs")]
     send_txn_sync_timeout_secs: u16,
 
     #[deprecated(note = "no longer used and will be removed in future versions")]
@@ -108,7 +114,7 @@ struct Conf {
     #[arg(long, default_value_t = 30)]
     review_after_unlimited_retries: u16,
 
-    #[arg(long, default_value_t = u32::MAX)]
+    #[arg(long, default_value_t = DEFAULT_GATEWAY_HTTP_MAX_RETRIES)]
     provider_max_retries: u32,
 
     #[arg(long, default_value = "4s", value_parser = parse_duration)]
@@ -121,7 +127,7 @@ struct Conf {
     #[arg(long, default_value = "0.0.0.0:9100")]
     metrics_addr: Option<String>,
 
-    #[arg(long, default_value = "4s", value_parser = parse_duration)]
+    #[arg(long, default_value = "70s", value_parser = parse_duration)]
     health_check_timeout: Duration,
 
     #[arg(
@@ -212,11 +218,27 @@ fn get_provider(
     Ok(provider)
 }
 
+fn validate_gateway_http_timeouts(conf: &Conf) -> anyhow::Result<()> {
+    validate_gateway_http_timeout(
+        "send_txn_sync_timeout_secs",
+        Duration::from_secs(conf.send_txn_sync_timeout_secs.into()),
+        conf.provider_max_retries,
+        conf.provider_retry_interval,
+    )?;
+    validate_gateway_http_timeout(
+        "health_check_timeout",
+        conf.health_check_timeout,
+        conf.provider_max_retries,
+        conf.provider_retry_interval,
+    )
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
 
     let conf = parse_args();
+    validate_gateway_http_timeouts(&conf)?;
 
     let _otel_guard = telemetry::init_tracing_otel_with_logs_only_fallback(
         conf.log_level,

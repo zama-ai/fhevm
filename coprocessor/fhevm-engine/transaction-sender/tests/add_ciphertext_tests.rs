@@ -13,8 +13,8 @@ use std::time::Duration;
 use test_harness::db_utils::{insert_ciphertext_digest, insert_random_keys_and_host_chain};
 use tokio::time::sleep;
 use transaction_sender::{
-    gateway_http_client, is_backend_gone, ConfigSettings, FillersWithoutNonceManagement,
-    NonceManagedProvider, TransactionSender,
+    gateway_http_client, is_gateway_provider_exhausted, ConfigSettings,
+    FillersWithoutNonceManagement, NonceManagedProvider, TransactionSender,
 };
 
 #[rstest]
@@ -295,7 +295,7 @@ async fn recover_from_transport_error(#[case] signer_type: SignerType) -> anyhow
 #[case::aws_kms(SignerType::AwsKms)]
 #[tokio::test]
 #[serial(db)]
-async fn stop_on_backend_gone(#[case] signer_type: SignerType) -> anyhow::Result<()> {
+async fn stop_on_gateway_provider_exhausted(#[case] signer_type: SignerType) -> anyhow::Result<()> {
     let http_max_retries = 2;
     let http_retry_interval = Duration::from_millis(50);
     let conf = ConfigSettings {
@@ -389,9 +389,9 @@ async fn stop_on_backend_gone(#[case] signer_type: SignerType) -> anyhow::Result
         sleep(Duration::from_millis(500)).await;
     }
 
-    // Expect that the sender will stop on its own due to BackendGone.
+    // Expect that the sender will stop on its own due to gateway provider exhaustion.
     let err = run_handle.await?.err().unwrap();
-    assert!(is_backend_gone(&err));
+    assert!(is_gateway_provider_exhausted(&err));
     Ok(())
 }
 

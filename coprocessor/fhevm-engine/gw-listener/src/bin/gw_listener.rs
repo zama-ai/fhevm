@@ -1,11 +1,12 @@
 use std::time::Duration;
 
 use alloy::providers::ProviderBuilder;
-use alloy::rpc::client::RpcClient;
-use alloy::transports::layers::RetryBackoffLayer;
 use alloy::{primitives::Address, transports::http::reqwest::Url};
 use clap::Parser;
 use fhevm_engine_common::database::{connect_pool_with_options, resolve_database_url_from_option};
+use fhevm_engine_common::gateway_http::{
+    gateway_http_client, validate_gateway_http_timeout, DEFAULT_GATEWAY_HTTP_MAX_RETRIES,
+};
 use fhevm_engine_common::{
     drift_revert::{
         self, RevertRunnerConfig, WatcherTimeouts, DRIFT_REVERT_DB_DOWN_LIMIT,
@@ -68,10 +69,10 @@ struct Conf {
     #[arg(long, default_value = "0.0.0.0:9100")]
     metrics_addr: Option<String>,
 
-    #[arg(long, default_value = "4s", value_parser = parse_duration)]
+    #[arg(long, default_value = "70s", value_parser = parse_duration)]
     health_check_timeout: Duration,
 
-    #[arg(long, default_value_t = u32::MAX)]
+    #[arg(long, default_value_t = DEFAULT_GATEWAY_HTTP_MAX_RETRIES)]
     provider_max_retries: u32,
 
     #[arg(long, default_value = "4s", value_parser = parse_duration)]
@@ -160,11 +161,21 @@ fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()
     Ok(())
 }
 
+fn validate_gateway_http_timeouts(conf: &Conf) -> anyhow::Result<()> {
+    validate_gateway_http_timeout(
+        "health_check_timeout",
+        conf.health_check_timeout,
+        conf.provider_max_retries,
+        conf.provider_retry_interval,
+    )
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
 
     let conf = Conf::parse();
+    validate_gateway_http_timeouts(&conf)?;
 
     let _otel_guard = telemetry::init_tracing_otel_with_logs_only_fallback(
         conf.log_level,
@@ -179,14 +190,11 @@ async fn main() -> anyhow::Result<()> {
         "Creating Gateway HTTP RPC provider"
     );
 
-    let provider_retry_interval_ms = conf.provider_retry_interval.as_millis();
-    let provider_retry_interval_ms = u64::try_from(provider_retry_interval_ms).unwrap_or(u64::MAX);
-    let retry_layer =
-        RetryBackoffLayer::new(conf.provider_max_retries, provider_retry_interval_ms, 100);
-    let client = RpcClient::builder()
-        .layer(retry_layer)
-        .http(conf.gw_url.clone());
-    let provider = ProviderBuilder::new().connect_client(client);
+    let provider = ProviderBuilder::new().connect_client(gateway_http_client(
+        &conf.gw_url,
+        conf.provider_max_retries,
+        conf.provider_retry_interval,
+    ));
 
     info!(gateway_rpc_url = %conf.gw_url, "Created Gateway HTTP RPC provider");
 

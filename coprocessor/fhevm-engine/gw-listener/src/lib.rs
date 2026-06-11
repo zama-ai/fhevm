@@ -1,5 +1,6 @@
 use alloy::primitives::Address;
 use alloy::transports::http::reqwest::Url;
+use fhevm_engine_common::gateway_http::DEFAULT_GATEWAY_HTTP_REQUEST_TIMEOUT;
 use fhevm_engine_common::utils::DatabaseURL;
 use std::time::Duration;
 
@@ -53,7 +54,7 @@ impl Default for ConfigSettings {
             error_sleep_initial_secs: 1,
             error_sleep_max_secs: 10,
             health_check_port: 8080,
-            health_check_timeout: Duration::from_secs(4),
+            health_check_timeout: DEFAULT_GATEWAY_HTTP_REQUEST_TIMEOUT,
             get_logs_poll_interval: Duration::from_millis(500),
             get_logs_block_batch_size: 100,
             log_last_processed_every_number_of_updates: 50,

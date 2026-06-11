@@ -11,15 +11,14 @@ use std::time::Duration;
 use alloy::network::TxSigner;
 use alloy::providers::Provider;
 use alloy::providers::ProviderBuilder;
-use alloy::rpc::client::RpcClient;
 use alloy::signers::Signature;
 use alloy::signers::Signer;
 use alloy::transports::http::reqwest::Url;
-use alloy::transports::layers::{RateLimitRetryPolicy, RetryBackoffLayer};
 use alloy::transports::TransportError;
-use alloy::transports::TransportErrorKind;
 use anyhow::Error;
 pub use config::ConfigSettings;
+pub use fhevm_engine_common::gateway_http::gateway_http_client;
+use fhevm_engine_common::gateway_http::is_gateway_provider_exhausted_transport_error;
 pub use nonce_managed_provider::FillersWithoutNonceManagement;
 pub use nonce_managed_provider::NonceManagedProvider;
 use tracing::error;
@@ -78,29 +77,6 @@ impl HealthStatus {
     }
 }
 
-pub fn gateway_http_client(url: &Url, max_retries: u32, retry_interval: Duration) -> RpcClient {
-    let retry_interval_ms = retry_interval.as_millis();
-    let retry_interval_ms = u64::try_from(retry_interval_ms).unwrap_or(u64::MAX);
-    let retry_policy = RateLimitRetryPolicy::default().or(|err| {
-        matches!(
-            err,
-            TransportError::Transport(TransportErrorKind::Custom(_))
-        )
-    });
-    let retry_layer =
-        RetryBackoffLayer::new_with_policy(max_retries, retry_interval_ms, 100, retry_policy);
-    RpcClient::builder().layer(retry_layer).http(url.clone())
-}
-
-pub fn is_backend_gone_transport_error(inner: &TransportErrorKind) -> bool {
-    matches!(inner, TransportErrorKind::BackendGone)
-        || matches!(
-            inner,
-            TransportErrorKind::Custom(err)
-                if err.to_string().starts_with("Max retries exceeded ")
-        )
-}
-
 // Gets the chain ID from the given Gateway HTTP RPC URL.
 // This is a utility function that will try to connect until it succeeds.
 pub async fn get_chain_id(gateway_url: Url, retry_interval: Duration) -> u64 {
@@ -129,10 +105,10 @@ pub async fn get_chain_id(gateway_url: Url, retry_interval: Duration) -> u64 {
     }
 }
 
-pub fn is_backend_gone(err: &Error) -> bool {
+pub fn is_gateway_provider_exhausted(err: &Error) -> bool {
     err.chain().any(|cause| {
         if let Some(t) = cause.downcast_ref::<TransportError>() {
-            matches!(t, TransportError::Transport(inner) if is_backend_gone_transport_error(inner))
+            matches!(t, TransportError::Transport(inner) if is_gateway_provider_exhausted_transport_error(inner))
         } else {
             false
         }

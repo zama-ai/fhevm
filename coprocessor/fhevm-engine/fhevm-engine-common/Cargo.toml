@@ -67,5 +67,9 @@ path = "src/bin/generate_keys.rs"
 name = "resolve_database_url"
 path = "src/bin/resolve_database_url.rs"
 
+[dev-dependencies]
+alloy-json-rpc = "1.1.2"
+tower = "0.5.2"
+
 [lints]
 workspace = true

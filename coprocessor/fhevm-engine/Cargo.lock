@@ -3492,6 +3492,7 @@ name = "fhevm-engine-common"
 version = "0.6.1"
 dependencies = [
  "alloy",
+ "alloy-json-rpc",
  "alloy-provider",
  "anyhow",
  "aws-config",
@@ -3524,6 +3525,7 @@ dependencies = [
  "tokio-util",
  "tonic",
  "tonic-build",
+ "tower 0.5.2",
  "tracing",
  "tracing-opentelemetry",
  "tracing-subscriber",
