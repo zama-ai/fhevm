@@ -1,4 +1,4 @@
-import type { Bytes, Bytes32Hex, Uint64BigInt, Uint8Number } from '../types/primitives.js';
+import type { Bytes, Bytes32Hex, Uint64BigInt } from '../types/primitives.js';
 import type { EncryptionBits, FheTypeId } from '../types/fheType.js';
 import type { InputHandle } from '../types/encryptedTypes-p.js';
 import type { SolanaZkProof, SolanaZkProofLike } from '../types/zkProof-p.js';
@@ -63,7 +63,7 @@ class SolanaZkProofImpl implements SolanaZkProof {
     return this.#userAddress;
   }
   public get ciphertextWithZkProof(): Bytes {
-    return new Uint8Array(this.#ciphertextWithZkProof) as Bytes;
+    return new Uint8Array(this.#ciphertextWithZkProof);
   }
   public get encryptionBits(): readonly EncryptionBits[] {
     return this.#encryptionBits;
@@ -149,7 +149,7 @@ function solanaInputHandles(args: {
         hash21,
         chainId: args.chainId,
         fheTypeId,
-        index: index as Uint8Number,
+        index,
       }),
     );
   }

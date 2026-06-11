@@ -15,13 +15,13 @@ import type {
   BoolValueLike,
   AddressValueLike,
 } from '../types/primitives.js';
+import type { SolanaZkProof } from './SolanaZkProof-p.js';
 import { assert } from '../base/errors/InternalError.js';
 import { isUint64 } from '../base/uint.js';
 import { asBytesHex } from '../base/bytes.js';
 import { ZkProofError } from '../errors/ZkProofError.js';
 import { buildInputProofMetaData, isSolanaHostChainId } from './buildInputProofMetaData-p.js';
 import { toSolanaZkProof } from './SolanaZkProof-p.js';
-import type { SolanaZkProof } from './SolanaZkProof-p.js';
 import { createTypedValue, TypedValueArrayBuilder } from '../base/typedValue.js';
 import { toZkProof } from './ZkProof-p.js';
 import { encryptionBitsFromFheType, fheTypeNameFromTypeName } from '../handle/FheType.js';

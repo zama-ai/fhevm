@@ -19,6 +19,9 @@ VALUE="${TE_VALUE:-77}"
 SID=9223372036854788153
 RPC=http://127.0.0.1:8899
 RELAYER=http://127.0.0.1:3000
+# extraData = version 0x01 ‖ 32-byte BE gateway KMS context id `0x07..01` (chain-type tag ‖ u64 id 1).
+# The KMS knows only this context; `extract_kms_context_id` derives the low-u64 (1) the Solana host
+# kms_context is keyed on.
 EXTRA=0x010700000000000000000000000000000000000000000000000000000000000001
 LC="$ROOT/solana/scripts/poc/live-client/target/debug/poc-live-client"
 LCDIR="$ROOT/solana/scripts/poc/live-client"
@@ -63,6 +66,7 @@ echo "==> [L4-b] disclose with a cert bound to a DIFFERENT context MUST be rejec
 source "$ROOT/.fhevm/runtime/addresses/gateway/.env.gateway"
 GW_RPC="${GW_RPC:-http://127.0.0.1:8546}"
 COPROCESSOR_SIGNER="$(cast call "$GATEWAY_CONFIG_ADDRESS" 'getCoprocessorSigners()(address[])' --rpc-url "$GW_RPC" | tr -d '[]' | tr ',' '\n' | head -1 | tr -d ' ')"
+COPROC_SET_DIGEST="$(cast keccak "$(cast abi-encode 'f(address[])' "[$COPROCESSOR_SIGNER]")")"
 
 # Stand up a confidential mint + a burned, sealed, released handle (same as full-vertical consume).
 UNDER="$(spl-token create-token --decimals 9 -u "$RPC" 2>/dev/null | grep -oiE 'creating token [A-Za-z0-9]+' | awk '{print $3}')"
@@ -85,8 +89,16 @@ for i in $(seq 1 40); do
   [ "$(ctdig "SELECT ciphertext IS NOT NULL, ciphertext128 IS NOT NULL FROM ciphertext_digest WHERE handle=decode('$BHH','hex')")" = "t|t" ] && break
   [ "$i" = 40 ] && fail "(b) burned-handle SNS commit timed out"; sleep 6
 done
-relout="$(lc SEAL_RELEASE_ONLY=1 CONSUME_SEAL=1 TS_ACL="$BURNED_ACL" TS_HANDLE="$BURNED_HANDLE")" || true
-echo "$relout" | grep -q 'OK request_disclose_amount' || fail "(b) release burned amount: $(echo "$relout" | tail -3)"
+# Full seal: commit the burned handle's material (disclose_amount_secp reads this
+# HandleMaterialCommitment) AND release it for public decrypt, in one call. Release-only would skip
+# the commit, so the control disclose below would fail on AccountNotInitialized instead of exercising
+# the context check. Digests are the real ct64/ct128 from the coprocessor DB (now SNS-committed).
+KEY_ID="0x$(ctdig "SELECT encode(key_id_gw,'hex') FROM ciphertext_digest WHERE handle=decode('$BHH','hex')")"
+CT64="0x$(ctdig "SELECT encode(ciphertext,'hex') FROM ciphertext_digest WHERE handle=decode('$BHH','hex')")"
+CT128="0x$(ctdig "SELECT encode(ciphertext128,'hex') FROM ciphertext_digest WHERE handle=decode('$BHH','hex')")"
+relout="$(lc CONSUME_SEAL=1 TS_ACL="$BURNED_ACL" TS_HANDLE="$BURNED_HANDLE" KEY_ID="$KEY_ID" \
+   CT64_DIGEST="$CT64" CT128_DIGEST="$CT128" COPROC_SET_DIGEST="$COPROC_SET_DIGEST")" || true
+echo "$relout" | grep -q 'OK request_disclose_amount' || fail "(b) seal+release burned amount: $(echo "$relout" | tail -3)"
 
 # Public-decrypt -> genuine KMS PublicDecryptVerification cert (bound to the CURRENT context).
 cjob="$(curl -s -m15 "$RELAYER/v2/public-decrypt" -H 'content-type: application/json' \

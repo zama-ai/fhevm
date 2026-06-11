@@ -12,6 +12,10 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 KMS="$(cd "$ROOT/../../zama/kms" 2>/dev/null && pwd || echo /Users/work/code/zama/kms)"
 VALUE="${TE_VALUE:-55}"
 CTX="${SOLANA_UD_CONTEXT_ID:-3166189940082864718613269121331309980362851143201109172953918312716374638593}"
+# extraData = version 0x01 ‖ 32-byte BE gateway KMS context id. The gateway/KMS context is the
+# uint256 `0x07..01` (chain-type tag 0x07 in the high byte ‖ u64 id 1 in the low 8 bytes); the KMS
+# only knows THIS context, so the cert must be requested under it. The Solana host's u64 kms_context
+# id is the low-64-bits (1), which `extract_kms_context_id` derives from this same extra_data.
 EXTRA=0x010700000000000000000000000000000000000000000000000000000000000001
 fail() { echo "FAIL: $*" >&2; exit 1; }
 LC="$ROOT/solana/scripts/poc/live-client/target/debug/poc-live-client"

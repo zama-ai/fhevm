@@ -1,6 +1,7 @@
+import type { EncryptionBits } from '../types/fheType.js';
+
 import { describe, it, expect } from 'vitest';
 
-import type { EncryptionBits } from '../types/fheType.js';
 import { toSolanaZkProof } from './SolanaZkProof-p.js';
 import { SOLANA_CHAIN_TYPE_BIT } from './buildInputProofMetaData-p.js';
 
@@ -32,7 +33,7 @@ describe('SolanaZkProof', () => {
     const handles = proof.getInputHandles();
     expect(handles.length).toBe(1);
 
-    const handle = handles[0];
+    const handle = handles[0]!;
     // Trailing handle metadata is what zama-host checks: the chain-type high bit
     // survives, fhe type is euint64, index 0, version 0.
     expect(handle.chainId).toBe(CHAIN_ID);
@@ -42,12 +43,12 @@ describe('SolanaZkProof', () => {
   });
 
   it('is deterministic for identical inputs', () => {
-    expect(mkProof().getInputHandles()[0].bytes32Hex).toBe(mkProof().getInputHandles()[0].bytes32Hex);
+    expect(mkProof().getInputHandles()[0]!.bytes32Hex).toBe(mkProof().getInputHandles()[0]!.bytes32Hex);
   });
 
   it('binds the bytes32 ACL identity into the handle prehash', () => {
-    const base = mkProof().getInputHandles()[0];
-    const other = mkProof({ aclContractAddress: `0x${'44'.repeat(32)}` }).getInputHandles()[0];
+    const base = mkProof().getInputHandles()[0]!;
+    const other = mkProof({ aclContractAddress: `0x${'44'.repeat(32)}` }).getInputHandles()[0]!;
     expect(base.hash21).not.toBe(other.hash21);
   });
 
