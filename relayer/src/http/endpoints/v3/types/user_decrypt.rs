@@ -14,16 +14,18 @@ use utoipa::ToSchema;
 use validator::Validate;
 
 /// v3 user-decrypt request envelope. The relayer dispatches strictly by
-/// `attestationType`; the currently supported value is
-/// `"eip712-unified-user-decrypt-v1"`. Adding a Solana attestation later is
-/// a one-line widening of the dispatch table, not a v4 bump.
+/// `attestationType`. Supported values:
+/// - `"eip712-unified-user-decrypt-v1"` — EVM EIP-712 (verified on-chain by the gateway).
+/// - `"solana-ed25519-user-decrypt-v1"` — Solana ed25519 (verified off-chain per-party by the
+///   kms-connector). Both route to the same gateway V2 `userDecryptionRequest` calldata; the
+///   relayer forwards `signature` + `extraData` opaquely and never verifies them.
 #[derive(Deserialize, Clone, ToSchema, Validate, Derivative)]
 #[derivative(Debug)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AttestedUserDecryptRequestJson {
     /// The attestation/signature scheme used for the `signature` bytes.
-    /// Must equal `"eip712-unified-user-decrypt-v1"` for the current
-    /// release.
+    /// Must equal `"eip712-unified-user-decrypt-v1"` (EVM EIP-712) or
+    /// `"solana-ed25519-user-decrypt-v1"` (Solana ed25519).
     #[validate(custom(function = "crate::http::validate_v3_attestation_type"))]
     #[schema(example = "eip712-unified-user-decrypt-v1")]
     pub attestation_type: String,
@@ -95,9 +97,10 @@ pub struct Eip712UnifiedUserDecryptPayloadJson {
     #[schema(example = "0x04b8e5d3f1a2c4e6d8f0a1b3c5d7e9f1a2b4c6d8e0f2a3b5c7d9e1f3a5b7c9d1")]
     pub public_key: String,
 
-    /// Extra data forwarded to the gateway contract. Always `"0x00"` in
-    /// the current protocol version (versioned formats reserved for
-    /// future extensions).
+    /// Extra data forwarded verbatim to the gateway contract. `"0x00"` /
+    /// `0x01`-versioned for EVM; the `0x03`-versioned Solana blob
+    /// (context_id + ed25519 identity + nonce + allowed ACL domain keys)
+    /// for the Solana ed25519 attestation type. Opaque to the relayer.
     #[validate(custom(function = "crate::http::validate_extra_data_field_decryption"))]
     #[schema(example = "0x00")]
     pub extra_data: String,

@@ -193,6 +193,18 @@ impl ComputeCalldata {
     }
 }
 
+fn encode_ct_handle_contract_pairs(
+    pairs: &[HandleContractPair],
+) -> Vec<Decryption::CtHandleContractPair> {
+    pairs
+        .iter()
+        .map(|d| Decryption::CtHandleContractPair {
+            ctHandle: d.ct_handle.into(),
+            contractAddress: d.contract_address,
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod solana_calldata_tests {
     use super::*;
@@ -222,16 +234,4 @@ mod solana_calldata_tests {
         assert_eq!(decoded.contractChainId, U256::from(chain_id));
         assert_eq!(decoded.ciphertextWithZKProof, Bytes::from(vec![1, 2, 3]));
     }
-}
-
-fn encode_ct_handle_contract_pairs(
-    pairs: &[HandleContractPair],
-) -> Vec<Decryption::CtHandleContractPair> {
-    pairs
-        .iter()
-        .map(|d| Decryption::CtHandleContractPair {
-            ctHandle: d.ct_handle.into(),
-            contractAddress: d.contract_address,
-        })
-        .collect()
 }

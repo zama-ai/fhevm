@@ -139,16 +139,41 @@ pub fn validate_0x_hexs(hex_strs: &Vec<String>) -> Result<(), ValidationError> {
     Ok(())
 }
 
+/// Solana `extraData` version byte (`0x03`): a versioned blob carrying
+/// {context_id, ed25519 identity, nonce, allowed ACL domain keys}. The relayer
+/// treats it as opaque and forwards it verbatim; the canonical layout and its
+/// parsing/verification live in the kms-connector `solana_extra_data` module.
+const EXTRA_DATA_SOLANA_VERSION_BYTE: &str = "03";
+
+/// Minimum hex length (including the `0x` prefix) of a Solana `0x03` blob:
+/// 1 (version) + 32 (context_id) + 32 (identity) + 32 (nonce) + 4 (domain-key
+/// count) = 101 bytes = 202 hex chars + 2 for `0x` = 204. A blob shorter than
+/// this header cannot be a well-formed Solana request.
+const EXTRA_DATA_SOLANA_MIN_HEX_LEN: usize = 2 + 101 * 2;
+
 /// Validates the extraData field format for decryption requests.
 ///
 /// Accepted formats:
 /// - `"0x00"`: Legacy format (version 0)
 /// - `"0x01" + 64 hex chars`: Versioned format (version 1: 1 byte version + 32 bytes payload)
+/// - `"0x03" + …`: Solana ed25519 user-decrypt blob (version 3). Forwarded
+///   opaquely; only the version byte, a minimum header length, and hex
+///   well-formedness are checked here — the relayer never parses the tail.
 pub fn validate_extra_data_field_decryption(extra_data: &str) -> Result<(), ValidationError> {
     match extra_data {
         "0x00" => Ok(()),
         s if s.len() == 68 && s.starts_with("0x01") => {
             // Version 1: [0x01 | contextId(32B)] = 33 bytes = 66 hex chars + "0x" prefix = 68 chars
+            hex::decode(&s[2..]).map_err(|_| {
+                ValidationError::new("validation_error")
+                    .with_message(validation_messages::INVALID_EXTRA_DATA_FORMAT.into())
+            })?;
+            Ok(())
+        }
+        s if s.len() >= EXTRA_DATA_SOLANA_MIN_HEX_LEN
+            && s.starts_with("0x")
+            && &s[2..4] == EXTRA_DATA_SOLANA_VERSION_BYTE =>
+        {
             hex::decode(&s[2..]).map_err(|_| {
                 ValidationError::new("validation_error")
                     .with_message(validation_messages::INVALID_EXTRA_DATA_FORMAT.into())
@@ -260,10 +285,17 @@ pub fn validate_request_validity(
 // v3 (unified EIP-712 user-decryption) validators
 // ---------------------------------------------------------------------------
 
-/// The single attestation-type value supported by the current v3 endpoint.
-/// Future signature schemes (e.g. Solana ed25519) plug in by widening this
-/// allowlist.
+/// EVM unified EIP-712 attestation type: the `signature` is an EIP-712
+/// signature verified on-chain by the gateway.
 pub const V3_ATTESTATION_TYPE_EIP712_UNIFIED_V1: &str = "eip712-unified-user-decrypt-v1";
+
+/// Solana ed25519 attestation type: the `signature` is an ed25519 `signMessage`
+/// blob over the Solana signing preimage (see the kms-connector
+/// `solana_extra_data` module). The relayer does NOT verify it — it forwards
+/// `signature` + the `0x03` `extraData` blob verbatim into the same gateway
+/// V2 `userDecryptionRequest` calldata; each KMS party's connector verifies the
+/// ed25519 signature off-chain.
+pub const V3_ATTESTATION_TYPE_SOLANA_ED25519_V1: &str = "solana-ed25519-user-decrypt-v1";
 
 /// Required `version` value in the EIP-712 payload.
 pub const V3_PAYLOAD_VERSION: &str = "2.0";
@@ -271,13 +303,18 @@ pub const V3_PAYLOAD_VERSION: &str = "2.0";
 /// Required `type` value in the EIP-712 payload.
 pub const V3_PAYLOAD_TYPE: &str = "user_decryption";
 
-/// v3 envelope: `attestationType` must match a supported scheme.
+/// v3 envelope: `attestationType` must match a supported scheme. Both the EVM
+/// EIP-712 and the Solana ed25519 schemes route to the same gateway V2
+/// `userDecryptionRequest` calldata; the relayer only forwards the opaque
+/// `signature` + `extraData` and never verifies them.
 pub fn validate_v3_attestation_type(value: &str) -> Result<(), ValidationError> {
-    if value != V3_ATTESTATION_TYPE_EIP712_UNIFIED_V1 {
+    if value != V3_ATTESTATION_TYPE_EIP712_UNIFIED_V1
+        && value != V3_ATTESTATION_TYPE_SOLANA_ED25519_V1
+    {
         return Err(ValidationError::new("validation_error").with_message(
             format!(
-                "Unsupported attestationType; expected one of: [{}]",
-                V3_ATTESTATION_TYPE_EIP712_UNIFIED_V1
+                "Unsupported attestationType; expected one of: [{}, {}]",
+                V3_ATTESTATION_TYPE_EIP712_UNIFIED_V1, V3_ATTESTATION_TYPE_SOLANA_ED25519_V1
             )
             .into(),
         ));
@@ -370,4 +407,68 @@ pub fn validate_request_validity_seconds(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn v3_attestation_type_accepts_evm_and_solana() {
+        assert!(validate_v3_attestation_type(V3_ATTESTATION_TYPE_EIP712_UNIFIED_V1).is_ok());
+        assert!(validate_v3_attestation_type(V3_ATTESTATION_TYPE_SOLANA_ED25519_V1).is_ok());
+        assert!(validate_v3_attestation_type("solana-ed25519-user-decrypt-v1").is_ok());
+    }
+
+    #[test]
+    fn v3_attestation_type_rejects_unknown() {
+        assert!(validate_v3_attestation_type("eip712-unified-user-decrypt-v2").is_err());
+        assert!(validate_v3_attestation_type("solana-ed25519-user-decrypt-v2").is_err());
+        assert!(validate_v3_attestation_type("").is_err());
+        assert!(validate_v3_attestation_type("garbage").is_err());
+    }
+
+    /// Builds a minimal well-formed Solana `0x03` extraData hex string with
+    /// `domain_key_count` domain keys (matching the kms-connector layout:
+    /// version + context_id + identity + nonce + count + keys).
+    fn solana_extra_data_hex(domain_key_count: u32) -> String {
+        let mut bytes = vec![0x03u8];
+        bytes.extend_from_slice(&[0u8; 32]); // context_id
+        bytes.extend_from_slice(&[7u8; 32]); // identity
+        bytes.extend_from_slice(&[9u8; 32]); // nonce
+        bytes.extend_from_slice(&domain_key_count.to_be_bytes());
+        bytes.extend(std::iter::repeat_n(0xabu8, domain_key_count as usize * 32));
+        format!("0x{}", hex::encode(bytes))
+    }
+
+    #[test]
+    fn extra_data_accepts_solana_v3_blob() {
+        // Header-only (zero domain keys) and with domain keys both pass.
+        assert!(validate_extra_data_field_decryption(&solana_extra_data_hex(0)).is_ok());
+        assert!(validate_extra_data_field_decryption(&solana_extra_data_hex(2)).is_ok());
+    }
+
+    #[test]
+    fn extra_data_rejects_truncated_solana_v3_blob() {
+        // A 0x03 prefix shorter than the minimum header is rejected.
+        let short = format!("0x03{}", "00".repeat(10));
+        assert!(validate_extra_data_field_decryption(&short).is_err());
+    }
+
+    #[test]
+    fn extra_data_rejects_non_hex_solana_v3_blob() {
+        // Right length, 0x03 version, but non-hex payload.
+        let bad = format!("0x03{}", "zz".repeat(101));
+        assert!(validate_extra_data_field_decryption(&bad).is_err());
+    }
+
+    #[test]
+    fn extra_data_evm_paths_unchanged() {
+        assert!(validate_extra_data_field_decryption("0x00").is_ok());
+        let v1 = format!("0x01{}", "00".repeat(32));
+        assert!(validate_extra_data_field_decryption(&v1).is_ok());
+        // An unknown version byte (e.g. 0x02-as-decryption-extraData) still fails.
+        let v2 = format!("0x02{}", "00".repeat(32));
+        assert!(validate_extra_data_field_decryption(&v2).is_err());
+    }
 }

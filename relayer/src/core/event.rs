@@ -666,16 +666,26 @@ impl TryFrom<UserDecryptRequestJson> for UserDecryptRequest {
             duration_days,
         };
 
+        // On Solana the contract identities are off-gateway (enforced by the KMS solana_acl), so
+        // the EVM `contract_addresses` list is empty; on EVM each entry is a 20-byte address.
+        let contract_addresses = if is_solana {
+            Vec::new()
+        } else {
+            value
+                .contract_addresses
+                .iter()
+                .map(|addr| Address::from_str(addr))
+                .collect::<Result<Vec<_>, _>>()?
+        };
+
         // Parse extraData (validated at HTTP layer)
         let extra_data = Bytes::from_str(&value.extra_data)?;
-        let signature = Bytes::from_str(&value.signature)?;
-        let public_key = Bytes::from_str(&value.public_key)?;
 
         Ok(UserDecryptRequest::LegacyDirect {
             ct_handle_contract_pairs,
             request_validity,
             contracts_chain_id,
-            contract_addresses: contract_addresses.clone(),
+            contract_addresses,
             user_address: Address::from_str(&value.user_address)?,
             signature: Bytes::from_str(&value.signature)?,
             public_key: Bytes::from_str(&value.public_key)?,
@@ -756,12 +766,19 @@ impl TryFrom<AttestedUserDecryptRequestJson> for UserDecryptRequest {
     type Error = anyhow::Error;
 
     fn try_from(value: AttestedUserDecryptRequestJson) -> Result<Self, Self::Error> {
-        info!("Converting AttestedUserDecryptRequestJson to UserDecryptRequest (Eip712UnifiedV1)");
+        info!(
+            attestation_type = %value.attestation_type,
+            "Converting AttestedUserDecryptRequestJson to UserDecryptRequest (Eip712UnifiedV1)"
+        );
 
-        // The envelope's `attestation_type` is validated at the HTTP layer
-        // to be exactly `"eip712-unified-user-decrypt-v1"`; the variant tag
-        // below carries that semantic implicitly, so we don't re-store it
-        // on the core type.
+        // `attestation_type` is validated at the HTTP layer to be either the EVM
+        // EIP-712 or the Solana ed25519 scheme. Both map to the same gateway V2
+        // `userDecryptionRequest` calldata: `signature`, `publicKey`, and
+        // `extraData` are forwarded verbatim (opaque to the relayer), and for
+        // Solana the real domain scope lives in the signed `extraData` (so
+        // `allowed_contracts` may be empty). The relayer never verifies the
+        // ed25519 signature — each KMS party's connector does. We therefore do
+        // not branch on the scheme here and don't re-store it on the core type.
         let payload_inner = value.attested_payload;
 
         let mut handles = Vec::with_capacity(payload_inner.handles.len());
@@ -1177,5 +1194,80 @@ mod tests {
         assert_eq!(request.solana_contract_address, None);
         assert_eq!(request.solana_user_address, None);
         assert_ne!(request.contract_address, Address::ZERO);
+    }
+
+    /// A Solana-attestationType v3 envelope routes to the same `Eip712UnifiedV1`
+    /// core variant (and hence the same gateway V2 `userDecryptionRequest`
+    /// calldata) as the EVM type, forwarding `signature` and `extraData`
+    /// unchanged. `allowedContracts` may be empty for Solana.
+    #[test]
+    fn solana_attested_user_decrypt_forwards_signature_and_extra_data_unchanged() {
+        use crate::http::endpoints::common::types::{
+            HandleEntryJson, RequestValiditySecondsJson,
+        };
+        use crate::http::endpoints::v3::types::Eip712UnifiedUserDecryptPayloadJson;
+
+        // 64-byte ed25519 signature (128 hex chars), forwarded opaquely.
+        let signature_hex = format!("0x{}", "ab".repeat(64));
+        // A Solana 0x03 extraData blob with zero domain keys, forwarded opaquely.
+        let mut extra = vec![0x03u8];
+        extra.extend_from_slice(&[0u8; 32]); // context_id
+        extra.extend_from_slice(&[7u8; 32]); // identity
+        extra.extend_from_slice(&[9u8; 32]); // nonce
+        extra.extend_from_slice(&0u32.to_be_bytes()); // domain-key count
+        let extra_data_hex = format!("0x{}", hex::encode(&extra));
+        let public_key_hex = "0x04b8e5d3".to_string();
+
+        let json = AttestedUserDecryptRequestJson {
+            attestation_type: "solana-ed25519-user-decrypt-v1".to_string(),
+            attested_payload: Eip712UnifiedUserDecryptPayloadJson {
+                version: "2.0".to_string(),
+                r#type: "user_decryption".to_string(),
+                handles: vec![HandleEntryJson {
+                    ct_handle: format!("0x{}", "11".repeat(32)),
+                    contract_address: "0xAb30999D17FAAB8c95B2eCD500cFeFc8f658f15d".to_string(),
+                    owner_address: "0x12B064FB845C1cc05e9493856a1D637a73e944bE".to_string(),
+                }],
+                user_address: "0x12B064FB845C1cc05e9493856a1D637a73e944bE".to_string(),
+                // Solana scope lives in the signed extraData, so this is empty.
+                allowed_contracts: vec![],
+                request_validity: RequestValiditySecondsJson {
+                    start_timestamp: "1700000000".to_string(),
+                    duration_seconds: "604800".to_string(),
+                },
+                public_key: public_key_hex.clone(),
+                extra_data: extra_data_hex.clone(),
+            },
+            signature: signature_hex.clone(),
+        };
+
+        let request = UserDecryptRequest::try_from(json).expect("Solana envelope should convert");
+
+        match request {
+            UserDecryptRequest::Eip712UnifiedV1 {
+                signature,
+                extra_data,
+                public_key,
+                allowed_contracts,
+                ..
+            } => {
+                assert_eq!(
+                    signature,
+                    Bytes::from_str(&signature_hex).unwrap(),
+                    "ed25519 signature forwarded verbatim"
+                );
+                assert_eq!(
+                    extra_data,
+                    Bytes::from_str(&extra_data_hex).unwrap(),
+                    "0x03 Solana extraData forwarded verbatim"
+                );
+                assert_eq!(public_key, Bytes::from_str(&public_key_hex).unwrap());
+                assert!(
+                    allowed_contracts.is_empty(),
+                    "Solana allowedContracts may be empty"
+                );
+            }
+            other => panic!("expected Eip712UnifiedV1, got {}", other.attestation_kind()),
+        }
     }
 }
