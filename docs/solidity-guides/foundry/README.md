@@ -4,7 +4,7 @@ This section will guide you through writing and testing FHEVM smart contracts in
 
 To write FHEVM smart contracts in Foundry, the recommended approach is to use [forge-fhevm](https://github.com/zama-ai/forge-fhevm) — a Foundry-native testing library for FHEVM confidential smart contracts.
 
-Unlike a mock-only setup, `forge-fhevm` deploys the **real** FHEVM host contracts (`FHEVMExecutor`, `ACL`, `InputVerifier`, `KMSVerifier`) inside Foundry's test environment, with mock signer keys. Your tests exercise the same code paths as production while plaintext values are tracked locally so you can `assertEq` on them.
+`forge-fhevm` deploys the FHEVM host contracts (`FHEVMExecutor`, `ACL`, `InputVerifier`, `KMSVerifier`) into Foundry's test EVM, so your contract runs the same on-chain code paths as production — input verification, ACL enforcement, and handle lifecycle all execute exactly as they would on mainnet. The FHE coprocessor computation itself is simulated, with plaintext values tracked locally so you can `assertEq` on decrypted results directly.
 
 It gives you, out of the box:
 
