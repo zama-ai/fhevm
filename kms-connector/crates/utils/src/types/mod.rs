@@ -4,6 +4,7 @@ pub mod extra_data;
 mod grpc;
 pub mod handle;
 pub mod kms_response;
+pub mod solana_extra_data;
 
 pub use event::{ProtocolEvent, ProtocolEventKind};
 pub use grpc::{KmsGrpcRequest, KmsGrpcResponse};

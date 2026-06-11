@@ -187,15 +187,17 @@ impl<GP: Provider, HP: Provider, C: ContextManager> DbEventProcessor<GP, HP, C> 
                     .check_user_decryption_request_v2(req)
                     .await?;
                 let payload = &req.payload;
+                // The authorization check above has already validated the Solana marker + ed25519
+                // binding when present; here we only pick the client-address shape for the KMS
+                // gRPC request. Solana keys on the `solana:<hex identity>` prefix (kms#637).
+                let user_decrypt_data =
+                    DecryptionProcessor::<GP, HP, C>::user_decryption_extra_data_for_v2(req)?;
                 self.decryption_processor
                     .prepare_decryption_request(
                         req.decryptionId,
                         &req.snsCtMaterials,
                         &payload.extraData,
-                        Some(UserDecryptionExtraData::new(
-                            payload.userAddress,
-                            payload.publicKey.clone(),
-                        )),
+                        Some(user_decrypt_data),
                     )
                     .await
             }

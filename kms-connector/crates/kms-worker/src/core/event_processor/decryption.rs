@@ -1,6 +1,13 @@
 use crate::core::{
-    config::Config,
-    event_processor::{ProcessingError, context::ContextManager, s3::S3Service},
+    config::{Config, HostChainKind},
+    event_processor::{
+        ProcessingError,
+        context::ContextManager,
+        s3::S3Service,
+        solana_user_decrypt::{SolanaHost, check_solana_handles_acl, verify_solana_user_decrypt_signature},
+    },
+    solana_acl::HandleBytes,
+    solana_v2_fetcher::SolanaV2Fetcher,
 };
 use alloy::{
     consensus::Transaction,
@@ -11,7 +18,10 @@ use alloy::{
 };
 use anyhow::anyhow;
 use connector_utils::types::{
-    KmsGrpcRequest, extra_data::parse_extra_data, handle::extract_chain_id_from_handle,
+    KmsGrpcRequest,
+    extra_data::{EXTRA_DATA_SOLANA_V1_VERSION, parse_extra_data},
+    handle::extract_chain_id_from_handle,
+    solana_extra_data::decode_solana_extra_data,
     u256_to_request_id,
 };
 use fhevm_gateway_bindings::decryption::Decryption::{
@@ -43,6 +53,10 @@ pub struct DecryptionProcessor<GP: Provider, HP: Provider, C> {
 
     /// The instances of the host chains `ACL` contracts used to check the decryption ACL.
     acl_contracts: HashMap<u64, ACLInstance<HP>>,
+
+    /// Solana host chains keyed by chain id: the ZamaHost program id and a `finalized`-commitment
+    /// account fetcher used for the Solana user-decryption ACL check.
+    solana_hosts: HashMap<u64, SolanaHost>,
 
     /// The entity used to collect ciphertexts from S3 buckets.
     s3_service: S3Service<GP>,
@@ -79,6 +93,7 @@ where
             context_manager,
             decryption_contract,
             acl_contracts,
+            solana_hosts: build_solana_hosts(config),
             s3_service,
             erc1271_gas_limit: config.erc1271_gas_limit,
         }
@@ -303,6 +318,15 @@ where
 
         let chain_id = Self::validate_handles_and_extract_chain_id(request)?;
 
+        // Dispatch on an explicit Solana marker in extraData (version byte), never on address
+        // shape. Solana requests carry a different authorization model (ed25519 identity binding +
+        // account-witness ACL) and never reach the EVM ecrecover/ERC-1271 path below.
+        if request.payload.extraData.first() == Some(&EXTRA_DATA_SOLANA_V1_VERSION) {
+            return self
+                .check_user_decryption_request_v2_solana(request, chain_id)
+                .await;
+        }
+
         let payload = &request.payload;
 
         // Validity window
@@ -389,6 +413,94 @@ where
 
         info!(
             "RFC016 ACL check passed for {} handles!",
+            request.handles.len()
+        );
+        Ok(())
+    }
+
+    /// Picks the `client_address` shape for a V2 user-decryption KMS gRPC request. EVM uses the
+    /// checksummed `userAddress`; Solana (extraData version marker) uses `solana:<hex identity>`,
+    /// with the identity taken from the already-verified Solana extraData. The authorization check
+    /// runs before this, so the extraData is trustworthy by the time we get here.
+    pub fn user_decryption_extra_data_for_v2(
+        request: &UserDecryptionRequestV2,
+    ) -> Result<UserDecryptionExtraData, ProcessingError> {
+        let payload = &request.payload;
+        if payload.extraData.first() == Some(&EXTRA_DATA_SOLANA_V1_VERSION) {
+            let extra = decode_solana_extra_data(payload.extraData.as_ref())
+                .map_err(|e| ProcessingError::Irrecoverable(anyhow!("invalid Solana extraData: {e}")))?;
+            Ok(UserDecryptionExtraData::new_solana(
+                extra.identity,
+                payload.publicKey.clone(),
+            ))
+        } else {
+            Ok(UserDecryptionExtraData::new(
+                payload.userAddress,
+                payload.publicKey.clone(),
+            ))
+        }
+    }
+
+    /// Solana branch of the V2 user-decryption check.
+    ///
+    /// Unlike the EVM path, the re-encryption `publicKey ↔ identity` binding is NOT verified
+    /// on-chain by the Gateway, so this connector verifies it itself:
+    ///
+    /// 1. validity window (shared with EVM; rejects expired / not-yet-valid windows),
+    /// 2. ed25519 signature over the canonical preimage — binds `publicKey`, handles, identity,
+    ///    nonce, allowed domains, and validity window to the claimed Solana identity (closes the
+    ///    publicKey-substitution / relayer-bypass bug),
+    /// 3. per-handle ACL read at `finalized` commitment with owner + canonical-PDA checks and the
+    ///    domain-scoped verifier (identity as subject).
+    #[tracing::instrument(skip_all)]
+    async fn check_user_decryption_request_v2_solana(
+        &self,
+        request: &UserDecryptionRequestV2,
+        chain_id: u64,
+    ) -> Result<(), ProcessingError> {
+        info!("Starting Solana V2 user-decryption check for chain {chain_id}...");
+
+        let payload = &request.payload;
+
+        // Validity window (same semantics as the EVM path).
+        let start = payload.requestValidity.startTimestamp;
+        let now = U256::from(Utc::now().timestamp() as u64);
+        let end = start.saturating_add(payload.requestValidity.durationSeconds);
+        if now < start {
+            return Err(ProcessingError::Recoverable(anyhow!(
+                "Solana user decryption request not yet valid: now {now} < startTimestamp {start}",
+            )));
+        }
+        if now > end {
+            return Err(ProcessingError::Irrecoverable(anyhow!(
+                "Solana user decryption request validity window expired: now {now} > end {end}"
+            )));
+        }
+
+        let host = self.solana_hosts.get(&chain_id).ok_or_else(|| {
+            // Fail closed: a Solana request for an unconfigured / program-id-less host cannot be
+            // authorized.
+            ProcessingError::Irrecoverable(anyhow!(
+                "No Solana host configuration (with ZamaHost program id) for chain id {chain_id}"
+            ))
+        })?;
+
+        // ed25519 binding — the check that closes the substitution bug. Pure, no I/O.
+        let extra = verify_solana_user_decrypt_signature(request, chain_id)?;
+
+        // ACL phase: read each handle's record at finalized commitment and run the domain-scoped
+        // verifier with the identity as subject.
+        let handles: Vec<HandleBytes> = request.handles.iter().map(|e| e.handle.0).collect();
+        check_solana_handles_acl(
+            host,
+            &handles,
+            extra.identity,
+            &extra.allowed_acl_domain_keys,
+        )
+        .await?;
+
+        info!(
+            "Solana V2 ACL check passed for {} handles!",
             request.handles.len()
         );
         Ok(())
@@ -550,7 +662,7 @@ where
         let kms_extra_data = kms_decryption_extra_data(extra_data);
 
         if let Some(user_decrypt_data) = user_decrypt_data {
-            let client_address = user_decrypt_data.user_address.to_checksum(None);
+            let client_address = user_decrypt_data.client_address;
             let enc_key = user_decrypt_data.public_key.to_vec();
             let user_decryption_request = UserDecryptionRequest {
                 request_id,
@@ -628,6 +740,30 @@ where
     }
 }
 
+/// Builds the per-chain Solana host map from config: only `chain_kind = Solana` entries that
+/// carry a `solana_host_program_id`. A Solana host configured without a program id is skipped,
+/// so a Solana request for that chain fails closed at lookup time rather than being authorized
+/// against an unverifiable program.
+fn build_solana_hosts(config: &Config) -> HashMap<u64, SolanaHost> {
+    let client = reqwest::Client::new();
+    config
+        .host_chains
+        .iter()
+        .filter(|h| h.chain_kind == HostChainKind::Solana)
+        .filter_map(|h| {
+            h.solana_host_program_id.map(|program_id| {
+                (
+                    h.chain_id,
+                    SolanaHost {
+                        program_id,
+                        fetcher: SolanaV2Fetcher::new(h.url.clone(), client.clone()),
+                    },
+                )
+            })
+        })
+        .collect()
+}
+
 fn kms_decryption_extra_data(extra_data: &Bytes) -> Vec<u8> {
     // relayer-sdk <=0.4.2 sends 0x00 but verifies the KMS signature against empty extraData.
     if extra_data.as_ref() == [0x00] {
@@ -638,14 +774,27 @@ fn kms_decryption_extra_data(extra_data: &Bytes) -> Vec<u8> {
 }
 
 pub struct UserDecryptionExtraData {
-    pub user_address: Address,
+    /// The `client_address` set on the KMS gRPC request. For EVM this is the checksummed
+    /// `userAddress`; for Solana it is `solana:<hex identity>` (kms#637's parser keys on the
+    /// `solana:` prefix).
+    pub client_address: String,
     pub public_key: Bytes,
 }
 
 impl UserDecryptionExtraData {
+    /// EVM user-decryption: `client_address` is the checksummed EVM `userAddress`.
     pub fn new(user_address: Address, public_key: Bytes) -> Self {
         Self {
-            user_address,
+            client_address: user_address.to_checksum(None),
+            public_key,
+        }
+    }
+
+    /// Solana user-decryption: `client_address` is `solana:<hex identity>` — lowercase, exactly
+    /// 64 hex chars, no `0x`.
+    pub fn new_solana(identity: [u8; 32], public_key: Bytes) -> Self {
+        Self {
+            client_address: format!("solana:{}", hex::encode(identity)),
             public_key,
         }
     }
