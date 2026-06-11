@@ -26,9 +26,12 @@ For **gw-listener** to tolerate transient gateway RPC failures, the following
 configuration options should be set to high enough values:
 
 ```rust
-    #[arg(long, default_value = "1000000")]
+    #[arg(long, default_value_t = DEFAULT_GATEWAY_HTTP_MAX_RETRIES)]
     provider_max_retries: u32,
 
     #[arg(long, default_value = "4s", value_parser = parse_duration)]
     provider_retry_interval: Duration,
+
+    #[arg(long, default_value = "70s", value_parser = parse_duration)]
+    health_check_timeout: Duration,
 ```

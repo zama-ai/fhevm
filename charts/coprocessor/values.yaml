@@ -766,7 +766,7 @@ gwListener:
   #     --verify-proof-req-database-channel=event_zkpok_new_work
   #     --error-sleep-initial-secs=1
   #     --error-sleep-max-secs=10
-  #     --health-check-timeout=4s
+  #     --health-check-timeout=70s
   #     --provider-max-retries=15
   #     --provider-retry-interval=4s
   #     --log-level=INFO
@@ -818,6 +818,7 @@ gwListener:
         port: healthcheck
       initialDelaySeconds: 5
       periodSeconds: 10
+      timeoutSeconds: 75
 
   # Distributed tracing (inherits from commonConfig but can be overridden)
   tracing:
@@ -1322,11 +1323,11 @@ txSender:
   #     --add-ciphertexts-max-retries=2147483647
   #     --error-sleep-initial-secs=1
   #     --error-sleep-max-secs=4
-  #     --send-txn-sync-timeout-secs=4           # alias: --txn-receipt-timeout-secs
+  #     --send-txn-sync-timeout-secs=70           # alias: --txn-receipt-timeout-secs
   #     --review-after-unlimited-retries=30
   #     --provider-max-retries=15
   #     --provider-retry-interval=4s
-  #     --health-check-timeout=4s
+  #     --health-check-timeout=70s
   #     --log-level=INFO
   #     --gas-limit-overprovision-percent=120
   #     --graceful-shutdown-timeout=8s
@@ -1378,6 +1379,7 @@ txSender:
         port: healthcheck
       initialDelaySeconds: 5
       periodSeconds: 10
+      timeoutSeconds: 75
 
   # Distributed tracing (inherits from commonConfig but can be overridden)
   tracing:
