@@ -15,6 +15,7 @@ pub const REQUEST_STATUS_CONSUMED: u8 = 2;
 
 /// Account-backed witness for a public disclosure request.
 #[account]
+#[derive(InitSpace)]
 pub struct DisclosureRequest {
     /// Confidential mint whose ACL domain scopes the request.
     pub mint: Pubkey,

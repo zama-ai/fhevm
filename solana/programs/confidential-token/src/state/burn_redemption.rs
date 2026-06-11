@@ -4,6 +4,7 @@ use anchor_lang::prelude::*;
 
 /// Replay marker for a redeemed burned amount handle.
 #[account]
+#[derive(InitSpace)]
 pub struct BurnRedemption {
     /// Confidential mint whose vault paid the redemption.
     pub mint: Pubkey,

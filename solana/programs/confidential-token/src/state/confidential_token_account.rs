@@ -4,6 +4,7 @@ use anchor_lang::prelude::*;
 
 /// Confidential token account state.
 #[account]
+#[derive(InitSpace)]
 pub struct ConfidentialTokenAccount {
     /// Token account owner.
     pub owner: Pubkey,

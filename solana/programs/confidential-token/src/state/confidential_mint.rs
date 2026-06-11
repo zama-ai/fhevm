@@ -4,6 +4,7 @@ use anchor_lang::prelude::*;
 
 /// Confidential mint state for the token PoC.
 #[account]
+#[derive(InitSpace)]
 pub struct ConfidentialMint {
     /// Admin/authority that created the mint.
     pub authority: Pubkey,

@@ -4,6 +4,7 @@ use anchor_lang::prelude::*;
 
 /// Replay marker for a transfer callback settlement.
 #[account]
+#[derive(InitSpace)]
 pub struct TransferCallbackSettlement {
     /// Confidential mint whose transfer was settled.
     pub mint: Pubkey,

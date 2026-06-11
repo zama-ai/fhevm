@@ -252,6 +252,19 @@ pub fn decode_anchor_log_events(
     events
 }
 
+/// Event-source policy for ZamaHost events in one transaction. Neither
+/// transport is "preferred": a single `fhe_eval` frame emits all of its events
+/// through exactly one transport (the host picks CPI or log per frame), so a
+/// real transaction never spreads order-sensitive compute events across both.
+///
+/// - only one transport present: return its events unchanged;
+/// - both present and BOTH carry order-sensitive compute events
+///   (see [`needs_ordered_db_log_index`]): reject, because their chronological
+///   interleaving cannot be reconstructed for DB log indexing;
+/// - both present but at most one side carries compute events (e.g. CPI compute
+///   events alongside log-only account-fetch events): concatenate CPI events
+///   first, then log events. Order is unambiguous because only one side needs
+///   ordered indexing.
 pub fn merge_solana_transport_events(
     cpi_events: Vec<SolanaHostEvent>,
     log_events: Vec<SolanaHostEvent>,
@@ -1321,6 +1334,57 @@ mod tests {
     }
 
     #[test]
+    fn failed_inner_program_exit_restores_host_log_scope() {
+        // A nested program that fails (rather than succeeds) must still pop the
+        // stack so subsequent host `Program data:` logs are attributed to the
+        // host program, not silently dropped.
+        let host_program = "ZamaHost111111111111111111111111111111111";
+        let inner_program = "Other111111111111111111111111111111111111";
+        let host_event = BASE64_STANDARD.encode(anchor_event(
+            "FheBinaryOpEvent",
+            binary_op_payload(1, [9; 32], [1; 32], [2; 32], false, [7; 32]),
+        ));
+        let logs = vec![
+            format!("Program {host_program} invoke [1]"),
+            format!("Program {inner_program} invoke [2]"),
+            format!("Program {inner_program} failed: custom error"),
+            format!("Program data: {host_event}"),
+            format!("Program {host_program} success"),
+        ];
+
+        let events = decode_anchor_log_events(&logs, host_program);
+
+        assert!(matches!(
+            events.as_slice(),
+            [SolanaHostEvent::FheBinaryOp(event)] if event.result == [7; 32]
+        ));
+    }
+
+    #[test]
+    fn out_of_order_program_exit_truncates_log_scope_stack() {
+        // If an exit names a program deeper in the stack, everything above it is
+        // truncated. A host event logged afterward is then outside host scope
+        // and must be ignored.
+        let host_program = "ZamaHost111111111111111111111111111111111";
+        let inner_program = "Other111111111111111111111111111111111111";
+        let host_event = BASE64_STANDARD.encode(anchor_event(
+            "FheBinaryOpEvent",
+            binary_op_payload(1, [9; 32], [1; 32], [2; 32], false, [7; 32]),
+        ));
+        let logs = vec![
+            format!("Program {host_program} invoke [1]"),
+            format!("Program {inner_program} invoke [2]"),
+            // Exit names the host (below `inner` on the stack): truncates both.
+            format!("Program {host_program} success"),
+            format!("Program data: {host_event}"),
+        ];
+
+        let events = decode_anchor_log_events(&logs, host_program);
+
+        assert!(events.is_empty());
+    }
+
+    #[test]
     fn rejects_mixed_host_cpi_and_log_transport() {
         let host_program = "ZamaHost111111111111111111111111111111111";
         let cpi_event = anchor_event_cpi(
@@ -1404,6 +1468,69 @@ mod tests {
                 .count(),
             3
         );
+    }
+
+    fn compute_event(result: u8) -> SolanaHostEvent {
+        SolanaHostEvent::FheBinaryOp(FheBinaryOpEvent {
+            version: EVENT_VERSION,
+            op: FheBinaryOpCode::Add,
+            subject: [0; 32],
+            lhs: [1; 32],
+            rhs: [2; 32],
+            scalar: false,
+            result: [result; 32],
+        })
+    }
+
+    fn fetch_event(account: u8) -> SolanaHostEvent {
+        SolanaHostEvent::FinalizedAccountFetch(acl_record_fetch(
+            [account; 32],
+            [account; 32],
+            "test",
+        ))
+    }
+
+    #[test]
+    fn merge_returns_single_transport_unchanged() {
+        // Only CPI events present: returned as-is, no log side.
+        let cpi_only =
+            merge_solana_transport_events(vec![compute_event(1)], Vec::new())
+                .expect("cpi-only transport is valid");
+        assert!(matches!(cpi_only.as_slice(), [SolanaHostEvent::FheBinaryOp(_)]));
+
+        // Only log events present: returned as-is, no cpi side.
+        let log_only =
+            merge_solana_transport_events(Vec::new(), vec![compute_event(2)])
+                .expect("log-only transport is valid");
+        assert!(matches!(log_only.as_slice(), [SolanaHostEvent::FheBinaryOp(_)]));
+    }
+
+    #[test]
+    fn merge_orders_cpi_events_before_log_events_when_one_side_is_compute() {
+        // CPI compute event alongside log-only account-fetch events: neither
+        // transport is preferred, but CPI events are emitted first so the single
+        // compute side keeps a deterministic DB log index.
+        let merged = merge_solana_transport_events(
+            vec![compute_event(1)],
+            vec![fetch_event(7), fetch_event(8)],
+        )
+        .expect("only the cpi side carries compute events");
+
+        assert!(matches!(merged[0], SolanaHostEvent::FheBinaryOp(_)));
+        assert!(matches!(merged[1], SolanaHostEvent::FinalizedAccountFetch(_)));
+        assert!(matches!(merged[2], SolanaHostEvent::FinalizedAccountFetch(_)));
+    }
+
+    #[test]
+    fn merge_allows_non_compute_events_on_both_transports() {
+        // Account-fetch events are not order-sensitive, so both sides carrying
+        // only fetches is not a mixed-transport conflict.
+        let merged = merge_solana_transport_events(
+            vec![fetch_event(1)],
+            vec![fetch_event(2)],
+        )
+        .expect("non-compute events on both transports are not a conflict");
+        assert_eq!(merged.len(), 2);
     }
 
     #[test]

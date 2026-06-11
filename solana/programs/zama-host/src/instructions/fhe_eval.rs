@@ -17,15 +17,14 @@ mod event_budget;
 mod event_transport;
 mod handles;
 mod preflight;
+mod walk;
 
 use admission::admit_eval_frame;
 use event_budget::eval_event_capacity;
 use event_transport::{emit_eval_events, EvalEvent};
-use handles::{
-    expected_binary_eval_result, expected_rand_eval_seed, expected_ternary_eval_result,
-    expected_trivial_eval_result, EvalHandleContext,
-};
+use handles::EvalHandleContext;
 use preflight::{assert_eval_step_birth_policy, preflight_eval_frame};
+use walk::{walk_eval_frame, EvalStepVisitor};
 
 /// Accounts for composed instruction-local FHE evaluation.
 ///
@@ -128,139 +127,13 @@ fn execute_eval_frame<'info>(
         current_slot,
         instructions_sysvar,
     );
-
-    for (index, step) in args.steps.iter().enumerate() {
-        match step {
-            FheEvalStep::Binary {
-                op,
-                lhs,
-                rhs,
-                output_fhe_type,
-                output,
-            } => {
-                let lhs = execution.resolve_lhs_operand(lhs)?;
-                let rhs = execution.resolve_rhs_operand(rhs)?;
-                assert_binary_operand_types(
-                    *op,
-                    lhs.handle,
-                    rhs.handle,
-                    rhs.scalar,
-                    *output_fhe_type,
-                )?;
-                let expected_result = expected_binary_eval_result(
-                    *op,
-                    lhs.handle,
-                    rhs.handle,
-                    rhs.scalar,
-                    *output_fhe_type,
-                    handle_context,
-                    index as u16,
-                    output,
-                );
-                execution.push_event(EvalEvent::Binary(FheBinaryOpEvent {
-                    version: EVENT_VERSION,
-                    op: *op,
-                    subject: subject.to_bytes(),
-                    lhs: lhs.handle,
-                    rhs: rhs.handle,
-                    scalar: rhs.scalar,
-                    result: expected_result,
-                }));
-                execution.accept_output(
-                    ctx,
-                    expected_result,
-                    output,
-                    input_session_policies(&lhs, &rhs),
-                    inputs_allow_public_decrypt(&lhs, &rhs),
-                    true,
-                )?;
-            }
-            FheEvalStep::Ternary {
-                op,
-                control,
-                if_true,
-                if_false,
-                output_fhe_type,
-                output,
-            } => {
-                let control = execution.resolve_encrypted_operand(control)?;
-                let if_true = execution.resolve_encrypted_operand(if_true)?;
-                let if_false = execution.resolve_encrypted_operand(if_false)?;
-                assert_ternary_operand_types(
-                    control.handle,
-                    if_true.handle,
-                    if_false.handle,
-                    *output_fhe_type,
-                )?;
-                let expected_result = expected_ternary_eval_result(
-                    *op,
-                    control.handle,
-                    if_true.handle,
-                    if_false.handle,
-                    *output_fhe_type,
-                    handle_context,
-                    index as u16,
-                    output,
-                );
-                execution.push_event(EvalEvent::Ternary(FheTernaryOpEvent {
-                    version: EVENT_VERSION,
-                    op: *op,
-                    subject: subject.to_bytes(),
-                    control: control.handle,
-                    if_true: if_true.handle,
-                    if_false: if_false.handle,
-                    result: expected_result,
-                }));
-                execution.accept_output(
-                    ctx,
-                    expected_result,
-                    output,
-                    input_session_policies3(&control, &if_true, &if_false),
-                    inputs3_allow_public_decrypt(&control, &if_true, &if_false),
-                    true,
-                )?;
-            }
-            FheEvalStep::TrivialEncrypt {
-                plaintext,
-                fhe_type,
-                output,
-            } => {
-                assert_supported_fhe_type(*fhe_type)?;
-                let result = expected_trivial_eval_result(
-                    *plaintext,
-                    *fhe_type,
-                    handle_context,
-                    index as u16,
-                    output,
-                );
-                execution.push_event(EvalEvent::Trivial(TrivialEncryptEvent {
-                    version: EVENT_VERSION,
-                    subject: subject.to_bytes(),
-                    plaintext: *plaintext,
-                    fhe_type: *fhe_type,
-                    result,
-                }));
-                execution.accept_output(ctx, result, output, Vec::new(), false, false)?;
-            }
-            FheEvalStep::Rand { fhe_type, output } => {
-                assert_supported_rand_type(*fhe_type)?;
-                let seed = expected_rand_eval_seed(handle_context, index as u16, output);
-                let result = computed_rand_handle(seed, *fhe_type, handle_context.chain_id);
-                execution.push_event(EvalEvent::Rand(FheRandEvent {
-                    version: EVENT_VERSION,
-                    subject: subject.to_bytes(),
-                    seed,
-                    fhe_type: *fhe_type,
-                    result,
-                }));
-                execution.accept_output(ctx, result, output, Vec::new(), false, false)?;
-            }
-        }
-    }
-
+    walk_eval_frame(&mut execution, ctx, args, handle_context)?;
     execution.finish(ctx)
 }
 
+/// Execution phase: resolves operands while marking the dynamic accounts used,
+/// mutates transient sessions and creates durable output ACL records, and
+/// buffers the events for transport.
 struct EvalExecutionState<'a, 'info> {
     remaining_accounts: &'a [AccountInfo<'info>],
     remaining_accounts_used: Vec<bool>,
@@ -300,60 +173,97 @@ impl<'a, 'info> EvalExecutionState<'a, 'info> {
         }
     }
 
-    #[inline(never)]
-    fn resolve_lhs_operand(&mut self, operand: &FheEvalOperand) -> Result<ResolvedOperand> {
-        resolve_lhs_operand(
-            self.remaining_accounts,
-            &mut self.remaining_accounts_used,
-            &self.produced,
-            operand,
-            self.subject,
-            self.session_authority,
-            self.chain_id,
-            self.current_slot,
-            &mut self.instructions_sysvar_used,
-            self.instructions_sysvar,
-        )
+    fn remaining_account(&mut self, index: u16) -> Result<&'a AccountInfo<'info>> {
+        let account_index = index as usize;
+        let account = self
+            .remaining_accounts
+            .get(account_index)
+            .ok_or_else(|| error!(ZamaHostError::InvalidFheEvalAccount))?;
+        self.remaining_accounts_used[account_index] = true;
+        Ok(account)
+    }
+
+    fn finish(self, ctx: &Context<'info, FheEval<'info>>) -> Result<Vec<EvalEvent>> {
+        require!(
+            self.remaining_accounts_used.iter().all(|used| *used),
+            ZamaHostError::InvalidFheEvalAccount
+        );
+        if !self.instructions_sysvar_used {
+            require!(
+                ctx.accounts.instructions_sysvar.is_none(),
+                ZamaHostError::InvalidFheEvalAccount
+            );
+        }
+        Ok(self.events)
+    }
+}
+
+impl EvalStepVisitor for EvalExecutionState<'_, '_> {
+    fn subject(&self) -> Pubkey {
+        self.subject
+    }
+
+    fn produced(&self) -> &[ProducedValue] {
+        &self.produced
     }
 
     #[inline(never)]
-    fn resolve_rhs_operand(&mut self, operand: &FheEvalOperand) -> Result<ResolvedOperand> {
-        resolve_rhs_operand(
-            self.remaining_accounts,
-            &mut self.remaining_accounts_used,
-            &self.produced,
-            operand,
-            self.subject,
-            self.session_authority,
+    fn resolve_durable_operand(
+        &mut self,
+        handle: [u8; 32],
+        acl_record_index: u16,
+        permission_index: Option<u16>,
+    ) -> Result<ResolvedOperand> {
+        let record_info = self.remaining_account(acl_record_index)?;
+        let permission_info = permission_index
+            .map(|index| self.remaining_account(index))
+            .transpose()?;
+        assert_unchecked_acl_record_subject_role(
+            record_info,
+            handle,
             self.chain_id,
-            self.current_slot,
-            &mut self.instructions_sysvar_used,
-            self.instructions_sysvar,
-        )
+            self.subject,
+            ACL_ROLE_USE,
+            permission_info,
+        )?;
+        let public_decrypt_allowed = unchecked_acl_record_subject_has_role(
+            record_info,
+            handle,
+            self.subject,
+            ACL_ROLE_PUBLIC_DECRYPT,
+            permission_info,
+        )?;
+        Ok(ResolvedOperand::encrypted(handle, public_decrypt_allowed))
     }
 
     #[inline(never)]
-    fn resolve_encrypted_operand(&mut self, operand: &FheEvalOperand) -> Result<ResolvedOperand> {
-        resolve_encrypted_operand(
-            self.remaining_accounts,
-            &mut self.remaining_accounts_used,
-            &self.produced,
-            operand,
-            self.subject,
+    fn resolve_transient_session_operand(
+        &mut self,
+        handle: [u8; 32],
+        session_index: u16,
+        capability_index: u16,
+    ) -> Result<ResolvedOperand> {
+        let session_info = self.remaining_account(session_index)?;
+        self.instructions_sysvar_used = true;
+        let capability = consume_transient_capability(
+            session_info,
             self.session_authority,
-            self.chain_id,
             self.current_slot,
-            &mut self.instructions_sysvar_used,
+            handle,
+            self.subject,
+            ACL_ROLE_USE,
+            capability_index,
             self.instructions_sysvar,
-        )
+        )?;
+        Ok(ResolvedOperand::transient_session(handle, capability.grant))
     }
 
-    fn push_event(&mut self, event: EvalEvent) {
+    fn record_op_event(&mut self, event: EvalEvent) {
         self.events.push(event);
     }
 
     #[inline(never)]
-    fn accept_output(
+    fn accept_output<'info>(
         &mut self,
         ctx: &Context<'info, FheEval<'info>>,
         result: [u8; 32],
@@ -374,166 +284,6 @@ impl<'a, 'info> EvalExecutionState<'a, 'info> {
             enforce_public_decrypt_role_propagation,
             self.current_slot,
         )
-    }
-
-    fn finish(self, ctx: &Context<'info, FheEval<'info>>) -> Result<Vec<EvalEvent>> {
-        require!(
-            self.remaining_accounts_used.iter().all(|used| *used),
-            ZamaHostError::InvalidFheEvalAccount
-        );
-        if !self.instructions_sysvar_used {
-            require!(
-                ctx.accounts.instructions_sysvar.is_none(),
-                ZamaHostError::InvalidFheEvalAccount
-            );
-        }
-        Ok(self.events)
-    }
-}
-
-#[inline(never)]
-fn resolve_lhs_operand<'a, 'info>(
-    remaining_accounts: &'a [AccountInfo<'info>],
-    remaining_accounts_used: &mut [bool],
-    produced: &[ProducedValue],
-    operand: &FheEvalOperand,
-    subject: Pubkey,
-    session_authority: Pubkey,
-    chain_id: u64,
-    current_slot: u64,
-    instructions_sysvar_used: &mut bool,
-    instructions_sysvar: Option<&AccountInfo>,
-) -> Result<ResolvedOperand> {
-    match operand {
-        FheEvalOperand::Scalar(_) => Err(error!(ZamaHostError::InvalidFheEvalAccount)),
-        _ => resolve_encrypted_operand(
-            remaining_accounts,
-            remaining_accounts_used,
-            produced,
-            operand,
-            subject,
-            session_authority,
-            chain_id,
-            current_slot,
-            instructions_sysvar_used,
-            instructions_sysvar,
-        ),
-    }
-}
-
-#[inline(never)]
-fn resolve_rhs_operand<'a, 'info>(
-    remaining_accounts: &'a [AccountInfo<'info>],
-    remaining_accounts_used: &mut [bool],
-    produced: &[ProducedValue],
-    operand: &FheEvalOperand,
-    subject: Pubkey,
-    session_authority: Pubkey,
-    chain_id: u64,
-    current_slot: u64,
-    instructions_sysvar_used: &mut bool,
-    instructions_sysvar: Option<&AccountInfo>,
-) -> Result<ResolvedOperand> {
-    match operand {
-        FheEvalOperand::Scalar(value) => Ok(ResolvedOperand::scalar(*value)),
-        _ => resolve_encrypted_operand(
-            remaining_accounts,
-            remaining_accounts_used,
-            produced,
-            operand,
-            subject,
-            session_authority,
-            chain_id,
-            current_slot,
-            instructions_sysvar_used,
-            instructions_sysvar,
-        ),
-    }
-}
-
-#[inline(never)]
-fn resolve_encrypted_operand<'a, 'info>(
-    remaining_accounts: &'a [AccountInfo<'info>],
-    remaining_accounts_used: &mut [bool],
-    produced: &[ProducedValue],
-    operand: &FheEvalOperand,
-    subject: Pubkey,
-    session_authority: Pubkey,
-    chain_id: u64,
-    current_slot: u64,
-    instructions_sysvar_used: &mut bool,
-    instructions_sysvar: Option<&AccountInfo>,
-) -> Result<ResolvedOperand> {
-    match operand {
-        FheEvalOperand::Durable {
-            handle,
-            acl_record_index,
-            permission_index,
-        } => {
-            let record_info = remaining_account(
-                remaining_accounts,
-                remaining_accounts_used,
-                *acl_record_index,
-            )?;
-            let permission_info = permission_index
-                .map(|index| remaining_account(remaining_accounts, remaining_accounts_used, index))
-                .transpose()?;
-            assert_unchecked_acl_record_subject_role(
-                record_info,
-                *handle,
-                chain_id,
-                subject,
-                ACL_ROLE_USE,
-                permission_info,
-            )?;
-            let public_decrypt_allowed = unchecked_acl_record_subject_has_role(
-                record_info,
-                *handle,
-                subject,
-                ACL_ROLE_PUBLIC_DECRYPT,
-                permission_info,
-            )?;
-            Ok(ResolvedOperand::encrypted(*handle, public_decrypt_allowed))
-        }
-        FheEvalOperand::Transient { producer_index } => produced
-            .get(*producer_index as usize)
-            .map(ResolvedOperand::from_produced)
-            .ok_or_else(|| error!(ZamaHostError::FheEvalTransientMissing)),
-        FheEvalOperand::TransientSession {
-            handle,
-            session_index,
-            capability_index,
-        } => {
-            let session_info =
-                remaining_account(remaining_accounts, remaining_accounts_used, *session_index)?;
-            *instructions_sysvar_used = true;
-            let capability = consume_transient_capability(
-                session_info,
-                session_authority,
-                current_slot,
-                *handle,
-                subject,
-                ACL_ROLE_USE,
-                *capability_index,
-                instructions_sysvar,
-            )?;
-            Ok(ResolvedOperand {
-                handle: *handle,
-                scalar: false,
-                public_decrypt_allowed: capability.grant.public_decrypt_allowed,
-                session_policies: vec![SessionPolicy {
-                    subject: capability.grant.subject,
-                    receiver_program: capability.grant.receiver_program,
-                    role_flags: capability.grant.role_flags,
-                    max_uses: capability.grant.max_uses,
-                    durable_output_allowed: capability.grant.durable_output_allowed,
-                    public_decrypt_allowed: capability.grant.public_decrypt_allowed,
-                    acl_domain_key: capability.grant.acl_domain_key,
-                    app_account: capability.grant.app_account,
-                }],
-            })
-        }
-        FheEvalOperand::Scalar(_) => Err(error!(ZamaHostError::InvalidFheEvalAccount)),
     }
 }
 
@@ -672,18 +422,18 @@ fn durable_output_authority<'info>(
 }
 
 #[derive(Clone)]
-struct ProducedValue {
+pub(super) struct ProducedValue {
     handle: [u8; 32],
     public_decrypt_allowed: bool,
     session_policies: Vec<SessionPolicy>,
 }
 
 #[derive(Clone)]
-struct ResolvedOperand {
-    handle: [u8; 32],
-    scalar: bool,
-    public_decrypt_allowed: bool,
-    session_policies: Vec<SessionPolicy>,
+pub(super) struct ResolvedOperand {
+    pub(super) handle: [u8; 32],
+    pub(super) scalar: bool,
+    pub(super) public_decrypt_allowed: bool,
+    pub(super) session_policies: Vec<SessionPolicy>,
 }
 
 impl ResolvedOperand {
@@ -713,10 +463,30 @@ impl ResolvedOperand {
             session_policies: value.session_policies.clone(),
         }
     }
+
+    /// Builds an operand from a transient-session capability grant, carrying the
+    /// grant's policy forward so any output it produces stays within the grant.
+    fn transient_session(handle: [u8; 32], grant: TransientCapabilityGrant) -> Self {
+        Self {
+            handle,
+            scalar: false,
+            public_decrypt_allowed: grant.public_decrypt_allowed,
+            session_policies: vec![SessionPolicy {
+                subject: grant.subject,
+                receiver_program: grant.receiver_program,
+                role_flags: grant.role_flags,
+                max_uses: grant.max_uses,
+                durable_output_allowed: grant.durable_output_allowed,
+                public_decrypt_allowed: grant.public_decrypt_allowed,
+                acl_domain_key: grant.acl_domain_key,
+                app_account: grant.app_account,
+            }],
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
-struct SessionPolicy {
+pub(super) struct SessionPolicy {
     subject: Pubkey,
     receiver_program: Pubkey,
     role_flags: u8,

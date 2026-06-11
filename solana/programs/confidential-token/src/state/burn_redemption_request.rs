@@ -5,6 +5,7 @@ use solana_sha256_hasher::hashv;
 
 /// Account-backed witness for a burned-amount redemption request.
 #[account]
+#[derive(InitSpace)]
 pub struct BurnRedemptionRequest {
     /// Confidential mint whose vault backs the redemption.
     pub mint: Pubkey,

@@ -379,4 +379,42 @@ mod tests {
             "unexpected error: {err}"
         );
     }
+
+    #[test]
+    fn rejects_account_data_with_wrong_field_count() {
+        let err = decode_account_data(vec![BASE64_STANDARD.encode([1_u8])])
+            .expect_err("single-field account data should fail");
+
+        assert!(
+            err.to_string().contains("[payload, encoding]"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn rejects_unsupported_account_data_encoding() {
+        let err = decode_account_data(vec![
+            "00".to_owned(),
+            "base58".to_owned(),
+        ])
+        .expect_err("non-base64 encoding should fail");
+
+        assert!(
+            err.to_string().contains("unsupported"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn get_finalized_accounts_short_circuits_on_empty_keys() {
+        // No key means no RPC call, so an unreachable URL must not be contacted.
+        let client = JsonRpcSolanaFinalizedAccountClient::new(
+            "http://127.0.0.1:1/unused",
+        );
+        let accounts = client
+            .get_finalized_accounts(&[])
+            .await
+            .expect("empty key set must short-circuit without a request");
+        assert!(accounts.is_empty());
+    }
 }

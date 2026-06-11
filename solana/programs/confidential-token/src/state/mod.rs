@@ -183,3 +183,34 @@ pub fn nonce_key(
 ) -> [u8; 32] {
     zama_host::acl_nonce_key(acl_domain_key, app_account, encrypted_value_label)
 }
+
+#[cfg(test)]
+mod space_invariants {
+    use super::*;
+
+    /// Each manual `SPACE` must equal the `InitSpace`-derived body size, so a
+    /// field added to a struct without updating `SPACE` fails fast here instead
+    /// of corrupting account layouts in production.
+    #[test]
+    fn manual_space_matches_derived_init_space() {
+        assert_eq!(BurnRedemption::SPACE, BurnRedemption::INIT_SPACE);
+        assert_eq!(
+            BurnRedemptionRequest::SPACE,
+            BurnRedemptionRequest::INIT_SPACE
+        );
+        assert_eq!(ConfidentialMint::SPACE, ConfidentialMint::INIT_SPACE);
+        assert_eq!(
+            ConfidentialTokenAccount::SPACE,
+            ConfidentialTokenAccount::INIT_SPACE
+        );
+        assert_eq!(DisclosureRequest::SPACE, DisclosureRequest::INIT_SPACE);
+        assert_eq!(
+            TransferCallbackSettlement::SPACE,
+            TransferCallbackSettlement::INIT_SPACE
+        );
+        assert_eq!(
+            TransferReceiverHookCall::SPACE,
+            TransferReceiverHookCall::INIT_SPACE
+        );
+    }
+}
