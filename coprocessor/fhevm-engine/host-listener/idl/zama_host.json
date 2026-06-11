@@ -788,6 +788,87 @@
       ]
     },
     {
+      "name": "create_verifier_set",
+      "discriminator": [
+        97,
+        190,
+        228,
+        105,
+        205,
+        6,
+        204,
+        201
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "docs": [
+            "Pays rent for the verifier-set account."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "admin",
+          "docs": [
+            "Configured host admin."
+          ],
+          "signer": true
+        },
+        {
+          "name": "host_config",
+          "docs": [
+            "Singleton config PDA."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  115,
+                  116,
+                  45,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "verifier_set",
+          "docs": [
+            "Canonical verifier-set PDA for `(kind, scope, version)`."
+          ],
+          "writable": true
+        },
+        {
+          "name": "system_program",
+          "docs": [
+            "System program used for account creation."
+          ],
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "CreateVerifierSetArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "delegate_for_user_decryption",
       "discriminator": [
         240,
@@ -867,6 +948,63 @@
           "type": "u64"
         }
       ]
+    },
+    {
+      "name": "disable_verifier_set",
+      "discriminator": [
+        87,
+        92,
+        179,
+        213,
+        242,
+        64,
+        232,
+        161
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "docs": [
+            "Configured host admin."
+          ],
+          "signer": true
+        },
+        {
+          "name": "host_config",
+          "docs": [
+            "Singleton config PDA."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  115,
+                  116,
+                  45,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "verifier_set",
+          "docs": [
+            "Verifier set to disable."
+          ],
+          "writable": true
+        }
+      ],
+      "args": []
     },
     {
       "name": "fhe_binary_op",
@@ -1958,171 +2096,60 @@
       ]
     },
     {
-      "name": "mock_input_verified_and_bind",
+      "name": "migrate_host_config_verifier_set",
       "discriminator": [
-        159,
-        75,
-        83,
-        64,
-        210,
-        90,
-        135,
-        69
+        48,
+        226,
+        49,
+        206,
+        91,
+        102,
+        107,
+        252
       ],
       "accounts": [
         {
           "name": "payer",
           "docs": [
-            "Pays rent for the output ACL record."
+            "Rent payer for any account-size top-up needed by realloc."
           ],
           "writable": true,
           "signer": true
         },
         {
-          "name": "input_verifier_authority",
+          "name": "admin",
           "docs": [
-            "Configured input verifier authority."
-          ],
-          "signer": true
-        },
-        {
-          "name": "app_account_authority",
-          "docs": [
-            "App account signer authorizing the ACL metadata."
+            "Legacy and current host admin."
           ],
           "signer": true
         },
         {
           "name": "host_config",
-          "docs": [
-            "Singleton config PDA with `mock_input_enabled`."
-          ],
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  104,
-                  111,
-                  115,
-                  116,
-                  45,
-                  99,
-                  111,
-                  110,
-                  102,
-                  105,
-                  103
-                ]
-              }
-            ]
-          }
+          "writable": true
         },
         {
-          "name": "output_acl_record",
+          "name": "verifier_set",
           "docs": [
-            "Canonical output ACL record created by this instruction."
+            "Canonical initial input verifier-set PDA."
           ],
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  97,
-                  99,
-                  108,
-                  45,
-                  114,
-                  101,
-                  99,
-                  111,
-                  114,
-                  100
-                ]
-              },
-              {
-                "kind": "arg",
-                "path": "output_nonce_key"
-              },
-              {
-                "kind": "arg",
-                "path": "output_nonce_sequence"
-              }
-            ]
-          }
+          "writable": true
         },
         {
           "name": "system_program",
           "docs": [
-            "System program used for ACL account creation."
+            "System program used for rent top-up and verifier-set creation."
           ],
           "address": "11111111111111111111111111111111"
-        },
-        {
-          "name": "event_authority"
-        },
-        {
-          "name": "program"
         }
       ],
       "args": [
         {
-          "name": "input_handle",
+          "name": "args",
           "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        },
-        {
-          "name": "user",
-          "type": "pubkey"
-        },
-        {
-          "name": "output_nonce_key",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        },
-        {
-          "name": "output_nonce_sequence",
-          "type": "u64"
-        },
-        {
-          "name": "output_acl_domain_key",
-          "type": "pubkey"
-        },
-        {
-          "name": "output_app_account",
-          "type": "pubkey"
-        },
-        {
-          "name": "output_encrypted_value_label",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        },
-        {
-          "name": "output_subjects",
-          "type": {
-            "vec": {
-              "defined": {
-                "name": "AclSubjectEntry"
-              }
+            "defined": {
+              "name": "CreateVerifierSetArgs"
             }
           }
-        },
-        {
-          "name": "output_public_decrypt",
-          "type": "bool"
         }
       ]
     },
@@ -2462,431 +2489,6 @@
       ]
     },
     {
-      "name": "set_mock_input_enabled",
-      "discriminator": [
-        135,
-        1,
-        182,
-        100,
-        241,
-        98,
-        142,
-        45
-      ],
-      "accounts": [
-        {
-          "name": "admin",
-          "docs": [
-            "Configured host admin."
-          ],
-          "signer": true
-        },
-        {
-          "name": "host_config",
-          "docs": [
-            "Singleton config PDA."
-          ],
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  104,
-                  111,
-                  115,
-                  116,
-                  45,
-                  99,
-                  111,
-                  110,
-                  102,
-                  105,
-                  103
-                ]
-              }
-            ]
-          }
-        }
-      ],
-      "args": [
-        {
-          "name": "enabled",
-          "type": "bool"
-        }
-      ]
-    },
-    {
-      "name": "set_test_shims_enabled",
-      "discriminator": [
-        45,
-        132,
-        54,
-        125,
-        146,
-        126,
-        28,
-        94
-      ],
-      "accounts": [
-        {
-          "name": "admin",
-          "docs": [
-            "Configured host admin."
-          ],
-          "signer": true
-        },
-        {
-          "name": "host_config",
-          "docs": [
-            "Singleton config PDA."
-          ],
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  104,
-                  111,
-                  115,
-                  116,
-                  45,
-                  99,
-                  111,
-                  110,
-                  102,
-                  105,
-                  103
-                ]
-              }
-            ]
-          }
-        }
-      ],
-      "args": [
-        {
-          "name": "enabled",
-          "type": "bool"
-        }
-      ]
-    },
-    {
-      "name": "test_emit_acl_allowed",
-      "discriminator": [
-        237,
-        181,
-        130,
-        44,
-        163,
-        232,
-        8,
-        159
-      ],
-      "accounts": [
-        {
-          "name": "test_authority",
-          "docs": [
-            "Configured test-shim authority."
-          ],
-          "signer": true
-        },
-        {
-          "name": "host_config",
-          "docs": [
-            "Singleton config PDA with `test_shims_enabled`."
-          ],
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  104,
-                  111,
-                  115,
-                  116,
-                  45,
-                  99,
-                  111,
-                  110,
-                  102,
-                  105,
-                  103
-                ]
-              }
-            ]
-          }
-        },
-        {
-          "name": "event_authority"
-        },
-        {
-          "name": "program"
-        }
-      ],
-      "args": [
-        {
-          "name": "handle",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        },
-        {
-          "name": "subject",
-          "type": "pubkey"
-        }
-      ]
-    },
-    {
-      "name": "test_emit_fhe_rand",
-      "discriminator": [
-        247,
-        2,
-        212,
-        142,
-        60,
-        157,
-        95,
-        255
-      ],
-      "accounts": [
-        {
-          "name": "test_authority",
-          "docs": [
-            "Configured test-shim authority."
-          ],
-          "signer": true
-        },
-        {
-          "name": "host_config",
-          "docs": [
-            "Singleton config PDA with `test_shims_enabled`."
-          ],
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  104,
-                  111,
-                  115,
-                  116,
-                  45,
-                  99,
-                  111,
-                  110,
-                  102,
-                  105,
-                  103
-                ]
-              }
-            ]
-          }
-        },
-        {
-          "name": "event_authority"
-        },
-        {
-          "name": "program"
-        }
-      ],
-      "args": [
-        {
-          "name": "subject",
-          "type": "pubkey"
-        },
-        {
-          "name": "seed",
-          "type": {
-            "array": [
-              "u8",
-              16
-            ]
-          }
-        },
-        {
-          "name": "fhe_type",
-          "type": "u8"
-        },
-        {
-          "name": "result",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        }
-      ]
-    },
-    {
-      "name": "test_emit_input_verified",
-      "discriminator": [
-        211,
-        57,
-        148,
-        111,
-        134,
-        198,
-        59,
-        109
-      ],
-      "accounts": [
-        {
-          "name": "test_authority",
-          "docs": [
-            "Configured test-shim authority."
-          ],
-          "signer": true
-        },
-        {
-          "name": "host_config",
-          "docs": [
-            "Singleton config PDA with `test_shims_enabled`."
-          ],
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  104,
-                  111,
-                  115,
-                  116,
-                  45,
-                  99,
-                  111,
-                  110,
-                  102,
-                  105,
-                  103
-                ]
-              }
-            ]
-          }
-        },
-        {
-          "name": "event_authority"
-        },
-        {
-          "name": "program"
-        }
-      ],
-      "args": [
-        {
-          "name": "input_handle",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        },
-        {
-          "name": "result_handle",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        },
-        {
-          "name": "user",
-          "type": "pubkey"
-        },
-        {
-          "name": "acl_domain_key",
-          "type": "pubkey"
-        }
-      ]
-    },
-    {
-      "name": "test_emit_trivial_encrypt",
-      "discriminator": [
-        200,
-        234,
-        216,
-        251,
-        244,
-        1,
-        101,
-        144
-      ],
-      "accounts": [
-        {
-          "name": "test_authority",
-          "docs": [
-            "Configured test-shim authority."
-          ],
-          "signer": true
-        },
-        {
-          "name": "host_config",
-          "docs": [
-            "Singleton config PDA with `test_shims_enabled`."
-          ],
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  104,
-                  111,
-                  115,
-                  116,
-                  45,
-                  99,
-                  111,
-                  110,
-                  102,
-                  105,
-                  103
-                ]
-              }
-            ]
-          }
-        },
-        {
-          "name": "event_authority"
-        },
-        {
-          "name": "program"
-        }
-      ],
-      "args": [
-        {
-          "name": "subject",
-          "type": "pubkey"
-        },
-        {
-          "name": "plaintext",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        },
-        {
-          "name": "fhe_type",
-          "type": "u8"
-        },
-        {
-          "name": "result",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        }
-      ]
-    },
-    {
       "name": "trivial_encrypt_and_bind",
       "discriminator": [
         191,
@@ -3077,10 +2679,9 @@
           "signer": true
         },
         {
-          "name": "input_verifier_authority",
+          "name": "input_verifier_set",
           "docs": [
-            "to match `HostConfig::input_verifier_authority` and verifies the matching",
-            "Ed25519 pre-instruction over the canonical proof message."
+            "Active threshold verifier set for input proofs."
           ]
         },
         {
@@ -3301,6 +2902,19 @@
         1,
         248
       ]
+    },
+    {
+      "name": "VerifierSet",
+      "discriminator": [
+        227,
+        16,
+        215,
+        74,
+        157,
+        114,
+        239,
+        185
+      ]
     }
   ],
   "events": [
@@ -3511,6 +3125,32 @@
         239,
         156
       ]
+    },
+    {
+      "name": "VerifierSetCreatedEvent",
+      "discriminator": [
+        110,
+        160,
+        70,
+        134,
+        190,
+        73,
+        166,
+        184
+      ]
+    },
+    {
+      "name": "VerifierSetDisabledEvent",
+      "discriminator": [
+        255,
+        202,
+        192,
+        250,
+        223,
+        98,
+        185,
+        35
+      ]
     }
   ],
   "errors": [
@@ -3556,306 +3196,336 @@
     },
     {
       "code": 6008,
+      "name": "VerifierSetMismatch",
+      "msg": "verifier set account is invalid"
+    },
+    {
+      "code": 6009,
+      "name": "InvalidVerifierSet",
+      "msg": "verifier set fields are invalid"
+    },
+    {
+      "code": 6010,
+      "name": "VerifierSetDisabled",
+      "msg": "verifier set is disabled"
+    },
+    {
+      "code": 6011,
+      "name": "VerifierSetThresholdNotMet",
+      "msg": "verifier set threshold was not met"
+    },
+    {
+      "code": 6012,
+      "name": "VerifierSetDuplicateSigner",
+      "msg": "verifier set proof includes a duplicate signer"
+    },
+    {
+      "code": 6013,
       "name": "MaterialAuthorityMismatch",
       "msg": "material authority does not match config"
     },
     {
-      "code": 6009,
+      "code": 6014,
       "name": "MaterialCommitmentPdaMismatch",
       "msg": "material commitment account does not match the canonical PDA"
     },
     {
-      "code": 6010,
+      "code": 6015,
       "name": "InvalidMaterialCommitment",
       "msg": "material commitment is invalid"
     },
     {
-      "code": 6011,
+      "code": 6016,
       "name": "MaterialAlreadySealed",
       "msg": "ACL record already has sealed material"
     },
     {
-      "code": 6012,
+      "code": 6017,
       "name": "InvalidInputProof",
       "msg": "input proof is invalid"
     },
     {
-      "code": 6013,
+      "code": 6018,
       "name": "InvalidInputHandleIndex",
       "msg": "input proof handle index is invalid"
     },
     {
-      "code": 6014,
+      "code": 6019,
       "name": "InvalidInputHandle",
       "msg": "input proof selected handle does not match"
     },
     {
-      "code": 6015,
+      "code": 6020,
       "name": "InvalidInputHandleVersion",
       "msg": "input handle version is unsupported"
     },
     {
-      "code": 6016,
+      "code": 6021,
       "name": "InvalidInputHandleChain",
       "msg": "input handle chain id does not match host config"
     },
     {
-      "code": 6017,
+      "code": 6022,
       "name": "InvalidInputHandleType",
       "msg": "input handle FHE type is unsupported"
     },
     {
-      "code": 6018,
+      "code": 6023,
       "name": "UnsupportedFheType",
       "msg": "FHE type is unsupported"
     },
     {
-      "code": 6019,
+      "code": 6024,
       "name": "BinaryOperandTypeMismatch",
       "msg": "binary FHE operand type is incompatible"
     },
     {
-      "code": 6020,
+      "code": 6025,
       "name": "InvalidRandomUpperBound",
       "msg": "bounded random upper bound is invalid"
     },
     {
-      "code": 6021,
+      "code": 6026,
       "name": "InputProofSignatureMissing",
       "msg": "input proof Ed25519 signature is missing or malformed"
     },
     {
-      "code": 6022,
+      "code": 6027,
       "name": "TestShimsDisabled",
       "msg": "test event shims are disabled"
     },
     {
-      "code": 6023,
+      "code": 6028,
       "name": "TestShimAuthorityMismatch",
       "msg": "test shim authority does not match config"
     },
     {
-      "code": 6024,
+      "code": 6029,
       "name": "AppAccountAuthorityMismatch",
       "msg": "ACL app account authority does not match app account"
     },
     {
-      "code": 6025,
+      "code": 6030,
       "name": "AclNonceKeyMismatch",
       "msg": "ACL record nonce key does not match"
     },
     {
-      "code": 6026,
+      "code": 6031,
       "name": "AclRecordPdaMismatch",
       "msg": "ACL record address is not the canonical PDA for its nonce key"
     },
     {
-      "code": 6027,
+      "code": 6032,
       "name": "AclNonceSequenceMismatch",
       "msg": "ACL record nonce sequence does not match"
     },
     {
-      "code": 6028,
+      "code": 6033,
       "name": "AclDomainKeyMismatch",
       "msg": "ACL record domain key does not match"
     },
     {
-      "code": 6029,
+      "code": 6034,
       "name": "AclAppAccountMismatch",
       "msg": "ACL record app account does not match"
     },
     {
-      "code": 6030,
+      "code": 6035,
       "name": "AclEncryptedValueLabelMismatch",
       "msg": "ACL record encrypted value label does not match"
     },
     {
-      "code": 6031,
+      "code": 6036,
       "name": "AclHandleMismatch",
       "msg": "ACL record handle does not match"
     },
     {
-      "code": 6032,
+      "code": 6037,
       "name": "AclSubjectMismatch",
       "msg": "ACL record subject is not allowed"
     },
     {
-      "code": 6033,
+      "code": 6038,
       "name": "AclSubjectRoleMismatch",
       "msg": "ACL record subject lacks the required role"
     },
     {
-      "code": 6034,
+      "code": 6039,
       "name": "PublicDecryptAtBirthUnsupported",
       "msg": "public decrypt cannot be set during ACL record birth"
     },
     {
-      "code": 6035,
+      "code": 6040,
       "name": "AclSubjectCapacityExceeded",
       "msg": "ACL record has too many inline subjects"
     },
     {
-      "code": 6036,
+      "code": 6041,
       "name": "AclPermissionMissing",
       "msg": "ACL permission account is required for an overflow subject"
     },
     {
-      "code": 6037,
+      "code": 6042,
       "name": "AclPermissionPdaMismatch",
       "msg": "ACL permission account does not match the canonical PDA"
     },
     {
-      "code": 6038,
+      "code": 6043,
       "name": "AclPermissionMismatch",
       "msg": "ACL permission account data does not match the requested subject"
     },
     {
-      "code": 6039,
+      "code": 6044,
       "name": "AclDenyRecordMissing",
       "msg": "ACL deny-list account is required"
     },
     {
-      "code": 6040,
+      "code": 6045,
       "name": "AclDenyRecordMismatch",
       "msg": "ACL deny-list account does not match the canonical PDA"
     },
     {
-      "code": 6041,
+      "code": 6046,
       "name": "AclSubjectDenied",
       "msg": "ACL authority subject is deny-listed"
     },
     {
-      "code": 6042,
+      "code": 6047,
       "name": "DelegationPdaMismatch",
       "msg": "delegation record does not match the canonical PDA"
     },
     {
-      "code": 6043,
+      "code": 6048,
       "name": "InvalidDelegation",
       "msg": "delegation tuple is invalid"
     },
     {
-      "code": 6044,
+      "code": 6049,
       "name": "DelegationRevoked",
       "msg": "delegation has already been revoked"
     },
     {
-      "code": 6045,
+      "code": 6050,
       "name": "DelegationUpdatedInCurrentSlot",
       "msg": "delegation was already updated in the current slot"
     },
     {
-      "code": 6046,
+      "code": 6051,
       "name": "PreviousBankHashUnavailable",
       "msg": "previous bank hash is not available"
     },
     {
-      "code": 6047,
+      "code": 6052,
       "name": "ComputedHandleMismatch",
       "msg": "computed handle does not match host formula"
     },
     {
-      "code": 6048,
+      "code": 6053,
       "name": "PdaCreationMismatch",
       "msg": "PDA creation target is invalid"
     },
     {
-      "code": 6049,
+      "code": 6054,
       "name": "InvalidFheEvalOperationCount",
       "msg": "FHE eval operation count is invalid"
     },
     {
-      "code": 6050,
+      "code": 6055,
+      "name": "FheEvalEventLogBudgetExceeded",
+      "msg": "FHE eval event log budget is exceeded"
+    },
+    {
+      "code": 6056,
       "name": "InvalidFheEvalAccount",
       "msg": "FHE eval account reference is invalid"
     },
     {
-      "code": 6051,
+      "code": 6057,
       "name": "FheEvalTransientMissing",
       "msg": "FHE eval transient operand is missing"
     },
     {
-      "code": 6052,
+      "code": 6058,
       "name": "FheEvalDuplicateHandle",
       "msg": "FHE eval output handle is duplicated"
     },
     {
-      "code": 6053,
+      "code": 6059,
       "name": "FheEvalOutputAlreadyInitialized",
       "msg": "FHE eval durable output ACL record already exists"
     },
     {
-      "code": 6054,
+      "code": 6060,
       "name": "InvalidFheEvalContext",
       "msg": "FHE eval context id is invalid"
     },
     {
-      "code": 6055,
+      "code": 6061,
       "name": "InvalidTransientSessionNonce",
       "msg": "transient session nonce is invalid"
     },
     {
-      "code": 6056,
+      "code": 6062,
       "name": "TransientSessionPdaMismatch",
       "msg": "transient session account does not match the canonical PDA"
     },
     {
-      "code": 6057,
+      "code": 6063,
       "name": "TransientSessionStateInvalid",
       "msg": "transient session state is invalid"
     },
     {
-      "code": 6058,
+      "code": 6064,
       "name": "TransientSessionExpired",
       "msg": "transient session is expired"
     },
     {
-      "code": 6059,
+      "code": 6065,
       "name": "TransientSessionAuthorityMismatch",
       "msg": "transient session authority does not match signer"
     },
     {
-      "code": 6060,
+      "code": 6066,
       "name": "TransientSessionRefundMismatch",
       "msg": "transient session refund recipient does not match"
     },
     {
-      "code": 6061,
+      "code": 6067,
       "name": "TransientSessionCapacityInvalid",
       "msg": "transient session capacity is invalid"
     },
     {
-      "code": 6062,
+      "code": 6068,
       "name": "TransientCapabilityMismatch",
       "msg": "transient capability is missing or mismatched"
     },
     {
-      "code": 6063,
+      "code": 6069,
       "name": "TransientCapabilityConsumed",
       "msg": "transient capability is consumed"
     },
     {
-      "code": 6064,
+      "code": 6070,
       "name": "TransientSessionCreationMissing",
       "msg": "transient session creation was not found in this transaction"
     },
     {
-      "code": 6065,
+      "code": 6071,
       "name": "TransientCapabilityUnauthorized",
       "msg": "transient capability is not authorized"
     },
     {
-      "code": 6066,
+      "code": 6072,
       "name": "TransientCapabilityOutputDenied",
       "msg": "transient capability does not allow this durable output"
     },
     {
-      "code": 6067,
+      "code": 6073,
       "name": "TransientCapabilityPublicDecryptDenied",
       "msg": "transient capability cannot authorize public decrypt"
     },
     {
-      "code": 6068,
+      "code": 6074,
       "name": "TransientCapabilityReceiverMissing",
       "msg": "transient capability receiver cannot be verified"
     }
@@ -4283,6 +3953,64 @@
       }
     },
     {
+      "name": "CreateVerifierSetArgs",
+      "docs": [
+        "Initialization arguments for a threshold [`VerifierSet`] account."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "kind",
+            "docs": [
+              "Protocol purpose for this set."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "scope",
+            "docs": [
+              "Scope that disambiguates sets of the same kind."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "version",
+            "docs": [
+              "Monotonic version chosen by the admin for rotation."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "threshold",
+            "docs": [
+              "Number of distinct signer signatures required."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "signer_count",
+            "docs": [
+              "Number of active entries in `signers`."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "signers",
+            "docs": [
+              "Fixed signer list. Entries after `signer_count` must be default keys."
+            ],
+            "type": {
+              "array": [
+                "pubkey",
+                16
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
       "name": "DenySubjectUpdatedEvent",
       "docs": [
         "Emitted when a subject deny-list record is updated."
@@ -4455,90 +4183,16 @@
             }
           },
           {
-            "name": "ops",
+            "name": "steps",
             "docs": [
-              "Ordered operation list. Each transient operand may only reference an",
-              "output produced by an earlier index in this vector."
+              "Ordered step list. Each transient operand may only reference an output",
+              "produced by an earlier index in this vector."
             ],
             "type": {
               "vec": {
                 "defined": {
-                  "name": "FheEvalOp"
+                  "name": "FheEvalStep"
                 }
-              }
-            }
-          }
-        ]
-      }
-    },
-    {
-      "name": "FheEvalOp",
-      "docs": [
-        "One binary operation inside a composed FHE eval."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "op",
-            "docs": [
-              "Binary operator."
-            ],
-            "type": {
-              "defined": {
-                "name": "FheBinaryOpCode"
-              }
-            }
-          },
-          {
-            "name": "lhs",
-            "docs": [
-              "Left-hand operand."
-            ],
-            "type": {
-              "defined": {
-                "name": "FheEvalOperand"
-              }
-            }
-          },
-          {
-            "name": "rhs",
-            "docs": [
-              "Right-hand operand or scalar bytes."
-            ],
-            "type": {
-              "defined": {
-                "name": "FheEvalOperand"
-              }
-            }
-          },
-          {
-            "name": "output_fhe_type",
-            "docs": [
-              "FHE type byte embedded in the output handle."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "result",
-            "docs": [
-              "Caller-supplied output handle verified by host derivation."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "output",
-            "docs": [
-              "Whether this output remains instruction-local or is bound into durable ACL state."
-            ],
-            "type": {
-              "defined": {
-                "name": "FheEvalOutput"
               }
             }
           }
@@ -4688,6 +4342,19 @@
                 "type": "u16"
               },
               {
+                "name": "output_app_account_authority_index",
+                "docs": [
+                  "Optional index into `remaining_accounts` for the app account authority signer.",
+                  "",
+                  "`None` uses the fixed `app_account_authority` account in the eval",
+                  "context. `Some(index)` requires that remaining account to be a signer",
+                  "and to match `output_app_account`."
+                ],
+                "type": {
+                  "option": "u16"
+                }
+              },
+              {
                 "name": "output_nonce_key",
                 "docs": [
                   "Nonce key for the output ACL record."
@@ -4751,6 +4418,244 @@
                   "Initial public decrypt flag on the output ACL record."
                 ],
                 "type": "bool"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "FheEvalStep",
+      "docs": [
+        "One step inside a composed FHE eval."
+      ],
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Binary",
+            "fields": [
+              {
+                "name": "op",
+                "docs": [
+                  "Binary operator."
+                ],
+                "type": {
+                  "defined": {
+                    "name": "FheBinaryOpCode"
+                  }
+                }
+              },
+              {
+                "name": "lhs",
+                "docs": [
+                  "Left-hand encrypted operand."
+                ],
+                "type": {
+                  "defined": {
+                    "name": "FheEvalOperand"
+                  }
+                }
+              },
+              {
+                "name": "rhs",
+                "docs": [
+                  "Right-hand encrypted operand or scalar bytes."
+                ],
+                "type": {
+                  "defined": {
+                    "name": "FheEvalOperand"
+                  }
+                }
+              },
+              {
+                "name": "output_fhe_type",
+                "docs": [
+                  "FHE type byte embedded in the output handle."
+                ],
+                "type": "u8"
+              },
+              {
+                "name": "output",
+                "docs": [
+                  "Whether this output remains instruction-local or is bound into durable ACL state."
+                ],
+                "type": {
+                  "defined": {
+                    "name": "FheEvalOutput"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "name": "Ternary",
+            "fields": [
+              {
+                "name": "op",
+                "docs": [
+                  "Ternary operator."
+                ],
+                "type": {
+                  "defined": {
+                    "name": "FheTernaryOpCode"
+                  }
+                }
+              },
+              {
+                "name": "control",
+                "docs": [
+                  "Encrypted bool control operand."
+                ],
+                "type": {
+                  "defined": {
+                    "name": "FheEvalOperand"
+                  }
+                }
+              },
+              {
+                "name": "if_true",
+                "docs": [
+                  "Encrypted branch selected when control is true."
+                ],
+                "type": {
+                  "defined": {
+                    "name": "FheEvalOperand"
+                  }
+                }
+              },
+              {
+                "name": "if_false",
+                "docs": [
+                  "Encrypted branch selected when control is false."
+                ],
+                "type": {
+                  "defined": {
+                    "name": "FheEvalOperand"
+                  }
+                }
+              },
+              {
+                "name": "output_fhe_type",
+                "docs": [
+                  "FHE type byte embedded in the output handle."
+                ],
+                "type": "u8"
+              },
+              {
+                "name": "output",
+                "docs": [
+                  "Whether this output remains instruction-local or is bound into durable ACL state."
+                ],
+                "type": {
+                  "defined": {
+                    "name": "FheEvalOutput"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "name": "TrivialEncrypt",
+            "fields": [
+              {
+                "name": "plaintext",
+                "docs": [
+                  "Plaintext bytes encoded using the host scalar convention."
+                ],
+                "type": {
+                  "array": [
+                    "u8",
+                    32
+                  ]
+                }
+              },
+              {
+                "name": "fhe_type",
+                "docs": [
+                  "FHE type byte embedded in the output handle."
+                ],
+                "type": "u8"
+              },
+              {
+                "name": "output",
+                "docs": [
+                  "Whether this output remains instruction-local or is bound into durable ACL state."
+                ],
+                "type": {
+                  "defined": {
+                    "name": "FheEvalOutput"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "name": "Rand",
+            "fields": [
+              {
+                "name": "fhe_type",
+                "docs": [
+                  "FHE type byte embedded in the output handle."
+                ],
+                "type": "u8"
+              },
+              {
+                "name": "output",
+                "docs": [
+                  "Whether this output remains instruction-local or is bound into durable ACL state."
+                ],
+                "type": {
+                  "defined": {
+                    "name": "FheEvalOutput"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "name": "Input",
+            "fields": [
+              {
+                "name": "input_handle",
+                "docs": [
+                  "Input handle selected from the proof."
+                ],
+                "type": {
+                  "array": [
+                    "u8",
+                    32
+                  ]
+                }
+              },
+              {
+                "name": "proof",
+                "docs": [
+                  "Solana input proof verified by the host."
+                ],
+                "type": {
+                  "defined": {
+                    "name": "SolanaInputProof"
+                  }
+                }
+              },
+              {
+                "name": "verifier_set_index",
+                "docs": [
+                  "Index into `remaining_accounts` for the active input [`VerifierSet`]."
+                ],
+                "type": "u16"
+              },
+              {
+                "name": "output",
+                "docs": [
+                  "Durable ACL output bound from the verified input."
+                ],
+                "type": {
+                  "defined": {
+                    "name": "FheEvalOutput"
+                  }
+                }
               }
             ]
           }
@@ -5322,11 +5227,18 @@
             "type": "u64"
           },
           {
-            "name": "input_verifier_authority",
+            "name": "input_verifier_set",
             "docs": [
-              "Configured authority for input verification paths."
+              "Active threshold verifier set for input verification paths."
             ],
             "type": "pubkey"
+          },
+          {
+            "name": "input_verifier_set_version",
+            "docs": [
+              "Version of the active input verifier set, or zero before the first set is created."
+            ],
+            "type": "u64"
           },
           {
             "name": "material_authority",
@@ -5424,11 +5336,18 @@
             "type": "u64"
           },
           {
-            "name": "input_verifier_authority",
+            "name": "input_verifier_set",
             "docs": [
-              "Configured input verifier authority."
+              "Active input verifier set."
             ],
             "type": "pubkey"
+          },
+          {
+            "name": "input_verifier_set_version",
+            "docs": [
+              "Active input verifier-set version."
+            ],
+            "type": "u64"
           },
           {
             "name": "material_authority",
@@ -5475,6 +5394,20 @@
               "Admin signer that performed the update."
             ],
             "type": "pubkey"
+          },
+          {
+            "name": "input_verifier_set",
+            "docs": [
+              "Active input verifier set."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "input_verifier_set_version",
+            "docs": [
+              "Active input verifier-set version."
+            ],
+            "type": "u64"
           },
           {
             "name": "paused",
@@ -5530,9 +5463,9 @@
             "type": "u64"
           },
           {
-            "name": "input_verifier_authority",
+            "name": "input_verifier_set",
             "docs": [
-              "Authority used by mock and signed encrypted-input bind paths."
+              "Active threshold verifier set used by encrypted-input bind paths."
             ],
             "type": "pubkey"
           },
@@ -5702,8 +5635,8 @@
         "Native Solana verifier payload for binding external encrypted inputs.",
         "",
         "The proof is not trusted by itself. `verify_input_and_bind` requires an",
-        "Ed25519 verifier pre-instruction from `HostConfig::input_verifier_authority`",
-        "over [`input_proof_message`]. The selected handle from `handles` is the only",
+        "Ed25519 verifier quorum from `HostConfig::input_verifier_set` over",
+        "[`input_proof_message_for_verifier_set`]. The selected handle from `handles` is the only",
         "handle that may be written into the output ACL record."
       ],
       "type": {
@@ -6168,6 +6101,236 @@
               "Whether the delegation is revoked after this update."
             ],
             "type": "bool"
+          }
+        ]
+      }
+    },
+    {
+      "name": "VerifierSet",
+      "docs": [
+        "Fixed-size threshold verifier set for host-facing signature proofs."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "admin",
+            "docs": [
+              "Admin that created and may disable this set."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "kind",
+            "docs": [
+              "Protocol purpose for this set."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "scope",
+            "docs": [
+              "Scope that disambiguates sets of the same kind.",
+              "",
+              "Input sets are scoped to the host config PDA. Token disclosure and",
+              "redemption sets are scoped to the confidential mint they certify."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "version",
+            "docs": [
+              "Monotonic version chosen by the admin for rotation."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "threshold",
+            "docs": [
+              "Number of distinct signer signatures required."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "signer_count",
+            "docs": [
+              "Number of active entries in `signers`."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "signers",
+            "docs": [
+              "Fixed signer list. Entries after `signer_count` must be default keys."
+            ],
+            "type": {
+              "array": [
+                "pubkey",
+                16
+              ]
+            }
+          },
+          {
+            "name": "state",
+            "docs": [
+              "Active/disabled state."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "created_slot",
+            "docs": [
+              "Slot in which the set was created."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "updated_slot",
+            "docs": [
+              "Slot in which the set was last updated."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump for the canonical verifier-set address."
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "VerifierSetCreatedEvent",
+      "docs": [
+        "Emitted when a threshold verifier set is created."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "version",
+            "docs": [
+              "Event schema version."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "verifier_set",
+            "docs": [
+              "Verifier-set PDA."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "admin",
+            "docs": [
+              "Admin signer that created the set."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "kind",
+            "docs": [
+              "Protocol purpose for this set."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "scope",
+            "docs": [
+              "Scope that disambiguates sets of the same kind."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "set_version",
+            "docs": [
+              "Monotonic version chosen by the admin for rotation."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "threshold",
+            "docs": [
+              "Number of distinct signer signatures required."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "signer_count",
+            "docs": [
+              "Number of active signers."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "created_slot",
+            "docs": [
+              "Slot in which this set was created."
+            ],
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "VerifierSetDisabledEvent",
+      "docs": [
+        "Emitted when a threshold verifier set is disabled."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "version",
+            "docs": [
+              "Event schema version."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "verifier_set",
+            "docs": [
+              "Verifier-set PDA."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "admin",
+            "docs": [
+              "Admin signer that disabled the set."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "kind",
+            "docs": [
+              "Protocol purpose for this set."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "scope",
+            "docs": [
+              "Scope that disambiguates sets of the same kind."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "set_version",
+            "docs": [
+              "Set version."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "updated_slot",
+            "docs": [
+              "Slot in which this set was disabled."
+            ],
+            "type": "u64"
           }
         ]
       }

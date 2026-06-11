@@ -12,20 +12,52 @@ pub fn instruction_contains_message(
     expected_pubkey: &[u8],
     expected_message: &[u8],
 ) -> bool {
+    matches!(
+        matching_signer_bitmask(data, &[expected_pubkey], expected_message),
+        Ok(1)
+    )
+}
+
+/// Error returned when an Ed25519 instruction contains unusable threshold proof
+/// data for the caller-supplied expected signer list.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MatchingSignerError {
+    /// More than 128 expected public keys were supplied.
+    TooManyExpectedPubkeys,
+    /// The instruction contains the same expected signer/message tuple twice.
+    DuplicateSigner,
+}
+
+/// Returns a bitmask of expected signer indexes that signed `expected_message`
+/// inside one native Ed25519 instruction.
+///
+/// Malformed tuples are ignored in the same spirit as
+/// [`instruction_contains_message`]. Duplicate matching tuples for one expected
+/// signer are rejected so callers cannot accidentally count repeated
+/// signatures as independent quorum members.
+pub fn matching_signer_bitmask(
+    data: &[u8],
+    expected_pubkeys: &[&[u8]],
+    expected_message: &[u8],
+) -> Result<u128, MatchingSignerError> {
+    if expected_pubkeys.len() > u128::BITS as usize {
+        return Err(MatchingSignerError::TooManyExpectedPubkeys);
+    }
     if data.len() < SIGNATURE_OFFSETS_START || data[1] != 0 {
-        return false;
+        return Ok(0);
     }
     let signature_count = data[0] as usize;
     if signature_count == 0 {
-        return false;
+        return Ok(0);
     }
 
     let expected_offsets_end = SIGNATURE_OFFSETS_START
         .saturating_add(signature_count.saturating_mul(SIGNATURE_OFFSETS_SERIALIZED_SIZE));
     if data.len() < expected_offsets_end {
-        return false;
+        return Ok(0);
     }
 
+    let mut matched = 0u128;
     for signature_index in 0..signature_count {
         let start = SIGNATURE_OFFSETS_START
             .saturating_add(signature_index.saturating_mul(SIGNATURE_OFFSETS_SERIALIZED_SIZE));
@@ -56,14 +88,23 @@ pub fn instruction_contains_message(
         if signature_end > data.len() || public_key_end > data.len() || message_end > data.len() {
             continue;
         }
-        if &data[public_key_offset..public_key_end] != expected_pubkey {
+        if &data[message_data_offset..message_end] != expected_message {
             continue;
         }
-        if &data[message_data_offset..message_end] == expected_message {
-            return true;
+        let signer = &data[public_key_offset..public_key_end];
+        let Some(signer_index) = expected_pubkeys
+            .iter()
+            .position(|expected_pubkey| *expected_pubkey == signer)
+        else {
+            continue;
+        };
+        let bit = 1u128 << signer_index;
+        if matched & bit != 0 {
+            return Err(MatchingSignerError::DuplicateSigner);
         }
+        matched |= bit;
     }
-    false
+    Ok(matched)
 }
 
 fn read_u16_le(data: &[u8], offset: usize) -> u16 {
@@ -182,5 +223,54 @@ mod tests {
         data.truncate(data.len() - 1);
 
         assert!(!instruction_contains_message(&data, &public_key, message));
+    }
+
+    #[test]
+    fn returns_matching_signer_bitmask() {
+        let first_public_key = [7; PUBKEY_SERIALIZED_SIZE];
+        let second_public_key = [8; PUBKEY_SERIALIZED_SIZE];
+        let third_public_key = [9; PUBKEY_SERIALIZED_SIZE];
+        let data = instruction_data(&[
+            (&first_public_key, b"right-message"),
+            (&third_public_key, b"wrong-message"),
+            (&second_public_key, b"right-message"),
+        ]);
+
+        assert_eq!(
+            matching_signer_bitmask(
+                &data,
+                &[&first_public_key, &second_public_key, &third_public_key],
+                b"right-message"
+            ),
+            Ok(0b011)
+        );
+    }
+
+    #[test]
+    fn rejects_duplicate_matching_signer() {
+        let public_key = [7; PUBKEY_SERIALIZED_SIZE];
+        let data = instruction_data(&[
+            (&public_key, b"verified-message"),
+            (&public_key, b"verified-message"),
+        ]);
+
+        assert_eq!(
+            matching_signer_bitmask(&data, &[&public_key], b"verified-message"),
+            Err(MatchingSignerError::DuplicateSigner)
+        );
+    }
+
+    #[test]
+    fn accepts_same_signer_with_only_one_matching_message() {
+        let public_key = [7; PUBKEY_SERIALIZED_SIZE];
+        let data = instruction_data(&[
+            (&public_key, b"wrong-message"),
+            (&public_key, b"verified-message"),
+        ]);
+
+        assert_eq!(
+            matching_signer_bitmask(&data, &[&public_key], b"verified-message"),
+            Ok(1)
+        );
     }
 }

@@ -11,7 +11,7 @@ use sha3::{Digest, Keccak256};
 use std::collections::HashMap;
 use thiserror::Error;
 
-pub const SOLANA_NATIVE_REQUEST_WIRE_LAYOUT_V0: u8 = 0;
+pub const SOLANA_NATIVE_REQUEST_WIRE_LAYOUT_V0: u8 = 1;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SolanaNativeParsedRequestV0 {
@@ -160,24 +160,50 @@ pub fn parse_solana_native_request_v0(
         return Err(SolanaNativeRequestParseError::UnsupportedLayout);
     }
 
+    let domain_separator = cursor.read_bytes_32()?;
+    let host_chain_id = cursor.read_u64()?;
+    let config_version = cursor.read_u64()?;
+    let solana_cluster_id = cursor.read_bytes_32()?;
+    let kms_context_id = cursor.read_bytes_32()?;
+    let user_reencryption_pubkey_len = cursor.read_u32()?;
+    let user_reencryption_pubkey_hash = cursor.read_bytes_32()?;
+    let request_signer_pubkey = cursor.read_bytes_32()?;
+    let acl_program_id = cursor.read_bytes_32()?;
+    let request_mode = cursor.read_u8()?;
+    let material_source_mode = cursor.read_u8()?;
+    let commitment_level = cursor.read_u8()?;
+    let min_context_slot = cursor.read_u64()?;
+    let expiration_slot = cursor.read_u64()?;
+    let nonce = cursor.read_bytes_32()?;
+    let extra_data_hash = cursor.read_bytes_32()?;
+    let domain_count = cursor.read_u16()? as usize;
+    if domain_count > limits.max_acl_domain_keys_per_request {
+        return Err(SolanaNativeRequestParseError::RequestTooLarge);
+    }
+    let allowed_acl_domain_keys = (0..domain_count)
+        .map(|_| cursor.read_bytes_32())
+        .collect::<Result<Vec<_>, _>>()?;
+    let entries_hash = cursor.read_bytes_32()?;
+
     let payload = SolanaUserDecryptionPayloadV0 {
-        domain_separator: cursor.read_bytes_32()?,
-        host_chain_id: cursor.read_u64()?,
-        config_version: cursor.read_u64()?,
-        solana_cluster_id: cursor.read_bytes_32()?,
-        kms_context_id: cursor.read_bytes_32()?,
-        user_reencryption_pubkey_len: cursor.read_u32()?,
-        user_reencryption_pubkey_hash: cursor.read_bytes_32()?,
-        request_signer_pubkey: cursor.read_bytes_32()?,
-        acl_program_id: cursor.read_bytes_32()?,
-        request_mode: cursor.read_u8()?,
-        material_source_mode: cursor.read_u8()?,
-        commitment_level: cursor.read_u8()?,
-        min_context_slot: cursor.read_u64()?,
-        expiration_slot: cursor.read_u64()?,
-        nonce: cursor.read_bytes_32()?,
-        extra_data_hash: cursor.read_bytes_32()?,
-        entries_hash: cursor.read_bytes_32()?,
+        domain_separator,
+        host_chain_id,
+        config_version,
+        solana_cluster_id,
+        kms_context_id,
+        user_reencryption_pubkey_len,
+        user_reencryption_pubkey_hash,
+        request_signer_pubkey,
+        acl_program_id,
+        request_mode,
+        material_source_mode,
+        commitment_level,
+        min_context_slot,
+        expiration_slot,
+        nonce,
+        extra_data_hash,
+        allowed_acl_domain_keys,
+        entries_hash,
     };
 
     let entry_count = cursor.read_u16()? as usize;
@@ -667,6 +693,7 @@ mod tests {
             expiration_slot: OBSERVED_SLOT + 20,
             nonce: [77; 32],
             extra_data_hash: solana_native_extra_data_hash(&raw_extra_data),
+            allowed_acl_domain_keys: vec![DOMAIN],
             entries_hash: solana_native_entries_hash(&entries),
         };
         let request = SolanaNativeDecryptionRequestV0 {
@@ -728,6 +755,10 @@ mod tests {
         output.extend_from_slice(&payload.expiration_slot.to_le_bytes());
         output.extend_from_slice(&payload.nonce);
         output.extend_from_slice(&payload.extra_data_hash);
+        output.extend_from_slice(&(payload.allowed_acl_domain_keys.len() as u16).to_le_bytes());
+        for domain in &payload.allowed_acl_domain_keys {
+            output.extend_from_slice(domain);
+        }
         output.extend_from_slice(&payload.entries_hash);
     }
 
@@ -983,6 +1014,20 @@ mod tests {
         assert_eq!(
             parsed.attach_account_witnesses(&account_witnesses),
             Err(SolanaNativeRequestParseError::ExtraAccountWitness)
+        );
+    }
+
+    #[test]
+    fn attach_rejects_duplicate_account_witness() {
+        let (_, mut account_witnesses, request_bytes) = request_fixture();
+        let parsed =
+            parse_solana_native_request_v0(&request_bytes, SolanaNativeRequestLimits::default())
+                .unwrap();
+        account_witnesses.push(account_witnesses[0].clone());
+
+        assert_eq!(
+            parsed.attach_account_witnesses(&account_witnesses),
+            Err(SolanaNativeRequestParseError::DuplicateAccountWitness)
         );
     }
 }

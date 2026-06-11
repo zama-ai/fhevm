@@ -13,8 +13,10 @@ pub struct HostConfig {
     pub admin: Pubkey,
     /// Host-chain id included in handle derivation.
     pub chain_id: u64,
-    /// Configured authority for input verification paths.
-    pub input_verifier_authority: Pubkey,
+    /// Active threshold verifier set for input verification paths.
+    pub input_verifier_set: Pubkey,
+    /// Version of the active input verifier set, or zero before the first set is created.
+    pub input_verifier_set_version: u64,
     /// Configured authority for material-commitment paths.
     pub material_authority: Pubkey,
     /// Configured signer for `test_emit_*` shims.
@@ -34,27 +36,21 @@ pub struct HostConfig {
 }
 
 impl HostConfig {
-    pub const SPACE: usize = 32 + 8 + 32 + 32 + 32 + 1 + 1 + 1 + 1 + 8 + 1;
+    pub const SPACE: usize = 32 + 8 + 32 + 8 + 32 + 32 + 1 + 1 + 1 + 1 + 8 + 1;
 
     /// True only for the local PoC sentinel chain id.
     ///
-    /// Local-only relaxations (the zero birth-entropy fallback and the mock
-    /// encrypted-input bind path) are confined to this chain. A real host chain
-    /// always takes the production branch regardless of admin-toggled flags, so
-    /// an operator cannot enable PoC short-circuits on a deployed chain. See
-    /// `DESIGN_DECISIONS.md` DD-014.
+    /// Local-only relaxations are compiled only with the `poc` Cargo feature and
+    /// are additionally confined to this sentinel chain id. Default builds
+    /// reject the sentinel at initialization.
     pub fn is_local_poc_chain(&self) -> bool {
-        self.chain_id == SOLANA_POC_CHAIN_ID
+        POC_FEATURE_ENABLED && self.chain_id == SOLANA_POC_CHAIN_ID
     }
 
-    /// True when handle birth may substitute the zero bank hash for an
-    /// unavailable prior bank hash.
+    /// True when PoC-only helpers may substitute zero birth entropy.
     ///
-    /// This is a local-PoC-only relaxation: production chains always fail closed
-    /// with [`ZamaHostError::PreviousBankHashUnavailable`] when the prior bank
-    /// hash is unavailable, so toggling `test_shims_enabled` on a deployed chain
-    /// can never degrade birth entropy. This intentionally decouples the
-    /// birth-entropy fallback from the `test_emit_*` shim gate on real chains.
+    /// The zero-hash fallback is confined to local PoC tests; production
+    /// handle birth keeps using runtime entropy and fails closed without it.
     pub fn zero_birth_entropy_allowed(&self) -> bool {
         self.test_shims_enabled && self.is_local_poc_chain()
     }

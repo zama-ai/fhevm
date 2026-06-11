@@ -21,7 +21,7 @@ pub struct TransferReceiverHookCall {
     pub callback_success_acl_record: Pubkey,
     /// Receiver hook program that returned the callback witness.
     pub receiver_program: Pubkey,
-    /// Sender or active operator that invoked the hook.
+    /// Sender that invoked the hook.
     pub caller: Pubkey,
     /// PDA bump for `(mint, sent_handle)`.
     pub bump: u8,

@@ -1,23 +1,26 @@
-use std::collections::HashSet;
+use std::{collections::HashSet, fmt, ops::DerefMut};
 
 use alloy_primitives::{Address, FixedBytes, Log};
+use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine};
 use fhevm_engine_common::types::AllowEvents;
 use sha2::{Digest, Sha256};
-use sqlx::Error as SqlxError;
+use sqlx::{Error as SqlxError, Row};
 
 use crate::generated::{
     decode_anchor_cpi_event as decode_zama_host_anchor_cpi_event,
+    decode_anchor_event as decode_zama_host_anchor_event,
+    decode_confidential_token_anchor_cpi_event,
+    decode_confidential_token_anchor_event, ConfidentialTokenEvent,
     FheBinaryOpCode, FheBinaryOpEvent, FheRandBoundedEvent, FheRandEvent,
     FheTernaryOpCode, FheTernaryOpEvent, TrivialEncryptEvent, ZamaHostEvent,
-    EVENT_VERSION,
+    CONFIDENTIAL_TOKEN_EVENT_VERSION, EVENT_VERSION,
 };
 
 use crate::contracts::TfheContract;
 use crate::contracts::TfheContract::TfheContractEvents;
 use crate::database::dependence_chains::dependence_chains;
 use crate::database::tfhe_event_propagate::{
-    tfhe_result_handle, ClearConst, Database, Handle, LogTfhe, Transaction,
-    TransactionHash,
+    ClearConst, Database, Handle, LogTfhe, Transaction, TransactionHash,
 };
 
 #[derive(Clone, Debug)]
@@ -27,6 +30,87 @@ pub struct SolanaAclAllowedEvent {
     pub event_type: AllowEvents,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum SolanaFinalizedAccountFetchKind {
+    AclRecord,
+    AclPermission,
+    HandleMaterialCommitment,
+    DisclosureRequest,
+    BurnRedemptionRequest,
+    TokenMint,
+    TokenAccount,
+    BurnRedemption,
+    TransferCallbackSettlement,
+}
+
+impl SolanaFinalizedAccountFetchKind {
+    fn as_i16(self) -> i16 {
+        match self {
+            SolanaFinalizedAccountFetchKind::AclRecord => 1,
+            SolanaFinalizedAccountFetchKind::AclPermission => 2,
+            SolanaFinalizedAccountFetchKind::HandleMaterialCommitment => 3,
+            SolanaFinalizedAccountFetchKind::DisclosureRequest => 4,
+            SolanaFinalizedAccountFetchKind::BurnRedemptionRequest => 5,
+            SolanaFinalizedAccountFetchKind::TokenMint => 6,
+            SolanaFinalizedAccountFetchKind::TokenAccount => 7,
+            SolanaFinalizedAccountFetchKind::BurnRedemption => 8,
+            SolanaFinalizedAccountFetchKind::TransferCallbackSettlement => 9,
+        }
+    }
+
+    fn from_i16(value: i16) -> Option<Self> {
+        match value {
+            1 => Some(SolanaFinalizedAccountFetchKind::AclRecord),
+            2 => Some(SolanaFinalizedAccountFetchKind::AclPermission),
+            3 => {
+                Some(SolanaFinalizedAccountFetchKind::HandleMaterialCommitment)
+            }
+            4 => Some(SolanaFinalizedAccountFetchKind::DisclosureRequest),
+            5 => Some(SolanaFinalizedAccountFetchKind::BurnRedemptionRequest),
+            6 => Some(SolanaFinalizedAccountFetchKind::TokenMint),
+            7 => Some(SolanaFinalizedAccountFetchKind::TokenAccount),
+            8 => Some(SolanaFinalizedAccountFetchKind::BurnRedemption),
+            9 => Some(
+                SolanaFinalizedAccountFetchKind::TransferCallbackSettlement,
+            ),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SolanaFinalizedAccountFetch {
+    pub account_key: [u8; 32],
+    pub kind: SolanaFinalizedAccountFetchKind,
+    pub reason: &'static str,
+    pub handle: Option<Handle>,
+    pub related_account: Option<[u8; 32]>,
+    pub subject: Option<[u8; 32]>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SolanaFinalizedAccountFetchJob {
+    pub account_key: [u8; 32],
+    pub kind: SolanaFinalizedAccountFetchKind,
+    pub reason: String,
+    pub handle: Option<Handle>,
+    pub related_account: Option<[u8; 32]>,
+    pub subject: Option<[u8; 32]>,
+    pub transaction_id: TransactionHash,
+    pub block_number: u64,
+    pub attempts: i32,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SolanaFinalizedAccountWitness {
+    pub account_key: [u8; 32],
+    pub owner: [u8; 32],
+    pub lamports: u64,
+    pub executable: bool,
+    pub data: Vec<u8>,
+    pub observed_slot: u64,
+}
+
 #[derive(Clone, Debug)]
 pub enum SolanaHostEvent {
     FheBinaryOp(FheBinaryOpEvent),
@@ -34,13 +118,15 @@ pub enum SolanaHostEvent {
     TrivialEncrypt(TrivialEncryptEvent),
     FheRand(FheRandEvent),
     FheRandBounded(FheRandBoundedEvent),
+    FinalizedAccountFetch(SolanaFinalizedAccountFetch),
     AclAllowed(SolanaAclAllowedEvent),
 }
 
 #[derive(Clone, Debug)]
 pub enum SolanaMappedEvent {
     Tfhe(Log<TfheContractEvents>),
-    AclAllowed(SolanaAclAllowedEvent),
+    FinalizedAccountFetch(SolanaFinalizedAccountFetch),
+    IgnoredAclAllowed(SolanaAclAllowedEvent),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -56,48 +142,490 @@ pub struct SolanaIngestStats {
     pub inserted_rows: usize,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SolanaEventDecodeError {
+    MixedHostEventTransport {
+        cpi_events: usize,
+        log_events: usize,
+    },
+}
+
+impl fmt::Display for SolanaEventDecodeError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::MixedHostEventTransport {
+                cpi_events,
+                log_events,
+            } => write!(
+                formatter,
+                "transaction mixed ZamaHost CPI events ({cpi_events}) and log events ({log_events})"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for SolanaEventDecodeError {}
+
 pub fn solana_transaction_id(signature_bytes: &[u8]) -> TransactionHash {
     let digest: [u8; 32] = Sha256::digest(signature_bytes).into();
     TransactionHash::from(digest)
 }
 
 pub fn decode_anchor_cpi_event(data: &[u8]) -> Option<SolanaHostEvent> {
-    let event = decode_zama_host_anchor_cpi_event(data)?;
+    decode_solana_host_events(decode_zama_host_anchor_cpi_event(data)?)
+        .into_iter()
+        .next()
+}
+
+pub fn decode_anchor_event(data: &[u8]) -> Option<SolanaHostEvent> {
+    decode_solana_host_events(decode_zama_host_anchor_event(data)?)
+        .into_iter()
+        .next()
+}
+
+/// Decode all ZamaHost events from one Solana transaction.
+///
+/// The inputs are intentionally RPC-client-neutral: production pollers can map
+/// JSON-RPC transaction metadata, LiteSVM metadata, or SDK metadata into the
+/// `(program_id, instruction_data)` iterator without making this adapter depend
+/// on a specific Solana client crate. A transaction must use one host event
+/// transport. Mixed host CPI/log event transport needs a chronological merge
+/// before DB log indexes can be assigned, so this API rejects it explicitly.
+pub fn decode_solana_transaction_events<'a>(
+    logs: &[String],
+    inner_instructions: impl IntoIterator<Item = (&'a str, &'a [u8])>,
+    program_id: &str,
+) -> Result<Vec<SolanaHostEvent>, SolanaEventDecodeError> {
+    let cpi_events = decode_anchor_cpi_events(inner_instructions, program_id);
+    let log_events = decode_anchor_log_events(logs, program_id);
+    merge_solana_transport_events(cpi_events, log_events)
+}
+
+pub fn decode_anchor_cpi_events<'a>(
+    inner_instructions: impl IntoIterator<Item = (&'a str, &'a [u8])>,
+    program_id: &str,
+) -> Vec<SolanaHostEvent> {
+    inner_instructions
+        .into_iter()
+        .filter(|(instruction_program_id, _)| {
+            *instruction_program_id == program_id
+        })
+        .filter_map(|(_, data)| decode_zama_host_anchor_cpi_event(data))
+        .flat_map(decode_solana_host_events)
+        .collect()
+}
+
+pub fn decode_anchor_log_events(
+    logs: &[String],
+    program_id: &str,
+) -> Vec<SolanaHostEvent> {
+    let mut stack = Vec::<&str>::new();
+    let mut events = Vec::new();
+
+    for log in logs {
+        if let Some(invoked_program) = parse_program_invoke(log) {
+            stack.push(invoked_program);
+            continue;
+        }
+
+        if let Some(exited_program) = parse_program_exit(log) {
+            pop_program_stack(&mut stack, exited_program);
+            continue;
+        }
+
+        if stack.last().copied() != Some(program_id) {
+            continue;
+        }
+
+        let Some(encoded) = log.strip_prefix("Program data: ") else {
+            continue;
+        };
+        let Ok(data) = BASE64_STANDARD.decode(encoded) else {
+            continue;
+        };
+        if let Some(event) = decode_zama_host_anchor_event(&data) {
+            events.extend(decode_solana_host_events(event));
+        }
+    }
+
+    events
+}
+
+pub fn merge_solana_transport_events(
+    cpi_events: Vec<SolanaHostEvent>,
+    log_events: Vec<SolanaHostEvent>,
+) -> Result<Vec<SolanaHostEvent>, SolanaEventDecodeError> {
+    match (cpi_events.is_empty(), log_events.is_empty()) {
+        (true, _) => Ok(log_events),
+        (_, true) => Ok(cpi_events),
+        (false, false)
+            if cpi_events.iter().any(needs_ordered_db_log_index)
+                && log_events.iter().any(needs_ordered_db_log_index) =>
+        {
+            Err(SolanaEventDecodeError::MixedHostEventTransport {
+                cpi_events: cpi_events.len(),
+                log_events: log_events.len(),
+            })
+        }
+        (false, false) => {
+            Ok(cpi_events.into_iter().chain(log_events).collect())
+        }
+    }
+}
+
+fn needs_ordered_db_log_index(event: &SolanaHostEvent) -> bool {
+    matches!(
+        event,
+        SolanaHostEvent::FheBinaryOp(_)
+            | SolanaHostEvent::FheTernaryOp(_)
+            | SolanaHostEvent::TrivialEncrypt(_)
+            | SolanaHostEvent::FheRand(_)
+            | SolanaHostEvent::FheRandBounded(_)
+    )
+}
+
+pub fn decode_solana_transaction_account_fetches<'a>(
+    logs: &[String],
+    inner_instructions: impl IntoIterator<Item = (&'a str, &'a [u8])>,
+    host_program_id: &str,
+    confidential_token_program_id: &str,
+) -> Result<Vec<SolanaFinalizedAccountFetch>, SolanaEventDecodeError> {
+    let inner_instructions = inner_instructions.into_iter().collect::<Vec<_>>();
+    let host_events = decode_solana_transaction_events(
+        logs,
+        inner_instructions.iter().copied(),
+        host_program_id,
+    )?;
+    let mut fetches = account_fetches_from_solana_events(host_events);
+    fetches.extend(decode_confidential_token_anchor_cpi_account_fetches(
+        inner_instructions.iter().copied(),
+        confidential_token_program_id,
+    ));
+    fetches.extend(decode_confidential_token_anchor_log_account_fetches(
+        logs,
+        confidential_token_program_id,
+    ));
+    dedup_account_fetches(&mut fetches);
+    Ok(fetches)
+}
+
+pub fn decode_confidential_token_anchor_cpi_account_fetches<'a>(
+    inner_instructions: impl IntoIterator<Item = (&'a str, &'a [u8])>,
+    program_id: &str,
+) -> Vec<SolanaFinalizedAccountFetch> {
+    inner_instructions
+        .into_iter()
+        .filter(|(instruction_program_id, _)| {
+            *instruction_program_id == program_id
+        })
+        .filter_map(|(_, data)| {
+            decode_confidential_token_anchor_cpi_event(data)
+        })
+        .flat_map(decode_confidential_token_account_fetches)
+        .collect()
+}
+
+pub fn decode_confidential_token_anchor_log_account_fetches(
+    logs: &[String],
+    program_id: &str,
+) -> Vec<SolanaFinalizedAccountFetch> {
+    let mut stack = Vec::<&str>::new();
+    let mut fetches = Vec::new();
+
+    for log in logs {
+        if let Some(invoked_program) = parse_program_invoke(log) {
+            stack.push(invoked_program);
+            continue;
+        }
+
+        if let Some(exited_program) = parse_program_exit(log) {
+            pop_program_stack(&mut stack, exited_program);
+            continue;
+        }
+
+        if stack.last().copied() != Some(program_id) {
+            continue;
+        }
+
+        let Some(encoded) = log.strip_prefix("Program data: ") else {
+            continue;
+        };
+        let Ok(data) = BASE64_STANDARD.decode(encoded) else {
+            continue;
+        };
+        if let Some(event) = decode_confidential_token_anchor_event(&data) {
+            fetches.extend(decode_confidential_token_account_fetches(event));
+        }
+    }
+
+    fetches
+}
+
+fn parse_program_invoke(log: &str) -> Option<&str> {
+    let rest = log.strip_prefix("Program ")?;
+    let (program_id, depth) = rest.split_once(" invoke [")?;
+    depth.strip_suffix(']')?;
+    Some(program_id)
+}
+
+fn parse_program_exit(log: &str) -> Option<&str> {
+    let rest = log.strip_prefix("Program ")?;
+    if let Some(program_id) = rest.strip_suffix(" success") {
+        return Some(program_id);
+    }
+
+    rest.split_once(" failed: ")
+        .map(|(program_id, _)| program_id)
+}
+
+fn pop_program_stack(stack: &mut Vec<&str>, program_id: &str) {
+    if stack.last().copied() == Some(program_id) {
+        stack.pop();
+        return;
+    }
+
+    if let Some(index) = stack.iter().rposition(|entry| *entry == program_id) {
+        stack.truncate(index);
+    }
+}
+
+fn decode_solana_host_events(event: ZamaHostEvent) -> Vec<SolanaHostEvent> {
     if zama_host_event_version(&event) != EVENT_VERSION {
-        return None;
+        return Vec::new();
     }
     match event {
         ZamaHostEvent::FheBinaryOp(event) => {
-            Some(SolanaHostEvent::FheBinaryOp(event))
+            vec![SolanaHostEvent::FheBinaryOp(event)]
         }
         ZamaHostEvent::FheTernaryOp(event) => {
-            Some(SolanaHostEvent::FheTernaryOp(event))
+            vec![SolanaHostEvent::FheTernaryOp(event)]
         }
         ZamaHostEvent::TrivialEncrypt(event) => {
-            Some(SolanaHostEvent::TrivialEncrypt(event))
+            vec![SolanaHostEvent::TrivialEncrypt(event)]
         }
-        ZamaHostEvent::FheRand(event) => Some(SolanaHostEvent::FheRand(event)),
+        ZamaHostEvent::FheRand(event) => vec![SolanaHostEvent::FheRand(event)],
         ZamaHostEvent::FheRandBounded(event) => {
-            Some(SolanaHostEvent::FheRandBounded(event))
+            vec![SolanaHostEvent::FheRandBounded(event)]
         }
         ZamaHostEvent::AclAllowed(event) => {
-            Some(SolanaHostEvent::AclAllowed(SolanaAclAllowedEvent {
+            vec![SolanaHostEvent::AclAllowed(SolanaAclAllowedEvent {
                 handle: Handle::from(event.handle),
                 subject: format!("0x{}", encode_hex(&event.subject)),
                 event_type: AllowEvents::AllowedAccount,
-            }))
+            })]
+        }
+        ZamaHostEvent::AclRecordBound(event) => {
+            vec![SolanaHostEvent::FinalizedAccountFetch(acl_record_fetch(
+                event.acl_record,
+                event.handle,
+                "acl_record_bound",
+            ))]
+        }
+        ZamaHostEvent::AclSubjectAllowed(event) => {
+            let mut fetches =
+                vec![SolanaHostEvent::FinalizedAccountFetch(acl_record_fetch(
+                    event.acl_record,
+                    event.handle,
+                    "acl_subject_allowed",
+                ))];
+            if event.overflow_permission_record != [0; 32] {
+                fetches.push(SolanaHostEvent::FinalizedAccountFetch(
+                    acl_permission_fetch(
+                        event.overflow_permission_record,
+                        event.acl_record,
+                        event.subject,
+                        "acl_subject_allowed",
+                    ),
+                ));
+            }
+            fetches
+        }
+        ZamaHostEvent::HandleMaterialCommitted(event) => {
+            vec![SolanaHostEvent::FinalizedAccountFetch(material_fetch(
+                event.material_commitment,
+                event.acl_record,
+                event.handle,
+                "handle_material_committed",
+            ))]
+        }
+        ZamaHostEvent::HandleMaterialSealed(event) => {
+            vec![
+                SolanaHostEvent::FinalizedAccountFetch(material_fetch(
+                    event.material_commitment,
+                    event.acl_record,
+                    event.handle,
+                    "handle_material_sealed",
+                )),
+                SolanaHostEvent::FinalizedAccountFetch(acl_record_fetch(
+                    event.acl_record,
+                    event.handle,
+                    "handle_material_sealed",
+                )),
+            ]
+        }
+        ZamaHostEvent::PublicDecryptAllowed(event) => {
+            vec![SolanaHostEvent::FinalizedAccountFetch(acl_record_fetch(
+                event.acl_record,
+                event.handle,
+                "public_decrypt_allowed",
+            ))]
         }
         ZamaHostEvent::InputVerified(_)
-        | ZamaHostEvent::AclRecordBound(_)
-        | ZamaHostEvent::AclSubjectAllowed(_)
         | ZamaHostEvent::DenySubjectUpdated(_)
-        | ZamaHostEvent::HandleMaterialCommitted(_)
-        | ZamaHostEvent::HandleMaterialSealed(_)
         | ZamaHostEvent::HostConfigInitialized(_)
         | ZamaHostEvent::HostConfigUpdated(_)
-        | ZamaHostEvent::PublicDecryptAllowed(_)
-        | ZamaHostEvent::UserDecryptionDelegationUpdated(_) => None,
+        | ZamaHostEvent::UserDecryptionDelegationUpdated(_)
+        | ZamaHostEvent::VerifierSetCreated(_)
+        | ZamaHostEvent::VerifierSetDisabled(_) => Vec::new(),
     }
+}
+
+fn decode_confidential_token_account_fetches(
+    event: ConfidentialTokenEvent,
+) -> Vec<SolanaFinalizedAccountFetch> {
+    if confidential_token_event_version(&event)
+        != CONFIDENTIAL_TOKEN_EVENT_VERSION
+    {
+        return Vec::new();
+    }
+    match event {
+        ConfidentialTokenEvent::AmountDisclosureRequested(event) => {
+            vec![request_witness_fetch(
+                event.request,
+                SolanaFinalizedAccountFetchKind::DisclosureRequest,
+                "amount_disclosure_requested",
+            )]
+        }
+        ConfidentialTokenEvent::BalanceDisclosureRequested(event) => {
+            vec![request_witness_fetch(
+                event.request,
+                SolanaFinalizedAccountFetchKind::DisclosureRequest,
+                "balance_disclosure_requested",
+            )]
+        }
+        ConfidentialTokenEvent::BurnRedemptionRequested(event) => {
+            vec![request_witness_fetch(
+                event.request,
+                SolanaFinalizedAccountFetchKind::BurnRedemptionRequest,
+                "burn_redemption_requested",
+            )]
+        }
+        ConfidentialTokenEvent::AmountDisclosed(_)
+        | ConfidentialTokenEvent::BalanceDisclosed(_)
+        | ConfidentialTokenEvent::BalanceHandleUpdated(_)
+        | ConfidentialTokenEvent::BurnRedeemed(_)
+        | ConfidentialTokenEvent::ConfidentialBurn(_)
+        | ConfidentialTokenEvent::ConfidentialMintMigrated(_)
+        | ConfidentialTokenEvent::ConfidentialTransfer(_)
+        | ConfidentialTokenEvent::MintVerifierSetsUpdated(_)
+        | ConfidentialTokenEvent::RandomAmountCreated(_)
+        | ConfidentialTokenEvent::TotalSupplyHandleUpdated(_) => Vec::new(),
+    }
+}
+
+fn confidential_token_event_version(event: &ConfidentialTokenEvent) -> u8 {
+    match event {
+        ConfidentialTokenEvent::AmountDisclosed(event) => event.version,
+        ConfidentialTokenEvent::AmountDisclosureRequested(event) => {
+            event.version
+        }
+        ConfidentialTokenEvent::BalanceDisclosed(event) => event.version,
+        ConfidentialTokenEvent::BalanceDisclosureRequested(event) => {
+            event.version
+        }
+        ConfidentialTokenEvent::BalanceHandleUpdated(event) => event.version,
+        ConfidentialTokenEvent::BurnRedeemed(event) => event.version,
+        ConfidentialTokenEvent::BurnRedemptionRequested(event) => event.version,
+        ConfidentialTokenEvent::ConfidentialBurn(event) => event.version,
+        ConfidentialTokenEvent::ConfidentialMintMigrated(event) => {
+            event.version
+        }
+        ConfidentialTokenEvent::ConfidentialTransfer(event) => event.version,
+        ConfidentialTokenEvent::MintVerifierSetsUpdated(event) => event.version,
+        ConfidentialTokenEvent::RandomAmountCreated(event) => event.version,
+        ConfidentialTokenEvent::TotalSupplyHandleUpdated(event) => {
+            event.version
+        }
+    }
+}
+
+fn account_fetches_from_solana_events(
+    events: impl IntoIterator<Item = SolanaHostEvent>,
+) -> Vec<SolanaFinalizedAccountFetch> {
+    events
+        .into_iter()
+        .filter_map(|event| match event {
+            SolanaHostEvent::FinalizedAccountFetch(fetch) => Some(fetch),
+            _ => None,
+        })
+        .collect()
+}
+
+fn acl_record_fetch(
+    acl_record: [u8; 32],
+    handle: [u8; 32],
+    reason: &'static str,
+) -> SolanaFinalizedAccountFetch {
+    SolanaFinalizedAccountFetch {
+        account_key: acl_record,
+        kind: SolanaFinalizedAccountFetchKind::AclRecord,
+        reason,
+        handle: Some(Handle::from(handle)),
+        related_account: None,
+        subject: None,
+    }
+}
+
+fn acl_permission_fetch(
+    permission: [u8; 32],
+    acl_record: [u8; 32],
+    subject: [u8; 32],
+    reason: &'static str,
+) -> SolanaFinalizedAccountFetch {
+    SolanaFinalizedAccountFetch {
+        account_key: permission,
+        kind: SolanaFinalizedAccountFetchKind::AclPermission,
+        reason,
+        handle: None,
+        related_account: Some(acl_record),
+        subject: Some(subject),
+    }
+}
+
+fn material_fetch(
+    material_commitment: [u8; 32],
+    acl_record: [u8; 32],
+    handle: [u8; 32],
+    reason: &'static str,
+) -> SolanaFinalizedAccountFetch {
+    SolanaFinalizedAccountFetch {
+        account_key: material_commitment,
+        kind: SolanaFinalizedAccountFetchKind::HandleMaterialCommitment,
+        reason,
+        handle: Some(Handle::from(handle)),
+        related_account: Some(acl_record),
+        subject: None,
+    }
+}
+
+fn request_witness_fetch(
+    request: [u8; 32],
+    kind: SolanaFinalizedAccountFetchKind,
+    reason: &'static str,
+) -> SolanaFinalizedAccountFetch {
+    SolanaFinalizedAccountFetch {
+        account_key: request,
+        kind,
+        reason,
+        handle: None,
+        related_account: None,
+        subject: None,
+    }
+}
+
+fn dedup_account_fetches(fetches: &mut Vec<SolanaFinalizedAccountFetch>) {
+    let mut seen = HashSet::new();
+    fetches.retain(|fetch| seen.insert((fetch.account_key, fetch.kind)));
 }
 
 fn zama_host_event_version(event: &ZamaHostEvent) -> u8 {
@@ -118,6 +646,8 @@ fn zama_host_event_version(event: &ZamaHostEvent) -> u8 {
         ZamaHostEvent::PublicDecryptAllowed(event) => event.version,
         ZamaHostEvent::TrivialEncrypt(event) => event.version,
         ZamaHostEvent::UserDecryptionDelegationUpdated(event) => event.version,
+        ZamaHostEvent::VerifierSetCreated(event) => event.version,
+        ZamaHostEvent::VerifierSetDisabled(event) => event.version,
     }
 }
 
@@ -138,8 +668,11 @@ pub fn map_solana_event(event: SolanaHostEvent) -> SolanaMappedEvent {
         SolanaHostEvent::FheRandBounded(event) => {
             SolanaMappedEvent::Tfhe(to_fhe_rand_bounded_event(event))
         }
+        SolanaHostEvent::FinalizedAccountFetch(fetch) => {
+            SolanaMappedEvent::FinalizedAccountFetch(fetch)
+        }
         SolanaHostEvent::AclAllowed(event) => {
-            SolanaMappedEvent::AclAllowed(event)
+            SolanaMappedEvent::IgnoredAclAllowed(event)
         }
     }
 }
@@ -148,10 +681,9 @@ pub fn normalize_solana_events_for_db(
     events: impl IntoIterator<Item = SolanaHostEvent>,
     transaction_id: TransactionHash,
     block: SolanaBlockMeta,
-) -> (Vec<LogTfhe>, Vec<SolanaAclAllowedEvent>) {
-    let mut allowed_handles = HashSet::<Handle>::new();
+) -> (Vec<LogTfhe>, Vec<SolanaFinalizedAccountFetch>) {
     let mut tfhe_logs = Vec::new();
-    let mut acl_events = Vec::new();
+    let mut account_fetches = Vec::new();
 
     for (index, event) in events.into_iter().enumerate() {
         match map_solana_event(event) {
@@ -162,20 +694,15 @@ pub fn normalize_solana_events_for_db(
                 false,
                 index as u64,
             )),
-            SolanaMappedEvent::AclAllowed(event) => {
-                allowed_handles.insert(event.handle);
-                acl_events.push(event);
+            SolanaMappedEvent::FinalizedAccountFetch(fetch) => {
+                account_fetches.push(fetch);
             }
+            SolanaMappedEvent::IgnoredAclAllowed(_) => {}
         }
     }
 
-    for log in &mut tfhe_logs {
-        log.is_allowed = tfhe_result_handle(&log.event.data)
-            .map(|handle| allowed_handles.contains(&handle))
-            .unwrap_or(false);
-    }
-
-    (tfhe_logs, acl_events)
+    dedup_account_fetches(&mut account_fetches);
+    (tfhe_logs, account_fetches)
 }
 
 pub async fn insert_solana_events(
@@ -185,37 +712,9 @@ pub async fn insert_solana_events(
     transaction_id: TransactionHash,
     block: SolanaBlockMeta,
 ) -> Result<SolanaIngestStats, SqlxError> {
-    let (mut tfhe_logs, acl_events) =
+    let (mut tfhe_logs, account_fetches) =
         normalize_solana_events_for_db(events, transaction_id, block);
     let mut inserted_rows = 0;
-
-    for event in &acl_events {
-        if db
-            .insert_allowed_handle(
-                tx,
-                event.handle.to_vec(),
-                event.subject.clone(),
-                event.event_type,
-                Some(transaction_id.to_vec()),
-                block.block_number,
-            )
-            .await?
-        {
-            inserted_rows += 1;
-        }
-
-        if db
-            .insert_pbs_computations(
-                tx,
-                &vec![event.handle.to_vec()],
-                Some(transaction_id.to_vec()),
-                block.block_number,
-            )
-            .await?
-        {
-            inserted_rows += 1;
-        }
-    }
 
     dependence_chains(&mut tfhe_logs, &db.dependence_chain, false, true).await;
 
@@ -224,12 +723,268 @@ pub async fn insert_solana_events(
             inserted_rows += 1;
         }
     }
+    for fetch in &account_fetches {
+        if insert_finalized_account_fetch(
+            tx,
+            fetch,
+            transaction_id,
+            block.block_number,
+        )
+        .await?
+        {
+            inserted_rows += 1;
+        }
+    }
 
     Ok(SolanaIngestStats {
         tfhe_events: tfhe_logs.len(),
-        acl_events: acl_events.len(),
+        acl_events: account_fetches.len(),
         inserted_rows,
     })
+}
+
+async fn insert_finalized_account_fetch(
+    tx: &mut Transaction<'_>,
+    fetch: &SolanaFinalizedAccountFetch,
+    transaction_id: TransactionHash,
+    block_number: u64,
+) -> Result<bool, SqlxError> {
+    let handle = fetch.handle.map(|handle| handle.to_vec());
+    let related_account = fetch.related_account.map(|account| account.to_vec());
+    let subject = fetch.subject.map(|subject| subject.to_vec());
+    sqlx::query(
+        r#"
+        INSERT INTO solana_finalized_account_fetches (
+            account_key,
+            kind,
+            reason,
+            handle,
+            related_account,
+            subject,
+            transaction_id,
+            block_number
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        ON CONFLICT (account_key, kind) DO UPDATE SET
+            reason = EXCLUDED.reason,
+            handle = COALESCE(EXCLUDED.handle, solana_finalized_account_fetches.handle),
+            related_account = COALESCE(
+                EXCLUDED.related_account,
+                solana_finalized_account_fetches.related_account
+            ),
+            subject = COALESCE(EXCLUDED.subject, solana_finalized_account_fetches.subject),
+            transaction_id = EXCLUDED.transaction_id,
+            block_number = EXCLUDED.block_number,
+            status = 'pending',
+            last_seen_at = NOW()
+        "#,
+    )
+    .bind(fetch.account_key.to_vec())
+    .bind(fetch.kind.as_i16())
+    .bind(fetch.reason)
+    .bind(handle)
+    .bind(related_account)
+    .bind(subject)
+    .bind(transaction_id.to_vec())
+    .bind(block_number as i64)
+    .execute(tx.deref_mut())
+    .await
+    .map(|result| result.rows_affected() > 0)
+}
+
+pub async fn claim_pending_finalized_account_fetches(
+    tx: &mut Transaction<'_>,
+    limit: i64,
+) -> Result<Vec<SolanaFinalizedAccountFetchJob>, SqlxError> {
+    let rows = sqlx::query(
+        r#"
+        WITH candidate AS (
+            SELECT account_key, kind
+            FROM solana_finalized_account_fetches
+            WHERE status = 'pending'
+               OR (
+                    status = 'processing'
+                    AND last_seen_at < NOW() - INTERVAL '5 minutes'
+               )
+            ORDER BY block_number, last_seen_at
+            LIMIT $1
+            FOR UPDATE SKIP LOCKED
+        )
+        UPDATE solana_finalized_account_fetches fetch
+        SET
+            status = 'processing',
+            attempts = fetch.attempts + 1,
+            last_seen_at = NOW()
+        FROM candidate
+        WHERE fetch.account_key = candidate.account_key
+          AND fetch.kind = candidate.kind
+        RETURNING
+            fetch.account_key,
+            fetch.kind,
+            fetch.reason,
+            fetch.handle,
+            fetch.related_account,
+            fetch.subject,
+            fetch.transaction_id,
+            fetch.block_number,
+            fetch.attempts
+        "#,
+    )
+    .bind(limit)
+    .fetch_all(tx.deref_mut())
+    .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(finalized_account_fetch_job_from_row)
+        .collect())
+}
+
+pub async fn store_finalized_account_witness(
+    tx: &mut Transaction<'_>,
+    witness: &SolanaFinalizedAccountWitness,
+) -> Result<(), SqlxError> {
+    let lamports = i64::try_from(witness.lamports).map_err(|err| {
+        SqlxError::Decode(Box::new(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!(
+                "Solana lamports exceed host-listener BIGINT storage: {err}"
+            ),
+        )))
+    })?;
+    let observed_slot = i64::try_from(witness.observed_slot).map_err(|err| {
+        SqlxError::Decode(Box::new(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("Solana observed slot exceeds host-listener BIGINT storage: {err}"),
+        )))
+    })?;
+    sqlx::query(
+        r#"
+        INSERT INTO solana_finalized_account_witnesses (
+            account_key,
+            owner,
+            lamports,
+            executable,
+            data,
+            observed_slot
+        )
+        VALUES ($1, $2, $3, $4, $5, $6)
+        ON CONFLICT (account_key) DO UPDATE SET
+            owner = EXCLUDED.owner,
+            lamports = EXCLUDED.lamports,
+            executable = EXCLUDED.executable,
+            data = EXCLUDED.data,
+            observed_slot = EXCLUDED.observed_slot,
+            fetched_at = NOW()
+        "#,
+    )
+    .bind(witness.account_key.to_vec())
+    .bind(witness.owner.to_vec())
+    .bind(lamports)
+    .bind(witness.executable)
+    .bind(witness.data.as_slice())
+    .bind(observed_slot)
+    .execute(tx.deref_mut())
+    .await?;
+    Ok(())
+}
+
+pub async fn complete_finalized_account_fetch(
+    tx: &mut Transaction<'_>,
+    job: &SolanaFinalizedAccountFetchJob,
+) -> Result<(), SqlxError> {
+    sqlx::query(
+        r#"
+        UPDATE solana_finalized_account_fetches
+        SET status = 'done', last_error = NULL, last_seen_at = NOW()
+        WHERE account_key = $1 AND kind = $2
+        "#,
+    )
+    .bind(job.account_key.to_vec())
+    .bind(job.kind.as_i16())
+    .execute(tx.deref_mut())
+    .await?;
+    Ok(())
+}
+
+pub async fn fail_finalized_account_fetch(
+    tx: &mut Transaction<'_>,
+    job: &SolanaFinalizedAccountFetchJob,
+    error: &str,
+) -> Result<(), SqlxError> {
+    sqlx::query(
+        r#"
+        UPDATE solana_finalized_account_fetches
+        SET status = 'error', last_error = $3, last_seen_at = NOW()
+        WHERE account_key = $1 AND kind = $2
+        "#,
+    )
+    .bind(job.account_key.to_vec())
+    .bind(job.kind.as_i16())
+    .bind(error)
+    .execute(tx.deref_mut())
+    .await?;
+    Ok(())
+}
+
+pub async fn retry_finalized_account_fetch(
+    tx: &mut Transaction<'_>,
+    job: &SolanaFinalizedAccountFetchJob,
+    error: &str,
+) -> Result<(), SqlxError> {
+    sqlx::query(
+        r#"
+        UPDATE solana_finalized_account_fetches
+        SET status = 'pending', last_error = $3, last_seen_at = NOW()
+        WHERE account_key = $1 AND kind = $2
+        "#,
+    )
+    .bind(job.account_key.to_vec())
+    .bind(job.kind.as_i16())
+    .bind(error)
+    .execute(tx.deref_mut())
+    .await?;
+    Ok(())
+}
+
+fn finalized_account_fetch_job_from_row(
+    row: sqlx::postgres::PgRow,
+) -> SolanaFinalizedAccountFetchJob {
+    let account_key = bytes32_from_vec(row.get::<Vec<u8>, _>("account_key"));
+    let kind_value = row.get::<i16, _>("kind");
+    let kind = SolanaFinalizedAccountFetchKind::from_i16(kind_value).expect(
+        "solana_finalized_account_fetches.kind is constrained to known values",
+    );
+    let handle = row
+        .get::<Option<Vec<u8>>, _>("handle")
+        .map(bytes32_from_vec)
+        .map(Handle::from);
+    let related_account = row
+        .get::<Option<Vec<u8>>, _>("related_account")
+        .map(bytes32_from_vec);
+    let subject = row
+        .get::<Option<Vec<u8>>, _>("subject")
+        .map(bytes32_from_vec);
+    let transaction_id =
+        Handle::from(bytes32_from_vec(row.get::<Vec<u8>, _>("transaction_id")));
+    let block_number = row.get::<i64, _>("block_number") as u64;
+    SolanaFinalizedAccountFetchJob {
+        account_key,
+        kind,
+        reason: row.get("reason"),
+        handle,
+        related_account,
+        subject,
+        transaction_id,
+        block_number,
+        attempts: row.get("attempts"),
+    }
+}
+
+fn bytes32_from_vec(bytes: Vec<u8>) -> [u8; 32] {
+    bytes
+        .try_into()
+        .expect("Solana finalized-account queue bytea field has length 32")
 }
 
 fn encode_hex(bytes: &[u8; 32]) -> String {
@@ -415,6 +1170,361 @@ mod tests {
     }
 
     #[test]
+    fn decodes_anchor_log_event_binary_event_to_existing_tfhe_event() {
+        let encoded = anchor_event(
+            "FheBinaryOpEvent",
+            binary_op_payload(1, [9; 32], [1; 32], [2; 32], false, [3; 32]),
+        );
+
+        let decoded =
+            decode_anchor_event(&encoded).expect("expected binary op event");
+        let SolanaMappedEvent::Tfhe(mapped) = map_solana_event(decoded) else {
+            panic!("expected mapped TFHE event");
+        };
+
+        assert!(matches!(
+            mapped.data,
+            TfheContractEvents::FheSub(TfheContract::FheSub {
+                lhs,
+                rhs,
+                scalarByte,
+                result,
+                ..
+            }) if lhs == handle(1)
+                && rhs == handle(2)
+                && scalarByte == FixedBytes::<1>::from([0])
+                && result == handle(3)
+        ));
+    }
+
+    #[test]
+    fn decodes_threshold_sized_host_program_data_logs_in_order() {
+        let host_program = "ZamaHost111111111111111111111111111111111";
+        let other_program = "Other111111111111111111111111111111111111";
+        let ignored = BASE64_STANDARD.encode(anchor_event(
+            "FheBinaryOpEvent",
+            binary_op_payload(1, [9; 32], [1; 32], [2; 32], false, [99; 32]),
+        ));
+        let mut logs = vec![
+            format!("Program {host_program} invoke [1]"),
+            format!("Program {other_program} invoke [2]"),
+            format!("Program data: {ignored}"),
+            format!("Program {other_program} success"),
+            "Program data: not base64".to_owned(),
+        ];
+
+        for value in 0_u8..5 {
+            logs.push(format!(
+                "Program data: {}",
+                BASE64_STANDARD.encode(anchor_event(
+                    "FheBinaryOpEvent",
+                    binary_op_payload(
+                        1,
+                        [9; 32],
+                        [1; 32],
+                        [2; 32],
+                        false,
+                        [value; 32],
+                    ),
+                ))
+            ));
+        }
+        for value in 10_u8..17 {
+            logs.push(format!(
+                "Program data: {}",
+                BASE64_STANDARD.encode(anchor_event("AclAllowedEvent", {
+                    let mut payload = vec![EVENT_VERSION];
+                    payload.extend_from_slice(&[value; 32]);
+                    payload.extend_from_slice(&[8; 32]);
+                    payload
+                }))
+            ));
+        }
+        logs.push(format!("Program {host_program} success"));
+        logs.push(format!("Program data: {ignored}"));
+
+        let events = decode_anchor_log_events(&logs, host_program);
+
+        assert_eq!(events.len(), 12);
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| matches!(
+                    event,
+                    SolanaHostEvent::FheBinaryOp(_)
+                ))
+                .count(),
+            5
+        );
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| matches!(event, SolanaHostEvent::AclAllowed(_)))
+                .count(),
+            7
+        );
+        assert!(matches!(
+            &events[0],
+            SolanaHostEvent::FheBinaryOp(event) if event.result == [0; 32]
+        ));
+        assert!(matches!(
+            &events[5],
+            SolanaHostEvent::AclAllowed(event) if event.handle == handle(10)
+        ));
+    }
+
+    #[test]
+    fn decodes_solana_transaction_log_transport_events() {
+        let host_program = "ZamaHost111111111111111111111111111111111";
+        let logs = vec![
+            format!("Program {host_program} invoke [1]"),
+            format!(
+                "Program data: {}",
+                BASE64_STANDARD.encode(anchor_event(
+                    "FheBinaryOpEvent",
+                    binary_op_payload(
+                        0, [9; 32], [1; 32], [2; 32], false, [3; 32],
+                    ),
+                ))
+            ),
+            format!("Program {host_program} success"),
+        ];
+
+        let events = decode_solana_transaction_events(&logs, [], host_program)
+            .expect("log transport should decode");
+
+        assert!(matches!(
+            events.as_slice(),
+            [SolanaHostEvent::FheBinaryOp(event)] if event.result == [3; 32]
+        ));
+    }
+
+    #[test]
+    fn rejects_mixed_host_cpi_and_log_transport() {
+        let host_program = "ZamaHost111111111111111111111111111111111";
+        let cpi_event = anchor_event_cpi(
+            "FheBinaryOpEvent",
+            binary_op_payload(0, [9; 32], [1; 32], [2; 32], false, [3; 32]),
+        );
+        let logs = vec![
+            format!("Program {host_program} invoke [1]"),
+            format!(
+                "Program data: {}",
+                BASE64_STANDARD.encode(anchor_event(
+                    "FheBinaryOpEvent",
+                    binary_op_payload(
+                        0, [9; 32], [1; 32], [2; 32], false, [4; 32],
+                    ),
+                ))
+            ),
+            format!("Program {host_program} success"),
+        ];
+
+        let error = decode_solana_transaction_events(
+            &logs,
+            [(host_program, cpi_event.as_slice())],
+            host_program,
+        )
+        .expect_err("mixed host transport should be rejected");
+
+        assert_eq!(
+            error,
+            SolanaEventDecodeError::MixedHostEventTransport {
+                cpi_events: 1,
+                log_events: 1,
+            }
+        );
+    }
+
+    #[test]
+    fn finalized_account_fetch_logs_do_not_make_cpi_transport_mixed() {
+        let host_program = "ZamaHost111111111111111111111111111111111";
+        let cpi_event = anchor_event_cpi(
+            "FheBinaryOpEvent",
+            binary_op_payload(0, [9; 32], [1; 32], [2; 32], false, [3; 32]),
+        );
+        let logs = vec![
+            format!("Program {host_program} invoke [1]"),
+            program_data_log(
+                "AclRecordBoundEvent",
+                acl_record_bound_payload([3; 32]),
+            ),
+            program_data_log(
+                "AclSubjectAllowedEvent",
+                acl_subject_allowed_payload([3; 32], [4; 32]),
+            ),
+            format!("Program {host_program} success"),
+        ];
+
+        let events = decode_solana_transaction_events(
+            &logs,
+            [(host_program, cpi_event.as_slice())],
+            host_program,
+        )
+        .expect("account fetch logs must not conflict with CPI transport");
+
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| matches!(
+                    event,
+                    SolanaHostEvent::FheBinaryOp(_)
+                ))
+                .count(),
+            1
+        );
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| matches!(
+                    event,
+                    SolanaHostEvent::FinalizedAccountFetch(_)
+                ))
+                .count(),
+            3
+        );
+    }
+
+    #[test]
+    fn input_verified_events_are_not_worker_compute_events() {
+        let cpi_encoded = anchor_event_cpi(
+            "InputVerifiedEvent",
+            input_verified_payload([7; 32]),
+        );
+        let log_encoded =
+            anchor_event("InputVerifiedEvent", input_verified_payload([8; 32]));
+
+        assert!(decode_anchor_cpi_event(&cpi_encoded).is_none());
+        assert!(decode_anchor_event(&log_encoded).is_none());
+    }
+
+    #[test]
+    fn input_verified_logs_do_not_hide_acl_allowances() {
+        let host_program = "ZamaHost111111111111111111111111111111111";
+        let logs = vec![
+            format!("Program {host_program} invoke [1]"),
+            program_data_log(
+                "InputVerifiedEvent",
+                input_verified_payload([7; 32]),
+            ),
+            program_data_log(
+                "AclAllowedEvent",
+                acl_allowed_payload([7; 32], [8; 32]),
+            ),
+            format!("Program {host_program} success"),
+        ];
+
+        let events = decode_solana_transaction_events(&logs, [], host_program)
+            .expect("input frame log transport should decode");
+
+        assert!(matches!(
+            events.as_slice(),
+            [SolanaHostEvent::AclAllowed(event)]
+                if event.handle == handle(7)
+                    && event.subject == "0x0808080808080808080808080808080808080808080808080808080808080808"
+        ));
+
+        let block_timestamp = PrimitiveDateTime::new(
+            Date::from_calendar_date(2026, Month::May, 9).unwrap(),
+            Time::MIDNIGHT,
+        );
+        let (tfhe_logs, acl_events) = normalize_solana_events_for_db(
+            events,
+            solana_transaction_id(&[4_u8; 64]),
+            SolanaBlockMeta {
+                block_number: 42,
+                block_timestamp,
+            },
+        );
+
+        assert!(tfhe_logs.is_empty());
+        assert!(acl_events.is_empty());
+    }
+
+    #[test]
+    fn raw_log_event_lines_are_bounded() {
+        let events = [
+            anchor_event(
+                "FheBinaryOpEvent",
+                binary_op_payload(1, [9; 32], [1; 32], [2; 32], false, [3; 32]),
+            ),
+            anchor_event("FheTernaryOpEvent", {
+                let mut payload = vec![EVENT_VERSION, 0];
+                payload.extend_from_slice(&[9; 32]);
+                payload.extend_from_slice(&[1; 32]);
+                payload.extend_from_slice(&[2; 32]);
+                payload.extend_from_slice(&[3; 32]);
+                payload.extend_from_slice(&[4; 32]);
+                payload
+            }),
+            anchor_event("TrivialEncryptEvent", {
+                let mut payload = vec![EVENT_VERSION];
+                payload.extend_from_slice(&[9; 32]);
+                payload.extend_from_slice(&[0; 32]);
+                payload.push(5);
+                payload.extend_from_slice(&[8; 32]);
+                payload
+            }),
+            anchor_event("FheRandEvent", {
+                let mut payload = vec![EVENT_VERSION];
+                payload.extend_from_slice(&[9; 32]);
+                payload.extend_from_slice(&[7; 16]);
+                payload.push(5);
+                payload.extend_from_slice(&[8; 32]);
+                payload
+            }),
+            anchor_event("FheRandBoundedEvent", {
+                let mut payload = vec![EVENT_VERSION];
+                payload.extend_from_slice(&[9; 32]);
+                payload.extend_from_slice(&[1; 32]);
+                payload.extend_from_slice(&[7; 16]);
+                payload.push(5);
+                payload.extend_from_slice(&[8; 32]);
+                payload
+            }),
+            anchor_event(
+                "AclAllowedEvent",
+                acl_allowed_payload([7; 32], [8; 32]),
+            ),
+            anchor_event("AclRecordBoundEvent", {
+                let mut payload = vec![EVENT_VERSION];
+                payload.extend_from_slice(&[1; 32]);
+                payload.extend_from_slice(&[2; 32]);
+                payload.extend_from_slice(&[3; 32]);
+                payload.extend_from_slice(&4_u64.to_le_bytes());
+                payload.extend_from_slice(&[5; 32]);
+                payload.extend_from_slice(&[6; 32]);
+                payload.extend_from_slice(&[7; 32]);
+                payload.push(8);
+                payload.push(0);
+                payload.extend_from_slice(&9_u64.to_le_bytes());
+                payload
+            }),
+            anchor_event("AclSubjectAllowedEvent", {
+                let mut payload = vec![EVENT_VERSION];
+                payload.extend_from_slice(&[1; 32]);
+                payload.extend_from_slice(&[2; 32]);
+                payload.extend_from_slice(&[3; 32]);
+                payload.extend_from_slice(&[4; 32]);
+                payload.push(5);
+                payload.extend_from_slice(&[6; 32]);
+                payload.push(u8::MAX);
+                payload.extend_from_slice(&7_u64.to_le_bytes());
+                payload
+            }),
+        ];
+        let longest_log_line = events
+            .iter()
+            .map(|event| {
+                "Program data: ".len() + BASE64_STANDARD.encode(event).len()
+            })
+            .max()
+            .expect("events");
+
+        assert!(longest_log_line < 384, "{longest_log_line}");
+    }
+
+    #[test]
     fn decodes_anchor_event_cpi_trivial_encrypt_event() {
         let encoded = anchor_event_cpi("TrivialEncryptEvent", {
             let mut payload = vec![EVENT_VERSION];
@@ -482,7 +1592,7 @@ mod tests {
     }
 
     #[test]
-    fn ignores_public_decrypt_allowed_event_for_coprocessor_ingest() {
+    fn public_decrypt_allowed_event_schedules_finalized_acl_fetch() {
         let encoded = anchor_event_cpi("PublicDecryptAllowedEvent", {
             let mut payload = vec![EVENT_VERSION];
             payload.extend_from_slice(&[1; 32]);
@@ -492,7 +1602,119 @@ mod tests {
             payload
         });
 
-        assert!(decode_anchor_cpi_event(&encoded).is_none());
+        let SolanaHostEvent::FinalizedAccountFetch(fetch) =
+            decode_anchor_cpi_event(&encoded).expect("expected ACL fetch")
+        else {
+            panic!("expected ACL fetch");
+        };
+
+        assert_eq!(fetch.account_key, [1; 32]);
+        assert_eq!(fetch.kind, SolanaFinalizedAccountFetchKind::AclRecord);
+        assert_eq!(fetch.reason, "public_decrypt_allowed");
+        assert_eq!(fetch.handle, Some(handle(2)));
+    }
+
+    #[test]
+    fn confidential_token_request_cpi_events_schedule_request_witness_fetches()
+    {
+        let token_program = "ConfToken111111111111111111111111111111111";
+        let amount_event = anchor_event_cpi(
+            "AmountDisclosureRequestedEvent",
+            amount_disclosure_requested_payload(5),
+        );
+        let balance_event = anchor_event_cpi(
+            "BalanceDisclosureRequestedEvent",
+            balance_disclosure_requested_payload(15),
+        );
+        let redemption_event = anchor_event_cpi(
+            "BurnRedemptionRequestedEvent",
+            burn_redemption_requested_payload(25),
+        );
+
+        let fetches = decode_confidential_token_anchor_cpi_account_fetches(
+            [
+                (token_program, amount_event.as_slice()),
+                (token_program, balance_event.as_slice()),
+                (token_program, redemption_event.as_slice()),
+            ],
+            token_program,
+        );
+
+        assert_eq!(fetches.len(), 3);
+        assert_request_fetch(
+            &fetches[0],
+            5,
+            SolanaFinalizedAccountFetchKind::DisclosureRequest,
+            "amount_disclosure_requested",
+        );
+        assert_request_fetch(
+            &fetches[1],
+            15,
+            SolanaFinalizedAccountFetchKind::DisclosureRequest,
+            "balance_disclosure_requested",
+        );
+        assert_request_fetch(
+            &fetches[2],
+            25,
+            SolanaFinalizedAccountFetchKind::BurnRedemptionRequest,
+            "burn_redemption_requested",
+        );
+    }
+
+    #[test]
+    fn confidential_token_request_logs_schedule_request_witness_fetches() {
+        let token_program = "ConfToken111111111111111111111111111111111";
+        let logs = vec![
+            format!("Program {token_program} invoke [1]"),
+            program_data_log(
+                "BalanceDisclosureRequestedEvent",
+                balance_disclosure_requested_payload(19),
+            ),
+            format!("Program {token_program} success"),
+        ];
+
+        let fetches = decode_solana_transaction_account_fetches(
+            &logs,
+            [],
+            "ZamaHost111111111111111111111111111111111",
+            token_program,
+        )
+        .expect("account fetch scheduling should decode");
+
+        assert_eq!(fetches.len(), 1);
+        assert_request_fetch(
+            &fetches[0],
+            19,
+            SolanaFinalizedAccountFetchKind::DisclosureRequest,
+            "balance_disclosure_requested",
+        );
+    }
+
+    #[test]
+    fn confidential_token_response_events_do_not_schedule_closed_request_fetches(
+    ) {
+        let token_program = "ConfToken111111111111111111111111111111111";
+        let amount_event = anchor_event_cpi(
+            "AmountDisclosedEvent",
+            amount_disclosed_payload(31),
+        );
+        let balance_event = anchor_event_cpi(
+            "BalanceDisclosedEvent",
+            balance_disclosed_payload(32),
+        );
+        let redeemed_event =
+            anchor_event_cpi("BurnRedeemedEvent", burn_redeemed_payload(33));
+
+        let fetches = decode_confidential_token_anchor_cpi_account_fetches(
+            [
+                (token_program, amount_event.as_slice()),
+                (token_program, balance_event.as_slice()),
+                (token_program, redeemed_event.as_slice()),
+            ],
+            token_program,
+        );
+
+        assert!(fetches.is_empty());
     }
 
     #[test]
@@ -665,7 +1887,8 @@ mod tests {
             }))
             .expect("expected ACL event");
 
-        let SolanaMappedEvent::AclAllowed(mapped) = map_solana_event(decoded)
+        let SolanaMappedEvent::IgnoredAclAllowed(mapped) =
+            map_solana_event(decoded)
         else {
             panic!("expected ACL allowance event");
         };
@@ -732,7 +1955,7 @@ mod tests {
     }
 
     #[test]
-    fn normalizes_same_transaction_acl_into_allowed_tfhe_log() {
+    fn ignores_same_transaction_acl_for_direct_db_normalization() {
         let tx_id = solana_transaction_id(&[2_u8; 64]);
         let block_timestamp = PrimitiveDateTime::new(
             Date::from_calendar_date(2026, Month::May, 9).unwrap(),
@@ -765,9 +1988,9 @@ mod tests {
             },
         );
 
-        assert_eq!(acl_events.len(), 1);
+        assert!(acl_events.is_empty());
         assert_eq!(tfhe_logs.len(), 1);
-        assert!(tfhe_logs[0].is_allowed);
+        assert!(!tfhe_logs[0].is_allowed);
         assert_eq!(tfhe_logs[0].transaction_hash, Some(tx_id));
         assert_eq!(tfhe_logs[0].dependence_chain, tx_id);
         assert_eq!(tfhe_logs[0].log_index, Some(0));
@@ -807,17 +2030,279 @@ mod tests {
             },
         );
 
-        assert_eq!(acl_events.len(), 1);
+        assert!(acl_events.is_empty());
         assert_eq!(tfhe_logs.len(), 1);
         assert!(!tfhe_logs[0].is_allowed);
+    }
+
+    #[test]
+    fn normalizes_interleaved_eval_frame_events_for_worker_replay() {
+        let tx_id = solana_transaction_id(&[5_u8; 64]);
+        let block_timestamp = PrimitiveDateTime::new(
+            Date::from_calendar_date(2026, Month::May, 9).unwrap(),
+            Time::MIDNIGHT,
+        );
+
+        let (tfhe_logs, acl_events) = normalize_solana_events_for_db(
+            [
+                SolanaHostEvent::TrivialEncrypt(TrivialEncryptEvent {
+                    version: EVENT_VERSION,
+                    subject: [0; 32],
+                    plaintext: {
+                        let mut plaintext = [0_u8; 32];
+                        plaintext[31] = 1;
+                        plaintext
+                    },
+                    fhe_type: 0,
+                    result: [1; 32],
+                }),
+                SolanaHostEvent::AclAllowed(SolanaAclAllowedEvent {
+                    handle: handle(1),
+                    subject:
+                        "0x0404040404040404040404040404040404040404040404040404040404040404"
+                            .to_owned(),
+                    event_type: AllowEvents::AllowedAccount,
+                }),
+                SolanaHostEvent::FheRand(FheRandEvent {
+                    version: EVENT_VERSION,
+                    subject: [0; 32],
+                    seed: [2; 16],
+                    fhe_type: 5,
+                    result: [2; 32],
+                }),
+                SolanaHostEvent::FheTernaryOp(FheTernaryOpEvent {
+                    version: EVENT_VERSION,
+                    op: FheTernaryOpCode::IfThenElse,
+                    subject: [0; 32],
+                    control: [1; 32],
+                    if_true: [2; 32],
+                    if_false: [1; 32],
+                    result: [3; 32],
+                }),
+                SolanaHostEvent::AclAllowed(SolanaAclAllowedEvent {
+                    handle: handle(3),
+                    subject:
+                        "0x0505050505050505050505050505050505050505050505050505050505050505"
+                            .to_owned(),
+                    event_type: AllowEvents::AllowedAccount,
+                }),
+                SolanaHostEvent::FheRandBounded(FheRandBoundedEvent {
+                    version: EVENT_VERSION,
+                    subject: [0; 32],
+                    upper_bound: {
+                        let mut upper_bound = [0_u8; 32];
+                        upper_bound[31] = 8;
+                        upper_bound
+                    },
+                    seed: [4; 16],
+                    fhe_type: 5,
+                    result: [4; 32],
+                }),
+            ],
+            tx_id,
+            SolanaBlockMeta {
+                block_number: 42,
+                block_timestamp,
+            },
+        );
+
+        assert!(acl_events.is_empty());
+        assert_eq!(tfhe_logs.len(), 4);
+        assert_eq!(
+            tfhe_logs
+                .iter()
+                .map(|log| log.log_index)
+                .collect::<Vec<_>>(),
+            vec![Some(0), Some(2), Some(3), Some(5)]
+        );
+        assert!(!tfhe_logs[0].is_allowed);
+        assert!(!tfhe_logs[1].is_allowed);
+        assert!(!tfhe_logs[2].is_allowed);
+        assert!(!tfhe_logs[3].is_allowed);
+        assert!(matches!(
+            tfhe_logs[0].event.data,
+            TfheContractEvents::TrivialEncrypt(_)
+        ));
+        assert!(matches!(
+            tfhe_logs[1].event.data,
+            TfheContractEvents::FheRand(_)
+        ));
+        assert!(matches!(
+            tfhe_logs[2].event.data,
+            TfheContractEvents::FheIfThenElse(_)
+        ));
+        assert!(matches!(
+            tfhe_logs[3].event.data,
+            TfheContractEvents::FheRandBounded(_)
+        ));
     }
 
     fn anchor_event_cpi(name: &str, payload: Vec<u8>) -> Vec<u8> {
         let mut encoded = Vec::new();
         encoded.extend_from_slice(&ANCHOR_EVENT_IX_TAG_LE);
+        encoded.extend_from_slice(&anchor_event(name, payload));
+        encoded
+    }
+
+    fn program_data_log(name: &str, payload: Vec<u8>) -> String {
+        format!(
+            "Program data: {}",
+            BASE64_STANDARD.encode(anchor_event(name, payload))
+        )
+    }
+
+    fn anchor_event(name: &str, payload: Vec<u8>) -> Vec<u8> {
+        let mut encoded = Vec::new();
         encoded.extend_from_slice(&anchor_event_discriminator(name));
         encoded.extend_from_slice(&payload);
         encoded
+    }
+
+    fn assert_request_fetch(
+        fetch: &SolanaFinalizedAccountFetch,
+        request_byte: u8,
+        kind: SolanaFinalizedAccountFetchKind,
+        reason: &'static str,
+    ) {
+        assert_eq!(fetch.account_key, [request_byte; 32]);
+        assert_eq!(fetch.kind, kind);
+        assert_eq!(fetch.reason, reason);
+        assert_eq!(fetch.handle, None);
+        assert_eq!(fetch.related_account, None);
+        assert_eq!(fetch.subject, None);
+    }
+
+    fn acl_allowed_payload(handle: [u8; 32], subject: [u8; 32]) -> Vec<u8> {
+        let mut payload = vec![EVENT_VERSION];
+        payload.extend_from_slice(&handle);
+        payload.extend_from_slice(&subject);
+        payload
+    }
+
+    fn input_verified_payload(handle: [u8; 32]) -> Vec<u8> {
+        let mut payload = vec![EVENT_VERSION];
+        payload.extend_from_slice(&handle);
+        payload.extend_from_slice(&handle);
+        payload.extend_from_slice(&[8; 32]);
+        payload.extend_from_slice(&[9; 32]);
+        payload
+    }
+
+    fn acl_record_bound_payload(handle: [u8; 32]) -> Vec<u8> {
+        let mut payload = vec![EVENT_VERSION];
+        payload.extend_from_slice(&[1; 32]);
+        payload.extend_from_slice(&handle);
+        payload.extend_from_slice(&[2; 32]);
+        payload.extend_from_slice(&3_u64.to_le_bytes());
+        payload.extend_from_slice(&[4; 32]);
+        payload.extend_from_slice(&[5; 32]);
+        payload.extend_from_slice(&[6; 32]);
+        payload.push(1);
+        payload.push(0);
+        payload.extend_from_slice(&7_u64.to_le_bytes());
+        payload
+    }
+
+    fn acl_subject_allowed_payload(
+        handle: [u8; 32],
+        subject: [u8; 32],
+    ) -> Vec<u8> {
+        let mut payload = vec![EVENT_VERSION];
+        payload.extend_from_slice(&[1; 32]);
+        payload.extend_from_slice(&handle);
+        payload.extend_from_slice(&[2; 32]);
+        payload.extend_from_slice(&subject);
+        payload.push(1);
+        payload.extend_from_slice(&[3; 32]);
+        payload.push(0);
+        payload.extend_from_slice(&4_u64.to_le_bytes());
+        payload
+    }
+
+    fn token_payload() -> Vec<u8> {
+        vec![CONFIDENTIAL_TOKEN_EVENT_VERSION]
+    }
+
+    fn amount_disclosure_requested_payload(request_byte: u8) -> Vec<u8> {
+        let mut payload = token_payload();
+        payload.extend_from_slice(&[1; 32]);
+        payload.extend_from_slice(&[2; 32]);
+        payload.extend_from_slice(&[3; 32]);
+        payload.extend_from_slice(&[4; 32]);
+        payload.extend_from_slice(&[request_byte; 32]);
+        payload.extend_from_slice(&[6; 32]);
+        payload.extend_from_slice(&[7; 32]);
+        payload.extend_from_slice(&8_u64.to_le_bytes());
+        payload.extend_from_slice(&9_u64.to_le_bytes());
+        payload
+    }
+
+    fn balance_disclosure_requested_payload(request_byte: u8) -> Vec<u8> {
+        let mut payload = token_payload();
+        payload.extend_from_slice(&[10; 32]);
+        payload.extend_from_slice(&[11; 32]);
+        payload.extend_from_slice(&[12; 32]);
+        payload.extend_from_slice(&[13; 32]);
+        payload.extend_from_slice(&[14; 32]);
+        payload.extend_from_slice(&[request_byte; 32]);
+        payload.extend_from_slice(&[16; 32]);
+        payload.extend_from_slice(&[17; 32]);
+        payload.extend_from_slice(&18_u64.to_le_bytes());
+        payload.extend_from_slice(&19_u64.to_le_bytes());
+        payload
+    }
+
+    fn burn_redemption_requested_payload(request_byte: u8) -> Vec<u8> {
+        let mut payload = token_payload();
+        payload.extend_from_slice(&[20; 32]);
+        payload.extend_from_slice(&[21; 32]);
+        payload.extend_from_slice(&[22; 32]);
+        payload.extend_from_slice(&[23; 32]);
+        payload.extend_from_slice(&[24; 32]);
+        payload.extend_from_slice(&[25; 32]);
+        payload.extend_from_slice(&[26; 32]);
+        payload.extend_from_slice(&[request_byte; 32]);
+        payload.extend_from_slice(&[28; 32]);
+        payload.extend_from_slice(&[29; 32]);
+        payload.extend_from_slice(&30_u64.to_le_bytes());
+        payload.extend_from_slice(&31_u64.to_le_bytes());
+        payload
+    }
+
+    fn amount_disclosed_payload(request_byte: u8) -> Vec<u8> {
+        let mut payload = token_payload();
+        payload.extend_from_slice(&[40; 32]);
+        payload.extend_from_slice(&[41; 32]);
+        payload.extend_from_slice(&[request_byte; 32]);
+        payload.extend_from_slice(&[43; 32]);
+        payload.extend_from_slice(&44_u64.to_le_bytes());
+        payload
+    }
+
+    fn balance_disclosed_payload(request_byte: u8) -> Vec<u8> {
+        let mut payload = token_payload();
+        payload.extend_from_slice(&[50; 32]);
+        payload.extend_from_slice(&[51; 32]);
+        payload.extend_from_slice(&[52; 32]);
+        payload.extend_from_slice(&[53; 32]);
+        payload.extend_from_slice(&[request_byte; 32]);
+        payload.extend_from_slice(&[55; 32]);
+        payload.extend_from_slice(&56_u64.to_le_bytes());
+        payload
+    }
+
+    fn burn_redeemed_payload(request_byte: u8) -> Vec<u8> {
+        let mut payload = token_payload();
+        payload.extend_from_slice(&[60; 32]);
+        payload.extend_from_slice(&[61; 32]);
+        payload.extend_from_slice(&[62; 32]);
+        payload.extend_from_slice(&[63; 32]);
+        payload.extend_from_slice(&[64; 32]);
+        payload.extend_from_slice(&[65; 32]);
+        payload.extend_from_slice(&[request_byte; 32]);
+        payload.extend_from_slice(&[67; 32]);
+        payload.extend_from_slice(&68_u64.to_le_bytes());
+        payload
     }
 
     fn binary_op_payload(

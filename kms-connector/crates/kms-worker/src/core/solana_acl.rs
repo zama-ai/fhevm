@@ -186,6 +186,7 @@ pub struct SolanaUserDecryptionPayloadV0 {
     pub expiration_slot: u64,
     pub nonce: [u8; 32],
     pub extra_data_hash: [u8; 32],
+    pub allowed_acl_domain_keys: Vec<SolanaPubkeyBytes>,
     pub entries_hash: [u8; 32],
 }
 
@@ -202,6 +203,7 @@ pub struct SolanaNativeRequestLimits {
     pub max_user_reencryption_pubkey_bytes: usize,
     pub max_extra_data_bytes: usize,
     pub max_handles_per_request: usize,
+    pub max_acl_domain_keys_per_request: usize,
     pub max_signed_request_bytes: usize,
     pub max_encrypted_bits_per_request: usize,
 }
@@ -212,6 +214,7 @@ impl Default for SolanaNativeRequestLimits {
             max_user_reencryption_pubkey_bytes: 4096,
             max_extra_data_bytes: 4096,
             max_handles_per_request: 128,
+            max_acl_domain_keys_per_request: 16,
             max_signed_request_bytes: 64 * 1024,
             max_encrypted_bits_per_request: SOLANA_NATIVE_MAX_ENCRYPTED_BITS_PER_REQUEST,
         }
@@ -413,6 +416,7 @@ impl SolanaAclVerifier {
         self.verify_material_commitment(record, material, handle)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn verify_delegated_user_decrypt(
         &self,
         record: &AclRecordWitness,
@@ -441,6 +445,7 @@ impl SolanaAclVerifier {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn verify_delegated_user_decrypt_with_material(
         &self,
         record: &AclRecordWitness,
@@ -482,6 +487,22 @@ impl SolanaAclVerifier {
         }
         if request.entries.len() > limits.max_handles_per_request {
             return Err(SolanaNativeRequestError::RequestTooLarge);
+        }
+        if payload.allowed_acl_domain_keys.len() > limits.max_acl_domain_keys_per_request {
+            return Err(SolanaNativeRequestError::RequestTooLarge);
+        }
+        if payload
+            .allowed_acl_domain_keys
+            .iter()
+            .enumerate()
+            .any(|(index, domain)| {
+                *domain == [0; 32]
+                    || payload.allowed_acl_domain_keys[index + 1..]
+                        .iter()
+                        .any(|later| later == domain)
+            })
+        {
+            return Err(SolanaNativeRequestError::InvalidProfile);
         }
         for (index, entry) in request.entries.iter().enumerate() {
             if request.entries[index + 1..]
@@ -596,6 +617,11 @@ impl SolanaAclVerifier {
         {
             return Err(SolanaNativeRequestError::InvalidProfile);
         }
+        if payload.request_mode == SOLANA_NATIVE_REQUEST_MODE_PUBLIC
+            && !payload.allowed_acl_domain_keys.is_empty()
+        {
+            return Err(SolanaNativeRequestError::InvalidProfile);
+        }
         Ok(())
     }
 
@@ -647,6 +673,7 @@ impl SolanaAclVerifier {
 
         for entry in entries {
             self.verify_native_common_entry(payload, entry, observed_slot)?;
+            self.verify_native_domain_scope(payload, entry)?;
             if entry.owner_pubkey != first.owner_pubkey
                 || entry.app_context_pubkey != first.app_context_pubkey
                 || entry.delegator_pubkey != [0; 32]
@@ -713,6 +740,7 @@ impl SolanaAclVerifier {
 
         for entry in entries {
             self.verify_native_common_entry(payload, entry, observed_slot)?;
+            self.verify_native_domain_scope(payload, entry)?;
             if entry.owner_pubkey != [0; 32]
                 || entry.owner_permission.is_some()
                 || entry.owner_permission_account != [0; 32]
@@ -750,6 +778,23 @@ impl SolanaAclVerifier {
                 entry.expected_delegation_counter,
                 observed_slot,
             )?;
+        }
+        Ok(())
+    }
+
+    fn verify_native_domain_scope(
+        &self,
+        payload: &SolanaUserDecryptionPayloadV0,
+        entry: &SolanaNativeHandleEntryV0,
+    ) -> Result<(), SolanaNativeRequestError> {
+        if payload.request_mode == SOLANA_NATIVE_REQUEST_MODE_PUBLIC {
+            return Ok(());
+        }
+        if !payload
+            .allowed_acl_domain_keys
+            .contains(&entry.acl_record.acl_domain_key)
+        {
+            return Err(SolanaAclVerificationError::DomainNotAllowed.into());
         }
         Ok(())
     }
@@ -955,9 +1000,9 @@ impl SolanaAclVerifier {
             return require_role(inline.role_flags, required_role);
         }
 
-        for permission in overflow_permissions
+        if let Some(permission) = overflow_permissions
             .iter()
-            .filter(|permission| permission.subject == subject)
+            .find(|permission| permission.subject == subject)
         {
             self.verify_overflow_permission(record, permission)?;
             return require_role(permission.role_flags, required_role);
@@ -1424,6 +1469,10 @@ pub fn solana_native_request_hash(payload: &SolanaUserDecryptionPayloadV0) -> [u
     hasher.update(payload.expiration_slot.to_le_bytes());
     hasher.update(payload.nonce);
     hasher.update(payload.extra_data_hash);
+    hasher.update((payload.allowed_acl_domain_keys.len() as u32).to_le_bytes());
+    for domain in &payload.allowed_acl_domain_keys {
+        hasher.update(domain);
+    }
     hasher.update(payload.entries_hash);
     hasher.finalize().into()
 }
@@ -1609,6 +1658,7 @@ mod tests {
     const DELEGATE: SolanaPubkeyBytes = [5; 32];
     const OBSERVED_SLOT: u64 = 500;
     const LABEL: [u8; 32] = *b"balance_________________________";
+    type NativeRequestMutator = fn(&mut SolanaNativeDecryptionRequestV0);
 
     fn hex32(value: &str) -> [u8; 32] {
         assert_eq!(value.len(), 64);
@@ -1955,6 +2005,11 @@ mod tests {
         } else {
             [77; 32]
         };
+        let allowed_acl_domain_keys = if mode == SOLANA_NATIVE_REQUEST_MODE_PUBLIC {
+            Vec::new()
+        } else {
+            vec![DOMAIN]
+        };
         let payload = SolanaUserDecryptionPayloadV0 {
             domain_separator: solana_native_domain_separator(
                 HOST_CHAIN_ID,
@@ -1977,6 +2032,7 @@ mod tests {
             expiration_slot: OBSERVED_SLOT + 20,
             nonce,
             extra_data_hash: solana_native_extra_data_hash(&raw_extra_data),
+            allowed_acl_domain_keys,
             entries_hash: solana_native_entries_hash(&entries),
         };
         SolanaNativeDecryptionRequestV0 {
@@ -2046,16 +2102,17 @@ mod tests {
             expiration_slot: 20,
             nonce: [6; 32],
             extra_data_hash,
+            allowed_acl_domain_keys: vec![DOMAIN],
             entries_hash,
         };
         assert_eq!(
             solana_native_request_hash(&payload),
-            hex32("b435c1d350e62d5b945dc8acba09cdf4d300aaf9e2073b4fe53cee3f56d704b2")
+            hex32("beb1f25fa67f1e6769e4def1deab3c326182b093713846ffd061a0646aae2a3f")
         );
         assert_eq!(
             solana_native_request_signature_message(solana_native_request_hash(&payload)),
             hex_bytes(
-                "28007a616d612d736f6c616e612d757365722d64656372797074696f6e2d7369676e61747572652d7630b435c1d350e62d5b945dc8acba09cdf4d300aaf9e2073b4fe53cee3f56d704b2"
+                "28007a616d612d736f6c616e612d757365722d64656372797074696f6e2d7369676e61747572652d7630beb1f25fa67f1e6769e4def1deab3c326182b093713846ffd061a0646aae2a3f"
             )
         );
     }
@@ -2750,6 +2807,78 @@ mod tests {
     }
 
     #[test]
+    fn native_v0_scoped_request_rejects_acl_domain_outside_signed_scope() {
+        let verifier = SolanaAclVerifier::new(HOST_PROGRAM_ID);
+        let mut request = native_request(SOLANA_NATIVE_REQUEST_MODE_DIRECT_SCOPED);
+        request.payload.allowed_acl_domain_keys = vec![[99; 32]];
+
+        assert_eq!(
+            verifier.verify_native_v0_request(
+                &request,
+                OBSERVED_SLOT,
+                SolanaNativeRequestLimits::default()
+            ),
+            Err(SolanaNativeRequestError::Acl(
+                SolanaAclVerificationError::DomainNotAllowed
+            ))
+        );
+    }
+
+    #[test]
+    fn native_v0_scoped_request_accepts_acl_domain_in_signed_scope() {
+        let verifier = SolanaAclVerifier::new(HOST_PROGRAM_ID);
+        let mut request = native_request(SOLANA_NATIVE_REQUEST_MODE_DIRECT_SCOPED);
+        request.payload.allowed_acl_domain_keys = vec![[99; 32], DOMAIN];
+
+        assert!(
+            verifier
+                .verify_native_v0_request(
+                    &request,
+                    OBSERVED_SLOT,
+                    SolanaNativeRequestLimits::default()
+                )
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn native_v0_rejects_invalid_signed_domain_scope_lists() {
+        let verifier = SolanaAclVerifier::new(HOST_PROGRAM_ID);
+        let mut zero_domain = native_request(SOLANA_NATIVE_REQUEST_MODE_DIRECT_SCOPED);
+        zero_domain.payload.allowed_acl_domain_keys = vec![[0; 32]];
+        assert_eq!(
+            verifier.verify_native_v0_request(
+                &zero_domain,
+                OBSERVED_SLOT,
+                SolanaNativeRequestLimits::default()
+            ),
+            Err(SolanaNativeRequestError::InvalidProfile)
+        );
+
+        let mut duplicate_domain = native_request(SOLANA_NATIVE_REQUEST_MODE_DIRECT_SCOPED);
+        duplicate_domain.payload.allowed_acl_domain_keys = vec![DOMAIN, DOMAIN];
+        assert_eq!(
+            verifier.verify_native_v0_request(
+                &duplicate_domain,
+                OBSERVED_SLOT,
+                SolanaNativeRequestLimits::default()
+            ),
+            Err(SolanaNativeRequestError::InvalidProfile)
+        );
+
+        let mut public_with_scope = native_request(SOLANA_NATIVE_REQUEST_MODE_PUBLIC);
+        public_with_scope.payload.allowed_acl_domain_keys = vec![DOMAIN];
+        assert_eq!(
+            verifier.verify_native_v0_request(
+                &public_with_scope,
+                OBSERVED_SLOT,
+                SolanaNativeRequestLimits::default()
+            ),
+            Err(SolanaNativeRequestError::InvalidProfile)
+        );
+    }
+
+    #[test]
     fn verifies_native_v0_public_request_without_replay_key() {
         let verifier = SolanaAclVerifier::new(HOST_PROGRAM_ID);
         let accepted = verifier
@@ -2886,7 +3015,7 @@ mod tests {
     #[test]
     fn native_v0_rejects_material_entry_binding_mismatches() {
         let verifier = SolanaAclVerifier::new(HOST_PROGRAM_ID);
-        let cases: [(&str, fn(&mut SolanaNativeDecryptionRequestV0)); 3] = [
+        let cases: [(&str, NativeRequestMutator); 3] = [
             ("material account", |request| {
                 request.entries[0].material_commitment_account = [31; 32];
             }),

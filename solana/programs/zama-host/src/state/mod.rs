@@ -21,6 +21,7 @@ pub mod handle_material_commitment;
 pub mod host_config;
 pub mod transient_session;
 pub mod user_decryption_delegation;
+pub mod verifier_set;
 
 pub use acl_permission::*;
 pub use acl_record::*;
@@ -29,6 +30,7 @@ pub use handle_material_commitment::*;
 pub use host_config::*;
 pub use transient_session::*;
 pub use user_decryption_delegation::*;
+pub use verifier_set::*;
 
 pub use crate::constants::*;
 
@@ -37,8 +39,8 @@ pub use crate::constants::*;
 pub struct InitializeHostConfigArgs {
     /// Host-chain id encoded into newly derived handles.
     pub chain_id: u64,
-    /// Authority used by mock and signed encrypted-input bind paths.
-    pub input_verifier_authority: Pubkey,
+    /// Active threshold verifier set used by encrypted-input bind paths.
+    pub input_verifier_set: Pubkey,
     /// Authority allowed to commit ciphertext material readiness.
     pub material_authority: Pubkey,
     /// Authority allowed to call `test_emit_*` event shims.
@@ -49,6 +51,23 @@ pub struct InitializeHostConfigArgs {
     pub test_shims_enabled: bool,
     /// Whether persistent grants must include a deny-list witness.
     pub grant_deny_list_enabled: bool,
+}
+
+/// Initialization arguments for a threshold [`VerifierSet`] account.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CreateVerifierSetArgs {
+    /// Protocol purpose for this set.
+    pub kind: u8,
+    /// Scope that disambiguates sets of the same kind.
+    pub scope: Pubkey,
+    /// Monotonic version chosen by the admin for rotation.
+    pub version: u64,
+    /// Number of distinct signer signatures required.
+    pub threshold: u8,
+    /// Number of active entries in `signers`.
+    pub signer_count: u8,
+    /// Fixed signer list. Entries after `signer_count` must be default keys.
+    pub signers: [Pubkey; MAX_VERIFIER_SET_SIGNERS],
 }
 
 /// Pubkey plus role flags stored inline or in an overflow permission PDA.
@@ -90,8 +109,8 @@ impl AclSubjectEntry {
 /// Native Solana verifier payload for binding external encrypted inputs.
 ///
 /// The proof is not trusted by itself. `verify_input_and_bind` requires an
-/// Ed25519 verifier pre-instruction from `HostConfig::input_verifier_authority`
-/// over [`input_proof_message`]. The selected handle from `handles` is the only
+/// Ed25519 verifier quorum from `HostConfig::input_verifier_set` over
+/// [`input_proof_message_for_verifier_set`]. The selected handle from `handles` is the only
 /// handle that may be written into the output ACL record.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
 pub struct SolanaInputProof {
@@ -197,26 +216,69 @@ pub struct FheEvalArgs {
     ///
     /// Callers should use a fresh value for each logical eval session.
     pub context_id: [u8; 32],
-    /// Ordered operation list. Each transient operand may only reference an
-    /// output produced by an earlier index in this vector.
-    pub ops: Vec<FheEvalOp>,
+    /// Ordered step list. Each transient operand may only reference an output
+    /// produced by an earlier index in this vector.
+    pub steps: Vec<FheEvalStep>,
 }
 
-/// One binary operation inside a composed FHE eval.
+/// One step inside a composed FHE eval.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
-pub struct FheEvalOp {
-    /// Binary operator.
-    pub op: FheBinaryOpCode,
-    /// Left-hand operand.
-    pub lhs: FheEvalOperand,
-    /// Right-hand operand or scalar bytes.
-    pub rhs: FheEvalOperand,
-    /// FHE type byte embedded in the output handle.
-    pub output_fhe_type: u8,
-    /// Caller-supplied output handle verified by host derivation.
-    pub result: [u8; 32],
-    /// Whether this output remains instruction-local or is bound into durable ACL state.
-    pub output: FheEvalOutput,
+pub enum FheEvalStep {
+    /// Binary operator step.
+    Binary {
+        /// Binary operator.
+        op: FheBinaryOpCode,
+        /// Left-hand encrypted operand.
+        lhs: FheEvalOperand,
+        /// Right-hand encrypted operand or scalar bytes.
+        rhs: FheEvalOperand,
+        /// FHE type byte embedded in the output handle.
+        output_fhe_type: u8,
+        /// Whether this output remains instruction-local or is bound into durable ACL state.
+        output: FheEvalOutput,
+    },
+    /// Ternary operator step.
+    Ternary {
+        /// Ternary operator.
+        op: FheTernaryOpCode,
+        /// Encrypted bool control operand.
+        control: FheEvalOperand,
+        /// Encrypted branch selected when control is true.
+        if_true: FheEvalOperand,
+        /// Encrypted branch selected when control is false.
+        if_false: FheEvalOperand,
+        /// FHE type byte embedded in the output handle.
+        output_fhe_type: u8,
+        /// Whether this output remains instruction-local or is bound into durable ACL state.
+        output: FheEvalOutput,
+    },
+    /// Trivial encryption step.
+    TrivialEncrypt {
+        /// Plaintext bytes encoded using the host scalar convention.
+        plaintext: [u8; 32],
+        /// FHE type byte embedded in the output handle.
+        fhe_type: u8,
+        /// Whether this output remains instruction-local or is bound into durable ACL state.
+        output: FheEvalOutput,
+    },
+    /// Random ciphertext step.
+    Rand {
+        /// FHE type byte embedded in the output handle.
+        fhe_type: u8,
+        /// Whether this output remains instruction-local or is bound into durable ACL state.
+        output: FheEvalOutput,
+    },
+    /// Externally verified input step.
+    Input {
+        /// Input handle selected from the proof.
+        input_handle: [u8; 32],
+        /// Solana input proof verified by the host.
+        proof: SolanaInputProof,
+        /// Index into `remaining_accounts` for the active input [`VerifierSet`].
+        verifier_set_index: u16,
+        /// Durable ACL output bound from the verified input.
+        output: FheEvalOutput,
+    },
 }
 
 /// Operand source for a composed FHE eval operation.
@@ -265,6 +327,12 @@ pub enum FheEvalOutput {
     Durable {
         /// Index into `remaining_accounts` for the output ACL record PDA.
         output_acl_record_index: u16,
+        /// Optional index into `remaining_accounts` for the app account authority signer.
+        ///
+        /// `None` uses the fixed `app_account_authority` account in the eval
+        /// context. `Some(index)` requires that remaining account to be a signer
+        /// and to match `output_app_account`.
+        output_app_account_authority_index: Option<u16>,
         /// Nonce key for the output ACL record.
         output_nonce_key: [u8; 32],
         /// Nonce sequence for the output ACL record.
@@ -556,9 +624,43 @@ pub fn input_proof_message(
     message
 }
 
+/// Canonical bytes signed by a threshold verifier-set quorum.
+pub fn input_proof_message_for_verifier_set(
+    proof: &SolanaInputProof,
+    bind_intent: &SolanaInputBindIntent,
+    host_program_id: Pubkey,
+    chain_id: u64,
+    verifier_set: Pubkey,
+    verifier_set_kind: u8,
+    verifier_set_scope: Pubkey,
+    verifier_set_version: u64,
+) -> Vec<u8> {
+    let legacy_message = input_proof_message(proof, bind_intent, host_program_id, chain_id);
+    let mut message = Vec::with_capacity(legacy_message.len() + 32 + 1 + 32 + 8);
+    message.extend_from_slice(&legacy_message);
+    message.extend_from_slice(verifier_set.as_ref());
+    message.push(verifier_set_kind);
+    message.extend_from_slice(verifier_set_scope.as_ref());
+    message.extend_from_slice(&verifier_set_version.to_be_bytes());
+    message
+}
+
 /// Returns the canonical singleton host config address.
 pub fn host_config_address() -> (Pubkey, u8) {
     Pubkey::find_program_address(&[HOST_CONFIG_SEED], &crate::ID)
+}
+
+/// Returns the canonical verifier-set address for `(kind, scope, version)`.
+pub fn verifier_set_address(kind: u8, scope: Pubkey, version: u64) -> (Pubkey, u8) {
+    Pubkey::find_program_address(
+        &[
+            VERIFIER_SET_SEED,
+            &[kind],
+            scope.as_ref(),
+            &version.to_le_bytes(),
+        ],
+        &crate::ID,
+    )
 }
 
 /// Returns the canonical ACL record address for a nonce key and sequence.
@@ -1028,7 +1130,15 @@ pub fn computed_bound_eval_handle_for_current_slot_with_chain_id_and_test_fallba
     ))
 }
 
-/// Deterministically derives an unbound binary-op handle from explicit entropy.
+fn finish_computed_handle(result: &mut [u8; 32], chain_id_bytes: &[u8; 8], fhe_type: u8) {
+    result[21..32].fill(0);
+    result[21] = COMPUTED_HANDLE_MARKER;
+    result[22..30].copy_from_slice(chain_id_bytes);
+    result[30] = fhe_type;
+    result[31] = HANDLE_VERSION;
+}
+
+/// Derives an unbound binary-op handle from explicit slot entropy.
 pub fn computed_binary_handle(
     op: FheBinaryOpCode,
     lhs: [u8; 32],
@@ -1056,15 +1166,11 @@ pub fn computed_binary_handle(
     ])
     .to_bytes();
 
-    result[21..32].fill(0);
-    result[21] = COMPUTED_HANDLE_MARKER;
-    result[22..30].copy_from_slice(&chain_id_bytes);
-    result[30] = fhe_type;
-    result[31] = HANDLE_VERSION;
+    finish_computed_handle(&mut result, &chain_id_bytes, fhe_type);
     result
 }
 
-/// Deterministically derives a nonce-bound binary-op output handle.
+/// Derives a nonce-bound binary-op output handle from explicit slot entropy.
 ///
 /// Binding the handle to `(output_nonce_key, output_nonce_sequence)` prevents
 /// two durable output ACL records from intentionally storing the same computed
@@ -1105,7 +1211,7 @@ pub fn computed_bound_binary_handle(
     result
 }
 
-/// Derives an unbound ternary-op handle from explicit entropy.
+/// Derives an unbound ternary-op handle from explicit slot entropy.
 pub fn computed_ternary_handle(
     op: FheTernaryOpCode,
     control: [u8; 32],
@@ -1132,15 +1238,11 @@ pub fn computed_ternary_handle(
     ])
     .to_bytes();
 
-    result[21..32].fill(0);
-    result[21] = COMPUTED_HANDLE_MARKER;
-    result[22..30].copy_from_slice(&chain_id_bytes);
-    result[30] = fhe_type;
-    result[31] = HANDLE_VERSION;
+    finish_computed_handle(&mut result, &chain_id_bytes, fhe_type);
     result
 }
 
-/// Deterministically derives a nonce-bound ternary-op output handle.
+/// Derives a nonce-bound ternary-op output handle from explicit slot entropy.
 pub fn computed_bound_ternary_handle(
     op: FheTernaryOpCode,
     control: [u8; 32],
@@ -1177,7 +1279,7 @@ pub fn computed_bound_ternary_handle(
     result
 }
 
-/// Derives an instruction-local eval operation handle from explicit entropy.
+/// Derives an instruction-local eval operation handle from explicit slot entropy.
 pub fn computed_eval_handle(
     op: FheBinaryOpCode,
     lhs: [u8; 32],
@@ -1193,8 +1295,8 @@ pub fn computed_eval_handle(
     let op_byte = [op.as_u8()];
     let scalar_byte = [u8::from(scalar)];
     let chain_id_bytes = chain_id.to_be_bytes();
-    let timestamp_bytes = unix_timestamp.to_be_bytes();
     let op_index_bytes = op_index.to_be_bytes();
+    let timestamp_bytes = unix_timestamp.to_be_bytes();
     let mut result = hashv(&[
         b"FHE_eval",
         &context_id,
@@ -1210,15 +1312,105 @@ pub fn computed_eval_handle(
     ])
     .to_bytes();
 
-    result[21..32].fill(0);
-    result[21] = COMPUTED_HANDLE_MARKER;
-    result[22..30].copy_from_slice(&chain_id_bytes);
-    result[30] = fhe_type;
-    result[31] = HANDLE_VERSION;
+    finish_computed_handle(&mut result, &chain_id_bytes, fhe_type);
     result
 }
 
-/// Derives a nonce-bound durable output handle for composed eval.
+/// Derives an instruction-local ternary eval operation handle from explicit slot entropy.
+#[allow(clippy::too_many_arguments)]
+pub fn computed_eval_ternary_handle(
+    op: FheTernaryOpCode,
+    control: [u8; 32],
+    if_true: [u8; 32],
+    if_false: [u8; 32],
+    fhe_type: u8,
+    chain_id: u64,
+    previous_bank_hash: [u8; 32],
+    unix_timestamp: i64,
+    context_id: [u8; 32],
+    op_index: u16,
+) -> [u8; 32] {
+    let op_byte = [op.as_u8()];
+    let chain_id_bytes = chain_id.to_be_bytes();
+    let op_index_bytes = op_index.to_be_bytes();
+    let timestamp_bytes = unix_timestamp.to_be_bytes();
+    let mut result = hashv(&[
+        b"FHE_eval_ternary",
+        &context_id,
+        &op_index_bytes,
+        &op_byte,
+        &control,
+        &if_true,
+        &if_false,
+        crate::ID.as_ref(),
+        &chain_id_bytes,
+        &previous_bank_hash,
+        &timestamp_bytes,
+    ])
+    .to_bytes();
+
+    finish_computed_handle(&mut result, &chain_id_bytes, fhe_type);
+    result
+}
+
+/// Derives an instruction-local trivial-encrypt eval handle from explicit slot entropy.
+pub fn computed_eval_trivial_handle(
+    plaintext: [u8; 32],
+    fhe_type: u8,
+    chain_id: u64,
+    previous_bank_hash: [u8; 32],
+    unix_timestamp: i64,
+    context_id: [u8; 32],
+    op_index: u16,
+) -> [u8; 32] {
+    let chain_id_bytes = chain_id.to_be_bytes();
+    let op_index_bytes = op_index.to_be_bytes();
+    let timestamp_bytes = unix_timestamp.to_be_bytes();
+    let fhe_type_bytes = [fhe_type];
+    let mut result = hashv(&[
+        b"FHE_eval_trivial",
+        &context_id,
+        &op_index_bytes,
+        &plaintext,
+        &fhe_type_bytes,
+        crate::ID.as_ref(),
+        &chain_id_bytes,
+        &previous_bank_hash,
+        &timestamp_bytes,
+    ])
+    .to_bytes();
+
+    finish_computed_handle(&mut result, &chain_id_bytes, fhe_type);
+    result
+}
+
+/// Derives the seed emitted for an instruction-local eval random handle.
+pub fn computed_eval_rand_seed(
+    chain_id: u64,
+    previous_bank_hash: [u8; 32],
+    unix_timestamp: i64,
+    context_id: [u8; 32],
+    op_index: u16,
+) -> [u8; 16] {
+    let chain_id_bytes = chain_id.to_be_bytes();
+    let op_index_bytes = op_index.to_be_bytes();
+    let timestamp_bytes = unix_timestamp.to_be_bytes();
+    let hash = hashv(&[
+        b"FHE_eval_seed",
+        &context_id,
+        &op_index_bytes,
+        crate::ID.as_ref(),
+        &chain_id_bytes,
+        &previous_bank_hash,
+        &timestamp_bytes,
+    ])
+    .to_bytes();
+    let mut seed = [0; 16];
+    seed.copy_from_slice(&hash[..16]);
+    seed
+}
+
+/// Derives a nonce-bound durable output handle for composed eval from explicit slot entropy.
 pub fn computed_bound_eval_handle(
     op: FheBinaryOpCode,
     lhs: [u8; 32],
@@ -1259,7 +1451,115 @@ pub fn computed_bound_eval_handle(
     result
 }
 
-/// Deterministically derives a trivial-encrypt handle from explicit entropy.
+/// Derives a nonce-bound durable ternary output handle for composed eval from explicit slot entropy.
+#[allow(clippy::too_many_arguments)]
+pub fn computed_bound_eval_ternary_handle(
+    op: FheTernaryOpCode,
+    control: [u8; 32],
+    if_true: [u8; 32],
+    if_false: [u8; 32],
+    fhe_type: u8,
+    chain_id: u64,
+    previous_bank_hash: [u8; 32],
+    unix_timestamp: i64,
+    context_id: [u8; 32],
+    op_index: u16,
+    output_nonce_key: [u8; 32],
+    output_nonce_sequence: u64,
+) -> [u8; 32] {
+    let sequence_bytes = output_nonce_sequence.to_be_bytes();
+    let base_result = computed_eval_ternary_handle(
+        op,
+        control,
+        if_true,
+        if_false,
+        fhe_type,
+        chain_id,
+        previous_bank_hash,
+        unix_timestamp,
+        context_id,
+        op_index,
+    );
+    let mut result = base_result;
+    result[..21].copy_from_slice(
+        &hashv(&[
+            b"FHE_bound_eval_output",
+            &base_result,
+            &output_nonce_key,
+            &sequence_bytes,
+        ])
+        .to_bytes()[..21],
+    );
+    result
+}
+
+/// Derives a nonce-bound durable trivial-encrypt eval handle from explicit slot entropy.
+pub fn computed_bound_eval_trivial_handle(
+    plaintext: [u8; 32],
+    fhe_type: u8,
+    chain_id: u64,
+    previous_bank_hash: [u8; 32],
+    unix_timestamp: i64,
+    context_id: [u8; 32],
+    op_index: u16,
+    output_nonce_key: [u8; 32],
+    output_nonce_sequence: u64,
+) -> [u8; 32] {
+    let chain_id_bytes = chain_id.to_be_bytes();
+    let op_index_bytes = op_index.to_be_bytes();
+    let sequence_bytes = output_nonce_sequence.to_be_bytes();
+    let fhe_type_bytes = [fhe_type];
+    let timestamp_bytes = unix_timestamp.to_be_bytes();
+    let mut result = hashv(&[
+        b"FHE_bound_eval_trivial_output",
+        &context_id,
+        &op_index_bytes,
+        &plaintext,
+        &fhe_type_bytes,
+        crate::ID.as_ref(),
+        &chain_id_bytes,
+        &previous_bank_hash,
+        &timestamp_bytes,
+        &output_nonce_key,
+        &sequence_bytes,
+    ])
+    .to_bytes();
+    finish_computed_handle(&mut result, &chain_id_bytes, fhe_type);
+    result
+}
+
+/// Derives the seed emitted for a nonce-bound durable eval random handle from explicit slot entropy.
+pub fn computed_bound_eval_rand_seed(
+    chain_id: u64,
+    previous_bank_hash: [u8; 32],
+    unix_timestamp: i64,
+    context_id: [u8; 32],
+    op_index: u16,
+    output_nonce_key: [u8; 32],
+    output_nonce_sequence: u64,
+) -> [u8; 16] {
+    let chain_id_bytes = chain_id.to_be_bytes();
+    let op_index_bytes = op_index.to_be_bytes();
+    let sequence_bytes = output_nonce_sequence.to_be_bytes();
+    let timestamp_bytes = unix_timestamp.to_be_bytes();
+    let hash = hashv(&[
+        b"FHE_bound_eval_seed",
+        &context_id,
+        &op_index_bytes,
+        crate::ID.as_ref(),
+        &chain_id_bytes,
+        &previous_bank_hash,
+        &timestamp_bytes,
+        &output_nonce_key,
+        &sequence_bytes,
+    ])
+    .to_bytes();
+    let mut seed = [0; 16];
+    seed.copy_from_slice(&hash[..16]);
+    seed
+}
+
+/// Derives a trivial-encrypt handle from explicit slot entropy.
 pub fn computed_trivial_handle(
     plaintext: [u8; 32],
     fhe_type: u8,
@@ -1287,11 +1587,7 @@ pub fn computed_trivial_handle(
     ])
     .to_bytes();
 
-    result[21..32].fill(0);
-    result[21] = COMPUTED_HANDLE_MARKER;
-    result[22..30].copy_from_slice(&chain_id_bytes);
-    result[30] = fhe_type;
-    result[31] = HANDLE_VERSION;
+    finish_computed_handle(&mut result, &chain_id_bytes, fhe_type);
     result
 }
 
@@ -1445,7 +1741,8 @@ mod tests {
         HostConfig {
             admin: Pubkey::default(),
             chain_id,
-            input_verifier_authority: Pubkey::default(),
+            input_verifier_set: Pubkey::default(),
+            input_verifier_set_version: 0,
             material_authority: Pubkey::default(),
             test_authority: Pubkey::default(),
             paused: false,
@@ -1457,8 +1754,9 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "poc")]
     #[test]
-    fn zero_birth_entropy_requires_poc_chain_and_test_shims() {
+    fn zero_birth_entropy_requires_poc_feature_chain_and_test_shims() {
         // Local PoC chain with the shim flag: relaxation allowed.
         assert!(host_config_with(SOLANA_POC_CHAIN_ID, true, false).zero_birth_entropy_allowed());
         // Local PoC chain without the shim flag: fails closed (drives the
@@ -1470,6 +1768,15 @@ mod tests {
         assert!(!host_config_with(1, true, false).zero_birth_entropy_allowed());
     }
 
+    #[cfg(not(feature = "poc"))]
+    #[test]
+    fn poc_chain_relaxations_are_disabled_without_poc_feature() {
+        assert!(!host_config_with(SOLANA_POC_CHAIN_ID, true, true).is_local_poc_chain());
+        assert!(!host_config_with(SOLANA_POC_CHAIN_ID, true, false).zero_birth_entropy_allowed());
+        assert!(!host_config_with(SOLANA_POC_CHAIN_ID, false, true).mock_input_allowed());
+    }
+
+    #[cfg(feature = "poc")]
     #[test]
     fn mock_input_requires_poc_chain() {
         assert!(host_config_with(SOLANA_POC_CHAIN_ID, false, true).mock_input_allowed());
@@ -1477,5 +1784,62 @@ mod tests {
         // A deployed chain can never run the mock input bind path, even if an
         // admin sets mock_input_enabled.
         assert!(!host_config_with(101, false, true).mock_input_allowed());
+    }
+
+    #[test]
+    fn native_v0_bound_eval_handle_uses_slot_entropy_and_preserves_layout() {
+        let lhs = [1; 32];
+        let rhs = [2; 32];
+        let context_id = [3; 32];
+        let nonce_key = [4; 32];
+        let first = computed_bound_eval_handle(
+            FheBinaryOpCode::Add,
+            lhs,
+            rhs,
+            false,
+            1,
+            42,
+            [5; 32],
+            100,
+            context_id,
+            7,
+            nonce_key,
+            9,
+        );
+        let different_entropy = computed_bound_eval_handle(
+            FheBinaryOpCode::Add,
+            lhs,
+            rhs,
+            false,
+            1,
+            42,
+            [6; 32],
+            101,
+            context_id,
+            7,
+            nonce_key,
+            9,
+        );
+        let different_nonce = computed_bound_eval_handle(
+            FheBinaryOpCode::Add,
+            lhs,
+            rhs,
+            false,
+            1,
+            42,
+            [5; 32],
+            100,
+            context_id,
+            7,
+            nonce_key,
+            10,
+        );
+
+        assert_ne!(first, different_entropy);
+        assert_ne!(first, different_nonce);
+        assert_eq!(first[21], COMPUTED_HANDLE_MARKER);
+        assert_eq!(&first[22..30], &42_u64.to_be_bytes());
+        assert_eq!(first[30], 1);
+        assert_eq!(first[31], HANDLE_VERSION);
     }
 }

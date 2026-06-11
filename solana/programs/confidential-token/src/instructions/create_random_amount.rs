@@ -76,28 +76,74 @@ fn create_random_amount_inner(
     );
 
     let encrypted_value_label = amount_kind.encrypted_value_label();
-    let nonce_key = nonce_key(mint_key, owner, encrypted_value_label);
-    let request = fhe::RandU64 {
-        payer: &ctx.accounts.owner,
-        event_authority: &ctx.accounts.zama_event_authority,
-        zama_program: &ctx.accounts.zama_program,
-        host_config: &ctx.accounts.host_config,
-        compute_signer: &ctx.accounts.compute_signer,
-        app_account_authority: &ctx.accounts.owner,
-        output_acl_record: ctx.accounts.amount_acl_record.to_account_info(),
-        acl_domain_key: mint_key,
-        compute_signer_bump: ctx.bumps.compute_signer,
-        system_program: &ctx.accounts.system_program,
-        output_nonce_key: nonce_key,
-        output_nonce_sequence: nonce_sequence,
-        output_encrypted_value_label: encrypted_value_label,
-        output_subjects: compute_acl_subject(ctx.accounts.compute_signer.key()),
-        output_public_decrypt: false,
-    };
-
+    let amount_output = fhe::DurableOutput::new(
+        ctx.accounts.amount_acl_record.to_account_info(),
+        durable_slot(mint_key, owner, encrypted_value_label, nonce_sequence),
+        zama_fhe::AccessPolicy::for_compute(ctx.accounts.compute_signer.key())
+            .map_err(invalid_eval_plan)?,
+    )?;
     let handle = match upper_bound {
-        Some(upper_bound) => fhe::rand_bounded_u64(request, upper_bound)?,
-        None => fhe::rand_u64(request)?,
+        Some(upper_bound) => fhe::rand_bounded_u64(
+            fhe::BoundedRandU64 {
+                payer: &ctx.accounts.owner,
+                event_authority: &ctx.accounts.zama_event_authority,
+                zama_program: &ctx.accounts.zama_program,
+                host_config: &ctx.accounts.host_config,
+                compute_authority: fhe::ComputeAuthority::for_mint(
+                    &ctx.accounts.compute_signer,
+                    mint_key,
+                    ctx.bumps.compute_signer,
+                )?,
+                output_authority: fhe::OutputAuthority::transaction_signer(&ctx.accounts.owner),
+                output: amount_output,
+                system_program: &ctx.accounts.system_program,
+            },
+            zama_fhe::BoundedU64UpperBound::from_be_bytes(upper_bound)
+                .map_err(invalid_eval_plan)?,
+        )?,
+        None => {
+            let context_id = transfer_eval_context(
+                b"random-amount",
+                mint_key,
+                owner,
+                owner,
+                encrypted_value_label,
+                nonce_sequence,
+                nonce_sequence,
+            )?;
+            let mut builder =
+                zama_fhe::EvalBuilder::new(context_id, zama_fhe::EvalAppAuthority::new(owner));
+            builder
+                .rand_u64(amount_output.output())
+                .map_err(invalid_eval_plan)?;
+            let plan = builder.finish().map_err(invalid_eval_plan)?;
+            let compute_authority = fhe::ComputeAuthority::for_mint(
+                &ctx.accounts.compute_signer,
+                mint_key,
+                ctx.bumps.compute_signer,
+            )?;
+            let eval_accounts = fhe::EvalAccountSet::for_plan(
+                &plan,
+                [amount_output.account_info()],
+                [fhe::OutputAuthority::transaction_signer(
+                    &ctx.accounts.owner,
+                )],
+            )?;
+            fhe::eval(fhe::Eval {
+                context: fhe::EvalContext {
+                    payer: &ctx.accounts.owner,
+                    event_authority: &ctx.accounts.zama_event_authority,
+                    zama_program: &ctx.accounts.zama_program,
+                    host_config: &ctx.accounts.host_config,
+                    compute_authority,
+                    system_program: &ctx.accounts.system_program,
+                    instructions_sysvar: None,
+                },
+                accounts: &eval_accounts,
+                plan,
+            })?;
+            amount_output.handle()?
+        }
     };
     ctx.accounts.token_account.next_amount_nonce_sequence = nonce_sequence
         .checked_add(1)

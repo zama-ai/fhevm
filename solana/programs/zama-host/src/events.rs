@@ -19,8 +19,10 @@ pub struct HostConfigInitializedEvent {
     pub admin: Pubkey,
     /// Host-chain id used by handle derivation.
     pub chain_id: u64,
-    /// Configured input verifier authority.
-    pub input_verifier_authority: Pubkey,
+    /// Active input verifier set.
+    pub input_verifier_set: Pubkey,
+    /// Active input verifier-set version.
+    pub input_verifier_set_version: u64,
     /// Configured material commitment authority.
     pub material_authority: Pubkey,
     /// Configured test-shim authority.
@@ -36,6 +38,10 @@ pub struct HostConfigUpdatedEvent {
     pub config: Pubkey,
     /// Admin signer that performed the update.
     pub admin: Pubkey,
+    /// Active input verifier set.
+    pub input_verifier_set: Pubkey,
+    /// Active input verifier-set version.
+    pub input_verifier_set_version: u64,
     /// Current pause state.
     pub paused: bool,
     /// Current mock input gate.
@@ -45,6 +51,48 @@ pub struct HostConfigUpdatedEvent {
     /// Current grant deny-list gate.
     pub grant_deny_list_enabled: bool,
     /// Slot in which this update was applied.
+    pub updated_slot: u64,
+}
+
+/// Emitted when a threshold verifier set is created.
+#[event]
+pub struct VerifierSetCreatedEvent {
+    /// Event schema version.
+    pub version: u8,
+    /// Verifier-set PDA.
+    pub verifier_set: Pubkey,
+    /// Admin signer that created the set.
+    pub admin: Pubkey,
+    /// Protocol purpose for this set.
+    pub kind: u8,
+    /// Scope that disambiguates sets of the same kind.
+    pub scope: Pubkey,
+    /// Monotonic version chosen by the admin for rotation.
+    pub set_version: u64,
+    /// Number of distinct signer signatures required.
+    pub threshold: u8,
+    /// Number of active signers.
+    pub signer_count: u8,
+    /// Slot in which this set was created.
+    pub created_slot: u64,
+}
+
+/// Emitted when a threshold verifier set is disabled.
+#[event]
+pub struct VerifierSetDisabledEvent {
+    /// Event schema version.
+    pub version: u8,
+    /// Verifier-set PDA.
+    pub verifier_set: Pubkey,
+    /// Admin signer that disabled the set.
+    pub admin: Pubkey,
+    /// Protocol purpose for this set.
+    pub kind: u8,
+    /// Scope that disambiguates sets of the same kind.
+    pub scope: Pubkey,
+    /// Set version.
+    pub set_version: u64,
+    /// Slot in which this set was disabled.
     pub updated_slot: u64,
 }
 

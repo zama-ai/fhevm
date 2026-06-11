@@ -74,8 +74,7 @@ confidential_transfer
 confidential_call_transfer_receiver
   -> owner-gated split instruction that invokes a receiver hook program with caller-provided
      instruction data and remaining accounts
-  -> companion confidential_call_transfer_receiver_from instruction is gated by an active operator
-     row for ERC7984-style transferFromAndCall continuation
+  -> no operator/delegated receiver-hook continuation is exposed in the production token surface
   -> verifies return data binding the encrypted callback-success witness to the prior transfer
   -> creates a one-shot TransferReceiverHookCall marker keyed by mint and sent_handle before any
      later callback settlement, blocking duplicate receiver CPIs for the same transferred handle
@@ -206,8 +205,7 @@ Subjects:
   inline subjects store Pubkey + role flags.
   Overflow subjects use PDA("acl-permission", acl_record, subject).
   Durable ACL/material/delegation/replay evidence is intentionally not closeable in this PoC.
-  TransientSession and expired/revoked ConfidentialOperator rows are the reclaimable rent-bearing
-  accounts.
+  TransientSession accounts are the current host-side reclaimable rent-bearing accounts.
 
 KMS connector:
   chain_kind = "solana" fails closed for decryption ACL checks unless Solana witnesses are present.

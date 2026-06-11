@@ -231,6 +231,7 @@ mod tests {
     }
 
     impl SolanaNativeAccountFetcher for CountingFetcher {
+        #[allow(clippy::manual_async_fn)]
         fn fetch_accounts(
             &self,
             _account_keys: &[SolanaPubkeyBytes],
@@ -252,6 +253,7 @@ mod tests {
     struct NoopReplayStore;
 
     impl SolanaNativeReplayStore for NoopReplayStore {
+        #[allow(clippy::manual_async_fn)]
         fn reserve_accepted_request(
             &self,
             _accepted: &SolanaNativeAcceptedRequestV0,
@@ -290,6 +292,7 @@ mod tests {
             expiration_slot: 520,
             nonce: [77; 32],
             extra_data_hash: solana_native_extra_data_hash(&raw_extra_data),
+            allowed_acl_domain_keys: vec![[1; 32]],
             entries_hash: [99; 32],
         }
     }

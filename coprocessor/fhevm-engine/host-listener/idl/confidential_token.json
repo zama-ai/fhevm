@@ -1,0 +1,5571 @@
+{
+  "address": "5c9FeFEgjdwZJ5kasqUrHbijgFWXVzNoumYWsKvvMUt9",
+  "metadata": {
+    "name": "confidential_token",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Solana PoC confidential token using the Zama host program"
+  },
+  "docs": [
+    "Anchor entrypoint module for the confidential token PoC."
+  ],
+  "instructions": [
+    {
+      "name": "close_consumed_burn_redemption_request",
+      "docs": [
+        "Closes a consumed burn-redemption request witness."
+      ],
+      "discriminator": [
+        104,
+        139,
+        122,
+        231,
+        214,
+        45,
+        172,
+        159
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "docs": [
+            "Request owner and rent recipient."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "redemption_request",
+          "docs": [
+            "Consumed request witness to close."
+          ],
+          "writable": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "close_consumed_disclosure_request",
+      "docs": [
+        "Closes a consumed disclosure request witness."
+      ],
+      "discriminator": [
+        176,
+        68,
+        80,
+        2,
+        77,
+        234,
+        206,
+        213
+      ],
+      "accounts": [
+        {
+          "name": "requester",
+          "docs": [
+            "Requester and rent recipient."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "disclosure_request",
+          "docs": [
+            "Consumed request witness to close."
+          ],
+          "writable": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "close_expired_burn_redemption_request",
+      "docs": [
+        "Closes an expired, unconsumed burn-redemption request witness."
+      ],
+      "discriminator": [
+        60,
+        198,
+        28,
+        143,
+        76,
+        180,
+        245,
+        48
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "docs": [
+            "Request owner and rent recipient."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "redemption_request",
+          "docs": [
+            "Expired request witness to close."
+          ],
+          "writable": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "close_expired_disclosure_request",
+      "docs": [
+        "Closes an expired, unconsumed disclosure request witness."
+      ],
+      "discriminator": [
+        198,
+        93,
+        219,
+        236,
+        214,
+        143,
+        76,
+        12
+      ],
+      "accounts": [
+        {
+          "name": "requester",
+          "docs": [
+            "Requester and rent recipient."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "disclosure_request",
+          "docs": [
+            "Expired request witness to close."
+          ],
+          "writable": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "confidential_burn",
+      "docs": [
+        "Burns an encrypted amount by rotating the account balance and encrypted total supply."
+      ],
+      "discriminator": [
+        4,
+        132,
+        56,
+        237,
+        159,
+        77,
+        135,
+        180
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "docs": [
+            "Token owner and burn authority."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "mint",
+          "docs": [
+            "Confidential mint whose encrypted total supply is decreased."
+          ],
+          "writable": true
+        },
+        {
+          "name": "token_account",
+          "docs": [
+            "Token account whose balance is decreased."
+          ],
+          "writable": true
+        },
+        {
+          "name": "compute_signer",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  104,
+                  101,
+                  45,
+                  99,
+                  111,
+                  109,
+                  112,
+                  117,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "total_supply_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  116,
+                  97,
+                  108,
+                  45,
+                  115,
+                  117,
+                  112,
+                  112,
+                  108,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "current_compute_acl",
+          "docs": [
+            "Current balance ACL record used as the left-hand operand."
+          ]
+        },
+        {
+          "name": "current_total_supply_acl",
+          "docs": [
+            "Current total-supply ACL record used as the left-hand operand."
+          ]
+        },
+        {
+          "name": "amount_compute_acl",
+          "docs": [
+            "Encrypted burn amount ACL record."
+          ]
+        },
+        {
+          "name": "output_acl",
+          "writable": true
+        },
+        {
+          "name": "burned_amount_acl",
+          "writable": true
+        },
+        {
+          "name": "total_supply_output_acl",
+          "writable": true
+        },
+        {
+          "name": "zama_event_authority"
+        },
+        {
+          "name": "zama_program",
+          "docs": [
+            "ZamaHost program used for FHE operations."
+          ],
+          "address": "7fNskHjCN1DBrgsSKs3a6ZujTg4MJcKf2vCCK5DuvUaE"
+        },
+        {
+          "name": "host_config",
+          "docs": [
+            "ZamaHost config used for handle derivation."
+          ]
+        },
+        {
+          "name": "system_program",
+          "docs": [
+            "System program used for ACL account creation."
+          ],
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount_handle",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "confidential_call_transfer_receiver",
+      "docs": [
+        "Calls an arbitrary receiver hook and verifies its encrypted callback-success result."
+      ],
+      "discriminator": [
+        188,
+        77,
+        160,
+        76,
+        56,
+        143,
+        205,
+        231
+      ],
+      "accounts": [
+        {
+          "name": "caller",
+          "docs": [
+            "Original sender owner and rent payer for the hook invocation transaction."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "mint",
+          "docs": [
+            "Confidential mint."
+          ]
+        },
+        {
+          "name": "from_account",
+          "docs": [
+            "Original sender token account."
+          ]
+        },
+        {
+          "name": "to_account",
+          "docs": [
+            "Original recipient token account."
+          ]
+        },
+        {
+          "name": "compute_signer",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  104,
+                  101,
+                  45,
+                  99,
+                  111,
+                  109,
+                  112,
+                  117,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "sent_amount_acl",
+          "docs": [
+            "ACL record for the prior transfer's all-or-zero sent amount."
+          ]
+        },
+        {
+          "name": "callback_success_acl",
+          "docs": [
+            "ACL record for the receiver-produced encrypted callback success bit."
+          ]
+        },
+        {
+          "name": "receiver_program"
+        },
+        {
+          "name": "instructions_sysvar",
+          "address": "Sysvar1nstructions1111111111111111111111111"
+        },
+        {
+          "name": "hook_record",
+          "docs": [
+            "One-shot marker for this receiver hook invocation."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  114,
+                  97,
+                  110,
+                  115,
+                  102,
+                  101,
+                  114,
+                  45,
+                  104,
+                  111,
+                  111,
+                  107
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              },
+              {
+                "kind": "arg",
+                "path": "sent_handle"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "docs": [
+            "System program used to create the one-shot hook marker."
+          ],
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "sent_handle",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "callback_success_handle",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "receiver_instruction_data",
+          "type": "bytes"
+        }
+      ]
+    },
+    {
+      "name": "confidential_finalize_transfer_callback",
+      "docs": [
+        "Finalizes a prepared callback settlement by crediting refund and recording final transfer."
+      ],
+      "discriminator": [
+        183,
+        241,
+        151,
+        179,
+        74,
+        145,
+        123,
+        69
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "docs": [
+            "Rent payer for final callback-settlement output accounts."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "mint",
+          "docs": [
+            "Confidential mint."
+          ]
+        },
+        {
+          "name": "from_account",
+          "docs": [
+            "Original sender token account; receives any best-effort refund in this finalize step."
+          ],
+          "writable": true
+        },
+        {
+          "name": "to_account",
+          "docs": [
+            "Original recipient token account; must match the prepared settlement."
+          ]
+        },
+        {
+          "name": "compute_signer",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  104,
+                  101,
+                  45,
+                  99,
+                  111,
+                  109,
+                  112,
+                  117,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "from_current_compute_acl",
+          "docs": [
+            "Original sender current balance ACL record."
+          ]
+        },
+        {
+          "name": "sent_amount_acl",
+          "docs": [
+            "ACL record for the prior transfer's all-or-zero sent amount."
+          ]
+        },
+        {
+          "name": "settlement_record",
+          "docs": [
+            "Prepared callback settlement."
+          ],
+          "writable": true
+        },
+        {
+          "name": "refund_amount_acl",
+          "docs": [
+            "ACL record for the prepared refund amount."
+          ]
+        },
+        {
+          "name": "from_output_acl",
+          "writable": true
+        },
+        {
+          "name": "transferred_amount_acl",
+          "writable": true
+        },
+        {
+          "name": "zama_event_authority"
+        },
+        {
+          "name": "zama_program",
+          "docs": [
+            "ZamaHost program used for FHE operations."
+          ],
+          "address": "7fNskHjCN1DBrgsSKs3a6ZujTg4MJcKf2vCCK5DuvUaE"
+        },
+        {
+          "name": "host_config",
+          "docs": [
+            "ZamaHost config used for handle derivation."
+          ]
+        },
+        {
+          "name": "system_program",
+          "docs": [
+            "System program used for ACL account creation."
+          ],
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "confidential_prepare_transfer_callback",
+      "docs": [
+        "Prepares receiver callback settlement by computing the encrypted refund."
+      ],
+      "discriminator": [
+        151,
+        109,
+        203,
+        43,
+        64,
+        245,
+        132,
+        149
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "docs": [
+            "Rent payer for callback-settlement output accounts."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "callback_authority",
+          "docs": [
+            "",
+            "This authority is already enforced by the callback-success ACL record; it",
+            "does not sign settlement so a failed callback can be refunded without",
+            "recipient cooperation after the hook."
+          ]
+        },
+        {
+          "name": "mint",
+          "docs": [
+            "Confidential mint."
+          ]
+        },
+        {
+          "name": "from_account",
+          "docs": [
+            "Original sender token account."
+          ]
+        },
+        {
+          "name": "to_account",
+          "docs": [
+            "Original recipient token account; pays any best-effort refund in this prepare step."
+          ],
+          "writable": true
+        },
+        {
+          "name": "compute_signer",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  104,
+                  101,
+                  45,
+                  99,
+                  111,
+                  109,
+                  112,
+                  117,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "to_current_compute_acl",
+          "docs": [
+            "Original recipient current balance ACL record."
+          ]
+        },
+        {
+          "name": "sent_amount_acl",
+          "docs": [
+            "ACL record for the prior transfer's all-or-zero sent amount."
+          ]
+        },
+        {
+          "name": "callback_success_acl",
+          "docs": [
+            "ACL record for the encrypted callback success bit."
+          ]
+        },
+        {
+          "name": "hook_record",
+          "docs": [
+            "Verified receiver-hook invocation for this sent amount."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  114,
+                  97,
+                  110,
+                  115,
+                  102,
+                  101,
+                  114,
+                  45,
+                  104,
+                  111,
+                  111,
+                  107
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              },
+              {
+                "kind": "arg",
+                "path": "sent_handle"
+              }
+            ]
+          }
+        },
+        {
+          "name": "settlement_record",
+          "docs": [
+            "Replay marker for this callback settlement."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  114,
+                  97,
+                  110,
+                  115,
+                  102,
+                  101,
+                  114,
+                  45,
+                  99,
+                  97,
+                  108,
+                  108,
+                  98,
+                  97,
+                  99,
+                  107
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              },
+              {
+                "kind": "arg",
+                "path": "sent_handle"
+              }
+            ]
+          }
+        },
+        {
+          "name": "to_output_acl",
+          "writable": true
+        },
+        {
+          "name": "refund_amount_acl",
+          "writable": true
+        },
+        {
+          "name": "zama_event_authority"
+        },
+        {
+          "name": "zama_program",
+          "docs": [
+            "ZamaHost program used for FHE operations."
+          ],
+          "address": "7fNskHjCN1DBrgsSKs3a6ZujTg4MJcKf2vCCK5DuvUaE"
+        },
+        {
+          "name": "host_config",
+          "docs": [
+            "ZamaHost config used for handle derivation."
+          ]
+        },
+        {
+          "name": "system_program",
+          "docs": [
+            "System program used for ACL and replay-marker account creation."
+          ],
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "sent_handle",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "callback_success_handle",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "confidential_transfer",
+      "docs": [
+        "Transfers an encrypted amount by rotating the sender and recipient balance handles."
+      ],
+      "discriminator": [
+        97,
+        79,
+        128,
+        58,
+        134,
+        222,
+        73,
+        143
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "docs": [
+            "Sender and transfer authority."
+          ],
+          "signer": true
+        },
+        {
+          "name": "payer",
+          "docs": [
+            "Pays rent for output ACL records."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "mint",
+          "docs": [
+            "Confidential mint."
+          ]
+        },
+        {
+          "name": "from_account",
+          "docs": [
+            "Sender token account."
+          ],
+          "writable": true
+        },
+        {
+          "name": "to_account",
+          "writable": true
+        },
+        {
+          "name": "compute_signer",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  104,
+                  101,
+                  45,
+                  99,
+                  111,
+                  109,
+                  112,
+                  117,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "from_current_compute_acl",
+          "docs": [
+            "Sender current balance ACL record."
+          ]
+        },
+        {
+          "name": "to_current_compute_acl",
+          "docs": [
+            "Recipient current balance ACL record."
+          ]
+        },
+        {
+          "name": "amount_compute_acl",
+          "docs": [
+            "Encrypted amount ACL record."
+          ]
+        },
+        {
+          "name": "from_output_acl",
+          "writable": true
+        },
+        {
+          "name": "transferred_amount_acl",
+          "writable": true
+        },
+        {
+          "name": "to_output_acl",
+          "writable": true
+        },
+        {
+          "name": "zama_event_authority"
+        },
+        {
+          "name": "zama_program",
+          "docs": [
+            "ZamaHost program used for FHE operations."
+          ],
+          "address": "7fNskHjCN1DBrgsSKs3a6ZujTg4MJcKf2vCCK5DuvUaE"
+        },
+        {
+          "name": "host_config",
+          "docs": [
+            "ZamaHost config used for handle derivation."
+          ]
+        },
+        {
+          "name": "system_program",
+          "docs": [
+            "System program used for ACL account creation."
+          ],
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount_handle",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "create_random_amount",
+      "docs": [
+        "Creates a token-scoped random encrypted amount for transfer or burn flows."
+      ],
+      "discriminator": [
+        205,
+        99,
+        135,
+        216,
+        17,
+        157,
+        31,
+        197
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "docs": [
+            "Token account owner and rent payer."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "mint",
+          "docs": [
+            "Confidential mint that scopes the encrypted amount."
+          ]
+        },
+        {
+          "name": "token_account",
+          "docs": [
+            "Owner's confidential token account carrying the amount nonce allocator."
+          ],
+          "writable": true
+        },
+        {
+          "name": "compute_signer",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  104,
+                  101,
+                  45,
+                  99,
+                  111,
+                  109,
+                  112,
+                  117,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "amount_acl_record",
+          "writable": true
+        },
+        {
+          "name": "zama_event_authority"
+        },
+        {
+          "name": "zama_program",
+          "docs": [
+            "ZamaHost program used to create the random handle."
+          ],
+          "address": "7fNskHjCN1DBrgsSKs3a6ZujTg4MJcKf2vCCK5DuvUaE"
+        },
+        {
+          "name": "host_config",
+          "docs": [
+            "ZamaHost config used for handle derivation."
+          ]
+        },
+        {
+          "name": "system_program",
+          "docs": [
+            "System program used for ACL account creation."
+          ],
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount_kind",
+          "type": {
+            "defined": {
+              "name": "ConfidentialAmountKind"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "create_random_bounded_amount",
+      "docs": [
+        "Creates a token-scoped bounded random encrypted amount for transfer or burn flows."
+      ],
+      "discriminator": [
+        208,
+        143,
+        226,
+        186,
+        110,
+        188,
+        41,
+        175
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "docs": [
+            "Token account owner and rent payer."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "mint",
+          "docs": [
+            "Confidential mint that scopes the encrypted amount."
+          ]
+        },
+        {
+          "name": "token_account",
+          "docs": [
+            "Owner's confidential token account carrying the amount nonce allocator."
+          ],
+          "writable": true
+        },
+        {
+          "name": "compute_signer",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  104,
+                  101,
+                  45,
+                  99,
+                  111,
+                  109,
+                  112,
+                  117,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "amount_acl_record",
+          "writable": true
+        },
+        {
+          "name": "zama_event_authority"
+        },
+        {
+          "name": "zama_program",
+          "docs": [
+            "ZamaHost program used to create the random handle."
+          ],
+          "address": "7fNskHjCN1DBrgsSKs3a6ZujTg4MJcKf2vCCK5DuvUaE"
+        },
+        {
+          "name": "host_config",
+          "docs": [
+            "ZamaHost config used for handle derivation."
+          ]
+        },
+        {
+          "name": "system_program",
+          "docs": [
+            "System program used for ACL account creation."
+          ],
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount_kind",
+          "type": {
+            "defined": {
+              "name": "ConfidentialAmountKind"
+            }
+          }
+        },
+        {
+          "name": "upper_bound",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "disclose_amount",
+      "docs": [
+        "Emits a KMS-certified cleartext for any token-scoped encrypted amount."
+      ],
+      "discriminator": [
+        194,
+        10,
+        172,
+        169,
+        192,
+        203,
+        74,
+        39
+      ],
+      "accounts": [
+        {
+          "name": "mint",
+          "docs": [
+            "Confidential mint carrying the disclosure verifier-set pointer."
+          ]
+        },
+        {
+          "name": "amount_acl_record",
+          "docs": [
+            "Token-scoped amount ACL record for the disclosed handle."
+          ]
+        },
+        {
+          "name": "amount_material_commitment",
+          "docs": [
+            "Material commitment witness for the disclosed handle."
+          ]
+        },
+        {
+          "name": "disclosure_request",
+          "docs": [
+            "Account-backed disclosure request witness."
+          ],
+          "writable": true
+        },
+        {
+          "name": "disclosure_verifier_set",
+          "docs": [
+            "Threshold verifier set whose quorum signs the response certificate."
+          ]
+        },
+        {
+          "name": "host_config",
+          "docs": [
+            "ZamaHost config bound into the request and certificate."
+          ]
+        },
+        {
+          "name": "instructions_sysvar"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount_handle",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "cleartext_amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "disclose_balance",
+      "docs": [
+        "Emits a KMS-certified cleartext for the current balance handle."
+      ],
+      "discriminator": [
+        166,
+        8,
+        221,
+        73,
+        167,
+        131,
+        62,
+        4
+      ],
+      "accounts": [
+        {
+          "name": "mint",
+          "docs": [
+            "Confidential mint carrying the disclosure verifier-set pointer."
+          ]
+        },
+        {
+          "name": "token_account",
+          "docs": [
+            "Confidential token account whose requested balance handle is disclosed."
+          ]
+        },
+        {
+          "name": "balance_acl_record",
+          "docs": [
+            "Balance ACL record for the requested handle."
+          ]
+        },
+        {
+          "name": "balance_material_commitment",
+          "docs": [
+            "Material commitment witness for the disclosed handle."
+          ]
+        },
+        {
+          "name": "disclosure_request",
+          "docs": [
+            "Account-backed disclosure request witness."
+          ],
+          "writable": true
+        },
+        {
+          "name": "disclosure_verifier_set",
+          "docs": [
+            "Threshold verifier set whose quorum signs the response certificate."
+          ]
+        },
+        {
+          "name": "host_config",
+          "docs": [
+            "ZamaHost config bound into the request and certificate."
+          ]
+        },
+        {
+          "name": "instructions_sysvar"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "cleartext_amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "initialize_mint",
+      "docs": [
+        "Initializes a confidential mint and records its host ACL domain."
+      ],
+      "discriminator": [
+        209,
+        42,
+        195,
+        4,
+        129,
+        85,
+        209,
+        44
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "docs": [
+            "Mint authority and rent payer."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "mint",
+          "docs": [
+            "Confidential mint account created by this instruction."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "underlying_mint",
+          "docs": [
+            "Underlying SPL mint wrapped by this confidential mint."
+          ]
+        },
+        {
+          "name": "compute_signer",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  104,
+                  101,
+                  45,
+                  99,
+                  111,
+                  109,
+                  112,
+                  117,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "total_supply_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  116,
+                  97,
+                  108,
+                  45,
+                  115,
+                  117,
+                  112,
+                  112,
+                  108,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "disclosure_verifier_set",
+          "docs": [
+            "Threshold verifier set whose quorum certifies disclosure responses."
+          ]
+        },
+        {
+          "name": "redemption_verifier_set",
+          "docs": [
+            "Threshold verifier set whose quorum certifies burn-redemption responses."
+          ]
+        },
+        {
+          "name": "total_supply_acl_record",
+          "writable": true
+        },
+        {
+          "name": "zama_event_authority"
+        },
+        {
+          "name": "zama_program",
+          "docs": [
+            "ZamaHost program used to create the initial total-supply handle."
+          ],
+          "address": "7fNskHjCN1DBrgsSKs3a6ZujTg4MJcKf2vCCK5DuvUaE"
+        },
+        {
+          "name": "host_config",
+          "docs": [
+            "ZamaHost config used for handle derivation."
+          ]
+        },
+        {
+          "name": "system_program",
+          "docs": [
+            "System program used for account creation."
+          ],
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "initialize_token_account",
+      "docs": [
+        "Initializes a token account and creates its initial confidential balance handle."
+      ],
+      "discriminator": [
+        150,
+        85,
+        44,
+        28,
+        149,
+        14,
+        210,
+        26
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "docs": [
+            "Account owner and rent payer."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "mint",
+          "docs": [
+            "Confidential mint this account belongs to."
+          ]
+        },
+        {
+          "name": "compute_signer",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  104,
+                  101,
+                  45,
+                  99,
+                  111,
+                  109,
+                  112,
+                  117,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110,
+                  45,
+                  97,
+                  99,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "acl_record",
+          "writable": true
+        },
+        {
+          "name": "zama_event_authority"
+        },
+        {
+          "name": "zama_program",
+          "docs": [
+            "ZamaHost program used to create the initial balance handle."
+          ],
+          "address": "7fNskHjCN1DBrgsSKs3a6ZujTg4MJcKf2vCCK5DuvUaE"
+        },
+        {
+          "name": "host_config",
+          "docs": [
+            "ZamaHost config used for handle derivation."
+          ]
+        },
+        {
+          "name": "system_program",
+          "docs": [
+            "System program used for account creation."
+          ],
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "initial_balance",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "migrate_mint_verifier_sets",
+      "docs": [
+        "Migrates a legacy mint to split disclosure and burn-redemption verifier sets."
+      ],
+      "discriminator": [
+        206,
+        204,
+        13,
+        16,
+        134,
+        234,
+        229,
+        1
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "docs": [
+            "Rent payer for any account-size top-up needed by realloc."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "authority",
+          "docs": [
+            "Legacy mint authority."
+          ],
+          "signer": true
+        },
+        {
+          "name": "mint",
+          "writable": true
+        },
+        {
+          "name": "disclosure_verifier_set",
+          "docs": [
+            "Active threshold verifier set for disclosure responses."
+          ]
+        },
+        {
+          "name": "redemption_verifier_set",
+          "docs": [
+            "Active threshold verifier set for burn-redemption responses."
+          ]
+        },
+        {
+          "name": "system_program",
+          "docs": [
+            "System program used for rent top-up before realloc."
+          ],
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "redeem_burned_amount",
+      "docs": [
+        "Redeems a previously burned encrypted amount from the underlying-token vault."
+      ],
+      "discriminator": [
+        75,
+        99,
+        73,
+        176,
+        121,
+        166,
+        244,
+        3
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "docs": [
+            "Token owner and redemption recipient."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "mint",
+          "docs": [
+            "Confidential mint whose vault backs the redeemed burned amount."
+          ]
+        },
+        {
+          "name": "token_account",
+          "docs": [
+            "Confidential token account that produced the burned amount."
+          ]
+        },
+        {
+          "name": "underlying_mint",
+          "docs": [
+            "Underlying SPL mint."
+          ]
+        },
+        {
+          "name": "vault_usdc",
+          "docs": [
+            "Program vault USDC token account."
+          ],
+          "writable": true
+        },
+        {
+          "name": "destination_usdc",
+          "docs": [
+            "Owner's destination USDC token account."
+          ],
+          "writable": true
+        },
+        {
+          "name": "vault_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116,
+                  45,
+                  97,
+                  117,
+                  116,
+                  104,
+                  111,
+                  114,
+                  105,
+                  116,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "burned_amount_acl",
+          "docs": [
+            "Burned amount ACL record whose handle is redeemed."
+          ]
+        },
+        {
+          "name": "burned_material_commitment",
+          "docs": [
+            "Material commitment witness for the burned handle."
+          ]
+        },
+        {
+          "name": "redemption_request",
+          "docs": [
+            "Account-backed redemption request witness."
+          ],
+          "writable": true
+        },
+        {
+          "name": "redemption_verifier_set",
+          "docs": [
+            "Threshold verifier set whose quorum signs the redemption certificate."
+          ]
+        },
+        {
+          "name": "redemption_record",
+          "docs": [
+            "Replay marker for this burned handle."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  117,
+                  114,
+                  110,
+                  45,
+                  114,
+                  101,
+                  100,
+                  101,
+                  109,
+                  112,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              },
+              {
+                "kind": "arg",
+                "path": "burned_handle"
+              }
+            ]
+          }
+        },
+        {
+          "name": "instructions_sysvar"
+        },
+        {
+          "name": "host_config",
+          "docs": [
+            "ZamaHost config bound into the request and certificate."
+          ]
+        },
+        {
+          "name": "token_program",
+          "docs": [
+            "SPL token program."
+          ],
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "docs": [
+            "System program used for the replay marker."
+          ],
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "burned_handle",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "cleartext_amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "request_burn_redemption",
+      "docs": [
+        "Requests KMS certification for redeeming a burned encrypted amount."
+      ],
+      "discriminator": [
+        249,
+        11,
+        114,
+        238,
+        31,
+        157,
+        245,
+        116
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "docs": [
+            "Token owner and redemption authority."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "mint",
+          "docs": [
+            "Confidential mint whose vault backs the redeemed burned amount."
+          ]
+        },
+        {
+          "name": "token_account",
+          "docs": [
+            "Confidential token account that produced the burned amount."
+          ]
+        },
+        {
+          "name": "underlying_mint",
+          "docs": [
+            "Underlying SPL mint."
+          ]
+        },
+        {
+          "name": "destination_usdc",
+          "docs": [
+            "Owner's destination USDC token account."
+          ]
+        },
+        {
+          "name": "burned_amount_acl",
+          "docs": [
+            "Burned amount ACL record whose handle will be redeemed."
+          ],
+          "writable": true
+        },
+        {
+          "name": "burned_material_commitment",
+          "docs": [
+            "Material commitment witness for the burned handle."
+          ]
+        },
+        {
+          "name": "redemption_request",
+          "docs": [
+            "Account-backed request witness consumed by the redemption path."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  117,
+                  114,
+                  110,
+                  45,
+                  114,
+                  101,
+                  100,
+                  101,
+                  109,
+                  112,
+                  116,
+                  105,
+                  111,
+                  110,
+                  45,
+                  114,
+                  101,
+                  113,
+                  117,
+                  101,
+                  115,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              },
+              {
+                "kind": "arg",
+                "path": "burned_handle"
+              },
+              {
+                "kind": "arg",
+                "path": "request_nonce"
+              }
+            ]
+          }
+        },
+        {
+          "name": "redemption_verifier_set",
+          "docs": [
+            "Threshold verifier set expected to certify the redemption response."
+          ]
+        },
+        {
+          "name": "authority_permission_record",
+          "optional": true
+        },
+        {
+          "name": "deny_subject_record",
+          "optional": true
+        },
+        {
+          "name": "zama_event_authority"
+        },
+        {
+          "name": "zama_program",
+          "docs": [
+            "ZamaHost program used to update the ACL record."
+          ],
+          "address": "7fNskHjCN1DBrgsSKs3a6ZujTg4MJcKf2vCCK5DuvUaE"
+        },
+        {
+          "name": "host_config",
+          "docs": [
+            "ZamaHost config used for pause and deny-list checks."
+          ]
+        },
+        {
+          "name": "system_program",
+          "docs": [
+            "System program used for request witness creation."
+          ],
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "burned_handle",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "request_nonce",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "expires_slot",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "request_disclose_amount",
+      "docs": [
+        "Requests public disclosure for any token-scoped encrypted amount handle."
+      ],
+      "discriminator": [
+        188,
+        53,
+        163,
+        215,
+        212,
+        213,
+        230,
+        174
+      ],
+      "accounts": [
+        {
+          "name": "requester",
+          "docs": [
+            "Requester that must have `ACL_ROLE_PUBLIC_DECRYPT` on the amount ACL."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "mint",
+          "docs": [
+            "Confidential mint that scopes the encrypted amount."
+          ]
+        },
+        {
+          "name": "amount_acl_record",
+          "docs": [
+            "Token-scoped amount ACL record. Updated by ZamaHost CPI."
+          ],
+          "writable": true
+        },
+        {
+          "name": "amount_material_commitment",
+          "docs": [
+            "Material commitment witness for the disclosed handle."
+          ]
+        },
+        {
+          "name": "disclosure_request",
+          "docs": [
+            "Account-backed request witness consumed by the KMS response path."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  105,
+                  115,
+                  99,
+                  108,
+                  111,
+                  115,
+                  117,
+                  114,
+                  101,
+                  45,
+                  114,
+                  101,
+                  113,
+                  117,
+                  101,
+                  115,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              },
+              {
+                "kind": "account",
+                "path": "requester"
+              },
+              {
+                "kind": "arg",
+                "path": "amount_handle"
+              },
+              {
+                "kind": "arg",
+                "path": "request_nonce"
+              }
+            ]
+          }
+        },
+        {
+          "name": "disclosure_verifier_set",
+          "docs": [
+            "Threshold verifier set expected to certify the disclosure response."
+          ]
+        },
+        {
+          "name": "authority_permission_record",
+          "optional": true
+        },
+        {
+          "name": "deny_subject_record",
+          "optional": true
+        },
+        {
+          "name": "zama_event_authority"
+        },
+        {
+          "name": "zama_program",
+          "docs": [
+            "ZamaHost program used to update the ACL record."
+          ],
+          "address": "7fNskHjCN1DBrgsSKs3a6ZujTg4MJcKf2vCCK5DuvUaE"
+        },
+        {
+          "name": "host_config",
+          "docs": [
+            "ZamaHost config used for pause and deny-list checks."
+          ]
+        },
+        {
+          "name": "system_program",
+          "docs": [
+            "System program used for request witness creation."
+          ],
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount_handle",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "request_nonce",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "expires_slot",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "request_disclose_balance",
+      "docs": [
+        "Requests public disclosure for the current confidential balance handle."
+      ],
+      "discriminator": [
+        185,
+        54,
+        155,
+        207,
+        27,
+        89,
+        166,
+        230
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "docs": [
+            "Token account owner and disclosure authority."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "mint",
+          "docs": [
+            "Confidential mint."
+          ]
+        },
+        {
+          "name": "token_account",
+          "docs": [
+            "Confidential token account whose current balance is disclosed."
+          ]
+        },
+        {
+          "name": "balance_acl_record",
+          "docs": [
+            "Current balance ACL record. Updated by ZamaHost CPI."
+          ],
+          "writable": true
+        },
+        {
+          "name": "balance_material_commitment",
+          "docs": [
+            "Material commitment witness for the disclosed handle."
+          ]
+        },
+        {
+          "name": "disclosure_request",
+          "docs": [
+            "Account-backed request witness consumed by the KMS response path."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  105,
+                  115,
+                  99,
+                  108,
+                  111,
+                  115,
+                  117,
+                  114,
+                  101,
+                  45,
+                  114,
+                  101,
+                  113,
+                  117,
+                  101,
+                  115,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              },
+              {
+                "kind": "account",
+                "path": "token_account.balance_handle",
+                "account": "ConfidentialTokenAccount"
+              },
+              {
+                "kind": "arg",
+                "path": "request_nonce"
+              }
+            ]
+          }
+        },
+        {
+          "name": "disclosure_verifier_set",
+          "docs": [
+            "Threshold verifier set expected to certify the disclosure response."
+          ]
+        },
+        {
+          "name": "authority_permission_record",
+          "optional": true
+        },
+        {
+          "name": "deny_subject_record",
+          "optional": true
+        },
+        {
+          "name": "zama_event_authority"
+        },
+        {
+          "name": "zama_program",
+          "docs": [
+            "ZamaHost program used to update the ACL record."
+          ],
+          "address": "7fNskHjCN1DBrgsSKs3a6ZujTg4MJcKf2vCCK5DuvUaE"
+        },
+        {
+          "name": "host_config",
+          "docs": [
+            "ZamaHost config used for pause and deny-list checks."
+          ]
+        },
+        {
+          "name": "system_program",
+          "docs": [
+            "System program used for request witness creation."
+          ],
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "request_nonce",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "expires_slot",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "update_mint_verifier_sets",
+      "docs": [
+        "Rotates the token-scoped verifier sets used by future KMS request witnesses."
+      ],
+      "discriminator": [
+        205,
+        220,
+        245,
+        175,
+        217,
+        59,
+        172,
+        191
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "docs": [
+            "Mint authority."
+          ],
+          "signer": true
+        },
+        {
+          "name": "mint",
+          "docs": [
+            "Confidential mint whose verifier-set pointers are updated."
+          ],
+          "writable": true
+        },
+        {
+          "name": "disclosure_verifier_set",
+          "docs": [
+            "Active threshold verifier set for future disclosure requests."
+          ]
+        },
+        {
+          "name": "redemption_verifier_set",
+          "docs": [
+            "Active threshold verifier set for future burn-redemption requests."
+          ]
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "wrap_usdc",
+      "docs": [
+        "Escrows public USDC and rotates the confidential balance by `amount`."
+      ],
+      "discriminator": [
+        88,
+        246,
+        99,
+        254,
+        37,
+        183,
+        111,
+        12
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "docs": [
+            "Token owner and transfer authority."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "mint",
+          "docs": [
+            "Confidential mint."
+          ],
+          "writable": true
+        },
+        {
+          "name": "token_account",
+          "docs": [
+            "Confidential token account whose balance is increased."
+          ],
+          "writable": true
+        },
+        {
+          "name": "underlying_mint",
+          "docs": [
+            "Underlying SPL mint."
+          ]
+        },
+        {
+          "name": "user_usdc",
+          "docs": [
+            "Owner's source USDC token account."
+          ],
+          "writable": true
+        },
+        {
+          "name": "vault_usdc",
+          "docs": [
+            "Program vault USDC token account."
+          ],
+          "writable": true
+        },
+        {
+          "name": "vault_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116,
+                  45,
+                  97,
+                  117,
+                  116,
+                  104,
+                  111,
+                  114,
+                  105,
+                  116,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "compute_signer",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  104,
+                  101,
+                  45,
+                  99,
+                  111,
+                  109,
+                  112,
+                  117,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "total_supply_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  116,
+                  97,
+                  108,
+                  45,
+                  115,
+                  117,
+                  112,
+                  112,
+                  108,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "current_compute_acl",
+          "docs": [
+            "Current balance ACL record used as the left-hand operand."
+          ]
+        },
+        {
+          "name": "current_total_supply_acl",
+          "docs": [
+            "Current total-supply ACL record used as the left-hand operand."
+          ]
+        },
+        {
+          "name": "output_acl",
+          "writable": true
+        },
+        {
+          "name": "total_supply_output_acl",
+          "writable": true
+        },
+        {
+          "name": "zama_event_authority"
+        },
+        {
+          "name": "zama_program",
+          "docs": [
+            "ZamaHost program used for FHE operations."
+          ],
+          "address": "7fNskHjCN1DBrgsSKs3a6ZujTg4MJcKf2vCCK5DuvUaE"
+        },
+        {
+          "name": "host_config",
+          "docs": [
+            "ZamaHost config used for handle derivation."
+          ]
+        },
+        {
+          "name": "token_program",
+          "docs": [
+            "SPL token program."
+          ],
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "docs": [
+            "System program used for ACL account creation."
+          ],
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "BurnRedemption",
+      "discriminator": [
+        98,
+        115,
+        13,
+        164,
+        230,
+        159,
+        128,
+        195
+      ]
+    },
+    {
+      "name": "BurnRedemptionRequest",
+      "discriminator": [
+        162,
+        190,
+        151,
+        208,
+        178,
+        0,
+        226,
+        157
+      ]
+    },
+    {
+      "name": "ConfidentialMint",
+      "discriminator": [
+        63,
+        117,
+        199,
+        24,
+        52,
+        30,
+        202,
+        4
+      ]
+    },
+    {
+      "name": "ConfidentialTokenAccount",
+      "discriminator": [
+        162,
+        241,
+        85,
+        134,
+        20,
+        132,
+        103,
+        199
+      ]
+    },
+    {
+      "name": "DisclosureRequest",
+      "discriminator": [
+        54,
+        30,
+        228,
+        141,
+        105,
+        30,
+        153,
+        227
+      ]
+    },
+    {
+      "name": "TransferCallbackSettlement",
+      "discriminator": [
+        206,
+        27,
+        140,
+        3,
+        83,
+        219,
+        146,
+        61
+      ]
+    },
+    {
+      "name": "TransferReceiverHookCall",
+      "discriminator": [
+        180,
+        50,
+        17,
+        17,
+        52,
+        29,
+        39,
+        180
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "AmountDisclosedEvent",
+      "discriminator": [
+        133,
+        166,
+        200,
+        249,
+        252,
+        169,
+        212,
+        14
+      ]
+    },
+    {
+      "name": "AmountDisclosureRequestedEvent",
+      "discriminator": [
+        217,
+        177,
+        208,
+        84,
+        242,
+        195,
+        251,
+        68
+      ]
+    },
+    {
+      "name": "BalanceDisclosedEvent",
+      "discriminator": [
+        67,
+        181,
+        92,
+        233,
+        239,
+        7,
+        86,
+        84
+      ]
+    },
+    {
+      "name": "BalanceDisclosureRequestedEvent",
+      "discriminator": [
+        94,
+        196,
+        252,
+        154,
+        178,
+        26,
+        177,
+        169
+      ]
+    },
+    {
+      "name": "BalanceHandleUpdatedEvent",
+      "discriminator": [
+        218,
+        115,
+        100,
+        232,
+        176,
+        152,
+        68,
+        72
+      ]
+    },
+    {
+      "name": "BurnRedeemedEvent",
+      "discriminator": [
+        6,
+        82,
+        161,
+        171,
+        88,
+        140,
+        98,
+        152
+      ]
+    },
+    {
+      "name": "BurnRedemptionRequestedEvent",
+      "discriminator": [
+        216,
+        124,
+        73,
+        131,
+        64,
+        33,
+        146,
+        213
+      ]
+    },
+    {
+      "name": "ConfidentialBurnEvent",
+      "discriminator": [
+        218,
+        41,
+        125,
+        0,
+        227,
+        226,
+        179,
+        50
+      ]
+    },
+    {
+      "name": "ConfidentialMintMigratedEvent",
+      "discriminator": [
+        222,
+        252,
+        8,
+        28,
+        188,
+        203,
+        149,
+        3
+      ]
+    },
+    {
+      "name": "ConfidentialTransferEvent",
+      "discriminator": [
+        24,
+        221,
+        223,
+        133,
+        221,
+        78,
+        35,
+        85
+      ]
+    },
+    {
+      "name": "MintVerifierSetsUpdatedEvent",
+      "discriminator": [
+        233,
+        215,
+        109,
+        127,
+        211,
+        112,
+        83,
+        201
+      ]
+    },
+    {
+      "name": "RandomAmountCreatedEvent",
+      "discriminator": [
+        197,
+        125,
+        32,
+        173,
+        115,
+        70,
+        150,
+        4
+      ]
+    },
+    {
+      "name": "TotalSupplyHandleUpdatedEvent",
+      "discriminator": [
+        140,
+        218,
+        185,
+        16,
+        174,
+        158,
+        75,
+        70
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "OwnerMismatch",
+      "msg": "Token owner does not match signer"
+    },
+    {
+      "code": 6001,
+      "name": "MintMismatch",
+      "msg": "Token account mint does not match"
+    },
+    {
+      "code": 6002,
+      "name": "MintAccountMismatch",
+      "msg": "Confidential mint account is invalid"
+    },
+    {
+      "code": 6003,
+      "name": "InvalidMintConfig",
+      "msg": "Confidential mint config is invalid"
+    },
+    {
+      "code": 6004,
+      "name": "MintAuthorityMismatch",
+      "msg": "Confidential mint authority does not match signer"
+    },
+    {
+      "code": 6005,
+      "name": "UnexpectedRemainingAccounts",
+      "msg": "instruction has unexpected remaining accounts"
+    },
+    {
+      "code": 6006,
+      "name": "TokenAccountMismatch",
+      "msg": "Confidential token account is not canonical"
+    },
+    {
+      "code": 6007,
+      "name": "AclNonceOverflow",
+      "msg": "ACL nonce overflow"
+    },
+    {
+      "code": 6008,
+      "name": "NonZeroInitialBalanceUnsupported",
+      "msg": "nonzero initial confidential balances are unsupported"
+    },
+    {
+      "code": 6009,
+      "name": "UnderlyingMintMismatch",
+      "msg": "Underlying mint does not match confidential mint"
+    },
+    {
+      "code": 6010,
+      "name": "VaultAuthorityMismatch",
+      "msg": "Vault token account authority does not match vault authority PDA"
+    },
+    {
+      "code": 6011,
+      "name": "VaultAccountMismatch",
+      "msg": "Vault token account is not the canonical mint vault"
+    },
+    {
+      "code": 6012,
+      "name": "AclDomainKeyMismatch",
+      "msg": "Confidential mint ACL domain key is invalid"
+    },
+    {
+      "code": 6013,
+      "name": "ComputeSignerMismatch",
+      "msg": "Compute signer does not match confidential mint"
+    },
+    {
+      "code": 6014,
+      "name": "CurrentAclRecordMismatch",
+      "msg": "current ACL record does not match token account state"
+    },
+    {
+      "code": 6015,
+      "name": "AmountHandleTypeMismatch",
+      "msg": "transfer amount handle type is invalid"
+    },
+    {
+      "code": 6016,
+      "name": "AmountAclMismatch",
+      "msg": "transfer amount ACL record is invalid"
+    },
+    {
+      "code": 6017,
+      "name": "TotalSupplyAuthorityMismatch",
+      "msg": "total supply authority does not match mint"
+    },
+    {
+      "code": 6018,
+      "name": "DisclosureProofSignatureMissing",
+      "msg": "disclosure proof signature is missing or invalid"
+    },
+    {
+      "code": 6019,
+      "name": "VerifierSetMismatch",
+      "msg": "verifier set account is invalid"
+    },
+    {
+      "code": 6020,
+      "name": "VerifierThresholdNotMet",
+      "msg": "verifier-set proof threshold was not met"
+    },
+    {
+      "code": 6021,
+      "name": "DuplicateVerifierSignature",
+      "msg": "verifier-set proof contains a duplicate signer"
+    },
+    {
+      "code": 6022,
+      "name": "RequestWitnessMismatch",
+      "msg": "request witness does not match"
+    },
+    {
+      "code": 6023,
+      "name": "RequestWitnessUnavailable",
+      "msg": "request witness is expired or already consumed"
+    },
+    {
+      "code": 6024,
+      "name": "MaterialCommitmentMismatch",
+      "msg": "material commitment witness does not match"
+    },
+    {
+      "code": 6025,
+      "name": "PublicDecryptNotReleased",
+      "msg": "handle is not released for public decrypt"
+    },
+    {
+      "code": 6026,
+      "name": "CallbackSettlementMismatch",
+      "msg": "transfer callback settlement accounts are invalid"
+    },
+    {
+      "code": 6027,
+      "name": "ReceiverHookMismatch",
+      "msg": "receiver hook return data is invalid"
+    },
+    {
+      "code": 6028,
+      "name": "ReceiverHookInputTooLarge",
+      "msg": "receiver hook input exceeds program limits"
+    },
+    {
+      "code": 6029,
+      "name": "InvalidFheEvalPlan",
+      "msg": "FHE eval plan is invalid"
+    },
+    {
+      "code": 6030,
+      "name": "DuplicateFheEvalAccount",
+      "msg": "FHE eval account list contains a duplicate account"
+    },
+    {
+      "code": 6031,
+      "name": "UnexpectedFheEvalAccount",
+      "msg": "FHE eval account list contains an unexpected account"
+    },
+    {
+      "code": 6032,
+      "name": "MissingFheEvalAccount",
+      "msg": "FHE eval plan is missing a required dynamic account"
+    },
+    {
+      "code": 6033,
+      "name": "FheEvalAccountNotWritable",
+      "msg": "FHE eval dynamic account must be writable"
+    },
+    {
+      "code": 6034,
+      "name": "DuplicateFheOutputAuthority",
+      "msg": "FHE eval output authority list contains a duplicate authority"
+    },
+    {
+      "code": 6035,
+      "name": "UnexpectedFheOutputAuthority",
+      "msg": "FHE eval output authority list contains an unexpected authority"
+    },
+    {
+      "code": 6036,
+      "name": "MissingFheOutputAuthority",
+      "msg": "FHE eval plan is missing a required output authority"
+    }
+  ],
+  "types": [
+    {
+      "name": "AclRecord",
+      "docs": [
+        "Canonical ACL state for one host handle.",
+        "",
+        "The account address is independent from the opaque handle:",
+        "`PDA(\"acl-record\", nonce_key, nonce_sequence)`. The handle is stored in the",
+        "account body so computed handles can be bound after transaction accounts are",
+        "declared."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "handle",
+            "docs": [
+              "Opaque FHEVM handle controlled by this ACL record."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "nonce_key",
+            "docs": [
+              "Domain-separated nonce key derived from app account metadata."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "nonce_sequence",
+            "docs": [
+              "App-maintained sequence for this nonce key."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "acl_domain_key",
+            "docs": [
+              "App-level ACL domain, such as a confidential token mint."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "app_account",
+            "docs": [
+              "App-owned account whose encrypted field is represented by this handle."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "encrypted_value_label",
+            "docs": [
+              "Domain-separated encrypted field label inside `app_account`."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "subjects",
+            "docs": [
+              "Inline subjects for the common case."
+            ],
+            "type": {
+              "array": [
+                "pubkey",
+                8
+              ]
+            }
+          },
+          {
+            "name": "subject_roles",
+            "docs": [
+              "Role flags parallel to [`AclRecord::subjects`]."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                8
+              ]
+            }
+          },
+          {
+            "name": "subject_count",
+            "docs": [
+              "Number of valid entries in the inline subject arrays."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "overflow_subject_count",
+            "docs": [
+              "Number of overflow subjects represented by [`AclPermission`] PDAs."
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "public_decrypt",
+            "docs": [
+              "Durable public-decrypt flag checked by KMS-style verification."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "material_commitment",
+            "docs": [
+              "Canonical material commitment PDA sealed to this ACL record."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "material_commitment_hash",
+            "docs": [
+              "Canonical material commitment hash sealed to this ACL record."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "material_key_id",
+            "docs": [
+              "Material key identifier sealed to this ACL record."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "created_slot",
+            "docs": [
+              "Slot in which this ACL record was first bound."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump for this record."
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "AmountDisclosedEvent",
+      "docs": [
+        "Emitted when a KMS certificate discloses a token-scoped amount cleartext."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "version",
+            "docs": [
+              "Event schema version."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "mint",
+            "docs": [
+              "Confidential mint."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "handle",
+            "docs": [
+              "Disclosed encrypted amount handle."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "request",
+            "docs": [
+              "Consumed request witness."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "request_hash",
+            "docs": [
+              "Canonical request hash stored in the witness."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "cleartext_amount",
+            "docs": [
+              "KMS-certified cleartext amount."
+            ],
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "AmountDisclosureRequestedEvent",
+      "docs": [
+        "Emitted when a requester asks to publicly disclose a token-scoped amount."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "version",
+            "docs": [
+              "Event schema version."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "mint",
+            "docs": [
+              "Confidential mint."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "requester",
+            "docs": [
+              "Requester authorized on the amount ACL."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "handle",
+            "docs": [
+              "Publicly decryptable amount handle."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "acl_record",
+            "docs": [
+              "ZamaHost ACL record updated by the request."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "request",
+            "docs": [
+              "Account-backed request witness."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "request_hash",
+            "docs": [
+              "Canonical request hash stored in the witness."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "verifier_set",
+            "docs": [
+              "Verifier set expected to certify the response."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "verifier_set_version",
+            "docs": [
+              "Verifier-set version expected to certify the response."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "expires_slot",
+            "docs": [
+              "Last slot in which this request can be consumed."
+            ],
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "BalanceDisclosedEvent",
+      "docs": [
+        "Emitted when a KMS certificate discloses the current balance cleartext."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "version",
+            "docs": [
+              "Event schema version."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "mint",
+            "docs": [
+              "Confidential mint."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "docs": [
+              "Token account owner."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "token_account",
+            "docs": [
+              "Confidential token account."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "handle",
+            "docs": [
+              "Disclosed balance handle."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "request",
+            "docs": [
+              "Consumed request witness."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "request_hash",
+            "docs": [
+              "Canonical request hash stored in the witness."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "cleartext_amount",
+            "docs": [
+              "KMS-certified cleartext amount."
+            ],
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "BalanceDisclosureRequestedEvent",
+      "docs": [
+        "Emitted when the owner requests public disclosure of the current balance."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "version",
+            "docs": [
+              "Event schema version."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "mint",
+            "docs": [
+              "Confidential mint."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "docs": [
+              "Token account owner."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "token_account",
+            "docs": [
+              "Confidential token account."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "handle",
+            "docs": [
+              "Publicly decryptable balance handle."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "acl_record",
+            "docs": [
+              "ZamaHost ACL record updated by the request."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "request",
+            "docs": [
+              "Account-backed request witness."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "request_hash",
+            "docs": [
+              "Canonical request hash stored in the witness."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "verifier_set",
+            "docs": [
+              "Verifier set expected to certify the response."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "verifier_set_version",
+            "docs": [
+              "Verifier-set version expected to certify the response."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "expires_slot",
+            "docs": [
+              "Last slot in which this request can be consumed."
+            ],
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "BalanceHandleUpdateReason",
+      "docs": [
+        "Reason code for [`BalanceHandleUpdatedEvent`]."
+      ],
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Initialize"
+          },
+          {
+            "name": "Wrap"
+          },
+          {
+            "name": "TransferDebit"
+          },
+          {
+            "name": "TransferCredit"
+          },
+          {
+            "name": "BurnDebit"
+          },
+          {
+            "name": "TransferCallbackRefundDebit"
+          },
+          {
+            "name": "TransferCallbackRefundCredit"
+          }
+        ]
+      }
+    },
+    {
+      "name": "BalanceHandleUpdatedEvent",
+      "docs": [
+        "App-local balance history event.",
+        "",
+        "This event is for frontend/app indexers. The generic coprocessor listener",
+        "consumes ZamaHost protocol events instead."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "version",
+            "docs": [
+              "Event schema version."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "mint",
+            "docs": [
+              "Confidential mint."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "docs": [
+              "Token account owner."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "token_account",
+            "docs": [
+              "Confidential token account."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "old_handle",
+            "docs": [
+              "Previous balance handle."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "old_acl_record",
+            "docs": [
+              "Previous ZamaHost ACL record."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "new_handle",
+            "docs": [
+              "New balance handle."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "new_acl_record",
+            "docs": [
+              "New ZamaHost ACL record."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "reason",
+            "docs": [
+              "Reason this balance pointer changed."
+            ],
+            "type": {
+              "defined": {
+                "name": "BalanceHandleUpdateReason"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "BurnRedeemedEvent",
+      "docs": [
+        "Emitted when a KMS-certified burned amount is redeemed from the vault."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "version",
+            "docs": [
+              "Event schema version."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "mint",
+            "docs": [
+              "Confidential mint."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "docs": [
+              "Token account owner."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "token_account",
+            "docs": [
+              "Confidential token account that produced the burned amount."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "burned_handle",
+            "docs": [
+              "Burned amount handle proven by KMS."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "burned_acl_record",
+            "docs": [
+              "ACL record for `burned_handle`."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "destination_usdc",
+            "docs": [
+              "Underlying token destination account."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "request",
+            "docs": [
+              "Consumed request witness."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "request_hash",
+            "docs": [
+              "Canonical request hash stored in the witness."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "cleartext_amount",
+            "docs": [
+              "KMS-certified cleartext amount released from the vault."
+            ],
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "BurnRedemption",
+      "docs": [
+        "Replay marker for a redeemed burned amount handle."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "docs": [
+              "Confidential mint whose vault paid the redemption."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "docs": [
+              "Token owner that redeemed the burned amount."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "token_account",
+            "docs": [
+              "Token account that produced the burned amount."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "burned_handle",
+            "docs": [
+              "Burned amount handle proven by KMS."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "burned_acl_record",
+            "docs": [
+              "ACL record for `burned_handle`."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "cleartext_amount",
+            "docs": [
+              "KMS-certified cleartext amount released from the vault."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump for `(mint, burned_handle)`."
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "BurnRedemptionRequest",
+      "docs": [
+        "Account-backed witness for a burned-amount redemption request."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "docs": [
+              "Confidential mint whose vault backs the redemption."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "docs": [
+              "Token owner that requested redemption."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "token_account",
+            "docs": [
+              "Token account that produced the burned amount."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "underlying_mint",
+            "docs": [
+              "Underlying SPL mint for the vault and destination."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "destination_owner",
+            "docs": [
+              "Destination token account owner."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "destination_account",
+            "docs": [
+              "Destination token account to receive redeemed underlying tokens."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "burned_handle",
+            "docs": [
+              "Burned amount handle."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "burned_acl_record",
+            "docs": [
+              "ACL record for `burned_handle`."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "material_commitment",
+            "docs": [
+              "Material commitment account for `burned_handle`."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "material_commitment_hash",
+            "docs": [
+              "Canonical material commitment hash."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "material_key_id",
+            "docs": [
+              "Material key identifier."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "host_config",
+            "docs": [
+              "Host config whose chain id and gates were validated."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "verifier_set",
+            "docs": [
+              "Verifier set expected to certify the redemption."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "verifier_set_version",
+            "docs": [
+              "Verifier-set version expected to certify the redemption."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "request_nonce",
+            "docs": [
+              "Caller-supplied nonce that makes the request PDA unique."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "request_hash",
+            "docs": [
+              "Canonical hash over this request witness."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "chain_id",
+            "docs": [
+              "Host chain id copied from the validated host config."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "expires_slot",
+            "docs": [
+              "Last slot in which this request can be consumed."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "status",
+            "docs": [
+              "Request lifecycle state."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump for this request account."
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "BurnRedemptionRequestedEvent",
+      "docs": [
+        "Emitted when a holder requests redemption of a burned amount."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "version",
+            "docs": [
+              "Event schema version."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "mint",
+            "docs": [
+              "Confidential mint."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "docs": [
+              "Token account owner."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "token_account",
+            "docs": [
+              "Confidential token account that produced the burned amount."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "burned_handle",
+            "docs": [
+              "Burned amount handle."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "burned_acl_record",
+            "docs": [
+              "ACL record for `burned_handle`."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "destination_owner",
+            "docs": [
+              "Underlying token destination owner."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "destination_account",
+            "docs": [
+              "Underlying token destination account."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "request",
+            "docs": [
+              "Account-backed request witness."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "request_hash",
+            "docs": [
+              "Canonical request hash stored in the witness."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "verifier_set",
+            "docs": [
+              "Verifier set expected to certify the response."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "verifier_set_version",
+            "docs": [
+              "Verifier-set version expected to certify the response."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "expires_slot",
+            "docs": [
+              "Last slot in which this request can be consumed."
+            ],
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ConfidentialAmountKind",
+      "docs": [
+        "Token-scoped amount purpose used for amount-handle birth."
+      ],
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Transfer"
+          },
+          {
+            "name": "Burn"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ConfidentialBurnEvent",
+      "docs": [
+        "Emitted when a confidential burn computes the all-or-zero burned amount."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "version",
+            "docs": [
+              "Event schema version."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "mint",
+            "docs": [
+              "Confidential mint."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "docs": [
+              "Token account owner."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "token_account",
+            "docs": [
+              "Token account whose balance was debited."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "burned_handle",
+            "docs": [
+              "Encrypted amount actually burned."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "burned_acl_record",
+            "docs": [
+              "ZamaHost ACL record for `burned_handle`."
+            ],
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ConfidentialMint",
+      "docs": [
+        "Confidential mint state for the token PoC."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "docs": [
+              "Admin/authority that created the mint."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "acl_domain_key",
+            "docs": [
+              "ACL domain key, currently equal to the mint pubkey."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "compute_signer",
+            "docs": [
+              "Program-controlled compute signer PDA."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "underlying_mint",
+            "docs": [
+              "Underlying SPL mint wrapped by this confidential mint."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "disclosure_verifier_set",
+            "docs": [
+              "Active threshold verifier set accepted for KMS disclosure certificates."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "redemption_verifier_set",
+            "docs": [
+              "Active threshold verifier set accepted for KMS burn-redemption certificates."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "decimals",
+            "docs": [
+              "Decimal precision inherited from the underlying mint."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "total_supply_handle",
+            "docs": [
+              "Current encrypted total-supply handle."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "total_supply_acl_record",
+            "docs": [
+              "Current ZamaHost ACL record for `total_supply_handle`."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "next_total_supply_nonce_sequence",
+            "docs": [
+              "Next nonce sequence to use for a total-supply ACL record."
+            ],
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ConfidentialMintMigratedEvent",
+      "docs": [
+        "Emitted when a legacy mint is migrated to split verifier-set pointers."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "version",
+            "docs": [
+              "Event schema version."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "mint",
+            "docs": [
+              "Confidential mint."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "authority",
+            "docs": [
+              "Mint authority that authorized the migration."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "legacy_kms_verifier_authority",
+            "docs": [
+              "Legacy single KMS verifier authority retained for auditability."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "disclosure_verifier_set",
+            "docs": [
+              "Active disclosure verifier set after migration."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "redemption_verifier_set",
+            "docs": [
+              "Active burn-redemption verifier set after migration."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "disclosure_verifier_set_version",
+            "docs": [
+              "Disclosure verifier-set version after migration."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "redemption_verifier_set_version",
+            "docs": [
+              "Burn-redemption verifier-set version after migration."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "migrated_slot",
+            "docs": [
+              "Slot in which the mint was migrated."
+            ],
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ConfidentialTokenAccount",
+      "docs": [
+        "Confidential token account state."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "owner",
+            "docs": [
+              "Token account owner."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "mint",
+            "docs": [
+              "Confidential mint this account belongs to."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "balance_handle",
+            "docs": [
+              "Current confidential balance handle."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "balance_acl_record",
+            "docs": [
+              "Current ZamaHost ACL record for `balance_handle`."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "next_balance_nonce_sequence",
+            "docs": [
+              "Next nonce sequence to use for a balance ACL record."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "next_amount_nonce_sequence",
+            "docs": [
+              "Next nonce sequence to use for owner-scoped random amount ACL records."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump for the token account."
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ConfidentialTransferEvent",
+      "docs": [
+        "Emitted when a confidential transfer computes the all-or-zero moved amount."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "version",
+            "docs": [
+              "Event schema version."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "mint",
+            "docs": [
+              "Confidential mint."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "from_owner",
+            "docs": [
+              "Sender token account owner."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "from_token_account",
+            "docs": [
+              "Sender confidential token account."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "to_owner",
+            "docs": [
+              "Recipient token account owner."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "to_token_account",
+            "docs": [
+              "Recipient confidential token account."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "transferred_handle",
+            "docs": [
+              "Encrypted amount actually transferred."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "transferred_acl_record",
+            "docs": [
+              "ZamaHost ACL record for `transferred_handle`."
+            ],
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "DisclosureRequest",
+      "docs": [
+        "Account-backed witness for a public disclosure request."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "docs": [
+              "Confidential mint whose ACL domain scopes the request."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "requester",
+            "docs": [
+              "User/app authority that requested disclosure."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "token_account",
+            "docs": [
+              "Balance token account for balance mode, or default for amount mode."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "app_account",
+            "docs": [
+              "ACL app account stored in the host ACL record."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "handle",
+            "docs": [
+              "Requested handle."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "acl_record",
+            "docs": [
+              "ACL record for the requested handle."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "material_commitment",
+            "docs": [
+              "Material commitment account for the requested handle."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "material_commitment_hash",
+            "docs": [
+              "Canonical material commitment hash."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "material_key_id",
+            "docs": [
+              "Material key identifier."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "host_config",
+            "docs": [
+              "Host config whose chain id and gates were validated."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "verifier_set",
+            "docs": [
+              "Verifier set expected to certify the response."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "verifier_set_version",
+            "docs": [
+              "Verifier-set version expected to certify the response."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "request_nonce",
+            "docs": [
+              "Caller-supplied nonce that makes the request PDA unique."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "request_hash",
+            "docs": [
+              "Canonical hash over this request witness."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "chain_id",
+            "docs": [
+              "Host chain id copied from the validated host config."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "expires_slot",
+            "docs": [
+              "Last slot in which this request can be consumed."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "mode",
+            "docs": [
+              "Disclosure request mode."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "status",
+            "docs": [
+              "Request lifecycle state."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump for this request account."
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "HandleMaterialCommitment",
+      "docs": [
+        "Host-owned commitment proving ciphertext material is available for a handle.",
+        "",
+        "ACL birth and material readiness are deliberately separate. KMS-style",
+        "decryption checks must verify both the canonical ACL record and this",
+        "material commitment before authorizing a decryptable handle."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "acl_record",
+            "docs": [
+              "ACL record whose handle has committed material."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "handle",
+            "docs": [
+              "Handle copied from the ACL record at commitment time."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "key_id",
+            "docs": [
+              "Release/key identifier for the ciphertext material."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "ciphertext_digest",
+            "docs": [
+              "Digest of the ciphertext material."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "sns_ciphertext_digest",
+            "docs": [
+              "Digest of the SNS ciphertext material."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "coprocessor_set_digest",
+            "docs": [
+              "Release-pinned coprocessor-set digest."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "material_commitment_hash",
+            "docs": [
+              "Canonical commitment hash over the material witness fields."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "created_slot",
+            "docs": [
+              "Slot in which the commitment was recorded."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "state",
+            "docs": [
+              "Commitment state. Native-v0 decryptability requires committed."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump for this material commitment."
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "HostConfig",
+      "docs": [
+        "Singleton host configuration and authority surface.",
+        "",
+        "`HostConfig` is the runtime switchboard for this PoC. Production-shaped",
+        "instructions reject while paused, and mock/test-only instructions require",
+        "both the corresponding feature gate and configured signer."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "admin",
+            "docs": [
+              "Program administrator allowed to update config flags."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "chain_id",
+            "docs": [
+              "Host-chain id included in handle derivation."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "input_verifier_set",
+            "docs": [
+              "Active threshold verifier set for input verification paths."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "input_verifier_set_version",
+            "docs": [
+              "Version of the active input verifier set, or zero before the first set is created."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "material_authority",
+            "docs": [
+              "Configured authority for material-commitment paths."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "test_authority",
+            "docs": [
+              "Configured signer for `test_emit_*` shims."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "paused",
+            "docs": [
+              "Pauses production-shaped host instructions when true."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "mock_input_enabled",
+            "docs": [
+              "Enables the mock encrypted-input bind instruction."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "test_shims_enabled",
+            "docs": [
+              "Enables test event shim instructions."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "grant_deny_list_enabled",
+            "docs": [
+              "Enables deny-list checks for persistent grant authorities."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "updated_slot",
+            "docs": [
+              "Slot in which the config was initialized or last changed."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump for `PDA(\"host-config\")`."
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MintVerifierSetsUpdatedEvent",
+      "docs": [
+        "Emitted when a mint rotates the token-scoped verifier sets used for new KMS requests."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "version",
+            "docs": [
+              "Event schema version."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "mint",
+            "docs": [
+              "Confidential mint."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "authority",
+            "docs": [
+              "Mint authority that authorized the update."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "old_disclosure_verifier_set",
+            "docs": [
+              "Previous disclosure verifier set."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "new_disclosure_verifier_set",
+            "docs": [
+              "New disclosure verifier set."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "old_redemption_verifier_set",
+            "docs": [
+              "Previous burn-redemption verifier set."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "new_redemption_verifier_set",
+            "docs": [
+              "New burn-redemption verifier set."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "disclosure_verifier_set_version",
+            "docs": [
+              "New disclosure verifier-set version."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "redemption_verifier_set_version",
+            "docs": [
+              "New redemption verifier-set version."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "updated_slot",
+            "docs": [
+              "Slot in which the mint pointers changed."
+            ],
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RandomAmountCreatedEvent",
+      "docs": [
+        "Emitted when the token program creates a token-scoped random amount."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "version",
+            "docs": [
+              "Event schema version."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "mint",
+            "docs": [
+              "Confidential mint."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "docs": [
+              "Token account owner."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "token_account",
+            "docs": [
+              "Confidential token account."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "amount_kind",
+            "docs": [
+              "Whether this amount is intended for transfer or burn."
+            ],
+            "type": {
+              "defined": {
+                "name": "ConfidentialAmountKind"
+              }
+            }
+          },
+          {
+            "name": "bounded",
+            "docs": [
+              "True when the random amount was bounded."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "upper_bound",
+            "docs": [
+              "Bound supplied to ZamaHost for bounded random amounts, or zero bytes for unbounded amounts."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "handle",
+            "docs": [
+              "Newly created amount handle."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "acl_record",
+            "docs": [
+              "ZamaHost ACL record initialized for the amount."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "nonce_sequence",
+            "docs": [
+              "Nonce sequence used for the amount ACL record."
+            ],
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TotalSupplyHandleUpdatedEvent",
+      "docs": [
+        "App-local total-supply history event.",
+        "",
+        "This mirrors ERC7984's encrypted `_totalSupply` pointer at the Solana mint",
+        "level. The generic coprocessor listener consumes ZamaHost protocol events;",
+        "this event is for token-aware indexers."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "version",
+            "docs": [
+              "Event schema version."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "mint",
+            "docs": [
+              "Confidential mint."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "old_handle",
+            "docs": [
+              "Previous total-supply handle."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "old_acl_record",
+            "docs": [
+              "Previous ZamaHost ACL record."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "new_handle",
+            "docs": [
+              "New total-supply handle."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "new_acl_record",
+            "docs": [
+              "New ZamaHost ACL record."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "reason",
+            "docs": [
+              "Reason this total-supply pointer changed."
+            ],
+            "type": {
+              "defined": {
+                "name": "TotalSupplyUpdateReason"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "TotalSupplyUpdateReason",
+      "docs": [
+        "Reason code for [`TotalSupplyHandleUpdatedEvent`]."
+      ],
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Initialize"
+          },
+          {
+            "name": "Wrap"
+          },
+          {
+            "name": "Burn"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TransferCallbackSettlement",
+      "docs": [
+        "Replay marker for a transfer callback settlement."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "docs": [
+              "Confidential mint whose transfer was settled."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "from_owner",
+            "docs": [
+              "Original sender owner."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "from_token_account",
+            "docs": [
+              "Original sender token account."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "to_owner",
+            "docs": [
+              "Original recipient owner."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "to_token_account",
+            "docs": [
+              "Original recipient token account."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "sent_handle",
+            "docs": [
+              "Prior transfer's encrypted all-or-zero sent handle."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "sent_acl_record",
+            "docs": [
+              "ACL record for `sent_handle`."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "callback_success_handle",
+            "docs": [
+              "Encrypted receiver callback success bit."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "callback_success_acl_record",
+            "docs": [
+              "ACL record for `callback_success_handle`."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "refund_handle",
+            "docs": [
+              "Encrypted amount actually refunded."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "refund_acl_record",
+            "docs": [
+              "ACL record for `refund_handle`."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "to_balance_handle",
+            "docs": [
+              "Recipient balance handle after the prepared refund debit."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "to_balance_acl_record",
+            "docs": [
+              "ACL record for `to_balance_handle`."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "from_balance_handle",
+            "docs": [
+              "Sender balance handle after the finalized refund credit."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "from_balance_acl_record",
+            "docs": [
+              "ACL record for `from_balance_handle`."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "transferred_handle",
+            "docs": [
+              "Encrypted amount that remains transferred after refund."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "transferred_acl_record",
+            "docs": [
+              "ACL record for `transferred_handle`."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "status",
+            "docs": [
+              "Settlement lifecycle status."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump for `(mint, sent_handle)`."
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TransferReceiverHookCall",
+      "docs": [
+        "One-shot marker for a receiver hook call."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "docs": [
+              "Confidential mint whose transfer reached the receiver hook."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "from_token_account",
+            "docs": [
+              "Original sender token account."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "to_token_account",
+            "docs": [
+              "Original recipient token account."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "sent_handle",
+            "docs": [
+              "Prior transfer's encrypted all-or-zero sent handle."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "sent_acl_record",
+            "docs": [
+              "ACL record for `sent_handle`."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "callback_success_handle",
+            "docs": [
+              "Encrypted receiver callback success bit."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "callback_success_acl_record",
+            "docs": [
+              "ACL record for `callback_success_handle`."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "receiver_program",
+            "docs": [
+              "Receiver hook program that returned the callback witness."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "caller",
+            "docs": [
+              "Sender that invoked the hook."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump for `(mint, sent_handle)`."
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "VerifierSet",
+      "docs": [
+        "Fixed-size threshold verifier set for host-facing signature proofs."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "admin",
+            "docs": [
+              "Admin that created and may disable this set."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "kind",
+            "docs": [
+              "Protocol purpose for this set."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "scope",
+            "docs": [
+              "Scope that disambiguates sets of the same kind.",
+              "",
+              "Input sets are scoped to the host config PDA. Token disclosure and",
+              "redemption sets are scoped to the confidential mint they certify."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "version",
+            "docs": [
+              "Monotonic version chosen by the admin for rotation."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "threshold",
+            "docs": [
+              "Number of distinct signer signatures required."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "signer_count",
+            "docs": [
+              "Number of active entries in `signers`."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "signers",
+            "docs": [
+              "Fixed signer list. Entries after `signer_count` must be default keys."
+            ],
+            "type": {
+              "array": [
+                "pubkey",
+                16
+              ]
+            }
+          },
+          {
+            "name": "state",
+            "docs": [
+              "Active/disabled state."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "created_slot",
+            "docs": [
+              "Slot in which the set was created."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "updated_slot",
+            "docs": [
+              "Slot in which the set was last updated."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump for the canonical verifier-set address."
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    }
+  ]
+}

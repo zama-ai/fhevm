@@ -128,8 +128,9 @@ impl
             if host_chain.chain_kind == HostChainKind::Solana {
                 if host_chain.solana_host_program_id.is_some() {
                     info!(
-                        "Configured Solana host chain {} with native ACL witness verification for \
-                        Gateway-PoC requests.",
+                        "Configured Solana host chain {} with solana_host_program_id. Gateway \
+                        decryption ACL checks for Solana still fail closed; native-v0 Solana \
+                        request processing is handled outside the Gateway event processor.",
                         host_chain.chain_id
                     );
                 } else {

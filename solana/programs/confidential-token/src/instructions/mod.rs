@@ -3,33 +3,36 @@
 //! The public Anchor entrypoints in `lib.rs` delegate into these modules so
 //! account contexts, validation, and handler logic stay out of the crate root.
 
-pub mod close_operator;
+pub mod close_consumed_burn_redemption_request;
+pub mod close_consumed_disclosure_request;
+pub mod close_expired_burn_redemption_request;
+pub mod close_expired_disclosure_request;
 pub mod common;
 pub mod confidential_burn;
 pub mod confidential_call_transfer_receiver;
-pub mod confidential_call_transfer_receiver_from;
 pub mod confidential_finalize_transfer_callback;
 pub mod confidential_prepare_transfer_callback;
 pub mod confidential_transfer;
-pub mod confidential_transfer_from;
 pub mod create_random_amount;
 pub mod disclose_amount;
 pub mod disclose_balance;
 pub mod initialize_mint;
 pub mod initialize_token_account;
+pub mod migrate_mint_verifier_sets;
 pub mod redeem_burned_amount;
+pub mod request_burn_redemption;
 pub mod request_disclose_amount;
 pub mod request_disclose_balance;
-pub mod set_operator;
+#[cfg(feature = "poc")]
 pub mod test_receiver_return_callback;
+pub mod update_mint_verifier_sets;
 pub mod wrap_usdc;
 
+use anchor_lang::prelude::*;
 use anchor_lang::solana_program::{
     instruction::{AccountMeta, Instruction},
-    program::{get_return_data, invoke, invoke_signed, set_return_data},
-    system_instruction,
+    program::{get_return_data, invoke, set_return_data},
 };
-use anchor_lang::{prelude::*, AccountDeserialize};
 use anchor_spl::{
     associated_token::get_associated_token_address_with_program_id,
     token::{self as spl_token, Mint as SplMint, Token, TokenAccount, TransferChecked},
@@ -37,30 +40,34 @@ use anchor_spl::{
 use solana_instructions_sysvar::{
     load_current_index_checked, load_instruction_at_checked, ID as INSTRUCTIONS_SYSVAR_ID,
 };
-use zama_host::{self, program::ZamaHost, AclSubjectEntry};
+use zama_host::{self, program::ZamaHost};
 
-use crate::{
-    errors::*, events::*, fhe, state::*, transfer_receiver_return_data, TransferReceiverReturn,
-};
+#[cfg(feature = "poc")]
+use crate::transfer_receiver_return_data;
+use crate::{errors::*, events::*, fhe, state::*, TransferReceiverReturn};
 
-pub use close_operator::*;
-pub use common::disclosure_proof_message;
+pub use close_consumed_burn_redemption_request::*;
+pub use close_consumed_disclosure_request::*;
+pub use close_expired_burn_redemption_request::*;
+pub use close_expired_disclosure_request::*;
 pub(crate) use common::*;
+pub use common::{disclosure_proof_message_v2, redemption_proof_message_v2};
 pub use confidential_burn::*;
 pub use confidential_call_transfer_receiver::*;
-pub use confidential_call_transfer_receiver_from::*;
 pub use confidential_finalize_transfer_callback::*;
 pub use confidential_prepare_transfer_callback::*;
 pub use confidential_transfer::*;
-pub use confidential_transfer_from::*;
 pub use create_random_amount::*;
 pub use disclose_amount::*;
 pub use disclose_balance::*;
 pub use initialize_mint::*;
 pub use initialize_token_account::*;
+pub use migrate_mint_verifier_sets::*;
 pub use redeem_burned_amount::*;
+pub use request_burn_redemption::*;
 pub use request_disclose_amount::*;
 pub use request_disclose_balance::*;
-pub use set_operator::*;
+#[cfg(feature = "poc")]
 pub use test_receiver_return_callback::*;
+pub use update_mint_verifier_sets::*;
 pub use wrap_usdc::*;
