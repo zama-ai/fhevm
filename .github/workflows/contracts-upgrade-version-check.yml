@@ -94,13 +94,15 @@ jobs:
           RELEASED_TAG: ${{ github.event.release.tag_name }}
         run: |
           if [ "$GITHUB_EVENT_NAME" = "release" ]; then
-            # Previous release in the published tag's version line, so a patch
-            # release compares against its own line (v0.13.1 -> v0.13.0 even
-            # when v0.14.0 exists).
+            # Highest stable release strictly below the published version, in
+            # its own version line: v0.13.1 -> v0.13.0 even when v0.14.0
+            # exists.  Prerelease suffixes are stripped first, so a prerelease
+            # compares like the version it precedes: v0.13.0-9 -> v0.12.5.
+            base="${RELEASED_TAG%%-*}"
             tag="$({ gh api "repos/${GH_REPOSITORY}/releases" --paginate \
               --jq '.[] | select((.draft or .prerelease) | not) | .tag_name'; \
-              echo "$RELEASED_TAG"; } | sort -u -V | grep -x -B1 -- "$RELEASED_TAG" | head -n1)"
-            if [ -z "$tag" ] || [ "$tag" = "$RELEASED_TAG" ]; then
+              echo "$base"; } | sort -u -V | grep -x -B1 -- "$base" | head -n1)"
+            if [ -z "$tag" ] || [ "$tag" = "$base" ]; then
               echo "::error::No previous release found to compare $RELEASED_TAG against"
               exit 1
             fi
