@@ -1,8 +1,3 @@
-import {
-  assertIsFhevmBaseClient,
-  resolveFhevmProtocolVersion,
-  setResolvedProtocolVersion,
-} from '../../runtime/CoreFhevm-p.js';
 import type { Fhevm, FhevmBase, FhevmExtension } from '../../types/coreFhevmClient.js';
 import type { FhevmChain } from '../../types/fhevmChain.js';
 import type {
@@ -13,6 +8,7 @@ import type {
   SerializeTransportKeyPairParameters,
   SerializeTransportKeyPairReturnType,
 } from '../../actions/chain/serializeTransportKeyPair.js';
+import { assertIsFhevmBaseClient } from '../../runtime/CoreFhevm-p.js';
 import {
   signDecryptionPermit,
   type SignSelfDecryptionPermitParameters,
@@ -54,6 +50,7 @@ import {
   type DecryptPublicValuesWithSignaturesParameters,
   type DecryptPublicValuesWithSignaturesReturnType,
 } from '../../actions/base/decryptPublicValuesWithSignatures.js';
+import { ensureResolvedProtocolVersion } from '../../runtime/resolveFhevmVersions-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -198,8 +195,7 @@ function _baseActions(fhevm: Fhevm<FhevmChain>): BaseActions {
 ////////////////////////////////////////////////////////////////////////////////
 
 async function _initBase(fhevm: FhevmBase<FhevmChain>): Promise<void> {
-  const protocolVersion = await resolveFhevmProtocolVersion(fhevm);
-  setResolvedProtocolVersion(fhevm, protocolVersion);
+  await ensureResolvedProtocolVersion(fhevm);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

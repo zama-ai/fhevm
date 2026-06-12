@@ -4,7 +4,7 @@ import { setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
 import {
   getViemClientOptions,
   getViemTestConfig,
-  type CreateFhevmViemBaseClientFn,
+  type CreateViemBaseClientFn,
   type FheTestViemConfig,
 } from '../setup-viem.js';
 import { FHETestABI } from '../FheTest-abi-v2.js';
@@ -22,7 +22,7 @@ import { asEncryptedValue, type EncryptedValue } from '@fhevm/sdk/types';
 
 export function defineClientBaseDecryptPublicValueTests(parameters: {
   readonly runIf: boolean;
-  readonly createFhevmBaseClient: CreateFhevmViemBaseClientFn;
+  readonly createFhevmBaseClient: CreateViemBaseClientFn;
 }): void {
   describe.runIf(parameters.runIf)('Base client — decryptPublicValue', () => {
     let config: FheTestViemConfig;

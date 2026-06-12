@@ -1,5 +1,5 @@
 import type { Hex } from 'viem';
-import type { CreateFhevmViemBaseClientFn, FheTestViemConfig } from '../setup-viem.js';
+import type { CreateViemBaseClientFn, FheTestViemConfig } from '../setup-viem.js';
 import type { EncryptedValue } from '@fhevm/sdk/types';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
@@ -16,7 +16,7 @@ import { asEncryptedValue } from '@fhevm/sdk/types';
 
 export function defineClientBaseMultichainDecryptPublicValueTests(parameters: {
   readonly runIf: boolean;
-  readonly createFhevmBaseClient: CreateFhevmViemBaseClientFn;
+  readonly createFhevmBaseClient: CreateViemBaseClientFn;
 }): void {
   describe.runIf(parameters.runIf)('Base client — decryptPublicValue', () => {
     let configs: FheTestViemConfig[];
