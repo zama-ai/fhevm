@@ -19,7 +19,9 @@ import {
   hostChainNames,
   hostChainRuntimes,
 } from "../layout";
+import { kmsConnectorEnvName, kmsConnectorPrefix } from "../kms-party";
 import { type StackSpec, topologyForState } from "../stack-spec/stack-spec";
+import { buildKmsThresholdOverride, kmsRenderOptionsFor } from "./kms-core";
 import type { HostChainScenario, ResolvedCoprocessorScenarioInstance, State } from "../types";
 import { ensureDir, exists, mergeArgs, readEnvFile, remove, toServiceName } from "../utils/fs";
 
@@ -425,10 +427,67 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
   return next;
 };
 
+/**
+ * Replicates the KMS connector tier once per threshold party (mirrors
+ * buildCoprocessorOverride). Party 1 keeps the base `kms-connector-*` names so
+ * it replaces the single-node template; parties 2..N get `kms-connector-{i}-*`.
+ * Each party's services read `kms-connector[.i].env` (own core endpoint, signer
+ * key, DB) and depend on that party's own db-migration.
+ *
+ * `--override kms-connector` behaves exactly as in centralized mode: overridden
+ * services run the locally built image on EVERY party. Only the party-1 (base
+ * name) clone carries the build spec — maybeBuild builds by base service name —
+ * so the image is built once and parties 2..N reference the same tag. Without
+ * an override every party runs the resolved published image (secure threshold
+ * keygen needs no connector changes).
+ */
+export const buildKmsConnectorOverride = async (plan: StackSpec) => {
+  const doc = rewriteComposePaths(await loadComposeDoc("kms-connector"));
+  const overridden = overriddenServicesForComponent(plan, "kms-connector");
+  const services: Record<string, Record<string, unknown>> = {};
+  for (let party = 1; party <= plan.kms.parties; party += 1) {
+    const prefix = `${kmsConnectorPrefix(party)}-`;
+    const envFileValue = envPath(kmsConnectorEnvName(party));
+    for (const [name, service] of Object.entries(doc.services)) {
+      const suffix = name.replace(/^kms-connector-/, "");
+      const serviceName = `${prefix}${suffix}`;
+      const next = structuredClone(service);
+      next.container_name = serviceName;
+      next.env_file = [envFileValue];
+      applyBuildPolicy(next, overridden.has(name));
+      if (party === 1 && overridden.has(name)) {
+        const build = localBuildSpecFor("kms-connector", name);
+        if (build) {
+          next.build = build;
+        }
+      }
+      if (next.depends_on && typeof next.depends_on === "object") {
+        next.depends_on = Object.fromEntries(
+          Object.entries(next.depends_on as Record<string, unknown>).map(([dep, value]) => [
+            dep.replace(/^kms-connector-/, prefix),
+            value,
+          ]),
+        );
+      }
+      services[serviceName] = next;
+    }
+  }
+  return { services };
+};
+
 /** Builds the generated compose override for one component. */
 const buildComposeOverride = async (component: string, plan: StackSpec) => {
   if (component === "coprocessor") {
     return buildCoprocessorOverride(plan);
+  }
+  if (component === "core-threshold") {
+    // Dedicated threshold-cluster component (gen-keys + N cores + kms-init).
+    // Separate from `core` so it never merges with the centralized template.
+    return buildKmsThresholdOverride(plan.kms, kmsRenderOptionsFor(plan.versions.env.CORE_VERSION));
+  }
+  if (component === "kms-connector" && plan.kms.mode === "threshold") {
+    // One connector per KMS party (each cores↔connector pair is independent).
+    return buildKmsConnectorOverride(plan);
   }
   const template = rewriteComposePaths(structuredClone(await loadComposeDoc(component)));
   const overridden = overriddenServicesForComponent(plan, component);
@@ -559,8 +618,12 @@ const buildExtraCoprocessorListenerOverride = async (
 };
 
 /** Lists which components need generated compose overrides for a runtime plan. */
-export const generatedComposeComponents = (plan: Pick<StackSpec, "overrides">) =>
-  new Set(["coprocessor", ...plan.overrides.flatMap((override) => GROUP_BUILD_COMPONENTS[override.group])]);
+export const generatedComposeComponents = (plan: Pick<StackSpec, "overrides" | "kms">) =>
+  new Set([
+    "coprocessor",
+    ...(plan.kms.mode === "threshold" ? ["core-threshold", "kms-connector"] : []),
+    ...plan.overrides.flatMap((override) => GROUP_BUILD_COMPONENTS[override.group]),
+  ]);
 
 /** Generates or removes compose override files to match the current runtime plan. */
 export const generateComposeOverrides = async (_state: State, plan: StackSpec) => {
