@@ -181,6 +181,7 @@ jobs:
               KMSVerifier) proxy_address="$KMS_VERIFIER_CONTRACT_ADDRESS" ;;
               InputVerifier) proxy_address="$INPUT_VERIFIER_CONTRACT_ADDRESS" ;;
               HCULimit) proxy_address="$HCU_LIMIT_CONTRACT_ADDRESS" ;;
+              ProtocolConfig) proxy_address="$PROTOCOL_CONFIG_CONTRACT_ADDRESS" ;;
               *)
                 echo "::error::Unsupported host upgrade manifest entry: $name"
                 exit 1
@@ -284,6 +285,8 @@ jobs:
           InputVerifier_ADDR=$INPUT_VERIFIER_CONTRACT_ADDRESS
           # shellcheck disable=SC2034
           HCULimit_ADDR=$HCU_LIMIT_CONTRACT_ADDRESS
+          # shellcheck disable=SC2034
+          ProtocolConfig_ADDR=$PROTOCOL_CONFIG_CONTRACT_ADDRESS
 
           for name in $(jq -r '.[]' upgrade-manifest.json); do
             addr_var="${name}_ADDR"
