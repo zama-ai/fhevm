@@ -16,7 +16,7 @@ pub const EXTRA_DATA_V2_LENGTH: usize = 65;
 /// Version `0x03`: Solana user-decryption marker (context_id + ed25519 identity + nonce +
 /// allowed ACL domain keys). The full byte layout and the signing preimage it commits to live
 /// in [`crate::types::solana_extra_data`]; this version constant exists so the generic
-/// [`parse_extra_data`] dispatcher can recognise Solana requests and still surface their
+/// [`parse_extra_data`] dispatcher can recognize Solana requests and still surface their
 /// `context_id`, exactly like the EVM versions.
 pub const EXTRA_DATA_SOLANA_V1_VERSION: u8 = 0x03;
 
