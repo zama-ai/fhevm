@@ -7,7 +7,7 @@
  * resharing — are deferred to RFC-005 and are not modeled here.)
  */
 import { PreflightError } from "../errors";
-import { castCall, probeBootstrap, resolveKmsGenerationTarget, waitForContainer } from "../flow/readiness";
+import { castCall, dockerInspect, probeBootstrap, resolveKmsGenerationTarget, waitForContainer } from "../flow/readiness";
 import { kmsConnectorPrefix, kmsCoreName, reconstructionThreshold } from "../kms-party";
 import type { State } from "../types";
 import { withHexPrefix } from "../utils/fs";
@@ -40,6 +40,32 @@ export const quorumPlan = (parties: number, threshold: number) => {
 const setRunning = async (containers: string[], action: "start" | "stop") => {
   for (const container of containers) {
     await run(["docker", action, container], { allowFailure: true });
+  }
+};
+
+/** Polls one container until docker reports it is not running (docker stop exits 137/143,
+ * so waitForContainer — which treats any non-zero exit as a crash — cannot be used here). */
+const waitForContainerStopped = async (container: string) => {
+  for (let attempt = 0; attempt <= 30; attempt += 1) {
+    const [inspect] = await dockerInspect(container);
+    if (!inspect || inspect.State.Status !== "running") {
+      return;
+    }
+    await Bun.sleep(1_000);
+  }
+  throw new PreflightError(
+    `kms-generation: ${container} is still running after docker stop — the quorum probe would count a live party as stopped`,
+  );
+};
+
+/** Confirms every stopped party is genuinely down before a quorum verdict is read. `setRunning`
+ * tolerates stop failures for idempotency, so without this check a silently no-op'd stop would
+ * probe with too many live parties and mis-diagnose "2t+1 not enforced". */
+const waitForPartiesStopped = async (parties: number[]) => {
+  for (const party of parties) {
+    for (const container of partyContainers(party)) {
+      await waitForContainerStopped(container);
+    }
   }
 };
 
@@ -135,6 +161,7 @@ export const runKmsGenerationProfile = async (state: State, runDecryption: Decry
       await setRunning(partyContainers(party), "stop");
       stopped.push(party);
     }
+    await waitForPartiesStopped(stopped);
     console.log(`[kms-generation] stopped ${stopForTolerance} part(y/ies); ${reconstruct} of ${parties} live (== 2t+1)`);
     if (!(await runDecryption(`kms-generation: decrypt with ${reconstruct}/${parties} live (== 2t+1)`))) {
       throw new PreflightError(
@@ -147,6 +174,7 @@ export const runKmsGenerationProfile = async (state: State, runDecryption: Decry
       await setRunning(partyContainers(party), "stop");
       stopped.push(party);
     }
+    await waitForPartiesStopped(stopped);
     console.log(`[kms-generation] stopped ${stopForFloor} part(y/ies); ${reconstruct - 1} of ${parties} live (< 2t+1)`);
     if (await runDecryption(`kms-generation: attempt decrypt with ${reconstruct - 1}/${parties} live (< 2t+1)`, { expectFailure: true })) {
       throw new PreflightError(
