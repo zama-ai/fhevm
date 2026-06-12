@@ -1,11 +1,11 @@
 import { calculateERC7201StorageLocation } from '@openzeppelin/upgrades-core/dist/utils/erc7201';
-import { AbiCoder, FunctionFragment, Interface, type InterfaceAbi, getAddress, keccak256, toBeHex } from 'ethers';
+import { AbiCoder, getAddress, keccak256, toBeHex } from 'ethers';
 import fs from 'fs';
 import { task, types } from 'hardhat/config';
 import type { HardhatRuntimeEnvironment } from 'hardhat/types';
 import path from 'path';
 
-import { parseSnapshotArtifact } from './protocolConfigMirror';
+import { parseSnapshotArtifact, prepareCanonicalSnapshotUpgrade } from './protocolConfigMirror';
 import {
   assertContractMatchesVersionPrefix,
   deployEmptyUUPS,
@@ -14,110 +14,19 @@ import {
   readHostEnv,
   waitForTaskReady,
 } from './taskDeploy';
+import {
+  getFunctionFragment,
+  prepareDaoUpgrade,
+  printPreparedDaoUpgrade,
+  toJsonString,
+  verifyPreparedImplementation,
+} from './utils/daoUpgrade';
 import { buildKMSGenerationInitializeFromMigrationArgs } from './utils/kmsGenerationMigrationEnv';
 import { getRequiredEnvVar, loadHostAddresses } from './utils/loadVariables';
 import {
   type ProtocolConfigMigrationKmsNode,
   buildProtocolConfigInitializeFromMigrationArgs,
 } from './utils/protocolConfigMigrationEnv';
-
-////////////////////////////////////////////////////////////////////////////////
-// Proposal artifact helpers
-////////////////////////////////////////////////////////////////////////////////
-
-export function toJsonString(value: unknown): string {
-  return JSON.stringify(
-    value,
-    (_, nestedValue: unknown) => (typeof nestedValue === 'bigint' ? nestedValue.toString() : nestedValue),
-    2,
-  );
-}
-
-function getFunctionFragment(abi: InterfaceAbi, functionName: string): FunctionFragment {
-  const fragment = new Interface(abi).getFunction(functionName);
-  if (fragment === null) {
-    throw new Error(`Function ${functionName} not found in ABI.`);
-  }
-  return fragment;
-}
-
-export const UPGRADE_TO_AND_CALL_INTERFACE = new Interface([
-  'function upgradeToAndCall(address newImplementation, bytes data) payable',
-]);
-
-type PreparedDaoUpgrade = {
-  proxyAddress: string;
-  newImplementationAddress: string;
-  innerFunctionSignature: string;
-  decodedArgs: unknown[];
-  innerCalldata: string;
-  outerCalldata: string;
-};
-
-async function prepareDaoUpgrade(
-  hre: HardhatRuntimeEnvironment,
-  params: {
-    proxyAddress: string;
-    contractName: string;
-    innerFunctionSignature: string;
-    decodedArgs: unknown[];
-  },
-): Promise<PreparedDaoUpgrade> {
-  const { ethers, upgrades } = hre;
-  const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
-  const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
-  const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
-  const newImplementation = await ethers.getContractFactory(params.contractName, deployer);
-  await upgrades.forceImport(params.proxyAddress, currentImplementation);
-  const newImplementationAddress = String(
-    await upgrades.prepareUpgrade(params.proxyAddress, newImplementation, {
-      kind: 'uups',
-    }),
-  );
-  const innerCalldata = newImplementation.interface.encodeFunctionData(
-    params.innerFunctionSignature,
-    params.decodedArgs,
-  );
-  const outerCalldata = UPGRADE_TO_AND_CALL_INTERFACE.encodeFunctionData('upgradeToAndCall', [
-    newImplementationAddress,
-    innerCalldata,
-  ]);
-
-  return {
-    proxyAddress: params.proxyAddress,
-    newImplementationAddress,
-    innerFunctionSignature: params.innerFunctionSignature,
-    decodedArgs: params.decodedArgs,
-    innerCalldata,
-    outerCalldata,
-  };
-}
-
-async function verifyPreparedImplementation(
-  hre: HardhatRuntimeEnvironment,
-  data: PreparedDaoUpgrade,
-  contract: string,
-): Promise<void> {
-  console.log('Waiting 2 minutes before contract verification... Please wait...');
-  await new Promise((resolve) => setTimeout(resolve, 2 * 60 * 1000));
-  await hre.run('verify:verify', {
-    address: data.newImplementationAddress,
-    contract,
-    constructorArguments: [],
-  });
-}
-
-function printPreparedDaoUpgrade(data: PreparedDaoUpgrade): void {
-  console.log('proxyAddress:', data.proxyAddress);
-  console.log('newImplementationAddress:', data.newImplementationAddress);
-  console.log('innerFunctionSignature:', data.innerFunctionSignature);
-  console.log('decodedArgs:', toJsonString(data.decodedArgs));
-  console.log(`${data.innerFunctionSignature} calldata:`, data.innerCalldata);
-  console.log('upgradeToAndCall(address,bytes) calldata:', data.outerCalldata);
-  console.log(
-    `Cast command: cast calldata 'upgradeToAndCall(address,bytes)' ${data.newImplementationAddress} ${data.innerCalldata}`,
-  );
-}
 
 function assertEqual<T>(label: string, actual: T, expected: NoInfer<T>): void {
   if (actual !== expected) {
@@ -262,15 +171,7 @@ task(
     // The bootstrap task may have updated addresses/FHEVMHostAddresses.sol, so rebuild
     await hre.run('compile:specific', { contract: 'contracts' });
     const snapshot = parseSnapshotArtifact(fs.readFileSync(snapshotPath, 'utf-8'));
-    const decodedArgs = [snapshot.currentKmsContextId, snapshot.kmsNodes, snapshot.thresholds];
-    const artifact = await hre.artifacts.readArtifact('ProtocolConfig');
-    const innerFunctionSignature = getFunctionFragment(artifact.abi, 'initializeFromMigration').format('sighash');
-    const preparedUpgrade = await prepareDaoUpgrade(hre, {
-      proxyAddress,
-      contractName: 'ProtocolConfig',
-      innerFunctionSignature,
-      decodedArgs,
-    });
+    const preparedUpgrade = await prepareCanonicalSnapshotUpgrade(hre, { snapshot, proxyAddress });
 
     printPreparedDaoUpgrade(preparedUpgrade);
     if (verifyContract) {

@@ -7,11 +7,12 @@ import type { HardhatEthersHelpers, HardhatRuntimeEnvironment, TaskArguments } f
 import path from 'path';
 
 import {
-  applyCanonicalSnapshot,
   buildSnapshotArtifact,
   parseSnapshotArtifact,
+  prepareCanonicalSnapshotUpgrade,
   readCanonicalSnapshot,
 } from './protocolConfigMirror';
+import { executePreparedDaoUpgrade } from './utils/daoUpgrade';
 import { formatError } from './utils/formatError';
 import { CRS_COUNTER_BASE, KEY_COUNTER_BASE } from './utils/kmsGenerationConstants';
 import { getRequiredEnvVar } from './utils/loadVariables';
@@ -593,7 +594,12 @@ task(
         canonicalProtocolConfigAddress: canonicalProtocolConfigAddress as string,
       });
     }
-    await applyCanonicalSnapshot(hre, { snapshot, secondaryProxyAddress });
+
+    // Same prepare step as the DAO path (task:prepareDeployProtocolConfigFromCanonical), then
+    // execute the produced payload directly: devnet runs byte-identical calldata to what the DAO
+    // would sign.
+    const prepared = await prepareCanonicalSnapshotUpgrade(hre, { snapshot, proxyAddress: secondaryProxyAddress });
+    await executePreparedDaoUpgrade(hre, prepared);
 
     // On interval-mining networks, upgradeProxy can return before the tx is mined.
     await waitForTaskReady(hre, 'task:assertProtocolConfigReady');

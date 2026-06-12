@@ -2,8 +2,8 @@ import type { Provider } from 'ethers';
 import type { HardhatRuntimeEnvironment } from 'hardhat/types';
 
 import type { ProtocolConfig } from '../types';
+import { type PreparedDaoUpgrade, getFunctionFragment, prepareDaoUpgrade } from './utils/daoUpgrade';
 import { formatError } from './utils/formatError';
-import { getRequiredEnvVar } from './utils/loadVariables';
 
 export type KmsNode = {
   txSenderAddress: string;
@@ -99,32 +99,29 @@ export async function readCanonicalSnapshot(
   return { currentKmsContextId, kmsNodes, thresholds, canonicalChainId, blockNumber };
 }
 
-// Upgrades the secondary ProtocolConfig proxy and initializes it from a snapshot — freshly read via
-// readCanonicalSnapshot or parsed from a reviewed export artifact. Reuses
-// ProtocolConfig.initializeFromMigration (originally the Gateway -> Ethereum migration initializer)
-// to land on canonical's currentKmsContextId rather than start a fresh counter.
-export async function applyCanonicalSnapshot(
+// Builds the upgrade for a secondary ProtocolConfig proxy from a snapshot — freshly read via
+// readCanonicalSnapshot or parsed from a reviewed export artifact: deploys the implementation and
+// returns the upgradeToAndCall(initializeFromMigration(...)) payload. The DAO path prints it for
+// signers; the direct (devnet) path executes the very same payload with the deployer key
+// (executePreparedDaoUpgrade). Reusing initializeFromMigration (originally the Gateway -> Ethereum
+// migration initializer) lands the replica on canonical's currentKmsContextId rather than starting
+// a fresh counter.
+export async function prepareCanonicalSnapshotUpgrade(
   hre: HardhatRuntimeEnvironment,
-  options: { snapshot: CanonicalSnapshot; secondaryProxyAddress: string },
-): Promise<void> {
-  const { ethers, upgrades } = hre;
-  const { snapshot, secondaryProxyAddress } = options;
-  const { currentKmsContextId, kmsNodes, thresholds, canonicalChainId, blockNumber } = snapshot;
+  options: { snapshot: CanonicalSnapshot; proxyAddress: string },
+): Promise<PreparedDaoUpgrade> {
+  const { snapshot, proxyAddress } = options;
   console.log(
-    `Mirroring ProtocolConfig from canonical chain ${canonicalChainId} at block ${blockNumber}: contextId=${currentKmsContextId}, kmsNodes=${kmsNodes.length}.`,
+    `Mirroring ProtocolConfig from canonical chain ${snapshot.canonicalChainId} at block ${snapshot.blockNumber}: contextId=${snapshot.currentKmsContextId}, kmsNodes=${snapshot.kmsNodes.length}.`,
   );
 
-  const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
-  const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
-  const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
-  const newImplem = await ethers.getContractFactory('ProtocolConfig', deployer);
-  const proxy = await upgrades.forceImport(secondaryProxyAddress, currentImplementation);
-
-  await upgrades.upgradeProxy(proxy, newImplem, {
-    call: {
-      fn: 'initializeFromMigration',
-      args: [currentKmsContextId, kmsNodes, thresholds],
-    },
+  const artifact = await hre.artifacts.readArtifact('ProtocolConfig');
+  const innerFunctionSignature = getFunctionFragment(artifact.abi, 'initializeFromMigration').format('sighash');
+  return prepareDaoUpgrade(hre, {
+    proxyAddress,
+    contractName: 'ProtocolConfig',
+    innerFunctionSignature,
+    decodedArgs: [snapshot.currentKmsContextId, snapshot.kmsNodes, snapshot.thresholds],
   });
 }
 

@@ -1,7 +1,8 @@
 import { expect } from 'chai';
 import hre, { ethers, run } from 'hardhat';
 
-import { applyCanonicalSnapshot, readCanonicalSnapshot } from '../../tasks/protocolConfigMirror';
+import { prepareCanonicalSnapshotUpgrade, readCanonicalSnapshot } from '../../tasks/protocolConfigMirror';
+import { executePreparedDaoUpgrade } from '../../tasks/utils/daoUpgrade';
 import { CRS_COUNTER_BASE, KEY_COUNTER_BASE, PREP_KEYGEN_COUNTER_BASE } from '../../tasks/utils/kmsGenerationConstants';
 import { getRequiredEnvVar } from '../../tasks/utils/loadVariables';
 import type { KMSGeneration, ProtocolConfig } from '../../types';
@@ -93,13 +94,15 @@ describe('canonical snapshot apply (canonical → secondary deploy flow)', funct
   const deployerPrivateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
   const deployer = new ethers.Wallet(deployerPrivateKey).connect(ethers.provider);
 
-  // The composition task:deployProtocolConfigFromCanonical performs in live-read mode.
+  // The composition task:deployProtocolConfigFromCanonical performs in live-read mode: the DAO
+  // prepare step, then direct execution of the produced payload.
   async function readAndApply(canonicalProtocolConfigAddress: string, secondaryProxyAddress: string) {
     const snapshot = await readCanonicalSnapshot(hre, {
       canonicalProvider: ethers.provider,
       canonicalProtocolConfigAddress,
     });
-    await applyCanonicalSnapshot(hre, { snapshot, secondaryProxyAddress });
+    const prepared = await prepareCanonicalSnapshotUpgrade(hre, { snapshot, proxyAddress: secondaryProxyAddress });
+    await executePreparedDaoUpgrade(hre, prepared);
     return snapshot;
   }
 

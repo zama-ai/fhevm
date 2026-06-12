@@ -149,9 +149,12 @@ contract address, the current KMS context id, the KMS node set, and all four thr
 artifact byte-for-byte — even after a later `defineNewKmsContext` rotation — by re-running the
 export with `--block-number <N>` from the artifact and diffing the output.
 
-**3. Apply** the reviewed artifact to the local `ProtocolConfig` proxy. Both paths upgrade the
-empty proxy via `initializeFromMigration`, so the replica lands on canonical's
-`currentKmsContextId` instead of starting a fresh counter.
+**3. Apply** the reviewed artifact to the local `ProtocolConfig` proxy. Both environments run the
+same prepare step — deploy the implementation and build the
+`upgradeToAndCall(initializeFromMigration(…))` payload, landing the replica on canonical's
+`currentKmsContextId` instead of a fresh counter. They differ only in who executes that payload:
+the devnet task sends it immediately with the deployer key, so **what runs on devnet is
+byte-identical to what the DAO signs**.
 
 | Environment       | Task                                                                       | Signer                                              |
 | ----------------- | -------------------------------------------------------------------------- | --------------------------------------------------- |

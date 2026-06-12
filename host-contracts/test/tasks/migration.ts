@@ -7,7 +7,7 @@ import path from 'path';
 
 import { buildSnapshotArtifact, readCanonicalSnapshot } from '../../tasks/protocolConfigMirror';
 import { buildKmsNodes, buildKmsThresholds } from '../../tasks/taskDeploy';
-import { UPGRADE_TO_AND_CALL_INTERFACE } from '../../tasks/taskMigrate';
+import { UPGRADE_TO_AND_CALL_INTERFACE } from '../../tasks/utils/daoUpgrade';
 import { makeEnvHelpers } from '../../tasks/utils/envSnapshot';
 import {
   CRS_COUNTER_BASE,
