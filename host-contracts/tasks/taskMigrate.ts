@@ -5,7 +5,7 @@ import { task, types } from 'hardhat/config';
 import type { HardhatRuntimeEnvironment } from 'hardhat/types';
 import path from 'path';
 
-import { parseSnapshotArtifact, prepareCanonicalSnapshotUpgrade } from './protocolConfigMirror';
+import { buildCanonicalUpgradeProposal, parseSnapshotArtifact } from './protocolConfigMirror';
 import {
   assertContractMatchesVersionPrefix,
   deployEmptyUUPS,
@@ -14,19 +14,19 @@ import {
   readHostEnv,
   waitForTaskReady,
 } from './taskDeploy';
-import {
-  getFunctionFragment,
-  prepareDaoUpgrade,
-  printPreparedDaoUpgrade,
-  toJsonString,
-  verifyPreparedImplementation,
-} from './utils/daoUpgrade';
 import { buildKMSGenerationInitializeFromMigrationArgs } from './utils/kmsGenerationMigrationEnv';
 import { getRequiredEnvVar, loadHostAddresses } from './utils/loadVariables';
 import {
   type ProtocolConfigMigrationKmsNode,
   buildProtocolConfigInitializeFromMigrationArgs,
 } from './utils/protocolConfigMigrationEnv';
+import {
+  buildUpgradeProposal,
+  getFunctionFragment,
+  printUpgradeProposal,
+  toJsonString,
+  verifyProposalImplementation,
+} from './utils/upgradeProposal';
 
 function assertEqual<T>(label: string, actual: T, expected: NoInfer<T>): void {
   if (actual !== expected) {
@@ -131,16 +131,16 @@ task(
     const decodedArgs = buildProtocolConfigInitializeFromMigrationArgs();
     const artifact = await hre.artifacts.readArtifact('ProtocolConfig');
     const innerFunctionSignature = getFunctionFragment(artifact.abi, 'initializeFromMigration').format('sighash');
-    const preparedUpgrade = await prepareDaoUpgrade(hre, {
+    const preparedUpgrade = await buildUpgradeProposal(hre, {
       proxyAddress,
       contractName: 'ProtocolConfig',
       innerFunctionSignature,
       decodedArgs,
     });
 
-    printPreparedDaoUpgrade(preparedUpgrade);
+    printUpgradeProposal(preparedUpgrade);
     if (verifyContract) {
-      await verifyPreparedImplementation(hre, preparedUpgrade, 'contracts/ProtocolConfig.sol:ProtocolConfig');
+      await verifyProposalImplementation(hre, preparedUpgrade, 'contracts/ProtocolConfig.sol:ProtocolConfig');
     }
     return preparedUpgrade;
   });
@@ -171,11 +171,11 @@ task(
     // The bootstrap task may have updated addresses/FHEVMHostAddresses.sol, so rebuild
     await hre.run('compile:specific', { contract: 'contracts' });
     const snapshot = parseSnapshotArtifact(fs.readFileSync(snapshotPath, 'utf-8'));
-    const preparedUpgrade = await prepareCanonicalSnapshotUpgrade(hre, { snapshot, proxyAddress });
+    const preparedUpgrade = await buildCanonicalUpgradeProposal(hre, { snapshot, proxyAddress });
 
-    printPreparedDaoUpgrade(preparedUpgrade);
+    printUpgradeProposal(preparedUpgrade);
     if (verifyContract) {
-      await verifyPreparedImplementation(hre, preparedUpgrade, 'contracts/ProtocolConfig.sol:ProtocolConfig');
+      await verifyProposalImplementation(hre, preparedUpgrade, 'contracts/ProtocolConfig.sol:ProtocolConfig');
     }
     return preparedUpgrade;
   });
@@ -227,16 +227,16 @@ task(
     const decodedArgs = buildKMSGenerationInitializeFromMigrationArgs();
     const artifact = await hre.artifacts.readArtifact('KMSGeneration');
     const innerFunctionSignature = getFunctionFragment(artifact.abi, 'initializeFromMigration').format('sighash');
-    const preparedUpgrade = await prepareDaoUpgrade(hre, {
+    const preparedUpgrade = await buildUpgradeProposal(hre, {
       proxyAddress,
       contractName: 'KMSGeneration',
       innerFunctionSignature,
       decodedArgs,
     });
 
-    printPreparedDaoUpgrade(preparedUpgrade);
+    printUpgradeProposal(preparedUpgrade);
     if (verifyContract) {
-      await verifyPreparedImplementation(hre, preparedUpgrade, 'contracts/KMSGeneration.sol:KMSGeneration');
+      await verifyProposalImplementation(hre, preparedUpgrade, 'contracts/KMSGeneration.sol:KMSGeneration');
     }
     return preparedUpgrade;
   });

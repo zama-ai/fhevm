@@ -7,7 +7,6 @@ import path from 'path';
 
 import { buildSnapshotArtifact, readCanonicalSnapshot } from '../../tasks/protocolConfigMirror';
 import { buildKmsNodes, buildKmsThresholds } from '../../tasks/taskDeploy';
-import { UPGRADE_TO_AND_CALL_INTERFACE } from '../../tasks/utils/daoUpgrade';
 import { makeEnvHelpers } from '../../tasks/utils/envSnapshot';
 import {
   CRS_COUNTER_BASE,
@@ -30,6 +29,7 @@ import {
   restoreProtocolConfigMigrationEnv,
   snapshotProtocolConfigMigrationEnv,
 } from '../../tasks/utils/protocolConfigMigrationEnv';
+import { UPGRADE_TO_AND_CALL_INTERFACE } from '../../tasks/utils/upgradeProposal';
 import { deployEmptyProxy } from '../utils/deploymentHelpers';
 import {
   HOST_ENV_FILE,

@@ -5,9 +5,9 @@ import { getRequiredEnvVar } from './loadVariables';
 
 // Generic prepare/execute machinery for UUPS upgrades governed by upgradeToAndCall payloads.
 //
-// The DAO path stops after `prepareDaoUpgrade` + `printPreparedDaoUpgrade`: the implementation is
+// The DAO path stops after `buildUpgradeProposal` + `printUpgradeProposal`: the implementation is
 // deployed, the payload is printed, and the DAO executes it. The direct (devnet) path is the same
-// prepare step followed by `executePreparedDaoUpgrade`, which simply sends the prepared payload
+// prepare step followed by `executeUpgradeProposal`, which simply sends the prepared payload
 // with the deployer key — so what runs on devnet is byte-identical to what the DAO signs.
 
 export function toJsonString(value: unknown): string {
@@ -30,7 +30,7 @@ export const UPGRADE_TO_AND_CALL_INTERFACE = new Interface([
   'function upgradeToAndCall(address newImplementation, bytes data) payable',
 ]);
 
-export type PreparedDaoUpgrade = {
+export type UpgradeProposal = {
   proxyAddress: string;
   newImplementationAddress: string;
   innerFunctionSignature: string;
@@ -39,7 +39,7 @@ export type PreparedDaoUpgrade = {
   outerCalldata: string;
 };
 
-export async function prepareDaoUpgrade(
+export async function buildUpgradeProposal(
   hre: HardhatRuntimeEnvironment,
   params: {
     proxyAddress: string;
@@ -47,7 +47,7 @@ export async function prepareDaoUpgrade(
     innerFunctionSignature: string;
     decodedArgs: unknown[];
   },
-): Promise<PreparedDaoUpgrade> {
+): Promise<UpgradeProposal> {
   const { ethers, upgrades } = hre;
   const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
   const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
@@ -80,10 +80,7 @@ export async function prepareDaoUpgrade(
 
 // The entire direct (non-DAO) execution path: send the exact payload the DAO would sign, using the
 // deployer key.
-export async function executePreparedDaoUpgrade(
-  hre: HardhatRuntimeEnvironment,
-  prepared: PreparedDaoUpgrade,
-): Promise<void> {
+export async function executeUpgradeProposal(hre: HardhatRuntimeEnvironment, prepared: UpgradeProposal): Promise<void> {
   const { ethers } = hre;
   const deployer = new ethers.Wallet(getRequiredEnvVar('DEPLOYER_PRIVATE_KEY')).connect(ethers.provider);
   console.log(
@@ -93,9 +90,9 @@ export async function executePreparedDaoUpgrade(
   await tx.wait();
 }
 
-export async function verifyPreparedImplementation(
+export async function verifyProposalImplementation(
   hre: HardhatRuntimeEnvironment,
-  data: PreparedDaoUpgrade,
+  data: UpgradeProposal,
   contract: string,
 ): Promise<void> {
   console.log('Waiting 2 minutes before contract verification... Please wait...');
@@ -107,7 +104,7 @@ export async function verifyPreparedImplementation(
   });
 }
 
-export function printPreparedDaoUpgrade(data: PreparedDaoUpgrade): void {
+export function printUpgradeProposal(data: UpgradeProposal): void {
   console.log('proxyAddress:', data.proxyAddress);
   console.log('newImplementationAddress:', data.newImplementationAddress);
   console.log('innerFunctionSignature:', data.innerFunctionSignature);

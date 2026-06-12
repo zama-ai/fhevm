@@ -2,8 +2,8 @@ import type { Provider } from 'ethers';
 import type { HardhatRuntimeEnvironment } from 'hardhat/types';
 
 import type { ProtocolConfig } from '../types';
-import { type PreparedDaoUpgrade, getFunctionFragment, prepareDaoUpgrade } from './utils/daoUpgrade';
 import { formatError } from './utils/formatError';
+import { type UpgradeProposal, buildUpgradeProposal, getFunctionFragment } from './utils/upgradeProposal';
 
 export type KmsNode = {
   txSenderAddress: string;
@@ -103,13 +103,13 @@ export async function readCanonicalSnapshot(
 // readCanonicalSnapshot or parsed from a reviewed export artifact: deploys the implementation and
 // returns the upgradeToAndCall(initializeFromMigration(...)) payload. The DAO path prints it for
 // signers; the direct (devnet) path executes the very same payload with the deployer key
-// (executePreparedDaoUpgrade). Reusing initializeFromMigration (originally the Gateway -> Ethereum
+// (executeUpgradeProposal). Reusing initializeFromMigration (originally the Gateway -> Ethereum
 // migration initializer) lands the replica on canonical's currentKmsContextId rather than starting
 // a fresh counter.
-export async function prepareCanonicalSnapshotUpgrade(
+export async function buildCanonicalUpgradeProposal(
   hre: HardhatRuntimeEnvironment,
   options: { snapshot: CanonicalSnapshot; proxyAddress: string },
-): Promise<PreparedDaoUpgrade> {
+): Promise<UpgradeProposal> {
   const { snapshot, proxyAddress } = options;
   console.log(
     `Mirroring ProtocolConfig from canonical chain ${snapshot.canonicalChainId} at block ${snapshot.blockNumber}: contextId=${snapshot.currentKmsContextId}, kmsNodes=${snapshot.kmsNodes.length}.`,
@@ -117,7 +117,7 @@ export async function prepareCanonicalSnapshotUpgrade(
 
   const artifact = await hre.artifacts.readArtifact('ProtocolConfig');
   const innerFunctionSignature = getFunctionFragment(artifact.abi, 'initializeFromMigration').format('sighash');
-  return prepareDaoUpgrade(hre, {
+  return buildUpgradeProposal(hre, {
     proxyAddress,
     contractName: 'ProtocolConfig',
     innerFunctionSignature,

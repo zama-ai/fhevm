@@ -1,10 +1,10 @@
 import { expect } from 'chai';
 import hre, { ethers, run } from 'hardhat';
 
-import { prepareCanonicalSnapshotUpgrade, readCanonicalSnapshot } from '../../tasks/protocolConfigMirror';
-import { executePreparedDaoUpgrade } from '../../tasks/utils/daoUpgrade';
+import { buildCanonicalUpgradeProposal, readCanonicalSnapshot } from '../../tasks/protocolConfigMirror';
 import { CRS_COUNTER_BASE, KEY_COUNTER_BASE, PREP_KEYGEN_COUNTER_BASE } from '../../tasks/utils/kmsGenerationConstants';
 import { getRequiredEnvVar } from '../../tasks/utils/loadVariables';
+import { executeUpgradeProposal } from '../../tasks/utils/upgradeProposal';
 import type { KMSGeneration, ProtocolConfig } from '../../types';
 import {
   buildProtocolConfigNodes,
@@ -101,8 +101,8 @@ describe('canonical snapshot apply (canonical → secondary deploy flow)', funct
       canonicalProvider: ethers.provider,
       canonicalProtocolConfigAddress,
     });
-    const prepared = await prepareCanonicalSnapshotUpgrade(hre, { snapshot, proxyAddress: secondaryProxyAddress });
-    await executePreparedDaoUpgrade(hre, prepared);
+    const prepared = await buildCanonicalUpgradeProposal(hre, { snapshot, proxyAddress: secondaryProxyAddress });
+    await executeUpgradeProposal(hre, prepared);
     return snapshot;
   }
 
