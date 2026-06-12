@@ -78,6 +78,10 @@ pub struct Args {
     #[arg(long, default_value = "120s", value_parser = parse_duration)]
     pub s3_regular_recheck_duration: Duration,
 
+    /// Disable S3 SHA256 checksum upload and HEAD verification for incompatible S3 servers.
+    #[arg(long, default_value_t = false)]
+    pub s3_disable_sha256_checksum: bool,
+
     #[arg(long, default_value = "15min", value_parser = parse_duration)]
     pub cleanup_interval: Duration,
 

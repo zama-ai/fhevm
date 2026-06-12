@@ -1149,6 +1149,9 @@ snsWorker:
   disabledArgs: []
 
   # Additional raw CLI flags, appended after template-injected args.
+  # Example for S3-compatible servers that reject SHA256 checksum headers:
+  # extraArgs:
+  #   - --s3-disable-sha256-checksum
   # Full sns_worker CLI for v0.11 / v0.12 images:
   #   built-in via template: --database-url, --bucket-name-ct64,
   #     --bucket-name-ct128, --signer-type, --metrics-addr, --health-check-port
@@ -1172,6 +1175,7 @@ snsWorker:
   #     --s3-max-retries-timeout=120s
   #     --s3-recheck-duration=2s
   #     --s3-regular-recheck-duration=120s
+  #     --s3-disable-sha256-checksum             # for S3-compatible servers without checksum support
   #     --cleanup-interval=15min
   #     --gc-batch-size=1000                     # set to 0 to disable GC
   #     --log-level=INFO

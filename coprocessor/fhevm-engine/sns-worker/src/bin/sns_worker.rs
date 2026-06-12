@@ -51,6 +51,7 @@ fn construct_config() -> Result<Config, fhevm_engine_common::database::DatabaseC
                 recheck_duration: args.s3_recheck_duration,
                 regular_recheck_duration: args.s3_regular_recheck_duration,
             },
+            verify_sha256_checksum: !args.s3_disable_sha256_checksum,
         },
         log_level: args.log_level,
         health_checks: HealthCheckConfig {

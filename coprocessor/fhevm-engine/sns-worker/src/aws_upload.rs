@@ -1,14 +1,16 @@
 use crate::metrics::{AWS_UPLOAD_FAILURE_COUNTER, AWS_UPLOAD_SUCCESS_COUNTER};
 use crate::{
     BigCiphertext, Ciphertext128Format, Config, ExecutionError, HandleItem, S3Config, UploadJob,
-    CURRENT_S3_FORMAT_VERSION,
+    CURRENT_S3_FORMAT_VERSION, S3_FORMAT_VERSION_LEGACY,
 };
-use alloy_primitives::{B256, U256};
+use alloy_primitives::{Address, B256, U256};
 use aws_sdk_s3::error::SdkError;
 use aws_sdk_s3::operation::head_bucket::HeadBucketError;
 use aws_sdk_s3::operation::head_object::HeadObjectError;
 use aws_sdk_s3::primitives::ByteStream;
+use aws_sdk_s3::types::{ChecksumAlgorithm, ChecksumMode};
 use aws_sdk_s3::Client;
+use base64::Engine;
 use bytesize::ByteSize;
 use ciphertext_attestation::{
     CiphertextAttestation, CiphertextAttestationPayload, CiphertextFormat, Version,
@@ -21,6 +23,7 @@ use fhevm_engine_common::types::CoproSigner;
 use fhevm_engine_common::utils::to_hex;
 use futures::future::join_all;
 use opentelemetry::trace::{Status, TraceContextExt};
+use sha2::Sha256;
 use sha3::{Digest, Keccak256};
 use sqlx::{PgPool, Pool, Postgres, Transaction};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -130,12 +133,26 @@ async fn run_uploader_loop(
                     }
                     UploadJob::DatabaseLock(mut item) => {
                         let row = match sqlx::query!(
-                            "SELECT ciphertext, ciphertext128, ciphertext128_format, s3_format_version
-                             FROM ciphertext_digest
-                             WHERE handle = $1 AND
-                             (ciphertext128 IS NULL OR ciphertext IS NULL)
-                             FOR UPDATE SKIP LOCKED",
-                            item.handle,
+                            "
+                            SELECT d.ciphertext128_format,
+                                   d.s3_format_version
+                            FROM ciphertext_digest d
+                            WHERE d.handle = $1
+                              AND (
+                                d.ciphertext IS NULL
+                                OR (
+                                  d.ciphertext128 IS NULL
+                                  AND EXISTS (
+                                    SELECT 1
+                                    FROM ciphertexts128 c
+                                    WHERE c.handle = d.handle
+                                      AND c.ciphertext IS NOT NULL
+                                  )
+                                )
+                            )
+                            FOR UPDATE SKIP LOCKED
+                            ",
+                            &item.handle,
                         )
                         .fetch_one(trx.as_mut())
                         .await
@@ -152,38 +169,27 @@ async fn run_uploader_loop(
                             }
                         };
 
-                        let s3_format_version = row.s3_format_version;
-                        let should_verify_existing_s3 =
-                            s3_format_version != Some(CURRENT_S3_FORMAT_VERSION);
-
-                        // A non-null digest means another worker already uploaded that
-                        // ciphertext variant. For pre-v1 rows, keep recovered bytes so
-                        // this retry can validate and, if needed, rewrite old S3 objects.
-                        if row.ciphertext.is_some() && !should_verify_existing_s3 {
-                            item.ct64_compressed = Arc::new(Vec::new());
-                        }
-
-                        let ct128_format = Ciphertext128Format::from_i16(row.ciphertext128_format)
+                        let ciphertext128_format = row.ciphertext128_format;
+                        item.s3_format_version = row.s3_format_version;
+                        let ct128_format = Ciphertext128Format::from_i16(ciphertext128_format)
                             .ok_or_else(|| {
                                 ExecutionError::InvalidCiphertext128Format(format!(
                                     "pending ct128 has invalid format id, host_chain_id: {}, handle: {}, format_id: {}",
                                     item.host_chain_id.as_i64(),
                                     to_hex(&item.handle),
-                                    row.ciphertext128_format,
+                                    ciphertext128_format,
                                 ))
                             })?;
 
-                        if row.ciphertext128.is_some()
-                            && (!should_verify_existing_s3 || item.ct128.is_empty())
-                        {
-                            // ct128 already uploaded; only ct64 may need retrying.
-                            item.ct128 = Arc::new(BigCiphertext::new(Vec::new(), ct128_format));
-                        } else if !item.ct128.is_empty() {
-                            // Still need to upload ct128 bytes; reconstruct with DB format as truth.
+                        if !item.ct128.is_empty() {
+                            // Reconstruct with DB format as truth. Even if a digest is already
+                            // present, incomplete rows retry the whole handle before committing.
                             item.ct128 = Arc::new(BigCiphertext::new(
                                 item.ct128.bytes().to_vec(),
                                 ct128_format,
                             ));
+                        } else {
+                            item.ct128 = Arc::new(BigCiphertext::new(Vec::new(), ct128_format));
                         }
 
                         item
@@ -283,8 +289,8 @@ async fn run_uploader_loop(
 }
 
 enum UploadResult {
-    CtType128(Vec<u8>),
-    CtType64(Vec<u8>),
+    CtType128,
+    CtType64,
 }
 
 #[derive(Clone)]
@@ -320,6 +326,7 @@ fn build_attestation_payload(
 
 fn validate_existing_attestation(
     expected: &CiphertextAttestationPayload,
+    expected_signer: Address,
     actual: &CiphertextAttestation,
 ) -> Result<(), String> {
     if actual.version != expected.version {
@@ -352,6 +359,12 @@ fn validate_existing_attestation(
             expected.format, actual.format
         ));
     }
+    if actual.signer != expected_signer {
+        return Err(format!(
+            "signer mismatch: expected {}, got {}",
+            expected_signer, actual.signer
+        ));
+    }
 
     actual
         .verify(expected.handle, expected.coprocessor_context_id)
@@ -371,8 +384,10 @@ async fn upload_ct(
     ct_bytes: Vec<u8>,
     extra_digest_key: Option<String>,
     result: UploadResult,
+    verify_sha256_checksum: bool,
 ) -> anyhow::Result<UploadResult> {
-    let upload = client
+    let checksum_sha256 = verify_sha256_checksum.then(|| sha256_checksum_header(&ct_bytes));
+    let mut upload = client
         .put_object()
         .bucket(bucket.clone())
         .metadata("Ct-Format", ct_format)
@@ -383,6 +398,9 @@ async fn upload_ct(
         .metadata("Signer", metadata.signer)
         .key(&key)
         .body(ByteStream::from(ct_bytes));
+    if let Some(checksum_sha256) = checksum_sha256 {
+        upload = upload.checksum_sha256(checksum_sha256);
+    }
     let upload = upload.send().await;
     if let Err(err) = upload {
         error!(error = %err, bucket, key, metadata.attestation_json, "Failed to upload ct");
@@ -396,6 +414,7 @@ async fn upload_ct(
             .copy_source(copy_source)
             .bucket(bucket.clone())
             .key(&extra_digest_key)
+            .set_checksum_algorithm(verify_sha256_checksum.then_some(ChecksumAlgorithm::Sha256))
             .send()
             .await;
         if let Err(err) = upload_backward_compatible {
@@ -481,6 +500,22 @@ fn upload_material(task: &HandleItem) -> anyhow::Result<UploadMaterial> {
     })
 }
 
+fn should_preserve_legacy_s3_format(task: &HandleItem, ct128_digest: &[u8]) -> bool {
+    let has_legacy_s3_format = task.s3_format_version != Some(CURRENT_S3_FORMAT_VERSION);
+    let has_existing_ct128_digest =
+        task.ct128_digest.is_some() && ct128_digest != NO_SNS_CIPHERTEXT_DIGEST.as_slice();
+
+    has_legacy_s3_format && has_existing_ct128_digest && task.ct128.is_empty()
+}
+
+fn completed_s3_format_version(task: &HandleItem, preserve_legacy_s3_format: bool) -> i16 {
+    if preserve_legacy_s3_format {
+        task.s3_format_version.unwrap_or(S3_FORMAT_VERSION_LEGACY)
+    } else {
+        CURRENT_S3_FORMAT_VERSION
+    }
+}
+
 async fn build_attestation(
     payload: &CiphertextAttestationPayload,
     signer: &CoproSigner,
@@ -499,13 +534,11 @@ async fn build_attestation(
 }
 
 /// Uploads both 128-bit bootstrapped ciphertext and regular ciphertext to S3
-/// buckets. If successful, it stores their digests in the database.
+/// buckets. If both uploads succeed, it stores their digests in the database.
 ///
 /// Guarantees:
-/// - If the upload of the 128-bit ciphertext fails, the function will not store
-///   its digest in the database.
-/// - If the upload of the regular ciphertext fails, the function will not store
-///   its digest in the database.
+/// - If any required upload or verification fails, the function will not mark
+///   either ciphertext as uploaded in the database.
 async fn upload_ciphertexts(
     mut trx: Transaction<'_, Postgres>,
     task: HandleItem,
@@ -521,6 +554,7 @@ async fn upload_ciphertexts(
 
     let upload_material = upload_material(&task)?;
     let ct128_digest = &upload_material.ct128_digest;
+    let preserve_legacy_s3_format = should_preserve_legacy_s3_format(&task, ct128_digest);
 
     // The ct128 format is only required for the attestation when we actually have
     // a real (non-zero) ct128 digest. For pure-ct64 handles or partial recovery
@@ -538,6 +572,7 @@ async fn upload_ciphertexts(
         ct128_digest,
         attestation_format,
     )?;
+    let expected_signer = signer.address();
     let attestation = build_attestation(&expected_attestation, &signer).await?;
     let attestation_json = serde_json::to_string(&attestation)?;
 
@@ -545,90 +580,105 @@ async fn upload_ciphertexts(
         attestation_json,
         key_id: hex::encode(&task.key_id_gw),
         transaction_id: hex::encode(task.transaction_id.as_deref().unwrap_or_default()),
-        signer: signer.address().to_string(),
+        signer: expected_signer.to_string(),
     };
 
     if *ct128_digest != NO_SNS_CIPHERTEXT_DIGEST.to_vec() {
         let key = s3_ciphertext_key(&task.handle, context_id);
         let digest_key = hex::encode(ct128_digest);
 
-        let ct128_check_span = tracing::info_span!(
-            "ct128_check_s3",
-            ct_type = "ct128",
-            exists = tracing::field::Empty,
-        );
-        let exists = object_check_result(
-            &ct128_check_span,
-            check_ct128_objects_exist(
-                client,
-                &conf.bucket_ct128,
-                &key,
-                &digest_key,
-                &expected_attestation,
-            )
-            .instrument(ct128_check_span.clone())
-            .await,
-        )?;
-        ct128_check_span.record("exists", tracing::field::display(exists));
-        drop(ct128_check_span);
-
-        if !exists {
-            if task.ct128.is_empty() {
-                anyhow::bail!(
-                    "ct128 S3 object needs upload for handle {}, but ct128 bytes are unavailable",
-                    handle_as_hex,
-                );
-            }
-
-            let ct128_format = task.ct128.format();
-            let ct128_bytes = task.ct128.bytes();
-            info!(
-                handle = handle_as_hex,
-                len = ?ByteSize::b(ct128_bytes.len() as u64),
-                format = %ct128_format,
-                host_chain_id = task.host_chain_id.as_i64(),
-                "Uploading ct128"
-            );
-
-            let bucket = &conf.bucket_ct128;
-            let ct_format = ct128_format.to_string();
-            let ct128_upload_span = tracing::info_span!(
-                "ct128_upload_s3",
-                ct_type = "ct128",
-                format = %ct_format,
-                len = ct128_bytes.len(),
-            );
-            let result = UploadResult::CtType128(ct128_digest.clone());
-            let upload_ct = upload_ct(
-                ct128_upload_span.clone(),
-                client.clone(),
-                bucket.clone(),
-                key,
-                ct_format,
-                s3_metadata.clone(),
-                ct128_bytes.to_vec(),
-                Some(digest_key),
-                result,
-            );
-            let grouped_upload = tokio::spawn(
-                async move {
-                    let result = upload_ct.await?;
-                    anyhow::Ok(result)
-                }
-                .instrument(ct128_upload_span),
-            );
-            jobs.push(grouped_upload);
-        } else {
+        if preserve_legacy_s3_format {
             info!(
                 handle = handle_as_hex,
                 ct128_digest = hex::encode(ct128_digest),
-                "ct128 already exists in S3",
+                s3_format_version = task.s3_format_version,
+                "Preserving legacy ct128 S3 format for later migration"
             );
+        } else {
+            let ct128_checksum_sha256 = conf
+                .verify_sha256_checksum
+                .then(|| match task.ct128.is_empty() {
+                    true => None,
+                    false => Some(sha256_checksum_header(task.ct128.bytes())),
+                })
+                .flatten();
 
-            // In case of a sns-worker failure after uploading to S3,
-            // the state between both storages may become inconsistent
-            task.update_ct128_uploaded(&mut trx, ct128_digest.clone())
-                .await?;
+            let ct128_check_span = tracing::info_span!(
+                "ct128_check_s3",
+                ct_type = "ct128",
+                exists = tracing::field::Empty,
+            );
+            let exists = object_check_result(
+                &ct128_check_span,
+                check_ct128_objects_exist(
+                    client,
+                    &conf.bucket_ct128,
+                    &key,
+                    &digest_key,
+                    &expected_attestation,
+                    expected_signer,
+                    ct128_checksum_sha256.as_deref(),
+                )
+                .instrument(ct128_check_span.clone())
+                .await,
+            )?;
+            ct128_check_span.record("exists", tracing::field::display(exists));
+            drop(ct128_check_span);
+
+            if !exists {
+                if task.ct128.is_empty() {
+                    anyhow::bail!(
+                        "ct128 S3 object needs upload for handle {}, but ct128 bytes are unavailable",
+                        handle_as_hex,
+                    );
+                }
+
+                let ct128_format = task.ct128.format();
+                let ct128_bytes = task.ct128.bytes();
+                info!(
+                    handle = handle_as_hex,
+                    len = ?ByteSize::b(ct128_bytes.len() as u64),
+                    format = %ct128_format,
+                    host_chain_id = task.host_chain_id.as_i64(),
+                    "Uploading ct128"
+                );
+
+                let bucket = &conf.bucket_ct128;
+                let ct_format = ct128_format.to_string();
+                let ct128_upload_span = tracing::info_span!(
+                    "ct128_upload_s3",
+                    ct_type = "ct128",
+                    format = %ct_format,
+                    len = ct128_bytes.len(),
+                );
+                let result = UploadResult::CtType128;
+                let upload_ct = upload_ct(
+                    ct128_upload_span.clone(),
+                    client.clone(),
+                    bucket.clone(),
+                    key,
+                    ct_format,
+                    s3_metadata.clone(),
+                    ct128_bytes.to_vec(),
+                    Some(digest_key),
+                    result,
+                    conf.verify_sha256_checksum,
+                );
+                let grouped_upload = tokio::spawn(
+                    async move {
+                        let result = upload_ct.await?;
+                        anyhow::Ok(result)
+                    }
+                    .instrument(ct128_upload_span),
+                );
+                jobs.push(grouped_upload);
+            } else {
+                info!(
+                    handle = handle_as_hex,
+                    ct128_digest = hex::encode(ct128_digest),
+                    "ct128 already exists in S3",
+                );
+            }
         }
     }
 
@@ -636,6 +686,13 @@ async fn upload_ciphertexts(
         let ct64_compressed = task.ct64_compressed.as_ref();
         let ct64_digest = &upload_material.ct64_digest;
         let key = s3_ciphertext_key(&task.handle, context_id);
+        let ct64_checksum_sha256 = conf
+            .verify_sha256_checksum
+            .then(|| match ct64_compressed.is_empty() {
+                true => None,
+                false => Some(sha256_checksum_header(ct64_compressed)),
+            })
+            .flatten();
 
         let ct64_check_span = tracing::info_span!(
             "ct64_check_s3",
@@ -644,9 +701,16 @@ async fn upload_ciphertexts(
         );
         let exists = object_check_result(
             &ct64_check_span,
-            check_attested_object_exists(client, &conf.bucket_ct64, &key, &expected_attestation)
-                .instrument(ct64_check_span.clone())
-                .await,
+            check_attested_object_exists(
+                client,
+                &conf.bucket_ct64,
+                &key,
+                &expected_attestation,
+                expected_signer,
+                ct64_checksum_sha256.as_deref(),
+            )
+            .instrument(ct64_check_span.clone())
+            .await,
         )?;
         ct64_check_span.record("exists", tracing::field::display(exists));
         drop(ct64_check_span);
@@ -671,7 +735,7 @@ async fn upload_ciphertexts(
                 ct_type = "ct64",
                 len = ct64_compressed.len(),
             );
-            let result = UploadResult::CtType64(ct64_digest.clone());
+            let result = UploadResult::CtType64;
             let upload_ct = upload_ct(
                 ct64_upload_span.clone(),
                 client.clone(),
@@ -682,6 +746,7 @@ async fn upload_ciphertexts(
                 ct64_compressed.clone(),
                 None,
                 result,
+                conf.verify_sha256_checksum,
             );
             let grouped_upload = tokio::spawn(
                 async move {
@@ -697,29 +762,15 @@ async fn upload_ciphertexts(
                 ct64_digest = hex::encode(ct64_digest),
                 "ct64 already exists in S3",
             );
-
-            // In case of a sns-worker failure after uploading to S3,
-            // the state between both storages may become inconsistent
-            task.update_ct64_uploaded(&mut trx, ct64_digest.clone())
-                .await?;
         }
     }
 
     let mut transient_error = anyhow::Ok(());
-    let mut successful_uploads = 0;
-    let jobs_is_empty = jobs.is_empty();
 
     // Wait all uploads results
     for result in join_all(jobs).await {
         match result {
-            Ok(Ok(UploadResult::CtType128(digest))) => {
-                successful_uploads += 1;
-                task.update_ct128_uploaded(&mut trx, digest).await?
-            }
-            Ok(Ok(UploadResult::CtType64(digest))) => {
-                successful_uploads += 1;
-                task.update_ct64_uploaded(&mut trx, digest).await?
-            }
+            Ok(Ok(UploadResult::CtType128)) | Ok(Ok(UploadResult::CtType64)) => {}
             Ok(Err(err)) => {
                 // already logged
                 transient_error = Err(ExecutionError::S3TransientError(err.to_string()).into());
@@ -731,17 +782,31 @@ async fn upload_ciphertexts(
         }
     }
 
-    if successful_uploads > 0 || jobs_is_empty {
-        sqlx::query("SELECT pg_notify($1, '')")
-            .bind(EVENT_CIPHERTEXTS_UPLOADED)
-            .execute(trx.as_mut())
-            .await?;
+    if let Err(err) = transient_error {
+        // Keep the incomplete row for resubmission, but do not mark either
+        // ciphertext digest as uploaded.
+        trx.commit().await?;
+        return Err(err);
     }
 
-    // db is updated only on successful cases
+    task.mark_ciphertexts_uploaded(
+        &mut trx,
+        upload_material.ct64_digest,
+        upload_material.ct128_digest,
+        completed_s3_format_version(&task, preserve_legacy_s3_format),
+    )
+    .await?;
+
+    sqlx::query("SELECT pg_notify($1, '')")
+        .bind(EVENT_CIPHERTEXTS_UPLOADED)
+        .execute(trx.as_mut())
+        .await?;
+
+    // The database is updated only after every required S3 object was verified
+    // or uploaded successfully.
     trx.commit().await?;
 
-    transient_error
+    Ok(())
 }
 
 pub fn compute_digest(ct: &[u8]) -> Vec<u8> {
@@ -750,21 +815,48 @@ pub fn compute_digest(ct: &[u8]) -> Vec<u8> {
     hasher.finalize().to_vec()
 }
 
+fn sha256_checksum_header(ct: &[u8]) -> String {
+    base64::engine::general_purpose::STANDARD.encode(Sha256::digest(ct))
+}
+
 /// Fetches incomplete upload tasks from the database.
 ///
-/// An incomplete upload task is defined as a task that has either
-/// `ciphertext` or `ciphertext128` as NULL in the `ciphertext_digest` table.
+/// An incomplete upload task is defined as a task missing its ct64 digest, or
+/// missing its ct128 digest while ct128 ciphertext material exists.
 async fn fetch_pending_uploads(
     db_pool: &Pool<Postgres>,
     limit: i64,
 ) -> Result<Vec<UploadJob>, ExecutionError> {
     let rows = sqlx::query!(
-        "SELECT handle, ciphertext, ciphertext128, ciphertext128_format, s3_format_version,
-            transaction_id, host_chain_id, key_id_gw
-        FROM ciphertext_digest 
-        WHERE ciphertext IS NULL OR ciphertext128 IS NULL
+        "
+        SELECT d.handle,
+               d.ciphertext,
+               d.ciphertext128,
+               d.ciphertext128_format,
+               d.s3_format_version,
+               d.transaction_id,
+               d.host_chain_id,
+               d.key_id_gw,
+               EXISTS (
+                 SELECT 1
+                 FROM ciphertexts128 c
+                 WHERE c.handle = d.handle
+                   AND c.ciphertext IS NOT NULL
+               ) AS \"has_ct128_ciphertext!\"
+        FROM ciphertext_digest d
+        WHERE d.ciphertext IS NULL
+           OR (
+             d.ciphertext128 IS NULL
+             AND EXISTS (
+               SELECT 1
+               FROM ciphertexts128 c
+               WHERE c.handle = d.handle
+                 AND c.ciphertext IS NOT NULL
+             )
+           )
         FOR UPDATE SKIP LOCKED
-        LIMIT $1;",
+        LIMIT $1;
+        ",
         limit
     )
     .fetch_all(db_pool)
@@ -781,11 +873,15 @@ async fn fetch_pending_uploads(
         let should_verify_existing_s3 = s3_format_version != Some(CURRENT_S3_FORMAT_VERSION);
         let handle = row.handle;
         let transaction_id = row.transaction_id;
+        let has_ct128_ciphertext = row.has_ct128_ciphertext;
+        let row_incomplete =
+            ciphertext_digest.is_none() || (has_ct128_ciphertext && ciphertext128_digest.is_none());
 
-        // Fetch missing ciphertext, and also fetch an already-uploaded ciphertext
-        // for pre-v1 rows so the retry can validate/rewrite its old S3 object.
-        if ciphertext_digest.is_none() || (should_verify_existing_s3 && ciphertext_digest.is_some())
-        {
+        // Fetch the ciphertext whenever the row is not fully committed. This
+        // lets recovery revalidate both S3 objects before the single DB update.
+        // Also fetch already-uploaded ciphertext for pre-v1 rows so the retry
+        // can validate/rewrite old S3 objects.
+        if row_incomplete || should_verify_existing_s3 {
             if let Ok(row) = sqlx::query!(
                 "SELECT ciphertext FROM ciphertexts WHERE handle = $1;",
                 handle
@@ -803,12 +899,11 @@ async fn fetch_pending_uploads(
             }
         }
 
-        // Fetch missing ciphertext128, and also fetch an already-uploaded
-        // ciphertext128 for pre-v1 rows so the retry can validate/rewrite its
-        // old S3 object.
-        if ciphertext128_digest.is_none()
-            || (should_verify_existing_s3 && ciphertext128_digest.is_some())
-        {
+        // Fetch ciphertext128 under the same rule: incomplete rows are retried
+        // as a whole handle, and pre-v1 rows need the bytes for validation.
+        // Ct64-only rows have no ciphertext128 material, so they are completed
+        // by writing the zero ct128 digest after ct64 is verified/uploaded.
+        if has_ct128_ciphertext && (row_incomplete || should_verify_existing_s3) {
             if let Ok(row) = sqlx::query!(
                 "SELECT ciphertext FROM ciphertexts128 WHERE handle = $1;",
                 handle
@@ -884,6 +979,7 @@ async fn fetch_pending_uploads(
                 ct128: Arc::new(ct128),
                 ct64_digest: ciphertext_digest,
                 ct128_digest: ciphertext128_digest,
+                s3_format_version,
                 span: recovery_span,
                 transaction_id,
             };
@@ -1038,8 +1134,15 @@ async fn check_attested_object_exists(
     bucket: &str,
     key: &str,
     expected: &CiphertextAttestationPayload,
+    expected_signer: Address,
+    expected_checksum_sha256: Option<&str>,
 ) -> Result<bool, ExecutionError> {
-    match client.head_object().bucket(bucket).key(key).send().await {
+    let mut head_object = client.head_object().bucket(bucket).key(key);
+    if expected_checksum_sha256.is_some() {
+        head_object = head_object.checksum_mode(ChecksumMode::Enabled);
+    }
+
+    match head_object.send().await {
         Ok(output) => {
             let Some(attestation_json) = output
                 .metadata()
@@ -1066,7 +1169,9 @@ async fn check_attested_object_exists(
                 }
             };
 
-            if let Err(reason) = validate_existing_attestation(expected, &attestation) {
+            if let Err(reason) =
+                validate_existing_attestation(expected, expected_signer, &attestation)
+            {
                 warn!(
                     bucket,
                     key,
@@ -1074,6 +1179,30 @@ async fn check_attested_object_exists(
                     "S3 object has stale ciphertext attestation metadata, reuploading"
                 );
                 return Ok(false);
+            }
+
+            if let Some(expected_checksum_sha256) = expected_checksum_sha256 {
+                match output.checksum_sha256() {
+                    Some(actual_checksum_sha256)
+                        if actual_checksum_sha256 == expected_checksum_sha256 => {}
+                    Some(actual_checksum_sha256) => {
+                        error!(
+                            bucket,
+                            key,
+                            expected_checksum_sha256,
+                            actual_checksum_sha256,
+                            "S3 object has stale SHA256 checksum, reuploading"
+                        );
+                        return Ok(false);
+                    }
+                    None => {
+                        warn!(
+                            bucket,
+                            key, "S3 object exists without SHA256 checksum, reuploading"
+                        );
+                        return Ok(false);
+                    }
+                }
             }
 
             Ok(true)
@@ -1109,10 +1238,27 @@ async fn check_ct128_objects_exist(
     key: &str,
     digest_key: &str,
     expected: &CiphertextAttestationPayload,
+    expected_signer: Address,
+    expected_checksum_sha256: Option<&str>,
 ) -> Result<bool, ExecutionError> {
-    let key_exists = check_attested_object_exists(client, bucket, key, expected).await?;
-    let digest_key_exists =
-        check_attested_object_exists(client, bucket, digest_key, expected).await?;
+    let key_exists = check_attested_object_exists(
+        client,
+        bucket,
+        key,
+        expected,
+        expected_signer,
+        expected_checksum_sha256,
+    )
+    .await?;
+    let digest_key_exists = check_attested_object_exists(
+        client,
+        bucket,
+        digest_key,
+        expected,
+        expected_signer,
+        expected_checksum_sha256,
+    )
+    .await?;
 
     if key_exists && !digest_key_exists {
         warn!(
@@ -1166,7 +1312,15 @@ async fn check_bucket_exists(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::S3RetryPolicy;
     use alloy::signers::local::PrivateKeySigner;
+    use aws_config::BehaviorVersion;
+    use serial_test::serial;
+    use std::time::Duration;
+    use test_harness::{
+        instance::{setup_test_db, ImportMode},
+        localstack,
+    };
 
     fn sample_handle_item() -> HandleItem {
         let ct128_format = Ciphertext128Format::CompressedOnCpu;
@@ -1179,12 +1333,14 @@ mod tests {
             ct128: Arc::new(BigCiphertext::new(vec![4, 5, 6], ct128_format)),
             ct64_digest: None,
             ct128_digest: None,
+            s3_format_version: None,
             span: Span::none(),
             transaction_id: None,
         }
     }
 
-    async fn sample_attestation() -> (CiphertextAttestationPayload, CiphertextAttestation) {
+    async fn sample_attestation() -> (CiphertextAttestationPayload, Address, CiphertextAttestation)
+    {
         let task = sample_handle_item();
         let upload_material = upload_material(&task).unwrap();
         let format = attestation_format(task.ct128.format()).unwrap();
@@ -1197,34 +1353,56 @@ mod tests {
         )
         .unwrap();
         let signer: CoproSigner = Arc::new(PrivateKeySigner::random());
+        let expected_signer = signer.address();
         let attestation = build_attestation(&expected, &signer).await.unwrap();
 
-        (expected, attestation)
+        (expected, expected_signer, attestation)
     }
 
     #[tokio::test]
     async fn expected_attestation_accepts_current_metadata() {
-        let (expected, attestation) = sample_attestation().await;
+        let (expected, expected_signer, attestation) = sample_attestation().await;
 
-        validate_existing_attestation(&expected, &attestation).unwrap();
+        validate_existing_attestation(&expected, expected_signer, &attestation).unwrap();
     }
 
     #[tokio::test]
     async fn expected_attestation_rejects_stale_digest_metadata() {
-        let (expected, mut attestation) = sample_attestation().await;
+        let (expected, expected_signer, mut attestation) = sample_attestation().await;
         attestation.sns_ciphertext_digest = B256::ZERO;
 
-        let err = validate_existing_attestation(&expected, &attestation).unwrap_err();
+        let err =
+            validate_existing_attestation(&expected, expected_signer, &attestation).unwrap_err();
         assert!(err.contains("sns ciphertext digest mismatch"));
     }
 
     #[tokio::test]
     async fn expected_attestation_rejects_wrong_context_metadata() {
-        let (mut expected, attestation) = sample_attestation().await;
+        let (mut expected, expected_signer, attestation) = sample_attestation().await;
         expected.coprocessor_context_id = U256::ZERO;
 
-        let err = validate_existing_attestation(&expected, &attestation).unwrap_err();
+        let err =
+            validate_existing_attestation(&expected, expected_signer, &attestation).unwrap_err();
         assert!(err.contains("handle/context/signature mismatch"));
+    }
+
+    #[tokio::test]
+    async fn expected_attestation_rejects_wrong_signer_metadata() {
+        let (expected, expected_signer, _) = sample_attestation().await;
+        let other_signer: CoproSigner = Arc::new(PrivateKeySigner::random());
+        let attestation = build_attestation(&expected, &other_signer).await.unwrap();
+
+        let err =
+            validate_existing_attestation(&expected, expected_signer, &attestation).unwrap_err();
+        assert!(err.contains("signer mismatch"));
+    }
+
+    #[test]
+    fn sha256_checksum_header_is_base64_encoded() {
+        assert_eq!(
+            sha256_checksum_header(b"Hello world"),
+            "ZOyIygCyaOW6GjVnihtTFtIS9PNmskdyMlNKiuyjfzw="
+        );
     }
 
     #[test]
@@ -1257,6 +1435,7 @@ mod tests {
             ct128: Arc::new(BigCiphertext::default()),
             ct64_digest: None,
             ct128_digest: None,
+            s3_format_version: None,
             span: Span::none(),
             transaction_id: None,
         };
@@ -1293,6 +1472,7 @@ mod tests {
             ct128: Arc::new(BigCiphertext::new(Vec::new(), stored_format)),
             ct64_digest: None,
             ct128_digest: Some(real_ct128_digest.clone()),
+            s3_format_version: Some(S3_FORMAT_VERSION_LEGACY),
             span: Span::none(),
             transaction_id: None,
         };
@@ -1307,6 +1487,171 @@ mod tests {
             .expect("ct128_format from DB must be valid when a real ct128 digest exists");
 
         assert_eq!(fmt, CiphertextFormat::CompressedOnCpu);
+    }
+
+    #[test]
+    fn legacy_partial_ct128_without_bytes_preserves_s3_format_version() {
+        let ct64 = vec![0xAA, 0xBB, 0xCC];
+        let real_ct128_digest = vec![0x11; 32];
+        let task = HandleItem {
+            host_chain_id: ChainId::try_from(42_i64).unwrap(),
+            key_id_gw: vec![7; 32],
+            handle: vec![0xDE, 0xAD, 0xBE, 0xEF],
+            ct64_compressed: Arc::new(ct64),
+            ct128: Arc::new(BigCiphertext::new(
+                Vec::new(),
+                Ciphertext128Format::CompressedOnCpu,
+            )),
+            ct64_digest: None,
+            ct128_digest: Some(real_ct128_digest.clone()),
+            s3_format_version: Some(S3_FORMAT_VERSION_LEGACY),
+            span: Span::none(),
+            transaction_id: None,
+        };
+
+        assert!(should_preserve_legacy_s3_format(&task, &real_ct128_digest));
+        assert_eq!(
+            completed_s3_format_version(&task, true),
+            S3_FORMAT_VERSION_LEGACY
+        );
+    }
+
+    #[test]
+    fn legacy_partial_ct128_with_bytes_updates_to_current_s3_format_version() {
+        let real_ct128_digest = vec![0x11; 32];
+        let task = HandleItem {
+            host_chain_id: ChainId::try_from(42_i64).unwrap(),
+            key_id_gw: vec![7; 32],
+            handle: vec![0xDE, 0xAD, 0xBE, 0xEF],
+            ct64_compressed: Arc::new(vec![0xAA, 0xBB, 0xCC]),
+            ct128: Arc::new(BigCiphertext::new(
+                vec![0x44, 0x55],
+                Ciphertext128Format::CompressedOnCpu,
+            )),
+            ct64_digest: None,
+            ct128_digest: Some(real_ct128_digest.clone()),
+            s3_format_version: Some(S3_FORMAT_VERSION_LEGACY),
+            span: Span::none(),
+            transaction_id: None,
+        };
+
+        assert!(!should_preserve_legacy_s3_format(&task, &real_ct128_digest));
+        assert_eq!(
+            completed_s3_format_version(&task, false),
+            CURRENT_S3_FORMAT_VERSION
+        );
+    }
+
+    #[tokio::test]
+    #[serial(s3)]
+    #[cfg(not(feature = "gpu"))]
+    async fn legacy_partial_ct128_without_bytes_uploads_ct64_and_preserves_legacy_s3_format(
+    ) -> anyhow::Result<()> {
+        let db_instance = setup_test_db(ImportMode::None)
+            .await
+            .map_err(|err| anyhow::anyhow!("setup test db: {err}"))?;
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(2)
+            .connect(db_instance.db_url())
+            .await?;
+
+        let localstack = localstack::start_localstack().await?;
+        let endpoint_url = format!("http://127.0.0.1:{}", localstack.host_port);
+        std::env::set_var("AWS_ENDPOINT_URL", endpoint_url);
+        std::env::set_var("AWS_REGION", "us-east-1");
+        std::env::set_var("AWS_ACCESS_KEY_ID", "test");
+        std::env::set_var("AWS_SECRET_ACCESS_KEY", "test");
+
+        let aws_conf = aws_config::load_defaults(BehaviorVersion::latest()).await;
+        let client = aws_sdk_s3::Client::new(&aws_conf);
+        let bucket_ct64 = "legacy-partial-ct64";
+        let bucket_ct128 = "legacy-partial-ct128-not-created";
+        client.create_bucket().bucket(bucket_ct64).send().await?;
+
+        let handle = vec![0x42; 32];
+        let key_id_gw = vec![0x07; 32];
+        let ct64 = vec![0xAA, 0xBB, 0xCC, 0xDD];
+        let ct128_digest = vec![0x11; 32];
+        let ct128_format: i16 = Ciphertext128Format::CompressedOnCpu.into();
+
+        sqlx::query!(
+            "INSERT INTO ciphertext_digest (
+                host_chain_id, key_id_gw, handle, ciphertext128, ciphertext128_format, s3_format_version
+            )
+            VALUES ($1, $2, $3, $4, $5, $6)",
+            1_i64,
+            &key_id_gw,
+            &handle,
+            &ct128_digest,
+            ct128_format,
+            S3_FORMAT_VERSION_LEGACY,
+        )
+        .execute(&pool)
+        .await?;
+
+        let task = HandleItem {
+            host_chain_id: ChainId::try_from(1_i64).unwrap(),
+            key_id_gw,
+            handle: handle.clone(),
+            ct64_compressed: Arc::new(ct64.clone()),
+            ct128: Arc::new(BigCiphertext::new(
+                Vec::new(),
+                Ciphertext128Format::CompressedOnCpu,
+            )),
+            ct64_digest: None,
+            ct128_digest: Some(ct128_digest.clone()),
+            s3_format_version: Some(S3_FORMAT_VERSION_LEGACY),
+            span: Span::none(),
+            transaction_id: None,
+        };
+        let conf = S3Config {
+            bucket_ct128: bucket_ct128.to_owned(),
+            bucket_ct64: bucket_ct64.to_owned(),
+            max_concurrent_uploads: 1,
+            retry_policy: S3RetryPolicy {
+                max_retries_per_upload: 1,
+                max_backoff: Duration::from_millis(1),
+                max_retries_timeout: Duration::from_secs(1),
+                recheck_duration: Duration::from_secs(1),
+                regular_recheck_duration: Duration::from_secs(1),
+            },
+            verify_sha256_checksum: false,
+        };
+
+        upload_ciphertexts(
+            pool.begin().await?,
+            task,
+            &client,
+            &conf,
+            Arc::new(PrivateKeySigner::random()),
+        )
+        .await?;
+
+        let row = sqlx::query!(
+            "SELECT ciphertext, ciphertext128, s3_format_version
+             FROM ciphertext_digest
+             WHERE handle = $1",
+            &handle
+        )
+        .fetch_one(&pool)
+        .await?;
+
+        assert_eq!(
+            row.ciphertext.as_deref(),
+            Some(compute_digest(&ct64).as_slice())
+        );
+        assert_eq!(row.ciphertext128.as_deref(), Some(ct128_digest.as_slice()));
+        assert_eq!(row.s3_format_version, Some(S3_FORMAT_VERSION_LEGACY));
+
+        let ct64_key = s3_ciphertext_key(&handle, COPROCESSOR_CONTEXT_ID_1);
+        client
+            .head_object()
+            .bucket(bucket_ct64)
+            .key(ct64_key)
+            .send()
+            .await?;
+
+        Ok(())
     }
 
     #[test]

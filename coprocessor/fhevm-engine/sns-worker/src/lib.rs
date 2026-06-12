@@ -55,6 +55,7 @@ use crate::{
 
 pub const UPLOAD_QUEUE_SIZE: usize = 20;
 pub const SAFE_SER_LIMIT: u64 = 1024 * 1024 * 66;
+pub(crate) const S3_FORMAT_VERSION_LEGACY: i16 = 0;
 pub(crate) const S3_FORMAT_VERSION_V1: i16 = 1;
 pub(crate) const CURRENT_S3_FORMAT_VERSION: i16 = S3_FORMAT_VERSION_V1;
 pub type InternalEvents = Option<tokio::sync::mpsc::Sender<&'static str>>;
@@ -102,6 +103,7 @@ pub struct S3Config {
     pub bucket_ct64: String,
     pub max_concurrent_uploads: u32,
     pub retry_policy: S3RetryPolicy,
+    pub verify_sha256_checksum: bool,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -258,6 +260,7 @@ pub struct HandleItem {
 
     pub(crate) ct64_digest: Option<Vec<u8>>,
     pub(crate) ct128_digest: Option<Vec<u8>>,
+    pub(crate) s3_format_version: Option<i16>,
 
     pub span: tracing::Span,
     pub transaction_id: Option<Vec<u8>>,
@@ -279,6 +282,7 @@ impl std::fmt::Debug for HandleItem {
             .field("ct128", &self.ct128) // only superficial debug print
             .field("ct64_digest", &ct64_digest)
             .field("ct128_digest", &ct128_digest)
+            .field("s3_format_version", &self.s3_format_version)
             .field("transaction_id", &transaction_id)
             .finish()
     }
@@ -333,58 +337,38 @@ impl HandleItem {
         Ok(())
     }
 
-    pub(crate) async fn update_ct128_uploaded(
+    pub(crate) async fn mark_ciphertexts_uploaded(
         &self,
         trx: &mut Transaction<'_, Postgres>,
-        digest: Vec<u8>,
+        ct64_digest: Vec<u8>,
+        ct128_digest: Vec<u8>,
+        s3_format_version: i16,
     ) -> Result<(), ExecutionError> {
         let format: i16 = self.ct128.format().into();
 
-        sqlx::query(
-            "UPDATE ciphertext_digest
-            SET ciphertext128 = $1,
-                ciphertext128_format = $2,
-                s3_format_version = $3
-            WHERE handle = $4",
-        )
-        .bind(&digest)
-        .bind(format)
-        .bind(CURRENT_S3_FORMAT_VERSION)
-        .bind(&self.handle)
-        .execute(trx.as_mut())
-        .await?;
-
-        info!(
-            "Mark ct128 as uploaded, handle: {}, digest: {}, format: {:?}",
-            to_hex(&self.handle),
-            to_hex(&digest),
-            self.ct128.format(),
-        );
-
-        Ok(())
-    }
-
-    pub(crate) async fn update_ct64_uploaded(
-        &self,
-        trx: &mut Transaction<'_, Postgres>,
-        digest: Vec<u8>,
-    ) -> Result<(), ExecutionError> {
-        sqlx::query(
+        sqlx::query!(
             "UPDATE ciphertext_digest
             SET ciphertext = $1,
-                s3_format_version = $2
-            WHERE handle = $3",
+                ciphertext128 = $2,
+                ciphertext128_format = $3,
+                s3_format_version = $4
+            WHERE handle = $5",
+            &ct64_digest,
+            &ct128_digest,
+            format,
+            s3_format_version,
+            &self.handle,
         )
-        .bind(&digest)
-        .bind(CURRENT_S3_FORMAT_VERSION)
-        .bind(&self.handle)
         .execute(trx.as_mut())
         .await?;
 
         info!(
-            "Mark ct64 as uploaded, handle: {}, digest: {}",
+            "Mark ciphertexts as uploaded, handle: {}, ct64_digest: {}, ct128_digest: {}, format: {:?}, s3_format_version: {}",
             to_hex(&self.handle),
-            to_hex(&digest)
+            to_hex(&ct64_digest),
+            to_hex(&ct128_digest),
+            self.ct128.format(),
+            s3_format_version,
         );
 
         Ok(())

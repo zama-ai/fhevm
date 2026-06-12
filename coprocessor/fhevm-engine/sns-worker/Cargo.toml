@@ -42,8 +42,10 @@ lru = { workspace = true }
 
 # crates.io dependencies
 aligned-vec = "0.6.4"
+base64 = "0.22.1"
 num-traits = "0.2.19"
 futures = "0.3.31"
+sha2 = "0.10.9"
 
 # local dependencies
 ciphertext-attestation = { path = "../../../shared/ciphertext-attestation" }

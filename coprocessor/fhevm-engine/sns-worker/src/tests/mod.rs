@@ -364,15 +364,44 @@ async fn test_garbage_collect() {
         .expect("insert into ciphertext_digest");
     }
 
-    let count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM ciphertexts128 where ciphertext IS not NULL")
-            .fetch_one(&pool)
-            .await
-            .expect("count ciphertexts128");
+    let count = sqlx::query_scalar!(
+        "SELECT COUNT(*)::BIGINT FROM ciphertexts128 WHERE ciphertext IS NOT NULL"
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("count ciphertexts128")
+    .unwrap_or(0);
     assert_eq!(
         count, HANDLES_COUNT as i64,
         "ciphertext128 should not be empty before garbage_collect"
     );
+
+    let partial_handle = vec![0xffu8; 32];
+    let partial_ciphertext = vec![0xffu8; 32];
+    let partial_digest = vec![0xffu8; 32];
+    sqlx::query!(
+        "INSERT INTO ciphertexts128(handle, ciphertext)
+            VALUES ($1, $2)
+        ON CONFLICT DO NOTHING;",
+        &partial_handle,
+        &partial_ciphertext,
+    )
+    .execute(&pool)
+    .await
+    .expect("insert partial ciphertexts128");
+
+    sqlx::query!(
+        "INSERT INTO ciphertext_digest(host_chain_id, key_id_gw, handle, ciphertext128)
+            VALUES ($1, $2, $3, $4)
+        ON CONFLICT DO NOTHING;",
+        host_chain_id,
+        &key_id_gw,
+        &partial_handle,
+        &partial_digest,
+    )
+    .execute(&pool)
+    .await
+    .expect("insert partial ciphertext_digest");
 
     let handles: Vec<_> = (0..CONCURRENT_TASKS)
         .map(|_| {
@@ -398,13 +427,27 @@ async fn test_garbage_collect() {
         "garbage_collect tasks did not complete in time"
     );
 
-    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM ciphertexts128")
+    let count = sqlx::query_scalar!("SELECT COUNT(*)::BIGINT FROM ciphertexts128")
         .fetch_one(&pool)
         .await
-        .expect("ciphertexts128 has been GCd");
+        .expect("ciphertexts128 has been GCd")
+        .unwrap_or(0);
     assert!(
         count <= 100,
         "ciphertext128 should have less entries than threshold after garbage_collect"
+    );
+
+    let partial_count = sqlx::query_scalar!(
+        "SELECT COUNT(*)::BIGINT FROM ciphertexts128 WHERE handle = $1",
+        &partial_handle
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("partial ciphertext128 should remain queryable")
+    .unwrap_or(0);
+    assert_eq!(
+        partial_count, 1,
+        "garbage_collect should keep ct128 material until both upload digests are committed"
     );
 }
 
@@ -1007,6 +1050,7 @@ fn build_test_config(url: DatabaseURL, enable_compression: bool) -> Config {
                 recheck_duration: Duration::from_secs(2),
                 regular_recheck_duration: Duration::from_secs(120),
             },
+            verify_sha256_checksum: true,
         },
         service_name: "".to_owned(),
         log_level: Level::INFO,
