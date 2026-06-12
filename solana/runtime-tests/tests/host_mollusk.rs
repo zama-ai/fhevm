@@ -656,10 +656,6 @@ fn mollusk_input_birth_rejects_invalid_trivial_and_mock_without_acl_birth() {
     assert!(read_acl_record(&wrong_context, wrong_verifier_acl).is_none());
 }
 
-
-
-
-
 #[test]
 fn mollusk_acl_allow_subjects_extends_inline_record_and_is_idempotent() {
     let program_id = host::id();
@@ -1495,13 +1491,6 @@ fn mollusk_host_config_initialize_creates_state_and_rejects_zero_profile_fields(
         assert!(read_host_config(&context, host_config).is_none());
     }
 }
-
-
-
-
-
-
-
 
 #[test]
 fn mollusk_host_config_rejects_wrong_admin_and_oversized_singleton_without_mutation() {
@@ -3935,8 +3924,6 @@ fn mollusk_fhe_eval_rejects_duplicate_durable_output_reference_without_partial_b
     assert!(read_acl_record(&context, output_acl).is_none());
 }
 
-
-
 #[test]
 fn mollusk_fhe_eval_rejects_swapped_dynamic_account_ordering() {
     let fixture = EvalFixture::new();
@@ -4133,7 +4120,6 @@ fn mollusk_fhe_eval_rejects_transient_session_output_to_sealed_session() {
     assert_eq!(session_account.state, host::TRANSIENT_SESSION_STATE_SEALED);
     assert!(session_account.entries.is_empty());
 }
-
 
 #[test]
 fn mollusk_fhe_eval_rejects_missing_transient_producer() {
@@ -5217,7 +5203,6 @@ fn assert_instruction_custom_error(result: &InstructionResult, error: host::erro
     );
 }
 
-
 fn process_transaction_result(
     context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
     instructions: &[Instruction],
@@ -5364,13 +5349,6 @@ fn host_config_account_with_options(
         },
     )
 }
-
-
-
-
-
-
-
 
 fn deny_subject_record_account(subject: Pubkey, denied: bool) -> (Pubkey, Account) {
     let (deny_subject_record, bump) = host::deny_subject_address(subject);
@@ -5566,11 +5544,6 @@ fn mock_input_verified_and_bind_ix(
     )
 }
 
-
-
-
-
-
 #[allow(clippy::too_many_arguments)]
 fn allow_acl_subjects_ix(
     program_id: Pubkey,
@@ -5626,9 +5599,6 @@ fn initialize_host_config_ix(
         host::instruction::InitializeHostConfig { args },
     )
 }
-
-
-
 
 fn set_host_pause_ix(
     program_id: Pubkey,
@@ -6338,7 +6308,6 @@ fn read_host_config(
     HostConfig::try_deserialize(&mut data).ok()
 }
 
-
 fn read_acl_record(
     context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
     address: Pubkey,
@@ -6429,7 +6398,6 @@ fn acl_allowed_events(result: &mollusk_svm::result::InstructionResult) -> Vec<Ac
         .filter_map(|inner| decode_anchor_event(&inner.instruction.data))
         .collect()
 }
-
 
 // --- Coprocessor EIP-712 input-bind (secp256k1_recover) — #1494 Phase 3 ---
 
@@ -6973,7 +6941,13 @@ fn mollusk_define_kms_context_rejects_duplicate_signers() {
     };
 
     let ix = define_kms_context_ix(
-        program_id, admin, host_config, kms_context, 1, signers, thresholds,
+        program_id,
+        admin,
+        host_config,
+        kms_context,
+        1,
+        signers,
+        thresholds,
     );
     let result = context.process_instruction(&ix);
     assert!(

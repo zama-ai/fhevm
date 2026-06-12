@@ -291,17 +291,25 @@ mod tests {
         let key = SigningKey::from_bytes(&[0x44u8; 32].into()).expect("valid signing key");
         let signer = evm_address_of(&key);
         let ds = domain_separator(b"Decryption", b"1", 31337, &[0xAAu8; 20]);
-        let digest =
-            typed_data_digest(&ds, &public_decrypt_struct_hash(&[[1u8; 32]], &[7u8; 8], &[0x00]));
+        let digest = typed_data_digest(
+            &ds,
+            &public_decrypt_struct_hash(&[[1u8; 32]], &[7u8; 8], &[0x00]),
+        );
         // k256 emits a low-s signature, which must verify.
         let low = sign(&key, &digest);
-        assert!(low[32..64] <= SECP256K1_HALF_ORDER[..], "k256 should emit low-s");
+        assert!(
+            low[32..64] <= SECP256K1_HALF_ORDER[..],
+            "k256 should emit low-s"
+        );
         assert_eq!(recover_evm_address(&digest, &low), Some(signer));
 
         // The high-s sibling recovers to the same key mathematically, but the malleability
         // guard must reject it outright (matching OpenZeppelin ECDSA / both EVM verifiers).
         let high = high_s_sibling(&low);
-        assert!(high[32..64] > SECP256K1_HALF_ORDER[..], "sibling must be high-s");
+        assert!(
+            high[32..64] > SECP256K1_HALF_ORDER[..],
+            "sibling must be high-s"
+        );
         assert_eq!(
             recover_evm_address(&digest, &high),
             None,

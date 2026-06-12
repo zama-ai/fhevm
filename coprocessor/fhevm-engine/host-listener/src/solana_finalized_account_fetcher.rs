@@ -90,7 +90,10 @@ pub fn decrypt_enqueue_for_fetch(
             return None;
         }
     }
-    Some(DecryptEnqueue { handle, allow_event })
+    Some(DecryptEnqueue {
+        handle,
+        allow_event,
+    })
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -512,8 +515,10 @@ mod tests {
     fn material_sealed_acl_record_does_not_release_a_handle() {
         // handle_material_sealed emits an AclRecord witness fetch, but the allow
         // it confirms already arrived through its own event; it must not enqueue.
-        let job =
-            acl_record_job("handle_material_sealed", Some(Handle::from([6; 32])));
+        let job = acl_record_job(
+            "handle_material_sealed",
+            Some(Handle::from([6; 32])),
+        );
         assert!(decrypt_enqueue_for_fetch(
             &job,
             &witness_owned_by(HOST_PROGRAM),
@@ -524,8 +529,10 @@ mod tests {
 
     #[test]
     fn non_acl_record_kinds_do_not_release_a_handle() {
-        let mut job =
-            acl_record_job("public_decrypt_allowed", Some(Handle::from([6; 32])));
+        let mut job = acl_record_job(
+            "public_decrypt_allowed",
+            Some(Handle::from([6; 32])),
+        );
         for kind in [
             SolanaFinalizedAccountFetchKind::AclPermission,
             SolanaFinalizedAccountFetchKind::HandleMaterialCommitment,
@@ -564,8 +571,10 @@ mod tests {
     fn wrong_owner_is_refused_when_program_id_is_configured() {
         // A finalized account at the right address but owned by another program
         // (e.g. an attacker-funded look-alike) must not release the handle.
-        let job =
-            acl_record_job("public_decrypt_allowed", Some(Handle::from([5; 32])));
+        let job = acl_record_job(
+            "public_decrypt_allowed",
+            Some(Handle::from([5; 32])),
+        );
         assert!(decrypt_enqueue_for_fetch(
             &job,
             &witness_owned_by([9; 32]),
@@ -576,8 +585,10 @@ mod tests {
 
     #[test]
     fn owner_check_is_skipped_when_no_program_id_is_configured() {
-        let job =
-            acl_record_job("public_decrypt_allowed", Some(Handle::from([5; 32])));
+        let job = acl_record_job(
+            "public_decrypt_allowed",
+            Some(Handle::from([5; 32])),
+        );
         assert!(decrypt_enqueue_for_fetch(
             &job,
             &witness_owned_by([9; 32]),
@@ -657,11 +668,9 @@ mod tests {
 
     #[test]
     fn rejects_unsupported_account_data_encoding() {
-        let err = decode_account_data(vec![
-            "00".to_owned(),
-            "base58".to_owned(),
-        ])
-        .expect_err("non-base64 encoding should fail");
+        let err =
+            decode_account_data(vec!["00".to_owned(), "base58".to_owned()])
+                .expect_err("non-base64 encoding should fail");
 
         assert!(
             err.to_string().contains("unsupported"),

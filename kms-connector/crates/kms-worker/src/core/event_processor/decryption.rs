@@ -439,8 +439,9 @@ where
     ) -> Result<UserDecryptionExtraData, ProcessingError> {
         let payload = &request.payload;
         if payload.extraData.first() == Some(&EXTRA_DATA_SOLANA_V1_VERSION) {
-            let extra = decode_solana_extra_data(payload.extraData.as_ref())
-                .map_err(|e| ProcessingError::Irrecoverable(anyhow!("invalid Solana extraData: {e}")))?;
+            let extra = decode_solana_extra_data(payload.extraData.as_ref()).map_err(|e| {
+                ProcessingError::Irrecoverable(anyhow!("invalid Solana extraData: {e}"))
+            })?;
             Ok(UserDecryptionExtraData::new_solana(
                 extra.identity,
                 payload.publicKey.clone(),

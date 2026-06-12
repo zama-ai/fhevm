@@ -38,8 +38,7 @@ use solana_sdk::{
 use tfhe::prelude::FheTryEncrypt;
 use time::{Date, Month, PrimitiveDateTime, Time};
 use zama_host::{
-    AclRecord, AclSubjectEntry, FheEvalArgs, FheEvalOperand, FheEvalOutput, FheEvalStep,
-    HostConfig,
+    AclRecord, AclSubjectEntry, FheEvalArgs, FheEvalOperand, FheEvalOutput, FheEvalStep, HostConfig,
 };
 
 use crate::tests::{

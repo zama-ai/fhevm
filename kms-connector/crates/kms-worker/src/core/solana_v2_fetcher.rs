@@ -142,7 +142,8 @@ impl SolanaV2Fetcher {
 /// Parses a Solana JSON-RPC `getAccountInfo` response body. Pure so it is unit-testable against
 /// canned RPC payloads.
 pub fn parse_account_info_response(body: &str) -> anyhow::Result<Option<SolanaAccount>> {
-    let json: Value = serde_json::from_str(body).context("solana RPC response is not valid JSON")?;
+    let json: Value =
+        serde_json::from_str(body).context("solana RPC response is not valid JSON")?;
 
     if let Some(error) = json.get("error") {
         bail!("solana RPC returned an error: {error}");
@@ -176,7 +177,8 @@ pub fn parse_account_info_response(body: &str) -> anyhow::Result<Option<SolanaAc
 /// Parses a Solana JSON-RPC `getProgramAccounts` response into the matching account pubkeys. Pure
 /// so the multi-match handling is unit-testable.
 pub fn parse_program_accounts_pubkeys(body: &str) -> anyhow::Result<Vec<SolanaPubkeyBytes>> {
-    let json: Value = serde_json::from_str(body).context("solana RPC response is not valid JSON")?;
+    let json: Value =
+        serde_json::from_str(body).context("solana RPC response is not valid JSON")?;
     if let Some(error) = json.get("error") {
         bail!("solana RPC returned an error: {error}");
     }
@@ -202,9 +204,9 @@ pub fn parse_program_accounts_pubkeys(body: &str) -> anyhow::Result<Vec<SolanaPu
 /// Decodes the `data` field of a `getAccountInfo` value. We only request `base64`, so the field is
 /// `[base64_string, "base64"]`.
 fn decode_account_data(data_field: &Value) -> anyhow::Result<Vec<u8>> {
-    let array = data_field
-        .as_array()
-        .ok_or_else(|| anyhow!("unexpected solana account data shape (expected [data, encoding])"))?;
+    let array = data_field.as_array().ok_or_else(|| {
+        anyhow!("unexpected solana account data shape (expected [data, encoding])")
+    })?;
     let encoded = array
         .first()
         .and_then(Value::as_str)

@@ -1202,9 +1202,7 @@ mod tests {
     /// unchanged. `allowedContracts` may be empty for Solana.
     #[test]
     fn solana_attested_user_decrypt_forwards_signature_and_extra_data_unchanged() {
-        use crate::http::endpoints::common::types::{
-            HandleEntryJson, RequestValiditySecondsJson,
-        };
+        use crate::http::endpoints::common::types::{HandleEntryJson, RequestValiditySecondsJson};
         use crate::http::endpoints::v3::types::Eip712UnifiedUserDecryptPayloadJson;
 
         // 64-byte ed25519 signature (128 hex chars), forwarded opaquely.

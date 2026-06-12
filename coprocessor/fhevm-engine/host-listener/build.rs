@@ -452,9 +452,11 @@ fn rust_type(idl_type: &Value) -> String {
     }
     if let Some(vec_inner) = idl_type.get("vec") {
         if let Some(array) = vec_inner["array"].as_array() {
-            let element =
-                array[0].as_str().expect("vec array element must be primitive");
-            let len = array[1].as_u64().expect("vec array length must be integer");
+            let element = array[0]
+                .as_str()
+                .expect("vec array element must be primitive");
+            let len =
+                array[1].as_u64().expect("vec array length must be integer");
             if element != "u8" {
                 panic!("unsupported IDL vec array element type {element}");
             }
@@ -489,9 +491,11 @@ fn read_expr(idl_type: &Value) -> String {
     }
     if let Some(vec_inner) = idl_type.get("vec") {
         if let Some(array) = vec_inner["array"].as_array() {
-            let element =
-                array[0].as_str().expect("vec array element must be primitive");
-            let len = array[1].as_u64().expect("vec array length must be integer");
+            let element = array[0]
+                .as_str()
+                .expect("vec array element must be primitive");
+            let len =
+                array[1].as_u64().expect("vec array length must be integer");
             if element != "u8" {
                 panic!("unsupported IDL vec array element type {element}");
             }

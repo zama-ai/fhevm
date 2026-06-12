@@ -256,7 +256,6 @@ pub mod zama_host {
         )
     }
 
-
     #[allow(clippy::too_many_arguments)]
     pub fn verify_coprocessor_input_and_bind(
         ctx: Context<VerifyCoprocessorInputAndBind>,

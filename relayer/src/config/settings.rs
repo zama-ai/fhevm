@@ -1493,10 +1493,10 @@ mod tests {
     #[serial] // avoid env var leakage from parallel tests
     fn test_settings_loads_solana_host_chain_id_above_i64_max() {
         const SOLANA_CHAIN_ID: u64 = (1u64 << 63) | 12345; // 9223372036854788153 > i64::MAX
-        // Mirror the live config (setup-solana-side.sh writes the Solana host_chains entry with a
-        // QUOTED chain_id, because the `config` crate's numeric value is i64-backed and a bare
-        // number above i64::MAX coerces to a lossy f64). Loading must succeed through the real
-        // Settings::new path; this regresses the untagged-enum crash the Visitor fix removed.
+                                                           // Mirror the live config (setup-solana-side.sh writes the Solana host_chains entry with a
+                                                           // QUOTED chain_id, because the `config` crate's numeric value is i64-backed and a bare
+                                                           // number above i64::MAX coerces to a lossy f64). Loading must succeed through the real
+                                                           // Settings::new path; this regresses the untagged-enum crash the Visitor fix removed.
         let base = std::fs::read_to_string("tests/relayer-test-config.yaml")
             .expect("read tests/relayer-test-config.yaml");
         let solana_cfg = base.replace(
@@ -1507,13 +1507,14 @@ mod tests {
             solana_cfg.contains(&format!("\"{SOLANA_CHAIN_ID}\"")),
             "test fixture must contain the quoted Solana chain id"
         );
-        let path = std::env::temp_dir()
-            .join(format!("relayer-solana-host-{}.yaml", std::process::id()));
+        let path =
+            std::env::temp_dir().join(format!("relayer-solana-host-{}.yaml", std::process::id()));
         std::fs::write(&path, solana_cfg).expect("write temp config");
         let result = Settings::new(Some(path.to_string_lossy().into_owned()));
         let _ = std::fs::remove_file(&path);
-        let settings = result
-            .expect("Settings::new must load a quoted Solana host chain id above i64::MAX (RFC-021)");
+        let settings = result.expect(
+            "Settings::new must load a quoted Solana host chain id above i64::MAX (RFC-021)",
+        );
         assert_eq!(settings.host_chains[0].chain_id, SOLANA_CHAIN_ID);
     }
 

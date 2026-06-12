@@ -279,7 +279,12 @@ impl SolanaAclVerifier {
         {
             return Err(SolanaAclVerificationError::DomainNotAllowed);
         }
-        self.verify_subject_role(record, overflow_permissions, request.delegator, ACL_ROLE_USE)?;
+        self.verify_subject_role(
+            record,
+            overflow_permissions,
+            request.delegator,
+            ACL_ROLE_USE,
+        )?;
         self.verify_delegation(
             delegation,
             request.delegator,

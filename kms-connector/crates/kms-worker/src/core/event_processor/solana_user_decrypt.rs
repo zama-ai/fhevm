@@ -57,17 +57,12 @@ pub fn verify_solana_user_decrypt_signature(
 ) -> Result<SolanaExtraData, ProcessingError> {
     let payload = &request.payload;
 
-    let extra = decode_solana_extra_data(payload.extraData.as_ref()).map_err(|e| {
-        ProcessingError::Irrecoverable(anyhow!("invalid Solana extraData: {e}"))
-    })?;
+    let extra = decode_solana_extra_data(payload.extraData.as_ref())
+        .map_err(|e| ProcessingError::Irrecoverable(anyhow!("invalid Solana extraData: {e}")))?;
 
     let context_id = extract_context_id_be(payload.extraData.as_ref());
 
-    let handles: Vec<HandleBytes> = request
-        .handles
-        .iter()
-        .map(|entry| entry.handle.0)
-        .collect();
+    let handles: Vec<HandleBytes> = request.handles.iter().map(|entry| entry.handle.0).collect();
 
     let preimage = solana_user_decrypt_signing_preimage(&SolanaUserDecryptSigningInput {
         contracts_chain_id,
@@ -166,12 +161,14 @@ pub async fn check_solana_handles_public_decrypt(
 
     for handle in handles {
         let record = fetch_acl_record_for_handle(host, *handle).await?;
-        verifier.verify_public_decrypt(&record, *handle).map_err(|e| {
-            ProcessingError::Recoverable(anyhow!(
-                "Solana public-decrypt not authorized for handle {}: {e}",
-                hex_handle(handle)
-            ))
-        })?;
+        verifier
+            .verify_public_decrypt(&record, *handle)
+            .map_err(|e| {
+                ProcessingError::Recoverable(anyhow!(
+                    "Solana public-decrypt not authorized for handle {}: {e}",
+                    hex_handle(handle)
+                ))
+            })?;
     }
     Ok(())
 }
@@ -267,15 +264,13 @@ fn hex_handle(handle: &HandleBytes) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::solana_acl::{
-        ACL_ROLE_USE, SubjectRole, acl_nonce_key, acl_record_address,
-    };
+    use crate::core::solana_acl::{ACL_ROLE_USE, SubjectRole, acl_nonce_key, acl_record_address};
+    use alloy::primitives::{Address, Bytes, FixedBytes};
     use connector_utils::types::solana_extra_data::encode_solana_extra_data;
     use fhevm_gateway_bindings::decryption::{
         Decryption::{HandleEntry, SnsCiphertextMaterial, UserDecryptionRequest_1},
         IDecryption::{RequestValiditySeconds, UserDecryptionRequestPayload},
     };
-    use alloy::primitives::{Address, Bytes, FixedBytes};
     use ring::signature::{Ed25519KeyPair, KeyPair};
 
     const CHAIN_ID: u64 = 7777;
@@ -372,7 +367,8 @@ mod tests {
 
     #[test]
     fn accepts_valid_signature() {
-        let (request, _identity) = signed_request(b"reencryption-public-key".to_vec(), vec![DOMAIN]);
+        let (request, _identity) =
+            signed_request(b"reencryption-public-key".to_vec(), vec![DOMAIN]);
         let extra = verify_solana_user_decrypt_signature(&request, CHAIN_ID).unwrap();
         assert_eq!(extra.allowed_acl_domain_keys, vec![DOMAIN]);
     }
@@ -401,8 +397,8 @@ mod tests {
         // Forge a signature with a *different* key over the same preimage — i.e. a relayer that
         // never held the user's identity key.
         let attacker_seed = [99u8; 32];
-        let attacker = Ed25519KeyPair::from_pkcs8_maybe_unchecked(&pkcs8_from_seed(&attacker_seed))
-            .unwrap();
+        let attacker =
+            Ed25519KeyPair::from_pkcs8_maybe_unchecked(&pkcs8_from_seed(&attacker_seed)).unwrap();
         // Re-sign whatever preimage the connector will build (publicKey unchanged), but with the
         // attacker key. The identity in extraData still names the victim.
         let forged = attacker.sign(b"any-bytes");
@@ -417,13 +413,18 @@ mod tests {
 
     #[test]
     fn rejects_wrong_chain_id_binding() {
-        let (request, _identity) = signed_request(b"reencryption-public-key".to_vec(), vec![DOMAIN]);
+        let (request, _identity) =
+            signed_request(b"reencryption-public-key".to_vec(), vec![DOMAIN]);
         // Verifier uses a different contracts_chain_id than the signer committed to.
         let result = verify_solana_user_decrypt_signature(&request, CHAIN_ID + 1);
         assert!(matches!(result, Err(ProcessingError::Irrecoverable(_))));
     }
 
-    fn record_for(handle: [u8; 32], domain: SolanaPubkeyBytes, subject: SolanaPubkeyBytes) -> AclRecordWitness {
+    fn record_for(
+        handle: [u8; 32],
+        domain: SolanaPubkeyBytes,
+        subject: SolanaPubkeyBytes,
+    ) -> AclRecordWitness {
         let nonce_key = acl_nonce_key(domain, APP_ACCOUNT, LABEL);
         let (account_key, bump) = acl_record_address(HOST_PROGRAM_ID, nonce_key, 3);
         AclRecordWitness {
@@ -459,9 +460,7 @@ mod tests {
         let record = record_for(handle, DOMAIN, subject);
 
         // In scope → accepted.
-        assert!(
-            authorize_solana_handle(&verifier, &record, handle, subject, &[DOMAIN]).is_ok()
-        );
+        assert!(authorize_solana_handle(&verifier, &record, handle, subject, &[DOMAIN]).is_ok());
 
         // Out of scope (some other domain authorized) → rejected, even though the subject holds
         // USE on this record.

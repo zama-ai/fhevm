@@ -739,7 +739,9 @@ pub fn normalize_solana_events_for_db(
 /// `IgnoredAclAllowed`), so trusting it to drive materialization would
 /// contradict that. Material-sealed/committed fetches are not allow signals
 /// either, so they are excluded.
-fn solana_allowed_result_handles(events: &[SolanaHostEvent]) -> HashSet<Handle> {
+fn solana_allowed_result_handles(
+    events: &[SolanaHostEvent],
+) -> HashSet<Handle> {
     events
         .iter()
         .filter_map(|event| match event {
@@ -774,7 +776,9 @@ pub async fn insert_solana_events(
         normalize_solana_events_for_db(events, transaction_id, block);
     let mut inserted_rows = 0;
 
-    let chains = dependence_chains(&mut tfhe_logs, &db.dependence_chain, false, true).await;
+    let chains =
+        dependence_chains(&mut tfhe_logs, &db.dependence_chain, false, true)
+            .await;
 
     let mut inserted_compute = false;
     for log in &tfhe_logs {
@@ -1556,13 +1560,19 @@ mod tests {
         let cpi_only =
             merge_solana_transport_events(vec![compute_event(1)], Vec::new())
                 .expect("cpi-only transport is valid");
-        assert!(matches!(cpi_only.as_slice(), [SolanaHostEvent::FheBinaryOp(_)]));
+        assert!(matches!(
+            cpi_only.as_slice(),
+            [SolanaHostEvent::FheBinaryOp(_)]
+        ));
 
         // Only log events present: returned as-is, no cpi side.
         let log_only =
             merge_solana_transport_events(Vec::new(), vec![compute_event(2)])
                 .expect("log-only transport is valid");
-        assert!(matches!(log_only.as_slice(), [SolanaHostEvent::FheBinaryOp(_)]));
+        assert!(matches!(
+            log_only.as_slice(),
+            [SolanaHostEvent::FheBinaryOp(_)]
+        ));
     }
 
     #[test]
@@ -1577,8 +1587,14 @@ mod tests {
         .expect("only the cpi side carries compute events");
 
         assert!(matches!(merged[0], SolanaHostEvent::FheBinaryOp(_)));
-        assert!(matches!(merged[1], SolanaHostEvent::FinalizedAccountFetch(_)));
-        assert!(matches!(merged[2], SolanaHostEvent::FinalizedAccountFetch(_)));
+        assert!(matches!(
+            merged[1],
+            SolanaHostEvent::FinalizedAccountFetch(_)
+        ));
+        assert!(matches!(
+            merged[2],
+            SolanaHostEvent::FinalizedAccountFetch(_)
+        ));
     }
 
     #[test]
@@ -2244,8 +2260,8 @@ mod tests {
     }
 
     #[test]
-    fn public_decrypt_allow_in_same_tx_marks_compute_result_for_materialization()
-    {
+    fn public_decrypt_allow_in_same_tx_marks_compute_result_for_materialization(
+    ) {
         // The eval frame that computes a handle also emits PublicDecryptAllowed
         // for it (TE_ALLOW). That rich allow is routed to a finalized fetch, but
         // its presence in the SAME tx must mark the compute is_allowed=true so the

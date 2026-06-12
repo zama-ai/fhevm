@@ -2,8 +2,8 @@
 mod support;
 
 use anchor_lang::{
-    prelude::system_program, AccountDeserialize, AccountSerialize, AnchorDeserialize, Discriminator,
-    InstructionData, ToAccountMetas,
+    prelude::system_program, AccountDeserialize, AccountSerialize, AnchorDeserialize,
+    Discriminator, InstructionData, ToAccountMetas,
 };
 use anchor_spl::token::spl_token;
 use confidential_token as token;
@@ -522,8 +522,6 @@ fn mollusk_request_disclose_balance_is_idempotent_without_duplicate_host_event()
     );
 }
 
-
-
 #[test]
 fn mollusk_request_disclose_balance_rejects_wrong_owner() {
     let fixture = TokenMolluskFixture::new();
@@ -560,11 +558,6 @@ fn mollusk_request_disclose_amount_rejects_acl_without_compute_authority() {
     let record = read_acl_record(&context, amount_acl);
     assert!(!record.public_decrypt);
 }
-
-
-
-
-
 
 #[test]
 fn mollusk_request_disclose_balance_rejects_deny_witness_when_deny_list_disabled() {
@@ -607,10 +600,6 @@ fn mollusk_request_disclose_amount_rejects_non_amount_acl_label() {
     let record = read_acl_record(&context, amount_acl);
     assert!(!record.public_decrypt);
 }
-
-
-
-
 
 #[test]
 fn mollusk_transfer_receiver_hook_records_same_transaction_callback_metadata() {
@@ -1749,7 +1738,6 @@ fn mollusk_confidential_burn_rejects_transfer_amount_acl_label() {
     }
 }
 
-
 #[test]
 fn mollusk_redeem_burned_amount_secp_releases_vault_with_kms_certificate() {
     let fixture = TokenMolluskFixture::new();
@@ -1856,9 +1844,6 @@ fn mollusk_redeem_burned_amount_secp_rejects_unauthorized_signer() {
     let redeem_result = process_transaction(&context, &[redeem_ix]);
     assert!(redeem_result.raw_result.is_err());
 }
-
-
-
 
 #[test]
 fn mollusk_confidential_token_account_rejects_wrong_bump_or_length() {
@@ -2042,8 +2027,6 @@ fn mollusk_initialize_mint_creates_total_supply_acl() {
         token::TotalSupplyUpdateReason::Initialize
     );
 }
-
-
 
 #[test]
 fn mollusk_initialize_token_account_creates_initial_balance_acl() {
@@ -2842,7 +2825,6 @@ fn initialize_mint_ix(
     )
 }
 
-
 #[allow(clippy::too_many_arguments)]
 fn initialize_token_account_ix(
     owner: Pubkey,
@@ -3467,7 +3449,11 @@ fn mollusk_disclose_amount_secp_accepts_real_kms_certificate_and_consumes_witnes
 
     let request_result = process_transaction(
         &context,
-        &[request_disclose_amount_ix(&fixture, amount_acl, amount_handle)],
+        &[request_disclose_amount_ix(
+            &fixture,
+            amount_acl,
+            amount_handle,
+        )],
     );
     assert!(request_result.raw_result.is_ok());
 
@@ -3483,7 +3469,8 @@ fn mollusk_disclose_amount_secp_accepts_real_kms_certificate_and_consumes_witnes
         )],
     );
     assert!(result.raw_result.is_ok());
-    let request = disclosure_request_address(&fixture, fixture.owner, amount_handle, request_nonce(1));
+    let request =
+        disclosure_request_address(&fixture, fixture.owner, amount_handle, request_nonce(1));
     assert_eq!(
         read_disclosure_request(&context, request).status,
         token::REQUEST_STATUS_CONSUMED
@@ -3575,7 +3562,11 @@ fn mollusk_disclose_balance_secp_rejects_rotated_context_expired_and_replay() {
             kms_public_decrypt_signatures(&key, fixture.alice_initial, cleartext_amount);
         let result = process_transaction(
             &context,
-            &[disclose_balance_secp_ix(&fixture, cleartext_amount, signatures)],
+            &[disclose_balance_secp_ix(
+                &fixture,
+                cleartext_amount,
+                signatures,
+            )],
         );
         assert!(
             result.raw_result.is_err(),
@@ -3689,10 +3680,6 @@ fn mollusk_disclose_balance_secp_rejects_unauthorized_signer() {
     assert!(result.raw_result.is_err());
 }
 
-
-
-
-
 /// Creates the burn-redemption request witness consumed by `redeem_burned_amount_secp`.
 fn request_burn_redemption_ix(
     fixture: &TokenMolluskFixture,
@@ -3775,8 +3762,6 @@ fn redeem_burned_amount_secp_ix(
         },
     )
 }
-
-
 
 fn wrap_and_burn_for_redeem(
     fixture: &TokenMolluskFixture,
@@ -3930,7 +3915,6 @@ fn confidential_mint_account_with_compute_signer_and_extra(
     }
 }
 
-
 fn confidential_token_account(
     owner: Pubkey,
     mint: Pubkey,
@@ -3973,7 +3957,6 @@ fn confidential_token_account_with_bump_and_extra(
         rent_epoch: 0,
     }
 }
-
 
 fn spl_mint_account(authority: Pubkey, decimals: u8, supply: u64) -> Account {
     let mut data = vec![0; spl_token::state::Mint::LEN];
@@ -4287,11 +4270,6 @@ fn read_disclosure_request(
         .expect("disclosure request should deserialize")
 }
 
-
-
-
-
-
 #[allow(clippy::too_many_arguments)]
 fn assert_disclosure_request(
     context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
@@ -4577,7 +4555,6 @@ fn process_transaction(
     result
 }
 
-
 fn seed_material_commitment_for_acl(
     context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
     acl_record_address: Pubkey,
@@ -4635,7 +4612,6 @@ fn seed_material_commitment_for_acl(
     );
 }
 
-
 fn seed_disclosable_amount_acl(
     context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
     fixture: &TokenMolluskFixture,
@@ -4683,9 +4659,6 @@ fn seed_amount_acl_with_subject_entries(
     );
     amount_acl
 }
-
-
-
 
 fn precompile_account() -> Account {
     Account {
@@ -4762,7 +4735,6 @@ fn burn_redemption_request_address(
     )
     .0
 }
-
 
 fn token_balance_acl_address(mint: Pubkey, token_account: Pubkey, nonce_sequence: u64) -> Pubkey {
     token_acl_address(mint, token_account, token::balance_label(), nonce_sequence)

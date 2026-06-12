@@ -135,9 +135,11 @@ pub fn decode_solana_extra_data(bytes: &[u8]) -> anyhow::Result<SolanaExtraData>
 
     let count = u32::from_be_bytes(read_array::<4>(bytes, DOMAIN_KEY_COUNT_OFFSET)) as usize;
     let expected_len = DOMAIN_KEYS_OFFSET
-        .checked_add(count.checked_mul(SOLANA_PUBKEY_LEN).ok_or_else(|| {
-            anyhow!("solana extra_data domain-key count overflows: {count}")
-        })?)
+        .checked_add(
+            count
+                .checked_mul(SOLANA_PUBKEY_LEN)
+                .ok_or_else(|| anyhow!("solana extra_data domain-key count overflows: {count}"))?,
+        )
         .ok_or_else(|| anyhow!("solana extra_data length overflows"))?;
     if bytes.len() != expected_len {
         bail!(

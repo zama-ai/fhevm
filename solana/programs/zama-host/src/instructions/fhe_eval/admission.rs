@@ -113,11 +113,7 @@ impl<'a, 'info> AdmissionState<'a, 'info> {
             capability_index,
             self.instructions_sysvar,
         )?;
-        self.admit_transient_capability_consume(
-            session_info.key(),
-            capability_index,
-            capability,
-        )?;
+        self.admit_transient_capability_consume(session_info.key(), capability_index, capability)?;
         Ok(ResolvedOperand::transient_session(handle, capability.grant))
     }
 
