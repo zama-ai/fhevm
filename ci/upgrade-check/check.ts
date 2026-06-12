@@ -98,7 +98,7 @@ for (const result of results) {
         errors++;
       } else {
         console.log(
-          `::warning::${error} — ${result.name} was not changed by this PR, so this is not blocking. Fix it with a version-bump PR before the next release.`,
+          `::warning::${error} — ${result.name} was not changed by this PR, so this is not blocking. Fix it with a version-bump PR before the next release; this check runs strictly when the release is published.`,
         );
         warnings++;
       }
