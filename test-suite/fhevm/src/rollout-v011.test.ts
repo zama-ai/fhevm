@@ -28,8 +28,8 @@ test("hops host and gateway contracts through v0.12 before v0.13", () => {
   expect(phaseVersions.contractsV012.RELAYER_VERSION).toBe(phaseVersions.baseline.RELAYER_VERSION);
   expect(phaseVersions.contractsV012.COPROCESSOR_DB_MIGRATION_VERSION).toBe("v0.11.0");
 
-  expect(phaseVersions.contractsV013.GATEWAY_VERSION).toBe("v0.13.0-6");
-  expect(phaseVersions.contractsV013.HOST_VERSION).toBe("v0.13.0-6");
+  expect(phaseVersions.contractsV013.GATEWAY_VERSION).toBe("v0.13.0");
+  expect(phaseVersions.contractsV013.HOST_VERSION).toBe("v0.13.0");
 });
 
 test("keeps every runtime component on v0.11 while contracts reach v0.13", () => {
@@ -41,23 +41,23 @@ test("keeps every runtime component on v0.11 while contracts reach v0.13", () =>
 
 test("jumps each runtime group straight from v0.11 to v0.13 in plan order", () => {
   // relayer
-  expect(phaseVersions.relayer.RELAYER_VERSION).toBe("v0.13.0-6");
+  expect(phaseVersions.relayer.RELAYER_VERSION).toBe("v0.13.0");
   expect(phaseVersions.relayer.CORE_VERSION).toBe("v0.13.0");
   // kms (core + connector)
-  expect(phaseVersions.kms.CORE_VERSION).toBe("v0.13.20-0");
-  expect(phaseVersions.kms.CONNECTOR_KMS_WORKER_VERSION).toBe("v0.13.0-6");
+  expect(phaseVersions.kms.CORE_VERSION).toBe("v0.13.20");
+  expect(phaseVersions.kms.CONNECTOR_KMS_WORKER_VERSION).toBe("v0.13.0");
   expect(phaseVersions.kms.LISTENER_CORE_VERSION).toBe("v0.11.0");
   // listener-core moves before the coprocessor image changes
-  expect(phaseVersions.listenerCore.LISTENER_CORE_VERSION).toBe("v0.13.0-6");
+  expect(phaseVersions.listenerCore.LISTENER_CORE_VERSION).toBe("v0.13.0");
   expect(phaseVersions.listenerCore.COPROCESSOR_DB_MIGRATION_VERSION).toBe("v0.11.0");
   // coprocessor last
-  expect(phaseVersions.coprocessor.COPROCESSOR_DB_MIGRATION_VERSION).toBe("v0.13.0-6");
-  expect(phaseVersions.coprocessor.COPROCESSOR_TFHE_WORKER_VERSION).toBe("v0.13.0-6");
+  expect(phaseVersions.coprocessor.COPROCESSOR_DB_MIGRATION_VERSION).toBe("v0.13.0");
+  expect(phaseVersions.coprocessor.COPROCESSOR_TFHE_WORKER_VERSION).toBe("v0.13.0");
 });
 
 test("pins the test harness to the target across every phase", () => {
   for (const phase of Object.values(phaseVersions)) {
-    expect(phase.TEST_SUITE_VERSION).toBe("v0.13.0-6");
+    expect(phase.TEST_SUITE_VERSION).toBe("v0.13.0");
     expect(phase.RELAYER_SDK_VERSION).toBe("0.4.2");
   }
 });

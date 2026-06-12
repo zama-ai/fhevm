@@ -8,12 +8,12 @@ export const scenario = "two-of-three";
 // phases, matching the staged plan for the direct mainnet upgrade.
 const v011Tag = "v0.11.0";
 const v012Tag = "v0.12.5";
-const v013Tag = "v0.13.0-6";
+const v013Tag = "v0.13.0";
 
 // The rollout-standard e2e suite and its relayer-sdk pairing only exist in the
 // target test-suite image, so the harness is pinned to the target across every
 // phase (the test-suite group is overridden at boot, never upgraded in place).
-const testSuiteVersion = "v0.13.0-6";
+const testSuiteVersion = "v0.13.0";
 const relayerSdkVersion = "0.4.2";
 
 // NOTE: RELAYER_VERSION at v0.11 is the least-certain pin. The deleted in-repo
@@ -49,7 +49,7 @@ export const v013 = {
   RELAYER_MIGRATE_VERSION: v013Tag,
   GATEWAY_VERSION: v013Tag,
   HOST_VERSION: v013Tag,
-  CORE_VERSION: "v0.13.20-0",
+  CORE_VERSION: "v0.13.20",
   CONNECTOR_DB_MIGRATION_VERSION: v013Tag,
   CONNECTOR_GW_LISTENER_VERSION: v013Tag,
   CONNECTOR_KMS_WORKER_VERSION: v013Tag,
@@ -102,5 +102,5 @@ export const versionSources = [
   `from=${v011Tag}`,
   `via=${v012Tag}`,
   `target=${v013Tag}`,
-  "kms-core=v0.13.20-0",
+  "kms-core=v0.13.20",
 ];
