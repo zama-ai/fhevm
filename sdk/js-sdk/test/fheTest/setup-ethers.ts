@@ -7,6 +7,27 @@ import { FHETestABI } from './FheTest-abi-v2.js';
 import { isCleartext, prepareChains } from './setupCommon.js';
 
 // ---------------------------------------------------------------------------
+// FixedNonceManager
+// ---------------------------------------------------------------------------
+// ethers.js NonceManager.sendTransaction calls this.signer.populateTransaction(tx)
+// *before* setting tx.nonce to the manager's value.  populateTransaction therefore
+// does its own eth_getTransactionCount query and passes THAT nonce to eth_estimateGas.
+// If the chain state changes between the two queries (e.g. the v12 coprocessor
+// submitting a tx on Alice's behalf), eth_estimateGas receives a stale nonce and
+// fails with "nonce too low".
+//
+// Fix: resolve the nonce first and pre-populate tx.nonce so that populateTransaction
+// skips its own query and eth_estimateGas uses the correct nonce.
+class FixedNonceManager extends ethers.NonceManager {
+  override async sendTransaction(tx: ethers.TransactionRequest): Promise<ethers.TransactionResponse> {
+    const nonce = await this.getNonce('pending');
+    this.increment();
+    tx = await this.signer.populateTransaction({ ...tx, nonce });
+    return await this.signer.sendTransaction(tx);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
@@ -69,13 +90,13 @@ function _buildConfig(env: FheTestBaseEnv): FheTestEthersConfig {
 
   const bobWallet = ethers.HDNodeWallet.fromMnemonic(ethers.Mnemonic.fromPhrase(env.mnemonic), "m/44'/60'/0'/0/1");
 
-  // Use a ethers.NonceManager to avoid nonce issues in parallel mode
-  const signer = new ethers.NonceManager(wallet.connect(provider));
+  // Use FixedNonceManager to avoid nonce issues in parallel mode and to prevent
+  // the stale-nonce race described in the FixedNonceManager class above.
+  const signer = new FixedNonceManager(wallet.connect(provider));
 
   const fheTestContract = new ethers.Contract(env.fheTestAddress, FHETestABI, signer);
 
-  // Use a ethers.NonceManager to avoid nonce issues in parallel mode
-  const bobSigner = new ethers.NonceManager(bobWallet.connect(provider));
+  const bobSigner = new FixedNonceManager(bobWallet.connect(provider));
 
   return {
     chainName: env.chainName,
