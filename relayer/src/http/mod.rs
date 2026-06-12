@@ -22,6 +22,7 @@ pub use utils::{
     deserialize_ct_handles_from_hex,
     // Parsing utilities
     parse_and_validate,
+    parse_and_validate_cross,
     // Serialization helpers
     serialize_ct_handle_as_hex,
     serialize_ct_handles_as_hex,
