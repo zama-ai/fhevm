@@ -559,6 +559,9 @@ task(
     types.string,
   )
   .setAction(async function ({ canonicalRpcUrl, canonicalProtocolConfigAddress }: SecondaryDeployArgs, hre) {
+    // ProtocolConfig embeds aclAdd from addresses/FHEVMHostAddresses.sol at compile time; a stale
+    // artifact would deploy bytecode authorized against the wrong ACL (same as FromMigration).
+    await hre.run('compile:specific', { contract: 'contracts' });
     const canonicalProvider = new hre.ethers.JsonRpcProvider(canonicalRpcUrl);
     const parsedEnv = readHostEnv();
     const secondaryProxyAddress = parsedEnv.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
@@ -608,6 +611,9 @@ task(
     }: { canonicalRpcUrl: string; canonicalProtocolConfigAddress: string; blockNumber?: number; out: string },
     hre,
   ) {
+    // readCanonicalSnapshot needs the ProtocolConfig artifact for its ABI; compile so the export
+    // also works from a clean checkout.
+    await hre.run('compile:specific', { contract: 'contracts' });
     const canonicalProvider = new hre.ethers.JsonRpcProvider(canonicalRpcUrl);
     const snapshot = await readCanonicalSnapshot(hre, {
       canonicalProvider,
