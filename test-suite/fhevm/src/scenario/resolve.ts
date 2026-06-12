@@ -84,10 +84,10 @@ export const resolveKmsTopology = (
   }
   // The KMS core enforces parties === 3*threshold + 1 (see zama-ai/kms
   // core/service/src/conf/threshold.rs). Valid cluster sizes are therefore only
-  // 4, 7, 10, ... — 2 and 3 parties cannot form a threshold cluster at all.
+  // 4, 7, 10, ... — 2 and 3 parties cannot form a threshold-mode cluster at all.
   if (!Number.isInteger(threshold) || threshold < 1 || 3 * threshold + 1 !== parties) {
     throw new Error(
-      `${sourceLabel}: KMS core requires parties === 3*threshold + 1; smallest threshold cluster is 4 parties (t=1), next valid sizes 7, 10. Got parties=${parties}, threshold=${threshold}`,
+      `${sourceLabel}: KMS core requires parties === 3*threshold + 1; smallest threshold-mode cluster is 4 parties (t=1), next valid sizes 7, 10. Got parties=${parties}, threshold=${threshold}`,
     );
   }
   // Threshold uses SECURE keygen (real DKG preprocessing): it signs the on-chain prepKeygenId, so it

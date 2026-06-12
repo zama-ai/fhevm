@@ -561,7 +561,7 @@ export const runStep = async (state: State, step: StepName) => {
       await waitForRpc(`http://localhost:${defaultChain.rpcPort}`);
       // Fund each KMS party's connector tx-sender on the host chain. The wallets are
       // derived from the gateway mnemonic so anvil pre-funds them there, but not on the
-      // host chain (different mnemonic). A threshold KMS runs one connector (and tx-sender)
+      // host chain (different mnemonic). A threshold-mode KMS runs one connector (and tx-sender)
       // per party, and EVERY party must be funded — otherwise only the funded party can
       // submit keygen/crsgen responses and on-chain consensus never completes.
       // `kms.parties` is 1 for centralized and N for threshold.
@@ -805,7 +805,7 @@ export const runStep = async (state: State, step: StepName) => {
         await waitForContainer("gateway-sc-trigger-crsgen", "complete");
       }
       // wait-for-materials polls roughly once per second. Centralized keygen is quick; a
-      // threshold cluster runs a real multi-party DKG (~360s for 4 parties), so it needs a
+      // threshold-mode cluster runs a real multi-party DKG (~360s for 4 parties), so it needs a
       // much larger budget before we conclude bootstrap failed.
       const CENTRALIZED_BOOTSTRAP_ATTEMPTS = 120;
       const THRESHOLD_BOOTSTRAP_ATTEMPTS = 450;
@@ -970,11 +970,11 @@ export const up = async (options: UpOptions) => {
   }
   if ((options.resume || options.fromStep) && state.scenario.kms.mode === "threshold") {
     // The resume/from-step lifecycle map (COMPONENT_BY_STEP, resumeSteadyStateServices) models a
-    // single `kms-core` + one connector tier. A threshold cluster has kms-core-2..N, kms-core-init
+    // single `kms-core` + one connector tier. A threshold-mode cluster has kms-core-2..N, kms-core-init
     // and per-party connectors that the map does not know about, so a partial restart would leave
     // them stale. Block it like the threshold upgrade guard until the map is made scenario-aware.
     throw new ResumeError(
-      "--resume / --from-step is not supported for a threshold KMS cluster (the lifecycle map models a single kms-core/connector and would leave kms-core-2..N, kms-core-init, and per-party connectors stale); recreate the stack with a fresh `up`",
+      "--resume / --from-step is not supported for a threshold-mode KMS cluster (the lifecycle map models a single kms-core/connector and would leave kms-core-2..N, kms-core-init, and per-party connectors stale); recreate the stack with a fresh `up`",
     );
   }
   if (options.resume) {

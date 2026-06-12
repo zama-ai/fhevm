@@ -246,7 +246,7 @@ const applyKmsThresholdGatewayEnv = async (
   const gw = envs["gateway-sc"];
   const mnemonic = gw.MNEMONIC;
   if (!mnemonic) {
-    throw new Error("Missing gateway mnemonic for threshold KMS setup");
+    throw new Error("Missing gateway mnemonic for threshold-mode KMS setup");
   }
   gw.NUM_KMS_NODES = String(parties);
   gw.MPC_THRESHOLD = String(threshold);

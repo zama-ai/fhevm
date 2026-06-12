@@ -2,9 +2,10 @@
  * The `kms-generation` acceptance profile for `fhevm-cli test`.
  *
  * It turns the implicit "the boot didn't fail" signal into named, on-chain assertions about the
- * KMSGeneration flow, then proves the threshold property is real by varying the live-party count
- * around the 2t+1 quorum. (KMS-context guarantees — epoch activation, cross-context replay,
- * resharing — are deferred to RFC-005 and are not modeled here.)
+ * FHE key and CRS generation flows (implemented by the KMSGeneration contract), then proves the
+ * 2t+1 quorum property is real by varying the live-party count around it. (KMS-context
+ * guarantees — epoch activation, cross-context replay, resharing — are deferred to RFC-005 and
+ * are not modeled here.)
  */
 import { PreflightError } from "../errors";
 import { castCall, dockerInspect, probeBootstrap, resolveKmsGenerationTarget, waitForContainer } from "../flow/readiness";
@@ -69,7 +70,8 @@ const waitForPartiesStopped = async (parties: number[]) => {
   }
 };
 
-/** Asserts the on-chain KMSGeneration state and returns the verified topology numbers. */
+/** Asserts the on-chain key/CRS generation state (KMSGeneration contract) and returns the
+ * verified topology numbers. */
 export const auditKmsGeneration = async (state: State) => {
   const { parties, threshold, fheParams } = state.scenario.kms;
   if (parties !== 3 * threshold + 1) {
@@ -80,7 +82,7 @@ export const auditKmsGeneration = async (state: State) => {
   const probe = await probeBootstrap(state);
   if (!probe) {
     throw new PreflightError(
-      "kms-generation: activeKeyId/activeCrsId are not set on chain — secure threshold keygen/crsgen did not finalize",
+      "kms-generation: activeKeyId/activeCrsId are not set on chain — secure threshold-mode keygen/crsgen did not finalize",
     );
   }
 
@@ -135,14 +137,14 @@ const waitForPartiesRunning = async (parties: number[]) => {
 };
 
 /**
- * `kms-generation`: assert the threshold KMSGeneration state on chain, then prove the
- * decryption quorum is genuinely 2t+1 by decrypting with a tolerated party loss, confirming
- * it cannot decrypt below quorum, and confirming it recovers once the parties return.
+ * `kms-generation`: audit the on-chain key/CRS generation state of a threshold-mode cluster,
+ * then prove the decryption quorum is genuinely 2t+1 by decrypting with a tolerated party loss,
+ * confirming it cannot decrypt below quorum, and confirming it recovers once the parties return.
  */
 export const runKmsGenerationProfile = async (state: State, runDecryption: DecryptionRunner) => {
   if (state.scenario.kms.mode !== "threshold") {
     throw new PreflightError(
-      "kms-generation requires a threshold KMS cluster; rerun `fhevm-cli up --scenario four-party-threshold-kms`",
+      "kms-generation requires a threshold-mode KMS cluster; rerun `fhevm-cli up --scenario four-party-threshold-kms`",
     );
   }
   const { parties, reconstruct } = await auditKmsGeneration(state);

@@ -368,7 +368,7 @@ jobs:
             snapshot_logs "${label} - ZKProof Worker" "${prefix}-zkproof-worker"
             snapshot_logs "${label} - TFHE Worker" "${prefix}-tfhe-worker"
           done
-          # Threshold KMS only (no-op on a centralized single-core stack): party 1 is the bare
+          # Threshold-mode KMS only (no-op on a centralized single-core stack): party 1 is the bare
           # `kms-core` / `kms-connector-*` already captured above; parties 2..N use the `-{i}-`
           # suffix. Use `docker ps -a` so a crashed or exited party core/connector (the usual
           # threshold flake) still has its logs surfaced. `kms-core-init` is the one-shot

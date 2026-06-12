@@ -269,8 +269,8 @@ describe("resolveUpgradePlan (threshold guard)", () => {
     scenario: testDefaultScenario({ kms: { mode: "threshold", parties: 4, threshold: 1, fheParams: "Test" } }),
   };
 
-  test("refuses to upgrade the single-core/connector KMS groups on a threshold cluster", () => {
-    expect(() => resolveUpgradePlan(thresholdState, "kms", { lockFile: true })).toThrow(/threshold KMS/);
-    expect(() => resolveUpgradePlan(thresholdState, "kms-core", { lockFile: true })).toThrow(/threshold KMS/);
+  test("refuses to upgrade the single-core/connector KMS groups on a threshold-mode cluster", () => {
+    expect(() => resolveUpgradePlan(thresholdState, "kms", { lockFile: true })).toThrow(/threshold-mode KMS/);
+    expect(() => resolveUpgradePlan(thresholdState, "kms-core", { lockFile: true })).toThrow(/threshold-mode KMS/);
   });
 });

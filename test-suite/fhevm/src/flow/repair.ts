@@ -156,12 +156,12 @@ export const resolveUpgradePlan = (
   const group = groupValue as UpgradeGroup;
   const lockFileMode = options.lockFile === true;
   // The upgrade/repair lifecycle still models the KMS tier as a single core + single connector. A
-  // threshold cluster (N cores + N connectors, the dedicated `core-threshold` component) is not
+  // threshold-mode cluster (N cores + N connectors, the dedicated `core-threshold` component) is not
   // covered, so fail loudly rather than silently upgrade only party 1. Threshold stacks are
   // recreated with a fresh `up` (the e2e workflow always boots from scratch).
   if ((group === "kms" || group === "kms-core") && state.scenario.kms.mode === "threshold") {
     throw new Error(
-      `upgrade ${group} is not supported for a threshold KMS cluster (it would only touch party 1); recreate the stack with a fresh \`up\``,
+      `upgrade ${group} is not supported for a threshold-mode KMS cluster (it would only touch party 1); recreate the stack with a fresh \`up\``,
     );
   }
   if (group === "kms") {

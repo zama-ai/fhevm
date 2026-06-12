@@ -1,4 +1,4 @@
-# Threshold KMS cluster component.
+# Threshold-mode KMS cluster component.
 #
 # All services (kms-core-gen-keys + N cores + kms-core-init) are GENERATED into
 # the compose override at .fhevm/runtime/compose/core-threshold.yml by

@@ -1,5 +1,5 @@
 /**
- * Generates the threshold KMS cluster: a `core-threshold` compose override
+ * Generates the threshold-mode KMS cluster: a `core-threshold` compose override
  * (gen-keys + N cores + kms-init) wired to the checked-in
  * `templates/config/kms-core-threshold.toml`.
  *
@@ -19,7 +19,7 @@
  *     misconfiguring the cluster.
  *
  * Design notes (kept deliberately close to how zama-ai/kms's own CI stands up a
- * threshold cluster — see ci/kube-testing + core/service/config/compose_1.toml):
+ * threshold-mode cluster — see ci/kube-testing + core/service/config/compose_1.toml):
  *   - Core-to-core MPC runs WITHOUT mTLS (the `[threshold.tls]` block is omitted;
  *     the field is optional). This matches the kind-CI test posture and removes all
  *     cert generation / distribution / subject-matching. Peers reach each other by
@@ -136,7 +136,7 @@ const genKeysCommand = (topology: ResolvedKmsTopology, opts: KmsRenderOptions) =
   ].join("\n");
 
 /**
- * Builds the threshold cluster compose doc: 1 gen-keys container + N cores +
+ * Builds the threshold-mode cluster compose doc: 1 gen-keys container + N cores +
  * kms-init. This is the generated override for the `core-threshold` component
  * (a dedicated component, so it never merges with the centralized `core`
  * template — no env/healthcheck conflicts to work around).

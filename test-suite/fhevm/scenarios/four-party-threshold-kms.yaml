@@ -2,7 +2,7 @@ version: 1
 kind: coprocessor-consensus
 name: Four Party Threshold KMS
 description: >
-  Multi-coprocessor (2-of-2) + a real 4-party threshold KMS cluster (t=1) running
+  Multi-coprocessor (2-of-2) + a real 4-party threshold-mode KMS cluster (t=1) running
   SECURE keygen with Test FHE parameters. Secure keygen does real MPC preprocessing
   and signs the on-chain prepKeygenId, so it passes the host KMSGeneration
   KeygenVerification and reaches activeKeyId (~360s for 4 parties, measured).
@@ -25,7 +25,7 @@ instances:
       host-listener-consumer:
         - --service-name=coprocessor1-host-listener-consumer
 # Optional `kms` block. Absent (every existing scenario) = today's single centralized
-# kms-core. Present with mode: threshold = an N-party threshold cluster + per-party connectors.
+# kms-core. Present with mode: threshold = an N-party threshold-mode cluster + per-party connectors.
 kms:
   mode: threshold
   parties: 4       # MPC nodes; KMS core requires parties == 3*threshold + 1

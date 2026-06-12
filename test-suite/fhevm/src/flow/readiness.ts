@@ -239,7 +239,7 @@ export const waitForStableChainListeners = async (state: Pick<State, "scenario">
 };
 
 /** MinIO prefixes that hold a party's VerfAddress. Centralized stores it under
- * `PUB/PUB` (or legacy `PUB`); a threshold cluster stores party i under its own prefix. */
+ * `PUB/PUB` (or legacy `PUB`); a threshold-mode cluster stores party i under its own prefix. */
 const verfAddressPrefixes = (parties: number, party: number): string[] =>
   parties === 1 ? ["PUB/PUB", "PUB"] : [kmsPublicPrefix(party)];
 
@@ -263,7 +263,7 @@ const fetchVerfAddress = async (
 
 /**
  * Discovers the KMS signer addresses after bootstrap: one for a centralized node,
- * one per party for a threshold cluster (`parties` is 1 in the centralized case).
+ * one per party for a threshold-mode cluster (`parties` is 1 in the centralized case).
  * The signing-key handle is scraped from the core logs and is shared across parties;
  * each party's address lives at its own MinIO prefix.
  */
@@ -335,7 +335,7 @@ export const castCall = async (rpcUrl: string, to: string, signature: string, ..
 };
 
 /**
- * Resolves the chain the KMSGeneration flow is wired to (host on v0.13+, else gateway) and the
+ * Resolves the chain the KMSGeneration contract is deployed on (host on v0.13+, else gateway) and the
  * contract addresses on it. Throws PreflightError when a required endpoint/address is missing;
  * `configAddress` (ProtocolConfig / GatewayConfig) is optional on pre-v0.13 bundles.
  */
