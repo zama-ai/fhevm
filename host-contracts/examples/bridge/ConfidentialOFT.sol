@@ -17,18 +17,20 @@ import {IDstApp} from "../../contracts/bridge/interfaces/IDstApp.sol";
  *         sender, and the destination-chain instance mints to the recipient.
  *
  * @dev    An instance of this contract is deployed on each supported chain. Peers are
- *         configured by the owner via `setTrustedPeer`. The ConfidentialBridge contract
- *         on this chain dispatches the cross-chain send and, on the destination chain,
- *         invokes `onReceive` via lzCompose.
+ *         configured by the owner via `setPeer`.
+ *         The ConfidentialBridge contract on this chain dispatches the cross-chain send and,
+ *         on the destination chain, invokes `onReceive` via lzCompose.
  */
 contract ConfidentialOFT is Ownable2Step, IDstApp {
     event Bridged(address indexed from, uint32 indexed dstEid, address indexed recipient);
     event Received(uint32 indexed srcEid, bytes32 indexed srcApp, address indexed recipient);
-    event TrustedPeerSet(uint32 indexed srcEid, bytes32 indexed srcApp, bool trusted);
+    event PeerSet(uint32 indexed eid, bytes32 indexed peer);
     event Minted(address indexed to);
 
     error UntrustedPeer(uint32 srcEid, bytes32 srcApp);
+    error PeerNotSet(uint32 dstEid);
     error OnlyConfidentialBridge(address caller);
+    error UnauthorizedUseOfEncryptedAmount(euint64 amount, address sender);
 
     /// @notice ConfidentialBridge on this chain. Used both to dispatch outbound sends and
     ///         to authenticate inbound `onReceive` calls (the bridge is its own lzCompose
@@ -36,12 +38,14 @@ contract ConfidentialOFT is Ownable2Step, IDstApp {
     ///         `onReceive`).
     ConfidentialBridge public immutable confidentialBridge;
 
-    /// @dev Per-chain trusted peer apps. Bridging from an untrusted (srcEid, srcApp)
-    ///      pair is rejected in `onReceive`.
-    ///      Keyed by `bytes32 srcApp` rather than `address` to support non-EVM peers
+    /// @dev The canonical peer app on each remote chain, keyed by eid. A single peer per
+    ///      eid serves both directions: outbound `send` dispatches to `_peers[dstEid]`,
+    ///      and inbound `onReceive` rejects any `(srcEid, srcApp)` that doesn't match
+    ///      `_peers[srcEid]`.
+    ///      Stored as `bytes32` rather than `address` to support non-EVM peers
     ///      (e.g. Solana program IDs). For EVM peers, pass
     ///      `bytes32(uint256(uint160(remoteEvmAddress)))`.
-    mapping(uint32 srcEid => mapping(bytes32 srcApp => bool trusted)) private _trustedPeers;
+    mapping(uint32 eid => bytes32 peer) private _peers;
 
     /// @dev Encrypted balance per holder.
     mapping(address holder => euint64 balance) private _balances;
@@ -53,25 +57,26 @@ contract ConfidentialOFT is Ownable2Step, IDstApp {
 
     /**
      * @notice Bridge an encrypted amount of tokens to `recipient` on the chain at `dstEid`.
-     * @dev    Caller must currently have ACL allowance on `amount`. Pass enough
-     *         `msg.value` to cover the LayerZero native fee — query
+     * @dev    The destination peer is resolved internally from the owner-configured peer
+     *         registry (`setPeer`); bridging to an eid with no configured peer reverts
+     *         with `PeerNotSet`. Caller must currently have ACL allowance on `amount`.
+     *         Pass enough `msg.value` to cover the LayerZero native fee — query
      *         `ConfidentialBridge.quote(...)` from off-chain.
      * @param dstEid           LayerZero endpoint id of the destination chain.
-     * @param dstApp           Peer ConfidentialOFT on the destination chain as bytes32.
-     *                         For EVM destinations pass
-     *                         `bytes32(uint256(uint160(remoteOftAddress)))`.
      * @param amount           Encrypted amount handle to burn-and-send.
      * @param recipient        Recipient on the destination chain.
      * @param mintComposeGas   Gas budget for destination-side lzCompose (the `onReceive`).
      */
     function send(
         uint32 dstEid,
-        bytes32 dstApp,
         euint64 amount,
         address recipient,
         uint128 mintComposeGas
     ) external payable {
-        require(FHE.isSenderAllowed(amount), "ConfidentialOFT: sender not allowed on amount");
+        if(!FHE.isSenderAllowed(amount)) revert UnauthorizedUseOfEncryptedAmount(amount, msg.sender);
+
+        bytes32 dstApp = _peers[dstEid];
+        if (dstApp == bytes32(0)) revert PeerNotSet(dstEid);
 
         euint64 actualAmount = _burn(msg.sender, amount);
 
@@ -105,7 +110,8 @@ contract ConfidentialOFT is Ownable2Step, IDstApp {
         bytes32[] calldata dstHandleList
     ) external override {
         if (msg.sender != address(confidentialBridge)) revert OnlyConfidentialBridge(msg.sender);
-        if (!_trustedPeers[srcEid][srcApp]) revert UntrustedPeer(srcEid, srcApp);
+        bytes32 trustedPeer = _peers[srcEid];
+        if (trustedPeer == bytes32(0) || trustedPeer != srcApp) revert UntrustedPeer(srcEid, srcApp);
 
         (address recipient, ) = abi.decode(payload, (address, bytes32));
         euint64 dstAmount = euint64.wrap(dstHandleList[0]);
@@ -115,13 +121,15 @@ contract ConfidentialOFT is Ownable2Step, IDstApp {
         emit Received(srcEid, srcApp, recipient);
     }
 
-    /// @notice Configure a per-chain trusted peer app. Must be set before that peer
-    ///         can mint into this contract via the bridge.
-    /// @param srcApp Peer app on the source chain as bytes32. EVM peers: pass
+    /// @notice Configure the canonical peer app on the chain at `eid`. Must be set before
+    ///         this contract can `send` to that eid or accept a mint from it via the bridge.
+    ///         Pass `bytes32(0)` to clear a peer.
+    /// @param eid  LayerZero endpoint id of the remote chain.
+    /// @param peer Peer app on the remote chain as bytes32. EVM peers: pass
     ///        `bytes32(uint256(uint160(remoteAddress)))`.
-    function setTrustedPeer(uint32 srcEid, bytes32 srcApp, bool trusted) external onlyOwner {
-        _trustedPeers[srcEid][srcApp] = trusted;
-        emit TrustedPeerSet(srcEid, srcApp, trusted);
+    function setPeer(uint32 eid, bytes32 peer) external onlyOwner {
+        _peers[eid] = peer;
+        emit PeerSet(eid, peer);
     }
 
     /**
@@ -148,9 +156,9 @@ contract ConfidentialOFT is Ownable2Step, IDstApp {
         return _balances[holder];
     }
 
-    /// @notice Returns whether `(srcEid, srcApp)` is a trusted bridging peer.
-    function isTrustedPeer(uint32 srcEid, bytes32 srcApp) external view returns (bool) {
-        return _trustedPeers[srcEid][srcApp];
+    /// @notice Returns the configured peer app on the chain at `eid` (bytes32(0) if unset).
+    function peers(uint32 eid) external view returns (bytes32) {
+        return _peers[eid];
     }
 
     /**

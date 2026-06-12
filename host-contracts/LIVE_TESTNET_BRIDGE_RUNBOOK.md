@@ -246,14 +246,16 @@ export SEPOLIA_OFT_ADDRESS=$(grep '^CONFIDENTIAL_OFT_CONTRACT_ADDRESS=' addresse
 export POLYGON_AMOY_OFT_ADDRESS=$(grep '^CONFIDENTIAL_OFT_CONTRACT_ADDRESS=' addresses-amoy/.env.host | cut -d= -f2)
 ```
 
-### 5.3 — Trust each remote OFT as a peer
+### 5.3 — Set each remote OFT as the peer
 
-`ConfidentialOFT.onReceive` rejects any inbound `(srcEid, srcApp)` pair the
-owner hasn't whitelisted (`UntrustedPeer`). Call `task:wireConfidentialOFT`
-once per direction.
+Each `ConfidentialOFT` resolves its destination peer internally from a single
+peer-per-eid registry (`setPeer`). The same registry authenticates inbound
+mints: `onReceive` rejects any `(srcEid, srcApp)` that doesn't match the
+configured peer (`UntrustedPeer`), and `send` reverts with `PeerNotSet` for an
+eid with no configured peer. Call `task:wireConfidentialOFT` once per direction.
 
 ```bash
-# Sepolia → trust the Amoy OFT
+# Sepolia → set the Amoy OFT as peer
 cp addresses-sepolia/{FHEVMHostAddresses.sol,.env.host} addresses/
 
 RPC_URL="$SEPOLIA_RPC_URL" \
@@ -261,7 +263,7 @@ RPC_URL="$SEPOLIA_RPC_URL" \
   --remote-eid 40267 \
   --remote-oft "$POLYGON_AMOY_OFT_ADDRESS"
 
-# Amoy → trust the Sepolia OFT
+# Amoy → set the Sepolia OFT as peer
 cp addresses-amoy/{FHEVMHostAddresses.sol,.env.host} addresses/
 
 RPC_URL="$POLYGON_AMOY_RPC_URL" \
