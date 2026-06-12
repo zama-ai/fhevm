@@ -23,27 +23,27 @@ describe('ConfidentialOFT', function () {
   });
 
   describe('governance', function () {
-    it('owner can toggle a trusted peer', async function () {
-      // setTrustedPeer takes bytes32 (forward-compat with non-EVM peers). For EVM
+    it('owner can set and clear a peer', async function () {
+      // setPeer takes bytes32 (forward-compat with non-EVM peers). For EVM
       // peers, pad the address to 32 bytes.
       const peerAddr = this.signers.bob.address;
       const peer = ethers.zeroPadValue(peerAddr, 32);
-      expect(await this.oft.isTrustedPeer(SRC_EID, peer)).to.equal(false);
+      expect(await this.oft.peers(SRC_EID)).to.equal(ethers.ZeroHash);
 
-      await expect(this.oft.connect(this.fx.owner).setTrustedPeer(SRC_EID, peer, true))
-        .to.emit(this.oft, 'TrustedPeerSet')
-        .withArgs(SRC_EID, peer, true);
-      expect(await this.oft.isTrustedPeer(SRC_EID, peer)).to.equal(true);
+      await expect(this.oft.connect(this.fx.owner).setPeer(SRC_EID, peer))
+        .to.emit(this.oft, 'PeerSet')
+        .withArgs(SRC_EID, peer);
+      expect(await this.oft.peers(SRC_EID)).to.equal(peer);
 
-      await this.oft.connect(this.fx.owner).setTrustedPeer(SRC_EID, peer, false);
-      expect(await this.oft.isTrustedPeer(SRC_EID, peer)).to.equal(false);
+      await this.oft.connect(this.fx.owner).setPeer(SRC_EID, ethers.ZeroHash);
+      expect(await this.oft.peers(SRC_EID)).to.equal(ethers.ZeroHash);
     });
 
-    it('non-owner cannot setTrustedPeer', async function () {
+    it('non-owner cannot setPeer', async function () {
       await expect(
         this.oft
           .connect(this.signers.bob)
-          .setTrustedPeer(SRC_EID, ethers.zeroPadValue(this.signers.bob.address, 32), true)
+          .setPeer(SRC_EID, ethers.zeroPadValue(this.signers.bob.address, 32))
       ).to.be.reverted;
     });
   });
@@ -101,17 +101,15 @@ describe('ConfidentialOFT', function () {
       // signers.alice deposits and gets a balance, then a different signer tries to send her amount.
       // Faster: just pass a fresh handle that has no allowance for anyone.
       const fakeAmount = makeFakeAmountHandle();
+      // Configure the destination peer so `send` reaches the ACL check (rather than
+      // reverting early with PeerNotSet).
+      await this.oft
+        .connect(this.fx.owner)
+        .setPeer(DST_EID, ethers.zeroPadValue(this.signers.alice.address, 32));
       await expect(
         this.oft
           .connect(this.signers.alice)
-          .send(
-            DST_EID,
-            ethers.zeroPadValue(this.signers.alice.address, 32),
-            fakeAmount,
-            this.signers.bob.address,
-            200_000n,
-            { value: ethers.parseEther('1') }
-          )
+          .send(DST_EID, fakeAmount, this.signers.bob.address, 200_000n, { value: ethers.parseEther('1') })
       ).to.be.reverted;
     });
   });

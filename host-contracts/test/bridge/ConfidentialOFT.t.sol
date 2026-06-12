@@ -20,7 +20,7 @@ import {aclAdd, fhevmExecutorAdd} from "../../addresses/FHEVMHostAddresses.sol";
  *         tests elsewhere; these tests instead cover:
  *         - send authorization (must hold ACL on the amount handle)
  *         - onReceive authentication (bridge-only, trusted-peer-only)
- *         - setTrustedPeer governance
+ *         - setPeer governance
  *
  *         The cOFT is deployed on the destination chain (eid=DST_EID) so its
  *         `confidentialBridge` is the destination-side bridge — the contract that
@@ -104,25 +104,25 @@ contract ConfidentialOFTTest is TestHelperOz5, HostContractsDeployerTestUtils {
     }
 
     ////////////////////////////////////////////////////////////////////////////////
-    // setTrustedPeer
+    // setPeer
     ////////////////////////////////////////////////////////////////////////////////
 
-    /// @dev EVM peer encoded as bytes32 for the new bytes32-based peer registry.
+    /// @dev EVM peer encoded as bytes32 for the bytes32-based peer registry.
     bytes32 private constant SRC_PEER_BEEF = bytes32(uint256(0xBEEF));
 
-    function test_SetTrustedPeer_OnlyOwner() public {
+    function test_SetPeer_OnlyOwner() public {
         vm.expectRevert();
-        oft.setTrustedPeer(SRC_EID, SRC_PEER_BEEF, true);
+        oft.setPeer(SRC_EID, SRC_PEER_BEEF);
     }
 
-    function test_SetTrustedPeer_TogglesState() public {
-        assertFalse(oft.isTrustedPeer(SRC_EID, SRC_PEER_BEEF));
+    function test_SetPeer_StoresAndClears() public {
+        assertEq(oft.peers(SRC_EID), bytes32(0));
         vm.prank(owner);
-        oft.setTrustedPeer(SRC_EID, SRC_PEER_BEEF, true);
-        assertTrue(oft.isTrustedPeer(SRC_EID, SRC_PEER_BEEF));
+        oft.setPeer(SRC_EID, SRC_PEER_BEEF);
+        assertEq(oft.peers(SRC_EID), SRC_PEER_BEEF);
         vm.prank(owner);
-        oft.setTrustedPeer(SRC_EID, SRC_PEER_BEEF, false);
-        assertFalse(oft.isTrustedPeer(SRC_EID, SRC_PEER_BEEF));
+        oft.setPeer(SRC_EID, bytes32(0));
+        assertEq(oft.peers(SRC_EID), bytes32(0));
     }
 
     ////////////////////////////////////////////////////////////////////////////////
@@ -155,7 +155,7 @@ contract ConfidentialOFTTest is TestHelperOz5, HostContractsDeployerTestUtils {
         dstList[0] = dst;
 
         vm.prank(owner);
-        oft.setTrustedPeer(SRC_EID, SRC_PEER_BEEF, true);
+        oft.setPeer(SRC_EID, SRC_PEER_BEEF);
 
         // Authentication should NOT revert with OnlyConfidentialBridge / UntrustedPeer.
         // If a revert happens, it must come from a later FHE.* call, not auth.
@@ -180,8 +180,11 @@ contract ConfidentialOFTTest is TestHelperOz5, HostContractsDeployerTestUtils {
     ///      is not allowed on a fresh handle, send must revert before any LZ work.
     function test_Send_RevertsWhenSenderNotAllowedOnAmount() public {
         // The fresh handle is unknown to the ACL, so isSenderAllowed fails.
+        vm.prank(owner);
+        oft.setPeer(DST_EID, SRC_PEER_BEEF);
+
         vm.prank(alice);
         vm.expectRevert();
-        oft.send{value: 1 ether}(DST_EID, SRC_PEER_BEEF, euint64.wrap(_makeHandle(0)), bob, uint128(150_000));
+        oft.send{value: 1 ether}(DST_EID, euint64.wrap(_makeHandle(0)), bob, uint128(150_000));
     }
 }

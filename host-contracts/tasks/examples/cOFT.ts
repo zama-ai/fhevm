@@ -40,7 +40,7 @@ task('task:deployConfidentialOFT').setAction(async function (_, hre) {
       }
     });
 
-task('task:wireConfidentialOFT', 'Trusts a remote ConfidentialOFT peer (setTrustedPeer)')
+task('task:wireConfidentialOFT', 'Sets the canonical remote ConfidentialOFT peer (setPeer)')
   .addParam('remoteEid', 'LayerZero V2 endpoint id of the remote chain', undefined, types.int)
   .addParam('remoteOft', 'Address of the ConfidentialOFT on the remote chain')
   .setAction(async function (taskArguments: TaskArguments, { ethers }) {
@@ -60,15 +60,15 @@ task('task:wireConfidentialOFT', 'Trusts a remote ConfidentialOFT peer (setTrust
 
     const oft = await ethers.getContractAt('ConfidentialOFT', localOftAddress, deployer);
     const remoteEid: number = taskArguments.remoteEid;
-    // ConfidentialOFT.setTrustedPeer takes bytes32 (forward-compat with non-EVM
-    // peers). The CLI accepts a regular EVM address for convenience; we pad
-    // here to the on-chain bytes32 type.
+    // ConfidentialOFT.setPeer takes bytes32 (forward-compat with non-EVM peers). The
+    // CLI accepts a regular EVM address for convenience; we pad here to the on-chain
+    // bytes32 type.
     const remoteOftBytes32 = ethers.zeroPadValue(taskArguments.remoteOft, 32);
 
     console.log(
-      `Wiring local OFT ${localOftAddress} → trusting remote { eid=${remoteEid}, oft=${taskArguments.remoteOft} (bytes32=${remoteOftBytes32}) }`,
+      `Wiring local OFT ${localOftAddress} → peer { eid=${remoteEid}, oft=${taskArguments.remoteOft} (bytes32=${remoteOftBytes32}) }`,
     );
-    const tx = await oft.setTrustedPeer(remoteEid, remoteOftBytes32, true);
+    const tx = await oft.setPeer(remoteEid, remoteOftBytes32);
     console.log(`  tx ${tx.hash}`);
     await tx.wait();
     console.log('ConfidentialOFT wiring done.');
@@ -216,7 +216,10 @@ task('task:bridgeCOFT', 'Bridges a ConfidentialOFT balance (or a specific amount
     );
     console.log(`  bridge=${bridgeAddress}, composeGas=${composeGas}, nativeFee=${fee.nativeFee.toString()} wei`);
 
-    const tx = await oft.send(dstEid, dstOftBytes32, amountHandle, recipient, composeGas, {
+    // The destination peer is resolved internally by the OFT from its peer registry
+    // (set via task:wireConfidentialOFT); `--dst-oft` above is only used to build the
+    // off-chain fee quote and must match the configured peer.
+    const tx = await oft.send(dstEid, amountHandle, recipient, composeGas, {
       value: fee.nativeFee,
     });
     console.log(`  tx ${tx.hash}`);
