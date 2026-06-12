@@ -20,23 +20,35 @@ export type KmsThresholds = {
 };
 
 export type CanonicalSnapshot = {
-  currentContextId: bigint;
+  currentKmsContextId: bigint;
   kmsNodes: KmsNode[];
   thresholds: KmsThresholds;
   canonicalChainId: bigint;
-  canonicalBlockTag: number;
+  blockNumber: number;
 };
 
 // Reads the canonical ProtocolConfig's current KMS context, pinned to one block. Shared by the
-// secondary mirror deploy and the export task so both seed from the exact same read. Pass blockTag
+// secondary mirror deploy and the export task so both seed from the exact same read. Pass blockNumber
 // to pin to a historical block (the export artifact's blockNumber) so a DAO signer can reproduce a
 // snapshot byte-for-byte even after a later context rotation; omit it to read the latest block.
 export async function readCanonicalSnapshot(
   hre: HardhatRuntimeEnvironment,
-  options: { canonicalProvider: Provider; canonicalProtocolConfigAddress: string; blockTag?: number },
+  options: { canonicalProvider: Provider; canonicalProtocolConfigAddress: string; blockNumber?: number },
 ): Promise<CanonicalSnapshot> {
   const { ethers } = hre;
-  const { canonicalProvider, canonicalProtocolConfigAddress, blockTag } = options;
+  const { canonicalProvider, canonicalProtocolConfigAddress } = options;
+
+  // Handshake before the identity check so a dead or mistyped RPC URL is reported as an RPC
+  // problem, not as a contract identity failure.
+  let canonicalChainId: bigint;
+  let blockNumber: number;
+  try {
+    canonicalChainId = (await canonicalProvider.getNetwork()).chainId;
+    blockNumber = options.blockNumber ?? (await canonicalProvider.getBlockNumber());
+  } catch (err) {
+    throw new Error(`Canonical RPC handshake failed (${formatError(err)}).`);
+  }
+  const at = { blockTag: blockNumber };
 
   const canonicalProtocolConfigBase = await ethers.getContractAt('ProtocolConfig', canonicalProtocolConfigAddress);
   const canonicalProtocolConfig = canonicalProtocolConfigBase.connect(canonicalProvider) as ProtocolConfig;
@@ -55,35 +67,25 @@ export async function readCanonicalSnapshot(
     );
   }
 
-  let canonicalChainId: bigint;
-  let canonicalBlockTag: number;
-  try {
-    canonicalChainId = (await canonicalProvider.getNetwork()).chainId;
-    canonicalBlockTag = blockTag ?? (await canonicalProvider.getBlockNumber());
-  } catch (err) {
-    throw new Error(`Canonical RPC handshake failed (${formatError(err)}).`);
-  }
-  const at = { blockTag: canonicalBlockTag };
-
-  const currentContextId: bigint = await canonicalProtocolConfig.getCurrentKmsContextId(at);
-  if (currentContextId === 0n) {
+  const currentKmsContextId: bigint = await canonicalProtocolConfig.getCurrentKmsContextId(at);
+  if (currentKmsContextId === 0n) {
     throw new Error(
       `Canonical ProtocolConfig at ${canonicalProtocolConfigAddress} has no active KMS context (currentKmsContextId=0); cannot mirror.`,
     );
   }
-  const isCurrentContextValid: boolean = await canonicalProtocolConfig.isValidKmsContext(currentContextId, at);
+  const isCurrentContextValid: boolean = await canonicalProtocolConfig.isValidKmsContext(currentKmsContextId, at);
   if (!isCurrentContextValid) {
     throw new Error(
-      `Canonical ProtocolConfig's current context ${currentContextId} is destroyed; cannot mirror a destroyed context.`,
+      `Canonical ProtocolConfig's current context ${currentKmsContextId} is destroyed; cannot mirror a destroyed context.`,
     );
   }
 
   const [rawNodes, publicDecryption, userDecryption, kmsGen, mpc] = await Promise.all([
-    canonicalProtocolConfig.getKmsNodesForContext(currentContextId, at),
-    canonicalProtocolConfig.getPublicDecryptionThresholdForContext(currentContextId, at),
-    canonicalProtocolConfig.getUserDecryptionThresholdForContext(currentContextId, at),
-    canonicalProtocolConfig.getKmsGenThresholdForContext(currentContextId, at),
-    canonicalProtocolConfig.getMpcThresholdForContext(currentContextId, at),
+    canonicalProtocolConfig.getKmsNodesForContext(currentKmsContextId, at),
+    canonicalProtocolConfig.getPublicDecryptionThresholdForContext(currentKmsContextId, at),
+    canonicalProtocolConfig.getUserDecryptionThresholdForContext(currentKmsContextId, at),
+    canonicalProtocolConfig.getKmsGenThresholdForContext(currentKmsContextId, at),
+    canonicalProtocolConfig.getMpcThresholdForContext(currentKmsContextId, at),
   ]);
   const kmsNodes: KmsNode[] = rawNodes.map((node) => ({
     txSenderAddress: node.txSenderAddress,
@@ -93,39 +95,22 @@ export async function readCanonicalSnapshot(
   }));
   const thresholds: KmsThresholds = { publicDecryption, userDecryption, kmsGen, mpc };
 
-  return { currentContextId, kmsNodes, thresholds, canonicalChainId, canonicalBlockTag };
+  return { currentKmsContextId, kmsNodes, thresholds, canonicalChainId, blockNumber };
 }
 
-// Upgrades the secondary ProtocolConfig proxy and initializes it from the canonical snapshot. Reuses
-// ProtocolConfig.initializeFromMigration (originally the Gateway -> Ethereum migration initializer) to
-// land on canonical's currentKmsContextId rather than start a fresh counter.
-export async function mirrorProtocolConfigFromCanonical(
-  hre: HardhatRuntimeEnvironment,
-  options: {
-    canonicalProvider: Provider;
-    canonicalProtocolConfigAddress: string;
-    secondaryProxyAddress: string;
-  },
-): Promise<CanonicalSnapshot> {
-  const { canonicalProvider, canonicalProtocolConfigAddress, secondaryProxyAddress } = options;
-
-  const snapshot = await readCanonicalSnapshot(hre, { canonicalProvider, canonicalProtocolConfigAddress });
-  await applyCanonicalSnapshot(hre, { snapshot, secondaryProxyAddress });
-
-  return snapshot;
-}
-
-// Upgrades the secondary ProtocolConfig proxy and initializes it from an already-read snapshot —
-// either freshly read (mirrorProtocolConfigFromCanonical) or parsed from a reviewed export artifact.
+// Upgrades the secondary ProtocolConfig proxy and initializes it from a snapshot — freshly read via
+// readCanonicalSnapshot or parsed from a reviewed export artifact. Reuses
+// ProtocolConfig.initializeFromMigration (originally the Gateway -> Ethereum migration initializer)
+// to land on canonical's currentKmsContextId rather than start a fresh counter.
 export async function applyCanonicalSnapshot(
   hre: HardhatRuntimeEnvironment,
   options: { snapshot: CanonicalSnapshot; secondaryProxyAddress: string },
 ): Promise<void> {
   const { ethers, upgrades } = hre;
   const { snapshot, secondaryProxyAddress } = options;
-  const { currentContextId, kmsNodes, thresholds, canonicalChainId, canonicalBlockTag } = snapshot;
+  const { currentKmsContextId, kmsNodes, thresholds, canonicalChainId, blockNumber } = snapshot;
   console.log(
-    `Mirroring ProtocolConfig from canonical chain ${canonicalChainId} at block ${canonicalBlockTag}: contextId=${currentContextId}, kmsNodes=${kmsNodes.length}.`,
+    `Mirroring ProtocolConfig from canonical chain ${canonicalChainId} at block ${blockNumber}: contextId=${currentKmsContextId}, kmsNodes=${kmsNodes.length}.`,
   );
 
   const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
@@ -137,13 +122,14 @@ export async function applyCanonicalSnapshot(
   await upgrades.upgradeProxy(proxy, newImplem, {
     call: {
       fn: 'initializeFromMigration',
-      args: [currentContextId, kmsNodes, thresholds],
+      args: [currentKmsContextId, kmsNodes, thresholds],
     },
   });
 }
 
-// The JSON shape written by task:exportCanonicalProtocolConfig. Bigints are serialized as strings
-// so DAO signers can diff artifacts as plain text.
+// The JSON shape written by task:exportCanonicalProtocolConfig: the snapshot fields plus the
+// canonical contract address, with bigints serialized as strings so DAO signers can diff artifacts
+// as plain text.
 export type CanonicalSnapshotArtifact = {
   canonicalChainId: string;
   blockNumber: number;
@@ -159,9 +145,9 @@ export function buildSnapshotArtifact(
 ): CanonicalSnapshotArtifact {
   return {
     canonicalChainId: snapshot.canonicalChainId.toString(),
-    blockNumber: snapshot.canonicalBlockTag,
+    blockNumber: snapshot.blockNumber,
     protocolConfigAddress,
-    currentKmsContextId: snapshot.currentContextId.toString(),
+    currentKmsContextId: snapshot.currentKmsContextId.toString(),
     kmsNodes: snapshot.kmsNodes,
     thresholds: {
       publicDecryption: snapshot.thresholds.publicDecryption.toString(),
@@ -172,10 +158,7 @@ export function buildSnapshotArtifact(
   };
 }
 
-export function parseSnapshotArtifact(raw: string): {
-  snapshot: CanonicalSnapshot;
-  protocolConfigAddress: string;
-} {
+export function parseSnapshotArtifact(raw: string): CanonicalSnapshot {
   let artifact: CanonicalSnapshotArtifact;
   try {
     artifact = JSON.parse(raw);
@@ -195,9 +178,6 @@ export function parseSnapshotArtifact(raw: string): {
       `Snapshot artifact field "blockNumber" must be a number, got ${JSON.stringify(artifact.blockNumber)}.`,
     );
   }
-  if (typeof artifact.protocolConfigAddress !== 'string' || artifact.protocolConfigAddress.length === 0) {
-    throw new Error('Snapshot artifact field "protocolConfigAddress" is missing.');
-  }
   if (!Array.isArray(artifact.kmsNodes) || artifact.kmsNodes.length === 0) {
     throw new Error('Snapshot artifact field "kmsNodes" must be a non-empty array.');
   }
@@ -209,8 +189,8 @@ export function parseSnapshotArtifact(raw: string): {
     }
   }
 
-  const snapshot: CanonicalSnapshot = {
-    currentContextId: requireBigint('currentKmsContextId', artifact.currentKmsContextId),
+  return {
+    currentKmsContextId: requireBigint('currentKmsContextId', artifact.currentKmsContextId),
     kmsNodes: artifact.kmsNodes,
     thresholds: {
       publicDecryption: requireBigint('thresholds.publicDecryption', artifact.thresholds?.publicDecryption),
@@ -219,8 +199,6 @@ export function parseSnapshotArtifact(raw: string): {
       mpc: requireBigint('thresholds.mpc', artifact.thresholds?.mpc),
     },
     canonicalChainId: requireBigint('canonicalChainId', artifact.canonicalChainId),
-    canonicalBlockTag: artifact.blockNumber,
+    blockNumber: artifact.blockNumber,
   };
-
-  return { snapshot, protocolConfigAddress: artifact.protocolConfigAddress };
 }

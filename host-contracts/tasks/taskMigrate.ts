@@ -261,8 +261,8 @@ task(
     const proxyAddress = parsedEnv.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
     // The bootstrap task may have updated addresses/FHEVMHostAddresses.sol, so rebuild
     await hre.run('compile:specific', { contract: 'contracts' });
-    const { snapshot } = parseSnapshotArtifact(fs.readFileSync(snapshotPath, 'utf-8'));
-    const decodedArgs = [snapshot.currentContextId, snapshot.kmsNodes, snapshot.thresholds];
+    const snapshot = parseSnapshotArtifact(fs.readFileSync(snapshotPath, 'utf-8'));
+    const decodedArgs = [snapshot.currentKmsContextId, snapshot.kmsNodes, snapshot.thresholds];
     const artifact = await hre.artifacts.readArtifact('ProtocolConfig');
     const innerFunctionSignature = getFunctionFragment(artifact.abi, 'initializeFromMigration').format('sighash');
     const preparedUpgrade = await prepareDaoUpgrade(hre, {

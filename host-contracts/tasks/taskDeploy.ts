@@ -9,7 +9,6 @@ import path from 'path';
 import {
   applyCanonicalSnapshot,
   buildSnapshotArtifact,
-  mirrorProtocolConfigFromCanonical,
   parseSnapshotArtifact,
   readCanonicalSnapshot,
 } from './protocolConfigMirror';
@@ -541,12 +540,10 @@ task('task:deployProtocolConfig').setAction(async function (_taskArguments: Task
 });
 
 // Initializes the local (non-canonical) ProtocolConfig replica from the canonical chain's current
-// KMS context, read via RPC and pinned to one block. Reuses initializeFromMigration (originally the
-// Gateway -> Ethereum migration initializer) to land on the canonical chain's `currentKmsContextId`
-// rather than start a fresh counter. Equivalent of `task:deployProtocolConfigSecondary` on main.
+// KMS context — from a reviewed export artifact (--snapshot) or a live block-pinned RPC read.
 task(
   'task:deployProtocolConfigFromCanonical',
-  'Upgrades the existing ProtocolConfig proxy from a canonical-chain snapshot.',
+  "Upgrades the existing ProtocolConfig proxy from the canonical chain's state (reviewed snapshot artifact, or live read).",
 )
   .addOptionalParam(
     'snapshot',
@@ -586,25 +583,22 @@ task(
     const parsedEnv = readHostEnv();
     const secondaryProxyAddress = parsedEnv.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
 
-    let applied;
+    let snapshot;
     if (snapshotPath) {
-      const { snapshot } = parseSnapshotArtifact(fs.readFileSync(snapshotPath, 'utf-8'));
       console.log(`Applying reviewed canonical snapshot from ${snapshotPath}.`);
-      await applyCanonicalSnapshot(hre, { snapshot, secondaryProxyAddress });
-      applied = snapshot;
+      snapshot = parseSnapshotArtifact(fs.readFileSync(snapshotPath, 'utf-8'));
     } else {
-      const canonicalProvider = new hre.ethers.JsonRpcProvider(canonicalRpcUrl);
-      applied = await mirrorProtocolConfigFromCanonical(hre, {
-        canonicalProvider,
-        canonicalProtocolConfigAddress: canonicalProtocolConfigAddress!,
-        secondaryProxyAddress,
+      snapshot = await readCanonicalSnapshot(hre, {
+        canonicalProvider: new hre.ethers.JsonRpcProvider(canonicalRpcUrl),
+        canonicalProtocolConfigAddress: canonicalProtocolConfigAddress as string,
       });
     }
+    await applyCanonicalSnapshot(hre, { snapshot, secondaryProxyAddress });
 
     // On interval-mining networks, upgradeProxy can return before the tx is mined.
     await waitForTaskReady(hre, 'task:assertProtocolConfigReady');
     console.log(
-      `ProtocolConfig code set successfully at ${secondaryProxyAddress}, mirroring canonical chain ${applied.canonicalChainId} context ${applied.currentContextId} (block ${applied.canonicalBlockTag}) with ${applied.kmsNodes.length} KMS nodes.`,
+      `ProtocolConfig code set successfully at ${secondaryProxyAddress}, mirroring canonical chain ${snapshot.canonicalChainId} context ${snapshot.currentKmsContextId} (block ${snapshot.blockNumber}) with ${snapshot.kmsNodes.length} KMS nodes.`,
     );
   });
 
@@ -650,13 +644,13 @@ task(
     const snapshot = await readCanonicalSnapshot(hre, {
       canonicalProvider,
       canonicalProtocolConfigAddress,
-      blockTag: blockNumber,
+      blockNumber,
     });
 
     const artifact = buildSnapshotArtifact(snapshot, canonicalProtocolConfigAddress);
     fs.writeFileSync(out, JSON.stringify(artifact, null, 2));
     console.log(
-      `Canonical ProtocolConfig snapshot written to ${out}: chain ${snapshot.canonicalChainId}, block ${snapshot.canonicalBlockTag}, context ${snapshot.currentContextId}, ${snapshot.kmsNodes.length} KMS nodes.`,
+      `Canonical ProtocolConfig snapshot written to ${out}: chain ${snapshot.canonicalChainId}, block ${snapshot.blockNumber}, context ${snapshot.currentKmsContextId}, ${snapshot.kmsNodes.length} KMS nodes.`,
     );
     return artifact;
   });
