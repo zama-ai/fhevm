@@ -43,7 +43,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      */
     string private constant CONTRACT_NAME = "GatewayConfig";
     uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 6;
+    uint256 private constant MINOR_VERSION = 7;
     uint256 private constant PATCH_VERSION = 0;
 
     /**
@@ -52,7 +52,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      * This constant does not represent the number of time a specific contract have been upgraded,
      * as a contract deployed from version VX will have a REINITIALIZER_VERSION > 2.
      */
-    uint64 private constant REINITIALIZER_VERSION = 8;
+    uint64 private constant REINITIALIZER_VERSION = 9;
 
     /**
      * @notice The address of the all gateway contracts
@@ -263,11 +263,11 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     }
 
     /**
-     * @notice Re-initializes the contract from V6.
+     * @notice Re-initializes the contract from V7.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV7() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    function reinitializeV8() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /**
      * @notice See {IGatewayConfig-isPauser}.
