@@ -1,3 +1,13 @@
+//! Host-chain reorg detection: tracks recent block headers (hash / parent_hash)
+//! to spot when the host chain orphans a block the listener already ingested,
+//! so the affected on-chain state can be rolled back.
+//!
+//! This is ON-CHAIN consensus, NOT `drift_revert`. `drift_revert`
+//! (`fhevm_engine_common::drift_revert`) is coprocessor consensus — two
+//! coprocessors disagreeing on a ciphertext's bits — and fires even on a chain
+//! that never reorgs. Discriminator: "would it fire on a chain that never
+//! reorgs?" only on an orphaned block -> reorg (this module).
+
 use std::collections::VecDeque;
 
 use alloy::primitives::FixedBytes;
