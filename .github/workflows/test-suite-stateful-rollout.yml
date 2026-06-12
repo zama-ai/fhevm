@@ -80,7 +80,10 @@ jobs:
             exit 1
           fi
 
-          git fetch --no-tags --depth=1 origin "$BASE_REF"
+          # Full fetch: a depth-1 fetch of a base tip newer than the checkout
+          # has no shared ancestry, and `base...HEAD` fails with "no merge base"
+          # (seen on re-runs after the base branch advanced).
+          git fetch --no-tags origin "$BASE_REF"
           git diff --name-only "origin/${BASE_REF}...HEAD" |
             awk -F/ '$1 == "test-suite" && $2 == "fhevm" && $3 == "rollouts" && $4 != "" && $5 != "" { print $1 "/" $2 "/" $3 "/" $4 "/run.ts" }' |
             sort -u > /tmp/rollout-runbooks.txt
