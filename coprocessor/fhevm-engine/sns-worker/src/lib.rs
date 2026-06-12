@@ -190,10 +190,19 @@ impl From<Ciphertext128Format> for i16 {
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Default)]
 pub struct BigCiphertext {
     format: Ciphertext128Format,
     bytes: Vec<u8>,
+}
+
+impl std::fmt::Debug for BigCiphertext {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BigCiphertext")
+            .field("format", &self.format)
+            .field("bytes_len", &self.bytes.len())
+            .finish()
+    }
 }
 
 impl BigCiphertext {
@@ -231,7 +240,7 @@ impl std::fmt::Display for Ciphertext128Format {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct HandleItem {
     pub host_chain_id: ChainId,
     pub key_id_gw: DbKeyId,
@@ -252,6 +261,27 @@ pub struct HandleItem {
 
     pub span: tracing::Span,
     pub transaction_id: Option<Vec<u8>>,
+}
+
+impl std::fmt::Debug for HandleItem {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let handle = to_hex(&self.handle);
+        let key_id_gw = to_hex(&self.key_id_gw);
+        let ct64_digest = self.ct64_digest.as_deref().map(to_hex);
+        let ct128_digest = self.ct128_digest.as_deref().map(to_hex);
+        let transaction_id = self.transaction_id.as_deref().map(to_hex);
+
+        f.debug_struct("HandleItem")
+            .field("host_chain_id", &self.host_chain_id.as_i64())
+            .field("key_id_gw", &key_id_gw)
+            .field("handle", &handle)
+            .field("ct64_compressed_len", &self.ct64_compressed.len())
+            .field("ct128", &self.ct128) // only superficial debug print
+            .field("ct64_digest", &ct64_digest)
+            .field("ct128_digest", &ct128_digest)
+            .field("transaction_id", &transaction_id)
+            .finish()
+    }
 }
 
 impl HandleItem {

@@ -1228,6 +1228,25 @@ mod tests {
     }
 
     #[test]
+    fn handle_item_debug_redacts_ciphertext_bytes() {
+        let task = sample_handle_item();
+
+        let debug = format!("{task:?}");
+
+        assert!(debug.contains("host_chain_id: 1"));
+        assert!(debug.contains(
+            "handle: \"0x0202020202020202020202020202020202020202020202020202020202020202\""
+        ));
+        assert!(debug.contains("ct64_compressed_len: 3"));
+        assert!(debug.contains("BigCiphertext"));
+        assert!(debug.contains("bytes_len: 3"));
+        assert!(!debug.contains("ct64_compressed:"));
+        assert!(!debug.contains("bytes: ["));
+        assert!(!debug.contains("[1, 2, 3]"));
+        assert!(!debug.contains("[4, 5, 6]"));
+    }
+
+    #[test]
     fn ct64_only_upload_material_uses_zero_sns_ciphertext_digest() {
         let ct64 = vec![1, 2, 3];
         let task = HandleItem {
