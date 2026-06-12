@@ -491,17 +491,9 @@ const scenarioOwnsCoprocessorSource = (
 
 /** Rejects override combinations that conflict with scenario-owned coprocessor source. */
 export const assertScenarioOverrideCompatibility = (
-  scenario: Pick<ResolvedCoprocessorScenario, "instances" | "sourcePath" | "kms">,
+  scenario: Pick<ResolvedCoprocessorScenario, "instances" | "sourcePath">,
   overrides: LocalOverride[],
 ) => {
-  // Threshold mode regenerates the whole connector tier per party (buildKmsConnectorOverride)
-  // and never applies local-build retags to it, so a kms-connector override would be silently
-  // ignored. Fail loudly until threshold supports local connector builds.
-  if (scenario.kms.mode === "threshold" && overrides.some((override) => override.group === "kms-connector")) {
-    throw new PreflightError(
-      "--override kms-connector is not supported with a threshold KMS scenario (every party's connector uses the resolved published image); drop the override or use a centralized scenario",
-    );
-  }
   const conflicting = overrides.find((override) => scenarioOwnsCoprocessorSource(scenario, override.group));
   if (!conflicting) {
     return;

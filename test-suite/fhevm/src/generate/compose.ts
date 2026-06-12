@@ -433,9 +433,17 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
  * it replaces the single-node template; parties 2..N get `kms-connector-{i}-*`.
  * Each party's services read `kms-connector[.i].env` (own core endpoint, signer
  * key, DB) and depend on that party's own db-migration.
+ *
+ * `--override kms-connector` behaves exactly as in centralized mode: overridden
+ * services run the locally built image on EVERY party. Only the party-1 (base
+ * name) clone carries the build spec — maybeBuild builds by base service name —
+ * so the image is built once and parties 2..N reference the same tag. Without
+ * an override every party runs the resolved published image (secure threshold
+ * keygen needs no connector changes).
  */
-const buildKmsConnectorOverride = async (plan: StackSpec) => {
+export const buildKmsConnectorOverride = async (plan: StackSpec) => {
   const doc = rewriteComposePaths(await loadComposeDoc("kms-connector"));
+  const overridden = overriddenServicesForComponent(plan, "kms-connector");
   const services: Record<string, Record<string, unknown>> = {};
   for (let party = 1; party <= plan.kms.parties; party += 1) {
     const prefix = `${kmsConnectorPrefix(party)}-`;
@@ -446,9 +454,13 @@ const buildKmsConnectorOverride = async (plan: StackSpec) => {
       const next = structuredClone(service);
       next.container_name = serviceName;
       next.env_file = [envFileValue];
-      // Secure threshold keygen uses the standard PUBLISHED connector (it calls the secure
-      // key_gen_preproc/key_gen endpoints, which sign the real on-chain prepKeygenId), so no
-      // local build or image retag is needed here — every party reuses the resolved image.
+      applyBuildPolicy(next, overridden.has(name));
+      if (party === 1 && overridden.has(name)) {
+        const build = localBuildSpecFor("kms-connector", name);
+        if (build) {
+          next.build = build;
+        }
+      }
       if (next.depends_on && typeof next.depends_on === "object") {
         next.depends_on = Object.fromEntries(
           Object.entries(next.depends_on as Record<string, unknown>).map(([dep, value]) => [

@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 
 import { partyContainers, quorumPlan } from "./commands/kms-generation";
 import { resolveUpgradePlan } from "./flow/repair";
+import { buildKmsConnectorOverride } from "./generate/compose";
 import { renderEnvMaps } from "./generate/env";
 import {
   KMS_THRESHOLD_CONFIG_NAME,
@@ -184,6 +185,36 @@ describe("threshold core config", () => {
     expect(env.KMS_CORE__PUBLIC_VAULT__STORAGE__S3__PREFIX).toBe("PUB-p2");
     expect(env.KMS_CORE__PRIVATE_VAULT__STORAGE__S3__PREFIX).toBe("PRIV-p2");
     expect(env.AWS_ACCESS_KEY_ID).toBe("fhevm-access-key");
+  });
+});
+
+describe("buildKmsConnectorOverride (--override kms-connector)", () => {
+  const thresholdSpec = (overrides: State["overrides"]) =>
+    stackSpecForState({
+      target: "latest-main",
+      requiresGitHub: true,
+      versions: presetBundle("latest-main", "abcdef0", "latest-main.json"),
+      overrides,
+      scenario: testDefaultScenario({ kms: { mode: "threshold", parties: 4, threshold: 1, fheParams: "Test" } }),
+    });
+
+  test("without an override every party runs the resolved published image (no build specs)", async () => {
+    const services = (await buildKmsConnectorOverride(thresholdSpec([]))).services;
+    for (const [name, service] of Object.entries(services)) {
+      expect(service.build, name).toBeUndefined();
+      expect(String(service.image), name).not.toContain("fhevm-local");
+    }
+  });
+
+  test("override retags every party to the one locally built image; only party 1 builds it", async () => {
+    const services = (await buildKmsConnectorOverride(thresholdSpec([{ group: "kms-connector" }]))).services;
+    const base = services["kms-connector-gw-listener"];
+    const clone = services["kms-connector-3-gw-listener"];
+    expect(String(base.image)).toEndWith(":fhevm-local");
+    expect(base.build).toBeDefined();
+    // Same image tag, no per-party rebuild: maybeBuild builds by base service name once.
+    expect(clone.image).toBe(base.image);
+    expect(clone.build).toBeUndefined();
   });
 });
 

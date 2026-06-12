@@ -2,10 +2,8 @@ import path from "node:path";
 import { describe, expect, test } from "bun:test";
 
 import {
-  DEFAULT_KMS_TOPOLOGY,
   assertScenarioOverrideCompatibility,
   parseCoprocessorScenario,
-  resolveKmsTopology,
   resolveScenarioReference,
   synthesizeOverrideScenario,
   effectiveOverrides,
@@ -145,7 +143,6 @@ topology:
             { index: 0, source: { mode: "inherit" }, env: {}, args: {} },
             { index: 1, source: { mode: "inherit" }, env: {}, args: {} },
           ],
-          kms: DEFAULT_KMS_TOPOLOGY,
         },
         [{ group: "coprocessor" }],
       ),
@@ -160,34 +157,9 @@ topology:
           instances: [
             { index: 0, source: { mode: "registry", tag: "abcdef0" }, env: {}, args: {} },
           ],
-          kms: DEFAULT_KMS_TOPOLOGY,
         },
         [{ group: "coprocessor", services: ["coprocessor-host-listener"] }],
       ),
     ).toThrow("conflicts with scenario-defined coprocessor source");
-  });
-
-  test("rejects kms-connector overrides on a threshold scenario (would be silently ignored)", () => {
-    expect(() =>
-      assertScenarioOverrideCompatibility(
-        {
-          instances: [{ index: 0, source: { mode: "inherit" }, env: {}, args: {} }],
-          kms: resolveKmsTopology({ mode: "threshold", parties: 4, threshold: 1 }),
-        },
-        [{ group: "kms-connector" }],
-      ),
-    ).toThrow("not supported with a threshold KMS scenario");
-  });
-
-  test("still allows kms-connector overrides on a centralized scenario", () => {
-    expect(() =>
-      assertScenarioOverrideCompatibility(
-        {
-          instances: [{ index: 0, source: { mode: "inherit" }, env: {}, args: {} }],
-          kms: DEFAULT_KMS_TOPOLOGY,
-        },
-        [{ group: "kms-connector" }],
-      ),
-    ).not.toThrow();
   });
 });
