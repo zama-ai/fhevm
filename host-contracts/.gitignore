@@ -15,7 +15,7 @@ node_modules
 /coverage.json
 
 # Proxy contract addresses
-/addresses
+/addresses*
 
 # Hardhat Ignition default folder for deployments against a local node
 ignition/deployments/chain-31337
@@ -33,3 +33,9 @@ foundry.lock
 
 # Soldeer
 /dependencies
+
+# deployment artifacts
+.openzeppelin
+
+# mock-coprocessor db
+scripts/mock-coprocessor/mock-coprocessor.db
