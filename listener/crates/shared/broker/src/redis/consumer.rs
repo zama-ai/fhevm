@@ -549,15 +549,34 @@ impl RedisConsumer {
                     {
                         continue;
                     }
+                    // Only fetch as many as we have free worker slots. This makes
+                    // prefetch_count a true concurrency cap (prefetch=1 => exactly one
+                    // in flight) and bounds the greedy re-poll below. The lock guard is a
+                    // temporary dropped at the `;`, so it is NOT held across the await.
+                    let available = config
+                        .prefetch_count
+                        .saturating_sub(in_flight.lock().await.len());
+                    if available == 0 {
+                        // At capacity — let workers finish; the result branch re-polls
+                        // immediately when a slot frees.
+                        continue;
+                    }
                     match self.xreadgroup(
                         &config.retry.base.stream,
                         &config.retry.base.group_name,
                         &config.retry.base.consumer_name,
-                        config.prefetch_count,
+                        available,
                         ">",
                     ).await {
                         Ok(entries) => {
                             consecutive_conn_errors = 0;
+                            // Adaptive drain: a non-empty read means more may be queued
+                            // right now — re-poll on the next loop iteration without
+                            // waiting for the block_ms heartbeat. An empty read leaves the
+                            // interval untouched, falling back to the block_ms idle cadence.
+                            if !entries.is_empty() {
+                                new_msg_interval.reset_immediately();
+                            }
                             for (stream_id, data) in entries {
                                 let should_dispatch = {
                                     let mut set = in_flight.lock().await;
@@ -809,6 +828,13 @@ impl RedisConsumer {
                             }
                         }
                     }
+
+                    // A worker slot just freed (the `in_flight.remove` happened at the top
+                    // of this branch). Fetch the next message now instead of waiting for the
+                    // block_ms heartbeat — the Redis analog of RMQ's "ack -> server pushes
+                    // next". Harmless while the breaker is open/half-open: the new-message
+                    // branch continues on its CB guard, so no read is issued.
+                    new_msg_interval.reset_immediately();
                 }
 
                 // Worker ended before delivering `ProcessingResult` (panic or send failure).
@@ -823,6 +849,9 @@ impl RedisConsumer {
                             "Worker exited before reporting result, cleared in-flight marker"
                         );
                     }
+                    // A slot may have freed (the worker exited before reporting); re-poll
+                    // immediately rather than waiting for the next block_ms tick.
+                    new_msg_interval.reset_immediately();
                     // If the abnormal exit was the Half-Open probe, clear `probe_in_flight`
                     // so the next pending tick can dispatch a fresh probe. We do NOT call
                     // `record_transient_failure` here — abnormal exit is not necessarily an

@@ -36,18 +36,19 @@ pub struct FilterCommand {
 }
 
 impl FilterCommand {
-    /// Validate that the command has a non-empty consumer ID and at least one address.
+    /// Validate that the command has a non-empty consumer ID.
     ///
     /// Normalizes `consumer_id` by trimming leading/trailing whitespace so
     /// the stored value is always canonical.
+    ///
+    /// Address fields are all optional. A command with none of `from`, `to`,
+    /// or `log_address` set is a valid **full-block** (wildcard) subscription:
+    /// the consumer receives every transaction and every log of each block.
     #[must_use = "validation result must be checked"]
     pub fn validate(&mut self) -> Result<(), FilterCommandValidationError> {
         self.consumer_id = self.consumer_id.trim().to_owned();
         if self.consumer_id.is_empty() {
             return Err(FilterCommandValidationError::EmptyConsumerId);
-        }
-        if self.from.is_none() && self.to.is_none() && self.log_address.is_none() {
-            return Err(FilterCommandValidationError::MissingContractAddresses);
         }
         Ok(())
     }
@@ -364,16 +365,31 @@ mod tests {
     }
 
     #[test]
-    fn filter_command_rejects_missing_addresses() {
+    fn filter_command_accepts_full_block_wildcard() {
+        // A command with no address fields is a valid full-block subscription:
+        // the consumer receives every transaction and every log.
         let mut cmd = FilterCommand {
-            consumer_id: "gateway".into(),
+            consumer_id: "  gateway  ".into(),
+            from: None,
+            to: None,
+            log_address: None,
+        };
+        cmd.validate().unwrap();
+        assert_eq!(cmd.consumer_id, "gateway");
+    }
+
+    #[test]
+    fn filter_command_rejects_empty_consumer_id_even_when_wildcard() {
+        // Empty consumer_id is still rejected regardless of address fields.
+        let mut cmd = FilterCommand {
+            consumer_id: "   ".into(),
             from: None,
             to: None,
             log_address: None,
         };
         assert_eq!(
             cmd.validate().unwrap_err(),
-            FilterCommandValidationError::MissingContractAddresses,
+            FilterCommandValidationError::EmptyConsumerId,
         );
     }
 
