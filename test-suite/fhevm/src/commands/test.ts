@@ -69,8 +69,12 @@ const ZERO_TESTS_RE = /\b0 passing\b/;
 // Mocha prints "N pending" when tests exist but were skipped. If any are pending,
 // the grep did match — don't treat all-skipped as "matched zero tests".
 const SOME_PENDING_RE = /\b[1-9]\d* pending\b/;
-/** True when the grep actually matched tests (some passed, or some are pending). */
-const matchedTests = (output: string) => !(ZERO_TESTS_RE.test(output) && !SOME_PENDING_RE.test(output));
+// Mocha prints "0 passing" alongside "N failing" when every matched test failed —
+// the grep DID match; the run failed for a different reason than an empty grep.
+const SOME_FAILING_RE = /\b[1-9]\d* failing\b/;
+/** True when the grep actually matched tests (some passed, failed, or are pending). */
+const matchedTests = (output: string) =>
+  !(ZERO_TESTS_RE.test(output) && !SOME_PENDING_RE.test(output) && !SOME_FAILING_RE.test(output));
 const PAUSE_PROFILE_SCOPE: Record<string, string> = {
   "paused-host-contracts": "host",
   "paused-gateway-contracts": "gateway",
@@ -886,7 +890,7 @@ export const test = async (testName: string | undefined, options: TestOptions) =
     // mid-decryption, or mocha executed the matched tests and they failed. Anything else
     // (docker error, missing container, zero tests matched) is an infra problem — fail loudly
     // instead of reading it as "the quorum held".
-    if (!timedOut && !/\b[1-9]\d* failing\b/.test(output)) {
+    if (!timedOut && !SOME_FAILING_RE.test(output)) {
       throw new PreflightError(
         `${label}: probe did not run to a decryption verdict (exit ${result.code}); cannot interpret the failure as a quorum proof`,
       );

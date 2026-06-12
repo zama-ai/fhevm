@@ -51,8 +51,9 @@ export const resolveKmsTopology = (
   if (block === undefined) {
     return DEFAULT_KMS_TOPOLOGY;
   }
-  if (typeof block !== "object" || Array.isArray(block)) {
-    throw new Error(`${sourceLabel}: must be a map`);
+  // YAML parses an empty `kms:` key to null, and `typeof null === "object"`.
+  if (block === null || typeof block !== "object" || Array.isArray(block)) {
+    throw new Error(`${sourceLabel}: must be a map (omit the key entirely for the centralized default)`);
   }
   const mode: KmsMode = block.mode ?? "centralized";
   if (mode !== "centralized" && mode !== "threshold") {
@@ -66,6 +67,9 @@ export const resolveKmsTopology = (
       throw new Error(
         `${sourceLabel}.fheParams "Test" is only supported for threshold mode; centralized KMS runs Default params`,
       );
+    }
+    if (block.fheParams !== undefined && block.fheParams !== "Default") {
+      throw new Error(`${sourceLabel}.fheParams must be "Test" or "Default", got "${block.fheParams}"`);
     }
     return {
       mode,

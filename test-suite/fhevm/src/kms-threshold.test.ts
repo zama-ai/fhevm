@@ -75,6 +75,16 @@ describe("resolveKmsTopology", () => {
   test("rejects Test params for centralized (it would be a silent no-op)", () => {
     expect(() => resolveKmsTopology({ mode: "centralized", fheParams: "Test" })).toThrow(/threshold/);
   });
+
+  test("rejects an empty `kms:` key (YAML null) instead of crashing", () => {
+    expect(() => resolveKmsTopology(null as unknown as undefined)).toThrow(/must be a map/);
+  });
+
+  test("rejects unknown fheParams values in centralized mode (e.g. a typo)", () => {
+    expect(() =>
+      resolveKmsTopology({ mode: "centralized", fheParams: "default" as unknown as "Default" }),
+    ).toThrow(/must be "Test" or "Default"/);
+  });
 });
 
 describe("reconstructionThreshold", () => {
