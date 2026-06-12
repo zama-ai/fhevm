@@ -61,7 +61,7 @@ const waitForContainerStopped = async (container: string) => {
 
 /** Confirms every stopped party is genuinely down before a quorum verdict is read. `setRunning`
  * tolerates stop failures for idempotency, so without this check a silently no-op'd stop would
- * probe with too many live parties and mis-diagnose "2t+1 not enforced". */
+ * probe with too many live parties and misdiagnose "2t+1 not enforced". */
 const waitForPartiesStopped = async (parties: number[]) => {
   for (const party of parties) {
     for (const container of partyContainers(party)) {
