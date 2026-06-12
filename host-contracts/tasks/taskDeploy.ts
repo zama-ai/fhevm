@@ -96,7 +96,7 @@ export async function assertContractMatchesVersionPrefix(
 // All Host Contracts
 ////////////////////////////////////////////////////////////////////////////////
 
-const PROTOCOL_CONFIG_SOURCES = ['fresh', 'migration'] as const;
+const PROTOCOL_CONFIG_SOURCES = ['fresh', 'migration', 'canonical'] as const;
 type ProtocolConfigSource = (typeof PROTOCOL_CONFIG_SOURCES)[number];
 
 task('task:deployAllHostContracts')
@@ -108,18 +108,52 @@ task('task:deployAllHostContracts')
   )
   .addOptionalParam(
     'protocolConfigSource',
-    "How to initialize ProtocolConfig: 'fresh' (default) calls initializeFromEmptyProxy with env-driven KMS nodes/thresholds; 'migration' calls initializeFromMigration consuming MIGRATION_CONTEXT_ID / MIGRATION_KMS_NODES / MIGRATION_KMS_THRESHOLDS.",
+    "How to initialize ProtocolConfig: 'fresh' (default) calls initializeFromEmptyProxy with env-driven KMS nodes/thresholds; 'migration' calls initializeFromMigration consuming MIGRATION_CONTEXT_ID / MIGRATION_KMS_NODES / MIGRATION_KMS_THRESHOLDS; 'canonical' mirrors the canonical chain's ProtocolConfig via task:deployProtocolConfigFromCanonical (non-canonical hosts only).",
     'fresh',
     types.string,
   )
+  .addOptionalParam(
+    'canonicalRpcUrl',
+    'RPC URL of the canonical host chain. Required with --protocol-config-source canonical.',
+    undefined,
+    types.string,
+  )
+  .addOptionalParam(
+    'canonicalProtocolConfigAddress',
+    "Address of the canonical chain's ProtocolConfig. Required with --protocol-config-source canonical.",
+    undefined,
+    types.string,
+  )
   .setAction(async function (
-    { withKmsGeneration, protocolConfigSource }: { withKmsGeneration: boolean; protocolConfigSource: string },
+    {
+      withKmsGeneration,
+      protocolConfigSource,
+      canonicalRpcUrl,
+      canonicalProtocolConfigAddress,
+    }: {
+      withKmsGeneration: boolean;
+      protocolConfigSource: string;
+      canonicalRpcUrl?: string;
+      canonicalProtocolConfigAddress?: string;
+    },
     hre,
   ) {
     if (!PROTOCOL_CONFIG_SOURCES.includes(protocolConfigSource as ProtocolConfigSource)) {
       throw new Error(
         `Invalid --protocol-config-source "${protocolConfigSource}". Allowed values: ${PROTOCOL_CONFIG_SOURCES.join(', ')}.`,
       );
+    }
+    if (protocolConfigSource === 'canonical') {
+      if (withKmsGeneration) {
+        throw new Error(
+          '--protocol-config-source canonical seeds a non-canonical replica; it cannot be combined with --with-kms-generation true.',
+        );
+      }
+      if (!(canonicalRpcUrl && canonicalProtocolConfigAddress)) {
+        throw new Error(
+          '--protocol-config-source canonical requires --canonical-rpc-url and --canonical-protocol-config-address.',
+        );
+      }
     }
 
     if (process.env.SOLIDITY_COVERAGE !== 'true') {
@@ -139,6 +173,8 @@ task('task:deployAllHostContracts')
     await hre.run('task:deployFHEVMExecutor');
     if (protocolConfigSource === 'migration') {
       await hre.run('task:deployProtocolConfigFromMigration');
+    } else if (protocolConfigSource === 'canonical') {
+      await hre.run('task:deployProtocolConfigFromCanonical', { canonicalRpcUrl, canonicalProtocolConfigAddress });
     } else {
       await hre.run('task:deployProtocolConfig');
     }

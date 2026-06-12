@@ -8,6 +8,7 @@ import {
   requiresGatewayKmsGenerationAddress,
   requiresMultichainAclAddress,
   requiresModernHostAddressArtifacts,
+  supportsCanonicalProtocolConfigSeeding,
   supportsHostListenerConsumer,
   validateBundleCompatibility,
 } from "../compat/compat";
@@ -89,6 +90,7 @@ import {
   readEnvFile,
   remove,
   withHexPrefix,
+  writeEnvFile,
   writeJson,
 } from "../utils/fs";
 import { ensureDiscovery, createDiscovery, defaultEndpoints, discoverContracts, minioIp, validateDiscovery } from "./discovery";
@@ -477,6 +479,31 @@ const registerExtraChainInCoprocessor = async (state: State, chain: { key: strin
   }
 };
 
+/**
+ * Builds the `task:deployAllHostContracts` args that seed a non-canonical chain's ProtocolConfig
+ * from the canonical chain, mirroring production. Returns "" when the host image predates
+ * `task:deployProtocolConfigFromCanonical`, so older bundles keep the "fresh" seeding.
+ * Must run after the canonical host deploy: it reads the canonical ProtocolConfig address from the
+ * generated address file.
+ */
+const canonicalProtocolConfigSeedingArgs = async (state: State) => {
+  if (!supportsCanonicalProtocolConfigSeeding(state)) {
+    return "";
+  }
+  const canonicalChain = defaultHostChain(state)!;
+  const canonicalAddresses = await readEnvFile(hostChainAddressesPath(canonicalChain.key));
+  const canonicalProtocolConfigAddress = canonicalAddresses.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
+  if (!canonicalProtocolConfigAddress) {
+    throw new PreflightError(
+      `Canonical host addresses at ${hostChainAddressesPath(canonicalChain.key)} lack PROTOCOL_CONFIG_CONTRACT_ADDRESS; cannot seed non-canonical chains from canonical.`,
+    );
+  }
+  return [
+    "--protocol-config-source canonical",
+    `--canonical-rpc-url http://${canonicalChain.node}:${canonicalChain.rpcPort}`,
+    `--canonical-protocol-config-address ${canonicalProtocolConfigAddress}`,
+  ].join(" ");
+};
 
 export const runStep = async (state: State, step: StepName) => {
   const stepIndex = stateStepIndex(step) + 1;
@@ -583,8 +610,19 @@ export const runStep = async (state: State, step: StepName) => {
         "HCU_LIMIT_CONTRACT_ADDRESS",
         ...(requiresModernHostAddressArtifacts(state) ? ["PROTOCOL_CONFIG_CONTRACT_ADDRESS", "KMS_GENERATION_CONTRACT_ADDRESS"] : []),
       ]);
+      // Production topology: non-canonical chains seed ProtocolConfig from the canonical chain
+      // (export → mirror), not "fresh" from env. The canonical address only exists after the
+      // canonical deploy above, so the placeholder env var is patched here, per chain, before
+      // its deploy container starts.
+      const canonicalSeedingArgs = await canonicalProtocolConfigSeedingArgs(state);
       for (const chain of extraHostChains(state)) {
         const scKey = chain.sc;
+        if (canonicalSeedingArgs) {
+          const scEnvPath = envPath(scKey);
+          const scEnv = await readEnvFile(scEnvPath);
+          scEnv.HOST_SC_DEPLOY_PROTOCOL_CONFIG_ARGS = canonicalSeedingArgs;
+          await writeEnvFile(scEnvPath, scEnv);
+        }
         await timed(`[multi-chain] ${scKey}-deploy`, async () => {
           await multiChainComposeTask(scKey, [`${scKey}-deploy`]);
           await waitForContainer(`${scKey}-deploy`, "complete");

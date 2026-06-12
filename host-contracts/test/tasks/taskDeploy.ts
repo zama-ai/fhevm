@@ -24,7 +24,19 @@ describe('task:deployAllHostContracts', function () {
   it('rejects an invalid --protocol-config-source value before mutating state', async function () {
     await expect(
       run('task:deployAllHostContracts', { withKmsGeneration: false, protocolConfigSource: 'bogus' }),
-    ).to.be.rejectedWith(/Invalid --protocol-config-source "bogus"\. Allowed values: fresh, migration\./);
+    ).to.be.rejectedWith(/Invalid --protocol-config-source "bogus"\. Allowed values: fresh, migration, canonical\./);
+  });
+
+  it('rejects --protocol-config-source canonical on a canonical host', async function () {
+    await expect(
+      run('task:deployAllHostContracts', { withKmsGeneration: true, protocolConfigSource: 'canonical' }),
+    ).to.be.rejectedWith(/cannot be combined with --with-kms-generation true/);
+  });
+
+  it('rejects --protocol-config-source canonical without the canonical chain parameters', async function () {
+    await expect(
+      run('task:deployAllHostContracts', { withKmsGeneration: false, protocolConfigSource: 'canonical' }),
+    ).to.be.rejectedWith(/requires --canonical-rpc-url and --canonical-protocol-config-address/);
   });
 });
 

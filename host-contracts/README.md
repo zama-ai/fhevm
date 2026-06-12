@@ -174,4 +174,9 @@ For quick devnet iteration, `task:deployProtocolConfigFromCanonical` also accept
 canonical live at deploy time — but then what is deployed is whatever canonical holds at that
 moment, not a reviewed artifact. The DAO path is artifact-only by design.
 
+When deploying a full non-canonical host stack, `task:deployAllHostContracts
+--protocol-config-source canonical --canonical-rpc-url … --canonical-protocol-config-address …`
+runs the mirror in sequence with the other host contracts (this is what the fhevm-cli multi-chain
+stack uses, so e2e seeds non-canonical chains exactly like production).
+
 Later canonical rotations are mirrored manually with `defineNewKmsContext`, as described above.
