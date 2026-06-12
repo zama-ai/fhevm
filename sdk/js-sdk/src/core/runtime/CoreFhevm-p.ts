@@ -8,7 +8,6 @@ import type {
   FhevmOptions,
   NativeClient,
   OptionalNativeClient,
-  FhevmProtocolContext,
   ProtocolVersionResolution,
   ResolvedFhevmOptions,
   WithProtocolVersion,
@@ -24,7 +23,6 @@ import { uid } from '../base/uid.js';
 import { createTrustedClient } from '../modules/ethereum/createTrustedClient.js';
 import { asFhevmRuntimeWith, assertIsFhevmRuntime, assertIsFhevmRuntimeWith } from './CoreFhevmRuntime-p.js';
 import { globalFheEncryptionKeyCache } from '../key/FheEncryptionKeyCache-p.js';
-import { hyperWasmResolveTfheModuleVersion, hyperWasmResolveTkmsModuleVersion } from './HyperWasmSolver-p.js';
 import { cloneModuleVersions } from '../runtimeConfig-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -616,6 +614,8 @@ export function setResolvedTkmsVersion(fhevm: FhevmBase, tkmsVersion: TkmsVersio
   f[SET_TKMS_VERSION](tkmsVersion);
 }
 
+////////////////////////////////////////////////////////////////////////////////
+
 export function getResolvedProtocolVersion(fhevm: unknown): ProtocolVersionResolution | undefined {
   const f = asCoreFhevm(fhevm) as CoreFhevm & { readonly [GET_PROTOCOL_VERSION]: GetProtocolVersionFn };
   return f[GET_PROTOCOL_VERSION]();
@@ -631,42 +631,4 @@ export function getResolvedTkmsVersion(fhevm: unknown): TkmsVersion | undefined 
   return f[GET_TKMS_VERSION]();
 }
 
-export async function resolveFhevmProtocolVersion(fhevm: unknown): Promise<ProtocolVersionResolution> {
-  return (await resolveFhevmProtocolContext(fhevm)).protocolVersion;
-}
-
-export async function resolveFhevmProtocolContext(fhevm: unknown): Promise<FhevmProtocolContext> {
-  assertIsFhevmBaseClient(fhevm);
-
-  const protocolVersion = getResolvedProtocolVersion(fhevm);
-  if (protocolVersion !== undefined) {
-    const { pubKeyCrsVersionFromProtocolVersion } = await import('./ProtocolVersionResolver-p.js');
-    return Object.freeze({
-      protocolVersion,
-      pubKeyCrsVersion: pubKeyCrsVersionFromProtocolVersion(fhevm.chain, protocolVersion),
-    });
-  }
-
-  const { resolveProtocolContext } = await import('./ProtocolVersionResolver-p.js');
-  return resolveProtocolContext(fhevm);
-}
-
-export async function resolveFhevmTfheVersion(fhevm: unknown): Promise<TfheVersion> {
-  const protocolContext = await resolveFhevmProtocolContext(fhevm);
-  const tfheVersion = getResolvedTfheVersion(fhevm);
-  if (tfheVersion !== undefined) {
-    return tfheVersion;
-  }
-  assertIsFhevmBaseClient(fhevm);
-  return hyperWasmResolveTfheModuleVersion(fhevm, protocolContext);
-}
-
-export async function resolveFhevmTkmsVersion(fhevm: unknown): Promise<TkmsVersion> {
-  const protocolContext = await resolveFhevmProtocolContext(fhevm);
-  const tkmsVersion = getResolvedTkmsVersion(fhevm);
-  if (tkmsVersion !== undefined) {
-    return tkmsVersion;
-  }
-  assertIsFhevmBaseClient(fhevm);
-  return hyperWasmResolveTkmsModuleVersion(fhevm, protocolContext);
-}
+////////////////////////////////////////////////////////////////////////////////

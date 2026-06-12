@@ -526,3 +526,65 @@ signDecryptionPermitV2;
 ```
 
 Once published, a versioned function's behavior should never change. Only the internal dispatch behavior of `signDecryptionPermit` may evolve as new protocol versions are introduced.
+
+## New Base Client
+
+in order to access the protocol version, the new base client must be initialized following decrypt and encrypt clients behaviours. Protocol Version computation will call on-chain view functions.
+
+Example:
+
+This is ok:
+
+```ts
+const client = createFhevmBaseClient(args);
+await client.init();
+const protocolVersion = client.protocolVersion;
+```
+
+This is not ok:
+
+```ts
+const client = createFhevmBaseClient(args);
+// throw an exception, missing call to init!
+const protocolVersion = client.protocolVersion;
+```
+
+### `client.signDecryptionPermit`
+
+The `signDecryptionPermit` should start with a lazy init if needed
+
+```ts
+/////////////////////
+// Existing code
+/////////////////////
+export async function signDecryptionPermit(
+  context: SignDecryptionPermitContext,
+  parameters: SignDecryptionPermitParameters,
+): Promise<SignedDecryptionPermit> {
+  const kmsSignersContext = await readKmsSignersContext(context, {
+    address: context.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
+  });
+
+  const extraData: BytesHex = kmsSignersContextToExtraData(kmsSignersContext);
+
+  ...
+}
+
+/////////////////////
+// New code
+/////////////////////
+export async function signDecryptionPermit(
+  context: SignDecryptionPermitContext,
+  parameters: SignDecryptionPermitParameters,
+): Promise<SignedDecryptionPermit> {
+  const protocolVersion = await ensureResolvedProtocolVersion(context);
+
+  const kmsSignersContext = await readKmsSignersContext(context, {
+    address: context.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
+  });
+
+  const extraData: BytesHex = kmsSignersContextToExtraData(kmsSignersContext);
+
+  ...
+}
+```

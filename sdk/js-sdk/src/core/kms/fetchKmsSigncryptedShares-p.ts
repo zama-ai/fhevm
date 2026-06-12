@@ -16,7 +16,7 @@ import { checkPersistAllowed } from '../host-contracts/checkPersistAllowed.js';
 import { assertExtraDataMatchesKmsSingersContext } from '../host-contracts/KmsSignersContext-p.js';
 import { createKmsEip712Domain } from './createKmsEip712Domain.js';
 import { checkDelegation } from '../host-contracts/checkDelegation.js';
-import { resolveFhevmTkmsVersion } from '../runtime/CoreFhevm-p.js';
+import { resolveFhevmTkmsVersion } from '../runtime/resolveFhevmVersions-p.js';
 
 /*
     See: in KMS (eip712Domain)
