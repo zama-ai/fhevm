@@ -98,6 +98,7 @@ import {
   writeJson,
 } from "../utils/fs";
 import { ensureDiscovery, createDiscovery, defaultEndpoints, discoverContracts, minioIp, validateDiscovery } from "./discovery";
+import { kmsConnectorEnvName } from "../kms-party";
 import { defaultHostChain, extraHostChains, hostChainsForState } from "./topology";
 import {
   kmsConnectorHealthContainers,
@@ -565,7 +566,7 @@ export const runStep = async (state: State, step: StepName) => {
       // submit keygen/crsgen responses and on-chain consensus never completes.
       // `kms.parties` is 1 for centralized and N for threshold.
       for (let party = 1; party <= state.scenario.kms.parties; party += 1) {
-        const connectorEnv = await readEnvFile(envPath(party === 1 ? "kms-connector" : `kms-connector.${party}`));
+        const connectorEnv = await readEnvFile(envPath(kmsConnectorEnvName(party)));
         const txSenderKey = connectorEnv.KMS_CONNECTOR_PRIVATE_KEY;
         if (!txSenderKey) {
           continue;
@@ -967,7 +968,7 @@ export const up = async (options: UpOptions) => {
     state = nextState;
     await saveState(state);
   }
-  if ((options.resume || options.fromStep) && state.scenario.kms?.mode === "threshold") {
+  if ((options.resume || options.fromStep) && state.scenario.kms.mode === "threshold") {
     // The resume/from-step lifecycle map (COMPONENT_BY_STEP, resumeSteadyStateServices) models a
     // single `kms-core` + one connector tier. A threshold cluster has kms-core-2..N, kms-core-init
     // and per-party connectors that the map does not know about, so a partial restart would leave

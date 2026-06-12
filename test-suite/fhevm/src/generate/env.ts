@@ -19,7 +19,7 @@ import {
   POSTGRES_HOST,
   hostChainRuntimes,
 } from "../layout";
-import { kmsCoreName, kmsServicePort, reconstructionThreshold } from "./kms-core";
+import { kmsConnectorDbName, kmsConnectorEnvName, kmsCoreName, kmsServicePort, reconstructionThreshold } from "../kms-party";
 import type { State } from "../types";
 import { predictedCrsId, predictedKeyId } from "../utils/fs";
 
@@ -272,7 +272,7 @@ const applyKmsThresholdGatewayEnv = async (
     gw[`KMS_NODE_STORAGE_URL_${idx}`] = `${MINIO_INTERNAL_URL}/kms-public`;
     // KMS_SIGNER_ADDRESS_{idx} comes from per-party signing-key discovery.
     const endpoint = `http://${kmsCoreName(party)}:${kmsServicePort(party)}`;
-    const dbName = party === 1 ? "kms-connector" : `kms-connector-${party}`;
+    const dbName = kmsConnectorDbName(party);
     if (party === 1) {
       envs["kms-connector"].KMS_CONNECTOR_KMS_CORE_ENDPOINTS = endpoint;
       envs["kms-connector"].KMS_CONNECTOR_PRIVATE_KEY = wallet.privateKey;
@@ -297,7 +297,7 @@ const buildKmsConnectorInstanceEnvs = (
     next.KMS_CONNECTOR_PRIVATE_KEY = privateKey;
     next.KMS_CONNECTOR_DATABASE_URL = `postgresql://db:5432/${dbName}`;
     next.DATABASE_URL = `postgresql://db:5432/${dbName}`;
-    instanceEnvs[`kms-connector.${party}`] = next;
+    instanceEnvs[kmsConnectorEnvName(party)] = next;
   }
   return instanceEnvs;
 };

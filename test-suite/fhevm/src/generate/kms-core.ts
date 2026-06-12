@@ -28,6 +28,15 @@
 import path from "node:path";
 
 import type { ComposeDoc } from "./compose";
+import {
+  kmsBackupPrefix,
+  kmsCoreName,
+  kmsMpcPort,
+  kmsPartyIds,
+  kmsPrivatePrefix,
+  kmsPublicPrefix,
+  kmsServicePort,
+} from "../kms-party";
 import type { ResolvedKmsTopology } from "../types";
 import { GENERATED_CONFIG_DIR } from "../layout";
 
@@ -52,34 +61,14 @@ export const kmsRenderOptionsFor = (coreVersion: string): KmsRenderOptions => ({
   s3SecretKey: "fhevm-access-secret-key",
 });
 
-/**
- * On-chain decryption/keygen consensus threshold for an n = 3t+1 cluster.
- * Reconstruction needs 2t+1 matching responses (KMS core-client `num_reconstruct`;
- * see zama-ai/kms core-client/src/lib.rs + ci/kube-testing kms values). For
- * n=4,t=1 this is 3.
- */
-export const reconstructionThreshold = (threshold: number) => 2 * threshold + 1;
-
-/** gRPC service port for party i (1-indexed): 50100, 50200, ... */
-export const kmsServicePort = (partyId: number) => 50000 + partyId * 100;
-/** MPC core-to-core port for party i (1-indexed): 50001, 50002, ... */
-export const kmsMpcPort = (partyId: number) => 50000 + partyId;
-/** Service / container name for party i. Party 1 keeps the bare `kms-core` name
- * so existing references (KMS_CORE_CONTAINER, connector endpoints, discovery)
- * keep working; parties 2..N are `kms-core-{i}`. Cores reach each other (and the
- * connector reaches them) by these names over the docker network. */
-export const kmsCoreName = (partyId: number) => (partyId === 1 ? "kms-core" : `kms-core-${partyId}`);
-
 /** The single cluster-shared threshold config filename (mounted into every core). */
 export const KMS_THRESHOLD_CONFIG_NAME = "kms-core-threshold.toml";
 /** Marker in the checked-in template where the per-cluster peer roster is injected. */
 export const THRESHOLD_PEERS_MARKER = "# __THRESHOLD_PEERS__";
 
-const partyIds = (parties: number) => Array.from({ length: parties }, (_, i) => i + 1);
-
 /** The `[[threshold.peers]]` roster for the whole cluster (identical for every party). */
 export const renderThresholdPeers = (topology: ResolvedKmsTopology): string =>
-  partyIds(topology.parties)
+  kmsPartyIds(topology.parties)
     .map(
       (peer) => `[[threshold.peers]]
 party_id = ${peer}
@@ -113,10 +102,10 @@ export const thresholdCoreEnv = (
   KMS_CORE__AWS__REGION: opts.s3Region,
   KMS_CORE__AWS__S3_ENDPOINT: opts.s3Endpoint,
   KMS_CORE__PUBLIC_VAULT__STORAGE__S3__BUCKET: opts.s3Bucket,
-  KMS_CORE__PUBLIC_VAULT__STORAGE__S3__PREFIX: `PUB-p${partyId}`,
+  KMS_CORE__PUBLIC_VAULT__STORAGE__S3__PREFIX: kmsPublicPrefix(partyId),
   KMS_CORE__PRIVATE_VAULT__STORAGE__S3__BUCKET: opts.s3Bucket,
-  KMS_CORE__PRIVATE_VAULT__STORAGE__S3__PREFIX: `PRIV-p${partyId}`,
-  KMS_CORE__BACKUP_VAULT__STORAGE__FILE__PREFIX: `BACKUP-p${partyId}`,
+  KMS_CORE__PRIVATE_VAULT__STORAGE__S3__PREFIX: kmsPrivatePrefix(partyId),
+  KMS_CORE__BACKUP_VAULT__STORAGE__FILE__PREFIX: kmsBackupPrefix(partyId),
   KMS_CORE__TELEMETRY__TRACING_SERVICE_NAME: `kms-threshold-${partyId}`,
   // The core's AWS SDK reads the minio creds straight from the environment — no
   // need to shell out and `cat` them from the shared secrets volume at startup.
@@ -124,24 +113,26 @@ export const thresholdCoreEnv = (
   AWS_SECRET_ACCESS_KEY: opts.s3SecretKey,
 });
 
-/** Shell for the signing-key setup container (loops over all parties). Generates ONLY each
- * party's signing key into S3 (PRIV-p{i}) via `--cmd signing-keys` — mirroring the KMS reference
- * threshold compose. The FHE key shares and CRS are NOT pre-generated here; they come from the
- * real on-chain DKG (keygen/crsgen). `--num-parties` must match the cluster size (the CLI rejects
- * a signing-key-party-id greater than num-parties; it also defaults to 4). No TLS certs are needed
- * (mTLS disabled), so nothing is fetched back locally. AWS creds come from the container env. */
+/** Shell for the signing-key setup container, one invocation per party (unrolled in TS rather
+ * than a shell loop, so prefixes come from kms-party.ts and no `$$` compose-interpolation
+ * escaping is needed). Generates ONLY each party's signing key into S3 via `--cmd signing-keys`
+ * — mirroring the KMS reference threshold compose. The FHE key shares and CRS are NOT
+ * pre-generated here; they come from the real on-chain DKG (keygen/crsgen). `--num-parties`
+ * must match the cluster size (the CLI rejects a signing-key-party-id greater than num-parties;
+ * it also defaults to 4). The `--tls-*` flags only shape generated cert material, which is inert
+ * here: core-to-core mTLS is disabled. AWS creds come from the container env. */
 const genKeysCommand = (topology: ResolvedKmsTopology, opts: KmsRenderOptions) =>
   [
     "set -e",
     `echo "=== generating signing keys for ${topology.parties} parties ==="`,
-    `for i in $(seq 1 ${topology.parties}); do \\
-  kms-gen-keys --aws-region ${opts.s3Region} \\
-    --public-storage s3 --public-s3-bucket ${opts.s3Bucket} --public-s3-prefix PUB-p$$i \\
-    --aws-s3-endpoint ${opts.s3Endpoint} \\
-    --private-storage s3 --private-s3-bucket ${opts.s3Bucket} --private-s3-prefix PRIV-p$$i \\
-    --cmd signing-keys \\
-    threshold --signing-key-party-id $$i --tls-subject kms-core-$$i --tls-wildcard --num-parties ${topology.parties}; \\
-done`,
+    ...kmsPartyIds(topology.parties).map(
+      (party) => `kms-gen-keys --aws-region ${opts.s3Region} \\
+  --public-storage s3 --public-s3-bucket ${opts.s3Bucket} --public-s3-prefix ${kmsPublicPrefix(party)} \\
+  --aws-s3-endpoint ${opts.s3Endpoint} \\
+  --private-storage s3 --private-s3-bucket ${opts.s3Bucket} --private-s3-prefix ${kmsPrivatePrefix(party)} \\
+  --cmd signing-keys \\
+  threshold --signing-key-party-id ${party} --tls-subject ${kmsCoreName(party)} --tls-wildcard --num-parties ${topology.parties}`,
+    ),
   ].join("\n");
 
 /**
@@ -168,7 +159,7 @@ export const buildKmsThresholdOverride = (
 
   const sharedConfigMount = `${path.join(GENERATED_CONFIG_DIR, KMS_THRESHOLD_CONFIG_NAME)}:/app/kms/core/service/config/${KMS_THRESHOLD_CONFIG_NAME}`;
 
-  for (const partyId of partyIds(topology.parties)) {
+  for (const partyId of kmsPartyIds(topology.parties)) {
     const name = kmsCoreName(partyId);
     services[name] = {
       container_name: name,
@@ -179,10 +170,7 @@ export const buildKmsThresholdOverride = (
       // Per-party identity/ports/prefixes (override the template placeholders) + AWS creds.
       environment: thresholdCoreEnv(partyId, topology, opts),
       volumes: [sharedConfigMount],
-      ports: [
-        `${kmsServicePort(partyId)}:${kmsServicePort(partyId)}`,
-        `${kmsMpcPort(partyId)}:${kmsMpcPort(partyId)}`,
-      ],
+      // No host port mapping: connectors and kms-init dial the cores over the docker network.
       healthcheck: {
         // The core image ships no grpc_health_probe; probe the metrics port.
         test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:9646/metrics || exit 1"],
@@ -199,7 +187,7 @@ export const buildKmsThresholdOverride = (
 
   // Once all cores are healthy, kms-init establishes the MPC context/epoch
   // across the parties (required before the cluster can serve requests).
-  const initEndpoints = partyIds(topology.parties)
+  const initEndpoints = kmsPartyIds(topology.parties)
     .map((partyId) => `http://${kmsCoreName(partyId)}:${kmsServicePort(partyId)}`)
     .join(" ");
   services["kms-core-init"] = {
@@ -207,7 +195,7 @@ export const buildKmsThresholdOverride = (
     image: opts.coreImage,
     entrypoint: ["/bin/sh", "-c", `kms-init -a ${initEndpoints}`],
     depends_on: Object.fromEntries(
-      partyIds(topology.parties).map((partyId) => [
+      kmsPartyIds(topology.parties).map((partyId) => [
         kmsCoreName(partyId),
         { condition: "service_healthy" },
       ]),

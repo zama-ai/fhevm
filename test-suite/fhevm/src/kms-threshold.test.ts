@@ -9,11 +9,17 @@ import {
   THRESHOLD_PEERS_MARKER,
   buildKmsThresholdOverride,
   kmsRenderOptionsFor,
-  reconstructionThreshold,
   renderThresholdCoreConfig,
   renderThresholdPeers,
   thresholdCoreEnv,
 } from "./generate/kms-core";
+import {
+  kmsConnectorDbName,
+  kmsConnectorEnvName,
+  kmsConnectorPrefix,
+  kmsCoreName,
+  reconstructionThreshold,
+} from "./kms-party";
 import { COMPONENTS, TEMPLATE_ENV_DIR } from "./layout";
 import { presetBundle } from "./resolve/target";
 import { resolveKmsTopology } from "./scenario/resolve";
@@ -94,6 +100,22 @@ describe("partyContainers", () => {
   });
 });
 
+describe("kms-party naming conventions", () => {
+  test("party 1 keeps the bare single-node names everywhere", () => {
+    expect(kmsCoreName(1)).toBe("kms-core");
+    expect(kmsConnectorPrefix(1)).toBe("kms-connector");
+    expect(kmsConnectorEnvName(1)).toBe("kms-connector");
+    expect(kmsConnectorDbName(1)).toBe("kms-connector");
+  });
+
+  test("parties 2..N get the documented per-artifact suffix forms", () => {
+    expect(kmsCoreName(2)).toBe("kms-core-2");
+    expect(kmsConnectorPrefix(2)).toBe("kms-connector-2");
+    expect(kmsConnectorEnvName(2)).toBe("kms-connector.2"); // dot: instance env-file convention
+    expect(kmsConnectorDbName(2)).toBe("kms-connector-2");
+  });
+});
+
 describe("buildKmsThresholdOverride", () => {
   test("emits the gen-keys job, one core per party, and the init job", () => {
     const names = Object.keys(buildKmsThresholdOverride(fourParty, RENDER_OPTS).services);
@@ -123,6 +145,13 @@ describe("buildKmsThresholdOverride", () => {
     expect(JSON.stringify(core.entrypoint)).toContain(KMS_THRESHOLD_CONFIG_NAME);
     expect(JSON.stringify(core.entrypoint)).not.toContain("/bin/sh");
     expect(JSON.stringify(core.volumes)).not.toContain("minio_secrets");
+  });
+
+  test("cores publish no host ports (everything dials them over the docker network)", () => {
+    const services = buildKmsThresholdOverride(fourParty, RENDER_OPTS).services;
+    for (const name of ["kms-core", "kms-core-2", "kms-core-3", "kms-core-4"]) {
+      expect(services[name].ports).toBeUndefined();
+    }
   });
 });
 

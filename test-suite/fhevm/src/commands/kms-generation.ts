@@ -7,8 +7,8 @@
  * resharing — are deferred to RFC-005 and are not modeled here.)
  */
 import { PreflightError } from "../errors";
-import { castCall, kmsConnectorPrefix, probeBootstrap, resolveKmsGenerationTarget, waitForContainer } from "../flow/readiness";
-import { kmsCoreName, reconstructionThreshold } from "../generate/kms-core";
+import { castCall, probeBootstrap, resolveKmsGenerationTarget, waitForContainer } from "../flow/readiness";
+import { kmsConnectorPrefix, kmsCoreName, reconstructionThreshold } from "../kms-party";
 import type { State } from "../types";
 import { withHexPrefix } from "../utils/fs";
 import { run } from "../utils/process";

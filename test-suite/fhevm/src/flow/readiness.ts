@@ -12,6 +12,7 @@ import {
   defaultHostChainKey,
   hostChainSuffix,
 } from "../layout";
+import { kmsConnectorPrefix, kmsPublicPrefix } from "../kms-party";
 import { topologyForState } from "../stack-spec/stack-spec";
 import type { State } from "../types";
 import { hostReachableMaterialUrl, hostReachableRpcUrl, predictedCrsId, predictedKeyId, toServiceName, withHexPrefix } from "../utils/fs";
@@ -22,11 +23,6 @@ const KMS_CONNECTOR_DECRYPTION_READY =
   /Started Decryption polling from block|Last block polled updated for \d+\/\d+ event types in \[PublicDecryptionRequest, UserDecryptionRequest\]/;
 const KMS_CONNECTOR_KMS_GENERATION_READY =
   /Started KMSGeneration polling from block|Last block polled updated for \d+\/\d+ event types in \[PrepKeygenRequest, KeygenRequest, CrsgenRequest, PrssInit, KeyReshareSameSet\]/;
-
-/** Container-name prefix for a KMS connector party. Party 1 keeps the bare
- * `kms-connector-*` names (it replaces the single-node template); parties 2..N
- * are `kms-connector-{party}-*` (see buildKmsConnectorOverride). */
-export const kmsConnectorPrefix = (party: number) => (party === 1 ? "kms-connector" : `kms-connector-${party}`);
 
 /** Number of KMS connector instances: one per party in threshold mode, else one. */
 // `kms.parties` is the canonical connector/party count: 1 for centralized, N for threshold.
@@ -243,9 +239,9 @@ export const waitForStableChainListeners = async (state: Pick<State, "scenario">
 };
 
 /** MinIO prefixes that hold a party's VerfAddress. Centralized stores it under
- * `PUB/PUB` (or legacy `PUB`); a threshold cluster stores party i under `PUB-p{i}`. */
+ * `PUB/PUB` (or legacy `PUB`); a threshold cluster stores party i under its own prefix. */
 const verfAddressPrefixes = (parties: number, party: number): string[] =>
-  parties === 1 ? ["PUB/PUB", "PUB"] : [`PUB-p${party}`];
+  parties === 1 ? ["PUB/PUB", "PUB"] : [kmsPublicPrefix(party)];
 
 /** Reads a single party's VerfAddress for `handle`, trying each candidate prefix. */
 const fetchVerfAddress = async (
@@ -274,6 +270,7 @@ const fetchVerfAddress = async (
 export const discoverKmsSigners = async (
   parties: number,
 ): Promise<{ signers: string[]; minioKeyPrefix: string }> => {
+  let lastFailure = "no signing-key handle in the kms-core logs yet";
   for (let attempt = 0; attempt <= 60; attempt += 1) {
     const logs = await run(["docker", "logs", KMS_CORE_CONTAINER], { allowFailure: true });
     const text = `${logs.stdout}\n${logs.stderr}`;
@@ -282,8 +279,10 @@ export const discoverKmsSigners = async (
       const signers: string[] = [];
       let minioKeyPrefix = "";
       for (let party = 1; party <= parties; party += 1) {
-        const found = await fetchVerfAddress(verfAddressPrefixes(parties, party), handle);
+        const prefixes = verfAddressPrefixes(parties, party);
+        const found = await fetchVerfAddress(prefixes, handle);
         if (!found) {
+          lastFailure = `party ${party}: no VerfAddress/${handle} under ${prefixes.join(" or ")}`;
           break;
         }
         signers.push(found.address);
@@ -297,7 +296,7 @@ export const discoverKmsSigners = async (
     }
     await Bun.sleep(1_000);
   }
-  throw new MinioError(`Could not discover ${parties} KMS signer(s) after 60 attempts`);
+  throw new MinioError(`Could not discover ${parties} KMS signer(s) after 60 attempts (${lastFailure})`);
 };
 
 /** Waits until one material artifact becomes available through host-reachable MinIO. */

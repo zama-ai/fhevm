@@ -19,6 +19,7 @@ import {
   hostChainNames,
   hostChainRuntimes,
 } from "../layout";
+import { kmsConnectorEnvName, kmsConnectorPrefix } from "../kms-party";
 import { type StackSpec, topologyForState } from "../stack-spec/stack-spec";
 import { buildKmsThresholdOverride, kmsRenderOptionsFor } from "./kms-core";
 import type { HostChainScenario, ResolvedCoprocessorScenarioInstance, State } from "../types";
@@ -437,8 +438,8 @@ const buildKmsConnectorOverride = async (plan: StackSpec) => {
   const doc = rewriteComposePaths(await loadComposeDoc("kms-connector"));
   const services: Record<string, Record<string, unknown>> = {};
   for (let party = 1; party <= plan.kms.parties; party += 1) {
-    const prefix = party === 1 ? "kms-connector-" : `kms-connector-${party}-`;
-    const envFileValue = envPath(party === 1 ? "kms-connector" : `kms-connector.${party}`);
+    const prefix = `${kmsConnectorPrefix(party)}-`;
+    const envFileValue = envPath(kmsConnectorEnvName(party));
     for (const [name, service] of Object.entries(doc.services)) {
       const suffix = name.replace(/^kms-connector-/, "");
       const serviceName = `${prefix}${suffix}`;
