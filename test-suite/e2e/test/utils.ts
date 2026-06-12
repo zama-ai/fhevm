@@ -3,7 +3,7 @@ import { ALL_FHE_TYPE_INFOS } from '@fhevm/solidity/lib-js/fheTypeInfos';
 import { ALL_OPERATORS_PRICES } from '@fhevm/solidity/lib-js/operatorsPrices';
 import { HardhatEthersSigner } from '@nomicfoundation/hardhat-ethers/signers';
 import { toBufferBE } from 'bigint-buffer';
-import { ContractMethodArgs, Log, TransactionReceipt, Typed } from 'ethers';
+import { ContractMethodArgs, Log, Signer, TransactionReceipt, TransactionRequest, Typed } from 'ethers';
 import { ethers, network } from 'hardhat';
 import hre from 'hardhat';
 
@@ -77,6 +77,36 @@ export const createTransaction = async <A extends [...{ [I in keyof A]-?: A[I] |
   ];
   return method(...updatedParams);
 };
+
+// Headroom (%) over `eth_estimateGas`, capped at GAS_LIMIT_CAP.
+const GAS_LIMIT_BUFFER_PERCENT = 50n;
+const GAS_LIMIT_CAP = 10_000_000n;
+const GAS_BUFFERED = Symbol.for('fhevm-e2e/gas-buffered');
+
+/**
+ * Buffers gasLimit on every tx a signer sends without an explicit one. The generated operator
+ * tests call contract methods directly, so ethers v6 uses the bare estimate with no margin;
+ * under `--parallel` that occasionally under-estimates (e.g. the per-block HCU meter SSTORE) and
+ * the op reverts with `EvmError: OutOfGas`. Idempotent (guarded by GAS_BUFFERED).
+ */
+export function withGasBuffer<T extends Signer>(signer: T): T {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const patched = signer as any;
+  if (patched[GAS_BUFFERED]) {
+    return signer;
+  }
+  const originalSendTransaction = signer.sendTransaction.bind(signer);
+  patched.sendTransaction = async (tx: TransactionRequest) => {
+    if (tx.gasLimit == null) {
+      const estimated = await signer.estimateGas(tx);
+      const buffered = (estimated * (100n + GAS_LIMIT_BUFFER_PERCENT)) / 100n;
+      tx = { ...tx, gasLimit: buffered < GAS_LIMIT_CAP ? buffered : GAS_LIMIT_CAP };
+    }
+    return originalSendTransaction(tx);
+  };
+  patched[GAS_BUFFERED] = true;
+  return signer;
+}
 
 export const mineNBlocks = async (n: number) => {
   for (let index = 0; index < n; index++) {

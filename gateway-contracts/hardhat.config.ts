@@ -17,6 +17,7 @@ import "./tasks/blockExplorerVerify";
 import "./tasks/deployment";
 import "./tasks/exportMigrationState";
 import "./tasks/getters";
+import "./tasks/manageHostChains";
 import "./tasks/mockedTokenFund";
 import "./tasks/ownership";
 import "./tasks/pauseContracts";

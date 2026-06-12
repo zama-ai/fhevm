@@ -59,6 +59,7 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         /// @notice KmsGen threshold per context.
         mapping(uint256 contextId => uint256) kmsGenThresholdForContext;
         /// @notice MPC threshold per context.
+        /// @dev The SDK derives the MPC threshold from the MPC nodes it knows about instead of reading this value.
         mapping(uint256 contextId => uint256) mpcThresholdForContext;
         /// @notice Whether a context has been destroyed.
         mapping(uint256 contextId => bool) destroyedContexts;

@@ -1265,19 +1265,17 @@ export class RelayerAsyncRequest {
 
     this._trace('_fetchGet', `jobId=${this.jobId}`);
 
-    // Do not include API key here!
-    // API key is only required on POST (by design).
-    // This is necessary for future caching on gateway.
-    // It will be implemented in future releases on (relayer).
-    // See relayer team.
-    const init: RequestInit = {
-      method: 'GET',
-      headers: {
-        'ZAMA-SDK-VERSION': version,
-        'ZAMA-SDK-NAME': sdkName,
-      },
-      ...(this._internalAbortSignal ? { signal: this._internalAbortSignal } : {}),
-    };
+    const init = setAuth(
+      {
+        method: 'GET',
+        headers: {
+          'ZAMA-SDK-VERSION': version,
+          'ZAMA-SDK-NAME': sdkName,
+        },
+        ...(this._internalAbortSignal ? { signal: this._internalAbortSignal } : {}),
+      } satisfies RequestInit,
+      this._fhevmAuth,
+    );
 
     this._state.fetching = true;
 
