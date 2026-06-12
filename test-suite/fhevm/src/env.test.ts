@@ -139,7 +139,7 @@ describe("env", () => {
       discovery: {
         gateway: {},
         hosts: {},
-        kmsSigner: "",
+        kmsSigners: [],
         fheKeyId: "f".repeat(64),
         crsKeyId: "c".repeat(64),
         endpoints: {
@@ -192,7 +192,7 @@ describe("env", () => {
             KMS_GENERATION_CONTRACT_ADDRESS: "0x0000000000000000000000000000000000000015",
           },
         },
-        kmsSigner: "",
+        kmsSigners: [],
         fheKeyId: "f".repeat(64),
         crsKeyId: "c".repeat(64),
         endpoints: {
@@ -257,7 +257,7 @@ describe("env", () => {
             KMS_GENERATION_CONTRACT_ADDRESS: "0x0000000000000000000000000000000000000015",
           },
         },
-        kmsSigner: "",
+        kmsSigners: [],
         fheKeyId: "f".repeat(64),
         crsKeyId: "c".repeat(64),
         endpoints: {
@@ -321,7 +321,7 @@ describe("env", () => {
             KMS_GENERATION_CONTRACT_ADDRESS: "0x0000000000000000000000000000000000000015",
           },
         },
-        kmsSigner: "",
+        kmsSigners: [],
         fheKeyId: "f".repeat(64),
         crsKeyId: "c".repeat(64),
         endpoints: {
