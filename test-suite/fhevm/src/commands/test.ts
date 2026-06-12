@@ -2,6 +2,7 @@
  * Runs named e2e test profiles, standard/heavy CI suites, and topology-specific test flows.
  */
 import { compatPolicyForState, supportsCoprocessorDbStateRevert } from "../compat/compat";
+import { type DecryptionRunner, runKmsGenerationProfile } from "./kms-generation";
 import { DRIFT_CLEANUP_SQL, DRIFT_INSTALL_SQL, driftDatabaseName, parseDriftInstanceIndex, parsePositiveInteger } from "../drift";
 import { PreflightError, formatCliError } from "../errors";
 import { dockerInspect } from "../flow/readiness";
@@ -54,14 +55,26 @@ const TEST_PROFILE_NAMES = [
   "ciphertext-drift-auto-recovery",
   "coprocessor-db-state-revert",
   "heavy",
+  "kms-generation",
   "light",
   "rollout-standard",
   "standard",
 ].sort();
+// The below-quorum probe is expected to hang waiting for KMS responses, so it is killed after
+// this bound. Only a timeout — or a run that demonstrably executed the tests and failed — is
+// read as "the 2t+1 quorum held"; any other failure is an infra error, not a quorum proof.
+// Pass-expected probes use the same invocation, streamed and unbounded (runNamedE2e).
+const QUORUM_FLOOR_TIMEOUT_MS = 300_000;
 const ZERO_TESTS_RE = /\b0 passing\b/;
 // Mocha prints "N pending" when tests exist but were skipped. If any are pending,
 // the grep did match — don't treat all-skipped as "matched zero tests".
 const SOME_PENDING_RE = /\b[1-9]\d* pending\b/;
+// Mocha prints "0 passing" alongside "N failing" when every matched test failed —
+// the grep DID match; the run failed for a different reason than an empty grep.
+const SOME_FAILING_RE = /\b[1-9]\d* failing\b/;
+/** True when the grep actually matched tests (some passed, failed, or are pending). */
+const matchedTests = (output: string) =>
+  !(ZERO_TESTS_RE.test(output) && !SOME_PENDING_RE.test(output) && !SOME_FAILING_RE.test(output));
 const PAUSE_PROFILE_SCOPE: Record<string, string> = {
   "paused-host-contracts": "host",
   "paused-gateway-contracts": "gateway",
@@ -91,6 +104,8 @@ const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[numb
   "ciphertext-drift-auto-recovery":
     "Run ciphertext drift auto-recovery checks — services self-recover (requires 2+ coprocessors).",
   "coprocessor-db-state-revert": "Run coprocessor DB state revert checks.",
+  "kms-generation":
+    "Audit the on-chain key/CRS generation state (KMSGeneration contract) and prove the 2t+1 decryption quorum (threshold-mode KMS).",
 };
 
 /** Validates whether a named profile supports an extra grep narrowing expression. */
@@ -480,10 +495,15 @@ const runTestsCommand = (
 
 /** Runs a narrow e2e grep inside the test-suite container. */
 const assertMatchedTests = (output: string, label: string) => {
-  if (ZERO_TESTS_RE.test(output) && !SOME_PENDING_RE.test(output)) {
+  if (!matchedTests(output)) {
     throw new PreflightError(`${label} matched zero tests`);
   }
 };
+
+/** The canonical in-container argv for a named e2e grep. The kms-generation quorum probes
+ * reuse it so they can never drift from the invocation they are compared against. */
+const namedE2eArgs = (options: Pick<TestOptions, "network" | "noHardhatCompile">, grep: string) =>
+  buildTestContainerArgs(runTestsArgs({ ...options, verbose: false, parallel: false, grep }));
 
 /** Runs a narrow e2e grep inside the test-suite container. */
 const runNamedE2e = async (
@@ -491,10 +511,7 @@ const runNamedE2e = async (
   grep: string,
   label: string,
 ) => {
-  const result = await runWithHeartbeat(
-    buildTestContainerArgs(runTestsArgs({ ...options, verbose: false, parallel: false, grep })),
-    label,
-  );
+  const result = await runWithHeartbeat(namedE2eArgs(options, grep), label);
   assertMatchedTests(result.stdout + result.stderr, label);
 };
 
@@ -892,7 +909,61 @@ export const test = async (testName: string | undefined, options: TestOptions) =
       ? undefined
       : `COPROCESSOR_DB_MIGRATION_VERSION=${state.versions.env.COPROCESSOR_DB_MIGRATION_VERSION || "unknown"} is older than v0.12.0`;
 
+  // Runs the user-decryption grep and reports pass/fail instead of throwing, so the
+  // kms-generation quorum probes can assert both success and (below quorum) non-success.
+  // Both branches run the canonical user-decryption invocation (namedE2eArgs); only the
+  // execution differs — streamed and unbounded when a pass is expected, bounded when the
+  // decryption is expected to hang below quorum.
+  const runUserDecryption: DecryptionRunner = async (label, decryptOpts) => {
+    const grep = TEST_GREP["user-decryption"];
+    if (!grep) {
+      throw new PreflightError("kms-generation: missing user-decryption grep pattern");
+    }
+    console.log(`[test] ${label}`);
+    if (!decryptOpts?.expectFailure) {
+      try {
+        await runNamedE2e(options, grep, label);
+        return true;
+      } catch (error) {
+        console.log(`[kms-generation] decryption probe reported failure: ${formatCliError(error) ?? "unknown error"}`);
+        return false;
+      }
+    }
+    // Below quorum: bound the wait. Print the captured output so a wrongly-successful run
+    // is debuggable.
+    const result = await run(namedE2eArgs(options, grep), { allowFailure: true, timeoutMs: QUORUM_FLOOR_TIMEOUT_MS });
+    if (result.stdout.trim()) console.log(result.stdout);
+    if (result.stderr.trim()) console.log(result.stderr);
+    const output = `${result.stdout}\n${result.stderr}`;
+    if (result.code === 0 && matchedTests(output)) {
+      return true; // decrypted below quorum — the caller turns this into a hard failure
+    }
+    const timedOut = result.code === 124;
+    if (timedOut) {
+      // The timeout only kills the local `docker exec` client; best-effort-reap the test run
+      // still going inside the container so it cannot overlap the recovery probe. The bracketed
+      // patterns avoid pkill matching its own command line.
+      await run(
+        buildTestContainerArgs(["sh", "-lc", "pkill -f 'run-tests[.]sh' 2>/dev/null; pkill -f '[h]ardhat' 2>/dev/null; true"]),
+        { allowFailure: true },
+      );
+    }
+    // "Did not decrypt" only proves the quorum when the probe demonstrably ran: it timed out
+    // mid-decryption, or mocha executed the matched tests and they failed. Anything else
+    // (docker error, missing container, zero tests matched) is an infra problem — fail loudly
+    // instead of reading it as "the quorum held".
+    if (!timedOut && !SOME_FAILING_RE.test(output)) {
+      throw new PreflightError(
+        `${label}: probe did not run to a decryption verdict (exit ${result.code}); cannot interpret the failure as a quorum proof`,
+      );
+    }
+    return false;
+  };
+
   const runProfile = async (name: string) => {
+    if (name === "kms-generation") {
+      return runKmsGenerationProfile(state, runUserDecryption);
+    }
     if (name === "coprocessor-db-state-revert") {
       return runDbStateRevert(state, options);
     }

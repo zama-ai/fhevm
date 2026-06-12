@@ -1,0 +1,78 @@
+# KMS core config for a threshold party. Modeled on zama-ai/kms
+# core/service/config/compose_1.toml, mTLS omitted for CI (peers connect plaintext
+# by docker service name).
+#
+# This file is the static, cluster-shared base. Two kinds of values are NOT final here:
+#   - the `[[threshold.peers]]` roster is injected per cluster at the __THRESHOLD_PEERS__
+#     marker (it depends on the party count);
+#   - the per-party values below carry deliberately-invalid PLACEHOLDERS (my_id = 0,
+#     prefixes "UNSET-*") and are overridden per container via KMS_CORE__* env vars in
+#     buildKmsThresholdOverride. A dropped override therefore fails loudly (my_id = 0 is
+#     rejected) instead of silently misconfiguring the cluster.
+mock_enclave = true
+
+[service]
+listen_address = "0.0.0.0"
+listen_port = 50100 # KMS_CORE__SERVICE__LISTEN_PORT (per party)
+timeout_secs = 360
+grpc_max_message_size = 104857600 # 100 MiB
+
+[aws]
+region = "eu-west-1"          # KMS_CORE__AWS__REGION
+s3_endpoint = "http://minio:9000" # KMS_CORE__AWS__S3_ENDPOINT
+
+[public_vault]
+[public_vault.storage.s3]
+bucket = "kms-public"   # KMS_CORE__PUBLIC_VAULT__STORAGE__S3__BUCKET
+prefix = "UNSET-PUB"    # KMS_CORE__PUBLIC_VAULT__STORAGE__S3__PREFIX (per party)
+
+[private_vault.storage.s3]
+bucket = "kms-public"   # KMS_CORE__PRIVATE_VAULT__STORAGE__S3__BUCKET
+prefix = "UNSET-PRIV"   # KMS_CORE__PRIVATE_VAULT__STORAGE__S3__PREFIX (per party)
+
+[backup_vault]
+[backup_vault.storage.file]
+path = "./backup_vault"
+prefix = "UNSET-BACKUP" # KMS_CORE__BACKUP_VAULT__STORAGE__FILE__PREFIX (per party)
+
+[threshold]
+listen_address = "0.0.0.0"
+listen_port = 50001 # KMS_CORE__THRESHOLD__LISTEN_PORT (per party)
+my_id = 0           # KMS_CORE__THRESHOLD__MY_ID (per party; 0 is invalid on purpose)
+threshold = 1       # KMS_CORE__THRESHOLD__THRESHOLD (cluster-wide t)
+dec_capacity = 10000
+min_dec_cache = 6000
+num_sessions_preproc = 2
+decryption_mode = "NoiseFloodSmall"
+
+# __THRESHOLD_PEERS__
+
+[threshold.core_to_core_net]
+message_limit = 70
+multiplier = 2.0
+max_interval = 60
+initial_interval_ms = 100
+max_elapsed_time = 300
+network_timeout = 20
+network_timeout_bk = 300
+network_timeout_bk_sns = 1200
+max_en_decode_message_size = 2147483648
+session_update_interval_secs = 60
+session_cleanup_interval_secs = 86400
+discard_inactive_sessions_interval = 10800
+max_waiting_time_for_message_queue = 60
+max_opened_inactive_sessions_per_party = 2000
+
+[telemetry]
+tracing_service_name = "kms-threshold" # KMS_CORE__TELEMETRY__TRACING_SERVICE_NAME (per party)
+tracing_otlp_timeout_ms = 10000
+metrics_bind_address = "0.0.0.0:9646"
+
+[rate_limiter_conf]
+bucket_size = 50000
+pub_decrypt = 1
+user_decrypt = 1
+crsgen = 100
+preproc = 25000
+keygen = 1000
+new_epoch = 1

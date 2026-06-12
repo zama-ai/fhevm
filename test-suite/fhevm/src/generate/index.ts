@@ -6,6 +6,7 @@ import path from "node:path";
 
 import type { StackSpec } from "../stack-spec/stack-spec";
 import { renderKmsCoreConfig, renderRelayerConfig } from "./config";
+import { KMS_THRESHOLD_CONFIG_NAME, renderThresholdCoreConfig } from "./kms-core";
 import { renderEnvMaps, type WalletMaterial } from "./env";
 import {
   renderGatewayAddressesEnv,
@@ -24,6 +25,7 @@ import {
   GENERATED_CONFIG_DIR,
   TEMPLATE_KMS_CORE_CONFIG_LEGACY,
   TEMPLATE_KMS_CORE_CONFIG_MODERN,
+  TEMPLATE_KMS_CORE_CONFIG_THRESHOLD,
   TEMPLATE_ENV_DIR,
   TEMPLATE_RELAYER_CONFIG,
   envPath,
@@ -113,6 +115,15 @@ export const generateRuntime = async (state: State, plan: StackSpec) => {
       await fs.readFile(TEMPLATE_KMS_CORE_CONFIG_MODERN, "utf8"),
     ),
   );
+  // Threshold mode: emit the single cluster-shared core config (checked-in template
+  // with the peer roster injected). Per-party values come from KMS_CORE__* env, so one
+  // file is mounted into every kms-core-{i}. Centralized mode ignores it.
+  if (plan.kms.mode === "threshold") {
+    await writeWritableFile(
+      path.join(GENERATED_CONFIG_DIR, KMS_THRESHOLD_CONFIG_NAME),
+      renderThresholdCoreConfig(await fs.readFile(TEMPLATE_KMS_CORE_CONFIG_THRESHOLD, "utf8"), plan.kms),
+    );
+  }
   await writeWritableFile(gatewayAddressesPath, renderGatewayAddressesEnv(state));
   await writeWritableFile(gatewayAddressesSolidityPath, renderGatewayAddressesSolidity(state));
   await writeWritableFile(
