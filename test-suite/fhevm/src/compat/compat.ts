@@ -117,14 +117,17 @@ const SHIM_PROFILES = {
 
 /** Parses a semver-like version string into comparable numeric parts. */
 const parseCompatVersion = (version: string) => {
-  const match = version.match(/^v?(\d+)\.(\d+)\.(\d+)(?:([-+]).*)?$/);
+  const match = version.match(/^v?(\d+)\.(\d+)\.(\d+)(?:-([^+]*))?(?:\+.*)?$/);
   if (!match) {
     return undefined;
   }
-  const [, major, minor, patch, suffixType] = match;
+  const [, major, minor, patch, prereleaseId] = match;
+  // Zama release tags carry a numeric build suffix (e.g. `0.13.0-8` is the 8th build *of* 0.13.0);
+  // it must rank equal to `0.13.0` for feature-floor checks, not below it. Only a non-numeric
+  // identifier (`-rc.1`, `-alpha`, …) is a true pre-release that precedes the release.
   return {
     parts: [Number(major), Number(minor), Number(patch)] as const,
-    prerelease: suffixType === "-",
+    prerelease: prereleaseId !== undefined && !/^\d+$/.test(prereleaseId),
   };
 };
 

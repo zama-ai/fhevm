@@ -46,7 +46,6 @@ interface IGatewayConfig {
     error CurrentKmsContextCannotBeDestroyed(uint256 currentKmsContextId);
     error CustodianSignerAlreadyRegistered(address custodianSignerAddress);
     error CustodianTxSenderAlreadyRegistered(address custodianTxSenderAddress);
-    error DecryptionMustBePaused();
     error EmptyCoprocessors();
     error EmptyCustodians();
     error EmptyKmsNodes();
@@ -1727,11 +1726,6 @@ interface IGatewayConfig {
         "internalType": "address"
       }
     ]
-  },
-  {
-    "type": "error",
-    "name": "DecryptionMustBePaused",
-    "inputs": []
   },
   {
     "type": "error",
@@ -4254,79 +4248,6 @@ error CustodianTxSenderAlreadyRegistered(address custodianTxSenderAddress);
                         &self.custodianTxSenderAddress,
                     ),
                 )
-            }
-            #[inline]
-            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `DecryptionMustBePaused()` and selector `0xd5a5c97b`.
-```solidity
-error DecryptionMustBePaused();
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct DecryptionMustBePaused;
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[doc(hidden)]
-        type UnderlyingSolTuple<'a> = ();
-        #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = ();
-        #[cfg(test)]
-        #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
-            match _t {
-                alloy_sol_types::private::AssertTypeEq::<
-                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                >(_) => {}
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<DecryptionMustBePaused> for UnderlyingRustTuple<'_> {
-            fn from(value: DecryptionMustBePaused) -> Self {
-                ()
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>> for DecryptionMustBePaused {
-            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolError for DecryptionMustBePaused {
-            type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "DecryptionMustBePaused()";
-            const SELECTOR: [u8; 4] = [213u8, 165u8, 201u8, 123u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                ()
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
@@ -18096,8 +18017,6 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
         #[allow(missing_docs)]
         CustodianTxSenderAlreadyRegistered(CustodianTxSenderAlreadyRegistered),
         #[allow(missing_docs)]
-        DecryptionMustBePaused(DecryptionMustBePaused),
-        #[allow(missing_docs)]
         EmptyCoprocessors(EmptyCoprocessors),
         #[allow(missing_docs)]
         EmptyCustodians(EmptyCustodians),
@@ -18194,7 +18113,6 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
             [207u8, 80u8, 231u8, 173u8],
             [209u8, 140u8, 79u8, 240u8],
             [210u8, 83u8, 94u8, 17u8],
-            [213u8, 165u8, 201u8, 123u8],
             [230u8, 10u8, 114u8, 113u8],
             [245u8, 26u8, 246u8, 187u8],
         ];
@@ -18203,7 +18121,7 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
     impl alloy_sol_types::SolInterface for IGatewayConfigErrors {
         const NAME: &'static str = "IGatewayConfigErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 36usize;
+        const COUNT: usize = 35usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -18230,9 +18148,6 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 }
                 Self::CustodianTxSenderAlreadyRegistered(_) => {
                     <CustodianTxSenderAlreadyRegistered as alloy_sol_types::SolError>::SELECTOR
-                }
-                Self::DecryptionMustBePaused(_) => {
-                    <DecryptionMustBePaused as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::EmptyCoprocessors(_) => {
                     <EmptyCoprocessors as alloy_sol_types::SolError>::SELECTOR
@@ -18712,17 +18627,6 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                     InvalidHighUserDecryptionThreshold
                 },
                 {
-                    fn DecryptionMustBePaused(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <DecryptionMustBePaused as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
-                            .map(IGatewayConfigErrors::DecryptionMustBePaused)
-                    }
-                    DecryptionMustBePaused
-                },
-                {
                     fn InvalidNullUserDecryptionThreshold(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
@@ -19148,17 +19052,6 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                     InvalidHighUserDecryptionThreshold
                 },
                 {
-                    fn DecryptionMustBePaused(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <DecryptionMustBePaused as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigErrors::DecryptionMustBePaused)
-                    }
-                    DecryptionMustBePaused
-                },
-                {
                     fn InvalidNullUserDecryptionThreshold(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
@@ -19233,11 +19126,6 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 }
                 Self::CustodianTxSenderAlreadyRegistered(inner) => {
                     <CustodianTxSenderAlreadyRegistered as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
-                }
-                Self::DecryptionMustBePaused(inner) => {
-                    <DecryptionMustBePaused as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -19421,12 +19309,6 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 }
                 Self::CustodianTxSenderAlreadyRegistered(inner) => {
                     <CustodianTxSenderAlreadyRegistered as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::DecryptionMustBePaused(inner) => {
-                    <DecryptionMustBePaused as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )

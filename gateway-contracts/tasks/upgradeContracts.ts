@@ -132,6 +132,9 @@ async function checkImplementationArtifacts(
   }
 }
 
+// Relies on incremental compilation: run only on a clean working tree whose generated
+// addresses/GatewayAddresses.sol matches the target environment, otherwise the implementation
+// embeds the wrong addresses.
 async function deployImplementationForPreparedUpgrade(
   proxyAddress: string,
   expectedArtifactName: string,
