@@ -30,8 +30,8 @@ use tracing::{debug, error, info};
 
 use crate::database::tfhe_event_propagate::Database;
 use crate::solana_adapter::{
-    decode_anchor_cpi_event, insert_solana_events, solana_transaction_id,
-    SolanaBlockMeta, SolanaHostEvent,
+    decode_solana_transaction_events, insert_solana_events,
+    solana_transaction_id, SolanaBlockMeta, SolanaHostEvent,
 };
 
 /// `getSignaturesForAddress` returns at most this many entries per call.
@@ -210,14 +210,18 @@ async fn ingest_signature(
     Ok(())
 }
 
-/// Decodes the `zama-host` CPI events carried by a confirmed transaction and
-/// derives its block metadata.
+/// Decodes the `zama-host` events carried by a confirmed transaction and derives
+/// its block metadata.
 ///
-/// Anchor's `emit_cpi!` emits each event as a self-invocation of the program: the
-/// event bytes live in an inner instruction whose program is `program_id`. We
-/// filter inner instructions to that program and hand their (base58) data to
-/// [`decode_anchor_cpi_event`], which strips the CPI sentinel and event
-/// discriminators before borsh-decoding.
+/// A host event reaches us by one of two transports, chosen per emitting frame:
+/// `emit_cpi!` puts the event bytes in an inner instruction that self-invokes the
+/// program, while `emit!` writes them as a `Program data:` log line. A large
+/// `fhe_eval` frame (event count above the CPI cap, e.g. `confidential_burn`)
+/// uses log transport, so a CPI-only decoder silently drops its whole compute
+/// graph. We gather both the inner instructions and the log messages and hand
+/// them to [`decode_solana_transaction_events`], the shared decoder that strips
+/// the CPI/Anchor discriminators, scopes log lines to this program, and rejects a
+/// transaction that mixes the two transports.
 pub fn extract_host_events(
     confirmed: &EncodedConfirmedTransactionWithStatusMeta,
     program_id: &Pubkey,
@@ -229,41 +233,50 @@ pub fn extract_host_events(
         .as_ref()
         .ok_or_else(|| anyhow!("transaction has no metadata"))?;
 
-    let inner_instructions = match &meta.inner_instructions {
-        OptionSerializer::Some(inner) => inner,
-        OptionSerializer::None | OptionSerializer::Skip => {
-            return Ok((Vec::new(), block))
-        }
-    };
-
     let account_keys = account_keys(confirmed)?;
     let program_id = program_id.to_string();
-    let mut events = Vec::new();
 
-    for group in inner_instructions {
-        for instruction in &group.instructions {
-            let UiInstruction::Compiled(compiled) = instruction else {
-                continue;
-            };
-            let program = account_keys
-                .get(compiled.program_id_index as usize)
-                .ok_or_else(|| {
-                    anyhow!(
-                        "program_id_index {} out of range",
-                        compiled.program_id_index
-                    )
-                })?;
-            if program != &program_id {
-                continue;
-            }
-            let data = bs58::decode(&compiled.data)
-                .into_vec()
-                .context("base58-decode inner instruction data")?;
-            if let Some(event) = decode_anchor_cpi_event(&data) {
-                events.push(event);
+    // CPI transport: each `emit_cpi!` event is an inner instruction of this
+    // program; collect (program, data) pairs and let the decoder filter + decode.
+    let mut cpi_instructions: Vec<(String, Vec<u8>)> = Vec::new();
+    if let OptionSerializer::Some(inner) = &meta.inner_instructions {
+        for group in inner {
+            for instruction in &group.instructions {
+                let UiInstruction::Compiled(compiled) = instruction else {
+                    continue;
+                };
+                let program = account_keys
+                    .get(compiled.program_id_index as usize)
+                    .ok_or_else(|| {
+                        anyhow!(
+                            "program_id_index {} out of range",
+                            compiled.program_id_index
+                        )
+                    })?;
+                let data = bs58::decode(&compiled.data)
+                    .into_vec()
+                    .context("base58-decode inner instruction data")?;
+                cpi_instructions.push((program.clone(), data));
             }
         }
     }
+
+    // Log transport: `emit!` events arrive as `Program data:` log lines. Do not
+    // early-return when there are no inner instructions — a log-only transaction
+    // (every large eval frame) carries all its events here.
+    let logs: Vec<String> = match &meta.log_messages {
+        OptionSerializer::Some(logs) => logs.clone(),
+        OptionSerializer::None | OptionSerializer::Skip => Vec::new(),
+    };
+
+    let events = decode_solana_transaction_events(
+        &logs,
+        cpi_instructions
+            .iter()
+            .map(|(program, data)| (program.as_str(), data.as_slice())),
+        &program_id,
+    )
+    .context("decode host events")?;
 
     Ok((events, block))
 }
@@ -410,6 +423,76 @@ mod tests {
         else {
             panic!("expected a TFHE-mapped event");
         };
+    }
+
+    /// Builds a fixture whose `zama-host` events arrive via log transport
+    /// (`emit!`): no compute inner instructions, just the program invoke/success
+    /// brackets and the `Program data:` lines carrying the events.
+    fn confirmed_tx_with_logs(
+        log_lines: &[String],
+    ) -> EncodedConfirmedTransactionWithStatusMeta {
+        let logs = log_lines
+            .iter()
+            .map(|line| format!("{line:?}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let json = format!(
+            r#"{{
+              "slot": 42,
+              "blockTime": 1700000000,
+              "transaction": {{
+                "signatures": ["{FOREIGN}"],
+                "message": {{
+                  "header": {{ "numRequiredSignatures": 1, "numReadonlySignedAccounts": 0, "numReadonlyUnsignedAccounts": 1 }},
+                  "accountKeys": ["{FOREIGN}", "{ZAMA_HOST}"],
+                  "recentBlockhash": "{FOREIGN}",
+                  "instructions": []
+                }}
+              }},
+              "meta": {{
+                "err": null,
+                "status": {{ "Ok": null }},
+                "fee": 5000,
+                "preBalances": [],
+                "postBalances": [],
+                "innerInstructions": [],
+                "logMessages": [{logs}]
+              }}
+            }}"#
+        );
+        serde_json::from_str(&json)
+            .expect("valid confirmed-transaction fixture")
+    }
+
+    /// A large eval frame (e.g. `confidential_burn`) switches from `emit_cpi!` to
+    /// `emit!`, so its events arrive only as `Program data:` log lines. The
+    /// listener must decode them or it silently drops the whole compute graph —
+    /// the regression that left burned-amount handles unmaterialized.
+    #[test]
+    fn extracts_zama_host_event_from_log_transport() {
+        use base64::engine::general_purpose::STANDARD as BASE64;
+        use base64::Engine;
+
+        let mut event_bytes =
+            anchor_event_discriminator("TrivialEncryptEvent").to_vec();
+        event_bytes.extend_from_slice(&trivial_encrypt_payload());
+        let logs = vec![
+            format!("Program {ZAMA_HOST} invoke [1]"),
+            format!("Program data: {}", BASE64.encode(&event_bytes)),
+            format!("Program {ZAMA_HOST} success"),
+        ];
+        let program_id = Pubkey::from_str(ZAMA_HOST).unwrap();
+
+        let (events, block) =
+            extract_host_events(&confirmed_tx_with_logs(&logs), &program_id)
+                .unwrap();
+
+        assert_eq!(block.block_number, 42);
+        assert_eq!(
+            events.len(),
+            1,
+            "log-transport event must be decoded, not dropped"
+        );
     }
 
     #[test]
