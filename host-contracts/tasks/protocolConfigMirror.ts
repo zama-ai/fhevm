@@ -27,10 +27,11 @@ export type CanonicalSnapshot = {
   blockNumber: number;
 };
 
-// Reads the canonical ProtocolConfig's current KMS context, pinned to one block. Shared by the
-// secondary mirror deploy and the export task so both seed from the exact same read. Pass blockNumber
-// to pin to a historical block (the export artifact's blockNumber) so a DAO signer can reproduce a
-// snapshot byte-for-byte even after a later context rotation; omit it to read the latest block.
+// Reads the canonical ProtocolConfig's current KMS context, pinned to one block. Shared by
+// task:exportCanonicalProtocolConfig and task:deployProtocolConfigFromCanonical's live-read mode so
+// both seed from the exact same read. Pass blockNumber to pin to a historical block (the export
+// artifact's blockNumber) so a DAO signer can reproduce a snapshot byte-for-byte even after a later
+// context rotation; omit it to read the latest block.
 export async function readCanonicalSnapshot(
   hre: HardhatRuntimeEnvironment,
   options: { canonicalProvider: Provider; canonicalProtocolConfigAddress: string; blockNumber?: number },
