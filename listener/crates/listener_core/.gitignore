@@ -1,3 +1,4 @@
 target
 .claude
 .env
+config.local.yaml
