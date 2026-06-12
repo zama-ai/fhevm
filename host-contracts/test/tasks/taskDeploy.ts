@@ -1,10 +1,19 @@
 import { expect } from 'chai';
-import { ethers, run } from 'hardhat';
+import hre, { ethers, run } from 'hardhat';
 
+import { mirrorProtocolConfigFromCanonical, readCanonicalSnapshot } from '../../tasks/protocolConfigMirror';
 import { CRS_COUNTER_BASE, KEY_COUNTER_BASE, PREP_KEYGEN_COUNTER_BASE } from '../../tasks/utils/kmsGenerationConstants';
 import { getRequiredEnvVar } from '../../tasks/utils/loadVariables';
-import type { KMSGeneration } from '../../types';
-import { deployFreshKMSGenerationProxy, readHostAddress } from './taskHelpers';
+import type { KMSGeneration, ProtocolConfig } from '../../types';
+import {
+  buildProtocolConfigNodes,
+  buildProtocolConfigThresholds,
+  deployFreshEmptyUUPSProxy,
+  deployFreshKMSGenerationProxy,
+  deployFreshProtocolConfigProxy,
+  deployFreshUninitializedProtocolConfigProxy,
+  readHostAddress,
+} from './taskHelpers';
 
 describe('task:deployAllHostContracts', function () {
   it('requires the KMSGeneration deployment role to be explicit', async function () {
@@ -77,5 +86,225 @@ describe('task:assertNoPendingKeyManagementRequest', function () {
     await kmsGeneration.abortCrsgen(CRS_COUNTER_BASE + 1n);
 
     await run('task:assertNoPendingKeyManagementRequest', { address: kmsGenerationAddress });
+  });
+});
+
+describe('mirrorProtocolConfigFromCanonical (canonical → secondary deploy flow)', function () {
+  const deployerPrivateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
+  const deployer = new ethers.Wallet(deployerPrivateKey).connect(ethers.provider);
+
+  it('mirrors the canonical ProtocolConfig snapshot onto a fresh secondary proxy', async function () {
+    const canonicalNodes = buildProtocolConfigNodes();
+    const canonicalThresholds = buildProtocolConfigThresholds();
+    const canonicalAddress = await deployFreshProtocolConfigProxy(deployer, canonicalNodes, canonicalThresholds);
+    const canonical = (await ethers.getContractAt(
+      'ProtocolConfig',
+      canonicalAddress,
+      deployer,
+    )) as unknown as ProtocolConfig;
+
+    const secondaryProxyAddress = await deployFreshEmptyUUPSProxy(deployer);
+
+    expect(canonicalAddress).to.not.equal(secondaryProxyAddress);
+
+    const blockBeforeMirror = await ethers.provider.getBlockNumber();
+    const snapshot = await mirrorProtocolConfigFromCanonical(hre, {
+      canonicalProvider: ethers.provider,
+      canonicalProtocolConfigAddress: canonicalAddress,
+      secondaryProxyAddress,
+    });
+    const blockAfterMirror = await ethers.provider.getBlockNumber();
+
+    const secondary = (await ethers.getContractAt(
+      'ProtocolConfig',
+      secondaryProxyAddress,
+      deployer,
+    )) as unknown as ProtocolConfig;
+
+    const canonicalContextId = await canonical.getCurrentKmsContextId();
+    const secondaryContextId = await secondary.getCurrentKmsContextId();
+    expect(snapshot.currentContextId).to.equal(canonicalContextId);
+    expect(secondaryContextId).to.equal(canonicalContextId);
+
+    expect(snapshot.canonicalChainId).to.equal((await ethers.provider.getNetwork()).chainId);
+    expect(snapshot.canonicalBlockTag).to.be.gte(blockBeforeMirror);
+    expect(snapshot.canonicalBlockTag).to.be.lte(blockAfterMirror);
+
+    const canonicalNodesOnChain = await canonical.getKmsNodesForContext(canonicalContextId);
+    const secondaryNodesOnChain = await secondary.getKmsNodesForContext(secondaryContextId);
+    expect(secondaryNodesOnChain.length).to.equal(canonicalNodesOnChain.length);
+    expect(secondaryNodesOnChain.length).to.equal(canonicalNodes.length);
+    for (let i = 0; i < canonicalNodes.length; i += 1) {
+      expect(secondaryNodesOnChain[i].txSenderAddress).to.equal(canonicalNodesOnChain[i].txSenderAddress);
+      expect(secondaryNodesOnChain[i].signerAddress).to.equal(canonicalNodesOnChain[i].signerAddress);
+      expect(secondaryNodesOnChain[i].ipAddress).to.equal(canonicalNodesOnChain[i].ipAddress);
+      expect(secondaryNodesOnChain[i].storageUrl).to.equal(canonicalNodesOnChain[i].storageUrl);
+    }
+
+    expect(await secondary.getPublicDecryptionThresholdForContext(secondaryContextId)).to.equal(
+      await canonical.getPublicDecryptionThresholdForContext(canonicalContextId),
+    );
+    expect(await secondary.getUserDecryptionThresholdForContext(secondaryContextId)).to.equal(
+      await canonical.getUserDecryptionThresholdForContext(canonicalContextId),
+    );
+    expect(await secondary.getKmsGenThresholdForContext(secondaryContextId)).to.equal(
+      await canonical.getKmsGenThresholdForContext(canonicalContextId),
+    );
+    expect(await secondary.getMpcThresholdForContext(secondaryContextId)).to.equal(
+      await canonical.getMpcThresholdForContext(canonicalContextId),
+    );
+
+    expect(await secondary.isValidKmsContext(secondaryContextId)).to.equal(true);
+  });
+
+  it('rejects when the canonical address is not a ProtocolConfig', async function () {
+    const notProtocolConfig = await deployFreshKMSGenerationProxy(deployer);
+    const secondaryProxyAddress = await deployFreshEmptyUUPSProxy(deployer);
+
+    await expect(
+      mirrorProtocolConfigFromCanonical(hre, {
+        canonicalProvider: ethers.provider,
+        canonicalProtocolConfigAddress: await notProtocolConfig.getAddress(),
+        secondaryProxyAddress,
+      }),
+    ).to.be.rejectedWith(/Canonical ProtocolConfig identity check failed.*reports version "KMSGeneration/);
+  });
+
+  it('rejects when the canonical address is an uninitialized empty proxy', async function () {
+    const uninitializedEmpty = await deployFreshEmptyUUPSProxy(deployer);
+    const secondaryProxyAddress = await deployFreshEmptyUUPSProxy(deployer);
+
+    await expect(
+      mirrorProtocolConfigFromCanonical(hre, {
+        canonicalProvider: ethers.provider,
+        canonicalProtocolConfigAddress: uninitializedEmpty,
+        secondaryProxyAddress,
+      }),
+    ).to.be.rejectedWith(/Canonical ProtocolConfig identity check failed.*does not expose getVersion/);
+  });
+
+  it('rejects when the canonical ProtocolConfig has no active KMS context', async function () {
+    const noContextCanonical = await deployFreshUninitializedProtocolConfigProxy(deployer);
+    const secondaryProxyAddress = await deployFreshEmptyUUPSProxy(deployer);
+
+    await expect(
+      mirrorProtocolConfigFromCanonical(hre, {
+        canonicalProvider: ethers.provider,
+        canonicalProtocolConfigAddress: noContextCanonical,
+        secondaryProxyAddress,
+      }),
+    ).to.be.rejectedWith(/has no active KMS context \(currentKmsContextId=0\); cannot mirror/);
+  });
+
+  it('pins canonical reads to a historical block under a rotation', async function () {
+    const canonicalAddress = await deployFreshProtocolConfigProxy(
+      deployer,
+      buildProtocolConfigNodes(),
+      buildProtocolConfigThresholds(),
+    );
+    const canonical = (await ethers.getContractAt(
+      'ProtocolConfig',
+      canonicalAddress,
+      deployer,
+    )) as unknown as ProtocolConfig;
+    const secondaryProxyAddress = await deployFreshEmptyUUPSProxy(deployer);
+
+    const snapshot = await mirrorProtocolConfigFromCanonical(hre, {
+      canonicalProvider: ethers.provider,
+      canonicalProtocolConfigAddress: canonicalAddress,
+      secondaryProxyAddress,
+    });
+    const pinnedBlock = snapshot.canonicalBlockTag;
+    const pinnedContextId = snapshot.currentContextId;
+
+    const rotatedNodes = buildProtocolConfigNodes().slice(0, 2);
+    const rotatedThresholds = { publicDecryption: 1, userDecryption: 1, kmsGen: 1, mpc: 1 };
+    await canonical.defineNewKmsContext(rotatedNodes, rotatedThresholds);
+    const latestContextId = await canonical.getCurrentKmsContextId();
+    expect(latestContextId).to.not.equal(pinnedContextId);
+
+    const historicalContextId = await canonical.getCurrentKmsContextId({ blockTag: pinnedBlock });
+    expect(historicalContextId).to.equal(pinnedContextId);
+  });
+});
+
+describe('canonical snapshot export (readCanonicalSnapshot)', function () {
+  const deployer = new ethers.Wallet(getRequiredEnvVar('DEPLOYER_PRIVATE_KEY')).connect(ethers.provider);
+
+  it('reads the canonical context and reproduces it on re-read', async function () {
+    const canonicalNodes = buildProtocolConfigNodes();
+    const canonicalAddress = await deployFreshProtocolConfigProxy(
+      deployer,
+      canonicalNodes,
+      buildProtocolConfigThresholds(),
+    );
+
+    const snapshot = await readCanonicalSnapshot(hre, {
+      canonicalProvider: ethers.provider,
+      canonicalProtocolConfigAddress: canonicalAddress,
+    });
+    expect(snapshot.kmsNodes.length).to.equal(canonicalNodes.length);
+    expect(snapshot.currentContextId).to.not.equal(0n);
+    expect(snapshot.canonicalChainId).to.equal((await ethers.provider.getNetwork()).chainId);
+
+    // The DAO's review check: re-reading the artifact's pinned block reproduces the snapshot exactly.
+    const reread = await readCanonicalSnapshot(hre, {
+      canonicalProvider: ethers.provider,
+      canonicalProtocolConfigAddress: canonicalAddress,
+      blockTag: snapshot.canonicalBlockTag,
+    });
+    expect(reread).to.deep.equal(snapshot);
+  });
+
+  it('rejects when the canonical ProtocolConfig has no active KMS context', async function () {
+    const noContextCanonical = await deployFreshUninitializedProtocolConfigProxy(deployer);
+
+    await expect(
+      readCanonicalSnapshot(hre, {
+        canonicalProvider: ethers.provider,
+        canonicalProtocolConfigAddress: noContextCanonical,
+      }),
+    ).to.be.rejectedWith(/has no active KMS context \(currentKmsContextId=0\); cannot mirror/);
+  });
+
+  it('reproduces a pinned snapshot after a rotation, while a latest re-read drifts', async function () {
+    const canonicalAddress = await deployFreshProtocolConfigProxy(
+      deployer,
+      buildProtocolConfigNodes(),
+      buildProtocolConfigThresholds(),
+    );
+    const canonical = (await ethers.getContractAt(
+      'ProtocolConfig',
+      canonicalAddress,
+      deployer,
+    )) as unknown as ProtocolConfig;
+
+    const exported = await readCanonicalSnapshot(hre, {
+      canonicalProvider: ethers.provider,
+      canonicalProtocolConfigAddress: canonicalAddress,
+    });
+
+    // Rotate the canonical committee so "latest" no longer matches the exported block.
+    await canonical.defineNewKmsContext(buildProtocolConfigNodes().slice(0, 2), {
+      publicDecryption: 1,
+      userDecryption: 1,
+      kmsGen: 1,
+      mpc: 1,
+    });
+
+    // Re-reading latest drifts: this is exactly what a signer would get with no block pin.
+    const atLatest = await readCanonicalSnapshot(hre, {
+      canonicalProvider: ethers.provider,
+      canonicalProtocolConfigAddress: canonicalAddress,
+    });
+    expect(atLatest.currentContextId).to.not.equal(exported.currentContextId);
+
+    // Re-reading at the artifact's blockNumber reproduces the original snapshot despite the rotation.
+    const atPinned = await readCanonicalSnapshot(hre, {
+      canonicalProvider: ethers.provider,
+      canonicalProtocolConfigAddress: canonicalAddress,
+      blockTag: exported.canonicalBlockTag,
+    });
+    expect(atPinned).to.deep.equal(exported);
   });
 });

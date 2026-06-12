@@ -74,3 +74,36 @@ export async function deployFreshKMSGenerationProxy(deployer: Wallet): Promise<K
 
   return (await ethers.getContractAt('KMSGeneration', proxyAddress, deployer)) as unknown as KMSGeneration;
 }
+
+export async function deployFreshEmptyUUPSProxy(deployer: Wallet): Promise<string> {
+  const emptyProxyFactory = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
+  return await deployEmptyProxy(emptyProxyFactory);
+}
+
+// Upgrades to the ProtocolConfig implementation WITHOUT calling an initializer: getVersion()
+// passes the identity check but no KMS context exists (currentKmsContextId=0).
+export async function deployFreshUninitializedProtocolConfigProxy(deployer: Wallet): Promise<string> {
+  const proxyAddress = await deployFreshEmptyUUPSProxy(deployer);
+  const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
+  const newImplementation = await ethers.getContractFactory('ProtocolConfig', deployer);
+  const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
+  const upgraded = await upgrades.upgradeProxy(proxy, newImplementation);
+  await upgraded.waitForDeployment();
+  return proxyAddress;
+}
+
+export async function deployFreshProtocolConfigProxy(
+  deployer: Wallet,
+  kmsNodes: Array<{ txSenderAddress: string; signerAddress: string; ipAddress: string; storageUrl: string }>,
+  thresholds: { publicDecryption: number; userDecryption: number; kmsGen: number; mpc: number },
+): Promise<string> {
+  const proxyAddress = await deployFreshEmptyUUPSProxy(deployer);
+  const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
+  const newImplementation = await ethers.getContractFactory('ProtocolConfig', deployer);
+  const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
+  const upgraded = await upgrades.upgradeProxy(proxy, newImplementation, {
+    call: { fn: 'initializeFromEmptyProxy', args: [kmsNodes, thresholds] },
+  });
+  await upgraded.waitForDeployment();
+  return proxyAddress;
+}

@@ -120,3 +120,37 @@ rotation to non-canonical chains call `defineNewKmsContext` directly on each non
 
 No on-chain guard prevents a non-canonical replica from drifting if a mirror transaction is
 skipped. Operators are responsible for fan-out correctness.
+
+### Initializing a non-canonical ProtocolConfig from the canonical chain
+
+The Ethereum `ProtocolConfig` is the source of truth for protocol state. New host chains seed
+their replica from it — not from the Gateway: the Gateway-based export
+(`task:exportKmsMigrationState` and the migration env plumbing) is superseded by the canonical
+export below as the state source for non-canonical chains.
+
+Export the canonical KMS context to a reviewable JSON artifact:
+
+```bash
+npx hardhat task:exportCanonicalProtocolConfig \
+  --canonical-rpc-url https://mainnet.example \
+  --canonical-protocol-config-address 0x... \
+  --out canonical-protocol-config-snapshot.json
+```
+
+The artifact records the canonical chainId, the block number the read was pinned to, the
+contract address, the current KMS context id, the KMS node set, and all four thresholds
+(bigints serialized as strings). All reads happen at one block, so DAO signers reproduce the
+artifact byte-for-byte — even after a later `defineNewKmsContext` rotation — by re-running with
+`--block-number <N>` from the artifact and diffing the output.
+
+Initialize the local replica from the canonical state (reads canonical via RPC at deploy time,
+then upgrades the local `ProtocolConfig` proxy via `initializeFromMigration` so the replica
+lands on canonical's `currentKmsContextId` instead of starting a fresh counter):
+
+```bash
+npx hardhat task:deployProtocolConfigFromCanonical \
+  --canonical-rpc-url https://mainnet.example \
+  --canonical-protocol-config-address 0x...
+```
+
+Later canonical rotations are mirrored manually with `defineNewKmsContext`, as described above.

@@ -6,6 +6,12 @@ import { task, types } from 'hardhat/config';
 import type { HardhatEthersHelpers, HardhatRuntimeEnvironment, TaskArguments } from 'hardhat/types';
 import path from 'path';
 
+import {
+  type SecondaryDeployArgs,
+  mirrorProtocolConfigFromCanonical,
+  readCanonicalSnapshot,
+} from './protocolConfigMirror';
+import { formatError } from './utils/formatError';
 import { CRS_COUNTER_BASE, KEY_COUNTER_BASE } from './utils/kmsGenerationConstants';
 import { getRequiredEnvVar } from './utils/loadVariables';
 
@@ -37,10 +43,6 @@ export function readExistingHostEnv(): Record<string, string> {
     return {};
   }
   return readHostEnv();
-}
-
-function formatError(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }
 
 export async function waitForTaskReady(
@@ -535,6 +537,101 @@ task('task:deployProtocolConfig').setAction(async function (_taskArguments: Task
   await waitForTaskReady(hre, 'task:assertProtocolConfigReady');
   console.log('ProtocolConfig code set successfully at address:', proxyAddress);
 });
+
+// Initializes the local (non-canonical) ProtocolConfig replica from the canonical chain's current
+// KMS context, read via RPC and pinned to one block. Reuses initializeFromMigration (originally the
+// Gateway -> Ethereum migration initializer) to land on the canonical chain's `currentKmsContextId`
+// rather than start a fresh counter. Equivalent of `task:deployProtocolConfigSecondary` on main.
+task(
+  'task:deployProtocolConfigFromCanonical',
+  'Upgrades the existing ProtocolConfig proxy from a canonical-chain snapshot.',
+)
+  .addParam(
+    'canonicalRpcUrl',
+    'RPC URL of the canonical host chain to read the current ProtocolConfig state from.',
+    undefined,
+    types.string,
+  )
+  .addParam(
+    'canonicalProtocolConfigAddress',
+    'Address of the ProtocolConfig contract on the canonical host chain.',
+    undefined,
+    types.string,
+  )
+  .setAction(async function ({ canonicalRpcUrl, canonicalProtocolConfigAddress }: SecondaryDeployArgs, hre) {
+    const canonicalProvider = new hre.ethers.JsonRpcProvider(canonicalRpcUrl);
+    const parsedEnv = readHostEnv();
+    const secondaryProxyAddress = parsedEnv.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
+    const { currentContextId, kmsNodes, canonicalChainId, canonicalBlockTag } = await mirrorProtocolConfigFromCanonical(
+      hre,
+      { canonicalProvider, canonicalProtocolConfigAddress, secondaryProxyAddress },
+    );
+    // On interval-mining networks, upgradeProxy can return before the tx is mined.
+    await waitForTaskReady(hre, 'task:assertProtocolConfigReady');
+    console.log(
+      `ProtocolConfig code set successfully at ${secondaryProxyAddress}, mirroring canonical chain ${canonicalChainId} context ${currentContextId} (block ${canonicalBlockTag}) with ${kmsNodes.length} KMS nodes.`,
+    );
+  });
+
+// Reads the canonical ProtocolConfig context at a pinned block and writes a JSON snapshot, without
+// deploying anything. DAO signers re-run this at the same block and diff the snapshot against
+// canonical before accepting secondary-host ownership.
+task(
+  'task:exportCanonicalProtocolConfig',
+  'Exports the canonical ProtocolConfig KMS context to a JSON snapshot for DAO review.',
+)
+  .addParam(
+    'canonicalRpcUrl',
+    'RPC URL of the canonical host chain to read ProtocolConfig from.',
+    undefined,
+    types.string,
+  )
+  .addParam(
+    'canonicalProtocolConfigAddress',
+    'Address of the ProtocolConfig contract on the canonical host chain.',
+    undefined,
+    types.string,
+  )
+  .addOptionalParam(
+    'blockNumber',
+    "Canonical block height to pin the snapshot to. Defaults to latest; pass the artifact's blockNumber to reproduce a prior export for DAO review.",
+    undefined,
+    types.int,
+  )
+  .addOptionalParam('out', 'Path to write the snapshot JSON.', 'canonical-protocol-config-snapshot.json', types.string)
+  .setAction(async function (
+    {
+      canonicalRpcUrl,
+      canonicalProtocolConfigAddress,
+      blockNumber,
+      out,
+    }: { canonicalRpcUrl: string; canonicalProtocolConfigAddress: string; blockNumber?: number; out: string },
+    hre,
+  ) {
+    const canonicalProvider = new hre.ethers.JsonRpcProvider(canonicalRpcUrl);
+    const snapshot = await readCanonicalSnapshot(hre, {
+      canonicalProvider,
+      canonicalProtocolConfigAddress,
+      blockTag: blockNumber,
+    });
+
+    const artifact = {
+      canonicalChainId: snapshot.canonicalChainId,
+      blockNumber: snapshot.canonicalBlockTag,
+      protocolConfigAddress: canonicalProtocolConfigAddress,
+      currentKmsContextId: snapshot.currentContextId,
+      kmsNodes: snapshot.kmsNodes,
+      thresholds: snapshot.thresholds,
+    };
+    fs.writeFileSync(
+      out,
+      JSON.stringify(artifact, (_, value) => (typeof value === 'bigint' ? value.toString() : value), 2),
+    );
+    console.log(
+      `Canonical ProtocolConfig snapshot written to ${out}: chain ${snapshot.canonicalChainId}, block ${snapshot.canonicalBlockTag}, context ${snapshot.currentContextId}, ${snapshot.kmsNodes.length} KMS nodes.`,
+    );
+    return artifact;
+  });
 
 ////////////////////////////////////////////////////////////////////////////////
 // KMSGeneration (host-side)
