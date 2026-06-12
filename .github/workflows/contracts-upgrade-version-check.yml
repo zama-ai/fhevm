@@ -8,6 +8,10 @@ on:
 # Compare PR bytecode against the latest stable release, not main.
 # This avoids unnecessary reinitializer bumps when multiple PRs modify
 # the same contract between releases. Keep in sync with *-upgrade-tests.yml.
+#
+# Only contracts the PR changed are enforced; violations on other contracts
+# (e.g. drift left on main after a release moved the baseline) are warnings.
+# The release process includes a manual check for such drift before tagging.
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -134,9 +138,22 @@ jobs:
           # Use PR's foundry.toml for both so compiler settings match (cbor_metadata, bytecode_hash)
           cp "$PACKAGE/foundry.toml" "baseline/$PACKAGE/foundry.toml"
 
+      - name: Determine contracts changed by this PR
+        if: env.PACKAGE_CHANGED == 'true'
+        id: changed
+        env:
+          PACKAGE: ${{ matrix.package }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          contracts="$(git diff --name-only "origin/$BASE_REF...HEAD" -- "$PACKAGE/contracts" \
+            | sed -n "s|^$PACKAGE/contracts/\([^/]*\)\.sol$|\1|p" | paste -sd, -)"
+          printf 'contracts=%s\n' "$contracts" >> "$GITHUB_OUTPUT"
+          echo "Changed contracts: ${contracts:-none}"
+
       - name: Run upgrade version check
         if: env.PACKAGE_CHANGED == 'true'
         env:
           PACKAGE: ${{ matrix.package }}
           UPGRADE_CHECK_BASE_REF: ${{ steps.baseline.outputs.tag }}
-        run: bun ci/upgrade-check/check.ts "baseline/$PACKAGE" "$PACKAGE"
+          CHANGED_CONTRACTS: ${{ steps.changed.outputs.contracts }}
+        run: bun ci/upgrade-check/check.ts "baseline/$PACKAGE" "$PACKAGE" --changed-contracts "$CHANGED_CONTRACTS"
