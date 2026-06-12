@@ -89,7 +89,7 @@ Current mapping:
 As long as this invariant holds, the mapping can be expressed as:
 
 ```ts
-protocolVersion = `0.${aclVersion.minor + 9}.0`
+protocolVersion = `0.${aclVersion.minor + 9}.0`;
 ```
 
 The resolver should still fail loudly if the `ACL` version shape stops matching this assumption.
@@ -305,7 +305,66 @@ async function signDecryptionPermit(parameters): Promise<SignedDecryptionPermit>
 }
 ```
 
-The exact version check should not be exposed to ordinary dApp code.
+## Existing API
+
+```ts
+type SignDecryptionPermitCommonParameters = {
+  readonly contractAddresses: readonly string[];
+  readonly startTimestamp: number;
+  readonly durationDays: number;
+  readonly signerAddress: string;
+  readonly signer: NativeSigner;
+  readonly transportKeyPair: TransportKeyPair;
+};
+
+export type SignSelfDecryptionPermitParameters = SignDecryptionPermitCommonParameters & {
+  readonly delegatorAddress?: undefined;
+};
+
+export type SignDelegatedDecryptionPermitParameters = SignDecryptionPermitCommonParameters & {
+  readonly delegatorAddress: string;
+};
+
+export type SignDecryptionPermitParameters =
+  | SignSelfDecryptionPermitParameters
+  | SignDelegatedDecryptionPermitParameters;
+```
+
+## New API
+
+To avoid as much breaking changes as possible, we could introduce:
+
+```ts
+type SignDecryptionPermitParameters = {
+  readonly contractAddresses: readonly string[];
+  readonly startTimestamp: number;
+  // Conversion to seconds if v14 or later
+  readonly durationDays: number;
+  // An unsigned integer value.
+  // Missing: what is the max supported value ?
+  // (See backend rust code for more info on that)
+  readonly durationSeconds?: number | bigint;
+  readonly signerAddress: string;
+  readonly signer: NativeSigner;
+  // `delegatorAddress` could be renamed as `encryptedDataOwnerAddress`
+  // to follow the new `ownerAddress` naming in unified EIP712
+  readonly delegatorAddress?: string | undefined;
+  readonly transportKeyPair: TransportKeyPair;
+};
+```
+
+Type validation should be performed according to Protocol Version which can be accessed
+using:
+
+`client.protocolVersion` or `context.protocolVersion`
+
+The `protcolVersion` property is now resolved at client `init` time.
+
+The files impacted:
+
+- sdk/js-sdk/src/core/kms/SignedDecryptionPermit-p.ts
+- sdk/js-sdk/src/core/actions/chain/parseSignedDecryptionPermit.ts
+- sdk/js-sdk/src/core/actions/base/signDecryptionPermit.ts
 
 ### Versioned Helpers
 
@@ -320,7 +379,7 @@ Versioned helpers are useful for:
 They should not dynamically switch behavior.
 
 ```ts
-signDecryptionPermitV1(parameters)
+signDecryptionPermitV1(parameters);
 ```
 
 Always produces the v13-and-below permit format:
@@ -329,7 +388,7 @@ Always produces the v13-and-below permit format:
 - `KmsDelegatedUserDecryptEip712`
 
 ```ts
-signDecryptionPermitV2(parameters)
+signDecryptionPermitV2(parameters);
 ```
 
 Always produces the v14 unified permit format:
@@ -341,9 +400,7 @@ Always produces the v14 unified permit format:
 The protocol-aware return type can be a discriminated union:
 
 ```ts
-type SignedDecryptionPermit =
-  | SignedDecryptionPermitV1
-  | SignedDecryptionPermitV2;
+type SignedDecryptionPermit = SignedDecryptionPermitV1 | SignedDecryptionPermitV2;
 ```
 
 Each permit should expose a stable discriminator:
@@ -377,7 +434,7 @@ type SignDecryptionPermitParameters = {
 Default:
 
 ```ts
-protocolVersion: 'auto'
+protocolVersion: 'auto';
 ```
 
 If this override is added, it should be documented as an advanced option. The normal user path should remain automatic.
@@ -424,9 +481,7 @@ This conversion can live in an internal helper:
 function resolveDecryptionPermitDuration(
   parameters: DecryptionPermitDuration,
   protocolVersion: string,
-):
-  | { readonly durationDays: number }
-  | { readonly durationSeconds: bigint } {
+): { readonly durationDays: number } | { readonly durationSeconds: bigint } {
   if ('durationDays' in parameters) {
     if (isSemverStrictlyBefore(protocolVersion, '0.14.0')) {
       return { durationDays: parameters.durationDays };
@@ -460,14 +515,14 @@ This helper should probably stay internal unless users need duration normalizati
 The unversioned function is intent-based:
 
 ```ts
-signDecryptionPermit
+signDecryptionPermit;
 ```
 
 The versioned functions are format-based:
 
 ```ts
-signDecryptionPermitV1
-signDecryptionPermitV2
+signDecryptionPermitV1;
+signDecryptionPermitV2;
 ```
 
 Once published, a versioned function's behavior should never change. Only the internal dispatch behavior of `signDecryptionPermit` may evolve as new protocol versions are introduced.
