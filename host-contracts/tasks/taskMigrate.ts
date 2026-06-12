@@ -5,6 +5,7 @@ import { task, types } from 'hardhat/config';
 import type { HardhatRuntimeEnvironment } from 'hardhat/types';
 import path from 'path';
 
+import { parseSnapshotArtifact } from './protocolConfigMirror';
 import {
   assertContractMatchesVersionPrefix,
   deployEmptyUUPS,
@@ -219,6 +220,49 @@ task(
     // The bootstrap task may have updated addresses/FHEVMHostAddresses.sol, so rebuild
     await hre.run('compile:specific', { contract: 'contracts' });
     const decodedArgs = buildProtocolConfigInitializeFromMigrationArgs();
+    const artifact = await hre.artifacts.readArtifact('ProtocolConfig');
+    const innerFunctionSignature = getFunctionFragment(artifact.abi, 'initializeFromMigration').format('sighash');
+    const preparedUpgrade = await prepareDaoUpgrade(hre, {
+      proxyAddress,
+      contractName: 'ProtocolConfig',
+      innerFunctionSignature,
+      decodedArgs,
+    });
+
+    printPreparedDaoUpgrade(preparedUpgrade);
+    if (verifyContract) {
+      await verifyPreparedImplementation(hre, preparedUpgrade, 'contracts/ProtocolConfig.sol:ProtocolConfig');
+    }
+    return preparedUpgrade;
+  });
+
+// DAO path for initializing a non-canonical ProtocolConfig replica from the canonical chain
+// (Ethereum). Consumes a reviewed task:exportCanonicalProtocolConfig artifact — not a live RPC
+// read — so the DAO executes exactly the state its signers reproduced and diffed. Devnet
+// equivalent: task:deployProtocolConfigFromCanonical.
+task(
+  'task:prepareDeployProtocolConfigFromCanonical',
+  'Deploys a ProtocolConfig implementation and prints DAO upgrade calldata from a reviewed canonical snapshot artifact',
+)
+  .addParam(
+    'snapshot',
+    'Path to the reviewed task:exportCanonicalProtocolConfig artifact to encode into the DAO payload.',
+    undefined,
+    types.string,
+  )
+  .addOptionalParam(
+    'verifyContract',
+    'Verify new implementation on Etherscan (for eg if deploying on Sepolia or Mainnet)',
+    true,
+    types.boolean,
+  )
+  .setAction(async function ({ snapshot: snapshotPath, verifyContract }, hre) {
+    const parsedEnv = readHostEnv();
+    const proxyAddress = parsedEnv.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
+    // The bootstrap task may have updated addresses/FHEVMHostAddresses.sol, so rebuild
+    await hre.run('compile:specific', { contract: 'contracts' });
+    const { snapshot } = parseSnapshotArtifact(fs.readFileSync(snapshotPath, 'utf-8'));
+    const decodedArgs = [snapshot.currentContextId, snapshot.kmsNodes, snapshot.thresholds];
     const artifact = await hre.artifacts.readArtifact('ProtocolConfig');
     const innerFunctionSignature = getFunctionFragment(artifact.abi, 'initializeFromMigration').format('sighash');
     const preparedUpgrade = await prepareDaoUpgrade(hre, {

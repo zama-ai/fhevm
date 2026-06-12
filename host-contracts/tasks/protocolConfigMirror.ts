@@ -5,11 +5,6 @@ import type { ProtocolConfig } from '../types';
 import { formatError } from './utils/formatError';
 import { getRequiredEnvVar } from './utils/loadVariables';
 
-export type SecondaryDeployArgs = {
-  canonicalRpcUrl: string;
-  canonicalProtocolConfigAddress: string;
-};
-
 export type KmsNode = {
   txSenderAddress: string;
   signerAddress: string;
@@ -112,10 +107,22 @@ export async function mirrorProtocolConfigFromCanonical(
     secondaryProxyAddress: string;
   },
 ): Promise<CanonicalSnapshot> {
-  const { ethers, upgrades } = hre;
   const { canonicalProvider, canonicalProtocolConfigAddress, secondaryProxyAddress } = options;
 
   const snapshot = await readCanonicalSnapshot(hre, { canonicalProvider, canonicalProtocolConfigAddress });
+  await applyCanonicalSnapshot(hre, { snapshot, secondaryProxyAddress });
+
+  return snapshot;
+}
+
+// Upgrades the secondary ProtocolConfig proxy and initializes it from an already-read snapshot —
+// either freshly read (mirrorProtocolConfigFromCanonical) or parsed from a reviewed export artifact.
+export async function applyCanonicalSnapshot(
+  hre: HardhatRuntimeEnvironment,
+  options: { snapshot: CanonicalSnapshot; secondaryProxyAddress: string },
+): Promise<void> {
+  const { ethers, upgrades } = hre;
+  const { snapshot, secondaryProxyAddress } = options;
   const { currentContextId, kmsNodes, thresholds, canonicalChainId, canonicalBlockTag } = snapshot;
   console.log(
     `Mirroring ProtocolConfig from canonical chain ${canonicalChainId} at block ${canonicalBlockTag}: contextId=${currentContextId}, kmsNodes=${kmsNodes.length}.`,
@@ -133,6 +140,87 @@ export async function mirrorProtocolConfigFromCanonical(
       args: [currentContextId, kmsNodes, thresholds],
     },
   });
+}
 
-  return snapshot;
+// The JSON shape written by task:exportCanonicalProtocolConfig. Bigints are serialized as strings
+// so DAO signers can diff artifacts as plain text.
+export type CanonicalSnapshotArtifact = {
+  canonicalChainId: string;
+  blockNumber: number;
+  protocolConfigAddress: string;
+  currentKmsContextId: string;
+  kmsNodes: KmsNode[];
+  thresholds: { publicDecryption: string; userDecryption: string; kmsGen: string; mpc: string };
+};
+
+export function buildSnapshotArtifact(
+  snapshot: CanonicalSnapshot,
+  protocolConfigAddress: string,
+): CanonicalSnapshotArtifact {
+  return {
+    canonicalChainId: snapshot.canonicalChainId.toString(),
+    blockNumber: snapshot.canonicalBlockTag,
+    protocolConfigAddress,
+    currentKmsContextId: snapshot.currentContextId.toString(),
+    kmsNodes: snapshot.kmsNodes,
+    thresholds: {
+      publicDecryption: snapshot.thresholds.publicDecryption.toString(),
+      userDecryption: snapshot.thresholds.userDecryption.toString(),
+      kmsGen: snapshot.thresholds.kmsGen.toString(),
+      mpc: snapshot.thresholds.mpc.toString(),
+    },
+  };
+}
+
+export function parseSnapshotArtifact(raw: string): {
+  snapshot: CanonicalSnapshot;
+  protocolConfigAddress: string;
+} {
+  let artifact: CanonicalSnapshotArtifact;
+  try {
+    artifact = JSON.parse(raw);
+  } catch (err) {
+    throw new Error(`Snapshot artifact is not valid JSON (${formatError(err)}).`);
+  }
+
+  const requireBigint = (field: string, value: unknown): bigint => {
+    if (typeof value !== 'string' || !/^\d+$/.test(value)) {
+      throw new Error(`Snapshot artifact field "${field}" must be a decimal string, got ${JSON.stringify(value)}.`);
+    }
+    return BigInt(value);
+  };
+
+  if (typeof artifact.blockNumber !== 'number') {
+    throw new Error(
+      `Snapshot artifact field "blockNumber" must be a number, got ${JSON.stringify(artifact.blockNumber)}.`,
+    );
+  }
+  if (typeof artifact.protocolConfigAddress !== 'string' || artifact.protocolConfigAddress.length === 0) {
+    throw new Error('Snapshot artifact field "protocolConfigAddress" is missing.');
+  }
+  if (!Array.isArray(artifact.kmsNodes) || artifact.kmsNodes.length === 0) {
+    throw new Error('Snapshot artifact field "kmsNodes" must be a non-empty array.');
+  }
+  for (const [index, node] of artifact.kmsNodes.entries()) {
+    for (const field of ['txSenderAddress', 'signerAddress', 'ipAddress', 'storageUrl'] as const) {
+      if (typeof node?.[field] !== 'string') {
+        throw new Error(`Snapshot artifact field "kmsNodes[${index}].${field}" is missing.`);
+      }
+    }
+  }
+
+  const snapshot: CanonicalSnapshot = {
+    currentContextId: requireBigint('currentKmsContextId', artifact.currentKmsContextId),
+    kmsNodes: artifact.kmsNodes,
+    thresholds: {
+      publicDecryption: requireBigint('thresholds.publicDecryption', artifact.thresholds?.publicDecryption),
+      userDecryption: requireBigint('thresholds.userDecryption', artifact.thresholds?.userDecryption),
+      kmsGen: requireBigint('thresholds.kmsGen', artifact.thresholds?.kmsGen),
+      mpc: requireBigint('thresholds.mpc', artifact.thresholds?.mpc),
+    },
+    canonicalChainId: requireBigint('canonicalChainId', artifact.canonicalChainId),
+    canonicalBlockTag: artifact.blockNumber,
+  };
+
+  return { snapshot, protocolConfigAddress: artifact.protocolConfigAddress };
 }

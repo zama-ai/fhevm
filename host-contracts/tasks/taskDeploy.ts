@@ -7,8 +7,10 @@ import type { HardhatEthersHelpers, HardhatRuntimeEnvironment, TaskArguments } f
 import path from 'path';
 
 import {
-  type SecondaryDeployArgs,
+  applyCanonicalSnapshot,
+  buildSnapshotArtifact,
   mirrorProtocolConfigFromCanonical,
+  parseSnapshotArtifact,
   readCanonicalSnapshot,
 } from './protocolConfigMirror';
 import { formatError } from './utils/formatError';
@@ -546,33 +548,63 @@ task(
   'task:deployProtocolConfigFromCanonical',
   'Upgrades the existing ProtocolConfig proxy from a canonical-chain snapshot.',
 )
-  .addParam(
+  .addOptionalParam(
+    'snapshot',
+    'Path to a reviewed task:exportCanonicalProtocolConfig artifact to apply. When set, canonical RPC access is not needed and exactly the reviewed state is deployed.',
+    undefined,
+    types.string,
+  )
+  .addOptionalParam(
     'canonicalRpcUrl',
-    'RPC URL of the canonical host chain to read the current ProtocolConfig state from.',
+    'RPC URL of the canonical host chain to read the current ProtocolConfig state from. Required without --snapshot.',
     undefined,
     types.string,
   )
-  .addParam(
+  .addOptionalParam(
     'canonicalProtocolConfigAddress',
-    'Address of the ProtocolConfig contract on the canonical host chain.',
+    'Address of the ProtocolConfig contract on the canonical host chain. Required without --snapshot.',
     undefined,
     types.string,
   )
-  .setAction(async function ({ canonicalRpcUrl, canonicalProtocolConfigAddress }: SecondaryDeployArgs, hre) {
+  .setAction(async function (
+    {
+      snapshot: snapshotPath,
+      canonicalRpcUrl,
+      canonicalProtocolConfigAddress,
+    }: { snapshot?: string; canonicalRpcUrl?: string; canonicalProtocolConfigAddress?: string },
+    hre,
+  ) {
+    if (!snapshotPath && !(canonicalRpcUrl && canonicalProtocolConfigAddress)) {
+      throw new Error(
+        'Pass either --snapshot <artifact.json> (reviewed export) or both --canonical-rpc-url and --canonical-protocol-config-address (live read).',
+      );
+    }
+
     // ProtocolConfig embeds aclAdd from addresses/FHEVMHostAddresses.sol at compile time; a stale
     // artifact would deploy bytecode authorized against the wrong ACL (same as FromMigration).
     await hre.run('compile:specific', { contract: 'contracts' });
-    const canonicalProvider = new hre.ethers.JsonRpcProvider(canonicalRpcUrl);
     const parsedEnv = readHostEnv();
     const secondaryProxyAddress = parsedEnv.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
-    const { currentContextId, kmsNodes, canonicalChainId, canonicalBlockTag } = await mirrorProtocolConfigFromCanonical(
-      hre,
-      { canonicalProvider, canonicalProtocolConfigAddress, secondaryProxyAddress },
-    );
+
+    let applied;
+    if (snapshotPath) {
+      const { snapshot } = parseSnapshotArtifact(fs.readFileSync(snapshotPath, 'utf-8'));
+      console.log(`Applying reviewed canonical snapshot from ${snapshotPath}.`);
+      await applyCanonicalSnapshot(hre, { snapshot, secondaryProxyAddress });
+      applied = snapshot;
+    } else {
+      const canonicalProvider = new hre.ethers.JsonRpcProvider(canonicalRpcUrl);
+      applied = await mirrorProtocolConfigFromCanonical(hre, {
+        canonicalProvider,
+        canonicalProtocolConfigAddress: canonicalProtocolConfigAddress!,
+        secondaryProxyAddress,
+      });
+    }
+
     // On interval-mining networks, upgradeProxy can return before the tx is mined.
     await waitForTaskReady(hre, 'task:assertProtocolConfigReady');
     console.log(
-      `ProtocolConfig code set successfully at ${secondaryProxyAddress}, mirroring canonical chain ${canonicalChainId} context ${currentContextId} (block ${canonicalBlockTag}) with ${kmsNodes.length} KMS nodes.`,
+      `ProtocolConfig code set successfully at ${secondaryProxyAddress}, mirroring canonical chain ${applied.canonicalChainId} context ${applied.currentContextId} (block ${applied.canonicalBlockTag}) with ${applied.kmsNodes.length} KMS nodes.`,
     );
   });
 
@@ -621,18 +653,8 @@ task(
       blockTag: blockNumber,
     });
 
-    const artifact = {
-      canonicalChainId: snapshot.canonicalChainId,
-      blockNumber: snapshot.canonicalBlockTag,
-      protocolConfigAddress: canonicalProtocolConfigAddress,
-      currentKmsContextId: snapshot.currentContextId,
-      kmsNodes: snapshot.kmsNodes,
-      thresholds: snapshot.thresholds,
-    };
-    fs.writeFileSync(
-      out,
-      JSON.stringify(artifact, (_, value) => (typeof value === 'bigint' ? value.toString() : value), 2),
-    );
+    const artifact = buildSnapshotArtifact(snapshot, canonicalProtocolConfigAddress);
+    fs.writeFileSync(out, JSON.stringify(artifact, null, 2));
     console.log(
       `Canonical ProtocolConfig snapshot written to ${out}: chain ${snapshot.canonicalChainId}, block ${snapshot.canonicalBlockTag}, context ${snapshot.currentContextId}, ${snapshot.kmsNodes.length} KMS nodes.`,
     );
