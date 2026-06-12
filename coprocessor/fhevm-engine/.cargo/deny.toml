@@ -135,6 +135,16 @@ license-files = [
     { path = "LICENSE", hash = 0xbd0eed23},
 ]
 
+# solana-config-interface 2.0.0 ships an Apache-2.0 LICENSE file but leaves the
+# `license` field empty in its Cargo.toml, so cargo-deny cannot infer the SPDX
+# expression. Pulled in transitively via solana-account-decoder -> solana-client.
+[[licenses.clarify]]
+crate = "solana-config-interface"
+expression = "Apache-2.0"
+license-files = [
+    { path = "LICENSE", hash = 0xd0891cfa },
+]
+
 [licenses.private]
 # If true, ignores workspace crates that aren't published, or are only
 # published to private registries.
