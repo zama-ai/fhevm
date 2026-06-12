@@ -60,9 +60,10 @@ const TEST_PROFILE_NAMES = [
   "rollout-standard",
   "standard",
 ].sort();
-// The below-quorum probe is expected to never finalize, so it is killed after this bound and the
-// timeout (or any non-pass) is read as "the 2t+1 quorum held". Pass-expected probes use the same
-// streamed, unbounded invocation as the normal user-decryption profile (runWithHeartbeat).
+// The below-quorum probe is expected to hang waiting for KMS responses, so it is killed after
+// this bound. Only a timeout — or a run that demonstrably executed the tests and failed — is
+// read as "the 2t+1 quorum held"; any other failure is an infra error, not a quorum proof.
+// Pass-expected probes use the same invocation, streamed and unbounded (runNamedE2e).
 const QUORUM_FLOOR_TIMEOUT_MS = 300_000;
 const ZERO_TESTS_RE = /\b0 passing\b/;
 // Mocha prints "N pending" when tests exist but were skipped. If any are pending,
@@ -432,16 +433,18 @@ const assertMatchedTests = (output: string, label: string) => {
   }
 };
 
+/** The canonical in-container argv for a named e2e grep. The kms-generation quorum probes
+ * reuse it so they can never drift from the invocation they are compared against. */
+const namedE2eArgs = (options: Pick<TestOptions, "network" | "noHardhatCompile">, grep: string) =>
+  buildTestContainerArgs(runTestsArgs({ ...options, verbose: false, parallel: false, grep }));
+
 /** Runs a narrow e2e grep inside the test-suite container. */
 const runNamedE2e = async (
   options: Pick<TestOptions, "network" | "noHardhatCompile">,
   grep: string,
   label: string,
 ) => {
-  const result = await runWithHeartbeat(
-    buildTestContainerArgs(runTestsArgs({ ...options, verbose: false, parallel: false, grep })),
-    label,
-  );
+  const result = await runWithHeartbeat(namedE2eArgs(options, grep), label);
   assertMatchedTests(result.stdout + result.stderr, label);
 };
 
@@ -841,34 +844,53 @@ export const test = async (testName: string | undefined, options: TestOptions) =
 
   // Runs the user-decryption grep and reports pass/fail instead of throwing, so the
   // kms-generation quorum probes can assert both success and (below quorum) non-success.
+  // Both branches run the canonical user-decryption invocation (namedE2eArgs); only the
+  // execution differs — streamed and unbounded when a pass is expected, bounded when the
+  // decryption is expected to hang below quorum.
   const runUserDecryption: DecryptionRunner = async (label, decryptOpts) => {
     const grep = TEST_GREP["user-decryption"];
     if (!grep) {
       throw new PreflightError("kms-generation: missing user-decryption grep pattern");
     }
     console.log(`[test] ${label}`);
-    if (decryptOpts?.expectFailure) {
-      // Below quorum: bound the wait and treat a timeout (or any non-pass) as the expected outcome.
-      // Print the captured output so a wrongly-successful run is debuggable.
-      const argv = buildTestContainerArgs(runTestsArgs({ ...options, verbose: false, parallel: false, grep }));
-      const result = await run(argv, { allowFailure: true, timeoutMs: QUORUM_FLOOR_TIMEOUT_MS });
-      if (result.stdout.trim()) console.log(result.stdout);
-      if (result.stderr.trim()) console.log(result.stderr);
-      return result.code === 0 && matchedTests(`${result.stdout}\n${result.stderr}`);
+    if (!decryptOpts?.expectFailure) {
+      try {
+        await runNamedE2e(options, grep, label);
+        return true;
+      } catch (error) {
+        console.log(`[kms-generation] decryption probe reported failure: ${formatCliError(error) ?? "unknown error"}`);
+        return false;
+      }
     }
-    // Pass-expected: identical streamed invocation to the normal user-decryption profile
-    // (runWithHeartbeat throws on non-zero), wrapped to report pass/fail instead of throwing.
-    try {
-      const result = await runWithHeartbeat(
-        buildTestContainerArgs(["sh", "-lc", runTestsCommand({ ...options, parallel: false, grep })]),
-        label,
+    // Below quorum: bound the wait. Print the captured output so a wrongly-successful run
+    // is debuggable.
+    const result = await run(namedE2eArgs(options, grep), { allowFailure: true, timeoutMs: QUORUM_FLOOR_TIMEOUT_MS });
+    if (result.stdout.trim()) console.log(result.stdout);
+    if (result.stderr.trim()) console.log(result.stderr);
+    const output = `${result.stdout}\n${result.stderr}`;
+    if (result.code === 0 && matchedTests(output)) {
+      return true; // decrypted below quorum — the caller turns this into a hard failure
+    }
+    const timedOut = result.code === 124;
+    if (timedOut) {
+      // The timeout only kills the local `docker exec` client; best-effort-reap the test run
+      // still going inside the container so it cannot overlap the recovery probe. The bracketed
+      // patterns avoid pkill matching its own command line.
+      await run(
+        buildTestContainerArgs(["sh", "-lc", "pkill -f 'run-tests[.]sh' 2>/dev/null; pkill -f '[h]ardhat' 2>/dev/null; true"]),
+        { allowFailure: true },
       );
-      assertMatchedTests(result.stdout + result.stderr, label);
-      return true;
-    } catch (error) {
-      console.log(`[kms-generation] decryption probe reported failure: ${formatCliError(error) ?? "unknown error"}`);
-      return false;
     }
+    // "Did not decrypt" only proves the quorum when the probe demonstrably ran: it timed out
+    // mid-decryption, or mocha executed the matched tests and they failed. Anything else
+    // (docker error, missing container, zero tests matched) is an infra problem — fail loudly
+    // instead of reading it as "the quorum held".
+    if (!timedOut && !/\b[1-9]\d* failing\b/.test(output)) {
+      throw new PreflightError(
+        `${label}: probe did not run to a decryption verdict (exit ${result.code}); cannot interpret the failure as a quorum proof`,
+      );
+    }
+    return false;
   };
 
   const runProfile = async (name: string) => {
