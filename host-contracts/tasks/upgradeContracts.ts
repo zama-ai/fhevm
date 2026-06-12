@@ -399,6 +399,56 @@ task('task:prepareUpgradeKMSVerifier')
     await prepareUpgradeContract('KMSVerifier', 'KMS_VERIFIER_CONTRACT_ADDRESS', taskArgs, hre);
   });
 
+task('task:upgradeProtocolConfig')
+  .addParam(
+    'currentImplementation',
+    'The currently deployed implementation solidity contract path and name, eg: contracts/ProtocolConfig.sol:ProtocolConfig',
+  )
+  .addParam(
+    'newImplementation',
+    'The new implementation solidity contract path and name, eg: examples/ProtocolConfigUpgradedExample.sol:ProtocolConfigUpgradedExample',
+  )
+  .addOptionalParam(
+    'useInternalProxyAddress',
+    'If proxy address from the /addresses directory should be used',
+    false,
+    types.boolean,
+  )
+  .addOptionalParam(
+    'verifyContract',
+    'Verify new implementation on Etherscan (for eg if deploying on Sepolia or Mainnet)',
+    true,
+    types.boolean,
+  )
+  .setAction(async function (taskArgs: TaskArguments, hre) {
+    await upgradeContract('ProtocolConfig', 'PROTOCOL_CONFIG_CONTRACT_ADDRESS', taskArgs, hre);
+  });
+
+task('task:prepareUpgradeProtocolConfig')
+  .addParam(
+    'currentImplementation',
+    'The currently deployed implementation solidity contract path and name, eg: contracts/ProtocolConfig.sol:ProtocolConfig',
+  )
+  .addParam(
+    'newImplementation',
+    'The new implementation solidity contract path and name, eg: contracts/ProtocolConfig.sol:ProtocolConfig',
+  )
+  .addOptionalParam(
+    'useInternalProxyAddress',
+    'If proxy address from the /addresses directory should be used',
+    false,
+    types.boolean,
+  )
+  .addOptionalParam(
+    'verifyContract',
+    'Verify new implementation on Etherscan (for eg if deploying on Sepolia or Mainnet)',
+    true,
+    types.boolean,
+  )
+  .setAction(async function (taskArgs: TaskArguments, hre) {
+    await prepareUpgradeContract('ProtocolConfig', 'PROTOCOL_CONFIG_CONTRACT_ADDRESS', taskArgs, hre);
+  });
+
 task('task:upgradeInputVerifier')
   .addParam(
     'currentImplementation',
