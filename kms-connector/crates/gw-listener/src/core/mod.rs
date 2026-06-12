@@ -8,3 +8,4 @@ pub use config::Config;
 pub use ethereum::EthereumListener;
 pub use gateway::GatewayListener;
 pub use gw_listener::EventListener;
+pub use publish::publish_context_and_epoch;

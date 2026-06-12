@@ -104,6 +104,12 @@ contract ProtocolConfigMock {
 
     event EpochActivationConfirmation(uint256 indexed epochId, address indexed signer, bytes32 dataHash);
 
+    event KmsContextDestroyed(uint256 indexed kmsContextId);
+
+    function destroyKmsContext(uint256 kmsContextId) external {
+        emit KmsContextDestroyed(kmsContextId);
+    }
+
     function confirmKmsContextCreation(uint256 kmsContextId) external {
         emit KmsContextCreationConfirmation(kmsContextId, msg.sender, true, true);
     }

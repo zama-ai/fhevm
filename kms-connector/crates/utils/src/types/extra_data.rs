@@ -16,6 +16,7 @@ pub const EXTRA_DATA_V2_LENGTH: usize = 65;
 /// Parsed extra_data contents.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExtraData {
+    // TODO: Remove `Option` as soon as the relayer-sdk 0.4.2 is deprecated.
     pub context_id: Option<U256>,
     pub epoch_id: Option<U256>,
 }
@@ -36,7 +37,8 @@ pub struct ExtraData {
 /// - Bytes 33..65: epoch ID (32 bytes, big-endian U256)
 /// - Bytes 65..: optional additional data (ignored)
 ///
-/// Version `0x01` → epoch_id is `None` (caller should fall back to DEFAULT_EPOCH_ID).
+/// Version `0x01` → epoch_id is `None` (downstream consumers fall back to
+/// [`crate::types::DEFAULT_EPOCH_ID`]).
 /// Empty or `[0x00]` → no explicit context and no epoch.
 pub fn parse_extra_data(extra_data: &[u8]) -> anyhow::Result<ExtraData> {
     if extra_data.is_empty() || extra_data == [0x00] {

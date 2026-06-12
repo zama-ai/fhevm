@@ -1,3 +1,4 @@
+use crate::types::DEFAULT_EPOCH_ID;
 use alloy::primitives::U256;
 use sqlx::{Pool, Postgres, types::chrono::Utc};
 use testcontainers::{ContainerAsync, GenericImage, ImageExt, core::WaitFor, runners::AsyncRunner};
@@ -52,12 +53,13 @@ impl DbInstance {
             .await?;
         info!("KMS Connector DB ready!");
 
-        info!("Inserting context #{TESTING_KMS_CONTEXT} for tests...");
+        info!("Inserting context #{TESTING_KMS_CONTEXT}, epoch #{DEFAULT_EPOCH_ID}) for tests...");
         let now = Utc::now();
         sqlx::query!(
-            "INSERT INTO kms_context(id, is_valid, created_at, updated_at)
-            VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
+            "INSERT INTO kms_context(id, epoch_id, is_valid, created_at, updated_at)
+            VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING",
             TESTING_KMS_CONTEXT.as_le_slice(),
+            DEFAULT_EPOCH_ID.as_le_slice(),
             true,
             now,
             now,
@@ -75,4 +77,3 @@ impl DbInstance {
 }
 
 pub const TESTING_KMS_CONTEXT: U256 = U256::ONE;
-pub const TESTING_KMS_EPOCH: U256 = U256::ONE;

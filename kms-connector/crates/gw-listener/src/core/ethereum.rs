@@ -1,16 +1,19 @@
 use crate::{
     core::{
         Config,
-        publish::{ChainName, publish_batch, publish_context_and_epoch},
+        publish::{
+            ChainName, EthereumEventAction, publish_context_and_epoch, publish_ethereum_batch,
+        },
     },
     monitoring::metrics::{EVENT_LISTENING_ERRORS, EVENT_RECEIVED_COUNTER},
 };
 use alloy::{
     eips::BlockNumberOrTag,
     network::Ethereum,
+    primitives::B256,
     providers::Provider,
     rpc::types::{Filter, Log},
-    sol_types::SolEventInterface,
+    sol_types::{SolEvent, SolEventInterface},
 };
 use anyhow::anyhow;
 use connector_utils::{
@@ -18,8 +21,13 @@ use connector_utils::{
     types::{KMS_CONTEXT_COUNTER_BASE, ProtocolEvent, db::EventType},
 };
 use fhevm_host_bindings::{
-    kms_generation::KMSGeneration::KMSGenerationEvents,
-    protocol_config::ProtocolConfig::{self, ProtocolConfigEvents, ProtocolConfigInstance},
+    kms_generation::KMSGeneration::{
+        CrsgenRequest, KMSGenerationEvents, KeygenRequest, PrepKeygenRequest,
+    },
+    protocol_config::ProtocolConfig::{
+        self, KmsContextDestroyed, NewKmsContext, NewKmsEpoch, ProtocolConfigEvents,
+        ProtocolConfigInstance,
+    },
 };
 use sqlx::{Pool, Postgres};
 use tokio::select;
@@ -27,15 +35,15 @@ use tokio_util::sync::CancellationToken;
 use tracing::{error, info, info_span, warn};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
-/// Ethereum-side events polled by `EthereumListener` — KMSGeneration + ProtocolConfig combined.
-/// Used to build the multi-address `eth_getLogs` filter; the polling cursor is per-chain
-/// (`ChainName::Ethereum`), not per-event-type.
-const ETHEREUM_EVENT_TYPES: [EventType; 5] = [
-    EventType::PrepKeygenRequest,
-    EventType::KeygenRequest,
-    EventType::CrsgenRequest,
-    EventType::NewKmsContext,
-    EventType::NewKmsEpoch,
+/// Ethereum-side events signatures polled by `EthereumListener`.
+/// Used to build the multi-address `eth_getLogs` filter.
+const ETHEREUM_EVENT_SIGNATURES: [B256; 6] = [
+    PrepKeygenRequest::SIGNATURE_HASH,
+    KeygenRequest::SIGNATURE_HASH,
+    CrsgenRequest::SIGNATURE_HASH,
+    NewKmsContext::SIGNATURE_HASH,
+    NewKmsEpoch::SIGNATURE_HASH,
+    KmsContextDestroyed::SIGNATURE_HASH,
 ];
 
 /// Struct monitoring and storing Ethereum's keygen events.
@@ -94,7 +102,8 @@ where
 
     /// Stores the active KMS context and epoch found on-chain in the database.
     ///
-    /// TODO: better init/update of this table (https://github.com/zama-ai/fhevm-internal/issues/1467)
+    /// Only the currently active pair is seeded. Other valid pairs are validated on demand by the
+    /// kms-worker against `ProtocolConfig` and cached back in the `kms_context` table.
     pub async fn store_on_chain_context(&self) -> anyhow::Result<()> {
         let active = self
             .protocol_config_contract
@@ -107,16 +116,12 @@ where
 
     /// Polling loop to listen to [`KMSGeneration`] and [`ProtocolConfig`] events on Ethereum.
     async fn run_poll_loop(&self) -> anyhow::Result<()> {
-        let event_signatures = ETHEREUM_EVENT_TYPES
-            .iter()
-            .map(|e| e.signature_hash())
-            .collect::<Vec<_>>();
         let base_filter = Filter::new()
             .address(vec![
                 self.config.kms_generation_contract.address,
                 self.config.protocol_config_contract.address,
             ])
-            .event_signature(event_signatures);
+            .event_signature(ETHEREUM_EVENT_SIGNATURES.to_vec());
 
         let mut from_block = match self.config.kms_operation_from_block_number {
             Some(from_block) => {
@@ -185,18 +190,21 @@ where
         let filter = base_filter.from_block(from_block).to_block(to_block);
 
         let logs = self.provider.get_logs(&filter).await?;
-        let events = self.prepare_events(logs)?;
-        publish_batch(&self.db_pool, events, ChainName::Ethereum, to_block).await?;
+        let actions = self.prepare_actions(logs)?;
+        publish_ethereum_batch(&self.db_pool, actions, to_block).await?;
 
         Ok((to_block.saturating_add(1), to_block < finalized_block))
     }
 
-    /// Decodes logs and prepares `ProtocolEvent` structs with OTLP context and metrics.
-    fn prepare_events(&self, logs: Vec<Log>) -> anyhow::Result<Vec<ProtocolEvent>> {
+    /// Decodes logs and prepares the [`EthereumEventAction`] to perform for each of them.
+    ///
+    /// Most events are stored in DB for the kms-worker. `KmsContextDestroyed` events instead
+    /// become context invalidations, as no other service has anything to do with them.
+    fn prepare_actions(&self, logs: Vec<Log>) -> anyhow::Result<Vec<EthereumEventAction>> {
         let kms_generation_address = self.config.kms_generation_contract.address;
         let protocol_config_address = self.config.protocol_config_contract.address;
 
-        let mut events = Vec::with_capacity(logs.len());
+        let mut actions = Vec::with_capacity(logs.len());
         for log in logs {
             let log_address = log.inner.address;
             let event_kind = if log_address == kms_generation_address {
@@ -222,6 +230,15 @@ where
                     continue;
                 }
 
+                if let ProtocolConfigEvents::KmsContextDestroyed(e) = &protocol_config_event {
+                    info!("KMS context #{} destroyed on-chain", e.kmsContextId);
+                    EVENT_RECEIVED_COUNTER
+                        .with_label_values(&["kms_context_destroyed"])
+                        .inc();
+                    actions.push(EthereumEventAction::InvalidateContext(e.kmsContextId));
+                    continue;
+                }
+
                 protocol_config_event.try_into()?
             } else {
                 warn!("Skipping log from unexpected address: {log_address}");
@@ -233,13 +250,11 @@ where
 
             let span = info_span!("handle_ethereum_event", event = %event_kind);
             let otlp_ctx = PropagationContext::inject(&span.context());
-            events.push(ProtocolEvent::new(
-                event_kind,
-                log.transaction_hash,
-                otlp_ctx,
-            ));
+            actions.push(EthereumEventAction::StoreEvent(Box::new(
+                ProtocolEvent::new(event_kind, log.transaction_hash, otlp_ctx),
+            )));
         }
-        Ok(events)
+        Ok(actions)
     }
 
     /// Determines the block to start event listening from.
@@ -291,7 +306,6 @@ mod tests {
         tests::setup::{TestInstance, TestInstanceBuilder},
         types::ProtocolEventKind,
     };
-    use fhevm_host_bindings::protocol_config::ProtocolConfig::NewKmsContext;
     use sqlx::Row;
     use std::time::Duration;
 
@@ -375,18 +389,21 @@ mod tests {
             ..Default::default()
         };
 
-        let events = listener
-            .prepare_events(vec![make_log(&genesis), make_log(&normal)])
+        let actions = listener
+            .prepare_actions(vec![make_log(&genesis), make_log(&normal)])
             .unwrap();
 
-        assert_eq!(events.len(), 1, "genesis NewKmsContext should be skipped");
-        match &events[0].kind {
-            ProtocolEventKind::NewKmsContext(e) => assert_eq!(
-                e.previousContextId,
-                KMS_CONTEXT_COUNTER_BASE + U256::ONE,
-                "only the non-genesis context switch should be kept"
-            ),
-            other => panic!("unexpected event kind: {other:?}"),
+        assert_eq!(actions.len(), 1, "genesis NewKmsContext should be skipped");
+        match &actions[0] {
+            EthereumEventAction::StoreEvent(event) => match &event.kind {
+                ProtocolEventKind::NewKmsContext(e) => assert_eq!(
+                    e.previousContextId,
+                    KMS_CONTEXT_COUNTER_BASE + U256::ONE,
+                    "only the non-genesis context switch should be kept"
+                ),
+                other => panic!("unexpected event kind: {other:?}"),
+            },
+            other => panic!("unexpected action: {other:?}"),
         }
     }
 

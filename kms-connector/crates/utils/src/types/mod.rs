@@ -24,6 +24,12 @@ pub const KMS_CONTEXT_COUNTER_BASE: U256 = U256::from_be_bytes([
     7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 ]);
 
+/// Mirrors `DEFAULT_EPOCH_ID` from `host-contracts/contracts/shared/Constants.sol`: the KMS
+/// fallback epoch ID when no epoch is specified. Format: [0x08 type tag | 31 counter bytes].
+pub const DEFAULT_EPOCH_ID: U256 = U256::from_be_bytes([
+    8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+]);
+
 pub fn u256_to_u32(integer: U256) -> anyhow::Result<u32> {
     // Get integer's least significant bits
     let Some(integer_lsb) = integer.as_le_slice().get(0..4) else {
