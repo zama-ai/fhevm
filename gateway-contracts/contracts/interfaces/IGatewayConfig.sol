@@ -526,6 +526,12 @@ interface IGatewayConfig {
      * @dev When set, coprocessor consensus is finalized only by this registered transaction sender.
      *      Applied live — `InputVerification` no longer has to be paused first (the pause coupling was
      *      removed, see fhevm-internal#1487); the in-flight per-proof tally is the accepted trade-off.
+     *      Known edge case: if the priority sender already responded to an in-flight request (proof or
+     *      ciphertext material) before priority mode was enabled, that request cannot finalize while
+     *      priority is set — duplicate responses revert and non-priority senders cannot finalize. It is
+     *      not lost: counters keep accumulating, so it finalizes through threshold consensus on the next
+     *      response after priority is removed. In the staged rollout this cannot occur (priority is
+     *      enabled while Zama is the sole coprocessor, so its response finalizes at threshold 1).
      *      Every host-chain `InputVerifier` must accept this coprocessor signer with threshold 1 before
      *      priority mode is used for user input proofs.
      * @param coprocessorTxSenderAddress The registered coprocessor transaction sender to prioritize.

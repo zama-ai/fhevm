@@ -257,6 +257,9 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      * @notice Re-initializes the contract from V7.
      * @dev If a priority coprocessor is set here, every host-chain `InputVerifier` must accept its signer
      *      with threshold 1 before user inputs rely on priority mode.
+     * @dev Requests where the priority sender responded before this upgrade but consensus was not yet
+     *      reached will only finalize after priority mode is later removed (see
+     *      {IGatewayConfig-setPriorityCoprocessorTxSender}).
      * @dev Intended to run atomically as the `call` of a UUPS `upgradeToAndCall`, whose `_authorizeUpgrade`
      *      already enforces owner authorization; the `reinitializer` guard then prevents any later re-entry.
      * @param coprocessorTxSenderAddress The registered priority coprocessor transaction sender to set,
