@@ -16,14 +16,15 @@ const v013Tag = "v0.13.0";
 const testSuiteVersion = "v0.13.0";
 const relayerSdkVersion = "0.4.2";
 
-// NOTE: RELAYER_VERSION at v0.11 is the least-certain pin. The deleted in-repo
-// v0.11 profile recorded v0.11.0-rc.1; mainnet relayer is described as "v0.9"
-// (the relayer repo's own versioning is offset from the fhevm meta-version).
-// If the baseline boot cannot pull this tag, adjust to the published v0.11
-// relayer image — this is a config pin, not the compatibility boundary tested.
+// NOTE: the v0.11 relayer line must be >= v0.11.0 final: rc.1 (the deleted
+// in-repo v0.11 profile's pin) predates the listener event-filter fix
+// (console#914) and the isUserDecryptionReady compat fix (console#925), which
+// caused a flaky "Ciphertext not ready" readiness race whenever the ciphertext
+// commit landed after the readiness loop started. v0.11.1 adds an estimate-gas
+// hotfix on top; relayer-migrate has no v0.11.1 release.
 export const v011 = {
-  RELAYER_VERSION: "v0.11.0-rc.1",
-  RELAYER_MIGRATE_VERSION: "v0.11.0-rc.1",
+  RELAYER_VERSION: "v0.11.1",
+  RELAYER_MIGRATE_VERSION: "v0.11.0",
   GATEWAY_VERSION: v011Tag,
   HOST_VERSION: v011Tag,
   CORE_VERSION: "v0.13.0",
