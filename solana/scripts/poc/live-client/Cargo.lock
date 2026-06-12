@@ -624,6 +624,8 @@ dependencies = [
  "confidential-token-receiver-sdk",
  "solana-ed25519-instruction",
  "solana-instructions-sysvar",
+ "solana-sha256-hasher",
+ "zama-fhe",
  "zama-host",
 ]
 
@@ -4445,6 +4447,14 @@ dependencies = [
  "quote",
  "syn 2.0.117",
  "synstructure",
+]
+
+[[package]]
+name = "zama-fhe"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang",
+ "zama-host",
 ]
 
 [[package]]

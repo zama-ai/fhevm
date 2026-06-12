@@ -48,6 +48,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
+    // TRIVIAL_ENCRYPT_EVAL drives the SAME trivial-encryption through the eval-plan executor
+    // (fhe_eval): a single TrivialEncrypt step with a durable output ACL record. The host computes
+    // the result handle on-chain and emits the same TrivialEncryptEvent the host-listener ingests,
+    // exercising the #2755 eval path instead of the standalone trivial_encrypt_and_bind.
+    if std::env::var("TRIVIAL_ENCRYPT_EVAL").is_ok() {
+        trivial_encrypt_eval(&host, &payer, host_config)?;
+        return Ok(());
+    }
+
     // CONSUME_WRAP: deposit public USDC into a confidential balance (wrap_usdc) — the balance
     // a subsequent confidential_burn draws from on the redeem path. MINT + WRAP_AMOUNT via env.
     if std::env::var("CONSUME_WRAP").is_ok() {
@@ -77,6 +86,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // path publicly decrypts, then releases against the vault. MINT via env.
     if std::env::var("CONSUME_BURN").is_ok() {
         consume_burn(&token, &payer, host_config)?;
+        return Ok(());
+    }
+    // CONSUME_REQUEST_REDEEM: create the burn-redemption request witness (request_burn_redemption)
+    // pinning the host's current KMS context id + expires_slot + request_hash before the secp
+    // consume. Releases the burned handle for public decrypt via the zama-host allow CPI.
+    if std::env::var("CONSUME_REQUEST_REDEEM").is_ok() {
+        consume_request_redeem(&host, &token, &payer, host_config)?;
         return Ok(());
     }
     // CONSUME_REDEEM: redeem a KMS-certified burned amount from the SPL vault
@@ -277,10 +293,124 @@ fn trivial_encrypt_and_bind(
     Ok(())
 }
 
+/// Eval-based compute leg: drives a single-step fhe_eval plan (one TrivialEncrypt step with a
+/// durable output ACL record) instead of the standalone trivial_encrypt_and_bind. The host runs
+/// the eval executor, computes the result handle on-chain, creates the durable output ACL record
+/// (passed as the sole remaining_account), and emits the same TrivialEncryptEvent the live
+/// host-listener ingests for the tfhe-worker to materialize. TE_VALUE selects the euint64
+/// plaintext; TE_ALLOW marks it publicly decryptable afterward.
+fn trivial_encrypt_eval(
+    host: &Program<Rc<Keypair>>,
+    payer: &Rc<Keypair>,
+    host_config: Pubkey,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use anchor_lang::solana_program::instruction::AccountMeta;
+    let value: u64 = std::env::var("TE_VALUE").ok().and_then(|s| s.parse().ok()).unwrap_or(42);
+    let mut plaintext = [0u8; 32];
+    plaintext[24..32].copy_from_slice(&value.to_be_bytes());
+    let fhe_type: u8 = 5; // euint64
+
+    let app_account = payer.pubkey();
+    let acl_domain_key = payer.pubkey();
+    // Distinct label per value so repeated runs derive distinct output ACL record PDAs. Use a
+    // marker byte distinct from trivial_encrypt_and_bind's [1u8;32] label so the two compute paths
+    // never collide on an already-initialized account.
+    let mut encrypted_value_label = [2u8; 32];
+    encrypted_value_label[24..32].copy_from_slice(&value.to_be_bytes());
+    let output_nonce_key =
+        zama_host::acl_nonce_key(acl_domain_key, app_account, encrypted_value_label);
+    let output_nonce_sequence: u64 = 0;
+    let (output_acl_record, _) =
+        zama_host::acl_record_address(output_nonce_key, output_nonce_sequence);
+    let (zama_event_authority, _) =
+        Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
+    // ACL_ROLE_ALL (user) grants USE | GRANT | PUBLIC_DECRYPT so the subject can later mark this
+    // compute output publicly decryptable. public_decrypt MUST be false at birth (the eval birth
+    // policy rejects setting it at creation); allow_for_decryption flips it after.
+    let subjects = vec![zama_host::AclSubjectEntry::user(payer.pubkey())];
+
+    // Context id: any non-zero 32-byte domain separator for the transient handles in this eval.
+    let mut context_id = [0u8; 32];
+    context_id[0] = 0xc0;
+    context_id[24..32].copy_from_slice(&value.to_be_bytes());
+
+    let args = zama_host::FheEvalArgs {
+        context_id,
+        steps: vec![zama_host::FheEvalStep::TrivialEncrypt {
+            plaintext,
+            fhe_type,
+            output: zama_host::FheEvalOutput::Durable {
+                output_acl_record_index: 0,
+                output_app_account_authority_index: None,
+                output_nonce_key,
+                output_nonce_sequence,
+                output_acl_domain_key: acl_domain_key,
+                output_app_account: app_account,
+                output_encrypted_value_label: encrypted_value_label,
+                output_subjects: subjects,
+                output_public_decrypt: false,
+            },
+        }],
+    };
+
+    // SlotHashes (read for the result-handle entropy) is populated only in real execution, not in
+    // RPC preflight simulation, so skip preflight for this op.
+    let sig = host
+        .request()
+        .accounts(zama_host::accounts::FheEval {
+            payer: payer.pubkey(),
+            compute_subject: payer.pubkey(),
+            app_account_authority: payer.pubkey(),
+            host_config,
+            system_program: system_program::ID,
+            instructions_sysvar: None,
+            event_authority: zama_event_authority,
+            program: zama_host::ID,
+        })
+        // The single durable output ACL record is remaining_accounts[0] (writable, created by the
+        // eval executor); it is referenced by output_acl_record_index: 0 in the plan.
+        .accounts(vec![AccountMeta::new(output_acl_record, false)])
+        .args(zama_host::instruction::FheEval { args })
+        .send_with_spinner_and_config(anchor_client::RpcSendTransactionConfig {
+            skip_preflight: true,
+            ..Default::default()
+        })?;
+    println!("OK fhe_eval trivial_encrypt ({value} as euint64): {sig}");
+
+    let record: zama_host::AclRecord = host.account(output_acl_record)?;
+    let handle_hex: String = record.handle.iter().map(|b| format!("{b:02x}")).collect();
+    println!("  output ACL record {output_acl_record}");
+    println!("  result handle 0x{handle_hex}  (tfhe-worker materializes this ciphertext)");
+
+    if std::env::var("TE_ALLOW").is_ok() {
+        let allow_sig = host
+            .request()
+            .accounts(zama_host::accounts::AllowForDecryption {
+                authority: payer.pubkey(),
+                authority_permission_record: None,
+                acl_record: output_acl_record,
+                host_config,
+                deny_subject_record: None,
+                event_authority: zama_event_authority,
+                program: zama_host::ID,
+            })
+            .args(zama_host::instruction::AllowForDecryption {
+                handle: record.handle,
+            })
+            .send()?;
+        println!("OK allow_for_decryption (public): {allow_sig}");
+    }
+    Ok(())
+}
+
 /// Consume step 1: seal the token amount's ciphertext material on-chain (commit_handle_material,
-/// signed by the configured material_authority, with the real ct64/ct128 digests) and request
-/// public disclosure (request_disclose_amount → CPIs zama-host allow_public_decrypt). Inputs via
-/// env: MINT, TS_ACL, TS_HANDLE, KEY_ID, CT64_DIGEST, CT128_DIGEST, COPROC_SET_DIGEST.
+/// signed by the configured material_authority, with the real ct64/ct128 digests) and create the
+/// disclosure request witness (request_disclose_amount → CPIs zama-host allow_public_decrypt, pins
+/// the host's current KMS context id + expires_slot + request_hash into a DisclosureRequest PDA
+/// the disclose_amount_secp consume step then binds to). The material commitment MUST exist before
+/// the request (the request validates it), so commit always precedes the request here. Inputs via
+/// env: MINT, TS_ACL, TS_HANDLE, KEY_ID, CT64_DIGEST, CT128_DIGEST, COPROC_SET_DIGEST; optional
+/// SEAL_SKIP_COMMIT (material already committed), REQUEST_NONCE (32-byte hex), REQUEST_TTL_SLOTS.
 fn consume_seal(
     host: &Program<Rc<Keypair>>,
     token: &Program<Rc<Keypair>>,
@@ -291,17 +421,17 @@ fn consume_seal(
     let ts_acl = Pubkey::from_str(&std::env::var("TS_ACL")?)?;
     let handle: [u8; 32] = hexdec(&std::env::var("TS_HANDLE")?).try_into().expect("TS_HANDLE");
     let (zama_evt, _) = Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
+    let (material_commitment, _) = zama_host::handle_material_address(ts_acl);
 
-    // commit_handle_material is skipped when SEAL_RELEASE_ONLY is set: useful to release a handle
-    // for public decryption first (so the KMS can decrypt it), then commit material before redeem.
-    if std::env::var("SEAL_RELEASE_ONLY").is_err() {
+    // The disclosure request validates the material commitment, so it must already exist: commit
+    // it now unless SEAL_SKIP_COMMIT says a prior step already did.
+    if std::env::var("SEAL_SKIP_COMMIT").is_err() {
         let key_id: [u8; 32] = hexdec(&std::env::var("KEY_ID")?).try_into().expect("KEY_ID");
         let ct64: [u8; 32] = hexdec(&std::env::var("CT64_DIGEST")?).try_into().expect("CT64_DIGEST");
         let ct128: [u8; 32] =
             hexdec(&std::env::var("CT128_DIGEST")?).try_into().expect("CT128_DIGEST");
         let coproc: [u8; 32] =
             hexdec(&std::env::var("COPROC_SET_DIGEST")?).try_into().expect("COPROC_SET_DIGEST");
-        let (material_commitment, _) = zama_host::handle_material_address(ts_acl);
 
         let sig = host
             .request()
@@ -326,6 +456,11 @@ fn consume_seal(
         println!("  material commitment {material_commitment}");
     }
 
+    let nonce = request_nonce_from_env();
+    let expires_slot = request_expires_slot(token)?;
+    let (disclosure_request, _) =
+        confidential_token::disclosure_request_address(mint, payer.pubkey(), handle, nonce);
+
     let (token_evt, _) =
         Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &confidential_token::ID);
     let sig2 = token
@@ -334,6 +469,8 @@ fn consume_seal(
             requester: payer.pubkey(),
             mint,
             amount_acl_record: ts_acl,
+            amount_material_commitment: material_commitment,
+            disclosure_request,
             // The disclosable amount (e.g. a confidential_burn burned amount) grants the owner
             // ACL_ROLE_ALL inline, so the requester is found inline — assert_record_subject_role
             // requires the overflow permission witness to be absent in that case.
@@ -342,13 +479,36 @@ fn consume_seal(
             zama_event_authority: zama_evt,
             zama_program: zama_host::ID,
             host_config,
+            system_program: system_program::ID,
             event_authority: token_evt,
             program: confidential_token::ID,
         })
-        .args(confidential_token::instruction::RequestDiscloseAmount { amount_handle: handle })
+        .args(confidential_token::instruction::RequestDiscloseAmount {
+            amount_handle: handle,
+            request_nonce: nonce,
+            expires_slot,
+        })
         .send()?;
     println!("OK request_disclose_amount: {sig2}  (handle released for public decrypt)");
+    println!("  disclosure request witness {disclosure_request}  (kms_context pinned, expires_slot {expires_slot})");
     Ok(())
+}
+
+/// Returns the 32-byte request nonce from REQUEST_NONCE (hex) or a default fixed nonce so the
+/// witness PDA is deterministic within one e2e run.
+fn request_nonce_from_env() -> [u8; 32] {
+    match std::env::var("REQUEST_NONCE") {
+        Ok(s) => hexdec(&s).try_into().expect("REQUEST_NONCE must be 32 bytes"),
+        Err(_) => [7u8; 32],
+    }
+}
+
+/// Computes the witness expiry slot: current slot + REQUEST_TTL_SLOTS (default 5000), giving the
+/// public-decrypt + consume steps ample time before the witness expires.
+fn request_expires_slot(program: &Program<Rc<Keypair>>) -> Result<u64, Box<dyn std::error::Error>> {
+    let ttl: u64 = std::env::var("REQUEST_TTL_SLOTS").ok().and_then(|s| s.parse().ok()).unwrap_or(5000);
+    let slot = program.rpc().get_slot()?;
+    Ok(slot + ttl)
 }
 
 /// Consume step 2: publish a KMS-certified cleartext by verifying the KMS PublicDecryptVerification
@@ -357,7 +517,7 @@ fn consume_seal(
 /// EXTRA, KMS_CTX_ID.
 fn consume_disclose(
     token: &Program<Rc<Keypair>>,
-    _payer: &Rc<Keypair>,
+    payer: &Rc<Keypair>,
     host_config: Pubkey,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mint = Pubkey::from_str(&std::env::var("MINT")?)?;
@@ -367,7 +527,10 @@ fn consume_disclose(
     let kms_sig: [u8; 65] = hexdec(&std::env::var("KMS_SIG")?).try_into().expect("KMS_SIG 65 bytes");
     let extra = hexdec(&std::env::var("EXTRA")?);
     let ctx_id: u64 = std::env::var("KMS_CTX_ID").ok().and_then(|s| s.parse().ok()).unwrap_or(1);
+    let nonce = request_nonce_from_env();
     let (material_commitment, _) = zama_host::handle_material_address(ts_acl);
+    let (disclosure_request, _) =
+        confidential_token::disclosure_request_address(mint, payer.pubkey(), handle, nonce);
     let (kms_context, _) = Pubkey::find_program_address(
         &[zama_host::KMS_CONTEXT_SEED, &ctx_id.to_le_bytes()],
         &zama_host::ID,
@@ -381,6 +544,7 @@ fn consume_disclose(
             mint,
             amount_acl_record: ts_acl,
             amount_material_commitment: material_commitment,
+            disclosure_request,
             host_config,
             kms_context,
             event_authority: token_evt,
@@ -515,13 +679,8 @@ fn consume_wrap(
     let ts_nk = confidential_token::total_supply_nonce_key(mint, ts_authority);
     let (current_ts_acl, _) = zama_host::acl_record_address(ts_nk, 0);
     let (output_ts_acl, _) = zama_host::acl_record_address(ts_nk, 1);
-    // The wrap amount is trivial-encrypted with app_account = token_account at the balance
-    // sequence (1), per wrap_usdc's fhe::trivial_encrypt_u64 output_nonce_key/sequence.
-    let amt_seq: u64 = std::env::var("WRAP_AMOUNT_SEQ").ok().and_then(|s| s.parse().ok()).unwrap_or(1);
-    let (wrap_amount_acl, _) = zama_host::acl_record_address(
-        confidential_token::nonce_key(mint, token_account, confidential_token::wrap_amount_label()),
-        amt_seq,
-    );
+    // The wrap amount is trivial-encrypted as a transient inside wrap_usdc's eval frame, so no
+    // separate amount ACL account is supplied.
     let (zama_evt, _) = Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
     let (token_evt, _) =
         Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &confidential_token::ID);
@@ -593,7 +752,6 @@ fn consume_wrap(
             total_supply_authority: ts_authority,
             current_compute_acl: current_balance_acl,
             current_total_supply_acl: current_ts_acl,
-            amount_compute_acl: wrap_amount_acl,
             output_acl: output_balance_acl,
             total_supply_output_acl: output_ts_acl,
             zama_event_authority: zama_evt,
@@ -644,12 +802,13 @@ fn consume_burn(
     let amt_seq = u64::from_le_bytes(ta.data[144..152].try_into().unwrap());
 
     // Read live mint state: current total-supply ACL + next total-supply nonce sequence.
-    // Layout after disc: authority(32) acl_domain_key(32) compute_signer(32) underlying_mint(32)
-    // kms_verifier_authority(32) decimals(1) total_supply_handle(32)
-    // total_supply_acl_record(32)[201..233] next_total_supply_nonce_sequence(8)[233..241].
+    // ConfidentialMint layout incl. 8-byte disc: authority(32)[8..40] acl_domain_key(32)[40..72]
+    // compute_signer(32)[72..104] underlying_mint(32)[104..136] decimals(1)[136..137]
+    // total_supply_handle(32)[137..169] total_supply_acl_record(32)[169..201]
+    // next_total_supply_nonce_sequence(8)[201..209]. (Account body is 201 bytes + 8 disc = 209.)
     let mi = token.rpc().get_account(&mint)?;
-    let current_ts_acl = Pubkey::new_from_array(mi.data[201..233].try_into().unwrap());
-    let ts_seq = u64::from_le_bytes(mi.data[233..241].try_into().unwrap());
+    let current_ts_acl = Pubkey::new_from_array(mi.data[169..201].try_into().unwrap());
+    let ts_seq = u64::from_le_bytes(mi.data[201..209].try_into().unwrap());
 
     // 1. create_random_amount(Burn): owner-scoped random burn amount at the amount sequence.
     // BURN_BOUND (a power of two) uses the bounded variant so the random amount stays below the
@@ -702,22 +861,11 @@ fn consume_burn(
     let hh: String = amount_handle.iter().map(|b| format!("{b:02x}")).collect();
     println!("  burn amount ACL {burn_amount_acl}  handle 0x{hh}");
 
-    // 2. Derive the five burn output ACLs: four balance-domain outputs at bal_seq (each with a
-    // distinct label) plus the total-supply output at ts_seq.
+    // 2. Derive the three durable burn output ACLs: the rotated balance + burned amount at
+    // bal_seq plus the total-supply output at ts_seq. burn_success and debit_candidate are
+    // transient inside confidential_burn's eval frame, so no durable accounts are supplied.
     let bal_nk = confidential_token::balance_nonce_key(mint, token_account);
     let (output_balance_acl, _) = zama_host::acl_record_address(bal_nk, bal_seq);
-    let (success_acl, _) = zama_host::acl_record_address(
-        confidential_token::nonce_key(mint, token_account, confidential_token::burn_success_label()),
-        bal_seq,
-    );
-    let (debit_candidate_acl, _) = zama_host::acl_record_address(
-        confidential_token::nonce_key(
-            mint,
-            token_account,
-            confidential_token::burn_debit_candidate_label(),
-        ),
-        bal_seq,
-    );
     let (burned_acl, _) = zama_host::acl_record_address(
         confidential_token::nonce_key(mint, token_account, confidential_token::burned_amount_label()),
         bal_seq,
@@ -751,8 +899,6 @@ fn consume_burn(
             current_compute_acl: current_balance_acl,
             current_total_supply_acl: current_ts_acl,
             amount_compute_acl: burn_amount_acl,
-            burn_success_acl: success_acl,
-            debit_candidate_acl,
             output_acl: output_balance_acl,
             burned_amount_acl: burned_acl,
             total_supply_output_acl: ts_output_acl,
@@ -777,13 +923,15 @@ fn consume_burn(
     Ok(())
 }
 
-/// Redeems a KMS-certified burned amount from the SPL vault (redeem_burned_amount_secp): commits
-/// the burned handle's ciphertext material (commit_handle_material, signed by material_authority),
-/// then verifies the KMS PublicDecryptVerification EIP-712 cert on-chain via secp256k1 against the
-/// active KMS context signer set and releases the cleartext amount of underlying USDC to the owner.
-/// Inputs via env: MINT, UNDERLYING_MINT, BURNED_ACL, BURNED_HANDLE, CLEARTEXT, KMS_SIG, EXTRA,
-/// KEY_ID, CT64_DIGEST, CT128_DIGEST, COPROC_SET_DIGEST, optional KMS_CTX_ID (default 1).
-fn consume_redeem(
+/// Redeem step 1: commit the burned handle's ciphertext material (commit_handle_material, signed
+/// by material_authority) then create the burn-redemption request witness
+/// (request_burn_redemption), which pins the host's current KMS context id + expires_slot +
+/// request_hash into a BurnRedemptionRequest PDA the redeem_burned_amount_secp consume step binds
+/// to, and releases the burned handle for public decrypt via the zama-host allow CPI. The material
+/// commitment MUST exist before the request, so commit precedes it here. Inputs via env: MINT,
+/// UNDERLYING_MINT, BURNED_ACL, BURNED_HANDLE, KEY_ID, CT64_DIGEST, CT128_DIGEST, COPROC_SET_DIGEST;
+/// optional REDEEM_SKIP_COMMIT, REQUEST_NONCE, REQUEST_TTL_SLOTS.
+fn consume_request_redeem(
     host: &Program<Rc<Keypair>>,
     token: &Program<Rc<Keypair>>,
     payer: &Rc<Keypair>,
@@ -794,38 +942,26 @@ fn consume_redeem(
     let burned_acl = Pubkey::from_str(&std::env::var("BURNED_ACL")?)?;
     let burned_handle: [u8; 32] =
         hexdec(&std::env::var("BURNED_HANDLE")?).try_into().expect("BURNED_HANDLE");
-    let cleartext: u64 = std::env::var("CLEARTEXT")?.parse()?;
-    let kms_sig: [u8; 65] = hexdec(&std::env::var("KMS_SIG")?).try_into().expect("KMS_SIG 65 bytes");
-    let extra = hexdec(&std::env::var("EXTRA")?);
-    let ctx_id: u64 = std::env::var("KMS_CTX_ID").ok().and_then(|s| s.parse().ok()).unwrap_or(1);
     let owner = payer.pubkey();
     let spl_token_id = Pubkey::from_str("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA")?;
     let ata_prog = Pubkey::from_str("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL")?;
 
-    let (compute_signer, _) = confidential_token::compute_signer_address(mint);
-    let _ = compute_signer;
     let (token_account, _) = confidential_token::token_account_address(mint, owner);
-    let (vault_authority, _) = confidential_token::vault_authority_address(mint);
-    let vault_usdc = confidential_token::vault_token_account_address(mint, underlying);
     let (destination_usdc, _) = Pubkey::find_program_address(
         &[owner.as_ref(), spl_token_id.as_ref(), underlying.as_ref()],
         &ata_prog,
     );
     let (material_commitment, _) = zama_host::handle_material_address(burned_acl);
-    let (redemption_record, _) = Pubkey::find_program_address(
-        &[b"burn-redemption", mint.as_ref(), burned_handle.as_ref()],
-        &confidential_token::ID,
-    );
-    let (kms_context, _) = Pubkey::find_program_address(
-        &[zama_host::KMS_CONTEXT_SEED, &ctx_id.to_le_bytes()],
-        &zama_host::ID,
-    );
+    let nonce = request_nonce_from_env();
+    let expires_slot = request_expires_slot(token)?;
+    let (redemption_request, _) =
+        confidential_token::burn_redemption_request_address(mint, owner, burned_handle, nonce);
     let (zama_evt, _) = Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
     let (token_evt, _) =
         Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &confidential_token::ID);
 
-    // 1. commit_handle_material for the burned handle (real key_id + ct/sns digests), unless it
-    // was already committed (REDEEM_SKIP_COMMIT).
+    // commit_handle_material for the burned handle (real key_id + ct/sns digests), unless already
+    // committed (REDEEM_SKIP_COMMIT). The request validates this commitment, so it must precede it.
     if std::env::var("REDEEM_SKIP_COMMIT").is_err() {
         let key_id: [u8; 32] = hexdec(&std::env::var("KEY_ID")?).try_into().expect("KEY_ID");
         let ct64: [u8; 32] = hexdec(&std::env::var("CT64_DIGEST")?).try_into().expect("CT64_DIGEST");
@@ -855,7 +991,84 @@ fn consume_redeem(
         println!("OK commit_handle_material (burned): {sig}");
     }
 
-    // 2. redeem_burned_amount_secp — on-chain secp256k1 verify of the KMS cert + vault release.
+    let sig = token
+        .request()
+        .accounts(confidential_token::accounts::RequestBurnRedemption {
+            owner,
+            mint,
+            token_account,
+            underlying_mint: underlying,
+            destination_usdc,
+            burned_amount_acl: burned_acl,
+            burned_material_commitment: material_commitment,
+            redemption_request,
+            authority_permission_record: None,
+            deny_subject_record: None,
+            zama_event_authority: zama_evt,
+            zama_program: zama_host::ID,
+            host_config,
+            system_program: system_program::ID,
+            event_authority: token_evt,
+            program: confidential_token::ID,
+        })
+        .args(confidential_token::instruction::RequestBurnRedemption {
+            burned_handle,
+            request_nonce: nonce,
+            expires_slot,
+        })
+        .send()?;
+    println!("OK request_burn_redemption: {sig}");
+    println!("  burn-redemption request witness {redemption_request}  (kms_context pinned, expires_slot {expires_slot})");
+    Ok(())
+}
+
+/// Redeem step 2: redeem the KMS-certified burned amount from the SPL vault
+/// (redeem_burned_amount_secp): binds the BurnRedemptionRequest witness, verifies the KMS
+/// PublicDecryptVerification EIP-712 cert on-chain via secp256k1 against the witness-pinned KMS
+/// context, and releases the cleartext amount of underlying USDC to the owner. Inputs via env:
+/// MINT, UNDERLYING_MINT, BURNED_ACL, BURNED_HANDLE, CLEARTEXT, KMS_SIG, EXTRA, optional
+/// KMS_CTX_ID (default 1), REQUEST_NONCE.
+fn consume_redeem(
+    _host: &Program<Rc<Keypair>>,
+    token: &Program<Rc<Keypair>>,
+    payer: &Rc<Keypair>,
+    host_config: Pubkey,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mint = Pubkey::from_str(&std::env::var("MINT")?)?;
+    let underlying = Pubkey::from_str(&std::env::var("UNDERLYING_MINT")?)?;
+    let burned_acl = Pubkey::from_str(&std::env::var("BURNED_ACL")?)?;
+    let burned_handle: [u8; 32] =
+        hexdec(&std::env::var("BURNED_HANDLE")?).try_into().expect("BURNED_HANDLE");
+    let cleartext: u64 = std::env::var("CLEARTEXT")?.parse()?;
+    let kms_sig: [u8; 65] = hexdec(&std::env::var("KMS_SIG")?).try_into().expect("KMS_SIG 65 bytes");
+    let extra = hexdec(&std::env::var("EXTRA")?);
+    let ctx_id: u64 = std::env::var("KMS_CTX_ID").ok().and_then(|s| s.parse().ok()).unwrap_or(1);
+    let nonce = request_nonce_from_env();
+    let owner = payer.pubkey();
+    let spl_token_id = Pubkey::from_str("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA")?;
+    let ata_prog = Pubkey::from_str("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL")?;
+
+    let (token_account, _) = confidential_token::token_account_address(mint, owner);
+    let (vault_authority, _) = confidential_token::vault_authority_address(mint);
+    let vault_usdc = confidential_token::vault_token_account_address(mint, underlying);
+    let (destination_usdc, _) = Pubkey::find_program_address(
+        &[owner.as_ref(), spl_token_id.as_ref(), underlying.as_ref()],
+        &ata_prog,
+    );
+    let (material_commitment, _) = zama_host::handle_material_address(burned_acl);
+    let (redemption_request, _) =
+        confidential_token::burn_redemption_request_address(mint, owner, burned_handle, nonce);
+    let (redemption_record, _) = Pubkey::find_program_address(
+        &[b"burn-redemption", mint.as_ref(), burned_handle.as_ref()],
+        &confidential_token::ID,
+    );
+    let (kms_context, _) = Pubkey::find_program_address(
+        &[zama_host::KMS_CONTEXT_SEED, &ctx_id.to_le_bytes()],
+        &zama_host::ID,
+    );
+    let (token_evt, _) =
+        Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &confidential_token::ID);
+
     let sig = token
         .request()
         .accounts(confidential_token::accounts::RedeemBurnedAmountSecp {
@@ -868,6 +1081,7 @@ fn consume_redeem(
             vault_authority,
             burned_amount_acl: burned_acl,
             burned_material_commitment: material_commitment,
+            redemption_request,
             redemption_record,
             host_config,
             kms_context,
@@ -960,7 +1174,6 @@ fn initialize_mint(
             underlying_mint,
             compute_signer,
             total_supply_authority,
-            kms_verifier_authority: payer.pubkey(),
             total_supply_acl_record,
             zama_event_authority,
             zama_program: zama_host::ID,

@@ -35,8 +35,8 @@ ctdig() { docker exec coprocessor-and-kms-db psql -U postgres -d coprocessor -tA
 # ---------------------------------------------------------------------------
 echo "==> [L4-a] publicKey-substitution / relayer-bypass user-decrypt MUST be rejected"
 
-# Fresh compute + ACL allow so the handle is granted USE to the user's Solana identity.
-out="$(lc TRIVIAL_ENCRYPT=1 TE_VALUE="$VALUE" TE_ALLOW=1)"
+# Fresh eval-based compute + ACL allow so the handle is granted USE to the user's Solana identity.
+out="$(lc TRIVIAL_ENCRYPT_EVAL=1 TE_VALUE="$VALUE" TE_ALLOW=1)"
 H="$(echo "$out" | grep -oE 'result handle 0x[0-9a-f]+' | grep -oE '0x[0-9a-f]+')"
 [ -n "$H" ] || fail "(a) could not compute a handle: $out"
 HH="${H#0x}"
@@ -90,15 +90,15 @@ for i in $(seq 1 40); do
   [ "$i" = 40 ] && fail "(b) burned-handle SNS commit timed out"; sleep 6
 done
 # Full seal: commit the burned handle's material (disclose_amount_secp reads this
-# HandleMaterialCommitment) AND release it for public decrypt, in one call. Release-only would skip
-# the commit, so the control disclose below would fail on AccountNotInitialized instead of exercising
-# the context check. Digests are the real ct64/ct128 from the coprocessor DB (now SNS-committed).
+# HandleMaterialCommitment) AND create the DisclosureRequest witness (pins KMS context id 1 +
+# expires_slot + request_hash) AND release the handle for public decrypt, in one call. The witness
+# is what the consume step binds to. Digests are the real ct64/ct128 from the coprocessor DB.
 KEY_ID="0x$(ctdig "SELECT encode(key_id_gw,'hex') FROM ciphertext_digest WHERE handle=decode('$BHH','hex')")"
 CT64="0x$(ctdig "SELECT encode(ciphertext,'hex') FROM ciphertext_digest WHERE handle=decode('$BHH','hex')")"
 CT128="0x$(ctdig "SELECT encode(ciphertext128,'hex') FROM ciphertext_digest WHERE handle=decode('$BHH','hex')")"
 relout="$(lc CONSUME_SEAL=1 TS_ACL="$BURNED_ACL" TS_HANDLE="$BURNED_HANDLE" KEY_ID="$KEY_ID" \
    CT64_DIGEST="$CT64" CT128_DIGEST="$CT128" COPROC_SET_DIGEST="$COPROC_SET_DIGEST")" || true
-echo "$relout" | grep -q 'OK request_disclose_amount' || fail "(b) seal+release burned amount: $(echo "$relout" | tail -3)"
+echo "$relout" | grep -q 'OK request_disclose_amount' || fail "(b) seal+request+release burned amount: $(echo "$relout" | tail -3)"
 
 # Public-decrypt -> genuine KMS PublicDecryptVerification cert (bound to the CURRENT context).
 cjob="$(curl -s -m15 "$RELAYER/v2/public-decrypt" -H 'content-type: application/json' \
@@ -116,15 +116,11 @@ KMS_SIG="0x$(echo "$cr" | python3 -c "import sys,json;print(json.load(sys.stdin)
 CEXTRA="$(echo "$cr" | python3 -c "import sys,json;print(json.load(sys.stdin)['result'].get('extraData','$EXTRA'))")"
 echo "    genuine cert obtained (cleartext=$CLEARTEXT, bound to the current KMS context; extraData=$CEXTRA)"
 
-# CONTROL: the genuine cert (with its OWN extra_data) discloses fine — confirms the cert + handle
-# are valid, so the only thing that breaks the attack below is the rotated/mismatched context.
-disok="$(lc CONSUME_DISCLOSE=1 TS_ACL="$BURNED_ACL" TS_HANDLE="$BURNED_HANDLE" CLEARTEXT="$CLEARTEXT" \
-   KMS_SIG="$KMS_SIG" EXTRA="$CEXTRA" KMS_CTX_ID=1)" || true
-echo "$disok" | grep -q 'OK disclose_amount_secp' || fail "(b) control disclose under correct context failed: $(echo "$disok" | tail -3)"
-
-# ATTACK: present the SAME genuine cert but with extra_data naming a DIFFERENT context (id 2) than
-# the on-chain kms_context (id 1) the cert was issued under. extract_kms_context_id(extra)=2, but
-# kms_context.context_id=1 -> require!(...) in disclose_amount_secp fails with InvalidKmsContext.
+# ATTACK (run FIRST, while the witness is still PENDING): present the genuine cert but with
+# extra_data naming a DIFFERENT context (id 2) than the witness-pinned context (id 1). The consume
+# verifies the cert against the WITNESS's kms_context_id (1), and extract_kms_context_id(extra)=2 !=
+# 1 -> require!(...) in disclose_amount_secp fails with InvalidKmsContext. Doing this first proves
+# the rejection is the context check, not witness-already-consumed.
 WRONG_CTX_EXTRA="0x01$(printf '%064x' 2)"
 set +e
 disbad="$(lc CONSUME_DISCLOSE=1 TS_ACL="$BURNED_ACL" TS_HANDLE="$BURNED_HANDLE" CLEARTEXT="$CLEARTEXT" \
@@ -134,6 +130,53 @@ if echo "$disbad" | grep -q 'OK disclose_amount_secp'; then
   fail "(b) SECURITY: a context-mismatched cert was ACCEPTED on-chain — cleartext disclosed!"
 fi
 echo "$disbad" | grep -qiE 'InvalidKmsContext|custom program error|0x' || echo "    (note: rejected, error text: $(echo "$disbad" | tail -2))"
-pass "(b) context-rotation cert reuse rejected on-chain — no cleartext emitted"
+pass "(b) context-rotation cert reuse rejected on-chain against the witness-pinned context — no cleartext emitted"
 
-echo "==> ADVERSARIAL L4 GREEN: (a) publicKey-substitution rejected + (b) context-rotation cert reuse rejected"
+# CONTROL: the genuine cert (with its OWN extra_data) discloses fine — confirms the cert + handle +
+# witness are valid, so the only thing that broke the attack above is the mismatched context. This
+# flips the witness to CONSUMED.
+disok="$(lc CONSUME_DISCLOSE=1 TS_ACL="$BURNED_ACL" TS_HANDLE="$BURNED_HANDLE" CLEARTEXT="$CLEARTEXT" \
+   KMS_SIG="$KMS_SIG" EXTRA="$CEXTRA" KMS_CTX_ID=1)" || true
+echo "$disok" | grep -q 'OK disclose_amount_secp' || fail "(b) control disclose under correct context failed: $(echo "$disok" | tail -3)"
+echo "    control disclose under the correct context succeeded (witness now CONSUMED)"
+
+# ---------------------------------------------------------------------------
+# (c) REPLAY-AFTER-CONSUME: the witness is single-use
+# ---------------------------------------------------------------------------
+echo "==> [L4-c] re-presenting the SAME genuine cert against the now-CONSUMED witness MUST be rejected"
+# Same valid cert, correct context, same witness PDA (same nonce) — but the witness status is now
+# CONSUMED, so assert_disclosure_request_witness's PENDING check fails: a single request authorizes
+# exactly one disclosure.
+set +e
+disreplay="$(lc CONSUME_DISCLOSE=1 TS_ACL="$BURNED_ACL" TS_HANDLE="$BURNED_HANDLE" CLEARTEXT="$CLEARTEXT" \
+   KMS_SIG="$KMS_SIG" EXTRA="$CEXTRA" KMS_CTX_ID=1)"
+set -e
+if echo "$disreplay" | grep -q 'OK disclose_amount_secp'; then
+  fail "(c) SECURITY: a consumed witness was REPLAYED — cleartext disclosed twice off one request!"
+fi
+echo "$disreplay" | grep -qiE 'RequestWitness|custom program error|0x' || echo "    (note: rejected, error text: $(echo "$disreplay" | tail -2))"
+pass "(c) replay against a consumed witness rejected on-chain — request is single-use"
+
+# ---------------------------------------------------------------------------
+# (d) EXPIRED-WITNESS: a witness past its expiry cannot be consumed
+# ---------------------------------------------------------------------------
+echo "==> [L4-d] consuming a witness whose expires_slot has passed MUST be rejected"
+# Create a SECOND disclosure witness on the same handle under a distinct nonce, with a tiny TTL so
+# it expires within a couple of slots. The material commitment already exists (SEAL_SKIP_COMMIT).
+EXP_NONCE="0x$(printf '%064x' 251)"
+expreq="$(lc CONSUME_SEAL=1 SEAL_SKIP_COMMIT=1 TS_ACL="$BURNED_ACL" TS_HANDLE="$BURNED_HANDLE" \
+   REQUEST_NONCE="$EXP_NONCE" REQUEST_TTL_SLOTS=1)" || true
+echo "$expreq" | grep -q 'OK request_disclose_amount' || fail "(d) create short-TTL witness: $(echo "$expreq" | tail -3)"
+# Wait for the validator to advance past expires_slot (current_slot + 1).
+sleep 3
+set +e
+disexp="$(lc CONSUME_DISCLOSE=1 TS_ACL="$BURNED_ACL" TS_HANDLE="$BURNED_HANDLE" CLEARTEXT="$CLEARTEXT" \
+   KMS_SIG="$KMS_SIG" EXTRA="$CEXTRA" KMS_CTX_ID=1 REQUEST_NONCE="$EXP_NONCE")"
+set -e
+if echo "$disexp" | grep -q 'OK disclose_amount_secp'; then
+  fail "(d) SECURITY: an EXPIRED witness was consumed — cleartext disclosed past expiry!"
+fi
+echo "$disexp" | grep -qiE 'RequestWitness|custom program error|0x' || echo "    (note: rejected, error text: $(echo "$disexp" | tail -2))"
+pass "(d) expired witness rejected on-chain — past expires_slot cannot be consumed"
+
+echo "==> ADVERSARIAL L4 GREEN: (a) publicKey-substitution rejected + (b) context-rotation cert reuse rejected + (c) consumed-witness replay rejected + (d) expired-witness rejected"

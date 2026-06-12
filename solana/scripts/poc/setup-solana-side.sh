@@ -169,8 +169,30 @@ fi
 echo "==> [5/5] run Solana host-listener"
 pkill -f solana_host_listener 2>/dev/null || true
 sleep 1
+# Always rebuild the listener from THIS worktree's source: its event decoders are generated
+# (build.rs -> OUT_DIR) from the program IDLs, so a stale prebuilt binary silently decodes zero
+# events when the program's event layout has moved (it drops every event whose generated struct
+# no longer matches), leaving the coprocessor with no work and the vertical hanging at SNS commit.
+( cd "$ROOT/coprocessor/fhevm-engine" && cargo build -p host-listener --bin solana_host_listener >/tmp/solana-host-listener-build.log 2>&1 ) \
+  || { echo "[setup] host-listener build failed; see /tmp/solana-host-listener-build.log" >&2; tail -20 /tmp/solana-host-listener-build.log >&2; exit 1; }
 ( "$ROOT/coprocessor/fhevm-engine/target/debug/solana_host_listener" \
     --database-url "$DBURL" --url "$VALIDATOR_RPC" --program-id "$ZAMA_HOST_ID" \
     --host-chain-id="$SID_I64" >/tmp/solana-host-listener.log 2>&1 & )
+
+# The Solana decrypt pipeline is two-stage: the host-listener ingests events and, for
+# PublicDecryptAllowed / disclose+redeem request events, QUEUES a finalized-account fetch rather
+# than enqueueing SnS work directly (the cert/ACL must be read at finalized commitment). The
+# finalized-account fetcher drains that queue, reads the finalized ACL/witness, and inserts the
+# pbs_computations rows that drive the SnS worker. Without it, computed handles never get a
+# ciphertext128 digest and every decrypt hangs. Build from source for the same generated-decoder
+# reason as the listener.
+echo "==> [5b/5] run Solana finalized-account fetcher"
+pkill -f solana_finalized_account_fetcher 2>/dev/null || true
+sleep 1
+( cd "$ROOT/coprocessor/fhevm-engine" && cargo build -p host-listener --bin solana_finalized_account_fetcher >>/tmp/solana-host-listener-build.log 2>&1 ) \
+  || { echo "[setup] finalized-account fetcher build failed; see /tmp/solana-host-listener-build.log" >&2; tail -20 /tmp/solana-host-listener-build.log >&2; exit 1; }
+( "$ROOT/coprocessor/fhevm-engine/target/debug/solana_finalized_account_fetcher" \
+    --database-url "$DBURL" --url "$VALIDATOR_RPC" --program-id "$ZAMA_HOST_ID" \
+    --host-chain-id="$SID_I64" >/tmp/solana-finalized-account-fetcher.log 2>&1 & )
 
 echo "==> Solana side-stack ready. zama_host=$ZAMA_HOST_ID host_chain_id=$SID_U64 (i64 $SID_I64)"

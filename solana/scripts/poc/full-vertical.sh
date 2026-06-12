@@ -63,9 +63,9 @@ BIND_INPUT=1 BIND_HANDLE="$ih" BIND_COPRO_SIG="$isig" BIND_USER="$USER" BIND_CON
   || fail "zama-host bind failed"
 echo "    input bound on zama-host via on-chain secp256k1 verify of coprocessor attestation"
 
-echo "==> [compute] trivial_encrypt_and_bind $VALUE on zama-host (real FHE op + ACL allow)"
-out="$(cd "$ROOT/solana/scripts/poc/live-client" && TRIVIAL_ENCRYPT=1 TE_VALUE="$VALUE" TE_ALLOW=1 ./target/debug/poc-live-client 2>&1)"
-echo "$out" | grep -E 'result handle|allow_for_decryption' || fail "trivial-encrypt: $out"
+echo "==> [compute] eval-based fhe_eval trivial_encrypt $VALUE on zama-host (#2755 eval executor + ACL allow)"
+out="$(cd "$ROOT/solana/scripts/poc/live-client" && TRIVIAL_ENCRYPT_EVAL=1 TE_VALUE="$VALUE" TE_ALLOW=1 ./target/debug/poc-live-client 2>&1)"
+echo "$out" | grep -E 'result handle|allow_for_decryption' || fail "trivial-encrypt(eval): $out"
 H="$(echo "$out" | grep -oE 'result handle 0x[0-9a-f]+' | grep -oE '0x[0-9a-f]+')"
 [ -n "$H" ] || fail "no handle"
 echo "    handle=$H"
@@ -137,9 +137,21 @@ for i in $(seq 1 40); do
   [ "$i" = 40 ] && fail "burned-handle SNS commit timed out"; sleep 6
 done
 
-# Release the burned amount for public decrypt (owner is inline ACL_ROLE_ALL in the burned ACL).
-relout="$(lc SEAL_RELEASE_ONLY=1 CONSUME_SEAL=1 TS_ACL="$BURNED_ACL" TS_HANDLE="$BURNED_HANDLE")" || true
-echo "$relout" | grep -q 'OK request_disclose_amount' || fail "release burned amount: $(echo "$relout" | tail -3)"
+# Real material digests for commit_handle_material (ProtocolConfig-mirrored coprocessor set).
+# Fetched BEFORE the request witnesses: request_disclose_amount/request_burn_redemption both
+# validate the material commitment, so it must be committed first.
+KEY_ID="0x$(ctdig "SELECT encode(key_id_gw,'hex') FROM ciphertext_digest WHERE handle=decode('$BHH','hex')")"
+CT64="0x$(ctdig "SELECT encode(ciphertext,'hex') FROM ciphertext_digest WHERE handle=decode('$BHH','hex')")"
+CT128="0x$(ctdig "SELECT encode(ciphertext128,'hex') FROM ciphertext_digest WHERE handle=decode('$BHH','hex')")"
+COPROC_SET_DIGEST="$(cast keccak "$(cast abi-encode 'f(address[])' "[$COPROCESSOR_SIGNER]")")"
+
+# Create the disclosure request witness: commit the burned handle's material, pin the host's
+# current KMS context id + expires_slot + request_hash into a DisclosureRequest PDA, and release
+# the handle for public decrypt (owner is inline ACL_ROLE_ALL in the burned ACL).
+relout="$(lc CONSUME_SEAL=1 TS_ACL="$BURNED_ACL" TS_HANDLE="$BURNED_HANDLE" \
+   KEY_ID="$KEY_ID" CT64_DIGEST="$CT64" CT128_DIGEST="$CT128" COPROC_SET_DIGEST="$COPROC_SET_DIGEST")" || true
+echo "$relout" | grep -q 'OK request_disclose_amount' || fail "request_disclose_amount witness: $(echo "$relout" | tail -3)"
+echo "    disclosure request witness created (KMS context pinned); handle released for public decrypt"
 
 # Public-decrypt the burned handle -> cleartext + KMS PublicDecryptVerification cert.
 cjob="$(curl -s -m15 localhost:3000/v2/public-decrypt -H 'content-type: application/json' \
@@ -157,23 +169,25 @@ KMS_SIG="0x$(echo "$cr" | python3 -c "import sys,json;print(json.load(sys.stdin)
 CEXTRA="$(echo "$cr" | python3 -c "import sys,json;print(json.load(sys.stdin)['result'].get('extraData','$EXTRA'))")"
 echo "    burned amount cleartext=$CLEARTEXT (KMS PublicDecryptVerification cert)"
 
-# Real material digests for commit_handle_material (ProtocolConfig-mirrored coprocessor set).
-KEY_ID="0x$(ctdig "SELECT encode(key_id_gw,'hex') FROM ciphertext_digest WHERE handle=decode('$BHH','hex')")"
-CT64="0x$(ctdig "SELECT encode(ciphertext,'hex') FROM ciphertext_digest WHERE handle=decode('$BHH','hex')")"
-CT128="0x$(ctdig "SELECT encode(ciphertext128,'hex') FROM ciphertext_digest WHERE handle=decode('$BHH','hex')")"
-COPROC_SET_DIGEST="$(cast keccak "$(cast abi-encode 'f(address[])' "[$COPROCESSOR_SIGNER]")")"
+# Create the burn-redemption request witness (material already committed by the seal step, so
+# REDEEM_SKIP_COMMIT): pins the host's current KMS context id + expires_slot + request_hash into a
+# BurnRedemptionRequest PDA the redeem_burned_amount_secp consume step binds to.
+reqout="$(lc CONSUME_REQUEST_REDEEM=1 REDEEM_SKIP_COMMIT=1 BURNED_ACL="$BURNED_ACL" BURNED_HANDLE="$BURNED_HANDLE")" || true
+echo "$reqout" | grep -q 'OK request_burn_redemption' || fail "request_burn_redemption witness: $(echo "$reqout" | tail -3)"
+echo "    burn-redemption request witness created (KMS context pinned)"
 
-# Redeem: commit material + on-chain secp256k1 verify of the KMS cert + SPL vault release.
+# Redeem: bind the redemption witness + on-chain secp256k1 verify of the KMS cert against the
+# witness-pinned KMS context + SPL vault release.
 redout="$(lc CONSUME_REDEEM=1 BURNED_ACL="$BURNED_ACL" BURNED_HANDLE="$BURNED_HANDLE" CLEARTEXT="$CLEARTEXT" \
-   KMS_SIG="$KMS_SIG" EXTRA="$CEXTRA" KEY_ID="$KEY_ID" CT64_DIGEST="$CT64" CT128_DIGEST="$CT128" \
-   COPROC_SET_DIGEST="$COPROC_SET_DIGEST" KMS_CTX_ID=1)" || true
+   KMS_SIG="$KMS_SIG" EXTRA="$CEXTRA" KMS_CTX_ID=1)" || true
 echo "$redout" | grep -q 'OK redeem_burned_amount_secp' || fail "redeem_burned_amount_secp: $(echo "$redout" | tail -3)"
-echo "    redeem_burned_amount_secp OK -- on-chain secp256k1 KMS-cert verify released $CLEARTEXT USDC base units"
+echo "    redeem_burned_amount_secp OK -- witness-bound secp256k1 KMS-cert verify released $CLEARTEXT USDC base units"
 
-# Disclose: on-chain secp256k1 verify of the same KMS cert + emit the cleartext on-chain.
+# Disclose: bind the disclosure witness + on-chain secp256k1 verify of the same KMS cert against the
+# witness-pinned KMS context + emit the cleartext on-chain.
 disout="$(lc CONSUME_DISCLOSE=1 TS_ACL="$BURNED_ACL" TS_HANDLE="$BURNED_HANDLE" CLEARTEXT="$CLEARTEXT" \
    KMS_SIG="$KMS_SIG" EXTRA="$CEXTRA" KMS_CTX_ID=1)" || true
 echo "$disout" | grep -q 'OK disclose_amount_secp' || fail "disclose_amount_secp: $(echo "$disout" | tail -3)"
-echo "    disclose_amount_secp OK -- on-chain secp256k1 KMS-cert verify emitted cleartext $CLEARTEXT"
+echo "    disclose_amount_secp OK -- witness-bound secp256k1 KMS-cert verify emitted cleartext $CLEARTEXT"
 
 echo "==> FULL VERTICAL GREEN: input(ZK+secp bind) -> compute -> public-decrypt($VALUE) + user-decrypt($VALUE) -> consume redeem($CLEARTEXT)+disclose($CLEARTEXT) [secp256k1 KMS cert]"
