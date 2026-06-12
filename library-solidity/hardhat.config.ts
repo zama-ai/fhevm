@@ -54,6 +54,7 @@ task('test', async (_taskArgs, hre, runSuper) => {
   const hostContractsSrcDir = path.resolve(__dirname, '../node_modules/@fhevm/host-contracts/contracts');
   const hostContractsDstDir = path.resolve(__dirname, 'fhevmTemp/contracts');
   fs.copySync(hostContractsSrcDir, hostContractsDstDir, { dereference: true });
+  fs.removeSync(path.join(hostContractsDstDir, 'bridge'));
 
   // Run modified test task
   if (hre.network.name === 'hardhat') {
