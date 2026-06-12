@@ -463,13 +463,15 @@ clippy-fix: ## Fix code issues with clippy
 	@cargo clippy --all-targets --all-features --fix --allow-dirty --allow-staged
 	@cargo clippy --all-targets --all-features --fix --allow-dirty --allow-staged --manifest-path $(MOCK_RPC_MANIFEST)
 
+# `--all` is intentionally omitted: for this single-package crate it would descend into path
+# dependencies (e.g. the in-tree generated `rust_bindings`), which are not ours to format.
 fmt: ## Check code formatting
-	@cargo fmt --all -- --check
-	@cargo fmt --all --manifest-path $(MOCK_RPC_MANIFEST) -- --check
+	@cargo fmt -- --check
+	@cargo fmt --manifest-path $(MOCK_RPC_MANIFEST) -- --check
 
 fmt-fix: ## Fix code formatting
-	@cargo fmt --all
-	@cargo fmt --all --manifest-path $(MOCK_RPC_MANIFEST)
+	@cargo fmt
+	@cargo fmt --manifest-path $(MOCK_RPC_MANIFEST)
 
 openapi-view: ## Preview OpenAPI spec in browser (requires npx)
 	@command -v npx >/dev/null 2>&1 || { echo "$(RED)Error: npx not found. Install Node.js$(RESET)"; exit 1; }
