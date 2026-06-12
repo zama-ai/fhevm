@@ -21,7 +21,8 @@ use crate::contracts::TfheContract;
 use crate::contracts::TfheContract::TfheContractEvents;
 use crate::database::dependence_chains::dependence_chains;
 use crate::database::tfhe_event_propagate::{
-    ClearConst, Database, Handle, LogTfhe, Transaction, TransactionHash,
+    tfhe_result_handle, ClearConst, Database, Handle, LogTfhe, Transaction,
+    TransactionHash,
 };
 
 #[derive(Clone, Debug)]
@@ -690,18 +691,35 @@ pub fn normalize_solana_events_for_db(
     transaction_id: TransactionHash,
     block: SolanaBlockMeta,
 ) -> (Vec<LogTfhe>, Vec<SolanaFinalizedAccountFetch>) {
+    let events = events.into_iter().collect::<Vec<_>>();
+
+    // Handles allowed within THIS transaction. A compute event whose result is
+    // allowed must be inserted with is_allowed=true so the tfhe-worker
+    // materializes its ciphertext (it only schedules is_allowed=TRUE rows); an
+    // unallowed result is inserted is_completed=true and never materialized,
+    // mirroring the EVM ingest path (database::ingest collects ACL-allowed
+    // handles in the block, then sets is_allowed per compute result). The allow
+    // signal lives in the same confirmed Solana transaction as the compute, so
+    // materialization need not wait on finalization — finalization independently
+    // gates only the DECRYPT release (pbs/allowed_handles), via the fetch queue.
+    let allowed_handles = solana_allowed_result_handles(&events);
+
     let mut tfhe_logs = Vec::new();
     let mut account_fetches = Vec::new();
 
     for (index, event) in events.into_iter().enumerate() {
         match map_solana_event(event) {
-            SolanaMappedEvent::Tfhe(event) => tfhe_logs.push(to_log_tfhe(
-                event,
-                transaction_id,
-                block,
-                false,
-                index as u64,
-            )),
+            SolanaMappedEvent::Tfhe(event) => {
+                let is_allowed = tfhe_result_handle(&event.data)
+                    .is_some_and(|handle| allowed_handles.contains(&handle));
+                tfhe_logs.push(to_log_tfhe(
+                    event,
+                    transaction_id,
+                    block,
+                    is_allowed,
+                    index as u64,
+                ));
+            }
             SolanaMappedEvent::FinalizedAccountFetch(fetch) => {
                 account_fetches.push(fetch);
             }
@@ -711,6 +729,38 @@ pub fn normalize_solana_events_for_db(
 
     dedup_account_fetches(&mut account_fetches);
     (tfhe_logs, account_fetches)
+}
+
+/// Result-handles allowed within one Solana transaction, gathered from the rich
+/// allow events that are routed to finalized-account fetches
+/// (`public_decrypt_allowed`, `acl_subject_allowed`, `acl_record_bound`) — each
+/// carries the handle being allowed. The legacy flat `AclAllowed` event is NOT
+/// an allow signal here: this design deliberately drops it (it is mapped to
+/// `IgnoredAclAllowed`), so trusting it to drive materialization would
+/// contradict that. Material-sealed/committed fetches are not allow signals
+/// either, so they are excluded.
+fn solana_allowed_result_handles(events: &[SolanaHostEvent]) -> HashSet<Handle> {
+    events
+        .iter()
+        .filter_map(|event| match event {
+            SolanaHostEvent::FinalizedAccountFetch(fetch)
+                if is_solana_allow_reason(fetch.reason) =>
+            {
+                fetch.handle
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+/// Whether a finalized-account-fetch reason denotes an ACL allow that releases a
+/// handle (vs. a material-commitment or request witness). Shared by the
+/// in-tx materialization mark and the finalized decrypt-release consumer.
+pub(crate) fn is_solana_allow_reason(reason: &str) -> bool {
+    matches!(
+        reason,
+        "public_decrypt_allowed" | "acl_subject_allowed" | "acl_record_bound"
+    )
 }
 
 pub async fn insert_solana_events(
@@ -743,6 +793,16 @@ pub async fn insert_solana_events(
         .await?
         {
             inserted_rows += 1;
+        }
+        // The allow for a computed handle lands a slot after the compute, which
+        // was therefore inserted unallowed (is_completed=true) and skipped by the
+        // worker. Re-open it for materialization now that the allow is known. The
+        // finalized fetch above independently gates the later DECRYPT release.
+        if is_solana_allow_reason(fetch.reason) {
+            if let Some(handle) = fetch.handle {
+                db.mark_solana_computation_allowed(tx, handle.as_slice())
+                    .await?;
+            }
         }
     }
 
@@ -844,24 +904,24 @@ pub async fn claim_pending_finalized_account_fetches(
             LIMIT $1
             FOR UPDATE SKIP LOCKED
         )
-        UPDATE solana_finalized_account_fetches fetch
+        UPDATE solana_finalized_account_fetches AS claimed
         SET
             status = 'processing',
-            attempts = fetch.attempts + 1,
+            attempts = claimed.attempts + 1,
             last_seen_at = NOW()
         FROM candidate
-        WHERE fetch.account_key = candidate.account_key
-          AND fetch.kind = candidate.kind
+        WHERE claimed.account_key = candidate.account_key
+          AND claimed.kind = candidate.kind
         RETURNING
-            fetch.account_key,
-            fetch.kind,
-            fetch.reason,
-            fetch.handle,
-            fetch.related_account,
-            fetch.subject,
-            fetch.transaction_id,
-            fetch.block_number,
-            fetch.attempts
+            claimed.account_key,
+            claimed.kind,
+            claimed.reason,
+            claimed.handle,
+            claimed.related_account,
+            claimed.subject,
+            claimed.transaction_id,
+            claimed.block_number,
+            claimed.attempts
         "#,
     )
     .bind(limit)
@@ -2179,6 +2239,87 @@ mod tests {
         );
 
         assert!(acl_events.is_empty());
+        assert_eq!(tfhe_logs.len(), 1);
+        assert!(!tfhe_logs[0].is_allowed);
+    }
+
+    #[test]
+    fn public_decrypt_allow_in_same_tx_marks_compute_result_for_materialization()
+    {
+        // The eval frame that computes a handle also emits PublicDecryptAllowed
+        // for it (TE_ALLOW). That rich allow is routed to a finalized fetch, but
+        // its presence in the SAME tx must mark the compute is_allowed=true so the
+        // tfhe-worker (is_completed=FALSE AND is_allowed=TRUE) materializes the
+        // ciphertext; the finalized fetch separately gates the decrypt release.
+        let tx_id = solana_transaction_id(&[7_u8; 64]);
+        let block_timestamp = PrimitiveDateTime::new(
+            Date::from_calendar_date(2026, Month::May, 9).unwrap(),
+            Time::MIDNIGHT,
+        );
+
+        let (tfhe_logs, acl_events) = normalize_solana_events_for_db(
+            [
+                SolanaHostEvent::TrivialEncrypt(TrivialEncryptEvent {
+                    version: EVENT_VERSION,
+                    subject: [0; 32],
+                    plaintext: [55; 32],
+                    fhe_type: 5,
+                    result: [3; 32],
+                }),
+                SolanaHostEvent::FinalizedAccountFetch(acl_record_fetch(
+                    [9; 32],
+                    [3; 32],
+                    "public_decrypt_allowed",
+                )),
+            ],
+            tx_id,
+            SolanaBlockMeta {
+                block_number: 42,
+                block_timestamp,
+            },
+        );
+
+        assert_eq!(tfhe_logs.len(), 1);
+        assert!(
+            tfhe_logs[0].is_allowed,
+            "compute whose result is allowed in-tx must be materializable"
+        );
+        // The allow is still queued for the finalized decrypt-release check.
+        assert_eq!(acl_events.len(), 1);
+        assert_eq!(acl_events[0].reason, "public_decrypt_allowed");
+    }
+
+    #[test]
+    fn unrelated_allow_handle_does_not_mark_compute_result() {
+        // An allow for a DIFFERENT handle must not mark this compute allowed.
+        let tx_id = solana_transaction_id(&[8_u8; 64]);
+        let block_timestamp = PrimitiveDateTime::new(
+            Date::from_calendar_date(2026, Month::May, 9).unwrap(),
+            Time::MIDNIGHT,
+        );
+
+        let (tfhe_logs, _) = normalize_solana_events_for_db(
+            [
+                SolanaHostEvent::TrivialEncrypt(TrivialEncryptEvent {
+                    version: EVENT_VERSION,
+                    subject: [0; 32],
+                    plaintext: [55; 32],
+                    fhe_type: 5,
+                    result: [3; 32],
+                }),
+                SolanaHostEvent::FinalizedAccountFetch(acl_record_fetch(
+                    [9; 32],
+                    [4; 32],
+                    "public_decrypt_allowed",
+                )),
+            ],
+            tx_id,
+            SolanaBlockMeta {
+                block_number: 42,
+                block_timestamp,
+            },
+        );
+
         assert_eq!(tfhe_logs.len(), 1);
         assert!(!tfhe_logs[0].is_allowed);
     }

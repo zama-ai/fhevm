@@ -1,7 +1,9 @@
+use std::str::FromStr;
 use std::time::Duration;
 
-use anyhow::ensure;
+use anyhow::{ensure, Context};
 use clap::Parser;
+use solana_sdk::pubkey::Pubkey;
 use tokio_util::sync::CancellationToken;
 use tracing::Level;
 
@@ -26,6 +28,13 @@ struct Args {
 
     #[arg(long, help = "PostgreSQL connection URL")]
     database_url: DatabaseURL,
+
+    #[arg(
+        long = "program-id",
+        alias = "acl-program-id",
+        help = "zama_host program id (base58); finalized ACL records must be owned by it before a handle is released for decryption. If unset, the owner check is skipped."
+    )]
+    program_id: Option<String>,
 
     #[arg(
         long,
@@ -73,10 +82,11 @@ struct Args {
 
     #[arg(
         long,
+        alias = "host-chain-id",
         default_value_t = 0,
-        help = "Database chain id label used by the shared host-listener database type"
+        help = "Database chain id label (two's-complement i64 of the canonical host id) used by the shared host-listener database type. Must match the Solana host listener so released handles are tagged with the same host chain id."
     )]
-    chain_id: u64,
+    chain_id: i64,
 }
 
 #[tokio::main]
@@ -98,16 +108,28 @@ async fn main() -> anyhow::Result<()> {
         cancel_token.child_token(),
     );
 
+    // from_canonical_u64 accepts the full u64 host id (RFC-021 Solana ids exceed
+    // i64::MAX and arrive as their two's-complement i64), matching the listener.
     let db = Database::new(
         &args.database_url,
-        ChainId::try_from(args.chain_id)?,
+        ChainId::from_canonical_u64(args.chain_id as u64),
         args.dependence_cache_size,
     )
     .await?;
+    let host_program_id = args
+        .program_id
+        .as_deref()
+        .map(|id| {
+            Pubkey::from_str(id)
+                .with_context(|| format!("invalid program id {id}"))
+                .map(|pubkey| pubkey.to_bytes())
+        })
+        .transpose()?;
     let config = SolanaFinalizedAccountFetcherConfig {
         rpc_url: args.url,
         batch_size: args.batch_size,
         poll_interval: Duration::from_millis(args.poll_interval_ms),
+        host_program_id,
         retry_interval: Duration::from_millis(args.retry_interval_ms),
     };
 
