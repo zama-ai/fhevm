@@ -68,6 +68,12 @@ spec:
               value: {{ .Values.commonConfig.gatewayContractAddresses.gatewayConfig | quote }}
             - name: KMS_CONNECTOR_ETHEREUM_CHAIN_ID
               value: {{ .Values.commonConfig.ethereumChainId | quote }}
+            - name: KMS_CONNECTOR_ETHEREUM_ACL_ADDRESS
+              value: {{ .Values.commonConfig.ethereumContractAddresses.acl | quote }}
+            - name: KMS_CONNECTOR_POLYGON_CHAIN_ID
+              value: {{ .Values.commonConfig.polygonChainId | quote }}
+            - name: KMS_CONNECTOR_POLYGON_ACL_ADDRESS
+              value: {{ .Values.commonConfig.polygonContractAddresses.acl | quote }}
             - name: KMS_CONNECTOR_KMS_GENERATION_CONTRACT__ADDRESS
               value: {{ .Values.commonConfig.gatewayContractAddresses.kmsGeneration | quote }}
           {{- if default .Values.commonConfig.tracing.enabled .Values.kmsConnectorKmsWorker.tracing.enabled }}
