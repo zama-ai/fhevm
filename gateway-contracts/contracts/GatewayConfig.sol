@@ -861,6 +861,11 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
             );
     }
 
+    /// @dev Temporary marker to exercise the upgrade version check; remove before merging.
+    function ciDriftProbe() external pure virtual returns (uint256) {
+        return 1;
+    }
+
     /**
      * @notice Sets the KMS context: nodes and all thresholds for a given context ID.
      * @param contextId The context ID.

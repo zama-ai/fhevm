@@ -619,6 +619,11 @@ contract ACL is
             );
     }
 
+    /// @dev Temporary marker to exercise the upgrade version check; remove before merging.
+    function ciDriftProbe() external pure virtual returns (uint256) {
+        return 1;
+    }
+
     /**
      * @dev Should revert when `msg.sender` is not authorized to upgrade the contract.
      */
