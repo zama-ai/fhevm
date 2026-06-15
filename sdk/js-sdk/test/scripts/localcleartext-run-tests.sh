@@ -202,9 +202,9 @@ anvil_deploy_cleartext() {
     echo "🏗️  Deploying FHEVM cleartext stack..."
     (
         cd "$CONTRACTS_DIR"
-        bash "$DEPLOY_FHEVM_SCRIPT"
+        bash "$DEPLOY_FHEVM_SCRIPT" --chain localcleartext
         sleep 1
-        bash "$DEPLOY_FHE_TEST_SCRIPT"
+        bash "$DEPLOY_FHE_TEST_SCRIPT" --chain localcleartext
     )
 }
 

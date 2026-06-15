@@ -11,6 +11,11 @@ const rawWasmAssetPrefix = '/__raw_wasm';
 
 export default defineConfig({
   root: projectRoot,
+  resolve: {
+    alias: {
+      '@fhevm/sdk': resolve(projectRoot, 'src'),
+    },
+  },
   plugins: [rawWasmAssetPlugin()],
   server: {
     port: 3333,
