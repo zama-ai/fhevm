@@ -22,7 +22,6 @@ import {
 } from './utils/protocolConfigMigrationEnv';
 import {
   buildUpgradeProposal,
-  getFunctionFragment,
   printUpgradeProposal,
   toJsonString,
   verifyProposalImplementation,
@@ -129,12 +128,10 @@ task(
     // The bootstrap task may have updated addresses/FHEVMHostAddresses.sol, so rebuild
     await hre.run('compile:specific', { contract: 'contracts' });
     const decodedArgs = buildProtocolConfigInitializeFromMigrationArgs();
-    const artifact = await hre.artifacts.readArtifact('ProtocolConfig');
-    const innerFunctionSignature = getFunctionFragment(artifact.abi, 'initializeFromMigration').format('sighash');
     const preparedUpgrade = await buildUpgradeProposal(hre, {
       proxyAddress,
       contractName: 'ProtocolConfig',
-      innerFunctionSignature,
+      innerFunctionName: 'initializeFromMigration',
       decodedArgs,
     });
 
@@ -225,12 +222,10 @@ task(
     // The bootstrap task may have updated addresses/FHEVMHostAddresses.sol, so rebuild
     await hre.run('compile:specific', { contract: 'contracts' });
     const decodedArgs = buildKMSGenerationInitializeFromMigrationArgs();
-    const artifact = await hre.artifacts.readArtifact('KMSGeneration');
-    const innerFunctionSignature = getFunctionFragment(artifact.abi, 'initializeFromMigration').format('sighash');
     const preparedUpgrade = await buildUpgradeProposal(hre, {
       proxyAddress,
       contractName: 'KMSGeneration',
-      innerFunctionSignature,
+      innerFunctionName: 'initializeFromMigration',
       decodedArgs,
     });
 

@@ -7,6 +7,7 @@ import type { HardhatEthersHelpers, HardhatRuntimeEnvironment, TaskArguments } f
 import path from 'path';
 
 import {
+  type CanonicalSnapshot,
   buildCanonicalUpgradeProposal,
   buildSnapshotArtifact,
   parseSnapshotArtifact,
@@ -600,7 +601,7 @@ task(
     const parsedEnv = readHostEnv();
     const secondaryProxyAddress = parsedEnv.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
 
-    let snapshot;
+    let snapshot: CanonicalSnapshot;
     if (snapshotPath) {
       console.log(`Applying reviewed canonical snapshot from ${snapshotPath}.`);
       snapshot = parseSnapshotArtifact(fs.readFileSync(snapshotPath, 'utf-8'));

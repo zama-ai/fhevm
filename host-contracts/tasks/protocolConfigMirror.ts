@@ -4,7 +4,7 @@ import type { HardhatRuntimeEnvironment } from 'hardhat/types';
 import type { ProtocolConfig } from '../types';
 import { assertContractMatchesVersionPrefix } from './utils/contractVersion';
 import { formatError } from './utils/formatError';
-import { type UpgradeProposal, buildUpgradeProposal, getFunctionFragment } from './utils/upgradeProposal';
+import { type UpgradeProposal, buildUpgradeProposal } from './utils/upgradeProposal';
 
 export type KmsNode = {
   txSenderAddress: string;
@@ -117,12 +117,10 @@ export async function buildCanonicalUpgradeProposal(
     `Mirroring ProtocolConfig from canonical chain ${snapshot.canonicalChainId} at block ${snapshot.blockNumber} (${snapshot.blockHash}): contextId=${snapshot.currentKmsContextId}, kmsNodes=${snapshot.kmsNodes.length}.`,
   );
 
-  const artifact = await hre.artifacts.readArtifact('ProtocolConfig');
-  const innerFunctionSignature = getFunctionFragment(artifact.abi, 'initializeFromMigration').format('sighash');
   return buildUpgradeProposal(hre, {
     proxyAddress,
     contractName: 'ProtocolConfig',
-    innerFunctionSignature,
+    innerFunctionName: 'initializeFromMigration',
     decodedArgs: [snapshot.currentKmsContextId, snapshot.kmsNodes, snapshot.thresholds],
   });
 }

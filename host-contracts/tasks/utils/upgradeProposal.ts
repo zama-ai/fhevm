@@ -1,4 +1,4 @@
-import { FunctionFragment, Interface, type InterfaceAbi } from 'ethers';
+import { Interface } from 'ethers';
 import type { HardhatRuntimeEnvironment } from 'hardhat/types';
 
 import { getRequiredEnvVar } from './loadVariables';
@@ -16,14 +16,6 @@ export function toJsonString(value: unknown): string {
     (_, nestedValue: unknown) => (typeof nestedValue === 'bigint' ? nestedValue.toString() : nestedValue),
     2,
   );
-}
-
-export function getFunctionFragment(abi: InterfaceAbi, functionName: string): FunctionFragment {
-  const fragment = new Interface(abi).getFunction(functionName);
-  if (fragment === null) {
-    throw new Error(`Function ${functionName} not found in ABI.`);
-  }
-  return fragment;
 }
 
 export const UPGRADE_TO_AND_CALL_INTERFACE = new Interface([
@@ -44,7 +36,7 @@ export async function buildUpgradeProposal(
   params: {
     proxyAddress: string;
     contractName: string;
-    innerFunctionSignature: string;
+    innerFunctionName: string;
     decodedArgs: unknown[];
   },
 ): Promise<UpgradeProposal> {
@@ -59,10 +51,10 @@ export async function buildUpgradeProposal(
       kind: 'uups',
     }),
   );
-  const innerCalldata = newImplementation.interface.encodeFunctionData(
-    params.innerFunctionSignature,
-    params.decodedArgs,
-  );
+  // The factory's interface already knows the new implementation's ABI, so encode by function name
+  // directly — no need to re-read the artifact or precompute a sighash at the call site.
+  const innerCalldata = newImplementation.interface.encodeFunctionData(params.innerFunctionName, params.decodedArgs);
+  const innerFunctionSignature = newImplementation.interface.getFunction(params.innerFunctionName)!.format('sighash');
   const outerCalldata = UPGRADE_TO_AND_CALL_INTERFACE.encodeFunctionData('upgradeToAndCall', [
     newImplementationAddress,
     innerCalldata,
@@ -71,7 +63,7 @@ export async function buildUpgradeProposal(
   return {
     proxyAddress: params.proxyAddress,
     newImplementationAddress,
-    innerFunctionSignature: params.innerFunctionSignature,
+    innerFunctionSignature,
     decodedArgs: params.decodedArgs,
     innerCalldata,
     outerCalldata,
