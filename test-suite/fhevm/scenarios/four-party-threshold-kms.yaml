@@ -1,0 +1,33 @@
+version: 1
+kind: coprocessor-consensus
+name: Four Party Threshold KMS
+description: >
+  Multi-coprocessor (2-of-2) + a real 4-party threshold-mode KMS cluster (t=1) running
+  SECURE keygen with Test FHE parameters. Secure keygen does real MPC preprocessing
+  and signs the on-chain prepKeygenId, so it passes the host KMSGeneration
+  KeygenVerification and reaches activeKeyId (~360s for 4 parties, measured).
+  Validates the KMS-generation path end to end against a genuine multi-party KMS,
+  with multiple coprocessors exercising the gateway/host event-listening paths.
+  The KMS-context guarantees (context-aware signature verification,
+  confirmEpochActivation quorum, cross-context replay protection) build on this;
+  resharing (RFC-005) is deferred to fhevm 0.14. Uses the published connector
+  (no local build); Default FHE params are deferred to a follow-up PR.
+topology:
+  count: 2
+  threshold: 2
+instances:
+  - index: 0
+    args:
+      host-listener-consumer:
+        - --service-name=coprocessor-host-listener-consumer
+  - index: 1
+    args:
+      host-listener-consumer:
+        - --service-name=coprocessor1-host-listener-consumer
+# Optional `kms` block. Absent (every existing scenario) = today's single centralized
+# kms-core. Present with mode: threshold = an N-party threshold-mode cluster + per-party connectors.
+kms:
+  mode: threshold
+  parties: 4       # MPC nodes; KMS core requires parties == 3*threshold + 1
+  threshold: 1     # t (reconstruction needs 2t+1 = 3 matching responses)
+  fheParams: Test  # Test only for now; Default deferred to a follow-up PR

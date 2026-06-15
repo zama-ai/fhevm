@@ -8,33 +8,33 @@ import type {
   SignedSelfDecryptionPermit,
 } from '../../types/signedDecryptionPermit.js';
 import type { EncryptedValueLike } from '../../types/encryptedTypes.js';
-import { fetchKmsSignedcryptedShares as fetchKmsSignedcryptedShares_ } from '../../kms/fetchKmsSignedcryptedShares-p.js';
+import { fetchKmsSigncryptedShares as fetchKmsSigncryptedShares_ } from '../../kms/fetchKmsSigncryptedShares-p.js';
 import { assertIsEncryptedValueLike, toFhevmHandle } from '../../handle/FhevmHandle.js';
 import { addressToChecksummedAddress, assertIsAddress } from '../../base/address.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
-type FetchKmsSignedcryptedSharesParametersBase = {
+type FetchKmsSigncryptedSharesParametersBase = {
   readonly pairs: ReadonlyArray<{
     readonly encryptedValue: EncryptedValueLike;
     readonly contractAddress: string;
   }>;
 };
 
-export type FetchSelfKmsSignedcryptedSharesParameters = FetchKmsSignedcryptedSharesParametersBase & {
+export type FetchSelfKmsSigncryptedSharesParameters = FetchKmsSigncryptedSharesParametersBase & {
   readonly signedPermit: SignedSelfDecryptionPermit;
   readonly options?: RelayerUserDecryptOptions | undefined;
 };
 
-export type FetchDelegatedKmsSignedcryptedSharesParameters = FetchKmsSignedcryptedSharesParametersBase & {
+export type FetchDelegatedKmsSigncryptedSharesParameters = FetchKmsSigncryptedSharesParametersBase & {
   readonly signedPermit: SignedDelegatedDecryptionPermit;
   readonly options?: RelayerDelegatedUserDecryptOptions | undefined;
 };
 
-export type FetchKmsSignedcryptedSharesReturnType = KmsSigncryptedShares;
+export type FetchKmsSigncryptedSharesReturnType = KmsSigncryptedShares;
 
 ////////////////////////////////////////////////////////////////////////////////
-// fetchKmsSignedcryptedShares
+// fetchKmsSigncryptedShares
 ////////////////////////////////////////////////////////////////////////////////
 
 /**
@@ -53,20 +53,20 @@ export type FetchKmsSignedcryptedSharesReturnType = KmsSigncryptedShares;
  * The returned {@link KmsSigncryptedShares} is fully validated (see
  * {@link KmsSigncryptedSharesImpl} invariants).
  */
-export async function fetchKmsSignedcryptedShares(
+export async function fetchKmsSigncryptedShares(
   fhevm: Fhevm<FhevmChain>,
-  parameters: FetchSelfKmsSignedcryptedSharesParameters,
-): Promise<FetchKmsSignedcryptedSharesReturnType>;
+  parameters: FetchSelfKmsSigncryptedSharesParameters,
+): Promise<FetchKmsSigncryptedSharesReturnType>;
 
-export async function fetchKmsSignedcryptedShares(
+export async function fetchKmsSigncryptedShares(
   fhevm: Fhevm<FhevmChain>,
-  parameters: FetchDelegatedKmsSignedcryptedSharesParameters,
-): Promise<FetchKmsSignedcryptedSharesReturnType>;
+  parameters: FetchDelegatedKmsSigncryptedSharesParameters,
+): Promise<FetchKmsSigncryptedSharesReturnType>;
 
-export async function fetchKmsSignedcryptedShares(
+export async function fetchKmsSigncryptedShares(
   fhevm: Fhevm<FhevmChain>,
-  parameters: FetchSelfKmsSignedcryptedSharesParameters | FetchDelegatedKmsSignedcryptedSharesParameters,
-): Promise<FetchKmsSignedcryptedSharesReturnType> {
+  parameters: FetchSelfKmsSigncryptedSharesParameters | FetchDelegatedKmsSigncryptedSharesParameters,
+): Promise<FetchKmsSigncryptedSharesReturnType> {
   const { pairs } = parameters;
 
   // Validate & sanitize `pairs` parameter
@@ -79,5 +79,5 @@ export async function fetchKmsSignedcryptedShares(
     };
   });
 
-  return fetchKmsSignedcryptedShares_(fhevm, { ...parameters, pairs: sanitizedPairs });
+  return fetchKmsSigncryptedShares_(fhevm, { ...parameters, pairs: sanitizedPairs });
 }

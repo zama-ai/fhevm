@@ -98,12 +98,13 @@ import {
   writeJson,
 } from "../utils/fs";
 import { ensureDiscovery, createDiscovery, defaultEndpoints, discoverContracts, minioIp, validateDiscovery } from "./discovery";
+import { kmsConnectorEnvName } from "../kms-party";
 import { defaultHostChain, extraHostChains, hostChainsForState } from "./topology";
 import {
-  KMS_CONNECTOR_HEALTH_CONTAINERS,
+  kmsConnectorHealthContainers,
   castBool,
   coprocessorHealthContainers,
-  discoverSigner,
+  discoverKmsSigners,
   dockerInspect,
   ensureMaterial,
   listenerContainersForChain,
@@ -153,7 +154,7 @@ export {
   createDiscovery,
   defaultEndpoints,
   discoverContracts,
-  discoverSigner,
+  discoverKmsSigners,
   dockerInspect,
   ensureDiscovery,
   ensureMaterial,
@@ -538,8 +539,18 @@ export const runStep = async (state: State, step: StepName) => {
       await stepComposeUp("minio", state);
       await waitForContainer("fhevm-minio", "healthy");
       await waitForContainer("fhevm-minio-setup", "complete");
-      await stepComposeUp("core", state);
+      // Threshold mode boots the dedicated N-node cluster component instead of
+      // the single centralized core. Party 1 keeps the `kms-core` name, so the
+      // readiness wait below is unchanged.
+      await stepComposeUp(state.scenario.kms.mode === "threshold" ? "core-threshold" : "core", state);
       await waitForLog(KMS_CORE_CONTAINER, /KMS Server service socket address/);
+      if (state.scenario.kms.mode === "threshold") {
+        // The party-1 socket log only proves one core is up. The cluster cannot
+        // serve keygen/decryption until kms-core-init has run the cross-party MPC
+        // context/PRSS setup, so gate on its completion before signer discovery /
+        // bootstrap — otherwise we proceed against an uninitialized cluster.
+        await waitForContainer("kms-core-init", "complete");
+      }
       await stepComposeUp("database", state);
       await waitForContainer(COPROCESSOR_DB_CONTAINER, "healthy");
       const defaultChain = defaultHostChain(state);
@@ -548,11 +559,18 @@ export const runStep = async (state: State, step: StepName) => {
         throw new PreflightError("Missing default host chain");
       }
       await waitForRpc(`http://localhost:${defaultChain.rpcPort}`);
-      // Fund the kms-connector tx-sender on the host chain. The wallet is derived from the gateway
-      // mnemonic so anvil pre-funds it there, but not on the host chain (different mnemonic).
-      const kmsConnectorEnv = await readEnvFile(envPath("kms-connector"));
-      const txSenderKey = kmsConnectorEnv.KMS_CONNECTOR_PRIVATE_KEY;
-      if (txSenderKey) {
+      // Fund each KMS party's connector tx-sender on the host chain. The wallets are
+      // derived from the gateway mnemonic so anvil pre-funds them there, but not on the
+      // host chain (different mnemonic). A threshold-mode KMS runs one connector (and tx-sender)
+      // per party, and EVERY party must be funded — otherwise only the funded party can
+      // submit keygen/crsgen responses and on-chain consensus never completes.
+      // `kms.parties` is 1 for centralized and N for threshold.
+      for (let party = 1; party <= state.scenario.kms.parties; party += 1) {
+        const connectorEnv = await readEnvFile(envPath(kmsConnectorEnvName(party)));
+        const txSenderKey = connectorEnv.KMS_CONNECTOR_PRIVATE_KEY;
+        if (!txSenderKey) {
+          continue;
+        }
         const txSenderAddress = (await run(["cast", "wallet", "address", txSenderKey])).stdout.trim();
         await run([
           "cast", "rpc", "anvil_setBalance", txSenderAddress, "0x56BC75E2D63100000", // 100 ETH
@@ -582,10 +600,11 @@ export const runStep = async (state: State, step: StepName) => {
       break;
     }
     case "kms-signer": {
+      // `kms.parties` is 1 for centralized and N for threshold, so one call covers both.
       const discovery = await ensureDiscovery(state);
-      const signer = await discoverSigner();
-      discovery.kmsSigner = signer.address;
-      discovery.minioKeyPrefix = signer.minioKeyPrefix;
+      const { signers, minioKeyPrefix } = await discoverKmsSigners(state.scenario.kms.parties);
+      discovery.kmsSigners = signers;
+      discovery.minioKeyPrefix = minioKeyPrefix;
       await generateRuntime(state, stackSpecForState(state));
       break;
     }
@@ -699,7 +718,7 @@ export const runStep = async (state: State, step: StepName) => {
     case "kms-connector":
       await stepComposeUp("kms-connector", state);
       await waitForKmsConnector(state);
-      await postBootHealthGate(KMS_CONNECTOR_HEALTH_CONTAINERS);
+      await postBootHealthGate(kmsConnectorHealthContainers(state));
       break;
     case "bootstrap": {
       await ensureRuntimeArtifacts(state, "bootstrap");
@@ -785,7 +804,14 @@ export const runStep = async (state: State, step: StepName) => {
         );
         await waitForContainer("gateway-sc-trigger-crsgen", "complete");
       }
-      await timed("[bootstrap] wait-for-materials", () => waitForBootstrap(state));
+      // wait-for-materials polls roughly once per second. Centralized keygen is quick; a
+      // threshold-mode cluster runs a real multi-party DKG (~360s for 4 parties), so it needs a
+      // much larger budget before we conclude bootstrap failed.
+      const CENTRALIZED_BOOTSTRAP_ATTEMPTS = 120;
+      const THRESHOLD_BOOTSTRAP_ATTEMPTS = 450;
+      const bootstrapAttempts =
+        state.scenario.kms.mode === "threshold" ? THRESHOLD_BOOTSTRAP_ATTEMPTS : CENTRALIZED_BOOTSTRAP_ATTEMPTS;
+      await timed("[bootstrap] wait-for-materials", () => waitForBootstrap(state, bootstrapAttempts));
       await generateRuntime(state, stackSpecForState(state));
       break;
     }
@@ -941,6 +967,15 @@ export const up = async (options: UpOptions) => {
     }
     state = nextState;
     await saveState(state);
+  }
+  if ((options.resume || options.fromStep) && state.scenario.kms.mode === "threshold") {
+    // The resume/from-step lifecycle map (COMPONENT_BY_STEP, resumeSteadyStateServices) models a
+    // single `kms-core` + one connector tier. A threshold-mode cluster has kms-core-2..N, kms-core-init
+    // and per-party connectors that the map does not know about, so a partial restart would leave
+    // them stale. Block it like the threshold upgrade guard until the map is made scenario-aware.
+    throw new ResumeError(
+      "--resume / --from-step is not supported for a threshold-mode KMS cluster (the lifecycle map models a single kms-core/connector and would leave kms-core-2..N, kms-core-init, and per-party connectors stale); recreate the stack with a fresh `up`",
+    );
   }
   if (options.resume) {
     state.requiresGitHub = false;
@@ -1408,7 +1443,7 @@ const waitForUpgrade = async (state: State, group: UpgradeGroup, runtimeServices
   if (group === "kms-connector" || group === "kms") {
     await waitForContainer(KMS_CORE_CONTAINER, "running");
     await waitForKmsConnector(state);
-    await postBootHealthGate(KMS_CONNECTOR_HEALTH_CONTAINERS);
+    await postBootHealthGate(kmsConnectorHealthContainers(state));
     return;
   }
   if (group === "kms-core") {
