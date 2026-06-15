@@ -1,10 +1,11 @@
 import { calculateERC7201StorageLocation } from '@openzeppelin/upgrades-core/dist/utils/erc7201';
-import { AbiCoder, FunctionFragment, Interface, type InterfaceAbi, getAddress, keccak256, toBeHex } from 'ethers';
+import { AbiCoder, getAddress, keccak256, toBeHex } from 'ethers';
 import fs from 'fs';
 import { task, types } from 'hardhat/config';
 import type { HardhatRuntimeEnvironment } from 'hardhat/types';
 import path from 'path';
 
+import { buildCanonicalUpgradeProposal, parseSnapshotArtifact } from './protocolConfigMirror';
 import {
   assertContractMatchesVersionPrefix,
   deployEmptyUUPS,
@@ -19,104 +20,12 @@ import {
   type ProtocolConfigMigrationKmsNode,
   buildProtocolConfigInitializeFromMigrationArgs,
 } from './utils/protocolConfigMigrationEnv';
-
-////////////////////////////////////////////////////////////////////////////////
-// Proposal artifact helpers
-////////////////////////////////////////////////////////////////////////////////
-
-export function toJsonString(value: unknown): string {
-  return JSON.stringify(
-    value,
-    (_, nestedValue: unknown) => (typeof nestedValue === 'bigint' ? nestedValue.toString() : nestedValue),
-    2,
-  );
-}
-
-function getFunctionFragment(abi: InterfaceAbi, functionName: string): FunctionFragment {
-  const fragment = new Interface(abi).getFunction(functionName);
-  if (fragment === null) {
-    throw new Error(`Function ${functionName} not found in ABI.`);
-  }
-  return fragment;
-}
-
-export const UPGRADE_TO_AND_CALL_INTERFACE = new Interface([
-  'function upgradeToAndCall(address newImplementation, bytes data) payable',
-]);
-
-type PreparedDaoUpgrade = {
-  proxyAddress: string;
-  newImplementationAddress: string;
-  innerFunctionSignature: string;
-  decodedArgs: unknown[];
-  innerCalldata: string;
-  outerCalldata: string;
-};
-
-async function prepareDaoUpgrade(
-  hre: HardhatRuntimeEnvironment,
-  params: {
-    proxyAddress: string;
-    contractName: string;
-    innerFunctionSignature: string;
-    decodedArgs: unknown[];
-  },
-): Promise<PreparedDaoUpgrade> {
-  const { ethers, upgrades } = hre;
-  const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
-  const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
-  const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
-  const newImplementation = await ethers.getContractFactory(params.contractName, deployer);
-  await upgrades.forceImport(params.proxyAddress, currentImplementation);
-  const newImplementationAddress = String(
-    await upgrades.prepareUpgrade(params.proxyAddress, newImplementation, {
-      kind: 'uups',
-    }),
-  );
-  const innerCalldata = newImplementation.interface.encodeFunctionData(
-    params.innerFunctionSignature,
-    params.decodedArgs,
-  );
-  const outerCalldata = UPGRADE_TO_AND_CALL_INTERFACE.encodeFunctionData('upgradeToAndCall', [
-    newImplementationAddress,
-    innerCalldata,
-  ]);
-
-  return {
-    proxyAddress: params.proxyAddress,
-    newImplementationAddress,
-    innerFunctionSignature: params.innerFunctionSignature,
-    decodedArgs: params.decodedArgs,
-    innerCalldata,
-    outerCalldata,
-  };
-}
-
-async function verifyPreparedImplementation(
-  hre: HardhatRuntimeEnvironment,
-  data: PreparedDaoUpgrade,
-  contract: string,
-): Promise<void> {
-  console.log('Waiting 2 minutes before contract verification... Please wait...');
-  await new Promise((resolve) => setTimeout(resolve, 2 * 60 * 1000));
-  await hre.run('verify:verify', {
-    address: data.newImplementationAddress,
-    contract,
-    constructorArguments: [],
-  });
-}
-
-function printPreparedDaoUpgrade(data: PreparedDaoUpgrade): void {
-  console.log('proxyAddress:', data.proxyAddress);
-  console.log('newImplementationAddress:', data.newImplementationAddress);
-  console.log('innerFunctionSignature:', data.innerFunctionSignature);
-  console.log('decodedArgs:', toJsonString(data.decodedArgs));
-  console.log(`${data.innerFunctionSignature} calldata:`, data.innerCalldata);
-  console.log('upgradeToAndCall(address,bytes) calldata:', data.outerCalldata);
-  console.log(
-    `Cast command: cast calldata 'upgradeToAndCall(address,bytes)' ${data.newImplementationAddress} ${data.innerCalldata}`,
-  );
-}
+import {
+  buildUpgradeProposal,
+  printUpgradeProposal,
+  toJsonString,
+  verifyProposalImplementation,
+} from './utils/upgradeProposal';
 
 function assertEqual<T>(label: string, actual: T, expected: NoInfer<T>): void {
   if (actual !== expected) {
@@ -219,18 +128,51 @@ task(
     // The bootstrap task may have updated addresses/FHEVMHostAddresses.sol, so rebuild
     await hre.run('compile:specific', { contract: 'contracts' });
     const decodedArgs = buildProtocolConfigInitializeFromMigrationArgs();
-    const artifact = await hre.artifacts.readArtifact('ProtocolConfig');
-    const innerFunctionSignature = getFunctionFragment(artifact.abi, 'initializeFromMigration').format('sighash');
-    const preparedUpgrade = await prepareDaoUpgrade(hre, {
+    const preparedUpgrade = await buildUpgradeProposal(hre, {
       proxyAddress,
       contractName: 'ProtocolConfig',
-      innerFunctionSignature,
+      innerFunctionName: 'initializeFromMigration',
       decodedArgs,
     });
 
-    printPreparedDaoUpgrade(preparedUpgrade);
+    printUpgradeProposal(preparedUpgrade);
     if (verifyContract) {
-      await verifyPreparedImplementation(hre, preparedUpgrade, 'contracts/ProtocolConfig.sol:ProtocolConfig');
+      await verifyProposalImplementation(hre, preparedUpgrade, 'contracts/ProtocolConfig.sol:ProtocolConfig');
+    }
+    return preparedUpgrade;
+  });
+
+// DAO path for initializing a non-canonical ProtocolConfig replica from the canonical chain
+// (Ethereum). Consumes a reviewed task:exportCanonicalProtocolConfig artifact — not a live RPC
+// read — so the DAO executes exactly the state its signers reproduced and diffed. Devnet
+// equivalent: task:deployProtocolConfigFromCanonical.
+task(
+  'task:prepareDeployProtocolConfigFromCanonical',
+  'Deploys a ProtocolConfig implementation and prints DAO upgrade calldata from a reviewed canonical snapshot artifact',
+)
+  .addParam(
+    'snapshot',
+    'Path to the reviewed task:exportCanonicalProtocolConfig artifact to encode into the DAO payload.',
+    undefined,
+    types.string,
+  )
+  .addOptionalParam(
+    'verifyContract',
+    'Verify new implementation on Etherscan (for eg if deploying on Sepolia or Mainnet)',
+    true,
+    types.boolean,
+  )
+  .setAction(async function ({ snapshot: snapshotPath, verifyContract }, hre) {
+    const parsedEnv = readHostEnv();
+    const proxyAddress = parsedEnv.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
+    // The bootstrap task may have updated addresses/FHEVMHostAddresses.sol, so rebuild
+    await hre.run('compile:specific', { contract: 'contracts' });
+    const snapshot = parseSnapshotArtifact(fs.readFileSync(snapshotPath, 'utf-8'));
+    const preparedUpgrade = await buildCanonicalUpgradeProposal(hre, { snapshot, proxyAddress });
+
+    printUpgradeProposal(preparedUpgrade);
+    if (verifyContract) {
+      await verifyProposalImplementation(hre, preparedUpgrade, 'contracts/ProtocolConfig.sol:ProtocolConfig');
     }
     return preparedUpgrade;
   });
@@ -280,18 +222,16 @@ task(
     // The bootstrap task may have updated addresses/FHEVMHostAddresses.sol, so rebuild
     await hre.run('compile:specific', { contract: 'contracts' });
     const decodedArgs = buildKMSGenerationInitializeFromMigrationArgs();
-    const artifact = await hre.artifacts.readArtifact('KMSGeneration');
-    const innerFunctionSignature = getFunctionFragment(artifact.abi, 'initializeFromMigration').format('sighash');
-    const preparedUpgrade = await prepareDaoUpgrade(hre, {
+    const preparedUpgrade = await buildUpgradeProposal(hre, {
       proxyAddress,
       contractName: 'KMSGeneration',
-      innerFunctionSignature,
+      innerFunctionName: 'initializeFromMigration',
       decodedArgs,
     });
 
-    printPreparedDaoUpgrade(preparedUpgrade);
+    printUpgradeProposal(preparedUpgrade);
     if (verifyContract) {
-      await verifyPreparedImplementation(hre, preparedUpgrade, 'contracts/KMSGeneration.sol:KMSGeneration');
+      await verifyProposalImplementation(hre, preparedUpgrade, 'contracts/KMSGeneration.sol:KMSGeneration');
     }
     return preparedUpgrade;
   });
