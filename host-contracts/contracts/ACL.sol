@@ -361,7 +361,8 @@ contract ACL is
     /**
      * @notice Revokes the access to handles for user decryption delegated to an account.
      * @param delegate The address of the account that receives the delegation.
-     * @param contractAddress The contract address to delegate access to.
+     * @param contractAddress The contract address to revoke access to, or `WILDCARD_DELEGATION_ADDRESS` to revoke the
+     *        wildcard delegation across all contracts.
      */
     function revokeDelegationForUserDecryption(address delegate, address contractAddress) public virtual whenNotPaused {
         ACLStorage storage $ = _getACLStorage();
