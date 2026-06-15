@@ -4,6 +4,18 @@ use tokio::{select, task::JoinHandle};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
+/// Spawns the background routine responsible for cleaning up the database.
+///
+/// # Arguments
+///
+/// * `period` - Duration to wait between two runs of the routine.
+/// * `decryption_expiry` - Age after which `completed`/`failed` decryption
+///   requests and responses are deleted (computed from their `updated_at`).
+/// * `under_process_limit` - Age after which decryption requests and responses
+///   stuck in the `under_process` status are unlocked back to `pending`
+///   (computed from their `updated_at`).
+/// * `db_pool` - Connection pool to the database to clean up.
+/// * `cancel_token` - Token used to stop the routine gracefully.
 pub fn spawn_garbage_collection_routine(
     period: Duration,
     decryption_expiry: PgInterval,
