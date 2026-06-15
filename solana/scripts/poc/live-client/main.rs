@@ -36,7 +36,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // (created by bootstrap.mjs with the real gateway verifier config); it does not touch
     // host_config or the mint, so it runs standalone with the relayer-returned attestation.
     if std::env::var("BIND_INPUT").is_ok() {
-        bind_coprocessor_input(&host, &payer, host_config)?;
+        bind_coprocessor_input(&host, host_config)?;
         return Ok(());
     }
 
@@ -118,14 +118,14 @@ fn hexdec(s: &str) -> Vec<u8> {
         .collect()
 }
 
-/// Binds a coprocessor-verified input on the live zama-host: feeds the handle + EIP-712
+/// Verifies a coprocessor-attested input on the live zama-host: feeds the handle + EIP-712
 /// `CiphertextVerification` attestation (handles + signature) the relayer returned, which the
 /// host verifies on-chain via secp256k1_recover against the configured coprocessor signer
-/// before creating the output ACL record. Inputs come from the relayer response via env
+/// before emitting the verified-input receipt. No persistent ACL is created (EVM parity).
+/// Inputs come from the relayer response via env
 /// (BIND_HANDLE, BIND_COPRO_SIG, BIND_USER, BIND_CONTRACT, BIND_CHAIN_ID, optional BIND_EXTRA).
 fn bind_coprocessor_input(
     host: &Program<Rc<Keypair>>,
-    payer: &Rc<Keypair>,
     host_config: Pubkey,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let handle: [u8; 32] = hexdec(&std::env::var("BIND_HANDLE")?)
@@ -145,35 +145,19 @@ fn bind_coprocessor_input(
         .map(|s| hexdec(&s))
         .unwrap_or_else(|_| vec![0u8]);
 
-    // Output ACL record: app_account must equal the authorizing signer, and nonce_key must
-    // equal acl_nonce_key(domain, app_account, label). The bound input is granted USE to the
-    // user subject.
-    let app_account = payer.pubkey();
-    let acl_domain_key = payer.pubkey();
-    let encrypted_value_label = [0u8; 32];
-    let output_nonce_key =
-        zama_host::acl_nonce_key(acl_domain_key, app_account, encrypted_value_label);
-    let output_nonce_sequence: u64 = 0;
-    let (output_acl_record, _) =
-        zama_host::acl_record_address(output_nonce_key, output_nonce_sequence);
     let (zama_event_authority, _) =
         Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
-    let subjects = vec![zama_host::AclSubjectEntry::use_only(payer.pubkey())];
 
     let handle_hex: String = handle.iter().map(|b| format!("{b:02x}")).collect();
     println!("binding input_handle 0x{handle_hex}");
     let sig = host
         .request()
-        .accounts(zama_host::accounts::VerifyCoprocessorInputAndBind {
-            payer: payer.pubkey(),
-            app_account_authority: payer.pubkey(),
+        .accounts(zama_host::accounts::VerifyCoprocessorInput {
             host_config,
-            output_acl_record,
-            system_program: system_program::ID,
             event_authority: zama_event_authority,
             program: zama_host::ID,
         })
-        .args(zama_host::instruction::VerifyCoprocessorInputAndBind {
+        .args(zama_host::instruction::VerifyCoprocessorInput {
             input_handle: handle,
             ct_handles: vec![handle],
             handle_index: 0,
@@ -182,17 +166,10 @@ fn bind_coprocessor_input(
             contract_chain_id,
             extra_data,
             signatures: vec![signature],
-            output_nonce_key,
-            output_nonce_sequence,
-            output_acl_domain_key: acl_domain_key,
-            output_app_account: app_account,
-            output_encrypted_value_label: encrypted_value_label,
-            output_subjects: subjects,
-            output_public_decrypt: false,
         })
         .send()?;
-    println!("OK verify_coprocessor_input_and_bind: {sig}");
-    println!("  output ACL record {output_acl_record}  (secp256k1 attestation verified on-chain)");
+    println!("OK verify_coprocessor_input: {sig}");
+    println!("  (secp256k1 coprocessor attestation verified on-chain; no persistent input ACL)");
     Ok(())
 }
 

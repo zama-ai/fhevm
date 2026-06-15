@@ -43,7 +43,7 @@ PINNED_SCHEMAS = [
     ("zama_host", "type", "InitializeHostConfigArgs", True),
     ("zama_host", "type", "FheEvalArgs", True),
     ("zama_host", "instruction_args", "initialize_host_config", True),
-    ("zama_host", "instruction_args", "verify_coprocessor_input_and_bind", True),
+    ("zama_host", "instruction_args", "verify_coprocessor_input", True),
     ("zama_host", "instruction_args", "fhe_eval", True),
     ("confidential_token", "account", "ConfidentialMint", True),
     ("confidential_token", "account", "ConfidentialTokenAccount", True),

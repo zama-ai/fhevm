@@ -56,12 +56,12 @@ ih="$(echo "$ir" | python3 -c "import sys,json;print(json.load(sys.stdin)['resul
 isig="$(echo "$ir" | python3 -c "import sys,json;print(json.load(sys.stdin)['result']['signatures'][0])")"
 iextra="$(echo "$ir" | python3 -c "import sys,json;print(json.load(sys.stdin)['result'].get('extraData','0x00'))")"
 echo "    input handle=$ih (coprocessor EIP-712 attestation $isig)"
-# Attested contract == deployer: zama-host binds the input into the signer's own ACL domain
-# (verify_coprocessor_input_and_bind requires attested contract == output app account == signer).
+# zama-host verifies the coprocessor's EIP-712 attestation on-chain via secp256k1 and emits the
+# verified-input receipt. EVM parity: no persistent input ACL is created (FHEVMExecutor.verifyInput).
 BIND_INPUT=1 BIND_HANDLE="$ih" BIND_COPRO_SIG="$isig" BIND_USER="$USER" BIND_CONTRACT="$USER" \
-  BIND_CHAIN_ID="$SID" BIND_EXTRA="$iextra" "$LC" 2>&1 | grep -E 'verify_coprocessor_input_and_bind|secp256k1' \
-  || fail "zama-host bind failed"
-echo "    input bound on zama-host via on-chain secp256k1 verify of coprocessor attestation"
+  BIND_CHAIN_ID="$SID" BIND_EXTRA="$iextra" "$LC" 2>&1 | grep -E 'verify_coprocessor_input|secp256k1' \
+  || fail "zama-host input verification failed"
+echo "    input verified on zama-host via on-chain secp256k1 verify of coprocessor attestation"
 
 echo "==> [compute] eval-based fhe_eval trivial_encrypt $VALUE on zama-host (#2755 eval executor + ACL allow)"
 out="$(cd "$ROOT/solana/scripts/poc/live-client" && TRIVIAL_ENCRYPT_EVAL=1 TE_VALUE="$VALUE" TE_ALLOW=1 ./target/debug/poc-live-client 2>&1)"

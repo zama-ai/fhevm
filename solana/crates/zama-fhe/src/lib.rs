@@ -2345,15 +2345,6 @@ mod tests {
         AccountInfo::new(key, false, is_writable, lamports, data, owner, false)
     }
 
-    fn input_handle(tag: u8, index: u8, chain_id: u64, fhe_type: u8) -> [u8; 32] {
-        let mut handle = [tag; 32];
-        handle[21] = index;
-        handle[22..30].copy_from_slice(&chain_id.to_be_bytes());
-        handle[30] = fhe_type;
-        handle[31] = zama_host::HANDLE_VERSION;
-        handle
-    }
-
     fn durable_slot(account: Pubkey, sequence: u64) -> DurableSlot {
         DurableSlot::new(
             Pubkey::new_unique(),

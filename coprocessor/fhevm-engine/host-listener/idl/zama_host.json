@@ -2666,33 +2666,18 @@
       ]
     },
     {
-      "name": "verify_coprocessor_input_and_bind",
+      "name": "verify_coprocessor_input",
       "discriminator": [
-        155,
-        59,
-        114,
-        90,
-        124,
-        188,
-        86,
-        222
+        179,
+        79,
+        160,
+        129,
+        222,
+        44,
+        88,
+        188
       ],
       "accounts": [
-        {
-          "name": "payer",
-          "docs": [
-            "Pays rent for the output ACL record."
-          ],
-          "writable": true,
-          "signer": true
-        },
-        {
-          "name": "app_account_authority",
-          "docs": [
-            "App account signer authorizing the ACL metadata."
-          ],
-          "signer": true
-        },
         {
           "name": "host_config",
           "docs": [
@@ -2718,47 +2703,6 @@
               }
             ]
           }
-        },
-        {
-          "name": "output_acl_record",
-          "docs": [
-            "Canonical output ACL record created by this instruction."
-          ],
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  97,
-                  99,
-                  108,
-                  45,
-                  114,
-                  101,
-                  99,
-                  111,
-                  114,
-                  100
-                ]
-              },
-              {
-                "kind": "arg",
-                "path": "output_nonce_key"
-              },
-              {
-                "kind": "arg",
-                "path": "output_nonce_sequence"
-              }
-            ]
-          }
-        },
-        {
-          "name": "system_program",
-          "docs": [
-            "System program used for ACL account creation."
-          ],
-          "address": "11111111111111111111111111111111"
         },
         {
           "name": "event_authority"
@@ -2828,50 +2772,6 @@
               ]
             }
           }
-        },
-        {
-          "name": "output_nonce_key",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        },
-        {
-          "name": "output_nonce_sequence",
-          "type": "u64"
-        },
-        {
-          "name": "output_acl_domain_key",
-          "type": "pubkey"
-        },
-        {
-          "name": "output_app_account",
-          "type": "pubkey"
-        },
-        {
-          "name": "output_encrypted_value_label",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        },
-        {
-          "name": "output_subjects",
-          "type": {
-            "vec": {
-              "defined": {
-                "name": "AclSubjectEntry"
-              }
-            }
-          }
-        },
-        {
-          "name": "output_public_decrypt",
-          "type": "bool"
         }
       ]
     }

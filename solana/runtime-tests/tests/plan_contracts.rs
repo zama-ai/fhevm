@@ -62,12 +62,12 @@ fn host_idl_drops_verifier_set_and_keeps_secp_kms_context_path() {
             "KmsContext is missing field `{required}`"
         );
     }
-    // Encrypted inputs are bound from the secp256k1 coprocessor attestation.
+    // Encrypted inputs are verified from the secp256k1 coprocessor attestation.
     assert!(
         instructions
             .iter()
-            .any(|name| name == "verify_coprocessor_input_and_bind"),
-        "zama-host IDL must expose verify_coprocessor_input_and_bind"
+            .any(|name| name == "verify_coprocessor_input"),
+        "zama-host IDL must expose verify_coprocessor_input"
     );
 }
 

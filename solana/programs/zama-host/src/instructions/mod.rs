@@ -42,7 +42,7 @@ pub mod test_emit_input_verified;
 #[cfg(feature = "poc")]
 pub mod test_emit_trivial_encrypt;
 pub mod trivial_encrypt_and_bind;
-pub mod verify_coprocessor_input_and_bind;
+pub mod verify_coprocessor_input;
 
 pub use allow_acl_subjects::*;
 pub use allow_for_decryption::*;
@@ -81,4 +81,4 @@ pub use test_emit_input_verified::*;
 #[cfg(feature = "poc")]
 pub use test_emit_trivial_encrypt::*;
 pub use trivial_encrypt_and_bind::*;
-pub use verify_coprocessor_input_and_bind::*;
+pub use verify_coprocessor_input::*;

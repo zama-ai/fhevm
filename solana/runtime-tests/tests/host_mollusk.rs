@@ -6460,36 +6460,25 @@ fn host_config_account_with_verifier(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn verify_coprocessor_input_and_bind_ix(
+fn verify_coprocessor_input_ix(
     program_id: Pubkey,
-    payer: Pubkey,
     host_config: Pubkey,
-    output_acl_record: Pubkey,
     input_handle: [u8; 32],
     ct_handles: Vec<[u8; 32]>,
     user_address: [u8; 32],
     contract_address: [u8; 32],
     extra_data: Vec<u8>,
     signatures: Vec<[u8; 65]>,
-    output_nonce_key: [u8; 32],
-    output_acl_domain_key: Pubkey,
-    output_app_account: Pubkey,
-    output_encrypted_value_label: [u8; 32],
-    output_subjects: Vec<AclSubjectEntry>,
 ) -> Instruction {
     Instruction {
         program_id,
-        accounts: host::accounts::VerifyCoprocessorInputAndBind {
-            payer,
-            app_account_authority: output_app_account,
+        accounts: host::accounts::VerifyCoprocessorInput {
             host_config,
-            output_acl_record,
-            system_program: system_program::ID,
             event_authority: event_authority(program_id),
             program: program_id,
         }
         .to_account_metas(None),
-        data: host::instruction::VerifyCoprocessorInputAndBind {
+        data: host::instruction::VerifyCoprocessorInput {
             input_handle,
             ct_handles,
             handle_index: 0,
@@ -6498,41 +6487,28 @@ fn verify_coprocessor_input_and_bind_ix(
             contract_chain_id: 12345,
             extra_data,
             signatures,
-            output_nonce_key,
-            output_nonce_sequence: 0,
-            output_acl_domain_key,
-            output_app_account,
-            output_encrypted_value_label,
-            output_subjects,
-            output_public_decrypt: false,
         }
         .data(),
     }
 }
 
-/// End-to-end: a real coprocessor secp256k1 EIP-712 attestation binds the handle.
+/// A real coprocessor secp256k1 EIP-712 attestation verifies and emits the input receipt.
+/// EVM parity (`FHEVMExecutor.verifyInput`): verification creates NO persistent ACL — the
+/// only effect is the signed `InputVerifiedEvent`.
 #[test]
-fn mollusk_verify_coprocessor_input_and_bind_accepts_real_secp256k1_attestation() {
+fn mollusk_verify_coprocessor_input_accepts_real_secp256k1_attestation() {
     let program_id = host::id();
     let authority = Pubkey::new_unique();
     let key = k256::ecdsa::SigningKey::from_bytes(&[0x44u8; 32].into()).unwrap();
     let (host_config, host_config_account) =
         host_config_account_with_verifier(authority, evm_address_of(&key));
 
-    let acl_domain_key = Pubkey::new_unique();
-    let label = label("balance");
-    let nonce_key = host::acl_nonce_key(acl_domain_key, authority, label);
-    let output_acl_record = host::acl_record_address(nonce_key, 0).0;
-
     let input_handle = input_handle_for_chain(0x01, 0, 5);
     let ct_handles = vec![input_handle];
-    // Identity-consistent with the bound ACL: the coprocessor attests the handle for `user`
-    // under contract `authority` (the app account that binds it). verify_coprocessor_input_and_bind
-    // requires contract_address == output_app_account and user_address among the subjects, so the
-    // attested identity must match what is written into the ACL record.
     let user = Pubkey::new_unique();
     let user_address = user.to_bytes();
-    let contract_address = authority.to_bytes();
+    let contract = Pubkey::new_unique();
+    let contract_address = contract.to_bytes();
     let extra_data = vec![0x00u8];
 
     let digest = host::eip712::typed_data_digest(
@@ -6552,54 +6528,44 @@ fn mollusk_verify_coprocessor_input_and_bind_accepts_real_secp256k1_attestation(
     );
     let signatures = vec![sign_eip712(&key, &digest)];
 
-    let context = transient_context(
-        authority,
-        vec![
-            (host_config, host_config_account),
-            (output_acl_record, system_account(0)),
-        ],
-    );
-    let ix = verify_coprocessor_input_and_bind_ix(
+    let context = transient_context(authority, vec![(host_config, host_config_account)]);
+    let ix = verify_coprocessor_input_ix(
         program_id,
-        authority,
         host_config,
-        output_acl_record,
         input_handle,
         ct_handles,
         user_address,
         contract_address,
         extra_data,
         signatures,
-        nonce_key,
-        acl_domain_key,
-        authority,
-        label,
-        vec![AclSubjectEntry::user(user)],
     );
 
-    context.process_and_validate_instruction(&ix, &[Check::success()]);
+    let result = context.process_and_validate_instruction(&ix, &[Check::success()]);
 
-    let record = read_acl_record(&context, output_acl_record).expect("expected bound ACL record");
-    assert_eq!(record.handle, input_handle);
-    assert_eq!(record.app_account, authority);
-    assert_eq!(record.nonce_key, nonce_key);
-    assert!(!record.public_decrypt);
+    // The sole effect is the signed verified-input receipt; no ACL account is created.
+    let input_events: Vec<InputVerifiedEvent> = result
+        .inner_instructions
+        .iter()
+        .filter_map(|inner| decode_anchor_event(&inner.instruction.data))
+        .collect();
+    assert_eq!(input_events.len(), 1);
+    assert_eq!(input_events[0].version, host::EVENT_VERSION);
+    assert_eq!(input_events[0].input_handle, input_handle);
+    assert_eq!(input_events[0].result_handle, input_handle);
+    assert_eq!(input_events[0].user, user_address);
+    // No app-chosen ACL domain: the receipt carries the attested contract identity.
+    assert_eq!(input_events[0].acl_domain_key, contract_address);
 }
 
-/// A signature from a key not in the configured signer set is rejected; no ACL is bound.
+/// A signature from a key not in the configured signer set is rejected.
 #[test]
-fn mollusk_verify_coprocessor_input_and_bind_rejects_unauthorized_signer() {
+fn mollusk_verify_coprocessor_input_rejects_unauthorized_signer() {
     let program_id = host::id();
     let authority = Pubkey::new_unique();
     let configured = k256::ecdsa::SigningKey::from_bytes(&[0x44u8; 32].into()).unwrap();
     let attacker = k256::ecdsa::SigningKey::from_bytes(&[0x99u8; 32].into()).unwrap();
     let (host_config, host_config_account) =
         host_config_account_with_verifier(authority, evm_address_of(&configured));
-
-    let acl_domain_key = Pubkey::new_unique();
-    let label = label("balance");
-    let nonce_key = host::acl_nonce_key(acl_domain_key, authority, label);
-    let output_acl_record = host::acl_record_address(nonce_key, 0).0;
 
     let input_handle = input_handle_for_chain(0x01, 0, 5);
     let ct_handles = vec![input_handle];
@@ -6624,187 +6590,20 @@ fn mollusk_verify_coprocessor_input_and_bind_rejects_unauthorized_signer() {
     );
     let signatures = vec![sign_eip712(&attacker, &digest)];
 
-    let context = transient_context(
-        authority,
-        vec![
-            (host_config, host_config_account),
-            (output_acl_record, system_account(0)),
-        ],
-    );
-    let ix = verify_coprocessor_input_and_bind_ix(
+    let context = transient_context(authority, vec![(host_config, host_config_account)]);
+    let ix = verify_coprocessor_input_ix(
         program_id,
-        authority,
         host_config,
-        output_acl_record,
         input_handle,
         ct_handles,
         user_address,
         contract_address,
         extra_data,
         signatures,
-        nonce_key,
-        acl_domain_key,
-        authority,
-        label,
-        vec![AclSubjectEntry::user(authority)],
     );
 
     let result = context.process_instruction(&ix);
-
     assert!(result.raw_result.is_err());
-    assert!(read_acl_record(&context, output_acl_record).is_none());
-}
-
-/// SECURITY (input-bind identity): a VALID coprocessor attestation for contract X must not be
-/// bindable into a DIFFERENT app account's ACL domain. Before the identity-binding check, any
-/// caller could staple a genuine attestation onto an ACL domain they control (the observed
-/// attestation is public). Here the signer is authorized and the signature verifies, so the
-/// rejection is due solely to contract_address != output_app_account.
-#[test]
-fn mollusk_verify_coprocessor_input_and_bind_rejects_contract_app_account_mismatch() {
-    let program_id = host::id();
-    let authority = Pubkey::new_unique();
-    let key = k256::ecdsa::SigningKey::from_bytes(&[0x44u8; 32].into()).unwrap();
-    let (host_config, host_config_account) =
-        host_config_account_with_verifier(authority, evm_address_of(&key));
-
-    let acl_domain_key = Pubkey::new_unique();
-    let label = label("balance");
-    let nonce_key = host::acl_nonce_key(acl_domain_key, authority, label);
-    let output_acl_record = host::acl_record_address(nonce_key, 0).0;
-
-    let input_handle = input_handle_for_chain(0x01, 0, 5);
-    let ct_handles = vec![input_handle];
-    let user = Pubkey::new_unique();
-    let user_address = user.to_bytes();
-    // Attested for a contract DIFFERENT from the binding app account (authority).
-    let attested_contract = Pubkey::new_unique();
-    let contract_address = attested_contract.to_bytes();
-    let extra_data = vec![0x00u8];
-
-    let digest = host::eip712::typed_data_digest(
-        &host::eip712::domain_separator(
-            b"InputVerification",
-            b"1",
-            GATEWAY_CHAIN_ID,
-            &INPUT_VERIFICATION_CONTRACT,
-        ),
-        &host::eip712::ciphertext_verification_struct_hash(
-            &ct_handles,
-            &user_address,
-            &contract_address,
-            12345,
-            &extra_data,
-        ),
-    );
-    let signatures = vec![sign_eip712(&key, &digest)];
-
-    let context = transient_context(
-        authority,
-        vec![
-            (host_config, host_config_account),
-            (output_acl_record, system_account(0)),
-        ],
-    );
-    let ix = verify_coprocessor_input_and_bind_ix(
-        program_id,
-        authority,
-        host_config,
-        output_acl_record,
-        input_handle,
-        ct_handles,
-        user_address,
-        contract_address,
-        extra_data,
-        signatures,
-        nonce_key,
-        acl_domain_key,
-        authority,
-        label,
-        vec![AclSubjectEntry::user(user)],
-    );
-
-    let result = context.process_instruction(&ix);
-    assert!(
-        result.raw_result.is_err(),
-        "an attestation for a different contract must not bind into authority's ACL domain"
-    );
-    assert!(read_acl_record(&context, output_acl_record).is_none());
-}
-
-/// SECURITY (input-bind identity): the attested user must appear among the output ACL subjects,
-/// so a valid attestation for user A cannot be bound as a grant to an unrelated subject set.
-/// Contract matches the app account here, so the rejection is due solely to the missing user.
-#[test]
-fn mollusk_verify_coprocessor_input_and_bind_rejects_user_not_in_subjects() {
-    let program_id = host::id();
-    let authority = Pubkey::new_unique();
-    let key = k256::ecdsa::SigningKey::from_bytes(&[0x44u8; 32].into()).unwrap();
-    let (host_config, host_config_account) =
-        host_config_account_with_verifier(authority, evm_address_of(&key));
-
-    let acl_domain_key = Pubkey::new_unique();
-    let label = label("balance");
-    let nonce_key = host::acl_nonce_key(acl_domain_key, authority, label);
-    let output_acl_record = host::acl_record_address(nonce_key, 0).0;
-
-    let input_handle = input_handle_for_chain(0x01, 0, 5);
-    let ct_handles = vec![input_handle];
-    let user = Pubkey::new_unique();
-    let user_address = user.to_bytes();
-    let contract_address = authority.to_bytes(); // contract matches the app account (passes that check)
-    let extra_data = vec![0x00u8];
-
-    let digest = host::eip712::typed_data_digest(
-        &host::eip712::domain_separator(
-            b"InputVerification",
-            b"1",
-            GATEWAY_CHAIN_ID,
-            &INPUT_VERIFICATION_CONTRACT,
-        ),
-        &host::eip712::ciphertext_verification_struct_hash(
-            &ct_handles,
-            &user_address,
-            &contract_address,
-            12345,
-            &extra_data,
-        ),
-    );
-    let signatures = vec![sign_eip712(&key, &digest)];
-
-    let context = transient_context(
-        authority,
-        vec![
-            (host_config, host_config_account),
-            (output_acl_record, system_account(0)),
-        ],
-    );
-    // Subjects deliberately exclude the attested `user`.
-    let other = Pubkey::new_unique();
-    let ix = verify_coprocessor_input_and_bind_ix(
-        program_id,
-        authority,
-        host_config,
-        output_acl_record,
-        input_handle,
-        ct_handles,
-        user_address,
-        contract_address,
-        extra_data,
-        signatures,
-        nonce_key,
-        acl_domain_key,
-        authority,
-        label,
-        vec![AclSubjectEntry::user(other)],
-    );
-
-    let result = context.process_instruction(&ix);
-    assert!(
-        result.raw_result.is_err(),
-        "an attested user absent from the subject set must not bind"
-    );
-    assert!(read_acl_record(&context, output_acl_record).is_none());
 }
 
 // --- KMS context lifecycle (mirror of ProtocolConfig define/destroy) — #1494 ---

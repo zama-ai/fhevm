@@ -51,9 +51,9 @@ const builder = createZkProofBuilder();
 builder.addTypedValue(createTypedValue({ type: 'uint64', value: 42n }));
 
 console.log('--- building Solana ZK proof (value=42, uint64) ...');
-// zama-host verify_coprocessor_input_and_bind requires the attested contract to equal the output
-// ACL app account, and the app account must be the authorizing signer (the deployer). So the proof
-// attests the deployer as the contract identity; binding the input into the deployer's ACL domain.
+// zama-host verify_coprocessor_input verifies the coprocessor's EIP-712 attestation on-chain; the
+// proof attests the deployer as both the user and the contract identity. No persistent input ACL is
+// created (EVM parity) — durable permission on an input-derived handle is a separate app grant.
 const proof = await builder.buildSolana(fhevm, { contractAddress: USER, userAddress: USER });
 console.log('proof prototype methods:', Object.getOwnPropertyNames(Object.getPrototypeOf(proof)));
 
