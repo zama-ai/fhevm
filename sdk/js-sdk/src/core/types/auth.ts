@@ -1,15 +1,4 @@
-export type AuthType = 'BearerToken' | 'ApiKeyHeader' | 'ApiKeyCookie';
-
-/**
- * Bearer Token Authentication
- */
-export type AuthBearerToken = {
-  type: 'BearerToken';
-  /**
-   * The Bearer token.
-   */
-  token: string;
-};
+export type AuthType = 'ApiKeyHeader';
 
 /**
  * Custom header authentication
@@ -26,19 +15,4 @@ export type AuthApiKeyHeader = {
   value: string;
 };
 
-/**
- * Custom cookie authentication
- */
-export type AuthApiKeyCookie = {
-  type: 'ApiKeyCookie';
-  /**
-   * The cookie name. The default value is `x-api-key`.
-   */
-  cookie?: string;
-  /**
-   * The API key.
-   */
-  value: string;
-};
-
-export type Auth = AuthBearerToken | AuthApiKeyHeader | AuthApiKeyCookie;
+export type Auth = AuthApiKeyHeader;
