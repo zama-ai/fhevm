@@ -135,11 +135,18 @@ task("task:exportKmsMigrationState", "Exports Gateway KMSGeneration migration st
     const kmsGenerationAddress = checksumAddress(taskArguments.kmsGenerationProxy, "Gateway KMSGeneration proxy");
     const gatewayConfigAddress = checksumAddress(taskArguments.gatewayConfigProxy, "GatewayConfig proxy");
 
-    const exportBlockNumber =
-      taskArguments.blockTag === undefined ? await ethers.provider.getBlockNumber() : Number(taskArguments.blockTag);
-    const exportBlock = await ethers.provider.getBlock(exportBlockNumber);
+    // Pin every read to a single, sufficiently finalized block. Reading from the unfinalized head
+    // risks a reorg orphaning the exported block, or sequential read batches straddling a reorg and
+    // splicing values that never coexisted at one canonical block.
+    const exportBlockRef = taskArguments.blockTag === undefined ? "finalized" : Number(taskArguments.blockTag);
+    const exportBlock = await ethers.provider.getBlock(exportBlockRef);
     if (exportBlock === null) {
-      throw new Error(`Block ${exportBlockNumber} not found`);
+      throw new Error(`Block ${exportBlockRef} not found`);
+    }
+    const exportBlockNumber = exportBlock.number;
+    const exportBlockHash = exportBlock.hash;
+    if (exportBlockHash === null) {
+      throw new Error(`Block ${exportBlockNumber} has no hash`);
     }
 
     const gatewayConfig = await ethers.getContractAt("GatewayConfig", gatewayConfigAddress);
@@ -231,6 +238,7 @@ task("task:exportKmsMigrationState", "Exports Gateway KMSGeneration migration st
       hostKmsGenerationMigrationState,
       metadata: {
         exportBlockNumber,
+        exportBlockHash,
         exportTimestamp: new Date(Number(exportBlock.timestamp) * 1000).toISOString(),
         gatewayKmsGenerationProxy: kmsGenerationAddress,
         gatewayConfigProxy: gatewayConfigAddress,
@@ -257,6 +265,15 @@ task("task:exportKmsMigrationState", "Exports Gateway KMSGeneration migration st
       assertConsensus(storageState.crsConsensusDigest, crsConsensusTxSenders),
       assertConsensus(storageState.prepKeygenConsensusDigest, prepKeygenConsensusTxSenders),
     ]);
+
+    // Reads are pinned by block number, not block hash, so
+    // re-fetch the pinned block after every read and abort if its hash changed mid-export.
+    const finalBlock = await ethers.provider.getBlock(exportBlockNumber);
+    if (finalBlock === null || finalBlock.hash !== exportBlockHash) {
+      throw new Error(
+        `Block ${exportBlockNumber} hash changed during export (possible reorg): expected ${exportBlockHash}, got ${finalBlock?.hash ?? "null"}`,
+      );
+    }
 
     const outputPath = path.resolve(process.cwd(), taskArguments.output);
     fs.mkdirSync(path.dirname(outputPath), { recursive: true });

@@ -52,6 +52,28 @@ export type HostChainScenario = {
   name?: string;
 };
 
+/** KMS deployment mode for a scenario. */
+export type KmsMode = "centralized" | "threshold";
+
+/** FHE parameter set: Test = small/fast for CI, Default = prod-size. */
+export type KmsFheParams = "Test" | "Default";
+
+/** Raw `kms` block as written in a scenario YAML. */
+export type KmsScenarioBlock = {
+  mode?: KmsMode;
+  parties?: number;
+  threshold?: number;
+  fheParams?: KmsFheParams;
+};
+
+/** Fully-resolved KMS topology carried on the resolved scenario / StackSpec. */
+export type ResolvedKmsTopology = {
+  mode: KmsMode;
+  parties: number;
+  threshold: number;
+  fheParams: KmsFheParams;
+};
+
 export type CoprocessorScenario = {
   version: 1;
   kind: "coprocessor-consensus";
@@ -63,6 +85,7 @@ export type CoprocessorScenario = {
     threshold: number;
   };
   instances?: CoprocessorScenarioInstance[];
+  kms?: KmsScenarioBlock;
 };
 
 export type ResolvedCoprocessorScenarioInstance = {
@@ -86,6 +109,7 @@ export type ResolvedCoprocessorScenario = {
     threshold: number;
   };
   instances: ResolvedCoprocessorScenarioInstance[];
+  kms: ResolvedKmsTopology;
 };
 
 export type ScenarioSummary = {
@@ -113,7 +137,7 @@ export type RpcEndpoints = {
 export type Discovery = {
   gateway: Record<string, string>;
   hosts: Record<string, Record<string, string>>;
-  kmsSigner: string;
+  kmsSigners: string[];
   fheKeyId: string;
   crsKeyId: string;
   actualFheKeyId?: string;

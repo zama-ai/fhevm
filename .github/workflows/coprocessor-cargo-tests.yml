@@ -16,7 +16,7 @@ jobs:
       actions: 'read' # Required to read workflow run information
       contents: 'read' # Required to checkout repository code
       pull-requests: 'read' # Required to read pull request information
-    runs-on: ubuntu-latest
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
     outputs:
       changes-rust-files: ${{ steps.filter.outputs.rust-files }}
     steps:
@@ -167,7 +167,7 @@ jobs:
     permissions:
       contents: 'read' # Required to checkout repository code
       pull-requests: 'write' # Required to post coverage comment on PR
-    runs-on: ubuntu-latest
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
     steps:
     - name: Checkout code
       uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -263,7 +263,7 @@ jobs:
     name: coprocessor-cargo-test/cargo-tests (bpr)
     needs: [check-changes, cargo-tests, coverage-report]
     if: ${{ always() }}
-    runs-on: ubuntu-latest
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
     env:
       CHECK_CHANGES_RESULT: ${{ needs.check-changes.result }}
       CARGO_TESTS_RESULT: ${{ needs.cargo-tests.result }}

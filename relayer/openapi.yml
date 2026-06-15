@@ -364,6 +364,10 @@ paths:
       tags:
       - User Decrypt
       summary: Submit user decryption.
+      description: |-
+        **Deprecated.** Superseded by `POST /v3/user-decrypt` (unified EIP-712
+        user-decryption). The v2 surface remains available throughout the
+        deprecation window.
       operationId: user_decrypt_post_v2
       requestBody:
         content:
@@ -460,6 +464,7 @@ paths:
                       message: Internal server error
                     requestId: 550e8400-e29b-41d4-a716-446655440000
                     status: failed
+      deprecated: true
   /v2/user-decrypt/{job_id}:
     get:
       tags:
@@ -606,6 +611,10 @@ paths:
       tags:
       - Delegated User Decrypt
       summary: Submit delegated user decryption.
+      description: |-
+        **Deprecated.** Superseded by `POST /v3/user-decrypt` (unified EIP-712
+        user-decryption — delegated handles use the per-entry `ownerAddress`).
+        The v2 surface remains available throughout the deprecation window.
       operationId: delegated_user_decrypt_post_v2
       requestBody:
         content:
@@ -702,6 +711,7 @@ paths:
                       message: Internal server error
                     requestId: 550e8400-e29b-41d4-a716-446655440000
                     status: failed
+      deprecated: true
   /v2/delegated-user-decrypt/{job_id}:
     get:
       tags:
@@ -1085,6 +1095,97 @@ paths:
                       message: Request processing timed out
                     requestId: 550e8400-e29b-41d4-a716-446655440000
                     status: failed
+  /v3/user-decrypt:
+    post:
+      tags:
+      - User Decrypt v3
+      summary: Submit a v3 (unified EIP-712) user-decryption request.
+      operationId: user_decrypt_post_v3
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AttestedUserDecryptRequestJson'
+        required: true
+      responses:
+        '202':
+          description: Request accepted for processing.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserDecryptPostResponseJson'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RelayerV2ResponseFailed'
+        '429':
+          description: Rate limited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RelayerV2ResponseFailed'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RelayerV2ResponseFailed'
+  /v3/user-decrypt/{job_id}:
+    get:
+      tags:
+      - User Decrypt v3
+      summary: Check v3 user-decryption status.
+      operationId: user_decrypt_get_v3
+      parameters:
+      - name: job_id
+        in: path
+        description: Job ID returned from POST request
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Completed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserDecryptSucceededStatusResponse'
+        '202':
+          description: Still processing. Poll again after Retry-After.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/V2StatusQueued'
+              example:
+                requestId: 550e8400-e29b-41d4-a716-446655440000
+                status: queued
+        '400':
+          description: Request failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/V2StatusFailed'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/V2StatusFailed'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/V2StatusFailed'
+        '503':
+          description: Service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/V2StatusFailed'
   /liveness:
     get:
       tags:
@@ -1138,6 +1239,38 @@ paths:
       - {}
 components:
   schemas:
+    AttestedUserDecryptRequestJson:
+      type: object
+      description: |-
+        v3 user-decrypt request envelope. The relayer dispatches strictly by
+        `attestationType`; the currently supported value is
+        `"eip712-unified-user-decrypt-v1"`. Adding a Solana attestation later is
+        a one-line widening of the dispatch table, not a v4 bump.
+      required:
+      - attestationType
+      - attestedPayload
+      - signature
+      properties:
+        attestationType:
+          type: string
+          description: |-
+            The attestation/signature scheme used for the `signature` bytes.
+            Must equal `"eip712-unified-user-decrypt-v1"` for the current
+            release.
+          example: eip712-unified-user-decrypt-v1
+        attestedPayload:
+          $ref: '#/components/schemas/Eip712UnifiedUserDecryptPayloadJson'
+          description: |-
+            The EIP-712 Unified User-Decryption Request payload that the
+            `signature` attests over.
+        signature:
+          type: string
+          description: |-
+            Attestation signature. Opaque to the relayer — forwarded verbatim
+            to the gateway, where the KMS Connector verifies it.
+            `0x` + arbitrary hex.
+          example: '0xaabbccddeeff'
+      additionalProperties: false
     ChainId:
       oneOf:
       - type: string
@@ -1207,6 +1340,67 @@ components:
           type: string
           description: Unix timestamp (seconds) when the delegation starts. Decimal string.
           example: '1700000000'
+    Eip712UnifiedUserDecryptPayloadJson:
+      type: object
+      description: |-
+        The EIP-712 Unified User-Decryption Request payload (the
+        `attestedPayload` body of the envelope).
+      required:
+      - version
+      - type
+      - handles
+      - userAddress
+      - allowedContracts
+      - requestValidity
+      - publicKey
+      - extraData
+      properties:
+        allowedContracts:
+          type: array
+          items:
+            type: string
+          description: |-
+            Allowlist of contracts whose handles may be decrypted under this
+            request. May be empty (permissive mode).
+          example:
+          - "0x1234567890123456789012345678901234567890"
+        extraData:
+          type: string
+          description: |-
+            Extra data forwarded to the gateway contract. Always `"0x00"` in
+            the current protocol version (versioned formats reserved for
+            future extensions).
+          example: '0x00'
+        handles:
+          type: array
+          items:
+            $ref: '#/components/schemas/HandleEntryJson'
+          description: |-
+            One entry per ciphertext handle to decrypt. The list must be
+            non-empty and must not exceed the existing v2 handle-count bound
+            applied via `validate_handle_entries`.
+        publicKey:
+          type: string
+          description: |-
+            User's public key for re-encryption. `0x` + hex, minimum 2 hex
+            chars after the prefix.
+          example: "0x04b8e5d3f1a2c4e6d8f0a1b3c5d7e9f1a2b4c6d8e0f2a3b5c7d9e1f3a5b7c9d1"
+        requestValidity:
+          $ref: '#/components/schemas/RequestValiditySecondsJson'
+          description: Validity window for the request, in seconds.
+        type:
+          type: string
+          description: Must equal `"user_decryption"`.
+          example: user_decryption
+        userAddress:
+          type: string
+          description: On-chain caller for the unified gateway call. `0x` + 40 hex chars.
+          example: "0x1234567890123456789012345678901234567890"
+        version:
+          type: string
+          description: Must equal `"2.0"`.
+          example: '2.0'
+      additionalProperties: false
     FheKeyInfo:
       type: object
       required:
@@ -1228,6 +1422,32 @@ components:
           type: string
           description: Ciphertext handle from an on-chain FHE operation. `0x` + 64 hex chars.
           example: "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+    HandleEntryJson:
+      type: object
+      description: |-
+        A single handle entry in the unified EIP-712 user-decryption payload.
+        Carries the `ownerAddress` for that handle alongside the handle and its
+        originating contract address.
+      required:
+      - ctHandle
+      - contractAddress
+      - ownerAddress
+      properties:
+        contractAddress:
+          type: string
+          description: Address of the contract that produced this ciphertext handle. `0x` + 40 hex chars.
+          example: "0x1234567890123456789012345678901234567890"
+        ctHandle:
+          type: string
+          description: Ciphertext handle from an on-chain FHE operation. `0x` + 64 hex chars.
+          example: "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+        ownerAddress:
+          type: string
+          description: |-
+            Owner address for this handle. For direct-access handles this equals
+            the request's `userAddress`; for delegated handles it differs.
+            `0x` + 40 hex chars.
+          example: "0x1234567890123456789012345678901234567890"
     HealthResponse:
       type: object
       required:
@@ -1496,6 +1716,23 @@ components:
           type: string
           description: Unix timestamp (seconds) when this request becomes valid. Decimal string.
           example: '1700000000'
+    RequestValiditySecondsJson:
+      type: object
+      description: |-
+        Request-validity window for the unified EIP-712 payload. Like
+        `RequestValidityJson` but in seconds instead of days.
+      required:
+      - startTimestamp
+      - durationSeconds
+      properties:
+        durationSeconds:
+          type: string
+          description: Number of seconds the request remains valid. Decimal string.
+          example: '604800'
+        startTimestamp:
+          type: string
+          description: Unix timestamp (seconds) when this request becomes valid. Decimal string.
+          example: '1700000000'
     Response:
       type: object
       required:
@@ -1748,6 +1985,8 @@ tags:
   description: Decrypt ciphertexts with user-provided key shares
 - name: Delegated User Decrypt
   description: Decrypt ciphertexts via delegated key shares
+- name: User Decrypt v3
+  description: unified EIP-712 user-decryption (direct + delegated under one endpoint)
 - name: Public Decrypt
   description: Decrypt ciphertexts using the network public key
 - name: Health

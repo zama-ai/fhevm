@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 
-use crate::core::event::HandleContractPair;
+use alloy::primitives::U256;
+
 use crate::host::handle_chain_id::{extract_chain_id_from_handle, extract_chain_id_from_u256};
 
 pub struct HostChainIdChecker {
@@ -26,11 +27,19 @@ impl HostChainIdChecker {
         Ok(())
     }
 
-    /// Validate that all U256 handles in HandleContractPair have a supported chain ID.
-    /// Returns `Err(unsupported_chain_id)` on the first mismatch.
-    pub fn validate_u256_handles(&self, pairs: &[HandleContractPair]) -> Result<(), u64> {
-        for pair in pairs {
-            let chain_id = extract_chain_id_from_u256(&pair.ct_handle);
+    /// Validate that every supplied U256 handle encodes a supported chain
+    /// ID. Returns `Err(unsupported_chain_id)` on the first mismatch.
+    ///
+    /// Takes an iterator over `&U256` so call sites can pass handles from
+    /// any container shape (e.g. `Vec<HandleContractPair>` via
+    /// `iter().map(|p| &p.ct_handle)`, or `Vec<HandleEntry>` via the
+    /// equivalent map) without allocating an intermediate `Vec`.
+    pub fn validate_u256_handles<'a, I>(&self, handles: I) -> Result<(), u64>
+    where
+        I: IntoIterator<Item = &'a U256>,
+    {
+        for handle in handles {
+            let chain_id = extract_chain_id_from_u256(handle);
             if !self.supported_chain_ids.contains(&chain_id) {
                 return Err(chain_id);
             }
@@ -42,7 +51,7 @@ impl HostChainIdChecker {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloy::primitives::{Address, U256};
+    use alloy::primitives::U256;
 
     fn make_handle_with_chain_id(chain_id: u64) -> [u8; 32] {
         let mut handle = [0u8; 32];
@@ -79,22 +88,14 @@ mod tests {
     #[test]
     fn test_validate_u256_handles_all_valid() {
         let validator = HostChainIdChecker::new(vec![8009]);
-        let handle_bytes = make_handle_with_chain_id(8009);
-        let pairs = vec![HandleContractPair {
-            ct_handle: U256::from_be_bytes(handle_bytes),
-            contract_address: Address::ZERO,
-        }];
-        assert!(validator.validate_u256_handles(&pairs).is_ok());
+        let handle = U256::from_be_bytes(make_handle_with_chain_id(8009));
+        assert!(validator.validate_u256_handles([&handle]).is_ok());
     }
 
     #[test]
     fn test_validate_u256_handles_unsupported() {
         let validator = HostChainIdChecker::new(vec![8009]);
-        let handle_bytes = make_handle_with_chain_id(5555);
-        let pairs = vec![HandleContractPair {
-            ct_handle: U256::from_be_bytes(handle_bytes),
-            contract_address: Address::ZERO,
-        }];
-        assert_eq!(validator.validate_u256_handles(&pairs), Err(5555));
+        let handle = U256::from_be_bytes(make_handle_with_chain_id(5555));
+        assert_eq!(validator.validate_u256_handles([&handle]), Err(5555));
     }
 }

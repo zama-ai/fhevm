@@ -4,10 +4,18 @@ permissions: {}
 
 on:
   pull_request:
+  release:
+    types: [published]
 
 # Compare PR bytecode against the latest stable release, not main.
 # This avoids unnecessary reinitializer bumps when multiple PRs modify
 # the same contract between releases. Keep in sync with *-upgrade-tests.yml.
+#
+# PRs enforce errors only for contracts they changed; violations on other
+# contracts (e.g. drift left on main after a release moved the baseline) are
+# warnings.  Publishing a release strict-checks the released tag against the
+# previous release in its version line, catching that drift.  Forward-ported
+# fixes exist on both sides of that comparison, so they do not trigger it.
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -16,10 +24,12 @@ concurrency:
 jobs:
   check-changes:
     name: contracts-upgrade-version-check/check-changes
+    # paths-filter needs a PR diff; release runs check all packages instead.
+    if: github.event_name == 'pull_request'
     permissions:
       contents: "read" # Required to checkout repository code
       pull-requests: "read" # Required to read pull request for paths-filter
-    runs-on: ubuntu-latest
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
     outputs:
       packages: ${{ steps.filter.outputs.changes }}
     steps:
@@ -44,11 +54,15 @@ jobs:
   check:
     name: contracts-upgrade-version-check/${{ matrix.package }} (bpr)
     needs: check-changes
+    # check-changes is skipped on release events, which by default would skip
+    # this job too; run unless it failed or the workflow was cancelled.
+    if: ${{ !cancelled() && needs.check-changes.result != 'failure' }}
     permissions:
       contents: "read" # Required to checkout repository code
-    runs-on: ubuntu-latest
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
     env:
-      PACKAGE_CHANGED: ${{ contains(fromJSON(needs.check-changes.outputs.packages), matrix.package) }}
+      # Release runs have no diff to filter on; they check both packages.
+      PACKAGE_CHANGED: ${{ github.event_name == 'release' || contains(fromJSON(needs.check-changes.outputs.packages || '[]'), matrix.package) }}
     strategy:
       fail-fast: false
       matrix:
@@ -77,8 +91,24 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPOSITORY: ${{ github.repository }}
+          RELEASED_TAG: ${{ github.event.release.tag_name }}
         run: |
-          tag="$(gh api "repos/${GH_REPOSITORY}/releases/latest" --jq .tag_name)"
+          if [ "$GITHUB_EVENT_NAME" = "release" ]; then
+            # Highest stable release strictly below the published version, in
+            # its own version line: v0.13.1 -> v0.13.0 even when v0.14.0
+            # exists.  Prerelease suffixes are stripped first, so a prerelease
+            # compares like the version it precedes: v0.13.0-9 -> v0.12.5.
+            base="${RELEASED_TAG%%-*}"
+            tag="$({ gh api "repos/${GH_REPOSITORY}/releases" --paginate \
+              --jq '.[] | select((.draft or .prerelease) | not) | .tag_name'; \
+              echo "$base"; } | sort -u -V | grep -x -B1 -- "$base" | head -n1)"
+            if [ -z "$tag" ] || [ "$tag" = "$base" ]; then
+              echo "::error::No previous release found to compare $RELEASED_TAG against"
+              exit 1
+            fi
+          else
+            tag="$(gh api "repos/${GH_REPOSITORY}/releases/latest" --jq .tag_name)"
+          fi
           printf 'tag=%s\n' "$tag" >> "$GITHUB_OUTPUT"
 
       - name: Checkout baseline (latest stable release)
@@ -134,9 +164,28 @@ jobs:
           # Use PR's foundry.toml for both so compiler settings match (cbor_metadata, bytecode_hash)
           cp "$PACKAGE/foundry.toml" "baseline/$PACKAGE/foundry.toml"
 
+      - name: Determine contracts changed by this PR
+        if: env.PACKAGE_CHANGED == 'true' && github.event_name == 'pull_request'
+        id: changed
+        env:
+          PACKAGE: ${{ matrix.package }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          contracts="$(git diff --name-only "origin/$BASE_REF...HEAD" -- "$PACKAGE/contracts" \
+            | sed -n "s|^$PACKAGE/contracts/\([^/]*\)\.sol$|\1|p" | paste -sd, -)"
+          printf 'contracts=%s\n' "$contracts" >> "$GITHUB_OUTPUT"
+          echo "Changed contracts: ${contracts:-none}"
+
       - name: Run upgrade version check
         if: env.PACKAGE_CHANGED == 'true'
         env:
           PACKAGE: ${{ matrix.package }}
           UPGRADE_CHECK_BASE_REF: ${{ steps.baseline.outputs.tag }}
-        run: bun ci/upgrade-check/check.ts "baseline/$PACKAGE" "$PACKAGE"
+          CHANGED_CONTRACTS: ${{ steps.changed.outputs.contracts }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            # Enforce only contracts this PR changed; the rest warn.
+            bun ci/upgrade-check/check.ts "baseline/$PACKAGE" "$PACKAGE" --changed-contracts "$CHANGED_CONTRACTS"
+          else
+            bun ci/upgrade-check/check.ts "baseline/$PACKAGE" "$PACKAGE"
+          fi
