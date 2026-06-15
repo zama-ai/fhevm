@@ -16,12 +16,18 @@ const v013Tag = "v0.13.0";
 const testSuiteVersion = "v0.13.0";
 const relayerSdkVersion = "0.4.2";
 
-// NOTE: the v0.11 relayer line must be >= v0.11.0 final: rc.1 (the deleted
-// in-repo v0.11 profile's pin) predates the listener event-filter fix
-// (console#914) and the isUserDecryptionReady compat fix (console#925), which
-// caused a flaky "Ciphertext not ready" readiness race whenever the ciphertext
-// commit landed after the readiness loop started. v0.11.1 adds an estimate-gas
-// hotfix on top; relayer-migrate has no v0.11.1 release.
+// v0.11.1 is the tip of the legacy console/relayer v0.11 line (rc.1 -> rc.2 ->
+// v0.11.0 -> v0.11.1), so it's the closest image to what mainnet "v0.11" runs.
+// NOTE: this pin does NOT fix the "Ciphertext not ready" readiness flake in
+// delegated user-decryption. Verified against the published console/relayer
+// images by git ancestry on their build SHAs: rc.1 (sha-1e44d77), v0.11.0
+// (sha-8319fd7) and v0.11.1 (sha-d6e1ba8) are identical in the readiness /
+// listener / decrypt path. Both console#914 (listener filters) and console#925
+// (isUserDecryptionReady compat) are already present in rc.1; the rc.1->v0.11.1
+// delta is only config-env-var plumbing (console#928) and an Arbitrum
+// estimate-gas fix (console#930). The flake reproduces on the pure-v0.11
+// baseline, so it is a pre-existing baseline race, unrelated to version
+// skipping. relayer-migrate has no v0.11.1 release, so it stays at v0.11.0.
 export const v011 = {
   RELAYER_VERSION: "v0.11.1",
   RELAYER_MIGRATE_VERSION: "v0.11.0",
