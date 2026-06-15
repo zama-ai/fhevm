@@ -1,19 +1,41 @@
 #!/usr/bin/env bun
 // Checks that upgradeable contracts have proper version bumps when bytecode changes.
-// Usage: bun ci/upgrade-check/check.ts <baseline-pkg-dir> <pr-pkg-dir>
+// Usage: bun ci/upgrade-check/check.ts <baseline-pkg-dir> <pr-pkg-dir> [--changed-contracts <comma-separated names>]
+//
+// With --changed-contracts, only the listed contracts are enforced; violations
+// on other contracts are warnings.  An empty list downgrades everything.
 import { execFileSync } from "child_process";
 import { basename } from "path";
 
 import { collectUpgradeVersionResults } from "./lib";
 
-const [baselineDir, prDir] = process.argv.slice(2);
+const positional: string[] = [];
+let changedContracts: Set<string> | undefined;
+const argv = process.argv.slice(2);
+for (let idx = 0; idx < argv.length; idx++) {
+  if (argv[idx] === "--changed-contracts") {
+    const value = argv[++idx];
+    if (value === undefined) {
+      console.error("--changed-contracts requires a value (may be an empty string)");
+      process.exit(1);
+    }
+    changedContracts = new Set(value.split(",").filter(Boolean));
+  } else {
+    positional.push(argv[idx]);
+  }
+}
+
+const [baselineDir, prDir] = positional;
 if (!baselineDir || !prDir) {
-  console.error("Usage: bun ci/upgrade-check/check.ts <baseline-pkg-dir> <pr-pkg-dir>");
+  console.error(
+    "Usage: bun ci/upgrade-check/check.ts <baseline-pkg-dir> <pr-pkg-dir> [--changed-contracts <comma-separated names>]",
+  );
   process.exit(1);
 }
 
 const results = collectUpgradeVersionResults(baselineDir, prDir);
 let errors = 0;
+let warnings = 0;
 
 function printCommits(title: string, baseRef: string, targetRef: string, paths: string[]) {
   const repo = process.env.GITHUB_REPOSITORY;
@@ -69,11 +91,19 @@ for (const result of results) {
       console.log(`${result.name}: bytecode unchanged`);
     }
 
+    const enforced = changedContracts === undefined || changedContracts.has(result.name);
     for (const error of result.errors) {
-      console.error(`::error::${error}`);
-      errors++;
+      if (enforced) {
+        console.error(`::error::${error}`);
+        errors++;
+      } else {
+        console.log(
+          `::warning::${error} — ${result.name} was not changed by this PR, so this is not blocking. Fix it with a version-bump PR before the next release; this check runs strictly when the release is published.`,
+        );
+        warnings++;
+      }
     }
-    if (result.errors.length > 0) {
+    if (result.errors.length > 0 && enforced) {
       printDiagnostics(result.name);
     }
   } finally {
@@ -86,4 +116,7 @@ if (errors > 0) {
   process.exit(1);
 }
 
+if (warnings > 0) {
+  console.log(`${warnings} violation(s) on contracts not changed by this PR were reported as warnings.`);
+}
 console.log("All contracts passed upgrade version checks");
