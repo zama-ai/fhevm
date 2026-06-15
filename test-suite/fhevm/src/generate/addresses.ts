@@ -67,6 +67,7 @@ const HOST_ADDRESS_KEYS = [
   "PAUSER_SET_CONTRACT_ADDRESS",
   "PROTOCOL_CONFIG_CONTRACT_ADDRESS",
   "KMS_GENERATION_CONTRACT_ADDRESS",
+  "CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS",
 ] as const;
 
 const renderHostChainAddressesEnv = (addresses?: Record<string, string>) =>
@@ -88,5 +89,6 @@ export const renderHostChainAddressesSolidity = (state: Pick<State, "discovery">
     ["pauserSetAdd", host?.PAUSER_SET_CONTRACT_ADDRESS],
     ["protocolConfigAdd", host?.PROTOCOL_CONFIG_CONTRACT_ADDRESS],
     ["kmsGenerationAdd", host?.KMS_GENERATION_CONTRACT_ADDRESS],
+    ["confidentialBridgeAdd", host?.CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS],
   ]);
 };
