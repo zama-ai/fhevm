@@ -25,8 +25,12 @@ Does a handle need temporary access across an instruction or program boundary?
 - **Option A: batch execution** is the default for internal expression graphs.
   Use `fhe_eval` when scratch values need to feed later binary/ternary steps before a durable
   output is bound. Trivial-encrypt and rand births can coexist in the same frame and produce
-  transient or durable outputs; verified input birth remains durable-only because it must bind ACL
-  state immediately. App-side code should use `zama-fhe::EvalBuilder` so transient producer indices,
+  transient or durable outputs. (Input verification is no longer an eval step; it is the separate
+  `verify_coprocessor_input` instruction, which verifies the coprocessor attestation and emits an
+  `InputVerifiedEvent` receipt — it creates NO persistent ACL, matching the EVM transient model where
+  `verifyInput` grants only a tx-scoped allow. Since Solana has no transient-storage analog, any durable
+  permission on an input handle is a separate explicit app grant — DD-007/DD-023.)
+  App-side code should use `zama-fhe::EvalBuilder` so transient producer indices,
   host account indices, output types for common operations, durable output metadata, and
   signer/writable roles are generated consistently; with the `cpi` feature, the app can execute an
   opaque `EvalPlan` through a pubkey-keyed account resolver instead of maintaining host account

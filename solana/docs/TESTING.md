@@ -14,8 +14,10 @@ Tests live in three places:
     settlement, on **Mollusk**.
 - **Program unit tests** — small `#[test]` blocks inside each program (encoding round-trips, etc.).
 - **Adapter tests** — in the other repos the host integrates with:
-  - `kms-connector` — 100+ Solana-specific `kms-worker` unit tests (witness decoding, native-v0
-    admission, response certificates).
+  - `kms-connector` — Solana-specific `kms-worker` unit tests (witness decoding, response
+    certificates). Note: the prior `native-v0` admission subsystem is no longer the chosen decrypt
+    path — decrypt reuses the Gateway V2 / EVM stack with on-chain secp256k1 cert verification
+    (DESIGN_DECISIONS.md DD-012/DD-021); some native-v0 tests remain for the legacy library boundary.
   - `coprocessor/fhevm-engine` — `host-listener` `solana_adapter` tests (event decoding). Its
     real-TFHE Solana integration tests are `#[ignore]` (they need a disposable Postgres and built
     PoC programs).

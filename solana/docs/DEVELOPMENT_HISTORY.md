@@ -1,5 +1,11 @@
 # How the Solana FHEVM PoC Was Built
 
+> Partially superseded (reconciliation, June 2026). This history predates the reconciliation chapter:
+> the "native-v0 KMS path that does not reuse EVM gateway routing" and the "single Ed25519 input
+> authority" notes below were reversed/removed — input binding is now on-chain secp256k1 over the
+> coprocessor attestation, and decrypt reuses the Gateway V2 / EVM stack. See `DESIGN_DECISIONS.md`
+> DD-007, DD-012, DD-020–DD-030 for the current design.
+
 This is the story behind the code: what we set out to do, the order we did it in, the
 hard-won lessons, and an honest snapshot of what is finished versus deliberately left for
 later. If you just want the *what* and *why* of the design, read
