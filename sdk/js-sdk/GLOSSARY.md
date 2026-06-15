@@ -9,7 +9,7 @@ The following terms had multiple names in use across the codebase, docs, whitepa
 | Canonical name                                                 | Other names (deprecated)                                                               | Decision                                                                                                                                         |
 | -------------------------------------------------------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
 | **FHE encryption key**                                         | FHEVM public key, TFHE public key, Zama public key, global FHE key, GlobalFhePkeParams | Decided — SDK uses `fetchFheEncryptionKeyBytes()`                                                                                                |
-| **encrypted value** (prose) / `EncryptedValue` (code)          | handle, fhevmHandle, fheHandle, FhevmHandle                                            | Decided — `EncryptedValue` is the primary public type name. `Handle` is a secondary alias for FHE.sol familiarity. "Encrypted value" in prose.   |
+| **encrypted value** (prose) / `EncryptedValue` (code)          | handle, fhevmHandle, fheHandle, FhevmHandle                                            | Decided — `EncryptedValue` is the primary public type name. `Handle` is a secondary alias for FHEVM familiarity. "Encrypted value" in prose.     |
 | **transport key pair** / `TransportKeyPair` (code)             | user decryption key pair, client decryption key pair, kms key pair, FhevmDecryptionKey | Decided — SDK uses `TransportKeyPair`. Generate with `generateTransportKeyPair()`.                                                               |
 | **TKMS private key**                                           | KMS private key                                                                        | Decided — SDK uses `tkmsPrivateKey` internally in `-p` files                                                                                     |
 | **FHE gas**                                                    | fheGas, fhe-gas, HCU (homomorphic complexity unit)                                     | Pending                                                                                                                                          |
@@ -153,7 +153,7 @@ The user's private key used to decrypt KMS signcrypted shares during decryption.
 ## 5. Encryption and decryption
 
 **Encrypted value** (also: handle, fhevmHandle, fheHandle)
-A deterministic identifier (`bytes32`) representing an encrypted value in the FHEVM system. Encrypted values (called "handles" in FHE.sol and the FHEVM whitepaper) are used inside smart contracts instead of actual ciphertexts. Each one references exactly one ciphertext stored and processed by coprocessors. In the SDK, the primary public type is `EncryptedValue<T>`, with `Handle<T>` as a secondary alias. In developer-facing prose, prefer "encrypted value" over "handle". Subtypes: `ComputedEncryptedValue` (verified, on-chain result of FHE operations) and `ExternalEncryptedValue` (unverified input from `encrypt()`).
+A deterministic identifier (`bytes32`) representing an encrypted value in the FHEVM system. Encrypted values (called "handles" in the FHEVM whitepaper) are used inside smart contracts instead of actual ciphertexts. Each one references exactly one ciphertext stored and processed by coprocessors. In the SDK, the primary public type is `EncryptedValue`. In developer-facing prose, prefer "encrypted value" over "handle".
 _Source: fhevm-whitepaper, Solidity, SDK_
 
 **ZKPoK** (Zero-Knowledge Proof of Knowledge, also: ZKProof)
@@ -168,23 +168,22 @@ _Source: SDK, TFHE WASM_
 A proof provided by users when submitting encrypted inputs to the protocol. It proves that the ciphertext is well-formed and that the sender knows the underlying plaintext.
 _Source: [Solidity](https://github.com/zama-ai/fhevm/blob/58aebb099b61b81ae33fdfb4258ff79e6f5ca0e8/host-contracts/contracts/InputVerifier.sol#L242)_
 
-**Private decryption** (SDK: `decrypt()`)
-A decryption mechanism where the plaintext result is returned only to the requesting user. The decrypted value is re-encrypted under the user's E2E transport public key so that only that user can reconstruct it locally. Requires a signed decryption permit (`SignedSelfDecryptionPermit` or `SignedDelegatedDecryptionPermit`). Returns `ClearValue[]`.
+**Private decryption** (SDK: `decryptValue()` and `decryptValues()`)
+A decryption mechanism where the plaintext result is returned only to the requesting user. The decrypted value is re-encrypted under the user's E2E transport public key so that only that user can reconstruct it locally. Requires a signed decryption permit (`SignedSelfDecryptionPermit` or `SignedDelegatedDecryptionPermit`). Returns `TypedValue` or `TypedValue[]`.
 _Source: SDK (not in fhevm-whitepaper, not in Solidity)_
 
-**Public decryption** (SDK: `publicDecrypt()`)
-A decryption operation whose result becomes publicly available and can be returned on-chain. This is typically used when the result of confidential computation must be revealed to everyone. Returns a `PublicDecryptionProof` with `orderedClearValues`.
+**Public decryption** (SDK: `decryptPublicValue()`, `decryptPublicValues()` and `decryptPublicValuesWithSignatures`)
+A decryption operation whose result has become publicly available and can be returned on-chain. This is typically used when the result of confidential computation must be revealed to everyone. Returns `TypedValue` or `TypedValue[]`, and optionally a `DecryptionProof` for `decryptPublicValuesWithSignatures`.
 _Source: SDK (not in fhevm-whitepaper, not in Solidity)_
 
 **Decryption proof** (also: public decryption proof)
 The KMS public decryption proof. It includes the KMS signatures, associated metadata, and the context needed for verification.
 
 **KMS signcrypted shares** (SDK: `KmsSigncryptedShares`)
-In the private decryption flow, the signed and encrypted shares sent by each KMS node as a response to a decryption request. Each share is encrypted under the user's E2E transport public key (so only the user can read it) and signed by the KMS node (so the user can verify it's authentic). The SDK fetches these via `fetchKmsSignedcryptedShares()` and reconstructs the plaintext locally via `decryptKmsSignedcryptedShares()` using the TKMS WASM module. The high-level `decrypt()` function wraps both steps.
+In the private decryption flow, the signed and encrypted shares sent by each KMS node as a response to a decryption request. Each share is encrypted under the user's E2E transport public key (so only the user can read it) and signed by the KMS node (so the user can verify it's authentic). The SDK fetches these via `fetchKmsSignedcryptedShares()` and reconstructs the plaintext locally via `decryptKmsSignedcryptedShares()` using the TKMS WASM module. The high-level `decryptValue()` function wraps both steps.
 
 **ExtraData**
 A `bytes` field included in EIP-712 permits and Relayer requests. It serves as an opaque context parameter that binds a decryption request to a specific KMS signer set. In standard operations, use `"0x00"`. The extraData is included in the EIP-712 message that the user signs, the Relayer request payload, and the KMS verification. In the SDK, extraData is auto-fetched — developers don't need to provide it manually.
-_Source: SDK types `KmsUserDecryptEIP712Message.extraData`, `PublicDecryptParameters.extraData`_
 
 ---
 
@@ -202,8 +201,8 @@ _Source: [`encrypted-types`](https://www.npmjs.com/package/encrypted-types)_
 A JavaScript/Solidity type abstraction representing encrypted data types such as `ebool`, `euintX`, and external encrypted inputs. In the SDK, `FheType` is a union type: `"ebool" | "euint8" | "euint16" | "euint32" | "euint64" | "euint128" | "euint256" | "eaddress"`.
 _Source: [`FheType.sol`](https://github.com/zama-ai/fhevm/blob/58aebb099b61b81ae33fdfb4258ff79e6f5ca0e8/host-contracts/contracts/shared/FheType.sol#L4)_
 
-**ClearValue** (SDK type)
-The result of decrypting an encrypted value. Pairs the original `EncryptedValue` with its decrypted plaintext, the `fheType`, and the JavaScript value type name. Type-specific aliases: `ClearBool`, `ClearUint8`, `ClearUint16`, `ClearUint32`, `ClearUint64`, `ClearUint128`, `ClearUint256`, `ClearAddress`.
+**TypedValue** (SDK type)
+The result of decrypting an encrypted value. Pairs the decrypted plaintext with a `fheType`.
 _Source: SDK_
 
 ---
@@ -257,5 +256,5 @@ A public key, often derived from the secret key, that allows the server to perfo
 ## 9. General computing terms
 
 **Handle** _(general computing)_
-In computer programming, a handle is an abstract reference to a resource that is used when application software references blocks of memory or objects that are managed by another system like a database or an operating system. In the FHEVM context, "handle" is the FHE.sol / whitepaper term for what the SDK calls an `EncryptedValue` — see **Encrypted value** in section 5.
+In computer programming, a handle is an abstract reference to a resource that is used when application software references blocks of memory or objects that are managed by another system like a database or an operating system. In the FHEVM context, "handle" is the FHEVM whitepaper term for what the SDK calls an `EncryptedValue` — see **Encrypted value** in section 5.
 Source: [Wikipedia](<https://en.wikipedia.org/wiki/Handle_(computing)>)
