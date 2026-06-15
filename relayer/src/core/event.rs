@@ -7,7 +7,7 @@ use crate::http::endpoints::v2::types::{
 use crate::http::endpoints::v3::types::AttestedUserDecryptRequestJson;
 use crate::http::utils::validations::V3_ATTESTATION_TYPE_SOLANA_ED25519_V1;
 use crate::orchestrator::traits::Event;
-use alloy::primitives::{Address, B256, Bytes, FixedBytes, TxHash};
+use alloy::primitives::{Address, Bytes, FixedBytes, TxHash, B256};
 use alloy::{primitives::U256, rpc::types::Log};
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
@@ -850,7 +850,9 @@ impl TryFrom<AttestedUserDecryptRequestJson> for UserDecryptRequest {
                 .iter()
                 .map(|k| B256::from_str(k))
                 .collect::<Result<Vec<_>, _>>()
-                .map_err(|e| anyhow::anyhow!("Failed to parse solanaAllowedAclDomainKeys: {}", e))?;
+                .map_err(|e| {
+                    anyhow::anyhow!("Failed to parse solanaAllowedAclDomainKeys: {}", e)
+                })?;
 
             return Ok(UserDecryptRequest::SolanaUnifiedV1 {
                 handles,
