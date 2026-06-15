@@ -63,7 +63,7 @@ function parseLog(
   log: Log,
   source: 'executor' | 'bridge',
   executor: ethers.Interface,
-  bridge: ethers.Interface
+  bridge: ethers.Interface,
 ): ParsedLog {
   let parsed: { name: string; args: ethers.Result } | null = null;
   try {
@@ -83,7 +83,7 @@ function parseLog(
   };
 }
 
-export async function runChainWorker(chain: ChainConfig, db: MockDb, abort: AbortSignal): Promise {
+export async function runChainWorker(chain: ChainConfig, db: MockDb, abort: AbortSignal): Promise<void> {
   const logger = prefixedLogger(`mock-coprocessor:${chain.name}`);
   const provider = new ethers.JsonRpcProvider(chain.rpcUrl);
   const executorIface = new ethers.Interface(FHEVM_EXECUTOR_EVENTS_ABI);
@@ -120,7 +120,7 @@ export async function runChainWorker(chain: ChainConfig, db: MockDb, abort: Abor
         ...bridgeLogs.map((l) => parseLog(l, 'bridge', executorIface, bridgeIface)),
       ];
       parsed.sort(
-        (a, b) => a.blockNumber - b.blockNumber || a.transactionIndex - b.transactionIndex || a.logIndex - b.logIndex
+        (a, b) => a.blockNumber - b.blockNumber || a.transactionIndex - b.transactionIndex || a.logIndex - b.logIndex,
       );
 
       let inserted = 0;
@@ -143,7 +143,7 @@ export async function runChainWorker(chain: ChainConfig, db: MockDb, abort: Abor
         } catch (err) {
           logger.error(
             `failed to process ${entry.source} event ${entry.event.eventName} at block ${entry.blockNumber} log ${entry.logIndex}`,
-            err
+            err,
           );
           // Continue with siblings — one broken event shouldn't stall the cursor.
         }
@@ -154,7 +154,7 @@ export async function runChainWorker(chain: ChainConfig, db: MockDb, abort: Abor
       if (pendingBridgeCount() > 0) await retryPendingBridges(db, console);
 
       logger.info(
-        `processed blocks ${fromBlock}-${toBlock} (head=${head}): inserted=${inserted} pending=${pending} skipped=${skipped}`
+        `processed blocks ${fromBlock}-${toBlock} (head=${head}): inserted=${inserted} pending=${pending} skipped=${skipped}`,
       );
 
       if (toBlock === head) {

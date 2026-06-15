@@ -27,7 +27,7 @@ import { runService } from './service';
 
 dotenv.config({ path: path.resolve(__dirname, '..', '..', '.env') });
 
-async function queryHandle(handleRaw: string): Promise {
+async function queryHandle(handleRaw: string): Promise<void> {
   let handle: string;
   try {
     handle = ethers.toBeHex(handleRaw, 32);
@@ -40,21 +40,21 @@ async function queryHandle(handleRaw: string): Promise {
   await db.close();
   if (value === null) {
     console.error(
-      `Handle ${handle} not present in mock DB. The daemon may still be catching up, or the handle was never produced.`
+      `Handle ${handle} not present in mock DB. The daemon may still be catching up, or the handle was never produced.`,
     );
     process.exit(1);
   }
   console.log(value.toString());
 }
 
-async function encryptHandle(args: string[]): Promise {
+async function encryptHandle(args: string[]): Promise<void> {
   const flags = parseFlags(args);
   const required = ['contract', 'user', 'type', 'value', 'host-chain-id'];
   const missing = required.filter((k) => flags[k] === undefined);
   if (missing.length > 0) {
     console.error(`Missing required flag(s): ${missing.map((m) => '--' + m).join(', ')}`);
     console.error(
-      'Usage: encrypt --contract <addr> --user <addr> --type <euint64|...> --value <num> --host-chain-id <chainId>'
+      'Usage: encrypt --contract <addr> --user <addr> --type <euint64|...> --value <num> --host-chain-id <chainId>',
     );
     process.exit(2);
   }
@@ -78,8 +78,8 @@ async function encryptHandle(args: string[]): Promise {
   }
 }
 
-function parseFlags(argv: string[]): Record {
-  const out: Record = {};
+function parseFlags(argv: string[]): Record<string, string> {
+  const out: Record<string, string> = {};
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (!arg.startsWith('--')) continue;
@@ -95,7 +95,7 @@ function parseFlags(argv: string[]): Record {
   return out;
 }
 
-async function main(): Promise {
+async function main(): Promise<void> {
   const [cmd, ...rest] = process.argv.slice(2);
   switch (cmd) {
     case undefined:
@@ -121,7 +121,7 @@ async function main(): Promise {
           '  query <handle>                               Print cleartext for <handle> and exit.\n' +
           '  encrypt --contract <addr> --user <addr>      Build a handle+inputProof bundle for a single\n' +
           '          --type <euint64|...> --value <num>   FHE.fromExternal-style input and persist its\n' +
-          '          --host-chain-id <chainId>            cleartext into the mock DB.'
+          '          --host-chain-id <chainId>            cleartext into the mock DB.',
       );
       return;
     default:

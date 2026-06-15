@@ -65,7 +65,11 @@ export async function deployBridgeFixture() {
  * empty proxy during `npm run compile` (see `task:deployEmptyUUPSProxies`). The
  * bridge's operational owner (`bridgeOwner`) can be a different account.
  */
-async function _deployBridgeProxy(lzEndpoint: string, dstEids: number[], dstChainIds: bigint[]): Promise {
+async function _deployBridgeProxy(
+  lzEndpoint: string,
+  dstEids: number[],
+  dstChainIds: bigint[],
+): Promise<ConfidentialBridge> {
   const aclOwner = new ethers.Wallet(process.env.DEPLOYER_PRIVATE_KEY!).connect(ethers.provider);
 
   const emptyFactory = await ethers.getContractFactory('EmptyUUPSProxy', aclOwner);

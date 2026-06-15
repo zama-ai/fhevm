@@ -43,14 +43,14 @@ interface PendingBridge {
 /** In-memory retry queue, shared across all chain workers. */
 const pending: PendingBridge[] = [];
 
-async function attempt(db: MockDb, entry: PendingBridge): Promise {
+async function attempt(db: MockDb, entry: PendingBridge): Promise<boolean> {
   const clearText = await db.getClearText(entry.srcHandle);
   if (clearText === null) return false;
   await db.insertCiphertext(entry.dstHandle, clearText);
   return true;
 }
 
-export async function applyBridgeEvent(event: BridgeEvent, db: MockDb): Promise {
+export async function applyBridgeEvent(event: BridgeEvent, db: MockDb): Promise<'inserted' | 'pending' | 'noop'> {
   switch (event.eventName) {
     case 'HandleBridged': {
       const srcHandle = ethers.toBeHex(event.args.srcHandle, 32);
@@ -84,7 +84,7 @@ export async function applyBridgeEvent(event: BridgeEvent, db: MockDb): Promise 
  * a loud warning — usually because the daemon was started AFTER the
  * source-chain tx was mined (live-events-only mode skips it).
  */
-export async function retryPendingBridges(db: MockDb, logger = console): Promise {
+export async function retryPendingBridges(db: MockDb, logger = console): Promise<void> {
   if (pending.length === 0) return;
   const remaining: PendingBridge[] = [];
   for (const entry of pending) {
@@ -93,8 +93,8 @@ export async function retryPendingBridges(db: MockDb, logger = console): Promise
       logger.info(
         `[mock-coprocessor:bridge] resolved pending mapping ${entry.srcHandle.slice(0, 10)}… → ${entry.dstHandle.slice(
           0,
-          10
-        )}…`
+          10,
+        )}…`,
       );
       continue;
     }
@@ -103,7 +103,7 @@ export async function retryPendingBridges(db: MockDb, logger = console): Promise
       logger.warn(
         `[mock-coprocessor:bridge] giving up on pending mapping ${entry.srcHandle} → ${entry.dstHandle} — ` +
           `source-side TrivialEncrypt/FheOp event was not seen in time. The daemon only processes live events — ` +
-          `the producing tx must be mined AFTER the daemon's "initialised at chain head" line on its origin chain.`
+          `the producing tx must be mined AFTER the daemon's "initialised at chain head" line on its origin chain.`,
       );
       continue;
     }
