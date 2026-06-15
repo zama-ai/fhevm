@@ -12,6 +12,7 @@ import {
   parseSnapshotArtifact,
   readCanonicalSnapshot,
 } from './protocolConfigMirror';
+import { assertContractMatchesVersionPrefix } from './utils/contractVersion';
 import { formatError } from './utils/formatError';
 import { CRS_COUNTER_BASE, KEY_COUNTER_BASE } from './utils/kmsGenerationConstants';
 import { getRequiredEnvVar } from './utils/loadVariables';
@@ -67,30 +68,9 @@ export async function waitForTaskReady(
   }
 }
 
-export async function assertContractMatchesVersionPrefix(
-  hre: HardhatRuntimeEnvironment,
-  address: string,
-  versionPrefix: string,
-): Promise<void> {
-  const contract = new hre.ethers.Contract(
-    address,
-    ['function getVersion() view returns (string)'],
-    hre.ethers.provider,
-  );
-
-  let version: string;
-  try {
-    version = await contract.getVersion();
-  } catch (err) {
-    throw new Error(
-      `Contract at ${address} does not expose getVersion(); it is not a ${versionPrefix} proxy. (${formatError(err)})`,
-    );
-  }
-
-  if (!version.startsWith(versionPrefix)) {
-    throw new Error(`Contract at ${address} reports version "${version}"; expected "${versionPrefix} v…".`);
-  }
-}
+// Re-exported for existing call sites (taskMigrate). Lives in utils/contractVersion to avoid a
+// cyclic import: protocolConfigMirror needs it too, and taskDeploy already imports from there.
+export { assertContractMatchesVersionPrefix };
 
 ////////////////////////////////////////////////////////////////////////////////
 // All Host Contracts
@@ -665,7 +645,7 @@ task(
   )
   .addOptionalParam(
     'blockNumber',
-    "Canonical block height to pin the snapshot to. Defaults to latest; pass the artifact's blockNumber to reproduce a prior export for DAO review.",
+    "Canonical block height to pin the snapshot to. Defaults to the latest finalized block; pass the artifact's blockNumber to reproduce a prior export for DAO review.",
     undefined,
     types.int,
   )

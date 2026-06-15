@@ -1,7 +1,8 @@
-import type { Provider } from 'ethers';
+import { type Provider, isAddress } from 'ethers';
 import type { HardhatRuntimeEnvironment } from 'hardhat/types';
 
 import type { ProtocolConfig } from '../types';
+import { assertContractMatchesVersionPrefix } from './utils/contractVersion';
 import { formatError } from './utils/formatError';
 import { type UpgradeProposal, buildUpgradeProposal, getFunctionFragment } from './utils/upgradeProposal';
 
@@ -25,13 +26,14 @@ export type CanonicalSnapshot = {
   thresholds: KmsThresholds;
   canonicalChainId: bigint;
   blockNumber: number;
+  blockHash: string;
 };
 
 // Reads the canonical ProtocolConfig's current KMS context, pinned to one block. Shared by
 // task:exportCanonicalProtocolConfig and task:deployProtocolConfigFromCanonical's live-read mode so
 // both seed from the exact same read. Pass blockNumber to pin to a historical block (the export
 // artifact's blockNumber) so a DAO signer can reproduce a snapshot byte-for-byte even after a later
-// context rotation; omit it to read the latest block.
+// context rotation; omit it to read the latest finalized block.
 export async function readCanonicalSnapshot(
   hre: HardhatRuntimeEnvironment,
   options: { canonicalProvider: Provider; canonicalProtocolConfigAddress: string; blockNumber?: number },
@@ -40,33 +42,33 @@ export async function readCanonicalSnapshot(
   const { canonicalProvider, canonicalProtocolConfigAddress } = options;
 
   // Handshake before the identity check so a dead or mistyped RPC URL is reported as an RPC
-  // problem, not as a contract identity failure.
+  // problem, not as a contract identity failure. Pin to the finalized block when no explicit block
+  // is requested: a finalized block can't be reorged out, so the exported artifact stays
+  // reproducible. We resolve the full block (not just its number) to capture the hash too, which
+  // uniquely identifies the read's state across reorgs — a height alone is ambiguous.
   let canonicalChainId: bigint;
-  let blockNumber: number;
+  let blockTag: number | 'finalized';
+  let block: Awaited<ReturnType<Provider['getBlock']>>;
   try {
     canonicalChainId = (await canonicalProvider.getNetwork()).chainId;
-    blockNumber = options.blockNumber ?? (await canonicalProvider.getBlockNumber());
+    blockTag = options.blockNumber ?? 'finalized';
+    block = await canonicalProvider.getBlock(blockTag);
   } catch (err) {
     throw new Error(`Canonical RPC handshake failed (${formatError(err)}).`);
   }
+  if (block === null || block.hash === null) {
+    throw new Error(`Canonical RPC returned no finalized block for "${blockTag}".`);
+  }
+  const blockNumber = block.number;
+  const blockHash = block.hash;
   const at = { blockTag: blockNumber };
+
+  // Reuse the shared version-prefix check, pointed at the canonical provider rather than the local
+  // network so the identity check runs against the remote ProtocolConfig.
+  await assertContractMatchesVersionPrefix(hre, canonicalProtocolConfigAddress, 'ProtocolConfig', canonicalProvider);
 
   const canonicalProtocolConfigBase = await ethers.getContractAt('ProtocolConfig', canonicalProtocolConfigAddress);
   const canonicalProtocolConfig = canonicalProtocolConfigBase.connect(canonicalProvider) as ProtocolConfig;
-
-  let canonicalVersion: string;
-  try {
-    canonicalVersion = await canonicalProtocolConfig.getVersion();
-  } catch (err) {
-    throw new Error(
-      `Canonical ProtocolConfig identity check failed: contract at ${canonicalProtocolConfigAddress} does not expose getVersion() (${formatError(err)}).`,
-    );
-  }
-  if (!/^ProtocolConfig v\d/.test(canonicalVersion)) {
-    throw new Error(
-      `Canonical ProtocolConfig identity check failed: contract at ${canonicalProtocolConfigAddress} reports version "${canonicalVersion}"; expected "ProtocolConfig v<n>...".`,
-    );
-  }
 
   const currentKmsContextId: bigint = await canonicalProtocolConfig.getCurrentKmsContextId(at);
   if (currentKmsContextId === 0n) {
@@ -96,7 +98,7 @@ export async function readCanonicalSnapshot(
   }));
   const thresholds: KmsThresholds = { publicDecryption, userDecryption, kmsGen, mpc };
 
-  return { currentKmsContextId, kmsNodes, thresholds, canonicalChainId, blockNumber };
+  return { currentKmsContextId, kmsNodes, thresholds, canonicalChainId, blockNumber, blockHash };
 }
 
 // Builds the upgrade for a secondary ProtocolConfig proxy from a snapshot — freshly read via
@@ -112,7 +114,7 @@ export async function buildCanonicalUpgradeProposal(
 ): Promise<UpgradeProposal> {
   const { snapshot, proxyAddress } = options;
   console.log(
-    `Mirroring ProtocolConfig from canonical chain ${snapshot.canonicalChainId} at block ${snapshot.blockNumber}: contextId=${snapshot.currentKmsContextId}, kmsNodes=${snapshot.kmsNodes.length}.`,
+    `Mirroring ProtocolConfig from canonical chain ${snapshot.canonicalChainId} at block ${snapshot.blockNumber} (${snapshot.blockHash}): contextId=${snapshot.currentKmsContextId}, kmsNodes=${snapshot.kmsNodes.length}.`,
   );
 
   const artifact = await hre.artifacts.readArtifact('ProtocolConfig');
@@ -131,6 +133,7 @@ export async function buildCanonicalUpgradeProposal(
 export type CanonicalSnapshotArtifact = {
   canonicalChainId: string;
   blockNumber: number;
+  blockHash: string;
   protocolConfigAddress: string;
   currentKmsContextId: string;
   kmsNodes: KmsNode[];
@@ -144,6 +147,7 @@ export function buildSnapshotArtifact(
   return {
     canonicalChainId: snapshot.canonicalChainId.toString(),
     blockNumber: snapshot.blockNumber,
+    blockHash: snapshot.blockHash,
     protocolConfigAddress,
     currentKmsContextId: snapshot.currentKmsContextId.toString(),
     kmsNodes: snapshot.kmsNodes,
@@ -176,11 +180,25 @@ export function parseSnapshotArtifact(raw: string): CanonicalSnapshot {
       `Snapshot artifact field "blockNumber" must be a number, got ${JSON.stringify(artifact.blockNumber)}.`,
     );
   }
+  if (typeof artifact.blockHash !== 'string' || !/^0x[0-9a-fA-F]{64}$/.test(artifact.blockHash)) {
+    throw new Error(
+      `Snapshot artifact field "blockHash" must be a 32-byte hex string, got ${JSON.stringify(artifact.blockHash)}.`,
+    );
+  }
   if (!Array.isArray(artifact.kmsNodes) || artifact.kmsNodes.length === 0) {
     throw new Error('Snapshot artifact field "kmsNodes" must be a non-empty array.');
   }
   for (const [index, node] of artifact.kmsNodes.entries()) {
-    for (const field of ['txSenderAddress', 'signerAddress', 'ipAddress', 'storageUrl'] as const) {
+    // Addresses get baked into the initializeFromMigration calldata, so reject a malformed one in
+    // a hand-reviewed artifact here rather than letting ABI encoding fail with an opaque error.
+    for (const field of ['txSenderAddress', 'signerAddress'] as const) {
+      if (!isAddress(node?.[field])) {
+        throw new Error(
+          `Snapshot artifact field "kmsNodes[${index}].${field}" must be a valid address, got ${JSON.stringify(node?.[field])}.`,
+        );
+      }
+    }
+    for (const field of ['ipAddress', 'storageUrl'] as const) {
       if (typeof node?.[field] !== 'string') {
         throw new Error(`Snapshot artifact field "kmsNodes[${index}].${field}" is missing.`);
       }
@@ -198,5 +216,6 @@ export function parseSnapshotArtifact(raw: string): CanonicalSnapshot {
     },
     canonicalChainId: requireBigint('canonicalChainId', artifact.canonicalChainId),
     blockNumber: artifact.blockNumber,
+    blockHash: artifact.blockHash,
   };
 }

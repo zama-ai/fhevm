@@ -1,7 +1,12 @@
 import { expect } from 'chai';
 import hre, { ethers, run } from 'hardhat';
 
-import { buildCanonicalUpgradeProposal, readCanonicalSnapshot } from '../../tasks/protocolConfigMirror';
+import {
+  buildCanonicalUpgradeProposal,
+  buildSnapshotArtifact,
+  parseSnapshotArtifact,
+  readCanonicalSnapshot,
+} from '../../tasks/protocolConfigMirror';
 import { CRS_COUNTER_BASE, KEY_COUNTER_BASE, PREP_KEYGEN_COUNTER_BASE } from '../../tasks/utils/kmsGenerationConstants';
 import { getRequiredEnvVar } from '../../tasks/utils/loadVariables';
 import { executeUpgradeProposal } from '../../tasks/utils/upgradeProposal';
@@ -242,7 +247,7 @@ describe('canonical snapshot export (readCanonicalSnapshot)', function () {
         canonicalProvider: ethers.provider,
         canonicalProtocolConfigAddress: await notProtocolConfig.getAddress(),
       }),
-    ).to.be.rejectedWith(/Canonical ProtocolConfig identity check failed.*reports version "KMSGeneration/);
+    ).to.be.rejectedWith(/reports version "KMSGeneration.*expected "ProtocolConfig/);
   });
 
   it('rejects when the canonical address is an uninitialized empty proxy', async function () {
@@ -253,7 +258,7 @@ describe('canonical snapshot export (readCanonicalSnapshot)', function () {
         canonicalProvider: ethers.provider,
         canonicalProtocolConfigAddress: uninitializedEmpty,
       }),
-    ).to.be.rejectedWith(/Canonical ProtocolConfig identity check failed.*does not expose getVersion/);
+    ).to.be.rejectedWith(/does not expose getVersion\(\); it is not a ProtocolConfig proxy/);
   });
 
   it('rejects when the canonical ProtocolConfig has no active KMS context', async function () {
@@ -306,5 +311,52 @@ describe('canonical snapshot export (readCanonicalSnapshot)', function () {
       blockNumber: exported.blockNumber,
     });
     expect(atPinned).to.deep.equal(exported);
+  });
+});
+
+describe('canonical snapshot artifact (buildSnapshotArtifact / parseSnapshotArtifact)', function () {
+  const deployer = new ethers.Wallet(getRequiredEnvVar('DEPLOYER_PRIVATE_KEY')).connect(ethers.provider);
+
+  async function exportArtifact(): Promise<string> {
+    const canonicalAddress = await deployFreshProtocolConfigProxy(
+      deployer,
+      buildProtocolConfigNodes(),
+      buildProtocolConfigThresholds(),
+    );
+    const snapshot = await readCanonicalSnapshot(hre, {
+      canonicalProvider: ethers.provider,
+      canonicalProtocolConfigAddress: canonicalAddress,
+    });
+    return JSON.stringify(buildSnapshotArtifact(snapshot, canonicalAddress));
+  }
+
+  it('round-trips a snapshot through the JSON artifact, preserving the block hash', async function () {
+    const canonicalAddress = await deployFreshProtocolConfigProxy(
+      deployer,
+      buildProtocolConfigNodes(),
+      buildProtocolConfigThresholds(),
+    );
+    const snapshot = await readCanonicalSnapshot(hre, {
+      canonicalProvider: ethers.provider,
+      canonicalProtocolConfigAddress: canonicalAddress,
+    });
+
+    const artifact = buildSnapshotArtifact(snapshot, canonicalAddress);
+    expect(artifact.blockHash).to.equal(snapshot.blockHash);
+    expect(parseSnapshotArtifact(JSON.stringify(artifact))).to.deep.equal(snapshot);
+  });
+
+  it('rejects an artifact whose blockHash is not a 32-byte hex string', async function () {
+    const artifact = JSON.parse(await exportArtifact());
+    artifact.blockHash = '0xdeadbeef';
+    expect(() => parseSnapshotArtifact(JSON.stringify(artifact))).to.throw(/"blockHash" must be a 32-byte hex string/);
+  });
+
+  it('rejects an artifact whose node signer address is malformed', async function () {
+    const artifact = JSON.parse(await exportArtifact());
+    artifact.kmsNodes[0].signerAddress = 'not-an-address';
+    expect(() => parseSnapshotArtifact(JSON.stringify(artifact))).to.throw(
+      /"kmsNodes\[0\]\.signerAddress" must be a valid address/,
+    );
   });
 });
