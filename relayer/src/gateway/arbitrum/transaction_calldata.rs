@@ -139,6 +139,43 @@ impl ComputeCalldata {
                 ));
                 Decryption::userDecryptionRequest_0Call::abi_encode(&call)
             }
+            UserDecryptRequest::SolanaUnifiedV1 {
+                handles,
+                user_identity,
+                allowed_acl_domain_keys,
+                request_validity,
+                nonce,
+                signature,
+                public_key,
+                extra_data,
+            } => {
+                let handle_entries: Vec<Decryption::HandleEntry> = handles
+                    .iter()
+                    .map(|h| Decryption::HandleEntry {
+                        handle: h.ct_handle.into(),
+                        contractAddress: h.contract_address,
+                        ownerAddress: h.owner_address,
+                    })
+                    .collect();
+                let validity = IDecryption::RequestValiditySeconds {
+                    startTimestamp: request_validity.start_timestamp,
+                    durationSeconds: request_validity.duration_seconds,
+                };
+                // The ed25519 auth fields travel as typed payload fields; `extraData` is
+                // context-only. The KMS Connector verifies the ed25519 signature off-chain.
+                let payload = IDecryption::UserDecryptionRequestSolanaPayload {
+                    userIdentity: user_identity,
+                    publicKey: public_key,
+                    allowedAclDomainKeys: allowed_acl_domain_keys,
+                    requestValidity: validity,
+                    nonce,
+                    extraData: extra_data,
+                    signature,
+                };
+                let call =
+                    Decryption::userDecryptionRequestSolanaCall::new((handle_entries, payload));
+                Decryption::userDecryptionRequestSolanaCall::abi_encode(&call)
+            }
         };
 
         info!(

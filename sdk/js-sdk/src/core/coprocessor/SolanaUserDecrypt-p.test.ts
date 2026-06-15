@@ -123,4 +123,14 @@ describe('SolanaUserDecrypt signer and request builder', () => {
     expect(req.userAddress).toBe(solanaUserDecryptClientId(PK));
     expect(req.userAddress).toBe(req.userAddress.toLowerCase());
   });
+
+  it('carries the ed25519 auth fields as typed values, not packed into extraData (RFC-021)', () => {
+    const req = buildSolanaUserDecryptRequest(signed, SEED);
+    // extraData is context-only (v0x01 ‖ contextId) — the 0x03 auth blob is not on the wire.
+    expect(req.extraData).toBe('0x01' + bytesToHex(CONTEXT_ID).slice(2));
+    // The auth fields travel as typed gateway fields instead.
+    expect(req.solanaUserIdentity).toBe(bytesToHex(PK));
+    expect(req.solanaNonce).toBe(bytesToHex(NONCE));
+    expect(req.solanaAllowedAclDomainKeys).toEqual(DOMAIN_KEYS.map((k) => bytesToHex(k)));
+  });
 });

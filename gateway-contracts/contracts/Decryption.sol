@@ -222,7 +222,7 @@ contract Decryption is
      */
     string private constant CONTRACT_NAME = "Decryption";
     uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 6;
+    uint256 private constant MINOR_VERSION = 7;
     uint256 private constant PATCH_VERSION = 0;
 
     /**
@@ -231,7 +231,7 @@ contract Decryption is
      * This constant does not represent the number of time a specific contract have been upgraded,
      * as a contract deployed from version VX will have a REINITIALIZER_VERSION > 2.
      */
-    uint64 private constant REINITIALIZER_VERSION = 7;
+    uint64 private constant REINITIALIZER_VERSION = 8;
 
     /**
      * @notice The contract's variable storage struct (@dev see ERC-7201)
@@ -320,11 +320,11 @@ contract Decryption is
     }
 
     /**
-     * @notice Re-initializes the contract from V5.
+     * @notice Re-initializes the contract from V6.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV6() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    function reinitializeV7() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /**
      * @notice See {IDecryption-publicDecryptionRequest}.
@@ -716,6 +716,72 @@ contract Decryption is
         $.decryptionContextId[userDecryptionId] = contextId;
 
         emit UserDecryptionRequest(userDecryptionId, snsCtMaterials, handles, payload);
+    }
+
+    /**
+     * @notice See {IDecryption-userDecryptionRequestSolana}.
+     */
+    function userDecryptionRequestSolana(
+        HandleEntry[] calldata handles,
+        UserDecryptionRequestSolanaPayload calldata payload
+    ) external virtual whenNotPaused {
+        if (handles.length == 0) {
+            revert EmptyHandles();
+        }
+        // The Solana ACL is enforced off-gateway by the KMS Connector against the on-chain Solana
+        // ACL; an empty domain-key list is valid (permissive mode), only the upper bound is enforced.
+        if (payload.allowedAclDomainKeys.length > MAX_USER_DECRYPT_CONTRACT_ADDRESSES) {
+            revert ContractAddressesMaxLengthExceeded(
+                MAX_USER_DECRYPT_CONTRACT_ADDRESSES,
+                payload.allowedAclDomainKeys.length
+            );
+        }
+        _checkUserDecryptionRequestValiditySeconds(payload.requestValidity);
+
+        uint256 contextId = _extractContextId(payload.extraData);
+
+        _collectUserDecryptionFee(msg.sender);
+
+        _executeUserDecryptionRequestSolana(handles, payload, contextId);
+    }
+
+    /**
+     * @notice Executes the post-validation body of `userDecryptionRequestSolana`: extracts and
+     * conformance-checks the handles, fetches the SNS ciphertexts, updates storage, and emits the
+     * `UserDecryptionRequestSolana` event.
+     * @dev Mirrors `_executeUnifiedUserDecryptionRequest` and reuses the shared `userDecryptionCounter`
+     * and `userDecryptionPayloads`/`decryptionContextId` storage, so the response handler
+     * (`userDecryptionResponse`) is oblivious to the request's host chain — only the request-side
+     * authorization (ed25519, Solana ACL) differs, and that lives in the KMS Connector.
+     */
+    function _executeUserDecryptionRequestSolana(
+        HandleEntry[] calldata handles,
+        UserDecryptionRequestSolanaPayload calldata payload,
+        uint256 contextId
+    ) internal virtual {
+        bytes32[] memory ctHandles = _extractCtHandlesCheckConformanceHandleEntry(handles);
+
+        // Reverts on any unknown handle.
+        SnsCiphertextMaterial[] memory snsCtMaterials = CIPHERTEXT_COMMITS.getSnsCiphertextMaterials(ctHandles);
+
+        // TODO: remove when batched decryption requests with different keys is supported by the
+        // KMS (see https://github.com/zama-ai/fhevm-internal/issues/376).
+        _checkCtMaterialKeyIds(snsCtMaterials);
+
+        DecryptionStorage storage $ = _getDecryptionStorage();
+
+        // Reuses the shared `userDecryptionCounter` so IDs are stable across EVM and Solana paths
+        // (`userDecryptionResponse` is oblivious to which path a request came from).
+        $.userDecryptionCounter++;
+        uint256 userDecryptionId = $.userDecryptionCounter;
+
+        // The publicKey and ctHandles are used during response calls for the EIP712 signature validation.
+        $.userDecryptionPayloads[userDecryptionId] = UserDecryptionPayload(payload.publicKey, ctHandles);
+
+        // Pin the KMS context at request time. See `decryptionContextId` storage docs.
+        $.decryptionContextId[userDecryptionId] = contextId;
+
+        emit UserDecryptionRequestSolana(userDecryptionId, snsCtMaterials, handles, payload);
     }
 
     /**

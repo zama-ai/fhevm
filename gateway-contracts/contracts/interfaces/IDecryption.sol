@@ -79,6 +79,34 @@ interface IDecryption {
     }
 
     /**
+     * @notice The signed payload carried by the `UserDecryptionRequestSolana` event (RFC-021).
+     * @dev The Solana analog of `UserDecryptionRequestPayload`: identities are 32-byte Solana
+     * pubkeys rather than 20-byte EVM addresses, and the ed25519-specific authorization data
+     * (identity, anti-replay nonce, allowed ACL domain keys) is carried as TYPED fields instead
+     * of being packed into `extraData`. `extraData` therefore carries only the KMS context
+     * (version `0x01` ‖ contextId), exactly like the EVM path. Signature validation is performed
+     * off-chain by the KMS Connector, which verifies the ed25519 signature against the canonical
+     * Solana preimage; the gateway forwards these fields verbatim. `snsCtMaterials` and `handles`
+     * are not part of the signed message.
+     */
+    struct UserDecryptionRequestSolanaPayload {
+        /// @notice The ed25519 identity (Solana pubkey) asserting authorization.
+        bytes32 userIdentity;
+        /// @notice The user's public key used for reencryption.
+        bytes publicKey;
+        /// @notice Optional Solana ACL domain-key allowlist. Empty = permissive mode.
+        bytes32[] allowedAclDomainKeys;
+        /// @notice The validity window (startTimestamp + durationSeconds).
+        RequestValiditySeconds requestValidity;
+        /// @notice Per-request anti-replay nonce bound into the ed25519 signing preimage.
+        bytes32 nonce;
+        /// @notice Generic bytes metadata for versioned payloads (KMS context). First byte is the version.
+        bytes extraData;
+        /// @notice The raw ed25519 signature; opaque to the gateway.
+        bytes signature;
+    }
+
+    /**
      * @notice A struct that contains the delegator and the delegate addresses for a delegated user decryption.
      * @custom:deprecated Used only by the legacy `delegatedUserDecryptionRequest` path. Removed when the
      * relayer-sdk deprecation window for old-format signatures closes. The unified EIP-712 format
@@ -173,6 +201,27 @@ interface IDecryption {
         SnsCiphertextMaterial[] snsCtMaterials,
         HandleEntry[] handles,
         UserDecryptionRequestPayload payload
+    );
+
+    /**
+     * @notice Emitted for a unified user decryption request originating from a Solana host chain
+     * (RFC-021).
+     * @param decryptionId The decryption request ID.
+     * @param snsCtMaterials The handles, key IDs and SNS ciphertexts to decrypt. Not part of the
+     * signed message.
+     * @param handles The handle entries (handle, contractAddress, ownerAddress). Not part of the
+     * signed message.
+     * @param payload The ed25519-signed Solana request fields plus the raw signature, grouped so
+     * the KMS Connector has everything it needs to verify the ed25519 signature off-chain. See
+     * `UserDecryptionRequestSolanaPayload`.
+     * @dev Distinct from the EVM `UserDecryptionRequest` event so the Solana auth fields (32-byte
+     * identity, nonce, ACL domain keys) are typed rather than packed into `extraData`.
+     */
+    event UserDecryptionRequestSolana(
+        uint256 indexed decryptionId,
+        SnsCiphertextMaterial[] snsCtMaterials,
+        HandleEntry[] handles,
+        UserDecryptionRequestSolanaPayload payload
     );
 
     /**
@@ -471,6 +520,23 @@ interface IDecryption {
         RequestValiditySeconds calldata requestValidity,
         bytes calldata signature,
         bytes calldata extraData
+    ) external;
+
+    /**
+     * @notice Requests a user decryption from a Solana host chain (unified path, RFC-021).
+     * @dev The Solana analog of the unified `userDecryptionRequest`: identities are 32-byte Solana
+     * pubkeys and the ed25519 authorization data is typed rather than packed into `extraData`. The
+     * gateway performs no signature verification; it validates format, fetches ciphertext materials,
+     * and emits `UserDecryptionRequestSolana`. ed25519 verification and Solana ACL authorization move
+     * to the KMS Connector. `extraData` carries only the KMS context (version `0x01` ‖ contextId).
+     * @param handles The handle entries (handle, contractAddress, ownerAddress).
+     * @param payload The ed25519-signed Solana request fields plus the raw signature. See
+     * `UserDecryptionRequestSolanaPayload`. Passed as a single calldata struct (rather than loose
+     * args) so the function stays under Solidity's stack-depth limit without `viaIR`.
+     */
+    function userDecryptionRequestSolana(
+        HandleEntry[] calldata handles,
+        UserDecryptionRequestSolanaPayload calldata payload
     ) external;
 
     /**

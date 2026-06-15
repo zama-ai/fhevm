@@ -108,6 +108,11 @@ impl UserDecryptReadinessProcessor {
                 handles,
                 extra_data,
                 ..
+            }
+            | UserDecryptRequest::SolanaUnifiedV1 {
+                handles,
+                extra_data,
+                ..
             } => (
                 handles
                     .iter()

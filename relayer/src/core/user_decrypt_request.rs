@@ -133,6 +133,43 @@ impl ContentHasher for UserDecryptRequest {
                 hasher.update(b"user_address:");
                 hasher.update(user_address.as_slice());
             }
+            UserDecryptRequest::SolanaUnifiedV1 {
+                handles,
+                user_identity,
+                allowed_acl_domain_keys,
+                request_validity: _,
+                nonce,
+                signature: _,
+                public_key,
+                extra_data,
+            } => {
+                // Distinct variant tag so Solana hashes never collide with EVM unified hashes.
+                hasher.update(b"variant:solana_unified_v1:");
+
+                hasher.update(b"allowed_acl_domain_keys:");
+                for key in allowed_acl_domain_keys {
+                    hasher.update(key.as_slice());
+                }
+
+                hasher.update(b"handles:");
+                for h in handles {
+                    hasher.update(h.ct_handle.to_be_bytes::<32>());
+                    hasher.update(h.contract_address.as_slice());
+                    hasher.update(h.owner_address.as_slice());
+                }
+
+                hasher.update(b"extra_data:");
+                hasher.update(extra_data);
+
+                hasher.update(b"public_key:");
+                hasher.update(public_key);
+
+                hasher.update(b"user_identity:");
+                hasher.update(user_identity.as_slice());
+
+                hasher.update(b"nonce:");
+                hasher.update(nonce.as_slice());
+            }
         }
 
         hasher.finalize().into()

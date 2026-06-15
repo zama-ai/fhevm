@@ -1,6 +1,7 @@
 use crate::{
     monitoring::otlp::PropagationContext,
     types::db::{OperationStatus, ParamsTypeDb, SnsCiphertextMaterialDbItem},
+    types::solana_extra_data::{SolanaExtraData, encode_solana_extra_data},
 };
 use alloy::primitives::{Address, FixedBytes, U256};
 use anyhow::anyhow;
@@ -8,7 +9,7 @@ use fhevm_gateway_bindings::decryption::{
     Decryption::{
         DecryptionEvents, HandleEntry, PublicDecryptionRequest, SnsCiphertextMaterial,
         UserDecryptionRequest_0 as UserDecryptionRequest,
-        UserDecryptionRequest_1 as UserDecryptionRequestV2,
+        UserDecryptionRequest_1 as UserDecryptionRequestV2, UserDecryptionRequestSolana,
     },
     IDecryption::{RequestValiditySeconds, UserDecryptionRequestPayload},
 };
@@ -478,6 +479,54 @@ impl From<UserDecryptionRequestV2> for ProtocolEventKind {
     }
 }
 
+/// Normalizes a typed Solana user-decryption gateway event (RFC-021) into the internal
+/// `UserDecryptionV2` representation: the ed25519 auth fields (identity, nonce, ACL domain keys)
+/// are re-encoded into the `0x03` `extraData` transport blob, and the EVM-shaped fields are filled
+/// with placeholders. This keeps the connector's internal transport, DB schema and worker
+/// (which routes a request to the Solana path on `extraData[0] == 0x03`) byte-compatible while the
+/// gateway interface carries the auth fields as typed values rather than packed into `extraData`.
+impl TryFrom<UserDecryptionRequestSolana> for ProtocolEventKind {
+    type Error = anyhow::Error;
+
+    fn try_from(value: UserDecryptionRequestSolana) -> Result<Self, Self::Error> {
+        let payload = value.payload;
+
+        // The typed `extraData` carries only the KMS context (RFC-003 v0x01: version ‖ contextId(32)).
+        // Empty / `0x00` extraData means the default context (zero id).
+        let extra = payload.extraData.as_ref();
+        let context_id: [u8; 32] = if extra.len() >= 33 {
+            extra[1..33]
+                .try_into()
+                .expect("a 32-byte slice fits [u8; 32]")
+        } else {
+            [0u8; 32]
+        };
+
+        let extra_data_blob = encode_solana_extra_data(&SolanaExtraData {
+            context_id,
+            identity: payload.userIdentity.0,
+            nonce: payload.nonce.0,
+            allowed_acl_domain_keys: payload.allowedAclDomainKeys.iter().map(|k| k.0).collect(),
+        })?;
+
+        Ok(Self::UserDecryptionV2(UserDecryptionRequestV2 {
+            decryptionId: value.decryptionId,
+            snsCtMaterials: value.snsCtMaterials,
+            handles: value.handles,
+            payload: UserDecryptionRequestPayload {
+                // EVM-shaped fields are placeholders for Solana: the worker keys on the `0x03`
+                // extraData blob (identity + ACL domain keys), never on these.
+                userAddress: Address::ZERO,
+                publicKey: payload.publicKey,
+                allowedContracts: Vec::new(),
+                requestValidity: payload.requestValidity,
+                extraData: extra_data_blob.into(),
+                signature: payload.signature,
+            },
+        }))
+    }
+}
+
 impl From<PrepKeygenRequest> for ProtocolEventKind {
     fn from(value: PrepKeygenRequest) -> Self {
         Self::PrepKeygen(value)
@@ -506,6 +555,7 @@ impl TryFrom<DecryptionEvents> for ProtocolEventKind {
             DecryptionEvents::PublicDecryptionRequest(e) => Ok(e.into()),
             DecryptionEvents::UserDecryptionRequest_0(e) => Ok(e.into()),
             DecryptionEvents::UserDecryptionRequest_1(e) => Ok(e.into()),
+            DecryptionEvents::UserDecryptionRequestSolana(e) => e.try_into(),
             _ => Err(anyhow!("Unexpected Decryption event")),
         }
     }

@@ -20,8 +20,16 @@ import { bytesToHex, concatBytes } from '../base/bytes.js';
  * the nonce, the allowed ACL domain keys, and the validity window.
  */
 
-/** Canonical Solana `extraData` version byte (`EXTRA_DATA_SOLANA_V1_VERSION` in Rust). */
+/**
+ * Internal Solana transport `extraData` version byte (`EXTRA_DATA_SOLANA_V1_VERSION` in Rust).
+ * No longer placed on the wire by the request builder — the ed25519 auth fields travel as typed
+ * gateway fields (RFC-021). The KMS Connector re-encodes this blob internally; the byte layout is
+ * kept here only so the cross-impl parity test against Rust `encode_solana_extra_data` still holds.
+ */
 export const SOLANA_EXTRA_DATA_VERSION = 0x03;
+
+/** Context-only `extraData` version byte (RFC-003 v0x01): version ‖ contextId(32). */
+export const SOLANA_CONTEXT_EXTRA_DATA_VERSION = 0x01;
 
 /** Domain-separation tag for the signing preimage (`SOLANA_USER_DECRYPT_DOMAIN_TAG` in Rust). */
 export const SOLANA_USER_DECRYPT_DOMAIN_TAG = 'zama-solana-user-decrypt-v1';
@@ -118,6 +126,16 @@ export function buildSolanaUserDecryptExtraData(input: {
 }
 
 /**
+ * Builds the context-only `extraData` placed on the wire (RFC-003 v0x01): `0x01 ‖ contextId(32 BE)`.
+ * This is what the Solana user-decrypt request now carries — the ed25519 auth fields (identity,
+ * nonce, allowed ACL domain keys) travel as typed gateway fields, not packed into `extraData`.
+ */
+export function buildSolanaUserDecryptContextExtraData(contextId: Uint8Array): Uint8Array {
+  assertLen('contextId', contextId, 32);
+  return concatBytes(new Uint8Array([SOLANA_CONTEXT_EXTRA_DATA_VERSION]), contextId);
+}
+
+/**
  * Builds the exact bytes the user's ed25519 key must sign, byte-identical to
  * `solana_user_decrypt_signing_preimage` in Rust:
  *
@@ -156,12 +174,13 @@ export function solanaUserDecryptClientId(identity: Uint8Array): Bytes20Hex {
   return bytesToHex(hash.subarray(12)) as Bytes20Hex;
 }
 
-/** A V2 user-decrypt request ready to POST to the relayer's Solana ed25519 endpoint. */
+/** A user-decrypt request ready to POST to the relayer's Solana ed25519 endpoint (RFC-021). */
 export interface SolanaUserDecryptRequest {
   readonly attestationType: typeof SOLANA_USER_DECRYPT_ATTESTATION_TYPE;
   /** The 64-byte ed25519 signature over the signing preimage, 0x-hex. */
   readonly signature: BytesHex;
-  /** The canonical `extraData` blob (version `0x03`), 0x-hex. */
+  /** Context-only `extraData` (v0x01: version ‖ contextId), 0x-hex. The Solana auth data is no
+   * longer packed here — it travels as the typed `solana*` fields below. */
   readonly extraData: BytesHex;
   /** The ML-KEM re-encryption public key, 0x-hex. */
   readonly publicKey: BytesHex;
@@ -169,6 +188,12 @@ export interface SolanaUserDecryptRequest {
   readonly handles: readonly BytesHex[];
   /** The derived client id (keccak(identity)[12..]), lowercase 0x-hex 20 bytes. */
   readonly userAddress: Bytes20Hex;
+  /** The user's 32-byte ed25519 identity public key, 0x-hex (typed gateway field). */
+  readonly solanaUserIdentity: BytesHex;
+  /** The per-request 32-byte anti-replay nonce, 0x-hex (typed gateway field). */
+  readonly solanaNonce: BytesHex;
+  /** The allowed Solana ACL domain keys, each 0x-hex 32 bytes (typed gateway field). */
+  readonly solanaAllowedAclDomainKeys: readonly BytesHex[];
 }
 
 /**
@@ -196,12 +221,10 @@ export function buildSolanaUserDecryptRequest(
     throw new Error(`unexpected ed25519 signature length: ${signature.length}`);
   }
 
-  const extraData = buildSolanaUserDecryptExtraData({
-    contextId: input.contextId,
-    identity: input.identity,
-    nonce: input.nonce,
-    allowedAclDomainKeys: input.allowedAclDomainKeys,
-  });
+  // The signed preimage still commits to identity + nonce + domain keys + context (unchanged);
+  // only the wire shape changes: `extraData` carries the context alone and the ed25519 auth fields
+  // travel as typed gateway fields (RFC-021), no longer packed into `extraData`.
+  const extraData = buildSolanaUserDecryptContextExtraData(input.contextId);
 
   return {
     attestationType: SOLANA_USER_DECRYPT_ATTESTATION_TYPE,
@@ -210,5 +233,8 @@ export function buildSolanaUserDecryptRequest(
     publicKey: bytesToHex(input.publicKey),
     handles: input.handles.map((h) => bytesToHex(h)),
     userAddress: solanaUserDecryptClientId(input.identity),
+    solanaUserIdentity: bytesToHex(input.identity),
+    solanaNonce: bytesToHex(input.nonce),
+    solanaAllowedAclDomainKeys: input.allowedAclDomainKeys.map((k) => bytesToHex(k)),
   };
 }

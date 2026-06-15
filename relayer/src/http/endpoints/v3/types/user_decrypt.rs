@@ -98,10 +98,30 @@ pub struct Eip712UnifiedUserDecryptPayloadJson {
     pub public_key: String,
 
     /// Extra data forwarded verbatim to the gateway contract. `"0x00"` /
-    /// `0x01`-versioned for EVM; the `0x03`-versioned Solana blob
-    /// (context_id + ed25519 identity + nonce + allowed ACL domain keys)
-    /// for the Solana ed25519 attestation type. Opaque to the relayer.
+    /// `0x01`-versioned (KMS context id). For the Solana ed25519 attestation
+    /// type, the ed25519 auth fields are carried as the typed `solana*` fields
+    /// below rather than packed here, so `extraData` is context-only on both
+    /// paths. Opaque to the relayer.
     #[validate(custom(function = "crate::http::validate_extra_data_field_decryption"))]
     #[schema(example = "0x00")]
     pub extra_data: String,
+
+    /// RFC-021 Solana ed25519 identity (32-byte pubkey, `0x` + 64 hex). Required for the
+    /// `solana-ed25519-user-decrypt-v1` attestation type; absent for EVM. The ed25519 `signature`
+    /// is verified against this identity off-chain by the KMS Connector.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(example = "0x1111111111111111111111111111111111111111111111111111111111111111")]
+    pub solana_user_identity: Option<String>,
+
+    /// RFC-021 per-request anti-replay nonce (`0x` + 64 hex) bound into the ed25519 signing
+    /// preimage. Required for the Solana ed25519 attestation type; absent for EVM.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(example = "0x2222222222222222222222222222222222222222222222222222222222222222")]
+    pub solana_nonce: Option<String>,
+
+    /// RFC-021 allowed Solana ACL domain keys (each a 32-byte pubkey, `0x` + 64 hex) — the Solana
+    /// analog of `allowedContracts`. May be empty (permissive mode). Absent for EVM.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(example = json!(["0x3333333333333333333333333333333333333333333333333333333333333333"]))]
+    pub solana_allowed_acl_domain_keys: Option<Vec<String>>,
 }
