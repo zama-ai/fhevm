@@ -111,12 +111,16 @@ pub fn validate_no_0x_hex(hex_str: &str) -> Result<(), ValidationError> {
 /// Both are accepted at the HTTP layer (the chain id selects which is expected); the ed25519 case
 /// is verified by the relayer before forwarding, and the EVM case on-chain by the gateway.
 pub fn validate_user_decrypt_signature(sig: &str) -> Result<(), ValidationError> {
+    // Surface hex-validity first so a malformed-hex signature reports "Invalid hex string"
+    // regardless of length — matching the field-level contract every other hex field upholds.
+    // A length-first check would mask the hex error for a wrong-length malformed signature.
+    validate_no_0x_hex(sig)?;
     if sig.len() != 130 && sig.len() != 128 {
         return Err(ValidationError::new("validation_error").with_message(
             "signature must be 130 (EIP-712) or 128 (Solana ed25519) hex characters".into(),
         ));
     }
-    validate_no_0x_hex(sig)
+    Ok(())
 }
 
 pub fn validate_0x_hex(hex_str: &str) -> Result<(), ValidationError> {
@@ -426,6 +430,39 @@ mod tests {
         assert!(validate_v3_attestation_type("solana-ed25519-user-decrypt-v2").is_err());
         assert!(validate_v3_attestation_type("").is_err());
         assert!(validate_v3_attestation_type("garbage").is_err());
+    }
+
+    #[test]
+    fn user_decrypt_signature_accepts_evm_130_and_solana_128() {
+        assert!(validate_user_decrypt_signature(&"a".repeat(130)).is_ok());
+        assert!(validate_user_decrypt_signature(&"a".repeat(128)).is_ok());
+    }
+
+    #[test]
+    fn user_decrypt_signature_reports_invalid_hex_regardless_of_length() {
+        // A malformed-hex signature must surface "Invalid hex string" even when its length is not
+        // 130/128 — the hex check runs before the length check. (Regression: a length-first check
+        // masked this, so an invalid-hex signature reported only the length message.)
+        let malformed = format!("{}g", "a".repeat(126)); // 127 chars, non-hex 'g'
+        let err = validate_user_decrypt_signature(&malformed).unwrap_err();
+        assert_eq!(
+            err.message.as_deref(),
+            Some(validation_messages::HEX_INVALID_STRING)
+        );
+    }
+
+    #[test]
+    fn user_decrypt_signature_reports_length_for_valid_hex_wrong_length() {
+        // Valid hex, even length, but neither 130 nor 128 -> the length message.
+        let err = validate_user_decrypt_signature(&"a".repeat(126)).unwrap_err();
+        assert!(
+            err.message
+                .as_deref()
+                .unwrap_or_default()
+                .contains("130 (EIP-712) or 128"),
+            "expected the 130/128 length message, got {:?}",
+            err.message
+        );
     }
 
     /// Builds a minimal well-formed Solana `0x03` extraData hex string with
