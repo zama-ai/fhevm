@@ -11,7 +11,8 @@ for arg in "$@"; do
   case "$arg" in
     --build-profile=dev)  PROFILE="dev" ;;
     --build-profile=prod) PROFILE="prod" ;;
-    --build-profile=*)    echo "Error: unknown --build-profile value '${arg#--build-profile=}'. Use 'dev' or 'prod'." >&2; exit 1 ;;
+    --build-profile=skip) PROFILE="skip" ;;
+    --build-profile=*)    echo "Error: unknown --build-profile value '${arg#--build-profile=}'. Use 'dev', 'prod', or 'skip'." >&2; exit 1 ;;
   esac
 done
 
@@ -27,8 +28,12 @@ mkdir -p "$PACK_DIR"
 PACK_DIR=$(cd "$PACK_DIR" && pwd)
 
 # Build
-echo -e "${GREEN}Building project (profile: $PROFILE)...${NC}"
-(cd "$ROOT_DIR" && npm run "build:$PROFILE")
+if [[ "$PROFILE" == "skip" ]]; then
+  echo -e "${GREEN}Skipping build step.${NC}"
+else
+  echo -e "${GREEN}Building project (profile: $PROFILE)...${NC}"
+  (cd "$ROOT_DIR" && npm run "build:$PROFILE")
+fi
 
 # Pack from src/ which holds the real package.json for distribution
 echo -e "${GREEN}Packing project...${NC}"
