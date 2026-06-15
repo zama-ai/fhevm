@@ -55,7 +55,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     uint64 private constant REINITIALIZER_VERSION = 8;
 
     /**
-     * @notice The address of the all gateway contracts
+     * @notice The addresses of all gateway contracts
      */
     Decryption private constant DECRYPTION = Decryption(decryptionAddress);
     InputVerification private constant INPUT_VERIFICATION = InputVerification(inputVerificationAddress);
