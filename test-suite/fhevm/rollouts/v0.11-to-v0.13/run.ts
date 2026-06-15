@@ -1,6 +1,7 @@
 import path from "node:path";
 
 import type { RolloutRunContext } from "../../src/commands/rollout-run";
+import { STANDARD_TEST_PROFILES } from "../../src/layout";
 import { phaseVersions, scenario, versionSources } from "./versions";
 
 export type RolloutEnv = Record<string, string>;
@@ -29,43 +30,47 @@ const writePhaseVersionLock = (ctx: RolloutRunContext, name: string, versions: R
   ctx.writeVersionLock(name, { versions, sources: versionSources });
 
 const contractVersionKeys = ["GATEWAY_VERSION", "HOST_VERSION"];
-const rolloutTestModes = ["rollout-standard", "rollout-heavy"] as const;
-type RolloutTestMode = (typeof rolloutTestModes)[number];
-type RolloutPhase = "baseline" | "contracts" | "relayer" | "kms" | "final";
 
-const heavyPhaseProfiles: Record<RolloutPhase, string[]> = {
-  baseline: ["rollout-standard"],
-  contracts: ["rollout-standard", "operators", "random-subset", "hcu-block-cap"],
-  relayer: ["rollout-standard", "negative-acl"],
-  kms: ["rollout-standard", "public-decryption"],
-  final: [
-    "rollout-standard",
-    "operators",
-    "random-subset",
-    "negative-acl",
-    "public-decryption",
-    "hcu-block-cap",
-    "coprocessor-db-state-revert",
-    "rollout-standard",
-    "ciphertext-drift-auto-recovery",
-    "rollout-standard",
-  ],
-};
+// A gate after every single hop, no batching — each phase change is validated
+// in isolation so a regression points at the component that introduced it.
+type RolloutPhase =
+  | "baseline"
+  | "contracts-v012"
+  | "contracts-v013"
+  | "relayer"
+  | "kms"
+  | "listener-core"
+  | "final";
 
-export const resolveRolloutTestMode = (value?: string): RolloutTestMode => {
-  const selected = value ?? "rollout-standard";
-  if (rolloutTestModes.includes(selected as RolloutTestMode)) {
-    return selected as RolloutTestMode;
-  }
-  throw new Error(`Unsupported ROLLOUT_TEST_PROFILE=${selected}; expected ${rolloutTestModes.join(" or ")}`);
-};
+// Slow/stateful or topology-bound profiles. They mutate DB state or need a
+// multi-chain topology, so they make poor per-hop smoke gates and run only at
+// the final gate, via the `standard` aggregate whose built-in guards self-skip
+// the ones this rollout's single-chain topology can't satisfy.
+const FINAL_ONLY_PROFILES: readonly string[] = [
+  "coprocessor-db-state-revert",
+  "ciphertext-drift-auto-recovery",
+  "multi-chain-isolation",
+];
 
-export const rolloutPhaseTestProfiles = (phase: RolloutPhase, mode: RolloutTestMode) =>
-  mode === "rollout-heavy" ? heavyPhaseProfiles[phase] : ["rollout-standard"];
+// Every intermediate hop runs the complete `fhevm-cli test standard` coverage
+// minus the final-only profiles — derived from STANDARD_TEST_PROFILES so it
+// tracks the suite. This is deliberately the full standard suite, not the much
+// thinner shared `rollout-standard` subset (which omits negative-acl,
+// hcu-block-cap, the paused-contract profiles, etc.).
+export const PER_HOP_TEST_PROFILES = STANDARD_TEST_PROFILES.filter(
+  (profile) => !FINAL_ONLY_PROFILES.includes(profile),
+);
 
-const testPhase = async (ctx: RolloutRunContext, phase: RolloutPhase, mode: RolloutTestMode) => {
-  const profiles = rolloutPhaseTestProfiles(phase, mode);
-  console.log(`[rollout] ${phase} tests (${mode}): ${profiles.join(", ")}`);
+// Per-hop gates run each non-final-only profile by name (multi-chain-isolation
+// is excluded, so none hit the named-profile precondition that throws on a
+// single-chain stack). The final gate runs the `standard` aggregate so it also
+// covers the stateful/topology-bound profiles with their built-in skip guards.
+export const rolloutPhaseProfiles = (phase: RolloutPhase): string[] =>
+  phase === "final" ? ["standard"] : [...PER_HOP_TEST_PROFILES];
+
+const testPhase = async (ctx: RolloutRunContext, phase: RolloutPhase) => {
+  const profiles = rolloutPhaseProfiles(phase);
+  console.log(`[rollout] ${phase} tests: ${profiles.join(", ")}`);
   for (const profile of profiles) {
     await ctx.test(profile, { parallel: false });
   }
@@ -251,7 +256,6 @@ const migrateContractsV012ToV013 = async (ctx: RolloutRunContext, v013Lock: stri
 };
 
 export default async function run(ctx: RolloutRunContext) {
-  const testMode = resolveRolloutTestMode(process.env.ROLLOUT_TEST_PROFILE);
   const baselineLock = await writePhaseVersionLock(ctx, "00-baseline", phaseVersions.baseline);
   const contractsV012Lock = await writePhaseVersionLock(ctx, "01a-contracts-v012", phaseVersions.contractsV012);
   const contractsV013Lock = await writePhaseVersionLock(ctx, "01b-contracts-v013", phaseVersions.contractsV013);
@@ -262,29 +266,32 @@ export default async function run(ctx: RolloutRunContext) {
 
   logPhase("00 baseline: boot v0.11.0 with the target test-suite harness");
   await ctx.up({ lockFile: baselineLock, scenario, overrides: [{ group: "test-suite" }] });
-  await testPhase(ctx, "baseline", testMode);
+  await testPhase(ctx, "baseline");
 
-  logPhase("01 contracts: batch upgrade v0.11 -> v0.12 -> v0.13 (two mandatory hops)");
+  // Contracts always hop through v0.12; gate each hop independently so the
+  // intermediate states (v0.11 services on v0.12, then on v0.13, contracts) are
+  // each exercised, not just the end state.
+  logPhase("01a contracts: v0.11 -> v0.12 (services still v0.11)");
   await migrateContractsV011ToV012(ctx, contractsV012Lock);
+  await testPhase(ctx, "contracts-v012");
+
+  logPhase("01b contracts: v0.12 -> v0.13 (services still v0.11)");
   await migrateContractsV012ToV013(ctx, contractsV013Lock);
-  // Single e2e gate after contracts reach v0.13, matching the batched
-  // "contracts upgrade" step of the staged plan.
-  await testPhase(ctx, "contracts", testMode);
+  await testPhase(ctx, "contracts-v013");
 
   logPhase("02 relayer: straight v0.11 -> v0.13, before KMS connector consumes versioned extraData");
   await ctx.upgradeRuntimeGroup("relayer", { lockFile: relayerLock });
-  await testPhase(ctx, "relayer", testMode);
+  await testPhase(ctx, "relayer");
 
   logPhase("03 kms: straight kms-core v0.13.0 -> v0.13.20 and connector v0.11 -> v0.13 together");
   await ctx.upgradeRuntimeGroup("kms", { lockFile: kmsLock });
-  await testPhase(ctx, "kms", testMode);
+  await testPhase(ctx, "kms");
 
-  logPhase("04 listener-core: upgrade listener-core before coprocessor");
-  // No test gate here: old coprocessor listeners do not consume listener-core.
-  // The compatibility boundary is the coprocessor upgrade, where consumers
-  // switch to the new listener path.
+  logPhase("04 listener-core: straight v0.11 -> v0.13 (still an old coprocessor against it)");
   await ctx.upgradeRuntimeGroup("listener-core", { lockFile: listenerCoreLock });
+  await testPhase(ctx, "listener-core");
+
   logPhase("05 coprocessor: straight v0.11 -> v0.13 (closes the old-coprocessor / v0.13-contracts window)");
   await ctx.upgradeRuntimeGroup("coprocessor", { lockFile: coprocessorLock });
-  await testPhase(ctx, "final", testMode);
+  await testPhase(ctx, "final");
 }

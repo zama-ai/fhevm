@@ -6,8 +6,8 @@ import { loadRolloutRunbook } from "./commands/rollout-run";
 import {
   needsLocalOneNodeMpcNormalization,
   normalizeLocalOneNodeMpcThreshold,
-  resolveRolloutTestMode,
-  rolloutPhaseTestProfiles,
+  PER_HOP_TEST_PROFILES,
+  rolloutPhaseProfiles,
 } from "../rollouts/v0.11-to-v0.13/run";
 import { phaseVersions, scenario } from "../rollouts/v0.11-to-v0.13/versions";
 
@@ -71,12 +71,21 @@ test("reuses the one-node ProtocolConfig mpc threshold normalization", () => {
   expect(JSON.parse(normalizeLocalOneNodeMpcThreshold(env).MIGRATION_KMS_THRESHOLDS).mpc).toBe("1");
 });
 
-test("defaults to rollout-standard at every phase", () => {
-  expect(resolveRolloutTestMode(undefined)).toBe("rollout-standard");
-  expect(rolloutPhaseTestProfiles("baseline", "rollout-standard")).toEqual(["rollout-standard"]);
-  expect(rolloutPhaseTestProfiles("contracts", "rollout-standard")).toEqual(["rollout-standard"]);
-  expect(rolloutPhaseTestProfiles("final", "rollout-standard")).toEqual(["rollout-standard"]);
-  expect(() => resolveRolloutTestMode("standard")).toThrow("Unsupported ROLLOUT_TEST_PROFILE=standard");
+test("gates every hop with the standard suite minus stateful profiles, full standard at the final gate", () => {
+  // The per-hop suite drops the slow/stateful and topology-bound profiles...
+  for (const profile of ["coprocessor-db-state-revert", "ciphertext-drift-auto-recovery", "multi-chain-isolation"] as const) {
+    expect(PER_HOP_TEST_PROFILES).not.toContain(profile);
+  }
+  // ...but still covers the robustness profiles the thin rollout-standard skipped.
+  for (const profile of ["negative-acl", "random-subset", "hcu-block-cap", "paused-host-contracts"] as const) {
+    expect(PER_HOP_TEST_PROFILES).toContain(profile);
+  }
+  for (const phase of ["baseline", "contracts-v012", "contracts-v013", "relayer", "kms", "listener-core"] as const) {
+    expect(rolloutPhaseProfiles(phase)).toEqual([...PER_HOP_TEST_PROFILES]);
+  }
+  // The final gate runs the complete standard aggregate (incl. the stateful
+  // profiles, which self-skip when their preconditions are unmet).
+  expect(rolloutPhaseProfiles("final")).toEqual(["standard"]);
 });
 
 test("loads the checked-in v0.11 to v0.13 runbook", async () => {
