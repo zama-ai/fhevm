@@ -23,7 +23,7 @@ import sqlite3 from 'sqlite3';
 export class MockDb {
   private constructor(private readonly db: sqlite3.Database) {}
 
-  static async open(path: string): Promise {
+  static async open(path: string): Promise<MockDb> {
     const db = await new Promise<sqlite3.Database>((resolve, reject) => {
       const conn = new sqlite3.Database(path, (err) => (err ? reject(err) : resolve(conn)));
     });
@@ -32,31 +32,31 @@ export class MockDb {
     return wrapper;
   }
 
-  private async init(): Promise {
+  private async init(): Promise<void> {
     await this.run(
       `CREATE TABLE IF NOT EXISTS ciphertexts (
          handle      TEXT PRIMARY KEY,
          clear_text  TEXT NOT NULL,
          updated_at  INTEGER NOT NULL DEFAULT (strftime('%s','now'))
-       )`
+       )`,
     );
   }
 
-  async insertCiphertext(handle: string, clearText: bigint | string, replace = false): Promise {
+  async insertCiphertext(handle: string, clearText: bigint | string, replace = false): Promise<void> {
     const sql = replace
       ? 'INSERT OR REPLACE INTO ciphertexts (handle, clear_text, updated_at) VALUES (?, ?, strftime("%s","now"))'
       : 'INSERT OR IGNORE INTO ciphertexts  (handle, clear_text, updated_at) VALUES (?, ?, strftime("%s","now"))';
     await this.run(sql, [handle.toLowerCase(), clearText.toString()]);
   }
 
-  async getClearText(handle: string): Promise {
+  async getClearText(handle: string): Promise<bigint | null> {
     const row = await this.get<{ clear_text: string }>('SELECT clear_text FROM ciphertexts WHERE handle = ?', [
       handle.toLowerCase(),
     ]);
     return row ? BigInt(row.clear_text) : null;
   }
 
-  async close(): Promise {
+  async close(): Promise<void> {
     await new Promise<void>((resolve, reject) => {
       this.db.close((err) => (err ? reject(err) : resolve()));
     });
@@ -64,13 +64,13 @@ export class MockDb {
 
   // ---- internal sqlite3 promise wrappers ----
 
-  private run(sql: string, params: unknown[] = []): Promise {
+  private run(sql: string, params: unknown[] = []): Promise<void> {
     return new Promise((resolve, reject) => {
       this.db.run(sql, params, (err) => (err ? reject(err) : resolve()));
     });
   }
 
-  private get<T>(sql: string, params: unknown[] = []): Promise {
+  private get<T>(sql: string, params: unknown[] = []): Promise<T | undefined> {
     return new Promise((resolve, reject) => {
       this.db.get(sql, params, (err, row) => (err ? reject(err) : resolve(row as T | undefined)));
     });

@@ -57,7 +57,7 @@ function bitwiseNotUintBits(value: bigint, numBits: number): bigint {
   return ~value & BIT_MASK;
 }
 
-async function lookup(db: MockDb, handleRaw: string | bigint): Promise {
+async function lookup(db: MockDb, handleRaw: string | bigint): Promise<bigint> {
   const handle = ethers.toBeHex(handleRaw, 32);
   const value = await db.getClearText(handle);
   if (value === null) {
@@ -65,7 +65,7 @@ async function lookup(db: MockDb, handleRaw: string | bigint): Promise {
       `Operand handle not found in mock DB: ${handle}. ` +
         `The daemon is live-events-only and seeds its cursor at the chain head on startup, so the producing tx ` +
         `must be mined AFTER the daemon's "initialised at chain head" line. Stop the daemon, run \`pnpm mock:reset\`, ` +
-        `restart it, then re-submit the producing tx.`
+        `restart it, then re-submit the producing tx.`,
     );
   }
   return value;
@@ -98,7 +98,7 @@ export interface ExecutorEvent {
  *   - Unknown event names (silent so we don't crash on future ABI additions)
  *     are returned as `'noop'` with a warning logged by the caller.
  */
-export async function applyExecutorEvent(event: ExecutorEvent, db: MockDb): Promise {
+export async function applyExecutorEvent(event: ExecutorEvent, db: MockDb): Promise<'inserted' | 'noop'> {
   let handle: string;
   let clearText: bigint;
   let clearLHS: bigint;
@@ -216,7 +216,7 @@ export async function applyExecutorEvent(event: ExecutorEvent, db: MockDb): Prom
       resultType = resultTypeFromHandle(handle);
       clearLHS = await lookup(db, event.args[1]);
       const rhs = event.args[3] === '0x01' ? BigInt(event.args[2]) : await lookup(db, event.args[2]);
-      clearText = modN(clearLHS << rhs % NUM_BITS[resultType], resultType);
+      clearText = modN(clearLHS << (rhs % NUM_BITS[resultType]), resultType);
       await db.insertCiphertext(handle, clearText);
       return 'inserted';
     }
@@ -226,7 +226,7 @@ export async function applyExecutorEvent(event: ExecutorEvent, db: MockDb): Prom
       resultType = resultTypeFromHandle(handle);
       clearLHS = await lookup(db, event.args[1]);
       const rhs = event.args[3] === '0x01' ? BigInt(event.args[2]) : await lookup(db, event.args[2]);
-      clearText = modN(clearLHS >> rhs % NUM_BITS[resultType], resultType);
+      clearText = modN(clearLHS >> (rhs % NUM_BITS[resultType]), resultType);
       await db.insertCiphertext(handle, clearText);
       return 'inserted';
     }
@@ -364,7 +364,7 @@ export async function applyExecutorEvent(event: ExecutorEvent, db: MockDb): Prom
       if (value === null) {
         throw new Error(
           `VerifyInput handle ${handle} not present in mock DB — the relayer/input-verifier path is not emulated. ` +
-            `Either pre-populate the handle manually (insertCiphertext) or only use TrivialEncrypt-based flows.`
+            `Either pre-populate the handle manually (insertCiphertext) or only use TrivialEncrypt-based flows.`,
         );
       }
       return 'noop';

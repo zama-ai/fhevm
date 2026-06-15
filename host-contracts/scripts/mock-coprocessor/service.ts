@@ -11,12 +11,12 @@ import { runChainWorker } from './chain-worker';
 import { RUNTIME, loadChainConfigs } from './config';
 import { MockDb } from './db';
 
-export async function runService(): Promise {
+export async function runService(): Promise<void> {
   const chains = loadChainConfigs();
   console.log(
     `[mock-coprocessor] starting service for ${chains.length} chain(s): ${chains
       .map((c) => `${c.name}(eid=${c.lzEid})`)
-      .join(', ')}`
+      .join(', ')}`,
   );
   console.log(`[mock-coprocessor] db=${RUNTIME.dbPath}`);
 

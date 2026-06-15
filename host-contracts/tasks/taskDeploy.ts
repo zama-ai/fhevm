@@ -6,11 +6,8 @@ import { task, types } from 'hardhat/config';
 import type { HardhatEthersHelpers, HardhatRuntimeEnvironment, TaskArguments } from 'hardhat/types';
 import path from 'path';
 
-
-
 import { CRS_COUNTER_BASE, KEY_COUNTER_BASE } from './utils/kmsGenerationConstants';
 import { getRequiredEnvVar } from './utils/loadVariables';
-
 
 const ADDRESSES_DIR = path.join(__dirname, '../addresses');
 const HOST_ENV_FILE = path.join(ADDRESSES_DIR, '.env.host');
@@ -35,7 +32,7 @@ function writeHostAddressesSol(content: string, mode: 'w' | 'a') {
   fs.writeFileSync(HOST_ADDRESSES_FILE, content, { encoding: 'utf8', flag: mode });
 }
 
-export function readExistingHostEnv(): Record {
+export function readExistingHostEnv(): Record<string, string> {
   if (!fs.existsSync(HOST_ENV_FILE)) {
     return {};
   }
@@ -46,7 +43,11 @@ function formatError(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-export async function waitForTaskReady(hre: HardhatRuntimeEnvironment, taskName: string, timeoutMs = 60_000): Promise {
+export async function waitForTaskReady(
+  hre: HardhatRuntimeEnvironment,
+  taskName: string,
+  timeoutMs = 60_000,
+): Promise<void> {
   const deadline = Date.now() + timeoutMs;
 
   while (true) {
@@ -65,12 +66,12 @@ export async function waitForTaskReady(hre: HardhatRuntimeEnvironment, taskName:
 export async function assertContractMatchesVersionPrefix(
   hre: HardhatRuntimeEnvironment,
   address: string,
-  versionPrefix: string
-): Promise {
+  versionPrefix: string,
+): Promise<void> {
   const contract = new hre.ethers.Contract(
     address,
     ['function getVersion() view returns (string)'],
-    hre.ethers.provider
+    hre.ethers.provider,
   );
 
   let version: string;
@@ -78,7 +79,7 @@ export async function assertContractMatchesVersionPrefix(
     version = await contract.getVersion();
   } catch (err) {
     throw new Error(
-      `Contract at ${address} does not expose getVersion(); it is not a ${versionPrefix} proxy. (${formatError(err)})`
+      `Contract at ${address} does not expose getVersion(); it is not a ${versionPrefix} proxy. (${formatError(err)})`,
     );
   }
 
@@ -99,23 +100,23 @@ task('task:deployAllHostContracts')
     'withKmsGeneration',
     'Whether to deploy canonical-host-only KMSGeneration. Required: true for canonical host, false for non-canonical host.',
     undefined,
-    types.boolean
+    types.boolean,
   )
   .addOptionalParam(
     'protocolConfigSource',
     "How to initialize ProtocolConfig: 'fresh' (default) calls initializeFromEmptyProxy with env-driven KMS nodes/thresholds; 'migration' calls initializeFromMigration consuming MIGRATION_CONTEXT_ID / MIGRATION_KMS_NODES / MIGRATION_KMS_THRESHOLDS.",
     'fresh',
-    types.string
+    types.string,
   )
   .setAction(async function (
     { withKmsGeneration, protocolConfigSource }: { withKmsGeneration: boolean; protocolConfigSource: string },
-    hre
+    hre,
   ) {
     if (!PROTOCOL_CONFIG_SOURCES.includes(protocolConfigSource as ProtocolConfigSource)) {
       throw new Error(
         `Invalid --protocol-config-source "${protocolConfigSource}". Allowed values: ${PROTOCOL_CONFIG_SOURCES.join(
-          ', '
-        )}.`
+          ', ',
+        )}.`,
       );
     }
 
@@ -158,18 +159,18 @@ task('task:deployAllHostContracts')
     if (!process.env.LZ_ENDPOINT_ADDRESS) {
       console.log(
         '[task:deployAllHostContracts] LZ_ENDPOINT_ADDRESS not set; ' +
-          'ConfidentialBridge stays at its empty-proxy stage. Set LZ_ENDPOINT_ADDRESS and run task:deployBridge when ready.'
+          'ConfidentialBridge stays at its empty-proxy stage. Set LZ_ENDPOINT_ADDRESS and run task:deployBridge when ready.',
       );
     } else if (hre.network.name === 'hardhat') {
       console.log(
         "[task:deployAllHostContracts] Skipping bridge upgrade on the in-memory 'hardhat' network " +
-          '(no LayerZero endpoint contract exists there). Run on a real network to upgrade the bridge.'
+          '(no LayerZero endpoint contract exists there). Run on a real network to upgrade the bridge.',
       );
     } else if ((await hre.ethers.provider.getCode(process.env.LZ_ENDPOINT_ADDRESS)) === '0x') {
       console.log(
         `[task:deployAllHostContracts] No contract deployed at LZ_ENDPOINT_ADDRESS (${process.env.LZ_ENDPOINT_ADDRESS}) ` +
           'on this network; ConfidentialBridge stays at its empty-proxy stage. ' +
-          'Run task:deployBridge against a network with a real LayerZero endpoint to upgrade the bridge.'
+          'Run task:deployBridge against a network with a real LayerZero endpoint to upgrade the bridge.',
       );
     } else {
       await hre.run('task:deployBridge');
@@ -218,7 +219,7 @@ task('task:deployEmptyUUPSProxies')
     'withKmsGeneration',
     'Whether to deploy the canonical-host-only KMSGeneration proxy. Required: true for canonical host, false for non-canonical host.',
     undefined,
-    types.boolean
+    types.boolean,
   )
   .setAction(async function ({ withKmsGeneration }: { withKmsGeneration: boolean }, { ethers, upgrades, run }) {
     // Compile the EmptyUUPS proxy contract for ACL
@@ -335,7 +336,7 @@ task('task:deployInputVerifier')
     'useAddress',
     'Use addresses instead of private keys env variables for kms signers',
     true,
-    types.boolean
+    types.boolean,
   )
   .setAction(async function (taskArguments: TaskArguments, { ethers, upgrades }) {
     const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
@@ -371,7 +372,7 @@ task('task:deployInputVerifier')
     console.log('InputVerifier code set successfully at address:', proxyAddress);
     console.log(
       `${numSigners} Coprocessor signers were added to InputVerifier at initialization, list of Coprocessor signers is:`,
-      initialSigners
+      initialSigners,
     );
     console.log('Threshold for InputVerifier is:', initialThreshold);
   });
@@ -432,7 +433,7 @@ task('task:deployBridge').setAction(async function (_, { ethers, upgrades }) {
   if (!proxyAddress) {
     throw new Error(
       'CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS not found in addresses/.env.host. ' +
-        'Run task:deployEmptyUUPSProxies first.'
+        'Run task:deployEmptyUUPSProxies first.',
     );
   }
 
@@ -494,7 +495,7 @@ task('task:assertProtocolConfigReady').setAction(async function (_, hre) {
   const protocolConfig = new hre.ethers.Contract(
     protocolConfigAddress,
     ['function getCurrentKmsContextId() view returns (uint256)'],
-    hre.ethers.provider
+    hre.ethers.provider,
   );
 
   let currentKmsContextId: bigint;
@@ -503,14 +504,14 @@ task('task:assertProtocolConfigReady').setAction(async function (_, hre) {
   } catch (err) {
     throw new Error(
       `Cannot deploy KMSVerifier: ProtocolConfig at ${protocolConfigAddress} is not initialized (reading current context reverted: ${formatError(
-        err
-      )}).`
+        err,
+      )}).`,
     );
   }
 
   if (currentKmsContextId === 0n) {
     throw new Error(
-      `Cannot deploy KMSVerifier: ProtocolConfig at ${protocolConfigAddress} has no active KMS context (currentKmsContextId=0).`
+      `Cannot deploy KMSVerifier: ProtocolConfig at ${protocolConfigAddress} has no active KMS context (currentKmsContextId=0).`,
     );
   }
 });
@@ -524,7 +525,7 @@ task('task:assertNoPendingKeyManagementRequest')
     'address',
     'KMSGeneration proxy address. Falls back to env var then addresses/.env.host.',
     undefined,
-    types.string
+    types.string,
   )
   .setAction(async function (taskArguments: TaskArguments, hre) {
     const kmsGenAddress: string | undefined =
@@ -533,21 +534,21 @@ task('task:assertNoPendingKeyManagementRequest')
       readExistingHostEnv().KMS_GENERATION_CONTRACT_ADDRESS;
     if (!kmsGenAddress) {
       throw new Error(
-        'KMSGeneration address not resolved. Pass --address 0x…, or set KMS_GENERATION_CONTRACT_ADDRESS, or generate addresses/.env.host via a deploy task first.'
+        'KMSGeneration address not resolved. Pass --address 0x…, or set KMS_GENERATION_CONTRACT_ADDRESS, or generate addresses/.env.host via a deploy task first.',
       );
     }
 
     await assertContractMatchesVersionPrefix(hre, kmsGenAddress, 'KMSGeneration');
 
     const kmsGen = await hre.ethers.getContractAt('KMSGeneration', kmsGenAddress);
-    const readKmsStatusView = async <T>(viewLabel: string, read: () => Promise): Promise => {
+    const readKmsStatusView = async <T>(viewLabel: string, read: () => Promise<T>): Promise<T> => {
       try {
         return await read();
       } catch (err) {
         const wrapped = new Error(
           `Failed reading ${viewLabel} from KMSGeneration at ${kmsGenAddress}. Re-check the configured address and confirm this KMSGeneration version exposes ${viewLabel}. (${formatError(
-            err
-          )})`
+            err,
+          )})`,
         ) as Error & { cause?: unknown };
         wrapped.cause = err;
         throw wrapped;
@@ -570,13 +571,13 @@ task('task:assertNoPendingKeyManagementRequest')
 
     if (keyCounter !== KEY_COUNTER_BASE && !keyDone) {
       throw new Error(
-        `Keygen pending on ${kmsGenAddress}: keyCounter=${keyCounter} has not completed (isRequestDone=false). Complete or abort before proposing a new key management request.`
+        `Keygen pending on ${kmsGenAddress}: keyCounter=${keyCounter} has not completed (isRequestDone=false). Complete or abort before proposing a new key management request.`,
       );
     }
 
     if (crsCounter !== CRS_COUNTER_BASE && !crsDone) {
       throw new Error(
-        `CRS generation pending on ${kmsGenAddress}: crsCounter=${crsCounter} has not completed (isRequestDone=false). Complete or abort before proposing a new key management request.`
+        `CRS generation pending on ${kmsGenAddress}: crsCounter=${crsCounter} has not completed (isRequestDone=false). Complete or abort before proposing a new key management request.`,
       );
     }
 
@@ -890,4 +891,3 @@ task('task:setDstChainId')
     await confidentialBridge.setDstChainId(taskArguments.remoteEid, taskArguments.remoteChainId);
     console.log('setDstChainId done successfully!');
   });
-  

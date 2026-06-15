@@ -76,7 +76,7 @@ describe('Bridge', function () {
       // signers.bob has no ACL allowance on this fresh handle.
       const bob = this.signers.bob;
       await expect(
-        this.srcBridge.connect(bob).send(DST_EID, ethers.ZeroHash, '0x', handleList, 0, '0x')
+        this.srcBridge.connect(bob).send(DST_EID, ethers.ZeroHash, '0x', handleList, 0, '0x'),
       ).to.be.revertedWithCustomError(this.srcBridge, 'HandleNotAllowed');
     });
 
@@ -99,7 +99,7 @@ describe('Bridge', function () {
       await expect(
         this.srcBridge
           .connect(this.signers.alice)
-          .send(DST_EID, ethers.ZeroHash, '0x', [handle], 50_000n, rawOpts, { value: ethers.parseEther('1') })
+          .send(DST_EID, ethers.ZeroHash, '0x', [handle], 50_000n, rawOpts, { value: ethers.parseEther('1') }),
       ).to.be.revertedWithCustomError(this.srcBridge, 'ComposeGasMustBeZeroWithRawOptions');
     });
   });
@@ -116,7 +116,7 @@ describe('Bridge', function () {
       const dst = ethers.keccak256(ethers.toUtf8Bytes('dst'));
       await expect(this.dstBridge.connect(this.owner).grantFallbackPlaintext(dst, 0n)).to.be.revertedWithCustomError(
         this.dstBridge,
-        'WrongChainIdInDstHandle'
+        'WrongChainIdInDstHandle',
       );
     });
 
@@ -140,7 +140,7 @@ describe('Bridge', function () {
           '0x',
           [],
           [],
-        ]
+        ],
       );
       await expect(
         this.dstBridge
@@ -150,8 +150,8 @@ describe('Bridge', function () {
             ethers.keccak256(ethers.toUtf8Bytes('g')),
             composeMsg,
             ethers.ZeroAddress,
-            '0x'
-          )
+            '0x',
+          ),
       ).to.be.revertedWithCustomError(this.dstBridge, 'NotLzEndpoint');
     });
 
@@ -166,7 +166,7 @@ describe('Bridge', function () {
           '0x',
           [],
           [],
-        ]
+        ],
       );
       await impersonate(endpointAddr);
       await fundAddress(endpointAddr);
@@ -179,8 +179,8 @@ describe('Bridge', function () {
             ethers.keccak256(ethers.toUtf8Bytes('g')),
             composeMsg,
             ethers.ZeroAddress,
-            '0x'
-          )
+            '0x',
+          ),
       )
         .to.be.revertedWithCustomError(this.dstBridge, 'UnexpectedComposeOrigin')
         .withArgs(this.signers.bob.address);
@@ -197,7 +197,7 @@ describe('Bridge', function () {
  *   - byte 30:    0x05 (FheType.Uint64)
  *   - byte 31:    HANDLE_VERSION 0
  */
-async function makeDstHandle(seed: number): Promise {
+async function makeDstHandle(seed: number): Promise<string> {
   const raw = ethers.keccak256(ethers.toUtf8Bytes(`dst-handle-${seed}`));
   const top21 = raw.slice(2, 2 + 21 * 2); // 21 random bytes (hex)
   const { chainId } = await ethers.provider.getNetwork();
@@ -205,7 +205,7 @@ async function makeDstHandle(seed: number): Promise {
   return '0x' + top21 + 'ff' + chainIdHex + '05' + '00';
 }
 
-async function getAclAddress(): Promise {
+async function getAclAddress(): Promise<string> {
   const dotenv = await import('dotenv');
   const fs = await import('fs');
   return dotenv.parse(fs.readFileSync('addresses/.env.host')).ACL_CONTRACT_ADDRESS;

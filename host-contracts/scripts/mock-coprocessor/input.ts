@@ -36,7 +36,7 @@ import type { MockDb } from './db';
 // ─── Type tables (kept in lock-step with test/fhevmjsMocked.ts) ─────────────
 
 /** FheType byte tag used both as the per-input blob prefix and as handle[30]. */
-export const FHE_TYPE_BY_BITS: Record = {
+export const FHE_TYPE_BY_BITS: Record<number, number> = {
   2: 0, // ebool (2 bits)
   4: 1,
   8: 2,
@@ -49,7 +49,7 @@ export const FHE_TYPE_BY_BITS: Record = {
 };
 
 /** Alias the CLI exposes — maps human names to bit widths. */
-export const TYPE_ALIASES: Record = {
+export const TYPE_ALIASES: Record<string, number> = {
   bool: 2,
   ebool: 2,
   uint4: 4,
@@ -110,7 +110,7 @@ export interface BuildEncryptedInputArgs {
  *
  * @throws if `inputs` is empty, > 256 entries, or sums > 2048 bits.
  */
-export async function buildEncryptedInput(args: BuildEncryptedInputArgs): Promise {
+export async function buildEncryptedInput(args: BuildEncryptedInputArgs): Promise<EncryptedInputBundle> {
   const {
     contractAddress,
     userAddress,
@@ -214,7 +214,10 @@ export async function buildEncryptedInput(args: BuildEncryptedInputArgs): Promis
  * the daemon's `VerifyInput` handler can resolve it once the tx is mined.
  * Use this from operator scripts immediately before broadcasting the dApp tx.
  */
-export async function buildAndRegisterEncryptedInput(db: MockDb, args: BuildEncryptedInputArgs): Promise {
+export async function buildAndRegisterEncryptedInput(
+  db: MockDb,
+  args: BuildEncryptedInputArgs,
+): Promise<EncryptedInputBundle> {
   const bundle = await buildEncryptedInput(args);
   for (let i = 0; i < bundle.handles.length; i++) {
     await db.insertCiphertext(bundle.handles[i], bundle.cleartexts[i]);
@@ -236,7 +239,7 @@ export interface CliOptions {
  * Reads env / signer keys, calls the builder, persists handles to the mock DB,
  * and prints `handle=… inputProof=…` on stdout.
  */
-export async function runMockEncryptCli(opts: CliOptions, db: MockDb): Promise {
+export async function runMockEncryptCli(opts: CliOptions, db: MockDb): Promise<void> {
   const bits = TYPE_ALIASES[opts.type.toLowerCase()];
   if (bits === undefined) {
     throw new Error(`Unknown --type: ${opts.type}. Supported: ${Object.keys(TYPE_ALIASES).sort().join(', ')}`);
@@ -261,7 +264,7 @@ export async function runMockEncryptCli(opts: CliOptions, db: MockDb): Promise {
     if (expected && ethers.getAddress(expected) !== ethers.getAddress(signers[i].address)) {
       throw new Error(
         `Signer ${i} private key derives address ${signers[i].address} but COPROCESSOR_SIGNER_ADDRESS_${i}=${expected}. ` +
-          `Refusing to build a proof the on-chain InputVerifier will reject.`
+          `Refusing to build a proof the on-chain InputVerifier will reject.`,
       );
     }
   }
@@ -283,7 +286,7 @@ export async function runMockEncryptCli(opts: CliOptions, db: MockDb): Promise {
     `[mock-coprocessor:encrypt] inserted handle=${bundle.handles[0]} cleartext=${bundle.cleartexts[0]} ` +
       `into ${db ? 'mock DB' : '<no db>'} for { contract=${opts.contract}, user=${opts.user}, hostChainId=${
         opts.hostChainId
-      } }`
+      } }`,
   );
 }
 
