@@ -58,15 +58,15 @@ const CHAINS: ChainSpec[] = [
   },
 ];
 
-function parseEnvFile(path: string): Record {
+function parseEnvFile(path: string): Record<string, string> {
   if (!existsSync(path)) {
     throw new Error(
       `[mock-coprocessor] addresses snapshot not found at ${path}. ` +
-        `Run task:deployAllHostContracts on this chain and snapshot the addresses (see addresses/BRIDGE_DEPLOYMENT.md §2.4).`
+        `Run task:deployAllHostContracts on this chain and snapshot the addresses (see addresses/BRIDGE_DEPLOYMENT.md §2.4).`,
     );
   }
   const lines = readFileSync(path, 'utf8').split('\n');
-  const env: Record = {};
+  const env: Record<string, string> = {};
   for (const raw of lines) {
     const line = raw.trim();
     if (line === '' || line.startsWith('#')) continue;
@@ -92,7 +92,7 @@ function buildConfig(spec: ChainSpec): ChainConfig {
   }
   if (!confidentialBridge) {
     throw new Error(
-      `[mock-coprocessor] ${spec.addressesEnv} is missing CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS — bridge events won't be propagated.`
+      `[mock-coprocessor] ${spec.addressesEnv} is missing CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS — bridge events won't be propagated.`,
     );
   }
   const rpcUrl = (process.env[spec.rpcEnvVar] ?? spec.rpcDefault).trim();
