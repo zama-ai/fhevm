@@ -1,44 +1,18 @@
-//! Canonical Solana user-decryption `extraData` layout and ed25519 signing preimage.
+//! Canonical Solana user-decryption ed25519 signing preimage.
 //!
 //! On EVM, the Gateway verifies on-chain the EIP-712 signature that binds the re-encryption
-//! `publicKey` to the requesting `userAddress`, so the relayer is untrusted. The Solana host
-//! has no such on-chain binding, so each KMS party's connector MUST re-derive and verify the
-//! user's ed25519 signature itself. This module is the single source of truth for:
+//! `publicKey` to the requesting `userAddress`, so the relayer is untrusted. The Solana host has no
+//! such on-chain binding, so each KMS party's connector MUST re-derive and verify the user's
+//! ed25519 signature itself. This module is the single source of truth for the exact bytes the
+//! user's ed25519 key signs (the "signing preimage").
 //!
-//! 1. the byte layout of the Solana `extraData` blob carried in
-//!    `UserDecryptionRequestPayload.extraData`, and
-//! 2. the exact bytes the user's ed25519 key must sign (the "signing preimage").
-//!
-//! The relayer, the client SDK, and kms-core must reproduce this byte-for-byte. Everything is
-//! pure (`no I/O`, `no crypto`) so it can be shared and unit-tested in isolation; the actual
-//! ed25519 verification lives in the `kms-worker` connector, which owns the vetted crypto
-//! dependency.
-//!
-//! # `extraData` layout (version `0x03`, [`EXTRA_DATA_SOLANA_V1_VERSION`])
-//!
-//! All multi-byte integers are big-endian. The `version ‖ context_id` prefix is shared with the
-//! EVM v1/v2 layouts so the generic [`super::extra_data::parse_extra_data`] dispatcher can
-//! surface `context_id` without knowing the Solana-specific tail.
-//!
-//! ```text
-//! offset  size            field
-//! 0       1               version (0x03)
-//! 1       32              context_id (big-endian U256)
-//! 33      32              ed25519 identity public key
-//! 65      32              per-request nonce (anti-replay)
-//! 97      4               domain_key_count = N (big-endian u32)
-//! 101     32 * N          allowed ACL domain keys (each a 32-byte Solana pubkey)
-//! ```
-//!
-//! The allowed ACL domain keys are the Solana analog of the EVM `allowedContracts` scope: they
-//! enumerate the on-chain ACL domains the user authorizes this decryption for. They live in the
-//! signed `extraData` (not in the EVM `allowedContracts` field, which cannot hold 32-byte
-//! pubkeys) so that the scope itself is committed to by the ed25519 signature.
+//! The auth fields (identity, nonce, allowed ACL domain keys, context) travel as TYPED gateway
+//! fields (RFC-021) — there is no `extraData` blob. The relayer, the client SDK, and kms-core must
+//! reproduce this preimage byte-for-byte. It is pure (no I/O, no crypto) so it can be shared and
+//! unit-tested in isolation; the ed25519 verification lives in the `kms-worker` connector, which
+//! owns the vetted crypto dependency.
 //!
 //! # Signing preimage
-//!
-//! The ed25519 signature in `UserDecryptionRequestPayload.signature` MUST cover
-//! [`solana_user_decrypt_signing_preimage`], whose layout is:
 //!
 //! ```text
 //! SOLANA_USER_DECRYPT_DOMAIN_TAG                 (constant ASCII tag)
@@ -56,9 +30,6 @@
 //! Binding `public_key` here is what closes the substitution attack: an attacker cannot swap in
 //! their own re-encryption key without invalidating the user's signature.
 
-use crate::types::extra_data::EXTRA_DATA_SOLANA_V1_VERSION;
-use anyhow::{anyhow, bail};
-
 /// Domain-separation tag for the Solana user-decryption signing preimage. Versioned so a future
 /// layout change forces signatures to a fresh domain.
 pub const SOLANA_USER_DECRYPT_DOMAIN_TAG: &[u8] = b"zama-solana-user-decrypt-v1";
@@ -69,98 +40,6 @@ pub const SOLANA_PUBKEY_LEN: usize = 32;
 pub const HANDLE_LEN: usize = 32;
 /// Length of an ed25519 signature, in bytes.
 pub const ED25519_SIGNATURE_LEN: usize = 64;
-
-const CONTEXT_ID_OFFSET: usize = 1;
-const IDENTITY_OFFSET: usize = CONTEXT_ID_OFFSET + 32;
-const NONCE_OFFSET: usize = IDENTITY_OFFSET + SOLANA_PUBKEY_LEN;
-const DOMAIN_KEY_COUNT_OFFSET: usize = NONCE_OFFSET + SOLANA_PUBKEY_LEN;
-const DOMAIN_KEYS_OFFSET: usize = DOMAIN_KEY_COUNT_OFFSET + 4;
-
-/// The minimum length of a Solana `extraData` blob (header with zero domain keys).
-pub const SOLANA_EXTRA_DATA_MIN_LEN: usize = DOMAIN_KEYS_OFFSET;
-
-/// Decoded Solana `extraData` contents (everything beyond the shared `context_id`, which the
-/// generic parser already exposes).
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SolanaExtraData {
-    /// 32-byte big-endian context id (zero when no explicit context was supplied).
-    pub context_id: [u8; 32],
-    /// The user's 32-byte ed25519 identity public key.
-    pub identity: [u8; SOLANA_PUBKEY_LEN],
-    /// Per-request anti-replay nonce.
-    pub nonce: [u8; SOLANA_PUBKEY_LEN],
-    /// The allowed ACL domain keys (Solana analog of EVM `allowedContracts`).
-    pub allowed_acl_domain_keys: Vec<[u8; SOLANA_PUBKEY_LEN]>,
-}
-
-/// Encodes [`SolanaExtraData`] into the canonical `extraData` byte layout (version `0x03`).
-pub fn encode_solana_extra_data(data: &SolanaExtraData) -> anyhow::Result<Vec<u8>> {
-    let count = u32::try_from(data.allowed_acl_domain_keys.len())
-        .map_err(|_| anyhow!("too many allowed ACL domain keys"))?;
-
-    let mut out = Vec::with_capacity(DOMAIN_KEYS_OFFSET + data.allowed_acl_domain_keys.len() * 32);
-    out.push(EXTRA_DATA_SOLANA_V1_VERSION);
-    out.extend_from_slice(&data.context_id);
-    out.extend_from_slice(&data.identity);
-    out.extend_from_slice(&data.nonce);
-    out.extend_from_slice(&count.to_be_bytes());
-    for key in &data.allowed_acl_domain_keys {
-        out.extend_from_slice(key);
-    }
-    Ok(out)
-}
-
-/// Decodes the canonical Solana `extraData` byte layout. Rejects a wrong version byte, a short
-/// buffer, a domain-key count that overflows the buffer, and any trailing bytes (the encoding is
-/// exact, so a length mismatch signals a malformed or tampered blob).
-pub fn decode_solana_extra_data(bytes: &[u8]) -> anyhow::Result<SolanaExtraData> {
-    if bytes.len() < SOLANA_EXTRA_DATA_MIN_LEN {
-        bail!(
-            "solana extra_data too short: {} bytes, expected at least {}",
-            bytes.len(),
-            SOLANA_EXTRA_DATA_MIN_LEN
-        );
-    }
-    if bytes[0] != EXTRA_DATA_SOLANA_V1_VERSION {
-        bail!(
-            "unexpected solana extra_data version: 0x{:02x}, expected 0x{:02x}",
-            bytes[0],
-            EXTRA_DATA_SOLANA_V1_VERSION
-        );
-    }
-
-    let context_id = read_array::<32>(bytes, CONTEXT_ID_OFFSET);
-    let identity = read_array::<SOLANA_PUBKEY_LEN>(bytes, IDENTITY_OFFSET);
-    let nonce = read_array::<SOLANA_PUBKEY_LEN>(bytes, NONCE_OFFSET);
-
-    let count = u32::from_be_bytes(read_array::<4>(bytes, DOMAIN_KEY_COUNT_OFFSET)) as usize;
-    let expected_len = DOMAIN_KEYS_OFFSET
-        .checked_add(
-            count
-                .checked_mul(SOLANA_PUBKEY_LEN)
-                .ok_or_else(|| anyhow!("solana extra_data domain-key count overflows: {count}"))?,
-        )
-        .ok_or_else(|| anyhow!("solana extra_data length overflows"))?;
-    if bytes.len() != expected_len {
-        bail!(
-            "solana extra_data length mismatch: {} bytes, expected exactly {} for {} domain keys",
-            bytes.len(),
-            expected_len,
-            count
-        );
-    }
-
-    let allowed_acl_domain_keys = (0..count)
-        .map(|i| read_array::<SOLANA_PUBKEY_LEN>(bytes, DOMAIN_KEYS_OFFSET + i * SOLANA_PUBKEY_LEN))
-        .collect();
-
-    Ok(SolanaExtraData {
-        context_id,
-        identity,
-        nonce,
-        allowed_acl_domain_keys,
-    })
-}
 
 /// Fields of a Solana user-decryption request that the ed25519 signature must commit to. Held by
 /// reference so callers build the preimage without copying the (potentially large) handle list or
@@ -233,78 +112,9 @@ pub fn solana_user_decrypt_signing_preimage(input: &SolanaUserDecryptSigningInpu
     preimage
 }
 
-/// Reads a fixed-size array from `bytes` at `offset`. Callers guarantee the slice is long enough
-/// (length is validated up front in [`decode_solana_extra_data`]).
-fn read_array<const N: usize>(bytes: &[u8], offset: usize) -> [u8; N] {
-    let mut out = [0u8; N];
-    out.copy_from_slice(&bytes[offset..offset + N]);
-    out
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::extra_data::{ExtraData, parse_extra_data};
-    use alloy::primitives::U256;
-
-    fn sample() -> SolanaExtraData {
-        SolanaExtraData {
-            context_id: U256::from(0x1234u64).to_be_bytes(),
-            identity: [7u8; 32],
-            nonce: [9u8; 32],
-            allowed_acl_domain_keys: vec![[1u8; 32], [2u8; 32]],
-        }
-    }
-
-    #[test]
-    fn extra_data_round_trips() {
-        let data = sample();
-        let encoded = encode_solana_extra_data(&data).unwrap();
-        assert_eq!(decode_solana_extra_data(&encoded).unwrap(), data);
-    }
-
-    #[test]
-    fn extra_data_round_trips_with_no_domain_keys() {
-        let mut data = sample();
-        data.allowed_acl_domain_keys.clear();
-        let encoded = encode_solana_extra_data(&data).unwrap();
-        assert_eq!(encoded.len(), SOLANA_EXTRA_DATA_MIN_LEN);
-        assert_eq!(decode_solana_extra_data(&encoded).unwrap(), data);
-    }
-
-    #[test]
-    fn generic_parser_surfaces_context_id() {
-        let data = sample();
-        let encoded = encode_solana_extra_data(&data).unwrap();
-        assert_eq!(
-            parse_extra_data(&encoded).unwrap(),
-            ExtraData {
-                context_id: Some(U256::from(0x1234u64)),
-                epoch_id: None,
-            }
-        );
-    }
-
-    #[test]
-    fn decode_rejects_wrong_version() {
-        let mut encoded = encode_solana_extra_data(&sample()).unwrap();
-        encoded[0] = 0x02;
-        assert!(decode_solana_extra_data(&encoded).is_err());
-    }
-
-    #[test]
-    fn decode_rejects_trailing_bytes() {
-        let mut encoded = encode_solana_extra_data(&sample()).unwrap();
-        encoded.push(0xff);
-        assert!(decode_solana_extra_data(&encoded).is_err());
-    }
-
-    #[test]
-    fn decode_rejects_truncated_domain_keys() {
-        let mut encoded = encode_solana_extra_data(&sample()).unwrap();
-        encoded.truncate(encoded.len() - 1);
-        assert!(decode_solana_extra_data(&encoded).is_err());
-    }
 
     #[test]
     fn preimage_is_deterministic_and_binds_public_key() {

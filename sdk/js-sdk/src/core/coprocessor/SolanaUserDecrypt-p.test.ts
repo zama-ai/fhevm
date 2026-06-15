@@ -5,7 +5,6 @@ import { keccak_256 } from '@noble/hashes/sha3.js';
 
 import { bytesToHex } from '../base/bytes.js';
 import {
-  buildSolanaUserDecryptExtraData,
   buildSolanaUserDecryptRequest,
   solanaUserDecryptClientId,
   solanaUserDecryptSigningPreimage,
@@ -42,14 +41,6 @@ const VECTOR: SolanaUserDecryptInput = {
   durationSeconds: 3600n,
 };
 
-const RUST_EXTRA_DATA =
-  '0x030000000000000000000000000000000000000000000000000000000000001234' +
-  '0707070707070707070707070707070707070707070707070707070707070707' +
-  '0909090909090909090909090909090909090909090909090909090909090909' +
-  '00000002' +
-  '0101010101010101010101010101010101010101010101010101010101010101' +
-  '0202020202020202020202020202020202020202020202020202020202020202';
-
 const RUST_PREIMAGE =
   '0x7a616d612d736f6c616e612d757365722d646563727970742d7631' + // "zama-solana-user-decrypt-v1"
   '000000000000cafe' + // contracts_chain_id u64 BE
@@ -68,16 +59,6 @@ const RUST_PREIMAGE =
   '0000000000000e10'; // duration_seconds 3600
 
 describe('SolanaUserDecrypt byte-parity with Rust source of truth', () => {
-  it('builds the extraData blob byte-identically to encode_solana_extra_data', () => {
-    const extra = buildSolanaUserDecryptExtraData({
-      contextId: CONTEXT_ID,
-      identity: IDENTITY,
-      nonce: NONCE,
-      allowedAclDomainKeys: DOMAIN_KEYS,
-    });
-    expect(bytesToHex(extra)).toBe(RUST_EXTRA_DATA);
-  });
-
   it('builds the signing preimage byte-identically to solana_user_decrypt_signing_preimage', () => {
     expect(bytesToHex(solanaUserDecryptSigningPreimage(VECTOR))).toBe(RUST_PREIMAGE);
   });

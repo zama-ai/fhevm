@@ -21,16 +21,13 @@ use alloy::{
 };
 use anyhow::anyhow;
 use connector_utils::types::{
-    KmsGrpcRequest,
-    extra_data::{EXTRA_DATA_SOLANA_V1_VERSION, parse_extra_data},
-    handle::extract_chain_id_from_handle,
-    solana_extra_data::decode_solana_extra_data,
+    KmsGrpcRequest, extra_data::parse_extra_data, handle::extract_chain_id_from_handle,
     u256_to_request_id,
 };
 use fhevm_gateway_bindings::decryption::Decryption::{
     self, DecryptionInstance, HandleEntry, SnsCiphertextMaterial,
-    UserDecryptionRequest_1 as UserDecryptionRequestV2, delegatedUserDecryptionRequestCall,
-    userDecryptionRequest_1Call as userDecryptionRequestCall,
+    UserDecryptionRequest_1 as UserDecryptionRequestV2, UserDecryptionRequestSolana,
+    delegatedUserDecryptionRequestCall, userDecryptionRequest_1Call as userDecryptionRequestCall,
 };
 use fhevm_host_bindings::acl::ACL::ACLInstance;
 use futures::future::{join_all, try_join_all};
@@ -256,30 +253,27 @@ where
     /// Verify that a `UserDecryptionRequestV2` is internally consistent before the ACL phase:
     /// `handles` and `snsCtMaterials` are pairwise aligned, and every handle resolves to the
     /// same host chain id. Returns that shared chain id.
+    /// Shared by the EVM (`UserDecryptionRequestV2`) and Solana (`UserDecryptionRequestSolana`)
+    /// paths — both carry the same `handles` / `snsCtMaterials` shapes.
     fn validate_handles_and_extract_chain_id(
-        request: &UserDecryptionRequestV2,
+        handles: &[HandleEntry],
+        sns_ct_materials: &[SnsCiphertextMaterial],
     ) -> Result<u64, ProcessingError> {
-        if request.handles.len() != request.snsCtMaterials.len() {
+        if handles.len() != sns_ct_materials.len() {
             return Err(ProcessingError::Irrecoverable(anyhow!(
                 "handles/snsCtMaterials length mismatch: {} vs {}",
-                request.handles.len(),
-                request.snsCtMaterials.len(),
+                handles.len(),
+                sns_ct_materials.len(),
             )));
         }
 
-        let chain_id = request
-            .handles
+        let chain_id = handles
             .first()
             .ok_or_else(|| ProcessingError::Irrecoverable(anyhow!("request contains no handles")))
             .map(|h| extract_chain_id_from_handle(h.handle.as_slice()))?
             .map_err(ProcessingError::Irrecoverable)?;
 
-        for (i, (h, m)) in request
-            .handles
-            .iter()
-            .zip(request.snsCtMaterials.iter())
-            .enumerate()
-        {
+        for (i, (h, m)) in handles.iter().zip(sns_ct_materials.iter()).enumerate() {
             if h.handle != m.ctHandle {
                 return Err(ProcessingError::Irrecoverable(anyhow!(
                     "handles[{i}].handle ({}) != snsCtMaterials[{i}].ctHandle ({})",
@@ -328,17 +322,11 @@ where
             request.handles.len()
         );
 
-        let chain_id = Self::validate_handles_and_extract_chain_id(request)?;
+        let chain_id =
+            Self::validate_handles_and_extract_chain_id(&request.handles, &request.snsCtMaterials)?;
 
-        // Dispatch on an explicit Solana marker in extraData (version byte), never on address
-        // shape. Solana requests carry a different authorization model (ed25519 identity binding +
-        // account-witness ACL) and never reach the EVM ecrecover/ERC-1271 path below.
-        if request.payload.extraData.first() == Some(&EXTRA_DATA_SOLANA_V1_VERSION) {
-            return self
-                .check_user_decryption_request_v2_solana(request, chain_id)
-                .await;
-        }
-
+        // Solana user-decryptions are a distinct event kind (`UserDecryptionSolana`) handled by
+        // `check_user_decryption_request_solana`; the V2 path below is EVM-only.
         let payload = &request.payload;
 
         // Validity window
@@ -430,48 +418,45 @@ where
         Ok(())
     }
 
-    /// Picks the `client_address` shape for a V2 user-decryption KMS gRPC request. EVM uses the
-    /// checksummed `userAddress`; Solana (extraData version marker) uses `solana:<hex identity>`,
-    /// with the identity taken from the already-verified Solana extraData. The authorization check
-    /// runs before this, so the extraData is trustworthy by the time we get here.
+    /// Picks the `client_address` for an EVM V2 user-decryption KMS gRPC request: the checksummed
+    /// `userAddress`. (Solana uses [`Self::user_decryption_extra_data_for_solana`].)
     pub fn user_decryption_extra_data_for_v2(
         request: &UserDecryptionRequestV2,
-    ) -> Result<UserDecryptionExtraData, ProcessingError> {
+    ) -> UserDecryptionExtraData {
         let payload = &request.payload;
-        if payload.extraData.first() == Some(&EXTRA_DATA_SOLANA_V1_VERSION) {
-            let extra = decode_solana_extra_data(payload.extraData.as_ref()).map_err(|e| {
-                ProcessingError::Irrecoverable(anyhow!("invalid Solana extraData: {e}"))
-            })?;
-            Ok(UserDecryptionExtraData::new_solana(
-                extra.identity,
-                payload.publicKey.clone(),
-            ))
-        } else {
-            Ok(UserDecryptionExtraData::new(
-                payload.userAddress,
-                payload.publicKey.clone(),
-            ))
-        }
+        UserDecryptionExtraData::new(payload.userAddress, payload.publicKey.clone())
     }
 
-    /// Solana branch of the V2 user-decryption check.
+    /// Picks the `client_address` for a Solana user-decryption KMS gRPC request: `solana:<hex
+    /// identity>`, with the ed25519 identity taken from the typed request payload (the authorization
+    /// check runs before this, so the identity is trustworthy here).
+    pub fn user_decryption_extra_data_for_solana(
+        request: &UserDecryptionRequestSolana,
+    ) -> UserDecryptionExtraData {
+        let payload = &request.payload;
+        UserDecryptionExtraData::new_solana(payload.userIdentity.0, payload.publicKey.clone())
+    }
+
+    /// Solana user-decryption authorization check (RFC-021). The ed25519 auth fields are TYPED on
+    /// the request (no extraData blob — extraData carries only the KMS context).
     ///
     /// Unlike the EVM path, the re-encryption `publicKey ↔ identity` binding is NOT verified
     /// on-chain by the Gateway, so this connector verifies it itself:
     ///
-    /// 1. validity window (shared with EVM; rejects expired / not-yet-valid windows),
+    /// 1. validity window (shared semantics with EVM; rejects expired / not-yet-valid windows),
     /// 2. ed25519 signature over the canonical preimage — binds `publicKey`, handles, identity,
     ///    nonce, allowed domains, and validity window to the claimed Solana identity (closes the
     ///    publicKey-substitution / relayer-bypass bug),
     /// 3. per-handle ACL read at `finalized` commitment with owner + canonical-PDA checks and the
     ///    domain-scoped verifier (identity as subject).
     #[tracing::instrument(skip_all)]
-    async fn check_user_decryption_request_v2_solana(
+    pub async fn check_user_decryption_request_solana(
         &self,
-        request: &UserDecryptionRequestV2,
-        chain_id: u64,
+        request: &UserDecryptionRequestSolana,
     ) -> Result<(), ProcessingError> {
-        info!("Starting Solana V2 user-decryption check for chain {chain_id}...");
+        let chain_id =
+            Self::validate_handles_and_extract_chain_id(&request.handles, &request.snsCtMaterials)?;
+        info!("Starting Solana user-decryption check for chain {chain_id}...");
 
         let payload = &request.payload;
 
@@ -499,21 +484,16 @@ where
         })?;
 
         // ed25519 binding — the check that closes the substitution bug. Pure, no I/O.
-        let extra = verify_solana_user_decrypt_signature(request, chain_id)?;
+        let auth = verify_solana_user_decrypt_signature(request, chain_id)?;
 
         // ACL phase: read each handle's record at finalized commitment and run the domain-scoped
         // verifier with the identity as subject.
         let handles: Vec<HandleBytes> = request.handles.iter().map(|e| e.handle.0).collect();
-        check_solana_handles_acl(
-            host,
-            &handles,
-            extra.identity,
-            &extra.allowed_acl_domain_keys,
-        )
-        .await?;
+        check_solana_handles_acl(host, &handles, auth.identity, &auth.allowed_acl_domain_keys)
+            .await?;
 
         info!(
-            "Solana V2 ACL check passed for {} handles!",
+            "Solana user-decryption ACL check passed for {} handles!",
             request.handles.len()
         );
         Ok(())

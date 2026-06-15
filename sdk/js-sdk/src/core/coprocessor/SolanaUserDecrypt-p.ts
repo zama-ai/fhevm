@@ -8,25 +8,18 @@ import { bytesToHex, concatBytes } from '../base/bytes.js';
 /**
  * Solana user-decryption signer and request builder.
  *
- * The byte layout here is the TypeScript mirror of the Rust source of truth
+ * The signing preimage here is the TypeScript mirror of the Rust source of truth
  * `kms-connector/crates/utils/src/types/solana_extra_data.rs`. Every KMS party's connector
  * re-derives this preimage and verifies the ed25519 signature over it, so the bytes produced
- * by {@link solanaUserDecryptSigningPreimage} and {@link buildSolanaUserDecryptExtraData} MUST
- * match the Rust byte-for-byte. The cross-impl parity is locked by `SolanaUserDecrypt-p.test.ts`.
+ * by {@link solanaUserDecryptSigningPreimage} MUST match the Rust byte-for-byte. The cross-impl
+ * parity is locked by `SolanaUserDecrypt-p.test.ts`. The ed25519 auth fields travel as typed
+ * gateway fields (RFC-021), so `extraData` carries only the KMS context (v0x01).
  *
  * On EVM the Gateway verifies the EIP-712 publicKey-to-userAddress binding on-chain. The Solana
  * host has no such on-chain binding, so the signature here is what closes the publicKey
  * substitution attack: it commits to the re-encryption `publicKey`, the handles, the identity,
  * the nonce, the allowed ACL domain keys, and the validity window.
  */
-
-/**
- * Internal Solana transport `extraData` version byte (`EXTRA_DATA_SOLANA_V1_VERSION` in Rust).
- * No longer placed on the wire by the request builder — the ed25519 auth fields travel as typed
- * gateway fields (RFC-021). The KMS Connector re-encodes this blob internally; the byte layout is
- * kept here only so the cross-impl parity test against Rust `encode_solana_extra_data` still holds.
- */
-export const SOLANA_EXTRA_DATA_VERSION = 0x03;
 
 /** Context-only `extraData` version byte (RFC-003 v0x01): version ‖ contextId(32). */
 export const SOLANA_CONTEXT_EXTRA_DATA_VERSION = 0x01;
@@ -96,33 +89,6 @@ function assertCommonInput(input: SolanaUserDecryptInput): void {
   assertLen('nonce', input.nonce, SOLANA_PUBKEY_LEN);
   assertLengths('handles', input.handles, HANDLE_LEN);
   assertLengths('allowedAclDomainKeys', input.allowedAclDomainKeys, SOLANA_PUBKEY_LEN);
-}
-
-/**
- * Builds the canonical Solana `extraData` blob (version `0x03`), byte-identical to
- * `encode_solana_extra_data` in Rust:
- *
- * `0x03 ‖ context_id(32 BE) ‖ identity(32) ‖ nonce(32) ‖ domain_key_count(4 BE) ‖ domain_keys(32*N)`
- */
-export function buildSolanaUserDecryptExtraData(input: {
-  readonly contextId: Uint8Array;
-  readonly identity: Uint8Array;
-  readonly nonce: Uint8Array;
-  readonly allowedAclDomainKeys: readonly Uint8Array[];
-}): Uint8Array {
-  assertLen('contextId', input.contextId, 32);
-  assertLen('identity', input.identity, SOLANA_PUBKEY_LEN);
-  assertLen('nonce', input.nonce, SOLANA_PUBKEY_LEN);
-  assertLengths('allowedAclDomainKeys', input.allowedAclDomainKeys, SOLANA_PUBKEY_LEN);
-
-  return concatBytes(
-    new Uint8Array([SOLANA_EXTRA_DATA_VERSION]),
-    input.contextId,
-    input.identity,
-    input.nonce,
-    u32BE(input.allowedAclDomainKeys.length),
-    ...input.allowedAclDomainKeys,
-  );
 }
 
 /**

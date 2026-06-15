@@ -182,16 +182,32 @@ impl<GP: Provider, HP: Provider, C: ContextManager> DbEventProcessor<GP, HP, C> 
             }
             ProtocolEventKind::UserDecryptionV2(req) => {
                 // The RFC016 event carries the full payload, so unlike the legacy path we don't
-                // need to re-fetch the transaction calldata.
+                // need to re-fetch the transaction calldata. EVM-only (Solana is its own arm below).
                 self.decryption_processor
                     .check_user_decryption_request_v2(req)
                     .await?;
                 let payload = &req.payload;
-                // The authorization check above has already validated the Solana marker + ed25519
-                // binding when present; here we only pick the client-address shape for the KMS
-                // gRPC request. Solana keys on the `solana:<hex identity>` prefix (kms#637).
                 let user_decrypt_data =
-                    DecryptionProcessor::<GP, HP, C>::user_decryption_extra_data_for_v2(req)?;
+                    DecryptionProcessor::<GP, HP, C>::user_decryption_extra_data_for_v2(req);
+                self.decryption_processor
+                    .prepare_decryption_request(
+                        req.decryptionId,
+                        &req.snsCtMaterials,
+                        &payload.extraData,
+                        Some(user_decrypt_data),
+                    )
+                    .await
+            }
+            ProtocolEventKind::UserDecryptionSolana(req) => {
+                // RFC-021: the ed25519 auth fields are typed on the event. The check verifies the
+                // ed25519 binding + Solana ACL; the client-address keys on the `solana:<hex
+                // identity>` prefix (kms#637). `extraData` carries only the KMS context.
+                self.decryption_processor
+                    .check_user_decryption_request_solana(req)
+                    .await?;
+                let payload = &req.payload;
+                let user_decrypt_data =
+                    DecryptionProcessor::<GP, HP, C>::user_decryption_extra_data_for_solana(req);
                 self.decryption_processor
                     .prepare_decryption_request(
                         req.decryptionId,

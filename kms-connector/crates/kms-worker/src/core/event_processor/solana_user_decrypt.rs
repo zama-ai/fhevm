@@ -33,12 +33,19 @@ use crate::core::{
 use alloy::primitives::U256;
 use anyhow::anyhow;
 use connector_utils::types::solana_extra_data::{
-    SolanaExtraData, SolanaUserDecryptSigningInput, decode_solana_extra_data,
-    solana_user_decrypt_signing_preimage,
+    SolanaUserDecryptSigningInput, solana_user_decrypt_signing_preimage,
 };
-use fhevm_gateway_bindings::decryption::Decryption::UserDecryptionRequest_1 as UserDecryptionRequestV2;
+use fhevm_gateway_bindings::decryption::Decryption::UserDecryptionRequestSolana;
 use ring::signature::{ED25519, UnparsedPublicKey};
 use solana_pubkey::Pubkey;
+
+/// The verified Solana auth data the ACL phase needs: the ed25519 identity (the ACL subject) and
+/// the signed allowed-ACL-domain-keys scope. Returned by [`verify_solana_user_decrypt_signature`].
+#[derive(Debug)]
+pub struct VerifiedSolanaAuth {
+    pub identity: SolanaPubkeyBytes,
+    pub allowed_acl_domain_keys: Vec<SolanaPubkeyBytes>,
+}
 
 /// Per-chain Solana host configuration needed to authorize a user-decrypt request: the expected
 /// ZamaHost program id and a `finalized`-commitment account fetcher.
@@ -50,16 +57,20 @@ pub struct SolanaHost {
 
 /// Verifies the ed25519 signature binding for a Solana user-decryption request. Pure (no I/O), so
 /// the publicKey-substitution and forged-signature rejections are unit-testable without a live
-/// RPC. Returns the parsed [`SolanaExtraData`] for the caller to drive the ACL phase.
+/// RPC. The auth fields (identity, nonce, allowed ACL domain keys) are read as TYPED fields off the
+/// request — there is no `extraData` blob to decode; `extraData` carries only the KMS context.
+/// Returns the [`VerifiedSolanaAuth`] (identity + scope) for the caller to drive the ACL phase.
 pub fn verify_solana_user_decrypt_signature(
-    request: &UserDecryptionRequestV2,
+    request: &UserDecryptionRequestSolana,
     contracts_chain_id: u64,
-) -> Result<SolanaExtraData, ProcessingError> {
+) -> Result<VerifiedSolanaAuth, ProcessingError> {
     let payload = &request.payload;
 
-    let extra = decode_solana_extra_data(payload.extraData.as_ref())
-        .map_err(|e| ProcessingError::Irrecoverable(anyhow!("invalid Solana extraData: {e}")))?;
-
+    let identity: SolanaPubkeyBytes = payload.userIdentity.0;
+    let nonce: SolanaPubkeyBytes = payload.nonce.0;
+    let allowed_acl_domain_keys: Vec<SolanaPubkeyBytes> =
+        payload.allowedAclDomainKeys.iter().map(|k| k.0).collect();
+    // extraData carries only the KMS context (v0x01: version ‖ contextId(32)).
     let context_id = extract_context_id_be(payload.extraData.as_ref());
 
     let handles: Vec<HandleBytes> = request.handles.iter().map(|entry| entry.handle.0).collect();
@@ -68,16 +79,16 @@ pub fn verify_solana_user_decrypt_signature(
         contracts_chain_id,
         public_key: payload.publicKey.as_ref(),
         handles: &handles,
-        identity: &extra.identity,
+        identity: &identity,
         context_id: &context_id,
-        nonce: &extra.nonce,
-        allowed_acl_domain_keys: &extra.allowed_acl_domain_keys,
+        nonce: &nonce,
+        allowed_acl_domain_keys: &allowed_acl_domain_keys,
         start_timestamp: saturating_u256_to_u64(payload.requestValidity.startTimestamp),
         duration_seconds: saturating_u256_to_u64(payload.requestValidity.durationSeconds),
     });
 
     let signature = payload.signature.as_ref();
-    let identity_key = UnparsedPublicKey::new(&ED25519, extra.identity);
+    let identity_key = UnparsedPublicKey::new(&ED25519, identity);
     identity_key.verify(&preimage, signature).map_err(|_| {
         // A substituted publicKey, a forged/relayer-only signature, or a wrong identity all land
         // here: the signature does not verify against the claimed Solana identity over the bound
@@ -88,7 +99,10 @@ pub fn verify_solana_user_decrypt_signature(
         ))
     })?;
 
-    Ok(extra)
+    Ok(VerifiedSolanaAuth {
+        identity,
+        allowed_acl_domain_keys,
+    })
 }
 
 /// Verifies, for a single handle, that its on-chain ACL record authorizes `subject` for USE
@@ -266,10 +280,9 @@ mod tests {
     use super::*;
     use crate::core::solana_acl::{ACL_ROLE_USE, SubjectRole, acl_nonce_key, acl_record_address};
     use alloy::primitives::{Address, Bytes, FixedBytes};
-    use connector_utils::types::solana_extra_data::encode_solana_extra_data;
     use fhevm_gateway_bindings::decryption::{
-        Decryption::{HandleEntry, SnsCiphertextMaterial, UserDecryptionRequest_1},
-        IDecryption::{RequestValiditySeconds, UserDecryptionRequestPayload},
+        Decryption::{HandleEntry, SnsCiphertextMaterial, UserDecryptionRequestSolana},
+        IDecryption::{RequestValiditySeconds, UserDecryptionRequestSolanaPayload},
     };
     use ring::signature::{Ed25519KeyPair, KeyPair};
 
@@ -304,11 +317,11 @@ mod tests {
         h
     }
 
-    /// Builds a Solana V2 request signed by `identity_keypair()` over the canonical preimage.
+    /// Builds a typed Solana request signed by `identity_keypair()` over the canonical preimage.
     fn signed_request(
         public_key: Vec<u8>,
         allowed_acl_domain_keys: Vec<SolanaPubkeyBytes>,
-    ) -> (UserDecryptionRequestV2, SolanaPubkeyBytes) {
+    ) -> (UserDecryptionRequestSolana, SolanaPubkeyBytes) {
         let kp = identity_keypair();
         let identity: SolanaPubkeyBytes = kp.public_key().as_ref().try_into().unwrap();
         let nonce = [5u8; 32];
@@ -316,14 +329,6 @@ mod tests {
         let handle = handle_with_chain(7);
         let start: u64 = 1_000;
         let duration: u64 = 3_600;
-
-        let extra = SolanaExtraData {
-            context_id,
-            identity,
-            nonce,
-            allowed_acl_domain_keys: allowed_acl_domain_keys.clone(),
-        };
-        let extra_data = encode_solana_extra_data(&extra).unwrap();
 
         let preimage = solana_user_decrypt_signing_preimage(&SolanaUserDecryptSigningInput {
             contracts_chain_id: CHAIN_ID,
@@ -338,18 +343,26 @@ mod tests {
         });
         let signature = kp.sign(&preimage);
 
-        let payload = UserDecryptionRequestPayload {
-            userAddress: Address::ZERO,
+        // extraData is context-only (v0x01: version ‖ contextId) — no auth blob.
+        let mut extra_data = vec![0x01u8];
+        extra_data.extend_from_slice(&context_id);
+
+        let payload = UserDecryptionRequestSolanaPayload {
+            userIdentity: FixedBytes::from(identity),
             publicKey: Bytes::from(public_key),
-            allowedContracts: vec![],
+            allowedAclDomainKeys: allowed_acl_domain_keys
+                .iter()
+                .map(|k| FixedBytes::from(*k))
+                .collect(),
             requestValidity: RequestValiditySeconds {
                 startTimestamp: U256::from(start),
                 durationSeconds: U256::from(duration),
             },
+            nonce: FixedBytes::from(nonce),
             extraData: Bytes::from(extra_data),
             signature: Bytes::from(signature.as_ref().to_vec()),
         };
-        let request = UserDecryptionRequest_1 {
+        let request = UserDecryptionRequestSolana {
             decryptionId: U256::from(1u64),
             snsCtMaterials: vec![SnsCiphertextMaterial {
                 ctHandle: FixedBytes::from(handle),
@@ -369,8 +382,8 @@ mod tests {
     fn accepts_valid_signature() {
         let (request, _identity) =
             signed_request(b"reencryption-public-key".to_vec(), vec![DOMAIN]);
-        let extra = verify_solana_user_decrypt_signature(&request, CHAIN_ID).unwrap();
-        assert_eq!(extra.allowed_acl_domain_keys, vec![DOMAIN]);
+        let auth = verify_solana_user_decrypt_signature(&request, CHAIN_ID).unwrap();
+        assert_eq!(auth.allowed_acl_domain_keys, vec![DOMAIN]);
     }
 
     // (a) publicKey substitution: a request whose publicKey differs from the key the signature

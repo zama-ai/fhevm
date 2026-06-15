@@ -13,13 +13,6 @@ pub const EXTRA_DATA_V2_VERSION: u8 = 0x02;
 /// The expected length of v2 `extra_data` (version + context_id + epoch_id).
 pub const EXTRA_DATA_V2_LENGTH: usize = 65;
 
-/// Version `0x03`: Solana user-decryption marker (context_id + ed25519 identity + nonce +
-/// allowed ACL domain keys). The full byte layout and the signing preimage it commits to live
-/// in [`crate::types::solana_extra_data`]; this version constant exists so the generic
-/// [`parse_extra_data`] dispatcher can recognize Solana requests and still surface their
-/// `context_id`, exactly like the EVM versions.
-pub const EXTRA_DATA_SOLANA_V1_VERSION: u8 = 0x03;
-
 /// Parsed extra_data contents.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExtraData {
@@ -94,34 +87,11 @@ pub fn parse_extra_data(extra_data: &[u8]) -> anyhow::Result<ExtraData> {
                 epoch_id: Some(U256::from_be_bytes(epoch_id_bytes)),
             })
         }
-        EXTRA_DATA_SOLANA_V1_VERSION => {
-            // The Solana marker shares the `version ‖ context_id` prefix with v1/v2 so the
-            // generic dispatcher can resolve `context_id` here. The remaining identity/nonce/
-            // domain-key fields are parsed and signature-checked by `solana_extra_data` on the
-            // Solana branch; epoch_id is not carried.
-            if extra_data.len() < EXTRA_DATA_V1_LENGTH {
-                return Err(anyhow!(
-                    "extra_data too short for solana v1: {} bytes, expected at least {} bytes",
-                    extra_data.len(),
-                    EXTRA_DATA_V1_LENGTH
-                ));
-            }
-
-            let context_id_bytes: [u8; 32] = extra_data[1..33]
-                .try_into()
-                .map_err(|e| anyhow!("Failed to extract context_id from extra_data: {e}"))?;
-
-            Ok(ExtraData {
-                context_id: Some(U256::from_be_bytes(context_id_bytes)),
-                epoch_id: None,
-            })
-        }
         _ => Err(anyhow!(
-            "Unsupported extra_data version: 0x{:02x}, expected 0x00, 0x{:02x}, 0x{:02x}, or 0x{:02x}",
+            "Unsupported extra_data version: 0x{:02x}, expected 0x00, 0x{:02x}, or 0x{:02x}",
             extra_data[0],
             EXTRA_DATA_V1_VERSION,
-            EXTRA_DATA_V2_VERSION,
-            EXTRA_DATA_SOLANA_V1_VERSION
+            EXTRA_DATA_V2_VERSION
         )),
     }
 }

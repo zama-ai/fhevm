@@ -173,9 +173,9 @@ fn prepare_mocks(req: &ProtocolEventKind) -> MockSet {
     // Gets the endpoints for the given request type
     let (req_endpoint, resp_endpoint) = match req {
         ProtocolEventKind::PublicDecryption(_) => ("PublicDecrypt", "GetPublicDecryptionResult"),
-        ProtocolEventKind::UserDecryption(_) | ProtocolEventKind::UserDecryptionV2(_) => {
-            ("UserDecrypt", "GetUserDecryptionResult")
-        }
+        ProtocolEventKind::UserDecryption(_)
+        | ProtocolEventKind::UserDecryptionV2(_)
+        | ProtocolEventKind::UserDecryptionSolana(_) => ("UserDecrypt", "GetUserDecryptionResult"),
         ProtocolEventKind::PrepKeygen(_) => ("KeyGenPreproc", "GetKeyGenPreprocResult"),
         ProtocolEventKind::Keygen(_) => ("KeyGen", "GetKeyGenResult"),
         ProtocolEventKind::Crsgen(_) => ("CrsGen", "GetCrsGenResult"),

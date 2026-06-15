@@ -262,6 +262,17 @@ pub fn check_event_in_db(rows: &[PgRow], event: ProtocolEventKind) -> anyhow::Re
                 }
             }
         }
+        ProtocolEventKind::UserDecryptionSolana(e) => {
+            // Solana rows store the ed25519 signature verbatim + the typed solana_identity.
+            for r in rows {
+                if e.payload.signature.to_vec() == r.try_get::<Vec<u8>, _>("signature")?
+                    && e.payload.userIdentity.as_slice()
+                        == r.try_get::<Vec<u8>, _>("solana_identity")?.as_slice()
+                {
+                    return Ok(());
+                }
+            }
+        }
         ProtocolEventKind::PrepKeygen(_) => {
             for r in rows {
                 if r.try_get::<ParamsTypeDb, _>("params_type")? == ParamsTypeDb::Test {

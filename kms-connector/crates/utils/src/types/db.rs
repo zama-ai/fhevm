@@ -157,11 +157,11 @@ impl From<&ProtocolEventKind> for EventType {
     fn from(value: &ProtocolEventKind) -> Self {
         match value {
             ProtocolEventKind::PublicDecryption(_) => Self::PublicDecryptionRequest,
-            // Both legacy and RFC016 variants share the same `user_decryption_requests` table
-            // and the same `UserDecryptionRequest` event type for `last_block_polled` bookkeeping.
-            ProtocolEventKind::UserDecryption(_) | ProtocolEventKind::UserDecryptionV2(_) => {
-                Self::UserDecryptionRequest
-            }
+            // Legacy, RFC016 and RFC-021 Solana variants share the same `user_decryption_requests`
+            // table and the same `UserDecryptionRequest` event type for `last_block_polled`.
+            ProtocolEventKind::UserDecryption(_)
+            | ProtocolEventKind::UserDecryptionV2(_)
+            | ProtocolEventKind::UserDecryptionSolana(_) => Self::UserDecryptionRequest,
             ProtocolEventKind::PrepKeygen(_) => Self::PrepKeygenRequest,
             ProtocolEventKind::Keygen(_) => Self::KeygenRequest,
             ProtocolEventKind::Crsgen(_) => Self::CrsgenRequest,
