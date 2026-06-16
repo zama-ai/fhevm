@@ -45,6 +45,7 @@ pub const EVENT_CIPHERTEXTS_UPLOADED: &str = "event_ciphertexts_uploaded";
 const DEFAULT_BATCH_SIZE: usize = 10;
 pub(crate) const COPROCESSOR_CONTEXT_ID_1: U256 = U256::ONE;
 const NO_SNS_CIPHERTEXT_DIGEST: [u8; 32] = [0; 32];
+const UPLOAD_CIPHERTEXTS_TASK_SAVEPOINT: &str = "savepoint_upload_ciphertexts_task";
 
 pub(crate) async fn spawn_resubmit_task(
     pool_mngr: &PostgresPoolManager,
@@ -129,9 +130,11 @@ async fn run_uploader_loop(
                 let item = match job {
                     UploadJob::Normal(item) => {
                         item.enqueue_upload_task(&mut trx).await?;
+                        create_upload_task_savepoint(&mut trx).await?;
                         item
                     }
                     UploadJob::DatabaseLock(mut item) => {
+                        create_upload_task_savepoint(&mut trx).await?;
                         let row = match sqlx::query!(
                             "
                             SELECT d.ciphertext128_format,
@@ -195,8 +198,6 @@ async fn run_uploader_loop(
                         item
                     }
                 };
-
-
                 debug!(handle = hex::encode(&item.handle), "Received task, handle");
 
                 // Cleanup completed tasks
@@ -226,7 +227,7 @@ async fn run_uploader_loop(
                     // that was captured when the upload item was created.
                     let upload_span = error_span!("upload_s3");
                     upload_span.set_parent(item.span.context());
-                    let result = upload_ciphertexts(trx, item, &client, &conf, signer)
+                    let result = upload_ciphertexts(&mut trx, item, &client, &conf, signer)
                         .instrument(upload_span.clone())
                         .await;
                     let outcome = match result {
@@ -235,6 +236,8 @@ async fn run_uploader_loop(
                             Ok(())
                         }
                         Err(err) => {
+                            preserve_upload_task_for_retry(trx, &err).await;
+
                             if err
                                 .downcast_ref::<ExecutionError>()
                                 .is_some_and(|err| matches!(err, ExecutionError::S3TransientError(_)))
@@ -285,6 +288,47 @@ async fn run_uploader_loop(
                 return Ok(())
             }
         }
+    }
+}
+
+async fn create_upload_task_savepoint(
+    trx: &mut Transaction<'_, Postgres>,
+) -> Result<(), ExecutionError> {
+    sqlx::query(&format!("SAVEPOINT {UPLOAD_CIPHERTEXTS_TASK_SAVEPOINT}"))
+        .execute(trx.as_mut())
+        .await?;
+
+    Ok(())
+}
+
+async fn rollback_to_upload_task_savepoint(
+    trx: &mut Transaction<'_, Postgres>,
+) -> Result<(), ExecutionError> {
+    sqlx::query(&format!(
+        "ROLLBACK TO SAVEPOINT {UPLOAD_CIPHERTEXTS_TASK_SAVEPOINT}"
+    ))
+    .execute(trx.as_mut())
+    .await?;
+
+    Ok(())
+}
+
+async fn preserve_upload_task_for_retry(
+    mut trx: Transaction<'_, Postgres>,
+    upload_error: &anyhow::Error,
+) {
+    if let Err(preserve_err) = async {
+        rollback_to_upload_task_savepoint(&mut trx).await?;
+        trx.commit().await?;
+        anyhow::Ok(())
+    }
+    .await
+    {
+        error!(
+            error = %preserve_err,
+            upload_error = %upload_error,
+            "Failed to preserve incomplete upload state",
+        );
     }
 }
 
@@ -540,7 +584,7 @@ async fn build_attestation(
 /// - If any required upload or verification fails, the function will not mark
 ///   either ciphertext as uploaded in the database.
 async fn upload_ciphertexts(
-    mut trx: Transaction<'_, Postgres>,
+    trx: &mut Transaction<'_, Postgres>,
     task: HandleItem,
     client: &Client,
     conf: &S3Config,
@@ -782,15 +826,10 @@ async fn upload_ciphertexts(
         }
     }
 
-    if let Err(err) = transient_error {
-        // Keep the incomplete row for resubmission, but do not mark either
-        // ciphertext digest as uploaded.
-        trx.commit().await?;
-        return Err(err);
-    }
+    transient_error?;
 
     task.mark_ciphertexts_uploaded(
-        &mut trx,
+        trx,
         upload_material.ct64_digest,
         upload_material.ct128_digest,
         completed_s3_format_version(&task, preserve_legacy_s3_format),
@@ -801,10 +840,6 @@ async fn upload_ciphertexts(
         .bind(EVENT_CIPHERTEXTS_UPLOADED)
         .execute(trx.as_mut())
         .await?;
-
-    // The database is updated only after every required S3 object was verified
-    // or uploaded successfully.
-    trx.commit().await?;
 
     Ok(())
 }
@@ -1618,14 +1653,17 @@ mod tests {
             verify_sha256_checksum: false,
         };
 
+        let mut trx = pool.begin().await?;
+        create_upload_task_savepoint(&mut trx).await?;
         upload_ciphertexts(
-            pool.begin().await?,
+            &mut trx,
             task,
             &client,
             &conf,
             Arc::new(PrivateKeySigner::random()),
         )
         .await?;
+        trx.commit().await?;
 
         let row = sqlx::query!(
             "SELECT ciphertext, ciphertext128, s3_format_version
