@@ -34,7 +34,6 @@ use fhevm_engine_common::{
     types::{CoproSigner, FhevmError, SignerType},
     utils::{to_hex, DatabaseURL},
 };
-use futures::join;
 use sqlx::{Postgres, Transaction};
 use thiserror::Error;
 use tokio::{
@@ -487,7 +486,8 @@ pub async fn run_uploader_loop(
     )
     .await?;
 
-    let mut handle_uploader = spawn_uploader(pool_mngr, conf.clone(), rx, client, is_ready, signer).await?;
+    let mut handle_uploader =
+        spawn_uploader(pool_mngr, conf.clone(), rx, client, is_ready, signer).await?;
 
     // Return when either task ends; abort the other and propagate its result.
     let res = tokio::select! {
@@ -590,7 +590,9 @@ pub async fn run_all(
         SignerType::PrivateKey => {
             let Some(private_key) = conf.private_key.clone() else {
                 error!("Private key is required for PrivateKey signer");
-                anyhow::bail!("Private key is required for PrivateKey signer");
+                return Err(
+                    anyhow::anyhow!("Private key is required for PrivateKey signer").into(),
+                );
             };
             let signer = PrivateKeySigner::from_str(private_key.trim())?;
             Arc::new(signer)
@@ -647,8 +649,9 @@ pub async fn run_all(
     .await?;
 
     // Keep the uploader's handle so its failure exits the process too.
-    let uploader =
-        spawn(async move { run_uploader_loop(&pg_mngr, &conf, jobs_rx, tx, s3, is_ready, signer).await });
+    let uploader = spawn(async move {
+        run_uploader_loop(&pg_mngr, &conf, jobs_rx, tx, s3, is_ready, signer).await
+    });
 
     // Exit if either the service loop or the uploader fails.
     let result: Result<(), Box<dyn std::error::Error + Send + Sync>> = tokio::select! {

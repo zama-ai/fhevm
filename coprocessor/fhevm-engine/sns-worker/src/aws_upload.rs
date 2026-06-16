@@ -30,7 +30,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::select;
 use tokio::sync::{mpsc, RwLock, Semaphore};
-use tokio::task::JoinHandle;
+use tokio::task::{JoinError, JoinHandle, JoinSet};
 use tokio::time::interval;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, error_span, info, warn, Instrument, Span};
@@ -106,7 +106,7 @@ async fn run_uploader_loop(
     conf: S3Config,
     signer: CoproSigner,
 ) -> Result<(), ExecutionError> {
-    let mut ongoing_upload_tasks: Vec<JoinHandle<()>> = Vec::new();
+    let mut ongoing_upload_tasks: JoinSet<anyhow::Result<()>> = JoinSet::new();
     let max_concurrent_uploads = conf.max_concurrent_uploads as usize;
     let semaphore = Arc::new(Semaphore::new(max_concurrent_uploads));
     let mut jobs_rx = jobs_rx.write().await;
@@ -201,7 +201,9 @@ async fn run_uploader_loop(
                 debug!(handle = hex::encode(&item.handle), "Received task, handle");
 
                 // Cleanup completed tasks
-                ongoing_upload_tasks.retain(|h| !h.is_finished());
+                while let Some(joined) = ongoing_upload_tasks.try_join_next() {
+                    propagate_joined_upload_error(joined)?;
+                }
                 // Check if we have reached the max concurrent uploads
                 if ongoing_upload_tasks.len() >= max_concurrent_uploads {
                     warn!({target = "worker", action = "review", max_concurrent_uploads = max_concurrent_uploads},
@@ -222,7 +224,7 @@ async fn run_uploader_loop(
                 let signer = signer.clone();
 
                 // Spawn a new task to upload the ciphertexts
-                let h = tokio::spawn(async move {
+                ongoing_upload_tasks.spawn(async move {
                     // Cross-boundary: spawned task; restore the OTel context
                     // that was captured when the upload item was created.
                     let upload_span = error_span!("upload_s3");
@@ -236,12 +238,15 @@ async fn run_uploader_loop(
                             Ok(())
                         }
                         Err(err) => {
+                            let is_s3_transient_error =
+                                err.downcast_ref::<ExecutionError>().is_some_and(|err| {
+                                    matches!(err, ExecutionError::S3TransientError(_))
+                                });
+                            let is_fatal_db_error = is_fatal_upload_db_error(&err);
+
                             preserve_upload_task_for_retry(trx, &err).await;
 
-                            if err
-                                .downcast_ref::<ExecutionError>()
-                                .is_some_and(|err| matches!(err, ExecutionError::S3TransientError(_)))
-                            {
+                            if is_s3_transient_error {
                                 ready_flag.store(false, Ordering::Release);
                                 info!(error = %err, "S3 setup is not ready, due to transient error");
                             } else {
@@ -253,11 +258,10 @@ async fn run_uploader_loop(
                                 .set_status(Status::error(err.to_string()));
                             AWS_UPLOAD_FAILURE_COUNTER.inc();
                             // Only a lost connection is fatal; retry the rest.
-                            match &err {
-                                ExecutionError::DbError(e) if is_fatal_connection_error(e) => {
-                                    Err(err)
-                                }
-                                _ => Ok(()),
+                            if is_fatal_db_error {
+                                Err(err)
+                            } else {
+                                Ok(())
                             }
                         }
                     };
@@ -265,29 +269,54 @@ async fn run_uploader_loop(
                     drop(permit);
                     outcome
                 });
-
-                ongoing_upload_tasks.push(h);
             },
             // Drain finished uploads; exit if one lost the connection.
             Some(joined) = ongoing_upload_tasks.join_next() => {
-                if let Ok(Err(err)) = joined {
-                    return Err(err);
-                }
+                propagate_joined_upload_error(joined)?;
             }
             _ = token.cancelled() => {
-                // Cleanup completed tasks
-                ongoing_upload_tasks.retain(|h| !h.is_finished());
-
                 info!("Waiting for all uploads to finish...");
-                for handle in ongoing_upload_tasks {
-                    if let Err(err) = handle.await {
-                        error!(error = %err, "Failed to join upload task");
+
+                while let Some(joined) = ongoing_upload_tasks.join_next().await {
+                    if let Err(err) = propagate_joined_upload_error(joined) {
+                        error!(error = %err, "Upload task failed while shutting down");
                     }
                 }
 
                 return Ok(())
             }
         }
+    }
+}
+
+fn is_fatal_upload_db_error(err: &anyhow::Error) -> bool {
+    err.downcast_ref::<ExecutionError>().is_some_and(
+        |err| matches!(err, ExecutionError::DbError(db_err) if is_fatal_connection_error(db_err)),
+    ) || err
+        .downcast_ref::<sqlx::Error>()
+        .is_some_and(is_fatal_connection_error)
+}
+
+fn propagate_joined_upload_error(
+    joined: Result<anyhow::Result<()>, JoinError>,
+) -> Result<(), ExecutionError> {
+    match joined {
+        Ok(Ok(())) => Ok(()),
+        Ok(Err(err)) => Err(upload_task_error_into_execution_error(err)),
+        Err(err) => {
+            error!(error = %err, "Failed to join upload task");
+            Ok(())
+        }
+    }
+}
+
+fn upload_task_error_into_execution_error(err: anyhow::Error) -> ExecutionError {
+    match err.downcast::<ExecutionError>() {
+        Ok(err) => err,
+        Err(err) => match err.downcast::<sqlx::Error>() {
+            Ok(err) => ExecutionError::DbError(err),
+            Err(err) => ExecutionError::InternalError(err.to_string()),
+        },
     }
 }
 
