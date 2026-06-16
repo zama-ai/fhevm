@@ -1,0 +1,6 @@
+{
+  "type": "module",
+  "types": "../_types/solana/index.d.ts",
+  "module": "../_esm/solana/index.js",
+  "main": "../_cjs/solana/index.js"
+}

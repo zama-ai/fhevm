@@ -47,6 +47,11 @@
       "import": "./_esm/core/types/index.js",
       "default": "./_cjs/core/types/index.js"
     },
+    "./solana": {
+      "types": "./_types/solana/index.d.ts",
+      "import": "./_esm/solana/index.js",
+      "default": "./_cjs/solana/index.js"
+    },
     "./viem": {
       "types": "./_types/viem/index.d.ts",
       "import": "./_esm/viem/index.js",

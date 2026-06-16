@@ -15,6 +15,7 @@
       "@fhevm/sdk/ethers/cleartext": ["./../src/ethers/cleartext/index.ts"],
       "@fhevm/sdk/viem": ["./../src/viem/index.ts"],
       "@fhevm/sdk/viem/cleartext": ["./../src/viem/cleartext/index.ts"],
+      "@fhevm/sdk/solana": ["./../src/solana/index.ts"],
       "@fhevm/sdk/base": ["./../src/core/base/index.ts"],
       "@fhevm/sdk/chains": ["./../src/core/chains/index.ts"],
       "@fhevm/sdk/types": ["./../src/core/types/index.ts"],
