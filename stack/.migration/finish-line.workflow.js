@@ -36,7 +36,8 @@ const ROOT = '/Users/work/code/zama/fhevm/.claude/worktrees/fhevm-cli-exemplar'
 const GOLDEN = ROOT + '/stack/.migration/golden'
 const RESERVE = 60000        // stop opening work if budget drops below this
 const MAX_ATTEMPTS = 3       // implement->gate retries per phase, then escalate
-const ISO = (args && args.inPlace) ? {} : { isolation: 'worktree' } // in-place mode (args.inPlace) skips per-agent isolation; agents use the absolute ROOT paths. Needed when worktree.baseRef='fresh' so the implementer sees uncommitted/local work in ROOT.
+const A = (typeof args === 'string') ? JSON.parse(args) : (args || {}) // args can arrive as a JSON string; normalize it before use
+const ISO = A.inPlace ? {} : { isolation: 'worktree' } // in-place mode (A.inPlace) skips per-agent isolation; agents use the absolute ROOT paths. Needed when worktree.baseRef='fresh'.
 
 const GROUNDING =
   'Repo facts (do not re-derive): the real deployment charts are at ' + ROOT + '/charts/{anvil-node,contracts,coprocessor,kms-connector,listener}; they are release-scoped ({{ .Release.Name }}-*) and single-operator. Multiplicity = N helm releases of the coprocessor chart, NOT chart edits and NOT replicas. Topology = operators (N releases) + signer-set/threshold (contracts values: NUM_COPROCESSORS + COPROCESSOR_SIGNER_ADDRESS_0..N-1 + threshold) + replicas (per-operator HA). Contract addresses flow via the contracts sc-deploy Job -> sc-addresses ConfigMap -> consumer charts. Endpoint indirection = kmsCoreEndpoints / *_ENDPOINT. kms-core is the EXTERNAL companion (not a chart). The Stack API is promoted from RolloutRunContext in ' + ROOT + '/test-suite/fhevm/src/commands/rollout-run.ts. Private ghcr images pull into kind with a registry-credentials secret from a read:packages token (proven).'
@@ -126,8 +127,9 @@ const VERDICT = {
   required: ['refuted', 'why'],
 }
 
-const P = PHASES[(args && typeof args.phase === 'number') ? args.phase : 0]
-if (!P) { log('unknown phase: ' + (args && args.phase)); return { error: 'unknown phase' } }
+const phaseNum = (typeof A.phase === 'number') ? A.phase : parseInt(A.phase, 10)
+const P = Number.isInteger(phaseNum) ? PHASES[phaseNum] : undefined
+if (!P) { log('unknown/blank phase arg (no silent fallback): ' + JSON.stringify(A.phase)); return { error: 'unknown phase', got: A.phase } }
 
 log('FINISH-LINE phase-runner — running ' + P.title + ' (gate: ' + P.gate.levels.join('+') + (P.runnableNow ? '' : ' — NOTE: gate likely not green until earlier phases are merged') + ')')
 if (budget.total && budget.remaining() < RESERVE) { log('budget too low; aborting before any work'); return { phase: P.id, status: 'ABORTED_BUDGET' } }
