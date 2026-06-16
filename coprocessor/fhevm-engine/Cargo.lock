@@ -4286,6 +4286,7 @@ dependencies = [
  "futures-util",
  "host-listener",
  "lru 0.13.0",
+ "primitives",
  "prometheus",
  "rustls",
  "semver 1.0.27",
