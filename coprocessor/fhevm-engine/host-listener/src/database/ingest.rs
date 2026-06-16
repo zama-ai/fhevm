@@ -182,7 +182,7 @@ pub async fn ingest_block_logs(
     info!(
         channel = NEW_BLOCK_CHANNEL,
         payload = %new_block_payload,
-        "Queueing new_block pg_notify in ingest transaction"
+        "Queuing new_block pg_notify in ingest transaction"
     );
     sqlx::query("SELECT pg_notify($1, $2)")
         .bind(NEW_BLOCK_CHANNEL)

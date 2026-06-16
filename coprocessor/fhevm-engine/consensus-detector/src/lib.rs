@@ -48,7 +48,6 @@ use crate::state_hash::state_hash_key;
 /// pg_notify channels this service listens on.
 pub const NEW_BLOCK_CHANNEL: &str = "event_new_block";
 pub const NEW_OPERATOR_ADDED_CHANNEL: &str = "event_new_operator_added";
-const EVENT_CIPHERTEXT_COMPUTED: &str = "event_ciphertext_computed";
 
 /// pg_notify channels this service emits.
 ///
