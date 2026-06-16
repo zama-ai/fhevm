@@ -23,6 +23,23 @@ To pull and install the OCI Helm chart from hub.zama.ai:
     helm registry login hub.zama.ai
     helm install kms oci://hub.zama.ai/zama-protocol/zama-ai/fhevm/charts/kms-connector
 
+## Smart contract addresses and chain IDs
+
+The connector talks to the gateway chain and to host chains (Ethereum, Polygon, etc). Their contract addresses and chain IDs are loaded from a per-network
+preset bundled in `configs/contracts-<network>.yaml`, selected via
+`commonConfig.network` (one of `""`, `devnet`, `testnet`, `mainnet`; an
+unrecognized value fails the render).
+
+Each preset provides:
+
+- `gateway.{chain_id,decryption.address,gateway_config.address,kms_generation.address}`
+- `ethereum.{chain_id,acl.address,kms_verifier.address}` (KMS Verifier is only on Ethereum)
+- `polygon.{chain_id,acl.address}`
+
+Individual entries can be overridden by setting the matching
+`commonConfig` values; a non-empty override wins over the preset. With `commonConfig.network: ""` no preset is loaded, so
+these values must be provided explicitly.
+
 ## Configuration
 
 The following table lists the configurable parameters of the `kms-connector` chart and their default values.
@@ -30,9 +47,16 @@ The following table lists the configurable parameters of the `kms-connector` cha
 | Parameter                                     | Description                                               | Default                                                                                                                                                           |
 | --------------------------------------------- |-----------------------------------------------------------| ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `commonConfig.databaseUrl`                    | The database URL.                                         | `postgresql://$(DATABASE_USERNAME):$(DATABASE_PASSWORD)@$(DATABASE_ENDPOINT)/connector`                                                                            |
+| `commonConfig.network`                        | Selects the bundled contract address / chain ID preset (`""`, `devnet`, `testnet`, `mainnet`). | `devnet`                                                                                                     |
 | `commonConfig.gatewayUrl`                     | The gateway URL.                                          | `http://gateway-node:8546`                                                                                                                                    |
-| `commonConfig.gatewayChainId`                 | The gateway chain ID.                                     | `54321`                                                                                                                                                           |
-| `commonConfig.gatewayContractAddresses`       | The contract addresses for the gateway.                   | `{}`                                                                                                                                                              |
+| `commonConfig.gatewayChainId`                 | Gateway chain ID. Overrides the network preset when set.  | `""`                                                                                                                                                              |
+| `commonConfig.gatewayContractAddresses`       | Gateway contract addresses (`decryption`, `gatewayConfig`, `kmsGeneration`). Each overrides the preset when set. | `{}`                                                                                                  |
+| `commonConfig.ethereumUrl`                    | The Ethereum host chain URL.                              | `http://ethereum-node:8545`                                                                                                                                       |
+| `commonConfig.ethereumChainId`                | Ethereum chain ID. Overrides the network preset when set. | `""`                                                                                                                                                              |
+| `commonConfig.ethereumContractAddresses`      | Ethereum contract addresses (`acl`, `kmsVerifier`). Each overrides the preset when set. | `{}`                                                                                                              |
+| `commonConfig.polygonUrl`                     | The Polygon host chain URL.                               | `http://polygon-node:8545`                                                                                                                                        |
+| `commonConfig.polygonChainId`                 | Polygon chain ID. Overrides the network preset when set.  | `""`                                                                                                                                                              |
+| `commonConfig.polygonContractAddresses`       | Polygon contract addresses (`acl`). Overrides the preset when set. | `{}`                                                                                                                                     |
 | `commonConfig.tracing.enabled`                | If `true`, enable tracing for all components.             | `false`                                                                                                                                                           |
 | `commonConfig.tracing.endpoint`               | The OpenTelemetry collector endpoint.                     | `http://otel-deployment-opentelemetry-collector.observability.svc.cluster.local:4317`                                                                             |
 | `commonConfig.env`                            | Environment variables to be injected into all containers. | `{}`                                                                                                                                                              |
