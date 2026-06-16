@@ -27,6 +27,7 @@ RUN --mount=type=bind,source=relayer/Cargo.toml,target=Cargo.toml \
 #    --mount=type=bind,source=.git/objects,target=.git/objects \
 #    --mount=type=bind,source=.git/refs,target=.git/refs \
     --mount=type=bind,source=relayer/.sqlx,target=.sqlx \
+    --mount=type=bind,source=gateway-contracts/rust_bindings,target=/gateway-contracts/rust_bindings \
     --mount=type=cache,target=/app/target/ \
     --mount=type=cache,target=/usr/local/cargo/registry/ \
     --mount=type=cache,target=/usr/local/cargo/git/ \

@@ -39,18 +39,18 @@ pub use instructions::TestReceiverReturnCallback;
 use instructions::*;
 /// Re-export instruction account contexts for compatibility with existing tests.
 pub use instructions::{
-    disclosure_proof_message_v2, redemption_proof_message_v2, CloseConsumedBurnRedemptionRequest,
-    CloseConsumedDisclosureRequest, CloseExpiredBurnRedemptionRequest,
-    CloseExpiredDisclosureRequest, ConfidentialBurn, ConfidentialCallTransferReceiver,
-    ConfidentialFinalizeTransferCallback, ConfidentialPrepareTransferCallback,
-    ConfidentialTransfer, CreateRandomAmount, DiscloseAmount, DiscloseBalance, InitializeMint,
-    InitializeTokenAccount, MigrateMintVerifierSets, RedeemBurnedAmount, RequestBurnRedemption,
-    RequestDiscloseAmount, RequestDiscloseBalance, UpdateMintVerifierSets, WrapUsdc,
+    CloseConsumedBurnRedemptionRequest, CloseConsumedDisclosureRequest,
+    CloseExpiredBurnRedemptionRequest, CloseExpiredDisclosureRequest, ConfidentialBurn,
+    ConfidentialCallTransferReceiver, ConfidentialFinalizeTransferCallback,
+    ConfidentialPrepareTransferCallback, ConfidentialTransfer, CreateRandomAmount,
+    DiscloseAmountSecp, DiscloseBalanceSecp, InitializeMint, InitializeTokenAccount,
+    RedeemBurnedAmountSecp, RequestBurnRedemption, RequestDiscloseAmount, RequestDiscloseBalance,
+    WrapUsdc,
 };
 /// Re-export account layouts and helper functions used by clients and tests.
 pub use state::*;
 
-declare_id!("5c9FeFEgjdwZJ5kasqUrHbijgFWXVzNoumYWsKvvMUt9");
+declare_id!("9Sbhx7VF6vAGdYApPikwHgJ68Z367Au2tTyw9FpBxnAh");
 
 /// Anchor entrypoint module for the confidential token PoC.
 #[program]
@@ -60,16 +60,6 @@ pub mod confidential_token {
     /// Initializes a confidential mint and records its host ACL domain.
     pub fn initialize_mint(ctx: Context<InitializeMint>) -> Result<()> {
         instructions::initialize_mint(ctx)
-    }
-
-    /// Rotates the token-scoped verifier sets used by future KMS request witnesses.
-    pub fn update_mint_verifier_sets(ctx: Context<UpdateMintVerifierSets>) -> Result<()> {
-        instructions::update_mint_verifier_sets(ctx)
-    }
-
-    /// Migrates a legacy mint to split disclosure and burn-redemption verifier sets.
-    pub fn migrate_mint_verifier_sets(ctx: Context<MigrateMintVerifierSets>) -> Result<()> {
-        instructions::migrate_mint_verifier_sets(ctx)
     }
 
     /// Initializes a token account and creates its initial confidential balance handle.
@@ -206,27 +196,51 @@ pub mod confidential_token {
         instructions::request_burn_redemption(ctx, burned_handle, request_nonce, expires_slot)
     }
 
-    /// Emits a KMS-certified cleartext for the current balance handle.
-    pub fn disclose_balance(ctx: Context<DiscloseBalance>, cleartext_amount: u64) -> Result<()> {
-        instructions::disclose_balance(ctx, cleartext_amount)
+    /// Gateway-compatible balance disclosure: verifies the KMS `PublicDecryptVerification`
+    /// EIP-712 certificate on-chain via secp256k1_recover against the HostConfig KMS signer.
+    pub fn disclose_balance_secp(
+        ctx: Context<DiscloseBalanceSecp>,
+        cleartext_amount: u64,
+        signatures: Vec<[u8; 65]>,
+        extra_data: Vec<u8>,
+    ) -> Result<()> {
+        instructions::disclose_balance_secp(ctx, cleartext_amount, signatures, extra_data)
     }
 
-    /// Emits a KMS-certified cleartext for any token-scoped encrypted amount.
-    pub fn disclose_amount(
-        ctx: Context<DiscloseAmount>,
+    /// Gateway-compatible amount disclosure: verifies the KMS `PublicDecryptVerification`
+    /// EIP-712 certificate on-chain via secp256k1_recover against the HostConfig KMS signer.
+    pub fn disclose_amount_secp(
+        ctx: Context<DiscloseAmountSecp>,
         amount_handle: [u8; 32],
         cleartext_amount: u64,
+        signatures: Vec<[u8; 65]>,
+        extra_data: Vec<u8>,
     ) -> Result<()> {
-        instructions::disclose_amount(ctx, amount_handle, cleartext_amount)
+        instructions::disclose_amount_secp(
+            ctx,
+            amount_handle,
+            cleartext_amount,
+            signatures,
+            extra_data,
+        )
     }
 
-    /// Redeems a previously burned encrypted amount from the underlying-token vault.
-    pub fn redeem_burned_amount(
-        ctx: Context<RedeemBurnedAmount>,
+    /// Gateway-compatible redemption: verifies the KMS `PublicDecryptVerification`
+    /// EIP-712 certificate on-chain via secp256k1_recover against the active KMS context.
+    pub fn redeem_burned_amount_secp(
+        ctx: Context<RedeemBurnedAmountSecp>,
         burned_handle: [u8; 32],
         cleartext_amount: u64,
+        signatures: Vec<[u8; 65]>,
+        extra_data: Vec<u8>,
     ) -> Result<()> {
-        instructions::redeem_burned_amount(ctx, burned_handle, cleartext_amount)
+        instructions::redeem_burned_amount_secp(
+            ctx,
+            burned_handle,
+            cleartext_amount,
+            signatures,
+            extra_data,
+        )
     }
 
     /// Closes a consumed disclosure request witness.

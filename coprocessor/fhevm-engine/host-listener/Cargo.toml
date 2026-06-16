@@ -24,6 +24,11 @@ bench = false
 path = "src/bin/consumer.rs"
 name = "host_listener_consumer"
 test = false
+
+[[bin]]
+path = "src/bin/solana_host_listener.rs"
+name = "solana_host_listener"
+test = false
 bench = false
 
 [[bin]]
@@ -64,6 +69,10 @@ tracing-subscriber = { workspace = true }
 union-find = { workspace = true}
 
 url = "2.5.7"
+solana-client = "3.0"
+solana-commitment-config = "3.1"
+solana-sdk = "3.0"
+solana-transaction-status = "3.0"
 
 # local dependencies
 fhevm-engine-common = { path = "../fhevm-engine-common" }

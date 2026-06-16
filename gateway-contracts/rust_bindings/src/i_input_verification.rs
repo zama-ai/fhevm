@@ -10,6 +10,7 @@ interface IInputVerification {
     event RejectProofResponse(uint256 indexed zkProofId);
     event RejectProofResponseCall(uint256 indexed zkProofId, bytes extraData);
     event VerifyProofRequest(uint256 indexed zkProofId, uint256 indexed contractChainId, address contractAddress, address userAddress, bytes ciphertextWithZKProof, bytes extraData);
+    event VerifyProofRequestSolana(uint256 indexed zkProofId, uint256 indexed contractChainId, bytes32 contractAddress, bytes32 userAddress, bytes ciphertextWithZKProof, bytes extraData);
     event VerifyProofResponse(uint256 indexed zkProofId, bytes32[] ctHandles, bytes[] signatures);
     event VerifyProofResponseCall(uint256 indexed zkProofId, bytes32[] ctHandles, bytes signature, address coprocessorTxSender, bytes extraData);
 
@@ -20,7 +21,9 @@ interface IInputVerification {
     function isProofVerified(uint256 zkProofId) external view returns (bool);
     function rejectProofResponse(uint256 zkProofId, bytes memory extraData) external;
     function verifyProofRequest(uint256 contractChainId, address contractAddress, address userAddress, bytes memory ciphertextWithZKProof, bytes memory extraData) external;
+    function verifyProofRequestSolana(uint256 contractChainId, bytes32 contractAddress, bytes32 userAddress, bytes memory ciphertextWithZKProof, bytes memory extraData) external;
     function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, bytes memory signature, bytes memory extraData) external;
+    function verifyProofResponseSolana(uint256 zkProofId, bytes32[] memory ctHandles, bytes memory signature, bytes memory extraData) external;
 }
 ```
 
@@ -169,7 +172,68 @@ interface IInputVerification {
   },
   {
     "type": "function",
+    "name": "verifyProofRequestSolana",
+    "inputs": [
+      {
+        "name": "contractChainId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "contractAddress",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "userAddress",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "ciphertextWithZKProof",
+        "type": "bytes",
+        "internalType": "bytes"
+      },
+      {
+        "name": "extraData",
+        "type": "bytes",
+        "internalType": "bytes"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "verifyProofResponse",
+    "inputs": [
+      {
+        "name": "zkProofId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "ctHandles",
+        "type": "bytes32[]",
+        "internalType": "bytes32[]"
+      },
+      {
+        "name": "signature",
+        "type": "bytes",
+        "internalType": "bytes"
+      },
+      {
+        "name": "extraData",
+        "type": "bytes",
+        "internalType": "bytes"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "verifyProofResponseSolana",
     "inputs": [
       {
         "name": "zkProofId",
@@ -254,6 +318,49 @@ interface IInputVerification {
         "type": "address",
         "indexed": false,
         "internalType": "address"
+      },
+      {
+        "name": "ciphertextWithZKProof",
+        "type": "bytes",
+        "indexed": false,
+        "internalType": "bytes"
+      },
+      {
+        "name": "extraData",
+        "type": "bytes",
+        "indexed": false,
+        "internalType": "bytes"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "VerifyProofRequestSolana",
+    "inputs": [
+      {
+        "name": "zkProofId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "contractChainId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "contractAddress",
+        "type": "bytes32",
+        "indexed": false,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "userAddress",
+        "type": "bytes32",
+        "indexed": false,
+        "internalType": "bytes32"
       },
       {
         "name": "ciphertextWithZKProof",
@@ -1078,6 +1185,158 @@ event VerifyProofRequest(uint256 indexed zkProofId, uint256 indexed contractChai
         impl From<&VerifyProofRequest> for alloy_sol_types::private::LogData {
             #[inline]
             fn from(this: &VerifyProofRequest) -> alloy_sol_types::private::LogData {
+                alloy_sol_types::SolEvent::encode_log_data(this)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Event with signature `VerifyProofRequestSolana(uint256,uint256,bytes32,bytes32,bytes,bytes)` and selector `0x3ac2cd229b0e448a4bb424cf873ae51b75ea9913d6bba81595eb57c49b6e5bbd`.
+```solidity
+event VerifyProofRequestSolana(uint256 indexed zkProofId, uint256 indexed contractChainId, bytes32 contractAddress, bytes32 userAddress, bytes ciphertextWithZKProof, bytes extraData);
+```*/
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    #[derive(Clone)]
+    pub struct VerifyProofRequestSolana {
+        #[allow(missing_docs)]
+        pub zkProofId: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub contractChainId: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub contractAddress: alloy::sol_types::private::FixedBytes<32>,
+        #[allow(missing_docs)]
+        pub userAddress: alloy::sol_types::private::FixedBytes<32>,
+        #[allow(missing_docs)]
+        pub ciphertextWithZKProof: alloy::sol_types::private::Bytes,
+        #[allow(missing_docs)]
+        pub extraData: alloy::sol_types::private::Bytes,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[automatically_derived]
+        impl alloy_sol_types::SolEvent for VerifyProofRequestSolana {
+            type DataTuple<'a> = (
+                alloy::sol_types::sol_data::FixedBytes<32>,
+                alloy::sol_types::sol_data::FixedBytes<32>,
+                alloy::sol_types::sol_data::Bytes,
+                alloy::sol_types::sol_data::Bytes,
+            );
+            type DataToken<'a> = <Self::DataTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type TopicList = (
+                alloy_sol_types::sol_data::FixedBytes<32>,
+                alloy::sol_types::sol_data::Uint<256>,
+                alloy::sol_types::sol_data::Uint<256>,
+            );
+            const SIGNATURE: &'static str = "VerifyProofRequestSolana(uint256,uint256,bytes32,bytes32,bytes,bytes)";
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
+                58u8, 194u8, 205u8, 34u8, 155u8, 14u8, 68u8, 138u8, 75u8, 180u8, 36u8,
+                207u8, 135u8, 58u8, 229u8, 27u8, 117u8, 234u8, 153u8, 19u8, 214u8, 187u8,
+                168u8, 21u8, 149u8, 235u8, 87u8, 196u8, 155u8, 110u8, 91u8, 189u8,
+            ]);
+            const ANONYMOUS: bool = false;
+            #[allow(unused_variables)]
+            #[inline]
+            fn new(
+                topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
+                data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                Self {
+                    zkProofId: topics.1,
+                    contractChainId: topics.2,
+                    contractAddress: data.0,
+                    userAddress: data.1,
+                    ciphertextWithZKProof: data.2,
+                    extraData: data.3,
+                }
+            }
+            #[inline]
+            fn check_signature(
+                topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
+            ) -> alloy_sol_types::Result<()> {
+                if topics.0 != Self::SIGNATURE_HASH {
+                    return Err(
+                        alloy_sol_types::Error::invalid_event_signature_hash(
+                            Self::SIGNATURE,
+                            topics.0,
+                            Self::SIGNATURE_HASH,
+                        ),
+                    );
+                }
+                Ok(())
+            }
+            #[inline]
+            fn tokenize_body(&self) -> Self::DataToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::FixedBytes<
+                        32,
+                    > as alloy_sol_types::SolType>::tokenize(&self.contractAddress),
+                    <alloy::sol_types::sol_data::FixedBytes<
+                        32,
+                    > as alloy_sol_types::SolType>::tokenize(&self.userAddress),
+                    <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
+                        &self.ciphertextWithZKProof,
+                    ),
+                    <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
+                        &self.extraData,
+                    ),
+                )
+            }
+            #[inline]
+            fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
+                (
+                    Self::SIGNATURE_HASH.into(),
+                    self.zkProofId.clone(),
+                    self.contractChainId.clone(),
+                )
+            }
+            #[inline]
+            fn encode_topics_raw(
+                &self,
+                out: &mut [alloy_sol_types::abi::token::WordToken],
+            ) -> alloy_sol_types::Result<()> {
+                if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
+                    return Err(alloy_sol_types::Error::Overrun);
+                }
+                out[0usize] = alloy_sol_types::abi::token::WordToken(
+                    Self::SIGNATURE_HASH,
+                );
+                out[1usize] = <alloy::sol_types::sol_data::Uint<
+                    256,
+                > as alloy_sol_types::EventTopic>::encode_topic(&self.zkProofId);
+                out[2usize] = <alloy::sol_types::sol_data::Uint<
+                    256,
+                > as alloy_sol_types::EventTopic>::encode_topic(&self.contractChainId);
+                Ok(())
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::private::IntoLogData for VerifyProofRequestSolana {
+            fn to_log_data(&self) -> alloy_sol_types::private::LogData {
+                From::from(self)
+            }
+            fn into_log_data(self) -> alloy_sol_types::private::LogData {
+                From::from(&self)
+            }
+        }
+        #[automatically_derived]
+        impl From<&VerifyProofRequestSolana> for alloy_sol_types::private::LogData {
+            #[inline]
+            fn from(
+                this: &VerifyProofRequestSolana,
+            ) -> alloy_sol_types::private::LogData {
                 alloy_sol_types::SolEvent::encode_log_data(this)
             }
         }
@@ -2496,6 +2755,204 @@ function verifyProofRequest(uint256 contractChainId, address contractAddress, ad
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `verifyProofRequestSolana(uint256,bytes32,bytes32,bytes,bytes)` and selector `0x9880380a`.
+```solidity
+function verifyProofRequestSolana(uint256 contractChainId, bytes32 contractAddress, bytes32 userAddress, bytes memory ciphertextWithZKProof, bytes memory extraData) external;
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct verifyProofRequestSolanaCall {
+        #[allow(missing_docs)]
+        pub contractChainId: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub contractAddress: alloy::sol_types::private::FixedBytes<32>,
+        #[allow(missing_docs)]
+        pub userAddress: alloy::sol_types::private::FixedBytes<32>,
+        #[allow(missing_docs)]
+        pub ciphertextWithZKProof: alloy::sol_types::private::Bytes,
+        #[allow(missing_docs)]
+        pub extraData: alloy::sol_types::private::Bytes,
+    }
+    ///Container type for the return parameters of the [`verifyProofRequestSolana(uint256,bytes32,bytes32,bytes,bytes)`](verifyProofRequestSolanaCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct verifyProofRequestSolanaReturn {}
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (
+                alloy::sol_types::sol_data::Uint<256>,
+                alloy::sol_types::sol_data::FixedBytes<32>,
+                alloy::sol_types::sol_data::FixedBytes<32>,
+                alloy::sol_types::sol_data::Bytes,
+                alloy::sol_types::sol_data::Bytes,
+            );
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::primitives::aliases::U256,
+                alloy::sol_types::private::FixedBytes<32>,
+                alloy::sol_types::private::FixedBytes<32>,
+                alloy::sol_types::private::Bytes,
+                alloy::sol_types::private::Bytes,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<verifyProofRequestSolanaCall>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: verifyProofRequestSolanaCall) -> Self {
+                    (
+                        value.contractChainId,
+                        value.contractAddress,
+                        value.userAddress,
+                        value.ciphertextWithZKProof,
+                        value.extraData,
+                    )
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for verifyProofRequestSolanaCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {
+                        contractChainId: tuple.0,
+                        contractAddress: tuple.1,
+                        userAddress: tuple.2,
+                        ciphertextWithZKProof: tuple.3,
+                        extraData: tuple.4,
+                    }
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = ();
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = ();
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<verifyProofRequestSolanaReturn>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: verifyProofRequestSolanaReturn) -> Self {
+                    ()
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for verifyProofRequestSolanaReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {}
+                }
+            }
+        }
+        impl verifyProofRequestSolanaReturn {
+            fn _tokenize(
+                &self,
+            ) -> <verifyProofRequestSolanaCall as alloy_sol_types::SolCall>::ReturnToken<
+                '_,
+            > {
+                ()
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for verifyProofRequestSolanaCall {
+            type Parameters<'a> = (
+                alloy::sol_types::sol_data::Uint<256>,
+                alloy::sol_types::sol_data::FixedBytes<32>,
+                alloy::sol_types::sol_data::FixedBytes<32>,
+                alloy::sol_types::sol_data::Bytes,
+                alloy::sol_types::sol_data::Bytes,
+            );
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = verifyProofRequestSolanaReturn;
+            type ReturnTuple<'a> = ();
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "verifyProofRequestSolana(uint256,bytes32,bytes32,bytes,bytes)";
+            const SELECTOR: [u8; 4] = [152u8, 128u8, 56u8, 10u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.contractChainId),
+                    <alloy::sol_types::sol_data::FixedBytes<
+                        32,
+                    > as alloy_sol_types::SolType>::tokenize(&self.contractAddress),
+                    <alloy::sol_types::sol_data::FixedBytes<
+                        32,
+                    > as alloy_sol_types::SolType>::tokenize(&self.userAddress),
+                    <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
+                        &self.ciphertextWithZKProof,
+                    ),
+                    <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
+                        &self.extraData,
+                    ),
+                )
+            }
+            #[inline]
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                verifyProofRequestSolanaReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Into::into)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `verifyProofResponse(uint256,bytes32[],bytes,bytes)` and selector `0x31bedea3`.
 ```solidity
 function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, bytes memory signature, bytes memory extraData) external;
@@ -2683,6 +3140,197 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `verifyProofResponseSolana(uint256,bytes32[],bytes,bytes)` and selector `0x683197d3`.
+```solidity
+function verifyProofResponseSolana(uint256 zkProofId, bytes32[] memory ctHandles, bytes memory signature, bytes memory extraData) external;
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct verifyProofResponseSolanaCall {
+        #[allow(missing_docs)]
+        pub zkProofId: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub ctHandles: alloy::sol_types::private::Vec<
+            alloy::sol_types::private::FixedBytes<32>,
+        >,
+        #[allow(missing_docs)]
+        pub signature: alloy::sol_types::private::Bytes,
+        #[allow(missing_docs)]
+        pub extraData: alloy::sol_types::private::Bytes,
+    }
+    ///Container type for the return parameters of the [`verifyProofResponseSolana(uint256,bytes32[],bytes,bytes)`](verifyProofResponseSolanaCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct verifyProofResponseSolanaReturn {}
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (
+                alloy::sol_types::sol_data::Uint<256>,
+                alloy::sol_types::sol_data::Array<
+                    alloy::sol_types::sol_data::FixedBytes<32>,
+                >,
+                alloy::sol_types::sol_data::Bytes,
+                alloy::sol_types::sol_data::Bytes,
+            );
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::primitives::aliases::U256,
+                alloy::sol_types::private::Vec<
+                    alloy::sol_types::private::FixedBytes<32>,
+                >,
+                alloy::sol_types::private::Bytes,
+                alloy::sol_types::private::Bytes,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<verifyProofResponseSolanaCall>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: verifyProofResponseSolanaCall) -> Self {
+                    (value.zkProofId, value.ctHandles, value.signature, value.extraData)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for verifyProofResponseSolanaCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {
+                        zkProofId: tuple.0,
+                        ctHandles: tuple.1,
+                        signature: tuple.2,
+                        extraData: tuple.3,
+                    }
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = ();
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = ();
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<verifyProofResponseSolanaReturn>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: verifyProofResponseSolanaReturn) -> Self {
+                    ()
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for verifyProofResponseSolanaReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {}
+                }
+            }
+        }
+        impl verifyProofResponseSolanaReturn {
+            fn _tokenize(
+                &self,
+            ) -> <verifyProofResponseSolanaCall as alloy_sol_types::SolCall>::ReturnToken<
+                '_,
+            > {
+                ()
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for verifyProofResponseSolanaCall {
+            type Parameters<'a> = (
+                alloy::sol_types::sol_data::Uint<256>,
+                alloy::sol_types::sol_data::Array<
+                    alloy::sol_types::sol_data::FixedBytes<32>,
+                >,
+                alloy::sol_types::sol_data::Bytes,
+                alloy::sol_types::sol_data::Bytes,
+            );
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = verifyProofResponseSolanaReturn;
+            type ReturnTuple<'a> = ();
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "verifyProofResponseSolana(uint256,bytes32[],bytes,bytes)";
+            const SELECTOR: [u8; 4] = [104u8, 49u8, 151u8, 211u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.zkProofId),
+                    <alloy::sol_types::sol_data::Array<
+                        alloy::sol_types::sol_data::FixedBytes<32>,
+                    > as alloy_sol_types::SolType>::tokenize(&self.ctHandles),
+                    <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
+                        &self.signature,
+                    ),
+                    <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
+                        &self.extraData,
+                    ),
+                )
+            }
+            #[inline]
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                verifyProofResponseSolanaReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Into::into)
+            }
+        }
+    };
     ///Container for all the [`IInputVerification`](self) function calls.
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive()]
@@ -2702,7 +3350,11 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
         #[allow(missing_docs)]
         verifyProofRequest(verifyProofRequestCall),
         #[allow(missing_docs)]
+        verifyProofRequestSolana(verifyProofRequestSolanaCall),
+        #[allow(missing_docs)]
         verifyProofResponse(verifyProofResponseCall),
+        #[allow(missing_docs)]
+        verifyProofResponseSolana(verifyProofResponseSolanaCall),
     }
     #[automatically_derived]
     impl IInputVerificationCalls {
@@ -2718,6 +3370,8 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
             [27u8, 190u8, 159u8, 174u8],
             [49u8, 190u8, 222u8, 163u8],
             [51u8, 128u8, 7u8, 252u8],
+            [104u8, 49u8, 151u8, 211u8],
+            [152u8, 128u8, 56u8, 10u8],
             [167u8, 0u8, 73u8, 150u8],
             [206u8, 126u8, 66u8, 87u8],
             [233u8, 111u8, 136u8, 234u8],
@@ -2727,7 +3381,7 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
     impl alloy_sol_types::SolInterface for IInputVerificationCalls {
         const NAME: &'static str = "IInputVerificationCalls";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 8usize;
+        const COUNT: usize = 10usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -2752,8 +3406,14 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
                 Self::verifyProofRequest(_) => {
                     <verifyProofRequestCall as alloy_sol_types::SolCall>::SELECTOR
                 }
+                Self::verifyProofRequestSolana(_) => {
+                    <verifyProofRequestSolanaCall as alloy_sol_types::SolCall>::SELECTOR
+                }
                 Self::verifyProofResponse(_) => {
                     <verifyProofResponseCall as alloy_sol_types::SolCall>::SELECTOR
+                }
+                Self::verifyProofResponseSolana(_) => {
+                    <verifyProofResponseSolanaCall as alloy_sol_types::SolCall>::SELECTOR
                 }
             }
         }
@@ -2830,6 +3490,28 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
                             .map(IInputVerificationCalls::rejectProofResponse)
                     }
                     rejectProofResponse
+                },
+                {
+                    fn verifyProofResponseSolana(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IInputVerificationCalls> {
+                        <verifyProofResponseSolanaCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IInputVerificationCalls::verifyProofResponseSolana)
+                    }
+                    verifyProofResponseSolana
+                },
+                {
+                    fn verifyProofRequestSolana(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IInputVerificationCalls> {
+                        <verifyProofRequestSolanaCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IInputVerificationCalls::verifyProofRequestSolana)
+                    }
+                    verifyProofRequestSolana
                 },
                 {
                     fn verifyProofRequest(
@@ -2944,6 +3626,28 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
                     rejectProofResponse
                 },
                 {
+                    fn verifyProofResponseSolana(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IInputVerificationCalls> {
+                        <verifyProofResponseSolanaCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IInputVerificationCalls::verifyProofResponseSolana)
+                    }
+                    verifyProofResponseSolana
+                },
+                {
+                    fn verifyProofRequestSolana(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IInputVerificationCalls> {
+                        <verifyProofRequestSolanaCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IInputVerificationCalls::verifyProofRequestSolana)
+                    }
+                    verifyProofRequestSolana
+                },
+                {
                     fn verifyProofRequest(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IInputVerificationCalls> {
@@ -3025,8 +3729,18 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
                         inner,
                     )
                 }
+                Self::verifyProofRequestSolana(inner) => {
+                    <verifyProofRequestSolanaCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
+                }
                 Self::verifyProofResponse(inner) => {
                     <verifyProofResponseCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::verifyProofResponseSolana(inner) => {
+                    <verifyProofResponseSolanaCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -3077,8 +3791,20 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
                         out,
                     )
                 }
+                Self::verifyProofRequestSolana(inner) => {
+                    <verifyProofRequestSolanaCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
                 Self::verifyProofResponse(inner) => {
                     <verifyProofResponseCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::verifyProofResponseSolana(inner) => {
+                    <verifyProofResponseSolanaCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -3299,6 +4025,8 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
         #[allow(missing_docs)]
         VerifyProofRequest(VerifyProofRequest),
         #[allow(missing_docs)]
+        VerifyProofRequestSolana(VerifyProofRequestSolana),
+        #[allow(missing_docs)]
         VerifyProofResponse(VerifyProofResponse),
         #[allow(missing_docs)]
         VerifyProofResponseCall(VerifyProofResponseCall),
@@ -3316,6 +4044,11 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
                 1u8, 223u8, 15u8, 166u8, 152u8, 87u8, 222u8, 178u8, 212u8, 5u8, 97u8,
                 135u8, 128u8, 17u8, 93u8, 228u8, 117u8, 138u8, 138u8, 58u8, 126u8, 3u8,
                 108u8, 142u8, 83u8, 154u8, 172u8, 28u8, 62u8, 136u8, 159u8, 105u8,
+            ],
+            [
+                58u8, 194u8, 205u8, 34u8, 155u8, 14u8, 68u8, 138u8, 75u8, 180u8, 36u8,
+                207u8, 135u8, 58u8, 229u8, 27u8, 117u8, 234u8, 153u8, 19u8, 214u8, 187u8,
+                168u8, 21u8, 149u8, 235u8, 87u8, 196u8, 155u8, 110u8, 91u8, 189u8,
             ],
             [
                 74u8, 229u8, 79u8, 106u8, 110u8, 144u8, 13u8, 128u8, 111u8, 250u8, 91u8,
@@ -3342,7 +4075,7 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
     #[automatically_derived]
     impl alloy_sol_types::SolEventInterface for IInputVerificationEvents {
         const NAME: &'static str = "IInputVerificationEvents";
-        const COUNT: usize = 5usize;
+        const COUNT: usize = 6usize;
         fn decode_raw_log(
             topics: &[alloy_sol_types::Word],
             data: &[u8],
@@ -3374,6 +4107,15 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
                             data,
                         )
                         .map(Self::VerifyProofRequest)
+                }
+                Some(
+                    <VerifyProofRequestSolana as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
+                ) => {
+                    <VerifyProofRequestSolana as alloy_sol_types::SolEvent>::decode_raw_log(
+                            topics,
+                            data,
+                        )
+                        .map(Self::VerifyProofRequestSolana)
                 }
                 Some(
                     <VerifyProofResponse as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
@@ -3420,6 +4162,9 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
                 Self::VerifyProofRequest(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
+                Self::VerifyProofRequestSolana(inner) => {
+                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
+                }
                 Self::VerifyProofResponse(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
@@ -3437,6 +4182,9 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
                 Self::VerifyProofRequest(inner) => {
+                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
+                }
+                Self::VerifyProofRequestSolana(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
                 Self::VerifyProofResponse(inner) => {
@@ -3689,6 +4437,25 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
                 },
             )
         }
+        ///Creates a new call builder for the [`verifyProofRequestSolana`] function.
+        pub fn verifyProofRequestSolana(
+            &self,
+            contractChainId: alloy::sol_types::private::primitives::aliases::U256,
+            contractAddress: alloy::sol_types::private::FixedBytes<32>,
+            userAddress: alloy::sol_types::private::FixedBytes<32>,
+            ciphertextWithZKProof: alloy::sol_types::private::Bytes,
+            extraData: alloy::sol_types::private::Bytes,
+        ) -> alloy_contract::SolCallBuilder<&P, verifyProofRequestSolanaCall, N> {
+            self.call_builder(
+                &verifyProofRequestSolanaCall {
+                    contractChainId,
+                    contractAddress,
+                    userAddress,
+                    ciphertextWithZKProof,
+                    extraData,
+                },
+            )
+        }
         ///Creates a new call builder for the [`verifyProofResponse`] function.
         pub fn verifyProofResponse(
             &self,
@@ -3701,6 +4468,25 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ) -> alloy_contract::SolCallBuilder<&P, verifyProofResponseCall, N> {
             self.call_builder(
                 &verifyProofResponseCall {
+                    zkProofId,
+                    ctHandles,
+                    signature,
+                    extraData,
+                },
+            )
+        }
+        ///Creates a new call builder for the [`verifyProofResponseSolana`] function.
+        pub fn verifyProofResponseSolana(
+            &self,
+            zkProofId: alloy::sol_types::private::primitives::aliases::U256,
+            ctHandles: alloy::sol_types::private::Vec<
+                alloy::sol_types::private::FixedBytes<32>,
+            >,
+            signature: alloy::sol_types::private::Bytes,
+            extraData: alloy::sol_types::private::Bytes,
+        ) -> alloy_contract::SolCallBuilder<&P, verifyProofResponseSolanaCall, N> {
+            self.call_builder(
+                &verifyProofResponseSolanaCall {
                     zkProofId,
                     ctHandles,
                     signature,
@@ -3741,6 +4527,12 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             &self,
         ) -> alloy_contract::Event<&P, VerifyProofRequest, N> {
             self.event_filter::<VerifyProofRequest>()
+        }
+        ///Creates a new event filter for the [`VerifyProofRequestSolana`] event.
+        pub fn VerifyProofRequestSolana_filter(
+            &self,
+        ) -> alloy_contract::Event<&P, VerifyProofRequestSolana, N> {
+            self.event_filter::<VerifyProofRequestSolana>()
         }
         ///Creates a new event filter for the [`VerifyProofResponse`] event.
         pub fn VerifyProofResponse_filter(

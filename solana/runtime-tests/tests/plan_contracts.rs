@@ -25,58 +25,50 @@ const SOLANA_ABI_GOLDEN: &str =
     include_str!("../../../coprocessor/fhevm-engine/host-listener/idl/solana_abi_golden.json");
 
 #[test]
-fn host_idl_exposes_threshold_verifier_set_lifecycle() {
+fn host_idl_drops_verifier_set_and_keeps_secp_kms_context_path() {
     let idl = parse_idl(HOST_IDL);
     let accounts = names(&idl, "accounts");
     let types = names(&idl, "types");
     let instructions = names(&idl, "instructions");
 
+    // The threshold-Ed25519 VerifierSet subsystem is fully removed: input binding, disclosure,
+    // and redemption all authenticate against the secp256k1 KMS context now.
     assert!(
-        accounts
+        !accounts
             .iter()
             .any(|name| name == "verifier_set" || name == "VerifierSet"),
-        "zama-host IDL must expose a VerifierSet account"
+        "zama-host IDL must not expose a VerifierSet account"
     );
     assert!(
-        types.iter().any(|name| name == "VerifierSet"),
-        "zama-host IDL must define VerifierSet layout"
+        !types.iter().any(|name| name == "VerifierSet"),
+        "zama-host IDL must not define a VerifierSet layout"
     );
     assert!(
-        instructions.iter().any(|name| name.contains("verifier_set")
-            && (name.contains("create") || name.contains("initialize"))),
-        "VerifierSet lifecycle needs an initialize/create instruction"
+        !instructions
+            .iter()
+            .any(|name| name.contains("verifier_set")),
+        "zama-host IDL must not expose any verifier-set instruction"
     );
+
+    // The canonical KMS context is the signer authority for secp256k1 certificates.
+    assert!(
+        accounts.iter().any(|name| name == "KmsContext"),
+        "zama-host IDL must expose the KmsContext account"
+    );
+    let fields = type_field_names(&idl, "KmsContext");
+    for required in ["context_id", "signers", "thresholds", "destroyed", "bump"] {
+        assert!(
+            fields.iter().any(|field| field == required),
+            "KmsContext is missing field `{required}`"
+        );
+    }
+    // Encrypted inputs are verified from the secp256k1 coprocessor attestation.
     assert!(
         instructions
             .iter()
-            .any(|name| name.contains("verifier_set") && name.contains("disable")),
-        "VerifierSet lifecycle needs a disable instruction"
+            .any(|name| name == "verify_coprocessor_input"),
+        "zama-host IDL must expose verify_coprocessor_input"
     );
-    let fields = type_field_names(&idl, "VerifierSet");
-    for required in [
-        "kind",
-        "scope",
-        "version",
-        "threshold",
-        "signers",
-        "signer_count",
-        "active",
-        "admin",
-        "bump",
-    ] {
-        if required == "active" {
-            assert!(
-                fields.iter().any(|field| field == "active")
-                    || fields.iter().any(|field| field == "state"),
-                "VerifierSet is missing an active/state field"
-            );
-        } else {
-            assert!(
-                fields.iter().any(|field| field == required),
-                "VerifierSet is missing field `{required}`"
-            );
-        }
-    }
 }
 
 #[test]
@@ -128,18 +120,34 @@ fn token_idl_removed_operator_surface_and_splits_payer_from_owner() {
         "owner authority and payer must be separate account metas even when callers pass the same key"
     );
 
-    let rotation_accounts = instruction_account_names(&idl, "update_mint_verifier_sets");
-    for required in [
-        "authority",
-        "mint",
-        "disclosure_verifier_set",
-        "redemption_verifier_set",
-    ] {
+    // The per-mint verifier-set rotation surface is gone; disclosure/redemption requests pin a
+    // KMS context id and the response verifies a secp256k1 cert against that context.
+    for removed in ["update_mint_verifier_sets", "migrate_mint_verifier_sets"] {
         assert!(
-            rotation_accounts.iter().any(|account| account == required),
-            "token verifier-set rotation instruction is missing `{required}` account"
+            !instructions.iter().any(|name| name == removed),
+            "production token IDL must not expose removed verifier-set instruction `{removed}`"
         );
     }
+    let mint_fields = type_field_names(&idl, "ConfidentialMint");
+    for removed in ["disclosure_verifier_set", "redemption_verifier_set"] {
+        assert!(
+            !mint_fields.iter().any(|field| field == removed),
+            "ConfidentialMint must not retain verifier-set field `{removed}`"
+        );
+    }
+    let disclosure_fields = type_field_names(&idl, "DisclosureRequest");
+    assert!(
+        disclosure_fields
+            .iter()
+            .any(|field| field == "kms_context_id"),
+        "DisclosureRequest must pin a kms_context_id"
+    );
+    assert!(
+        !disclosure_fields
+            .iter()
+            .any(|field| field == "verifier_set" || field == "verifier_set_version"),
+        "DisclosureRequest must not retain verifier-set fields"
+    );
 
     let source = format!("{TOKEN_LIB}\n{TOKEN_COMMON}");
     for removed in [
@@ -198,29 +206,37 @@ fn transient_wrap_and_requested_refund_do_not_leave_durable_acl_contracts() {
 }
 
 #[test]
-fn token_certificate_v2_domains_include_request_witnesses_and_material() {
+fn token_request_witnesses_bind_material_and_secp_kms_context() {
     let source = TOKEN_COMMON;
+    // The request witness binds the request to its accounts, material, host config, chain id,
+    // and the pinned KMS context id; the response then verifies a secp256k1 KMS cert.
     for required in [
-        "proof_message_v2",
         "request_hash",
-        "request_key",
-        "verifier_set",
-        "verifier_set_version",
+        "kms_context_id",
         "material_commitment_hash",
         "material_key_id",
         "host_config",
         "chain_id",
-        "destination",
+        "assert_kms_public_decrypt_cert_for_request",
+        "extract_kms_context_id",
+        "verify_kms_public_decrypt",
     ] {
         assert!(
             source.contains(required),
-            "certificate v2 domain must bind `{required}`"
+            "token request/consume path must bind `{required}`"
         );
     }
-    assert!(
-        !source.contains("disclosure_proof_message("),
-        "legacy narrow disclosure proof message helper should not remain in production paths"
-    );
+    // The dead Ed25519 verifier-set message helpers must be gone.
+    for removed in [
+        "proof_message_v2",
+        "assert_threshold_verifier_signature",
+        "verifier_set_version",
+    ] {
+        assert!(
+            !source.contains(removed),
+            "legacy verifier-set helper `{removed}` should not remain in production paths"
+        );
+    }
 }
 
 #[test]
@@ -304,7 +320,7 @@ fn abi_golden_drift_checks_cover_host_token_listener_and_kms_layouts() {
         .get("schemas")
         .and_then(Value::as_array)
         .expect("ABI golden schemas should be an array");
-    for required in ["VerifierSet", "DisclosureRequest", "BurnRedemptionRequest"] {
+    for required in ["KmsContext", "DisclosureRequest", "BurnRedemptionRequest"] {
         assert!(
             schemas
                 .iter()
@@ -312,12 +328,12 @@ fn abi_golden_drift_checks_cover_host_token_listener_and_kms_layouts() {
             "ABI golden manifest must pin `{required}`"
         );
     }
-    for removed in ["OperatorSetEvent", "OperatorClosedEvent"] {
+    for removed in ["VerifierSet", "OperatorSetEvent", "OperatorClosedEvent"] {
         assert!(
             !schemas
                 .iter()
                 .any(|schema| { schema.get("name").and_then(Value::as_str) == Some(removed) }),
-            "ABI golden manifest must not pin removed operator event `{removed}`"
+            "ABI golden manifest must not pin removed schema `{removed}`"
         );
     }
 
@@ -325,7 +341,7 @@ fn abi_golden_drift_checks_cover_host_token_listener_and_kms_layouts() {
         "zama_host.json",
         "confidential_token.json",
         "HostConfig",
-        "VerifierSet",
+        "KmsContext",
         "AclRecord",
         "HandleMaterialCommitment",
         "TransferCallbackSettlement",

@@ -14,11 +14,11 @@ use crate::{
         acl_nonce_key, acl_permission_address, acl_record_address,
         acl_record_subject_slots_are_canonical, assert_handle_for_chain, deny_subject_address,
         host_config_address, role_flags_are_known, subject_has_role, transient_session_address,
-        verifier_set_address, AclPermission, AclRecord, AclSubjectEntry, DenySubjectRecord,
-        HostConfig, TransientCapability, TransientCapabilityGrant, TransientSession, VerifierSet,
-        ACL_PERMISSION_SEED, ACL_ROLE_COMPUTE, ACL_ROLE_PUBLIC_DECRYPT, ACL_ROLE_USE,
-        EVENT_VERSION, MAX_ACL_SUBJECTS, MAX_ACL_SUBJECT_GRANTS_PER_CALL,
-        MAX_TRANSIENT_CAPABILITIES, TRANSIENT_SESSION_STATE_OPEN, TRANSIENT_SESSION_STATE_SEALED,
+        AclPermission, AclRecord, AclSubjectEntry, DenySubjectRecord, HostConfig,
+        TransientCapability, TransientCapabilityGrant, TransientSession, ACL_PERMISSION_SEED,
+        ACL_ROLE_COMPUTE, ACL_ROLE_PUBLIC_DECRYPT, ACL_ROLE_USE, EVENT_VERSION, MAX_ACL_SUBJECTS,
+        MAX_ACL_SUBJECT_GRANTS_PER_CALL, MAX_TRANSIENT_CAPABILITIES, TRANSIENT_SESSION_STATE_OPEN,
+        TRANSIENT_SESSION_STATE_SEALED,
     },
 };
 
@@ -60,36 +60,6 @@ pub(super) fn assert_not_paused(config: &Account<HostConfig>) -> Result<()> {
     Ok(())
 }
 
-pub(super) fn assert_verifier_set_shape(
-    verifier_set: &Account<VerifierSet>,
-    kind: u8,
-    scope: Pubkey,
-    version: u64,
-) -> Result<()> {
-    let (expected_key, expected_bump) = verifier_set_address(kind, scope, version);
-    require_keys_eq!(
-        verifier_set.key(),
-        expected_key,
-        ZamaHostError::VerifierSetMismatch
-    );
-    require!(
-        verifier_set.to_account_info().data_len() == 8 + VerifierSet::SPACE,
-        ZamaHostError::VerifierSetMismatch
-    );
-    require!(
-        verifier_set.bump == expected_bump,
-        ZamaHostError::VerifierSetMismatch
-    );
-    require!(
-        verifier_set.kind == kind
-            && verifier_set.scope == scope
-            && verifier_set.version == version
-            && verifier_set.validate_shape(),
-        ZamaHostError::VerifierSetMismatch
-    );
-    Ok(())
-}
-
 #[cfg(feature = "poc")]
 pub(super) fn assert_test_shim_authority(
     config: &Account<HostConfig>,
@@ -118,8 +88,6 @@ pub(super) fn emit_config_updated(config: &HostConfig, admin: Pubkey) {
         version: EVENT_VERSION,
         config: crate::state::host_config_address().0,
         admin,
-        input_verifier_set: config.input_verifier_set,
-        input_verifier_set_version: config.input_verifier_set_version,
         paused: config.paused,
         mock_input_enabled: config.mock_input_enabled,
         test_shims_enabled: config.test_shims_enabled,

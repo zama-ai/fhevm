@@ -4936,8 +4936,11 @@ name = "zama-host"
 version = "0.1.0"
 dependencies = [
  "anchor-lang",
+ "k256",
  "solana-ed25519-instruction",
  "solana-instructions-sysvar",
+ "solana-keccak-hasher",
+ "solana-secp256k1-recover",
  "solana-sha256-hasher",
  "solana-sysvar",
 ]
@@ -4951,6 +4954,7 @@ dependencies = [
  "base64 0.22.1",
  "confidential-token",
  "confidential-token-receiver",
+ "k256",
  "mollusk-svm",
  "mollusk-svm-programs-token",
  "serde_json",

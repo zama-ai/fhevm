@@ -50,10 +50,10 @@ both records and require the sealed ACL fields to agree with the material commit
 
 ## Instruction-Local Transients
 
-`fhe_eval` composes mixed FHE steps in one host instruction. Binary scratch results can feed ternary
-`if_then_else`, while trivial-encrypt, rand, and verified-input births can participate in the same
-frame. Outputs produced earlier in the eval can be referenced as transient operands by later
-operations.
+`fhe_eval` composes mixed FHE steps in one host instruction: **Binary / Ternary / TrivialEncrypt /
+Rand** (no `Input` step — DD-007/DD-023). Binary scratch results can feed ternary `if_then_else`, and
+trivial-encrypt / rand births can participate in the same frame. Outputs produced earlier in the eval
+can be referenced as transient operands by later operations.
 Durable operands must still be authorized by canonical ACL records. Transient outputs do not create
 `AclRecord`, `AclPermission`, or `AclAllowedEvent` state. Only outputs marked durable are bound into an
 ACL record with the existing nonce-key model.
@@ -79,8 +79,9 @@ Admission invariants for `fhe_eval`:
 - Transient operands may only reference outputs produced by earlier steps in the same frame.
 - Only the RHS of a binary operation may be scalar; encrypted operands must match the operator's FHE
   type rules.
-- Verified input steps must bind a durable output immediately and require the instructions sysvar for
-  the Ed25519 verifier witness.
+- There is no verified-input eval step; input verification is the separate `verify_coprocessor_input`
+  instruction, which verifies the coprocessor attestation and emits a receipt only — it creates no ACL
+  (DD-007).
 - Durable outputs must be born with `public_decrypt = false`; public decrypt is granted later through
   the dedicated role-aware instruction path. `ACL_ROLE_PUBLIC_DECRYPT` in output subjects authorizes
   that later explicit path; it does not set the durable record's `public_decrypt` flag at birth.
@@ -91,18 +92,24 @@ Admission invariants for `fhe_eval`:
 
 ## External Inputs
 
-`verify_input_and_bind` is the production-shaped encrypted-input birth path. It accepts a
-`SolanaInputProof`, requires the immediately preceding transaction instruction to be Solana's native
-Ed25519 verifier, and checks that the active `HostConfig::input_verifier_set` met its threshold over
-the canonical verifier-set-bound `input_proof_message` bytes for the proof and
-`SolanaInputBindIntent`. The selected proof handle must match the requested input handle, and every
-proof handle must carry this host chain id, a supported FHE type, its proof index in byte 21, and the
-current handle version before the instruction writes the canonical ACL record named by the signed
-bind intent.
+> Superseded (reconciliation, June 2026): the Ed25519 verifier-set path described in older revisions
+> was REMOVED. See `solana/docs/DESIGN_DECISIONS.md` DD-007.
 
-`mock_input_verified_and_bind` remains local-PoC test-only glue for cases that do not need verifier
-transaction witnesses. It is still constrained to the active verifier set by requiring a signer from
-that set.
+`verify_coprocessor_input` is the production-shaped encrypted-input *verification* path. It verifies
+the **coprocessor's EIP-712 `CiphertextVerification` attestation on-chain via secp256k1** (recovering
+the EVM coprocessor signers and threshold-checking them against the configured coprocessor signer set),
+then emits an `InputVerifiedEvent` receipt. It does **not** create a persistent ACL record and takes no
+`output_*` / ACL-binding parameters — matching the EVM `FHEVMExecutor.verifyInput`, which grants only a
+tx-scoped transient allow. Solana has no transient-storage analog, so the verified input is surfaced
+solely as the signed receipt; durable permission on an input handle is a separate explicit app grant.
+This mirrors the EVM `InputVerification` coprocessor-threshold model; the gateway counterpart is the
+RFC-021 bytes32 path `InputVerification.verifyProofRequestSolana`. There is no `FheEvalStep::Input` —
+input verification is its own instruction, not an eval step. (Fully using a verified input as a compute
+operand still needs the host-listener to consume `InputVerifiedEvent`, a follow-up.)
+
+`mock_input_verified_and_bind` remains local-PoC test-only glue, chain-id confined (DD-014). The
+removed `verify_input_and_bind` (native Ed25519 over `SolanaInputProof` + `SolanaInputBindIntent`,
+anchored to a Solana input verifier set) is retained only as the superseded design in DD-007.
 
 ## Roles
 
@@ -127,7 +134,7 @@ remain full ACL subjects. Persistent grants require `ACL_ROLE_GRANT`. Public dec
 feature gates and the configured authority signer:
 
 ```text
-mock_input_verified_and_bind -> mock_input_enabled + local PoC chain id + active verifier-set signer
+mock_input_verified_and_bind -> mock_input_enabled + local PoC chain id (DD-014)
 test_emit_*                  -> test_shims_enabled + test_authority
 ```
 

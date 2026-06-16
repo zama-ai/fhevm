@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE computations\n                SET is_allowed = TRUE, is_completed = FALSE\n              WHERE output_handle = $1\n                AND host_chain_id = $2\n                AND completed_at IS NULL\n                AND is_error = FALSE\n              RETURNING dependence_chain_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "dependence_chain_id",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "b82423ecfd7aadb57f5a6e2cb710b834d7f86f1489c850d646312a36a816ee73"
+}

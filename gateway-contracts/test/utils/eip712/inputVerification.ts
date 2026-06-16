@@ -50,6 +50,54 @@ export function createEIP712ResponseZKPoK(
   };
 }
 
+// Create an EIP712 message for a Solana (RFC-021) ZKPoK response, with bytes32 host identities.
+// The type string and domain must match the gateway's EIP712_SOLANA_ZKPOK_TYPE and the zama-host
+// program's CiphertextVerification verifier byte-for-byte.
+export function createEIP712ResponseZKPoKSolana(
+  gatewayChainId: number,
+  verifyingContract: string,
+  ctHandles: string[],
+  userAddress: string,
+  contractAddress: string,
+  contractChainId: number,
+  extraData: string,
+): EIP712 {
+  if (!ethers.isAddress(verifyingContract)) {
+    throw new Error("Invalid verifying contract address.");
+  }
+  return {
+    types: {
+      EIP712Domain: [
+        { name: "name", type: "string" },
+        { name: "version", type: "string" },
+        { name: "chainId", type: "uint256" },
+        { name: "verifyingContract", type: "address" },
+      ],
+      CiphertextVerification: [
+        { name: "ctHandles", type: "bytes32[]" },
+        { name: "userAddress", type: "bytes32" },
+        { name: "contractAddress", type: "bytes32" },
+        { name: "contractChainId", type: "uint256" },
+        { name: "extraData", type: "bytes" },
+      ],
+    },
+    primaryType: "CiphertextVerification",
+    domain: {
+      name: "InputVerification",
+      version: "1",
+      chainId: gatewayChainId,
+      verifyingContract,
+    },
+    message: {
+      ctHandles,
+      userAddress,
+      contractAddress,
+      contractChainId,
+      extraData,
+    },
+  };
+}
+
 // Get signatures from signers using the EIP712 message response for proof verification
 export async function getSignaturesZKPoK(
   eip712: EIP712,

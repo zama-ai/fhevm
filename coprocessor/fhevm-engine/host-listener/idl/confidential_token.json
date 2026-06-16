@@ -1,5 +1,5 @@
 {
-  "address": "5c9FeFEgjdwZJ5kasqUrHbijgFWXVzNoumYWsKvvMUt9",
+  "address": "9Sbhx7VF6vAGdYApPikwHgJ68Z367Au2tTyw9FpBxnAh",
   "metadata": {
     "name": "confidential_token",
     "version": "0.1.0",
@@ -277,7 +277,7 @@
           "docs": [
             "ZamaHost program used for FHE operations."
           ],
-          "address": "7fNskHjCN1DBrgsSKs3a6ZujTg4MJcKf2vCCK5DuvUaE"
+          "address": "BXsiKq6Jg4vgdBqSd75NbMbKaB7WFKK48NVXx4zoeLsW"
         },
         {
           "name": "host_config",
@@ -580,7 +580,7 @@
           "docs": [
             "ZamaHost program used for FHE operations."
           ],
-          "address": "7fNskHjCN1DBrgsSKs3a6ZujTg4MJcKf2vCCK5DuvUaE"
+          "address": "BXsiKq6Jg4vgdBqSd75NbMbKaB7WFKK48NVXx4zoeLsW"
         },
         {
           "name": "host_config",
@@ -794,7 +794,7 @@
           "docs": [
             "ZamaHost program used for FHE operations."
           ],
-          "address": "7fNskHjCN1DBrgsSKs3a6ZujTg4MJcKf2vCCK5DuvUaE"
+          "address": "BXsiKq6Jg4vgdBqSd75NbMbKaB7WFKK48NVXx4zoeLsW"
         },
         {
           "name": "host_config",
@@ -950,7 +950,7 @@
           "docs": [
             "ZamaHost program used for FHE operations."
           ],
-          "address": "7fNskHjCN1DBrgsSKs3a6ZujTg4MJcKf2vCCK5DuvUaE"
+          "address": "BXsiKq6Jg4vgdBqSd75NbMbKaB7WFKK48NVXx4zoeLsW"
         },
         {
           "name": "host_config",
@@ -1060,7 +1060,7 @@
           "docs": [
             "ZamaHost program used to create the random handle."
           ],
-          "address": "7fNskHjCN1DBrgsSKs3a6ZujTg4MJcKf2vCCK5DuvUaE"
+          "address": "BXsiKq6Jg4vgdBqSd75NbMbKaB7WFKK48NVXx4zoeLsW"
         },
         {
           "name": "host_config",
@@ -1169,7 +1169,7 @@
           "docs": [
             "ZamaHost program used to create the random handle."
           ],
-          "address": "7fNskHjCN1DBrgsSKs3a6ZujTg4MJcKf2vCCK5DuvUaE"
+          "address": "BXsiKq6Jg4vgdBqSd75NbMbKaB7WFKK48NVXx4zoeLsW"
         },
         {
           "name": "host_config",
@@ -1212,25 +1212,26 @@
       ]
     },
     {
-      "name": "disclose_amount",
+      "name": "disclose_amount_secp",
       "docs": [
-        "Emits a KMS-certified cleartext for any token-scoped encrypted amount."
+        "Gateway-compatible amount disclosure: verifies the KMS `PublicDecryptVerification`",
+        "EIP-712 certificate on-chain via secp256k1_recover against the HostConfig KMS signer."
       ],
       "discriminator": [
-        194,
-        10,
-        172,
-        169,
-        192,
-        203,
-        74,
-        39
+        181,
+        136,
+        88,
+        90,
+        248,
+        153,
+        53,
+        143
       ],
       "accounts": [
         {
           "name": "mint",
           "docs": [
-            "Confidential mint carrying the disclosure verifier-set pointer."
+            "Confidential mint the disclosed amount belongs to."
           ]
         },
         {
@@ -1248,24 +1249,80 @@
         {
           "name": "disclosure_request",
           "docs": [
-            "Account-backed disclosure request witness."
+            "Account-backed disclosure request witness consumed by this instruction."
           ],
           "writable": true
         },
         {
-          "name": "disclosure_verifier_set",
-          "docs": [
-            "Threshold verifier set whose quorum signs the response certificate."
-          ]
-        },
-        {
           "name": "host_config",
           "docs": [
-            "ZamaHost config bound into the request and certificate."
-          ]
+            "Host config carrying the gateway KMS verifier params."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  115,
+                  116,
+                  45,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                156,
+                125,
+                162,
+                99,
+                204,
+                203,
+                80,
+                132,
+                132,
+                78,
+                41,
+                42,
+                44,
+                224,
+                219,
+                14,
+                81,
+                187,
+                243,
+                16,
+                16,
+                6,
+                86,
+                170,
+                69,
+                114,
+                184,
+                61,
+                254,
+                53,
+                252,
+                165
+              ]
+            }
+          }
         },
         {
-          "name": "instructions_sysvar"
+          "name": "kms_context",
+          "docs": [
+            "KMS context the request was pinned to. Verified in-handler against the witness's",
+            "`kms_context_id` (not the current context), so a cert minted under one context cannot be",
+            "presented against a request pinned to another after rotation."
+          ]
         },
         {
           "name": "event_authority"
@@ -1287,41 +1344,57 @@
         {
           "name": "cleartext_amount",
           "type": "u64"
+        },
+        {
+          "name": "signatures",
+          "type": {
+            "vec": {
+              "array": [
+                "u8",
+                65
+              ]
+            }
+          }
+        },
+        {
+          "name": "extra_data",
+          "type": "bytes"
         }
       ]
     },
     {
-      "name": "disclose_balance",
+      "name": "disclose_balance_secp",
       "docs": [
-        "Emits a KMS-certified cleartext for the current balance handle."
+        "Gateway-compatible balance disclosure: verifies the KMS `PublicDecryptVerification`",
+        "EIP-712 certificate on-chain via secp256k1_recover against the HostConfig KMS signer."
       ],
       "discriminator": [
-        166,
-        8,
-        221,
-        73,
-        167,
-        131,
-        62,
-        4
+        218,
+        219,
+        112,
+        210,
+        88,
+        169,
+        228,
+        105
       ],
       "accounts": [
         {
           "name": "mint",
           "docs": [
-            "Confidential mint carrying the disclosure verifier-set pointer."
+            "Confidential mint the disclosed balance belongs to."
           ]
         },
         {
           "name": "token_account",
           "docs": [
-            "Confidential token account whose requested balance handle is disclosed."
+            "Confidential token account whose current balance is disclosed."
           ]
         },
         {
           "name": "balance_acl_record",
           "docs": [
-            "Balance ACL record for the requested handle."
+            "Current balance ACL record for the disclosed handle."
           ]
         },
         {
@@ -1333,24 +1406,80 @@
         {
           "name": "disclosure_request",
           "docs": [
-            "Account-backed disclosure request witness."
+            "Account-backed disclosure request witness consumed by this instruction."
           ],
           "writable": true
         },
         {
-          "name": "disclosure_verifier_set",
-          "docs": [
-            "Threshold verifier set whose quorum signs the response certificate."
-          ]
-        },
-        {
           "name": "host_config",
           "docs": [
-            "ZamaHost config bound into the request and certificate."
-          ]
+            "Host config carrying the gateway KMS verifier params."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  115,
+                  116,
+                  45,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                156,
+                125,
+                162,
+                99,
+                204,
+                203,
+                80,
+                132,
+                132,
+                78,
+                41,
+                42,
+                44,
+                224,
+                219,
+                14,
+                81,
+                187,
+                243,
+                16,
+                16,
+                6,
+                86,
+                170,
+                69,
+                114,
+                184,
+                61,
+                254,
+                53,
+                252,
+                165
+              ]
+            }
+          }
         },
         {
-          "name": "instructions_sysvar"
+          "name": "kms_context",
+          "docs": [
+            "KMS context the request was pinned to. Verified in-handler against the witness's",
+            "`kms_context_id` (not the current context), so a cert minted under one context cannot be",
+            "presented against a request pinned to another after rotation."
+          ]
         },
         {
           "name": "event_authority"
@@ -1363,6 +1492,21 @@
         {
           "name": "cleartext_amount",
           "type": "u64"
+        },
+        {
+          "name": "signatures",
+          "type": {
+            "vec": {
+              "array": [
+                "u8",
+                65
+              ]
+            }
+          }
+        },
+        {
+          "name": "extra_data",
+          "type": "bytes"
         }
       ]
     },
@@ -1460,18 +1604,6 @@
           }
         },
         {
-          "name": "disclosure_verifier_set",
-          "docs": [
-            "Threshold verifier set whose quorum certifies disclosure responses."
-          ]
-        },
-        {
-          "name": "redemption_verifier_set",
-          "docs": [
-            "Threshold verifier set whose quorum certifies burn-redemption responses."
-          ]
-        },
-        {
           "name": "total_supply_acl_record",
           "writable": true
         },
@@ -1483,7 +1615,7 @@
           "docs": [
             "ZamaHost program used to create the initial total-supply handle."
           ],
-          "address": "7fNskHjCN1DBrgsSKs3a6ZujTg4MJcKf2vCCK5DuvUaE"
+          "address": "BXsiKq6Jg4vgdBqSd75NbMbKaB7WFKK48NVXx4zoeLsW"
         },
         {
           "name": "host_config",
@@ -1610,7 +1742,7 @@
           "docs": [
             "ZamaHost program used to create the initial balance handle."
           ],
-          "address": "7fNskHjCN1DBrgsSKs3a6ZujTg4MJcKf2vCCK5DuvUaE"
+          "address": "BXsiKq6Jg4vgdBqSd75NbMbKaB7WFKK48NVXx4zoeLsW"
         },
         {
           "name": "host_config",
@@ -1640,82 +1772,20 @@
       ]
     },
     {
-      "name": "migrate_mint_verifier_sets",
+      "name": "redeem_burned_amount_secp",
       "docs": [
-        "Migrates a legacy mint to split disclosure and burn-redemption verifier sets."
+        "Gateway-compatible redemption: verifies the KMS `PublicDecryptVerification`",
+        "EIP-712 certificate on-chain via secp256k1_recover against the active KMS context."
       ],
       "discriminator": [
-        206,
-        204,
-        13,
-        16,
-        134,
-        234,
-        229,
-        1
-      ],
-      "accounts": [
-        {
-          "name": "payer",
-          "docs": [
-            "Rent payer for any account-size top-up needed by realloc."
-          ],
-          "writable": true,
-          "signer": true
-        },
-        {
-          "name": "authority",
-          "docs": [
-            "Legacy mint authority."
-          ],
-          "signer": true
-        },
-        {
-          "name": "mint",
-          "writable": true
-        },
-        {
-          "name": "disclosure_verifier_set",
-          "docs": [
-            "Active threshold verifier set for disclosure responses."
-          ]
-        },
-        {
-          "name": "redemption_verifier_set",
-          "docs": [
-            "Active threshold verifier set for burn-redemption responses."
-          ]
-        },
-        {
-          "name": "system_program",
-          "docs": [
-            "System program used for rent top-up before realloc."
-          ],
-          "address": "11111111111111111111111111111111"
-        },
-        {
-          "name": "event_authority"
-        },
-        {
-          "name": "program"
-        }
-      ],
-      "args": []
-    },
-    {
-      "name": "redeem_burned_amount",
-      "docs": [
-        "Redeems a previously burned encrypted amount from the underlying-token vault."
-      ],
-      "discriminator": [
-        75,
-        99,
-        73,
-        176,
-        121,
-        166,
-        244,
-        3
+        69,
+        39,
+        88,
+        170,
+        163,
+        18,
+        191,
+        93
       ],
       "accounts": [
         {
@@ -1804,15 +1874,9 @@
         {
           "name": "redemption_request",
           "docs": [
-            "Account-backed redemption request witness."
+            "Account-backed redemption request witness pinned to a KMS context id."
           ],
           "writable": true
-        },
-        {
-          "name": "redemption_verifier_set",
-          "docs": [
-            "Threshold verifier set whose quorum signs the redemption certificate."
-          ]
         },
         {
           "name": "redemption_record",
@@ -1854,12 +1918,74 @@
           }
         },
         {
-          "name": "instructions_sysvar"
-        },
-        {
           "name": "host_config",
           "docs": [
-            "ZamaHost config bound into the request and certificate."
+            "Host config carrying the gateway KMS verifier params."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  115,
+                  116,
+                  45,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                156,
+                125,
+                162,
+                99,
+                204,
+                203,
+                80,
+                132,
+                132,
+                78,
+                41,
+                42,
+                44,
+                224,
+                219,
+                14,
+                81,
+                187,
+                243,
+                16,
+                16,
+                6,
+                86,
+                170,
+                69,
+                114,
+                184,
+                61,
+                254,
+                53,
+                252,
+                165
+              ]
+            }
+          }
+        },
+        {
+          "name": "kms_context",
+          "docs": [
+            "KMS context the request was pinned to. Verified in-handler against the witness's",
+            "`kms_context_id` (not the current context), so a cert minted under one context cannot be",
+            "presented against a request pinned to another after rotation."
           ]
         },
         {
@@ -1896,6 +2022,21 @@
         {
           "name": "cleartext_amount",
           "type": "u64"
+        },
+        {
+          "name": "signatures",
+          "type": {
+            "vec": {
+              "array": [
+                "u8",
+                65
+              ]
+            }
+          }
+        },
+        {
+          "name": "extra_data",
+          "type": "bytes"
         }
       ]
     },
@@ -2016,12 +2157,6 @@
           }
         },
         {
-          "name": "redemption_verifier_set",
-          "docs": [
-            "Threshold verifier set expected to certify the redemption response."
-          ]
-        },
-        {
           "name": "authority_permission_record",
           "optional": true
         },
@@ -2037,7 +2172,7 @@
           "docs": [
             "ZamaHost program used to update the ACL record."
           ],
-          "address": "7fNskHjCN1DBrgsSKs3a6ZujTg4MJcKf2vCCK5DuvUaE"
+          "address": "BXsiKq6Jg4vgdBqSd75NbMbKaB7WFKK48NVXx4zoeLsW"
         },
         {
           "name": "host_config",
@@ -2178,12 +2313,6 @@
           }
         },
         {
-          "name": "disclosure_verifier_set",
-          "docs": [
-            "Threshold verifier set expected to certify the disclosure response."
-          ]
-        },
-        {
           "name": "authority_permission_record",
           "optional": true
         },
@@ -2199,7 +2328,7 @@
           "docs": [
             "ZamaHost program used to update the ACL record."
           ],
-          "address": "7fNskHjCN1DBrgsSKs3a6ZujTg4MJcKf2vCCK5DuvUaE"
+          "address": "BXsiKq6Jg4vgdBqSd75NbMbKaB7WFKK48NVXx4zoeLsW"
         },
         {
           "name": "host_config",
@@ -2347,12 +2476,6 @@
           }
         },
         {
-          "name": "disclosure_verifier_set",
-          "docs": [
-            "Threshold verifier set expected to certify the disclosure response."
-          ]
-        },
-        {
           "name": "authority_permission_record",
           "optional": true
         },
@@ -2368,7 +2491,7 @@
           "docs": [
             "ZamaHost program used to update the ACL record."
           ],
-          "address": "7fNskHjCN1DBrgsSKs3a6ZujTg4MJcKf2vCCK5DuvUaE"
+          "address": "BXsiKq6Jg4vgdBqSd75NbMbKaB7WFKK48NVXx4zoeLsW"
         },
         {
           "name": "host_config",
@@ -2405,57 +2528,6 @@
           "type": "u64"
         }
       ]
-    },
-    {
-      "name": "update_mint_verifier_sets",
-      "docs": [
-        "Rotates the token-scoped verifier sets used by future KMS request witnesses."
-      ],
-      "discriminator": [
-        205,
-        220,
-        245,
-        175,
-        217,
-        59,
-        172,
-        191
-      ],
-      "accounts": [
-        {
-          "name": "authority",
-          "docs": [
-            "Mint authority."
-          ],
-          "signer": true
-        },
-        {
-          "name": "mint",
-          "docs": [
-            "Confidential mint whose verifier-set pointers are updated."
-          ],
-          "writable": true
-        },
-        {
-          "name": "disclosure_verifier_set",
-          "docs": [
-            "Active threshold verifier set for future disclosure requests."
-          ]
-        },
-        {
-          "name": "redemption_verifier_set",
-          "docs": [
-            "Active threshold verifier set for future burn-redemption requests."
-          ]
-        },
-        {
-          "name": "event_authority"
-        },
-        {
-          "name": "program"
-        }
-      ],
-      "args": []
     },
     {
       "name": "wrap_usdc",
@@ -2629,7 +2701,7 @@
           "docs": [
             "ZamaHost program used for FHE operations."
           ],
-          "address": "7fNskHjCN1DBrgsSKs3a6ZujTg4MJcKf2vCCK5DuvUaE"
+          "address": "BXsiKq6Jg4vgdBqSd75NbMbKaB7WFKK48NVXx4zoeLsW"
         },
         {
           "name": "host_config",
@@ -2865,19 +2937,6 @@
       ]
     },
     {
-      "name": "ConfidentialMintMigratedEvent",
-      "discriminator": [
-        222,
-        252,
-        8,
-        28,
-        188,
-        203,
-        149,
-        3
-      ]
-    },
-    {
       "name": "ConfidentialTransferEvent",
       "discriminator": [
         24,
@@ -2888,19 +2947,6 @@
         78,
         35,
         85
-      ]
-    },
-    {
-      "name": "MintVerifierSetsUpdatedEvent",
-      "discriminator": [
-        233,
-        215,
-        109,
-        127,
-        211,
-        112,
-        83,
-        201
       ]
     },
     {
@@ -3023,96 +3069,91 @@
     },
     {
       "code": 6018,
-      "name": "DisclosureProofSignatureMissing",
-      "msg": "disclosure proof signature is missing or invalid"
+      "name": "InvalidKmsCertificate",
+      "msg": "KMS public-decrypt certificate is invalid"
     },
     {
       "code": 6019,
-      "name": "VerifierSetMismatch",
-      "msg": "verifier set account is invalid"
+      "name": "GatewayVerifierConfigUnset",
+      "msg": "gateway verifier config is not set"
     },
     {
       "code": 6020,
-      "name": "VerifierThresholdNotMet",
-      "msg": "verifier-set proof threshold was not met"
+      "name": "InvalidKmsContext",
+      "msg": "KMS context is not valid for this request"
     },
     {
       "code": 6021,
-      "name": "DuplicateVerifierSignature",
-      "msg": "verifier-set proof contains a duplicate signer"
-    },
-    {
-      "code": 6022,
       "name": "RequestWitnessMismatch",
       "msg": "request witness does not match"
     },
     {
-      "code": 6023,
+      "code": 6022,
       "name": "RequestWitnessUnavailable",
       "msg": "request witness is expired or already consumed"
     },
     {
-      "code": 6024,
+      "code": 6023,
       "name": "MaterialCommitmentMismatch",
       "msg": "material commitment witness does not match"
     },
     {
-      "code": 6025,
+      "code": 6024,
       "name": "PublicDecryptNotReleased",
       "msg": "handle is not released for public decrypt"
     },
     {
-      "code": 6026,
+      "code": 6025,
       "name": "CallbackSettlementMismatch",
       "msg": "transfer callback settlement accounts are invalid"
     },
     {
-      "code": 6027,
+      "code": 6026,
       "name": "ReceiverHookMismatch",
       "msg": "receiver hook return data is invalid"
     },
     {
-      "code": 6028,
+      "code": 6027,
       "name": "ReceiverHookInputTooLarge",
       "msg": "receiver hook input exceeds program limits"
     },
     {
-      "code": 6029,
+      "code": 6028,
       "name": "InvalidFheEvalPlan",
       "msg": "FHE eval plan is invalid"
     },
     {
-      "code": 6030,
+      "code": 6029,
       "name": "DuplicateFheEvalAccount",
       "msg": "FHE eval account list contains a duplicate account"
     },
     {
-      "code": 6031,
+      "code": 6030,
       "name": "UnexpectedFheEvalAccount",
       "msg": "FHE eval account list contains an unexpected account"
     },
     {
-      "code": 6032,
+      "code": 6031,
       "name": "MissingFheEvalAccount",
       "msg": "FHE eval plan is missing a required dynamic account"
     },
     {
-      "code": 6033,
+      "code": 6032,
       "name": "FheEvalAccountNotWritable",
       "msg": "FHE eval dynamic account must be writable"
     },
     {
-      "code": 6034,
+      "code": 6033,
       "name": "DuplicateFheOutputAuthority",
       "msg": "FHE eval output authority list contains a duplicate authority"
     },
     {
-      "code": 6035,
+      "code": 6034,
       "name": "UnexpectedFheOutputAuthority",
       "msg": "FHE eval output authority list contains an unexpected authority"
     },
     {
-      "code": 6036,
+      "code": 6035,
       "name": "MissingFheOutputAuthority",
       "msg": "FHE eval plan is missing a required output authority"
     }
@@ -3412,16 +3453,9 @@
             }
           },
           {
-            "name": "verifier_set",
+            "name": "kms_context_id",
             "docs": [
-              "Verifier set expected to certify the response."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "verifier_set_version",
-            "docs": [
-              "Verifier-set version expected to certify the response."
+              "KMS context id the response cert must verify against."
             ],
             "type": "u64"
           },
@@ -3587,16 +3621,9 @@
             }
           },
           {
-            "name": "verifier_set",
+            "name": "kms_context_id",
             "docs": [
-              "Verifier set expected to certify the response."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "verifier_set_version",
-            "docs": [
-              "Verifier-set version expected to certify the response."
+              "KMS context id the response cert must verify against."
             ],
             "type": "u64"
           },
@@ -3997,16 +4024,10 @@
             "type": "pubkey"
           },
           {
-            "name": "verifier_set",
+            "name": "kms_context_id",
             "docs": [
-              "Verifier set expected to certify the redemption."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "verifier_set_version",
-            "docs": [
-              "Verifier-set version expected to certify the redemption."
+              "KMS context id pinned at request time; the redemption cert must verify",
+              "against this context's signer set, not the current one."
             ],
             "type": "u64"
           },
@@ -4154,16 +4175,9 @@
             }
           },
           {
-            "name": "verifier_set",
+            "name": "kms_context_id",
             "docs": [
-              "Verifier set expected to certify the response."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "verifier_set_version",
-            "docs": [
-              "Verifier-set version expected to certify the response."
+              "KMS context id the redemption cert must verify against."
             ],
             "type": "u64"
           },
@@ -4289,20 +4303,6 @@
             "type": "pubkey"
           },
           {
-            "name": "disclosure_verifier_set",
-            "docs": [
-              "Active threshold verifier set accepted for KMS disclosure certificates."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "redemption_verifier_set",
-            "docs": [
-              "Active threshold verifier set accepted for KMS burn-redemption certificates."
-            ],
-            "type": "pubkey"
-          },
-          {
             "name": "decimals",
             "docs": [
               "Decimal precision inherited from the underlying mint."
@@ -4332,80 +4332,6 @@
             "name": "next_total_supply_nonce_sequence",
             "docs": [
               "Next nonce sequence to use for a total-supply ACL record."
-            ],
-            "type": "u64"
-          }
-        ]
-      }
-    },
-    {
-      "name": "ConfidentialMintMigratedEvent",
-      "docs": [
-        "Emitted when a legacy mint is migrated to split verifier-set pointers."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "version",
-            "docs": [
-              "Event schema version."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "mint",
-            "docs": [
-              "Confidential mint."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "authority",
-            "docs": [
-              "Mint authority that authorized the migration."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "legacy_kms_verifier_authority",
-            "docs": [
-              "Legacy single KMS verifier authority retained for auditability."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "disclosure_verifier_set",
-            "docs": [
-              "Active disclosure verifier set after migration."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "redemption_verifier_set",
-            "docs": [
-              "Active burn-redemption verifier set after migration."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "disclosure_verifier_set_version",
-            "docs": [
-              "Disclosure verifier-set version after migration."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "redemption_verifier_set_version",
-            "docs": [
-              "Burn-redemption verifier-set version after migration."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "migrated_slot",
-            "docs": [
-              "Slot in which the mint was migrated."
             ],
             "type": "u64"
           }
@@ -4643,16 +4569,10 @@
             "type": "pubkey"
           },
           {
-            "name": "verifier_set",
+            "name": "kms_context_id",
             "docs": [
-              "Verifier set expected to certify the response."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "verifier_set_version",
-            "docs": [
-              "Verifier-set version expected to certify the response."
+              "KMS context id pinned at request time; the response cert must verify",
+              "against this context's signer set, not the current one."
             ],
             "type": "u64"
           },
@@ -4860,16 +4780,64 @@
             "type": "u64"
           },
           {
-            "name": "input_verifier_set",
+            "name": "input_verifier_authority",
             "docs": [
-              "Active threshold verifier set for input verification paths."
+              "Configured authority for input verification paths."
             ],
             "type": "pubkey"
           },
           {
-            "name": "input_verifier_set_version",
+            "name": "gateway_chain_id",
             "docs": [
-              "Version of the active input verifier set, or zero before the first set is created."
+              "EVM gateway chain id used in the coprocessor/KMS EIP-712 domain separators."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "input_verification_contract",
+            "docs": [
+              "EVM `InputVerification` contract address: the EIP-712 verifying contract for",
+              "coprocessor `CiphertextVerification` input attestations."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                20
+              ]
+            }
+          },
+          {
+            "name": "coprocessor_signer",
+            "docs": [
+              "Authorized coprocessor EVM signer for input attestations (v0: single signer,",
+              "threshold 1)."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                20
+              ]
+            }
+          },
+          {
+            "name": "decryption_contract",
+            "docs": [
+              "EVM `Decryption` contract address: the EIP-712 verifying contract for KMS",
+              "`PublicDecryptVerification` certificates (disclose/redeem)."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                20
+              ]
+            }
+          },
+          {
+            "name": "current_kms_context_id",
+            "docs": [
+              "Active KMS context id (mirrors `ProtocolConfig.getCurrentKmsContextId`). The",
+              "signer set + thresholds live in the `KmsContext` PDA at this id; 0 means none",
+              "defined yet. Updated by `define_kms_context`."
             ],
             "type": "u64"
           },
@@ -4933,82 +4901,97 @@
       }
     },
     {
-      "name": "MintVerifierSetsUpdatedEvent",
+      "name": "KmsContext",
       "docs": [
-        "Emitted when a mint rotates the token-scoped verifier sets used for new KMS requests."
+        "A KMS context: the signer set + thresholds active under a `context_id`."
       ],
       "type": {
         "kind": "struct",
         "fields": [
           {
-            "name": "version",
+            "name": "context_id",
             "docs": [
-              "Event schema version."
+              "Monotonic context id (mirrors `kmsContextId`)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "signers",
+            "docs": [
+              "KMS node signer EVM addresses authorized to sign certs in this context."
+            ],
+            "type": {
+              "vec": {
+                "array": [
+                  "u8",
+                  20
+                ]
+              }
+            }
+          },
+          {
+            "name": "thresholds",
+            "docs": [
+              "Per-operation signature thresholds."
+            ],
+            "type": {
+              "defined": {
+                "name": "KmsThresholds"
+              }
+            }
+          },
+          {
+            "name": "destroyed",
+            "docs": [
+              "True once destroyed (mirrors `destroyKmsContext`); destroyed contexts reject."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump for `PDA(\"kms-context\", context_id)`."
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "KmsThresholds",
+      "docs": [
+        "Per-operation signature thresholds for a KMS context (mirrors `KmsThresholds`)."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "public_decryption",
+            "docs": [
+              "Threshold for public-decrypt (disclose/redeem) certificates."
             ],
             "type": "u8"
           },
           {
-            "name": "mint",
+            "name": "user_decryption",
             "docs": [
-              "Confidential mint."
+              "Threshold for user-decrypt certificates."
             ],
-            "type": "pubkey"
+            "type": "u8"
           },
           {
-            "name": "authority",
+            "name": "kms_gen",
             "docs": [
-              "Mint authority that authorized the update."
+              "Threshold for key generation (KMS-internal; stored for fidelity)."
             ],
-            "type": "pubkey"
+            "type": "u8"
           },
           {
-            "name": "old_disclosure_verifier_set",
+            "name": "mpc",
             "docs": [
-              "Previous disclosure verifier set."
+              "Threshold for MPC (KMS-internal; stored for fidelity)."
             ],
-            "type": "pubkey"
-          },
-          {
-            "name": "new_disclosure_verifier_set",
-            "docs": [
-              "New disclosure verifier set."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "old_redemption_verifier_set",
-            "docs": [
-              "Previous burn-redemption verifier set."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "new_redemption_verifier_set",
-            "docs": [
-              "New burn-redemption verifier set."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "disclosure_verifier_set_version",
-            "docs": [
-              "New disclosure verifier-set version."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "redemption_verifier_set_version",
-            "docs": [
-              "New redemption verifier-set version."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "updated_slot",
-            "docs": [
-              "Slot in which the mint pointers changed."
-            ],
-            "type": "u64"
+            "type": "u8"
           }
         ]
       }
@@ -5465,102 +5448,6 @@
             "name": "bump",
             "docs": [
               "PDA bump for `(mint, sent_handle)`."
-            ],
-            "type": "u8"
-          }
-        ]
-      }
-    },
-    {
-      "name": "VerifierSet",
-      "docs": [
-        "Fixed-size threshold verifier set for host-facing signature proofs."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "admin",
-            "docs": [
-              "Admin that created and may disable this set."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "kind",
-            "docs": [
-              "Protocol purpose for this set."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "scope",
-            "docs": [
-              "Scope that disambiguates sets of the same kind.",
-              "",
-              "Input sets are scoped to the host config PDA. Token disclosure and",
-              "redemption sets are scoped to the confidential mint they certify."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "version",
-            "docs": [
-              "Monotonic version chosen by the admin for rotation."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "threshold",
-            "docs": [
-              "Number of distinct signer signatures required."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "signer_count",
-            "docs": [
-              "Number of active entries in `signers`."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "signers",
-            "docs": [
-              "Fixed signer list. Entries after `signer_count` must be default keys."
-            ],
-            "type": {
-              "array": [
-                "pubkey",
-                16
-              ]
-            }
-          },
-          {
-            "name": "state",
-            "docs": [
-              "Active/disabled state."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "created_slot",
-            "docs": [
-              "Slot in which the set was created."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "updated_slot",
-            "docs": [
-              "Slot in which the set was last updated."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "bump",
-            "docs": [
-              "PDA bump for the canonical verifier-set address."
             ],
             "type": "u8"
           }

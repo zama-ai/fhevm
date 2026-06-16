@@ -174,27 +174,30 @@ comes from app state. ACL authorization is durable and can also apply to histori
 ## Current Caveats
 
 ```text
+# Superseded (reconciliation, June 2026): the input/decrypt caveats below were Ed25519/verifier-set
+# shaped. The current model is on-chain secp256k1 over the coprocessor attestation (input) and over
+# the KMS cert (decrypt), against a witness-pinned kms_context. See DESIGN_DECISIONS.md DD-007,
+# DD-012, DD-021, DD-022, DD-026.
+
 Input path:
-  mock_input_verified_and_bind is a test short-circuit.
-  It deliberately trusts the caller-supplied input handle.
-  Its nonce sequence is explicit in tests and must not come from handle bytes.
-  verify_input_and_bind is the production-shaped path:
-    it requires an immediately preceding native Ed25519 verifier instruction
-    over SolanaInputProof plus the ACL bind intent and binds only the selected
-    certified handle to that signed ACL policy.
-  Threshold policy and real proof/transciphering validation still live in the
-  external verifier service.
+  mock_input_verified_and_bind is a test short-circuit (chain-id confined, DD-014).
+  verify_coprocessor_input is the production-shaped path:
+    it verifies the coprocessor EIP-712 CiphertextVerification attestation on-chain via secp256k1
+    (recovers + threshold-checks the EVM coprocessor signers) and emits an InputVerifiedEvent receipt.
+    It creates NO persistent ACL record (matching EVM verifyInput's tx-scoped transient allow); a durable
+    permission on the input handle is a separate explicit app grant. (Using a verified input as a compute
+    operand still needs the host-listener to consume InputVerifiedEvent — a follow-up.)
+  The removed verify_input_and_bind Ed25519 verifier-set path is the superseded design in DD-007.
+  Real ZKPoK / transciphering still lives behind the attestation (PoC shortcut).
 
 Public decrypt:
   allow_for_decryption is modeled and role-gated.
-  confidential-token exposes request_disclose_balance and request_disclose_amount convenience
-  instructions that delegate to allow_for_decryption and emit token-local request events.
-  disclose_balance and disclose_amount require the ACL public-decrypt release flag, a preceding
-  Ed25519 KMS certificate over (token program, mint, handle, cleartext amount), and a committed
-  material witness sealed onto the ACL record before emitting cleartext events.
-  redeem_burned_amount uses the same certificate shape after confidential_burn, checks the
-  burned-amount ACL public-decrypt release flag plus sealed material witness, and creates a replay
-  marker before moving cleartext SPL out of the vault.
+  confidential-token exposes request_disclose_balance / request_disclose_amount / request_burn_redemption,
+  which create DisclosureRequest / BurnRedemptionRequest witness PDAs (kms_context_id, request_nonce,
+  expires_slot, request_hash) BEFORE the secp consume (DD-022).
+  disclose_amount_secp / disclose_balance_secp / redeem_burned_amount_secp require the ACL public-decrypt
+  release flag, a sealed material witness, and an on-chain secp256k1 KMS-cert verification against the
+  WITNESS-PINNED kms_context (rejects high-s; consume-once; replay/expiry/context-mismatch rejected).
   A compute_signer does not automatically get public_decrypt authority.
 
 Persistent grants:

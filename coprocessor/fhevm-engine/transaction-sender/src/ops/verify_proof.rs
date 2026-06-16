@@ -10,6 +10,7 @@ use alloy::rpc::types::TransactionRequest;
 use alloy::sol;
 use alloy::{network::Ethereum, primitives::FixedBytes, sol_types::SolStruct};
 use async_trait::async_trait;
+use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::telemetry;
 use sqlx::{Pool, Postgres};
 use std::convert::TryInto;
@@ -27,6 +28,23 @@ sol! {
         address contractAddress;
         uint256 contractChainId;
         bytes extraData;
+    }
+}
+
+// RFC-021 (Solana host) counterpart with bytes32 host identities. The gateway names this
+// EIP-712 type "CiphertextVerification" as well (EIP712_SOLANA_ZKPOK_TYPE), distinguished
+// from the EVM type only by its bytes32 identity fields. alloy derives the EIP-712 type name
+// from the struct identifier, so this lives in its own module to reuse the name while differing
+// in field types — the type string must match the gateway and zama-host program byte for byte.
+mod solana_zkpok {
+    alloy::sol! {
+        struct CiphertextVerification {
+            bytes32[] ctHandles;
+            bytes32 userAddress;
+            bytes32 contractAddress;
+            uint256 contractChainId;
+            bytes extraData;
+        }
     }
 }
 
@@ -334,48 +352,89 @@ where
                         chain_id: self.gw_chain_id,
                         verifying_contract: self.input_verification_address,
                     };
-                    let signing_hash = CiphertextVerification {
-                        ctHandles: handles.clone(),
-                        userAddress: row.user_address.parse().expect("invalid user address"),
-                        contractAddress: row
-                            .contract_address
-                            .parse()
-                            .expect("invalid contract address"),
-                        contractChainId: U256::from(row.chain_id),
-                        extraData: row.extra_data.clone().into(),
-                    }
-                    .eip712_signing_hash(&domain);
-                    let signature = self
-                        .signer
-                        .sign_hash(&signing_hash)
-                        .instrument(span.clone())
-                        .await?;
 
-                    if let Some(gas) = self.gas {
-                        (
-                            row.zk_proof_id,
-                            input_verification
-                                .verifyProofResponse(
-                                    U256::from(row.zk_proof_id),
-                                    handles,
-                                    signature.as_bytes().into(),
-                                    row.extra_data.into(),
-                                )
-                                .into_transaction_request()
-                                .with_gas_limit(gas),
-                        )
+                    // RFC-021 Solana hosts carry the chain-type high bit; they use bytes32 dapp/user
+                    // identities and the verifyProofResponseSolana entrypoint, signing the matching
+                    // bytes32 CiphertextVerification typed data. EVM hosts keep the 20-byte path.
+                    if ChainId::from_canonical_u64(row.chain_id as u64).is_solana_host() {
+                        let signing_hash = solana_zkpok::CiphertextVerification {
+                            ctHandles: handles.clone(),
+                            userAddress: row
+                                .user_address
+                                .parse()
+                                .expect("invalid bytes32 user identity"),
+                            contractAddress: row
+                                .contract_address
+                                .parse()
+                                .expect("invalid bytes32 contract identity"),
+                            contractChainId: U256::from(row.chain_id as u64),
+                            extraData: row.extra_data.clone().into(),
+                        }
+                        .eip712_signing_hash(&domain);
+                        let signature = self
+                            .signer
+                            .sign_hash(&signing_hash)
+                            .instrument(span.clone())
+                            .await?;
+
+                        let call = input_verification.verifyProofResponseSolana(
+                            U256::from(row.zk_proof_id),
+                            handles,
+                            signature.as_bytes().into(),
+                            row.extra_data.into(),
+                        );
+                        if let Some(gas) = self.gas {
+                            (
+                                row.zk_proof_id,
+                                call.into_transaction_request().with_gas_limit(gas),
+                            )
+                        } else {
+                            (row.zk_proof_id, call.into_transaction_request())
+                        }
                     } else {
-                        (
-                            row.zk_proof_id,
-                            input_verification
-                                .verifyProofResponse(
-                                    U256::from(row.zk_proof_id),
-                                    handles,
-                                    signature.as_bytes().into(),
-                                    row.extra_data.into(),
-                                )
-                                .into_transaction_request(),
-                        )
+                        let signing_hash = CiphertextVerification {
+                            ctHandles: handles.clone(),
+                            userAddress: row.user_address.parse().expect("invalid user address"),
+                            contractAddress: row
+                                .contract_address
+                                .parse()
+                                .expect("invalid contract address"),
+                            contractChainId: U256::from(row.chain_id),
+                            extraData: row.extra_data.clone().into(),
+                        }
+                        .eip712_signing_hash(&domain);
+                        let signature = self
+                            .signer
+                            .sign_hash(&signing_hash)
+                            .instrument(span.clone())
+                            .await?;
+
+                        if let Some(gas) = self.gas {
+                            (
+                                row.zk_proof_id,
+                                input_verification
+                                    .verifyProofResponse(
+                                        U256::from(row.zk_proof_id),
+                                        handles,
+                                        signature.as_bytes().into(),
+                                        row.extra_data.into(),
+                                    )
+                                    .into_transaction_request()
+                                    .with_gas_limit(gas),
+                            )
+                        } else {
+                            (
+                                row.zk_proof_id,
+                                input_verification
+                                    .verifyProofResponse(
+                                        U256::from(row.zk_proof_id),
+                                        handles,
+                                        signature.as_bytes().into(),
+                                        row.extra_data.into(),
+                                    )
+                                    .into_transaction_request(),
+                            )
+                        }
                     }
                 }
                 Some(false) => {
@@ -424,5 +483,32 @@ where
             res??;
         }
         Ok(maybe_has_more_work)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // The coprocessor signs the ZKPOK response with an EIP-712 type string whose struct
+    // name and field encoding must equal the gateway's exactly; any divergence makes the
+    // signature recover to a wrong address and the gateway reject it (NotCoprocessorSigner).
+    // These lock both variants to InputVerification's EIP712_ZKPOK_TYPE / EIP712_SOLANA_ZKPOK_TYPE.
+
+    #[test]
+    fn evm_zkpok_eip712_type_matches_gateway() {
+        assert_eq!(
+            CiphertextVerification::eip712_encode_type(),
+            "CiphertextVerification(bytes32[] ctHandles,address userAddress,address contractAddress,uint256 contractChainId,bytes extraData)"
+        );
+    }
+
+    #[test]
+    fn solana_zkpok_eip712_type_matches_gateway() {
+        // Same struct name as the EVM type, differing only in its bytes32 identity fields.
+        assert_eq!(
+            solana_zkpok::CiphertextVerification::eip712_encode_type(),
+            "CiphertextVerification(bytes32[] ctHandles,bytes32 userAddress,bytes32 contractAddress,uint256 contractChainId,bytes extraData)"
+        );
     }
 }

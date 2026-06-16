@@ -20,6 +20,17 @@ impl ContentHasher for InputProofRequest {
         hasher.update(b"user_address:");
         hasher.update(self.user_address.as_slice());
 
+        // Solana 32-byte identities, folded in only when present so EVM requests
+        // (which leave these `None`) keep byte-identical dedup hashes.
+        if let Some(contract) = self.solana_contract_address {
+            hasher.update(b"solana_contract_address:");
+            hasher.update(contract.as_slice());
+        }
+        if let Some(user) = self.solana_user_address {
+            hasher.update(b"solana_user_address:");
+            hasher.update(user.as_slice());
+        }
+
         hasher.update(b"ciphertext_with_zk_proof:");
         hasher.update(&self.ciphetext_with_zk_proof);
 
@@ -43,6 +54,8 @@ mod tests {
             user_address: Address::from([2; 20]),
             ciphetext_with_zk_proof: Bytes::from(vec![0xaa, 0xbb, 0xcc]),
             extra_data: Bytes::from(vec![0x00]),
+            solana_contract_address: None,
+            solana_user_address: None,
         };
 
         let hash1 = request.content_hash();
@@ -60,6 +73,8 @@ mod tests {
             user_address: Address::from([2; 20]),
             ciphetext_with_zk_proof: Bytes::from(vec![0xaa, 0xbb]),
             extra_data: Bytes::from(vec![0x00]),
+            solana_contract_address: None,
+            solana_user_address: None,
         };
 
         let mut request2 = request1.clone();
@@ -82,6 +97,8 @@ mod tests {
             user_address: Address::from([2; 20]),
             ciphetext_with_zk_proof: Bytes::from(vec![0xaa]),
             extra_data: Bytes::from(vec![0x00]),
+            solana_contract_address: None,
+            solana_user_address: None,
         };
         let base_hash = base_request.content_hash();
 
@@ -139,6 +156,8 @@ mod tests {
             user_address: Address::from([2; 20]),
             ciphetext_with_zk_proof: Bytes::from(vec![0xaa]),
             extra_data: Bytes::from(vec![0x00]),
+            solana_contract_address: None,
+            solana_user_address: None,
         };
 
         let hash = request.content_hash();

@@ -27,8 +27,6 @@ pub struct MockInputVerifiedAndBind<'info> {
     pub payer: Signer<'info>,
     /// Input verifier signer used by the local mock path.
     pub input_verifier_authority: Signer<'info>,
-    /// Active input verifier set containing `input_verifier_authority`.
-    pub input_verifier_set: Box<Account<'info, VerifierSet>>,
     /// App account signer authorizing the ACL metadata.
     pub app_account_authority: Signer<'info>,
     /// Singleton config PDA with `mock_input_enabled`.
@@ -66,14 +64,9 @@ pub fn mock_input_verified_and_bind(
         ctx.accounts.host_config.mock_input_allowed(),
         ZamaHostError::MockInputDisabled
     );
-    super::verify_input_and_bind::assert_input_verifier_set(
-        &ctx.accounts.host_config,
-        &ctx.accounts.input_verifier_set,
-    )?;
-    require!(
-        ctx.accounts
-            .input_verifier_set
-            .contains_signer(ctx.accounts.input_verifier_authority.key()),
+    require_keys_eq!(
+        ctx.accounts.input_verifier_authority.key(),
+        ctx.accounts.host_config.input_verifier_authority,
         ZamaHostError::MockInputVerifierMismatch
     );
     assert_input_handle_for_chain(input_handle, ctx.accounts.host_config.chain_id)?;

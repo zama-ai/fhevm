@@ -11,7 +11,7 @@ import type {
   Uint64ValueLike,
   Uint8ValueLike,
 } from './primitives.js';
-import type { ZkProof } from './zkProof-p.js';
+import type { ZkProof, SolanaZkProof } from './zkProof-p.js';
 import type { WithEncrypt } from './coreFhevmRuntime.js';
 import type { FhevmChain } from './fhevmChain.js';
 
@@ -33,4 +33,11 @@ export interface ZkProofBuilder {
       readonly userAddress: string;
     },
   ): Promise<ZkProof>;
+  buildSolana(
+    fhevm: Fhevm<FhevmChain, WithEncrypt>,
+    parameters: {
+      readonly contractAddress: string;
+      readonly userAddress: string;
+    },
+  ): Promise<SolanaZkProof>;
 }

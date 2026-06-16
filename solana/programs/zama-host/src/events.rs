@@ -19,10 +19,8 @@ pub struct HostConfigInitializedEvent {
     pub admin: Pubkey,
     /// Host-chain id used by handle derivation.
     pub chain_id: u64,
-    /// Active input verifier set.
-    pub input_verifier_set: Pubkey,
-    /// Active input verifier-set version.
-    pub input_verifier_set_version: u64,
+    /// Configured input verifier authority.
+    pub input_verifier_authority: Pubkey,
     /// Configured material commitment authority.
     pub material_authority: Pubkey,
     /// Configured test-shim authority.
@@ -38,10 +36,6 @@ pub struct HostConfigUpdatedEvent {
     pub config: Pubkey,
     /// Admin signer that performed the update.
     pub admin: Pubkey,
-    /// Active input verifier set.
-    pub input_verifier_set: Pubkey,
-    /// Active input verifier-set version.
-    pub input_verifier_set_version: u64,
     /// Current pause state.
     pub paused: bool,
     /// Current mock input gate.
@@ -54,46 +48,28 @@ pub struct HostConfigUpdatedEvent {
     pub updated_slot: u64,
 }
 
-/// Emitted when a threshold verifier set is created.
+/// Emitted when a KMS context is defined (mirrors `ProtocolConfig.NewKmsContext`).
 #[event]
-pub struct VerifierSetCreatedEvent {
+pub struct NewKmsContextEvent {
     /// Event schema version.
     pub version: u8,
-    /// Verifier-set PDA.
-    pub verifier_set: Pubkey,
-    /// Admin signer that created the set.
-    pub admin: Pubkey,
-    /// Protocol purpose for this set.
-    pub kind: u8,
-    /// Scope that disambiguates sets of the same kind.
-    pub scope: Pubkey,
-    /// Monotonic version chosen by the admin for rotation.
-    pub set_version: u64,
-    /// Number of distinct signer signatures required.
-    pub threshold: u8,
-    /// Number of active signers.
-    pub signer_count: u8,
-    /// Slot in which this set was created.
-    pub created_slot: u64,
+    /// The new context id.
+    pub kms_context_id: u64,
+    /// KMS node signer EVM addresses authorized in this context.
+    pub signers: Vec<[u8; 20]>,
+    /// Public-decrypt signature threshold.
+    pub public_decryption_threshold: u8,
+    /// User-decrypt signature threshold.
+    pub user_decryption_threshold: u8,
 }
 
-/// Emitted when a threshold verifier set is disabled.
+/// Emitted when a KMS context is destroyed (mirrors `ProtocolConfig.KmsContextDestroyed`).
 #[event]
-pub struct VerifierSetDisabledEvent {
+pub struct KmsContextDestroyedEvent {
     /// Event schema version.
     pub version: u8,
-    /// Verifier-set PDA.
-    pub verifier_set: Pubkey,
-    /// Admin signer that disabled the set.
-    pub admin: Pubkey,
-    /// Protocol purpose for this set.
-    pub kind: u8,
-    /// Scope that disambiguates sets of the same kind.
-    pub scope: Pubkey,
-    /// Set version.
-    pub set_version: u64,
-    /// Slot in which this set was disabled.
-    pub updated_slot: u64,
+    /// The destroyed context id.
+    pub kms_context_id: u64,
 }
 
 /// Emitted when ciphertext material is committed for a host handle.

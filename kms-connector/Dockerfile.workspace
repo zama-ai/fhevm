@@ -48,7 +48,15 @@ WORKDIR /app/kms-connector
 # to /tmp in the same RUN instruction for COPY --from to work in later stages.
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/app/kms-connector/target,sharing=locked \
-    git config --global --add safe.directory /app && \
+    if [ -f /app/.git ]; then rm -f /app/.git; fi && \
+    git config --global --add safe.directory '*' && \
+    git config --global user.email build@local && \
+    git config --global user.name build && \
+    if [ ! -e /app/.git ]; then \
+      git init -q /app && \
+      git -C /app commit --allow-empty -q -m build && \
+      git -C /app tag -a v0.0.0-build -m build; \
+    fi && \
     cargo fetch && \
     cargo build --profile=${CARGO_PROFILE} --workspace && \
     mkdir -p /out && \

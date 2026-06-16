@@ -33,21 +33,6 @@ pub enum ZamaHostError {
     /// The input verifier authority account does not match host config.
     #[msg("input verifier authority does not match config")]
     InputVerifierMismatch,
-    /// A verifier set account is not canonical or has invalid contents.
-    #[msg("verifier set account is invalid")]
-    VerifierSetMismatch,
-    /// A verifier set creation request has invalid fields.
-    #[msg("verifier set fields are invalid")]
-    InvalidVerifierSet,
-    /// The verifier set is disabled.
-    #[msg("verifier set is disabled")]
-    VerifierSetDisabled,
-    /// The Ed25519 threshold proof did not contain enough distinct valid signers.
-    #[msg("verifier set threshold was not met")]
-    VerifierSetThresholdNotMet,
-    /// The Ed25519 threshold proof repeated a signer.
-    #[msg("verifier set proof includes a duplicate signer")]
-    VerifierSetDuplicateSigner,
     /// The material commitment authority account does not match host config.
     #[msg("material authority does not match config")]
     MaterialAuthorityMismatch,
@@ -69,6 +54,27 @@ pub enum ZamaHostError {
     /// The selected input handle does not match the requested handle.
     #[msg("input proof selected handle does not match")]
     InvalidInputHandle,
+    /// The coprocessor EIP-712 input attestation failed secp256k1 threshold verification.
+    #[msg("coprocessor input attestation is invalid")]
+    InvalidInputAttestation,
+    /// The gateway verifier config (coprocessor signer / verifying contract) is unset.
+    #[msg("gateway verifier config is not set")]
+    GatewayVerifierConfigUnset,
+    /// A KMS context must define at least one signer.
+    #[msg("KMS context has no signers")]
+    EmptyKmsContext,
+    /// A KMS context exceeds the maximum supported signer count.
+    #[msg("KMS context exceeds the maximum signer count")]
+    TooManyKmsSigners,
+    /// A KMS threshold is zero or exceeds the signer count.
+    #[msg("KMS context threshold is invalid")]
+    InvalidKmsThreshold,
+    /// A new KMS context id must be the current id plus one (monotonic).
+    #[msg("KMS context id is not the next sequential id")]
+    InvalidKmsContextId,
+    /// The current active KMS context cannot be destroyed.
+    #[msg("current KMS context cannot be destroyed")]
+    CurrentKmsContextCannotBeDestroyed,
     /// The input handle version byte is unsupported.
     #[msg("input handle version is unsupported")]
     InvalidInputHandleVersion,
@@ -234,4 +240,13 @@ pub enum ZamaHostError {
     /// A transient capability requires the instructions sysvar for receiver validation.
     #[msg("transient capability receiver cannot be verified")]
     TransientCapabilityReceiverMissing,
+    /// A KMS context was defined with a duplicate signer address.
+    #[msg("KMS context signer set contains a duplicate address")]
+    DuplicateKmsSigner,
+    /// The coprocessor-attested contract does not match the output ACL app account.
+    #[msg("attested contract address does not match the output app account")]
+    InputBindContractMismatch,
+    /// The coprocessor-attested user is not among the output ACL subjects.
+    #[msg("attested user address is not an output ACL subject")]
+    InputBindUserNotSubject,
 }

@@ -20,10 +20,6 @@ pub struct InitializeMint<'info> {
     /// CHECK: Mint-scoped app authority for total-supply handles.
     #[account(seeds = [b"total-supply", mint.key().as_ref()], bump)]
     pub total_supply_authority: UncheckedAccount<'info>,
-    /// Threshold verifier set whose quorum certifies disclosure responses.
-    pub disclosure_verifier_set: Box<Account<'info, zama_host::VerifierSet>>,
-    /// Threshold verifier set whose quorum certifies burn-redemption responses.
-    pub redemption_verifier_set: Box<Account<'info, zama_host::VerifierSet>>,
     /// CHECK: initialized and validated by the Zama host program CPI.
     #[account(mut)]
     pub total_supply_acl_record: UncheckedAccount<'info>,
@@ -47,18 +43,6 @@ pub fn initialize_mint(ctx: Context<InitializeMint>) -> Result<()> {
         compute_signer,
         ConfidentialTokenError::ComputeSignerMismatch
     );
-    assert_active_verifier_set(
-        &ctx.accounts.disclosure_verifier_set,
-        ctx.accounts.disclosure_verifier_set.key(),
-        zama_host::VERIFIER_SET_KIND_TOKEN_DISCLOSURE,
-        mint_key,
-    )?;
-    assert_active_verifier_set(
-        &ctx.accounts.redemption_verifier_set,
-        ctx.accounts.redemption_verifier_set.key(),
-        zama_host::VERIFIER_SET_KIND_TOKEN_REDEMPTION,
-        mint_key,
-    )?;
     let total_supply_authority = ctx.accounts.total_supply_authority.key();
     require_keys_eq!(
         total_supply_authority,
@@ -122,8 +106,6 @@ pub fn initialize_mint(ctx: Context<InitializeMint>) -> Result<()> {
     mint.acl_domain_key = mint_key;
     mint.compute_signer = compute_signer;
     mint.underlying_mint = ctx.accounts.underlying_mint.key();
-    mint.disclosure_verifier_set = ctx.accounts.disclosure_verifier_set.key();
-    mint.redemption_verifier_set = ctx.accounts.redemption_verifier_set.key();
     mint.decimals = ctx.accounts.underlying_mint.decimals;
     mint.total_supply_handle = total_supply_handle;
     mint.total_supply_acl_record = total_supply_acl_record;

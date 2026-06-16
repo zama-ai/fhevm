@@ -22,6 +22,7 @@ pub use utils::{
     deserialize_ct_handles_from_hex,
     // Parsing utilities
     parse_and_validate,
+    parse_and_validate_cross,
     // Serialization helpers
     serialize_ct_handle_as_hex,
     serialize_ct_handles_as_hex,
@@ -38,12 +39,15 @@ pub use utils::{
     validate_extra_data_field_input_proof,
     validate_handle_contract_pairs,
     validate_handle_entries,
+    validate_host_address,
+    validate_host_addresses,
     validate_no_0x_hex,
     validate_request_validity,
     validate_request_validity_seconds,
     validate_timestamp,
     validate_u32_string,
     validate_u64_string,
+    validate_user_decrypt_signature,
     // v3 unified EIP-712 validators
     validate_v3_attestation_type,
     validate_v3_payload_type,

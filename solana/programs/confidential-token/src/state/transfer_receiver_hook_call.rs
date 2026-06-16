@@ -4,6 +4,7 @@ use anchor_lang::prelude::*;
 
 /// One-shot marker for a receiver hook call.
 #[account]
+#[derive(InitSpace)]
 pub struct TransferReceiverHookCall {
     /// Confidential mint whose transfer reached the receiver hook.
     pub mint: Pubkey,

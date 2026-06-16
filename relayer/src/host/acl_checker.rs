@@ -80,14 +80,29 @@ struct HostChainAcl {
 /// Checks handle permissions against host chain ACL contracts via multicall.
 pub struct HostAclChecker {
     chains: HashMap<u64, HostChainAcl>,
+    /// RFC-021 Solana host chains (chain-type high bit), keyed by chain id. A Solana
+    /// host carries a base58 `acl_address` (the zama-host program) and has no EVM ACL
+    /// contract to `eth_call`. Its ACL is enforced authoritatively by the KMS
+    /// (`solana_acl` witness verification) and on-chain `secp256k1` cert checks; the
+    /// relayer cannot derive the ACL-record PDA from a bare handle, so it does not
+    /// perform the EVM-style pre-check for these chains.
+    solana_chains: std::collections::HashSet<u64>,
     retry_config: RetrySettings,
 }
 
 impl HostAclChecker {
     pub fn new(host_chains: &[HostChainConfig], retry: RetrySettings) -> anyhow::Result<Self> {
         let mut chains = HashMap::new();
+        let mut solana_chains = std::collections::HashSet::new();
 
         for hc in host_chains {
+            // RFC-021 Solana host: base58 `acl_address` (zama-host program). No EVM ACL
+            // contract exists, so record the chain and skip building an eth_call client.
+            if crate::http::utils::solana_address::is_solana_address(&hc.acl_address) {
+                solana_chains.insert(hc.chain_id);
+                continue;
+            }
+
             let url = Url::parse(&hc.url).map_err(|e| {
                 anyhow::anyhow!("Invalid host chain URL for chain {}: {}", hc.chain_id, e)
             })?;
@@ -109,6 +124,7 @@ impl HostAclChecker {
 
         Ok(Self {
             chains,
+            solana_chains,
             retry_config: retry,
         })
     }
@@ -129,6 +145,11 @@ impl HostAclChecker {
         let mut all_failures = Vec::new();
 
         for (chain_id, chain_handles) in &grouped {
+            // RFC-021 Solana host: ACL enforced authoritatively by the KMS (solana_acl)
+            // and on-chain secp256k1 cert checks; no EVM eth_call pre-check applies.
+            if self.solana_chains.contains(chain_id) {
+                continue;
+            }
             let chain_acl = self
                 .chains
                 .get(chain_id)
@@ -205,6 +226,11 @@ impl HostAclChecker {
         let mut all_failures = Vec::new();
 
         for (chain_id, chain_pairs) in &grouped {
+            // RFC-021 Solana host: ACL enforced authoritatively by the KMS (solana_acl)
+            // and on-chain secp256k1 cert checks; no EVM eth_call pre-check applies.
+            if self.solana_chains.contains(chain_id) {
+                continue;
+            }
             let chain_acl = self
                 .chains
                 .get(chain_id)
@@ -305,6 +331,11 @@ impl HostAclChecker {
         let mut all_failures = Vec::new();
 
         for (chain_id, chain_pairs) in &grouped {
+            // RFC-021 Solana host: ACL enforced authoritatively by the KMS (solana_acl)
+            // and on-chain secp256k1 cert checks; no EVM eth_call pre-check applies.
+            if self.solana_chains.contains(chain_id) {
+                continue;
+            }
             let chain_acl = self
                 .chains
                 .get(chain_id)
@@ -391,6 +422,11 @@ impl HostAclChecker {
         let mut all_failures = Vec::new();
 
         for (chain_id, chain_entries) in &grouped {
+            // RFC-021 Solana host: ACL enforced authoritatively by the KMS (solana_acl)
+            // and on-chain secp256k1 cert checks; no EVM eth_call pre-check applies.
+            if self.solana_chains.contains(chain_id) {
+                continue;
+            }
             let chain_acl = self
                 .chains
                 .get(chain_id)
@@ -604,5 +640,44 @@ mod tests {
     fn test_group_handles_empty() {
         let grouped = group_handles_by_chain(&[]);
         assert!(grouped.is_empty());
+    }
+
+    #[tokio::test]
+    async fn solana_host_starts_and_skips_evm_precheck() {
+        use crate::config::settings::{HostChainConfig, RetrySettings};
+
+        // RFC-021 Solana host: chain-type high bit + base58 acl_address (zama-host program).
+        let solana_chain_id = (1u64 << 63) | 12345;
+        let host_chains = vec![HostChainConfig {
+            chain_id: solana_chain_id,
+            url: "http://127.0.0.1:8899".to_string(),
+            acl_address: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA".to_string(),
+        }];
+
+        // new() must not panic on the base58 acl_address (the prior bug).
+        let checker = HostAclChecker::new(
+            &host_chains,
+            RetrySettings {
+                max_attempts: 1,
+                retry_interval_ms: 1,
+            },
+        )
+        .expect("base58 Solana acl_address must not fail HostAclChecker::new");
+
+        assert!(checker.solana_chains.contains(&solana_chain_id));
+        assert!(
+            checker.chains.is_empty(),
+            "Solana host must not create an EVM ACL eth_call client"
+        );
+
+        // A Solana handle (chain id in bytes 22..30): the EVM pre-check is deferred to the
+        // KMS solana_acl + on-chain secp path, so this returns Ok without any chain RPC.
+        let mut handle = [0u8; 32];
+        handle[22..30].copy_from_slice(&solana_chain_id.to_be_bytes());
+        let job_id = JobId::from([0u8; 32]);
+        assert!(checker
+            .check_public_decrypt(&job_id, &[handle])
+            .await
+            .is_ok());
     }
 }

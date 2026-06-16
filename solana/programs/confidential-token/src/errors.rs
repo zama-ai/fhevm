@@ -59,18 +59,15 @@ pub enum ConfidentialTokenError {
     /// Total-supply authority PDA did not match the mint.
     #[msg("total supply authority does not match mint")]
     TotalSupplyAuthorityMismatch,
-    /// Disclosure certificate was not signed by the mint KMS verifier authority.
-    #[msg("disclosure proof signature is missing or invalid")]
-    DisclosureProofSignatureMissing,
-    /// Threshold verifier set account is invalid for this token flow.
-    #[msg("verifier set account is invalid")]
-    VerifierSetMismatch,
-    /// The Ed25519 verifier quorum did not satisfy the verifier-set threshold.
-    #[msg("verifier-set proof threshold was not met")]
-    VerifierThresholdNotMet,
-    /// The Ed25519 verifier proof repeated one signer.
-    #[msg("verifier-set proof contains a duplicate signer")]
-    DuplicateVerifierSignature,
+    /// The KMS EIP-712 public-decrypt certificate failed secp256k1 threshold verification.
+    #[msg("KMS public-decrypt certificate is invalid")]
+    InvalidKmsCertificate,
+    /// The host gateway verifier config (KMS signer / decryption contract) is unset.
+    #[msg("gateway verifier config is not set")]
+    GatewayVerifierConfigUnset,
+    /// The provided KMS context is not the request-pinned context or has been destroyed.
+    #[msg("KMS context is not valid for this request")]
+    InvalidKmsContext,
     /// Account-backed request witness does not match the disclosure or redemption.
     #[msg("request witness does not match")]
     RequestWitnessMismatch,

@@ -38,8 +38,7 @@ use solana_sdk::{
 use tfhe::prelude::FheTryEncrypt;
 use time::{Date, Month, PrimitiveDateTime, Time};
 use zama_host::{
-    AclRecord, AclSubjectEntry, FheEvalArgs, FheEvalOperand, FheEvalOutput, FheEvalStep,
-    HostConfig, VerifierSet,
+    AclRecord, AclSubjectEntry, FheEvalArgs, FheEvalOperand, FheEvalOutput, FheEvalStep, HostConfig,
 };
 
 use crate::tests::{
@@ -50,7 +49,11 @@ use crate::tests::{
 use confidential_token as token;
 use zama_host as host;
 
+// Small "fast" euint8 type used by the standalone fhe-rand round-trip.
 const FAST_REAL_FHE_TYPE: u8 = 2;
+// Must equal the token program's BALANCE_FHE_TYPE: confidential balances and
+// transfer amounts are euint64 (type 5); the program rejects other handle types.
+const BALANCE_FHE_TYPE: u8 = 5;
 const TOKEN_BALANCE_FHE_TYPE: u8 = 5;
 type SeededCiphertext = ([u8; 32], i16, Vec<u8>);
 const DEFAULT_SOLANA_LOG_BYTES_LIMIT: usize = 10_000;
@@ -63,7 +66,7 @@ async fn solana_confidential_transfer_with_real_ciphertexts_computes_and_decrypt
     let harness = setup_event_harness().await?;
     let mut fixture = token_fixture();
 
-    let amount_handle = typed_fast_handle(0x09);
+    let amount_handle = balance_handle(0x09);
 
     seed_real_fast_ciphertexts(
         &harness.pool,
@@ -143,9 +146,9 @@ async fn solana_confidential_transfer_with_real_ciphertexts_computes_and_decrypt
     )
     .await?;
 
-    assert_eq!(decrypted[0].output_type, FAST_REAL_FHE_TYPE as i16);
+    assert_eq!(decrypted[0].output_type, BALANCE_FHE_TYPE as i16);
     assert_eq!(decrypted[0].value, "25");
-    assert_eq!(decrypted[1].output_type, FAST_REAL_FHE_TYPE as i16);
+    assert_eq!(decrypted[1].output_type, BALANCE_FHE_TYPE as i16);
     assert_eq!(decrypted[1].value, "120");
 
     Ok(())
@@ -455,7 +458,7 @@ async fn solana_trivial_encrypt_then_confidential_transfer_computes_and_decrypts
     let harness = setup_event_harness().await?;
     let mut fixture = token_fixture();
 
-    let amount_handle = typed_fast_handle(0x19);
+    let amount_handle = balance_handle(0x19);
 
     let initial_ixs = vec![
         test_emit_trivial_encrypt_ix(
@@ -554,9 +557,9 @@ async fn solana_trivial_encrypt_then_confidential_transfer_computes_and_decrypts
     )
     .await?;
 
-    assert_eq!(decrypted[0].output_type, FAST_REAL_FHE_TYPE as i16);
+    assert_eq!(decrypted[0].output_type, BALANCE_FHE_TYPE as i16);
     assert_eq!(decrypted[0].value, "25");
-    assert_eq!(decrypted[1].output_type, FAST_REAL_FHE_TYPE as i16);
+    assert_eq!(decrypted[1].output_type, BALANCE_FHE_TYPE as i16);
     assert_eq!(decrypted[1].value, "120");
 
     Ok(())
@@ -607,7 +610,7 @@ async fn solana_fhe_rand_creates_ciphertext_and_decrypts() -> Result<(), Box<dyn
 #[ignore = "requires built Solana PoC programs; validates user-decrypt ACL semantics without running the worker"]
 fn solana_user_decrypt_acl_invariants_match_evm_semantics() {
     let mut fixture = token_fixture();
-    let amount_handle = typed_fast_handle(0x39);
+    let amount_handle = balance_handle(0x39);
     authorize_input_compute_acl(&mut fixture, amount_handle);
     let output = transfer_output_accounts(&fixture, 1);
     let transfer_ix = transfer_ix(&fixture, output, amount_handle);
@@ -659,7 +662,7 @@ fn solana_user_decrypt_acl_invariants_match_evm_semantics() {
         &fixture.alice,
         vec![fixture.mint.pubkey()],
         vec![UserDecryptHandleEntry {
-            handle: typed_fast_handle(0x7f),
+            handle: balance_handle(0x7f),
             ..valid.handles[0]
         }],
     );
@@ -670,7 +673,6 @@ struct TokenFixture {
     svm: LiteSVM,
     host_program_id: Pubkey,
     host_config: Pubkey,
-    input_verifier_set: Pubkey,
     token_program_id: Pubkey,
     alice: Keypair,
     bob: Keypair,
@@ -735,20 +737,11 @@ fn host_fixture() -> HostFixture {
         .unwrap();
     let payer = Keypair::new();
     svm.airdrop(&payer.pubkey(), 1_000_000_000).unwrap();
-    let host_config = Pubkey::find_program_address(&[host::HOST_CONFIG_SEED], &host_program_id).0;
-    let input_verifier_set = seed_verifier_set(
-        &mut svm,
-        host_program_id,
-        payer.pubkey(),
-        host::VERIFIER_SET_KIND_INPUT,
-        host_config,
-        payer.pubkey(),
-    );
     let _host_config = seed_host_config(
         &mut svm,
         host_program_id,
         payer.pubkey(),
-        input_verifier_set,
+        payer.pubkey(),
         payer.pubkey(),
     );
 
@@ -763,7 +756,7 @@ fn seed_host_config(
     svm: &mut LiteSVM,
     program_id: Pubkey,
     admin: Pubkey,
-    input_verifier_set: Pubkey,
+    input_verifier_authority: Pubkey,
     test_authority: Pubkey,
 ) -> Pubkey {
     let (host_config, bump) = Pubkey::find_program_address(&[host::HOST_CONFIG_SEED], &program_id);
@@ -774,9 +767,13 @@ fn seed_host_config(
             data: serialized_account(HostConfig {
                 admin,
                 chain_id: host::SOLANA_POC_CHAIN_ID,
-                input_verifier_set,
-                input_verifier_set_version: 1,
-                material_authority: admin,
+                input_verifier_authority,
+                gateway_chain_id: 0,
+                input_verification_contract: [0u8; 20],
+                coprocessor_signer: [0u8; 20],
+                decryption_contract: [0u8; 20],
+                current_kms_context_id: 0,
+                material_authority: input_verifier_authority,
                 test_authority,
                 paused: false,
                 mock_input_enabled: true,
@@ -794,50 +791,15 @@ fn seed_host_config(
     host_config
 }
 
-fn seed_verifier_set(
-    svm: &mut LiteSVM,
-    program_id: Pubkey,
-    admin: Pubkey,
-    kind: u8,
-    scope: Pubkey,
-    signer: Pubkey,
-) -> Pubkey {
-    let (address, bump) = host::verifier_set_address(kind, scope, 1);
-    let mut signers = [Pubkey::default(); host::MAX_VERIFIER_SET_SIGNERS];
-    signers[0] = signer;
-    svm.set_account(
-        address,
-        Account {
-            lamports: 1_000_000_000,
-            data: serialized_account(VerifierSet {
-                admin,
-                kind,
-                scope,
-                version: 1,
-                threshold: 1,
-                signer_count: 1,
-                signers,
-                state: host::VERIFIER_SET_STATE_ACTIVE,
-                created_slot: 0,
-                updated_slot: 0,
-                bump,
-            }),
-            owner: program_id,
-            executable: false,
-            rent_epoch: 0,
-        },
-    )
-    .unwrap();
-    address
-}
-
 fn token_fixture() -> TokenFixture {
     token_fixture_with_initial_balances(125, 20)
 }
 
 fn token_fixture_with_initial_balances(
-    alice_initial_balance: u64,
-    bob_initial_balance: u64,
+    // Balances are injected as input ciphertexts keyed by handle (the program forbids
+    // nonzero init balances and funds via wrap), so these are documentation only.
+    _alice_initial_balance: u64,
+    _bob_initial_balance: u64,
 ) -> TokenFixture {
     let host_program_id = host::id();
     let token_program_id = token::id();
@@ -866,37 +828,11 @@ fn token_fixture_with_initial_balances(
     let underlying_mint = Keypair::new();
     svm.airdrop(&alice.pubkey(), 2_000_000_000).unwrap();
     svm.airdrop(&bob.pubkey(), 1_000_000_000).unwrap();
-    let host_config_address =
-        Pubkey::find_program_address(&[host::HOST_CONFIG_SEED], &host_program_id).0;
-    let input_verifier_set = seed_verifier_set(
-        &mut svm,
-        host_program_id,
-        alice.pubkey(),
-        host::VERIFIER_SET_KIND_INPUT,
-        host_config_address,
-        alice.pubkey(),
-    );
     let host_config = seed_host_config(
         &mut svm,
         host_program_id,
         alice.pubkey(),
-        input_verifier_set,
         alice.pubkey(),
-    );
-    let disclosure_verifier_set = seed_verifier_set(
-        &mut svm,
-        host_program_id,
-        alice.pubkey(),
-        host::VERIFIER_SET_KIND_TOKEN_DISCLOSURE,
-        mint.pubkey(),
-        alice.pubkey(),
-    );
-    let redemption_verifier_set = seed_verifier_set(
-        &mut svm,
-        host_program_id,
-        alice.pubkey(),
-        host::VERIFIER_SET_KIND_TOKEN_REDEMPTION,
-        mint.pubkey(),
         alice.pubkey(),
     );
     create_spl_mint(&mut svm, &alice, &underlying_mint, 6);
@@ -919,8 +855,6 @@ fn token_fixture_with_initial_balances(
                 underlying_mint: underlying_mint.pubkey(),
                 compute_signer,
                 total_supply_authority,
-                disclosure_verifier_set,
-                redemption_verifier_set,
                 total_supply_acl_record,
                 zama_event_authority: event_authority(host_program_id),
                 zama_program: host_program_id,
@@ -953,7 +887,9 @@ fn token_fixture_with_initial_balances(
             token_account: alice_token,
             compute_signer,
             acl_record: alice_current_compute_acl,
-            initial_balance: alice_initial_balance,
+            // Program forbids nonzero init balances (funded via wrap); the test injects
+            // the real input ciphertext value (125) into the DB keyed by this handle.
+            initial_balance: 0,
         },
     );
     initialize_token_account(
@@ -967,7 +903,7 @@ fn token_fixture_with_initial_balances(
             token_account: bob_token,
             compute_signer,
             acl_record: bob_current_compute_acl,
-            initial_balance: bob_initial_balance,
+            initial_balance: 0,
         },
     );
     let alice_initial = read_acl_record(&svm, alice_current_compute_acl)
@@ -981,7 +917,6 @@ fn token_fixture_with_initial_balances(
         svm,
         host_program_id,
         host_config,
-        input_verifier_set,
         token_program_id,
         alice,
         bob,
@@ -1092,7 +1027,6 @@ fn authorize_input_compute_acl(fixture: &mut TokenFixture, handle: [u8; 32]) {
             accounts: host::accounts::MockInputVerifiedAndBind {
                 payer: fixture.alice.pubkey(),
                 input_verifier_authority: fixture.alice.pubkey(),
-                input_verifier_set: fixture.input_verifier_set,
                 app_account_authority: app_account,
                 host_config: fixture.host_config,
                 output_acl_record: acl_record,
@@ -1168,7 +1102,7 @@ fn test_emit_trivial_encrypt_ix(
         data: host::instruction::TestEmitTrivialEncrypt {
             subject,
             plaintext: amount_to_plaintext(value),
-            fhe_type: FAST_REAL_FHE_TYPE,
+            fhe_type: BALANCE_FHE_TYPE,
             result,
         }
         .data(),
@@ -1260,9 +1194,9 @@ async fn seed_real_fast_ciphertexts(
             values
                 .into_iter()
                 .map(|(handle, value)| {
-                    let ciphertext = tfhe::FheUint8::try_encrypt(value, &client_key)
+                    let ciphertext = tfhe::FheUint64::try_encrypt(value as u64, &client_key)
                         .map_err(|err| err.to_string())?;
-                    let supported = SupportedFheCiphertexts::FheUint8(ciphertext);
+                    let supported = SupportedFheCiphertexts::FheUint64(ciphertext);
                     let ty = supported.type_num();
                     let compressed = supported.compress().map_err(|err| err.to_string())?;
                     Ok((handle, ty, compressed))
@@ -1543,20 +1477,27 @@ fn label_bytes(label: &[u8]) -> [u8; 32] {
     bytes
 }
 
-fn typed_fast_handle(seed: u8) -> [u8; 32] {
-    typed_handle(seed, FAST_REAL_FHE_TYPE)
-}
-
 fn typed_balance_handle(seed: u8) -> [u8; 32] {
     typed_handle(seed, TOKEN_BALANCE_FHE_TYPE)
 }
 
 fn typed_handle(seed: u8, fhe_type: u8) -> [u8; 32] {
+    // Canonical handle metadata the host validates on input bind: embedded chain
+    // id (bytes 22..30), fhe type (byte 30), and handle version (byte 31).
     let mut handle = [seed; 32];
+    handle[21] = 0;
     handle[22..30].copy_from_slice(&host::SOLANA_POC_CHAIN_ID.to_be_bytes());
     handle[30] = fhe_type;
     handle[31] = host::HANDLE_VERSION;
     handle
+}
+
+fn typed_fast_handle(seed: u8) -> [u8; 32] {
+    typed_handle(seed, FAST_REAL_FHE_TYPE)
+}
+
+fn balance_handle(seed: u8) -> [u8; 32] {
+    typed_handle(seed, BALANCE_FHE_TYPE)
 }
 
 fn amount_to_plaintext(amount: u64) -> [u8; 32] {
@@ -1615,13 +1556,30 @@ fn send(svm: &mut LiteSVM, payer: &Keypair, ix: Instruction) {
     send_with_signers(svm, &payer.pubkey(), ix, &[payer]);
 }
 
+/// ComputeBudget `SetComputeUnitLimit` instruction (consensus-stable wire format:
+/// variant tag 2 + u32 LE), hand-built to avoid a version-skewed solana dep.
+fn set_compute_unit_limit_ix(units: u32) -> Instruction {
+    let program_id: Pubkey = "ComputeBudget111111111111111111111111111111"
+        .parse()
+        .unwrap();
+    let mut data = vec![2u8];
+    data.extend_from_slice(&units.to_le_bytes());
+    Instruction {
+        program_id,
+        accounts: vec![],
+        data,
+    }
+}
+
 fn send_with_meta(
     svm: &mut LiteSVM,
     payer: &Keypair,
     ix: Instruction,
 ) -> (TransactionMetadata, Vec<Pubkey>, Signature) {
-    let message =
-        Message::new_with_blockhash(&[ix], Some(&payer.pubkey()), &svm.latest_blockhash());
+    // Confidential transfer's real euint64 FHE ops exceed the default 200k CU limit
+    // (mollusk measures ~258k); raise it like a real client would.
+    let ixs = [set_compute_unit_limit_ix(400_000), ix];
+    let message = Message::new_with_blockhash(&ixs, Some(&payer.pubkey()), &svm.latest_blockhash());
     let account_keys = message.account_keys.clone();
     let tx = VersionedTransaction::try_new(VersionedMessage::Legacy(message), &[payer]).unwrap();
     let signature = tx.signatures[0];
@@ -1633,6 +1591,8 @@ fn send_many_with_meta(
     payer: &Keypair,
     ixs: Vec<Instruction>,
 ) -> (TransactionMetadata, Vec<Pubkey>, Signature) {
+    let mut ixs = ixs;
+    ixs.insert(0, set_compute_unit_limit_ix(400_000));
     let message = Message::new_with_blockhash(&ixs, Some(&payer.pubkey()), &svm.latest_blockhash());
     let account_keys = message.account_keys.clone();
     let tx = VersionedTransaction::try_new(VersionedMessage::Legacy(message), &[payer]).unwrap();

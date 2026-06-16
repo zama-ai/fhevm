@@ -24,19 +24,18 @@ pub struct UserDecryptRequestJson {
     #[schema(value_type = ChainId)]
     #[validate(custom(function = "crate::http::validate_chain_id_string"))]
     pub contracts_chain_id: String,
-    #[validate(length(min = 1, message = "Must not be empty"))]
-    #[validate(custom(function = "crate::http::validate_blockchain_addresses"))]
-    #[schema(min_items = 1, example = json!(["0x1234567890123456789012345678901234567890"]))]
+    // EVM requires >=1 contract address; RFC-021 Solana sends an empty list (the handle ACL is
+    // enforced by the KMS solana_acl, off-gateway), so emptiness is allowed here and the per-mode
+    // requirement is enforced downstream.
+    #[validate(custom(function = "crate::http::validate_host_addresses"))]
+    #[schema(example = json!(["0x1234567890123456789012345678901234567890"]))]
     pub contract_addresses: Vec<String>,
-    /// Ethereum address of the user requesting decryption. `0x` + 40 hex chars.
-    #[validate(custom(function = "crate::http::validate_blockchain_address"))]
+    /// User requesting decryption: an EVM `0x`+40-hex address, or an RFC-021 Solana base58 pubkey.
+    #[validate(custom(function = "crate::http::validate_host_address"))]
     #[schema(example = "0x1234567890123456789012345678901234567890")]
     pub user_address: String,
-    /// EIP-712 signature over the decryption request, signed by the user. Raw hex, 130 chars, no `0x` prefix.
-    #[validate(
-        length(equal = 130, message = "Must be 130 characters long"),
-        custom(function = "crate::http::validate_no_0x_hex")
-    )]
+    /// User signature over the request: EVM EIP-712 (130 hex) or Solana ed25519 signMessage (128 hex), no `0x`.
+    #[validate(custom(function = "crate::http::validate_user_decrypt_signature"))]
     #[derivative(Debug(format_with = "redact_len"))]
     #[schema(
         example = "aabbccdd00112233445566778899aabbccdd00112233445566778899aabbccdd00112233445566778899aabbccdd00112233445566778899aabbccdd0011223344"

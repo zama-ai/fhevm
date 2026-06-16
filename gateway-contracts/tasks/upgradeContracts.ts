@@ -493,3 +493,60 @@ task("task:prepareUpgradeInputVerification")
   .setAction(async function (taskArgs: TaskArguments, hre) {
     await prepareUpgradeContract("InputVerification", "INPUT_VERIFICATION_ADDRESS", taskArgs, hre);
   });
+
+// RFC-021: no-reinitializer upgrade of the Decryption proxy to the implementation that adds
+// `userDecryptionRequestSolana` (+ event). The change adds no storage, so the layout is identical to
+// the deployed implementation — a clean storage-compatible swap; `forceImport` rebuilds the OZ
+// upgrades manifest from the deployed proxy. Must be run by the GatewayConfig owner; inside the
+// `gateway-sc-deploy` container `DEPLOYER_PRIVATE_KEY` is that owner, so no key handling is needed
+// outside the container (the same mechanism the rollout/compat flow uses for true proxy upgrades).
+task("task:upgradeDecryptionSolana")
+  .addOptionalParam(
+    "proxyAddress",
+    "Decryption proxy address (defaults to the DECRYPTION_ADDRESS env var)",
+    undefined,
+    types.string,
+  )
+  .setAction(async function (taskArgs: TaskArguments, hre: HardhatRuntimeEnvironment) {
+    const { ethers } = hre;
+    const proxyAddress = taskArgs.proxyAddress ?? getRequiredEnvVar("DECRYPTION_ADDRESS");
+    const deployer = new Wallet(getRequiredEnvVar("DEPLOYER_PRIVATE_KEY")).connect(ethers.provider);
+    console.log(`Deployer (must be the GatewayConfig owner): ${deployer.address}`);
+    console.log(`Decryption proxy: ${proxyAddress}`);
+
+    const factory = await ethers.getContractFactory("contracts/Decryption.sol:Decryption", deployer);
+    const erc1967ImplSlot = "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc";
+    const readImpl = async () =>
+      ethers.getAddress("0x" + (await ethers.provider.getStorage(proxyAddress, erc1967ImplSlot)).slice(-40));
+    const before = await readImpl();
+    console.log(`Current implementation: ${before}`);
+
+    // Raw UUPS upgrade: deploy the new implementation and call upgradeToAndCall as the owner. The
+    // change adds no storage (storage-compatible), so OZ's manifest-based upgradeProxy is bypassed —
+    // forceImport(newFactory)+upgradeProxy(newFactory) records the new bytecode as already-current
+    // and no-ops, which is why this path deploys + points the proxy explicitly instead.
+    console.log("Deploying new Decryption implementation...");
+    const newImpl = await factory.deploy();
+    await newImpl.waitForDeployment();
+    const newImplAddr = await newImpl.getAddress();
+    console.log(`New implementation deployed: ${newImplAddr}`);
+
+    const proxy = await ethers.getContractAt("contracts/Decryption.sol:Decryption", proxyAddress, deployer);
+    console.log("Calling upgradeToAndCall(newImpl, 0x) on the proxy as the owner...");
+    const tx = await proxy.upgradeToAndCall(newImplAddr, "0x");
+    await tx.wait();
+
+    const after = await readImpl();
+    console.log(`New implementation:     ${after}`);
+    if (after.toLowerCase() !== newImplAddr.toLowerCase()) {
+      throw new Error(`upgrade did not take effect (impl=${after}, expected ${newImplAddr})`);
+    }
+    const hasFn = proxy.interface.fragments.some(
+      (f) => f.type === "function" && (f as { name?: string }).name === "userDecryptionRequestSolana",
+    );
+    console.log(`userDecryptionRequestSolana present in proxy ABI: ${hasFn}`);
+    if (!hasFn) {
+      throw new Error("new implementation does not expose userDecryptionRequestSolana");
+    }
+    console.log("Decryption proxy upgraded — userDecryptionRequestSolana is now live.");
+  });

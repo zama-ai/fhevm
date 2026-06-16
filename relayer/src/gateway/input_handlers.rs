@@ -179,14 +179,29 @@ impl InputProofGatewayHandler {
                 ))
             })?;
 
-        // PRE-CALCULATE CALLDATA
-        let calldata_bytes = ComputeCalldata::verify_proof_req(
-            input_proof_request.contract_chain_id,
-            input_proof_request.contract_address,
-            input_proof_request.user_address,
-            input_proof_request.ciphetext_with_zk_proof.clone(),
-            input_proof_request.extra_data.clone(),
-        )?;
+        // PRE-CALCULATE CALLDATA. Solana hosts carry 32-byte identities and submit
+        // via `verifyProofRequestSolana`; EVM hosts use the 20-byte address path.
+        let calldata_bytes = match (
+            input_proof_request.solana_contract_address,
+            input_proof_request.solana_user_address,
+        ) {
+            (Some(contract_address), Some(user_address)) => {
+                ComputeCalldata::verify_proof_req_solana(
+                    input_proof_request.contract_chain_id,
+                    contract_address,
+                    user_address,
+                    input_proof_request.ciphetext_with_zk_proof.clone(),
+                    input_proof_request.extra_data.clone(),
+                )?
+            }
+            _ => ComputeCalldata::verify_proof_req(
+                input_proof_request.contract_chain_id,
+                input_proof_request.contract_address,
+                input_proof_request.user_address,
+                input_proof_request.ciphetext_with_zk_proof.clone(),
+                input_proof_request.extra_data.clone(),
+            )?,
+        };
 
         // CONSTRUCT TASK
         let task = GatewayTxTask {
@@ -705,13 +720,26 @@ impl TxLifecycleHooks for InputProofGatewayHandler {
         job_id: &JobId,
         receipt: &TxResult,
     ) -> Result<(), EventProcessingError> {
+        // EVM hosts emit VerifyProofRequest (address identities); Solana hosts (RFC-021)
+        // emit VerifyProofRequestSolana (bytes32 identities). Both carry the indexed
+        // zkProofId, and the response side shares the VerifyProofResponse event, so we
+        // only need to accept either request event when extracting the gateway id.
         let gw_reference_id = TransactionHelper::extract_gateway_id_from_receipt::<
             InputVerification::VerifyProofRequest,
         >(
             receipt,
             InputVerification::VerifyProofRequest::SIGNATURE_HASH,
             |event| event.zkProofId,
-        )?;
+        )
+        .or_else(|_| {
+            TransactionHelper::extract_gateway_id_from_receipt::<
+                InputVerification::VerifyProofRequestSolana,
+            >(
+                receipt,
+                InputVerification::VerifyProofRequestSolana::SIGNATURE_HASH,
+                |event| event.zkProofId,
+            )
+        })?;
 
         let tx_hash = format!("{:?}", receipt.transaction_hash);
 

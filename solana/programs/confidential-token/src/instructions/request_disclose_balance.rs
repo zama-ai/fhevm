@@ -34,8 +34,6 @@ pub struct RequestDiscloseBalance<'info> {
         bump
     )]
     pub disclosure_request: Box<Account<'info, DisclosureRequest>>,
-    /// Threshold verifier set expected to certify the disclosure response.
-    pub disclosure_verifier_set: Box<Account<'info, zama_host::VerifierSet>>,
     /// CHECK: optional overflow permission witness for the owner authority.
     pub authority_permission_record: Option<UncheckedAccount<'info>>,
     /// CHECK: optional deny-list witness when host deny-lists are enabled.
@@ -91,17 +89,13 @@ pub fn request_disclose_balance(
         &ctx.accounts.balance_acl_record,
         handle,
     )?;
-    require_keys_eq!(
-        ctx.accounts.mint.disclosure_verifier_set,
-        ctx.accounts.disclosure_verifier_set.key(),
-        ConfidentialTokenError::VerifierSetMismatch
+    // Pin the request to the host's current KMS context; the response cert must verify against
+    // this context (not a later rotated one) when the disclosure is consumed.
+    let kms_context_id = ctx.accounts.host_config.current_kms_context_id;
+    require!(
+        kms_context_id != 0,
+        ConfidentialTokenError::GatewayVerifierConfigUnset
     );
-    assert_active_verifier_set(
-        &ctx.accounts.disclosure_verifier_set,
-        ctx.accounts.disclosure_verifier_set.key(),
-        zama_host::VERIFIER_SET_KIND_TOKEN_DISCLOSURE,
-        ctx.accounts.mint.key(),
-    )?;
 
     let acl_record = ctx.accounts.balance_acl_record.key();
     let request_key = ctx.accounts.disclosure_request.key();
@@ -120,8 +114,7 @@ pub fn request_disclose_balance(
             .material_commitment_hash,
         ctx.accounts.balance_material_commitment.key_id,
         ctx.accounts.host_config.key(),
-        ctx.accounts.disclosure_verifier_set.key(),
-        ctx.accounts.disclosure_verifier_set.version,
+        kms_context_id,
         request_nonce,
         ctx.accounts.host_config.chain_id,
         expires_slot,
@@ -159,8 +152,7 @@ pub fn request_disclose_balance(
         .material_commitment_hash;
     request.material_key_id = ctx.accounts.balance_material_commitment.key_id;
     request.host_config = ctx.accounts.host_config.key();
-    request.verifier_set = ctx.accounts.disclosure_verifier_set.key();
-    request.verifier_set_version = ctx.accounts.disclosure_verifier_set.version;
+    request.kms_context_id = kms_context_id;
     request.request_nonce = request_nonce;
     request.request_hash = request_hash;
     request.chain_id = ctx.accounts.host_config.chain_id;
@@ -177,8 +169,7 @@ pub fn request_disclose_balance(
         acl_record,
         request: request_key,
         request_hash,
-        verifier_set: ctx.accounts.disclosure_verifier_set.key(),
-        verifier_set_version: ctx.accounts.disclosure_verifier_set.version,
+        kms_context_id,
         expires_slot,
     });
     Ok(())

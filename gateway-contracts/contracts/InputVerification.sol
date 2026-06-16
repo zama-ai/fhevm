@@ -59,6 +59,30 @@ contract InputVerification is
     }
 
     /**
+     * @notice RFC-021 (Solana host) counterpart of {@link CiphertextVerification}. The dapp and
+     * user identities are 32-byte host addresses (Solana program ids / pubkeys) rather than 20-byte
+     * EVM addresses. The EVM `CiphertextVerification` is left untouched; this parallel struct lets
+     * the gateway verify the same bytes32 coprocessor attestation that the zama-host program checks.
+     */
+    struct SolanaCiphertextVerification {
+        bytes32[] ctHandles;
+        bytes32 userAddress;
+        bytes32 contractAddress;
+        uint256 contractChainId;
+        bytes extraData;
+    }
+
+    /**
+     * @notice Solana counterpart of {@link ZKProofInput}: stores the bytes32 host identities of a
+     * ZK Proof verification request for later EIP712 signature validation in the response call.
+     */
+    struct SolanaZKProofInput {
+        uint256 contractChainId;
+        bytes32 contractAddress;
+        bytes32 userAddress;
+    }
+
+    /**
      * @notice The address of the GatewayConfig contract for protocol state calls.
      */
     IGatewayConfig private constant GATEWAY_CONFIG = IGatewayConfig(gatewayConfigAddress);
@@ -75,13 +99,27 @@ contract InputVerification is
     bytes32 private constant EIP712_ZKPOK_TYPE_HASH = keccak256(bytes(EIP712_ZKPOK_TYPE));
 
     /**
+     * @notice The Solana (RFC-021) CiphertextVerification typed data definition. Identical to
+     * EIP712_ZKPOK_TYPE except the user/dapp identities are bytes32. This string MUST match the
+     * zama-host program's CiphertextVerification type byte-for-byte so a single coprocessor
+     * signature validates both on the gateway and on-chain on Solana.
+     */
+    string private constant EIP712_SOLANA_ZKPOK_TYPE =
+        "CiphertextVerification(bytes32[] ctHandles,bytes32 userAddress,bytes32 contractAddress,uint256 contractChainId,bytes extraData)";
+
+    /**
+     * @notice The hash of the Solana CiphertextVerification typed data definition.
+     */
+    bytes32 private constant EIP712_SOLANA_ZKPOK_TYPE_HASH = keccak256(bytes(EIP712_SOLANA_ZKPOK_TYPE));
+
+    /**
      * @dev The following constants are used for versioning the contract. They are made private
      * in order to force derived contracts to consider a different version. Note that
      * they can still define their own private constants with the same name.
      */
     string private constant CONTRACT_NAME = "InputVerification";
     uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 4;
+    uint256 private constant MINOR_VERSION = 5;
     uint256 private constant PATCH_VERSION = 0;
 
     /**
@@ -90,7 +128,7 @@ contract InputVerification is
      * This constant does not represent the number of time a specific contract have been upgraded,
      * as a contract deployed from version VX will have a REINITIALIZER_VERSION > 2.
      */
-    uint64 private constant REINITIALIZER_VERSION = 5;
+    uint64 private constant REINITIALIZER_VERSION = 6;
 
     /**
      * @notice The contract's variable storage struct (@dev see ERC-7201)
@@ -136,6 +174,11 @@ contract InputVerification is
         // ----------------------------------------------------------------------------------------------
         /// @notice The coprocessor context ID associated to the input verification request
         mapping(uint256 zkProofId => uint256 contextId) inputVerificationContextId;
+        // ----------------------------------------------------------------------------------------------
+        // Solana (RFC-021) host state variables (appended; preserves the ERC-7201 storage layout):
+        // ----------------------------------------------------------------------------------------------
+        /// @notice The bytes32-identity request inputs for Solana host ZK Proof verifications.
+        mapping(uint256 zkProofId => SolanaZKProofInput solanaZkProofInput) solanaZkProofInputs;
     }
 
     /**
@@ -163,11 +206,11 @@ contract InputVerification is
     }
 
     /**
-     * @notice Re-initializes the contract from V3.
+     * @notice Re-initializes the contract from V4 (Solana RFC-021 input-verification path).
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV4() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    function reinitializeV5() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /**
      * @notice See {IInputVerification-verifyProofRequest}.
@@ -194,6 +237,44 @@ contract InputVerification is
         _collectInputVerificationFee(msg.sender);
 
         emit VerifyProofRequest(
+            zkProofId,
+            contractChainId,
+            contractAddress,
+            userAddress,
+            ciphertextWithZKProof,
+            extraData
+        );
+    }
+
+    /**
+     * @notice See {IInputVerification-verifyProofRequestSolana}.
+     * @dev RFC-021 (Solana host) counterpart of {verifyProofRequest}. Identical lifecycle and fee
+     * collection; only the dapp/user identities are 32-byte host addresses. Shares the zkProofId
+     * counter and all consensus state with the EVM path; only the request inputs are stored in the
+     * parallel `solanaZkProofInputs` mapping for bytes32 EIP712 signature validation on response.
+     */
+    function verifyProofRequestSolana(
+        uint256 contractChainId,
+        bytes32 contractAddress,
+        bytes32 userAddress,
+        bytes calldata ciphertextWithZKProof,
+        bytes calldata extraData
+    ) external virtual onlyRegisteredHostChain(contractChainId) whenNotPaused {
+        InputVerificationStorage storage $ = _getInputVerificationStorage();
+
+        $.zkProofIdCounter++;
+        uint256 zkProofId = $.zkProofIdCounter;
+
+        // Stored for bytes32 EIP712 signature validation during the response call.
+        $.solanaZkProofInputs[zkProofId] = SolanaZKProofInput(contractChainId, contractAddress, userAddress);
+
+        // Associate the request to coprocessor context ID 1 to anticipate their introduction in V2.
+        $.inputVerificationContextId[zkProofId] = 1;
+
+        // Collect the fee from the transaction sender for this input verification request.
+        _collectInputVerificationFee(msg.sender);
+
+        emit VerifyProofRequestSolana(
             zkProofId,
             contractChainId,
             contractAddress,
@@ -277,6 +358,73 @@ contract InputVerification is
             // the list after consensus. This storage variable is here to be able to retrieve this list
             // later by only knowing the zkProofId, since a consensus can only happen once per proof
             // verification request.
+            $.verifyProofConsensusDigest[zkProofId] = digest;
+
+            emit VerifyProofResponse(zkProofId, ctHandles, currentSignatures);
+        }
+    }
+
+    /**
+     * @notice See {IInputVerification-verifyProofResponseSolana}.
+     * @dev RFC-021 (Solana host) counterpart of {verifyProofResponse}. The only difference is the
+     * EIP712 digest, computed over bytes32 host identities via {_hashSolanaCiphertextVerification};
+     * all consensus, signer/tx-sender and verification state is shared with the EVM path (keyed by
+     * zkProofId), so a Solana request verified here is indistinguishable downstream from an EVM one.
+     */
+    function verifyProofResponseSolana(
+        uint256 zkProofId,
+        bytes32[] calldata ctHandles,
+        bytes calldata signature,
+        bytes calldata extraData
+    ) external virtual onlyCoprocessorTxSender {
+        InputVerificationStorage storage $ = _getInputVerificationStorage();
+
+        // Make sure the zkProofId corresponds to a generated ZK Proof verification request.
+        if (zkProofId > $.zkProofIdCounter || zkProofId == 0) {
+            revert VerifyProofNotRequested(zkProofId);
+        }
+
+        // Retrieve stored Solana ZK Proof verification request inputs (bytes32 identities).
+        SolanaZKProofInput memory solanaInput = $.solanaZkProofInputs[zkProofId];
+
+        // Initialize the bytes32 CiphertextVerification structure for the signature validation.
+        SolanaCiphertextVerification memory ciphertextVerification = SolanaCiphertextVerification(
+            ctHandles,
+            solanaInput.userAddress,
+            solanaInput.contractAddress,
+            solanaInput.contractChainId,
+            extraData
+        );
+
+        // Compute the digest of the Solana CiphertextVerification structure.
+        bytes32 digest = _hashSolanaCiphertextVerification(ciphertextVerification);
+
+        // Recover the signer address from the signature.
+        address signerAddress = ECDSA.recover(digest, signature);
+
+        // Check that the signer is a coprocessor signer matching the transaction sender.
+        _checkCoprocessorSignerMatchesTxSender(signerAddress, msg.sender);
+
+        // Check that the coprocessor has not already responded to the ZKPoK verification request.
+        _checkCoprocessorAlreadyResponded(zkProofId, signerAddress);
+
+        bytes[] storage currentSignatures = $.zkProofSignatures[zkProofId][digest];
+        currentSignatures.push(signature);
+        $.signerVerifiedZKPoK[zkProofId][signerAddress] = true;
+
+        // Store the coprocessor transaction sender address for the proof verification response.
+        $.verifyProofConsensusTxSenders[zkProofId][digest].push(msg.sender);
+
+        // Emit the event at each call for monitoring purposes.
+        emit VerifyProofResponseCall(zkProofId, ctHandles, signature, msg.sender, extraData);
+
+        // Send the event if and only if the consensus is reached in the current response call.
+        if (
+            !$.verifiedZKProofs[zkProofId] &&
+            !$.rejectedZKProofs[zkProofId] &&
+            _isConsensusReached(currentSignatures.length)
+        ) {
+            $.verifiedZKProofs[zkProofId] = true;
             $.verifyProofConsensusDigest[zkProofId] = digest;
 
             emit VerifyProofResponse(zkProofId, ctHandles, currentSignatures);
@@ -427,6 +575,31 @@ contract InputVerification is
                 keccak256(
                     abi.encode(
                         EIP712_ZKPOK_TYPE_HASH,
+                        keccak256(abi.encodePacked(ctVerification.ctHandles)),
+                        ctVerification.userAddress,
+                        ctVerification.contractAddress,
+                        ctVerification.contractChainId,
+                        keccak256(abi.encodePacked(ctVerification.extraData))
+                    )
+                )
+            );
+    }
+
+    /**
+     * @notice Computes the EIP712 digest of a {SolanaCiphertextVerification} (bytes32 identities).
+     * @dev Mirrors {_hashCiphertextVerification} with the bytes32 type hash. Because the EIP712
+     * domain (name "InputVerification", version "1", the gateway chain id and this contract address)
+     * matches the zama-host program's verifier domain, a coprocessor signature over this digest
+     * validates both here and on-chain on Solana.
+     */
+    function _hashSolanaCiphertextVerification(
+        SolanaCiphertextVerification memory ctVerification
+    ) internal view virtual returns (bytes32) {
+        return
+            _hashTypedDataV4(
+                keccak256(
+                    abi.encode(
+                        EIP712_SOLANA_ZKPOK_TYPE_HASH,
                         keccak256(abi.encodePacked(ctVerification.ctHandles)),
                         ctVerification.userAddress,
                         ctVerification.contractAddress,

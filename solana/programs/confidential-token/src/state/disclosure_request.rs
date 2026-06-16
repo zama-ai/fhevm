@@ -15,6 +15,7 @@ pub const REQUEST_STATUS_CONSUMED: u8 = 2;
 
 /// Account-backed witness for a public disclosure request.
 #[account]
+#[derive(InitSpace)]
 pub struct DisclosureRequest {
     /// Confidential mint whose ACL domain scopes the request.
     pub mint: Pubkey,
@@ -36,10 +37,9 @@ pub struct DisclosureRequest {
     pub material_key_id: [u8; 32],
     /// Host config whose chain id and gates were validated.
     pub host_config: Pubkey,
-    /// Verifier set expected to certify the response.
-    pub verifier_set: Pubkey,
-    /// Verifier-set version expected to certify the response.
-    pub verifier_set_version: u64,
+    /// KMS context id pinned at request time; the response cert must verify
+    /// against this context's signer set, not the current one.
+    pub kms_context_id: u64,
     /// Caller-supplied nonce that makes the request PDA unique.
     pub request_nonce: [u8; 32],
     /// Canonical hash over this request witness.
@@ -58,7 +58,7 @@ pub struct DisclosureRequest {
 
 impl DisclosureRequest {
     /// Serialized size of the account body, excluding Anchor discriminator.
-    pub const SPACE: usize = (32 * 13) + (8 * 3) + 1 + 1 + 1;
+    pub const SPACE: usize = (32 * 12) + (8 * 3) + 1 + 1 + 1;
 }
 
 /// Returns the canonical PDA for a disclosure request witness.
@@ -95,8 +95,7 @@ pub fn disclosure_request_hash(
     material_commitment_hash: [u8; 32],
     material_key_id: [u8; 32],
     host_config: Pubkey,
-    verifier_set: Pubkey,
-    verifier_set_version: u64,
+    kms_context_id: u64,
     request_nonce: [u8; 32],
     chain_id: u64,
     expires_slot: u64,
@@ -116,8 +115,7 @@ pub fn disclosure_request_hash(
         material_commitment_hash.as_ref(),
         material_key_id.as_ref(),
         host_config.as_ref(),
-        verifier_set.as_ref(),
-        &verifier_set_version.to_le_bytes(),
+        &kms_context_id.to_le_bytes(),
         request_nonce.as_ref(),
         &chain_id.to_le_bytes(),
         &expires_slot.to_le_bytes(),

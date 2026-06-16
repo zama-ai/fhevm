@@ -16,11 +16,13 @@ use crate::generated::{
     CONFIDENTIAL_TOKEN_EVENT_VERSION, EVENT_VERSION,
 };
 
+use crate::cmd::block_history::BlockSummary;
 use crate::contracts::TfheContract;
 use crate::contracts::TfheContract::TfheContractEvents;
 use crate::database::dependence_chains::dependence_chains;
 use crate::database::tfhe_event_propagate::{
-    ClearConst, Database, Handle, LogTfhe, Transaction, TransactionHash,
+    tfhe_result_handle, ClearConst, Database, Handle, LogTfhe, Transaction,
+    TransactionHash,
 };
 
 #[derive(Clone, Debug)]
@@ -251,6 +253,19 @@ pub fn decode_anchor_log_events(
     events
 }
 
+/// Event-source policy for ZamaHost events in one transaction. Neither
+/// transport is "preferred": a single `fhe_eval` frame emits all of its events
+/// through exactly one transport (the host picks CPI or log per frame), so a
+/// real transaction never spreads order-sensitive compute events across both.
+///
+/// - only one transport present: return its events unchanged;
+/// - both present and BOTH carry order-sensitive compute events
+///   (see [`needs_ordered_db_log_index`]): reject, because their chronological
+///   interleaving cannot be reconstructed for DB log indexing;
+/// - both present but at most one side carries compute events (e.g. CPI compute
+///   events alongside log-only account-fetch events): concatenate CPI events
+///   first, then log events. Order is unambiguous because only one side needs
+///   ordered indexing.
 pub fn merge_solana_transport_events(
     cpi_events: Vec<SolanaHostEvent>,
     log_events: Vec<SolanaHostEvent>,
@@ -474,9 +489,9 @@ fn decode_solana_host_events(event: ZamaHostEvent) -> Vec<SolanaHostEvent> {
         | ZamaHostEvent::DenySubjectUpdated(_)
         | ZamaHostEvent::HostConfigInitialized(_)
         | ZamaHostEvent::HostConfigUpdated(_)
-        | ZamaHostEvent::UserDecryptionDelegationUpdated(_)
-        | ZamaHostEvent::VerifierSetCreated(_)
-        | ZamaHostEvent::VerifierSetDisabled(_) => Vec::new(),
+        | ZamaHostEvent::NewKmsContext(_)
+        | ZamaHostEvent::KmsContextDestroyed(_)
+        | ZamaHostEvent::UserDecryptionDelegationUpdated(_) => Vec::new(),
     }
 }
 
@@ -515,9 +530,7 @@ fn decode_confidential_token_account_fetches(
         | ConfidentialTokenEvent::BalanceHandleUpdated(_)
         | ConfidentialTokenEvent::BurnRedeemed(_)
         | ConfidentialTokenEvent::ConfidentialBurn(_)
-        | ConfidentialTokenEvent::ConfidentialMintMigrated(_)
         | ConfidentialTokenEvent::ConfidentialTransfer(_)
-        | ConfidentialTokenEvent::MintVerifierSetsUpdated(_)
         | ConfidentialTokenEvent::RandomAmountCreated(_)
         | ConfidentialTokenEvent::TotalSupplyHandleUpdated(_) => Vec::new(),
     }
@@ -537,11 +550,7 @@ fn confidential_token_event_version(event: &ConfidentialTokenEvent) -> u8 {
         ConfidentialTokenEvent::BurnRedeemed(event) => event.version,
         ConfidentialTokenEvent::BurnRedemptionRequested(event) => event.version,
         ConfidentialTokenEvent::ConfidentialBurn(event) => event.version,
-        ConfidentialTokenEvent::ConfidentialMintMigrated(event) => {
-            event.version
-        }
         ConfidentialTokenEvent::ConfidentialTransfer(event) => event.version,
-        ConfidentialTokenEvent::MintVerifierSetsUpdated(event) => event.version,
         ConfidentialTokenEvent::RandomAmountCreated(event) => event.version,
         ConfidentialTokenEvent::TotalSupplyHandleUpdated(event) => {
             event.version
@@ -643,11 +652,11 @@ fn zama_host_event_version(event: &ZamaHostEvent) -> u8 {
         ZamaHostEvent::HostConfigInitialized(event) => event.version,
         ZamaHostEvent::HostConfigUpdated(event) => event.version,
         ZamaHostEvent::InputVerified(event) => event.version,
+        ZamaHostEvent::KmsContextDestroyed(event) => event.version,
+        ZamaHostEvent::NewKmsContext(event) => event.version,
         ZamaHostEvent::PublicDecryptAllowed(event) => event.version,
         ZamaHostEvent::TrivialEncrypt(event) => event.version,
         ZamaHostEvent::UserDecryptionDelegationUpdated(event) => event.version,
-        ZamaHostEvent::VerifierSetCreated(event) => event.version,
-        ZamaHostEvent::VerifierSetDisabled(event) => event.version,
     }
 }
 
@@ -682,18 +691,35 @@ pub fn normalize_solana_events_for_db(
     transaction_id: TransactionHash,
     block: SolanaBlockMeta,
 ) -> (Vec<LogTfhe>, Vec<SolanaFinalizedAccountFetch>) {
+    let events = events.into_iter().collect::<Vec<_>>();
+
+    // Handles allowed within THIS transaction. A compute event whose result is
+    // allowed must be inserted with is_allowed=true so the tfhe-worker
+    // materializes its ciphertext (it only schedules is_allowed=TRUE rows); an
+    // unallowed result is inserted is_completed=true and never materialized,
+    // mirroring the EVM ingest path (database::ingest collects ACL-allowed
+    // handles in the block, then sets is_allowed per compute result). The allow
+    // signal lives in the same confirmed Solana transaction as the compute, so
+    // materialization need not wait on finalization — finalization independently
+    // gates only the DECRYPT release (pbs/allowed_handles), via the fetch queue.
+    let allowed_handles = solana_allowed_result_handles(&events);
+
     let mut tfhe_logs = Vec::new();
     let mut account_fetches = Vec::new();
 
     for (index, event) in events.into_iter().enumerate() {
         match map_solana_event(event) {
-            SolanaMappedEvent::Tfhe(event) => tfhe_logs.push(to_log_tfhe(
-                event,
-                transaction_id,
-                block,
-                false,
-                index as u64,
-            )),
+            SolanaMappedEvent::Tfhe(event) => {
+                let is_allowed = tfhe_result_handle(&event.data)
+                    .is_some_and(|handle| allowed_handles.contains(&handle));
+                tfhe_logs.push(to_log_tfhe(
+                    event,
+                    transaction_id,
+                    block,
+                    is_allowed,
+                    index as u64,
+                ));
+            }
             SolanaMappedEvent::FinalizedAccountFetch(fetch) => {
                 account_fetches.push(fetch);
             }
@@ -703,6 +729,40 @@ pub fn normalize_solana_events_for_db(
 
     dedup_account_fetches(&mut account_fetches);
     (tfhe_logs, account_fetches)
+}
+
+/// Result-handles allowed within one Solana transaction, gathered from the rich
+/// allow events that are routed to finalized-account fetches
+/// (`public_decrypt_allowed`, `acl_subject_allowed`, `acl_record_bound`) — each
+/// carries the handle being allowed. The legacy flat `AclAllowed` event is NOT
+/// an allow signal here: this design deliberately drops it (it is mapped to
+/// `IgnoredAclAllowed`), so trusting it to drive materialization would
+/// contradict that. Material-sealed/committed fetches are not allow signals
+/// either, so they are excluded.
+fn solana_allowed_result_handles(
+    events: &[SolanaHostEvent],
+) -> HashSet<Handle> {
+    events
+        .iter()
+        .filter_map(|event| match event {
+            SolanaHostEvent::FinalizedAccountFetch(fetch)
+                if is_solana_allow_reason(fetch.reason) =>
+            {
+                fetch.handle
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+/// Whether a finalized-account-fetch reason denotes an ACL allow that releases a
+/// handle (vs. a material-commitment or request witness). Shared by the
+/// in-tx materialization mark and the finalized decrypt-release consumer.
+pub(crate) fn is_solana_allow_reason(reason: &str) -> bool {
+    matches!(
+        reason,
+        "public_decrypt_allowed" | "acl_subject_allowed" | "acl_record_bound"
+    )
 }
 
 pub async fn insert_solana_events(
@@ -716,11 +776,15 @@ pub async fn insert_solana_events(
         normalize_solana_events_for_db(events, transaction_id, block);
     let mut inserted_rows = 0;
 
-    dependence_chains(&mut tfhe_logs, &db.dependence_chain, false, true).await;
+    let chains =
+        dependence_chains(&mut tfhe_logs, &db.dependence_chain, false, true)
+            .await;
 
+    let mut inserted_compute = false;
     for log in &tfhe_logs {
         if db.insert_tfhe_event(tx, log).await? {
             inserted_rows += 1;
+            inserted_compute = true;
         }
     }
     for fetch in &account_fetches {
@@ -734,6 +798,40 @@ pub async fn insert_solana_events(
         {
             inserted_rows += 1;
         }
+        // The allow for a computed handle lands a slot after the compute, which
+        // was therefore inserted unallowed (is_completed=true) and skipped by the
+        // worker. Re-open it for materialization now that the allow is known. The
+        // finalized fetch above independently gates the later DECRYPT release.
+        if is_solana_allow_reason(fetch.reason) {
+            if let Some(handle) = fetch.handle {
+                db.mark_solana_computation_allowed(tx, handle.as_slice())
+                    .await?;
+            }
+        }
+    }
+
+    // Populate the dependence_chain scheduling table the tfhe-worker locks against; without
+    // it the inserted computations are never scheduled (the EVM ingest path likewise calls
+    // update_dependence_chain after inserting tfhe events). Solana host slots carry no
+    // EVM-style block hash, so derive a unique per-slot hash from the slot number — it is used
+    // only for reorg bookkeeping, which a single local validator never exercises.
+    if inserted_compute {
+        let mut block_hash = [0u8; 32];
+        block_hash[24..32].copy_from_slice(&block.block_number.to_be_bytes());
+        let block_summary = BlockSummary {
+            number: block.block_number,
+            hash: FixedBytes::<32>::from(block_hash),
+            parent_hash: FixedBytes::<32>::ZERO,
+            timestamp: 0,
+        };
+        db.update_dependence_chain(
+            tx,
+            chains,
+            block.block_timestamp,
+            &block_summary,
+            &HashSet::new(),
+        )
+        .await?;
     }
 
     Ok(SolanaIngestStats {
@@ -810,24 +908,24 @@ pub async fn claim_pending_finalized_account_fetches(
             LIMIT $1
             FOR UPDATE SKIP LOCKED
         )
-        UPDATE solana_finalized_account_fetches fetch
+        UPDATE solana_finalized_account_fetches AS claimed
         SET
             status = 'processing',
-            attempts = fetch.attempts + 1,
+            attempts = claimed.attempts + 1,
             last_seen_at = NOW()
         FROM candidate
-        WHERE fetch.account_key = candidate.account_key
-          AND fetch.kind = candidate.kind
+        WHERE claimed.account_key = candidate.account_key
+          AND claimed.kind = candidate.kind
         RETURNING
-            fetch.account_key,
-            fetch.kind,
-            fetch.reason,
-            fetch.handle,
-            fetch.related_account,
-            fetch.subject,
-            fetch.transaction_id,
-            fetch.block_number,
-            fetch.attempts
+            claimed.account_key,
+            claimed.kind,
+            claimed.reason,
+            claimed.handle,
+            claimed.related_account,
+            claimed.subject,
+            claimed.transaction_id,
+            claimed.block_number,
+            claimed.attempts
         "#,
     )
     .bind(limit)
@@ -1300,6 +1398,57 @@ mod tests {
     }
 
     #[test]
+    fn failed_inner_program_exit_restores_host_log_scope() {
+        // A nested program that fails (rather than succeeds) must still pop the
+        // stack so subsequent host `Program data:` logs are attributed to the
+        // host program, not silently dropped.
+        let host_program = "ZamaHost111111111111111111111111111111111";
+        let inner_program = "Other111111111111111111111111111111111111";
+        let host_event = BASE64_STANDARD.encode(anchor_event(
+            "FheBinaryOpEvent",
+            binary_op_payload(1, [9; 32], [1; 32], [2; 32], false, [7; 32]),
+        ));
+        let logs = vec![
+            format!("Program {host_program} invoke [1]"),
+            format!("Program {inner_program} invoke [2]"),
+            format!("Program {inner_program} failed: custom error"),
+            format!("Program data: {host_event}"),
+            format!("Program {host_program} success"),
+        ];
+
+        let events = decode_anchor_log_events(&logs, host_program);
+
+        assert!(matches!(
+            events.as_slice(),
+            [SolanaHostEvent::FheBinaryOp(event)] if event.result == [7; 32]
+        ));
+    }
+
+    #[test]
+    fn out_of_order_program_exit_truncates_log_scope_stack() {
+        // If an exit names a program deeper in the stack, everything above it is
+        // truncated. A host event logged afterward is then outside host scope
+        // and must be ignored.
+        let host_program = "ZamaHost111111111111111111111111111111111";
+        let inner_program = "Other111111111111111111111111111111111111";
+        let host_event = BASE64_STANDARD.encode(anchor_event(
+            "FheBinaryOpEvent",
+            binary_op_payload(1, [9; 32], [1; 32], [2; 32], false, [7; 32]),
+        ));
+        let logs = vec![
+            format!("Program {host_program} invoke [1]"),
+            format!("Program {inner_program} invoke [2]"),
+            // Exit names the host (below `inner` on the stack): truncates both.
+            format!("Program {host_program} success"),
+            format!("Program data: {host_event}"),
+        ];
+
+        let events = decode_anchor_log_events(&logs, host_program);
+
+        assert!(events.is_empty());
+    }
+
+    #[test]
     fn rejects_mixed_host_cpi_and_log_transport() {
         let host_program = "ZamaHost111111111111111111111111111111111";
         let cpi_event = anchor_event_cpi(
@@ -1383,6 +1532,81 @@ mod tests {
                 .count(),
             3
         );
+    }
+
+    fn compute_event(result: u8) -> SolanaHostEvent {
+        SolanaHostEvent::FheBinaryOp(FheBinaryOpEvent {
+            version: EVENT_VERSION,
+            op: FheBinaryOpCode::Add,
+            subject: [0; 32],
+            lhs: [1; 32],
+            rhs: [2; 32],
+            scalar: false,
+            result: [result; 32],
+        })
+    }
+
+    fn fetch_event(account: u8) -> SolanaHostEvent {
+        SolanaHostEvent::FinalizedAccountFetch(acl_record_fetch(
+            [account; 32],
+            [account; 32],
+            "test",
+        ))
+    }
+
+    #[test]
+    fn merge_returns_single_transport_unchanged() {
+        // Only CPI events present: returned as-is, no log side.
+        let cpi_only =
+            merge_solana_transport_events(vec![compute_event(1)], Vec::new())
+                .expect("cpi-only transport is valid");
+        assert!(matches!(
+            cpi_only.as_slice(),
+            [SolanaHostEvent::FheBinaryOp(_)]
+        ));
+
+        // Only log events present: returned as-is, no cpi side.
+        let log_only =
+            merge_solana_transport_events(Vec::new(), vec![compute_event(2)])
+                .expect("log-only transport is valid");
+        assert!(matches!(
+            log_only.as_slice(),
+            [SolanaHostEvent::FheBinaryOp(_)]
+        ));
+    }
+
+    #[test]
+    fn merge_orders_cpi_events_before_log_events_when_one_side_is_compute() {
+        // CPI compute event alongside log-only account-fetch events: neither
+        // transport is preferred, but CPI events are emitted first so the single
+        // compute side keeps a deterministic DB log index.
+        let merged = merge_solana_transport_events(
+            vec![compute_event(1)],
+            vec![fetch_event(7), fetch_event(8)],
+        )
+        .expect("only the cpi side carries compute events");
+
+        assert!(matches!(merged[0], SolanaHostEvent::FheBinaryOp(_)));
+        assert!(matches!(
+            merged[1],
+            SolanaHostEvent::FinalizedAccountFetch(_)
+        ));
+        assert!(matches!(
+            merged[2],
+            SolanaHostEvent::FinalizedAccountFetch(_)
+        ));
+    }
+
+    #[test]
+    fn merge_allows_non_compute_events_on_both_transports() {
+        // Account-fetch events are not order-sensitive, so both sides carrying
+        // only fetches is not a mixed-transport conflict.
+        let merged = merge_solana_transport_events(
+            vec![fetch_event(1)],
+            vec![fetch_event(2)],
+        )
+        .expect("non-compute events on both transports are not a conflict");
+        assert_eq!(merged.len(), 2);
     }
 
     #[test]
@@ -2036,6 +2260,87 @@ mod tests {
     }
 
     #[test]
+    fn public_decrypt_allow_in_same_tx_marks_compute_result_for_materialization(
+    ) {
+        // The eval frame that computes a handle also emits PublicDecryptAllowed
+        // for it (TE_ALLOW). That rich allow is routed to a finalized fetch, but
+        // its presence in the SAME tx must mark the compute is_allowed=true so the
+        // tfhe-worker (is_completed=FALSE AND is_allowed=TRUE) materializes the
+        // ciphertext; the finalized fetch separately gates the decrypt release.
+        let tx_id = solana_transaction_id(&[7_u8; 64]);
+        let block_timestamp = PrimitiveDateTime::new(
+            Date::from_calendar_date(2026, Month::May, 9).unwrap(),
+            Time::MIDNIGHT,
+        );
+
+        let (tfhe_logs, acl_events) = normalize_solana_events_for_db(
+            [
+                SolanaHostEvent::TrivialEncrypt(TrivialEncryptEvent {
+                    version: EVENT_VERSION,
+                    subject: [0; 32],
+                    plaintext: [55; 32],
+                    fhe_type: 5,
+                    result: [3; 32],
+                }),
+                SolanaHostEvent::FinalizedAccountFetch(acl_record_fetch(
+                    [9; 32],
+                    [3; 32],
+                    "public_decrypt_allowed",
+                )),
+            ],
+            tx_id,
+            SolanaBlockMeta {
+                block_number: 42,
+                block_timestamp,
+            },
+        );
+
+        assert_eq!(tfhe_logs.len(), 1);
+        assert!(
+            tfhe_logs[0].is_allowed,
+            "compute whose result is allowed in-tx must be materializable"
+        );
+        // The allow is still queued for the finalized decrypt-release check.
+        assert_eq!(acl_events.len(), 1);
+        assert_eq!(acl_events[0].reason, "public_decrypt_allowed");
+    }
+
+    #[test]
+    fn unrelated_allow_handle_does_not_mark_compute_result() {
+        // An allow for a DIFFERENT handle must not mark this compute allowed.
+        let tx_id = solana_transaction_id(&[8_u8; 64]);
+        let block_timestamp = PrimitiveDateTime::new(
+            Date::from_calendar_date(2026, Month::May, 9).unwrap(),
+            Time::MIDNIGHT,
+        );
+
+        let (tfhe_logs, _) = normalize_solana_events_for_db(
+            [
+                SolanaHostEvent::TrivialEncrypt(TrivialEncryptEvent {
+                    version: EVENT_VERSION,
+                    subject: [0; 32],
+                    plaintext: [55; 32],
+                    fhe_type: 5,
+                    result: [3; 32],
+                }),
+                SolanaHostEvent::FinalizedAccountFetch(acl_record_fetch(
+                    [9; 32],
+                    [4; 32],
+                    "public_decrypt_allowed",
+                )),
+            ],
+            tx_id,
+            SolanaBlockMeta {
+                block_number: 42,
+                block_timestamp,
+            },
+        );
+
+        assert_eq!(tfhe_logs.len(), 1);
+        assert!(!tfhe_logs[0].is_allowed);
+    }
+
+    #[test]
     fn normalizes_interleaved_eval_frame_events_for_worker_replay() {
         let tx_id = solana_transaction_id(&[5_u8; 64]);
         let block_timestamp = PrimitiveDateTime::new(
@@ -2231,7 +2536,6 @@ mod tests {
         payload.extend_from_slice(&[4; 32]);
         payload.extend_from_slice(&[request_byte; 32]);
         payload.extend_from_slice(&[6; 32]);
-        payload.extend_from_slice(&[7; 32]);
         payload.extend_from_slice(&8_u64.to_le_bytes());
         payload.extend_from_slice(&9_u64.to_le_bytes());
         payload
@@ -2246,7 +2550,6 @@ mod tests {
         payload.extend_from_slice(&[14; 32]);
         payload.extend_from_slice(&[request_byte; 32]);
         payload.extend_from_slice(&[16; 32]);
-        payload.extend_from_slice(&[17; 32]);
         payload.extend_from_slice(&18_u64.to_le_bytes());
         payload.extend_from_slice(&19_u64.to_le_bytes());
         payload
@@ -2263,7 +2566,6 @@ mod tests {
         payload.extend_from_slice(&[26; 32]);
         payload.extend_from_slice(&[request_byte; 32]);
         payload.extend_from_slice(&[28; 32]);
-        payload.extend_from_slice(&[29; 32]);
         payload.extend_from_slice(&30_u64.to_le_bytes());
         payload.extend_from_slice(&31_u64.to_le_bytes());
         payload

@@ -12,9 +12,9 @@ pub mod close_transient_session;
 pub mod commit_handle_material;
 mod common;
 pub mod create_transient_session;
-pub mod create_verifier_set;
+pub mod define_kms_context;
 pub mod delegate_for_user_decryption;
-pub mod disable_verifier_set;
+pub mod destroy_kms_context;
 pub mod fhe_binary_op;
 pub mod fhe_binary_op_and_bind_output;
 pub mod fhe_eval;
@@ -22,7 +22,6 @@ pub mod fhe_rand_and_bind;
 pub mod fhe_rand_bounded_and_bind;
 pub mod fhe_ternary_op_and_bind_output;
 pub mod initialize_host_config;
-pub mod migrate_host_config_verifier_set;
 #[cfg(feature = "poc")]
 pub mod mock_input_verified_and_bind;
 pub mod revoke_delegation_for_user_decryption;
@@ -43,7 +42,7 @@ pub mod test_emit_input_verified;
 #[cfg(feature = "poc")]
 pub mod test_emit_trivial_encrypt;
 pub mod trivial_encrypt_and_bind;
-pub mod verify_input_and_bind;
+pub mod verify_coprocessor_input;
 
 pub use allow_acl_subjects::*;
 pub use allow_for_decryption::*;
@@ -52,9 +51,9 @@ pub use assert_acl_record::*;
 pub use close_transient_session::*;
 pub use commit_handle_material::*;
 pub use create_transient_session::*;
-pub use create_verifier_set::*;
+pub use define_kms_context::*;
 pub use delegate_for_user_decryption::*;
-pub use disable_verifier_set::*;
+pub use destroy_kms_context::*;
 pub use fhe_binary_op::*;
 pub use fhe_binary_op_and_bind_output::*;
 pub use fhe_eval::*;
@@ -62,7 +61,6 @@ pub use fhe_rand_and_bind::*;
 pub use fhe_rand_bounded_and_bind::*;
 pub use fhe_ternary_op_and_bind_output::*;
 pub use initialize_host_config::*;
-pub use migrate_host_config_verifier_set::*;
 #[cfg(feature = "poc")]
 pub use mock_input_verified_and_bind::*;
 pub use revoke_delegation_for_user_decryption::*;
@@ -83,4 +81,4 @@ pub use test_emit_input_verified::*;
 #[cfg(feature = "poc")]
 pub use test_emit_trivial_encrypt::*;
 pub use trivial_encrypt_and_bind::*;
-pub use verify_input_and_bind::*;
+pub use verify_coprocessor_input::*;

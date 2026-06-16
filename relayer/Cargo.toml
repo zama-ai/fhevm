@@ -29,6 +29,7 @@ aws-sdk-kms = { version = "1.104.0", default-features = false, features = [
 ] }
 dashmap = "6.1.0"
 derivative = "2.2"
+ed25519-dalek = "2"
 futures = "0.3.32"
 hex = "0.4.3"
 moka = { version = "0.12.13", features = ["future"] }
@@ -52,10 +53,9 @@ clap = { version = "4.5.60", features = ["derive"] }
 rustls = { version = "0.23.36", features = [
   "aws-lc-rs",
 ], default-features = false }
-# Pinned to a commit for now; switch to a release tag once the unified
-# userDecryptionRequest(HandleEntry[], …) overload ships in a tagged
-# fhevm release.
-fhevm_gateway_bindings = { git = "https://github.com/zama-ai/fhevm.git", rev = "4d6867ef081ea8620186414b198b2d336f608372", default-features = false }
+# Use the in-monorepo gateway bindings so the relayer picks up the Solana (RFC-021)
+# input-verification calls (verifyProofRequestSolana). Repoint to a published rev once merged.
+fhevm_gateway_bindings = { path = "../gateway-contracts/rust_bindings", default-features = false }
 # Use a pinned version of fhevm host bindings contract as the feature branch is still unmerged.
 fhevm_host_bindings = { git = "https://github.com/zama-ai/fhevm.git", rev = "2a6cf820b", default-features = false }
 utoipa = { version = "5.4.0", features = ["axum_extras", "preserve_path_order"] }

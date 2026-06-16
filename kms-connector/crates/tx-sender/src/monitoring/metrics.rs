@@ -14,10 +14,6 @@ use tokio::{select, task::JoinHandle};
 use tokio_util::sync::CancellationToken;
 use tracing::error;
 
-use crate::core::solana_native::{
-    SOLANA_NATIVE_DECRYPTION_RESPONSE_V0_STR, SolanaNativeResponseV0,
-};
-
 pub static RESPONSE_RECEIVED_COUNTER: LazyLock<IntCounterVec> = LazyLock::new(|| {
     register_int_counter_vec!(
         "kms_connector_tx_sender_response_received_counter",
@@ -70,13 +66,6 @@ pub fn register_response_forwarding_latency(response: &KmsResponse) {
     let elapsed = Utc::now() - response.created_at;
     RESPONSE_FORWARDING_LATENCY_HISTOGRAM
         .with_label_values(&[response.kind.as_str()])
-        .observe(elapsed.as_seconds_f64());
-}
-
-pub fn register_solana_native_response_forwarding_latency(response: &SolanaNativeResponseV0) {
-    let elapsed = Utc::now() - response.created_at;
-    RESPONSE_FORWARDING_LATENCY_HISTOGRAM
-        .with_label_values(&[SOLANA_NATIVE_DECRYPTION_RESPONSE_V0_STR])
         .observe(elapsed.as_seconds_f64());
 }
 

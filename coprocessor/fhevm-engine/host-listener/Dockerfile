@@ -46,7 +46,8 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     SQLX_OFFLINE=true BUILD_ID=$(cat BUILD_ID) cargo build --profile=${CARGO_PROFILE} -p host-listener && \
     cp target/${CARGO_PROFILE}/host_listener /tmp/host_listener && \
     cp target/${CARGO_PROFILE}/host_listener_poller /tmp/host_listener_poller && \
-    cp target/${CARGO_PROFILE}/host_listener_consumer /tmp/host_listener_consumer
+    cp target/${CARGO_PROFILE}/host_listener_consumer /tmp/host_listener_consumer && \
+    cp target/${CARGO_PROFILE}/solana_host_listener /tmp/solana_host_listener
 
 # Stage 2: Runtime image
 FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0 AS prod
@@ -56,6 +57,7 @@ COPY --from=builder /etc/passwd /etc/passwd
 COPY --from=builder --chown=fhevm:fhevm /tmp/host_listener /usr/local/bin/host_listener
 COPY --from=builder --chown=fhevm:fhevm /tmp/host_listener_poller /usr/local/bin/host_listener_poller
 COPY --from=builder --chown=fhevm:fhevm /tmp/host_listener_consumer /usr/local/bin/host_listener_consumer
+COPY --from=builder --chown=fhevm:fhevm /tmp/solana_host_listener /usr/local/bin/solana_host_listener
 
 USER fhevm:fhevm
 

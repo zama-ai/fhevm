@@ -7,7 +7,7 @@ use anyhow::anyhow;
 use fhevm_gateway_bindings::decryption::Decryption::{
     PublicDecryptionRequest, SnsCiphertextMaterial,
     UserDecryptionRequest_0 as UserDecryptionRequest,
-    UserDecryptionRequest_1 as UserDecryptionRequestV2,
+    UserDecryptionRequest_1 as UserDecryptionRequestV2, UserDecryptionRequestSolana,
 };
 use fhevm_host_bindings::kms_generation::{
     IKMSGeneration::KeyDigest,
@@ -157,11 +157,11 @@ impl From<&ProtocolEventKind> for EventType {
     fn from(value: &ProtocolEventKind) -> Self {
         match value {
             ProtocolEventKind::PublicDecryption(_) => Self::PublicDecryptionRequest,
-            // Both legacy and RFC016 variants share the same `user_decryption_requests` table
-            // and the same `UserDecryptionRequest` event type for `last_block_polled` bookkeeping.
-            ProtocolEventKind::UserDecryption(_) | ProtocolEventKind::UserDecryptionV2(_) => {
-                Self::UserDecryptionRequest
-            }
+            // Legacy, RFC016 and RFC-021 Solana variants share the same `user_decryption_requests`
+            // table and the same `UserDecryptionRequest` event type for `last_block_polled`.
+            ProtocolEventKind::UserDecryption(_)
+            | ProtocolEventKind::UserDecryptionV2(_)
+            | ProtocolEventKind::UserDecryptionSolana(_) => Self::UserDecryptionRequest,
             ProtocolEventKind::PrepKeygen(_) => Self::PrepKeygenRequest,
             ProtocolEventKind::Keygen(_) => Self::KeygenRequest,
             ProtocolEventKind::Crsgen(_) => Self::CrsgenRequest,
@@ -217,14 +217,17 @@ impl EventType {
 
     /// Returns every topic0 hash that maps to this `EventType` in the Gateway ABI.
     ///
-    /// `UserDecryptionRequest` currently covers two overloaded events — the legacy shape and the
-    /// RFC016 shape — so both topic0 hashes must be listed in the `eth_getLogs` filter. All other
-    /// event types map one-to-one to a single topic0.
+    /// `UserDecryptionRequest` currently covers three overloaded events — the legacy shape, the
+    /// RFC016 shape, and the Solana (RFC-021) shape — so all three topic0 hashes must be listed in
+    /// the `eth_getLogs` filter; otherwise the gw-listener never ingests the Solana user-decrypt
+    /// event and the request silently never completes. All other event types map one-to-one to a
+    /// single topic0.
     pub fn signature_hashes(&self) -> Vec<B256> {
         match self {
             EventType::UserDecryptionRequest => vec![
                 UserDecryptionRequest::SIGNATURE_HASH,
                 UserDecryptionRequestV2::SIGNATURE_HASH,
+                UserDecryptionRequestSolana::SIGNATURE_HASH,
             ],
             _ => vec![self.signature_hash()],
         }

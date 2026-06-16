@@ -126,54 +126,6 @@ pub struct RandomAmountCreatedEvent {
     pub nonce_sequence: u64,
 }
 
-/// Emitted when a mint rotates the token-scoped verifier sets used for new KMS requests.
-#[event]
-pub struct MintVerifierSetsUpdatedEvent {
-    /// Event schema version.
-    pub version: u8,
-    /// Confidential mint.
-    pub mint: Pubkey,
-    /// Mint authority that authorized the update.
-    pub authority: Pubkey,
-    /// Previous disclosure verifier set.
-    pub old_disclosure_verifier_set: Pubkey,
-    /// New disclosure verifier set.
-    pub new_disclosure_verifier_set: Pubkey,
-    /// Previous burn-redemption verifier set.
-    pub old_redemption_verifier_set: Pubkey,
-    /// New burn-redemption verifier set.
-    pub new_redemption_verifier_set: Pubkey,
-    /// New disclosure verifier-set version.
-    pub disclosure_verifier_set_version: u64,
-    /// New redemption verifier-set version.
-    pub redemption_verifier_set_version: u64,
-    /// Slot in which the mint pointers changed.
-    pub updated_slot: u64,
-}
-
-/// Emitted when a legacy mint is migrated to split verifier-set pointers.
-#[event]
-pub struct ConfidentialMintMigratedEvent {
-    /// Event schema version.
-    pub version: u8,
-    /// Confidential mint.
-    pub mint: Pubkey,
-    /// Mint authority that authorized the migration.
-    pub authority: Pubkey,
-    /// Legacy single KMS verifier authority retained for auditability.
-    pub legacy_kms_verifier_authority: Pubkey,
-    /// Active disclosure verifier set after migration.
-    pub disclosure_verifier_set: Pubkey,
-    /// Active burn-redemption verifier set after migration.
-    pub redemption_verifier_set: Pubkey,
-    /// Disclosure verifier-set version after migration.
-    pub disclosure_verifier_set_version: u64,
-    /// Burn-redemption verifier-set version after migration.
-    pub redemption_verifier_set_version: u64,
-    /// Slot in which the mint was migrated.
-    pub migrated_slot: u64,
-}
-
 /// Emitted when the owner requests public disclosure of the current balance.
 #[event]
 pub struct BalanceDisclosureRequestedEvent {
@@ -193,10 +145,8 @@ pub struct BalanceDisclosureRequestedEvent {
     pub request: Pubkey,
     /// Canonical request hash stored in the witness.
     pub request_hash: [u8; 32],
-    /// Verifier set expected to certify the response.
-    pub verifier_set: Pubkey,
-    /// Verifier-set version expected to certify the response.
-    pub verifier_set_version: u64,
+    /// KMS context id the response cert must verify against.
+    pub kms_context_id: u64,
     /// Last slot in which this request can be consumed.
     pub expires_slot: u64,
 }
@@ -218,10 +168,8 @@ pub struct AmountDisclosureRequestedEvent {
     pub request: Pubkey,
     /// Canonical request hash stored in the witness.
     pub request_hash: [u8; 32],
-    /// Verifier set expected to certify the response.
-    pub verifier_set: Pubkey,
-    /// Verifier-set version expected to certify the response.
-    pub verifier_set_version: u64,
+    /// KMS context id the response cert must verify against.
+    pub kms_context_id: u64,
     /// Last slot in which this request can be consumed.
     pub expires_slot: u64,
 }
@@ -287,10 +235,8 @@ pub struct BurnRedemptionRequestedEvent {
     pub request: Pubkey,
     /// Canonical request hash stored in the witness.
     pub request_hash: [u8; 32],
-    /// Verifier set expected to certify the response.
-    pub verifier_set: Pubkey,
-    /// Verifier-set version expected to certify the response.
-    pub verifier_set_version: u64,
+    /// KMS context id the redemption cert must verify against.
+    pub kms_context_id: u64,
     /// Last slot in which this request can be consumed.
     pub expires_slot: u64,
 }

@@ -230,6 +230,12 @@ impl<'a> Cursor<'a> {
         }
     }
 
+    // Used only by `read_vec_array`; unused in event modules without a `Vec<[u8; N]>` field.
+    #[allow(dead_code)]
+    fn read_u32(&mut self) -> Option<u32> {
+        Some(u32::from_le_bytes(self.read_array::<4>()?))
+    }
+
     fn read_u64(&mut self) -> Option<u64> {
         Some(u64::from_le_bytes(self.read_array::<8>()?))
     }
@@ -239,6 +245,18 @@ impl<'a> Cursor<'a> {
         let bytes = self.bytes.get(self.offset..end)?;
         self.offset = end;
         bytes.try_into().ok()
+    }
+
+    // Borsh `Vec<[u8; N]>`: u32 little-endian length, then `len` fixed-size arrays.
+    // Unused in event modules without a `Vec<[u8; N]>` field (e.g. confidential_token).
+    #[allow(dead_code)]
+    fn read_vec_array<const N: usize>(&mut self) -> Option<Vec<[u8; N]>> {
+        let len = self.read_u32()? as usize;
+        let mut out = Vec::with_capacity(len);
+        for _ in 0..len {
+            out.push(self.read_array::<N>()?);
+        }
+        Some(out)
     }
 }
 "#,
@@ -432,6 +450,20 @@ fn rust_type(idl_type: &Value) -> String {
         }
         return format!("[u8; {len}]");
     }
+    if let Some(vec_inner) = idl_type.get("vec") {
+        if let Some(array) = vec_inner["array"].as_array() {
+            let element = array[0]
+                .as_str()
+                .expect("vec array element must be primitive");
+            let len =
+                array[1].as_u64().expect("vec array length must be integer");
+            if element != "u8" {
+                panic!("unsupported IDL vec array element type {element}");
+            }
+            return format!("Vec<[u8; {len}]>");
+        }
+        panic!("unsupported IDL vec inner type {vec_inner}");
+    }
     if let Some(defined) = idl_type["defined"]["name"].as_str() {
         return defined.to_string();
     }
@@ -456,6 +488,20 @@ fn read_expr(idl_type: &Value) -> String {
             panic!("unsupported IDL array element type {element}");
         }
         return format!("cursor.read_array::<{len}>()");
+    }
+    if let Some(vec_inner) = idl_type.get("vec") {
+        if let Some(array) = vec_inner["array"].as_array() {
+            let element = array[0]
+                .as_str()
+                .expect("vec array element must be primitive");
+            let len =
+                array[1].as_u64().expect("vec array length must be integer");
+            if element != "u8" {
+                panic!("unsupported IDL vec array element type {element}");
+            }
+            return format!("cursor.read_vec_array::<{len}>()");
+        }
+        panic!("unsupported IDL vec inner type {vec_inner}");
     }
     if let Some(defined) = idl_type["defined"]["name"].as_str() {
         return format!("read_{}(&mut cursor)", snake_case(defined));

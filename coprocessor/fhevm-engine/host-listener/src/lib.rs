@@ -8,3 +8,4 @@ pub mod kms_generation;
 pub mod poller;
 pub mod solana_adapter;
 pub mod solana_finalized_account_fetcher;
+pub mod solana_listener;

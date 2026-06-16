@@ -35,8 +35,7 @@ use zama_host::TransientCapabilityGrant;
 use zama_host::{
     acl_nonce_key, acl_record_address, role_flags_are_known, subject_has_role, AclSubjectEntry,
     FheBinaryOpCode, FheEvalArgs, FheEvalOperand, FheEvalOutput, FheEvalStep, FheTernaryOpCode,
-    SolanaInputProof, ACL_ROLE_USE, MAX_ACL_SUBJECTS, MAX_FHE_EVAL_OPS, MAX_INPUT_PROOF_EXTRA_DATA,
-    MAX_INPUT_PROOF_HANDLES,
+    ACL_ROLE_USE, MAX_ACL_SUBJECTS, MAX_FHE_EVAL_OPS,
 };
 
 /// Result type used by the builder helpers.
@@ -368,89 +367,6 @@ fn binary_rhs_operand<T>(rhs: impl Into<BinaryRhs<T>>) -> Operand {
     match rhs.into() {
         BinaryRhs::Encrypted(value) => value.operand(),
         BinaryRhs::Scalar(value) => Operand::scalar(value.bytes()),
-    }
-}
-
-/// App-domain slot for an externally verified encrypted input.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct InputSlot {
-    namespace: Pubkey,
-    app_account: Pubkey,
-    user: Pubkey,
-    chain_id: u64,
-}
-
-impl InputSlot {
-    pub fn new(namespace: Pubkey, app_account: Pubkey, user: Pubkey, chain_id: u64) -> Self {
-        Self {
-            namespace,
-            app_account,
-            user,
-            chain_id,
-        }
-    }
-}
-
-/// Native Solana encrypted-input proof payload.
-///
-/// The host still verifies the Ed25519 pre-instruction. This wrapper keeps the
-/// host proof type out of the normal eval-builder API.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct InputProof {
-    selected_handle: [u8; 32],
-    proof: SolanaInputProof,
-}
-
-impl InputProof {
-    pub fn new(
-        slot: InputSlot,
-        handles: Vec<[u8; 32]>,
-        selected_handle_index: u8,
-        extra_data: Vec<u8>,
-    ) -> Result<Self> {
-        validate_input_proof_shape(&slot, &handles, selected_handle_index, &extra_data)?;
-        let selected_handle = handles
-            .get(selected_handle_index as usize)
-            .copied()
-            .ok_or(EvalBuildError::InvalidInputProof)?;
-        Ok(Self {
-            selected_handle,
-            proof: SolanaInputProof {
-                handles,
-                handle_index: selected_handle_index,
-                user: slot.user,
-                app_account: slot.app_account,
-                acl_domain_key: slot.namespace,
-                extra_data,
-            },
-        })
-    }
-}
-
-/// Typed encrypted input selected from a native input proof.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct EncryptedInput<T> {
-    handle: [u8; 32],
-    proof: SolanaInputProof,
-    verifier_set: Pubkey,
-    marker: PhantomData<T>,
-}
-
-impl<T: FheTyped> EncryptedInput<T> {
-    pub fn from_proof(proof: InputProof, verifier_set: Pubkey) -> Result<Self> {
-        if verifier_set == Pubkey::default() {
-            return Err(EvalBuildError::InvalidInputProof);
-        }
-        let handle = proof.selected_handle;
-        if handle_fhe_type(handle) != T::FHE_TYPE.byte() {
-            return Err(EvalBuildError::UnsupportedFheType);
-        }
-        Ok(Self {
-            handle,
-            proof: proof.proof,
-            verifier_set,
-            marker: PhantomData,
-        })
     }
 }
 
@@ -892,7 +808,6 @@ impl Output {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EvalAccountPurpose {
     DurableInputAcl,
-    InputVerifierSet,
     PermissionRecord,
     TransientSession,
     DurableOutputAcl,
@@ -1277,7 +1192,6 @@ fn resolve_eval_accounts<'info>(
 
 fn step_requires_instructions_sysvar(step: &FheEvalStep) -> bool {
     match step {
-        FheEvalStep::Input { .. } => true,
         FheEvalStep::Binary { lhs, rhs, .. } => {
             operand_requires_instructions_sysvar(lhs) || operand_requires_instructions_sysvar(rhs)
         }
@@ -1571,40 +1485,6 @@ impl EvalBuilder {
         self.rand::<Uint<64>>(output)
     }
 
-    pub fn input<T: FheTyped>(
-        &mut self,
-        input: EncryptedInput<T>,
-        output: DurableOutput,
-    ) -> Result<Encrypted<T>> {
-        if self.steps.len() >= MAX_FHE_EVAL_OPS {
-            return Err(EvalBuildError::TooManyOps);
-        }
-        let step_index = u16::try_from(self.steps.len()).map_err(|_| EvalBuildError::TooManyOps)?;
-        let mut remaining_accounts = self.remaining_accounts.clone();
-        let verifier_set_index = account_index(
-            &mut remaining_accounts,
-            EvalAccountMeta::readonly(input.verifier_set, EvalAccountPurpose::InputVerifierSet),
-        )?;
-        let output = lower_output(
-            &mut remaining_accounts,
-            self.app_authority,
-            Output(OutputKind::Durable(output)),
-        )?;
-        self.remaining_accounts = remaining_accounts;
-        self.steps.push(FheEvalStep::Input {
-            input_handle: input.handle,
-            proof: input.proof,
-            verifier_set_index,
-            output,
-        });
-        self.produced_types.push(T::FHE_TYPE.byte());
-        Ok(Encrypted::from_operand(Operand::transient(
-            step_index,
-            self.context_id,
-            self.scope,
-        )))
-    }
-
     fn encrypted_operand_type(
         &self,
         operand: &Operand,
@@ -1704,17 +1584,6 @@ fn validate_lowered_step(
             validate_lowered_output(output, used_accounts)?;
         }
         FheEvalStep::TrivialEncrypt { output, .. } | FheEvalStep::Rand { output, .. } => {
-            validate_lowered_output(output, used_accounts)?;
-        }
-        FheEvalStep::Input {
-            verifier_set_index,
-            output,
-            ..
-        } => {
-            if !matches!(output, FheEvalOutput::Durable { .. }) {
-                return Err(EvalBuildError::InvalidRemainingAccountReference);
-            }
-            mark_lowered_account(used_accounts, *verifier_set_index)?;
             validate_lowered_output(output, used_accounts)?;
         }
     }
@@ -1983,31 +1852,6 @@ fn validate_permission_record(permission: PermissionRecord) -> Result<()> {
     Ok(())
 }
 
-fn validate_input_proof_shape(
-    slot: &InputSlot,
-    handles: &[[u8; 32]],
-    selected_handle_index: u8,
-    extra_data: &[u8],
-) -> Result<()> {
-    if slot.namespace == Pubkey::default()
-        || slot.app_account == Pubkey::default()
-        || slot.user == Pubkey::default()
-        || handles.is_empty()
-        || handles.len() > MAX_INPUT_PROOF_HANDLES
-        || extra_data.len() > MAX_INPUT_PROOF_EXTRA_DATA
-    {
-        return Err(EvalBuildError::InvalidInputProof);
-    }
-    if handles.get(selected_handle_index as usize).is_none() {
-        return Err(EvalBuildError::InvalidInputProof);
-    }
-    for (index, handle) in handles.iter().enumerate() {
-        zama_host::assert_input_handle_metadata(*handle, slot.chain_id, index as u8)
-            .map_err(|_| EvalBuildError::InvalidInputProof)?;
-    }
-    Ok(())
-}
-
 fn handle_fhe_type(handle: [u8; 32]) -> u8 {
     handle[30]
 }
@@ -2136,43 +1980,23 @@ fn account_index(
 
 /// Explicit escape hatch for host-shaped ABI pieces.
 ///
-/// Normal app code should use typed [`Encrypted`], [`InputProof`],
-/// [`DurableSlot`], and [`AccessPolicy`] instead.
+/// Normal app code should use typed [`Encrypted`], [`DurableSlot`], and
+/// [`AccessPolicy`] instead.
 #[cfg(feature = "raw-host-api")]
 pub mod advanced {
     use super::{
-        handle_fhe_type, validate_input_proof_shape, AccessPolicy, AccessSubject, Encrypted,
-        EvalBuildError, EvalBuilder, FheRandom, FheTyped, InputProof, InputSlot, Operand, Output,
-        OutputKind, PermissionRecord, Result,
+        handle_fhe_type, AccessPolicy, AccessSubject, Encrypted, EvalBuildError, EvalBuilder,
+        FheRandom, FheTyped, Operand, Output, OutputKind, PermissionRecord, Result,
     };
     use anchor_lang::prelude::Pubkey;
 
     pub use zama_host::{
-        AclSubjectEntry, FheEvalArgs, FheEvalOperand, FheEvalOutput, FheEvalStep, SolanaInputProof,
+        AclSubjectEntry, FheEvalArgs, FheEvalOperand, FheEvalOutput, FheEvalStep,
         TransientCapabilityGrant,
     };
 
     pub fn access_policy_from_subjects(subjects: Vec<AclSubjectEntry>) -> Result<AccessPolicy> {
         AccessPolicy::from_subjects(subjects.into_iter().map(AccessSubject::from_host).collect())
-    }
-
-    pub fn input_proof_from_host(proof: SolanaInputProof, chain_id: u64) -> Result<InputProof> {
-        let slot = InputSlot::new(
-            proof.acl_domain_key,
-            proof.app_account,
-            proof.user,
-            chain_id,
-        );
-        validate_input_proof_shape(&slot, &proof.handles, proof.handle_index, &proof.extra_data)?;
-        let selected_handle = proof
-            .handles
-            .get(proof.handle_index as usize)
-            .copied()
-            .ok_or(EvalBuildError::InvalidInputProof)?;
-        Ok(InputProof {
-            selected_handle,
-            proof,
-        })
     }
 
     pub fn durable_with_acl_record<T: FheTyped>(
@@ -2519,15 +2343,6 @@ mod tests {
         let lamports = Box::leak(Box::new(0));
         let data = Box::leak(Vec::new().into_boxed_slice());
         AccountInfo::new(key, false, is_writable, lamports, data, owner, false)
-    }
-
-    fn input_handle(tag: u8, index: u8, chain_id: u64, fhe_type: u8) -> [u8; 32] {
-        let mut handle = [tag; 32];
-        handle[21] = index;
-        handle[22..30].copy_from_slice(&chain_id.to_be_bytes());
-        handle[30] = fhe_type;
-        handle[31] = zama_host::HANDLE_VERSION;
-        handle
     }
 
     fn durable_slot(account: Pubkey, sequence: u64) -> DurableSlot {
@@ -3262,83 +3077,6 @@ mod tests {
     }
 
     #[test]
-    fn lowers_input_step_to_durable_output() {
-        let namespace = Pubkey::new_unique();
-        let primary_authority = Pubkey::new_unique();
-        let user = Pubkey::new_unique();
-        let chain_id = zama_host::SOLANA_POC_CHAIN_ID;
-        let selected_input_handle = input_handle(3, 1, chain_id, FheType::UINT64.byte());
-        let proof = InputProof::new(
-            InputSlot::new(namespace, primary_authority, user, chain_id),
-            vec![
-                input_handle(1, 0, chain_id, FheType::UINT64.byte()),
-                selected_input_handle,
-            ],
-            1,
-            vec![7, 8, 9],
-        )
-        .unwrap();
-        let verifier_set = Pubkey::new_unique();
-        let input = EncryptedInput::<Uint<64>>::from_proof(proof, verifier_set).unwrap();
-        let output_slot = durable_slot(primary_authority, 11);
-        let output_acl = output_slot.address();
-        let mut builder = EvalBuilder::new(context_id(9), app_authority(primary_authority));
-        let produced = builder
-            .input(
-                input,
-                DurableOutput::new(output_slot, access_policy(primary_authority)),
-            )
-            .unwrap();
-        builder
-            .add(produced, Scalar::<Uint<64>>::u64(1), Output::transient())
-            .unwrap();
-
-        let plan = builder.finish().unwrap();
-
-        assert_eq!(
-            plan.remaining_accounts,
-            vec![
-                EvalAccountMeta::readonly(verifier_set, EvalAccountPurpose::InputVerifierSet),
-                EvalAccountMeta::writable(output_acl, EvalAccountPurpose::DurableOutputAcl),
-            ]
-        );
-        match &plan.args.steps[0] {
-            FheEvalStep::Input {
-                input_handle: lowered_handle,
-                proof,
-                verifier_set_index,
-                output,
-            } => {
-                assert_eq!(*lowered_handle, selected_input_handle);
-                assert_eq!(proof.handle_index, 1);
-                assert_eq!(proof.user, user);
-                assert_eq!(proof.app_account, primary_authority);
-                assert_eq!(proof.acl_domain_key, namespace);
-                assert_eq!(proof.extra_data, vec![7, 8, 9]);
-                assert_eq!(*verifier_set_index, 0);
-                match output {
-                    FheEvalOutput::Durable {
-                        output_acl_record_index,
-                        output_public_decrypt,
-                        ..
-                    } => {
-                        assert_eq!(*output_acl_record_index, 1);
-                        assert!(!*output_public_decrypt);
-                    }
-                    other => panic!("unexpected output: {other:?}"),
-                }
-            }
-            other => panic!("unexpected step: {other:?}"),
-        }
-        match &plan.args.steps[1] {
-            FheEvalStep::Binary { lhs, .. } => {
-                assert_eq!(*lhs, FheEvalOperand::Transient { producer_index: 0 });
-            }
-            other => panic!("unexpected step: {other:?}"),
-        }
-    }
-
-    #[test]
     fn rejects_invalid_references_and_types() {
         let primary_authority = Pubkey::new_unique();
         let mut builder = EvalBuilder::new(context_id(9), app_authority(primary_authority));
@@ -3510,53 +3248,6 @@ mod tests {
             )
             .unwrap_err();
         assert_eq!(error, EvalBuildError::BinaryOperandTypeMismatch);
-    }
-
-    #[test]
-    fn input_proof_rejects_shape_metadata_and_selected_type_mismatch() {
-        let namespace = Pubkey::new_unique();
-        let app_account = Pubkey::new_unique();
-        let user = Pubkey::new_unique();
-        let chain_id = zama_host::SOLANA_POC_CHAIN_ID;
-        let slot = InputSlot::new(namespace, app_account, user, chain_id);
-        let valid_handle = input_handle(1, 0, chain_id, FheType::UINT64.byte());
-
-        assert_eq!(
-            InputProof::new(
-                InputSlot::new(Pubkey::default(), app_account, user, chain_id),
-                vec![valid_handle],
-                0,
-                Vec::new(),
-            )
-            .unwrap_err(),
-            EvalBuildError::InvalidInputProof
-        );
-        assert_eq!(
-            InputProof::new(slot, Vec::new(), 0, Vec::new()).unwrap_err(),
-            EvalBuildError::InvalidInputProof
-        );
-        assert_eq!(
-            InputProof::new(slot, vec![valid_handle], 1, Vec::new()).unwrap_err(),
-            EvalBuildError::InvalidInputProof
-        );
-
-        let wrong_chain_handle = input_handle(1, 0, chain_id + 1, FheType::UINT64.byte());
-        assert_eq!(
-            InputProof::new(slot, vec![wrong_chain_handle], 0, Vec::new()).unwrap_err(),
-            EvalBuildError::InvalidInputProof
-        );
-
-        let proof = InputProof::new(
-            slot,
-            vec![input_handle(2, 0, chain_id, FheType::UINT32.byte())],
-            0,
-            Vec::new(),
-        )
-        .unwrap();
-        assert_eq!(
-            EncryptedInput::<Uint<64>>::from_proof(proof, Pubkey::new_unique()).unwrap_err(),
-            EvalBuildError::UnsupportedFheType
-        );
     }
 
     #[test]

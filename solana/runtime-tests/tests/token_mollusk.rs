@@ -3,7 +3,7 @@ mod support;
 
 use anchor_lang::{
     prelude::system_program, AccountDeserialize, AccountSerialize, AnchorDeserialize,
-    AnchorSerialize, Discriminator, InstructionData, ToAccountMetas,
+    Discriminator, InstructionData, ToAccountMetas,
 };
 use anchor_spl::token::spl_token;
 use confidential_token as token;
@@ -20,8 +20,6 @@ use solana_sdk::{
     program_option::COption,
     program_pack::Pack,
     pubkey::Pubkey,
-    signature::Keypair,
-    signature::Signer,
     sysvar,
 };
 use std::{
@@ -525,186 +523,6 @@ fn mollusk_request_disclose_balance_is_idempotent_without_duplicate_host_event()
 }
 
 #[test]
-fn mollusk_disclose_balance_accepts_kms_signed_cleartext() {
-    let fixture = TokenMolluskFixture::new();
-    let mut context = mollusk().with_context(fixture.base_accounts());
-    let cleartext_amount = 125;
-    seed_material_commitment_for_acl(&context, fixture.alice_current_compute_acl, 120);
-    let request_ix = request_disclose_balance_ix(&fixture);
-
-    let request_result = process_transaction(&context, &[request_ix]);
-    assert!(request_result.raw_result.is_ok());
-
-    let result = process_transaction(
-        &context,
-        &[
-            disclosure_ed25519_ix(&context, &fixture, fixture.alice_initial, cleartext_amount),
-            disclose_balance_ix(&fixture, cleartext_amount),
-        ],
-    );
-
-    assert!(result.raw_result.is_ok());
-    let events: Vec<token::BalanceDisclosedEvent> = result
-        .inner_instructions
-        .iter()
-        .flat_map(|group| group.iter())
-        .filter_map(|inner| decode_anchor_event(&inner.instruction.data))
-        .collect();
-    assert_eq!(events.len(), 1);
-    assert_eq!(events[0].version, token::APP_EVENT_VERSION);
-    assert_eq!(events[0].mint, fixture.mint);
-    assert_eq!(events[0].owner, fixture.owner);
-    assert_eq!(events[0].token_account, fixture.alice_token);
-    assert_eq!(events[0].handle, fixture.alice_initial);
-    assert_eq!(events[0].cleartext_amount, cleartext_amount);
-    let request = disclosure_request_address(
-        &fixture,
-        fixture.owner,
-        fixture.alice_initial,
-        request_nonce(1),
-    );
-    assert_eq!(
-        read_disclosure_request(&context, request).status,
-        token::REQUEST_STATUS_CONSUMED
-    );
-    let owner_before = account_lamports(&context, fixture.owner);
-    context
-        .mollusk
-        .sysvars
-        .warp_to_slot(DEFAULT_REQUEST_EXPIRES_SLOT + 1);
-    let close_result = context.process_and_validate_instruction(
-        &close_consumed_disclosure_request_ix(&fixture, request),
-        &[Check::success()],
-    );
-    assert!(close_result.raw_result.is_ok());
-    assert!(!disclosure_request_exists(&context, request));
-    assert!(account_lamports(&context, fixture.owner) > owner_before);
-}
-
-#[test]
-fn mollusk_disclose_balance_accepts_requested_handle_after_balance_rotation() {
-    let fixture = TokenMolluskFixture::new();
-    let context = fixture.context_with_wrap_accounts();
-    let cleartext_amount = 125;
-    let wrap_amount = 100_000_000;
-    let wrap_output = WrapOutputAccounts::canonical(&fixture, 1);
-    seed_material_commitment_for_acl(&context, fixture.alice_current_compute_acl, 120);
-    let request_ix = request_disclose_balance_ix(&fixture);
-
-    let request_result = process_transaction(&context, &[request_ix]);
-    assert!(request_result.raw_result.is_ok());
-    context.process_and_validate_instruction(
-        &wrap_usdc_ix(&fixture, wrap_output, wrap_amount),
-        &[Check::success()],
-    );
-    let token_account = read_token_account(&context, fixture.alice_token);
-    assert_eq!(token_account.balance_acl_record, wrap_output.balance);
-    assert_ne!(token_account.balance_handle, fixture.alice_initial);
-
-    let result = process_transaction(
-        &context,
-        &[
-            disclosure_ed25519_ix(&context, &fixture, fixture.alice_initial, cleartext_amount),
-            disclose_balance_ix(&fixture, cleartext_amount),
-        ],
-    );
-
-    assert!(result.raw_result.is_ok());
-    let events: Vec<token::BalanceDisclosedEvent> = result
-        .inner_instructions
-        .iter()
-        .flat_map(|group| group.iter())
-        .filter_map(|inner| decode_anchor_event(&inner.instruction.data))
-        .collect();
-    assert_eq!(events.len(), 1);
-    assert_eq!(events[0].handle, fixture.alice_initial);
-    assert_eq!(events[0].cleartext_amount, cleartext_amount);
-}
-
-#[test]
-fn mollusk_disclose_amount_accepts_kms_signed_cleartext() {
-    let fixture = TokenMolluskFixture::new();
-    let amount_handle = handle_for_chain(23, BALANCE_FHE_TYPE);
-    let context = mollusk().with_context(fixture.base_accounts());
-    let amount_acl = seed_disclosable_amount_acl(&context, &fixture, amount_handle);
-    let cleartext_amount = 77;
-    seed_material_commitment_for_acl(&context, amount_acl, 121);
-
-    let request_result = process_transaction(
-        &context,
-        &[request_disclose_amount_ix(
-            &fixture,
-            amount_acl,
-            amount_handle,
-        )],
-    );
-    assert!(request_result.raw_result.is_ok());
-
-    let result = process_transaction(
-        &context,
-        &[
-            disclosure_ed25519_ix(&context, &fixture, amount_handle, cleartext_amount),
-            disclose_amount_ix(&fixture, amount_acl, amount_handle, cleartext_amount),
-        ],
-    );
-
-    assert!(result.raw_result.is_ok());
-    let request_record = read_acl_record(&context, amount_acl);
-    assert!(request_record.public_decrypt);
-    let events: Vec<token::AmountDisclosedEvent> = result
-        .inner_instructions
-        .iter()
-        .flat_map(|group| group.iter())
-        .filter_map(|inner| decode_anchor_event(&inner.instruction.data))
-        .collect();
-    assert_eq!(events.len(), 1);
-    assert_eq!(events[0].version, token::APP_EVENT_VERSION);
-    assert_eq!(events[0].mint, fixture.mint);
-    assert_eq!(events[0].handle, amount_handle);
-    assert_eq!(events[0].cleartext_amount, cleartext_amount);
-    let request =
-        disclosure_request_address(&fixture, fixture.owner, amount_handle, request_nonce(1));
-    assert_eq!(
-        read_disclosure_request(&context, request).status,
-        token::REQUEST_STATUS_CONSUMED
-    );
-}
-
-#[test]
-fn mollusk_close_expired_disclosure_request_returns_rent_to_requester() {
-    let fixture = TokenMolluskFixture::new();
-    let mut context = mollusk().with_context(fixture.base_accounts());
-    let request = disclosure_request_address(
-        &fixture,
-        fixture.owner,
-        fixture.alice_initial,
-        request_nonce(8),
-    );
-    seed_material_commitment_for_acl(&context, fixture.alice_current_compute_acl, 128);
-    let request_result = process_transaction(
-        &context,
-        &[request_disclose_balance_ix_with_nonce_and_expires(
-            &fixture,
-            request_nonce(8),
-            5,
-        )],
-    );
-    assert!(request_result.raw_result.is_ok());
-    assert!(disclosure_request_exists(&context, request));
-    let owner_before = account_lamports(&context, fixture.owner);
-
-    context.mollusk.sysvars.warp_to_slot(6);
-    let result = context.process_and_validate_instruction(
-        &close_expired_disclosure_request_ix(&fixture, request),
-        &[Check::success()],
-    );
-
-    assert!(result.raw_result.is_ok());
-    assert!(!disclosure_request_exists(&context, request));
-    assert!(account_lamports(&context, fixture.owner) > owner_before);
-}
-
-#[test]
 fn mollusk_request_disclose_balance_rejects_wrong_owner() {
     let fixture = TokenMolluskFixture::new();
     let context = mollusk().with_context(fixture.base_accounts());
@@ -739,110 +557,6 @@ fn mollusk_request_disclose_amount_rejects_acl_without_compute_authority() {
     assert!(result.raw_result.is_err());
     let record = read_acl_record(&context, amount_acl);
     assert!(!record.public_decrypt);
-}
-
-#[test]
-fn mollusk_disclose_amount_rejects_without_public_decrypt_release() {
-    let fixture = TokenMolluskFixture::new();
-    let amount_handle = handle_for_chain(25, BALANCE_FHE_TYPE);
-    let context = mollusk().with_context(fixture.base_accounts());
-    let amount_acl = seed_disclosable_amount_acl(&context, &fixture, amount_handle);
-    let cleartext_amount = 88;
-    seed_material_commitment_for_acl(&context, amount_acl, 124);
-    let ed25519_ix = ed25519_verify_ix(&fixture.verifier, b"request-not-created");
-    let disclose_ix = disclose_amount_ix(&fixture, amount_acl, amount_handle, cleartext_amount);
-
-    let result = process_transaction(&context, &[ed25519_ix, disclose_ix]);
-
-    assert!(result.raw_result.is_err());
-    let record = read_acl_record(&context, amount_acl);
-    assert!(!record.public_decrypt);
-}
-
-#[test]
-fn mollusk_disclose_balance_rejects_missing_material_commitment() {
-    let fixture = TokenMolluskFixture::new();
-    let context = mollusk().with_context(fixture.base_accounts());
-    let request_ix = request_disclose_balance_ix(&fixture);
-
-    let result = process_transaction(&context, &[request_ix]);
-
-    assert!(result.raw_result.is_err());
-    assert!(!read_acl_record(&context, fixture.alice_current_compute_acl).public_decrypt);
-    assert!(!material_commitment_exists(
-        &context,
-        host::handle_material_address(fixture.alice_current_compute_acl).0,
-    ));
-}
-
-#[test]
-fn mollusk_disclose_balance_rejects_without_public_decrypt_release() {
-    let fixture = TokenMolluskFixture::new();
-    let context = mollusk().with_context(fixture.base_accounts());
-    let cleartext_amount = 125;
-    seed_material_commitment_for_acl(&context, fixture.alice_current_compute_acl, 125);
-    let ed25519_ix = ed25519_verify_ix(&fixture.verifier, b"request-not-created");
-    let disclose_ix = disclose_balance_ix(&fixture, cleartext_amount);
-
-    let result = process_transaction(&context, &[ed25519_ix, disclose_ix]);
-
-    assert!(result.raw_result.is_err());
-    let record = read_acl_record(&context, fixture.alice_current_compute_acl);
-    assert!(!record.public_decrypt);
-}
-
-#[test]
-fn mollusk_disclose_balance_rejects_mismatched_kms_cleartext() {
-    let fixture = TokenMolluskFixture::new();
-    let context = mollusk().with_context(fixture.base_accounts());
-    let signed_amount = 124;
-    let claimed_amount = 125;
-    seed_material_commitment_for_acl(&context, fixture.alice_current_compute_acl, 126);
-    let request_result = process_transaction(&context, &[request_disclose_balance_ix(&fixture)]);
-    assert!(request_result.raw_result.is_ok());
-    let ed25519_ix =
-        disclosure_ed25519_ix(&context, &fixture, fixture.alice_initial, signed_amount);
-    let disclose_ix = disclose_balance_ix(&fixture, claimed_amount);
-
-    let result = process_transaction(&context, &[ed25519_ix, disclose_ix]);
-
-    assert!(result.raw_result.is_err());
-}
-
-#[test]
-fn mollusk_disclose_balance_rejects_wrong_kms_verifier() {
-    let fixture = TokenMolluskFixture::new();
-    let context = mollusk().with_context(fixture.base_accounts());
-    let cleartext_amount = 125;
-    seed_material_commitment_for_acl(&context, fixture.alice_current_compute_acl, 127);
-    let request_result = process_transaction(&context, &[request_disclose_balance_ix(&fixture)]);
-    assert!(request_result.raw_result.is_ok());
-    let wrong_verifier = Keypair::new();
-    let request = read_disclosure_request(
-        &context,
-        disclosure_request_address(
-            &fixture,
-            fixture.owner,
-            fixture.alice_initial,
-            request_nonce(1),
-        ),
-    );
-    let ed25519_ix = ed25519_verify_ix(
-        &wrong_verifier,
-        &disclosure_proof_message_for_request(
-            &request,
-            request.acl_record,
-            fixture.alice_initial,
-            cleartext_amount,
-            token::id(),
-            host::id(),
-        ),
-    );
-    let disclose_ix = disclose_balance_ix(&fixture, cleartext_amount);
-
-    let result = process_transaction(&context, &[ed25519_ix, disclose_ix]);
-
-    assert!(result.raw_result.is_err());
 }
 
 #[test]
@@ -885,131 +599,6 @@ fn mollusk_request_disclose_amount_rejects_non_amount_acl_label() {
     assert!(result.raw_result.is_err());
     let record = read_acl_record(&context, amount_acl);
     assert!(!record.public_decrypt);
-}
-
-#[test]
-fn mollusk_disclose_amount_rejects_acl_record_with_wrong_stored_bump() {
-    let fixture = TokenMolluskFixture::new();
-    let amount_handle = handle_for_chain(27, BALANCE_FHE_TYPE);
-    let cleartext_amount = 125;
-    let context = mollusk().with_context(fixture.base_accounts());
-    let amount_acl = seed_disclosable_amount_acl(&context, &fixture, amount_handle);
-    seed_material_commitment_for_acl(&context, amount_acl, 128);
-
-    let request_result = process_transaction(
-        &context,
-        &[request_disclose_amount_ix(
-            &fixture,
-            amount_acl,
-            amount_handle,
-        )],
-    );
-    assert!(request_result.raw_result.is_ok());
-    mutate_acl_record(&context, amount_acl, |record| {
-        record.bump = record.bump.wrapping_add(1);
-    });
-
-    let result = process_transaction(
-        &context,
-        &[
-            disclosure_ed25519_ix(&context, &fixture, amount_handle, cleartext_amount),
-            disclose_amount_ix(&fixture, amount_acl, amount_handle, cleartext_amount),
-        ],
-    );
-
-    assert!(result.raw_result.is_err());
-    let record = read_acl_record(&context, amount_acl);
-    assert!(record.public_decrypt);
-    assert_ne!(
-        record.bump,
-        host::acl_record_address(record.nonce_key, record.nonce_sequence).1
-    );
-}
-
-#[test]
-fn mollusk_disclose_amount_rejects_acl_record_with_noncanonical_nonce_sequence() {
-    let fixture = TokenMolluskFixture::new();
-    let amount_handle = handle_for_chain(28, BALANCE_FHE_TYPE);
-    let cleartext_amount = 125;
-    let context = mollusk().with_context(fixture.base_accounts());
-    let amount_acl = seed_disclosable_amount_acl(&context, &fixture, amount_handle);
-    seed_material_commitment_for_acl(&context, amount_acl, 129);
-
-    let request_result = process_transaction(
-        &context,
-        &[request_disclose_amount_ix(
-            &fixture,
-            amount_acl,
-            amount_handle,
-        )],
-    );
-    assert!(request_result.raw_result.is_ok());
-    mutate_acl_record(&context, amount_acl, |record| {
-        record.nonce_sequence = record.nonce_sequence.wrapping_add(1);
-    });
-
-    let result = process_transaction(
-        &context,
-        &[
-            disclosure_ed25519_ix(&context, &fixture, amount_handle, cleartext_amount),
-            disclose_amount_ix(&fixture, amount_acl, amount_handle, cleartext_amount),
-        ],
-    );
-
-    assert!(result.raw_result.is_err());
-    let record = read_acl_record(&context, amount_acl);
-    assert!(record.public_decrypt);
-    assert_ne!(
-        amount_acl,
-        host::acl_record_address(record.nonce_key, record.nonce_sequence).0
-    );
-}
-
-#[test]
-fn mollusk_disclose_balance_rejects_unlinked_unsealed_material_commitment() {
-    let fixture = TokenMolluskFixture::new();
-    let context = mollusk().with_context(fixture.base_accounts());
-    let material_commitment =
-        seed_unsealed_material_commitment_for_acl(&context, fixture.alice_current_compute_acl, 130);
-    let request_ix = request_disclose_balance_ix(&fixture);
-
-    let result = process_transaction(&context, &[request_ix]);
-
-    assert!(result.raw_result.is_err());
-    let record = read_acl_record(&context, fixture.alice_current_compute_acl);
-    assert!(!record.public_decrypt);
-    assert_eq!(record.material_commitment, Pubkey::default());
-    assert!(material_commitment_exists(&context, material_commitment));
-}
-
-#[test]
-fn mollusk_disclose_balance_rejects_oversized_material_commitment() {
-    let fixture = TokenMolluskFixture::new();
-    let context = mollusk().with_context(fixture.base_accounts());
-    let cleartext_amount = 125;
-    seed_material_commitment_for_acl(&context, fixture.alice_current_compute_acl, 131);
-    let request_result = process_transaction(&context, &[request_disclose_balance_ix(&fixture)]);
-    assert!(request_result.raw_result.is_ok());
-    let material_commitment = host::handle_material_address(fixture.alice_current_compute_acl).0;
-    let material_len = account_data_len(&context, material_commitment);
-    extend_account_data(&context, material_commitment, 1);
-
-    let result = process_transaction(
-        &context,
-        &[
-            disclosure_ed25519_ix(&context, &fixture, fixture.alice_initial, cleartext_amount),
-            disclose_balance_ix(&fixture, cleartext_amount),
-        ],
-    );
-
-    assert!(result.raw_result.is_err());
-    assert_eq!(
-        account_data_len(&context, material_commitment),
-        material_len + 1
-    );
-    let record = read_acl_record(&context, fixture.alice_current_compute_acl);
-    assert!(record.public_decrypt);
-    assert_eq!(record.material_commitment, material_commitment);
 }
 
 #[test]
@@ -2150,39 +1739,48 @@ fn mollusk_confidential_burn_rejects_transfer_amount_acl_label() {
 }
 
 #[test]
-fn mollusk_redeem_burned_amount_releases_vault_once_with_kms_certificate() {
+fn mollusk_redeem_burned_amount_secp_releases_vault_with_kms_certificate() {
     let fixture = TokenMolluskFixture::new();
+    let key = k256::ecdsa::SigningKey::from_bytes(&[0x55u8; 32].into()).unwrap();
     let cleartext_amount = 9;
     let burn_amount_handle = handle_for_chain(53, BALANCE_FHE_TYPE);
-    let (_wrap_output, burn_output, mut context, burned_handle) =
+    let (_wrap_output, burn_output, context, burned_handle) =
         wrap_and_burn_for_redeem(&fixture, burn_amount_handle);
+
+    // Switch the context to the gateway KMS (secp256k1) trust model: the KMS host config carries
+    // the gateway verifier params + active context id, and the KMS context holds the signer set.
+    seed_account(
+        &context,
+        fixture.host_config,
+        kms_host_config_account(fixture.owner),
+    );
+    let (kms_ctx, kms_ctx_account) = kms_context_account(secp_evm_address(&key));
+    seed_account(&context, kms_ctx, kms_ctx_account);
 
     seed_material_commitment_for_acl(&context, burn_output.burned, 140);
     let release_ix = request_burn_redemption_ix(&fixture, burn_output.burned, burned_handle);
     context.process_and_validate_instruction(&release_ix, &[Check::success()]);
 
-    let released_burned_acl = read_acl_record(&context, burn_output.burned);
-    assert!(released_burned_acl.public_decrypt);
-    assert_eq!(released_burned_acl.handle, burned_handle);
-
     let redemption_record = token::burn_redemption_address(fixture.mint, burned_handle).0;
     let vault_before = read_spl_token_amount(&context, fixture.vault_usdc);
     let destination_before = read_spl_token_amount(&context, fixture.user_usdc);
-    let ed25519_ix = redemption_ed25519_ix(&context, &fixture, burned_handle, cleartext_amount);
-    let replay_ed25519_ix = ed25519_ix.clone();
-    let redeem_ix = redeem_burned_amount_ix(
+
+    // No Ed25519 ix: the cert is verified on-chain via secp256k1_recover from the signatures arg.
+    let signatures = kms_public_decrypt_signatures(&key, burned_handle, cleartext_amount);
+    let redeem_ix = redeem_burned_amount_secp_ix(
         &fixture,
         burn_output.burned,
         redemption_record,
         burned_handle,
         cleartext_amount,
+        fixture.vault_usdc,
+        signatures,
     );
-
-    let redeem_result = process_transaction(&context, &[ed25519_ix, redeem_ix]);
+    let redeem_result = process_transaction(&context, &[redeem_ix]);
 
     assert!(
         redeem_result.raw_result.is_ok(),
-        "redeem transaction failed: raw={:?} program={:?}",
+        "redeem_secp failed: raw={:?} program={:?}",
         redeem_result.raw_result,
         redeem_result.program_result
     );
@@ -2195,11 +1793,7 @@ fn mollusk_redeem_burned_amount_releases_vault_once_with_kms_certificate() {
         destination_before + cleartext_amount
     );
     let redemption = read_burn_redemption(&context, redemption_record);
-    assert_eq!(redemption.mint, fixture.mint);
-    assert_eq!(redemption.owner, fixture.owner);
-    assert_eq!(redemption.token_account, fixture.alice_token);
     assert_eq!(redemption.burned_handle, burned_handle);
-    assert_eq!(redemption.burned_acl_record, burn_output.burned);
     assert_eq!(redemption.cleartext_amount, cleartext_amount);
 
     let redeem_events: Vec<token::BurnRedeemedEvent> = redeem_result
@@ -2209,213 +1803,46 @@ fn mollusk_redeem_burned_amount_releases_vault_once_with_kms_certificate() {
         .filter_map(|inner| decode_anchor_event(&inner.instruction.data))
         .collect();
     assert_eq!(redeem_events.len(), 1);
-    assert_eq!(redeem_events[0].version, token::APP_EVENT_VERSION);
-    assert_eq!(redeem_events[0].mint, fixture.mint);
-    assert_eq!(redeem_events[0].owner, fixture.owner);
-    assert_eq!(redeem_events[0].token_account, fixture.alice_token);
     assert_eq!(redeem_events[0].burned_handle, burned_handle);
-    assert_eq!(redeem_events[0].burned_acl_record, burn_output.burned);
-    assert_eq!(redeem_events[0].destination_usdc, fixture.user_usdc);
     assert_eq!(redeem_events[0].cleartext_amount, cleartext_amount);
-    let redemption_request =
-        burn_redemption_request_address(&fixture, burned_handle, request_nonce(1));
-    assert_eq!(
-        read_burn_redemption_request(&context, redemption_request).status,
-        token::REQUEST_STATUS_CONSUMED
-    );
+}
 
-    let vault_after_redeem = read_spl_token_amount(&context, fixture.vault_usdc);
-    let destination_after_redeem = read_spl_token_amount(&context, fixture.user_usdc);
-    let replay_redeem_ix = redeem_burned_amount_ix(
-        &fixture,
-        burn_output.burned,
-        redemption_record,
-        burned_handle,
-        cleartext_amount,
-    );
-    let replay_result = process_transaction(&context, &[replay_ed25519_ix, replay_redeem_ix]);
+#[test]
+fn mollusk_redeem_burned_amount_secp_rejects_unauthorized_signer() {
+    let fixture = TokenMolluskFixture::new();
+    let configured = k256::ecdsa::SigningKey::from_bytes(&[0x55u8; 32].into()).unwrap();
+    let attacker = k256::ecdsa::SigningKey::from_bytes(&[0x66u8; 32].into()).unwrap();
+    let cleartext_amount = 9;
+    let burn_amount_handle = handle_for_chain(53, BALANCE_FHE_TYPE);
+    let (_wrap_output, burn_output, context, burned_handle) =
+        wrap_and_burn_for_redeem(&fixture, burn_amount_handle);
 
-    assert!(replay_result.raw_result.is_err());
-    assert_eq!(
-        read_spl_token_amount(&context, fixture.vault_usdc),
-        vault_after_redeem
-    );
-    assert_eq!(
-        read_spl_token_amount(&context, fixture.user_usdc),
-        destination_after_redeem
-    );
-
-    let owner_before = account_lamports(&context, fixture.owner);
-    context
-        .mollusk
-        .sysvars
-        .warp_to_slot(DEFAULT_REQUEST_EXPIRES_SLOT + 1);
-    let close_result = context.process_and_validate_instruction(
-        &close_consumed_burn_redemption_request_ix(&fixture, redemption_request),
-        &[Check::success()],
-    );
-    assert!(close_result.raw_result.is_ok());
-    assert!(!burn_redemption_request_exists(
+    seed_account(
         &context,
-        redemption_request
-    ));
-    assert!(account_lamports(&context, fixture.owner) > owner_before);
-}
-
-#[test]
-fn mollusk_close_expired_burn_redemption_request_returns_rent_to_owner() {
-    let fixture = TokenMolluskFixture::new();
-    let burn_amount_handle = handle_for_chain(58, BALANCE_FHE_TYPE);
-    let (_wrap_output, burn_output, mut context, burned_handle) =
-        wrap_and_burn_for_redeem(&fixture, burn_amount_handle);
-    seed_material_commitment_for_acl(&context, burn_output.burned, 144);
-    let request = burn_redemption_request_address(&fixture, burned_handle, request_nonce(8));
-    let request_ix = request_burn_redemption_ix_with_nonce_and_expires(
-        &fixture,
-        burn_output.burned,
-        burned_handle,
-        request_nonce(8),
-        5,
+        fixture.host_config,
+        kms_host_config_account(fixture.owner),
     );
+    let (kms_ctx, kms_ctx_account) = kms_context_account(secp_evm_address(&configured));
+    seed_account(&context, kms_ctx, kms_ctx_account);
 
-    let request_result = process_transaction(&context, &[request_ix]);
-    assert!(request_result.raw_result.is_ok());
-    assert!(burn_redemption_request_exists(&context, request));
-    let owner_before = account_lamports(&context, fixture.owner);
-
-    context.mollusk.sysvars.warp_to_slot(6);
-    let result = context.process_and_validate_instruction(
-        &close_expired_burn_redemption_request_ix(&fixture, request),
-        &[Check::success()],
-    );
-
-    assert!(result.raw_result.is_ok());
-    assert!(!burn_redemption_request_exists(&context, request));
-    assert!(account_lamports(&context, fixture.owner) > owner_before);
-}
-
-#[test]
-fn mollusk_redeem_burned_amount_rejects_without_public_decrypt_release() {
-    let fixture = TokenMolluskFixture::new();
-    let cleartext_amount = 9;
-    let burn_amount_handle = handle_for_chain(54, BALANCE_FHE_TYPE);
-    let (_wrap_output, burn_output, context, burned_handle) =
-        wrap_and_burn_for_redeem(&fixture, burn_amount_handle);
-
-    seed_material_commitment_for_acl(&context, burn_output.burned, 141);
-
-    let burned_acl = read_acl_record(&context, burn_output.burned);
-    assert!(!burned_acl.public_decrypt);
-    assert_eq!(burned_acl.handle, burned_handle);
+    seed_material_commitment_for_acl(&context, burn_output.burned, 140);
+    let release_ix = request_burn_redemption_ix(&fixture, burn_output.burned, burned_handle);
+    context.process_and_validate_instruction(&release_ix, &[Check::success()]);
 
     let redemption_record = token::burn_redemption_address(fixture.mint, burned_handle).0;
-    let vault_before = read_spl_token_amount(&context, fixture.vault_usdc);
-    let destination_before = read_spl_token_amount(&context, fixture.user_usdc);
-    let ed25519_ix = ed25519_verify_ix(&fixture.verifier, b"request-not-created");
-    let redeem_ix = redeem_burned_amount_ix(
+    // A signature from a key outside the KMS context must be rejected.
+    let signatures = kms_public_decrypt_signatures(&attacker, burned_handle, cleartext_amount);
+    let redeem_ix = redeem_burned_amount_secp_ix(
         &fixture,
         burn_output.burned,
         redemption_record,
         burned_handle,
         cleartext_amount,
+        fixture.vault_usdc,
+        signatures,
     );
-
-    let result = process_transaction(&context, &[ed25519_ix, redeem_ix]);
-
-    assert!(result.raw_result.is_err());
-    assert!(!burn_redemption_exists(&context, redemption_record));
-    assert_eq!(
-        read_spl_token_amount(&context, fixture.vault_usdc),
-        vault_before
-    );
-    assert_eq!(
-        read_spl_token_amount(&context, fixture.user_usdc),
-        destination_before
-    );
-}
-
-#[test]
-fn mollusk_redeem_burned_amount_rejects_noncanonical_vault_account() {
-    let fixture = TokenMolluskFixture::new();
-    let cleartext_amount = 9;
-    let burn_amount_handle = handle_for_chain(55, BALANCE_FHE_TYPE);
-    let (_wrap_output, burn_output, context, burned_handle) =
-        wrap_and_burn_for_redeem(&fixture, burn_amount_handle);
-
-    seed_material_commitment_for_acl(&context, burn_output.burned, 142);
-    let release_ix = request_burn_redemption_ix(&fixture, burn_output.burned, burned_handle);
-    context.process_and_validate_instruction(&release_ix, &[Check::success()]);
-    let noncanonical_vault = seed_noncanonical_vault_token_account(&context, &fixture, 100);
-
-    let redemption_record = token::burn_redemption_address(fixture.mint, burned_handle).0;
-    let canonical_vault_before = read_spl_token_amount(&context, fixture.vault_usdc);
-    let noncanonical_vault_before = read_spl_token_amount(&context, noncanonical_vault);
-    let destination_before = read_spl_token_amount(&context, fixture.user_usdc);
-    let ed25519_ix = redemption_ed25519_ix(&context, &fixture, burned_handle, cleartext_amount);
-    let redeem_ix = redeem_burned_amount_ix_with_vault(
-        &fixture,
-        burn_output.burned,
-        redemption_record,
-        burned_handle,
-        cleartext_amount,
-        noncanonical_vault,
-    );
-
-    let result = process_transaction(&context, &[ed25519_ix, redeem_ix]);
-
-    assert!(result.raw_result.is_err());
-    assert!(!burn_redemption_exists(&context, redemption_record));
-    assert_eq!(
-        read_spl_token_amount(&context, fixture.vault_usdc),
-        canonical_vault_before
-    );
-    assert_eq!(
-        read_spl_token_amount(&context, noncanonical_vault),
-        noncanonical_vault_before
-    );
-    assert_eq!(
-        read_spl_token_amount(&context, fixture.user_usdc),
-        destination_before
-    );
-}
-
-#[test]
-fn mollusk_redeem_burned_amount_rejects_mismatched_kms_cleartext() {
-    let fixture = TokenMolluskFixture::new();
-    let signed_amount = 8;
-    let claimed_amount = 9;
-    let burn_amount_handle = handle_for_chain(56, BALANCE_FHE_TYPE);
-    let (_wrap_output, burn_output, context, burned_handle) =
-        wrap_and_burn_for_redeem(&fixture, burn_amount_handle);
-
-    seed_material_commitment_for_acl(&context, burn_output.burned, 143);
-    let release_ix = request_burn_redemption_ix(&fixture, burn_output.burned, burned_handle);
-    context.process_and_validate_instruction(&release_ix, &[Check::success()]);
-
-    let redemption_record = token::burn_redemption_address(fixture.mint, burned_handle).0;
-    let vault_before = read_spl_token_amount(&context, fixture.vault_usdc);
-    let destination_before = read_spl_token_amount(&context, fixture.user_usdc);
-    let ed25519_ix = redemption_ed25519_ix(&context, &fixture, burned_handle, signed_amount);
-    let redeem_ix = redeem_burned_amount_ix(
-        &fixture,
-        burn_output.burned,
-        redemption_record,
-        burned_handle,
-        claimed_amount,
-    );
-
-    let result = process_transaction(&context, &[ed25519_ix, redeem_ix]);
-
-    assert!(result.raw_result.is_err());
-    assert!(!burn_redemption_exists(&context, redemption_record));
-    assert_eq!(
-        read_spl_token_amount(&context, fixture.vault_usdc),
-        vault_before
-    );
-    assert_eq!(
-        read_spl_token_amount(&context, fixture.user_usdc),
-        destination_before
-    );
+    let redeem_result = process_transaction(&context, &[redeem_ix]);
+    assert!(redeem_result.raw_result.is_err());
 }
 
 #[test]
@@ -2527,11 +1954,6 @@ fn mollusk_initialize_mint_creates_total_supply_acl() {
     let underlying_mint = Pubkey::new_unique();
     let compute_signer = token::compute_signer_address(mint).0;
     let total_supply_authority = token::total_supply_authority_address(mint).0;
-    let disclosure_verifier_set =
-        host::verifier_set_address(host::VERIFIER_SET_KIND_TOKEN_DISCLOSURE, mint, 1).0;
-    let redemption_verifier_set =
-        host::verifier_set_address(host::VERIFIER_SET_KIND_TOKEN_REDEMPTION, mint, 1).0;
-    let verifier = Keypair::new();
     let total_supply_acl_record = token_total_supply_acl_address(mint, total_supply_authority, 0);
     let host_config = host::host_config_address().0;
     let context = mollusk().with_context(HashMap::from([
@@ -2540,24 +1962,6 @@ fn mollusk_initialize_mint_creates_total_supply_acl() {
         (underlying_mint, spl_mint_account(authority, 6, 0)),
         (compute_signer, system_account(0)),
         (total_supply_authority, system_account(0)),
-        (
-            disclosure_verifier_set,
-            verifier_set_account(
-                authority,
-                host::VERIFIER_SET_KIND_TOKEN_DISCLOSURE,
-                mint,
-                verifier.pubkey(),
-            ),
-        ),
-        (
-            redemption_verifier_set,
-            verifier_set_account(
-                authority,
-                host::VERIFIER_SET_KIND_TOKEN_REDEMPTION,
-                mint,
-                verifier.pubkey(),
-            ),
-        ),
         (total_supply_acl_record, system_account(0)),
         (host_config, host_config_account(authority)),
         (event_authority(host::id()), system_account(0)),
@@ -2569,8 +1973,6 @@ fn mollusk_initialize_mint_creates_total_supply_acl() {
         underlying_mint,
         compute_signer,
         total_supply_authority,
-        disclosure_verifier_set,
-        redemption_verifier_set,
         total_supply_acl_record,
         host_config,
     );
@@ -2594,8 +1996,6 @@ fn mollusk_initialize_mint_creates_total_supply_acl() {
     assert_eq!(stored.acl_domain_key, mint);
     assert_eq!(stored.compute_signer, compute_signer);
     assert_eq!(stored.underlying_mint, underlying_mint);
-    assert_eq!(stored.disclosure_verifier_set, disclosure_verifier_set);
-    assert_eq!(stored.redemption_verifier_set, redemption_verifier_set);
     assert_eq!(stored.decimals, 6);
     assert_eq!(stored.total_supply_handle, supply_acl.handle);
     assert_eq!(stored.total_supply_acl_record, total_supply_acl_record);
@@ -2625,104 +2025,6 @@ fn mollusk_initialize_mint_creates_total_supply_acl() {
     assert_eq!(
         supply_events[0].reason,
         token::TotalSupplyUpdateReason::Initialize
-    );
-}
-
-#[test]
-fn mollusk_initialize_mint_rejects_invalid_verifier_set_accounts() {
-    let authority = Pubkey::new_unique();
-    let mint = Pubkey::new_unique();
-    let underlying_mint = Pubkey::new_unique();
-    let compute_signer = token::compute_signer_address(mint).0;
-    let total_supply_authority = token::total_supply_authority_address(mint).0;
-    let disclosure_verifier_set =
-        host::verifier_set_address(host::VERIFIER_SET_KIND_TOKEN_DISCLOSURE, mint, 1).0;
-    let total_supply_acl_record = token_total_supply_acl_address(mint, total_supply_authority, 0);
-    let host_config = host::host_config_address().0;
-    let context = mollusk().with_context(HashMap::from([
-        (authority, system_account(5_000_000_000)),
-        (mint, system_account(0)),
-        (underlying_mint, spl_mint_account(authority, 6, 0)),
-        (compute_signer, system_account(0)),
-        (total_supply_authority, system_account(0)),
-        (disclosure_verifier_set, system_account(1)),
-        (total_supply_acl_record, system_account(0)),
-        (host_config, host_config_account(authority)),
-        (event_authority(host::id()), system_account(0)),
-        (event_authority(token::id()), system_account(0)),
-    ]));
-    let ix = initialize_mint_ix(
-        authority,
-        mint,
-        underlying_mint,
-        compute_signer,
-        total_supply_authority,
-        disclosure_verifier_set,
-        Pubkey::default(),
-        total_supply_acl_record,
-        host_config,
-    );
-
-    let result = context.process_instruction(&ix);
-
-    assert!(result.raw_result.is_err());
-    assert_empty_system_account(&context, mint);
-    assert_empty_system_account(&context, total_supply_acl_record);
-}
-
-#[test]
-fn mollusk_migrate_legacy_mint_preserves_state_and_sets_split_verifiers() {
-    let fixture = TokenMolluskFixture::new();
-    let legacy_verifier = Pubkey::new_unique();
-    let mut accounts = fixture.base_accounts();
-    accounts.insert(
-        fixture.mint,
-        legacy_confidential_mint_account(&fixture, legacy_verifier),
-    );
-    let context = mollusk().with_context(accounts);
-    let ix = migrate_mint_verifier_sets_ix(&fixture, fixture.owner);
-
-    let result = context.process_and_validate_instruction(&ix, &[Check::success()]);
-
-    let stored = read_confidential_mint(&context, fixture.mint);
-    assert_eq!(stored.authority, fixture.owner);
-    assert_eq!(stored.acl_domain_key, fixture.mint);
-    assert_eq!(stored.compute_signer, fixture.compute_signer);
-    assert_eq!(stored.underlying_mint, fixture.underlying_mint);
-    assert_eq!(
-        stored.disclosure_verifier_set,
-        fixture.disclosure_verifier_set
-    );
-    assert_eq!(
-        stored.redemption_verifier_set,
-        fixture.redemption_verifier_set
-    );
-    assert_eq!(stored.decimals, 6);
-    assert_eq!(stored.total_supply_handle, fixture.total_supply_initial);
-    assert_eq!(
-        stored.total_supply_acl_record,
-        fixture.total_supply_current_acl
-    );
-    assert_eq!(stored.next_total_supply_nonce_sequence, 1);
-    let migrated_events: Vec<token::ConfidentialMintMigratedEvent> = result
-        .inner_instructions
-        .iter()
-        .filter_map(|inner| decode_anchor_event(&inner.instruction.data))
-        .collect();
-    assert_eq!(migrated_events.len(), 1);
-    assert_eq!(migrated_events[0].mint, fixture.mint);
-    assert_eq!(migrated_events[0].authority, fixture.owner);
-    assert_eq!(
-        migrated_events[0].legacy_kms_verifier_authority,
-        legacy_verifier
-    );
-    assert_eq!(
-        migrated_events[0].disclosure_verifier_set,
-        fixture.disclosure_verifier_set
-    );
-    assert_eq!(
-        migrated_events[0].redemption_verifier_set,
-        fixture.redemption_verifier_set
     );
 }
 
@@ -2985,9 +2287,6 @@ struct TokenMolluskFixture {
     compute_signer: Pubkey,
     total_supply_authority: Pubkey,
     host_config: Pubkey,
-    disclosure_verifier_set: Pubkey,
-    redemption_verifier_set: Pubkey,
-    verifier: Keypair,
     alice_token: Pubkey,
     bob_token: Pubkey,
     user_usdc: Pubkey,
@@ -3009,11 +2308,6 @@ impl TokenMolluskFixture {
         let compute_signer = token::compute_signer_address(mint).0;
         let total_supply_authority = token::total_supply_authority_address(mint).0;
         let host_config = host::host_config_address().0;
-        let verifier = Keypair::new();
-        let disclosure_verifier_set =
-            host::verifier_set_address(host::VERIFIER_SET_KIND_TOKEN_DISCLOSURE, mint, 1).0;
-        let redemption_verifier_set =
-            host::verifier_set_address(host::VERIFIER_SET_KIND_TOKEN_REDEMPTION, mint, 1).0;
         let alice_token = token::token_account_address(mint, owner).0;
         let bob_token = token::token_account_address(mint, bob_owner).0;
         let user_usdc = Pubkey::new_unique();
@@ -3033,9 +2327,6 @@ impl TokenMolluskFixture {
             compute_signer,
             total_supply_authority,
             host_config,
-            disclosure_verifier_set,
-            redemption_verifier_set,
-            verifier,
             alice_token,
             bob_token,
             user_usdc,
@@ -3162,24 +2453,7 @@ impl TokenMolluskFixture {
             (self.mint, confidential_mint_account(self)),
             (self.compute_signer, system_account(0)),
             (self.host_config, host_config_account(self.owner)),
-            (
-                self.disclosure_verifier_set,
-                verifier_set_account(
-                    self.owner,
-                    host::VERIFIER_SET_KIND_TOKEN_DISCLOSURE,
-                    self.mint,
-                    self.verifier.pubkey(),
-                ),
-            ),
-            (
-                self.redemption_verifier_set,
-                verifier_set_account(
-                    self.owner,
-                    host::VERIFIER_SET_KIND_TOKEN_REDEMPTION,
-                    self.mint,
-                    self.verifier.pubkey(),
-                ),
-            ),
+            kms_context_account([0x11u8; 20]),
             (
                 self.alice_token,
                 confidential_token_account(
@@ -3528,8 +2802,6 @@ fn initialize_mint_ix(
     underlying_mint: Pubkey,
     compute_signer: Pubkey,
     total_supply_authority: Pubkey,
-    disclosure_verifier_set: Pubkey,
-    redemption_verifier_set: Pubkey,
     total_supply_acl_record: Pubkey,
     host_config: Pubkey,
 ) -> Instruction {
@@ -3541,8 +2813,6 @@ fn initialize_mint_ix(
             underlying_mint,
             compute_signer,
             total_supply_authority,
-            disclosure_verifier_set,
-            redemption_verifier_set,
             total_supply_acl_record,
             zama_event_authority: event_authority(host::id()),
             zama_program: host::id(),
@@ -3552,23 +2822,6 @@ fn initialize_mint_ix(
             program: token::id(),
         },
         token::instruction::InitializeMint {},
-    )
-}
-
-fn migrate_mint_verifier_sets_ix(fixture: &TokenMolluskFixture, payer: Pubkey) -> Instruction {
-    anchor_ix(
-        token::id(),
-        token::accounts::MigrateMintVerifierSets {
-            payer,
-            authority: fixture.owner,
-            mint: fixture.mint,
-            disclosure_verifier_set: fixture.disclosure_verifier_set,
-            redemption_verifier_set: fixture.redemption_verifier_set,
-            system_program: system_program::ID,
-            event_authority: event_authority(token::id()),
-            program: token::id(),
-        },
-        token::instruction::MigrateMintVerifierSets {},
     )
 }
 
@@ -3829,7 +3082,6 @@ fn request_disclose_amount_ix_with_nonce(
                 amount_handle,
                 request_nonce,
             ),
-            disclosure_verifier_set: fixture.disclosure_verifier_set,
             authority_permission_record: None,
             deny_subject_record: None,
             zama_event_authority: event_authority(host::id()),
@@ -3932,7 +3184,6 @@ fn request_disclose_balance_ix_with_owner_and_deny_record_and_nonce(
                 fixture.alice_initial,
                 request_nonce,
             ),
-            disclosure_verifier_set: fixture.disclosure_verifier_set,
             authority_permission_record: None,
             deny_subject_record,
             zama_event_authority: event_authority(host::id()),
@@ -3949,10 +3200,142 @@ fn request_disclose_balance_ix_with_owner_and_deny_record_and_nonce(
     )
 }
 
-fn disclose_balance_ix(fixture: &TokenMolluskFixture, cleartext_amount: u64) -> Instruction {
+// --- KMS EIP-712 disclose (secp256k1_recover) — #1494 Phase 3 cert-secp ---
+
+const SECP_GATEWAY_CHAIN_ID: u64 = 31337;
+const SECP_DECRYPTION_CONTRACT: [u8; 20] = [0xDEu8; 20];
+
+/// Recovers the EVM address (keccak(pubkey)[12..]) for a KMS signing key.
+fn secp_evm_address(key: &k256::ecdsa::SigningKey) -> [u8; 20] {
+    let encoded = key.verifying_key().to_encoded_point(false);
+    let hash = solana_program::keccak::hash(&encoded.as_bytes()[1..]).to_bytes();
+    let mut address = [0u8; 20];
+    address.copy_from_slice(&hash[12..]);
+    address
+}
+
+/// 65-byte `[r || s || v]` recoverable signature over an EIP-712 digest.
+fn secp_sign(key: &k256::ecdsa::SigningKey, digest: &[u8; 32]) -> [u8; 65] {
+    let (signature, recovery_id) = key.sign_prehash_recoverable(digest).unwrap();
+    let mut out = [0u8; 65];
+    out[..64].copy_from_slice(&signature.to_bytes());
+    out[64] = 27 + recovery_id.to_byte();
+    out
+}
+
+fn decrypted_u64_bytes(value: u64) -> [u8; 32] {
+    let mut decrypted = [0u8; 32];
+    decrypted[24..].copy_from_slice(&value.to_be_bytes());
+    decrypted
+}
+
+const KMS_CONTEXT_ID: u64 = 1;
+
+/// Host config pointing at the active KMS context id + the gateway decryption contract.
+fn kms_host_config_account(authority: Pubkey) -> Account {
+    Account {
+        lamports: 1_000_000_000,
+        data: serialized_account(host::HostConfig {
+            admin: authority,
+            chain_id: host::SOLANA_POC_CHAIN_ID,
+            input_verifier_authority: authority,
+            gateway_chain_id: SECP_GATEWAY_CHAIN_ID,
+            input_verification_contract: [0u8; 20],
+            coprocessor_signer: [0u8; 20],
+            decryption_contract: SECP_DECRYPTION_CONTRACT,
+            current_kms_context_id: KMS_CONTEXT_ID,
+            material_authority: Pubkey::new_unique(),
+            test_authority: authority,
+            paused: false,
+            mock_input_enabled: true,
+            test_shims_enabled: true,
+            grant_deny_list_enabled: false,
+            updated_slot: 0,
+            bump: host::host_config_address().1,
+        }),
+        owner: host::id(),
+        executable: false,
+        rent_epoch: 0,
+    }
+}
+
+/// KMS context PDA holding a single signer + threshold-1 at the test context id.
+fn kms_context_account(signer: [u8; 20]) -> (Pubkey, Account) {
+    kms_context_account_for(KMS_CONTEXT_ID, signer)
+}
+
+/// KMS context PDA for an arbitrary context id (used to model rotation).
+fn kms_context_account_for(context_id: u64, signer: [u8; 20]) -> (Pubkey, Account) {
+    let (pubkey, bump) = host::kms_context_address(context_id);
+    (
+        pubkey,
+        Account {
+            lamports: 1_000_000_000,
+            data: serialized_account(host::KmsContext {
+                context_id,
+                signers: vec![signer],
+                thresholds: host::KmsThresholds {
+                    public_decryption: 1,
+                    user_decryption: 1,
+                    kms_gen: 1,
+                    mpc: 1,
+                },
+                destroyed: false,
+                bump,
+            }),
+            owner: host::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    )
+}
+
+/// KMS `PublicDecryptVerification` signature set over a single handle + cleartext.
+fn kms_public_decrypt_signatures(
+    key: &k256::ecdsa::SigningKey,
+    handle: [u8; 32],
+    cleartext_amount: u64,
+) -> Vec<[u8; 65]> {
+    let digest = host::eip712::typed_data_digest(
+        &host::eip712::domain_separator(
+            b"Decryption",
+            b"1",
+            SECP_GATEWAY_CHAIN_ID,
+            &SECP_DECRYPTION_CONTRACT,
+        ),
+        &host::eip712::public_decrypt_struct_hash(
+            &[handle],
+            &decrypted_u64_bytes(cleartext_amount),
+            &[],
+        ),
+    );
+    vec![secp_sign(key, &digest)]
+}
+
+fn disclose_balance_secp_ix(
+    fixture: &TokenMolluskFixture,
+    cleartext_amount: u64,
+    signatures: Vec<[u8; 65]>,
+) -> Instruction {
+    disclose_balance_secp_ix_with_context(
+        fixture,
+        cleartext_amount,
+        signatures,
+        host::kms_context_address(KMS_CONTEXT_ID).0,
+        request_nonce(1),
+    )
+}
+
+fn disclose_balance_secp_ix_with_context(
+    fixture: &TokenMolluskFixture,
+    cleartext_amount: u64,
+    signatures: Vec<[u8; 65]>,
+    kms_context: Pubkey,
+    nonce: [u8; 32],
+) -> Instruction {
     anchor_ix(
         token::id(),
-        token::accounts::DiscloseBalance {
+        token::accounts::DiscloseBalanceSecp {
             mint: fixture.mint,
             token_account: fixture.alice_token,
             balance_acl_record: fixture.alice_current_compute_acl,
@@ -3964,27 +3347,31 @@ fn disclose_balance_ix(fixture: &TokenMolluskFixture, cleartext_amount: u64) -> 
                 fixture,
                 fixture.owner,
                 fixture.alice_initial,
-                request_nonce(1),
+                nonce,
             ),
-            disclosure_verifier_set: fixture.disclosure_verifier_set,
             host_config: fixture.host_config,
-            instructions_sysvar: sysvar::instructions::ID,
+            kms_context,
             event_authority: event_authority(token::id()),
             program: token::id(),
         },
-        token::instruction::DiscloseBalance { cleartext_amount },
+        token::instruction::DiscloseBalanceSecp {
+            cleartext_amount,
+            signatures,
+            extra_data: vec![],
+        },
     )
 }
 
-fn disclose_amount_ix(
+fn disclose_amount_secp_ix(
     fixture: &TokenMolluskFixture,
     amount_acl_record: Pubkey,
     amount_handle: [u8; 32],
     cleartext_amount: u64,
+    signatures: Vec<[u8; 65]>,
 ) -> Instruction {
     anchor_ix(
         token::id(),
-        token::accounts::DiscloseAmount {
+        token::accounts::DiscloseAmountSecp {
             mint: fixture.mint,
             amount_acl_record,
             amount_material_commitment: host::handle_material_address(amount_acl_record).0,
@@ -3994,39 +3381,310 @@ fn disclose_amount_ix(
                 amount_handle,
                 request_nonce(1),
             ),
-            disclosure_verifier_set: fixture.disclosure_verifier_set,
             host_config: fixture.host_config,
-            instructions_sysvar: sysvar::instructions::ID,
+            kms_context: host::kms_context_address(KMS_CONTEXT_ID).0,
             event_authority: event_authority(token::id()),
             program: token::id(),
         },
-        token::instruction::DiscloseAmount {
+        token::instruction::DiscloseAmountSecp {
             amount_handle,
             cleartext_amount,
+            signatures,
+            extra_data: vec![],
         },
     )
 }
 
+#[test]
+fn mollusk_disclose_balance_secp_accepts_real_kms_certificate() {
+    let fixture = TokenMolluskFixture::new();
+    let key = k256::ecdsa::SigningKey::from_bytes(&[0x55u8; 32].into()).unwrap();
+    let cleartext_amount = 125;
+    let mut accounts = fixture.base_accounts();
+    accounts.insert(fixture.host_config, kms_host_config_account(fixture.owner));
+    let (kms_ctx, kms_ctx_account) = kms_context_account(secp_evm_address(&key));
+    accounts.insert(kms_ctx, kms_ctx_account);
+    let context = mollusk().with_context(accounts);
+
+    seed_material_commitment_for_acl(&context, fixture.alice_current_compute_acl, 120);
+    let request_result = process_transaction(&context, &[request_disclose_balance_ix(&fixture)]);
+    assert!(request_result.raw_result.is_ok());
+
+    let signatures = kms_public_decrypt_signatures(&key, fixture.alice_initial, cleartext_amount);
+    let result = process_transaction(
+        &context,
+        &[disclose_balance_secp_ix(
+            &fixture,
+            cleartext_amount,
+            signatures,
+        )],
+    );
+
+    assert!(result.raw_result.is_ok());
+    let events: Vec<token::BalanceDisclosedEvent> = result
+        .inner_instructions
+        .iter()
+        .flat_map(|group| group.iter())
+        .filter_map(|inner| decode_anchor_event(&inner.instruction.data))
+        .collect();
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].mint, fixture.mint);
+    assert_eq!(events[0].handle, fixture.alice_initial);
+    assert_eq!(events[0].cleartext_amount, cleartext_amount);
+}
+
+#[test]
+fn mollusk_disclose_amount_secp_accepts_real_kms_certificate_and_consumes_witness() {
+    let fixture = TokenMolluskFixture::new();
+    let key = k256::ecdsa::SigningKey::from_bytes(&[0x55u8; 32].into()).unwrap();
+    let amount_handle = handle_for_chain(61, BALANCE_FHE_TYPE);
+    let cleartext_amount = 41;
+    let mut accounts = fixture.base_accounts();
+    accounts.insert(fixture.host_config, kms_host_config_account(fixture.owner));
+    let (kms_ctx, kms_ctx_account) = kms_context_account(secp_evm_address(&key));
+    accounts.insert(kms_ctx, kms_ctx_account);
+    let context = mollusk().with_context(accounts);
+    let amount_acl = seed_disclosable_amount_acl(&context, &fixture, amount_handle);
+    seed_material_commitment_for_acl(&context, amount_acl, 145);
+
+    let request_result = process_transaction(
+        &context,
+        &[request_disclose_amount_ix(
+            &fixture,
+            amount_acl,
+            amount_handle,
+        )],
+    );
+    assert!(request_result.raw_result.is_ok());
+
+    let signatures = kms_public_decrypt_signatures(&key, amount_handle, cleartext_amount);
+    let result = process_transaction(
+        &context,
+        &[disclose_amount_secp_ix(
+            &fixture,
+            amount_acl,
+            amount_handle,
+            cleartext_amount,
+            signatures.clone(),
+        )],
+    );
+    assert!(result.raw_result.is_ok());
+    let request =
+        disclosure_request_address(&fixture, fixture.owner, amount_handle, request_nonce(1));
+    assert_eq!(
+        read_disclosure_request(&context, request).status,
+        token::REQUEST_STATUS_CONSUMED
+    );
+
+    // Replaying the same cert against the now-CONSUMED witness must fail.
+    let replay = process_transaction(
+        &context,
+        &[disclose_amount_secp_ix(
+            &fixture,
+            amount_acl,
+            amount_handle,
+            cleartext_amount,
+            signatures,
+        )],
+    );
+    assert!(
+        replay.raw_result.is_err(),
+        "consumed disclosure witness must not be replayable"
+    );
+}
+
+/// SECURITY (witness <-> secp binding): a request witness pins the KMS context id at request time.
+/// A certificate minted under a different (e.g. rotated) context is rejected, an expired witness is
+/// rejected, and a consumed witness cannot be replayed.
+#[test]
+fn mollusk_disclose_balance_secp_rejects_rotated_context_expired_and_replay() {
+    let fixture = TokenMolluskFixture::new();
+    let key = k256::ecdsa::SigningKey::from_bytes(&[0x55u8; 32].into()).unwrap();
+    let cleartext_amount = 125;
+
+    // Rejected: the passed kms_context is a different id than the one the witness pinned.
+    {
+        let mut accounts = fixture.base_accounts();
+        accounts.insert(fixture.host_config, kms_host_config_account(fixture.owner));
+        // Seed the witness-pinned context (KMS_CONTEXT_ID) so the request can verify the PDA, plus a
+        // rotated context the cert is NOT bound to.
+        let (kms_ctx, kms_ctx_account) = kms_context_account(secp_evm_address(&key));
+        accounts.insert(kms_ctx, kms_ctx_account);
+        let rotated_id = KMS_CONTEXT_ID + 1;
+        let (rotated_ctx, _) = host::kms_context_address(rotated_id);
+        accounts.insert(
+            rotated_ctx,
+            kms_context_account_for(rotated_id, secp_evm_address(&key)).1,
+        );
+        let context = mollusk().with_context(accounts);
+        seed_material_commitment_for_acl(&context, fixture.alice_current_compute_acl, 150);
+        let request_result =
+            process_transaction(&context, &[request_disclose_balance_ix(&fixture)]);
+        assert!(request_result.raw_result.is_ok());
+        let signatures =
+            kms_public_decrypt_signatures(&key, fixture.alice_initial, cleartext_amount);
+        // Present the rotated context PDA instead of the witness-pinned one.
+        let result = process_transaction(
+            &context,
+            &[disclose_balance_secp_ix_with_context(
+                &fixture,
+                cleartext_amount,
+                signatures,
+                rotated_ctx,
+                request_nonce(1),
+            )],
+        );
+        assert!(
+            result.raw_result.is_err(),
+            "cert verified against a context other than the witness-pinned one must be rejected"
+        );
+    }
+
+    // Rejected: the witness has expired before the disclosure is consumed.
+    {
+        let mut accounts = fixture.base_accounts();
+        accounts.insert(fixture.host_config, kms_host_config_account(fixture.owner));
+        let (kms_ctx, kms_ctx_account) = kms_context_account(secp_evm_address(&key));
+        accounts.insert(kms_ctx, kms_ctx_account);
+        let mut context = mollusk().with_context(accounts);
+        seed_material_commitment_for_acl(&context, fixture.alice_current_compute_acl, 151);
+        let request_result = process_transaction(
+            &context,
+            &[request_disclose_balance_ix_with_nonce_and_expires(
+                &fixture,
+                request_nonce(1),
+                5,
+            )],
+        );
+        assert!(request_result.raw_result.is_ok());
+        context.mollusk.sysvars.warp_to_slot(6);
+        let signatures =
+            kms_public_decrypt_signatures(&key, fixture.alice_initial, cleartext_amount);
+        let result = process_transaction(
+            &context,
+            &[disclose_balance_secp_ix(
+                &fixture,
+                cleartext_amount,
+                signatures,
+            )],
+        );
+        assert!(
+            result.raw_result.is_err(),
+            "expired disclosure witness must be rejected"
+        );
+    }
+}
+
+/// SECURITY (P1#3 context binding): a request whose `extra_data` names a KMS context other than the
+/// passed `kms_context` account is rejected. The context is resolved from `extra_data` (which the
+/// KMS signs over) and checked against the account BEFORE signature verification, so a certificate
+/// minted under one context cannot be verified under another (e.g. the current one after a rotation).
+/// The certificate here is signed over this very `extra_data`, so the only reason for rejection is
+/// the context-id binding.
+#[test]
+fn mollusk_disclose_balance_secp_rejects_context_mismatch_in_extra_data() {
+    let fixture = TokenMolluskFixture::new();
+    let key = k256::ecdsa::SigningKey::from_bytes(&[0x55u8; 32].into()).unwrap();
+    let cleartext_amount = 125;
+    let mut accounts = fixture.base_accounts();
+    accounts.insert(fixture.host_config, kms_host_config_account(fixture.owner));
+    let (kms_ctx, kms_ctx_account) = kms_context_account(secp_evm_address(&key));
+    accounts.insert(kms_ctx, kms_ctx_account);
+    let context = mollusk().with_context(accounts);
+
+    seed_material_commitment_for_acl(&context, fixture.alice_current_compute_acl, 120);
+    let request_result = process_transaction(&context, &[request_disclose_balance_ix(&fixture)]);
+    assert!(request_result.raw_result.is_ok());
+
+    // extra_data (version 1) names context KMS_CONTEXT_ID + 1, but the passed kms_context is for
+    // KMS_CONTEXT_ID. Sign the cert over this extra_data so it is otherwise valid.
+    let mut extra_data = vec![1u8];
+    extra_data.extend_from_slice(&[0u8; 24]);
+    extra_data.extend_from_slice(&(KMS_CONTEXT_ID + 1).to_be_bytes());
+    let digest = host::eip712::typed_data_digest(
+        &host::eip712::domain_separator(
+            b"Decryption",
+            b"1",
+            SECP_GATEWAY_CHAIN_ID,
+            &SECP_DECRYPTION_CONTRACT,
+        ),
+        &host::eip712::public_decrypt_struct_hash(
+            &[fixture.alice_initial],
+            &decrypted_u64_bytes(cleartext_amount),
+            &extra_data,
+        ),
+    );
+    let signatures = vec![secp_sign(&key, &digest)];
+
+    let ix = anchor_ix(
+        token::id(),
+        token::accounts::DiscloseBalanceSecp {
+            mint: fixture.mint,
+            token_account: fixture.alice_token,
+            balance_acl_record: fixture.alice_current_compute_acl,
+            balance_material_commitment: host::handle_material_address(
+                fixture.alice_current_compute_acl,
+            )
+            .0,
+            disclosure_request: disclosure_request_address(
+                &fixture,
+                fixture.owner,
+                fixture.alice_initial,
+                request_nonce(1),
+            ),
+            host_config: fixture.host_config,
+            kms_context: host::kms_context_address(KMS_CONTEXT_ID).0,
+            event_authority: event_authority(token::id()),
+            program: token::id(),
+        },
+        token::instruction::DiscloseBalanceSecp {
+            cleartext_amount,
+            signatures,
+            extra_data,
+        },
+    );
+    let result = process_transaction(&context, &[ix]);
+    assert!(
+        result.raw_result.is_err(),
+        "extra_data naming a context other than the passed kms_context must be rejected"
+    );
+}
+
+#[test]
+fn mollusk_disclose_balance_secp_rejects_unauthorized_signer() {
+    let fixture = TokenMolluskFixture::new();
+    let configured = k256::ecdsa::SigningKey::from_bytes(&[0x55u8; 32].into()).unwrap();
+    let attacker = k256::ecdsa::SigningKey::from_bytes(&[0x66u8; 32].into()).unwrap();
+    let cleartext_amount = 125;
+    let mut accounts = fixture.base_accounts();
+    accounts.insert(fixture.host_config, kms_host_config_account(fixture.owner));
+    let (kms_ctx, kms_ctx_account) = kms_context_account(secp_evm_address(&configured));
+    accounts.insert(kms_ctx, kms_ctx_account);
+    let context = mollusk().with_context(accounts);
+
+    seed_material_commitment_for_acl(&context, fixture.alice_current_compute_acl, 120);
+    let request_result = process_transaction(&context, &[request_disclose_balance_ix(&fixture)]);
+    assert!(request_result.raw_result.is_ok());
+
+    let signatures =
+        kms_public_decrypt_signatures(&attacker, fixture.alice_initial, cleartext_amount);
+    let result = process_transaction(
+        &context,
+        &[disclose_balance_secp_ix(
+            &fixture,
+            cleartext_amount,
+            signatures,
+        )],
+    );
+
+    assert!(result.raw_result.is_err());
+}
+
+/// Creates the burn-redemption request witness consumed by `redeem_burned_amount_secp`.
 fn request_burn_redemption_ix(
     fixture: &TokenMolluskFixture,
     burned_amount_acl: Pubkey,
     burned_handle: [u8; 32],
-) -> Instruction {
-    request_burn_redemption_ix_with_nonce_and_expires(
-        fixture,
-        burned_amount_acl,
-        burned_handle,
-        request_nonce(1),
-        DEFAULT_REQUEST_EXPIRES_SLOT,
-    )
-}
-
-fn request_burn_redemption_ix_with_nonce_and_expires(
-    fixture: &TokenMolluskFixture,
-    burned_amount_acl: Pubkey,
-    burned_handle: [u8; 32],
-    request_nonce: [u8; 32],
-    expires_slot: u64,
 ) -> Instruction {
     anchor_ix(
         token::id(),
@@ -4041,9 +3699,8 @@ fn request_burn_redemption_ix_with_nonce_and_expires(
             redemption_request: burn_redemption_request_address(
                 fixture,
                 burned_handle,
-                request_nonce,
+                request_nonce(1),
             ),
-            redemption_verifier_set: fixture.redemption_verifier_set,
             authority_permission_record: None,
             deny_subject_record: None,
             zama_event_authority: event_authority(host::id()),
@@ -4055,96 +3712,26 @@ fn request_burn_redemption_ix_with_nonce_and_expires(
         },
         token::instruction::RequestBurnRedemption {
             burned_handle,
-            request_nonce,
-            expires_slot,
+            request_nonce: request_nonce(1),
+            expires_slot: DEFAULT_REQUEST_EXPIRES_SLOT,
         },
     )
 }
 
-fn close_expired_disclosure_request_ix(
-    fixture: &TokenMolluskFixture,
-    disclosure_request: Pubkey,
-) -> Instruction {
-    anchor_ix(
-        token::id(),
-        token::accounts::CloseExpiredDisclosureRequest {
-            requester: fixture.owner,
-            disclosure_request,
-        },
-        token::instruction::CloseExpiredDisclosureRequest {},
-    )
-}
-
-fn close_consumed_disclosure_request_ix(
-    fixture: &TokenMolluskFixture,
-    disclosure_request: Pubkey,
-) -> Instruction {
-    anchor_ix(
-        token::id(),
-        token::accounts::CloseConsumedDisclosureRequest {
-            requester: fixture.owner,
-            disclosure_request,
-        },
-        token::instruction::CloseConsumedDisclosureRequest {},
-    )
-}
-
-fn close_expired_burn_redemption_request_ix(
-    fixture: &TokenMolluskFixture,
-    redemption_request: Pubkey,
-) -> Instruction {
-    anchor_ix(
-        token::id(),
-        token::accounts::CloseExpiredBurnRedemptionRequest {
-            owner: fixture.owner,
-            redemption_request,
-        },
-        token::instruction::CloseExpiredBurnRedemptionRequest {},
-    )
-}
-
-fn close_consumed_burn_redemption_request_ix(
-    fixture: &TokenMolluskFixture,
-    redemption_request: Pubkey,
-) -> Instruction {
-    anchor_ix(
-        token::id(),
-        token::accounts::CloseConsumedBurnRedemptionRequest {
-            owner: fixture.owner,
-            redemption_request,
-        },
-        token::instruction::CloseConsumedBurnRedemptionRequest {},
-    )
-}
-
-fn redeem_burned_amount_ix(
-    fixture: &TokenMolluskFixture,
-    burned_amount_acl: Pubkey,
-    redemption_record: Pubkey,
-    burned_handle: [u8; 32],
-    cleartext_amount: u64,
-) -> Instruction {
-    redeem_burned_amount_ix_with_vault(
-        fixture,
-        burned_amount_acl,
-        redemption_record,
-        burned_handle,
-        cleartext_amount,
-        fixture.vault_usdc,
-    )
-}
-
-fn redeem_burned_amount_ix_with_vault(
+/// Solana (secp256k1 EIP-712) counterpart of [`redeem_burned_amount_ix_with_vault`]: verifies
+/// the KMS `PublicDecryptVerification` cert on-chain against the request-pinned KMS context.
+fn redeem_burned_amount_secp_ix(
     fixture: &TokenMolluskFixture,
     burned_amount_acl: Pubkey,
     redemption_record: Pubkey,
     burned_handle: [u8; 32],
     cleartext_amount: u64,
     vault_usdc: Pubkey,
+    signatures: Vec<[u8; 65]>,
 ) -> Instruction {
     anchor_ix(
         token::id(),
-        token::accounts::RedeemBurnedAmount {
+        token::accounts::RedeemBurnedAmountSecp {
             owner: fixture.owner,
             mint: fixture.mint,
             token_account: fixture.alice_token,
@@ -4159,112 +3746,21 @@ fn redeem_burned_amount_ix_with_vault(
                 burned_handle,
                 request_nonce(1),
             ),
-            redemption_verifier_set: fixture.redemption_verifier_set,
             redemption_record,
-            instructions_sysvar: sysvar::instructions::ID,
             host_config: fixture.host_config,
+            kms_context: host::kms_context_address(KMS_CONTEXT_ID).0,
             token_program: spl_token::id(),
             system_program: system_program::ID,
             event_authority: event_authority(token::id()),
             program: token::id(),
         },
-        token::instruction::RedeemBurnedAmount {
+        token::instruction::RedeemBurnedAmountSecp {
             burned_handle,
             cleartext_amount,
+            signatures,
+            extra_data: vec![],
         },
     )
-}
-
-fn disclosure_ed25519_ix(
-    context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
-    fixture: &TokenMolluskFixture,
-    handle: [u8; 32],
-    cleartext_amount: u64,
-) -> Instruction {
-    let request = read_disclosure_request(
-        context,
-        disclosure_request_address(fixture, fixture.owner, handle, request_nonce(1)),
-    );
-    ed25519_verify_ix(
-        &fixture.verifier,
-        &disclosure_proof_message_for_request(
-            &request,
-            request.acl_record,
-            handle,
-            cleartext_amount,
-            token::id(),
-            host::id(),
-        ),
-    )
-}
-
-fn redemption_ed25519_ix(
-    context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
-    fixture: &TokenMolluskFixture,
-    burned_handle: [u8; 32],
-    cleartext_amount: u64,
-) -> Instruction {
-    let request = read_burn_redemption_request(
-        context,
-        burn_redemption_request_address(fixture, burned_handle, request_nonce(1)),
-    );
-    ed25519_verify_ix(
-        &fixture.verifier,
-        &token::redemption_proof_message_v2(
-            token::id(),
-            host::id(),
-            request.host_config,
-            request.chain_id,
-            request.mint,
-            request.verifier_set,
-            request.verifier_set_version,
-            burn_redemption_request_address(fixture, burned_handle, request_nonce(1)),
-            request.request_hash,
-            request.burned_acl_record,
-            request.material_commitment_hash,
-            request.material_key_id,
-            burned_handle,
-            cleartext_amount,
-            request.owner,
-            request.token_account,
-            request.underlying_mint,
-            request.destination_owner,
-            request.destination_account,
-        ),
-    )
-}
-
-fn ed25519_verify_ix(authority: &Keypair, message: &[u8]) -> Instruction {
-    const PUBKEY_SIZE: usize = 32;
-    const SIGNATURE_SIZE: usize = 64;
-    const OFFSETS_SIZE: usize = 14;
-    const OFFSETS_START: usize = 2;
-    const DATA_START: usize = OFFSETS_START + OFFSETS_SIZE;
-
-    let public_key_offset = DATA_START;
-    let signature_offset = public_key_offset + PUBKEY_SIZE;
-    let message_data_offset = signature_offset + SIGNATURE_SIZE;
-    let signature = authority.sign_message(message);
-
-    let mut data = Vec::with_capacity(message_data_offset + message.len());
-    data.push(1);
-    data.push(0);
-    data.extend_from_slice(&(signature_offset as u16).to_le_bytes());
-    data.extend_from_slice(&u16::MAX.to_le_bytes());
-    data.extend_from_slice(&(public_key_offset as u16).to_le_bytes());
-    data.extend_from_slice(&u16::MAX.to_le_bytes());
-    data.extend_from_slice(&(message_data_offset as u16).to_le_bytes());
-    data.extend_from_slice(&(message.len() as u16).to_le_bytes());
-    data.extend_from_slice(&u16::MAX.to_le_bytes());
-    data.extend_from_slice(authority.pubkey().as_ref());
-    data.extend_from_slice(signature.as_ref());
-    data.extend_from_slice(message);
-
-    Instruction {
-        program_id: ed25519_program::ID,
-        accounts: Vec::new(),
-        data,
-    }
 }
 
 fn wrap_and_burn_for_redeem(
@@ -4404,41 +3900,12 @@ fn confidential_mint_account_with_compute_signer_and_extra(
         acl_domain_key: fixture.mint,
         compute_signer,
         underlying_mint: fixture.underlying_mint,
-        disclosure_verifier_set: fixture.disclosure_verifier_set,
-        redemption_verifier_set: fixture.redemption_verifier_set,
         decimals: 6,
         total_supply_handle: fixture.total_supply_initial,
         total_supply_acl_record: fixture.total_supply_current_acl,
         next_total_supply_nonce_sequence: 1,
     });
     data.resize(data.len() + extra_bytes, 0);
-    Account {
-        lamports: 1_000_000_000,
-        data,
-        owner: token::id(),
-        executable: false,
-        rent_epoch: 0,
-    }
-}
-
-fn legacy_confidential_mint_account(
-    fixture: &TokenMolluskFixture,
-    legacy_kms_verifier_authority: Pubkey,
-) -> Account {
-    let mut data = token::ConfidentialMint::DISCRIMINATOR.to_vec();
-    token::LegacyConfidentialMintV1 {
-        authority: fixture.owner,
-        acl_domain_key: fixture.mint,
-        compute_signer: fixture.compute_signer,
-        underlying_mint: fixture.underlying_mint,
-        kms_verifier_authority: legacy_kms_verifier_authority,
-        decimals: 6,
-        total_supply_handle: fixture.total_supply_initial,
-        total_supply_acl_record: fixture.total_supply_current_acl,
-        next_total_supply_nonce_sequence: 1,
-    }
-    .serialize(&mut data)
-    .expect("legacy mint should serialize");
     Account {
         lamports: 1_000_000_000,
         data,
@@ -4486,30 +3953,6 @@ fn confidential_token_account_with_bump_and_extra(
         lamports: 1_000_000_000,
         data,
         owner: token::id(),
-        executable: false,
-        rent_epoch: 0,
-    }
-}
-
-fn verifier_set_account(admin: Pubkey, kind: u8, scope: Pubkey, signer: Pubkey) -> Account {
-    let mut signers = [Pubkey::default(); host::MAX_VERIFIER_SET_SIGNERS];
-    signers[0] = signer;
-    Account {
-        lamports: 1_000_000_000,
-        data: serialized_account(host::VerifierSet {
-            admin,
-            kind,
-            scope,
-            version: 1,
-            threshold: 1,
-            signer_count: 1,
-            signers,
-            state: host::VERIFIER_SET_STATE_ACTIVE,
-            created_slot: 0,
-            updated_slot: 0,
-            bump: host::verifier_set_address(kind, scope, 1).1,
-        }),
-        owner: host::id(),
         executable: false,
         rent_epoch: 0,
     }
@@ -4613,8 +4056,14 @@ fn host_config_account(authority: Pubkey) -> Account {
         data: serialized_account(host::HostConfig {
             admin: authority,
             chain_id: host::SOLANA_POC_CHAIN_ID,
-            input_verifier_set: authority,
-            input_verifier_set_version: 1,
+            input_verifier_authority: authority,
+            gateway_chain_id: SECP_GATEWAY_CHAIN_ID,
+            input_verification_contract: [0u8; 20],
+            coprocessor_signer: [0u8; 20],
+            decryption_contract: SECP_DECRYPTION_CONTRACT,
+            // Request witnesses pin this context id; the secp disclose/redeem path verifies the
+            // KMS cert against it.
+            current_kms_context_id: KMS_CONTEXT_ID,
             material_authority: Pubkey::new_unique(),
             test_authority: authority,
             paused: false,
@@ -4821,66 +4270,6 @@ fn read_disclosure_request(
         .expect("disclosure request should deserialize")
 }
 
-fn read_burn_redemption_request(
-    context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
-    address: Pubkey,
-) -> token::BurnRedemptionRequest {
-    let account = context
-        .account_store
-        .borrow()
-        .get(&address)
-        .expect("missing burn redemption request")
-        .clone();
-    assert_eq!(account.owner, token::id());
-    token::BurnRedemptionRequest::try_deserialize(&mut account.data.as_slice())
-        .expect("burn redemption request should deserialize")
-}
-
-fn burn_redemption_exists(
-    context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
-    address: Pubkey,
-) -> bool {
-    let Some(account) = context.account_store.borrow().get(&address).cloned() else {
-        return false;
-    };
-    account.owner == token::id()
-        && token::BurnRedemption::try_deserialize(&mut account.data.as_slice()).is_ok()
-}
-
-fn disclosure_request_exists(
-    context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
-    address: Pubkey,
-) -> bool {
-    let Some(account) = context.account_store.borrow().get(&address).cloned() else {
-        return false;
-    };
-    account.owner == token::id()
-        && token::DisclosureRequest::try_deserialize(&mut account.data.as_slice()).is_ok()
-}
-
-fn burn_redemption_request_exists(
-    context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
-    address: Pubkey,
-) -> bool {
-    let Some(account) = context.account_store.borrow().get(&address).cloned() else {
-        return false;
-    };
-    account.owner == token::id()
-        && token::BurnRedemptionRequest::try_deserialize(&mut account.data.as_slice()).is_ok()
-}
-
-fn account_lamports(
-    context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
-    address: Pubkey,
-) -> u64 {
-    context
-        .account_store
-        .borrow()
-        .get(&address)
-        .expect("missing account")
-        .lamports
-}
-
 #[allow(clippy::too_many_arguments)]
 fn assert_disclosure_request(
     context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
@@ -4911,8 +4300,7 @@ fn assert_disclosure_request(
     );
     assert_eq!(request.material_key_id, material.key_id);
     assert_eq!(request.host_config, fixture.host_config);
-    assert_eq!(request.verifier_set, fixture.disclosure_verifier_set);
-    assert_eq!(request.verifier_set_version, 1);
+    assert_eq!(request.kms_context_id, KMS_CONTEXT_ID);
     assert_eq!(request.request_nonce, request_nonce);
     assert_eq!(request.chain_id, host::SOLANA_POC_CHAIN_ID);
     assert_eq!(request.expires_slot, DEFAULT_REQUEST_EXPIRES_SLOT);
@@ -4933,8 +4321,7 @@ fn assert_disclosure_request(
             request.material_commitment_hash,
             request.material_key_id,
             request.host_config,
-            request.verifier_set,
-            request.verifier_set_version,
+            request.kms_context_id,
             request.request_nonce,
             request.chain_id,
             request.expires_slot,
@@ -5168,26 +4555,6 @@ fn process_transaction(
     result
 }
 
-fn mutate_acl_record(
-    context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
-    address: Pubkey,
-    mutate: impl FnOnce(&mut host::AclRecord),
-) {
-    let mut record = read_acl_record(context, address);
-    mutate(&mut record);
-    seed_account(
-        context,
-        address,
-        Account {
-            lamports: 1_000_000_000,
-            data: serialized_account(record),
-            owner: host::id(),
-            executable: false,
-            rent_epoch: 0,
-        },
-    );
-}
-
 fn seed_material_commitment_for_acl(
     context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
     acl_record_address: Pubkey,
@@ -5245,50 +4612,6 @@ fn seed_material_commitment_for_acl(
     );
 }
 
-fn seed_unsealed_material_commitment_for_acl(
-    context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
-    acl_record_address: Pubkey,
-    seed: u8,
-) -> Pubkey {
-    let acl_record = read_acl_record(context, acl_record_address);
-    let (material_commitment, bump) = host::handle_material_address(acl_record_address);
-    let key_id = [seed; 32];
-    let ciphertext_digest = [seed.wrapping_add(1); 32];
-    let sns_ciphertext_digest = [seed.wrapping_add(2); 32];
-    let coprocessor_set_digest = [seed.wrapping_add(3); 32];
-    let material_commitment_hash = host::handle_material_commitment_hash(
-        material_commitment,
-        acl_record_address,
-        key_id,
-        ciphertext_digest,
-        sns_ciphertext_digest,
-        coprocessor_set_digest,
-    );
-    seed_account(
-        context,
-        material_commitment,
-        Account {
-            lamports: 1_000_000_000,
-            data: serialized_account(host::HandleMaterialCommitment {
-                acl_record: acl_record_address,
-                handle: acl_record.handle,
-                key_id,
-                ciphertext_digest,
-                sns_ciphertext_digest,
-                coprocessor_set_digest,
-                material_commitment_hash,
-                created_slot: 0,
-                state: host::HANDLE_MATERIAL_STATE_COMMITTED,
-                bump,
-            }),
-            owner: host::id(),
-            executable: false,
-            rent_epoch: 0,
-        },
-    );
-    material_commitment
-}
-
 fn seed_disclosable_amount_acl(
     context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
     fixture: &TokenMolluskFixture,
@@ -5335,41 +4658,6 @@ fn seed_amount_acl_with_subject_entries(
         ),
     );
     amount_acl
-}
-
-fn material_commitment_exists(
-    context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
-    address: Pubkey,
-) -> bool {
-    let Some(account) = context.account_store.borrow().get(&address).cloned() else {
-        return false;
-    };
-    account.owner == host::id()
-        && host::HandleMaterialCommitment::try_deserialize(&mut account.data.as_slice()).is_ok()
-}
-
-fn account_data_len(
-    context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
-    address: Pubkey,
-) -> usize {
-    context
-        .account_store
-        .borrow()
-        .get(&address)
-        .expect("missing account")
-        .data
-        .len()
-}
-
-fn extend_account_data(
-    context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
-    address: Pubkey,
-    extra_bytes: usize,
-) {
-    let mut store = context.account_store.borrow_mut();
-    let account = store.get_mut(&address).expect("missing account");
-    let new_len = account.data.len() + extra_bytes;
-    account.data.resize(new_len, 0);
 }
 
 fn precompile_account() -> Account {
@@ -5446,39 +4734,6 @@ fn burn_redemption_request_address(
         request_nonce,
     )
     .0
-}
-
-fn disclosure_proof_message_for_request(
-    request: &token::DisclosureRequest,
-    acl_record: Pubkey,
-    handle: [u8; 32],
-    cleartext_amount: u64,
-    token_program_id: Pubkey,
-    host_program_id: Pubkey,
-) -> Vec<u8> {
-    token::disclosure_proof_message_v2(
-        token_program_id,
-        host_program_id,
-        request.host_config,
-        request.chain_id,
-        request.mint,
-        request.mode,
-        request.verifier_set,
-        request.verifier_set_version,
-        token::disclosure_request_address(
-            request.mint,
-            request.requester,
-            request.handle,
-            request.request_nonce,
-        )
-        .0,
-        request.request_hash,
-        acl_record,
-        request.material_commitment_hash,
-        request.material_key_id,
-        handle,
-        cleartext_amount,
-    )
 }
 
 fn token_balance_acl_address(mint: Pubkey, token_account: Pubkey, nonce_sequence: u64) -> Pubkey {

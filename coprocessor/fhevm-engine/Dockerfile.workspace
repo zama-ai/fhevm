@@ -79,6 +79,10 @@ COPY coprocessor/proto ./coprocessor/proto
 COPY gateway-contracts/rust_bindings ./gateway-contracts/rust_bindings
 COPY gateway-contracts/contracts ./gateway-contracts/contracts
 COPY host-contracts/contracts ./host-contracts/contracts
+# The Solana branch adds tfhe-worker dev-deps on solana/programs/{zama-host,
+# confidential-token}; the whole-workspace build must resolve their manifests, so
+# the Solana sources must be present. .dockerignore excludes solana/target.
+COPY solana ./solana
 
 WORKDIR /app/coprocessor/fhevm-engine
 

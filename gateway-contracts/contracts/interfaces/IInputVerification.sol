@@ -26,6 +26,26 @@ interface IInputVerification {
     );
 
     /**
+     * @notice Emitted when a verification of a ZK Proof is requested for a Solana (RFC-021) host.
+     * @dev Counterpart of {VerifyProofRequest} with 32-byte host identities (Solana program id /
+     * pubkey) instead of 20-byte EVM addresses.
+     * @param zkProofId The ID of the requested ZK Proof.
+     * @param contractChainId The ID of the host chain the contract belongs to.
+     * @param contractAddress The 32-byte identity of the dapp the input is used for.
+     * @param userAddress The 32-byte identity of the user providing the input.
+     * @param ciphertextWithZKProof The combination of the ciphertext and the ZK Proof.
+     * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
+     */
+    event VerifyProofRequestSolana(
+        uint256 indexed zkProofId,
+        uint256 indexed contractChainId,
+        bytes32 contractAddress,
+        bytes32 userAddress,
+        bytes ciphertextWithZKProof,
+        bytes extraData
+    );
+
+    /**
      * @notice Emitted when a coprocessor transaction sender responds to a ZK Proof verification
      * request for a proof validation.
      * @param zkProofId The ID of the ZK Proof.
@@ -110,6 +130,39 @@ interface IInputVerification {
      * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      */
     function verifyProofResponse(
+        uint256 zkProofId,
+        bytes32[] calldata ctHandles,
+        bytes calldata signature,
+        bytes calldata extraData
+    ) external;
+
+    /**
+     * @notice Requests the verification of a ZK Proof for a Solana (RFC-021) host.
+     * @dev Counterpart of {verifyProofRequest} with 32-byte host identities.
+     * @param contractChainId The ID of the host chain the contract belongs to.
+     * @param contractAddress The 32-byte identity of the dapp the input is used for.
+     * @param userAddress The 32-byte identity of the user providing the input.
+     * @param ciphertextWithZKProof The combination of the ciphertext and the ZK Proof.
+     * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
+     */
+    function verifyProofRequestSolana(
+        uint256 contractChainId,
+        bytes32 contractAddress,
+        bytes32 userAddress,
+        bytes calldata ciphertextWithZKProof,
+        bytes calldata extraData
+    ) external;
+
+    /**
+     * @notice Responds to a correct ZK Proof verification request for a Solana (RFC-021) host.
+     * @dev Counterpart of {verifyProofResponse}; validates the coprocessor signature over the
+     * bytes32 CiphertextVerification typed data. Shares all consensus state with the EVM path.
+     * @param zkProofId The ID of the requested ZK Proof.
+     * @param ctHandles The coprocessor's computed ciphertext handles.
+     * @param signature The coprocessor's signature.
+     * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
+     */
+    function verifyProofResponseSolana(
         uint256 zkProofId,
         bytes32[] calldata ctHandles,
         bytes calldata signature,

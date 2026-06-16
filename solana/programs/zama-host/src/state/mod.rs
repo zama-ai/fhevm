@@ -5,12 +5,12 @@
 //! needed to prepare CPI accounts and to verify host-owned ACL state off-chain.
 
 use anchor_lang::prelude::*;
+use solana_keccak_hasher::hashv as keccak_hashv;
 use solana_sha256_hasher::hashv;
-use solana_sysvar::slot_hashes::PodSlotHashes;
+use solana_sysvar::get_sysvar;
 
 use crate::constants::{
-    COMPUTATION_DOMAIN_SEPARATOR, COMPUTED_HANDLE_MARKER, INPUT_PROOF_DOMAIN_SEPARATOR,
-    RANDOM_SEED_DOMAIN_SEPARATOR,
+    COMPUTATION_DOMAIN_SEPARATOR, COMPUTED_HANDLE_MARKER, RANDOM_SEED_DOMAIN_SEPARATOR,
 };
 use crate::errors::ZamaHostError;
 
@@ -18,19 +18,21 @@ pub mod acl_permission;
 pub mod acl_record;
 pub mod deny_subject_record;
 pub mod handle_material_commitment;
+pub mod host_chain_address;
 pub mod host_config;
+pub mod kms_context;
 pub mod transient_session;
 pub mod user_decryption_delegation;
-pub mod verifier_set;
 
 pub use acl_permission::*;
 pub use acl_record::*;
 pub use deny_subject_record::*;
 pub use handle_material_commitment::*;
+pub use host_chain_address::*;
 pub use host_config::*;
+pub use kms_context::*;
 pub use transient_session::*;
 pub use user_decryption_delegation::*;
-pub use verifier_set::*;
 
 pub use crate::constants::*;
 
@@ -39,8 +41,16 @@ pub use crate::constants::*;
 pub struct InitializeHostConfigArgs {
     /// Host-chain id encoded into newly derived handles.
     pub chain_id: u64,
-    /// Active threshold verifier set used by encrypted-input bind paths.
-    pub input_verifier_set: Pubkey,
+    /// Authority used by mock and signed encrypted-input bind paths.
+    pub input_verifier_authority: Pubkey,
+    /// EVM gateway chain id used in the coprocessor/KMS EIP-712 domain separators.
+    pub gateway_chain_id: u64,
+    /// EVM `InputVerification` contract address (EIP-712 verifying contract).
+    pub input_verification_contract: [u8; 20],
+    /// Authorized coprocessor EVM signer for input attestations (v0: single signer).
+    pub coprocessor_signer: [u8; 20],
+    /// EVM `Decryption` contract address (EIP-712 verifying contract for KMS certs).
+    pub decryption_contract: [u8; 20],
     /// Authority allowed to commit ciphertext material readiness.
     pub material_authority: Pubkey,
     /// Authority allowed to call `test_emit_*` event shims.
@@ -51,23 +61,6 @@ pub struct InitializeHostConfigArgs {
     pub test_shims_enabled: bool,
     /// Whether persistent grants must include a deny-list witness.
     pub grant_deny_list_enabled: bool,
-}
-
-/// Initialization arguments for a threshold [`VerifierSet`] account.
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq)]
-pub struct CreateVerifierSetArgs {
-    /// Protocol purpose for this set.
-    pub kind: u8,
-    /// Scope that disambiguates sets of the same kind.
-    pub scope: Pubkey,
-    /// Monotonic version chosen by the admin for rotation.
-    pub version: u64,
-    /// Number of distinct signer signatures required.
-    pub threshold: u8,
-    /// Number of active entries in `signers`.
-    pub signer_count: u8,
-    /// Fixed signer list. Entries after `signer_count` must be default keys.
-    pub signers: [Pubkey; MAX_VERIFIER_SET_SIGNERS],
 }
 
 /// Pubkey plus role flags stored inline or in an overflow permission PDA.
@@ -104,47 +97,6 @@ impl AclSubjectEntry {
             role_flags: ACL_ROLE_USE,
         }
     }
-}
-
-/// Native Solana verifier payload for binding external encrypted inputs.
-///
-/// The proof is not trusted by itself. `verify_input_and_bind` requires an
-/// Ed25519 verifier quorum from `HostConfig::input_verifier_set` over
-/// [`input_proof_message_for_verifier_set`]. The selected handle from `handles` is the only
-/// handle that may be written into the output ACL record.
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
-pub struct SolanaInputProof {
-    /// Ordered handles certified by the input verifier.
-    pub handles: Vec<[u8; 32]>,
-    /// Selected handle index for this bind operation.
-    pub handle_index: u8,
-    /// User associated with the encrypted input.
-    pub user: Pubkey,
-    /// App account to which this input authorization is scoped.
-    pub app_account: Pubkey,
-    /// App ACL domain to which this input authorization is scoped.
-    pub acl_domain_key: Pubkey,
-    /// Opaque verifier payload, such as transcript/proof metadata.
-    pub extra_data: Vec<u8>,
-}
-
-/// ACL metadata covered by a native Solana encrypted-input verifier signature.
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
-pub struct SolanaInputBindIntent {
-    /// Nonce key for the output ACL record.
-    pub output_nonce_key: [u8; 32],
-    /// Nonce sequence for the output ACL record.
-    pub output_nonce_sequence: u64,
-    /// ACL domain key for the output ACL record.
-    pub output_acl_domain_key: Pubkey,
-    /// App account authorized to create the output ACL record.
-    pub output_app_account: Pubkey,
-    /// Encrypted value label for the output ACL record.
-    pub output_encrypted_value_label: [u8; 32],
-    /// Initial subjects on the output ACL record.
-    pub output_subjects: Vec<AclSubjectEntry>,
-    /// Initial public decrypt flag on the output ACL record.
-    pub output_public_decrypt: bool,
 }
 
 /// Caller-supplied policy for adding a transient capability to a session.
@@ -266,17 +218,6 @@ pub enum FheEvalStep {
         /// FHE type byte embedded in the output handle.
         fhe_type: u8,
         /// Whether this output remains instruction-local or is bound into durable ACL state.
-        output: FheEvalOutput,
-    },
-    /// Externally verified input step.
-    Input {
-        /// Input handle selected from the proof.
-        input_handle: [u8; 32],
-        /// Solana input proof verified by the host.
-        proof: SolanaInputProof,
-        /// Index into `remaining_accounts` for the active input [`VerifierSet`].
-        verifier_set_index: u16,
-        /// Durable ACL output bound from the verified input.
         output: FheEvalOutput,
     },
 }
@@ -569,98 +510,14 @@ fn power_of_two_bit_index(value: [u8; 32]) -> Option<u16> {
     bit_index
 }
 
-/// Canonical bytes signed by the native Solana input verifier authority.
-pub fn input_proof_message(
-    proof: &SolanaInputProof,
-    bind_intent: &SolanaInputBindIntent,
-    host_program_id: Pubkey,
-    chain_id: u64,
-) -> Vec<u8> {
-    let mut message = Vec::with_capacity(
-        INPUT_PROOF_DOMAIN_SEPARATOR.len()
-            + 32
-            + 8
-            + 32
-            + 32
-            + 32
-            + 32
-            + 8
-            + 32
-            + 32
-            + 32
-            + 4
-            + (bind_intent.output_subjects.len() * (32 + 1))
-            + 1
-            + 4
-            + 1
-            + (proof.handles.len() * 32)
-            + 4
-            + proof.extra_data.len(),
-    );
-    message.extend_from_slice(INPUT_PROOF_DOMAIN_SEPARATOR);
-    message.extend_from_slice(host_program_id.as_ref());
-    message.extend_from_slice(&chain_id.to_be_bytes());
-    message.extend_from_slice(proof.user.as_ref());
-    message.extend_from_slice(proof.app_account.as_ref());
-    message.extend_from_slice(proof.acl_domain_key.as_ref());
-    message.extend_from_slice(&bind_intent.output_nonce_key);
-    message.extend_from_slice(&bind_intent.output_nonce_sequence.to_be_bytes());
-    message.extend_from_slice(bind_intent.output_acl_domain_key.as_ref());
-    message.extend_from_slice(bind_intent.output_app_account.as_ref());
-    message.extend_from_slice(&bind_intent.output_encrypted_value_label);
-    message.extend_from_slice(&(bind_intent.output_subjects.len() as u32).to_be_bytes());
-    for subject in &bind_intent.output_subjects {
-        message.extend_from_slice(subject.pubkey.as_ref());
-        message.push(subject.role_flags);
-    }
-    message.push(u8::from(bind_intent.output_public_decrypt));
-    message.extend_from_slice(&(proof.handles.len() as u32).to_be_bytes());
-    message.push(proof.handle_index);
-    for handle in &proof.handles {
-        message.extend_from_slice(handle);
-    }
-    message.extend_from_slice(&(proof.extra_data.len() as u32).to_be_bytes());
-    message.extend_from_slice(&proof.extra_data);
-    message
-}
-
-/// Canonical bytes signed by a threshold verifier-set quorum.
-pub fn input_proof_message_for_verifier_set(
-    proof: &SolanaInputProof,
-    bind_intent: &SolanaInputBindIntent,
-    host_program_id: Pubkey,
-    chain_id: u64,
-    verifier_set: Pubkey,
-    verifier_set_kind: u8,
-    verifier_set_scope: Pubkey,
-    verifier_set_version: u64,
-) -> Vec<u8> {
-    let legacy_message = input_proof_message(proof, bind_intent, host_program_id, chain_id);
-    let mut message = Vec::with_capacity(legacy_message.len() + 32 + 1 + 32 + 8);
-    message.extend_from_slice(&legacy_message);
-    message.extend_from_slice(verifier_set.as_ref());
-    message.push(verifier_set_kind);
-    message.extend_from_slice(verifier_set_scope.as_ref());
-    message.extend_from_slice(&verifier_set_version.to_be_bytes());
-    message
-}
-
 /// Returns the canonical singleton host config address.
 pub fn host_config_address() -> (Pubkey, u8) {
     Pubkey::find_program_address(&[HOST_CONFIG_SEED], &crate::ID)
 }
 
-/// Returns the canonical verifier-set address for `(kind, scope, version)`.
-pub fn verifier_set_address(kind: u8, scope: Pubkey, version: u64) -> (Pubkey, u8) {
-    Pubkey::find_program_address(
-        &[
-            VERIFIER_SET_SEED,
-            &[kind],
-            scope.as_ref(),
-            &version.to_le_bytes(),
-        ],
-        &crate::ID,
-    )
+/// Returns the canonical KMS context address for a context id.
+pub fn kms_context_address(context_id: u64) -> (Pubkey, u8) {
+    Pubkey::find_program_address(&[KMS_CONTEXT_SEED, &context_id.to_le_bytes()], &crate::ID)
 }
 
 /// Returns the canonical ACL record address for a nonce key and sequence.
@@ -1153,7 +1010,7 @@ pub fn computed_binary_handle(
     let scalar_byte = [u8::from(scalar)];
     let chain_id_bytes = chain_id.to_be_bytes();
     let timestamp_bytes = unix_timestamp.to_be_bytes();
-    let mut result = hashv(&[
+    let mut result = keccak_hashv(&[
         COMPUTATION_DOMAIN_SEPARATOR,
         &op_byte,
         &lhs,
@@ -1200,7 +1057,7 @@ pub fn computed_bound_binary_handle(
     );
     let mut result = base_result;
     result[..21].copy_from_slice(
-        &hashv(&[
+        &keccak_hashv(&[
             b"FHE_bound_output",
             &base_result,
             &output_nonce_key,
@@ -1225,7 +1082,7 @@ pub fn computed_ternary_handle(
     let op_byte = [op.as_u8()];
     let chain_id_bytes = chain_id.to_be_bytes();
     let timestamp_bytes = unix_timestamp.to_be_bytes();
-    let mut result = hashv(&[
+    let mut result = keccak_hashv(&[
         COMPUTATION_DOMAIN_SEPARATOR,
         &op_byte,
         &control,
@@ -1268,7 +1125,7 @@ pub fn computed_bound_ternary_handle(
     );
     let mut result = base_result;
     result[..21].copy_from_slice(
-        &hashv(&[
+        &keccak_hashv(&[
             b"FHE_bound_ternary_output",
             &base_result,
             &output_nonce_key,
@@ -1297,7 +1154,7 @@ pub fn computed_eval_handle(
     let chain_id_bytes = chain_id.to_be_bytes();
     let op_index_bytes = op_index.to_be_bytes();
     let timestamp_bytes = unix_timestamp.to_be_bytes();
-    let mut result = hashv(&[
+    let mut result = keccak_hashv(&[
         b"FHE_eval",
         &context_id,
         &op_index_bytes,
@@ -1440,7 +1297,7 @@ pub fn computed_bound_eval_handle(
     );
     let mut result = base_result;
     result[..21].copy_from_slice(
-        &hashv(&[
+        &keccak_hashv(&[
             b"FHE_bound_eval_output",
             &base_result,
             &output_nonce_key,
@@ -1573,7 +1430,7 @@ pub fn computed_trivial_handle(
     let timestamp_bytes = unix_timestamp.to_be_bytes();
     let sequence_bytes = output_nonce_sequence.to_be_bytes();
     let fhe_type_bytes = [fhe_type];
-    let mut result = hashv(&[
+    let mut result = keccak_hashv(&[
         COMPUTATION_DOMAIN_SEPARATOR,
         &[2],
         &plaintext,
@@ -1602,7 +1459,7 @@ pub fn computed_rand_seed(
     let chain_id_bytes = chain_id.to_be_bytes();
     let timestamp_bytes = unix_timestamp.to_be_bytes();
     let sequence_bytes = output_nonce_sequence.to_be_bytes();
-    let hash = hashv(&[
+    let hash = keccak_hashv(&[
         RANDOM_SEED_DOMAIN_SEPARATOR,
         crate::ID.as_ref(),
         &chain_id_bytes,
@@ -1621,7 +1478,7 @@ pub fn computed_rand_seed(
 pub fn computed_rand_handle(seed: [u8; 16], fhe_type: u8, chain_id: u64) -> [u8; 32] {
     let chain_id_bytes = chain_id.to_be_bytes();
     let fhe_type_bytes = [fhe_type];
-    let mut result = hashv(&[
+    let mut result = keccak_hashv(&[
         COMPUTATION_DOMAIN_SEPARATOR,
         &[3],
         &fhe_type_bytes,
@@ -1648,7 +1505,7 @@ pub fn computed_rand_bounded_handle(
 ) -> [u8; 32] {
     let chain_id_bytes = chain_id.to_be_bytes();
     let fhe_type_bytes = [fhe_type];
-    let mut result = hashv(&[
+    let mut result = keccak_hashv(&[
         COMPUTATION_DOMAIN_SEPARATOR,
         &[4],
         &upper_bound,
@@ -1677,13 +1534,55 @@ pub fn previous_bank_hash(current_slot: u64) -> Result<[u8; 32]> {
     if current_slot == 0 {
         return Err(error!(ZamaHostError::PreviousBankHashUnavailable));
     }
-    let slot_hashes =
-        PodSlotHashes::fetch().map_err(|_| error!(ZamaHostError::PreviousBankHashUnavailable))?;
-    let entries = slot_hashes
-        .as_slice()
-        .map_err(|_| error!(ZamaHostError::PreviousBankHashUnavailable))?
-        .iter()
-        .map(|slot_hash| (slot_hash.slot, slot_hash.hash.to_bytes()));
+    // `PodSlotHashes::fetch()` (solana-sysvar 3.1.1) allocates an align-1 `Vec<u8>` and then
+    // rejects it with an 8-byte alignment check; the SBF bump allocator does not 8-align
+    // align-1 allocations, so fetch() fails on a real validator (LiteSVM/mollusk mock the
+    // `sol_get_sysvar` syscall and never exercise this allocation). Read the sysvar into an
+    // 8-aligned buffer ourselves via the same syscall, then scan the entries — which are laid
+    // out as `[u64 count][ (u64 slot, [u8;32] hash) ...]` — for the most recent slot below
+    // `current_slot`.
+    //
+    // `SlotHashes` is ordered newest-first and every entry is a prior slot (slot < the
+    // executing `current_slot`), so the answer is in the first entries. Read only a small
+    // window rather than the full 20_488-byte sysvar: on the SBF bump allocator (default 32KB
+    // heap, never freed) a 20KB buffer per call means a second FHE op in the same instruction
+    // — e.g. wrap_usdc's balance-add then total-supply-add — runs out of heap. A small window
+    // keeps the read well within the default heap.
+    const ENTRY_LEN: usize = 40; // u64 slot + 32-byte hash
+    const MAX_SCAN_ENTRIES: usize = 16;
+
+    // Read the 8-byte entry count first (8-aligned stack buffer).
+    let mut count_word = [0u64; 1];
+    let count_bytes =
+        unsafe { core::slice::from_raw_parts_mut(count_word.as_mut_ptr() as *mut u8, 8) };
+    get_sysvar(count_bytes, &solana_sysvar::slot_hashes::id(), 0, 8)
+        .map_err(|_| error!(ZamaHostError::PreviousBankHashUnavailable))?;
+    let count = count_word[0] as usize;
+    if count == 0 {
+        return Err(error!(ZamaHostError::PreviousBankHashUnavailable));
+    }
+
+    let scan = count.min(MAX_SCAN_ENTRIES);
+    // 8-aligned heap buffer for the scanned entries; ENTRY_LEN (40) is a multiple of 8.
+    let mut aligned = vec![0u64; (scan * ENTRY_LEN) / 8];
+    let data: &mut [u8] = unsafe {
+        core::slice::from_raw_parts_mut(aligned.as_mut_ptr() as *mut u8, scan * ENTRY_LEN)
+    };
+    get_sysvar(
+        data,
+        &solana_sysvar::slot_hashes::id(),
+        8,
+        (scan * ENTRY_LEN) as u64,
+    )
+    .map_err(|_| error!(ZamaHostError::PreviousBankHashUnavailable))?;
+
+    let entries = (0..scan).filter_map(|index| {
+        let offset = index * ENTRY_LEN;
+        let slot = u64::from_le_bytes(data[offset..offset + 8].try_into().ok()?);
+        let mut hash = [0u8; 32];
+        hash.copy_from_slice(&data[offset + 8..offset + ENTRY_LEN]);
+        Some((slot, hash))
+    });
     latest_prior_bank_hash_from_entries(current_slot, entries)
         .ok_or_else(|| error!(ZamaHostError::PreviousBankHashUnavailable))
 }
@@ -1715,131 +1614,4 @@ pub fn record_allows(record: &AclRecord, subject: Pubkey) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn latest_prior_bank_hash_tolerates_skipped_slots() {
-        let entries = vec![(8, [8; 32]), (6, [6; 32]), (3, [3; 32])];
-
-        assert_eq!(
-            latest_prior_bank_hash_from_entries(10, entries.clone()),
-            Some([8; 32])
-        );
-        assert_eq!(
-            latest_prior_bank_hash_from_entries(8, entries.clone()),
-            Some([6; 32])
-        );
-        assert_eq!(latest_prior_bank_hash_from_entries(3, entries), None);
-    }
-
-    fn host_config_with(
-        chain_id: u64,
-        test_shims_enabled: bool,
-        mock_input_enabled: bool,
-    ) -> HostConfig {
-        HostConfig {
-            admin: Pubkey::default(),
-            chain_id,
-            input_verifier_set: Pubkey::default(),
-            input_verifier_set_version: 0,
-            material_authority: Pubkey::default(),
-            test_authority: Pubkey::default(),
-            paused: false,
-            mock_input_enabled,
-            test_shims_enabled,
-            grant_deny_list_enabled: false,
-            updated_slot: 0,
-            bump: 0,
-        }
-    }
-
-    #[cfg(feature = "poc")]
-    #[test]
-    fn zero_birth_entropy_requires_poc_feature_chain_and_test_shims() {
-        // Local PoC chain with the shim flag: relaxation allowed.
-        assert!(host_config_with(SOLANA_POC_CHAIN_ID, true, false).zero_birth_entropy_allowed());
-        // Local PoC chain without the shim flag: fails closed (drives the
-        // PreviousBankHashUnavailable negative test).
-        assert!(!host_config_with(SOLANA_POC_CHAIN_ID, false, false).zero_birth_entropy_allowed());
-        // A deployed chain can NEVER zero birth entropy, even with the shim flag
-        // toggled on by an admin — this is the security boundary.
-        assert!(!host_config_with(101, true, false).zero_birth_entropy_allowed());
-        assert!(!host_config_with(1, true, false).zero_birth_entropy_allowed());
-    }
-
-    #[cfg(not(feature = "poc"))]
-    #[test]
-    fn poc_chain_relaxations_are_disabled_without_poc_feature() {
-        assert!(!host_config_with(SOLANA_POC_CHAIN_ID, true, true).is_local_poc_chain());
-        assert!(!host_config_with(SOLANA_POC_CHAIN_ID, true, false).zero_birth_entropy_allowed());
-        assert!(!host_config_with(SOLANA_POC_CHAIN_ID, false, true).mock_input_allowed());
-    }
-
-    #[cfg(feature = "poc")]
-    #[test]
-    fn mock_input_requires_poc_chain() {
-        assert!(host_config_with(SOLANA_POC_CHAIN_ID, false, true).mock_input_allowed());
-        assert!(!host_config_with(SOLANA_POC_CHAIN_ID, false, false).mock_input_allowed());
-        // A deployed chain can never run the mock input bind path, even if an
-        // admin sets mock_input_enabled.
-        assert!(!host_config_with(101, false, true).mock_input_allowed());
-    }
-
-    #[test]
-    fn native_v0_bound_eval_handle_uses_slot_entropy_and_preserves_layout() {
-        let lhs = [1; 32];
-        let rhs = [2; 32];
-        let context_id = [3; 32];
-        let nonce_key = [4; 32];
-        let first = computed_bound_eval_handle(
-            FheBinaryOpCode::Add,
-            lhs,
-            rhs,
-            false,
-            1,
-            42,
-            [5; 32],
-            100,
-            context_id,
-            7,
-            nonce_key,
-            9,
-        );
-        let different_entropy = computed_bound_eval_handle(
-            FheBinaryOpCode::Add,
-            lhs,
-            rhs,
-            false,
-            1,
-            42,
-            [6; 32],
-            101,
-            context_id,
-            7,
-            nonce_key,
-            9,
-        );
-        let different_nonce = computed_bound_eval_handle(
-            FheBinaryOpCode::Add,
-            lhs,
-            rhs,
-            false,
-            1,
-            42,
-            [5; 32],
-            100,
-            context_id,
-            7,
-            nonce_key,
-            10,
-        );
-
-        assert_ne!(first, different_entropy);
-        assert_ne!(first, different_nonce);
-        assert_eq!(first[21], COMPUTED_HANDLE_MARKER);
-        assert_eq!(&first[22..30], &42_u64.to_be_bytes());
-        assert_eq!(first[30], 1);
-        assert_eq!(first[31], HANDLE_VERSION);
-    }
-}
+mod tests;

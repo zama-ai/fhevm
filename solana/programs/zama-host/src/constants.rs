@@ -17,6 +17,8 @@ pub const POC_FEATURE_ENABLED: bool = false;
 
 /// Seed for the singleton host config PDA.
 pub const HOST_CONFIG_SEED: &[u8] = b"host-config";
+/// Seed prefix for KMS context PDAs (one per `kmsContextId`, mirroring ProtocolConfig).
+pub const KMS_CONTEXT_SEED: &[u8] = b"kms-context";
 /// Seed prefix for canonical ACL record PDAs.
 pub const ACL_RECORD_SEED: &[u8] = b"acl-record";
 /// Seed prefix for overflow ACL permission PDAs.
@@ -31,8 +33,6 @@ pub const WILDCARD_APP_CONTEXT_BYTES: [u8; 32] = [0xff; 32];
 pub const TRANSIENT_SESSION_SEED: &[u8] = b"transient-session";
 /// Seed prefix for host-owned material commitment records.
 pub const HANDLE_MATERIAL_SEED: &[u8] = b"handle-material";
-/// Seed prefix for threshold verifier set records.
-pub const VERIFIER_SET_SEED: &[u8] = b"verifier-set";
 
 /// Subject may use a handle in host operations and decrypt checks.
 pub const ACL_ROLE_USE: u8 = 0x01;
@@ -57,18 +57,6 @@ pub const MAX_FHE_EVAL_OPS: usize = 16;
 pub const MAX_INPUT_PROOF_HANDLES: usize = 16;
 /// Maximum opaque verifier payload bytes carried in one signed input proof.
 pub const MAX_INPUT_PROOF_EXTRA_DATA: usize = 256;
-/// Maximum number of signers stored in one verifier set account.
-pub const MAX_VERIFIER_SET_SIGNERS: usize = 16;
-/// Verifier-set kind for native encrypted-input proofs.
-pub const VERIFIER_SET_KIND_INPUT: u8 = 1;
-/// Verifier-set kind for confidential-token disclosure certificates.
-pub const VERIFIER_SET_KIND_TOKEN_DISCLOSURE: u8 = 2;
-/// Verifier-set kind for confidential-token burn-redemption certificates.
-pub const VERIFIER_SET_KIND_TOKEN_REDEMPTION: u8 = 3;
-/// Verifier-set account state for an active quorum.
-pub const VERIFIER_SET_STATE_ACTIVE: u8 = 1;
-/// Verifier-set account state for a disabled quorum.
-pub const VERIFIER_SET_STATE_DISABLED: u8 = 2;
 /// Maximum number of capability entries stored in one transient session.
 pub const MAX_TRANSIENT_CAPABILITIES: usize = 1;
 /// Transient session accepts new capabilities.
@@ -83,5 +71,3 @@ pub(crate) const RANDOM_SEED_DOMAIN_SEPARATOR: &[u8] = b"FHE_seed";
 pub(crate) const COMPUTED_HANDLE_MARKER: u8 = 0xff;
 /// Current handle encoding version byte.
 pub const HANDLE_VERSION: u8 = 0;
-
-pub(crate) const INPUT_PROOF_DOMAIN_SEPARATOR: &[u8] = b"zama-solana-input-proof-v1";

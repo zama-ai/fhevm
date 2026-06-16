@@ -5,8 +5,9 @@ use crate::http::endpoints::v2::types::{
     InputProofRequestJson, PublicDecryptRequestJson, UserDecryptRequestJson,
 };
 use crate::http::endpoints::v3::types::AttestedUserDecryptRequestJson;
+use crate::http::utils::validations::V3_ATTESTATION_TYPE_SOLANA_ED25519_V1;
 use crate::orchestrator::traits::Event;
-use alloy::primitives::{Address, Bytes, FixedBytes, TxHash};
+use alloy::primitives::{Address, Bytes, FixedBytes, TxHash, B256};
 use alloy::{primitives::U256, rpc::types::Log};
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
@@ -508,6 +509,23 @@ pub enum UserDecryptRequest {
         public_key: Bytes,
         extra_data: Bytes,
     },
+    /// Unified Solana ed25519 user-decryption (attestation_type
+    /// `"solana-ed25519-user-decrypt-v1"`, RFC-021): maps to
+    /// `userDecryptionRequestSolana(HandleEntry[], UserDecryptionRequestSolanaPayload)`.
+    /// The ed25519 auth fields (`user_identity`, `nonce`, `allowed_acl_domain_keys`) are 32-byte
+    /// Solana pubkeys carried as typed fields rather than packed into `extra_data`; `extra_data`
+    /// carries only the KMS context. `signature` is the ed25519 signature, verified off-chain by
+    /// the KMS Connector. `allowed_acl_domain_keys` may be empty (permissive mode).
+    SolanaUnifiedV1 {
+        handles: Vec<HandleEntry>,
+        user_identity: B256,
+        allowed_acl_domain_keys: Vec<B256>,
+        request_validity: RequestValiditySeconds,
+        nonce: B256,
+        signature: Bytes,
+        public_key: Bytes,
+        extra_data: Bytes,
+    },
 }
 
 impl UserDecryptRequest {
@@ -517,12 +535,16 @@ impl UserDecryptRequest {
             UserDecryptRequest::LegacyDirect { .. } => "legacy_direct",
             UserDecryptRequest::LegacyDelegated { .. } => "legacy_delegated",
             UserDecryptRequest::Eip712UnifiedV1 { .. } => "eip712_unified_v1",
+            UserDecryptRequest::SolanaUnifiedV1 { .. } => "solana_unified_v1",
         }
     }
 
-    /// Whether this request uses the unified EIP-712 gateway overload.
+    /// Whether this request uses one of the unified gateway overloads (EVM or Solana).
     pub fn is_unified(&self) -> bool {
-        matches!(self, UserDecryptRequest::Eip712UnifiedV1 { .. })
+        matches!(
+            self,
+            UserDecryptRequest::Eip712UnifiedV1 { .. } | UserDecryptRequest::SolanaUnifiedV1 { .. }
+        )
     }
 
     /// References to the ciphertext handles, regardless of variant shape.
@@ -539,7 +561,8 @@ impl UserDecryptRequest {
                 .iter()
                 .map(|p| &p.ct_handle)
                 .collect(),
-            UserDecryptRequest::Eip712UnifiedV1 { handles, .. } => {
+            UserDecryptRequest::Eip712UnifiedV1 { handles, .. }
+            | UserDecryptRequest::SolanaUnifiedV1 { handles, .. } => {
                 handles.iter().map(|h| &h.ct_handle).collect()
             }
         }
@@ -617,6 +640,13 @@ impl TryFrom<UserDecryptRequestJson> for UserDecryptRequest {
     fn try_from(value: UserDecryptRequestJson) -> Result<Self, Self::Error> {
         info!("Converting UserDecryptRequestJson to UserDecryptRequest");
 
+        // Parse the contract chain ID first: it selects the EVM vs RFC-021 (Solana) identity shapes.
+        let contracts_chain_id = parse_chain_id(&value.contracts_chain_id)?;
+        let is_solana = is_solana_host_chain_id(contracts_chain_id);
+
+        // Parse handle/contract pairs. Handles are 32-byte values on both paths; on Solana the
+        // per-pair contract identity is off-gateway (enforced by the KMS solana_acl), so it is not
+        // an EVM address and is left zero.
         let mut ct_handle_contract_pairs = Vec::new();
         for json_data in &value.handle_contract_pairs {
             let ct_handle = if json_data.handle.starts_with("0x") {
@@ -627,8 +657,12 @@ impl TryFrom<UserDecryptRequestJson> for UserDecryptRequest {
             }
             .map_err(|e| anyhow::anyhow!("Failed to parse ctHandle: {}", e))?;
 
-            let contract_address = Address::from_str(&json_data.contract_address)
-                .map_err(|e| anyhow::anyhow!("Failed to parse contractAddress: {}", e))?;
+            let contract_address = if is_solana {
+                Address::ZERO
+            } else {
+                Address::from_str(&json_data.contract_address)
+                    .map_err(|e| anyhow::anyhow!("Failed to parse contractAddress: {}", e))?
+            };
 
             ct_handle_contract_pairs.push(HandleContractPair {
                 ct_handle,
@@ -655,14 +689,17 @@ impl TryFrom<UserDecryptRequestJson> for UserDecryptRequest {
             duration_days,
         };
 
-        // Parse contract chain ID
-        let contracts_chain_id = parse_chain_id(&value.contracts_chain_id)?;
-
-        let contract_addresses = &value
-            .contract_addresses
-            .iter()
-            .map(|addr| Address::from_str(addr))
-            .collect::<Result<Vec<_>, _>>()?;
+        // On Solana the contract identities are off-gateway (enforced by the KMS solana_acl), so
+        // the EVM `contract_addresses` list is empty; on EVM each entry is a 20-byte address.
+        let contract_addresses = if is_solana {
+            Vec::new()
+        } else {
+            value
+                .contract_addresses
+                .iter()
+                .map(|addr| Address::from_str(addr))
+                .collect::<Result<Vec<_>, _>>()?
+        };
 
         // Parse extraData (validated at HTTP layer)
         let extra_data = Bytes::from_str(&value.extra_data)?;
@@ -671,7 +708,7 @@ impl TryFrom<UserDecryptRequestJson> for UserDecryptRequest {
             ct_handle_contract_pairs,
             request_validity,
             contracts_chain_id,
-            contract_addresses: contract_addresses.clone(),
+            contract_addresses,
             user_address: Address::from_str(&value.user_address)?,
             signature: Bytes::from_str(&value.signature)?,
             public_key: Bytes::from_str(&value.public_key)?,
@@ -752,14 +789,21 @@ impl TryFrom<AttestedUserDecryptRequestJson> for UserDecryptRequest {
     type Error = anyhow::Error;
 
     fn try_from(value: AttestedUserDecryptRequestJson) -> Result<Self, Self::Error> {
-        info!("Converting AttestedUserDecryptRequestJson to UserDecryptRequest (Eip712UnifiedV1)");
+        info!(
+            attestation_type = %value.attestation_type,
+            "Converting AttestedUserDecryptRequestJson to UserDecryptRequest"
+        );
 
-        // The envelope's `attestation_type` is validated at the HTTP layer
-        // to be exactly `"eip712-unified-user-decrypt-v1"`; the variant tag
-        // below carries that semantic implicitly, so we don't re-store it
-        // on the core type.
+        // `attestation_type` (validated at the HTTP layer) selects the gateway overload: EVM
+        // EIP-712 -> `userDecryptionRequest`, Solana ed25519 (RFC-021) -> `userDecryptionRequestSolana`.
+        // `signature`, `publicKey` and `extraData` are forwarded verbatim (opaque to the relayer);
+        // the relayer never verifies the signature — each KMS party's connector does. The Solana auth
+        // fields travel as typed `solana*` values, not packed into `extraData`.
         let payload_inner = value.attested_payload;
 
+        // Handles are shared across both unified paths. On Solana the per-handle EVM
+        // contract/owner addresses are placeholders (the ACL is enforced off-gateway via the typed
+        // `solana_allowed_acl_domain_keys`); the handle bytes are authoritative on both paths.
         let mut handles = Vec::with_capacity(payload_inner.handles.len());
         for entry in &payload_inner.handles {
             let ct_handle = if let Some(rest) = entry.ct_handle.strip_prefix("0x") {
@@ -781,25 +825,61 @@ impl TryFrom<AttestedUserDecryptRequestJson> for UserDecryptRequest {
             });
         }
 
+        let request_validity = RequestValiditySeconds {
+            start_timestamp: U256::from_str(&payload_inner.request_validity.start_timestamp)?,
+            duration_seconds: U256::from_str(&payload_inner.request_validity.duration_seconds)?,
+        };
+        let signature = Bytes::from_str(&value.signature)?;
+        let public_key = Bytes::from_str(&payload_inner.public_key)?;
+        let extra_data = Bytes::from_str(&payload_inner.extra_data)?;
+
+        if value.attestation_type == V3_ATTESTATION_TYPE_SOLANA_ED25519_V1 {
+            let user_identity = B256::from_str(payload_inner.solana_user_identity.as_deref().ok_or_else(
+                || anyhow::anyhow!("solanaUserIdentity is required for the Solana ed25519 attestation type"),
+            )?)
+            .map_err(|e| anyhow::anyhow!("Failed to parse solanaUserIdentity: {}", e))?;
+
+            let nonce = B256::from_str(payload_inner.solana_nonce.as_deref().ok_or_else(|| {
+                anyhow::anyhow!("solanaNonce is required for the Solana ed25519 attestation type")
+            })?)
+            .map_err(|e| anyhow::anyhow!("Failed to parse solanaNonce: {}", e))?;
+
+            let allowed_acl_domain_keys = payload_inner
+                .solana_allowed_acl_domain_keys
+                .unwrap_or_default()
+                .iter()
+                .map(|k| B256::from_str(k))
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|e| {
+                    anyhow::anyhow!("Failed to parse solanaAllowedAclDomainKeys: {}", e)
+                })?;
+
+            return Ok(UserDecryptRequest::SolanaUnifiedV1 {
+                handles,
+                user_identity,
+                allowed_acl_domain_keys,
+                request_validity,
+                nonce,
+                signature,
+                public_key,
+                extra_data,
+            });
+        }
+
         let allowed_contracts = payload_inner
             .allowed_contracts
             .iter()
             .map(|addr| Address::from_str(addr))
             .collect::<Result<Vec<_>, _>>()?;
 
-        let request_validity = RequestValiditySeconds {
-            start_timestamp: U256::from_str(&payload_inner.request_validity.start_timestamp)?,
-            duration_seconds: U256::from_str(&payload_inner.request_validity.duration_seconds)?,
-        };
-
         Ok(UserDecryptRequest::Eip712UnifiedV1 {
             handles,
             user_address: Address::from_str(&payload_inner.user_address)?,
             allowed_contracts,
             request_validity,
-            signature: Bytes::from_str(&value.signature)?,
-            public_key: Bytes::from_str(&payload_inner.public_key)?,
-            extra_data: Bytes::from_str(&payload_inner.extra_data)?,
+            signature,
+            public_key,
+            extra_data,
         })
     }
 }
@@ -922,6 +1002,16 @@ pub struct KeyData {
     pub url: String,
 }
 
+/// Chain-type high bit of a canonical RFC-021 `u64` chain id: set for Solana
+/// hosts, clear for EVM. Matches `SOLANA_CHAIN_TYPE_BIT` in the coprocessor
+/// (`fhevm-engine-common::chain_id`) and the js-sdk prover.
+pub const SOLANA_CHAIN_TYPE_BIT: u64 = 1 << 63;
+
+/// Whether a contract chain id denotes a Solana host (chain-type high bit set).
+pub fn is_solana_host_chain_id(contract_chain_id: u64) -> bool {
+    contract_chain_id & SOLANA_CHAIN_TYPE_BIT != 0
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct InputProofRequest {
     pub contract_chain_id: u64,
@@ -929,6 +1019,14 @@ pub struct InputProofRequest {
     pub user_address: Address,
     pub ciphetext_with_zk_proof: Bytes,
     pub extra_data: Bytes,
+    /// Solana 32-byte host identities, set only when `contract_chain_id` carries
+    /// the Solana chain-type high bit. EVM requests leave these `None` and use
+    /// the 20-byte `contract_address`/`user_address` fields above. Exactly one
+    /// representation is meaningful per request, decided by the chain id.
+    #[serde(default)]
+    pub solana_contract_address: Option<FixedBytes<32>>,
+    #[serde(default)]
+    pub solana_user_address: Option<FixedBytes<32>>,
 }
 
 impl InputProofRequest {
@@ -945,7 +1043,35 @@ impl InputProofRequest {
             user_address,
             ciphetext_with_zk_proof,
             extra_data,
+            solana_contract_address: None,
+            solana_user_address: None,
         }
+    }
+
+    /// Builds a Solana-host input-proof request carrying 32-byte identities. The
+    /// 20-byte EVM `contract_address`/`user_address` are left zero — unused on
+    /// the Solana path, which submits via `verifyProofRequestSolana`.
+    pub fn new_solana(
+        contract_chain_id: u64,
+        contract_address: FixedBytes<32>,
+        user_address: FixedBytes<32>,
+        ciphetext_with_zk_proof: Bytes,
+        extra_data: Bytes,
+    ) -> InputProofRequest {
+        InputProofRequest {
+            contract_chain_id,
+            contract_address: Address::ZERO,
+            user_address: Address::ZERO,
+            ciphetext_with_zk_proof,
+            extra_data,
+            solana_contract_address: Some(contract_address),
+            solana_user_address: Some(user_address),
+        }
+    }
+
+    /// Whether this request targets a Solana host (chain-type high bit set).
+    pub fn is_solana(&self) -> bool {
+        is_solana_host_chain_id(self.contract_chain_id)
     }
 }
 
@@ -973,12 +1099,6 @@ impl TryFrom<InputProofRequestJson> for InputProofRequest {
             .map_err(|e| anyhow::anyhow!("Error parsing contractChainId: {:?}", e))?;
         info!("contract_chain_id decoded: {:?}", contract_chain_id);
 
-        let contract_address = Address::from_str(&json.contract_address)
-            .map_err(|e| anyhow::anyhow!("Error parsing contractAddress: {:?}", e))?;
-
-        let user_address = Address::from_str(&json.user_address)
-            .map_err(|e| anyhow::anyhow!("Error parsing userAddress: {:?}", e))?;
-
         // Should be hex string without a "0x" prefix.
         let proof_bytes = hex::decode(&json.ciphertext_with_input_verification).map_err(|e| {
             anyhow::anyhow!("Error decoding ciphertextWithInputVerification: {}", e)
@@ -988,13 +1108,42 @@ impl TryFrom<InputProofRequestJson> for InputProofRequest {
         // Parse extraData (validated at HTTP layer)
         let extra_data = Bytes::from_str(&json.extra_data)?;
 
-        Ok(InputProofRequest {
+        // The chain-type high bit selects how the (HTTP-validated) identity
+        // strings are interpreted: Solana hosts carry 32-byte base58 identities,
+        // EVM hosts the usual 20-byte 0x-hex addresses.
+        if is_solana_host_chain_id(contract_chain_id) {
+            let contract_address =
+                crate::http::utils::solana_address::decode_solana_address(&json.contract_address)
+                    .map_err(|e| {
+                    anyhow::anyhow!("Error parsing Solana contractAddress: {:?}", e.message)
+                })?;
+            let user_address =
+                crate::http::utils::solana_address::decode_solana_address(&json.user_address)
+                    .map_err(|e| {
+                        anyhow::anyhow!("Error parsing Solana userAddress: {:?}", e.message)
+                    })?;
+            return Ok(InputProofRequest::new_solana(
+                contract_chain_id,
+                FixedBytes::<32>::from(contract_address),
+                FixedBytes::<32>::from(user_address),
+                ciphetext_with_zk_proof,
+                extra_data,
+            ));
+        }
+
+        let contract_address = Address::from_str(&json.contract_address)
+            .map_err(|e| anyhow::anyhow!("Error parsing contractAddress: {:?}", e))?;
+
+        let user_address = Address::from_str(&json.user_address)
+            .map_err(|e| anyhow::anyhow!("Error parsing userAddress: {:?}", e))?;
+
+        Ok(InputProofRequest::new(
             contract_chain_id,
             contract_address,
             user_address,
             ciphetext_with_zk_proof,
             extra_data,
-        })
+        ))
     }
 }
 
@@ -1046,5 +1195,140 @@ mod tests {
         assert_eq!(request.ciphetext_with_zk_proof, Bytes::from(expected_bytes));
 
         Ok(())
+    }
+
+    // Canonical 32-byte base58 Solana identities (Token program + wrapped-SOL mint).
+    const SOLANA_CONTRACT: &str = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
+    const SOLANA_USER: &str = "So11111111111111111111111111111111111111112";
+    // A canonical RFC-021 Solana chain id: chain-type high bit set | 12345.
+    const SOLANA_CHAIN_ID_HEX: &str = "0x8000000000003039";
+
+    #[test]
+    fn solana_input_proof_request_carries_bytes32_identities() {
+        use crate::http::utils::solana_address::decode_solana_address;
+
+        let json = InputProofRequestJson {
+            contract_chain_id: SOLANA_CHAIN_ID_HEX.to_string(),
+            contract_address: SOLANA_CONTRACT.to_string(),
+            user_address: SOLANA_USER.to_string(),
+            ciphertext_with_input_verification: "abcd".to_string(),
+            extra_data: "0x00".to_string(),
+        };
+
+        let request = InputProofRequest::try_from(json).expect("Solana request should parse");
+
+        assert!(request.is_solana(), "high-bit chain id is a Solana host");
+        assert_eq!(request.contract_chain_id, (1u64 << 63) | 12345);
+        // 20-byte EVM fields are unused on the Solana path.
+        assert_eq!(request.contract_address, Address::ZERO);
+        assert_eq!(request.user_address, Address::ZERO);
+        // 32-byte identities are populated from the base58 input.
+        assert_eq!(
+            request.solana_contract_address,
+            Some(FixedBytes::<32>::from(
+                decode_solana_address(SOLANA_CONTRACT).unwrap()
+            ))
+        );
+        assert_eq!(
+            request.solana_user_address,
+            Some(FixedBytes::<32>::from(
+                decode_solana_address(SOLANA_USER).unwrap()
+            ))
+        );
+    }
+
+    #[test]
+    fn evm_input_proof_request_leaves_solana_identities_unset() {
+        let json = InputProofRequestJson {
+            contract_chain_id: "123456".to_string(),
+            contract_address: "0xAb30999D17FAAB8c95B2eCD500cFeFc8f658f15d".to_string(),
+            user_address: "0x12B064FB845C1cc05e9493856a1D637a73e944bE".to_string(),
+            ciphertext_with_input_verification: "abcd".to_string(),
+            extra_data: "0x00".to_string(),
+        };
+
+        let request = InputProofRequest::try_from(json).expect("EVM request should parse");
+
+        assert!(!request.is_solana(), "no high bit ⇒ EVM host");
+        assert_eq!(request.solana_contract_address, None);
+        assert_eq!(request.solana_user_address, None);
+        assert_ne!(request.contract_address, Address::ZERO);
+    }
+
+    /// A Solana-attestationType v3 envelope routes to the `SolanaUnifiedV1` core variant (and hence
+    /// the gateway `userDecryptionRequestSolana` calldata), carrying the ed25519 auth fields
+    /// (identity, nonce, allowed ACL domain keys) as TYPED values and forwarding `signature` +
+    /// context-only `extraData` unchanged. The EVM-shaped fields are placeholders.
+    #[test]
+    fn solana_attested_user_decrypt_routes_to_typed_solana_unified() {
+        use crate::http::endpoints::common::types::{HandleEntryJson, RequestValiditySecondsJson};
+        use crate::http::endpoints::v3::types::Eip712UnifiedUserDecryptPayloadJson;
+
+        // 64-byte ed25519 signature (128 hex chars), forwarded opaquely.
+        let signature_hex = format!("0x{}", "ab".repeat(64));
+        // Context-only extraData (v0x01: version ‖ contextId(32)) — no Solana auth data here.
+        let mut extra = vec![0x01u8];
+        extra.extend_from_slice(&[0u8; 32]);
+        let extra_data_hex = format!("0x{}", hex::encode(&extra));
+        let public_key_hex = "0x04b8e5d3".to_string();
+        let identity_hex = format!("0x{}", "07".repeat(32));
+        let nonce_hex = format!("0x{}", "09".repeat(32));
+        let domain_key_hex = format!("0x{}", "05".repeat(32));
+
+        let json = AttestedUserDecryptRequestJson {
+            attestation_type: "solana-ed25519-user-decrypt-v1".to_string(),
+            attested_payload: Eip712UnifiedUserDecryptPayloadJson {
+                version: "2.0".to_string(),
+                r#type: "user_decryption".to_string(),
+                handles: vec![HandleEntryJson {
+                    ct_handle: format!("0x{}", "11".repeat(32)),
+                    contract_address: "0xAb30999D17FAAB8c95B2eCD500cFeFc8f658f15d".to_string(),
+                    owner_address: "0x12B064FB845C1cc05e9493856a1D637a73e944bE".to_string(),
+                }],
+                // EVM-shaped fields are placeholders for Solana; the typed `solana*` fields below
+                // carry the real auth data.
+                user_address: "0x12B064FB845C1cc05e9493856a1D637a73e944bE".to_string(),
+                allowed_contracts: vec![],
+                request_validity: RequestValiditySecondsJson {
+                    start_timestamp: "1700000000".to_string(),
+                    duration_seconds: "604800".to_string(),
+                },
+                public_key: public_key_hex.clone(),
+                extra_data: extra_data_hex.clone(),
+                solana_user_identity: Some(identity_hex.clone()),
+                solana_nonce: Some(nonce_hex.clone()),
+                solana_allowed_acl_domain_keys: Some(vec![domain_key_hex.clone()]),
+            },
+            signature: signature_hex.clone(),
+        };
+
+        let request = UserDecryptRequest::try_from(json).expect("Solana envelope should convert");
+
+        match request {
+            UserDecryptRequest::SolanaUnifiedV1 {
+                signature,
+                extra_data,
+                public_key,
+                user_identity,
+                nonce,
+                allowed_acl_domain_keys,
+                ..
+            } => {
+                assert_eq!(signature, Bytes::from_str(&signature_hex).unwrap());
+                assert_eq!(
+                    extra_data,
+                    Bytes::from_str(&extra_data_hex).unwrap(),
+                    "extraData is context-only (no Solana auth data)"
+                );
+                assert_eq!(public_key, Bytes::from_str(&public_key_hex).unwrap());
+                assert_eq!(user_identity, B256::from_str(&identity_hex).unwrap());
+                assert_eq!(nonce, B256::from_str(&nonce_hex).unwrap());
+                assert_eq!(
+                    allowed_acl_domain_keys,
+                    vec![B256::from_str(&domain_key_hex).unwrap()]
+                );
+            }
+            other => panic!("expected SolanaUnifiedV1, got {}", other.attestation_kind()),
+        }
     }
 }

@@ -400,6 +400,10 @@ pub(crate) fn aux_fixture(acl_contract_address: String) -> (ZkData, [u8; 92]) {
 
     (
         zk_data.clone(),
-        zk_data.assemble().expect("Failed to assemble ZkData"),
+        zk_data
+            .assemble()
+            .expect("Failed to assemble ZkData")
+            .try_into()
+            .expect("EVM aux data is 92 bytes"),
     )
 }

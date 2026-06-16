@@ -1,5 +1,13 @@
 # Solana FHEVM PoC
 
+> Partially superseded (reconciliation, June 2026). The input-binding, KMS/decrypt, and trust-root
+> framing in parts of this README predates the reconciliation: external inputs now bind via an on-chain
+> secp256k1 coprocessor attestation (not an Ed25519 verifier set), the VerifierSet subsystem was
+> replaced by a `define_kms_context` singleton, and user/public decrypt reuse the Gateway V2 / EVM stack
+> with on-chain secp256k1 cert verification rather than a separate native-v0 KMS path. For the current,
+> authoritative view (with every design choice as a debatable ADR), read
+> `solana/docs/DESIGN_DECISIONS.md` — especially DD-007, DD-012, DD-015, and DD-020 through DD-030.
+
 This workspace is the Solana host-chain PoC for the `openzeppelin-solana-track` branch.
 
 It is meant to be a readable base for:

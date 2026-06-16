@@ -16,6 +16,8 @@
 
 /// Shared constants, seed bytes, role flags, and fixed protocol sizes.
 pub mod constants;
+/// EIP-712 v4 verification of EVM-signed KMS / coprocessor certificates.
+pub mod eip712;
 /// Program-specific errors returned by ZamaHost instructions.
 pub mod errors;
 /// Anchor events emitted by protocol and test-shim instructions.
@@ -38,7 +40,7 @@ pub use state::*;
 
 use instructions::*;
 
-declare_id!("7fNskHjCN1DBrgsSKs3a6ZujTg4MJcKf2vCCK5DuvUaE");
+declare_id!("BXsiKq6Jg4vgdBqSd75NbMbKaB7WFKK48NVXx4zoeLsW");
 
 /// Anchor entrypoint module generated into the ZamaHost IDL.
 #[program]
@@ -52,11 +54,19 @@ pub mod zama_host {
         instructions::initialize_host_config(ctx, args)
     }
 
-    pub fn migrate_host_config_verifier_set(
-        ctx: Context<MigrateHostConfigVerifierSet>,
-        args: CreateVerifierSetArgs,
+    /// Defines a new KMS context (mirror of `ProtocolConfig.defineNewKmsContext`).
+    pub fn define_kms_context(
+        ctx: Context<DefineKmsContext>,
+        context_id: u64,
+        signers: Vec<[u8; 20]>,
+        thresholds: KmsThresholds,
     ) -> Result<()> {
-        instructions::migrate_host_config_verifier_set(ctx, args)
+        instructions::define_kms_context(ctx, context_id, signers, thresholds)
+    }
+
+    /// Destroys a non-current KMS context (mirror of `ProtocolConfig.destroyKmsContext`).
+    pub fn destroy_kms_context(ctx: Context<DestroyKmsContext>, context_id: u64) -> Result<()> {
+        instructions::destroy_kms_context(ctx, context_id)
     }
 
     pub fn set_host_pause(ctx: Context<HostAdmin>, paused: bool) -> Result<()> {
@@ -75,17 +85,6 @@ pub mod zama_host {
 
     pub fn set_grant_deny_list_enabled(ctx: Context<HostAdmin>, enabled: bool) -> Result<()> {
         instructions::set_grant_deny_list_enabled(ctx, enabled)
-    }
-
-    pub fn create_verifier_set(
-        ctx: Context<CreateVerifierSet>,
-        args: CreateVerifierSetArgs,
-    ) -> Result<()> {
-        instructions::create_verifier_set(ctx, args)
-    }
-
-    pub fn disable_verifier_set(ctx: Context<DisableVerifierSet>) -> Result<()> {
-        instructions::disable_verifier_set(ctx)
     }
 
     pub fn set_deny_subject(
@@ -257,29 +256,28 @@ pub mod zama_host {
         )
     }
 
-    pub fn verify_input_and_bind(
-        ctx: Context<VerifyInputAndBind>,
+    #[allow(clippy::too_many_arguments)]
+    pub fn verify_coprocessor_input(
+        ctx: Context<VerifyCoprocessorInput>,
         input_handle: [u8; 32],
-        proof: SolanaInputProof,
-        output_nonce_key: [u8; 32],
-        output_nonce_sequence: u64,
-        output_acl_domain_key: Pubkey,
-        output_app_account: Pubkey,
-        output_encrypted_value_label: [u8; 32],
-        output_subjects: Vec<AclSubjectEntry>,
-        output_public_decrypt: bool,
+        ct_handles: Vec<[u8; 32]>,
+        handle_index: u8,
+        user_address: [u8; 32],
+        contract_address: [u8; 32],
+        contract_chain_id: u64,
+        extra_data: Vec<u8>,
+        signatures: Vec<[u8; 65]>,
     ) -> Result<()> {
-        instructions::verify_input_and_bind(
+        instructions::verify_coprocessor_input(
             ctx,
             input_handle,
-            proof,
-            output_nonce_key,
-            output_nonce_sequence,
-            output_acl_domain_key,
-            output_app_account,
-            output_encrypted_value_label,
-            output_subjects,
-            output_public_decrypt,
+            ct_handles,
+            handle_index,
+            user_address,
+            contract_address,
+            contract_chain_id,
+            extra_data,
+            signatures,
         )
     }
 

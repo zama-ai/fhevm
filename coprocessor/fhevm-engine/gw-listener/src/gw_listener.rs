@@ -192,14 +192,28 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
                                 if let Ok(event) = InputVerification::InputVerificationEvents::decode_log(&log.inner) {
                                     // This listener only reacts to proof requests. Other known InputVerification
                                     // events are expected when multiple coprocessors interact with the gateway.
-                                    if let InputVerification::InputVerificationEvents::VerifyProofRequest(request) = event.data {
-                                        self.verify_proof_request(db_pool, request, log.clone()).await.
-                                            inspect(|_| {
-                                                verify_proof_success += 1;
-                                            }).inspect_err(|e| {
-                                                error!(error = %e, "VerifyProofRequest processing failed");
-                                                VERIFY_PROOF_FAIL_COUNTER.inc();
-                                        })?;
+                                    // EVM hosts emit VerifyProofRequest (address identities); Solana hosts
+                                    // (RFC-021) emit VerifyProofRequestSolana (bytes32 identities, high-bit chain id).
+                                    match event.data {
+                                        InputVerification::InputVerificationEvents::VerifyProofRequest(request) => {
+                                            self.verify_proof_request(db_pool, request, log.clone()).await.
+                                                inspect(|_| {
+                                                    verify_proof_success += 1;
+                                                }).inspect_err(|e| {
+                                                    error!(error = %e, "VerifyProofRequest processing failed");
+                                                    VERIFY_PROOF_FAIL_COUNTER.inc();
+                                            })?;
+                                        }
+                                        InputVerification::InputVerificationEvents::VerifyProofRequestSolana(request) => {
+                                            self.verify_proof_request_solana(db_pool, request, log.clone()).await.
+                                                inspect(|_| {
+                                                    verify_proof_success += 1;
+                                                }).inspect_err(|e| {
+                                                    error!(error = %e, "VerifyProofRequestSolana processing failed");
+                                                    VERIFY_PROOF_FAIL_COUNTER.inc();
+                                            })?;
+                                        }
+                                        _ => {}
                                     }
                                 } else {
                                     error!(log = ?log, "Failed to decode InputVerification event log");
@@ -442,6 +456,51 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
         .await;
 
         // TODO: check if we can avoid the cast from u256 to i64
+        sqlx::query!(
+            "WITH ins AS (
+                INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, input, extra_data, transaction_id)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                ON CONFLICT(zk_proof_id) DO NOTHING
+            )
+            SELECT pg_notify($8, '')",
+            request.zkProofId.to::<i64>(),
+            chain_id.as_i64(),
+            request.contractAddress.to_string(),
+            request.userAddress.to_string(),
+            Some(request.ciphertextWithZKProof.as_ref()),
+            request.extraData.as_ref(),
+            transaction_id,
+            self.conf.verify_proof_req_db_channel
+        )
+        .execute(db_pool)
+        .await?;
+        Ok(())
+    }
+
+    /// Solana (RFC-021) counterpart of [`Self::verify_proof_request`]: the gateway emits
+    /// `VerifyProofRequestSolana` with bytes32 host identities and a chain id carrying the
+    /// chain-type high bit (decoded via `from_canonical_u64`, stored as its i64 bit-pattern).
+    /// The verify_proofs row is otherwise identical; the zkproof-worker selects the 128-byte
+    /// aux + 32-byte identity layout from the chain-type bit.
+    async fn verify_proof_request_solana(
+        &self,
+        db_pool: &Pool<Postgres>,
+        request: InputVerification::VerifyProofRequestSolana,
+        log: Log,
+    ) -> anyhow::Result<()> {
+        let transaction_id = log.transaction_hash.map(|h| h.to_vec()).unwrap_or_default();
+        info!(zk_proof_id = %request.zkProofId, tid = %to_hex(&transaction_id), "Received Solana ZK proof request event");
+
+        let chain_id = ChainId::from_canonical_u64(request.contractChainId.to::<u64>());
+
+        let _ = telemetry::try_begin_transaction(
+            db_pool,
+            chain_id,
+            &transaction_id,
+            log.block_number.unwrap_or_default(),
+        )
+        .await;
+
         sqlx::query!(
             "WITH ins AS (
                 INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, input, extra_data, transaction_id)

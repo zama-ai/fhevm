@@ -1,4 +1,4 @@
-import type { Bytes20, Bytes32, BytesHex, ChecksummedAddress, UintNumber } from '../types/primitives.js';
+import type { BytesHex, ChecksummedAddress, UintNumber } from '../types/primitives.js';
 import type { ZkProof } from '../types/zkProof-p.js';
 import type { EncryptionBits, FheType } from '../types/fheType.js';
 import type { ZkProofBuilder } from '../types/zkProofBuilder.js';
@@ -15,11 +15,13 @@ import type {
   BoolValueLike,
   AddressValueLike,
 } from '../types/primitives.js';
+import type { SolanaZkProof } from './SolanaZkProof-p.js';
 import { assert } from '../base/errors/InternalError.js';
-import { isUint64, uint256ToBytes32 } from '../base/uint.js';
-import { isAddress } from '../base/address.js';
-import { asBytesHex, hexToBytes20 } from '../base/bytes.js';
+import { isUint64 } from '../base/uint.js';
+import { asBytesHex } from '../base/bytes.js';
 import { ZkProofError } from '../errors/ZkProofError.js';
+import { buildInputProofMetaData, isSolanaHostChainId } from './buildInputProofMetaData-p.js';
+import { toSolanaZkProof } from './SolanaZkProof-p.js';
 import { createTypedValue, TypedValueArrayBuilder } from '../base/typedValue.js';
 import { toZkProof } from './ZkProof-p.js';
 import { encryptionBitsFromFheType, fheTypeNameFromTypeName } from '../handle/FheType.js';
@@ -149,6 +151,98 @@ class ZkProofBuilderImpl implements ZkProofBuilder {
       readonly extraData: string;
     },
   ): Promise<ZkProof> {
+    const {
+      chainId,
+      aclContractAddress,
+      ciphertextWithZkProof,
+      extraData: finalExtraData,
+    } = await this.#encodeAndProve(context, contractAddress, userAddress, asBytesHex(extraData));
+
+    if (isSolanaHostChainId(chainId)) {
+      throw new ZkProofError({
+        message: 'Use buildSolana() for Solana host chains',
+      });
+    }
+
+    return toZkProof(
+      {
+        chainId: BigInt(chainId),
+        aclContractAddress,
+        contractAddress,
+        userAddress,
+        ciphertextWithZkProof,
+        encryptionBits: this.#bits,
+      },
+      finalExtraData,
+      { copy: false }, // Take ownership
+    );
+  }
+
+  /**
+   * Solana counterpart of {@link build}: produces a {@link SolanaZkProof} bound to
+   * RFC-021 bytes32 host identities and the 128-byte aux layout. The proof-generation
+   * core is shared with {@link build}; only the aux layout (selected by host chain
+   * type inside `buildInputProofMetaData`) and the returned proof type differ.
+   */
+  public async buildSolana(
+    context: Context,
+    {
+      contractAddress,
+      userAddress,
+    }: {
+      readonly contractAddress: string;
+      readonly userAddress: string;
+    },
+  ): Promise<SolanaZkProof> {
+    // Solana input-proof extraData is fixed (`0x00`): the host binding lives in the 128-byte aux
+    // (`buildInputProofMetaData`), and SolanaZkProof carries no extraData field.
+    const { chainId, aclContractAddress, ciphertextWithZkProof } = await this.#encodeAndProve(
+      context,
+      contractAddress,
+      userAddress,
+      asBytesHex('0x00'),
+    );
+
+    if (!isSolanaHostChainId(chainId)) {
+      throw new ZkProofError({
+        message: 'buildSolana() requires a Solana host chain (RFC-021 chain-type bit)',
+      });
+    }
+
+    return toSolanaZkProof(
+      {
+        chainId: BigInt(chainId),
+        aclContractAddress,
+        contractAddress,
+        userAddress,
+        ciphertextWithZkProof,
+        encryptionBits: this.#bits,
+      },
+      { copy: false }, // Take ownership
+    );
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+  // Private helpers
+  //////////////////////////////////////////////////////////////////////////////
+
+  /**
+   * Shared proof-generation core for {@link build} and {@link buildSolana}: validates
+   * inputs, assembles the host-appropriate input-proof aux, and produces the packed
+   * proven ciphertext. The aux layout is chosen by host chain type inside
+   * `buildInputProofMetaData`; the caller wraps the result in the matching proof type.
+   */
+  async #encodeAndProve(
+    context: Context,
+    contractAddress: string,
+    userAddress: string,
+    extraData: BytesHex,
+  ): Promise<{
+    readonly chainId: bigint | number;
+    readonly aclContractAddress: string;
+    readonly ciphertextWithZkProof: Uint8Array;
+    readonly extraData: BytesHex;
+  }> {
     // Fetch the FheEncryptionKey (in wasm format) from the global cache.
     const fheEncryptionKeyWasm = await fetchFheEncryptionKeyWasm(context);
 
@@ -161,83 +255,41 @@ class ZkProofBuilderImpl implements ZkProofBuilder {
     // should be guaranteed at this point
     assert(this.#totalBits <= this.#bitsCapacity);
 
-    if (!isAddress(contractAddress)) {
-      throw new ZkProofError({
-        message: `Invalid contract address: ${contractAddress}`,
-      });
-    }
-    if (!isAddress(userAddress)) {
-      throw new ZkProofError({
-        message: `Invalid user address: ${userAddress}`,
-      });
-    }
-
     const aclContractAddress = context.chain.fhevm.contracts.acl.address;
     const chainId = context.chain.id;
 
-    if (!isAddress(aclContractAddress)) {
-      throw new ZkProofError({
-        message: `Invalid ACL address: ${aclContractAddress}`,
-      });
-    }
     if (!isUint64(chainId)) {
       throw new ZkProofError({
         message: `Invalid chain ID uint64: ${chainId}`,
       });
     }
 
-    // Note about hexToBytes(<address>)
-    // ================================
-    // All addresses are 42 characters long strings.
-    // hexToBytes(<42-characters hex string>) always returns a 20-byte long Uint8Array
-
-    // Bytes20
-    const contractAddressBytes20: Bytes20 = hexToBytes20(contractAddress);
-
-    // Bytes20
-    const userAddressBytes20: Bytes20 = hexToBytes20(userAddress);
-
-    // Bytes20
-    const aclContractAddressBytes20: Bytes20 = hexToBytes20(aclContractAddress);
-
-    // Bytes32
-    const chainIdBytes32: Bytes32 = uint256ToBytes32(chainId);
-
-    const metaDataLength = 3 * 20 + 32;
-    const metaData = new Uint8Array(metaDataLength);
-
-    metaData.set(contractAddressBytes20, 0);
-    metaData.set(userAddressBytes20, 20);
-    metaData.set(aclContractAddressBytes20, 40);
-    metaData.set(chainIdBytes32, 60);
-
-    assert(metaData.length - chainIdBytes32.length === 60);
+    // Prover side of the input-proof auxiliary data. It MUST agree with the
+    // coprocessor zkproof-worker verifier byte-for-byte: EVM hosts use the
+    // 92-byte 20-byte-address layout, Solana hosts (RFC-021) the 128-byte bytes32
+    // layout. Per-host identity validation happens inside the helper.
+    const metaData = buildInputProofMetaData({
+      chainId,
+      contractAddress,
+      userAddress,
+      aclContractAddress,
+    });
 
     const { ciphertextWithZKProofBytes, extraData: finalExtraData } =
       await context.runtime.encrypt.buildWithProofPacked({
         typedValues: [...this.#builder.build()],
         fheEncryptionKey: fheEncryptionKeyWasm,
         metaData,
-        extraData: asBytesHex(extraData),
+        extraData,
       });
 
-    return toZkProof(
-      {
-        chainId: BigInt(chainId),
-        aclContractAddress,
-        contractAddress,
-        userAddress,
-        ciphertextWithZkProof: ciphertextWithZKProofBytes,
-        encryptionBits: this.#bits,
-      },
-      finalExtraData,
-      { copy: false }, // Take ownership
-    );
+    return {
+      chainId,
+      aclContractAddress,
+      ciphertextWithZkProof: ciphertextWithZKProofBytes,
+      extraData: finalExtraData,
+    };
   }
-
-  //////////////////////////////////////////////////////////////////////////////
-  // Private helpers
-  //////////////////////////////////////////////////////////////////////////////
 
   #checkLimit(encryptionBits: EncryptionBits): void {
     if (this.#totalBits + encryptionBits > this.#bitsCapacity) {

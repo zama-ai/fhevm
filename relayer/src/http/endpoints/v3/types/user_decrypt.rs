@@ -14,16 +14,18 @@ use utoipa::ToSchema;
 use validator::Validate;
 
 /// v3 user-decrypt request envelope. The relayer dispatches strictly by
-/// `attestationType`; the currently supported value is
-/// `"eip712-unified-user-decrypt-v1"`. Adding a Solana attestation later is
-/// a one-line widening of the dispatch table, not a v4 bump.
+/// `attestationType`. Supported values:
+/// - `"eip712-unified-user-decrypt-v1"` — EVM EIP-712 (verified on-chain by the gateway).
+/// - `"solana-ed25519-user-decrypt-v1"` — Solana ed25519 (verified off-chain per-party by the
+///   kms-connector). Both route to the same gateway V2 `userDecryptionRequest` calldata; the
+///   relayer forwards `signature` + `extraData` opaquely and never verifies them.
 #[derive(Deserialize, Clone, ToSchema, Validate, Derivative)]
 #[derivative(Debug)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AttestedUserDecryptRequestJson {
     /// The attestation/signature scheme used for the `signature` bytes.
-    /// Must equal `"eip712-unified-user-decrypt-v1"` for the current
-    /// release.
+    /// Must equal `"eip712-unified-user-decrypt-v1"` (EVM EIP-712) or
+    /// `"solana-ed25519-user-decrypt-v1"` (Solana ed25519).
     #[validate(custom(function = "crate::http::validate_v3_attestation_type"))]
     #[schema(example = "eip712-unified-user-decrypt-v1")]
     pub attestation_type: String,
@@ -95,10 +97,31 @@ pub struct Eip712UnifiedUserDecryptPayloadJson {
     #[schema(example = "0x04b8e5d3f1a2c4e6d8f0a1b3c5d7e9f1a2b4c6d8e0f2a3b5c7d9e1f3a5b7c9d1")]
     pub public_key: String,
 
-    /// Extra data forwarded to the gateway contract. Always `"0x00"` in
-    /// the current protocol version (versioned formats reserved for
-    /// future extensions).
+    /// Extra data forwarded verbatim to the gateway contract. `"0x00"` /
+    /// `0x01`-versioned (KMS context id). For the Solana ed25519 attestation
+    /// type, the ed25519 auth fields are carried as the typed `solana*` fields
+    /// below rather than packed here, so `extraData` is context-only on both
+    /// paths. Opaque to the relayer.
     #[validate(custom(function = "crate::http::validate_extra_data_field_decryption"))]
     #[schema(example = "0x00")]
     pub extra_data: String,
+
+    /// RFC-021 Solana ed25519 identity (32-byte pubkey, `0x` + 64 hex). Required for the
+    /// `solana-ed25519-user-decrypt-v1` attestation type; absent for EVM. The ed25519 `signature`
+    /// is verified against this identity off-chain by the KMS Connector.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(example = "0x1111111111111111111111111111111111111111111111111111111111111111")]
+    pub solana_user_identity: Option<String>,
+
+    /// RFC-021 per-request anti-replay nonce (`0x` + 64 hex) bound into the ed25519 signing
+    /// preimage. Required for the Solana ed25519 attestation type; absent for EVM.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(example = "0x2222222222222222222222222222222222222222222222222222222222222222")]
+    pub solana_nonce: Option<String>,
+
+    /// RFC-021 allowed Solana ACL domain keys (each a 32-byte pubkey, `0x` + 64 hex) — the Solana
+    /// analog of `allowedContracts`. May be empty (permissive mode). Absent for EVM.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(example = json!(["0x3333333333333333333333333333333333333333333333333333333333333333"]))]
+    pub solana_allowed_acl_domain_keys: Option<Vec<String>>,
 }

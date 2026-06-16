@@ -139,6 +139,43 @@ impl ComputeCalldata {
                 ));
                 Decryption::userDecryptionRequest_0Call::abi_encode(&call)
             }
+            UserDecryptRequest::SolanaUnifiedV1 {
+                handles,
+                user_identity,
+                allowed_acl_domain_keys,
+                request_validity,
+                nonce,
+                signature,
+                public_key,
+                extra_data,
+            } => {
+                let handle_entries: Vec<Decryption::HandleEntry> = handles
+                    .iter()
+                    .map(|h| Decryption::HandleEntry {
+                        handle: h.ct_handle.into(),
+                        contractAddress: h.contract_address,
+                        ownerAddress: h.owner_address,
+                    })
+                    .collect();
+                let validity = IDecryption::RequestValiditySeconds {
+                    startTimestamp: request_validity.start_timestamp,
+                    durationSeconds: request_validity.duration_seconds,
+                };
+                // The ed25519 auth fields travel as typed payload fields; `extraData` is
+                // context-only. The KMS Connector verifies the ed25519 signature off-chain.
+                let payload = IDecryption::UserDecryptionRequestSolanaPayload {
+                    userIdentity: user_identity,
+                    publicKey: public_key,
+                    allowedAclDomainKeys: allowed_acl_domain_keys,
+                    requestValidity: validity,
+                    nonce,
+                    extraData: extra_data,
+                    signature,
+                };
+                let call =
+                    Decryption::userDecryptionRequestSolanaCall::new((handle_entries, payload));
+                Decryption::userDecryptionRequestSolanaCall::abi_encode(&call)
+            }
         };
 
         info!(
@@ -170,6 +207,27 @@ impl ComputeCalldata {
         let calldata = request_call.abi_encode();
         Ok(Bytes::from(calldata))
     }
+
+    /// Solana (RFC-021) counterpart of [`Self::verify_proof_req`]: encodes a
+    /// `verifyProofRequestSolana` call with 32-byte bytes32 host identities (Solana
+    /// program id / pubkey). The contract chain id is the full u64 carrying the
+    /// chain-type high bit.
+    pub fn verify_proof_req_solana(
+        contract_chain_id: u64,
+        contract_address: FixedBytes<32>,
+        user_address: FixedBytes<32>,
+        ciphertext_with_zkproof: Bytes,
+        extra_data: Bytes,
+    ) -> Result<Bytes, EventProcessingError> {
+        let request_call = InputVerification::verifyProofRequestSolanaCall {
+            contractChainId: U256::from(contract_chain_id),
+            contractAddress: contract_address,
+            userAddress: user_address,
+            ciphertextWithZKProof: ciphertext_with_zkproof,
+            extraData: extra_data,
+        };
+        Ok(Bytes::from(request_call.abi_encode()))
+    }
 }
 
 fn encode_ct_handle_contract_pairs(
@@ -182,4 +240,35 @@ fn encode_ct_handle_contract_pairs(
             contractAddress: d.contract_address,
         })
         .collect()
+}
+
+#[cfg(test)]
+mod solana_calldata_tests {
+    use super::*;
+    use alloy::sol_types::SolCall;
+
+    #[test]
+    fn verify_proof_req_solana_encodes_bytes32_identities() {
+        let contract = FixedBytes::<32>::from([0x11u8; 32]);
+        let user = FixedBytes::<32>::from([0x22u8; 32]);
+        // RFC-021 Solana host chain id (chain-type high bit set).
+        let chain_id = (1u64 << 63) | 12345;
+
+        let calldata = ComputeCalldata::verify_proof_req_solana(
+            chain_id,
+            contract,
+            user,
+            Bytes::from(vec![1, 2, 3]),
+            Bytes::from(vec![0]),
+        )
+        .expect("encode solana verify_proof_req");
+
+        // Round-trips through the verifyProofRequestSolana ABI (selector + args).
+        let decoded = InputVerification::verifyProofRequestSolanaCall::abi_decode(&calldata)
+            .expect("decode verifyProofRequestSolana calldata");
+        assert_eq!(decoded.contractAddress, contract);
+        assert_eq!(decoded.userAddress, user);
+        assert_eq!(decoded.contractChainId, U256::from(chain_id));
+        assert_eq!(decoded.ciphertextWithZKProof, Bytes::from(vec![1, 2, 3]));
+    }
 }

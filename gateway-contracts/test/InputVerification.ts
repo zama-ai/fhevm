@@ -18,6 +18,7 @@ import {
   createByteInput,
   createCtHandles,
   createEIP712ResponseZKPoK,
+  createEIP712ResponseZKPoKSolana,
   createRandomAddress,
   createRandomWallet,
   getSignaturesZKPoK,
@@ -918,6 +919,90 @@ describe("InputVerification", function () {
       await expect(inputVerification.connect(fakeOwner).unpause())
         .to.be.revertedWithCustomError(inputVerification, "NotOwnerOrGatewayConfig")
         .withArgs(fakeOwner.address);
+    });
+  });
+
+  describe("Solana host (RFC-021) proof verification", function () {
+    let inputVerification: InputVerification;
+    let coprocessorTxSenders: HardhatEthersSigner[];
+    let coprocessorSigners: HardhatEthersSigner[];
+    let tokenFundedTxSender: Wallet;
+    let contractChainId: number;
+    let inputVerificationAddress: string;
+    let signatures: string[];
+
+    // 32-byte (bytes32) Solana host identities, in contrast to the 20-byte EVM addresses above.
+    const solanaContractAddress = "0x" + "11".repeat(32);
+    const solanaUserAddress = "0x" + "22".repeat(32);
+
+    beforeEach(async function () {
+      const fixture = await loadFixture(loadTestVariablesFixture);
+      inputVerification = fixture.inputVerification;
+      coprocessorTxSenders = fixture.coprocessorTxSenders;
+      coprocessorSigners = fixture.coprocessorSigners;
+      tokenFundedTxSender = fixture.tokenFundedTxSender;
+      contractChainId = fixture.chainIds[0];
+      inputVerificationAddress = await inputVerification.getAddress();
+
+      // Coprocessor signatures over the bytes32 CiphertextVerification typed data.
+      const eip712Message = createEIP712ResponseZKPoKSolana(
+        hre.network.config.chainId!,
+        inputVerificationAddress,
+        ctHandles,
+        solanaUserAddress,
+        solanaContractAddress,
+        contractChainId,
+        extraDataV0,
+      );
+      signatures = await getSignaturesZKPoK(eip712Message, coprocessorSigners);
+    });
+
+    it("Should emit VerifyProofRequestSolana with bytes32 identities", async function () {
+      await expect(
+        inputVerification
+          .connect(tokenFundedTxSender)
+          .verifyProofRequestSolana(
+            contractChainId,
+            solanaContractAddress,
+            solanaUserAddress,
+            ciphertextWithZKProof,
+            extraDataV0,
+          ),
+      )
+        .to.emit(inputVerification, "VerifyProofRequestSolana")
+        .withArgs(
+          zkProofId,
+          contractChainId,
+          solanaContractAddress,
+          solanaUserAddress,
+          ciphertextWithZKProof,
+          extraDataV0,
+        );
+    });
+
+    it("Should verify a Solana proof once consensus is reached over the bytes32 attestation", async function () {
+      await inputVerification
+        .connect(tokenFundedTxSender)
+        .verifyProofRequestSolana(
+          contractChainId,
+          solanaContractAddress,
+          solanaUserAddress,
+          ciphertextWithZKProof,
+          extraDataV0,
+        );
+
+      await inputVerification
+        .connect(coprocessorTxSenders[0])
+        .verifyProofResponseSolana(zkProofId, ctHandles, signatures[0], extraDataV0);
+      const txResponse = await inputVerification
+        .connect(coprocessorTxSenders[1])
+        .verifyProofResponseSolana(zkProofId, ctHandles, signatures[1], extraDataV0);
+
+      // Consensus reached at the second response (coprocessor threshold = 2).
+      await expect(txResponse)
+        .to.emit(inputVerification, "VerifyProofResponse")
+        .withArgs(zkProofId, ctHandles, signatures.slice(0, 2));
+      expect(await inputVerification.isProofVerified(zkProofId)).to.be.true;
     });
   });
 });

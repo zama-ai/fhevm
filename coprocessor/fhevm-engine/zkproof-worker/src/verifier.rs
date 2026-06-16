@@ -312,17 +312,13 @@ async fn execute_verify_proof_routine(
             .input
             .ok_or(ExecutionError::NullInput(row.zk_proof_id))?;
         let host_chain_id_raw: i64 = row.chain_id;
-
-        // The filter above guarantees host_chain_id_raw is in HostChainsCache.
-        // Both lookups below are infallible in practice; the `?` is a sanity
-        // backstop for the (impossible-in-current-code) case where the cache
-        // diverges from the SELECT result mid-routine.
-        let host_chain_id = ChainId::try_from(host_chain_id_raw)
-            .map_err(|_| ExecutionError::UnknownChainId(host_chain_id_raw))?;
+        // A Solana host id carries the RFC-021 chain-type high bit and is stored as a
+        // negative i64 bit pattern, which the strict ChainId::try_from rejects;
+        // from_canonical_u64 recovers the full u64 host id for EVM and Solana alike.
+        let host_chain_id = ChainId::from_canonical_u64(host_chain_id_raw as u64);
         let host_chain = host_chain_cache
             .get_chain(host_chain_id)
             .ok_or(ExecutionError::UnknownChainId(host_chain_id_raw))?;
-
         let contract_address = row.contract_address;
         let user_address = row.user_address;
         let transaction_id: Option<Vec<u8>> = row.transaction_id;
@@ -601,11 +597,22 @@ fn compute_handle_hash(
     handle_hash.update(HANDLE_HASH_DOMAIN_SEPARATOR);
     handle_hash.update(blob_hash);
     handle_hash.update([ct_idx as u8]);
-    handle_hash.update(
-        Address::from_str(&aux_data.acl_contract_address)
-            .expect("valid acl_contract_address")
-            .into_array(),
-    );
+    // EVM hosts contribute a 20-byte ACL address; Solana hosts a 32-byte bytes32
+    // ACL program identity. The handle preimage is internal to the coprocessor
+    // (the host program checks only the trailing metadata + the signed
+    // attestation), so the width just needs to stay collision-free per host type.
+    if aux_data.chain_id.is_solana_host() {
+        handle_hash.update(
+            auxiliary::parse_bytes32(&aux_data.acl_contract_address)
+                .map_err(|e| ExecutionError::InvalidAuxData(e.to_string()))?,
+        );
+    } else {
+        handle_hash.update(
+            Address::from_str(&aux_data.acl_contract_address)
+                .expect("valid acl_contract_address")
+                .into_array(),
+        );
+    }
     handle_hash.update(chain_id_bytes);
     let handle = handle_hash.finalize().to_vec();
     assert_eq!(handle.len(), 32);

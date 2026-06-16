@@ -6,8 +6,10 @@ notes are gone.
 
 ```text
 DESIGN_DECISIONS.md
-  The stable *why* (DD-001..DD-013) + open product decisions. Read this before changing ACL, KMS,
-  event transport, decrypt, or token-transfer behavior.
+  The stable *why* (DD-001..DD-030) + open product decisions. Read this before changing ACL, KMS,
+  event transport, decrypt, or token-transfer behavior. DD-020..DD-030, plus the "Open questions for
+  the e2e flow debate" and "Next steps after merge" sections, are the June 2026 reconciliation; DD-007,
+  DD-012, and DD-015 were updated there. This is the current authoritative view of the e2e PoC.
 
 EVM_PARITY.md
   Capability-by-capability EVM->Solana parity map (ERC7984 + host-contracts + gateway-contracts)

@@ -1,5 +1,11 @@
 # EVM → Solana Parity Note
 
+> Partially superseded (reconciliation, June 2026). Rows mentioning `verify_input_and_bind`, the input
+> verifier set, the Ed25519 KMS cert, or the native-v0 "don't reuse EVM routing" path are stale: input
+> binding is now on-chain secp256k1 over the coprocessor attestation, and decrypt reuses the Gateway
+> V2 / EVM stack with on-chain secp256k1 cert verification. See `DESIGN_DECISIONS.md` DD-007, DD-012,
+> DD-020–DD-024, DD-026–DD-027 for the current view.
+
 This note maps each EVM-side capability of the Zama confidential-token + FHEVM host design to
 its Solana equivalent in this PoC, or records a justified divergence. It is grounded in direct
 code review of `ERC7984.sol`, `host-contracts/`, `gateway-contracts/`, and the Solana programs +
@@ -28,9 +34,9 @@ Design rationale for the divergences below is recorded in
 | ERC7984 capability | Semantics | Solana equivalent | Status |
 |---|---|---|---|
 | `confidentialTransfer(to, euint64)` | holder transfers an already-allowed handle; `require isAllowed(amount, sender)` | `confidential_transfer(amount_handle)` — owner-signed; owner-scoped amount ACL; rotates sender/recipient balance handles + births output ACL records | **MET** |
-| `confidentialTransfer(to, externalEuint64, inputProof)` | transfer a freshly verified external input | `verify_input_and_bind` (host) → `confidential_transfer` | **DIVERGENCE** — input verification is a separate host instruction (no inline `FHE.fromExternal`; DD-007) |
+| `confidentialTransfer(to, externalEuint64, inputProof)` | transfer a freshly verified external input | `verify_coprocessor_input` (host; verify + receipt, no persistent ACL) → `confidential_transfer` | **DIVERGENCE** — input verification is a separate host instruction (no inline `FHE.fromExternal`; DD-007) |
 | `confidentialTransferFrom(from,to,euint64)` | operator transfer; `require isOperator` + `isAllowed`; `allowTransient(transferred, sender)` | no Solana production equivalent | **INTENTIONAL GAP** — operator/delegated transfer APIs were removed to simplify authority and reduce attack surface |
-| `confidentialTransferFrom(from,to,externalEuint64,proof)` | operator transfer of external input | no Solana production equivalent | **INTENTIONAL GAP** — owner-authorized `verify_input_and_bind` → `confidential_transfer` is the supported path |
+| `confidentialTransferFrom(from,to,externalEuint64,proof)` | operator transfer of external input | no Solana production equivalent | **INTENTIONAL GAP** — owner-authorized `verify_coprocessor_input` → `confidential_transfer` is the supported path |
 | `confidentialTransferAndCall(...)` ×4 | transfer then call `onConfidentialTransferReceived`; refund `select(success,0,sent)`; `transferred = sent - refund`; transient-allow to sender | `confidential_call_transfer_receiver` (hook, returns encrypted success handle) → `confidential_prepare_transfer_callback` (compute refund) → `confidential_finalize_transfer_callback` (credit refund, record transfer) | **DIVERGENCE** — split receiver-hook + settlement (DD-011: single-instruction callback exceeds SBF heap/CPI depth); hook causality + replay markers enforced explicitly |
 | `setOperator(operator, until)` | time-bounded operator approval (`uint48` deadline); `OperatorSet` event | no Solana production equivalent | **INTENTIONAL GAP** — no operator rows or operator events |
 | `isOperator(holder, spender)` | `holder==spender \|\| now <= until` | no Solana production equivalent | **INTENTIONAL GAP** — holder self-authority is handled by owner-signed paths |
@@ -95,7 +101,7 @@ fromExternal** — all implemented. The confidential token is therefore **op-com
 | `checkDecryptionReady` (material added) | all handles have ciphertext material | `verify_material_commitment` (state==COMMITTED + canonical PDA) / on-chain `assert_material_commitment` | **MET** |
 | `CiphertextCommits.addCiphertextMaterial` | multi-coprocessor consensus adds (keyId, ctDigest, snsDigest) | `commit_handle_material` — single `material_authority` writes one-shot `HandleMaterialCommitment`, seals ACL record | **DIVERGENCE** (consensus → single authority; consensus is off-chain) |
 | `checkCiphertextMaterial` | material-present check | `commitment.state==COMMITTED` + hash binding | **MET** |
-| `InputVerification.verifyProofRequest/Response` (ZKPoK consensus) | coprocessor ZK-proof verify + consensus + EIP-712 | `verify_input_and_bind` (active host input-verifier-set quorum over canonical Solana proof+intent bytes) | **DIVERGENCE** + partial **SCOPE/PRODUCT-OPEN** (external proof/transciphering service and no `rejectProofResponse`) |
+| `InputVerification.verifyProofRequest/Response` (ZKPoK consensus) + `FHEVMExecutor.verifyInput` (tx-scoped transient allow, no persistent ACL) | coprocessor ZK-proof verify + consensus + EIP-712; verifyInput grants only a transient allow | `verify_coprocessor_input` — on-chain secp256k1 recover + threshold-check of the coprocessor EIP-712 `CiphertextVerification` attestation, then emits an `InputVerifiedEvent` receipt; creates **no persistent ACL** (DD-007) | **MET** (parity with `verifyInput`: verify ≠ allow; Solana has no transient store so durable perms are a separate explicit grant) + partial **SCOPE/PRODUCT-OPEN** (external proof/transciphering service, no `rejectProofResponse`, host-listener does not yet consume the receipt) |
 | `HandleOps`/`FHETypeBitSizes` | parse chainId/fheType; bit-size table | mirrored exactly in connector (`solana_native_handle_chain_id`, `*_fhe_type_encrypted_bits`) | **MET** |
 | `MAX_DECRYPTION_REQUEST_BITS=2048` | per-request cleartext cap | `SOLANA_NATIVE_MAX_ENCRYPTED_BITS_PER_REQUEST=2048` enforced | **MET** |
 | `Structs` (Sns material, delegation, pairs) | cross-contract DTOs | witness structs + on-chain `AclRecord`/`UserDecryptionDelegation`/`HandleMaterialCommitment` | **MET** (re-modeled) |

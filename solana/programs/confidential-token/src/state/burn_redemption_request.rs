@@ -5,6 +5,7 @@ use solana_sha256_hasher::hashv;
 
 /// Account-backed witness for a burned-amount redemption request.
 #[account]
+#[derive(InitSpace)]
 pub struct BurnRedemptionRequest {
     /// Confidential mint whose vault backs the redemption.
     pub mint: Pubkey,
@@ -30,10 +31,9 @@ pub struct BurnRedemptionRequest {
     pub material_key_id: [u8; 32],
     /// Host config whose chain id and gates were validated.
     pub host_config: Pubkey,
-    /// Verifier set expected to certify the redemption.
-    pub verifier_set: Pubkey,
-    /// Verifier-set version expected to certify the redemption.
-    pub verifier_set_version: u64,
+    /// KMS context id pinned at request time; the redemption cert must verify
+    /// against this context's signer set, not the current one.
+    pub kms_context_id: u64,
     /// Caller-supplied nonce that makes the request PDA unique.
     pub request_nonce: [u8; 32],
     /// Canonical hash over this request witness.
@@ -50,7 +50,7 @@ pub struct BurnRedemptionRequest {
 
 impl BurnRedemptionRequest {
     /// Serialized size of the account body, excluding Anchor discriminator.
-    pub const SPACE: usize = (32 * 15) + (8 * 3) + 1 + 1;
+    pub const SPACE: usize = (32 * 14) + (8 * 3) + 1 + 1;
 }
 
 /// Returns the canonical PDA for a burn-redemption request witness.
@@ -89,8 +89,7 @@ pub fn burn_redemption_request_hash(
     material_commitment_hash: [u8; 32],
     material_key_id: [u8; 32],
     host_config: Pubkey,
-    verifier_set: Pubkey,
-    verifier_set_version: u64,
+    kms_context_id: u64,
     request_nonce: [u8; 32],
     chain_id: u64,
     expires_slot: u64,
@@ -111,8 +110,7 @@ pub fn burn_redemption_request_hash(
         material_commitment_hash.as_ref(),
         material_key_id.as_ref(),
         host_config.as_ref(),
-        verifier_set.as_ref(),
-        &verifier_set_version.to_le_bytes(),
+        &kms_context_id.to_le_bytes(),
         request_nonce.as_ref(),
         &chain_id.to_le_bytes(),
         &expires_slot.to_le_bytes(),

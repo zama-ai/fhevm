@@ -1692,6 +1692,14 @@ pub(crate) fn assert_public_decrypt_released(
     Ok(())
 }
 
+/// Encodes a u64 cleartext as the 32-byte big-endian (abi `uint256`) decrypted result
+/// the KMS signs over in the `PublicDecryptVerification` certificate (cert-secp path).
+pub(crate) fn kms_decrypted_result_bytes(cleartext_amount: u64) -> [u8; 32] {
+    let mut decrypted = [0u8; 32];
+    decrypted[24..].copy_from_slice(&cleartext_amount.to_be_bytes());
+    decrypted
+}
+
 pub(crate) fn assert_host_config_allows_token_response(
     host_config: &Account<zama_host::HostConfig>,
 ) -> Result<()> {
@@ -1755,11 +1763,6 @@ pub(crate) fn assert_confidential_mint_shape(mint: &Account<ConfidentialMint>) -
         compute_signer_address(mint.key()).0,
         ConfidentialTokenError::ComputeSignerMismatch
     );
-    require!(
-        mint.disclosure_verifier_set != Pubkey::default()
-            && mint.redemption_verifier_set != Pubkey::default(),
-        ConfidentialTokenError::MintAccountMismatch
-    );
     Ok(())
 }
 
@@ -1791,89 +1794,6 @@ pub(crate) fn assert_confidential_token_account_shape(
     Ok(())
 }
 
-pub(crate) fn assert_active_verifier_set(
-    verifier_set: &Account<zama_host::VerifierSet>,
-    verifier_set_key: Pubkey,
-    kind: u8,
-    scope: Pubkey,
-) -> Result<()> {
-    let (expected_key, expected_bump) =
-        zama_host::verifier_set_address(kind, scope, verifier_set.version);
-    require_keys_eq!(
-        verifier_set_key,
-        expected_key,
-        ConfidentialTokenError::VerifierSetMismatch
-    );
-    require!(
-        verifier_set.to_account_info().data_len() == 8 + zama_host::VerifierSet::SPACE,
-        ConfidentialTokenError::VerifierSetMismatch
-    );
-    require!(
-        verifier_set.bump == expected_bump,
-        ConfidentialTokenError::VerifierSetMismatch
-    );
-    require!(
-        verifier_set.kind == kind && verifier_set.scope == scope && verifier_set.is_active(),
-        ConfidentialTokenError::VerifierSetMismatch
-    );
-    require!(
-        verifier_set.validate_shape(),
-        ConfidentialTokenError::VerifierSetMismatch
-    );
-    Ok(())
-}
-
-pub(crate) fn assert_threshold_verifier_signature(
-    instructions_sysvar: &AccountInfo,
-    verifier_set: &Account<zama_host::VerifierSet>,
-    message: &[u8],
-) -> Result<()> {
-    require_keys_eq!(
-        instructions_sysvar.key(),
-        INSTRUCTIONS_SYSVAR_ID,
-        ConfidentialTokenError::DisclosureProofSignatureMissing
-    );
-    let current_index = load_current_index_checked(instructions_sysvar)
-        .map_err(|_| error!(ConfidentialTokenError::DisclosureProofSignatureMissing))?;
-    let signer_pubkeys: Vec<&[u8]> = verifier_set
-        .signer_slice()
-        .iter()
-        .map(|signer| signer.as_ref())
-        .collect();
-    let mut matched_mask = 0u128;
-    let mut verifier_index = current_index;
-    while verifier_index > 0 {
-        verifier_index -= 1;
-        let verifier_ix = load_instruction_at_checked(verifier_index as usize, instructions_sysvar)
-            .map_err(|_| error!(ConfidentialTokenError::DisclosureProofSignatureMissing))?;
-        if verifier_ix.program_id != ED25519_PROGRAM_ID {
-            break;
-        }
-        let instruction_mask = solana_ed25519_instruction::matching_signer_bitmask(
-            &verifier_ix.data,
-            &signer_pubkeys,
-            message,
-        )
-        .map_err(|err| match err {
-            solana_ed25519_instruction::MatchingSignerError::DuplicateSigner => {
-                error!(ConfidentialTokenError::DuplicateVerifierSignature)
-            }
-            solana_ed25519_instruction::MatchingSignerError::TooManyExpectedPubkeys => {
-                error!(ConfidentialTokenError::VerifierSetMismatch)
-            }
-        })?;
-        require!(
-            matched_mask & instruction_mask == 0,
-            ConfidentialTokenError::DuplicateVerifierSignature
-        );
-        matched_mask |= instruction_mask;
-        if matched_mask.count_ones() >= verifier_set.threshold as u32 {
-            return Ok(());
-        }
-    }
-    Err(error!(ConfidentialTokenError::VerifierThresholdNotMet))
-}
-
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn assert_disclosure_request_witness(
     request: &Account<DisclosureRequest>,
@@ -1886,7 +1806,6 @@ pub(crate) fn assert_disclosure_request_witness(
     acl_record: Pubkey,
     material_commitment: &Account<zama_host::HandleMaterialCommitment>,
     host_config: Pubkey,
-    verifier_set: &Account<zama_host::VerifierSet>,
 ) -> Result<()> {
     let (expected_key, expected_bump) =
         disclosure_request_address(mint, request.requester, handle, request.request_nonce);
@@ -1915,8 +1834,7 @@ pub(crate) fn assert_disclosure_request_witness(
             && request.material_commitment_hash == material_commitment.material_commitment_hash
             && request.material_key_id == material_commitment.key_id
             && request.host_config == host_config
-            && request.verifier_set == verifier_set.key()
-            && request.verifier_set_version == verifier_set.version
+            && request.kms_context_id != 0
             && request.chain_id != 0,
         ConfidentialTokenError::RequestWitnessMismatch
     );
@@ -1933,8 +1851,7 @@ pub(crate) fn assert_disclosure_request_witness(
         request.material_commitment_hash,
         request.material_key_id,
         request.host_config,
-        request.verifier_set,
-        request.verifier_set_version,
+        request.kms_context_id,
         request.request_nonce,
         request.chain_id,
         request.expires_slot,
@@ -1961,7 +1878,6 @@ pub(crate) fn assert_burn_redemption_request_witness(
     burned_acl_record: Pubkey,
     material_commitment: &Account<zama_host::HandleMaterialCommitment>,
     host_config: Pubkey,
-    verifier_set: &Account<zama_host::VerifierSet>,
 ) -> Result<()> {
     let (expected_key, expected_bump) =
         burn_redemption_request_address(mint, owner, burned_handle, request.request_nonce);
@@ -1992,8 +1908,7 @@ pub(crate) fn assert_burn_redemption_request_witness(
             && request.material_commitment_hash == material_commitment.material_commitment_hash
             && request.material_key_id == material_commitment.key_id
             && request.host_config == host_config
-            && request.verifier_set == verifier_set.key()
-            && request.verifier_set_version == verifier_set.version
+            && request.kms_context_id != 0
             && request.chain_id != 0,
         ConfidentialTokenError::RequestWitnessMismatch
     );
@@ -2012,8 +1927,7 @@ pub(crate) fn assert_burn_redemption_request_witness(
         request.material_commitment_hash,
         request.material_key_id,
         request.host_config,
-        request.verifier_set,
-        request.verifier_set_version,
+        request.kms_context_id,
         request.request_nonce,
         request.chain_id,
         request.expires_slot,
@@ -2025,90 +1939,65 @@ pub(crate) fn assert_burn_redemption_request_witness(
     Ok(())
 }
 
-/// Builds the v2 message that a verifier-set quorum signs for disclosure responses.
-#[allow(clippy::too_many_arguments)]
-pub fn disclosure_proof_message_v2(
-    token_program_id: Pubkey,
-    host_program_id: Pubkey,
-    host_config: Pubkey,
-    chain_id: u64,
-    mint: Pubkey,
-    mode: u8,
-    verifier_set: Pubkey,
-    verifier_set_version: u64,
-    request_account: Pubkey,
-    request_hash: [u8; 32],
-    acl_record: Pubkey,
-    material_commitment_hash: [u8; 32],
-    material_key_id: [u8; 32],
-    handle: [u8; 32],
+/// Verifies a KMS `PublicDecryptVerification` secp256k1 EIP-712 certificate against the
+/// KMS context a request witness was pinned to at request time.
+///
+/// The context is resolved two ways and required to agree: the passed `kms_context` account
+/// must be the canonical PDA for `request_kms_context_id` (the id stored in the witness), and
+/// the id the certificate itself commits to via `extra_data` (EVM `_extractContextId` parity)
+/// must equal that same id. Binding to the witness id — not the *current* context — is what
+/// closes the rotation-reuse window: a cert minted under context N cannot satisfy a request
+/// pinned to N, then be replayed against a rotated context, nor can a witness be steered to a
+/// different context than the one it was created under.
+pub(crate) fn assert_kms_public_decrypt_cert_for_request(
+    host_config: &Account<zama_host::HostConfig>,
+    kms_context: &Account<zama_host::KmsContext>,
+    request_kms_context_id: u64,
+    ct_handle: [u8; 32],
     cleartext_amount: u64,
-) -> Vec<u8> {
-    let mut message = Vec::new();
-    message.extend_from_slice(DISCLOSURE_PROOF_V2_DOMAIN_SEPARATOR);
-    message.extend_from_slice(token_program_id.as_ref());
-    message.extend_from_slice(host_program_id.as_ref());
-    message.extend_from_slice(host_config.as_ref());
-    message.extend_from_slice(&chain_id.to_le_bytes());
-    message.extend_from_slice(mint.as_ref());
-    message.push(mode);
-    message.extend_from_slice(verifier_set.as_ref());
-    message.extend_from_slice(&verifier_set_version.to_le_bytes());
-    message.extend_from_slice(request_account.as_ref());
-    message.extend_from_slice(&request_hash);
-    message.extend_from_slice(acl_record.as_ref());
-    message.extend_from_slice(&material_commitment_hash);
-    message.extend_from_slice(&material_key_id);
-    message.extend_from_slice(&handle);
-    message.extend_from_slice(&cleartext_amount.to_le_bytes());
-    message
-}
-
-/// Builds the v2 message that a verifier-set quorum signs for burn redemptions.
-#[allow(clippy::too_many_arguments)]
-pub fn redemption_proof_message_v2(
-    token_program_id: Pubkey,
-    host_program_id: Pubkey,
-    host_config: Pubkey,
-    chain_id: u64,
-    mint: Pubkey,
-    verifier_set: Pubkey,
-    verifier_set_version: u64,
-    request_account: Pubkey,
-    request_hash: [u8; 32],
-    burned_acl_record: Pubkey,
-    material_commitment_hash: [u8; 32],
-    material_key_id: [u8; 32],
-    burned_handle: [u8; 32],
-    cleartext_amount: u64,
-    owner: Pubkey,
-    token_account: Pubkey,
-    underlying_mint: Pubkey,
-    destination_owner: Pubkey,
-    destination_account: Pubkey,
-) -> Vec<u8> {
-    let mut message = Vec::new();
-    message.extend_from_slice(REDEMPTION_PROOF_V2_DOMAIN_SEPARATOR);
-    message.extend_from_slice(token_program_id.as_ref());
-    message.extend_from_slice(host_program_id.as_ref());
-    message.extend_from_slice(host_config.as_ref());
-    message.extend_from_slice(&chain_id.to_le_bytes());
-    message.extend_from_slice(mint.as_ref());
-    message.extend_from_slice(verifier_set.as_ref());
-    message.extend_from_slice(&verifier_set_version.to_le_bytes());
-    message.extend_from_slice(request_account.as_ref());
-    message.extend_from_slice(&request_hash);
-    message.extend_from_slice(burned_acl_record.as_ref());
-    message.extend_from_slice(&material_commitment_hash);
-    message.extend_from_slice(&material_key_id);
-    message.extend_from_slice(&burned_handle);
-    message.extend_from_slice(&cleartext_amount.to_le_bytes());
-    message.extend_from_slice(owner.as_ref());
-    message.extend_from_slice(token_account.as_ref());
-    message.extend_from_slice(underlying_mint.as_ref());
-    message.extend_from_slice(destination_owner.as_ref());
-    message.extend_from_slice(destination_account.as_ref());
-    message
+    signatures: &[[u8; 65]],
+    extra_data: &[u8],
+) -> Result<()> {
+    require!(
+        host_config.decryption_contract != [0u8; 20] && request_kms_context_id != 0,
+        ConfidentialTokenError::GatewayVerifierConfigUnset
+    );
+    require!(
+        !kms_context.destroyed,
+        ConfidentialTokenError::InvalidKmsContext
+    );
+    // The passed context account must be the canonical PDA for the witness-pinned id.
+    require!(
+        kms_context.context_id == request_kms_context_id
+            && kms_context.key() == zama_host::kms_context_address(request_kms_context_id).0,
+        ConfidentialTokenError::InvalidKmsContext
+    );
+    // The id the certificate commits to (via signed extra_data) must equal the witness id, so a
+    // cert minted under a different context cannot be presented against this request.
+    let cert_context_id =
+        zama_host::eip712::extract_kms_context_id(extra_data, request_kms_context_id)
+            .ok_or(ConfidentialTokenError::InvalidKmsContext)?;
+    require!(
+        cert_context_id == request_kms_context_id,
+        ConfidentialTokenError::InvalidKmsContext
+    );
+    let verifier = zama_host::eip712::Eip712VerifierConfig {
+        gateway_chain_id: host_config.gateway_chain_id,
+        verifying_contract: host_config.decryption_contract,
+        signers: &kms_context.signers,
+        threshold: kms_context.thresholds.public_decryption,
+    };
+    require!(
+        zama_host::eip712::verify_kms_public_decrypt(
+            &verifier,
+            &[ct_handle],
+            &kms_decrypted_result_bytes(cleartext_amount),
+            extra_data,
+            signatures,
+        ),
+        ConfidentialTokenError::InvalidKmsCertificate
+    );
+    Ok(())
 }
 
 pub(crate) fn assert_current_balance_acl(
@@ -2143,44 +2032,6 @@ pub(crate) fn assert_current_balance_acl(
     );
     require!(
         balance_acl.nonce_key == balance_nonce_key(mint, token_account.key()),
-        ConfidentialTokenError::CurrentAclRecordMismatch
-    );
-    Ok(())
-}
-
-pub(crate) fn assert_balance_acl_for_request(
-    balance_acl: &Account<zama_host::AclRecord>,
-    balance_acl_key: Pubkey,
-    token_account: Pubkey,
-    mint: Pubkey,
-    handle: [u8; 32],
-) -> Result<()> {
-    assert_current_acl_record_shape(balance_acl)?;
-    require_keys_eq!(
-        balance_acl_key,
-        balance_acl.key(),
-        ConfidentialTokenError::CurrentAclRecordMismatch
-    );
-    require!(
-        balance_acl.handle == handle,
-        ConfidentialTokenError::CurrentAclRecordMismatch
-    );
-    require_keys_eq!(
-        balance_acl.acl_domain_key,
-        mint,
-        ConfidentialTokenError::CurrentAclRecordMismatch
-    );
-    require_keys_eq!(
-        balance_acl.app_account,
-        token_account,
-        ConfidentialTokenError::CurrentAclRecordMismatch
-    );
-    require!(
-        balance_acl.encrypted_value_label == balance_label(),
-        ConfidentialTokenError::CurrentAclRecordMismatch
-    );
-    require!(
-        balance_acl.nonce_key == balance_nonce_key(mint, token_account),
         ConfidentialTokenError::CurrentAclRecordMismatch
     );
     Ok(())

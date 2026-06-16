@@ -82,6 +82,10 @@ fn create_random_amount_inner(
         zama_fhe::AccessPolicy::for_compute(ctx.accounts.compute_signer.key())
             .map_err(invalid_eval_plan)?,
     )?;
+    // Unbounded rand goes through the generic `EvalBuilder` + `fhe::eval` path
+    // used by every other token instruction. Bounded rand cannot: it maps to a
+    // dedicated host instruction (`fhe_rand_bounded_and_bind`) that the plan
+    // builder does not express, so it routes through `fhe::rand_bounded_u64`.
     let handle = match upper_bound {
         Some(upper_bound) => fhe::rand_bounded_u64(
             fhe::BoundedRandU64 {

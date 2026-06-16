@@ -7,8 +7,7 @@ pub(super) fn assert_eval_step_birth_policy(step: &FheEvalStep) -> Result<()> {
         FheEvalStep::Binary { output, .. }
         | FheEvalStep::Ternary { output, .. }
         | FheEvalStep::TrivialEncrypt { output, .. }
-        | FheEvalStep::Rand { output, .. }
-        | FheEvalStep::Input { output, .. } => output,
+        | FheEvalStep::Rand { output, .. } => output,
     };
     if let FheEvalOutput::Durable {
         output_public_decrypt,
@@ -123,18 +122,6 @@ fn preflight_eval_step(
         FheEvalStep::TrivialEncrypt { output, .. } | FheEvalStep::Rand { output, .. } => {
             preflight_output(output, preflight)?;
         }
-        FheEvalStep::Input {
-            verifier_set_index,
-            output,
-            ..
-        } => {
-            preflight.require_instructions_sysvar();
-            preflight.mark_account(*verifier_set_index)?;
-            if !matches!(output, FheEvalOutput::Durable { .. }) {
-                return Err(error!(ZamaHostError::InvalidFheEvalAccount));
-            }
-            preflight_output(output, preflight)?;
-        }
     }
     Ok(())
 }
@@ -207,19 +194,23 @@ mod tests {
 
     #[test]
     fn preflight_requires_instructions_sysvar_when_needed() {
+        // A transient-session operand is the surviving path that requires the
+        // instructions sysvar (it is consumed by binding it to the top-level receiver).
         let args = FheEvalArgs {
             context_id: [1; 32],
-            steps: vec![FheEvalStep::Input {
-                input_handle: [1; 32],
-                proof: input_proof(),
-                verifier_set_index: 1,
-                output: durable_output_with_subjects(1),
+            steps: vec![FheEvalStep::Binary {
+                op: FheBinaryOpCode::Add,
+                lhs: FheEvalOperand::TransientSession {
+                    handle: [1; 32],
+                    session_index: 0,
+                    capability_index: 0,
+                },
+                rhs: FheEvalOperand::Scalar([0; 32]),
+                output_fhe_type: 5,
+                output: FheEvalOutput::Transient,
             }],
         };
-        let accounts = vec![
-            test_account(Pubkey::new_unique()),
-            test_account(Pubkey::new_unique()),
-        ];
+        let accounts = vec![test_account(Pubkey::new_unique())];
         let sysvar = test_account(INSTRUCTIONS_SYSVAR_ID);
         let wrong_sysvar = test_account(Pubkey::new_unique());
 
@@ -242,22 +233,6 @@ mod tests {
 
         assert!(preflight_eval_frame(&[], &args, Some(&sysvar)).is_err());
         preflight_eval_frame(&[], &args, None).unwrap();
-    }
-
-    #[test]
-    fn preflight_rejects_input_without_durable_output() {
-        let args = FheEvalArgs {
-            context_id: [1; 32],
-            steps: vec![FheEvalStep::Input {
-                input_handle: [1; 32],
-                proof: input_proof(),
-                verifier_set_index: 0,
-                output: FheEvalOutput::Transient,
-            }],
-        };
-        let sysvar = test_account(INSTRUCTIONS_SYSVAR_ID);
-
-        assert!(preflight_eval_frame(&[], &args, Some(&sysvar)).is_err());
     }
 
     #[test]
@@ -284,36 +259,6 @@ mod tests {
         let accounts = vec![test_account(duplicate), test_account(duplicate)];
 
         assert!(preflight_eval_frame(&accounts, &args, None).is_err());
-    }
-
-    fn durable_output_with_subjects(subject_count: usize) -> FheEvalOutput {
-        FheEvalOutput::Durable {
-            output_acl_record_index: 0,
-            output_app_account_authority_index: None,
-            output_nonce_key: [0; 32],
-            output_nonce_sequence: 0,
-            output_acl_domain_key: Pubkey::new_unique(),
-            output_app_account: Pubkey::new_unique(),
-            output_encrypted_value_label: [0; 32],
-            output_subjects: (0..subject_count)
-                .map(|_| AclSubjectEntry {
-                    pubkey: Pubkey::new_unique(),
-                    role_flags: ACL_ROLE_USE,
-                })
-                .collect(),
-            output_public_decrypt: false,
-        }
-    }
-
-    fn input_proof() -> SolanaInputProof {
-        SolanaInputProof {
-            handles: vec![[1; 32]],
-            handle_index: 0,
-            user: Pubkey::new_unique(),
-            app_account: Pubkey::new_unique(),
-            acl_domain_key: Pubkey::new_unique(),
-            extra_data: Vec::new(),
-        }
     }
 
     fn test_account(key: Pubkey) -> AccountInfo<'static> {

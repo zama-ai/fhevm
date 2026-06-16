@@ -10,13 +10,14 @@ use crate::core::errors::{
     TIMEOUT_REASON_MISSING_MSG,
 };
 use crate::core::event::{
-    ApiVersion, RelayerEvent, RelayerEventData, UserDecryptEventData, UserDecryptRequest,
+    is_solana_host_chain_id, ApiVersion, RelayerEvent, RelayerEventData, UserDecryptEventData,
+    UserDecryptRequest,
 };
 use crate::core::job_id::JobId;
 use crate::host::HostChainIdChecker;
 use crate::http::retry_after::{DecryptQueueInfo, RequestStateInfo, RetryAfterState};
 use crate::http::utils::BounceChecker;
-use crate::http::{parse_and_validate, AppResponse};
+use crate::http::{parse_and_validate, parse_and_validate_cross, AppResponse};
 use crate::logging::UserDecryptStep;
 use crate::metrics::http::{self as http_metrics, HttpEndpoint, HttpMethod};
 use crate::metrics::{observe_raw_eta_seconds, HttpApiVersion, RetryAfterRequestType};
@@ -44,6 +45,39 @@ use tracing::{error, info, instrument, span, Level};
 use uuid::Uuid;
 
 pub type UserDecryptResponse = AppResponse<UserDecryptPostResponseJson>;
+
+/// Cross-field validation for V2 user-decrypt: re-impose the EVM-strict input
+/// rules that the per-field validators relax to accommodate Solana.
+///
+/// The field validators accept both host shapes (an empty contract list and a
+/// 128-char ed25519 signature for RFC-021 Solana, or the EVM forms). Solana
+/// hosts — identified by the chain-type high bit of `contractsChainId` — keep
+/// that relaxation (the handle ACL is enforced by the KMS `solana_acl`). For EVM
+/// chain ids we still require a non-empty contract list and a 130-char EIP-712
+/// signature, reported as field-named errors so the response is unchanged.
+fn validate_user_decrypt_evm_strictness(
+    req: &UserDecryptRequestJson,
+    errors: &mut validator::ValidationErrors,
+) {
+    // `contractsChainId` is validated as numeric by its field validator; if it
+    // doesn't parse, that error is already reported, so skip this pass.
+    let Ok(chain_id) = req.contracts_chain_id.parse::<u64>() else {
+        return;
+    };
+    if is_solana_host_chain_id(chain_id) {
+        return;
+    }
+    if req.contract_addresses.is_empty() {
+        let mut error = validator::ValidationError::new("length");
+        error.message = Some("Must not be empty".into());
+        errors.add("contract_addresses", error);
+    }
+    if req.signature.len() != 130 {
+        let mut error = validator::ValidationError::new("length");
+        error.message = Some("Must be 130 characters long".into());
+        errors.add("signature", error);
+    }
+}
 
 pub struct UserDecryptHandler {
     orchestrator: Arc<Orchestrator>,
@@ -192,7 +226,10 @@ impl UserDecryptHandler {
         // `TryFrom<UserDecryptRequestJson>` only constructs `LegacyDirect`;
         // the downstream `UserDecryptReqData::UserDecrypt` tag relies on it.
         let user_decrypt_request: UserDecryptRequest =
-            match parse_and_validate::<UserDecryptRequestJson, UserDecryptRequest>(&body) {
+            match parse_and_validate_cross::<UserDecryptRequestJson, UserDecryptRequest>(
+                &body,
+                validate_user_decrypt_evm_strictness,
+            ) {
                 Ok(request) => request,
                 Err(parse_error) => {
                     return RelayerV2ResponseFailed::from_parse_error(

@@ -6,10 +6,16 @@ const EXTRA_DATA_V1_LENGTH: usize = 33; // 1 (version) + 32 (context_id)
 const EXTRA_DATA_V2_VERSION: u8 = 0x02; // RFC 005: context_id + epoch_id
 const EXTRA_DATA_V2_LENGTH: usize = 65; // 1 (version) + 32 (context_id) + 32 (epoch_id)
 
+const EXTRA_DATA_SOLANA_VERSION: u8 = 0x03; // RFC 021: Solana ed25519 user-decrypt blob
+const EXTRA_DATA_SOLANA_MIN_LENGTH: usize = 33; // 1 (version) + 32 (context_id); tail not parsed here
+
 /// Parse context ID from extra_data bytes.
 ///
 /// - v1: `[0x01 | context_id(32)]`
 /// - v2: `[0x02 | context_id(32) | epoch_id(32)]`
+/// - v3 (Solana): `[0x03 | context_id(32) | …]` — only the shared
+///   `version ‖ context_id` prefix is read; the Solana-specific tail
+///   (identity, nonce, domain keys) is opaque to the relayer.
 /// - empty or `0x00`: returns `U256::ZERO` (use static default)
 /// - unknown version or truncated: returns `Err`
 pub fn parse_context_id_from_extra_data(extra_data: &[u8]) -> Result<U256, ExtraDataError> {
@@ -20,11 +26,11 @@ pub fn parse_context_id_from_extra_data(extra_data: &[u8]) -> Result<U256, Extra
     match version {
         // 0x00 is the legacy/default marker — use static threshold
         0x00 => Ok(U256::ZERO),
-        EXTRA_DATA_V1_VERSION | EXTRA_DATA_V2_VERSION => {
-            let min_len = if version == EXTRA_DATA_V1_VERSION {
-                EXTRA_DATA_V1_LENGTH
-            } else {
-                EXTRA_DATA_V2_LENGTH
+        EXTRA_DATA_V1_VERSION | EXTRA_DATA_V2_VERSION | EXTRA_DATA_SOLANA_VERSION => {
+            let min_len = match version {
+                EXTRA_DATA_V1_VERSION => EXTRA_DATA_V1_LENGTH,
+                EXTRA_DATA_V2_VERSION => EXTRA_DATA_V2_LENGTH,
+                _ => EXTRA_DATA_SOLANA_MIN_LENGTH,
             };
             if extra_data.len() < min_len {
                 return Err(ExtraDataError::TooShort {
@@ -119,8 +125,29 @@ mod tests {
 
     #[test]
     fn unknown_version_returns_error() {
-        let mut data = vec![0x03];
+        let mut data = vec![0x7f];
         data.extend_from_slice(&[0u8; 64]);
+        assert!(parse_context_id_from_extra_data(&data).is_err());
+    }
+
+    #[test]
+    fn valid_solana_v3_returns_context_id() {
+        // Solana 0x03 blob: [0x03 | context_id(32) | identity(32) | nonce(32) | count(4) | keys].
+        // Only the shared version+context_id prefix is read; the tail is opaque.
+        let context_id = U256::from(0x1234u64);
+        let mut data = vec![EXTRA_DATA_SOLANA_VERSION];
+        data.extend_from_slice(&context_id.to_be_bytes::<32>());
+        data.extend_from_slice(&[7u8; 32]); // identity
+        data.extend_from_slice(&[9u8; 32]); // nonce
+        data.extend_from_slice(&0u32.to_be_bytes()); // zero domain keys
+
+        assert_eq!(parse_context_id_from_extra_data(&data).unwrap(), context_id);
+    }
+
+    #[test]
+    fn solana_v3_too_short_returns_error() {
+        let mut data = vec![EXTRA_DATA_SOLANA_VERSION];
+        data.extend_from_slice(&[0u8; 10]); // truncated before full context_id
         assert!(parse_context_id_from_extra_data(&data).is_err());
     }
 

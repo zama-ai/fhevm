@@ -42,8 +42,6 @@ pub struct RequestBurnRedemption<'info> {
         bump
     )]
     pub redemption_request: Box<Account<'info, BurnRedemptionRequest>>,
-    /// Threshold verifier set expected to certify the redemption response.
-    pub redemption_verifier_set: Box<Account<'info, zama_host::VerifierSet>>,
     /// CHECK: optional overflow permission witness for the owner authority.
     pub authority_permission_record: Option<UncheckedAccount<'info>>,
     /// CHECK: optional deny-list witness when host deny-lists are enabled.
@@ -108,17 +106,13 @@ pub fn request_burn_redemption(
         &ctx.accounts.burned_amount_acl,
         burned_handle,
     )?;
-    require_keys_eq!(
-        ctx.accounts.mint.redemption_verifier_set,
-        ctx.accounts.redemption_verifier_set.key(),
-        ConfidentialTokenError::VerifierSetMismatch
+    // Pin the request to the host's current KMS context; the redemption cert must verify against
+    // this context (not a later rotated one) when the redemption is consumed.
+    let kms_context_id = ctx.accounts.host_config.current_kms_context_id;
+    require!(
+        kms_context_id != 0,
+        ConfidentialTokenError::GatewayVerifierConfigUnset
     );
-    assert_active_verifier_set(
-        &ctx.accounts.redemption_verifier_set,
-        ctx.accounts.redemption_verifier_set.key(),
-        zama_host::VERIFIER_SET_KIND_TOKEN_REDEMPTION,
-        mint_key,
-    )?;
 
     let request_key = ctx.accounts.redemption_request.key();
     let request_hash = burn_redemption_request_hash(
@@ -138,8 +132,7 @@ pub fn request_burn_redemption(
             .material_commitment_hash,
         ctx.accounts.burned_material_commitment.key_id,
         ctx.accounts.host_config.key(),
-        ctx.accounts.redemption_verifier_set.key(),
-        ctx.accounts.redemption_verifier_set.version,
+        kms_context_id,
         request_nonce,
         ctx.accounts.host_config.chain_id,
         expires_slot,
@@ -180,8 +173,7 @@ pub fn request_burn_redemption(
         .material_commitment_hash;
     request.material_key_id = ctx.accounts.burned_material_commitment.key_id;
     request.host_config = ctx.accounts.host_config.key();
-    request.verifier_set = ctx.accounts.redemption_verifier_set.key();
-    request.verifier_set_version = ctx.accounts.redemption_verifier_set.version;
+    request.kms_context_id = kms_context_id;
     request.request_nonce = request_nonce;
     request.request_hash = request_hash;
     request.chain_id = ctx.accounts.host_config.chain_id;
@@ -200,8 +192,7 @@ pub fn request_burn_redemption(
         destination_account: ctx.accounts.destination_usdc.key(),
         request: request_key,
         request_hash,
-        verifier_set: ctx.accounts.redemption_verifier_set.key(),
-        verifier_set_version: ctx.accounts.redemption_verifier_set.version,
+        kms_context_id,
         expires_slot,
     });
     Ok(())

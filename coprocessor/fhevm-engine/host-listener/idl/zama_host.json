@@ -1,5 +1,5 @@
 {
-  "address": "7fNskHjCN1DBrgsSKs3a6ZujTg4MJcKf2vCCK5DuvUaE",
+  "address": "BXsiKq6Jg4vgdBqSd75NbMbKaB7WFKK48NVXx4zoeLsW",
   "metadata": {
     "name": "zama_host",
     "version": "0.1.0",
@@ -788,37 +788,33 @@
       ]
     },
     {
-      "name": "create_verifier_set",
+      "name": "define_kms_context",
+      "docs": [
+        "Defines a new KMS context (mirror of `ProtocolConfig.defineNewKmsContext`)."
+      ],
       "discriminator": [
-        97,
-        190,
-        228,
-        105,
-        205,
-        6,
-        204,
-        201
+        102,
+        233,
+        87,
+        23,
+        174,
+        186,
+        233,
+        87
       ],
       "accounts": [
         {
-          "name": "payer",
+          "name": "admin",
           "docs": [
-            "Pays rent for the verifier-set account."
+            "Configured host admin and rent payer for the context account."
           ],
           "writable": true,
           "signer": true
         },
         {
-          "name": "admin",
-          "docs": [
-            "Configured host admin."
-          ],
-          "signer": true
-        },
-        {
           "name": "host_config",
           "docs": [
-            "Singleton config PDA."
+            "Singleton config PDA; its `current_kms_context_id` is advanced to `context_id`."
           ],
           "writable": true,
           "pda": {
@@ -843,11 +839,35 @@
           }
         },
         {
-          "name": "verifier_set",
+          "name": "kms_context",
           "docs": [
-            "Canonical verifier-set PDA for `(kind, scope, version)`."
+            "KMS context PDA created for `context_id`."
           ],
-          "writable": true
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  107,
+                  109,
+                  115,
+                  45,
+                  99,
+                  111,
+                  110,
+                  116,
+                  101,
+                  120,
+                  116
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "context_id"
+              }
+            ]
+          }
         },
         {
           "name": "system_program",
@@ -859,10 +879,25 @@
       ],
       "args": [
         {
-          "name": "args",
+          "name": "context_id",
+          "type": "u64"
+        },
+        {
+          "name": "signers",
+          "type": {
+            "vec": {
+              "array": [
+                "u8",
+                20
+              ]
+            }
+          }
+        },
+        {
+          "name": "thresholds",
           "type": {
             "defined": {
-              "name": "CreateVerifierSetArgs"
+              "name": "KmsThresholds"
             }
           }
         }
@@ -950,16 +985,19 @@
       ]
     },
     {
-      "name": "disable_verifier_set",
+      "name": "destroy_kms_context",
+      "docs": [
+        "Destroys a non-current KMS context (mirror of `ProtocolConfig.destroyKmsContext`)."
+      ],
       "discriminator": [
-        87,
-        92,
-        179,
-        213,
-        242,
-        64,
+        44,
+        184,
+        24,
+        234,
+        89,
+        57,
         232,
-        161
+        251
       ],
       "accounts": [
         {
@@ -972,9 +1010,8 @@
         {
           "name": "host_config",
           "docs": [
-            "Singleton config PDA."
+            "Singleton config PDA holding the current active context id."
           ],
-          "writable": true,
           "pda": {
             "seeds": [
               {
@@ -997,14 +1034,43 @@
           }
         },
         {
-          "name": "verifier_set",
+          "name": "kms_context",
           "docs": [
-            "Verifier set to disable."
+            "KMS context PDA being destroyed."
           ],
-          "writable": true
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  107,
+                  109,
+                  115,
+                  45,
+                  99,
+                  111,
+                  110,
+                  116,
+                  101,
+                  120,
+                  116
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "context_id"
+              }
+            ]
+          }
         }
       ],
-      "args": []
+      "args": [
+        {
+          "name": "context_id",
+          "type": "u64"
+        }
+      ]
     },
     {
       "name": "fhe_binary_op",
@@ -2096,64 +2162,6 @@
       ]
     },
     {
-      "name": "migrate_host_config_verifier_set",
-      "discriminator": [
-        48,
-        226,
-        49,
-        206,
-        91,
-        102,
-        107,
-        252
-      ],
-      "accounts": [
-        {
-          "name": "payer",
-          "docs": [
-            "Rent payer for any account-size top-up needed by realloc."
-          ],
-          "writable": true,
-          "signer": true
-        },
-        {
-          "name": "admin",
-          "docs": [
-            "Legacy and current host admin."
-          ],
-          "signer": true
-        },
-        {
-          "name": "host_config",
-          "writable": true
-        },
-        {
-          "name": "verifier_set",
-          "docs": [
-            "Canonical initial input verifier-set PDA."
-          ],
-          "writable": true
-        },
-        {
-          "name": "system_program",
-          "docs": [
-            "System program used for rent top-up and verifier-set creation."
-          ],
-          "address": "11111111111111111111111111111111"
-        }
-      ],
-      "args": [
-        {
-          "name": "args",
-          "type": {
-            "defined": {
-              "name": "CreateVerifierSetArgs"
-            }
-          }
-        }
-      ]
-    },
-    {
       "name": "revoke_delegation_for_user_decryption",
       "discriminator": [
         147,
@@ -2658,43 +2666,22 @@
       ]
     },
     {
-      "name": "verify_input_and_bind",
+      "name": "verify_coprocessor_input",
       "discriminator": [
+        179,
+        79,
+        160,
+        129,
+        222,
+        44,
         88,
-        45,
-        196,
-        125,
-        150,
-        85,
-        127,
-        154
+        188
       ],
       "accounts": [
         {
-          "name": "payer",
-          "docs": [
-            "Pays rent for the output ACL record."
-          ],
-          "writable": true,
-          "signer": true
-        },
-        {
-          "name": "input_verifier_set",
-          "docs": [
-            "Active threshold verifier set for input proofs."
-          ]
-        },
-        {
-          "name": "app_account_authority",
-          "docs": [
-            "App account signer authorizing the ACL metadata."
-          ],
-          "signer": true
-        },
-        {
           "name": "host_config",
           "docs": [
-            "Singleton config PDA."
+            "Singleton config PDA holding the gateway verifier trust config."
           ],
           "pda": {
             "seeds": [
@@ -2718,54 +2705,6 @@
           }
         },
         {
-          "name": "output_acl_record",
-          "docs": [
-            "Canonical output ACL record created by this instruction."
-          ],
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  97,
-                  99,
-                  108,
-                  45,
-                  114,
-                  101,
-                  99,
-                  111,
-                  114,
-                  100
-                ]
-              },
-              {
-                "kind": "arg",
-                "path": "output_nonce_key"
-              },
-              {
-                "kind": "arg",
-                "path": "output_nonce_sequence"
-              }
-            ]
-          }
-        },
-        {
-          "name": "instructions_sysvar",
-          "docs": [
-            "through `solana_instructions_sysvar`."
-          ],
-          "address": "Sysvar1nstructions1111111111111111111111111"
-        },
-        {
-          "name": "system_program",
-          "docs": [
-            "System program used for ACL account creation."
-          ],
-          "address": "11111111111111111111111111111111"
-        },
-        {
           "name": "event_authority"
         },
         {
@@ -2783,15 +2722,22 @@
           }
         },
         {
-          "name": "proof",
+          "name": "ct_handles",
           "type": {
-            "defined": {
-              "name": "SolanaInputProof"
+            "vec": {
+              "array": [
+                "u8",
+                32
+              ]
             }
           }
         },
         {
-          "name": "output_nonce_key",
+          "name": "handle_index",
+          "type": "u8"
+        },
+        {
+          "name": "user_address",
           "type": {
             "array": [
               "u8",
@@ -2800,39 +2746,32 @@
           }
         },
         {
-          "name": "output_nonce_sequence",
+          "name": "contract_address",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "contract_chain_id",
           "type": "u64"
         },
         {
-          "name": "output_acl_domain_key",
-          "type": "pubkey"
+          "name": "extra_data",
+          "type": "bytes"
         },
         {
-          "name": "output_app_account",
-          "type": "pubkey"
-        },
-        {
-          "name": "output_encrypted_value_label",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        },
-        {
-          "name": "output_subjects",
+          "name": "signatures",
           "type": {
             "vec": {
-              "defined": {
-                "name": "AclSubjectEntry"
-              }
+              "array": [
+                "u8",
+                65
+              ]
             }
           }
-        },
-        {
-          "name": "output_public_decrypt",
-          "type": "bool"
         }
       ]
     }
@@ -2878,6 +2817,19 @@
       ]
     },
     {
+      "name": "KmsContext",
+      "discriminator": [
+        93,
+        0,
+        205,
+        40,
+        74,
+        63,
+        201,
+        149
+      ]
+    },
+    {
       "name": "TransientSession",
       "discriminator": [
         148,
@@ -2901,19 +2853,6 @@
         53,
         1,
         248
-      ]
-    },
-    {
-      "name": "VerifierSet",
-      "discriminator": [
-        227,
-        16,
-        215,
-        74,
-        157,
-        114,
-        239,
-        185
       ]
     }
   ],
@@ -3088,6 +3027,32 @@
       ]
     },
     {
+      "name": "KmsContextDestroyedEvent",
+      "discriminator": [
+        222,
+        190,
+        134,
+        134,
+        245,
+        159,
+        38,
+        240
+      ]
+    },
+    {
+      "name": "NewKmsContextEvent",
+      "discriminator": [
+        43,
+        80,
+        86,
+        88,
+        234,
+        232,
+        240,
+        63
+      ]
+    },
+    {
       "name": "PublicDecryptAllowedEvent",
       "discriminator": [
         96,
@@ -3124,32 +3089,6 @@
         174,
         239,
         156
-      ]
-    },
-    {
-      "name": "VerifierSetCreatedEvent",
-      "discriminator": [
-        110,
-        160,
-        70,
-        134,
-        190,
-        73,
-        166,
-        184
-      ]
-    },
-    {
-      "name": "VerifierSetDisabledEvent",
-      "discriminator": [
-        255,
-        202,
-        192,
-        250,
-        223,
-        98,
-        185,
-        35
       ]
     }
   ],
@@ -3196,338 +3135,363 @@
     },
     {
       "code": 6008,
-      "name": "VerifierSetMismatch",
-      "msg": "verifier set account is invalid"
-    },
-    {
-      "code": 6009,
-      "name": "InvalidVerifierSet",
-      "msg": "verifier set fields are invalid"
-    },
-    {
-      "code": 6010,
-      "name": "VerifierSetDisabled",
-      "msg": "verifier set is disabled"
-    },
-    {
-      "code": 6011,
-      "name": "VerifierSetThresholdNotMet",
-      "msg": "verifier set threshold was not met"
-    },
-    {
-      "code": 6012,
-      "name": "VerifierSetDuplicateSigner",
-      "msg": "verifier set proof includes a duplicate signer"
-    },
-    {
-      "code": 6013,
       "name": "MaterialAuthorityMismatch",
       "msg": "material authority does not match config"
     },
     {
-      "code": 6014,
+      "code": 6009,
       "name": "MaterialCommitmentPdaMismatch",
       "msg": "material commitment account does not match the canonical PDA"
     },
     {
-      "code": 6015,
+      "code": 6010,
       "name": "InvalidMaterialCommitment",
       "msg": "material commitment is invalid"
     },
     {
-      "code": 6016,
+      "code": 6011,
       "name": "MaterialAlreadySealed",
       "msg": "ACL record already has sealed material"
     },
     {
-      "code": 6017,
+      "code": 6012,
       "name": "InvalidInputProof",
       "msg": "input proof is invalid"
     },
     {
-      "code": 6018,
+      "code": 6013,
       "name": "InvalidInputHandleIndex",
       "msg": "input proof handle index is invalid"
     },
     {
-      "code": 6019,
+      "code": 6014,
       "name": "InvalidInputHandle",
       "msg": "input proof selected handle does not match"
     },
     {
+      "code": 6015,
+      "name": "InvalidInputAttestation",
+      "msg": "coprocessor input attestation is invalid"
+    },
+    {
+      "code": 6016,
+      "name": "GatewayVerifierConfigUnset",
+      "msg": "gateway verifier config is not set"
+    },
+    {
+      "code": 6017,
+      "name": "EmptyKmsContext",
+      "msg": "KMS context has no signers"
+    },
+    {
+      "code": 6018,
+      "name": "TooManyKmsSigners",
+      "msg": "KMS context exceeds the maximum signer count"
+    },
+    {
+      "code": 6019,
+      "name": "InvalidKmsThreshold",
+      "msg": "KMS context threshold is invalid"
+    },
+    {
       "code": 6020,
+      "name": "InvalidKmsContextId",
+      "msg": "KMS context id is not the next sequential id"
+    },
+    {
+      "code": 6021,
+      "name": "CurrentKmsContextCannotBeDestroyed",
+      "msg": "current KMS context cannot be destroyed"
+    },
+    {
+      "code": 6022,
       "name": "InvalidInputHandleVersion",
       "msg": "input handle version is unsupported"
     },
     {
-      "code": 6021,
+      "code": 6023,
       "name": "InvalidInputHandleChain",
       "msg": "input handle chain id does not match host config"
     },
     {
-      "code": 6022,
+      "code": 6024,
       "name": "InvalidInputHandleType",
       "msg": "input handle FHE type is unsupported"
     },
     {
-      "code": 6023,
+      "code": 6025,
       "name": "UnsupportedFheType",
       "msg": "FHE type is unsupported"
     },
     {
-      "code": 6024,
+      "code": 6026,
       "name": "BinaryOperandTypeMismatch",
       "msg": "binary FHE operand type is incompatible"
     },
     {
-      "code": 6025,
+      "code": 6027,
       "name": "InvalidRandomUpperBound",
       "msg": "bounded random upper bound is invalid"
     },
     {
-      "code": 6026,
+      "code": 6028,
       "name": "InputProofSignatureMissing",
       "msg": "input proof Ed25519 signature is missing or malformed"
     },
     {
-      "code": 6027,
+      "code": 6029,
       "name": "TestShimsDisabled",
       "msg": "test event shims are disabled"
     },
     {
-      "code": 6028,
+      "code": 6030,
       "name": "TestShimAuthorityMismatch",
       "msg": "test shim authority does not match config"
     },
     {
-      "code": 6029,
+      "code": 6031,
       "name": "AppAccountAuthorityMismatch",
       "msg": "ACL app account authority does not match app account"
     },
     {
-      "code": 6030,
+      "code": 6032,
       "name": "AclNonceKeyMismatch",
       "msg": "ACL record nonce key does not match"
     },
     {
-      "code": 6031,
+      "code": 6033,
       "name": "AclRecordPdaMismatch",
       "msg": "ACL record address is not the canonical PDA for its nonce key"
     },
     {
-      "code": 6032,
+      "code": 6034,
       "name": "AclNonceSequenceMismatch",
       "msg": "ACL record nonce sequence does not match"
     },
     {
-      "code": 6033,
+      "code": 6035,
       "name": "AclDomainKeyMismatch",
       "msg": "ACL record domain key does not match"
     },
     {
-      "code": 6034,
+      "code": 6036,
       "name": "AclAppAccountMismatch",
       "msg": "ACL record app account does not match"
     },
     {
-      "code": 6035,
+      "code": 6037,
       "name": "AclEncryptedValueLabelMismatch",
       "msg": "ACL record encrypted value label does not match"
     },
     {
-      "code": 6036,
+      "code": 6038,
       "name": "AclHandleMismatch",
       "msg": "ACL record handle does not match"
     },
     {
-      "code": 6037,
+      "code": 6039,
       "name": "AclSubjectMismatch",
       "msg": "ACL record subject is not allowed"
     },
     {
-      "code": 6038,
+      "code": 6040,
       "name": "AclSubjectRoleMismatch",
       "msg": "ACL record subject lacks the required role"
     },
     {
-      "code": 6039,
+      "code": 6041,
       "name": "PublicDecryptAtBirthUnsupported",
       "msg": "public decrypt cannot be set during ACL record birth"
     },
     {
-      "code": 6040,
+      "code": 6042,
       "name": "AclSubjectCapacityExceeded",
       "msg": "ACL record has too many inline subjects"
     },
     {
-      "code": 6041,
+      "code": 6043,
       "name": "AclPermissionMissing",
       "msg": "ACL permission account is required for an overflow subject"
     },
     {
-      "code": 6042,
+      "code": 6044,
       "name": "AclPermissionPdaMismatch",
       "msg": "ACL permission account does not match the canonical PDA"
     },
     {
-      "code": 6043,
+      "code": 6045,
       "name": "AclPermissionMismatch",
       "msg": "ACL permission account data does not match the requested subject"
     },
     {
-      "code": 6044,
+      "code": 6046,
       "name": "AclDenyRecordMissing",
       "msg": "ACL deny-list account is required"
     },
     {
-      "code": 6045,
+      "code": 6047,
       "name": "AclDenyRecordMismatch",
       "msg": "ACL deny-list account does not match the canonical PDA"
     },
     {
-      "code": 6046,
+      "code": 6048,
       "name": "AclSubjectDenied",
       "msg": "ACL authority subject is deny-listed"
     },
     {
-      "code": 6047,
+      "code": 6049,
       "name": "DelegationPdaMismatch",
       "msg": "delegation record does not match the canonical PDA"
     },
     {
-      "code": 6048,
+      "code": 6050,
       "name": "InvalidDelegation",
       "msg": "delegation tuple is invalid"
     },
     {
-      "code": 6049,
+      "code": 6051,
       "name": "DelegationRevoked",
       "msg": "delegation has already been revoked"
     },
     {
-      "code": 6050,
+      "code": 6052,
       "name": "DelegationUpdatedInCurrentSlot",
       "msg": "delegation was already updated in the current slot"
     },
     {
-      "code": 6051,
+      "code": 6053,
       "name": "PreviousBankHashUnavailable",
       "msg": "previous bank hash is not available"
     },
     {
-      "code": 6052,
+      "code": 6054,
       "name": "ComputedHandleMismatch",
       "msg": "computed handle does not match host formula"
     },
     {
-      "code": 6053,
+      "code": 6055,
       "name": "PdaCreationMismatch",
       "msg": "PDA creation target is invalid"
     },
     {
-      "code": 6054,
+      "code": 6056,
       "name": "InvalidFheEvalOperationCount",
       "msg": "FHE eval operation count is invalid"
     },
     {
-      "code": 6055,
+      "code": 6057,
       "name": "FheEvalEventLogBudgetExceeded",
       "msg": "FHE eval event log budget is exceeded"
     },
     {
-      "code": 6056,
+      "code": 6058,
       "name": "InvalidFheEvalAccount",
       "msg": "FHE eval account reference is invalid"
     },
     {
-      "code": 6057,
+      "code": 6059,
       "name": "FheEvalTransientMissing",
       "msg": "FHE eval transient operand is missing"
     },
     {
-      "code": 6058,
+      "code": 6060,
       "name": "FheEvalDuplicateHandle",
       "msg": "FHE eval output handle is duplicated"
     },
     {
-      "code": 6059,
+      "code": 6061,
       "name": "FheEvalOutputAlreadyInitialized",
       "msg": "FHE eval durable output ACL record already exists"
     },
     {
-      "code": 6060,
+      "code": 6062,
       "name": "InvalidFheEvalContext",
       "msg": "FHE eval context id is invalid"
     },
     {
-      "code": 6061,
+      "code": 6063,
       "name": "InvalidTransientSessionNonce",
       "msg": "transient session nonce is invalid"
     },
     {
-      "code": 6062,
+      "code": 6064,
       "name": "TransientSessionPdaMismatch",
       "msg": "transient session account does not match the canonical PDA"
     },
     {
-      "code": 6063,
+      "code": 6065,
       "name": "TransientSessionStateInvalid",
       "msg": "transient session state is invalid"
     },
     {
-      "code": 6064,
+      "code": 6066,
       "name": "TransientSessionExpired",
       "msg": "transient session is expired"
     },
     {
-      "code": 6065,
+      "code": 6067,
       "name": "TransientSessionAuthorityMismatch",
       "msg": "transient session authority does not match signer"
     },
     {
-      "code": 6066,
+      "code": 6068,
       "name": "TransientSessionRefundMismatch",
       "msg": "transient session refund recipient does not match"
     },
     {
-      "code": 6067,
+      "code": 6069,
       "name": "TransientSessionCapacityInvalid",
       "msg": "transient session capacity is invalid"
     },
     {
-      "code": 6068,
+      "code": 6070,
       "name": "TransientCapabilityMismatch",
       "msg": "transient capability is missing or mismatched"
     },
     {
-      "code": 6069,
+      "code": 6071,
       "name": "TransientCapabilityConsumed",
       "msg": "transient capability is consumed"
     },
     {
-      "code": 6070,
+      "code": 6072,
       "name": "TransientSessionCreationMissing",
       "msg": "transient session creation was not found in this transaction"
     },
     {
-      "code": 6071,
+      "code": 6073,
       "name": "TransientCapabilityUnauthorized",
       "msg": "transient capability is not authorized"
     },
     {
-      "code": 6072,
+      "code": 6074,
       "name": "TransientCapabilityOutputDenied",
       "msg": "transient capability does not allow this durable output"
     },
     {
-      "code": 6073,
+      "code": 6075,
       "name": "TransientCapabilityPublicDecryptDenied",
       "msg": "transient capability cannot authorize public decrypt"
     },
     {
-      "code": 6074,
+      "code": 6076,
       "name": "TransientCapabilityReceiverMissing",
       "msg": "transient capability receiver cannot be verified"
+    },
+    {
+      "code": 6077,
+      "name": "DuplicateKmsSigner",
+      "msg": "KMS context signer set contains a duplicate address"
+    },
+    {
+      "code": 6078,
+      "name": "InputBindContractMismatch",
+      "msg": "attested contract address does not match the output app account"
+    },
+    {
+      "code": 6079,
+      "name": "InputBindUserNotSubject",
+      "msg": "attested user address is not an output ACL subject"
     }
   ],
   "types": [
@@ -3948,64 +3912,6 @@
               "Bitset of `ACL_ROLE_*` flags."
             ],
             "type": "u8"
-          }
-        ]
-      }
-    },
-    {
-      "name": "CreateVerifierSetArgs",
-      "docs": [
-        "Initialization arguments for a threshold [`VerifierSet`] account."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "kind",
-            "docs": [
-              "Protocol purpose for this set."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "scope",
-            "docs": [
-              "Scope that disambiguates sets of the same kind."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "version",
-            "docs": [
-              "Monotonic version chosen by the admin for rotation."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "threshold",
-            "docs": [
-              "Number of distinct signer signatures required."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "signer_count",
-            "docs": [
-              "Number of active entries in `signers`."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "signers",
-            "docs": [
-              "Fixed signer list. Entries after `signer_count` must be default keys."
-            ],
-            "type": {
-              "array": [
-                "pubkey",
-                16
-              ]
-            }
           }
         ]
       }
@@ -4612,52 +4518,6 @@
                 }
               }
             ]
-          },
-          {
-            "name": "Input",
-            "fields": [
-              {
-                "name": "input_handle",
-                "docs": [
-                  "Input handle selected from the proof."
-                ],
-                "type": {
-                  "array": [
-                    "u8",
-                    32
-                  ]
-                }
-              },
-              {
-                "name": "proof",
-                "docs": [
-                  "Solana input proof verified by the host."
-                ],
-                "type": {
-                  "defined": {
-                    "name": "SolanaInputProof"
-                  }
-                }
-              },
-              {
-                "name": "verifier_set_index",
-                "docs": [
-                  "Index into `remaining_accounts` for the active input [`VerifierSet`]."
-                ],
-                "type": "u16"
-              },
-              {
-                "name": "output",
-                "docs": [
-                  "Durable ACL output bound from the verified input."
-                ],
-                "type": {
-                  "defined": {
-                    "name": "FheEvalOutput"
-                  }
-                }
-              }
-            ]
           }
         ]
       }
@@ -5227,16 +5087,64 @@
             "type": "u64"
           },
           {
-            "name": "input_verifier_set",
+            "name": "input_verifier_authority",
             "docs": [
-              "Active threshold verifier set for input verification paths."
+              "Configured authority for input verification paths."
             ],
             "type": "pubkey"
           },
           {
-            "name": "input_verifier_set_version",
+            "name": "gateway_chain_id",
             "docs": [
-              "Version of the active input verifier set, or zero before the first set is created."
+              "EVM gateway chain id used in the coprocessor/KMS EIP-712 domain separators."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "input_verification_contract",
+            "docs": [
+              "EVM `InputVerification` contract address: the EIP-712 verifying contract for",
+              "coprocessor `CiphertextVerification` input attestations."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                20
+              ]
+            }
+          },
+          {
+            "name": "coprocessor_signer",
+            "docs": [
+              "Authorized coprocessor EVM signer for input attestations (v0: single signer,",
+              "threshold 1)."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                20
+              ]
+            }
+          },
+          {
+            "name": "decryption_contract",
+            "docs": [
+              "EVM `Decryption` contract address: the EIP-712 verifying contract for KMS",
+              "`PublicDecryptVerification` certificates (disclose/redeem)."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                20
+              ]
+            }
+          },
+          {
+            "name": "current_kms_context_id",
+            "docs": [
+              "Active KMS context id (mirrors `ProtocolConfig.getCurrentKmsContextId`). The",
+              "signer set + thresholds live in the `KmsContext` PDA at this id; 0 means none",
+              "defined yet. Updated by `define_kms_context`."
             ],
             "type": "u64"
           },
@@ -5336,18 +5244,11 @@
             "type": "u64"
           },
           {
-            "name": "input_verifier_set",
+            "name": "input_verifier_authority",
             "docs": [
-              "Active input verifier set."
+              "Configured input verifier authority."
             ],
             "type": "pubkey"
-          },
-          {
-            "name": "input_verifier_set_version",
-            "docs": [
-              "Active input verifier-set version."
-            ],
-            "type": "u64"
           },
           {
             "name": "material_authority",
@@ -5394,20 +5295,6 @@
               "Admin signer that performed the update."
             ],
             "type": "pubkey"
-          },
-          {
-            "name": "input_verifier_set",
-            "docs": [
-              "Active input verifier set."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "input_verifier_set_version",
-            "docs": [
-              "Active input verifier-set version."
-            ],
-            "type": "u64"
           },
           {
             "name": "paused",
@@ -5463,11 +5350,54 @@
             "type": "u64"
           },
           {
-            "name": "input_verifier_set",
+            "name": "input_verifier_authority",
             "docs": [
-              "Active threshold verifier set used by encrypted-input bind paths."
+              "Authority used by mock and signed encrypted-input bind paths."
             ],
             "type": "pubkey"
+          },
+          {
+            "name": "gateway_chain_id",
+            "docs": [
+              "EVM gateway chain id used in the coprocessor/KMS EIP-712 domain separators."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "input_verification_contract",
+            "docs": [
+              "EVM `InputVerification` contract address (EIP-712 verifying contract)."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                20
+              ]
+            }
+          },
+          {
+            "name": "coprocessor_signer",
+            "docs": [
+              "Authorized coprocessor EVM signer for input attestations (v0: single signer)."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                20
+              ]
+            }
+          },
+          {
+            "name": "decryption_contract",
+            "docs": [
+              "EVM `Decryption` contract address (EIP-712 verifying contract for KMS certs)."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                20
+              ]
+            }
           },
           {
             "name": "material_authority",
@@ -5574,6 +5504,180 @@
       }
     },
     {
+      "name": "KmsContext",
+      "docs": [
+        "A KMS context: the signer set + thresholds active under a `context_id`."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "context_id",
+            "docs": [
+              "Monotonic context id (mirrors `kmsContextId`)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "signers",
+            "docs": [
+              "KMS node signer EVM addresses authorized to sign certs in this context."
+            ],
+            "type": {
+              "vec": {
+                "array": [
+                  "u8",
+                  20
+                ]
+              }
+            }
+          },
+          {
+            "name": "thresholds",
+            "docs": [
+              "Per-operation signature thresholds."
+            ],
+            "type": {
+              "defined": {
+                "name": "KmsThresholds"
+              }
+            }
+          },
+          {
+            "name": "destroyed",
+            "docs": [
+              "True once destroyed (mirrors `destroyKmsContext`); destroyed contexts reject."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump for `PDA(\"kms-context\", context_id)`."
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "KmsContextDestroyedEvent",
+      "docs": [
+        "Emitted when a KMS context is destroyed (mirrors `ProtocolConfig.KmsContextDestroyed`)."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "version",
+            "docs": [
+              "Event schema version."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "kms_context_id",
+            "docs": [
+              "The destroyed context id."
+            ],
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "KmsThresholds",
+      "docs": [
+        "Per-operation signature thresholds for a KMS context (mirrors `KmsThresholds`)."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "public_decryption",
+            "docs": [
+              "Threshold for public-decrypt (disclose/redeem) certificates."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "user_decryption",
+            "docs": [
+              "Threshold for user-decrypt certificates."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "kms_gen",
+            "docs": [
+              "Threshold for key generation (KMS-internal; stored for fidelity)."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "mpc",
+            "docs": [
+              "Threshold for MPC (KMS-internal; stored for fidelity)."
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "NewKmsContextEvent",
+      "docs": [
+        "Emitted when a KMS context is defined (mirrors `ProtocolConfig.NewKmsContext`)."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "version",
+            "docs": [
+              "Event schema version."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "kms_context_id",
+            "docs": [
+              "The new context id."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "signers",
+            "docs": [
+              "KMS node signer EVM addresses authorized in this context."
+            ],
+            "type": {
+              "vec": {
+                "array": [
+                  "u8",
+                  20
+                ]
+              }
+            }
+          },
+          {
+            "name": "public_decryption_threshold",
+            "docs": [
+              "Public-decrypt signature threshold."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "user_decryption_threshold",
+            "docs": [
+              "User-decrypt signature threshold."
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
       "name": "PublicDecryptAllowedEvent",
       "docs": [
         "Emitted when public decrypt is enabled for a handle."
@@ -5625,71 +5729,6 @@
               "Slot in which this update was applied."
             ],
             "type": "u64"
-          }
-        ]
-      }
-    },
-    {
-      "name": "SolanaInputProof",
-      "docs": [
-        "Native Solana verifier payload for binding external encrypted inputs.",
-        "",
-        "The proof is not trusted by itself. `verify_input_and_bind` requires an",
-        "Ed25519 verifier quorum from `HostConfig::input_verifier_set` over",
-        "[`input_proof_message_for_verifier_set`]. The selected handle from `handles` is the only",
-        "handle that may be written into the output ACL record."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "handles",
-            "docs": [
-              "Ordered handles certified by the input verifier."
-            ],
-            "type": {
-              "vec": {
-                "array": [
-                  "u8",
-                  32
-                ]
-              }
-            }
-          },
-          {
-            "name": "handle_index",
-            "docs": [
-              "Selected handle index for this bind operation."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "user",
-            "docs": [
-              "User associated with the encrypted input."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "app_account",
-            "docs": [
-              "App account to which this input authorization is scoped."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "acl_domain_key",
-            "docs": [
-              "App ACL domain to which this input authorization is scoped."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "extra_data",
-            "docs": [
-              "Opaque verifier payload, such as transcript/proof metadata."
-            ],
-            "type": "bytes"
           }
         ]
       }
@@ -6101,236 +6140,6 @@
               "Whether the delegation is revoked after this update."
             ],
             "type": "bool"
-          }
-        ]
-      }
-    },
-    {
-      "name": "VerifierSet",
-      "docs": [
-        "Fixed-size threshold verifier set for host-facing signature proofs."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "admin",
-            "docs": [
-              "Admin that created and may disable this set."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "kind",
-            "docs": [
-              "Protocol purpose for this set."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "scope",
-            "docs": [
-              "Scope that disambiguates sets of the same kind.",
-              "",
-              "Input sets are scoped to the host config PDA. Token disclosure and",
-              "redemption sets are scoped to the confidential mint they certify."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "version",
-            "docs": [
-              "Monotonic version chosen by the admin for rotation."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "threshold",
-            "docs": [
-              "Number of distinct signer signatures required."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "signer_count",
-            "docs": [
-              "Number of active entries in `signers`."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "signers",
-            "docs": [
-              "Fixed signer list. Entries after `signer_count` must be default keys."
-            ],
-            "type": {
-              "array": [
-                "pubkey",
-                16
-              ]
-            }
-          },
-          {
-            "name": "state",
-            "docs": [
-              "Active/disabled state."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "created_slot",
-            "docs": [
-              "Slot in which the set was created."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "updated_slot",
-            "docs": [
-              "Slot in which the set was last updated."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "bump",
-            "docs": [
-              "PDA bump for the canonical verifier-set address."
-            ],
-            "type": "u8"
-          }
-        ]
-      }
-    },
-    {
-      "name": "VerifierSetCreatedEvent",
-      "docs": [
-        "Emitted when a threshold verifier set is created."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "version",
-            "docs": [
-              "Event schema version."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "verifier_set",
-            "docs": [
-              "Verifier-set PDA."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "admin",
-            "docs": [
-              "Admin signer that created the set."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "kind",
-            "docs": [
-              "Protocol purpose for this set."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "scope",
-            "docs": [
-              "Scope that disambiguates sets of the same kind."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "set_version",
-            "docs": [
-              "Monotonic version chosen by the admin for rotation."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "threshold",
-            "docs": [
-              "Number of distinct signer signatures required."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "signer_count",
-            "docs": [
-              "Number of active signers."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "created_slot",
-            "docs": [
-              "Slot in which this set was created."
-            ],
-            "type": "u64"
-          }
-        ]
-      }
-    },
-    {
-      "name": "VerifierSetDisabledEvent",
-      "docs": [
-        "Emitted when a threshold verifier set is disabled."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "version",
-            "docs": [
-              "Event schema version."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "verifier_set",
-            "docs": [
-              "Verifier-set PDA."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "admin",
-            "docs": [
-              "Admin signer that disabled the set."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "kind",
-            "docs": [
-              "Protocol purpose for this set."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "scope",
-            "docs": [
-              "Scope that disambiguates sets of the same kind."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "set_version",
-            "docs": [
-              "Set version."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "updated_slot",
-            "docs": [
-              "Slot in which this set was disabled."
-            ],
-            "type": "u64"
           }
         ]
       }

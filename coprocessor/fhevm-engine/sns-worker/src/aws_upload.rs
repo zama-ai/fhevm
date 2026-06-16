@@ -592,8 +592,10 @@ async fn fetch_pending_uploads(
                 transaction_id.as_deref(),
             );
             let item = HandleItem {
-                host_chain_id: ChainId::try_from(row.host_chain_id)
-                    .map_err(|e| ExecutionError::ConversionError(e.into()))?,
+                // BIGINT stores the i64 bit pattern of the canonical u64 chain id
+                // (negative for an RFC-021 Solana host); reconstruct via the
+                // canonical path so it round-trips, matching the verifier.
+                host_chain_id: ChainId::from_canonical_u64(row.host_chain_id as u64),
                 key_id_gw: row.key_id_gw,
                 handle: handle.clone(),
                 ct64_compressed,

@@ -1,12 +1,19 @@
-//! Redeems KMS-certified burned encrypted amounts from the SPL vault.
+//! Redeems KMS-certified burned encrypted amounts from the SPL vault, verifying the
+//! KMS `PublicDecryptVerification` EIP-712 certificate on-chain via `secp256k1_recover`
+//! (the gateway-compatible path, #1494 Phase 3 cert-secp).
+//!
+//! Mirrors `redeem_burned_amount` but trusts the gateway-level KMS context signer set
+//! (EVM secp256k1 EIP-712) instead of the per-mint Ed25519 verifier — the same cert the
+//! `disclose_*_secp` instructions verify. This is the secp256k1-parity counterpart of the
+//! disclose path; the legacy Ed25519 redeem stays until the secp path is adopted.
 
 use super::*;
 
-/// Accounts for redeeming a KMS-certified burned amount from the SPL vault.
+/// Accounts for redeeming a KMS-certified burned amount via secp256k1 EIP-712.
 #[derive(Accounts)]
 #[instruction(burned_handle: [u8; 32], cleartext_amount: u64)]
 #[event_cpi]
-pub struct RedeemBurnedAmount<'info> {
+pub struct RedeemBurnedAmountSecp<'info> {
     /// Token owner and redemption recipient.
     #[account(mut)]
     pub owner: Signer<'info>,
@@ -37,11 +44,9 @@ pub struct RedeemBurnedAmount<'info> {
     pub burned_amount_acl: Box<Account<'info, zama_host::AclRecord>>,
     /// Material commitment witness for the burned handle.
     pub burned_material_commitment: Box<Account<'info, zama_host::HandleMaterialCommitment>>,
-    /// Account-backed redemption request witness.
+    /// Account-backed redemption request witness pinned to a KMS context id.
     #[account(mut)]
     pub redemption_request: Box<Account<'info, BurnRedemptionRequest>>,
-    /// Threshold verifier set whose quorum signs the redemption certificate.
-    pub redemption_verifier_set: Box<Account<'info, zama_host::VerifierSet>>,
     /// Replay marker for this burned handle.
     #[account(
         init,
@@ -51,21 +56,31 @@ pub struct RedeemBurnedAmount<'info> {
         bump
     )]
     pub redemption_record: Account<'info, BurnRedemption>,
-    /// CHECK: Solana instructions sysvar; handler verifies its address and previous Ed25519 ix.
-    pub instructions_sysvar: UncheckedAccount<'info>,
-    /// ZamaHost config bound into the request and certificate.
+    /// Host config carrying the gateway KMS verifier params.
+    #[account(
+        seeds = [zama_host::HOST_CONFIG_SEED],
+        seeds::program = zama_host::ID,
+        bump = host_config.bump,
+    )]
     pub host_config: Box<Account<'info, zama_host::HostConfig>>,
+    /// KMS context the request was pinned to. Verified in-handler against the witness's
+    /// `kms_context_id` (not the current context), so a cert minted under one context cannot be
+    /// presented against a request pinned to another after rotation.
+    pub kms_context: Box<Account<'info, zama_host::KmsContext>>,
     /// SPL token program.
     pub token_program: Program<'info, Token>,
     /// System program used for the replay marker.
     pub system_program: Program<'info, System>,
 }
 
-/// Redeems a previously burned encrypted amount from the underlying-token vault.
-pub fn redeem_burned_amount(
-    ctx: Context<RedeemBurnedAmount>,
+/// Redeems a previously burned encrypted amount from the underlying-token vault after
+/// on-chain secp256k1 verification of the KMS `PublicDecryptVerification` certificate.
+pub fn redeem_burned_amount_secp(
+    ctx: Context<RedeemBurnedAmountSecp>,
     burned_handle: [u8; 32],
     cleartext_amount: u64,
+    signatures: Vec<[u8; 65]>,
+    extra_data: Vec<u8>,
 ) -> Result<()> {
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
     assert_confidential_mint_shape(&ctx.accounts.mint)?;
@@ -112,12 +127,9 @@ pub fn redeem_burned_amount(
         burned_handle,
     )?;
     assert_public_decrypt_released(&ctx.accounts.burned_amount_acl)?;
-    assert_active_verifier_set(
-        &ctx.accounts.redemption_verifier_set,
-        ctx.accounts.redemption_verifier_set.key(),
-        zama_host::VERIFIER_SET_KIND_TOKEN_REDEMPTION,
-        mint_key,
-    )?;
+
+    // Bind the redemption to a previously created request witness: same handle, accounts,
+    // material, host config; still PENDING and not expired; recomputed request_hash matches.
     assert_burn_redemption_request_witness(
         &ctx.accounts.redemption_request,
         ctx.accounts.redemption_request.key(),
@@ -131,35 +143,17 @@ pub fn redeem_burned_amount(
         ctx.accounts.burned_amount_acl.key(),
         &ctx.accounts.burned_material_commitment,
         ctx.accounts.host_config.key(),
-        &ctx.accounts.redemption_verifier_set,
     )?;
-    let message = redemption_proof_message_v2(
-        crate::ID,
-        zama_host::ID,
-        ctx.accounts.host_config.key(),
-        ctx.accounts.redemption_request.chain_id,
-        mint_key,
-        ctx.accounts.redemption_verifier_set.key(),
-        ctx.accounts.redemption_verifier_set.version,
-        ctx.accounts.redemption_request.key(),
-        ctx.accounts.redemption_request.request_hash,
-        ctx.accounts.burned_amount_acl.key(),
-        ctx.accounts
-            .burned_material_commitment
-            .material_commitment_hash,
-        ctx.accounts.burned_material_commitment.key_id,
+    // Verify the KMS PublicDecryptVerification secp256k1 cert against the context the witness was
+    // pinned to at request time (not the current context), closing rotation reuse.
+    assert_kms_public_decrypt_cert_for_request(
+        &ctx.accounts.host_config,
+        &ctx.accounts.kms_context,
+        ctx.accounts.redemption_request.kms_context_id,
         burned_handle,
         cleartext_amount,
-        ctx.accounts.owner.key(),
-        token_account_key,
-        ctx.accounts.underlying_mint.key(),
-        ctx.accounts.destination_usdc.owner,
-        ctx.accounts.destination_usdc.key(),
-    );
-    assert_threshold_verifier_signature(
-        &ctx.accounts.instructions_sysvar.to_account_info(),
-        &ctx.accounts.redemption_verifier_set,
-        &message,
+        &signatures,
+        &extra_data,
     )?;
 
     let vault_authority_bump = [ctx.bumps.vault_authority];

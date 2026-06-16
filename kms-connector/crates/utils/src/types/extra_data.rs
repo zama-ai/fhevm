@@ -176,7 +176,7 @@ mod tests {
 
     #[test]
     fn wrong_version_byte_errors() {
-        let mut data = vec![0x03];
+        let mut data = vec![0x04];
         data.extend_from_slice(&[0u8; 64]);
 
         let err = parse_extra_data(&data).unwrap_err();

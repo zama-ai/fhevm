@@ -1,7 +1,7 @@
 use anchor_lang::{
     prelude::{bpf_loader_upgradeable, system_program},
-    AccountDeserialize, AccountSerialize, AnchorDeserialize, AnchorSerialize, Discriminator,
-    InstructionData, ToAccountMetas,
+    AccountDeserialize, AccountSerialize, AnchorDeserialize, Discriminator, InstructionData,
+    ToAccountMetas,
 };
 use mollusk_svm::{
     result::{
@@ -16,9 +16,7 @@ use solana_sdk::{
     instruction::{AccountMeta, Instruction, InstructionError},
     native_loader,
     pubkey::Pubkey,
-    signature::{Keypair, Signer},
     sysvar,
-    transaction::TransactionError,
 };
 use std::{
     collections::{HashMap, HashSet},
@@ -33,7 +31,7 @@ use zama_host::{
     },
     AclPermission, AclRecord, AclSubjectEntry, DenySubjectRecord, FheBinaryOpCode, FheEvalArgs,
     FheEvalOperand, FheEvalOutput, FheEvalStep, FheTernaryOpCode, HandleMaterialCommitment,
-    HostConfig, TransientCapabilityGrant, TransientSession, UserDecryptionDelegation, VerifierSet,
+    HostConfig, TransientCapabilityGrant, TransientSession, UserDecryptionDelegation,
 };
 
 #[test]
@@ -451,10 +449,9 @@ fn mollusk_input_trivial_encrypt_bind_nonce_separates_equal_plaintexts_and_event
 fn mollusk_input_mock_verified_bind_creates_acl_record_and_event() {
     let program_id = host::id();
     let authority = Pubkey::new_unique();
-    let verifier = Pubkey::new_unique();
-    let (verifier_set, verifier_set_account) = input_verifier_set_account(authority, verifier);
-    let (host_config, host_config_account) =
-        host_config_account_with_flags(authority, verifier_set, true, true);
+    // The mock path now authenticates against `HostConfig::input_verifier_authority`, which
+    // `host_config_account` sets to the admin (authority).
+    let (host_config, host_config_account) = host_config_account(authority);
     let acl_domain_key = authority;
     let app_account = authority;
     let encrypted_value_label = label("input-gate");
@@ -464,8 +461,6 @@ fn mollusk_input_mock_verified_bind_creates_acl_record_and_event() {
     let context = transient_context(
         authority,
         vec![
-            (verifier, system_account(1_000_000_000)),
-            (verifier_set, verifier_set_account),
             (host_config, host_config_account),
             (output_acl, system_account(0)),
             (event_authority(program_id), system_account(0)),
@@ -476,8 +471,7 @@ fn mollusk_input_mock_verified_bind_creates_acl_record_and_event() {
     let result = context.process_instruction(&mock_input_verified_and_bind_ix(
         program_id,
         authority,
-        verifier,
-        verifier_set,
+        authority,
         host_config,
         output_acl,
         nonce_key,
@@ -520,10 +514,7 @@ fn mollusk_input_mock_verified_bind_creates_acl_record_and_event() {
 fn mollusk_input_birth_rejects_invalid_trivial_and_mock_without_acl_birth() {
     let program_id = host::id();
     let authority = Pubkey::new_unique();
-    let verifier = Pubkey::new_unique();
-    let (verifier_set, verifier_set_account) = input_verifier_set_account(authority, verifier);
-    let (host_config, host_config_account) =
-        host_config_account_with_flags(authority, verifier_set, true, true);
+    let (host_config, host_config_data) = host_config_account(authority);
     let acl_domain_key = authority;
     let app_account = authority;
     let bad_type_label = label("bad-trivial-type");
@@ -539,9 +530,7 @@ fn mollusk_input_birth_rejects_invalid_trivial_and_mock_without_acl_birth() {
     let context = transient_context(
         authority,
         vec![
-            (verifier, system_account(1_000_000_000)),
-            (verifier_set, verifier_set_account),
-            (host_config, host_config_account),
+            (host_config, host_config_data),
             (bad_type_acl, system_account(0)),
             (public_birth_acl, system_account(0)),
             (bad_input_acl, system_account(0)),
@@ -587,8 +576,7 @@ fn mollusk_input_birth_rejects_invalid_trivial_and_mock_without_acl_birth() {
     let computed_input = context.process_instruction(&mock_input_verified_and_bind_ix(
         program_id,
         authority,
-        verifier,
-        verifier_set,
+        authority,
         host_config,
         bad_input_acl,
         bad_input_nonce_key,
@@ -606,15 +594,10 @@ fn mollusk_input_birth_rejects_invalid_trivial_and_mock_without_acl_birth() {
     let disabled_nonce_key = host::acl_nonce_key(acl_domain_key, app_account, disabled_label);
     let disabled_acl = host::acl_record_address(disabled_nonce_key, 23).0;
     let (disabled_host_config, disabled_host_config_account) =
-        host_config_account_with_flags(authority, verifier_set, false, true);
+        host_config_account_with_options(authority, authority, false, true, false);
     let disabled_context = transient_context(
         authority,
         vec![
-            (verifier, system_account(1_000_000_000)),
-            (
-                verifier_set,
-                input_verifier_set_account(authority, verifier).1,
-            ),
             (disabled_host_config, disabled_host_config_account),
             (disabled_acl, system_account(0)),
             (event_authority(program_id), system_account(0)),
@@ -624,8 +607,7 @@ fn mollusk_input_birth_rejects_invalid_trivial_and_mock_without_acl_birth() {
     let disabled = disabled_context.process_instruction(&mock_input_verified_and_bind_ix(
         program_id,
         authority,
-        verifier,
-        verifier_set,
+        authority,
         disabled_host_config,
         disabled_acl,
         disabled_nonce_key,
@@ -639,22 +621,17 @@ fn mollusk_input_birth_rejects_invalid_trivial_and_mock_without_acl_birth() {
     assert!(disabled.raw_result.is_err());
     assert!(read_acl_record(&disabled_context, disabled_acl).is_none());
 
+    // A signer that is not the configured input_verifier_authority must be rejected.
     let wrong_verifier = Pubkey::new_unique();
     let wrong_verifier_label = label("mock-wrong-verifier");
     let wrong_verifier_nonce_key =
         host::acl_nonce_key(acl_domain_key, app_account, wrong_verifier_label);
     let wrong_verifier_acl = host::acl_record_address(wrong_verifier_nonce_key, 24).0;
-    let (wrong_host_config, wrong_host_config_account) =
-        host_config_account_with_flags(authority, verifier_set, true, true);
+    let (wrong_host_config, wrong_host_config_account) = host_config_account(authority);
     let wrong_context = transient_context(
         authority,
         vec![
-            (verifier, system_account(1_000_000_000)),
             (wrong_verifier, system_account(1_000_000_000)),
-            (
-                verifier_set,
-                input_verifier_set_account(authority, verifier).1,
-            ),
             (wrong_host_config, wrong_host_config_account),
             (wrong_verifier_acl, system_account(0)),
             (event_authority(program_id), system_account(0)),
@@ -665,7 +642,6 @@ fn mollusk_input_birth_rejects_invalid_trivial_and_mock_without_acl_birth() {
         program_id,
         authority,
         wrong_verifier,
-        verifier_set,
         wrong_host_config,
         wrong_verifier_acl,
         wrong_verifier_nonce_key,
@@ -678,847 +654,6 @@ fn mollusk_input_birth_rejects_invalid_trivial_and_mock_without_acl_birth() {
     ));
     assert!(wrong.raw_result.is_err());
     assert!(read_acl_record(&wrong_context, wrong_verifier_acl).is_none());
-}
-
-#[test]
-fn mollusk_signed_input_bind_accepts_ed25519_preinstruction_and_events() {
-    let program_id = host::id();
-    let authority = Pubkey::new_unique();
-    let verifier = Keypair::new();
-    let (verifier_set, verifier_set_account) =
-        input_verifier_set_account(authority, verifier.pubkey());
-    let (host_config, host_config_account) =
-        host_config_account_with_flags(authority, verifier_set, true, true);
-    let acl_domain_key = authority;
-    let app_account = authority;
-    let encrypted_value_label = label("signed-input");
-    let nonce_key = host::acl_nonce_key(acl_domain_key, app_account, encrypted_value_label);
-    let output_acl = host::acl_record_address(nonce_key, 30).0;
-    let input_handle = input_handle_for_chain(7, 1, 5);
-    let proof = host::SolanaInputProof {
-        handles: vec![input_handle_for_chain(8, 0, 5), input_handle],
-        handle_index: 1,
-        user: authority,
-        app_account,
-        acl_domain_key,
-        extra_data: b"mollusk-proof-context".to_vec(),
-    };
-    let output_subjects = vec![AclSubjectEntry::compute(authority)];
-    let instructions = signed_verify_input_and_bind_instructions(
-        program_id,
-        authority,
-        verifier_set,
-        &verifier,
-        host_config,
-        output_acl,
-        input_handle,
-        proof,
-        nonce_key,
-        30,
-        acl_domain_key,
-        app_account,
-        encrypted_value_label,
-        output_subjects,
-        false,
-    );
-    let context = transient_context(
-        authority,
-        vec![
-            (verifier_set, verifier_set_account),
-            (host_config, host_config_account),
-            (output_acl, system_account(0)),
-            (event_authority(program_id), system_account(0)),
-            (program_id, executable_program_account()),
-        ],
-    );
-
-    let result = process_transaction_result(&context, &instructions);
-
-    assert!(result.raw_result.is_ok());
-    let record = read_acl_record(&context, output_acl).expect("expected signed input ACL");
-    assert_bound_acl_record(
-        &record,
-        input_handle,
-        nonce_key,
-        30,
-        acl_domain_key,
-        app_account,
-        encrypted_value_label,
-        authority,
-        host::ACL_ROLE_COMPUTE_SUBJECT,
-        context.mollusk.sysvars.clock.slot,
-    );
-    let input_events: Vec<InputVerifiedEvent> = result
-        .inner_instructions
-        .iter()
-        .flat_map(|group| group.iter())
-        .filter_map(|inner| decode_anchor_event(&inner.instruction.data))
-        .collect();
-    assert_eq!(input_events.len(), 1);
-    assert_eq!(input_events[0].version, host::EVENT_VERSION);
-    assert_eq!(input_events[0].input_handle, input_handle);
-    assert_eq!(input_events[0].result_handle, input_handle);
-    assert_eq!(input_events[0].user, authority.to_bytes());
-    assert_eq!(input_events[0].acl_domain_key, acl_domain_key.to_bytes());
-    assert_acl_allowed_transaction_event(&result, input_handle, authority);
-}
-
-#[test]
-fn mollusk_signed_input_bind_rejects_missing_wrong_and_replayed_signature_without_acl_birth() {
-    let program_id = host::id();
-    let authority = Pubkey::new_unique();
-    let verifier = Keypair::new();
-    let wrong_verifier = Keypair::new();
-    let (verifier_set, verifier_set_account) =
-        input_verifier_set_account(authority, verifier.pubkey());
-    let (host_config, host_config_account) =
-        host_config_account_with_flags(authority, verifier_set, true, true);
-    let acl_domain_key = authority;
-    let app_account = authority;
-    let input_handle = input_handle_for_chain(7, 0, 5);
-    let proof = host::SolanaInputProof {
-        handles: vec![input_handle],
-        handle_index: 0,
-        user: authority,
-        app_account,
-        acl_domain_key,
-        extra_data: b"mollusk-signature-context".to_vec(),
-    };
-    let subjects = vec![AclSubjectEntry::compute(authority)];
-
-    let missing_label = label("signed-no-sig");
-    let missing_nonce_key = host::acl_nonce_key(acl_domain_key, app_account, missing_label);
-    let missing_acl = host::acl_record_address(missing_nonce_key, 31).0;
-    let wrong_label = label("signed-wrong-signer");
-    let wrong_nonce_key = host::acl_nonce_key(acl_domain_key, app_account, wrong_label);
-    let wrong_acl = host::acl_record_address(wrong_nonce_key, 32).0;
-    let signed_label = label("signed-policy-base");
-    let signed_nonce_key = host::acl_nonce_key(acl_domain_key, app_account, signed_label);
-    let replay_label = label("signed-policy-replay");
-    let replay_nonce_key = host::acl_nonce_key(acl_domain_key, app_account, replay_label);
-    let replay_acl = host::acl_record_address(replay_nonce_key, 33).0;
-    let context = transient_context(
-        authority,
-        vec![
-            (verifier_set, verifier_set_account),
-            (host_config, host_config_account),
-            (missing_acl, system_account(0)),
-            (wrong_acl, system_account(0)),
-            (replay_acl, system_account(0)),
-            (event_authority(program_id), system_account(0)),
-            (program_id, executable_program_account()),
-        ],
-    );
-
-    let missing = process_transaction_result(
-        &context,
-        &[verify_input_and_bind_ix(
-            program_id,
-            authority,
-            verifier_set,
-            host_config,
-            missing_acl,
-            input_handle,
-            proof.clone(),
-            missing_nonce_key,
-            31,
-            acl_domain_key,
-            app_account,
-            missing_label,
-            subjects.clone(),
-            false,
-        )],
-    );
-    assert!(missing.raw_result.is_err());
-    assert!(read_acl_record(&context, missing_acl).is_none());
-
-    let wrong_instructions = signed_verify_input_and_bind_instructions(
-        program_id,
-        authority,
-        verifier_set,
-        &wrong_verifier,
-        host_config,
-        wrong_acl,
-        input_handle,
-        proof.clone(),
-        wrong_nonce_key,
-        32,
-        acl_domain_key,
-        app_account,
-        wrong_label,
-        subjects.clone(),
-        false,
-    );
-    let wrong = process_transaction_result(&context, &wrong_instructions);
-    assert!(wrong.raw_result.is_err());
-    assert!(read_acl_record(&context, wrong_acl).is_none());
-
-    let signed_intent = input_bind_intent(
-        signed_nonce_key,
-        33,
-        acl_domain_key,
-        app_account,
-        signed_label,
-        subjects.clone(),
-        false,
-    );
-    let replay_ed25519_ix = ed25519_verify_ix(
-        &verifier,
-        &input_proof_message_for_verifier_set(&proof, &signed_intent, program_id, verifier_set, 1),
-    );
-    let replay_bind_ix = verify_input_and_bind_ix(
-        program_id,
-        authority,
-        verifier_set,
-        host_config,
-        replay_acl,
-        input_handle,
-        proof,
-        replay_nonce_key,
-        33,
-        acl_domain_key,
-        app_account,
-        replay_label,
-        subjects,
-        false,
-    );
-    let replay = process_transaction_result(&context, &[replay_ed25519_ix, replay_bind_ix]);
-    assert!(replay.raw_result.is_err());
-    assert!(read_acl_record(&context, replay_acl).is_none());
-}
-
-#[test]
-fn mollusk_signed_input_bind_rejects_bad_proof_handles_without_acl_birth() {
-    let program_id = host::id();
-    let authority = Pubkey::new_unique();
-    let verifier = Keypair::new();
-    let (verifier_set, verifier_set_account) =
-        input_verifier_set_account(authority, verifier.pubkey());
-    let (host_config, host_config_account) =
-        host_config_account_with_flags(authority, verifier_set, true, true);
-    let acl_domain_key = authority;
-    let app_account = authority;
-    let bad_index_label = label("signed-bad-index");
-    let bad_index_nonce_key = host::acl_nonce_key(acl_domain_key, app_account, bad_index_label);
-    let bad_index_acl = host::acl_record_address(bad_index_nonce_key, 34).0;
-    let computed_label = label("signed-computed");
-    let computed_nonce_key = host::acl_nonce_key(acl_domain_key, app_account, computed_label);
-    let computed_acl = host::acl_record_address(computed_nonce_key, 35).0;
-    let bad_type_label = label("signed-bad-type");
-    let bad_type_nonce_key = host::acl_nonce_key(acl_domain_key, app_account, bad_type_label);
-    let bad_type_acl = host::acl_record_address(bad_type_nonce_key, 36).0;
-    let subjects = vec![AclSubjectEntry::compute(authority)];
-    let context = transient_context(
-        authority,
-        vec![
-            (verifier_set, verifier_set_account),
-            (host_config, host_config_account),
-            (bad_index_acl, system_account(0)),
-            (computed_acl, system_account(0)),
-            (bad_type_acl, system_account(0)),
-            (event_authority(program_id), system_account(0)),
-            (program_id, executable_program_account()),
-        ],
-    );
-
-    let bad_index_handle = input_handle_for_chain(7, 2, 5);
-    let bad_index_proof = host::SolanaInputProof {
-        handles: vec![bad_index_handle],
-        handle_index: 0,
-        user: authority,
-        app_account,
-        acl_domain_key,
-        extra_data: Vec::new(),
-    };
-    let bad_index_instructions = signed_verify_input_and_bind_instructions(
-        program_id,
-        authority,
-        verifier_set,
-        &verifier,
-        host_config,
-        bad_index_acl,
-        bad_index_handle,
-        bad_index_proof,
-        bad_index_nonce_key,
-        34,
-        acl_domain_key,
-        app_account,
-        bad_index_label,
-        subjects.clone(),
-        false,
-    );
-    let bad_index = process_transaction_result(&context, &bad_index_instructions);
-    assert!(bad_index.raw_result.is_err());
-    assert!(read_acl_record(&context, bad_index_acl).is_none());
-
-    let computed_handle = computed_like_handle_for_chain(8, 5);
-    let computed_proof = host::SolanaInputProof {
-        handles: vec![computed_handle],
-        handle_index: 0,
-        user: authority,
-        app_account,
-        acl_domain_key,
-        extra_data: Vec::new(),
-    };
-    let computed_instructions = signed_verify_input_and_bind_instructions(
-        program_id,
-        authority,
-        verifier_set,
-        &verifier,
-        host_config,
-        computed_acl,
-        computed_handle,
-        computed_proof,
-        computed_nonce_key,
-        35,
-        acl_domain_key,
-        app_account,
-        computed_label,
-        subjects.clone(),
-        false,
-    );
-    let computed = process_transaction_result(&context, &computed_instructions);
-    assert!(computed.raw_result.is_err());
-    assert!(read_acl_record(&context, computed_acl).is_none());
-
-    let bad_type_handle = input_handle_for_chain(9, 0, 1);
-    let bad_type_proof = host::SolanaInputProof {
-        handles: vec![bad_type_handle],
-        handle_index: 0,
-        user: authority,
-        app_account,
-        acl_domain_key,
-        extra_data: Vec::new(),
-    };
-    let bad_type_instructions = signed_verify_input_and_bind_instructions(
-        program_id,
-        authority,
-        verifier_set,
-        &verifier,
-        host_config,
-        bad_type_acl,
-        bad_type_handle,
-        bad_type_proof,
-        bad_type_nonce_key,
-        36,
-        acl_domain_key,
-        app_account,
-        bad_type_label,
-        subjects,
-        false,
-    );
-    let bad_type = process_transaction_result(&context, &bad_type_instructions);
-    assert!(bad_type.raw_result.is_err());
-    assert!(read_acl_record(&context, bad_type_acl).is_none());
-}
-
-#[test]
-fn mollusk_threshold_input_verifier_set_accepts_valid_quorum() {
-    let program_id = host::id();
-    let authority = Pubkey::new_unique();
-    let signer_a = Keypair::new();
-    let signer_b = Keypair::new();
-    let signer_c = Keypair::new();
-    let signer_pubkeys = [signer_a.pubkey(), signer_b.pubkey(), signer_c.pubkey()];
-    let (verifier_set, verifier_set_account) = input_verifier_set_account_with_signers(
-        authority,
-        1,
-        2,
-        &signer_pubkeys,
-        host::VERIFIER_SET_STATE_ACTIVE,
-    );
-    let (host_config, host_config_account) =
-        host_config_account_with_flags(authority, verifier_set, true, true);
-    let acl_domain_key = authority;
-    let app_account = authority;
-    let encrypted_value_label = label("threshold-ok");
-    let nonce_key = host::acl_nonce_key(acl_domain_key, app_account, encrypted_value_label);
-    let output_acl = host::acl_record_address(nonce_key, 101).0;
-    let input_handle = input_handle_for_chain(7, 0, 5);
-    let proof = host::SolanaInputProof {
-        handles: vec![input_handle],
-        handle_index: 0,
-        user: authority,
-        app_account,
-        acl_domain_key,
-        extra_data: b"threshold-ok".to_vec(),
-    };
-    let output_subjects = vec![AclSubjectEntry::compute(authority)];
-    let bind_intent = input_bind_intent(
-        nonce_key,
-        101,
-        acl_domain_key,
-        app_account,
-        encrypted_value_label,
-        output_subjects.clone(),
-        false,
-    );
-    let message =
-        input_proof_message_for_verifier_set(&proof, &bind_intent, program_id, verifier_set, 1);
-    let ed25519_ix = ed25519_verify_multi_ix(&[&signer_a, &signer_b], &message);
-    let verify_ix = verify_input_and_bind_ix(
-        program_id,
-        authority,
-        verifier_set,
-        host_config,
-        output_acl,
-        input_handle,
-        proof,
-        nonce_key,
-        101,
-        acl_domain_key,
-        app_account,
-        encrypted_value_label,
-        output_subjects,
-        false,
-    );
-    let context = transient_context(
-        authority,
-        vec![
-            (verifier_set, verifier_set_account),
-            (host_config, host_config_account),
-            (output_acl, system_account(0)),
-            (event_authority(program_id), system_account(0)),
-            (program_id, executable_program_account()),
-        ],
-    );
-
-    let result = process_transaction_result(&context, &[ed25519_ix, verify_ix]);
-
-    assert!(result.raw_result.is_ok());
-    let record = read_acl_record(&context, output_acl).expect("expected threshold input ACL");
-    assert_bound_acl_record(
-        &record,
-        input_handle,
-        nonce_key,
-        101,
-        acl_domain_key,
-        app_account,
-        encrypted_value_label,
-        authority,
-        host::ACL_ROLE_COMPUTE_SUBJECT,
-        context.mollusk.sysvars.clock.slot,
-    );
-}
-
-#[test]
-fn mollusk_threshold_input_verifier_set_rejects_below_threshold_and_duplicates() {
-    let program_id = host::id();
-    let authority = Pubkey::new_unique();
-    let signer_a = Keypair::new();
-    let signer_b = Keypair::new();
-    let signer_c = Keypair::new();
-    let signer_pubkeys = [signer_a.pubkey(), signer_b.pubkey(), signer_c.pubkey()];
-    let (verifier_set, verifier_set_account) = input_verifier_set_account_with_signers(
-        authority,
-        1,
-        2,
-        &signer_pubkeys,
-        host::VERIFIER_SET_STATE_ACTIVE,
-    );
-    let (host_config, host_config_account) =
-        host_config_account_with_flags(authority, verifier_set, true, true);
-    let acl_domain_key = authority;
-    let app_account = authority;
-    let input_handle = input_handle_for_chain(8, 0, 5);
-    let proof = host::SolanaInputProof {
-        handles: vec![input_handle],
-        handle_index: 0,
-        user: authority,
-        app_account,
-        acl_domain_key,
-        extra_data: b"threshold-fail".to_vec(),
-    };
-    let output_subjects = vec![AclSubjectEntry::compute(authority)];
-    let context = transient_context(
-        authority,
-        vec![
-            (verifier_set, verifier_set_account),
-            (host_config, host_config_account),
-            (
-                host::acl_record_address(
-                    host::acl_nonce_key(acl_domain_key, app_account, label("threshold-low")),
-                    102,
-                )
-                .0,
-                system_account(0),
-            ),
-            (
-                host::acl_record_address(
-                    host::acl_nonce_key(acl_domain_key, app_account, label("threshold-dupe")),
-                    103,
-                )
-                .0,
-                system_account(0),
-            ),
-        ],
-    );
-
-    let low_label = label("threshold-low");
-    let low_nonce_key = host::acl_nonce_key(acl_domain_key, app_account, low_label);
-    let low_acl = host::acl_record_address(low_nonce_key, 102).0;
-    let low_intent = input_bind_intent(
-        low_nonce_key,
-        102,
-        acl_domain_key,
-        app_account,
-        low_label,
-        output_subjects.clone(),
-        false,
-    );
-    let low_message =
-        input_proof_message_for_verifier_set(&proof, &low_intent, program_id, verifier_set, 1);
-    let low_result = process_transaction_result(
-        &context,
-        &[
-            ed25519_verify_ix(&signer_a, &low_message),
-            verify_input_and_bind_ix(
-                program_id,
-                authority,
-                verifier_set,
-                host_config,
-                low_acl,
-                input_handle,
-                proof.clone(),
-                low_nonce_key,
-                102,
-                acl_domain_key,
-                app_account,
-                low_label,
-                output_subjects.clone(),
-                false,
-            ),
-        ],
-    );
-    assert_transaction_custom_error(
-        &low_result,
-        1,
-        host::errors::ZamaHostError::VerifierSetThresholdNotMet,
-    );
-    assert!(read_acl_record(&context, low_acl).is_none());
-
-    let duplicate_label = label("threshold-dupe");
-    let duplicate_nonce_key = host::acl_nonce_key(acl_domain_key, app_account, duplicate_label);
-    let duplicate_acl = host::acl_record_address(duplicate_nonce_key, 103).0;
-    let duplicate_intent = input_bind_intent(
-        duplicate_nonce_key,
-        103,
-        acl_domain_key,
-        app_account,
-        duplicate_label,
-        output_subjects.clone(),
-        false,
-    );
-    let duplicate_message = input_proof_message_for_verifier_set(
-        &proof,
-        &duplicate_intent,
-        program_id,
-        verifier_set,
-        1,
-    );
-    let duplicate_result = process_transaction_result(
-        &context,
-        &[
-            ed25519_verify_multi_ix(&[&signer_a, &signer_a], &duplicate_message),
-            verify_input_and_bind_ix(
-                program_id,
-                authority,
-                verifier_set,
-                host_config,
-                duplicate_acl,
-                input_handle,
-                proof,
-                duplicate_nonce_key,
-                103,
-                acl_domain_key,
-                app_account,
-                duplicate_label,
-                output_subjects,
-                false,
-            ),
-        ],
-    );
-    assert_transaction_custom_error(
-        &duplicate_result,
-        1,
-        host::errors::ZamaHostError::VerifierSetDuplicateSigner,
-    );
-    assert!(read_acl_record(&context, duplicate_acl).is_none());
-}
-
-#[test]
-fn mollusk_threshold_input_verifier_set_rejects_wrong_metadata_and_disabled_set() {
-    let program_id = host::id();
-    let authority = Pubkey::new_unique();
-    let signer = Keypair::new();
-    let acl_domain_key = authority;
-    let app_account = authority;
-    let input_handle = input_handle_for_chain(9, 0, 5);
-    let proof = host::SolanaInputProof {
-        handles: vec![input_handle],
-        handle_index: 0,
-        user: authority,
-        app_account,
-        acl_domain_key,
-        extra_data: b"threshold-metadata".to_vec(),
-    };
-    let output_subjects = vec![AclSubjectEntry::compute(authority)];
-
-    let wrong_kind_scope = host::host_config_address().0;
-    let (wrong_kind_set, wrong_kind_account) = verifier_set_account_with_fields(
-        authority,
-        77,
-        wrong_kind_scope,
-        1,
-        1,
-        &[signer.pubkey()],
-        host::VERIFIER_SET_STATE_ACTIVE,
-    );
-    let (wrong_kind_config, wrong_kind_config_account) =
-        host_config_account_with_flags(authority, wrong_kind_set, true, true);
-    let wrong_kind_label = label("threshold-kind");
-    let wrong_kind_nonce_key = host::acl_nonce_key(acl_domain_key, app_account, wrong_kind_label);
-    let wrong_kind_acl = host::acl_record_address(wrong_kind_nonce_key, 104).0;
-    let wrong_kind_context = transient_context(
-        authority,
-        vec![
-            (wrong_kind_set, wrong_kind_account),
-            (wrong_kind_config, wrong_kind_config_account),
-            (wrong_kind_acl, system_account(0)),
-        ],
-    );
-    let wrong_kind_message = input_proof_message_for_verifier_set(
-        &proof,
-        &input_bind_intent(
-            wrong_kind_nonce_key,
-            104,
-            acl_domain_key,
-            app_account,
-            wrong_kind_label,
-            output_subjects.clone(),
-            false,
-        ),
-        program_id,
-        wrong_kind_set,
-        1,
-    );
-    let wrong_kind_result = process_transaction_result(
-        &wrong_kind_context,
-        &[
-            ed25519_verify_ix(&signer, &wrong_kind_message),
-            verify_input_and_bind_ix(
-                program_id,
-                authority,
-                wrong_kind_set,
-                wrong_kind_config,
-                wrong_kind_acl,
-                input_handle,
-                proof.clone(),
-                wrong_kind_nonce_key,
-                104,
-                acl_domain_key,
-                app_account,
-                wrong_kind_label,
-                output_subjects.clone(),
-                false,
-            ),
-        ],
-    );
-    assert_transaction_custom_error(
-        &wrong_kind_result,
-        1,
-        host::errors::ZamaHostError::VerifierSetMismatch,
-    );
-
-    let wrong_scope = Pubkey::new_unique();
-    let (wrong_scope_set, wrong_scope_account) = verifier_set_account_with_fields(
-        authority,
-        host::VERIFIER_SET_KIND_INPUT,
-        wrong_scope,
-        1,
-        1,
-        &[signer.pubkey()],
-        host::VERIFIER_SET_STATE_ACTIVE,
-    );
-    let (wrong_scope_config, wrong_scope_config_account) =
-        host_config_account_with_flags(authority, wrong_scope_set, true, true);
-    let wrong_scope_label = label("threshold-scope");
-    let wrong_scope_nonce_key = host::acl_nonce_key(acl_domain_key, app_account, wrong_scope_label);
-    let wrong_scope_acl = host::acl_record_address(wrong_scope_nonce_key, 105).0;
-    let wrong_scope_context = transient_context(
-        authority,
-        vec![
-            (wrong_scope_set, wrong_scope_account),
-            (wrong_scope_config, wrong_scope_config_account),
-            (wrong_scope_acl, system_account(0)),
-        ],
-    );
-    let wrong_scope_message = host::input_proof_message_for_verifier_set(
-        &proof,
-        &input_bind_intent(
-            wrong_scope_nonce_key,
-            105,
-            acl_domain_key,
-            app_account,
-            wrong_scope_label,
-            output_subjects.clone(),
-            false,
-        ),
-        program_id,
-        host::SOLANA_POC_CHAIN_ID,
-        wrong_scope_set,
-        host::VERIFIER_SET_KIND_INPUT,
-        wrong_scope,
-        1,
-    );
-    let wrong_scope_result = process_transaction_result(
-        &wrong_scope_context,
-        &[
-            ed25519_verify_ix(&signer, &wrong_scope_message),
-            verify_input_and_bind_ix(
-                program_id,
-                authority,
-                wrong_scope_set,
-                wrong_scope_config,
-                wrong_scope_acl,
-                input_handle,
-                proof.clone(),
-                wrong_scope_nonce_key,
-                105,
-                acl_domain_key,
-                app_account,
-                wrong_scope_label,
-                output_subjects.clone(),
-                false,
-            ),
-        ],
-    );
-    assert_transaction_custom_error(
-        &wrong_scope_result,
-        1,
-        host::errors::ZamaHostError::VerifierSetMismatch,
-    );
-
-    let (versioned_set, versioned_account) = input_verifier_set_account_with_signers(
-        authority,
-        2,
-        1,
-        &[signer.pubkey()],
-        host::VERIFIER_SET_STATE_ACTIVE,
-    );
-    let (versioned_config, versioned_config_account) =
-        host_config_account_with_flags(authority, versioned_set, true, true);
-    let version_label = label("threshold-version");
-    let version_nonce_key = host::acl_nonce_key(acl_domain_key, app_account, version_label);
-    let version_acl = host::acl_record_address(version_nonce_key, 106).0;
-    let version_context = transient_context(
-        authority,
-        vec![
-            (versioned_set, versioned_account),
-            (versioned_config, versioned_config_account),
-            (version_acl, system_account(0)),
-        ],
-    );
-    let version_message = input_proof_message_for_verifier_set(
-        &proof,
-        &input_bind_intent(
-            version_nonce_key,
-            106,
-            acl_domain_key,
-            app_account,
-            version_label,
-            output_subjects.clone(),
-            false,
-        ),
-        program_id,
-        versioned_set,
-        1,
-    );
-    let version_result = process_transaction_result(
-        &version_context,
-        &[
-            ed25519_verify_ix(&signer, &version_message),
-            verify_input_and_bind_ix(
-                program_id,
-                authority,
-                versioned_set,
-                versioned_config,
-                version_acl,
-                input_handle,
-                proof.clone(),
-                version_nonce_key,
-                106,
-                acl_domain_key,
-                app_account,
-                version_label,
-                output_subjects.clone(),
-                false,
-            ),
-        ],
-    );
-    assert_transaction_custom_error(
-        &version_result,
-        1,
-        host::errors::ZamaHostError::InputVerifierMismatch,
-    );
-
-    let (disabled_set, disabled_account) =
-        disabled_input_verifier_set_account(authority, signer.pubkey());
-    let (disabled_config, disabled_config_account) =
-        host_config_account_with_flags(authority, disabled_set, true, true);
-    let disabled_label = label("threshold-disabled");
-    let disabled_nonce_key = host::acl_nonce_key(acl_domain_key, app_account, disabled_label);
-    let disabled_acl = host::acl_record_address(disabled_nonce_key, 107).0;
-    let disabled_context = transient_context(
-        authority,
-        vec![
-            (disabled_set, disabled_account),
-            (disabled_config, disabled_config_account),
-            (disabled_acl, system_account(0)),
-        ],
-    );
-    let disabled_message = input_proof_message_for_verifier_set(
-        &proof,
-        &input_bind_intent(
-            disabled_nonce_key,
-            107,
-            acl_domain_key,
-            app_account,
-            disabled_label,
-            output_subjects.clone(),
-            false,
-        ),
-        program_id,
-        disabled_set,
-        1,
-    );
-    let disabled_result = process_transaction_result(
-        &disabled_context,
-        &[
-            ed25519_verify_ix(&signer, &disabled_message),
-            verify_input_and_bind_ix(
-                program_id,
-                authority,
-                disabled_set,
-                disabled_config,
-                disabled_acl,
-                input_handle,
-                proof,
-                disabled_nonce_key,
-                107,
-                acl_domain_key,
-                app_account,
-                disabled_label,
-                output_subjects,
-                false,
-            ),
-        ],
-    );
-    assert_transaction_custom_error(
-        &disabled_result,
-        1,
-        host::errors::ZamaHostError::VerifierSetDisabled,
-    );
 }
 
 #[test]
@@ -2279,12 +1414,17 @@ fn mollusk_host_config_initialize_creates_state_and_rejects_zero_profile_fields(
     let program_id = host::id();
     let payer = Pubkey::new_unique();
     let admin = Pubkey::new_unique();
+    let input_verifier_authority = Pubkey::new_unique();
     let material_authority = Pubkey::new_unique();
     let test_authority = Pubkey::new_unique();
     let (host_config, expected_bump) = host::host_config_address();
     let args = host::InitializeHostConfigArgs {
         chain_id: host::SOLANA_POC_CHAIN_ID,
-        input_verifier_set: Pubkey::default(),
+        input_verifier_authority,
+        gateway_chain_id: 0,
+        input_verification_contract: [0u8; 20],
+        coprocessor_signer: [0u8; 20],
+        decryption_contract: [0u8; 20],
         material_authority,
         test_authority,
         mock_input_enabled: false,
@@ -2305,8 +1445,7 @@ fn mollusk_host_config_initialize_creates_state_and_rejects_zero_profile_fields(
     let config = read_host_config(&context, host_config).expect("expected host config");
     assert_eq!(config.admin, admin);
     assert_eq!(config.chain_id, host::SOLANA_POC_CHAIN_ID);
-    assert_eq!(config.input_verifier_set, Pubkey::default());
-    assert_eq!(config.input_verifier_set_version, 0);
+    assert_eq!(config.input_verifier_authority, input_verifier_authority);
     assert_eq!(config.material_authority, material_authority);
     assert_eq!(config.test_authority, test_authority);
     assert!(!config.paused);
@@ -2318,7 +1457,7 @@ fn mollusk_host_config_initialize_creates_state_and_rejects_zero_profile_fields(
 
     let cases: [fn(&mut host::InitializeHostConfigArgs); 4] = [
         |args| args.chain_id = 0,
-        |args| args.input_verifier_set = input_verifier_set_key(1),
+        |args| args.input_verifier_authority = Pubkey::default(),
         |args| args.material_authority = Pubkey::default(),
         |args| args.test_authority = Pubkey::default(),
     ];
@@ -2326,7 +1465,11 @@ fn mollusk_host_config_initialize_creates_state_and_rejects_zero_profile_fields(
     for mutate in cases {
         let mut args = host::InitializeHostConfigArgs {
             chain_id: host::SOLANA_POC_CHAIN_ID,
-            input_verifier_set: Pubkey::default(),
+            input_verifier_authority,
+            gateway_chain_id: 0,
+            input_verification_contract: [0u8; 20],
+            coprocessor_signer: [0u8; 20],
+            decryption_contract: [0u8; 20],
             material_authority,
             test_authority,
             mock_input_enabled: true,
@@ -2347,412 +1490,6 @@ fn mollusk_host_config_initialize_creates_state_and_rejects_zero_profile_fields(
         assert!(result.raw_result.is_err());
         assert!(read_host_config(&context, host_config).is_none());
     }
-}
-
-#[test]
-fn mollusk_migrate_host_config_verifier_set_resizes_legacy_config_and_bootstraps_input_set() {
-    let program_id = host::id();
-    let payer = Pubkey::new_unique();
-    let admin = Pubkey::new_unique();
-    let input_verifier_authority = Pubkey::new_unique();
-    let material_authority = Pubkey::new_unique();
-    let test_authority = Pubkey::new_unique();
-    let (host_config, expected_bump) = host::host_config_address();
-    let verifier_set = host::verifier_set_address(host::VERIFIER_SET_KIND_INPUT, host_config, 1).0;
-    let args = verifier_set_args(
-        host::VERIFIER_SET_KIND_INPUT,
-        host_config,
-        1,
-        1,
-        &[input_verifier_authority],
-    );
-    let context = transient_context(
-        payer,
-        vec![
-            (
-                host_config,
-                legacy_host_config_account(
-                    admin,
-                    input_verifier_authority,
-                    material_authority,
-                    test_authority,
-                    expected_bump,
-                ),
-            ),
-            (verifier_set, system_account(0)),
-        ],
-    );
-
-    let result = context.process_instruction(&migrate_host_config_verifier_set_ix(
-        program_id,
-        payer,
-        admin,
-        host_config,
-        verifier_set,
-        args,
-    ));
-
-    assert!(result.raw_result.is_ok());
-    let config = read_host_config(&context, host_config).expect("expected migrated host config");
-    assert_eq!(config.admin, admin);
-    assert_eq!(config.chain_id, host::SOLANA_POC_CHAIN_ID);
-    assert_eq!(config.input_verifier_set, verifier_set);
-    assert_eq!(config.input_verifier_set_version, 1);
-    assert_eq!(config.material_authority, material_authority);
-    assert_eq!(config.test_authority, test_authority);
-    assert!(!config.paused);
-    assert!(config.mock_input_enabled);
-    assert!(config.test_shims_enabled);
-    assert!(config.grant_deny_list_enabled);
-    assert_eq!(config.updated_slot, context.mollusk.sysvars.clock.slot);
-    assert_eq!(config.bump, expected_bump);
-    assert_eq!(
-        stored_account(&context, host_config).data.len(),
-        8 + HostConfig::SPACE
-    );
-
-    let stored_set = read_verifier_set(&context, verifier_set).expect("expected verifier set");
-    assert_eq!(stored_set.admin, admin);
-    assert_eq!(stored_set.kind, host::VERIFIER_SET_KIND_INPUT);
-    assert_eq!(stored_set.scope, host_config);
-    assert_eq!(stored_set.version, 1);
-    assert_eq!(stored_set.threshold, 1);
-    assert_eq!(stored_set.signer_count, 1);
-    assert_eq!(stored_set.signers[0], input_verifier_authority);
-    assert!(stored_set.is_active());
-}
-
-#[test]
-fn mollusk_create_verifier_set_rotates_host_input_set() {
-    let program_id = host::id();
-    let admin = Pubkey::new_unique();
-    let initial_input_set = input_verifier_set_key(1);
-    let (host_config, host_config_account) =
-        host_config_account_with_flags(admin, initial_input_set, true, true);
-    let signer = Pubkey::new_unique();
-    let args = verifier_set_args(host::VERIFIER_SET_KIND_INPUT, host_config, 2, 1, &[signer]);
-    let (verifier_set, expected_bump) =
-        host::verifier_set_address(args.kind, args.scope, args.version);
-    let mut context = transient_context(
-        admin,
-        vec![
-            (host_config, host_config_account),
-            (verifier_set, system_account(0)),
-        ],
-    );
-
-    context.mollusk.sysvars.warp_to_slot(21);
-    let result = context.process_instruction(&create_verifier_set_ix(
-        program_id,
-        admin,
-        admin,
-        host_config,
-        verifier_set,
-        args,
-    ));
-
-    assert!(result.raw_result.is_ok());
-    let created = read_verifier_set(&context, verifier_set).expect("expected verifier set");
-    assert_eq!(created.admin, admin);
-    assert_eq!(created.kind, host::VERIFIER_SET_KIND_INPUT);
-    assert_eq!(created.scope, host_config);
-    assert_eq!(created.version, 2);
-    assert_eq!(created.threshold, 1);
-    assert_eq!(created.signer_count, 1);
-    assert_eq!(created.signers[0], signer);
-    assert!(created.signers[1..]
-        .iter()
-        .all(|key| *key == Pubkey::default()));
-    assert_eq!(created.state, host::VERIFIER_SET_STATE_ACTIVE);
-    assert_eq!(created.created_slot, 21);
-    assert_eq!(created.updated_slot, 21);
-    assert_eq!(created.bump, expected_bump);
-
-    let config = read_host_config(&context, host_config).expect("expected host config");
-    assert_eq!(config.input_verifier_set, verifier_set);
-    assert_eq!(config.input_verifier_set_version, 2);
-    assert_eq!(config.updated_slot, 21);
-}
-
-#[test]
-fn mollusk_create_initial_input_verifier_set_bootstraps_host_config() {
-    let program_id = host::id();
-    let admin = Pubkey::new_unique();
-    let (host_config, host_config_account) =
-        host_config_account_with_flags(admin, Pubkey::default(), true, true);
-    let signer = Pubkey::new_unique();
-    let args = verifier_set_args(host::VERIFIER_SET_KIND_INPUT, host_config, 1, 1, &[signer]);
-    let (verifier_set, _) = host::verifier_set_address(args.kind, args.scope, args.version);
-    let context = transient_context(
-        admin,
-        vec![
-            (host_config, host_config_account),
-            (verifier_set, system_account(0)),
-        ],
-    );
-
-    let result = context.process_instruction(&create_verifier_set_ix(
-        program_id,
-        admin,
-        admin,
-        host_config,
-        verifier_set,
-        args,
-    ));
-
-    assert!(result.raw_result.is_ok());
-    let config = read_host_config(&context, host_config).expect("expected host config");
-    assert_eq!(config.input_verifier_set, verifier_set);
-    assert_eq!(config.input_verifier_set_version, 1);
-}
-
-#[test]
-fn mollusk_create_input_verifier_set_rejects_zero_or_non_monotonic_version() {
-    let program_id = host::id();
-    let admin = Pubkey::new_unique();
-    let active_input_set = input_verifier_set_key(1);
-    let (host_config, host_config_account) =
-        host_config_account_with_flags(admin, active_input_set, true, true);
-    let signer = Pubkey::new_unique();
-    let zero_args = verifier_set_args(host::VERIFIER_SET_KIND_INPUT, host_config, 0, 1, &[signer]);
-    let stale_args = verifier_set_args(host::VERIFIER_SET_KIND_INPUT, host_config, 1, 1, &[signer]);
-    let zero_set = host::verifier_set_address(zero_args.kind, zero_args.scope, zero_args.version).0;
-    let stale_set =
-        host::verifier_set_address(stale_args.kind, stale_args.scope, stale_args.version).0;
-    let context = transient_context(
-        admin,
-        vec![
-            (host_config, host_config_account),
-            (zero_set, system_account(0)),
-            (stale_set, system_account(0)),
-        ],
-    );
-
-    for (verifier_set, args) in [(zero_set, zero_args), (stale_set, stale_args)] {
-        let result = context.process_instruction(&create_verifier_set_ix(
-            program_id,
-            admin,
-            admin,
-            host_config,
-            verifier_set,
-            args,
-        ));
-
-        assert_instruction_custom_error(&result, host::errors::ZamaHostError::InvalidVerifierSet);
-        assert!(read_verifier_set(&context, verifier_set).is_none());
-    }
-}
-
-#[test]
-fn mollusk_create_token_verifier_sets_are_mint_scoped_without_host_rotation() {
-    let program_id = host::id();
-    let admin = Pubkey::new_unique();
-    let input_set = input_verifier_set_key(1);
-    let (host_config, host_config_account) =
-        host_config_account_with_flags(admin, input_set, true, true);
-    let mint = Pubkey::new_unique();
-    let signer_a = Pubkey::new_unique();
-    let signer_b = Pubkey::new_unique();
-    let disclosure_args = verifier_set_args(
-        host::VERIFIER_SET_KIND_TOKEN_DISCLOSURE,
-        mint,
-        1,
-        2,
-        &[signer_a, signer_b],
-    );
-    let redemption_args = verifier_set_args(
-        host::VERIFIER_SET_KIND_TOKEN_REDEMPTION,
-        mint,
-        1,
-        1,
-        &[signer_b],
-    );
-    let disclosure_set =
-        host::verifier_set_address(disclosure_args.kind, disclosure_args.scope, 1).0;
-    let redemption_set =
-        host::verifier_set_address(redemption_args.kind, redemption_args.scope, 1).0;
-    let mut context = transient_context(
-        admin,
-        vec![
-            (host_config, host_config_account),
-            (disclosure_set, system_account(0)),
-            (redemption_set, system_account(0)),
-        ],
-    );
-
-    context.mollusk.sysvars.warp_to_slot(30);
-    let disclosure_result = context.process_instruction(&create_verifier_set_ix(
-        program_id,
-        admin,
-        admin,
-        host_config,
-        disclosure_set,
-        disclosure_args,
-    ));
-    assert!(disclosure_result.raw_result.is_ok());
-
-    context.mollusk.sysvars.warp_to_slot(31);
-    let redemption_result = context.process_instruction(&create_verifier_set_ix(
-        program_id,
-        admin,
-        admin,
-        host_config,
-        redemption_set,
-        redemption_args,
-    ));
-    assert!(redemption_result.raw_result.is_ok());
-
-    let disclosure = read_verifier_set(&context, disclosure_set).expect("expected disclosure set");
-    assert_eq!(disclosure.admin, admin);
-    assert_eq!(disclosure.kind, host::VERIFIER_SET_KIND_TOKEN_DISCLOSURE);
-    assert_eq!(disclosure.scope, mint);
-    assert_eq!(disclosure.version, 1);
-    assert_eq!(disclosure.threshold, 2);
-    assert_eq!(disclosure.signer_count, 2);
-    assert_eq!(disclosure.signers[0], signer_a);
-    assert_eq!(disclosure.signers[1], signer_b);
-    assert_eq!(disclosure.created_slot, 30);
-    assert_eq!(disclosure.updated_slot, 30);
-
-    let redemption = read_verifier_set(&context, redemption_set).expect("expected redemption set");
-    assert_eq!(redemption.admin, admin);
-    assert_eq!(redemption.kind, host::VERIFIER_SET_KIND_TOKEN_REDEMPTION);
-    assert_eq!(redemption.scope, mint);
-    assert_eq!(redemption.version, 1);
-    assert_eq!(redemption.threshold, 1);
-    assert_eq!(redemption.signer_count, 1);
-    assert_eq!(redemption.signers[0], signer_b);
-    assert_eq!(redemption.created_slot, 31);
-    assert_eq!(redemption.updated_slot, 31);
-
-    let config = read_host_config(&context, host_config).expect("expected host config");
-    assert_eq!(config.input_verifier_set, input_set);
-    assert_eq!(config.input_verifier_set_version, 1);
-    assert_eq!(config.updated_slot, 0);
-}
-
-#[test]
-fn mollusk_create_verifier_set_rejects_invalid_kind_scope_pairs() {
-    let program_id = host::id();
-    let admin = Pubkey::new_unique();
-    let (host_config, host_config_account) = host_config_account(admin);
-    let mint = Pubkey::new_unique();
-    let signer = Pubkey::new_unique();
-    let input_with_mint_scope =
-        verifier_set_args(host::VERIFIER_SET_KIND_INPUT, mint, 1, 1, &[signer]);
-    let token_with_host_scope = verifier_set_args(
-        host::VERIFIER_SET_KIND_TOKEN_DISCLOSURE,
-        host_config,
-        1,
-        1,
-        &[signer],
-    );
-    let token_with_default_scope = verifier_set_args(
-        host::VERIFIER_SET_KIND_TOKEN_REDEMPTION,
-        Pubkey::default(),
-        1,
-        1,
-        &[signer],
-    );
-    let invalid_cases = [
-        input_with_mint_scope,
-        token_with_host_scope,
-        token_with_default_scope,
-    ];
-    let mut seeded = vec![(host_config, host_config_account)];
-    for args in invalid_cases {
-        seeded.push((
-            host::verifier_set_address(args.kind, args.scope, args.version).0,
-            system_account(0),
-        ));
-    }
-    let context = transient_context(admin, seeded);
-
-    for args in invalid_cases {
-        let verifier_set = host::verifier_set_address(args.kind, args.scope, args.version).0;
-        let result = context.process_instruction(&create_verifier_set_ix(
-            program_id,
-            admin,
-            admin,
-            host_config,
-            verifier_set,
-            args,
-        ));
-
-        assert_instruction_custom_error(&result, host::errors::ZamaHostError::InvalidVerifierSet);
-        assert!(read_verifier_set(&context, verifier_set).is_none());
-    }
-}
-
-#[test]
-fn mollusk_disable_token_verifier_set_requires_creator_admin_and_preserves_host_rotation() {
-    let program_id = host::id();
-    let admin = Pubkey::new_unique();
-    let wrong_admin = Pubkey::new_unique();
-    let input_set = input_verifier_set_key(1);
-    let (host_config, host_config_account) =
-        host_config_account_with_flags(admin, input_set, true, true);
-    let mint = Pubkey::new_unique();
-    let signer = Pubkey::new_unique();
-    let (verifier_set, verifier_set_account) = verifier_set_account_with_fields(
-        admin,
-        host::VERIFIER_SET_KIND_TOKEN_DISCLOSURE,
-        mint,
-        1,
-        1,
-        &[signer],
-        host::VERIFIER_SET_STATE_ACTIVE,
-    );
-    let mut context = transient_context(
-        admin,
-        vec![
-            (host_config, host_config_account),
-            (verifier_set, verifier_set_account),
-        ],
-    );
-
-    let wrong_admin_result = context.process_instruction(&disable_verifier_set_ix(
-        program_id,
-        wrong_admin,
-        host_config,
-        verifier_set,
-    ));
-    assert_instruction_custom_error(
-        &wrong_admin_result,
-        host::errors::ZamaHostError::HostConfigAdminMismatch,
-    );
-    let still_active = read_verifier_set(&context, verifier_set).expect("expected verifier set");
-    assert_eq!(still_active.state, host::VERIFIER_SET_STATE_ACTIVE);
-    assert_eq!(still_active.updated_slot, 0);
-
-    context.mollusk.sysvars.warp_to_slot(42);
-    let disable_result = context.process_instruction(&disable_verifier_set_ix(
-        program_id,
-        admin,
-        host_config,
-        verifier_set,
-    ));
-    assert!(disable_result.raw_result.is_ok());
-    let disabled = read_verifier_set(&context, verifier_set).expect("expected verifier set");
-    assert_eq!(disabled.state, host::VERIFIER_SET_STATE_DISABLED);
-    assert_eq!(disabled.updated_slot, 42);
-
-    context.mollusk.sysvars.warp_to_slot(43);
-    let repeat_result = context.process_instruction(&disable_verifier_set_ix(
-        program_id,
-        admin,
-        host_config,
-        verifier_set,
-    ));
-    assert!(repeat_result.raw_result.is_ok());
-    let repeated = read_verifier_set(&context, verifier_set).expect("expected verifier set");
-    assert_eq!(repeated.state, host::VERIFIER_SET_STATE_DISABLED);
-    assert_eq!(repeated.updated_slot, 42);
-
-    let config = read_host_config(&context, host_config).expect("expected host config");
-    assert_eq!(config.input_verifier_set, input_set);
-    assert_eq!(config.input_verifier_set_version, 1);
-    assert_eq!(config.updated_slot, 0);
 }
 
 #[test]
@@ -5188,217 +3925,6 @@ fn mollusk_fhe_eval_rejects_duplicate_durable_output_reference_without_partial_b
 }
 
 #[test]
-fn mollusk_fhe_eval_rejects_duplicate_generated_input_handle_before_second_birth() {
-    let program_id = host::id();
-    let authority = Pubkey::new_unique();
-    let verifier = Keypair::new();
-    let (verifier_set, verifier_set_account) =
-        input_verifier_set_account(authority, verifier.pubkey());
-    let (host_config, host_config_account) =
-        host_config_account_with_flags(authority, verifier_set, true, true);
-    let acl_domain_key = authority;
-    let app_account = authority;
-    let input_label = label("eval-dupe-input");
-    let input_nonce_key = host::acl_nonce_key(acl_domain_key, app_account, input_label);
-    let input_acl = host::acl_record_address(input_nonce_key, 50).0;
-    let input_handle = input_handle_for_chain(184, 0, 5);
-    let proof = host::SolanaInputProof {
-        handles: vec![input_handle],
-        handle_index: 0,
-        user: authority,
-        app_account,
-        acl_domain_key,
-        extra_data: b"duplicate-eval-input".to_vec(),
-    };
-    let input_subjects = vec![AclSubjectEntry::compute(authority)];
-    let input_bind_intent = input_bind_intent(
-        input_nonce_key,
-        50,
-        acl_domain_key,
-        app_account,
-        input_label,
-        input_subjects.clone(),
-        false,
-    );
-    let ed25519_ix = ed25519_verify_ix(
-        &verifier,
-        &input_proof_message_for_verifier_set(
-            &proof,
-            &input_bind_intent,
-            program_id,
-            verifier_set,
-            1,
-        ),
-    );
-    let context = transient_context(
-        authority,
-        vec![
-            (verifier_set, verifier_set_account),
-            (host_config, host_config_account),
-            (input_acl, system_account(0)),
-        ],
-    );
-    let input_output = FheEvalOutput::Durable {
-        output_acl_record_index: 1,
-        output_app_account_authority_index: None,
-        output_nonce_key: input_nonce_key,
-        output_nonce_sequence: 50,
-        output_acl_domain_key: acl_domain_key,
-        output_app_account: app_account,
-        output_encrypted_value_label: input_label,
-        output_subjects: input_subjects,
-        output_public_decrypt: false,
-    };
-    let mut eval_ix = anchor_ix(
-        program_id,
-        host::accounts::FheEval {
-            payer: authority,
-            compute_subject: authority,
-            app_account_authority: authority,
-            host_config,
-            system_program: system_program::ID,
-            instructions_sysvar: Some(sysvar::instructions::ID),
-            event_authority: event_authority(program_id),
-            program: program_id,
-        },
-        host::instruction::FheEval {
-            args: FheEvalArgs {
-                context_id: label("eval-dupe-handle"),
-                steps: vec![
-                    FheEvalStep::Input {
-                        input_handle,
-                        proof: proof.clone(),
-                        verifier_set_index: 0,
-                        output: input_output.clone(),
-                    },
-                    FheEvalStep::Input {
-                        input_handle,
-                        proof,
-                        verifier_set_index: 0,
-                        output: input_output,
-                    },
-                ],
-            },
-        },
-    );
-    eval_ix
-        .accounts
-        .push(AccountMeta::new_readonly(verifier_set, false));
-    eval_ix.accounts.push(AccountMeta::new(input_acl, false));
-
-    let result = process_transaction_result(&context, &[ed25519_ix, eval_ix]);
-
-    assert_transaction_custom_error(
-        &result,
-        1,
-        host::errors::ZamaHostError::FheEvalDuplicateHandle,
-    );
-    assert!(read_acl_record(&context, input_acl).is_none());
-}
-
-#[test]
-fn mollusk_fhe_eval_rejects_bad_signed_input_preinstruction_without_acl_birth() {
-    let program_id = host::id();
-    let authority = Pubkey::new_unique();
-    let verifier = Keypair::new();
-    let (verifier_set, verifier_set_account) =
-        input_verifier_set_account(authority, verifier.pubkey());
-    let (host_config, host_config_account) =
-        host_config_account_with_flags(authority, verifier_set, true, true);
-    let acl_domain_key = authority;
-    let app_account = authority;
-    let input_label = label("eval-bad-sig-input");
-    let wrong_label = label("eval-bad-sig-wrong");
-    let input_nonce_key = host::acl_nonce_key(acl_domain_key, app_account, input_label);
-    let wrong_nonce_key = host::acl_nonce_key(acl_domain_key, app_account, wrong_label);
-    let input_acl = host::acl_record_address(input_nonce_key, 51).0;
-    let input_handle = input_handle_for_chain(185, 0, 5);
-    let proof = host::SolanaInputProof {
-        handles: vec![input_handle],
-        handle_index: 0,
-        user: authority,
-        app_account,
-        acl_domain_key,
-        extra_data: b"bad-eval-input-signature".to_vec(),
-    };
-    let input_subjects = vec![AclSubjectEntry::compute(authority)];
-    let wrong_bind_intent = input_bind_intent(
-        wrong_nonce_key,
-        51,
-        acl_domain_key,
-        app_account,
-        wrong_label,
-        input_subjects.clone(),
-        false,
-    );
-    let ed25519_ix = ed25519_verify_ix(
-        &verifier,
-        &input_proof_message_for_verifier_set(
-            &proof,
-            &wrong_bind_intent,
-            program_id,
-            verifier_set,
-            1,
-        ),
-    );
-    let context = transient_context(
-        authority,
-        vec![
-            (verifier_set, verifier_set_account),
-            (host_config, host_config_account),
-            (input_acl, system_account(0)),
-        ],
-    );
-    let mut eval_ix = anchor_ix(
-        program_id,
-        host::accounts::FheEval {
-            payer: authority,
-            compute_subject: authority,
-            app_account_authority: authority,
-            host_config,
-            system_program: system_program::ID,
-            instructions_sysvar: Some(sysvar::instructions::ID),
-            event_authority: event_authority(program_id),
-            program: program_id,
-        },
-        host::instruction::FheEval {
-            args: FheEvalArgs {
-                context_id: label("eval-bad-sig"),
-                steps: vec![FheEvalStep::Input {
-                    input_handle,
-                    proof,
-                    verifier_set_index: 0,
-                    output: FheEvalOutput::Durable {
-                        output_acl_record_index: 1,
-                        output_app_account_authority_index: None,
-                        output_nonce_key: input_nonce_key,
-                        output_nonce_sequence: 51,
-                        output_acl_domain_key: acl_domain_key,
-                        output_app_account: app_account,
-                        output_encrypted_value_label: input_label,
-                        output_subjects: input_subjects,
-                        output_public_decrypt: false,
-                    },
-                }],
-            },
-        },
-    );
-    eval_ix
-        .accounts
-        .push(AccountMeta::new_readonly(verifier_set, false));
-    eval_ix.accounts.push(AccountMeta::new(input_acl, false));
-
-    let result = process_transaction_result(&context, &[ed25519_ix, eval_ix]);
-
-    assert_transaction_custom_error(
-        &result,
-        1,
-        host::errors::ZamaHostError::VerifierSetThresholdNotMet,
-    );
-    assert!(read_acl_record(&context, input_acl).is_none());
-}
-
-#[test]
 fn mollusk_fhe_eval_rejects_swapped_dynamic_account_ordering() {
     let fixture = EvalFixture::new();
     let context_id = label("eval-ordering");
@@ -5593,187 +4119,6 @@ fn mollusk_fhe_eval_rejects_transient_session_output_to_sealed_session() {
     let session_account = read_transient_session(&context, session).expect("expected session");
     assert_eq!(session_account.state, host::TRANSIENT_SESSION_STATE_SEALED);
     assert!(session_account.entries.is_empty());
-}
-
-#[test]
-fn mollusk_fhe_eval_verifies_signed_input_and_feeds_later_step() {
-    let program_id = host::id();
-    let authority = Pubkey::new_unique();
-    let verifier = Keypair::new();
-    let (verifier_set, verifier_set_account) =
-        input_verifier_set_account(authority, verifier.pubkey());
-    let (host_config, host_config_account) =
-        host_config_account_with_flags(authority, verifier_set, true, true);
-    let acl_domain_key = authority;
-    let app_account = authority;
-    let input_label = label("eval-signed-input");
-    let output_label = label("eval-signed-add");
-    let input_nonce_key = host::acl_nonce_key(acl_domain_key, app_account, input_label);
-    let output_nonce_key = host::acl_nonce_key(acl_domain_key, app_account, output_label);
-    let input_acl = host::acl_record_address(input_nonce_key, 40).0;
-    let output_acl = host::acl_record_address(output_nonce_key, 41).0;
-    let input_handle = input_handle_for_chain(21, 1, 5);
-    let proof = host::SolanaInputProof {
-        handles: vec![input_handle_for_chain(20, 0, 5), input_handle],
-        handle_index: 1,
-        user: authority,
-        app_account,
-        acl_domain_key,
-        extra_data: b"eval-input-context".to_vec(),
-    };
-    let input_subjects = vec![AclSubjectEntry::compute(authority)];
-    let input_bind_intent = input_bind_intent(
-        input_nonce_key,
-        40,
-        acl_domain_key,
-        app_account,
-        input_label,
-        input_subjects.clone(),
-        false,
-    );
-    let ed25519_ix = ed25519_verify_ix(
-        &verifier,
-        &input_proof_message_for_verifier_set(
-            &proof,
-            &input_bind_intent,
-            program_id,
-            verifier_set,
-            1,
-        ),
-    );
-    let context = transient_context(
-        authority,
-        vec![
-            (verifier_set, verifier_set_account),
-            (host_config, host_config_account),
-            (input_acl, system_account(0)),
-            (output_acl, system_account(0)),
-            (event_authority(program_id), system_account(0)),
-            (program_id, executable_program_account()),
-        ],
-    );
-    let context_id = label("eval-input-step");
-    let rhs = amount_plaintext(2);
-    let output_handle = current_bound_eval_handle(
-        &context.mollusk,
-        FheBinaryOpCode::Add,
-        input_handle,
-        rhs,
-        true,
-        5,
-        context_id,
-        1,
-        output_nonce_key,
-        41,
-    );
-    let mut eval_ix = anchor_ix(
-        program_id,
-        host::accounts::FheEval {
-            payer: authority,
-            compute_subject: authority,
-            app_account_authority: authority,
-            host_config,
-            system_program: system_program::ID,
-            instructions_sysvar: Some(sysvar::instructions::ID),
-            event_authority: event_authority(program_id),
-            program: program_id,
-        },
-        host::instruction::FheEval {
-            args: FheEvalArgs {
-                context_id,
-                steps: vec![
-                    FheEvalStep::Input {
-                        input_handle,
-                        proof,
-                        verifier_set_index: 0,
-                        output: FheEvalOutput::Durable {
-                            output_acl_record_index: 1,
-                            output_app_account_authority_index: None,
-                            output_nonce_key: input_nonce_key,
-                            output_nonce_sequence: 40,
-                            output_acl_domain_key: acl_domain_key,
-                            output_app_account: app_account,
-                            output_encrypted_value_label: input_label,
-                            output_subjects: input_subjects,
-                            output_public_decrypt: false,
-                        },
-                    },
-                    FheEvalStep::Binary {
-                        op: FheBinaryOpCode::Add,
-                        lhs: FheEvalOperand::Transient { producer_index: 0 },
-                        rhs: FheEvalOperand::Scalar(rhs),
-                        output_fhe_type: 5,
-                        output: FheEvalOutput::Durable {
-                            output_acl_record_index: 2,
-                            output_app_account_authority_index: None,
-                            output_nonce_key,
-                            output_nonce_sequence: 41,
-                            output_acl_domain_key: acl_domain_key,
-                            output_app_account: app_account,
-                            output_encrypted_value_label: output_label,
-                            output_subjects: vec![AclSubjectEntry::use_only(authority)],
-                            output_public_decrypt: false,
-                        },
-                    },
-                ],
-            },
-        },
-    );
-    eval_ix
-        .accounts
-        .push(AccountMeta::new_readonly(verifier_set, false));
-    eval_ix.accounts.push(AccountMeta::new(input_acl, false));
-    eval_ix.accounts.push(AccountMeta::new(output_acl, false));
-
-    let result = process_transaction_result(&context, &[ed25519_ix, eval_ix]);
-
-    assert!(result.raw_result.is_ok());
-    let input_record = read_acl_record(&context, input_acl).expect("expected input ACL");
-    assert_bound_acl_record(
-        &input_record,
-        input_handle,
-        input_nonce_key,
-        40,
-        acl_domain_key,
-        app_account,
-        input_label,
-        authority,
-        host::ACL_ROLE_COMPUTE_SUBJECT,
-        context.mollusk.sysvars.clock.slot,
-    );
-    let output_record = read_acl_record(&context, output_acl).expect("expected eval output ACL");
-    assert_bound_acl_record(
-        &output_record,
-        output_handle,
-        output_nonce_key,
-        41,
-        acl_domain_key,
-        app_account,
-        output_label,
-        authority,
-        host::ACL_ROLE_USE,
-        context.mollusk.sysvars.clock.slot,
-    );
-    let input_events: Vec<InputVerifiedEvent> = result
-        .inner_instructions
-        .iter()
-        .flat_map(|group| group.iter())
-        .filter_map(|inner| decode_anchor_event(&inner.instruction.data))
-        .collect();
-    assert_eq!(input_events.len(), 1);
-    assert_eq!(input_events[0].input_handle, input_handle);
-    assert_eq!(input_events[0].result_handle, input_handle);
-    let binary_events: Vec<host::events::FheBinaryOpEvent> = result
-        .inner_instructions
-        .iter()
-        .flat_map(|group| group.iter())
-        .filter_map(|inner| decode_anchor_event(&inner.instruction.data))
-        .collect();
-    assert_eq!(binary_events.len(), 1);
-    assert_eq!(binary_events[0].lhs, input_handle);
-    assert_eq!(binary_events[0].rhs, rhs);
-    assert!(binary_events[0].scalar);
-    assert_eq!(binary_events[0].result, output_handle);
 }
 
 #[test]
@@ -6858,21 +5203,6 @@ fn assert_instruction_custom_error(result: &InstructionResult, error: host::erro
     );
 }
 
-fn assert_transaction_custom_error(
-    result: &TransactionResult,
-    instruction_index: u8,
-    error: host::errors::ZamaHostError,
-) {
-    let expected_code: u32 = error.into();
-    assert_eq!(
-        result.raw_result,
-        Err(TransactionError::InstructionError(
-            instruction_index,
-            InstructionError::Custom(expected_code)
-        ))
-    );
-}
-
 fn process_transaction_result(
     context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
     instructions: &[Instruction],
@@ -6973,49 +5303,23 @@ fn host_config_account_with_extra_bytes(admin: Pubkey, extra_bytes: usize) -> (P
 }
 
 fn host_config_account(admin: Pubkey) -> (Pubkey, Account) {
-    host_config_account_with_flags(admin, input_verifier_set_key(1), true, true)
-}
-
-fn host_config_account_with_flags(
-    admin: Pubkey,
-    input_verifier_set: Pubkey,
-    mock_input_enabled: bool,
-    test_shims_enabled: bool,
-) -> (Pubkey, Account) {
-    host_config_account_with_options(
-        admin,
-        input_verifier_set,
-        mock_input_enabled,
-        test_shims_enabled,
-        false,
-    )
+    host_config_account_with_options(admin, admin, true, true, false)
 }
 
 fn host_config_account_with_grant_deny_list(
     admin: Pubkey,
     grant_deny_list_enabled: bool,
 ) -> (Pubkey, Account) {
-    host_config_account_with_options(
-        admin,
-        input_verifier_set_key(1),
-        true,
-        true,
-        grant_deny_list_enabled,
-    )
+    host_config_account_with_options(admin, admin, true, true, grant_deny_list_enabled)
 }
 
 fn host_config_account_with_options(
     admin: Pubkey,
-    input_verifier_set: Pubkey,
+    input_verifier_authority: Pubkey,
     mock_input_enabled: bool,
     test_shims_enabled: bool,
     grant_deny_list_enabled: bool,
 ) -> (Pubkey, Account) {
-    let input_verifier_set_version = if input_verifier_set == Pubkey::default() {
-        0
-    } else {
-        1
-    };
     let (host_config, bump) = host::host_config_address();
     (
         host_config,
@@ -7024,162 +5328,18 @@ fn host_config_account_with_options(
             data: serialized_account(HostConfig {
                 admin,
                 chain_id: host::SOLANA_POC_CHAIN_ID,
-                input_verifier_set,
-                input_verifier_set_version,
+                input_verifier_authority,
+                gateway_chain_id: 0,
+                input_verification_contract: [0u8; 20],
+                coprocessor_signer: [0u8; 20],
+                decryption_contract: [0u8; 20],
+                current_kms_context_id: 0,
                 material_authority: admin,
                 test_authority: admin,
                 paused: false,
                 mock_input_enabled,
                 test_shims_enabled,
                 grant_deny_list_enabled,
-                updated_slot: 0,
-                bump,
-            }),
-            owner: host::id(),
-            executable: false,
-            rent_epoch: 0,
-        },
-    )
-}
-
-fn input_verifier_set_key(version: u64) -> Pubkey {
-    host::verifier_set_address(
-        host::VERIFIER_SET_KIND_INPUT,
-        host::host_config_address().0,
-        version,
-    )
-    .0
-}
-
-#[derive(AnchorSerialize, AnchorDeserialize)]
-struct LegacyHostConfigV1 {
-    admin: Pubkey,
-    chain_id: u64,
-    input_verifier_authority: Pubkey,
-    material_authority: Pubkey,
-    test_authority: Pubkey,
-    paused: bool,
-    mock_input_enabled: bool,
-    test_shims_enabled: bool,
-    grant_deny_list_enabled: bool,
-    updated_slot: u64,
-    bump: u8,
-}
-
-fn legacy_host_config_account(
-    admin: Pubkey,
-    input_verifier_authority: Pubkey,
-    material_authority: Pubkey,
-    test_authority: Pubkey,
-    bump: u8,
-) -> Account {
-    let legacy = LegacyHostConfigV1 {
-        admin,
-        chain_id: host::SOLANA_POC_CHAIN_ID,
-        input_verifier_authority,
-        material_authority,
-        test_authority,
-        paused: false,
-        mock_input_enabled: true,
-        test_shims_enabled: true,
-        grant_deny_list_enabled: true,
-        updated_slot: 0,
-        bump,
-    };
-    let mut data = HostConfig::DISCRIMINATOR.to_vec();
-    legacy.serialize(&mut data).unwrap();
-    Account {
-        lamports: 1_000_000_000,
-        data,
-        owner: host::id(),
-        executable: false,
-        rent_epoch: 0,
-    }
-}
-
-fn input_verifier_set_account(admin: Pubkey, signer: Pubkey) -> (Pubkey, Account) {
-    input_verifier_set_account_with_signers(admin, 1, 1, &[signer], host::VERIFIER_SET_STATE_ACTIVE)
-}
-
-fn disabled_input_verifier_set_account(admin: Pubkey, signer: Pubkey) -> (Pubkey, Account) {
-    input_verifier_set_account_with_signers(
-        admin,
-        1,
-        1,
-        &[signer],
-        host::VERIFIER_SET_STATE_DISABLED,
-    )
-}
-
-fn input_verifier_set_account_with_signers(
-    admin: Pubkey,
-    version: u64,
-    threshold: u8,
-    active_signers: &[Pubkey],
-    state: u8,
-) -> (Pubkey, Account) {
-    verifier_set_account_with_fields(
-        admin,
-        host::VERIFIER_SET_KIND_INPUT,
-        host::host_config_address().0,
-        version,
-        threshold,
-        active_signers,
-        state,
-    )
-}
-
-fn verifier_set_args(
-    kind: u8,
-    scope: Pubkey,
-    version: u64,
-    threshold: u8,
-    active_signers: &[Pubkey],
-) -> host::CreateVerifierSetArgs {
-    assert!(active_signers.len() <= host::MAX_VERIFIER_SET_SIGNERS);
-    let mut signers = [Pubkey::default(); host::MAX_VERIFIER_SET_SIGNERS];
-    for (index, signer) in active_signers.iter().enumerate() {
-        signers[index] = *signer;
-    }
-    host::CreateVerifierSetArgs {
-        kind,
-        scope,
-        version,
-        threshold,
-        signer_count: active_signers.len() as u8,
-        signers,
-    }
-}
-
-fn verifier_set_account_with_fields(
-    admin: Pubkey,
-    kind: u8,
-    scope: Pubkey,
-    version: u64,
-    threshold: u8,
-    active_signers: &[Pubkey],
-    state: u8,
-) -> (Pubkey, Account) {
-    assert!(active_signers.len() <= host::MAX_VERIFIER_SET_SIGNERS);
-    let (verifier_set, bump) = host::verifier_set_address(kind, scope, version);
-    let mut signers = [Pubkey::default(); host::MAX_VERIFIER_SET_SIGNERS];
-    for (index, signer) in active_signers.iter().enumerate() {
-        signers[index] = *signer;
-    }
-    (
-        verifier_set,
-        Account {
-            lamports: 1_000_000_000,
-            data: serialized_account(VerifierSet {
-                admin,
-                kind,
-                scope,
-                version,
-                threshold,
-                signer_count: active_signers.len() as u8,
-                signers,
-                state,
-                created_slot: 0,
                 updated_slot: 0,
                 bump,
             }),
@@ -7348,7 +5508,6 @@ fn mock_input_verified_and_bind_ix(
     program_id: Pubkey,
     authority: Pubkey,
     input_verifier_authority: Pubkey,
-    input_verifier_set: Pubkey,
     host_config: Pubkey,
     output_acl_record: Pubkey,
     output_nonce_key: [u8; 32],
@@ -7364,7 +5523,6 @@ fn mock_input_verified_and_bind_ix(
         host::accounts::MockInputVerifiedAndBind {
             payer: authority,
             input_verifier_authority,
-            input_verifier_set,
             app_account_authority: authority,
             host_config,
             output_acl_record,
@@ -7384,195 +5542,6 @@ fn mock_input_verified_and_bind_ix(
             output_public_decrypt,
         },
     )
-}
-
-#[allow(clippy::too_many_arguments)]
-fn signed_verify_input_and_bind_instructions(
-    program_id: Pubkey,
-    payer: Pubkey,
-    input_verifier_set: Pubkey,
-    ed25519_authority: &Keypair,
-    host_config: Pubkey,
-    output_acl_record: Pubkey,
-    input_handle: [u8; 32],
-    proof: host::SolanaInputProof,
-    output_nonce_key: [u8; 32],
-    output_nonce_sequence: u64,
-    output_acl_domain_key: Pubkey,
-    output_app_account: Pubkey,
-    output_encrypted_value_label: [u8; 32],
-    output_subjects: Vec<AclSubjectEntry>,
-    output_public_decrypt: bool,
-) -> [Instruction; 2] {
-    let bind_intent = input_bind_intent(
-        output_nonce_key,
-        output_nonce_sequence,
-        output_acl_domain_key,
-        output_app_account,
-        output_encrypted_value_label,
-        output_subjects.clone(),
-        output_public_decrypt,
-    );
-    [
-        ed25519_verify_ix(
-            ed25519_authority,
-            &input_proof_message_for_verifier_set(
-                &proof,
-                &bind_intent,
-                program_id,
-                input_verifier_set,
-                1,
-            ),
-        ),
-        verify_input_and_bind_ix(
-            program_id,
-            payer,
-            input_verifier_set,
-            host_config,
-            output_acl_record,
-            input_handle,
-            proof,
-            output_nonce_key,
-            output_nonce_sequence,
-            output_acl_domain_key,
-            output_app_account,
-            output_encrypted_value_label,
-            output_subjects,
-            output_public_decrypt,
-        ),
-    ]
-}
-
-#[allow(clippy::too_many_arguments)]
-fn verify_input_and_bind_ix(
-    program_id: Pubkey,
-    payer: Pubkey,
-    input_verifier_set: Pubkey,
-    host_config: Pubkey,
-    output_acl_record: Pubkey,
-    input_handle: [u8; 32],
-    proof: host::SolanaInputProof,
-    output_nonce_key: [u8; 32],
-    output_nonce_sequence: u64,
-    output_acl_domain_key: Pubkey,
-    output_app_account: Pubkey,
-    output_encrypted_value_label: [u8; 32],
-    output_subjects: Vec<AclSubjectEntry>,
-    output_public_decrypt: bool,
-) -> Instruction {
-    anchor_ix(
-        program_id,
-        host::accounts::VerifyInputAndBind {
-            payer,
-            input_verifier_set,
-            app_account_authority: output_app_account,
-            host_config,
-            output_acl_record,
-            instructions_sysvar: sysvar::instructions::ID,
-            system_program: system_program::ID,
-            event_authority: event_authority(program_id),
-            program: program_id,
-        },
-        host::instruction::VerifyInputAndBind {
-            input_handle,
-            proof,
-            output_nonce_key,
-            output_nonce_sequence,
-            output_acl_domain_key,
-            output_app_account,
-            output_encrypted_value_label,
-            output_subjects,
-            output_public_decrypt,
-        },
-    )
-}
-
-fn input_bind_intent(
-    output_nonce_key: [u8; 32],
-    output_nonce_sequence: u64,
-    output_acl_domain_key: Pubkey,
-    output_app_account: Pubkey,
-    output_encrypted_value_label: [u8; 32],
-    output_subjects: Vec<AclSubjectEntry>,
-    output_public_decrypt: bool,
-) -> host::SolanaInputBindIntent {
-    host::SolanaInputBindIntent {
-        output_nonce_key,
-        output_nonce_sequence,
-        output_acl_domain_key,
-        output_app_account,
-        output_encrypted_value_label,
-        output_subjects,
-        output_public_decrypt,
-    }
-}
-
-fn input_proof_message_for_verifier_set(
-    proof: &host::SolanaInputProof,
-    bind_intent: &host::SolanaInputBindIntent,
-    program_id: Pubkey,
-    verifier_set: Pubkey,
-    version: u64,
-) -> Vec<u8> {
-    host::input_proof_message_for_verifier_set(
-        proof,
-        bind_intent,
-        program_id,
-        host::SOLANA_POC_CHAIN_ID,
-        verifier_set,
-        host::VERIFIER_SET_KIND_INPUT,
-        host::host_config_address().0,
-        version,
-    )
-}
-
-fn ed25519_verify_ix(authority: &Keypair, message: &[u8]) -> Instruction {
-    ed25519_verify_multi_ix(&[authority], message)
-}
-
-fn ed25519_verify_multi_ix(authorities: &[&Keypair], message: &[u8]) -> Instruction {
-    const PUBKEY_SIZE: usize = 32;
-    const SIGNATURE_SIZE: usize = 64;
-    const OFFSETS_SIZE: usize = 14;
-    const OFFSETS_START: usize = 2;
-    let signature_count = u8::try_from(authorities.len()).expect("signature count fits u8");
-    let data_start = OFFSETS_START + (authorities.len() * OFFSETS_SIZE);
-
-    let mut data = Vec::with_capacity(
-        data_start + authorities.len() * (PUBKEY_SIZE + SIGNATURE_SIZE + message.len()),
-    );
-    data.push(signature_count);
-    data.push(0);
-    data.resize(data_start, 0);
-
-    for (index, authority) in authorities.iter().enumerate() {
-        let public_key_offset = data.len();
-        data.extend_from_slice(authority.pubkey().as_ref());
-        let signature_offset = data.len();
-        let signature = authority.sign_message(message);
-        data.extend_from_slice(signature.as_ref());
-        let message_data_offset = data.len();
-        data.extend_from_slice(message);
-
-        let fields_offset = OFFSETS_START + index * OFFSETS_SIZE;
-        data[fields_offset..fields_offset + 2]
-            .copy_from_slice(&(signature_offset as u16).to_le_bytes());
-        data[fields_offset + 2..fields_offset + 4].copy_from_slice(&u16::MAX.to_le_bytes());
-        data[fields_offset + 4..fields_offset + 6]
-            .copy_from_slice(&(public_key_offset as u16).to_le_bytes());
-        data[fields_offset + 6..fields_offset + 8].copy_from_slice(&u16::MAX.to_le_bytes());
-        data[fields_offset + 8..fields_offset + 10]
-            .copy_from_slice(&(message_data_offset as u16).to_le_bytes());
-        data[fields_offset + 10..fields_offset + 12]
-            .copy_from_slice(&(message.len() as u16).to_le_bytes());
-        data[fields_offset + 12..fields_offset + 14].copy_from_slice(&u16::MAX.to_le_bytes());
-    }
-
-    Instruction {
-        program_id: ed25519_program::ID,
-        accounts: Vec::new(),
-        data,
-    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -7628,65 +5597,6 @@ fn initialize_host_config_ix(
             system_program: system_program::ID,
         },
         host::instruction::InitializeHostConfig { args },
-    )
-}
-
-fn create_verifier_set_ix(
-    program_id: Pubkey,
-    payer: Pubkey,
-    admin: Pubkey,
-    host_config: Pubkey,
-    verifier_set: Pubkey,
-    args: host::CreateVerifierSetArgs,
-) -> Instruction {
-    anchor_ix(
-        program_id,
-        host::accounts::CreateVerifierSet {
-            payer,
-            admin,
-            host_config,
-            verifier_set,
-            system_program: system_program::ID,
-        },
-        host::instruction::CreateVerifierSet { args },
-    )
-}
-
-fn migrate_host_config_verifier_set_ix(
-    program_id: Pubkey,
-    payer: Pubkey,
-    admin: Pubkey,
-    host_config: Pubkey,
-    verifier_set: Pubkey,
-    args: host::CreateVerifierSetArgs,
-) -> Instruction {
-    anchor_ix(
-        program_id,
-        host::accounts::MigrateHostConfigVerifierSet {
-            payer,
-            admin,
-            host_config,
-            verifier_set,
-            system_program: system_program::ID,
-        },
-        host::instruction::MigrateHostConfigVerifierSet { args },
-    )
-}
-
-fn disable_verifier_set_ix(
-    program_id: Pubkey,
-    admin: Pubkey,
-    host_config: Pubkey,
-    verifier_set: Pubkey,
-) -> Instruction {
-    anchor_ix(
-        program_id,
-        host::accounts::DisableVerifierSet {
-            admin,
-            host_config,
-            verifier_set,
-        },
-        host::instruction::DisableVerifierSet {},
     )
 }
 
@@ -8398,19 +6308,6 @@ fn read_host_config(
     HostConfig::try_deserialize(&mut data).ok()
 }
 
-fn read_verifier_set(
-    context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
-    address: Pubkey,
-) -> Option<VerifierSet> {
-    let store = context.account_store.borrow();
-    let account = store.get(&address)?;
-    if account.owner != host::id() {
-        return None;
-    }
-    let mut data = account.data.as_slice();
-    VerifierSet::try_deserialize(&mut data).ok()
-}
-
 fn read_acl_record(
     context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
     address: Pubkey,
@@ -8502,21 +6399,427 @@ fn acl_allowed_events(result: &mollusk_svm::result::InstructionResult) -> Vec<Ac
         .collect()
 }
 
-fn assert_acl_allowed_transaction_event(
-    result: &TransactionResult,
-    handle: [u8; 32],
-    subject: Pubkey,
-) {
-    let events: Vec<AclAllowedEvent> = result
+// --- Coprocessor EIP-712 input-bind (secp256k1_recover) — #1494 Phase 3 ---
+
+const GATEWAY_CHAIN_ID: u64 = 31337;
+const INPUT_VERIFICATION_CONTRACT: [u8; 20] = [0xCDu8; 20];
+const DECRYPTION_CONTRACT: [u8; 20] = [0xDEu8; 20];
+
+/// Recovers the EVM address (keccak(pubkey)[12..]) for a coprocessor signing key,
+/// matching the on-chain `secp256k1_recover` derivation.
+fn evm_address_of(key: &k256::ecdsa::SigningKey) -> [u8; 20] {
+    let encoded = key.verifying_key().to_encoded_point(false); // 0x04 || X || Y
+    let hash = solana_program::keccak::hash(&encoded.as_bytes()[1..]).to_bytes();
+    let mut address = [0u8; 20];
+    address.copy_from_slice(&hash[12..]);
+    address
+}
+
+/// Produces a 65-byte `[r || s || v]` recoverable signature over an EIP-712 digest.
+fn sign_eip712(key: &k256::ecdsa::SigningKey, digest: &[u8; 32]) -> [u8; 65] {
+    let (signature, recovery_id) = key.sign_prehash_recoverable(digest).unwrap();
+    let mut out = [0u8; 65];
+    out[..64].copy_from_slice(&signature.to_bytes());
+    out[64] = 27 + recovery_id.to_byte();
+    out
+}
+
+/// Host config seeded with coprocessor + KMS EIP-712 verifiers (single signer, threshold 1).
+fn host_config_account_with_verifier(
+    admin: Pubkey,
+    coprocessor_signer: [u8; 20],
+) -> (Pubkey, Account) {
+    let (host_config, bump) = host::host_config_address();
+    (
+        host_config,
+        Account {
+            lamports: 1_000_000_000,
+            data: serialized_account(HostConfig {
+                admin,
+                chain_id: host::SOLANA_POC_CHAIN_ID,
+                input_verifier_authority: admin,
+                gateway_chain_id: GATEWAY_CHAIN_ID,
+                input_verification_contract: INPUT_VERIFICATION_CONTRACT,
+                coprocessor_signer,
+                decryption_contract: DECRYPTION_CONTRACT,
+                current_kms_context_id: 0,
+                material_authority: admin,
+                test_authority: admin,
+                paused: false,
+                mock_input_enabled: false,
+                test_shims_enabled: false,
+                grant_deny_list_enabled: false,
+                updated_slot: 0,
+                bump,
+            }),
+            owner: host::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn verify_coprocessor_input_ix(
+    program_id: Pubkey,
+    host_config: Pubkey,
+    input_handle: [u8; 32],
+    ct_handles: Vec<[u8; 32]>,
+    user_address: [u8; 32],
+    contract_address: [u8; 32],
+    extra_data: Vec<u8>,
+    signatures: Vec<[u8; 65]>,
+) -> Instruction {
+    Instruction {
+        program_id,
+        accounts: host::accounts::VerifyCoprocessorInput {
+            host_config,
+            event_authority: event_authority(program_id),
+            program: program_id,
+        }
+        .to_account_metas(None),
+        data: host::instruction::VerifyCoprocessorInput {
+            input_handle,
+            ct_handles,
+            handle_index: 0,
+            user_address,
+            contract_address,
+            contract_chain_id: 12345,
+            extra_data,
+            signatures,
+        }
+        .data(),
+    }
+}
+
+/// A real coprocessor secp256k1 EIP-712 attestation verifies and emits the input receipt.
+/// EVM parity (`FHEVMExecutor.verifyInput`): verification creates NO persistent ACL — the
+/// only effect is the signed `InputVerifiedEvent`.
+#[test]
+fn mollusk_verify_coprocessor_input_accepts_real_secp256k1_attestation() {
+    let program_id = host::id();
+    let authority = Pubkey::new_unique();
+    let key = k256::ecdsa::SigningKey::from_bytes(&[0x44u8; 32].into()).unwrap();
+    let (host_config, host_config_account) =
+        host_config_account_with_verifier(authority, evm_address_of(&key));
+
+    let input_handle = input_handle_for_chain(0x01, 0, 5);
+    let ct_handles = vec![input_handle];
+    let user = Pubkey::new_unique();
+    let user_address = user.to_bytes();
+    let contract = Pubkey::new_unique();
+    let contract_address = contract.to_bytes();
+    let extra_data = vec![0x00u8];
+
+    let digest = host::eip712::typed_data_digest(
+        &host::eip712::domain_separator(
+            b"InputVerification",
+            b"1",
+            GATEWAY_CHAIN_ID,
+            &INPUT_VERIFICATION_CONTRACT,
+        ),
+        &host::eip712::ciphertext_verification_struct_hash(
+            &ct_handles,
+            &user_address,
+            &contract_address,
+            12345,
+            &extra_data,
+        ),
+    );
+    let signatures = vec![sign_eip712(&key, &digest)];
+
+    let context = transient_context(authority, vec![(host_config, host_config_account)]);
+    let ix = verify_coprocessor_input_ix(
+        program_id,
+        host_config,
+        input_handle,
+        ct_handles,
+        user_address,
+        contract_address,
+        extra_data,
+        signatures,
+    );
+
+    let result = context.process_and_validate_instruction(&ix, &[Check::success()]);
+
+    // The sole effect is the signed verified-input receipt; no ACL account is created.
+    let input_events: Vec<InputVerifiedEvent> = result
         .inner_instructions
         .iter()
-        .flat_map(|group| group.iter())
         .filter_map(|inner| decode_anchor_event(&inner.instruction.data))
         .collect();
-    assert_eq!(events.len(), 1);
-    assert_eq!(events[0].version, host::EVENT_VERSION);
-    assert_eq!(events[0].handle, handle);
-    assert_eq!(events[0].subject, subject.to_bytes());
+    assert_eq!(input_events.len(), 1);
+    assert_eq!(input_events[0].version, host::EVENT_VERSION);
+    assert_eq!(input_events[0].input_handle, input_handle);
+    assert_eq!(input_events[0].result_handle, input_handle);
+    assert_eq!(input_events[0].user, user_address);
+    // No app-chosen ACL domain: the receipt carries the attested contract identity.
+    assert_eq!(input_events[0].acl_domain_key, contract_address);
+}
+
+/// A signature from a key not in the configured signer set is rejected.
+#[test]
+fn mollusk_verify_coprocessor_input_rejects_unauthorized_signer() {
+    let program_id = host::id();
+    let authority = Pubkey::new_unique();
+    let configured = k256::ecdsa::SigningKey::from_bytes(&[0x44u8; 32].into()).unwrap();
+    let attacker = k256::ecdsa::SigningKey::from_bytes(&[0x99u8; 32].into()).unwrap();
+    let (host_config, host_config_account) =
+        host_config_account_with_verifier(authority, evm_address_of(&configured));
+
+    let input_handle = input_handle_for_chain(0x01, 0, 5);
+    let ct_handles = vec![input_handle];
+    let user_address = [0x07u8; 32];
+    let contract_address = [0x08u8; 32];
+    let extra_data = vec![0x00u8];
+
+    let digest = host::eip712::typed_data_digest(
+        &host::eip712::domain_separator(
+            b"InputVerification",
+            b"1",
+            GATEWAY_CHAIN_ID,
+            &INPUT_VERIFICATION_CONTRACT,
+        ),
+        &host::eip712::ciphertext_verification_struct_hash(
+            &ct_handles,
+            &user_address,
+            &contract_address,
+            12345,
+            &extra_data,
+        ),
+    );
+    let signatures = vec![sign_eip712(&attacker, &digest)];
+
+    let context = transient_context(authority, vec![(host_config, host_config_account)]);
+    let ix = verify_coprocessor_input_ix(
+        program_id,
+        host_config,
+        input_handle,
+        ct_handles,
+        user_address,
+        contract_address,
+        extra_data,
+        signatures,
+    );
+
+    let result = context.process_instruction(&ix);
+    assert!(result.raw_result.is_err());
+}
+
+// --- KMS context lifecycle (mirror of ProtocolConfig define/destroy) — #1494 ---
+
+fn read_kms_context(
+    context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
+    address: Pubkey,
+) -> Option<host::KmsContext> {
+    let store = context.account_store.borrow();
+    let account = store.get(&address)?;
+    if account.owner != host::id() {
+        return None;
+    }
+    let mut data = account.data.as_slice();
+    host::KmsContext::try_deserialize(&mut data).ok()
+}
+
+fn define_kms_context_ix(
+    program_id: Pubkey,
+    admin: Pubkey,
+    host_config: Pubkey,
+    kms_context: Pubkey,
+    context_id: u64,
+    signers: Vec<[u8; 20]>,
+    thresholds: host::KmsThresholds,
+) -> Instruction {
+    Instruction {
+        program_id,
+        accounts: host::accounts::DefineKmsContext {
+            admin,
+            host_config,
+            kms_context,
+            system_program: system_program::ID,
+        }
+        .to_account_metas(None),
+        data: host::instruction::DefineKmsContext {
+            context_id,
+            signers,
+            thresholds,
+        }
+        .data(),
+    }
+}
+
+fn destroy_kms_context_ix(
+    program_id: Pubkey,
+    admin: Pubkey,
+    host_config: Pubkey,
+    kms_context: Pubkey,
+    context_id: u64,
+) -> Instruction {
+    Instruction {
+        program_id,
+        accounts: host::accounts::DestroyKmsContext {
+            admin,
+            host_config,
+            kms_context,
+        }
+        .to_account_metas(None),
+        data: host::instruction::DestroyKmsContext { context_id }.data(),
+    }
+}
+
+#[test]
+fn mollusk_define_kms_context_records_signers_and_advances_current() {
+    let program_id = host::id();
+    let admin = Pubkey::new_unique();
+    let (host_config, host_config_account) =
+        host_config_account_with_options(admin, admin, false, false, false);
+    let (kms_context, _) = host::kms_context_address(1);
+    let context = transient_context(
+        admin,
+        vec![
+            (host_config, host_config_account),
+            (kms_context, system_account(0)),
+        ],
+    );
+    let signers = vec![[0x11u8; 20], [0x22u8; 20]];
+    let thresholds = host::KmsThresholds {
+        public_decryption: 2,
+        user_decryption: 1,
+        kms_gen: 1,
+        mpc: 1,
+    };
+
+    let ix = define_kms_context_ix(
+        program_id,
+        admin,
+        host_config,
+        kms_context,
+        1,
+        signers.clone(),
+        thresholds,
+    );
+    context.process_and_validate_instruction(&ix, &[Check::success()]);
+
+    let kc = read_kms_context(&context, kms_context).expect("expected KMS context");
+    assert_eq!(kc.context_id, 1);
+    assert_eq!(kc.signers, signers);
+    assert_eq!(kc.thresholds.public_decryption, 2);
+    assert!(!kc.destroyed);
+    assert_eq!(
+        read_host_config(&context, host_config)
+            .unwrap()
+            .current_kms_context_id,
+        1
+    );
+}
+
+/// SECURITY (KMS context): a signer set containing a duplicate address is rejected. Threshold
+/// verification counts DISTINCT recovered addresses, so a duplicate would silently raise the
+/// effective quorum (a 2-of-[A, A] set can never be satisfied). EVM KMS signer sets are distinct;
+/// thresholds here are individually valid, so the rejection is due solely to the duplicate.
+#[test]
+fn mollusk_define_kms_context_rejects_duplicate_signers() {
+    let program_id = host::id();
+    let admin = Pubkey::new_unique();
+    let (host_config, host_config_account) =
+        host_config_account_with_options(admin, admin, false, false, false);
+    let (kms_context, _) = host::kms_context_address(1);
+    let context = transient_context(
+        admin,
+        vec![
+            (host_config, host_config_account),
+            (kms_context, system_account(0)),
+        ],
+    );
+    let signers = vec![[0x11u8; 20], [0x11u8; 20]];
+    let thresholds = host::KmsThresholds {
+        public_decryption: 1,
+        user_decryption: 1,
+        kms_gen: 1,
+        mpc: 1,
+    };
+
+    let ix = define_kms_context_ix(
+        program_id,
+        admin,
+        host_config,
+        kms_context,
+        1,
+        signers,
+        thresholds,
+    );
+    let result = context.process_instruction(&ix);
+    assert!(
+        result.raw_result.is_err(),
+        "a KMS context with duplicate signers must be rejected"
+    );
+    assert!(read_kms_context(&context, kms_context).is_none());
+}
+
+#[test]
+fn mollusk_destroy_kms_context_rejects_current_but_destroys_prior() {
+    let program_id = host::id();
+    let admin = Pubkey::new_unique();
+    let (host_config, host_config_account) =
+        host_config_account_with_options(admin, admin, false, false, false);
+    let (kc1, _) = host::kms_context_address(1);
+    let (kc2, _) = host::kms_context_address(2);
+    let context = transient_context(
+        admin,
+        vec![
+            (host_config, host_config_account),
+            (kc1, system_account(0)),
+            (kc2, system_account(0)),
+        ],
+    );
+    let thresholds = host::KmsThresholds {
+        public_decryption: 1,
+        user_decryption: 1,
+        kms_gen: 1,
+        mpc: 1,
+    };
+    context.process_and_validate_instruction(
+        &define_kms_context_ix(
+            program_id,
+            admin,
+            host_config,
+            kc1,
+            1,
+            vec![[0x11u8; 20]],
+            thresholds,
+        ),
+        &[Check::success()],
+    );
+    context.process_and_validate_instruction(
+        &define_kms_context_ix(
+            program_id,
+            admin,
+            host_config,
+            kc2,
+            2,
+            vec![[0x22u8; 20]],
+            thresholds,
+        ),
+        &[Check::success()],
+    );
+
+    // Prior context can be destroyed.
+    context.process_and_validate_instruction(
+        &destroy_kms_context_ix(program_id, admin, host_config, kc1, 1),
+        &[Check::success()],
+    );
+    assert!(read_kms_context(&context, kc1).unwrap().destroyed);
+
+    // The current context (2) cannot.
+    let result = context.process_instruction(&destroy_kms_context_ix(
+        program_id,
+        admin,
+        host_config,
+        kc2,
+        2,
+    ));
+    assert!(result.raw_result.is_err());
+    assert!(!read_kms_context(&context, kc2).unwrap().destroyed);
 }
 
 fn amount_plaintext(amount: u64) -> [u8; 32] {
