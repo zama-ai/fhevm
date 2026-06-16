@@ -61,15 +61,21 @@ ZAMA_HOST_ID="$(solana address -k "$SOLANA/target/deploy/zama_host-keypair.json"
 echo "    zama_host=$ZAMA_HOST_ID deployed"
 
 echo "==> [3/5] bootstrap zama-host (real gateway/ProtocolConfig values, mock/test OFF)"
-( cd "$SOLANA/scripts/poc/client" && [ -d node_modules ] || npm install --no-audit --no-fund >/dev/null 2>&1 )
-( cd "$SOLANA/scripts/poc/client" &&
+# Build the live-client from THIS worktree's source: its Anchor instruction discriminators come
+# from the program crates, so a stale prebuilt binary sends mismatched discriminators (same
+# reason the host-listener is rebuilt below). This BOOTSTRAP leg replaces the former
+# bootstrap.mjs (@solana/web3.js) with the typed anchor-client path.
+LC="$SOLANA/scripts/poc/live-client"
+( cd "$LC" && cargo build >/tmp/solana-live-client-build.log 2>&1 ) \
+  || { echo "[setup] live-client build failed; see /tmp/solana-live-client-build.log" >&2; tail -20 /tmp/solana-live-client-build.log >&2; exit 1; }
+BOOTSTRAP=1 \
   GATEWAY_CHAIN_ID="$GATEWAY_CHAIN_ID" \
   INPUT_VERIFICATION_ADDRESS="$INPUT_VERIFICATION_ADDRESS" \
   COPROCESSOR_SIGNER="$COPROCESSOR_SIGNER" \
   DECRYPTION_ADDRESS="$DECRYPTION_ADDRESS" \
   KMS_SIGNERS="$KMS_SIGNERS" \
   SOLANA_HOST_CHAIN_ID="$SID_U64" \
-  node bootstrap.mjs )
+  "$LC/target/debug/poc-live-client"
 
 echo "==> [4/5] register Solana host chain (coprocessor DB + gateway)"
 DBURL="$(grep -m1 '^DATABASE_URL=' "$ROOT/.fhevm/runtime/env/coprocessor.env" | cut -d= -f2- | sed 's/@db:/@127.0.0.1:/')"

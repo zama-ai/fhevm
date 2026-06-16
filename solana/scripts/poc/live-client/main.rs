@@ -24,16 +24,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let payer =
         Rc::new(read_keypair_file(format!("{home}/.config/solana/id.json")).expect("wallet"));
     let cluster = Cluster::Custom("http://127.0.0.1:8899".into(), "ws://127.0.0.1:8900".into());
-    let client =
-        Client::new_with_options(cluster, payer.clone(), CommitmentConfig::confirmed());
+    let client = Client::new_with_options(cluster, payer.clone(), CommitmentConfig::confirmed());
     let host = client.program(zama_host::ID)?;
     let token = client.program(confidential_token::ID)?;
 
     let (host_config, _) =
         Pubkey::find_program_address(&[zama_host::HOST_CONFIG_SEED], &zama_host::ID);
 
+    // BOOTSTRAP initializes the singleton HostConfig + active KMS context from the REAL live
+    // gateway/ProtocolConfig values (passed via env). Typed anchor-client path that replaces
+    // the former bootstrap.mjs (@solana/web3.js); mock-input + test-shims OFF.
+    if std::env::var("BOOTSTRAP").is_ok() {
+        bootstrap(&host, &payer, host_config)?;
+        return Ok(());
+    }
+
     // BIND_INPUT drives the coprocessor-attested input bind against the live host_config
-    // (created by bootstrap.mjs with the real gateway verifier config); it does not touch
+    // (created by BOOTSTRAP with the real gateway verifier config); it does not touch
     // host_config or the mint, so it runs standalone with the relayer-returned attestation.
     if std::env::var("BIND_INPUT").is_ok() {
         bind_coprocessor_input(&host, host_config)?;
@@ -116,6 +123,93 @@ fn hexdec(s: &str) -> Vec<u8> {
         .step_by(2)
         .map(|i| u8::from_str_radix(&s[i..i + 2], 16).expect("hex"))
         .collect()
+}
+
+/// Parses a 0x-prefixed 20-byte EVM address.
+fn addr20(s: &str) -> [u8; 20] {
+    hexdec(s)
+        .try_into()
+        .expect("expected a 20-byte EVM address")
+}
+
+/// Bootstraps the singleton HostConfig + the active KMS context from the REAL live
+/// gateway/ProtocolConfig values (env-supplied), via the typed anchor-client path. Replaces
+/// the former bootstrap.mjs (which used the deprecated @solana/web3.js and hand-rolled Anchor
+/// discriminators). Idempotent: skips initialize_host_config if the singleton already exists.
+/// mock-input + test-shims OFF — the live secp256k1 paths are authoritative.
+fn bootstrap(
+    host: &Program<Rc<Keypair>>,
+    payer: &Rc<Keypair>,
+    host_config: Pubkey,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let authority = payer.pubkey();
+    let chain_id: u64 = std::env::var("SOLANA_HOST_CHAIN_ID")?.parse()?;
+    let gateway_chain_id: u64 = std::env::var("GATEWAY_CHAIN_ID")?.parse()?;
+    let input_verification_contract = addr20(&std::env::var("INPUT_VERIFICATION_ADDRESS")?);
+    let coprocessor_signer = addr20(&std::env::var("COPROCESSOR_SIGNER")?);
+    let decryption_contract = addr20(&std::env::var("DECRYPTION_ADDRESS")?);
+    let kms_signers: Vec<[u8; 20]> = std::env::var("KMS_SIGNERS")?
+        .split(',')
+        .map(|s| addr20(s.trim()))
+        .collect();
+
+    if host.rpc().get_account(&host_config).is_err() {
+        let sig = host
+            .request()
+            .accounts(zama_host::accounts::InitializeHostConfig {
+                payer: authority,
+                admin: authority,
+                host_config,
+                system_program: system_program::ID,
+            })
+            .args(zama_host::instruction::InitializeHostConfig {
+                args: zama_host::InitializeHostConfigArgs {
+                    chain_id,
+                    input_verifier_authority: authority, // inert: mock/signed input paths OFF
+                    gateway_chain_id,
+                    input_verification_contract,
+                    coprocessor_signer,
+                    decryption_contract,
+                    material_authority: authority,
+                    test_authority: authority, // inert: test shims OFF
+                    mock_input_enabled: false,
+                    test_shims_enabled: false,
+                    grant_deny_list_enabled: false,
+                },
+            })
+            .send()?;
+        println!("OK initialize_host_config: {sig}");
+    } else {
+        println!("host_config already initialized — skipping initialize_host_config");
+    }
+
+    let context_id: u64 = 1;
+    let (kms_context, _) = Pubkey::find_program_address(
+        &[zama_host::KMS_CONTEXT_SEED, &context_id.to_le_bytes()],
+        &zama_host::ID,
+    );
+    let signer_count = kms_signers.len();
+    let sig = host
+        .request()
+        .accounts(zama_host::accounts::DefineKmsContext {
+            admin: authority,
+            host_config,
+            kms_context,
+            system_program: system_program::ID,
+        })
+        .args(zama_host::instruction::DefineKmsContext {
+            context_id,
+            signers: kms_signers,
+            thresholds: zama_host::KmsThresholds {
+                public_decryption: 1,
+                user_decryption: 1,
+                kms_gen: 1,
+                mpc: 1,
+            },
+        })
+        .send()?;
+    println!("OK define_kms_context: {sig} (signers: {signer_count})");
+    Ok(())
 }
 
 /// Verifies a coprocessor-attested input on the live zama-host: feeds the handle + EIP-712
@@ -282,7 +376,10 @@ fn trivial_encrypt_eval(
     host_config: Pubkey,
 ) -> Result<(), Box<dyn std::error::Error>> {
     use anchor_lang::solana_program::instruction::AccountMeta;
-    let value: u64 = std::env::var("TE_VALUE").ok().and_then(|s| s.parse().ok()).unwrap_or(42);
+    let value: u64 = std::env::var("TE_VALUE")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(42);
     let mut plaintext = [0u8; 32];
     plaintext[24..32].copy_from_slice(&value.to_be_bytes());
     let fhe_type: u8 = 5; // euint64
@@ -396,19 +493,27 @@ fn consume_seal(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mint = Pubkey::from_str(&std::env::var("MINT")?)?;
     let ts_acl = Pubkey::from_str(&std::env::var("TS_ACL")?)?;
-    let handle: [u8; 32] = hexdec(&std::env::var("TS_HANDLE")?).try_into().expect("TS_HANDLE");
+    let handle: [u8; 32] = hexdec(&std::env::var("TS_HANDLE")?)
+        .try_into()
+        .expect("TS_HANDLE");
     let (zama_evt, _) = Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
     let (material_commitment, _) = zama_host::handle_material_address(ts_acl);
 
     // The disclosure request validates the material commitment, so it must already exist: commit
     // it now unless SEAL_SKIP_COMMIT says a prior step already did.
     if std::env::var("SEAL_SKIP_COMMIT").is_err() {
-        let key_id: [u8; 32] = hexdec(&std::env::var("KEY_ID")?).try_into().expect("KEY_ID");
-        let ct64: [u8; 32] = hexdec(&std::env::var("CT64_DIGEST")?).try_into().expect("CT64_DIGEST");
-        let ct128: [u8; 32] =
-            hexdec(&std::env::var("CT128_DIGEST")?).try_into().expect("CT128_DIGEST");
-        let coproc: [u8; 32] =
-            hexdec(&std::env::var("COPROC_SET_DIGEST")?).try_into().expect("COPROC_SET_DIGEST");
+        let key_id: [u8; 32] = hexdec(&std::env::var("KEY_ID")?)
+            .try_into()
+            .expect("KEY_ID");
+        let ct64: [u8; 32] = hexdec(&std::env::var("CT64_DIGEST")?)
+            .try_into()
+            .expect("CT64_DIGEST");
+        let ct128: [u8; 32] = hexdec(&std::env::var("CT128_DIGEST")?)
+            .try_into()
+            .expect("CT128_DIGEST");
+        let coproc: [u8; 32] = hexdec(&std::env::var("COPROC_SET_DIGEST")?)
+            .try_into()
+            .expect("COPROC_SET_DIGEST");
 
         let sig = host
             .request()
@@ -475,7 +580,9 @@ fn consume_seal(
 /// witness PDA is deterministic within one e2e run.
 fn request_nonce_from_env() -> [u8; 32] {
     match std::env::var("REQUEST_NONCE") {
-        Ok(s) => hexdec(&s).try_into().expect("REQUEST_NONCE must be 32 bytes"),
+        Ok(s) => hexdec(&s)
+            .try_into()
+            .expect("REQUEST_NONCE must be 32 bytes"),
         Err(_) => [7u8; 32],
     }
 }
@@ -483,7 +590,10 @@ fn request_nonce_from_env() -> [u8; 32] {
 /// Computes the witness expiry slot: current slot + REQUEST_TTL_SLOTS (default 5000), giving the
 /// public-decrypt + consume steps ample time before the witness expires.
 fn request_expires_slot(program: &Program<Rc<Keypair>>) -> Result<u64, Box<dyn std::error::Error>> {
-    let ttl: u64 = std::env::var("REQUEST_TTL_SLOTS").ok().and_then(|s| s.parse().ok()).unwrap_or(5000);
+    let ttl: u64 = std::env::var("REQUEST_TTL_SLOTS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(5000);
     let slot = program.rpc().get_slot()?;
     Ok(slot + ttl)
 }
@@ -499,11 +609,18 @@ fn consume_disclose(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mint = Pubkey::from_str(&std::env::var("MINT")?)?;
     let ts_acl = Pubkey::from_str(&std::env::var("TS_ACL")?)?;
-    let handle: [u8; 32] = hexdec(&std::env::var("TS_HANDLE")?).try_into().expect("TS_HANDLE");
+    let handle: [u8; 32] = hexdec(&std::env::var("TS_HANDLE")?)
+        .try_into()
+        .expect("TS_HANDLE");
     let cleartext: u64 = std::env::var("CLEARTEXT")?.parse()?;
-    let kms_sig: [u8; 65] = hexdec(&std::env::var("KMS_SIG")?).try_into().expect("KMS_SIG 65 bytes");
+    let kms_sig: [u8; 65] = hexdec(&std::env::var("KMS_SIG")?)
+        .try_into()
+        .expect("KMS_SIG 65 bytes");
     let extra = hexdec(&std::env::var("EXTRA")?);
-    let ctx_id: u64 = std::env::var("KMS_CTX_ID").ok().and_then(|s| s.parse().ok()).unwrap_or(1);
+    let ctx_id: u64 = std::env::var("KMS_CTX_ID")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(1);
     let nonce = request_nonce_from_env();
     let (material_commitment, _) = zama_host::handle_material_address(ts_acl);
     let (disclosure_request, _) =
@@ -535,7 +652,9 @@ fn consume_disclose(
         })
         .send()?;
     println!("OK disclose_amount_secp: {sig}");
-    println!("  KMS PublicDecryptVerification cert verified on-chain (secp256k1); cleartext {cleartext}");
+    println!(
+        "  KMS PublicDecryptVerification cert verified on-chain (secp256k1); cleartext {cleartext}"
+    );
     Ok(())
 }
 
@@ -633,7 +752,10 @@ fn consume_wrap(
     use anchor_lang::solana_program::instruction::{AccountMeta, Instruction};
     let mint = Pubkey::from_str(&std::env::var("MINT")?)?;
     let underlying = Pubkey::from_str(&std::env::var("UNDERLYING_MINT")?)?;
-    let amount: u64 = std::env::var("WRAP_AMOUNT").ok().and_then(|s| s.parse().ok()).unwrap_or(100);
+    let amount: u64 = std::env::var("WRAP_AMOUNT")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(100);
     let owner = payer.pubkey();
     let spl_token_id = Pubkey::from_str("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA")?;
     let ata_prog = Pubkey::from_str("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL")?;
@@ -708,10 +830,18 @@ fn consume_wrap(
     let cb_prog = Pubkey::from_str("ComputeBudget111111111111111111111111111111")?;
     let mut heap_data = vec![1u8];
     heap_data.extend_from_slice(&(256u32 * 1024).to_le_bytes());
-    let heap_ix = Instruction { program_id: cb_prog, accounts: vec![], data: heap_data };
+    let heap_ix = Instruction {
+        program_id: cb_prog,
+        accounts: vec![],
+        data: heap_data,
+    };
     let mut cu_data = vec![2u8];
     cu_data.extend_from_slice(&1_400_000u32.to_le_bytes());
-    let cu_ix = Instruction { program_id: cb_prog, accounts: vec![], data: cu_data };
+    let cu_ix = Instruction {
+        program_id: cb_prog,
+        accounts: vec![],
+        data: cu_data,
+    };
 
     let sig = token
         .request()
@@ -792,8 +922,10 @@ fn consume_burn(
     // balance and the burn yields a positive burned amount (unbounded randoms exceed the balance,
     // so burn_success is false and the burned amount is 0).
     let burn_label = confidential_token::burn_amount_label();
-    let (burn_amount_acl, _) =
-        zama_host::acl_record_address(confidential_token::nonce_key(mint, owner, burn_label), amt_seq);
+    let (burn_amount_acl, _) = zama_host::acl_record_address(
+        confidential_token::nonce_key(mint, owner, burn_label),
+        amt_seq,
+    );
     let accounts = confidential_token::accounts::CreateRandomAmount {
         owner,
         mint,
@@ -844,7 +976,11 @@ fn consume_burn(
     let bal_nk = confidential_token::balance_nonce_key(mint, token_account);
     let (output_balance_acl, _) = zama_host::acl_record_address(bal_nk, bal_seq);
     let (burned_acl, _) = zama_host::acl_record_address(
-        confidential_token::nonce_key(mint, token_account, confidential_token::burned_amount_label()),
+        confidential_token::nonce_key(
+            mint,
+            token_account,
+            confidential_token::burned_amount_label(),
+        ),
         bal_seq,
     );
     let (ts_output_acl, _) = zama_host::acl_record_address(
@@ -858,10 +994,18 @@ fn consume_burn(
     let cb_prog = Pubkey::from_str("ComputeBudget111111111111111111111111111111")?;
     let mut heap_data = vec![1u8];
     heap_data.extend_from_slice(&(256u32 * 1024).to_le_bytes());
-    let heap_ix = Instruction { program_id: cb_prog, accounts: vec![], data: heap_data };
+    let heap_ix = Instruction {
+        program_id: cb_prog,
+        accounts: vec![],
+        data: heap_data,
+    };
     let mut cu_data = vec![2u8];
     cu_data.extend_from_slice(&1_400_000u32.to_le_bytes());
-    let cu_ix = Instruction { program_id: cb_prog, accounts: vec![], data: cu_data };
+    let cu_ix = Instruction {
+        program_id: cb_prog,
+        accounts: vec![],
+        data: cu_data,
+    };
 
     let sig = token
         .request()
@@ -917,8 +1061,9 @@ fn consume_request_redeem(
     let mint = Pubkey::from_str(&std::env::var("MINT")?)?;
     let underlying = Pubkey::from_str(&std::env::var("UNDERLYING_MINT")?)?;
     let burned_acl = Pubkey::from_str(&std::env::var("BURNED_ACL")?)?;
-    let burned_handle: [u8; 32] =
-        hexdec(&std::env::var("BURNED_HANDLE")?).try_into().expect("BURNED_HANDLE");
+    let burned_handle: [u8; 32] = hexdec(&std::env::var("BURNED_HANDLE")?)
+        .try_into()
+        .expect("BURNED_HANDLE");
     let owner = payer.pubkey();
     let spl_token_id = Pubkey::from_str("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA")?;
     let ata_prog = Pubkey::from_str("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL")?;
@@ -940,12 +1085,18 @@ fn consume_request_redeem(
     // commit_handle_material for the burned handle (real key_id + ct/sns digests), unless already
     // committed (REDEEM_SKIP_COMMIT). The request validates this commitment, so it must precede it.
     if std::env::var("REDEEM_SKIP_COMMIT").is_err() {
-        let key_id: [u8; 32] = hexdec(&std::env::var("KEY_ID")?).try_into().expect("KEY_ID");
-        let ct64: [u8; 32] = hexdec(&std::env::var("CT64_DIGEST")?).try_into().expect("CT64_DIGEST");
-        let ct128: [u8; 32] =
-            hexdec(&std::env::var("CT128_DIGEST")?).try_into().expect("CT128_DIGEST");
-        let coproc: [u8; 32] =
-            hexdec(&std::env::var("COPROC_SET_DIGEST")?).try_into().expect("COPROC_SET_DIGEST");
+        let key_id: [u8; 32] = hexdec(&std::env::var("KEY_ID")?)
+            .try_into()
+            .expect("KEY_ID");
+        let ct64: [u8; 32] = hexdec(&std::env::var("CT64_DIGEST")?)
+            .try_into()
+            .expect("CT64_DIGEST");
+        let ct128: [u8; 32] = hexdec(&std::env::var("CT128_DIGEST")?)
+            .try_into()
+            .expect("CT128_DIGEST");
+        let coproc: [u8; 32] = hexdec(&std::env::var("COPROC_SET_DIGEST")?)
+            .try_into()
+            .expect("COPROC_SET_DIGEST");
         let sig = host
             .request()
             .accounts(zama_host::accounts::CommitHandleMaterial {
@@ -1014,12 +1165,18 @@ fn consume_redeem(
     let mint = Pubkey::from_str(&std::env::var("MINT")?)?;
     let underlying = Pubkey::from_str(&std::env::var("UNDERLYING_MINT")?)?;
     let burned_acl = Pubkey::from_str(&std::env::var("BURNED_ACL")?)?;
-    let burned_handle: [u8; 32] =
-        hexdec(&std::env::var("BURNED_HANDLE")?).try_into().expect("BURNED_HANDLE");
+    let burned_handle: [u8; 32] = hexdec(&std::env::var("BURNED_HANDLE")?)
+        .try_into()
+        .expect("BURNED_HANDLE");
     let cleartext: u64 = std::env::var("CLEARTEXT")?.parse()?;
-    let kms_sig: [u8; 65] = hexdec(&std::env::var("KMS_SIG")?).try_into().expect("KMS_SIG 65 bytes");
+    let kms_sig: [u8; 65] = hexdec(&std::env::var("KMS_SIG")?)
+        .try_into()
+        .expect("KMS_SIG 65 bytes");
     let extra = hexdec(&std::env::var("EXTRA")?);
-    let ctx_id: u64 = std::env::var("KMS_CTX_ID").ok().and_then(|s| s.parse().ok()).unwrap_or(1);
+    let ctx_id: u64 = std::env::var("KMS_CTX_ID")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(1);
     let nonce = request_nonce_from_env();
     let owner = payer.pubkey();
     let spl_token_id = Pubkey::from_str("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA")?;
