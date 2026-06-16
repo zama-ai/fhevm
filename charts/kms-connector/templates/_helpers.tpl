@@ -42,3 +42,15 @@ ethereumAcl: {{ default (index $preset "ethereum.acl.address") $eth.acl | quote 
 ethereumKmsVerifier: {{ default (index $preset "ethereum.kms_verifier.address") $eth.kmsVerifier | quote }}
 polygonAcl: {{ default (index $preset "polygon.acl.address") $pol.acl | quote }}
 {{- end -}}
+
+{{/*
+Render the kms-worker host_chains list as JSON with chainId as an integer.
+chainId values are resolved by Kubernetes from $(...) env substitution at
+runtime, so they are strings at template time; we strip the surrounding quotes
+in the JSON so the substituted value is emitted unquoted and deserializes as a
+u64. url and aclAddress stay quoted strings.
+*/}}
+{{- define "kmsConnector.hostChainsJson" -}}
+{{- $json := toJson .Values.kmsConnectorKmsWorker.config.hostChains -}}
+{{- regexReplaceAll "\"chainId\":\"([^\"]*)\"" $json "\"chainId\":${1}" -}}
+{{- end -}}

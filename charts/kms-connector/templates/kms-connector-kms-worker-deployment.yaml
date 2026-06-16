@@ -88,7 +88,7 @@ spec:
             - name: KMS_CONNECTOR_KMS_CORE_ENDPOINTS
               value: {{ .Values.kmsConnectorKmsWorker.config.kmsCoreEndpoints | quote }}
             - name: KMS_CONNECTOR_HOST_CHAINS
-              value: {{ toJson (.Values.kmsConnectorKmsWorker.config.hostChains) | quote }}
+              value: {{ include "kmsConnector.hostChainsJson" . | quote }}
           ports:
             {{- range $portName, $portValue := .Values.kmsConnectorKmsWorker.ports }}
             - name: {{ $portName }}
