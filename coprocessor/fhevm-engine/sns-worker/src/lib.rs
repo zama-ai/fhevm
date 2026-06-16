@@ -346,7 +346,7 @@ impl HandleItem {
     ) -> Result<(), ExecutionError> {
         let format: i16 = self.ct128.format().into();
 
-        sqlx::query!(
+        let result = sqlx::query!(
             "UPDATE ciphertext_digest
             SET ciphertext = $1,
                 ciphertext128 = $2,
@@ -361,6 +361,14 @@ impl HandleItem {
         )
         .execute(trx.as_mut())
         .await?;
+
+        if result.rows_affected() != 1 {
+            return Err(ExecutionError::InternalError(format!(
+                "expected to mark exactly one ciphertext_digest row as uploaded for handle {}, updated {}",
+                to_hex(&self.handle),
+                result.rows_affected(),
+            )));
+        }
 
         info!(
             "Mark ciphertexts as uploaded, handle: {}, ct64_digest: {}, ct128_digest: {}, format: {:?}, s3_format_version: {}",
