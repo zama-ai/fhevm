@@ -9,7 +9,6 @@ use sqlx::Row;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 use test_harness::instance::{DBInstance, ImportMode};
-use tfhe::integer::ciphertext::IntegerProvenCompactCiphertextListConformanceParams;
 use tokio::sync::RwLock;
 use tokio::time::sleep;
 
@@ -208,10 +207,7 @@ pub(crate) async fn compress_inputs_without_rerandomization(
 
     let verified_list: tfhe::ProvenCompactCiphertextList = safe_deserialize_conformant(
         raw_ct,
-        &IntegerProvenCompactCiphertextListConformanceParams::from_public_key_encryption_parameters_and_crs_parameters(
-            latest_key.pks.parameters(),
-            &latest_crs.crs,
-        ),
+        &crate::verifier::proven_list_conformance_params(&latest_key.pks, &latest_crs),
     )?;
 
     if verified_list.is_empty() {
@@ -278,7 +274,7 @@ pub(crate) async fn generate_zk_pok_with_inputs(
     }
 
     let the_list = builder
-        .build_with_proof_packed(&latest_crs.crs, aux_data, tfhe::zk::ZkComputeLoad::Proof)
+        .build_with_proof_packed(&latest_crs.crs, aux_data, tfhe::zk::ZkComputeLoad::Verify)
         .unwrap();
 
     safe_serialize(&the_list)
