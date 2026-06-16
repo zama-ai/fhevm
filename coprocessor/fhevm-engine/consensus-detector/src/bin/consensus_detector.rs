@@ -59,6 +59,18 @@ struct Args {
     #[arg(long, default_value = "60s", value_parser = parse_duration)]
     commitment_timeout: Duration,
 
+    /// This operator's S3 bucket. Omit to disable GCS uploads.
+    #[arg(long)]
+    my_bucket: Option<String>,
+
+    /// S3 endpoint override (e.g. `http://minio:9000`).
+    #[arg(long)]
+    s3_endpoint: Option<String>,
+
+    /// Max pending blocks processed per state_hash sweep.
+    #[arg(long, default_value_t = 256)]
+    state_hash_batch_limit: i64,
+
     #[arg(
         long,
         value_parser = clap::value_parser!(Level),
@@ -99,6 +111,9 @@ async fn main() -> anyhow::Result<()> {
         poll_interval: Duration::from_secs(args.poll_interval_secs),
         commitment_poll_interval: args.commitment_poll_interval,
         commitment_timeout: args.commitment_timeout,
+        my_bucket: args.my_bucket.clone(),
+        s3_endpoint: args.s3_endpoint.clone(),
+        state_hash_batch_limit: args.state_hash_batch_limit,
     };
 
     info!(

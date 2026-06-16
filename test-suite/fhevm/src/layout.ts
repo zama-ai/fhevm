@@ -172,6 +172,8 @@ export const GROUP_BUILD_SERVICES: Record<OverrideGroup, string[]> = {
     "coprocessor-zkproof-worker",
     "coprocessor-sns-worker",
     "coprocessor-transaction-sender",
+    "coprocessor-consensus-detector",
+    "coprocessor-upgrade-controller",
   ],
   "kms-connector": [
     "kms-connector-db-migration",

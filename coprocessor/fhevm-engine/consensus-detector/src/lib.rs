@@ -23,6 +23,7 @@
 //! Note: `unanimity_consensus` is only meaningful as a signal for the upgrade
 //! procedure; nothing else consumes it.
 
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -39,8 +40,10 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn, Level};
 
 pub mod s3;
+pub mod state_hash;
 
 use crate::s3::S3Service;
+use crate::state_hash::state_hash_key;
 
 /// pg_notify channels this service listens on.
 pub const NEW_BLOCK_CHANNEL: &str = "event_new_block";
@@ -71,6 +74,12 @@ pub struct Config {
     /// Hard cap on how long we wait for unanimity before giving up and
     /// emitting `unanimity_consensus_timeout`.
     pub commitment_timeout: Duration,
+    /// This operator's S3 bucket. `None` disables GCS uploads (read-only).
+    pub my_bucket: Option<String>,
+    /// S3 endpoint override (e.g. `http://minio:9000`).
+    pub s3_endpoint: Option<String>,
+    /// Max pending blocks processed per state_hash sweep.
+    pub state_hash_batch_limit: i64,
 }
 
 impl Default for Config {
@@ -84,6 +93,9 @@ impl Default for Config {
             poll_interval: Duration::from_secs(30),
             commitment_poll_interval: Duration::from_secs(5),
             commitment_timeout: Duration::from_secs(60),
+            my_bucket: None,
+            s3_endpoint: None,
+            state_hash_batch_limit: 256,
         }
     }
 }
@@ -116,68 +128,115 @@ pub enum Error {
     Gateway(String),
 }
 
-/// Placeholder for the per-operator state-commitment fetch. Future work will
-/// HTTP-GET each URL and return the bytes. For now it returns an empty vec
-/// per URL — never unanimous, so the polling loop always hits the timeout.
-async fn fetch_state_commitments(s3_urls: &[String]) -> Vec<Vec<u8>> {
-    // TODO: real implementation — fetch bytes from each S3 bucket URL.
-    debug!(
-        operator_count = s3_urls.len(),
-        "fetch_state_commitments (placeholder) — returning empty commitments"
-    );
-    vec![Vec::new(); s3_urls.len()]
-}
-
-/// Returns true when `commitments` is non-empty and every entry is identical.
-fn all_identical(commitments: &[Vec<u8>]) -> bool {
-    let Some(first) = commitments.first() else {
-        return false;
-    };
-    commitments.iter().all(|c| c == first)
-}
-
-/// Look up the single in-progress upgrade. Returns the `end_block` when there
-/// is exactly one row with `status='in_progress'` and `state='UpgradeActivated'`,
-/// `None` otherwise (no active upgrade, or in a state we shouldn't act on).
-async fn fetch_active_upgrade_end_block(pool: &Pool<Postgres>) -> Result<Option<i64>, Error> {
-    let rows: Vec<(String, Option<i64>)> =
-        sqlx::query_as("SELECT state, end_block FROM upgrade_state WHERE status = 'in_progress'")
-            .fetch_all(pool)
-            .await?;
-
-    match rows.len() {
-        0 => Ok(None),
-        1 => {
-            let (state, end_block) = &rows[0];
-            if state != "DryRunActivated" {
-                debug!(
-                    state = %state,
-                    "active upgrade row is not in DryRunActivated — ignoring new_block"
-                );
-                return Ok(None);
-            }
-            Ok(*end_block)
+/// HTTP-GETs `state_hash` for `(chain_id, block_height)` from each operator
+/// whose slot is `None`, concurrently. Slots already populated by a prior
+/// attempt are left untouched, so retries only re-request the missing
+/// operators. Failure modes (404 / 5xx / transport) are logged distinctly
+/// so "peer hasn't uploaded yet" is visually separable from "peer's S3 is
+/// flaky".
+async fn fetch_state_commitments(
+    http: &reqwest::Client,
+    s3_urls: &[String],
+    chain_id: i64,
+    block_height: i64,
+    slots: &mut [Option<Vec<u8>>],
+) {
+    debug_assert_eq!(s3_urls.len(), slots.len());
+    let key = state_hash_key(chain_id, block_height);
+    let missing: Vec<usize> = slots
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, slot)| slot.is_none().then_some(idx))
+        .collect();
+    if missing.is_empty() {
+        return;
+    }
+    let fetches = missing.into_iter().map(|idx| {
+        let url = s3_urls[idx].clone();
+        let path = format!("{}/{key}", url.trim_end_matches('/'));
+        async move {
+            let bytes = match http.get(&path).send().await {
+                Ok(r) => {
+                    let status = r.status();
+                    if status.is_success() {
+                        match r.bytes().await {
+                            Ok(b) => Some(b.to_vec()),
+                            Err(e) => {
+                                warn!(operator = %url, error = %e, "operator body read failed");
+                                None
+                            }
+                        }
+                    } else if status == reqwest::StatusCode::NOT_FOUND {
+                        debug!(operator = %url, "operator state_hash not yet uploaded");
+                        None
+                    } else if status.is_server_error() {
+                        warn!(operator = %url, %status, "operator S3 server error");
+                        None
+                    } else {
+                        warn!(operator = %url, %status, "operator returned unexpected status");
+                        None
+                    }
+                }
+                Err(e) => {
+                    warn!(operator = %url, error = %e, "operator request failed (timeout/transport)");
+                    None
+                }
+            };
+            (idx, bytes)
         }
-        n => {
-            // Schema invariant per upgrade procedure: only one in_progress row at a time.
-            warn!(
-                count = n,
-                "found multiple in_progress upgrade_state rows — refusing to act"
-            );
-            Ok(None)
+    });
+    let results = futures::future::join_all(fetches).await;
+    for (idx, bytes) in results {
+        if bytes.is_some() {
+            slots[idx] = bytes;
         }
     }
+}
+
+/// Returns true when every slot is `Some` and all bytes are identical.
+/// Empty / partially filled slot sets return false.
+fn all_some_and_identical(slots: &[Option<Vec<u8>>]) -> bool {
+    let mut iter = slots.iter();
+    let Some(Some(first)) = iter.next() else {
+        return false;
+    };
+    iter.all(|s| matches!(s, Some(b) if b == first))
+}
+
+/// Returns `(start_block, end_block)` for the GCS dry-run when it's active.
+/// `None` otherwise. Scoped to `stack_role = 'GCS'` because BCS also stays
+/// `status='in_progress'` during the upgrade and doesn't own the replay window.
+pub(crate) async fn active_upgrade_window(
+    pool: &Pool<Postgres>,
+) -> Result<Option<(i64, i64)>, Error> {
+    let row: Option<(String, Option<i64>, Option<i64>)> = sqlx::query_as(
+        "SELECT state, start_block, end_block FROM upgrade_state
+          WHERE stack_role = 'GCS' AND status = 'in_progress'",
+    )
+    .fetch_optional(pool)
+    .await?;
+
+    let Some((state, start_block, end_block)) = row else { return Ok(None) };
+    if !matches!(state.as_str(), "UpgradeActivated" | "DryRunStarted") {
+        debug!(state = %state, "GCS not in UpgradeActivated/DryRunStarted — ignoring");
+        return Ok(None);
+    }
+    Ok(start_block.zip(end_block))
 }
 
 /// Run the polling loop for one `(chain_id, block_height, block_hash)` event.
 ///
 /// Emits `unanimity_consensus` on agreement, `unanimity_consensus_timeout`
 /// after `commitment_timeout`. Returns early if the cancellation token fires.
+#[allow(clippy::too_many_arguments)]
 async fn run_unanimity_poll(
     pool: &Pool<Postgres>,
     cancel: &CancellationToken,
+    http: &reqwest::Client,
     s3_urls: &[String],
     payload: &NewBlockPayload,
+    start_block: i64,
+    end_block: i64,
     commitment_poll_interval: Duration,
     commitment_timeout: Duration,
 ) -> Result<(), Error> {
@@ -185,6 +244,8 @@ async fn run_unanimity_poll(
         chain_id = payload.chain_id,
         block_height = payload.block_height,
         block_hash = %payload.block_hash,
+        start_block,
+        end_block,
         operator_count = s3_urls.len(),
         poll_interval = ?commitment_poll_interval,
         timeout = ?commitment_timeout,
@@ -196,16 +257,47 @@ async fn run_unanimity_poll(
     // First tick fires immediately — we want to attempt straight away.
     ticker.tick().await;
 
+    // Require unanimity on every block in [start_block, end_block]. `confirmed`
+    // tracks blocks that already reached unanimity (skipped on later ticks).
+    // `partial` caches per-operator bytes for blocks still waiting on laggers,
+    // so each tick only re-requests the operators we haven't heard from yet.
+    let window_size = end_block.saturating_sub(start_block) as usize + 1;
+    let mut confirmed: HashSet<i64> = HashSet::with_capacity(window_size);
+    let mut partial: HashMap<i64, Vec<Option<Vec<u8>>>> = HashMap::new();
+
     loop {
-        let commitments = fetch_state_commitments(s3_urls).await;
-        if all_identical(&commitments) {
+        for block_height in start_block..=end_block {
+            if confirmed.contains(&block_height) {
+                continue;
+            }
+            let slots = partial
+                .entry(block_height)
+                .or_insert_with(|| vec![None; s3_urls.len()]);
+            fetch_state_commitments(http, s3_urls, payload.chain_id, block_height, slots).await;
+            let done = all_some_and_identical(slots);
+            if done {
+                confirmed.insert(block_height);
+                partial.remove(&block_height);
+            }
+        }
+
+        if confirmed.len() == window_size {
             info!(
                 chain_id = payload.chain_id,
-                block_height = payload.block_height,
+                start_block,
+                end_block,
                 block_hash = %payload.block_hash,
-                "unanimity reached — emitting unanimity_consensus"
+                "unanimity reached for the whole window — emitting unanimity_consensus"
             );
-            return notify_unanimity(pool, UNANIMITY_CONSENSUS_CHANNEL, payload).await;
+            return notify_unanimity(
+                pool,
+                UNANIMITY_CONSENSUS_CHANNEL,
+                &NewBlockPayload {
+                    block_height: end_block,
+                    ..payload.clone()
+                },
+            )
+            .await;
         }
 
         if tokio::time::Instant::now() >= deadline {
@@ -213,6 +305,10 @@ async fn run_unanimity_poll(
                 chain_id = payload.chain_id,
                 block_height = payload.block_height,
                 block_hash = %payload.block_hash,
+                start_block,
+                end_block,
+                confirmed = confirmed.len(),
+                window_size,
                 "unanimity poll timed out — emitting unanimity_consensus_timeout"
             );
             return notify_unanimity(pool, UNANIMITY_CONSENSUS_TIMEOUT_CHANNEL, payload).await;
@@ -250,9 +346,11 @@ async fn notify_unanimity(
 }
 
 /// Handle a `new_block` notification.
+#[allow(clippy::too_many_arguments)]
 async fn handle_new_block<P>(
     pool: &Pool<Postgres>,
     cancel: &CancellationToken,
+    http: &reqwest::Client,
     s3_urls: &Arc<RwLock<Vec<String>>>,
     raw_payload: &str,
     commitment_poll_interval: Duration,
@@ -272,7 +370,7 @@ where
         "new_block received"
     );
 
-    let Some(end_block) = fetch_active_upgrade_end_block(pool).await? else {
+    let Some((start_block, end_block)) = active_upgrade_window(pool).await? else {
         info!(
             chain_id = payload.chain_id,
             block_height = payload.block_height,
@@ -297,8 +395,11 @@ where
     run_unanimity_poll(
         pool,
         cancel,
+        http,
         &urls_snapshot,
         &payload,
+        start_block,
+        end_block,
         commitment_poll_interval,
         commitment_timeout,
     )
@@ -328,6 +429,20 @@ where
     Ok(())
 }
 
+async fn build_s3_client(config: &Config) -> aws_sdk_s3::Client {
+    let mut loader = aws_config::defaults(aws_config::BehaviorVersion::latest());
+    if let Some(endpoint) = config.s3_endpoint.as_deref() {
+        loader = loader.endpoint_url(endpoint);
+    }
+    let sdk_config = loader.load().await;
+    let mut builder = aws_sdk_s3::config::Builder::from(&sdk_config);
+    if config.s3_endpoint.is_some() {
+        // path-style addressing is required by minio / localstack
+        builder = builder.force_path_style(true);
+    }
+    aws_sdk_s3::Client::from_conf(builder.build())
+}
+
 /// Main service loop.
 pub async fn run<P>(
     config: Config,
@@ -341,6 +456,7 @@ where
     info!(
         service_name = %config.service_name,
         gateway_config_address = %config.gateway_config_address,
+        my_bucket = ?config.my_bucket,
         "starting consensus-detector"
     );
 
@@ -357,6 +473,35 @@ where
         "fetched operator S3 URLs from GatewayConfig"
     );
     let s3_urls: Arc<RwLock<Vec<String>>> = Arc::new(RwLock::new(urls));
+
+    let http = reqwest::Client::builder()
+        .timeout(Duration::from_secs(5))
+        .build()?;
+
+    // GCS upload only when --my-bucket is set.
+    let s3 = if config.my_bucket.is_none() {
+        info!("--my-bucket not set; GCS upload disabled");
+        None
+    } else {
+        Some(Arc::new(build_s3_client(&config).await))
+    };
+    {
+        let pool = pool.clone();
+        let worker_cancel = cancel.child_token();
+        let parent_cancel = cancel.clone();
+        let bucket = config.my_bucket.clone().unwrap_or_default();
+        let batch_limit = config.state_hash_batch_limit;
+        tokio::spawn(async move {
+            // The state_hash worker is required for the consensus poll: without
+            // it, no GCS state hashes get uploaded and the poll always times
+            // out. If it exits unexpectedly, cancel the parent so the service
+            // crashes and is restarted by its supervisor.
+            if let Err(e) = state_hash::run(pool, s3, bucket, batch_limit, worker_cancel).await {
+                error!(error = %e, "state_hash worker exited with error; shutting down consensus-detector");
+                parent_cancel.cancel();
+            }
+        });
+    }
 
     let mut listener = PgListener::connect_with(&pool).await?;
     listener
@@ -389,6 +534,7 @@ where
                                 handle_new_block(
                                     &pool,
                                     &cancel,
+                                    &http,
                                     &s3_urls,
                                     payload,
                                     config.commitment_poll_interval,
@@ -440,26 +586,40 @@ mod tests {
     }
 
     #[test]
-    fn all_identical_rejects_empty() {
-        let v: Vec<Vec<u8>> = vec![];
-        assert!(!all_identical(&v));
+    fn all_some_and_identical_rejects_empty() {
+        let v: Vec<Option<Vec<u8>>> = vec![];
+        assert!(!all_some_and_identical(&v));
     }
 
     #[test]
-    fn all_identical_accepts_single() {
-        let v = vec![vec![1u8, 2, 3]];
-        assert!(all_identical(&v));
+    fn all_some_and_identical_accepts_single() {
+        let v = vec![Some(vec![1u8, 2, 3])];
+        assert!(all_some_and_identical(&v));
     }
 
     #[test]
-    fn all_identical_detects_match() {
-        let v = vec![vec![1, 2, 3], vec![1, 2, 3], vec![1, 2, 3]];
-        assert!(all_identical(&v));
+    fn all_some_and_identical_detects_match() {
+        let v = vec![
+            Some(vec![1, 2, 3]),
+            Some(vec![1, 2, 3]),
+            Some(vec![1, 2, 3]),
+        ];
+        assert!(all_some_and_identical(&v));
     }
 
     #[test]
-    fn all_identical_detects_mismatch() {
-        let v = vec![vec![1, 2, 3], vec![1, 2, 3], vec![9, 9, 9]];
-        assert!(!all_identical(&v));
+    fn all_some_and_identical_detects_mismatch() {
+        let v = vec![
+            Some(vec![1, 2, 3]),
+            Some(vec![1, 2, 3]),
+            Some(vec![9, 9, 9]),
+        ];
+        assert!(!all_some_and_identical(&v));
+    }
+
+    #[test]
+    fn all_some_and_identical_rejects_partial() {
+        let v = vec![Some(vec![1, 2, 3]), None, Some(vec![1, 2, 3])];
+        assert!(!all_some_and_identical(&v));
     }
 }

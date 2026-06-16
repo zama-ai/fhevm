@@ -159,7 +159,7 @@ services:
       - --pg-polling-interval=30
       - --pg-pool-connections=10
       - --bucket-name-ct64=ct64
-      - --bucket-name-ct128=ct128
+      - --bucket-name-ct128=${BUCKET_NAME_CT128}
       - --s3-max-concurrent-uploads=100
       - --s3-max-retries-per-upload=100
       - --s3-max-backoff=10s
@@ -191,6 +191,33 @@ services:
       - --verify-proof-resp-max-retries=15
       - --verify-proof-remove-after-max-retries
       - --signer-type=private-key
+    depends_on:
+      coprocessor-db-migration:
+        condition: service_completed_successfully
+
+  coprocessor-consensus-detector:
+    container_name: coprocessor-consensus-detector
+    image: ghcr.io/zama-ai/fhevm/coprocessor/consensus-detector:${COPROCESSOR_CONSENSUS_DETECTOR_VERSION}
+    env_file:
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/coprocessor.env
+    command:
+      - consensus-detector
+      - --database-url=${DATABASE_URL}
+      - --gw-url=${GATEWAY_WS_URL}
+      - --gateway-config-address=${GATEWAY_CONFIG_ADDRESS}
+      - --my-bucket=${BUCKET_NAME_CT128}
+    depends_on:
+      coprocessor-db-migration:
+        condition: service_completed_successfully
+
+  coprocessor-upgrade-controller:
+    container_name: coprocessor-upgrade-controller
+    image: ghcr.io/zama-ai/fhevm/coprocessor/upgrade-controller:${COPROCESSOR_UPGRADE_CONTROLLER_VERSION}
+    env_file:
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/coprocessor.env
+    command:
+      - upgrade-controller
+      - --database-url=${DATABASE_URL}
     depends_on:
       coprocessor-db-migration:
         condition: service_completed_successfully

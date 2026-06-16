@@ -51,6 +51,12 @@ on:
       zkproof_worker_build_result:
         description: "Result of the build-zkproof-worker job"
         value: ${{ jobs.build-zkproof-worker.result }}
+      consensus_detector_build_result:
+        description: "Result of the build-consensus-detector job"
+        value: ${{ jobs.build-consensus-detector.result }}
+      upgrade_controller_build_result:
+        description: "Result of the build-upgrade-controller job"
+        value: ${{ jobs.build-upgrade-controller.result }}
   workflow_dispatch:
     inputs:
       build_db_migration:
@@ -79,6 +85,14 @@ on:
         default: true
       build_zkproof_worker:
         description: "Enable/disable build for Coprocessor's ZKProof Worker"
+        type: boolean
+        default: true
+      build_consensus_detector:
+        description: "Enable/disable build for Coprocessor's Consensus Detector"
+        type: boolean
+        default: true
+      build_upgrade_controller:
+        description: "Enable/disable build for Coprocessor's Upgrade Controller"
         type: boolean
         default: true
   push:
@@ -215,6 +229,38 @@ jobs:
           - coprocessor/fhevm-engine/zkproof-worker/**
           - coprocessor/fhevm-engine/Cargo.*
 
+  check-changes-consensus-detector:
+    uses: ./.github/workflows/check-changes-for-docker-build.yml
+    if: github.event_name == 'push' || inputs.is_workflow_call
+    secrets: *check_changes_secrets
+    permissions: *check_changes_permissions
+    with:
+      caller-workflow-event-name: ${{ github.event_name }}
+      caller-workflow-event-before: ${{ github.event.before }}
+      path-filter-base-commit: ${{ inputs.path-filter-base-commit }}
+      docker-image: fhevm/coprocessor/consensus-detector
+      filters: |
+        consensus-detector:
+          - .github/workflows/coprocessor-docker-build.yml
+          - coprocessor/fhevm-engine/consensus-detector/**
+          - coprocessor/fhevm-engine/Cargo.*
+
+  check-changes-upgrade-controller:
+    uses: ./.github/workflows/check-changes-for-docker-build.yml
+    if: github.event_name == 'push' || inputs.is_workflow_call
+    secrets: *check_changes_secrets
+    permissions: *check_changes_permissions
+    with:
+      caller-workflow-event-name: ${{ github.event_name }}
+      caller-workflow-event-before: ${{ github.event.before }}
+      path-filter-base-commit: ${{ inputs.path-filter-base-commit }}
+      docker-image: fhevm/coprocessor/upgrade-controller
+      filters: |
+        upgrade-controller:
+          - .github/workflows/coprocessor-docker-build.yml
+          - coprocessor/fhevm-engine/upgrade-controller/**
+          - coprocessor/fhevm-engine/Cargo.*
+
   ########################################################################
   #                        BUILD DECISIONS                               #
   # Centralizes all build/re-tag logic in one place for maintainability  #
@@ -232,6 +278,8 @@ jobs:
       - check-changes-tfhe-worker
       - check-changes-tx-sender
       - check-changes-zkproof-worker
+      - check-changes-consensus-detector
+      - check-changes-upgrade-controller
     outputs:
       db_migration: ${{ steps.decide.outputs.db_migration }}
       gw_listener: ${{ steps.decide.outputs.gw_listener }}
@@ -240,6 +288,8 @@ jobs:
       tfhe_worker: ${{ steps.decide.outputs.tfhe_worker }}
       tx_sender: ${{ steps.decide.outputs.tx_sender }}
       zkproof_worker: ${{ steps.decide.outputs.zkproof_worker }}
+      consensus_detector: ${{ steps.decide.outputs.consensus_detector }}
+      upgrade_controller: ${{ steps.decide.outputs.upgrade_controller }}
     steps:
       - id: decide
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
@@ -276,6 +326,8 @@ jobs:
               tfhe_worker: { changes: needs['check-changes-tfhe-worker'].outputs?.changes, build_input: inputs.build_tfhe_worker },
               tx_sender: { changes: needs['check-changes-tx-sender'].outputs?.changes, build_input: inputs.build_tx_sender },
               zkproof_worker: { changes: needs['check-changes-zkproof-worker'].outputs?.changes, build_input: inputs.build_zkproof_worker },
+              consensus_detector: { changes: needs['check-changes-consensus-detector'].outputs?.changes, build_input: inputs.build_consensus_detector },
+              upgrade_controller: { changes: needs['check-changes-upgrade-controller'].outputs?.changes, build_input: inputs.build_upgrade_controller },
             };
 
             core.info(`Event: ${event}, Is latest commit: ${isLatestCommit}, Is workflow call: ${isWorkflowCall}`);
@@ -487,4 +539,58 @@ jobs:
     with:
       image-name: "fhevm/coprocessor/zkproof-worker"
       previous-tag-or-commit: ${{ needs.check-changes-zkproof-worker.outputs.base-commit }}
+      new-tag-or-commit: ${{ github.event.after }}
+
+  ########################################################################
+  #                          CONSENSUS DETECTOR                          #
+  ########################################################################
+  build-consensus-detector:
+    needs: build-decisions
+    if: always() && needs.build-decisions.outputs.consensus_detector == 'build'
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@f3ad2e177a5247777349447608ba20f0977a824f # v1.0.7
+    permissions: *docker_permissions
+    secrets: *docker_secrets
+    with:
+      use-cgr-secrets: true
+      working-directory: "."
+      image-name: "fhevm/coprocessor/consensus-detector"
+      docker-file: "coprocessor/fhevm-engine/consensus-detector/Dockerfile"
+      app-cache-dir: "fhevm-coprocessor-consensus-detector"
+      rust-toolchain-file-path: coprocessor/fhevm-engine/rust-toolchain.toml
+
+  re-tag-consensus-detector-image:
+    needs: [build-decisions, check-changes-consensus-detector]
+    if: always() && needs.build-decisions.outputs.consensus_detector == 'retag'
+    permissions: *re-tag-image-permissions
+    uses: ./.github/workflows/re-tag-docker-image.yml
+    with:
+      image-name: "fhevm/coprocessor/consensus-detector"
+      previous-tag-or-commit: ${{ needs.check-changes-consensus-detector.outputs.base-commit }}
+      new-tag-or-commit: ${{ github.event.after }}
+
+  ########################################################################
+  #                          UPGRADE CONTROLLER                          #
+  ########################################################################
+  build-upgrade-controller:
+    needs: build-decisions
+    if: always() && needs.build-decisions.outputs.upgrade_controller == 'build'
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@f3ad2e177a5247777349447608ba20f0977a824f # v1.0.7
+    permissions: *docker_permissions
+    secrets: *docker_secrets
+    with:
+      use-cgr-secrets: true
+      working-directory: "."
+      image-name: "fhevm/coprocessor/upgrade-controller"
+      docker-file: "coprocessor/fhevm-engine/upgrade-controller/Dockerfile"
+      app-cache-dir: "fhevm-coprocessor-upgrade-controller"
+      rust-toolchain-file-path: coprocessor/fhevm-engine/rust-toolchain.toml
+
+  re-tag-upgrade-controller-image:
+    needs: [build-decisions, check-changes-upgrade-controller]
+    if: always() && needs.build-decisions.outputs.upgrade_controller == 'retag'
+    permissions: *re-tag-image-permissions
+    uses: ./.github/workflows/re-tag-docker-image.yml
+    with:
+      image-name: "fhevm/coprocessor/upgrade-controller"
+      previous-tag-or-commit: ${{ needs.check-changes-upgrade-controller.outputs.base-commit }}
       new-tag-or-commit: ${{ github.event.after }}

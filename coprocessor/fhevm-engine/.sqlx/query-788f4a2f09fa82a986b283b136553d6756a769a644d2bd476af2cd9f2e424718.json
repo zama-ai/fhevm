@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO gcs.state_hash (chain_id, block_number, state_hash)\n             VALUES ($1, $2, $3)\n             ON CONFLICT (chain_id, block_number) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "788f4a2f09fa82a986b283b136553d6756a769a644d2bd476af2cd9f2e424718"
+}
