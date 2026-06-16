@@ -97,12 +97,6 @@ kmsConnectorDbMigration:
 
   # Environment variables for database migration
   env:
-    - name: DATABASE_ENDPOINT
-      value: "postgresql://db:5432/kms-connector"
-    - name: PGUSER
-      value: "postgres"
-    - name: PGPASSWORD
-      value: "postgres"
 
   serviceAccountName:
 
