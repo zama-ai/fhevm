@@ -1,10 +1,12 @@
 import { expect } from 'chai';
 import { Wallet } from 'ethers';
 import fs from 'fs';
-import { ethers, run, upgrades } from 'hardhat';
+import hre, { ethers, run, upgrades } from 'hardhat';
+import os from 'os';
+import path from 'path';
 
+import { buildSnapshotArtifact, readCanonicalSnapshot } from '../../tasks/protocolConfigMirror';
 import { buildKmsNodes, buildKmsThresholds } from '../../tasks/taskDeploy';
-import { UPGRADE_TO_AND_CALL_INTERFACE } from '../../tasks/taskMigrate';
 import { makeEnvHelpers } from '../../tasks/utils/envSnapshot';
 import {
   CRS_COUNTER_BASE,
@@ -27,8 +29,15 @@ import {
   restoreProtocolConfigMigrationEnv,
   snapshotProtocolConfigMigrationEnv,
 } from '../../tasks/utils/protocolConfigMigrationEnv';
+import { UPGRADE_TO_AND_CALL_INTERFACE } from '../../tasks/utils/upgradeProposal';
 import { deployEmptyProxy } from '../utils/deploymentHelpers';
-import { HOST_ENV_FILE, buildProtocolConfigNodes, buildProtocolConfigThresholds, readHostAddress } from './taskHelpers';
+import {
+  HOST_ENV_FILE,
+  buildProtocolConfigNodes,
+  buildProtocolConfigThresholds,
+  deployFreshProtocolConfigProxy,
+  readHostAddress,
+} from './taskHelpers';
 
 async function deployEmptyUUPSProxy(deployer: Wallet): Promise<string> {
   const factory = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
@@ -167,6 +176,75 @@ describe('Migration prepare tasks', function () {
   // ---------------------------------------------------------------------------
   // KMSGeneration
   // ---------------------------------------------------------------------------
+
+  describe('ProtocolConfig from canonical artifact', function () {
+    async function writeCanonicalArtifact(): Promise<{ file: string; canonicalAddress: string }> {
+      const canonicalAddress = await deployFreshProtocolConfigProxy(
+        deployer,
+        buildProtocolConfigNodes(),
+        buildProtocolConfigThresholds(),
+      );
+      const snapshot = await readCanonicalSnapshot(hre, {
+        canonicalProvider: ethers.provider,
+        canonicalProtocolConfigAddress: canonicalAddress,
+      });
+      const artifact = buildSnapshotArtifact(snapshot, canonicalAddress);
+      const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'canonical-snapshot-')), 'snapshot.json');
+      fs.writeFileSync(file, JSON.stringify(artifact, null, 2));
+      return { file, canonicalAddress };
+    }
+
+    it('prepares DAO calldata from a reviewed artifact without mutating the proxy', async function () {
+      const proxyAddress = await deployEmptyUUPSProxy(deployer);
+      patchHostEnv('PROTOCOL_CONFIG_CONTRACT_ADDRESS', proxyAddress);
+      const { file, canonicalAddress } = await writeCanonicalArtifact();
+      const canonical = await ethers.getContractAt('ProtocolConfig', canonicalAddress, deployer);
+      const canonicalContextId = await canonical.getCurrentKmsContextId();
+
+      const implementationSlotBefore = await readImplementationSlot(proxyAddress);
+      const preparedUpgrade = await run('task:prepareDeployProtocolConfigFromCanonical', {
+        snapshot: file,
+        verifyContract: false,
+      });
+      expect(await readImplementationSlot(proxyAddress)).to.equal(implementationSlotBefore);
+
+      const { newImplementationAddress, innerFunctionSignature, innerCalldata, outerCalldata } = preparedUpgrade;
+      expect(preparedUpgrade.proxyAddress).to.equal(proxyAddress);
+      const iface = new ethers.Interface([`function ${innerFunctionSignature}`]);
+      const decoded = iface.decodeFunctionData('initializeFromMigration', innerCalldata);
+      expect(decoded[0]).to.equal(canonicalContextId);
+      expect(decoded[1].map((node: string[]) => node[0])).to.deep.equal(
+        buildProtocolConfigNodes().map((node) => node.txSenderAddress),
+      );
+      expect(decoded[2][0]).to.equal(BigInt(buildProtocolConfigThresholds().publicDecryption));
+      expect(outerCalldata).to.equal(
+        UPGRADE_TO_AND_CALL_INTERFACE.encodeFunctionData('upgradeToAndCall', [newImplementationAddress, innerCalldata]),
+      );
+    });
+
+    it('applies a reviewed artifact with the devnet deploy task, without canonical RPC access', async function () {
+      const proxyAddress = await deployEmptyUUPSProxy(deployer);
+      patchHostEnv('PROTOCOL_CONFIG_CONTRACT_ADDRESS', proxyAddress);
+      const { file, canonicalAddress } = await writeCanonicalArtifact();
+      const canonical = await ethers.getContractAt('ProtocolConfig', canonicalAddress, deployer);
+      const canonicalContextId = await canonical.getCurrentKmsContextId();
+
+      await run('task:deployProtocolConfigFromCanonical', { snapshot: file });
+
+      const secondary = await ethers.getContractAt('ProtocolConfig', proxyAddress, deployer);
+      expect(await secondary.getCurrentKmsContextId()).to.equal(canonicalContextId);
+      expect((await secondary.getKmsNodesForContext(canonicalContextId)).length).to.equal(
+        buildProtocolConfigNodes().length,
+      );
+      expect(await secondary.getPublicDecryptionThresholdForContext(canonicalContextId)).to.equal(
+        BigInt(buildProtocolConfigThresholds().publicDecryption),
+      );
+    });
+
+    it('rejects when neither a snapshot nor canonical RPC parameters are given', async function () {
+      await expect(run('task:deployProtocolConfigFromCanonical')).to.be.rejectedWith(/either --snapshot/);
+    });
+  });
 
   describe('KMSGeneration migration', function () {
     // The KMSGeneration migration validates consensus tx senders against the

@@ -249,6 +249,7 @@ export const TEST_GREP: Record<string, string> = {
     "test paused gateway user input|test paused gateway HTTP public decrypt",
   "input-proof": "test user input uint64",
   "input-proof-compute-decrypt": "test add 42 to uint64 input and decrypt",
+  "priority-coprocessor": "test priority coprocessor input flow",
   "user-decryption": "test user decrypt",
   "delegated-user-decryption": "test delegated user decrypt",
   "public-decryption":
