@@ -53,8 +53,7 @@ export default async function run(ctx: RolloutRunContext) {
   const baselineLock = await writePhaseVersionLock(ctx, "00-baseline", phaseVersions.baseline);
   const contractsLock = await writePhaseVersionLock(ctx, "01-contracts", phaseVersions.contracts);
   const kmsLock = await writePhaseVersionLock(ctx, "02-kms", phaseVersions.kms);
-  const listenerCoreLock = await writePhaseVersionLock(ctx, "03-listener-core", phaseVersions.listenerCore);
-  const coprocessorLock = await writePhaseVersionLock(ctx, "04-coprocessor", phaseVersions.coprocessor);
+  const coprocessorLock = await writePhaseVersionLock(ctx, "03-coprocessor", phaseVersions.coprocessor);
 
   logPhase("00 baseline: boot v0.11 (single coprocessor, Zama-only consensus)");
   await ctx.up({ lockFile: baselineLock, scenario, overrides: [{ group: "test-suite" }] });
@@ -83,10 +82,10 @@ export default async function run(ctx: RolloutRunContext) {
   await ctx.upgradeRuntimeGroup("kms", { lockFile: kmsLock });
   await testPhase(ctx, "kms");
 
-  logPhase("03 listener-core: v0.11 -> v0.12 (before the coprocessor)");
-  await ctx.upgradeRuntimeGroup("listener-core", { lockFile: listenerCoreLock });
-
-  logPhase("04 coprocessor: v0.11 -> v0.12 (last)");
+  // No listener-core phase: the standalone listener-core (v2) is a v0.13
+  // component; at v0.12 the listener rides with the coprocessor's host-listener,
+  // which moves in the coprocessor group below.
+  logPhase("03 coprocessor: v0.11 -> v0.12 (last; carries the host-listener)");
   await ctx.upgradeRuntimeGroup("coprocessor", { lockFile: coprocessorLock });
   await testPhase(ctx, "final");
 }

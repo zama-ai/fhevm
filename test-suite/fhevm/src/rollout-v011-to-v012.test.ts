@@ -31,14 +31,20 @@ test("upgrades contracts to v0.12 first, runtime still v0.11", () => {
   expect(phaseVersions.contracts.COPROCESSOR_TFHE_WORKER_VERSION).toBe("v0.11.0");
 });
 
-test("moves kms (core + connector) then listener then coprocessor to v0.12", () => {
+test("moves kms (core + connector) then the coprocessor to v0.12", () => {
   expect(phaseVersions.kms.CORE_VERSION).toBe("v0.13.10");
   expect(phaseVersions.kms.CONNECTOR_KMS_WORKER_VERSION).toBe("v0.12.5");
-  expect(phaseVersions.kms.LISTENER_CORE_VERSION).toBe("v0.11.0");
-  expect(phaseVersions.listenerCore.LISTENER_CORE_VERSION).toBe("v0.12.5");
-  expect(phaseVersions.listenerCore.COPROCESSOR_TFHE_WORKER_VERSION).toBe("v0.11.0");
   expect(phaseVersions.coprocessor.COPROCESSOR_TFHE_WORKER_VERSION).toBe("v0.12.5");
   expect(phaseVersions.coprocessor.COPROCESSOR_DB_MIGRATION_VERSION).toBe("v0.12.5");
+  expect(phaseVersions.coprocessor.COPROCESSOR_HOST_LISTENER_VERSION).toBe("v0.12.5");
+});
+
+test("leaves the standalone listener-core unchanged (it is a v0.13 component)", () => {
+  // No v0.11/v0.12 listener-core image exists; it must never be pinned/upgraded here.
+  for (const phase of Object.values(phaseVersions)) {
+    expect(phase.LISTENER_CORE_VERSION).toBe("v0.11.0");
+  }
+  expect("listenerCore" in phaseVersions).toBe(false);
 });
 
 test("keeps the relayer on the shared v0.11.x line across every phase", () => {

@@ -49,6 +49,10 @@ export const from = {
 export const to = {
   ...from,
   // relayer keys intentionally unchanged (shared v0.11.x line).
+  // LISTENER_CORE_VERSION intentionally unchanged: the standalone listener-core
+  // (v2 listener) is a v0.13 component with no v0.11/v0.12 published image. At
+  // v0.12 the listener is the coprocessor-bundled host-listener, which moves
+  // with the coprocessor group below; listener-core only activates at v0.13.
   GATEWAY_VERSION: toTag,
   HOST_VERSION: toTag,
   CORE_VERSION: "v0.13.10",
@@ -63,7 +67,6 @@ export const to = {
   COPROCESSOR_TFHE_WORKER_VERSION: toTag,
   COPROCESSOR_ZKPROOF_WORKER_VERSION: toTag,
   COPROCESSOR_SNS_WORKER_VERSION: toTag,
-  LISTENER_CORE_VERSION: toTag,
 } satisfies Env;
 
 type EnvKey = keyof typeof from;
@@ -76,21 +79,18 @@ const kmsKeys = [
   "CONNECTOR_KMS_WORKER_VERSION",
   "CONNECTOR_TX_SENDER_VERSION",
 ] as const satisfies readonly EnvKey[];
-const listenerKeys = ["LISTENER_CORE_VERSION"] as const satisfies readonly EnvKey[];
-
 const withTargetVersions = (...keys: EnvKey[]): Env => ({
   ...from,
   ...Object.fromEntries(keys.map((key) => [key, to[key]])),
 });
 
 // Contracts move first (plain UUPS), then kms (core + connector, which needs the
-// v0.12 contract ABI), then listener-core, then the coprocessor last. The relayer
-// is unchanged so it has no phase of its own.
+// v0.12 contract ABI), then the coprocessor last. The relayer and the standalone
+// listener-core are unchanged in this hop, so neither has a phase of its own.
 export const phaseVersions = {
   baseline: from,
   contracts: withTargetVersions(...contractKeys),
   kms: withTargetVersions(...contractKeys, ...kmsKeys),
-  listenerCore: withTargetVersions(...contractKeys, ...kmsKeys, ...listenerKeys),
   coprocessor: to,
 };
 
