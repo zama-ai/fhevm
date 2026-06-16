@@ -1,0 +1,12 @@
+version: 1
+kind: coprocessor-consensus
+name: Single Coprocessor
+description: >-
+  One coprocessor, threshold 1 (Zama-only consensus), single host chain. Matches
+  the mainnet upgrade-window topology: multi-coprocessor consensus (onboarding
+  Phase 3) is enabled only after the upgrades, so during an upgrade a single
+  signer is authoritative. A threshold of 1 also cannot hit the cross-node
+  ciphertext-digest split-brain that threshold >= 2 exposes.
+topology:
+  count: 1
+  threshold: 1
