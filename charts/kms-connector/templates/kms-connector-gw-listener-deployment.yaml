@@ -75,10 +75,6 @@ spec:
               value: {{ $contracts.ethereumChainId | quote }}
             - name: KMS_CONNECTOR_KMS_VERIFIER_ADDRESS
               value: {{ $contracts.ethereumKmsVerifier | quote }}
-            - name: KMS_CONNECTOR_POLYGON_URL
-              value: {{ .Values.commonConfig.polygonUrl | quote }}
-            - name: KMS_CONNECTOR_POLYGON_CHAIN_ID
-              value: {{ $contracts.polygonChainId | quote }}
           {{- if default .Values.commonConfig.tracing.enabled .Values.kmsConnectorGwListener.tracing.enabled }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ .Values.commonConfig.tracing.endpoint }}
