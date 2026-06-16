@@ -120,7 +120,7 @@ hostContractConfigMap:
   # Resource name. Downstream components reference this via configMapKeyRef.name.
   name: eth-sc-addresses
 
-  # Selects a bundled preset from configs/host-<network>.yaml.
+  # Selects a bundled preset from configs/ethereum-<network>.yaml.
   # Allowed values: "" (no preset), "devnet", "testnet", "mainnet".
   # An unrecognized value fails the render.
   network: ""
