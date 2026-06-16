@@ -450,3 +450,62 @@ async fn publish_new_kms_epoch<'e>(
     .await
     .map_err(anyhow::Error::from)
 }
+
+/// Action derived from a decoded Ethereum log.
+#[derive(Clone, Debug, PartialEq)]
+pub enum EthereumEventAction {
+    /// Store the event in the DB, for the kms-worker to forward it to the KMS Core.
+    // Boxed to keep the enum small: `ProtocolEvent` is an order of magnitude bigger than
+    // the other variant (`clippy::large_enum_variant`).
+    StoreEvent(Box<ProtocolEvent>),
+    /// Mark a destroyed KMS context as invalid in the `kms_context` table; this implies that
+    /// all its associated epoch IDs also become invalid.
+    ///
+    /// Context destruction is the only invalidation that can ever happen: once active, an
+    /// epoch stays active on-chain until its context is destroyed (RFC-005 leaves epoch
+    /// expiration/cleanup out of scope).
+    InvalidateContext(U256),
+}
+
+/// Applies all the Ethereum log actions and updates the last block polled in a single
+/// transaction. On failure, the transaction is rolled back automatically.
+#[tracing::instrument(skip_all)]
+pub async fn publish_ethereum_batch(
+    db_pool: &Pool<Postgres>,
+    actions: Vec<EthereumEventAction>,
+    block_number: u64,
+) -> anyhow::Result<()> {
+    let mut tx = db_pool.begin().await?;
+    for action in actions {
+        match action {
+            EthereumEventAction::StoreEvent(event) => publish_event_inner(&mut *tx, *event).await?,
+            EthereumEventAction::InvalidateContext(context_id) => {
+                invalidate_kms_context(&mut *tx, context_id).await?
+            }
+        }
+    }
+    update_last_block_polled(&mut *tx, ChainName::Ethereum, Some(block_number)).await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+/// Marks a destroyed KMS context as invalid; this implies that all its associated epoch IDs
+/// also become invalid.
+async fn invalidate_kms_context<'e>(
+    executor: impl PgExecutor<'e>,
+    context_id: U256,
+) -> anyhow::Result<()> {
+    let query_result = sqlx::query!(
+        "UPDATE kms_context SET is_valid = FALSE, updated_at = $2 WHERE id = $1",
+        context_id.as_le_slice(),
+        Utc::now(),
+    )
+    .execute(executor)
+    .await?;
+
+    info!(
+        "KMS context #{context_id} destroyed: {} epoch(s) invalidated in DB",
+        query_result.rows_affected()
+    );
+    Ok(())
+}

@@ -48,10 +48,9 @@ where
     ) -> Result<KmsGrpcRequest, ProcessingError> {
         let parsed_extra_data = parse_extra_data(&prep_keygen_request.extraData)
             .map_err(ProcessingError::Irrecoverable)?;
-        if let Some(context_id) = parsed_extra_data.context_id {
-            self.context_manager.validate_context(context_id).await?;
-        }
-        // TODO: validation of epoch_id (https://github.com/zama-ai/fhevm-internal/issues/1467)
+        self.context_manager
+            .validate_context(&parsed_extra_data)
+            .await?;
 
         Ok(KmsGrpcRequest::PrepKeygen(KeyGenPreprocRequest {
             request_id: Some(u256_to_request_id(prep_keygen_request.prepKeygenId)),
@@ -71,10 +70,9 @@ where
     ) -> Result<KmsGrpcRequest, ProcessingError> {
         let parsed_extra_data =
             parse_extra_data(&keygen_request.extraData).map_err(ProcessingError::Irrecoverable)?;
-        if let Some(context_id) = parsed_extra_data.context_id {
-            self.context_manager.validate_context(context_id).await?;
-        }
-        // TODO: validation of epoch_id (https://github.com/zama-ai/fhevm-internal/issues/1467)
+        self.context_manager
+            .validate_context(&parsed_extra_data)
+            .await?;
 
         Ok(KmsGrpcRequest::Keygen(KeyGenRequest {
             request_id: Some(u256_to_request_id(keygen_request.keyId)),
@@ -96,10 +94,9 @@ where
     ) -> Result<KmsGrpcRequest, ProcessingError> {
         let parsed_extra_data =
             parse_extra_data(&crsgen_request.extraData).map_err(ProcessingError::Irrecoverable)?;
-        if let Some(context_id) = parsed_extra_data.context_id {
-            self.context_manager.validate_context(context_id).await?;
-        }
-        // TODO: validation of epoch_id (https://github.com/zama-ai/fhevm-internal/issues/1467)
+        self.context_manager
+            .validate_context(&parsed_extra_data)
+            .await?;
 
         let max_num_bits = crsgen_request
             .maxBitLength

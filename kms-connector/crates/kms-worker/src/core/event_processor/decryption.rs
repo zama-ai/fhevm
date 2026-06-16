@@ -539,10 +539,9 @@ where
 
         let parsed_extra_data =
             parse_extra_data(extra_data).map_err(ProcessingError::Irrecoverable)?;
-        if let Some(context_id) = parsed_extra_data.context_id {
-            self.context_manager.validate_context(context_id).await?;
-        }
-        // TODO: validation of epoch_id (https://github.com/zama-ai/fhevm-internal/issues/1467)
+        self.context_manager
+            .validate_context(&parsed_extra_data)
+            .await?;
 
         let ciphertexts = self.prepare_ciphertexts(&key_id, sns_materials).await?;
 
@@ -560,7 +559,7 @@ where
                 enc_key,
                 typed_ciphertexts: ciphertexts,
                 extra_data: kms_extra_data,
-                epoch_id: None,
+                epoch_id: parsed_extra_data.epoch_id.map(u256_to_request_id),
                 context_id: parsed_extra_data.context_id.map(u256_to_request_id),
             };
 
@@ -572,7 +571,7 @@ where
                 key_id: Some(RequestId { request_id: key_id }),
                 domain: Some(self.domain.clone()),
                 extra_data: kms_extra_data,
-                epoch_id: None,
+                epoch_id: parsed_extra_data.epoch_id.map(u256_to_request_id),
                 context_id: parsed_extra_data.context_id.map(u256_to_request_id),
             };
             Ok(public_decryption_request.into())
@@ -660,7 +659,10 @@ mod tests {
         sol_types::SolValue,
         transports::http::reqwest,
     };
-    use connector_utils::tests::rand::{rand_address, rand_public_key, rand_sns_ct, rand_u256};
+    use connector_utils::{
+        tests::rand::{rand_address, rand_public_key, rand_sns_ct, rand_u256},
+        types::extra_data::ExtraData,
+    };
     use fhevm_gateway_bindings::decryption::{
         Decryption::CtHandleContractPair,
         IDecryption::{RequestValiditySeconds, UserDecryptionRequestPayload},
@@ -680,7 +682,7 @@ mod tests {
     struct MockContextManager;
 
     impl ContextManager for MockContextManager {
-        async fn validate_context(&self, _context_id: U256) -> Result<(), ProcessingError> {
+        async fn validate_context(&self, _extra_data: &ExtraData) -> Result<(), ProcessingError> {
             Ok(())
         }
     }

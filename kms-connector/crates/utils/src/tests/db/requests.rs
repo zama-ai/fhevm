@@ -2,10 +2,10 @@ use crate::{
     monitoring::otlp::PropagationContext,
     tests::{
         rand::{rand_address, rand_public_key, rand_signature, rand_sns_ct, rand_u256},
-        setup::{S3_CT_DIGEST, S3_CT_HANDLE, TESTING_KMS_CONTEXT, TESTING_KMS_EPOCH},
+        setup::{S3_CT_DIGEST, S3_CT_HANDLE},
     },
     types::{
-        ProtocolEventKind,
+        DEFAULT_EPOCH_ID, ProtocolEventKind, TESTING_KMS_CONTEXT,
         db::{EventType, OperationStatus, ParamsTypeDb, SnsCiphertextMaterialDbItem},
         extra_data::EXTRA_DATA_V2_VERSION,
     },
@@ -458,7 +458,7 @@ pub async fn insert_rand_new_kms_epoch(
 ) -> anyhow::Result<NewKmsEpoch> {
     let context_id = options.context_id.unwrap_or(TESTING_KMS_CONTEXT);
     let previous_context_id = rand_u256();
-    let epoch_id = options.id.or(options.epoch_id).unwrap_or(TESTING_KMS_EPOCH);
+    let epoch_id = options.id.or(options.epoch_id).unwrap_or(DEFAULT_EPOCH_ID);
     let previous_epoch_id = rand_u256();
     let status = options.status.unwrap_or(OperationStatus::Pending);
 
@@ -625,7 +625,7 @@ impl InsertRequestOptions {
 
     pub fn build_extra_data(&self) -> Vec<u8> {
         let context_id = self.context_id.unwrap_or(TESTING_KMS_CONTEXT);
-        let epoch_id = self.epoch_id.unwrap_or(TESTING_KMS_EPOCH);
+        let epoch_id = self.epoch_id.unwrap_or(DEFAULT_EPOCH_ID);
         let mut extra_data = vec![EXTRA_DATA_V2_VERSION];
         extra_data.extend(context_id.to_be_bytes_vec());
         extra_data.extend(epoch_id.to_be_bytes_vec());

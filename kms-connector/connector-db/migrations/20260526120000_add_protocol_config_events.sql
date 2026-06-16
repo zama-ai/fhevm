@@ -38,6 +38,12 @@ ON CONFLICT DO NOTHING;
 -- Persist the active epoch alongside the active context fetched at startup
 -- via KMSVerifier::getActiveKmsContextAndEpoch().
 ALTER TABLE kms_context ADD COLUMN IF NOT EXISTS epoch_id BYTEA;
+-- Use the default epoch ID (little endian representation) for all existing contexts
+UPDATE kms_context SET epoch_id = '\x0100000000000000000000000000000000000000000000000000000000000008'::bytea WHERE epoch_id IS NULL;
+ALTER TABLE kms_context ALTER COLUMN epoch_id SET NOT NULL;
+ALTER TABLE kms_context
+    DROP CONSTRAINT kms_context_pkey,
+    ADD PRIMARY KEY (id, epoch_id);
 
 -- Nested ABI types (KmsNodeParams[], PreviousKeyInfo[], PreviousCrsInfo[],
 -- PcrValues[], KmsThresholds) are stored as ABI-encoded BYTEA to keep the

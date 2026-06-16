@@ -1,6 +1,9 @@
 use alloy::primitives::U256;
 use anyhow::anyhow;
 
+/// Version `0x00`: legacy default-context marker (no explicit context, no epoch).
+pub const EXTRA_DATA_V0_VERSION: u8 = 0x00;
+
 /// Version `0x01`: context_id only (RFC 003).
 pub const EXTRA_DATA_V1_VERSION: u8 = 0x01;
 
@@ -16,14 +19,15 @@ pub const EXTRA_DATA_V2_LENGTH: usize = 65;
 /// Parsed extra_data contents.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExtraData {
+    // TODO: Remove `Option` as soon as the relayer-sdk 0.4.2 is deprecated.
+    // https://github.com/zama-ai/fhevm-internal/issues/1506
     pub context_id: Option<U256>,
     pub epoch_id: Option<U256>,
 }
 
 /// Parses the `extra_data` bytes to extract a context ID and an optional epoch ID.
 ///
-/// Versions `0x01` and `0x02` are accepted (rolling compatibility window).
-/// Empty extra_data and `0x00` are legacy default-context markers.
+/// Versions `0x00`, `0x01` and `0x02` are accepted (rolling compatibility window).
 ///
 /// Format (v1, RFC 003):
 /// - Byte 0: version (`0x01`)
@@ -36,18 +40,15 @@ pub struct ExtraData {
 /// - Bytes 33..65: epoch ID (32 bytes, big-endian U256)
 /// - Bytes 65..: optional additional data (ignored)
 ///
-/// Version `0x01` → epoch_id is `None` (caller should fall back to DEFAULT_EPOCH_ID).
-/// Empty or `[0x00]` → no explicit context and no epoch.
+/// Empty or `0x00` → both context_id and epoch_id are `None`.
+/// Version `0x01` → epoch_id is `None`.
 pub fn parse_extra_data(extra_data: &[u8]) -> anyhow::Result<ExtraData> {
-    if extra_data.is_empty() || extra_data == [0x00] {
-        return Ok(ExtraData {
+    match extra_data.first().copied() {
+        None | Some(EXTRA_DATA_V0_VERSION) => Ok(ExtraData {
             context_id: None,
             epoch_id: None,
-        });
-    }
-
-    match extra_data[0] {
-        EXTRA_DATA_V1_VERSION => {
+        }),
+        Some(EXTRA_DATA_V1_VERSION) => {
             if extra_data.len() < EXTRA_DATA_V1_LENGTH {
                 return Err(anyhow!(
                     "extra_data too short for v1: {} bytes, expected at least {} bytes",
@@ -65,7 +66,7 @@ pub fn parse_extra_data(extra_data: &[u8]) -> anyhow::Result<ExtraData> {
                 epoch_id: None,
             })
         }
-        EXTRA_DATA_V2_VERSION => {
+        Some(EXTRA_DATA_V2_VERSION) => {
             if extra_data.len() < EXTRA_DATA_V2_LENGTH {
                 return Err(anyhow!(
                     "extra_data too short for v2: {} bytes, expected at least {} bytes",
@@ -88,8 +89,9 @@ pub fn parse_extra_data(extra_data: &[u8]) -> anyhow::Result<ExtraData> {
             })
         }
         _ => Err(anyhow!(
-            "Unsupported extra_data version: 0x{:02x}, expected 0x00, 0x{:02x}, or 0x{:02x}",
+            "Unsupported extra_data version: 0x{:02x}, expected 0x{:02x}, 0x{:02x}, or 0x{:02x}",
             extra_data[0],
+            EXTRA_DATA_V0_VERSION,
             EXTRA_DATA_V1_VERSION,
             EXTRA_DATA_V2_VERSION
         )),
@@ -123,6 +125,17 @@ mod tests {
     fn single_zero_byte_returns_default_context() {
         assert_eq!(
             parse_extra_data(&[0x00]).unwrap(),
+            ExtraData {
+                context_id: None,
+                epoch_id: None
+            }
+        );
+    }
+
+    #[test]
+    fn zero_prefixed_with_trailing_bytes_returns_default_context() {
+        assert_eq!(
+            parse_extra_data(&[0x00, 0xde, 0xad, 0xbe, 0xef]).unwrap(),
             ExtraData {
                 context_id: None,
                 epoch_id: None

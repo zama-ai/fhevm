@@ -22,7 +22,7 @@ pub async fn init_kms_worker<P>(
     provider: P,
     acl_contracts_mock: HashMap<u64, ACLInstance<P>>,
     db: &Pool<Postgres>,
-) -> anyhow::Result<KmsWorker<DbEventPicker, DbEventProcessor<P, P, DbContextManager>>>
+) -> anyhow::Result<KmsWorker<DbEventPicker, DbEventProcessor<P, P, DbContextManager<P>>>>
 where
     P: Provider + Clone + 'static,
 {
@@ -30,7 +30,7 @@ where
     let s3_client = reqwest::Client::new();
     let event_picker = DbEventPicker::connect(db.clone(), &config).await?;
 
-    let context_manager = DbContextManager::new(db.clone());
+    let context_manager = DbContextManager::new(db.clone(), &config, provider.clone());
     let s3_service = S3Service::new(&config, provider.clone(), s3_client);
     let decryption_processor = DecryptionProcessor::new(
         &config,
