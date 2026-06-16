@@ -28,7 +28,6 @@ use fhevm_engine_common::{
     types::FhevmError,
     utils::{to_hex, DatabaseURL},
 };
-use futures::join;
 use sqlx::{Postgres, Transaction};
 use thiserror::Error;
 use tokio::{
@@ -436,7 +435,7 @@ pub async fn run_uploader_loop(
     let (is_ready_res, _) = check_is_ready(&client, conf).await;
     is_ready.store(is_ready_res, Ordering::Release);
 
-    let handle_resubmit = spawn_resubmit_task(
+    let mut handle_resubmit = spawn_resubmit_task(
         pool_mngr,
         conf.clone(),
         tx.clone(),
@@ -445,8 +444,16 @@ pub async fn run_uploader_loop(
     )
     .await?;
 
-    let handle_uploader = spawn_uploader(pool_mngr, conf.clone(), rx, client, is_ready).await?;
-    let _res = join!(handle_resubmit, handle_uploader);
+    let mut handle_uploader = spawn_uploader(pool_mngr, conf.clone(), rx, client, is_ready).await?;
+
+    // Return when either task ends; abort the other and propagate its result.
+    let res = tokio::select! {
+        r = &mut handle_resubmit => r,
+        r = &mut handle_uploader => r,
+    };
+    handle_resubmit.abort();
+    handle_uploader.abort();
+    res??;
 
     info!("Uploader stopped");
     Ok(())
@@ -579,16 +586,24 @@ pub async fn run_all(
     )
     .await?;
 
-    // Spawns a task to handle S3 uploads
-    spawn(async move {
-        if let Err(err) = run_uploader_loop(&pg_mngr, &conf, jobs_rx, tx, s3, is_ready).await {
-            error!(error = %err, "Failed to run the upload-worker");
-        }
-    });
+    // Keep the uploader's handle so its failure exits the process too.
+    let uploader =
+        spawn(async move { run_uploader_loop(&pg_mngr, &conf, jobs_rx, tx, s3, is_ready).await });
 
-    // Run the main service loop
-    service.run(&pool_mngr).await;
+    // Exit if either the service loop or the uploader fails.
+    let result: Result<(), Box<dyn std::error::Error + Send + Sync>> = tokio::select! {
+        res = service.run(&pool_mngr) => res.map_err(Into::into),
+        res = uploader => match res {
+            Ok(inner) => inner,
+            Err(join_err) => Err(join_err.into()),
+        },
+    };
     token.cancel();
+
+    if let Err(err) = result {
+        error!(error = %err, "SNS worker exited with a fatal error");
+        return Err(err);
+    }
 
     info!("Worker stopped");
     Ok(())
