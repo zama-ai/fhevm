@@ -1,0 +1,65 @@
+# EXEMPLAR — local-kind overrides values overlay.
+#
+# Purpose: make the real charts/* boot on a local `kind` cluster. Verified live on
+# 2026-06-16 (see stack/EXEMPLAR.md §0): private ghcr images pull into kind with a
+# `read:packages` token + a `registry-credentials` secret; no `kind load`, no
+# hub.zama.org access needed.
+#
+# The ONLY registry change required: the charts default the coprocessor + listener
+# images to hub.zama.org (the prod registry). The SAME images exist on ghcr (where the
+# compose e2e already pulls them and where we have working creds), so repoint them here.
+# kms-connector and contracts already default to ghcr — no repoint needed for those.
+#
+# Prerequisite (run once per cluster namespace), NOT a values change — the charts
+# hardcode imagePullSecrets: [registry-credentials]:
+#   kubectl create secret docker-registry registry-credentials \
+#     --docker-server=ghcr.io --docker-username=<gh-user> \
+#     --docker-password="$(gh auth token)" -n <ns>
+#
+# NOTE: image tags below are left at chart defaults; set them to the tags you actually
+# want to boot (the manifest contract). This file only fixes the *registry* + storage.
+
+# ---- coprocessor chart: repoint every component image hub.zama.org -> ghcr ----
+# (real value keys confirmed in charts/coprocessor/values.yaml)
+dbMigration:
+  image:
+    name: ghcr.io/zama-ai/fhevm/coprocessor/db-migration
+hostListenerShared:
+  image:
+    name: ghcr.io/zama-ai/fhevm/coprocessor/host-listener
+hostListenerPollerShared:
+  image:
+    name: ghcr.io/zama-ai/fhevm/coprocessor/host-listener
+hostListenerCatchupOnlyShared:
+  image:
+    name: ghcr.io/zama-ai/fhevm/coprocessor/host-listener
+hostListenerConsumerShared:
+  image:
+    name: ghcr.io/zama-ai/fhevm/coprocessor/host-listener
+gwListener:
+  image:
+    name: ghcr.io/zama-ai/fhevm/coprocessor/gw-listener
+tfheWorker:
+  image:
+    name: ghcr.io/zama-ai/fhevm/coprocessor/tfhe-worker
+zkProofWorker:
+  image:
+    name: ghcr.io/zama-ai/fhevm/coprocessor/zkproof-worker
+snsWorker:
+  image:
+    name: ghcr.io/zama-ai/fhevm/coprocessor/sns-worker
+txSender:
+  image:
+    name: ghcr.io/zama-ai/fhevm/coprocessor/tx-sender
+
+# ---- contracts chart: kind's default StorageClass instead of "" ----
+# (charts/contracts/values.yaml: persistence.volumeClaim.storageClassName defaults to "")
+persistence:
+  volumeClaim:
+    storageClassName: standard
+
+# ---- listener chart (applied when installing charts/listener) ----
+# strip the hub.zama.org/ghcr/ mirror prefix; set tag (chart default is "")
+# image:
+#   repository: ghcr.io/zama-ai/fhevm/listener/listener-core
+#   tag: "<set-me>"

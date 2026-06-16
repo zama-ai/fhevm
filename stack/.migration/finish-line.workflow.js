@@ -36,6 +36,7 @@ const ROOT = '/Users/work/code/zama/fhevm/.claude/worktrees/fhevm-cli-exemplar'
 const GOLDEN = ROOT + '/stack/.migration/golden'
 const RESERVE = 60000        // stop opening work if budget drops below this
 const MAX_ATTEMPTS = 3       // implement->gate retries per phase, then escalate
+const ISO = (args && args.inPlace) ? {} : { isolation: 'worktree' } // in-place mode (args.inPlace) skips per-agent isolation; agents use the absolute ROOT paths. Needed when worktree.baseRef='fresh' so the implementer sees uncommitted/local work in ROOT.
 
 const GROUNDING =
   'Repo facts (do not re-derive): the real deployment charts are at ' + ROOT + '/charts/{anvil-node,contracts,coprocessor,kms-connector,listener}; they are release-scoped ({{ .Release.Name }}-*) and single-operator. Multiplicity = N helm releases of the coprocessor chart, NOT chart edits and NOT replicas. Topology = operators (N releases) + signer-set/threshold (contracts values: NUM_COPROCESSORS + COPROCESSOR_SIGNER_ADDRESS_0..N-1 + threshold) + replicas (per-operator HA). Contract addresses flow via the contracts sc-deploy Job -> sc-addresses ConfigMap -> consumer charts. Endpoint indirection = kmsCoreEndpoints / *_ENDPOINT. kms-core is the EXTERNAL companion (not a chart). The Stack API is promoted from RolloutRunContext in ' + ROOT + '/test-suite/fhevm/src/commands/rollout-run.ts. Private ghcr images pull into kind with a registry-credentials secret from a read:packages token (proven).'
@@ -142,7 +143,7 @@ while (attempt < MAX_ATTEMPTS && (!budget.total || budget.remaining() > RESERVE)
     'Stay strictly inside this lane (edit nothing else): ' + P.lane.join(', ') + '. Charts are structurally OFF-LIMITS. Do NOT push, do NOT merge, do NOT touch main. kind-local only; tear down any cluster you create.\n' +
     (feedback ? 'The previous attempt FAILED the gate — fix exactly this and retry:\n' + feedback + '\n' : '') +
     'Implement the change in this worktree. THEN run the acceptance gate for levels [' + P.gate.levels.join(', ') + '] (' + P.gate.how + ') and return the harness output VERBATIM in rawGateOutput — do not summarize it into a pass/fail yourself; the orchestrator and an independent verifier judge it.',
-    { isolation: 'worktree', schema: PATCH, phase: 'Implement', model: 'sonnet', label: 'impl:P' + P.id + '#' + attempt }
+    { ...ISO, schema: PATCH, phase: 'Implement', model: 'sonnet', label: 'impl:P' + P.id + '#' + attempt }
   )
   if (!patch) { feedback = 'implementer returned nothing'; continue }
   // gate-as-oracle: a SEPARATE agent interprets the raw harness output into pass/fail.
