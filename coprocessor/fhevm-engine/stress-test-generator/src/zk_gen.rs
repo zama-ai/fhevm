@@ -187,7 +187,7 @@ pub async fn generate_random_handle_vec(
     info!(target: "tool", "ZK Transaction: tx_id: {:?}, inputs = {:?}", to_hex(transaction_id.as_ref()), count);
 
     let the_list = builder
-        .build_with_proof_packed(&public_params, &aux_data, tfhe::zk::ZkComputeLoad::Proof)
+        .build_with_proof_packed(&public_params, &aux_data, tfhe::zk::ZkComputeLoad::Verify)
         .unwrap();
     let zk_pok = fhevm_engine_common::utils::safe_serialize(&the_list);
     let zk_id = ZK_PROOF_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -249,7 +249,7 @@ pub async fn generate_and_insert_inputs_batch(
         let zk_id = ZK_PROOF_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         info!(target: "tool", "zkpok id: {}, count = {:?}, seq_num = {} of {} , txn: {:?}, ", zk_id, inputs_count, idx, batch_size, transaction_id );
         let the_list = builder
-            .build_with_proof_packed(&public_params, &aux_data, tfhe::zk::ZkComputeLoad::Proof)
+            .build_with_proof_packed(&public_params, &aux_data, tfhe::zk::ZkComputeLoad::Verify)
             .unwrap();
 
         let zk_pok = fhevm_engine_common::utils::safe_serialize(&the_list);
