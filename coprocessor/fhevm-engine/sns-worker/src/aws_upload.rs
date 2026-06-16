@@ -9,7 +9,7 @@ use aws_sdk_s3::primitives::ByteStream;
 use aws_sdk_s3::Client;
 use bytesize::ByteSize;
 use fhevm_engine_common::chain_id::ChainId;
-use fhevm_engine_common::pg_pool::{PostgresPoolManager, ServiceError};
+use fhevm_engine_common::pg_pool::{is_fatal_connection_error, PostgresPoolManager, ServiceError};
 use fhevm_engine_common::{telemetry, utils::to_hex};
 use futures::future::join_all;
 use opentelemetry::trace::{Status, TraceContextExt};
@@ -19,7 +19,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::select;
 use tokio::sync::{mpsc, RwLock, Semaphore};
-use tokio::task::JoinHandle;
+use tokio::task::{JoinHandle, JoinSet};
 use tokio::time::interval;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, error_span, info, warn, Instrument};
@@ -39,7 +39,7 @@ pub(crate) async fn spawn_resubmit_task(
     jobs_tx: mpsc::Sender<UploadJob>,
     client: Arc<aws_sdk_s3::Client>,
     is_ready: Arc<AtomicBool>,
-) -> Result<JoinHandle<()>, ExecutionError> {
+) -> Result<JoinHandle<Result<(), ServiceError>>, ExecutionError> {
     let op = move |pool, token| {
         let client = client.clone();
         let is_ready = is_ready.clone();
@@ -63,7 +63,7 @@ pub(crate) async fn spawn_uploader(
     rx: Arc<RwLock<mpsc::Receiver<UploadJob>>>,
     client: Arc<aws_sdk_s3::Client>,
     is_ready: Arc<AtomicBool>,
-) -> Result<JoinHandle<()>, ExecutionError> {
+) -> Result<JoinHandle<Result<(), ServiceError>>, ExecutionError> {
     let op = move |pool, token| {
         let client = client.clone();
         let is_ready = is_ready.clone();
@@ -89,7 +89,7 @@ async fn run_uploader_loop(
     pool: Pool<Postgres>,
     conf: S3Config,
 ) -> Result<(), ExecutionError> {
-    let mut ongoing_upload_tasks: Vec<JoinHandle<()>> = Vec::new();
+    let mut ongoing_upload_tasks: JoinSet<Result<(), ExecutionError>> = JoinSet::new();
     let max_concurrent_uploads = conf.max_concurrent_uploads as usize;
     let semaphore = Arc::new(Semaphore::new(max_concurrent_uploads));
     let mut jobs_rx = jobs_rx.write().await;
@@ -171,8 +171,6 @@ async fn run_uploader_loop(
 
                 debug!(handle = hex::encode(&item.handle), "Received task, handle");
 
-                // Cleanup completed tasks
-                ongoing_upload_tasks.retain(|h| !h.is_finished());
                 // Check if we have reached the max concurrent uploads
                 if ongoing_upload_tasks.len() >= max_concurrent_uploads {
                     warn!({target = "worker", action = "review", max_concurrent_uploads = max_concurrent_uploads},
@@ -191,18 +189,20 @@ async fn run_uploader_loop(
                 let conf = conf.clone();
                 let ready_flag = is_ready.clone();
 
-                // Spawn a new task to upload the ciphertexts
-                let h = tokio::spawn(async move {
+                // Spawn an upload. A lost connection is returned so the loop
+                // fails fast; other failures are best-effort (resubmit retries).
+                ongoing_upload_tasks.spawn(async move {
                     // Cross-boundary: spawned task; restore the OTel context
                     // that was captured when the upload item was created.
                     let upload_span = error_span!("upload_s3");
                     upload_span.set_parent(item.span.context());
-                    match upload_ciphertexts(trx, item, &client, &conf)
+                    let result = upload_ciphertexts(trx, item, &client, &conf)
                         .instrument(upload_span.clone())
-                        .await
-                    {
+                        .await;
+                    let outcome = match result {
                         Ok(()) => {
                             AWS_UPLOAD_SUCCESS_COUNTER.inc();
+                            Ok(())
                         }
                         Err(err) => {
                             if let ExecutionError::S3TransientError(_) = err {
@@ -216,25 +216,35 @@ async fn run_uploader_loop(
                                 .span()
                                 .set_status(Status::error(err.to_string()));
                             AWS_UPLOAD_FAILURE_COUNTER.inc();
+                            // Only a lost connection is fatal; retry the rest.
+                            match &err {
+                                ExecutionError::DbError(e) if is_fatal_connection_error(e) => {
+                                    Err(err)
+                                }
+                                _ => Ok(()),
+                            }
                         }
-                    }
+                    };
                     drop(upload_span);
                     drop(permit);
+                    outcome
                 });
-
-                ongoing_upload_tasks.push(h);
             },
+            // Drain finished uploads; exit if one lost the connection.
+            Some(joined) = ongoing_upload_tasks.join_next() => {
+                if let Ok(Err(err)) = joined {
+                    return Err(err);
+                }
+            }
             _ = token.cancelled() => {
-                // Cleanup completed tasks
-                ongoing_upload_tasks.retain(|h| !h.is_finished());
-
                 info!("Waiting for all uploads to finish...");
-                for handle in ongoing_upload_tasks {
-                    if let Err(err) = handle.await {
-                        error!(error = %err, "Failed to join upload task");
+                while let Some(joined) = ongoing_upload_tasks.join_next().await {
+                    match joined {
+                        Ok(Err(err)) => error!(error = %err, "Upload task failed during shutdown"),
+                        Err(err) => error!(error = %err, "Failed to join upload task"),
+                        Ok(Ok(())) => {}
                     }
                 }
-
                 return Ok(())
             }
         }

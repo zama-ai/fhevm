@@ -43,6 +43,7 @@ jobs:
   test-rust-sdk:
     name: sdk-rust-sdk-tests/test-rust-sdk (bpr)
     needs: check-changes
+    if: ${{ needs.check-changes.outputs.changes-rust-sdk == 'true' }}
     timeout-minutes: 50
     permissions:
       actions: 'read' # Required to read workflow run information
