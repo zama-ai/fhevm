@@ -32,7 +32,7 @@ use tokio::time::interval;
 use tokio::{select, time::Duration};
 use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 pub const MAX_CACHED_KEYS: usize = 100;
 const EVENT_CIPHERTEXT_COMPUTED: &str = "event_ciphertext_computed";
@@ -178,10 +178,20 @@ pub async fn execute_verify_proofs_loop(
             .await;
     }
 
-    // Wait for all tasks to complete
+    // Exit on the first worker to fail; clean exits just drain.
     while let Some(result) = task_set.join_next().await {
-        if let Err(err) = result {
-            error!(error = %err, "A worker failed");
+        match result {
+            Ok(Err(err)) => {
+                error!(error = %err, "A worker exited with a fatal DB error");
+                task_set.shutdown().await;
+                return Err(err.into());
+            }
+            Err(err) => {
+                error!(error = %err, "A worker task panicked");
+                task_set.shutdown().await;
+                return Err(ExecutionError::from(err));
+            }
+            Ok(Ok(())) => {}
         }
     }
 
@@ -253,7 +263,8 @@ async fn execute_worker(
                 match res {
                     Some(notification) => info!( src = %notification.process_id(), "Received notification"),
                     None => {
-                        error!("Connection lost");
+                        // sqlx already reconnected the LISTEN connection; keep going.
+                        warn!("postgres LISTEN connection reset; reconnected");
                         continue;
                     },
                 };
@@ -307,9 +318,22 @@ async fn execute_verify_proof_routine(
     {
         let started_at = SystemTime::now();
         let request_id: i64 = row.zk_proof_id;
-        let input: Vec<u8> = row
-            .input
-            .ok_or(ExecutionError::NullInput(row.zk_proof_id))?;
+        let Some(input) = row.input else {
+            // A NULL input can never verify; mark it failed and commit so the
+            // malformed row isn't re-picked and crash-loops the worker.
+            error!(
+                message = "verify_proofs row has NULL input; marking failed",
+                request_id
+            );
+            sqlx::query(
+                "UPDATE verify_proofs SET verified = false, verified_at = NOW() WHERE zk_proof_id = $1",
+            )
+            .bind(request_id)
+            .execute(&mut *txn)
+            .await?;
+            txn.commit().await?;
+            return Ok(());
+        };
         let host_chain_id_raw: i64 = row.chain_id;
 
         // The filter above guarantees host_chain_id_raw is in HostChainsCache.
