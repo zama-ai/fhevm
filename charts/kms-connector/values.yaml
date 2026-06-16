@@ -214,10 +214,10 @@ kmsConnectorKmsWorker:
 
     # List of host chain RPC node endpoints, chain ids, and ACL contract addresses
     hostChains:
-      - url: "$(KMS_CONNECTOR_ETHEREUM_RPC_URL)"
+      - url: "$(KMS_CONNECTOR_ETHEREUM_URL)"
         chainId: "$(KMS_CONNECTOR_ETHEREUM_CHAIN_ID)"
         aclAddress: "$(KMS_CONNECTOR_ETHEREUM_ACL_ADDRESS)"
-      - url: "$(KMS_CONNECTOR_POLYGON_RPC_URL)"
+      - url: "$(KMS_CONNECTOR_POLYGON_URL)"
         chainId: "$(KMS_CONNECTOR_POLYGON_CHAIN_ID)"
         aclAddress: "$(KMS_CONNECTOR_POLYGON_ACL_ADDRESS)"
 
