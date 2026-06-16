@@ -67,10 +67,14 @@ spec:
               value: {{ $contracts.decryption | quote }}
             - name: KMS_CONNECTOR_GATEWAY_CONFIG_CONTRACT__ADDRESS
               value: {{ $contracts.gatewayConfig | quote }}
+            - name: KMS_CONNECTOR_ETHEREUM_URL
+              value: {{ .Values.commonConfig.ethereumUrl | quote }}
             - name: KMS_CONNECTOR_ETHEREUM_CHAIN_ID
               value: {{ $contracts.ethereumChainId | quote }}
             - name: KMS_CONNECTOR_ETHEREUM_ACL_ADDRESS
               value: {{ $contracts.ethereumAcl | quote }}
+            - name: KMS_CONNECTOR_POLYGON_URL
+              value: {{ .Values.commonConfig.polygonUrl | quote }}
             - name: KMS_CONNECTOR_POLYGON_CHAIN_ID
               value: {{ $contracts.polygonChainId | quote }}
             - name: KMS_CONNECTOR_POLYGON_ACL_ADDRESS
