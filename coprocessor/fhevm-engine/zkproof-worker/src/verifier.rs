@@ -16,6 +16,7 @@ use sqlx::{postgres::PgListener, PgPool};
 use sqlx::{Postgres, Transaction};
 use std::str::FromStr;
 use tfhe::integer::ciphertext::IntegerProvenCompactCiphertextListConformanceParams;
+use tfhe::zk::{ZkComputeLoad, ZkPkeV2SupportedHashConfig};
 use tfhe::ReRandomizationContext;
 use tokio::sync::RwLock;
 use tokio::task::JoinSet;
@@ -488,6 +489,35 @@ pub(crate) fn verify_proof(
     Ok((cts, blob_hash))
 }
 
+/// Builds the conformance parameters used to deserialize an incoming
+/// [`tfhe::ProvenCompactCiphertextList`] before its ZK proof is verified.
+///
+/// Beyond binding the list to the active public-key encryption parameters and the
+/// CRS, this hardens the verifier by accepting only the proof shapes the current
+/// stack actually produces. `safe_deserialize_conformant` rejects everything else
+/// during the conformance check, i.e. *before* any ZK verification runs, which
+/// keeps the attack surface of the proof verifier down to what is strictly needed:
+///
+/// * Hash config: only `V0_8_0` (tfhe-zk-pok 0.8.0+, produced by tfhe-rs 1.5.0+)
+///   is accepted; the legacy `V0_4_0` (tfhe-rs 0.11.x–1.2.x) and `V0_7_0`
+///   (tfhe-rs 1.3.0–1.4.x) configs are forbidden.
+/// * Compute load: only [`ZkComputeLoad::Verify`] is accepted — the load the
+///   clients emit — and `ZkComputeLoad::Proof` is forbidden.
+/// * Packing: `allow_unpacked` is left off, so only packed (and therefore
+///   sanitized) lists are accepted.
+pub(crate) fn proven_list_conformance_params(
+    pks: &tfhe::CompactPublicKey,
+    crs: &Crs,
+) -> IntegerProvenCompactCiphertextListConformanceParams {
+    IntegerProvenCompactCiphertextListConformanceParams::from_public_key_encryption_parameters_and_crs_parameters(
+        pks.parameters(),
+        &crs.crs,
+    )
+    .forbid_hash_config(ZkPkeV2SupportedHashConfig::V0_4_0)
+    .forbid_hash_config(ZkPkeV2SupportedHashConfig::V0_7_0)
+    .forbid_compute_load(ZkComputeLoad::Proof)
+}
+
 #[tracing::instrument(name = "verify_proof", skip_all, fields(list_len = tracing::field::Empty))]
 fn verify_proof_only(
     request_id: i64,
@@ -501,13 +531,10 @@ fn verify_proof_only(
         .map_err(|e| ExecutionError::InvalidAuxData(e.to_string()))
         .inspect_err(telemetry::set_current_span_error)?;
 
-    let the_list: tfhe::ProvenCompactCiphertextList = safe_deserialize_conformant(
-        raw_ct,
-        &IntegerProvenCompactCiphertextListConformanceParams::from_public_key_encryption_parameters_and_crs_parameters(
-            key.pks.parameters(), &crs.crs,
-        ))
-        .map_err(ExecutionError::from)
-        .inspect_err(telemetry::set_current_span_error)?;
+    let the_list: tfhe::ProvenCompactCiphertextList =
+        safe_deserialize_conformant(raw_ct, &proven_list_conformance_params(&key.pks, crs))
+            .map_err(ExecutionError::from)
+            .inspect_err(telemetry::set_current_span_error)?;
 
     info!(
         message = "Input list deserialized",
