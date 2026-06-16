@@ -454,12 +454,12 @@ async fn publish_new_kms_epoch<'e>(
 /// Action derived from a decoded Ethereum log.
 #[derive(Clone, Debug, PartialEq)]
 pub enum EthereumEventAction {
-    /// Store the event in DB, for the kms-worker to forward it to the KMS Core.
-    ///
-    /// Boxed to keep the enum small: `ProtocolEvent` is an order of magnitude bigger than
-    /// the other variant (`clippy::large_enum_variant`).
+    /// Store the event in the DB, for the kms-worker to forward it to the KMS Core.
+    // Boxed to keep the enum small: `ProtocolEvent` is an order of magnitude bigger than
+    // the other variant (`clippy::large_enum_variant`).
     StoreEvent(Box<ProtocolEvent>),
-    /// Invalidate all the epochs of a destroyed KMS context in the `kms_context` table.
+    /// Mark a destroyed KMS context as invalid in the `kms_context` table; this implies that
+    /// all its associated epoch IDs also become invalid.
     ///
     /// Context destruction is the only invalidation that can ever happen: once active, an
     /// epoch stays active on-chain until its context is destroyed (RFC-005 leaves epoch
@@ -489,7 +489,8 @@ pub async fn publish_ethereum_batch(
     Ok(())
 }
 
-/// Marks all the epochs of a destroyed KMS context as invalid.
+/// Marks a destroyed KMS context as invalid; this implies that all its associated epoch IDs
+/// also become invalid.
 async fn invalidate_kms_context<'e>(
     executor: impl PgExecutor<'e>,
     context_id: U256,

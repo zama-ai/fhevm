@@ -1,5 +1,4 @@
-use crate::types::DEFAULT_EPOCH_ID;
-use alloy::primitives::U256;
+use crate::types::{DEFAULT_EPOCH_ID, TESTING_KMS_CONTEXT};
 use sqlx::{Pool, Postgres, types::chrono::Utc};
 use testcontainers::{ContainerAsync, GenericImage, ImageExt, core::WaitFor, runners::AsyncRunner};
 use tracing::info;
@@ -75,5 +74,3 @@ impl DbInstance {
         })
     }
 }
-
-pub const TESTING_KMS_CONTEXT: U256 = U256::ONE;

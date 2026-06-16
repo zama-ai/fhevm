@@ -14,11 +14,11 @@ use connector_utils::{
         },
         rand::{rand_digest, rand_sns_ct},
         setup::{
-            DbInstance, TESTING_KMS_CONTEXT, TestInstance, TestInstanceBuilder,
-            erc1271_magic_response, init_host_chains_acl_contracts_mock,
+            DbInstance, TestInstance, TestInstanceBuilder, erc1271_magic_response,
+            init_host_chains_acl_contracts_mock,
         },
     },
-    types::{DEFAULT_EPOCH_ID, extra_data::ExtraData},
+    types::{DEFAULT_EPOCH_ID, TESTING_KMS_CONTEXT, extra_data::ExtraData},
 };
 use kms_worker::core::{
     Config,

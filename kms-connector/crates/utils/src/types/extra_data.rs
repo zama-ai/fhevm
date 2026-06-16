@@ -17,6 +17,7 @@ pub const EXTRA_DATA_V2_LENGTH: usize = 65;
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExtraData {
     // TODO: Remove `Option` as soon as the relayer-sdk 0.4.2 is deprecated.
+    // https://github.com/zama-ai/fhevm-internal/issues/1506
     pub context_id: Option<U256>,
     pub epoch_id: Option<U256>,
 }
@@ -39,7 +40,7 @@ pub struct ExtraData {
 ///
 /// Version `0x01` → epoch_id is `None` (downstream consumers fall back to
 /// [`crate::types::DEFAULT_EPOCH_ID`]).
-/// Empty or `[0x00]` → no explicit context and no epoch.
+/// Empty or `[0x00]` → both context_id and epoch_id are `None` (no explicit context, no epoch).
 pub fn parse_extra_data(extra_data: &[u8]) -> anyhow::Result<ExtraData> {
     if extra_data.is_empty() || extra_data == [0x00] {
         return Ok(ExtraData {

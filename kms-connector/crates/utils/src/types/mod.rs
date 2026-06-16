@@ -30,6 +30,10 @@ pub const DEFAULT_EPOCH_ID: U256 = U256::from_be_bytes([
     8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
 ]);
 
+/// KMS context ID seeded into the database for integration tests.
+#[cfg(feature = "tests")]
+pub const TESTING_KMS_CONTEXT: U256 = U256::ONE;
+
 pub fn u256_to_u32(integer: U256) -> anyhow::Result<u32> {
     // Get integer's least significant bits
     let Some(integer_lsb) = integer.as_le_slice().get(0..4) else {

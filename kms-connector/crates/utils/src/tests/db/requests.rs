@@ -2,10 +2,10 @@ use crate::{
     monitoring::otlp::PropagationContext,
     tests::{
         rand::{rand_address, rand_public_key, rand_signature, rand_sns_ct, rand_u256},
-        setup::{S3_CT_DIGEST, S3_CT_HANDLE, TESTING_KMS_CONTEXT},
+        setup::{S3_CT_DIGEST, S3_CT_HANDLE},
     },
     types::{
-        DEFAULT_EPOCH_ID, ProtocolEventKind,
+        DEFAULT_EPOCH_ID, ProtocolEventKind, TESTING_KMS_CONTEXT,
         db::{EventType, OperationStatus, ParamsTypeDb, SnsCiphertextMaterialDbItem},
         extra_data::EXTRA_DATA_V2_VERSION,
     },
