@@ -1,2232 +1,2232 @@
-
-
-
-
-
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-          
-                  fieldPath: metadata.name
-                  key: "kms-wallet"
-                  name: "kms-connector-tx-sender"
-                fieldRef:
-                key: contracts.version
-                name: sc-addresses
-                optional: true
-                secretKeyRef:
-              configMapKeyRef:
-              containerPort: 8080
-              containerPort: 8080
-              containerPort: 8080
-              containerPort: 8080
-              containerPort: 8080
-              containerPort: 8080
-              containerPort: 8080
-              containerPort: 8080
-              containerPort: 8080
-              containerPort: 8080
-              containerPort: 8080
-              containerPort: 8080
-              containerPort: 8080
-              containerPort: 8080
-              containerPort: 8080
-              containerPort: 8080
-              containerPort: 8080
-              containerPort: 8080
-              containerPort: 9100
-              containerPort: 9100
-              containerPort: 9100
-              containerPort: 9100
-              containerPort: 9100
-              containerPort: 9100
-              containerPort: 9100
-              containerPort: 9100
-              containerPort: 9100
-              containerPort: 9100
-              containerPort: 9100
-              containerPort: 9100
-              containerPort: 9100
-              containerPort: 9100
-              containerPort: 9100
-              containerPort: 9100
-              containerPort: 9100
-              containerPort: 9100
-              containerPort: 9100
-              containerPort: 9100
-              containerPort: 9100
-              cpu: 100m
-              cpu: 100m
-              cpu: 100m
-              cpu: 100m
-              cpu: 100m
-              cpu: 100m
-              cpu: 100m
-              cpu: 100m
-              cpu: 100m
-              cpu: 100m
-              cpu: 100m
-              cpu: 100m
-              cpu: 100m
-              cpu: 100m
-              cpu: 100m
-              cpu: 100m
-              cpu: 100m
-              cpu: 100m
-              cpu: 100m
-              cpu: 100m
-              cpu: 100m
-              cpu: 100m
-              cpu: 500m
-              cpu: 500m
-              cpu: 500m
-              cpu: 500m
-              cpu: 500m
-              cpu: 500m
-              cpu: 500m
-              cpu: 500m
-              cpu: 500m
-              cpu: 500m
-              cpu: 500m
-              cpu: 500m
-              cpu: 500m
-              cpu: 500m
-              cpu: 500m
-              cpu: 500m
-              cpu: 500m
-              cpu: 500m
-              cpu: 500m
-              cpu: 500m
-              cpu: 500m
-              cpu: 500m
-              memory: 256Mi
-              memory: 256Mi
-              memory: 256Mi
-              memory: 256Mi
-              memory: 256Mi
-              memory: 256Mi
-              memory: 256Mi
-              memory: 256Mi
-              memory: 256Mi
-              memory: 256Mi
-              memory: 256Mi
-              memory: 256Mi
-              memory: 256Mi
-              memory: 256Mi
-              memory: 256Mi
-              memory: 256Mi
-              memory: 256Mi
-              memory: 256Mi
-              memory: 256Mi
-              memory: 256Mi
-              memory: 256Mi
-              memory: 256Mi
-              memory: 512Mi
-              memory: 512Mi
-              memory: 512Mi
-              memory: 512Mi
-              memory: 512Mi
-              memory: 512Mi
-              memory: 512Mi
-              memory: 512Mi
-              memory: 512Mi
-              memory: 512Mi
-              memory: 512Mi
-              memory: 512Mi
-              memory: 512Mi
-              memory: 512Mi
-              memory: 512Mi
-              memory: 512Mi
-              memory: 512Mi
-              memory: 512Mi
-              memory: 512Mi
-              memory: 512Mi---
-              memory: 512Mi---
-              memory: 512Mi---
-              path: /healthz
-              path: /healthz
-              path: /healthz
-              path: /healthz
-              path: /healthz
-              path: /healthz
-              port: monitoring
-              port: monitoring
-              port: monitoring
-              port: monitoring
-              port: monitoring
-              port: monitoring
-              protocol: TCP
-              protocol: TCP
-              protocol: TCP
-              protocol: TCP
-              protocol: TCP
-              protocol: TCP
-              protocol: TCP
-              protocol: TCP
-              protocol: TCP
-              protocol: TCP
-              protocol: TCP
-              protocol: TCP
-              protocol: TCP
-              protocol: TCP
-              protocol: TCP
-              protocol: TCP
-              protocol: TCP
-              protocol: TCP
-              protocol: TCP
-              protocol: TCP
-              protocol: TCP
-              protocol: TCP
-              protocol: TCP
-              protocol: TCP
-              protocol: TCP
-              protocol: TCP
-              protocol: TCP
-              protocol: TCP
-              protocol: TCP
-              protocol: TCP
-              protocol: TCP
-              protocol: TCP
-              protocol: TCP
-              protocol: TCP
-              protocol: TCP
-              protocol: TCP
-              protocol: TCP
-              protocol: TCP
-              protocol: TCP
-              value: 
-              value: "[{\"aclAddress\":{\"valueFrom\":{\"configMapKeyRef\":{\"key\":\"acl.address\",\"name\":\"sc-addresses\"}}},\"chainId\":31337,\"url\":\"http://anvil-node-eth:8545\"},{\"aclAddress\":\"0xTODO_POLYGON_ACL_ADDRESS\",\"chainId\":80002,\"url\":\"http://anvil-node-polygon:8545\"}]"
-              value: "0xTODO_CIPHERTEXT_COMMITS_ADDRESS"
-              value: "0xTODO_CIPHERTEXT_COMMITS_ADDRESS"
-              value: "0xTODO_CIPHERTEXT_COMMITS_ADDRESS"
-              value: "0xTODO_CIPHERTEXT_COMMITS_ADDRESS"
-              value: "0xTODO_CIPHERTEXT_COMMITS_ADDRESS"
-              value: "0xTODO_CIPHERTEXT_COMMITS_ADDRESS"
-              value: "0xTODO_COPROCESSOR_TX_SENDER_PRIVATE_KEY"
-              value: "0xTODO_COPROCESSOR_TX_SENDER_PRIVATE_KEY"
-              value: "0xTODO_COPROCESSOR_TX_SENDER_PRIVATE_KEY"
-              value: "0xTODO_DECRYPTION_ADDRESS"
-              value: "0xTODO_DECRYPTION_ADDRESS"
-              value: "0xTODO_DECRYPTION_ADDRESS"
-              value: "0xTODO_GATEWAY_CONFIG_ADDRESS"
-              value: "0xTODO_GATEWAY_CONFIG_ADDRESS"
-              value: "0xTODO_GATEWAY_CONFIG_ADDRESS"
-              value: "0xTODO_GATEWAY_CONFIG_ADDRESS"
-              value: "0xTODO_GATEWAY_CONFIG_ADDRESS"
-              value: "0xTODO_GATEWAY_CONFIG_ADDRESS"
-              value: "0xTODO_INPUT_VERIFICATION_ADDRESS"
-              value: "0xTODO_INPUT_VERIFICATION_ADDRESS"
-              value: "0xTODO_INPUT_VERIFICATION_ADDRESS"
-              value: "0xTODO_INPUT_VERIFICATION_ADDRESS"
-              value: "0xTODO_INPUT_VERIFICATION_ADDRESS"
-              value: "0xTODO_INPUT_VERIFICATION_ADDRESS"
-              value: "0xTODO_KMS_GENERATION_ADDRESS"
-              value: "0xTODO_KMS_GENERATION_ADDRESS"
-              value: "0xTODO_KMS_GENERATION_ADDRESS"
-              value: "0xTODO_KMS_VERIFIER_ADDRESS"
-              value: "0xTODO_KMS_VERIFIER_ADDRESS"
-              value: "0xTODO_POLYGON_ACL_ADDRESS"
-              value: "0xTODO_POLYGON_ACL_ADDRESS"
-              value: "0xTODO_POLYGON_ACL_ADDRESS"
-              value: "0xTODO_POLYGON_ACL_ADDRESS"
-              value: "0xTODO_POLYGON_ACL_ADDRESS"
-              value: "0xTODO_POLYGON_ACL_ADDRESS"
-              value: "0xTODO_POLYGON_FHEVM_EXECUTOR_ADDRESS"
-              value: "0xTODO_POLYGON_FHEVM_EXECUTOR_ADDRESS"
-              value: "0xTODO_POLYGON_FHEVM_EXECUTOR_ADDRESS"
-              value: "0xTODO_POLYGON_FHEVM_EXECUTOR_ADDRESS"
-              value: "0xTODO_POLYGON_FHEVM_EXECUTOR_ADDRESS"
-              value: "0xTODO_POLYGON_FHEVM_EXECUTOR_ADDRESS"
-              value: "31337"
-              value: "31337"
-              value: "31337"
-              value: "54321"
-              value: "54321"
-              value: "54321"
-              value: "http://anvil-node-eth:8545"
-              value: "http://anvil-node-eth:8545"
-              value: "http://anvil-node-polygon:8545"
-              value: "http://anvil-node-polygon:8545"
-              value: "http://anvil-node-polygon:8545"
-              value: "http://gateway-node:8546"
-              value: "http://gateway-node:8546"
-              value: "http://gateway-node:8546"
-              value: "http://gateway-node:8546"
-              value: "http://gateway-node:8546"
-              value: "http://gateway-node:8546"
-              value: "http://gateway-node:8546"
-              value: "http://gateway-node:8546"
-              value: "http://gateway-node:8546"
-              value: "http://kms-core-0:50051,http://kms-core-1:50051,http://kms-core-2:50051"
-              value: "map[valueFrom:map[configMapKeyRef:map[key:acl.address name:sc-addresses]]]"
-              value: "map[valueFrom:map[configMapKeyRef:map[key:acl.address name:sc-addresses]]]"
-              value: "map[valueFrom:map[configMapKeyRef:map[key:acl.address name:sc-addresses]]]"
-              value: "map[valueFrom:map[configMapKeyRef:map[key:fhevm_executor.address name:sc-addresses]]]"
-              value: "map[valueFrom:map[configMapKeyRef:map[key:fhevm_executor.address name:sc-addresses]]]"
-              value: "map[valueFrom:map[configMapKeyRef:map[key:fhevm_executor.address name:sc-addresses]]]"
-              value: "postgresql://coprocessor:coprocessor@db:5432/coprocessor"
-              value: "postgresql://coprocessor:coprocessor@db:5432/coprocessor"
-              value: "postgresql://coprocessor:coprocessor@db:5432/coprocessor"
-              value: "postgresql://coprocessor:coprocessor@db:5432/coprocessor"
-              value: "postgresql://coprocessor:coprocessor@db:5432/coprocessor"
-              value: "postgresql://coprocessor:coprocessor@db:5432/coprocessor"
-              value: "postgresql://coprocessor:coprocessor@db:5432/coprocessor"
-              value: "postgresql://coprocessor:coprocessor@db:5432/coprocessor"
-              value: "postgresql://coprocessor:coprocessor@db:5432/coprocessor"
-              value: "postgresql://coprocessor:coprocessor@db:5432/coprocessor"
-              value: "postgresql://coprocessor:coprocessor@db:5432/coprocessor"
-              value: "postgresql://coprocessor:coprocessor@db:5432/coprocessor"
-              value: "postgresql://coprocessor:coprocessor@db:5432/coprocessor"
-              value: "postgresql://coprocessor:coprocessor@db:5432/coprocessor"
-              value: "postgresql://coprocessor:coprocessor@db:5432/coprocessor"
-              value: "postgresql://coprocessor:coprocessor@db:5432/coprocessor"
-              value: "postgresql://coprocessor:coprocessor@db:5432/coprocessor"
-              value: "postgresql://coprocessor:coprocessor@db:5432/coprocessor"
-              value: "postgresql://kms-connector:kms-connector@db:5432/kms-connector"
-              value: "postgresql://kms-connector:kms-connector@db:5432/kms-connector"
-              value: "postgresql://kms-connector:kms-connector@db:5432/kms-connector"
-              value: "ws://anvil-node-eth:8546"
-              value: "ws://anvil-node-eth:8546"
-              value: "ws://anvil-node-eth:8546"
-              value: "ws://anvil-node-polygon:8546"
-              value: "ws://anvil-node-polygon:8546"
-              value: "ws://anvil-node-polygon:8546"
-              value: http://otel-deployment-opentelemetry-collector.observability.svc.cluster.local:4317
-              valueFrom:
-              valueFrom:
-            - --acl-contract-address=$(ACL_CONTRACT_ADDRESS)
-            - --acl-contract-address=$(ACL_CONTRACT_ADDRESS)
-            - --acl-contract-address=$(ACL_CONTRACT_ADDRESS)
-            - --acl-contract-address=$(ACL_CONTRACT_ADDRESS)
-            - --acl-contract-address=$(ACL_CONTRACT_ADDRESS)
-            - --acl-contract-address=$(ACL_CONTRACT_ADDRESS)
-            - --acl-contract-address=$(ACL_CONTRACT_ADDRESS)
-            - --acl-contract-address=$(ACL_CONTRACT_ADDRESS)
-            - --acl-contract-address=$(ACL_CONTRACT_ADDRESS)
-            - --ciphertext-commits-address=$(CIPHERTEXT_COMMITS_ADDRESS)
-            - --ciphertext-commits-address=$(CIPHERTEXT_COMMITS_ADDRESS)
-            - --ciphertext-commits-address=$(CIPHERTEXT_COMMITS_ADDRESS)
-            - --ciphertext-commits-address=$(CIPHERTEXT_COMMITS_ADDRESS)
-            - --ciphertext-commits-address=$(CIPHERTEXT_COMMITS_ADDRESS)
-            - --ciphertext-commits-address=$(CIPHERTEXT_COMMITS_ADDRESS)
-            - --database-url=$(DATABASE_URL)
-            - --database-url=$(DATABASE_URL)
-            - --database-url=$(DATABASE_URL)
-            - --database-url=$(DATABASE_URL)
-            - --database-url=$(DATABASE_URL)
-            - --database-url=$(DATABASE_URL)
-            - --database-url=$(DATABASE_URL)
-            - --database-url=$(DATABASE_URL)
-            - --database-url=$(DATABASE_URL)
-            - --database-url=$(DATABASE_URL)
-            - --database-url=$(DATABASE_URL)
-            - --database-url=$(DATABASE_URL)
-            - --database-url=$(DATABASE_URL)
-            - --database-url=$(DATABASE_URL)
-            - --database-url=$(DATABASE_URL)
-            - --database-url=$(DATABASE_URL)
-            - --database-url=$(DATABASE_URL)
-            - --database-url=$(DATABASE_URL)
-            - --gateway-config-address=$(GATEWAY_CONFIG_ADDRESS)
-            - --gateway-config-address=$(GATEWAY_CONFIG_ADDRESS)
-            - --gateway-config-address=$(GATEWAY_CONFIG_ADDRESS)
-            - --gateway-url=$(GATEWAY_URL)
-            - --gateway-url=$(GATEWAY_URL)
-            - --gateway-url=$(GATEWAY_URL)
-            - --gw-url=$(GATEWAY_URL)
-            - --gw-url=$(GATEWAY_URL)
-            - --gw-url=$(GATEWAY_URL)
-            - --health-check-port=8080
-            - --health-check-port=8080
-            - --health-check-port=8080
-            - --health-check-port=8080
-            - --health-check-port=8080
-            - --health-check-port=8080
-            - --health-check-port=8080
-            - --health-check-port=8080
-            - --health-check-port=8080
-            - --health-port=8080
-            - --health-port=8080
-            - --health-port=8080
-            - --health-port=8080
-            - --health-port=8080
-            - --health-port=8080
-            - --health-port=8080
-            - --health-port=8080
-            - --health-port=8080
-            - --input-verification-address=$(INPUT_VERIFICATION_ADDRESS)
-            - --input-verification-address=$(INPUT_VERIFICATION_ADDRESS)
-            - --input-verification-address=$(INPUT_VERIFICATION_ADDRESS)
-            - --input-verification-address=$(INPUT_VERIFICATION_ADDRESS)
-            - --input-verification-address=$(INPUT_VERIFICATION_ADDRESS)
-            - --input-verification-address=$(INPUT_VERIFICATION_ADDRESS)
-            - --metrics-addr=0.0.0.0:9100
-            - --metrics-addr=0.0.0.0:9100
-            - --metrics-addr=0.0.0.0:9100
-            - --metrics-addr=0.0.0.0:9100
-            - --metrics-addr=0.0.0.0:9100
-            - --metrics-addr=0.0.0.0:9100
-            - --metrics-addr=0.0.0.0:9100
-            - --metrics-addr=0.0.0.0:9100
-            - --metrics-addr=0.0.0.0:9100
-            - --metrics-addr=0.0.0.0:9100
-            - --metrics-addr=0.0.0.0:9100
-            - --metrics-addr=0.0.0.0:9100
-            - --multichain-acl-address=$(MULTICHAIN_ACL_ADDRESS)
-            - --multichain-acl-address=$(MULTICHAIN_ACL_ADDRESS)
-            - --multichain-acl-address=$(MULTICHAIN_ACL_ADDRESS)
-            - --private-key=$(TX_SENDER_PRIVATE_KEY)
-            - --private-key=$(TX_SENDER_PRIVATE_KEY)
-            - --private-key=$(TX_SENDER_PRIVATE_KEY)
-            - --signer-type=private-key
-            - --signer-type=private-key
-            - --signer-type=private-key
-            - --tfhe-contract-address=$(FHEVM_EXECUTOR_CONTRACT_ADDRESS)
-            - --tfhe-contract-address=$(FHEVM_EXECUTOR_CONTRACT_ADDRESS)
-            - --tfhe-contract-address=$(FHEVM_EXECUTOR_CONTRACT_ADDRESS)
-            - --tfhe-contract-address=$(FHEVM_EXECUTOR_CONTRACT_ADDRESS)
-            - --tfhe-contract-address=$(FHEVM_EXECUTOR_CONTRACT_ADDRESS)
-            - --tfhe-contract-address=$(FHEVM_EXECUTOR_CONTRACT_ADDRESS)
-            - --tfhe-contract-address=$(FHEVM_EXECUTOR_CONTRACT_ADDRESS)
-            - --tfhe-contract-address=$(FHEVM_EXECUTOR_CONTRACT_ADDRESS)
-            - --tfhe-contract-address=$(FHEVM_EXECUTOR_CONTRACT_ADDRESS)
-            - --url=$(ETHEREUM_RPC_HTTP_URL)
-            - --url=$(ETHEREUM_RPC_HTTP_URL)
-            - --url=$(ETHEREUM_RPC_HTTP_URL)
-            - --url=$(ETHEREUM_RPC_URL)
-            - --url=$(ETHEREUM_RPC_URL)
-            - --url=$(ETHEREUM_RPC_URL)
-            - --url=$(ETHEREUM_RPC_URL)
-            - --url=$(ETHEREUM_RPC_URL)
-            - --url=$(ETHEREUM_RPC_URL)
-            - "--accounts"
-            - "--block-time"
-            - "--chain-id"
-            - "--host"
-            - "--mnemonic"
-            - "--port"
-            - "$(MNEMONIC)"
-            - "0.0.0.0"
-            - "0.5"
-            - "10"
-            - "12345"
-            - "8545"
-            - containerPort: 8545
-            - name: ACL_CONTRACT_ADDRESS
-            - name: ACL_CONTRACT_ADDRESS
-            - name: ACL_CONTRACT_ADDRESS
-            - name: ACL_CONTRACT_ADDRESS
-            - name: ACL_CONTRACT_ADDRESS
-            - name: ACL_CONTRACT_ADDRESS
-            - name: ACL_CONTRACT_ADDRESS
-            - name: ACL_CONTRACT_ADDRESS
-            - name: ACL_CONTRACT_ADDRESS
-            - name: CIPHERTEXT_COMMITS_ADDRESS
-            - name: CIPHERTEXT_COMMITS_ADDRESS
-            - name: CIPHERTEXT_COMMITS_ADDRESS
-            - name: CIPHERTEXT_COMMITS_ADDRESS
-            - name: CIPHERTEXT_COMMITS_ADDRESS
-            - name: CIPHERTEXT_COMMITS_ADDRESS
-            - name: DATABASE_URL
-            - name: DATABASE_URL
-            - name: DATABASE_URL
-            - name: DATABASE_URL
-            - name: DATABASE_URL
-            - name: DATABASE_URL
-            - name: DATABASE_URL
-            - name: DATABASE_URL
-            - name: DATABASE_URL
-            - name: DATABASE_URL
-            - name: DATABASE_URL
-            - name: DATABASE_URL
-            - name: DATABASE_URL
-            - name: DATABASE_URL
-            - name: DATABASE_URL
-            - name: DATABASE_URL
-            - name: DATABASE_URL
-            - name: DATABASE_URL
-            - name: ETHEREUM_RPC_HTTP_URL
-            - name: ETHEREUM_RPC_HTTP_URL
-            - name: ETHEREUM_RPC_HTTP_URL
-            - name: ETHEREUM_RPC_URL
-            - name: ETHEREUM_RPC_URL
-            - name: ETHEREUM_RPC_URL
-            - name: ETHEREUM_RPC_URL
-            - name: ETHEREUM_RPC_URL
-            - name: ETHEREUM_RPC_URL
-            - name: FHEVM_EXECUTOR_CONTRACT_ADDRESS
-            - name: FHEVM_EXECUTOR_CONTRACT_ADDRESS
-            - name: FHEVM_EXECUTOR_CONTRACT_ADDRESS
-            - name: FHEVM_EXECUTOR_CONTRACT_ADDRESS
-            - name: FHEVM_EXECUTOR_CONTRACT_ADDRESS
-            - name: FHEVM_EXECUTOR_CONTRACT_ADDRESS
-            - name: FHEVM_EXECUTOR_CONTRACT_ADDRESS
-            - name: FHEVM_EXECUTOR_CONTRACT_ADDRESS
-            - name: FHEVM_EXECUTOR_CONTRACT_ADDRESS
-            - name: GATEWAY_CONFIG_ADDRESS
-            - name: GATEWAY_CONFIG_ADDRESS
-            - name: GATEWAY_CONFIG_ADDRESS
-            - name: GATEWAY_URL
-            - name: GATEWAY_URL
-            - name: GATEWAY_URL
-            - name: GATEWAY_URL
-            - name: GATEWAY_URL
-            - name: GATEWAY_URL
-            - name: healthcheck
-            - name: healthcheck
-            - name: healthcheck
-            - name: healthcheck
-            - name: healthcheck
-            - name: healthcheck
-            - name: healthcheck
-            - name: healthcheck
-            - name: healthcheck
-            - name: healthcheck
-            - name: healthcheck
-            - name: healthcheck
-            - name: healthcheck
-            - name: healthcheck
-            - name: healthcheck
-            - name: healthcheck
-            - name: healthcheck
-            - name: healthcheck
-            - name: INPUT_VERIFICATION_ADDRESS
-            - name: INPUT_VERIFICATION_ADDRESS
-            - name: INPUT_VERIFICATION_ADDRESS
-            - name: INPUT_VERIFICATION_ADDRESS
-            - name: INPUT_VERIFICATION_ADDRESS
-            - name: INPUT_VERIFICATION_ADDRESS
-            - name: KMS_CONNECTOR_DATABASE_URL
-            - name: KMS_CONNECTOR_DATABASE_URL
-            - name: KMS_CONNECTOR_DATABASE_URL
-            - name: KMS_CONNECTOR_DECRYPTION_CONTRACT__ADDRESS
-            - name: KMS_CONNECTOR_DECRYPTION_CONTRACT__ADDRESS
-            - name: KMS_CONNECTOR_DECRYPTION_CONTRACT__ADDRESS
-            - name: KMS_CONNECTOR_ETHEREUM_CHAIN_ID
-            - name: KMS_CONNECTOR_ETHEREUM_CHAIN_ID
-            - name: KMS_CONNECTOR_ETHEREUM_CHAIN_ID
-            - name: KMS_CONNECTOR_ETHEREUM_URL
-            - name: KMS_CONNECTOR_ETHEREUM_URL
-            - name: KMS_CONNECTOR_GATEWAY_CHAIN_ID
-            - name: KMS_CONNECTOR_GATEWAY_CHAIN_ID
-            - name: KMS_CONNECTOR_GATEWAY_CHAIN_ID
-            - name: KMS_CONNECTOR_GATEWAY_CONFIG_CONTRACT__ADDRESS
-            - name: KMS_CONNECTOR_GATEWAY_CONFIG_CONTRACT__ADDRESS
-            - name: KMS_CONNECTOR_GATEWAY_CONFIG_CONTRACT__ADDRESS
-            - name: KMS_CONNECTOR_GATEWAY_URL
-            - name: KMS_CONNECTOR_GATEWAY_URL
-            - name: KMS_CONNECTOR_GATEWAY_URL
-            - name: KMS_CONNECTOR_HOST_CHAINS
-            - name: KMS_CONNECTOR_KMS_CORE_ENDPOINTS
-            - name: KMS_CONNECTOR_KMS_GENERATION_CONTRACT__ADDRESS
-            - name: KMS_CONNECTOR_KMS_GENERATION_CONTRACT__ADDRESS
-            - name: KMS_CONNECTOR_KMS_GENERATION_CONTRACT__ADDRESS
-            - name: KMS_CONNECTOR_KMS_VERIFIER_ADDRESS
-            - name: KMS_CONNECTOR_KMS_VERIFIER_ADDRESS
-            - name: KMS_CONNECTOR_PRIVATE_KEY
-            - name: KMS_CONNECTOR_SERVICE_NAME
-            - name: metrics
-            - name: metrics
-            - name: metrics
-            - name: metrics
-            - name: metrics
-            - name: metrics
-            - name: metrics
-            - name: metrics
-            - name: metrics
-            - name: metrics
-            - name: metrics
-            - name: metrics
-            - name: metrics
-            - name: metrics
-            - name: metrics
-            - name: metrics
-            - name: metrics
-            - name: metrics
-            - name: MNEMONIC
-            - name: monitoring
-            - name: monitoring
-            - name: monitoring
-            - name: OTEL_EXPORTER_OTLP_ENDPOINT
-            - name: TX_SENDER_PRIVATE_KEY
-            - name: TX_SENDER_PRIVATE_KEY
-            - name: TX_SENDER_PRIVATE_KEY
-            cpu: 100m
-            cpu: 100m
-            cpu: 100m
-            cpu: 100m
-            cpu: 100m
-            cpu: 500m
-            cpu: 500m
-            cpu: 500m
-            cpu: 500m
-            cpu: 500m
-            httpGet:
-            httpGet:
-            httpGet:
-            httpGet:
-            httpGet:
-            httpGet:
-            initialDelaySeconds: 10
-            initialDelaySeconds: 10
-            initialDelaySeconds: 10
-            initialDelaySeconds: 5
-            initialDelaySeconds: 5
-            initialDelaySeconds: 5
-            limits:
-            limits:
-            limits:
-            limits:
-            limits:
-            limits:
-            limits:
-            limits:
-            limits:
-            limits:
-            limits:
-            limits:
-            limits:
-            limits:
-            limits:
-            limits:
-            limits:
-            limits:
-            limits:
-            limits:
-            limits:
-            limits:
-            memory: 256Mi
-            memory: 256Mi
-            memory: 256Mi
-            memory: 256Mi
-            memory: 256Mi
-            memory: 512Mi
-            memory: 512Mi
-            memory: 512Mi
-            memory: 512Mi
-            memory: 512Mi
-            mountPath: /home/foundry/.foundry/anvil
-            name: config
-            name: config
-            name: persistence
-            periodSeconds: 10
-            periodSeconds: 10
-            periodSeconds: 10
-            periodSeconds: 10
-            periodSeconds: 10
-            periodSeconds: 10
-            requests:
-            requests:
-            requests:
-            requests:
-            requests:
-            requests:
-            requests:
-            requests:
-            requests:
-            requests:
-            requests:
-            requests:
-            requests:
-            requests:
-            requests:
-            requests:
-            requests:
-            requests:
-            requests:
-            requests:
-            requests:
-            requests:
-            sizeLimit: 2Gi
-            subPath: deploy-contracts.sh
-            subPath: upgrade-contracts.sh
-            value: "/app/addresses/.openzeppelin"
-            value: "0xTODO_POLYGON_ACL_ADDRESS"
-            value: "0xTODO_POLYGON_ACL_ADDRESS"
-            value: "0xTODO_POLYGON_ACL_ADDRESS"
-            value: "2"
-            value: "2"
-            value: "2"
-            value: "2"
-            value: "2"
-            value: "2"
-            value: "2"
-            value: "2"
-            value: "3"
-            value: "3"
-            value: "31337"
-            value: "31337"
-            value: "31337"
-            value: "54321"
-            value: "6"
-            value: "80002"
-            value: "80002"
-            value: "80002"
-            value: "ethereum"
-            value: "ethereum"
-            value: "ethereum"
-            value: "map[valueFrom:map[configMapKeyRef:map[key:acl.address name:sc-addresses]]]"
-            value: "map[valueFrom:map[configMapKeyRef:map[key:acl.address name:sc-addresses]]]"
-            value: "map[valueFrom:map[configMapKeyRef:map[key:acl.address name:sc-addresses]]]"
-            value: "polygon"
-            value: "polygon"
-            value: "polygon"
-            value: "postgresql://coprocessor:coprocessor@db:5432/coprocessor"
-            value: "postgresql://coprocessor:coprocessor@db:5432/coprocessor"
-            value: "postgresql://coprocessor:coprocessor@db:5432/coprocessor"
-            value: "postgresql://kms-connector:kms-connector@db:5432/kms-connector"
-            value: 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
-            value: 0xTODO_COPROCESSOR_SIGNER_0
-            value: 0xTODO_COPROCESSOR_SIGNER_1
-            value: 0xTODO_COPROCESSOR_SIGNER_2
-            value: 0xTODO_COPROCESSOR_TX_SENDER_0
-            value: 0xTODO_COPROCESSOR_TX_SENDER_1
-            value: 0xTODO_COPROCESSOR_TX_SENDER_2
-            value: 0xTODO_DECRYPTION_ADDRESS
-            value: 0xTODO_INPUT_VERIFICATION_ADDRESS
-            value: 0xTODO_KMS_SIGNER_0
-            value: 0xTODO_KMS_SIGNER_1
-            value: 0xTODO_KMS_SIGNER_2
-            value: 0xTODO_KMS_TX_SENDER_0
-            value: 0xTODO_KMS_TX_SENDER_0
-            value: 0xTODO_KMS_TX_SENDER_1
-            value: 0xTODO_KMS_TX_SENDER_1
-            value: 0xTODO_KMS_TX_SENDER_2
-            value: 0xTODO_KMS_TX_SENDER_2
-            value: http://kms-core-0.default.svc.cluster.local:9000
-            value: http://kms-core-1.default.svc.cluster.local:9000
-            value: http://kms-core-2.default.svc.cluster.local:9000
-            value: kms-core-0.default.svc.cluster.local
-            value: kms-core-1.default.svc.cluster.local
-            value: kms-core-2.default.svc.cluster.local
-            value: postgres
-            value: postgres
-            value: postgresql://db:5432/kms-connector
-            valueFrom:
-          - --source
-          - /migrations
-          - migrate
-          - mountPath: /app/addresses
-          - mountPath: /app/deploy-contracts.sh
-          - mountPath: /app/upgrade-contracts.sh
-          - name: anvil-chain-data
-          - name: CHAIN_ID_GATEWAY
-          - name: COPROCESSOR_SIGNER_ADDRESS_0
-          - name: COPROCESSOR_SIGNER_ADDRESS_1
-          - name: COPROCESSOR_SIGNER_ADDRESS_2
-          - name: COPROCESSOR_THRESHOLD
-          - name: DATABASE_ENDPOINT
-          - name: DATABASE_URL
-          - name: DATABASE_URL
-          - name: DATABASE_URL
-          - name: DATABASE_URL
-          - name: DECRYPTION_ADDRESS
-          - name: DEPLOYED_SMART_CONTRACTS_VERSION
-          - name: DEPLOYER_PRIVATE_KEY
-          - name: HOST_CHAIN_0_ACL
-          - name: HOST_CHAIN_0_ACL
-          - name: HOST_CHAIN_0_ACL
-          - name: HOST_CHAIN_0_ID
-          - name: HOST_CHAIN_0_ID
-          - name: HOST_CHAIN_0_ID
-          - name: HOST_CHAIN_0_NAME
-          - name: HOST_CHAIN_0_NAME
-          - name: HOST_CHAIN_0_NAME
-          - name: HOST_CHAIN_1_ACL
-          - name: HOST_CHAIN_1_ACL
-          - name: HOST_CHAIN_1_ACL
-          - name: HOST_CHAIN_1_ID
-          - name: HOST_CHAIN_1_ID
-          - name: HOST_CHAIN_1_ID
-          - name: HOST_CHAIN_1_NAME
-          - name: HOST_CHAIN_1_NAME
-          - name: HOST_CHAIN_1_NAME
-          - name: HOST_CHAINS_COUNT
-          - name: HOST_CHAINS_COUNT
-          - name: HOST_CHAINS_COUNT
-          - name: INPUT_VERIFICATION_ADDRESS
-          - name: KMS_GEN_THRESHOLD
-          - name: KMS_NODE_IP_0
-          - name: KMS_NODE_IP_1
-          - name: KMS_NODE_IP_2
-          - name: KMS_NODE_STORAGE_URL_0
-          - name: KMS_NODE_STORAGE_URL_1
-          - name: KMS_NODE_STORAGE_URL_2
-          - name: KMS_SIGNER_ADDRESS_0
-          - name: KMS_SIGNER_ADDRESS_1
-          - name: KMS_SIGNER_ADDRESS_2
-          - name: KMS_TX_SENDER_ADDRESS_0
-          - name: KMS_TX_SENDER_ADDRESS_1
-          - name: KMS_TX_SENDER_ADDRESS_2
-          - name: MANIFEST_DEFAULT_DIR
-          - name: MPC_THRESHOLD
-          - name: NUM_COPROCESSORS
-          - name: NUM_KMS_NODES
-          - name: NUM_PAUSERS
-          - name: PAUSER_ADDRESS_0
-          - name: PAUSER_ADDRESS_1
-          - name: PAUSER_ADDRESS_2
-          - name: PAUSER_ADDRESS_3
-          - name: PAUSER_ADDRESS_4
-          - name: PAUSER_ADDRESS_5
-          - name: PGPASSWORD
-          - name: PGUSER
-          - name: PUBLIC_DECRYPTION_THRESHOLD
-          - name: USER_DECRYPTION_THRESHOLD
-          - run
-          - sqlx
-          args:
-          args:
-          args:
-          args:
-          args:
-          args:
-          args:
-          args:
-          args:
-          args:
-          args:
-          args:
-          args:
-          args:
-          args:
-          args:
-          args:
-          args:
-          args:
-          claimName: host-contracts
-          command: ["anvil"]
-          command: ["gw_listener"]
-          command: ["gw_listener"]
-          command: ["gw_listener"]
-          command: ["host_listener_poller"]
-          command: ["host_listener_poller"]
-          command: ["host_listener_poller"]
-          command: ["host_listener"]
-          command: ["host_listener"]
-          command: ["host_listener"]
-          command: ["host_listener"]
-          command: ["host_listener"]
-          command: ["host_listener"]
-          command: ["tfhe_worker"]
-          command: ["tfhe_worker"]
-          command: ["tfhe_worker"]
-          command: ["transaction_sender"]
-          command: ["transaction_sender"]
-          command: ["transaction_sender"]
-          defaultMode: 0755
-          emptyDir:
-          env:
-          env:
-          env:
-          env:
-          env:
-          env:
-          env:
-          env:
-          env:
-          env:
-          env:
-          env:
-          env:
-          env:
-          env:
-          env:
-          env:
-          env:
-          env:
-          env:
-          env:
-          env:
-          image: ghcr.io/foundry-rs/foundry:stable
-          image: ghcr.io/zama-ai/fhevm/coprocessor/gw-listener:v0.12.0
-          image: ghcr.io/zama-ai/fhevm/coprocessor/gw-listener:v0.12.0
-          image: ghcr.io/zama-ai/fhevm/coprocessor/gw-listener:v0.12.0
-          image: ghcr.io/zama-ai/fhevm/coprocessor/host-listener:v0.11.0
-          image: ghcr.io/zama-ai/fhevm/coprocessor/host-listener:v0.11.0
-          image: ghcr.io/zama-ai/fhevm/coprocessor/host-listener:v0.11.0
-          image: ghcr.io/zama-ai/fhevm/coprocessor/host-listener:v0.11.0
-          image: ghcr.io/zama-ai/fhevm/coprocessor/host-listener:v0.11.0
-          image: ghcr.io/zama-ai/fhevm/coprocessor/host-listener:v0.11.0
-          image: ghcr.io/zama-ai/fhevm/coprocessor/host-listener:v0.11.0
-          image: ghcr.io/zama-ai/fhevm/coprocessor/host-listener:v0.11.0
-          image: ghcr.io/zama-ai/fhevm/coprocessor/host-listener:v0.11.0
-          image: ghcr.io/zama-ai/fhevm/coprocessor/tfhe-worker:v0.11.0
-          image: ghcr.io/zama-ai/fhevm/coprocessor/tfhe-worker:v0.11.0
-          image: ghcr.io/zama-ai/fhevm/coprocessor/tfhe-worker:v0.11.0
-          image: ghcr.io/zama-ai/fhevm/coprocessor/tx-sender:v0.11.0
-          image: ghcr.io/zama-ai/fhevm/coprocessor/tx-sender:v0.11.0
-          image: ghcr.io/zama-ai/fhevm/coprocessor/tx-sender:v0.11.0
-          image: ghcr.io/zama-ai/fhevm/kms-connector/gw-listener:v0.10.0
-          image: ghcr.io/zama-ai/fhevm/kms-connector/kms-worker:v0.10.0
-          image: ghcr.io/zama-ai/fhevm/kms-connector/tx-sender:v0.10.0
-          limits:
-          limits:
-          limits:
-          limits:
-          limits:
-          livenessProbe:
-          livenessProbe:
-          livenessProbe:
-          name: host-contracts-config
-          ports:
-          ports:
-          ports:
-          ports:
-          ports:
-          ports:
-          ports:
-          ports:
-          ports:
-          ports:
-          ports:
-          ports:
-          ports:
-          ports:
-          ports:
-          ports:
-          ports:
-          ports:
-          ports:
-          ports:
-          ports:
-          ports:
-          readinessProbe:
-          readinessProbe:
-          readinessProbe:
-          requests:
-          requests:
-          requests:
-          requests:
-          requests:
-          resources:
-          resources:
-          resources:
-          resources:
-          resources:
-          resources:
-          resources:
-          resources:
-          resources:
-          resources:
-          resources:
-          resources:
-          resources:
-          resources:
-          resources:
-          resources:
-          resources:
-          resources:
-          resources:
-          resources:
-          resources:
-          resources:
-          storage: 1Gi
-          volumeMounts:
-        - name: anvil-node
-        - name: cache-volume
-        - name: coprocessor-gw-listener
-        - name: coprocessor-gw-listener
-        - name: coprocessor-gw-listener
-        - name: coprocessor-host-listener
-        - name: coprocessor-host-listener
-        - name: coprocessor-host-listener
-        - name: coprocessor-host-listener
-        - name: coprocessor-host-listener
-        - name: coprocessor-host-listener
-        - name: coprocessor-host-listener-poller
-        - name: coprocessor-host-listener-poller
-        - name: coprocessor-host-listener-poller
-        - name: coprocessor-tfhe-worker
-        - name: coprocessor-tfhe-worker
-        - name: coprocessor-tfhe-worker
-        - name: coprocessor-tx-sender
-        - name: coprocessor-tx-sender
-        - name: coprocessor-tx-sender
-        - name: kms-connector-gw-listener
-        - name: kms-connector-kms-worker
-        - name: kms-connector-tx-sender
-        - name: registry-credentials
-        - name: registry-credentials
-        - name: registry-credentials
-        - name: registry-credentials
-        - name: registry-credentials
-        - name: registry-credentials
-        - name: registry-credentials
-        - name: registry-credentials
-        - name: registry-credentials
-        - name: registry-credentials
-        - name: registry-credentials
-        - name: registry-credentials
-        - name: registry-credentials
-        - name: registry-credentials
-        - name: registry-credentials
-        - name: registry-credentials
-        - name: registry-credentials
-        - name: registry-credentials
-        - name: registry-credentials
-        - name: registry-credentials
-        - name: registry-credentials
-        - name: registry-credentials
-        - name: registry-credentials
-        - name: registry-credentials
-        - name: registry-credentials
-        - name: registry-credentials
-        # Remove the "_ADDRESS" or  "_CONTRACT_ADDRESS" suffix to get the clean contract name
-        # The first part is the key (CONTRACT_NAME) and the second is the value (CONTRACT_ADDRESS)
-        # Use `cut` to split the line at the first `=`
-        add_key_to_configmap "${CONFIGMAP_NAME}" "${CLEAN_NAME}.address" "${CONTRACT_ADDRESS}"
-        app: anvil-node-anvil-node
-        app: coprocessor-db-migration
-        app: coprocessor-db-migration
-        app: coprocessor-db-migration
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: coprocessor-gw-listener
+    app.kubernetes.io/name: coprocessor-0-gw-listener
+  name: coprocessor-0-gw-listener
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: coprocessor-gw-listener
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
         app: coprocessor-gw-listener
-        app: coprocessor-gw-listener
-        app: coprocessor-gw-listener
-        app: coprocessor-host-listener
-        app: coprocessor-host-listener
-        app: coprocessor-host-listener
-        app: coprocessor-host-listener-poller-polygon
-        app: coprocessor-host-listener-poller-polygon
-        app: coprocessor-host-listener-poller-polygon
-        app: coprocessor-host-listener-polygon
-        app: coprocessor-host-listener-polygon
-        app: coprocessor-host-listener-polygon
-        app: coprocessor-tfhe-worker
-        app: coprocessor-tfhe-worker
-        app: coprocessor-tfhe-worker
-        app: coprocessor-tx-sender
-        app: coprocessor-tx-sender
-        app: coprocessor-tx-sender
-        app: kms-connector-db-migration
-        app: kms-connector-gw-listener
-        app: kms-connector-kms-worker
-        app: kms-connector-tx-sender
-        app.kubernetes.io/name: coprocessor-0-db-migration
         app.kubernetes.io/name: coprocessor-0-gw-listener
-        app.kubernetes.io/name: coprocessor-0-host-listener
-        app.kubernetes.io/name: coprocessor-0-host-listener-poller-polygon
-        app.kubernetes.io/name: coprocessor-0-host-listener-polygon
-        app.kubernetes.io/name: coprocessor-0-tfhe-worker
-        app.kubernetes.io/name: coprocessor-0-tx-sender
-        app.kubernetes.io/name: coprocessor-1-db-migration
+    spec:
+      imagePullSecrets:
+        - name: registry-credentials
+      restartPolicy: Always
+      containers:
+        - name: coprocessor-gw-listener
+          image: ghcr.io/zama-ai/fhevm/coprocessor/gw-listener:v0.12.0
+          command: ["gw_listener"]
+          args:
+            - --database-url=$(DATABASE_URL)
+            - --gw-url=$(GATEWAY_URL)
+            - --input-verification-address=$(INPUT_VERIFICATION_ADDRESS)
+            - --ciphertext-commits-address=$(CIPHERTEXT_COMMITS_ADDRESS)
+            - --gateway-config-address=$(GATEWAY_CONFIG_ADDRESS)
+            - --health-check-port=8080
+            - --metrics-addr=0.0.0.0:9100
+          env:
+            - name: DATABASE_URL
+              value: "postgresql://coprocessor:coprocessor@db:5432/coprocessor"
+            - name: GATEWAY_URL
+              value: "http://gateway-node:8546"
+            - name: INPUT_VERIFICATION_ADDRESS
+              value: "0xTODO_INPUT_VERIFICATION_ADDRESS"
+            - name: CIPHERTEXT_COMMITS_ADDRESS
+              value: "0xTODO_CIPHERTEXT_COMMITS_ADDRESS"
+            - name: GATEWAY_CONFIG_ADDRESS
+              value: "0xTODO_GATEWAY_CONFIG_ADDRESS"
+          ports:
+            - name: healthcheck
+              containerPort: 8080
+              protocol: TCP
+            - name: metrics
+              containerPort: 9100
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: coprocessor-gw-listener
+    app.kubernetes.io/name: coprocessor-1-gw-listener
+  name: coprocessor-1-gw-listener
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: coprocessor-gw-listener
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: coprocessor-gw-listener
         app.kubernetes.io/name: coprocessor-1-gw-listener
-        app.kubernetes.io/name: coprocessor-1-host-listener
-        app.kubernetes.io/name: coprocessor-1-host-listener-poller-polygon
-        app.kubernetes.io/name: coprocessor-1-host-listener-polygon
-        app.kubernetes.io/name: coprocessor-1-tfhe-worker
-        app.kubernetes.io/name: coprocessor-1-tx-sender
-        app.kubernetes.io/name: coprocessor-2-db-migration
+    spec:
+      imagePullSecrets:
+        - name: registry-credentials
+      restartPolicy: Always
+      containers:
+        - name: coprocessor-gw-listener
+          image: ghcr.io/zama-ai/fhevm/coprocessor/gw-listener:v0.12.0
+          command: ["gw_listener"]
+          args:
+            - --database-url=$(DATABASE_URL)
+            - --gw-url=$(GATEWAY_URL)
+            - --input-verification-address=$(INPUT_VERIFICATION_ADDRESS)
+            - --ciphertext-commits-address=$(CIPHERTEXT_COMMITS_ADDRESS)
+            - --gateway-config-address=$(GATEWAY_CONFIG_ADDRESS)
+            - --health-check-port=8080
+            - --metrics-addr=0.0.0.0:9100
+          env:
+            - name: DATABASE_URL
+              value: "postgresql://coprocessor:coprocessor@db:5432/coprocessor"
+            - name: GATEWAY_URL
+              value: "http://gateway-node:8546"
+            - name: INPUT_VERIFICATION_ADDRESS
+              value: "0xTODO_INPUT_VERIFICATION_ADDRESS"
+            - name: CIPHERTEXT_COMMITS_ADDRESS
+              value: "0xTODO_CIPHERTEXT_COMMITS_ADDRESS"
+            - name: GATEWAY_CONFIG_ADDRESS
+              value: "0xTODO_GATEWAY_CONFIG_ADDRESS"
+          ports:
+            - name: healthcheck
+              containerPort: 8080
+              protocol: TCP
+            - name: metrics
+              containerPort: 9100
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: coprocessor-gw-listener
+    app.kubernetes.io/name: coprocessor-2-gw-listener
+  name: coprocessor-2-gw-listener
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: coprocessor-gw-listener
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: coprocessor-gw-listener
         app.kubernetes.io/name: coprocessor-2-gw-listener
+    spec:
+      imagePullSecrets:
+        - name: registry-credentials
+      restartPolicy: Always
+      containers:
+        - name: coprocessor-gw-listener
+          image: ghcr.io/zama-ai/fhevm/coprocessor/gw-listener:v0.12.0
+          command: ["gw_listener"]
+          args:
+            - --database-url=$(DATABASE_URL)
+            - --gw-url=$(GATEWAY_URL)
+            - --input-verification-address=$(INPUT_VERIFICATION_ADDRESS)
+            - --ciphertext-commits-address=$(CIPHERTEXT_COMMITS_ADDRESS)
+            - --gateway-config-address=$(GATEWAY_CONFIG_ADDRESS)
+            - --health-check-port=8080
+            - --metrics-addr=0.0.0.0:9100
+          env:
+            - name: DATABASE_URL
+              value: "postgresql://coprocessor:coprocessor@db:5432/coprocessor"
+            - name: GATEWAY_URL
+              value: "http://gateway-node:8546"
+            - name: INPUT_VERIFICATION_ADDRESS
+              value: "0xTODO_INPUT_VERIFICATION_ADDRESS"
+            - name: CIPHERTEXT_COMMITS_ADDRESS
+              value: "0xTODO_CIPHERTEXT_COMMITS_ADDRESS"
+            - name: GATEWAY_CONFIG_ADDRESS
+              value: "0xTODO_GATEWAY_CONFIG_ADDRESS"
+          ports:
+            - name: healthcheck
+              containerPort: 8080
+              protocol: TCP
+            - name: metrics
+              containerPort: 9100
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: coprocessor-host-listener
+    app.kubernetes.io/name: coprocessor-0-host-listener
+  name: coprocessor-0-host-listener
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: coprocessor-host-listener
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: coprocessor-host-listener
+        app.kubernetes.io/name: coprocessor-0-host-listener
+    spec:
+      imagePullSecrets:
+        - name: registry-credentials
+      restartPolicy: Always
+      containers:
+        - name: coprocessor-host-listener
+          image: ghcr.io/zama-ai/fhevm/coprocessor/host-listener:v0.11.0
+          command: ["host_listener"]
+          args:
+            - --database-url=$(DATABASE_URL)
+            - --url=$(ETHEREUM_RPC_URL)
+            - --acl-contract-address=$(ACL_CONTRACT_ADDRESS)
+            - --tfhe-contract-address=$(FHEVM_EXECUTOR_CONTRACT_ADDRESS)
+            - --health-port=8080
+          env:
+            - name: DATABASE_URL
+              value: "postgresql://coprocessor:coprocessor@db:5432/coprocessor"
+            - name: ETHEREUM_RPC_URL
+              value: "ws://anvil-node-eth:8546"
+            - name: ACL_CONTRACT_ADDRESS
+              value: "map[valueFrom:map[configMapKeyRef:map[key:acl.address name:sc-addresses]]]"
+            - name: FHEVM_EXECUTOR_CONTRACT_ADDRESS
+              value: "map[valueFrom:map[configMapKeyRef:map[key:fhevm_executor.address name:sc-addresses]]]"
+          ports:
+            - name: healthcheck
+              containerPort: 8080
+              protocol: TCP
+            - name: metrics
+              containerPort: 9100
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: coprocessor-host-listener-polygon
+    app.kubernetes.io/name: coprocessor-0-host-listener-polygon
+  name: coprocessor-0-host-listener-polygon
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: coprocessor-host-listener-polygon
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: coprocessor-host-listener-polygon
+        app.kubernetes.io/name: coprocessor-0-host-listener-polygon
+    spec:
+      imagePullSecrets:
+        - name: registry-credentials
+      restartPolicy: Always
+      containers:
+        - name: coprocessor-host-listener
+          image: ghcr.io/zama-ai/fhevm/coprocessor/host-listener:v0.11.0
+          command: ["host_listener"]
+          args:
+            - --database-url=$(DATABASE_URL)
+            - --url=$(ETHEREUM_RPC_URL)
+            - --acl-contract-address=$(ACL_CONTRACT_ADDRESS)
+            - --tfhe-contract-address=$(FHEVM_EXECUTOR_CONTRACT_ADDRESS)
+            - --health-port=8080
+          env:
+            - name: DATABASE_URL
+              value: "postgresql://coprocessor:coprocessor@db:5432/coprocessor"
+            - name: ETHEREUM_RPC_URL
+              value: "ws://anvil-node-polygon:8546"
+            - name: ACL_CONTRACT_ADDRESS
+              value: "0xTODO_POLYGON_ACL_ADDRESS"
+            - name: FHEVM_EXECUTOR_CONTRACT_ADDRESS
+              value: "0xTODO_POLYGON_FHEVM_EXECUTOR_ADDRESS"
+          ports:
+            - name: healthcheck
+              containerPort: 8080
+              protocol: TCP
+            - name: metrics
+              containerPort: 9100
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: coprocessor-host-listener
+    app.kubernetes.io/name: coprocessor-1-host-listener
+  name: coprocessor-1-host-listener
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: coprocessor-host-listener
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: coprocessor-host-listener
+        app.kubernetes.io/name: coprocessor-1-host-listener
+    spec:
+      imagePullSecrets:
+        - name: registry-credentials
+      restartPolicy: Always
+      containers:
+        - name: coprocessor-host-listener
+          image: ghcr.io/zama-ai/fhevm/coprocessor/host-listener:v0.11.0
+          command: ["host_listener"]
+          args:
+            - --database-url=$(DATABASE_URL)
+            - --url=$(ETHEREUM_RPC_URL)
+            - --acl-contract-address=$(ACL_CONTRACT_ADDRESS)
+            - --tfhe-contract-address=$(FHEVM_EXECUTOR_CONTRACT_ADDRESS)
+            - --health-port=8080
+          env:
+            - name: DATABASE_URL
+              value: "postgresql://coprocessor:coprocessor@db:5432/coprocessor"
+            - name: ETHEREUM_RPC_URL
+              value: "ws://anvil-node-eth:8546"
+            - name: ACL_CONTRACT_ADDRESS
+              value: "map[valueFrom:map[configMapKeyRef:map[key:acl.address name:sc-addresses]]]"
+            - name: FHEVM_EXECUTOR_CONTRACT_ADDRESS
+              value: "map[valueFrom:map[configMapKeyRef:map[key:fhevm_executor.address name:sc-addresses]]]"
+          ports:
+            - name: healthcheck
+              containerPort: 8080
+              protocol: TCP
+            - name: metrics
+              containerPort: 9100
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: coprocessor-host-listener-polygon
+    app.kubernetes.io/name: coprocessor-1-host-listener-polygon
+  name: coprocessor-1-host-listener-polygon
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: coprocessor-host-listener-polygon
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: coprocessor-host-listener-polygon
+        app.kubernetes.io/name: coprocessor-1-host-listener-polygon
+    spec:
+      imagePullSecrets:
+        - name: registry-credentials
+      restartPolicy: Always
+      containers:
+        - name: coprocessor-host-listener
+          image: ghcr.io/zama-ai/fhevm/coprocessor/host-listener:v0.11.0
+          command: ["host_listener"]
+          args:
+            - --database-url=$(DATABASE_URL)
+            - --url=$(ETHEREUM_RPC_URL)
+            - --acl-contract-address=$(ACL_CONTRACT_ADDRESS)
+            - --tfhe-contract-address=$(FHEVM_EXECUTOR_CONTRACT_ADDRESS)
+            - --health-port=8080
+          env:
+            - name: DATABASE_URL
+              value: "postgresql://coprocessor:coprocessor@db:5432/coprocessor"
+            - name: ETHEREUM_RPC_URL
+              value: "ws://anvil-node-polygon:8546"
+            - name: ACL_CONTRACT_ADDRESS
+              value: "0xTODO_POLYGON_ACL_ADDRESS"
+            - name: FHEVM_EXECUTOR_CONTRACT_ADDRESS
+              value: "0xTODO_POLYGON_FHEVM_EXECUTOR_ADDRESS"
+          ports:
+            - name: healthcheck
+              containerPort: 8080
+              protocol: TCP
+            - name: metrics
+              containerPort: 9100
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: coprocessor-host-listener
+    app.kubernetes.io/name: coprocessor-2-host-listener
+  name: coprocessor-2-host-listener
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: coprocessor-host-listener
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: coprocessor-host-listener
         app.kubernetes.io/name: coprocessor-2-host-listener
-        app.kubernetes.io/name: coprocessor-2-host-listener-poller-polygon
+    spec:
+      imagePullSecrets:
+        - name: registry-credentials
+      restartPolicy: Always
+      containers:
+        - name: coprocessor-host-listener
+          image: ghcr.io/zama-ai/fhevm/coprocessor/host-listener:v0.11.0
+          command: ["host_listener"]
+          args:
+            - --database-url=$(DATABASE_URL)
+            - --url=$(ETHEREUM_RPC_URL)
+            - --acl-contract-address=$(ACL_CONTRACT_ADDRESS)
+            - --tfhe-contract-address=$(FHEVM_EXECUTOR_CONTRACT_ADDRESS)
+            - --health-port=8080
+          env:
+            - name: DATABASE_URL
+              value: "postgresql://coprocessor:coprocessor@db:5432/coprocessor"
+            - name: ETHEREUM_RPC_URL
+              value: "ws://anvil-node-eth:8546"
+            - name: ACL_CONTRACT_ADDRESS
+              value: "map[valueFrom:map[configMapKeyRef:map[key:acl.address name:sc-addresses]]]"
+            - name: FHEVM_EXECUTOR_CONTRACT_ADDRESS
+              value: "map[valueFrom:map[configMapKeyRef:map[key:fhevm_executor.address name:sc-addresses]]]"
+          ports:
+            - name: healthcheck
+              containerPort: 8080
+              protocol: TCP
+            - name: metrics
+              containerPort: 9100
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: coprocessor-host-listener-polygon
+    app.kubernetes.io/name: coprocessor-2-host-listener-polygon
+  name: coprocessor-2-host-listener-polygon
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: coprocessor-host-listener-polygon
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: coprocessor-host-listener-polygon
         app.kubernetes.io/name: coprocessor-2-host-listener-polygon
+    spec:
+      imagePullSecrets:
+        - name: registry-credentials
+      restartPolicy: Always
+      containers:
+        - name: coprocessor-host-listener
+          image: ghcr.io/zama-ai/fhevm/coprocessor/host-listener:v0.11.0
+          command: ["host_listener"]
+          args:
+            - --database-url=$(DATABASE_URL)
+            - --url=$(ETHEREUM_RPC_URL)
+            - --acl-contract-address=$(ACL_CONTRACT_ADDRESS)
+            - --tfhe-contract-address=$(FHEVM_EXECUTOR_CONTRACT_ADDRESS)
+            - --health-port=8080
+          env:
+            - name: DATABASE_URL
+              value: "postgresql://coprocessor:coprocessor@db:5432/coprocessor"
+            - name: ETHEREUM_RPC_URL
+              value: "ws://anvil-node-polygon:8546"
+            - name: ACL_CONTRACT_ADDRESS
+              value: "0xTODO_POLYGON_ACL_ADDRESS"
+            - name: FHEVM_EXECUTOR_CONTRACT_ADDRESS
+              value: "0xTODO_POLYGON_FHEVM_EXECUTOR_ADDRESS"
+          ports:
+            - name: healthcheck
+              containerPort: 8080
+              protocol: TCP
+            - name: metrics
+              containerPort: 9100
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: coprocessor-host-listener-poller-polygon
+    app.kubernetes.io/name: coprocessor-0-host-listener-poller-polygon
+  name: coprocessor-0-host-listener-poller-polygon
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: coprocessor-host-listener-poller-polygon
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: coprocessor-host-listener-poller-polygon
+        app.kubernetes.io/name: coprocessor-0-host-listener-poller-polygon
+    spec:
+      imagePullSecrets:
+        - name: registry-credentials
+      restartPolicy: Always
+      containers:
+        - name: coprocessor-host-listener-poller
+          image: ghcr.io/zama-ai/fhevm/coprocessor/host-listener:v0.11.0
+          command: ["host_listener_poller"]
+          args:
+            - --database-url=$(DATABASE_URL)
+            - --url=$(ETHEREUM_RPC_HTTP_URL)
+            - --acl-contract-address=$(ACL_CONTRACT_ADDRESS)
+            - --tfhe-contract-address=$(FHEVM_EXECUTOR_CONTRACT_ADDRESS)
+            - --health-port=8080
+            - --metrics-addr=0.0.0.0:9100
+          env:
+            - name: DATABASE_URL
+              value: "postgresql://coprocessor:coprocessor@db:5432/coprocessor"
+            - name: ETHEREUM_RPC_HTTP_URL
+              value: "http://anvil-node-polygon:8545"
+            - name: ACL_CONTRACT_ADDRESS
+              value: "0xTODO_POLYGON_ACL_ADDRESS"
+            - name: FHEVM_EXECUTOR_CONTRACT_ADDRESS
+              value: "0xTODO_POLYGON_FHEVM_EXECUTOR_ADDRESS"
+          ports:
+            - name: healthcheck
+              containerPort: 8080
+              protocol: TCP
+            - name: metrics
+              containerPort: 9100
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: coprocessor-host-listener-poller-polygon
+    app.kubernetes.io/name: coprocessor-1-host-listener-poller-polygon
+  name: coprocessor-1-host-listener-poller-polygon
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: coprocessor-host-listener-poller-polygon
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: coprocessor-host-listener-poller-polygon
+        app.kubernetes.io/name: coprocessor-1-host-listener-poller-polygon
+    spec:
+      imagePullSecrets:
+        - name: registry-credentials
+      restartPolicy: Always
+      containers:
+        - name: coprocessor-host-listener-poller
+          image: ghcr.io/zama-ai/fhevm/coprocessor/host-listener:v0.11.0
+          command: ["host_listener_poller"]
+          args:
+            - --database-url=$(DATABASE_URL)
+            - --url=$(ETHEREUM_RPC_HTTP_URL)
+            - --acl-contract-address=$(ACL_CONTRACT_ADDRESS)
+            - --tfhe-contract-address=$(FHEVM_EXECUTOR_CONTRACT_ADDRESS)
+            - --health-port=8080
+            - --metrics-addr=0.0.0.0:9100
+          env:
+            - name: DATABASE_URL
+              value: "postgresql://coprocessor:coprocessor@db:5432/coprocessor"
+            - name: ETHEREUM_RPC_HTTP_URL
+              value: "http://anvil-node-polygon:8545"
+            - name: ACL_CONTRACT_ADDRESS
+              value: "0xTODO_POLYGON_ACL_ADDRESS"
+            - name: FHEVM_EXECUTOR_CONTRACT_ADDRESS
+              value: "0xTODO_POLYGON_FHEVM_EXECUTOR_ADDRESS"
+          ports:
+            - name: healthcheck
+              containerPort: 8080
+              protocol: TCP
+            - name: metrics
+              containerPort: 9100
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: coprocessor-host-listener-poller-polygon
+    app.kubernetes.io/name: coprocessor-2-host-listener-poller-polygon
+  name: coprocessor-2-host-listener-poller-polygon
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: coprocessor-host-listener-poller-polygon
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: coprocessor-host-listener-poller-polygon
+        app.kubernetes.io/name: coprocessor-2-host-listener-poller-polygon
+    spec:
+      imagePullSecrets:
+        - name: registry-credentials
+      restartPolicy: Always
+      containers:
+        - name: coprocessor-host-listener-poller
+          image: ghcr.io/zama-ai/fhevm/coprocessor/host-listener:v0.11.0
+          command: ["host_listener_poller"]
+          args:
+            - --database-url=$(DATABASE_URL)
+            - --url=$(ETHEREUM_RPC_HTTP_URL)
+            - --acl-contract-address=$(ACL_CONTRACT_ADDRESS)
+            - --tfhe-contract-address=$(FHEVM_EXECUTOR_CONTRACT_ADDRESS)
+            - --health-port=8080
+            - --metrics-addr=0.0.0.0:9100
+          env:
+            - name: DATABASE_URL
+              value: "postgresql://coprocessor:coprocessor@db:5432/coprocessor"
+            - name: ETHEREUM_RPC_HTTP_URL
+              value: "http://anvil-node-polygon:8545"
+            - name: ACL_CONTRACT_ADDRESS
+              value: "0xTODO_POLYGON_ACL_ADDRESS"
+            - name: FHEVM_EXECUTOR_CONTRACT_ADDRESS
+              value: "0xTODO_POLYGON_FHEVM_EXECUTOR_ADDRESS"
+          ports:
+            - name: healthcheck
+              containerPort: 8080
+              protocol: TCP
+            - name: metrics
+              containerPort: 9100
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: coprocessor-tfhe-worker
+    app.kubernetes.io/name: coprocessor-0-tfhe-worker
+  name: coprocessor-0-tfhe-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: coprocessor-tfhe-worker
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: coprocessor-tfhe-worker
+        app.kubernetes.io/name: coprocessor-0-tfhe-worker
+    spec:
+      imagePullSecrets:
+        - name: registry-credentials
+      restartPolicy: Always
+      containers:
+        - name: coprocessor-tfhe-worker
+          image: ghcr.io/zama-ai/fhevm/coprocessor/tfhe-worker:v0.11.0
+          command: ["tfhe_worker"]
+          args:
+            - --database-url=$(DATABASE_URL)
+            - --metrics-addr=0.0.0.0:9100
+            - --health-check-port=8080
+          env:
+            - name: DATABASE_URL
+              value: "postgresql://coprocessor:coprocessor@db:5432/coprocessor"
+          ports:
+            - name: healthcheck
+              containerPort: 8080
+              protocol: TCP
+            - name: metrics
+              containerPort: 9100
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: coprocessor-tfhe-worker
+    app.kubernetes.io/name: coprocessor-1-tfhe-worker
+  name: coprocessor-1-tfhe-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: coprocessor-tfhe-worker
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: coprocessor-tfhe-worker
+        app.kubernetes.io/name: coprocessor-1-tfhe-worker
+    spec:
+      imagePullSecrets:
+        - name: registry-credentials
+      restartPolicy: Always
+      containers:
+        - name: coprocessor-tfhe-worker
+          image: ghcr.io/zama-ai/fhevm/coprocessor/tfhe-worker:v0.11.0
+          command: ["tfhe_worker"]
+          args:
+            - --database-url=$(DATABASE_URL)
+            - --metrics-addr=0.0.0.0:9100
+            - --health-check-port=8080
+          env:
+            - name: DATABASE_URL
+              value: "postgresql://coprocessor:coprocessor@db:5432/coprocessor"
+          ports:
+            - name: healthcheck
+              containerPort: 8080
+              protocol: TCP
+            - name: metrics
+              containerPort: 9100
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: coprocessor-tfhe-worker
+    app.kubernetes.io/name: coprocessor-2-tfhe-worker
+  name: coprocessor-2-tfhe-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: coprocessor-tfhe-worker
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: coprocessor-tfhe-worker
         app.kubernetes.io/name: coprocessor-2-tfhe-worker
+    spec:
+      imagePullSecrets:
+        - name: registry-credentials
+      restartPolicy: Always
+      containers:
+        - name: coprocessor-tfhe-worker
+          image: ghcr.io/zama-ai/fhevm/coprocessor/tfhe-worker:v0.11.0
+          command: ["tfhe_worker"]
+          args:
+            - --database-url=$(DATABASE_URL)
+            - --metrics-addr=0.0.0.0:9100
+            - --health-check-port=8080
+          env:
+            - name: DATABASE_URL
+              value: "postgresql://coprocessor:coprocessor@db:5432/coprocessor"
+          ports:
+            - name: healthcheck
+              containerPort: 8080
+              protocol: TCP
+            - name: metrics
+              containerPort: 9100
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: coprocessor-tx-sender
+    app.kubernetes.io/name: coprocessor-0-tx-sender
+  name: coprocessor-0-tx-sender
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: coprocessor-tx-sender
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: coprocessor-tx-sender
+        app.kubernetes.io/name: coprocessor-0-tx-sender
+    spec:
+      imagePullSecrets:
+        - name: registry-credentials
+      restartPolicy: Always
+      containers:
+        - name: coprocessor-tx-sender
+          image: ghcr.io/zama-ai/fhevm/coprocessor/tx-sender:v0.11.0
+          command: ["transaction_sender"]
+          args:
+            - --database-url=$(DATABASE_URL)
+            - --gateway-url=$(GATEWAY_URL)
+            - --input-verification-address=$(INPUT_VERIFICATION_ADDRESS)
+            - --ciphertext-commits-address=$(CIPHERTEXT_COMMITS_ADDRESS)
+            - --multichain-acl-address=$(MULTICHAIN_ACL_ADDRESS)
+            - --signer-type=private-key
+            - --private-key=$(TX_SENDER_PRIVATE_KEY)
+            - --health-check-port=8080
+            - --metrics-addr=0.0.0.0:9100
+          env:
+            - name: DATABASE_URL
+              value: "postgresql://coprocessor:coprocessor@db:5432/coprocessor"
+            - name: GATEWAY_URL
+              value: "http://gateway-node:8546"
+            - name: INPUT_VERIFICATION_ADDRESS
+              value: "0xTODO_INPUT_VERIFICATION_ADDRESS"
+            - name: CIPHERTEXT_COMMITS_ADDRESS
+              value: "0xTODO_CIPHERTEXT_COMMITS_ADDRESS"
+            - name: TX_SENDER_PRIVATE_KEY
+              value: "0xTODO_COPROCESSOR_TX_SENDER_PRIVATE_KEY"
+          ports:
+            - name: healthcheck
+              containerPort: 8080
+              protocol: TCP
+            - name: metrics
+              containerPort: 9100
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: coprocessor-tx-sender
+    app.kubernetes.io/name: coprocessor-1-tx-sender
+  name: coprocessor-1-tx-sender
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: coprocessor-tx-sender
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: coprocessor-tx-sender
+        app.kubernetes.io/name: coprocessor-1-tx-sender
+    spec:
+      imagePullSecrets:
+        - name: registry-credentials
+      restartPolicy: Always
+      containers:
+        - name: coprocessor-tx-sender
+          image: ghcr.io/zama-ai/fhevm/coprocessor/tx-sender:v0.11.0
+          command: ["transaction_sender"]
+          args:
+            - --database-url=$(DATABASE_URL)
+            - --gateway-url=$(GATEWAY_URL)
+            - --input-verification-address=$(INPUT_VERIFICATION_ADDRESS)
+            - --ciphertext-commits-address=$(CIPHERTEXT_COMMITS_ADDRESS)
+            - --multichain-acl-address=$(MULTICHAIN_ACL_ADDRESS)
+            - --signer-type=private-key
+            - --private-key=$(TX_SENDER_PRIVATE_KEY)
+            - --health-check-port=8080
+            - --metrics-addr=0.0.0.0:9100
+          env:
+            - name: DATABASE_URL
+              value: "postgresql://coprocessor:coprocessor@db:5432/coprocessor"
+            - name: GATEWAY_URL
+              value: "http://gateway-node:8546"
+            - name: INPUT_VERIFICATION_ADDRESS
+              value: "0xTODO_INPUT_VERIFICATION_ADDRESS"
+            - name: CIPHERTEXT_COMMITS_ADDRESS
+              value: "0xTODO_CIPHERTEXT_COMMITS_ADDRESS"
+            - name: TX_SENDER_PRIVATE_KEY
+              value: "0xTODO_COPROCESSOR_TX_SENDER_PRIVATE_KEY"
+          ports:
+            - name: healthcheck
+              containerPort: 8080
+              protocol: TCP
+            - name: metrics
+              containerPort: 9100
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: coprocessor-tx-sender
+    app.kubernetes.io/name: coprocessor-2-tx-sender
+  name: coprocessor-2-tx-sender
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: coprocessor-tx-sender
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: coprocessor-tx-sender
         app.kubernetes.io/name: coprocessor-2-tx-sender
-        app.kubernetes.io/name: kms-connector-kms-connector-db-migration
-        app.kubernetes.io/name: kms-connector-kms-connector-gw-listener
-        app.kubernetes.io/name: kms-connector-kms-connector-kms-worker
-        app.kubernetes.io/name: kms-connector-kms-connector-tx-sender
-        CLEAN_NAME=$(echo "${CONTRACT_NAME}" | sed 's/_CONTRACT_ADDRESS\|_ADDRESS//g' | tr '[:upper:]' '[:lower:]')
-        command:
-        command: [ "/app/deploy-contracts.sh" ]
-        command: ["/initialize_db.sh"]
-        command: ["/initialize_db.sh"]
-        command: ["/initialize_db.sh"]
-        configMap:
-        CONTRACT_ADDRESS=$(echo "$line" | cut -d'=' -f2)
-        CONTRACT_NAME=$(echo "$line" | cut -d'=' -f1)
-        echo "Adding ${CLEAN_NAME}.address=${CONTRACT_ADDRESS}"
-        echo "error: you must supply a configmap name" 1>&2
-        echo "error: you must supply a configmap name" 1>&2
-        echo "error: you must supply a configmap name" 1>&2
-        echo "error: you must supply an annotation key" 1>&2
-        echo "error: you must supply an annotation value" 1>&2
-        echo "error: you must supply an item name" 1>&2
-        echo "error: you must supply an item value" 1>&2
-        echo "skipping: ${configmap_name} already contains ${name}:${configmap_value}"
-        echo "skipping: configmap ${configmap_name} already exists" 2>&1
-        env:
-        env:
-        env:
-        env:
-        env:
-        exit 1
-        exit 1
-        exit 1
-        exit 1
-        exit 1
-        exit 1
-        exit 1
-        fsGroup: 10001
-        image: ghcr.io/zama-ai/fhevm/coprocessor/db-migration:v0.11.0
-        image: ghcr.io/zama-ai/fhevm/coprocessor/db-migration:v0.11.0
-        image: ghcr.io/zama-ai/fhevm/coprocessor/db-migration:v0.11.0
-        image: ghcr.io/zama-ai/fhevm/host-contracts:v0.13.0
-        image: ghcr.io/zama-ai/fhevm/kms-connector/db-migration:v0.10.0
-        kubectl create configmap ${configmap_name}
-        kubectl patch configmap "${configmap_name}" -p="{\"data\": {\"${name}\": \"${value}\"}}"
-        persistentVolumeClaim:
-        requests:
-        resources:
-        resources:
-        resources:
-        resources:
-        resources:
-        runAsNonRoot: true
-        runAsUser: 10000
-        volumeMounts:
-      - name: config
-      - name: db-migration
-      - name: db-migration
-      - name: db-migration
-      - name: deploy-smart-contracts
-      - name: kms-connector-db-migration
-      - name: persistence
-      # Parse envfile adding a newline at the end if missing
-      # Patch configmap to add key if it doesn't already exists
-      accessModes: [ "ReadWriteOnce" ]
-      annotations:
-      app: anvil-node-anvil-node
-      app: coprocessor-gw-listener
-      app: coprocessor-gw-listener
-      app: coprocessor-gw-listener
-      app: coprocessor-host-listener
-      app: coprocessor-host-listener
-      app: coprocessor-host-listener
-      app: coprocessor-host-listener-poller-polygon
-      app: coprocessor-host-listener-poller-polygon
-      app: coprocessor-host-listener-poller-polygon
-      app: coprocessor-host-listener-polygon
-      app: coprocessor-host-listener-polygon
-      app: coprocessor-host-listener-polygon
-      app: coprocessor-tfhe-worker
-      app: coprocessor-tfhe-worker
-      app: coprocessor-tfhe-worker
-      app: coprocessor-tx-sender
-      app: coprocessor-tx-sender
-      app: coprocessor-tx-sender
+    spec:
+      imagePullSecrets:
+        - name: registry-credentials
+      restartPolicy: Always
+      containers:
+        - name: coprocessor-tx-sender
+          image: ghcr.io/zama-ai/fhevm/coprocessor/tx-sender:v0.11.0
+          command: ["transaction_sender"]
+          args:
+            - --database-url=$(DATABASE_URL)
+            - --gateway-url=$(GATEWAY_URL)
+            - --input-verification-address=$(INPUT_VERIFICATION_ADDRESS)
+            - --ciphertext-commits-address=$(CIPHERTEXT_COMMITS_ADDRESS)
+            - --multichain-acl-address=$(MULTICHAIN_ACL_ADDRESS)
+            - --signer-type=private-key
+            - --private-key=$(TX_SENDER_PRIVATE_KEY)
+            - --health-check-port=8080
+            - --metrics-addr=0.0.0.0:9100
+          env:
+            - name: DATABASE_URL
+              value: "postgresql://coprocessor:coprocessor@db:5432/coprocessor"
+            - name: GATEWAY_URL
+              value: "http://gateway-node:8546"
+            - name: INPUT_VERIFICATION_ADDRESS
+              value: "0xTODO_INPUT_VERIFICATION_ADDRESS"
+            - name: CIPHERTEXT_COMMITS_ADDRESS
+              value: "0xTODO_CIPHERTEXT_COMMITS_ADDRESS"
+            - name: TX_SENDER_PRIVATE_KEY
+              value: "0xTODO_COPROCESSOR_TX_SENDER_PRIVATE_KEY"
+          ports:
+            - name: healthcheck
+              containerPort: 8080
+              protocol: TCP
+            - name: metrics
+              containerPort: 9100
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: kms-connector-gw-listener
+    app.kubernetes.io/name: kms-connector-kms-connector-gw-listener
+  name: kms-connector-kms-connector-gw-listener
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
       app: kms-connector-gw-listener
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: kms-connector-gw-listener
+        app.kubernetes.io/name: kms-connector-kms-connector-gw-listener
+    spec:
+      imagePullSecrets:
+        - name: registry-credentials
+      restartPolicy: Always
+      containers:
+        - name: kms-connector-gw-listener
+          image: ghcr.io/zama-ai/fhevm/kms-connector/gw-listener:v0.10.0
+          env:
+            - name: KMS_CONNECTOR_DATABASE_URL
+              value: "postgresql://kms-connector:kms-connector@db:5432/kms-connector"
+            - name: KMS_CONNECTOR_GATEWAY_URL
+              value: "http://gateway-node:8546"
+            - name: KMS_CONNECTOR_GATEWAY_CHAIN_ID
+              value: "54321"
+            - name: KMS_CONNECTOR_DECRYPTION_CONTRACT__ADDRESS
+              value: "0xTODO_DECRYPTION_ADDRESS"
+            - name: KMS_CONNECTOR_GATEWAY_CONFIG_CONTRACT__ADDRESS
+              value: "0xTODO_GATEWAY_CONFIG_ADDRESS"
+            - name: KMS_CONNECTOR_KMS_GENERATION_CONTRACT__ADDRESS
+              value: "0xTODO_KMS_GENERATION_ADDRESS"
+            - name: KMS_CONNECTOR_ETHEREUM_URL
+              value: "http://anvil-node-eth:8545"
+            - name: KMS_CONNECTOR_ETHEREUM_CHAIN_ID
+              value: "31337"
+            - name: KMS_CONNECTOR_KMS_VERIFIER_ADDRESS
+              value: "0xTODO_KMS_VERIFIER_ADDRESS"
+          ports:
+            - name: monitoring
+              containerPort: 9100
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: monitoring
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: monitoring
+            initialDelaySeconds: 5
+            periodSeconds: 10
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: kms-connector-kms-worker
+    app.kubernetes.io/name: kms-connector-kms-connector-kms-worker
+  name: kms-connector-kms-connector-kms-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
       app: kms-connector-kms-worker
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: kms-connector-kms-worker
+        app.kubernetes.io/name: kms-connector-kms-connector-kms-worker
+    spec:
+      imagePullSecrets:
+        - name: registry-credentials
+      restartPolicy: Always
+      containers:
+        - name: kms-connector-kms-worker
+          image: ghcr.io/zama-ai/fhevm/kms-connector/kms-worker:v0.10.0
+          env:
+            - name: KMS_CONNECTOR_DATABASE_URL
+              value: "postgresql://kms-connector:kms-connector@db:5432/kms-connector"
+            - name: KMS_CONNECTOR_GATEWAY_URL
+              value: "http://gateway-node:8546"
+            - name: KMS_CONNECTOR_GATEWAY_CHAIN_ID
+              value: "54321"
+            - name: KMS_CONNECTOR_DECRYPTION_CONTRACT__ADDRESS
+              value: "0xTODO_DECRYPTION_ADDRESS"
+            - name: KMS_CONNECTOR_GATEWAY_CONFIG_CONTRACT__ADDRESS
+              value: "0xTODO_GATEWAY_CONFIG_ADDRESS"
+            - name: KMS_CONNECTOR_ETHEREUM_CHAIN_ID
+              value: "31337"
+            - name: KMS_CONNECTOR_KMS_GENERATION_CONTRACT__ADDRESS
+              value: "0xTODO_KMS_GENERATION_ADDRESS"
+            - name: KMS_CONNECTOR_KMS_CORE_ENDPOINTS
+              value: "http://kms-core-0:50051,http://kms-core-1:50051,http://kms-core-2:50051"
+            - name: KMS_CONNECTOR_HOST_CHAINS
+              value: "[{\"aclAddress\":{\"valueFrom\":{\"configMapKeyRef\":{\"key\":\"acl.address\",\"name\":\"sc-addresses\"}}},\"chainId\":31337,\"url\":\"http://anvil-node-eth:8545\"},{\"aclAddress\":\"0xTODO_POLYGON_ACL_ADDRESS\",\"chainId\":80002,\"url\":\"http://anvil-node-polygon:8545\"}]"
+          ports:
+            - name: monitoring
+              containerPort: 9100
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: monitoring
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: monitoring
+            initialDelaySeconds: 5
+            periodSeconds: 10
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: kms-connector-tx-sender
+    app.kubernetes.io/name: kms-connector-kms-connector-tx-sender
+  name: kms-connector-kms-connector-tx-sender
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
       app: kms-connector-tx-sender
-      configmap_name="${1}"
-      configmap_name="${1}"
-      configmap_name="${1}"
-      configmap_value=$(kubectl get configmap "${configmap_name}" -o jsonpath="{.data['${name//./\\.}']}")
-      containers:
-      containers:
-      containers:
-      containers:
-      containers:
-      containers:
-      containers:
-      containers:
-      containers:
-      containers:
-      containers:
-      containers:
-      containers:
-      containers:
-      containers:
-      containers:
-      containers:
-      containers:
-      containers:
-      containers:
-      containers:
-      containers:
-      containers:
-      containers:
-      containers:
-      containers:
-      containers:
-      done < "${envfile}"
-      echo "---"
-      echo "Updating configmap: ${CONFIGMAP_NAME} for the following contract addresses:"
-      else
-      else
-      fi
-      fi
-      fi
-      fi
-      fi
-      fi
-      fi
-      fi
-      fi
-      if ! kubectl get configmap ${configmap_name}; then
-      if [[ -n "${configmap_value}" ]]; then
-      if [[ -z "$configmap_name" ]]; then
-      if [[ -z "$configmap_name" ]]; then
-      if [[ -z "$configmap_name" ]]; then
-      if [[ -z "$key" ]]; then
-      if [[ -z "$name" ]]; then
-      if [[ -z "$value" ]]; then
-      if [[ -z "$value" ]]; then
-      imagePullSecrets:
-      imagePullSecrets:
-      imagePullSecrets:
-      imagePullSecrets:
-      imagePullSecrets:
-      imagePullSecrets:
-      imagePullSecrets:
-      imagePullSecrets:
-      imagePullSecrets:
-      imagePullSecrets:
-      imagePullSecrets:
-      imagePullSecrets:
-      imagePullSecrets:
-      imagePullSecrets:
-      imagePullSecrets:
-      imagePullSecrets:
-      imagePullSecrets:
-      imagePullSecrets:
-      imagePullSecrets:
-      imagePullSecrets:
-      imagePullSecrets:
-      imagePullSecrets:
-      imagePullSecrets:
-      imagePullSecrets:
-      imagePullSecrets:
-      imagePullSecrets:
-      key="${2}"
-      labels:
-      labels:
-      labels:
-      labels:
-      labels:
-      labels:
-      labels:
-      labels:
-      labels:
-      labels:
-      labels:
-      labels:
-      labels:
-      labels:
-      labels:
-      labels:
-      labels:
-      labels:
-      labels:
-      labels:
-      labels:
-      labels:
-      labels:
-      labels:
-      labels:
-      labels:
-      labels:
-      maxSurge: 1
-      maxSurge: 1
-      maxSurge: 1
-      maxSurge: 1
-      maxSurge: 1
-      maxSurge: 1
-      maxSurge: 1
-      maxSurge: 1
-      maxSurge: 1
-      maxSurge: 1
-      maxSurge: 1
-      maxSurge: 1
-      maxSurge: 1
-      maxSurge: 1
-      maxSurge: 1
-      maxSurge: 1
-      maxSurge: 1
-      maxSurge: 1
-      maxSurge: 1
-      maxSurge: 1
+  strategy:
+    rollingUpdate:
       maxSurge: 1
       maxUnavailable: 0
-      maxUnavailable: 0
-      maxUnavailable: 0
-      maxUnavailable: 0
-      maxUnavailable: 0
-      maxUnavailable: 0
-      maxUnavailable: 0
-      maxUnavailable: 0
-      maxUnavailable: 0
-      maxUnavailable: 0
-      maxUnavailable: 0
-      maxUnavailable: 0
-      maxUnavailable: 0
-      maxUnavailable: 0
-      maxUnavailable: 0
-      maxUnavailable: 0
-      maxUnavailable: 0
-      maxUnavailable: 0
-      maxUnavailable: 0
-      maxUnavailable: 0
-      maxUnavailable: 0
-      name: anvil-chain-data
-      name="${2}"
-      port: 8080
-      port: 8080
-      port: 8080
-      port: 8080
-      port: 8080
-      port: 8080
-      port: 8080
-      port: 8080
-      port: 8080
-      port: 8080
-      port: 8080
-      port: 8080
-      port: 8080
-      port: 8080
-      port: 8080
-      port: 8080
-      port: 8080
-      port: 8080
-      port: 8545
-      port: 9100
-      port: 9100
-      port: 9100
-      port: 9100
-      port: 9100
-      port: 9100
-      port: 9100
-      port: 9100
-      port: 9100
-      port: 9100
-      port: 9100
-      port: 9100
-      port: 9100
-      port: 9100
-      port: 9100
-      port: 9100
-      port: 9100
-      port: 9100
-      port: 9100
-      port: 9100
-      port: 9100
-      resources:
-      restartPolicy: Always
-      restartPolicy: Always
-      restartPolicy: Always
-      restartPolicy: Always
-      restartPolicy: Always
-      restartPolicy: Always
-      restartPolicy: Always
-      restartPolicy: Always
-      restartPolicy: Always
-      restartPolicy: Always
-      restartPolicy: Always
-      restartPolicy: Always
-      restartPolicy: Always
-      restartPolicy: Always
-      restartPolicy: Always
-      restartPolicy: Always
-      restartPolicy: Always
-      restartPolicy: Always
-      restartPolicy: Always
-      restartPolicy: Always
-      restartPolicy: Always
-      restartPolicy: Never
-      restartPolicy: Never
-      restartPolicy: Never
-      restartPolicy: Never
-      restartPolicy: Never
-      securityContext:
-      serviceAccountName: host-contracts-config-writer
-      storage: 1Gi
-      targetPort: 8545
-      targetPort: healthcheck
-      targetPort: healthcheck
-      targetPort: healthcheck
-      targetPort: healthcheck
-      targetPort: healthcheck
-      targetPort: healthcheck
-      targetPort: healthcheck
-      targetPort: healthcheck
-      targetPort: healthcheck
-      targetPort: healthcheck
-      targetPort: healthcheck
-      targetPort: healthcheck
-      targetPort: healthcheck
-      targetPort: healthcheck
-      targetPort: healthcheck
-      targetPort: healthcheck
-      targetPort: healthcheck
-      targetPort: healthcheck
-      targetPort: metrics
-      targetPort: metrics
-      targetPort: metrics
-      targetPort: metrics
-      targetPort: metrics
-      targetPort: metrics
-      targetPort: metrics
-      targetPort: metrics
-      targetPort: metrics
-      targetPort: metrics
-      targetPort: metrics
-      targetPort: metrics
-      targetPort: metrics
-      targetPort: metrics
-      targetPort: metrics
-      targetPort: metrics
-      targetPort: metrics
-      targetPort: metrics
-      targetPort: monitoring
-      targetPort: monitoring
-      targetPort: monitoring
-      value="${3}"
-      value="${3}"
-      volumes:
-      volumes:
-      while IFS= read -r line || [[ -n "$line" ]]; do
-    - name: healthcheck
-    - name: healthcheck
-    - name: healthcheck
-    - name: healthcheck
-    - name: healthcheck
-    - name: healthcheck
-    - name: healthcheck
-    - name: healthcheck
-    - name: healthcheck
-    - name: healthcheck
-    - name: healthcheck
-    - name: healthcheck
-    - name: healthcheck
-    - name: healthcheck
-    - name: healthcheck
-    - name: healthcheck
-    - name: healthcheck
-    - name: healthcheck
-    - name: metrics
-    - name: metrics
-    - name: metrics
-    - name: metrics
-    - name: metrics
-    - name: metrics
-    - name: metrics
-    - name: metrics
-    - name: metrics
-    - name: metrics
-    - name: metrics
-    - name: metrics
-    - name: metrics
-    - name: metrics
-    - name: metrics
-    - name: metrics
-    - name: metrics
-    - name: metrics
-    - name: monitoring
-    - name: monitoring
-    - name: monitoring
-    - protocol: TCP
-    - ReadWriteOnce
-    }
-    }
-    }
-    #!/bin/bash
-    #!/bin/bash
-    add_annotation_to_configmap() {
-    add_key_to_configmap() {
-    app: anvil-node-anvil-node
-    app: coprocessor-db-migration
-    app: coprocessor-db-migration
-    app: coprocessor-db-migration
-    app: coprocessor-gw-listener
-    app: coprocessor-gw-listener
-    app: coprocessor-gw-listener
-    app: coprocessor-gw-listener
-    app: coprocessor-gw-listener
-    app: coprocessor-gw-listener
-    app: coprocessor-gw-listener
-    app: coprocessor-gw-listener
-    app: coprocessor-gw-listener
-    app: coprocessor-host-listener
-    app: coprocessor-host-listener
-    app: coprocessor-host-listener
-    app: coprocessor-host-listener
-    app: coprocessor-host-listener
-    app: coprocessor-host-listener
-    app: coprocessor-host-listener
-    app: coprocessor-host-listener
-    app: coprocessor-host-listener
-    app: coprocessor-host-listener-poller-polygon
-    app: coprocessor-host-listener-poller-polygon
-    app: coprocessor-host-listener-poller-polygon
-    app: coprocessor-host-listener-poller-polygon
-    app: coprocessor-host-listener-poller-polygon
-    app: coprocessor-host-listener-poller-polygon
-    app: coprocessor-host-listener-poller-polygon
-    app: coprocessor-host-listener-poller-polygon
-    app: coprocessor-host-listener-poller-polygon
-    app: coprocessor-host-listener-polygon
-    app: coprocessor-host-listener-polygon
-    app: coprocessor-host-listener-polygon
-    app: coprocessor-host-listener-polygon
-    app: coprocessor-host-listener-polygon
-    app: coprocessor-host-listener-polygon
-    app: coprocessor-host-listener-polygon
-    app: coprocessor-host-listener-polygon
-    app: coprocessor-host-listener-polygon
-    app: coprocessor-tfhe-worker
-    app: coprocessor-tfhe-worker
-    app: coprocessor-tfhe-worker
-    app: coprocessor-tfhe-worker
-    app: coprocessor-tfhe-worker
-    app: coprocessor-tfhe-worker
-    app: coprocessor-tfhe-worker
-    app: coprocessor-tfhe-worker
-    app: coprocessor-tfhe-worker
-    app: coprocessor-tx-sender
-    app: coprocessor-tx-sender
-    app: coprocessor-tx-sender
-    app: coprocessor-tx-sender
-    app: coprocessor-tx-sender
-    app: coprocessor-tx-sender
-    app: coprocessor-tx-sender
-    app: coprocessor-tx-sender
-    app: coprocessor-tx-sender
-    app: fhevm-sc-deploy
-    app: fhevm-sc-deploy
-    app: fhevm-sc-deploy
-    app: kms-connector-db-migration
-    app: kms-connector-gw-listener
-    app: kms-connector-gw-listener
-    app: kms-connector-gw-listener
-    app: kms-connector-kms-worker
-    app: kms-connector-kms-worker
-    app: kms-connector-kms-worker
-    app: kms-connector-tx-sender
-    app: kms-connector-tx-sender
-    app: kms-connector-tx-sender
-    app.kubernetes.io/managed-by: Helm
-    app.kubernetes.io/name: coprocessor-0-db-migration
-    app.kubernetes.io/name: coprocessor-0-gw-listener
-    app.kubernetes.io/name: coprocessor-0-gw-listener
-    app.kubernetes.io/name: coprocessor-0-gw-listener
-    app.kubernetes.io/name: coprocessor-0-host-listener
-    app.kubernetes.io/name: coprocessor-0-host-listener
-    app.kubernetes.io/name: coprocessor-0-host-listener
-    app.kubernetes.io/name: coprocessor-0-host-listener-poller-polygon
-    app.kubernetes.io/name: coprocessor-0-host-listener-poller-polygon
-    app.kubernetes.io/name: coprocessor-0-host-listener-poller-polygon
-    app.kubernetes.io/name: coprocessor-0-host-listener-polygon
-    app.kubernetes.io/name: coprocessor-0-host-listener-polygon
-    app.kubernetes.io/name: coprocessor-0-host-listener-polygon
-    app.kubernetes.io/name: coprocessor-0-tfhe-worker
-    app.kubernetes.io/name: coprocessor-0-tfhe-worker
-    app.kubernetes.io/name: coprocessor-0-tfhe-worker
-    app.kubernetes.io/name: coprocessor-0-tx-sender
-    app.kubernetes.io/name: coprocessor-0-tx-sender
-    app.kubernetes.io/name: coprocessor-0-tx-sender
-    app.kubernetes.io/name: coprocessor-1-db-migration
-    app.kubernetes.io/name: coprocessor-1-gw-listener
-    app.kubernetes.io/name: coprocessor-1-gw-listener
-    app.kubernetes.io/name: coprocessor-1-gw-listener
-    app.kubernetes.io/name: coprocessor-1-host-listener
-    app.kubernetes.io/name: coprocessor-1-host-listener
-    app.kubernetes.io/name: coprocessor-1-host-listener
-    app.kubernetes.io/name: coprocessor-1-host-listener-poller-polygon
-    app.kubernetes.io/name: coprocessor-1-host-listener-poller-polygon
-    app.kubernetes.io/name: coprocessor-1-host-listener-poller-polygon
-    app.kubernetes.io/name: coprocessor-1-host-listener-polygon
-    app.kubernetes.io/name: coprocessor-1-host-listener-polygon
-    app.kubernetes.io/name: coprocessor-1-host-listener-polygon
-    app.kubernetes.io/name: coprocessor-1-tfhe-worker
-    app.kubernetes.io/name: coprocessor-1-tfhe-worker
-    app.kubernetes.io/name: coprocessor-1-tfhe-worker
-    app.kubernetes.io/name: coprocessor-1-tx-sender
-    app.kubernetes.io/name: coprocessor-1-tx-sender
-    app.kubernetes.io/name: coprocessor-1-tx-sender
-    app.kubernetes.io/name: coprocessor-2-db-migration
-    app.kubernetes.io/name: coprocessor-2-gw-listener
-    app.kubernetes.io/name: coprocessor-2-gw-listener
-    app.kubernetes.io/name: coprocessor-2-gw-listener
-    app.kubernetes.io/name: coprocessor-2-host-listener
-    app.kubernetes.io/name: coprocessor-2-host-listener
-    app.kubernetes.io/name: coprocessor-2-host-listener
-    app.kubernetes.io/name: coprocessor-2-host-listener-poller-polygon
-    app.kubernetes.io/name: coprocessor-2-host-listener-poller-polygon
-    app.kubernetes.io/name: coprocessor-2-host-listener-poller-polygon
-    app.kubernetes.io/name: coprocessor-2-host-listener-polygon
-    app.kubernetes.io/name: coprocessor-2-host-listener-polygon
-    app.kubernetes.io/name: coprocessor-2-host-listener-polygon
-    app.kubernetes.io/name: coprocessor-2-tfhe-worker
-    app.kubernetes.io/name: coprocessor-2-tfhe-worker
-    app.kubernetes.io/name: coprocessor-2-tfhe-worker
-    app.kubernetes.io/name: coprocessor-2-tx-sender
-    app.kubernetes.io/name: coprocessor-2-tx-sender
-    app.kubernetes.io/name: coprocessor-2-tx-sender
-    app.kubernetes.io/name: host-contracts
-    app.kubernetes.io/name: host-contracts-config
-    app.kubernetes.io/name: host-contracts-deploy
-    app.kubernetes.io/name: kms-connector-kms-connector-db-migration
-    app.kubernetes.io/name: kms-connector-kms-connector-gw-listener
-    app.kubernetes.io/name: kms-connector-kms-connector-gw-listener
-    app.kubernetes.io/name: kms-connector-kms-connector-gw-listener
-    app.kubernetes.io/name: kms-connector-kms-connector-kms-worker
-    app.kubernetes.io/name: kms-connector-kms-connector-kms-worker
-    app.kubernetes.io/name: kms-connector-kms-connector-kms-worker
-    app.kubernetes.io/name: kms-connector-kms-connector-tx-sender
-    app.kubernetes.io/name: kms-connector-kms-connector-tx-sender
-    app.kubernetes.io/name: kms-connector-kms-connector-tx-sender
-    app.kubernetes.io/part-of: listener
-    CONFIGMAP_NAME="sc-addresses"
-    CONFIGMAP_NAME="sc-addresses"
-    create_configmap "${CONFIGMAP_NAME}"
-    create_configmap() {
-    done;
-    echo "adding the current contracts version to the configmap"
-    echo "creating kubernetes configmap for smart contract configuration outputs"
-    echo "executing deploy commands"
-    echo "executing upgrade commands"
-    echo "updating the contracts version to the configmap"
-    for envfile in addresses/.env.*; do
-    kubectl patch configmap "${CONFIGMAP_NAME}" -p="{\"data\": {\"contracts.version\": \"v0.13.0\"}}"
-    kubectl patch configmap "${CONFIGMAP_NAME}" -p="{\"data\": {\"contracts.version\": \"v0.13.0\"}}"
-    matchLabels:
-    matchLabels:
-    matchLabels:
-    matchLabels:
-    matchLabels:
-    matchLabels:
-    matchLabels:
-    matchLabels:
-    matchLabels:
-    matchLabels:
-    matchLabels:
-    matchLabels:
-    matchLabels:
-    matchLabels:
-    matchLabels:
-    matchLabels:
-    matchLabels:
-    matchLabels:
-    matchLabels:
-    matchLabels:
-    matchLabels:
-    matchLabels:
-    metadata:
-    metadata:
-    metadata:
-    metadata:
-    metadata:
-    metadata:
-    metadata:
-    metadata:
-    metadata:
-    metadata:
-    metadata:
-    metadata:
-    metadata:
-    metadata:
-    metadata:
-    metadata:
-    metadata:
-    metadata:
-    metadata:
-    metadata:
-    metadata:
-    metadata:
-    metadata:
-    metadata:
-    metadata:
-    metadata:
-    metadata:
-    name: host-contracts-config-writer
-    namespace: default
-    npx hardhat task:addGatewayPausers
-    npx hardhat task:addHostChainsToGatewayConfig
-    npx hardhat task:addHostPausers
-    npx hardhat task:deployAllGatewayContracts
-    npx hardhat task:deployAllHostContracts --with-kms-generation true
-    npx hardhat task:upgradeDecryption
-    npx hardhat task:upgradeGatewayConfig
-    npx hardhat task:upgradeKMSGeneration
-    npx hardhat task:upgradeKMSVerifier
-    requests:
-    resources: ["configmaps"]
-    rollingUpdate:
-    rollingUpdate:
-    rollingUpdate:
-    rollingUpdate:
-    rollingUpdate:
-    rollingUpdate:
-    rollingUpdate:
-    rollingUpdate:
-    rollingUpdate:
-    rollingUpdate:
-    rollingUpdate:
-    rollingUpdate:
-    rollingUpdate:
-    rollingUpdate:
-    rollingUpdate:
-    rollingUpdate:
-    rollingUpdate:
-    rollingUpdate:
-    rollingUpdate:
-    rollingUpdate:
-    rollingUpdate:
-    set -eo pipefail
-    set -eo pipefail
-    spec:
-    spec:
-    spec:
-    spec:
-    spec:
-    spec:
-    spec:
-    spec:
-    spec:
-    spec:
-    spec:
-    spec:
-    spec:
-    spec:
-    spec:
-    spec:
-    spec:
-    spec:
-    spec:
-    spec:
-    spec:
-    spec:
-    spec:
-    spec:
-    spec:
-    spec:
-    spec:
-    spec:
     type: RollingUpdate
-    type: RollingUpdate
-    type: RollingUpdate
-    type: RollingUpdate
-    type: RollingUpdate
-    type: RollingUpdate
-    type: RollingUpdate
-    type: RollingUpdate
-    type: RollingUpdate
-    type: RollingUpdate
-    type: RollingUpdate
-    type: RollingUpdate
-    type: RollingUpdate
-    type: RollingUpdate
-    type: RollingUpdate
-    type: RollingUpdate
-    type: RollingUpdate
-    type: RollingUpdate
-    type: RollingUpdate
-    type: RollingUpdate
-    type: RollingUpdate
-    verbs: ["get", "watch", "list", "create", "patch"]
-  - apiGroups: [""]
-  - kind: ServiceAccount
-  - metadata:
-  accessModes:
-  apiGroup: rbac.authorization.k8s.io
-  backoffLimit: 0
-  backoffLimit: 3
-  backoffLimit: 3
-  backoffLimit: 3
-  backoffLimit: 3
-  deploy-contracts.sh: |
-  kind: Role
-  labels:
-  labels:
-  labels:
-  labels:
-  labels:
-  labels:
-  labels:
-  labels:
-  labels:
-  labels:
-  labels:
-  labels:
-  labels:
-  labels:
-  labels:
-  labels:
-  labels:
-  labels:
-  labels:
-  labels:
-  labels:
-  labels:
-  labels:
-  labels:
-  labels:
-  labels:
-  labels:
-  labels:
-  labels:
-  labels:
-  labels:
-  labels:
-  labels:
-  labels:
-  labels:
-  labels:
-  labels:
-  labels:
-  labels:
-  labels:
-  labels:
-  labels:
-  labels:
-  labels:
-  labels:
-  labels:
-  labels:
-  labels:
-  labels:
-  labels:
-  name: anvil-node-anvil-node
-  name: anvil-node-anvil-node
-  name: coprocessor-0-db-migration-1
-  name: coprocessor-0-gw-listener
-  name: coprocessor-0-gw-listener
-  name: coprocessor-0-host-listener
-  name: coprocessor-0-host-listener
-  name: coprocessor-0-host-listener-poller-polygon
-  name: coprocessor-0-host-listener-poller-polygon
-  name: coprocessor-0-host-listener-polygon
-  name: coprocessor-0-host-listener-polygon
-  name: coprocessor-0-tfhe-worker
-  name: coprocessor-0-tfhe-worker
-  name: coprocessor-0-tx-sender
-  name: coprocessor-0-tx-sender
-  name: coprocessor-1-db-migration-1
-  name: coprocessor-1-gw-listener
-  name: coprocessor-1-gw-listener
-  name: coprocessor-1-host-listener
-  name: coprocessor-1-host-listener
-  name: coprocessor-1-host-listener-poller-polygon
-  name: coprocessor-1-host-listener-poller-polygon
-  name: coprocessor-1-host-listener-polygon
-  name: coprocessor-1-host-listener-polygon
-  name: coprocessor-1-tfhe-worker
-  name: coprocessor-1-tfhe-worker
-  name: coprocessor-1-tx-sender
-  name: coprocessor-1-tx-sender
-  name: coprocessor-2-db-migration-1
-  name: coprocessor-2-gw-listener
-  name: coprocessor-2-gw-listener
-  name: coprocessor-2-host-listener
-  name: coprocessor-2-host-listener
-  name: coprocessor-2-host-listener-poller-polygon
-  name: coprocessor-2-host-listener-poller-polygon
-  name: coprocessor-2-host-listener-polygon
-  name: coprocessor-2-host-listener-polygon
-  name: coprocessor-2-tfhe-worker
-  name: coprocessor-2-tfhe-worker
-  name: coprocessor-2-tx-sender
-  name: coprocessor-2-tx-sender
-  name: host-contracts
-  name: host-contracts-config
-  name: host-contracts-config-writer
-  name: host-contracts-config-writer
-  name: host-contracts-config-writer
-  name: host-contracts-config-writer
-  name: host-contracts-deploy
-  name: kms-connector-kms-connector-db-migration-v0.10.0
-  name: kms-connector-kms-connector-gw-listener
-  name: kms-connector-kms-connector-gw-listener
-  name: kms-connector-kms-connector-kms-worker
-  name: kms-connector-kms-connector-kms-worker
-  name: kms-connector-kms-connector-tx-sender
-  name: kms-connector-kms-connector-tx-sender
-  name: listener
-  namespace: default
-  namespace: default
-  namespace: default
-  namespace: default
-  namespace: default
-  namespace: default
-  namespace: default
-  ports:
-  ports:
-  ports:
-  ports:
-  ports:
-  ports:
-  ports:
-  ports:
-  ports:
-  ports:
-  ports:
-  ports:
-  ports:
-  ports:
-  ports:
-  ports:
-  ports:
-  ports:
-  ports:
-  ports:
-  ports:
-  ports:
-  replicas: 1
-  replicas: 1
-  replicas: 1
-  replicas: 1
-  replicas: 1
-  replicas: 1
-  replicas: 1
-  replicas: 1
-  replicas: 1
-  replicas: 1
-  replicas: 1
-  replicas: 1
-  replicas: 1
-  replicas: 1
-  replicas: 1
-  replicas: 1
-  replicas: 1
-  replicas: 1
-  replicas: 1
-  replicas: 1
-  replicas: 1
-  replicas: 1
-  resources:
-  selector:
-  selector:
-  selector:
-  selector:
-  selector:
-  selector:
-  selector:
-  selector:
-  selector:
-  selector:
-  selector:
-  selector:
-  selector:
-  selector:
-  selector:
-  selector:
-  selector:
-  selector:
-  selector:
-  selector:
-  selector:
-  selector:
-  selector:
-  selector:
-  selector:
-  selector:
-  selector:
-  selector:
-  selector:
-  selector:
-  selector:
-  selector:
-  selector:
-  selector:
-  selector:
-  selector:
-  selector:
-  selector:
-  selector:
-  selector:
-  selector:
-  selector:
-  selector:
-  selector:
-  serviceName: anvil-node-anvil-node
-  storageClassName: standard
-  strategy:
-  strategy:
-  strategy:
-  strategy:
-  strategy:
-  strategy:
-  strategy:
-  strategy:
-  strategy:
-  strategy:
-  strategy:
-  strategy:
-  strategy:
-  strategy:
-  strategy:
-  strategy:
-  strategy:
-  strategy:
-  strategy:
-  strategy:
-  strategy:
   template:
-  template:
-  template:
-  template:
-  template:
-  template:
-  template:
-  template:
-  template:
-  template:
-  template:
-  template:
-  template:
-  template:
-  template:
-  template:
-  template:
-  template:
-  template:
-  template:
-  template:
-  template:
-  template:
-  template:
-  template:
-  template:
-  template:
-  type: ClusterIP
-  type: ClusterIP
-  type: ClusterIP
-  type: ClusterIP
-  type: ClusterIP
-  type: ClusterIP
-  type: ClusterIP
-  type: ClusterIP
-  type: ClusterIP
-  type: ClusterIP
-  type: ClusterIP
-  type: ClusterIP
-  type: ClusterIP
-  type: ClusterIP
-  type: ClusterIP
-  type: ClusterIP
-  type: ClusterIP
-  type: ClusterIP
-  type: ClusterIP
-  type: ClusterIP---
-  type: ClusterIP---
-  type: ClusterIP---
-  upgrade-contracts.sh: |
-  volumeClaimTemplates:
+    metadata:
+      labels:
+        app: kms-connector-tx-sender
+        app.kubernetes.io/name: kms-connector-kms-connector-tx-sender
+    spec:
+      imagePullSecrets:
+        - name: registry-credentials
+      restartPolicy: Always
+      containers:
+        - name: kms-connector-tx-sender
+          image: ghcr.io/zama-ai/fhevm/kms-connector/tx-sender:v0.10.0
+          env:
+            - name: KMS_CONNECTOR_DATABASE_URL
+              value: "postgresql://kms-connector:kms-connector@db:5432/kms-connector"
+            - name: KMS_CONNECTOR_GATEWAY_URL
+              value: "http://gateway-node:8546"
+            - name: KMS_CONNECTOR_GATEWAY_CHAIN_ID
+              value: "54321"
+            - name: KMS_CONNECTOR_DECRYPTION_CONTRACT__ADDRESS
+              value: "0xTODO_DECRYPTION_ADDRESS"
+            - name: KMS_CONNECTOR_GATEWAY_CONFIG_CONTRACT__ADDRESS
+              value: "0xTODO_GATEWAY_CONFIG_ADDRESS"
+            - name: KMS_CONNECTOR_KMS_GENERATION_CONTRACT__ADDRESS
+              value: "0xTODO_KMS_GENERATION_ADDRESS"
+            - name: KMS_CONNECTOR_ETHEREUM_URL
+              value: "http://anvil-node-eth:8545"
+            - name: KMS_CONNECTOR_ETHEREUM_CHAIN_ID
+              value: "31337"
+            - name: KMS_CONNECTOR_KMS_VERIFIER_ADDRESS
+              value: "0xTODO_KMS_VERIFIER_ADDRESS"
+            - name: KMS_CONNECTOR_PRIVATE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: "kms-connector-tx-sender"
+                  key: "kms-wallet"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://otel-deployment-opentelemetry-collector.observability.svc.cluster.local:4317
+            - name: KMS_CONNECTOR_SERVICE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          ports:
+            - name: monitoring
+              containerPort: 9100
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: monitoring
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: monitoring
+            initialDelaySeconds: 5
+            periodSeconds: 10
 apiVersion: apps/v1
-apiVersion: apps/v1
-apiVersion: apps/v1
-apiVersion: apps/v1
-apiVersion: apps/v1
-apiVersion: apps/v1
-apiVersion: apps/v1
-apiVersion: apps/v1
-apiVersion: apps/v1
-apiVersion: apps/v1
-apiVersion: apps/v1
-apiVersion: apps/v1
-apiVersion: apps/v1
-apiVersion: apps/v1
-apiVersion: apps/v1
-apiVersion: apps/v1
-apiVersion: apps/v1
-apiVersion: apps/v1
-apiVersion: apps/v1
-apiVersion: apps/v1
-apiVersion: apps/v1
-apiVersion: apps/v1
-apiVersion: batch/v1
-apiVersion: batch/v1
-apiVersion: batch/v1
-apiVersion: batch/v1
-apiVersion: batch/v1
-apiVersion: rbac.authorization.k8s.io/v1
-apiVersion: rbac.authorization.k8s.io/v1
-apiVersion: v1
-apiVersion: v1
-apiVersion: v1
-apiVersion: v1
-apiVersion: v1
-apiVersion: v1
-apiVersion: v1
-apiVersion: v1
-apiVersion: v1
-apiVersion: v1
-apiVersion: v1
-apiVersion: v1
-apiVersion: v1
-apiVersion: v1
-apiVersion: v1
-apiVersion: v1
-apiVersion: v1
-apiVersion: v1
-apiVersion: v1
-apiVersion: v1
-apiVersion: v1
-apiVersion: v1
-apiVersion: v1
-apiVersion: v1
-apiVersion: v1
-apiVersion: v1
-automountServiceAccountToken: true
-data:
-kind: ConfigMap
-kind: Deployment
-kind: Deployment
-kind: Deployment
-kind: Deployment
-kind: Deployment
-kind: Deployment
-kind: Deployment
-kind: Deployment
-kind: Deployment
-kind: Deployment
-kind: Deployment
-kind: Deployment
-kind: Deployment
-kind: Deployment
-kind: Deployment
-kind: Deployment
-kind: Deployment
-kind: Deployment
-kind: Deployment
-kind: Deployment
-kind: Deployment
-kind: Job
-kind: Job
-kind: Job
-kind: Job
-kind: Job
-kind: PersistentVolumeClaim
-kind: Role
-kind: RoleBinding
-kind: Service
-kind: Service
-kind: Service
-kind: Service
-kind: Service
-kind: Service
-kind: Service
-kind: Service
-kind: Service
-kind: Service
-kind: Service
-kind: Service
-kind: Service
-kind: Service
-kind: Service
-kind: Service
-kind: Service
-kind: Service
-kind: Service
-kind: Service
-kind: Service
-kind: Service
-kind: ServiceAccount
-kind: ServiceAccount
 kind: StatefulSet
 metadata:
+  name: anvil-node-anvil-node
+spec:
+  serviceName: anvil-node-anvil-node
+  replicas: 1
+  selector:
+    matchLabels:
+      app: anvil-node-anvil-node
+  template:
+    metadata:
+      labels:
+        app: anvil-node-anvil-node
+    spec:
+      containers:
+        - name: anvil-node
+          image: ghcr.io/foundry-rs/foundry:stable
+          command: ["anvil"]
+          env:
+            - name: MNEMONIC
+              value: 
+          args:
+            - "--block-time"
+            - "0.5"
+            - "--host"
+            - "0.0.0.0"
+            - "--port"
+            - "8545"
+            - "--chain-id"
+            - "12345"
+            - "--accounts"
+            - "10"
+            - "--mnemonic"
+            - "$(MNEMONIC)"
+          ports:
+            - containerPort: 8545
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+          - name: anvil-chain-data
+            mountPath: /home/foundry/.foundry/anvil
+  volumeClaimTemplates:
+  - metadata:
+      name: anvil-chain-data
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 1Gi
+apiVersion: batch/v1
+kind: Job
 metadata:
+  labels:
+    app: fhevm-sc-deploy
+    app.kubernetes.io/name: host-contracts-deploy
+  name: host-contracts-deploy
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      annotations:
+      labels:
+    spec:
+      serviceAccountName: host-contracts-config-writer
+      securityContext:
+        fsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10000
+      containers:
+      - name: deploy-smart-contracts
+        command: [ "/app/deploy-contracts.sh" ]
+        image: ghcr.io/zama-ai/fhevm/host-contracts:v0.13.0
+        env:
+          - name: DEPLOYED_SMART_CONTRACTS_VERSION
+            valueFrom:
+              configMapKeyRef:
+                name: sc-addresses
+                key: contracts.version
+                optional: true
+          - name: MANIFEST_DEFAULT_DIR
+            value: "/app/addresses/.openzeppelin"
+          
+          - name: DEPLOYER_PRIVATE_KEY
+            value: 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
+          - name: NUM_KMS_NODES
+            value: "3"
+          - name: KMS_TX_SENDER_ADDRESS_0
+            value: 0xTODO_KMS_TX_SENDER_0
+          - name: KMS_SIGNER_ADDRESS_0
+            value: 0xTODO_KMS_SIGNER_0
+          - name: KMS_NODE_IP_0
+            value: kms-core-0.default.svc.cluster.local
+          - name: KMS_NODE_STORAGE_URL_0
+            value: http://kms-core-0.default.svc.cluster.local:9000
+          - name: KMS_TX_SENDER_ADDRESS_1
+            value: 0xTODO_KMS_TX_SENDER_1
+          - name: KMS_SIGNER_ADDRESS_1
+            value: 0xTODO_KMS_SIGNER_1
+          - name: KMS_NODE_IP_1
+            value: kms-core-1.default.svc.cluster.local
+          - name: KMS_NODE_STORAGE_URL_1
+            value: http://kms-core-1.default.svc.cluster.local:9000
+          - name: KMS_TX_SENDER_ADDRESS_2
+            value: 0xTODO_KMS_TX_SENDER_2
+          - name: KMS_SIGNER_ADDRESS_2
+            value: 0xTODO_KMS_SIGNER_2
+          - name: KMS_NODE_IP_2
+            value: kms-core-2.default.svc.cluster.local
+          - name: KMS_NODE_STORAGE_URL_2
+            value: http://kms-core-2.default.svc.cluster.local:9000
+          - name: PUBLIC_DECRYPTION_THRESHOLD
+            value: "2"
+          - name: USER_DECRYPTION_THRESHOLD
+            value: "2"
+          - name: KMS_GEN_THRESHOLD
+            value: "2"
+          - name: MPC_THRESHOLD
+            value: "2"
+          - name: NUM_COPROCESSORS
+            value: "3"
+          - name: COPROCESSOR_THRESHOLD
+            value: "2"
+          - name: COPROCESSOR_SIGNER_ADDRESS_0
+            value: 0xTODO_COPROCESSOR_SIGNER_0
+          - name: COPROCESSOR_SIGNER_ADDRESS_1
+            value: 0xTODO_COPROCESSOR_SIGNER_1
+          - name: COPROCESSOR_SIGNER_ADDRESS_2
+            value: 0xTODO_COPROCESSOR_SIGNER_2
+          - name: CHAIN_ID_GATEWAY
+            value: "54321"
+          - name: DECRYPTION_ADDRESS
+            value: 0xTODO_DECRYPTION_ADDRESS
+          - name: INPUT_VERIFICATION_ADDRESS
+            value: 0xTODO_INPUT_VERIFICATION_ADDRESS
+          - name: NUM_PAUSERS
+            value: "6"
+          - name: PAUSER_ADDRESS_0
+            value: 0xTODO_KMS_TX_SENDER_0
+          - name: PAUSER_ADDRESS_1
+            value: 0xTODO_KMS_TX_SENDER_1
+          - name: PAUSER_ADDRESS_2
+            value: 0xTODO_KMS_TX_SENDER_2
+          - name: PAUSER_ADDRESS_3
+            value: 0xTODO_COPROCESSOR_TX_SENDER_0
+          - name: PAUSER_ADDRESS_4
+            value: 0xTODO_COPROCESSOR_TX_SENDER_1
+          - name: PAUSER_ADDRESS_5
+            value: 0xTODO_COPROCESSOR_TX_SENDER_2
+        volumeMounts:
+          - mountPath: /app/deploy-contracts.sh
+            subPath: deploy-contracts.sh
+            name: config
+          - mountPath: /app/upgrade-contracts.sh
+            subPath: upgrade-contracts.sh
+            name: config
+          - mountPath: /app/addresses
+            name: persistence
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+      volumes:
+      - name: config
+        configMap:
+          name: host-contracts-config
+          defaultMode: 0755
+      - name: persistence
+        persistentVolumeClaim:
+          claimName: host-contracts
+      restartPolicy: Never
+      imagePullSecrets:
+        - name: registry-credentials
+apiVersion: batch/v1
+kind: Job
 metadata:
+  name: coprocessor-0-db-migration-1
+  labels:
+    app: coprocessor-db-migration
+    app.kubernetes.io/name: coprocessor-0-db-migration
+  namespace: default
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app: coprocessor-db-migration
+        app.kubernetes.io/name: coprocessor-0-db-migration
+    spec:
+      imagePullSecrets:
+        - name: registry-credentials
+      restartPolicy: Never
+      containers:
+      - name: db-migration
+        image: ghcr.io/zama-ai/fhevm/coprocessor/db-migration:v0.11.0
+        command: ["/initialize_db.sh"]
+        env:
+          - name: DATABASE_URL
+            value: "postgresql://coprocessor:coprocessor@db:5432/coprocessor"
+          - name: HOST_CHAINS_COUNT
+            value: "2"
+          - name: HOST_CHAIN_0_ID
+            value: "31337"
+          - name: HOST_CHAIN_0_NAME
+            value: "ethereum"
+          - name: HOST_CHAIN_0_ACL
+            value: "map[valueFrom:map[configMapKeyRef:map[key:acl.address name:sc-addresses]]]"
+          - name: HOST_CHAIN_1_ID
+            value: "80002"
+          - name: HOST_CHAIN_1_NAME
+            value: "polygon"
+          - name: HOST_CHAIN_1_ACL
+            value: "0xTODO_POLYGON_ACL_ADDRESS"
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+apiVersion: batch/v1
+kind: Job
 metadata:
+  name: coprocessor-1-db-migration-1
+  labels:
+    app: coprocessor-db-migration
+    app.kubernetes.io/name: coprocessor-1-db-migration
+  namespace: default
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app: coprocessor-db-migration
+        app.kubernetes.io/name: coprocessor-1-db-migration
+    spec:
+      imagePullSecrets:
+        - name: registry-credentials
+      restartPolicy: Never
+      containers:
+      - name: db-migration
+        image: ghcr.io/zama-ai/fhevm/coprocessor/db-migration:v0.11.0
+        command: ["/initialize_db.sh"]
+        env:
+          - name: DATABASE_URL
+            value: "postgresql://coprocessor:coprocessor@db:5432/coprocessor"
+          - name: HOST_CHAINS_COUNT
+            value: "2"
+          - name: HOST_CHAIN_0_ID
+            value: "31337"
+          - name: HOST_CHAIN_0_NAME
+            value: "ethereum"
+          - name: HOST_CHAIN_0_ACL
+            value: "map[valueFrom:map[configMapKeyRef:map[key:acl.address name:sc-addresses]]]"
+          - name: HOST_CHAIN_1_ID
+            value: "80002"
+          - name: HOST_CHAIN_1_NAME
+            value: "polygon"
+          - name: HOST_CHAIN_1_ACL
+            value: "0xTODO_POLYGON_ACL_ADDRESS"
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+apiVersion: batch/v1
+kind: Job
 metadata:
+  name: coprocessor-2-db-migration-1
+  labels:
+    app: coprocessor-db-migration
+    app.kubernetes.io/name: coprocessor-2-db-migration
+  namespace: default
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app: coprocessor-db-migration
+        app.kubernetes.io/name: coprocessor-2-db-migration
+    spec:
+      imagePullSecrets:
+        - name: registry-credentials
+      restartPolicy: Never
+      containers:
+      - name: db-migration
+        image: ghcr.io/zama-ai/fhevm/coprocessor/db-migration:v0.11.0
+        command: ["/initialize_db.sh"]
+        env:
+          - name: DATABASE_URL
+            value: "postgresql://coprocessor:coprocessor@db:5432/coprocessor"
+          - name: HOST_CHAINS_COUNT
+            value: "2"
+          - name: HOST_CHAIN_0_ID
+            value: "31337"
+          - name: HOST_CHAIN_0_NAME
+            value: "ethereum"
+          - name: HOST_CHAIN_0_ACL
+            value: "map[valueFrom:map[configMapKeyRef:map[key:acl.address name:sc-addresses]]]"
+          - name: HOST_CHAIN_1_ID
+            value: "80002"
+          - name: HOST_CHAIN_1_NAME
+            value: "polygon"
+          - name: HOST_CHAIN_1_ACL
+            value: "0xTODO_POLYGON_ACL_ADDRESS"
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+apiVersion: batch/v1
+kind: Job
 metadata:
+  name: kms-connector-kms-connector-db-migration-v0.10.0
+  labels:
+    app: kms-connector-db-migration
+    app.kubernetes.io/name: kms-connector-kms-connector-db-migration
+  namespace: default
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app: kms-connector-db-migration
+        app.kubernetes.io/name: kms-connector-kms-connector-db-migration
+    spec:
+      imagePullSecrets:
+        - name: registry-credentials
+      restartPolicy: Never
+      containers:
+      - name: kms-connector-db-migration
+        image: ghcr.io/zama-ai/fhevm/kms-connector/db-migration:v0.10.0
+        command:
+          - sqlx
+          - migrate
+          - run
+          - --source
+          - /migrations
+        env:
+          - name: DATABASE_ENDPOINT
+            value: postgresql://db:5432/kms-connector
+          - name: PGUSER
+            value: postgres
+          - name: PGPASSWORD
+            value: postgres
+          - name: DATABASE_URL
+            value: "postgresql://kms-connector:kms-connector@db:5432/kms-connector"
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+      volumes:
+        - name: cache-volume
+          emptyDir:
+            sizeLimit: 2Gi
+apiVersion: v1
+kind: ConfigMap
 metadata:
+  labels:
+    app: fhevm-sc-deploy
+    app.kubernetes.io/name: host-contracts-config
+  name: host-contracts-config
+data:
+  deploy-contracts.sh: |
+    #!/bin/bash
+    set -eo pipefail
+    
+    create_configmap() {
+      configmap_name="${1}"
+      if [[ -z "$configmap_name" ]]; then
+        echo "error: you must supply a configmap name" 1>&2
+        exit 1
+      fi
+      if ! kubectl get configmap ${configmap_name}; then
+        kubectl create configmap ${configmap_name}
+      else
+        echo "skipping: configmap ${configmap_name} already exists" 2>&1
+      fi
+    }
+    add_key_to_configmap() {
+      configmap_name="${1}"
+      name="${2}"
+      value="${3}"
+      if [[ -z "$configmap_name" ]]; then
+        echo "error: you must supply a configmap name" 1>&2
+        exit 1
+      fi
+      if [[ -z "$name" ]]; then
+        echo "error: you must supply an item name" 1>&2
+        exit 1
+      fi
+      if [[ -z "$value" ]]; then
+        echo "error: you must supply an item value" 1>&2
+        exit 1
+      fi
+      # Patch configmap to add key if it doesn't already exists
+      configmap_value=$(kubectl get configmap "${configmap_name}" -o jsonpath="{.data['${name//./\\.}']}")
+      if [[ -n "${configmap_value}" ]]; then
+        echo "skipping: ${configmap_name} already contains ${name}:${configmap_value}"
+      else
+        kubectl patch configmap "${configmap_name}" -p="{\"data\": {\"${name}\": \"${value}\"}}"
+      fi
+    }
+    add_annotation_to_configmap() {
+      configmap_name="${1}"
+      key="${2}"
+      value="${3}"
+      if [[ -z "$configmap_name" ]]; then
+        echo "error: you must supply a configmap name" 1>&2
+        exit 1
+      fi
+      if [[ -z "$key" ]]; then
+        echo "error: you must supply an annotation key" 1>&2
+        exit 1
+      fi
+      if [[ -z "$value" ]]; then
+        echo "error: you must supply an annotation value" 1>&2
+        exit 1
+      fi
+    }
+    CONFIGMAP_NAME="sc-addresses"
+    echo "creating kubernetes configmap for smart contract configuration outputs"
+    create_configmap "${CONFIGMAP_NAME}"
+
+    echo "executing deploy commands"
+    
+    npx hardhat task:deployAllGatewayContracts
+    
+    npx hardhat task:addHostChainsToGatewayConfig
+    
+    npx hardhat task:addGatewayPausers
+    
+    npx hardhat task:deployAllHostContracts --with-kms-generation true
+    
+    npx hardhat task:addHostPausers
+
+    for envfile in addresses/.env.*; do
+      echo "---"
+      echo "Updating configmap: ${CONFIGMAP_NAME} for the following contract addresses:"
+
+      # Parse envfile adding a newline at the end if missing
+      while IFS= read -r line || [[ -n "$line" ]]; do
+        # Use `cut` to split the line at the first `=`
+        # The first part is the key (CONTRACT_NAME) and the second is the value (CONTRACT_ADDRESS)
+        CONTRACT_NAME=$(echo "$line" | cut -d'=' -f1)
+        CONTRACT_ADDRESS=$(echo "$line" | cut -d'=' -f2)
+
+        # Remove the "_ADDRESS" or  "_CONTRACT_ADDRESS" suffix to get the clean contract name
+        CLEAN_NAME=$(echo "${CONTRACT_NAME}" | sed 's/_CONTRACT_ADDRESS\|_ADDRESS//g' | tr '[:upper:]' '[:lower:]')
+        echo "Adding ${CLEAN_NAME}.address=${CONTRACT_ADDRESS}"
+        add_key_to_configmap "${CONFIGMAP_NAME}" "${CLEAN_NAME}.address" "${CONTRACT_ADDRESS}"
+      done < "${envfile}"
+    done;
+    echo "adding the current contracts version to the configmap"
+    kubectl patch configmap "${CONFIGMAP_NAME}" -p="{\"data\": {\"contracts.version\": \"v0.13.0\"}}"
+  upgrade-contracts.sh: |
+    #!/bin/bash
+    set -eo pipefail
+
+    echo "executing upgrade commands"
+    
+    npx hardhat task:upgradeGatewayConfig
+    
+    npx hardhat task:upgradeDecryption
+    
+    npx hardhat task:upgradeKMSGeneration
+    
+    npx hardhat task:upgradeKMSVerifier
+    echo "updating the contracts version to the configmap"
+    CONFIGMAP_NAME="sc-addresses"
+    kubectl patch configmap "${CONFIGMAP_NAME}" -p="{\"data\": {\"contracts.version\": \"v0.13.0\"}}"
+apiVersion: v1
+kind: PersistentVolumeClaim
 metadata:
+  name: host-contracts
+  labels:
+    app: fhevm-sc-deploy
+    app.kubernetes.io/name: host-contracts
+spec:
+  storageClassName: standard
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+apiVersion: v1
+kind: Service
 metadata:
+  labels:
+    app: coprocessor-gw-listener
+    app.kubernetes.io/name: coprocessor-0-gw-listener
+  name: coprocessor-0-gw-listener
+spec:
+  ports:
+    - name: metrics
+      port: 9100
+      targetPort: metrics
+    - name: healthcheck
+      port: 8080
+      targetPort: healthcheck
+  selector:
+    app: coprocessor-gw-listener
+    app.kubernetes.io/name: coprocessor-0-gw-listener
+  type: ClusterIP
+apiVersion: v1
+kind: Service
 metadata:
+  labels:
+    app: coprocessor-gw-listener
+    app.kubernetes.io/name: coprocessor-1-gw-listener
+  name: coprocessor-1-gw-listener
+spec:
+  ports:
+    - name: metrics
+      port: 9100
+      targetPort: metrics
+    - name: healthcheck
+      port: 8080
+      targetPort: healthcheck
+  selector:
+    app: coprocessor-gw-listener
+    app.kubernetes.io/name: coprocessor-1-gw-listener
+  type: ClusterIP
+apiVersion: v1
+kind: Service
 metadata:
+  labels:
+    app: coprocessor-gw-listener
+    app.kubernetes.io/name: coprocessor-2-gw-listener
+  name: coprocessor-2-gw-listener
+spec:
+  ports:
+    - name: metrics
+      port: 9100
+      targetPort: metrics
+    - name: healthcheck
+      port: 8080
+      targetPort: healthcheck
+  selector:
+    app: coprocessor-gw-listener
+    app.kubernetes.io/name: coprocessor-2-gw-listener
+  type: ClusterIP
+apiVersion: v1
+kind: Service
 metadata:
+  labels:
+    app: coprocessor-host-listener
+    app.kubernetes.io/name: coprocessor-0-host-listener
+  name: coprocessor-0-host-listener
+spec:
+  ports:
+    - name: metrics
+      port: 9100
+      targetPort: metrics
+    - name: healthcheck
+      port: 8080
+      targetPort: healthcheck
+  selector:
+    app: coprocessor-host-listener
+    app.kubernetes.io/name: coprocessor-0-host-listener
+  type: ClusterIP---
+apiVersion: v1
+kind: Service
 metadata:
+  labels:
+    app: coprocessor-host-listener-polygon
+    app.kubernetes.io/name: coprocessor-0-host-listener-polygon
+  name: coprocessor-0-host-listener-polygon
+spec:
+  ports:
+    - name: metrics
+      port: 9100
+      targetPort: metrics
+    - name: healthcheck
+      port: 8080
+      targetPort: healthcheck
+  selector:
+    app: coprocessor-host-listener-polygon
+    app.kubernetes.io/name: coprocessor-0-host-listener-polygon
+  type: ClusterIP
+apiVersion: v1
+kind: Service
 metadata:
+  labels:
+    app: coprocessor-host-listener
+    app.kubernetes.io/name: coprocessor-1-host-listener
+  name: coprocessor-1-host-listener
+spec:
+  ports:
+    - name: metrics
+      port: 9100
+      targetPort: metrics
+    - name: healthcheck
+      port: 8080
+      targetPort: healthcheck
+  selector:
+    app: coprocessor-host-listener
+    app.kubernetes.io/name: coprocessor-1-host-listener
+  type: ClusterIP---
+apiVersion: v1
+kind: Service
 metadata:
+  labels:
+    app: coprocessor-host-listener-polygon
+    app.kubernetes.io/name: coprocessor-1-host-listener-polygon
+  name: coprocessor-1-host-listener-polygon
+spec:
+  ports:
+    - name: metrics
+      port: 9100
+      targetPort: metrics
+    - name: healthcheck
+      port: 8080
+      targetPort: healthcheck
+  selector:
+    app: coprocessor-host-listener-polygon
+    app.kubernetes.io/name: coprocessor-1-host-listener-polygon
+  type: ClusterIP
+apiVersion: v1
+kind: Service
 metadata:
+  labels:
+    app: coprocessor-host-listener
+    app.kubernetes.io/name: coprocessor-2-host-listener
+  name: coprocessor-2-host-listener
+spec:
+  ports:
+    - name: metrics
+      port: 9100
+      targetPort: metrics
+    - name: healthcheck
+      port: 8080
+      targetPort: healthcheck
+  selector:
+    app: coprocessor-host-listener
+    app.kubernetes.io/name: coprocessor-2-host-listener
+  type: ClusterIP---
+apiVersion: v1
+kind: Service
 metadata:
+  labels:
+    app: coprocessor-host-listener-polygon
+    app.kubernetes.io/name: coprocessor-2-host-listener-polygon
+  name: coprocessor-2-host-listener-polygon
+spec:
+  ports:
+    - name: metrics
+      port: 9100
+      targetPort: metrics
+    - name: healthcheck
+      port: 8080
+      targetPort: healthcheck
+  selector:
+    app: coprocessor-host-listener-polygon
+    app.kubernetes.io/name: coprocessor-2-host-listener-polygon
+  type: ClusterIP
+apiVersion: v1
+kind: Service
 metadata:
+  labels:
+    app: coprocessor-host-listener-poller-polygon
+    app.kubernetes.io/name: coprocessor-0-host-listener-poller-polygon
+  name: coprocessor-0-host-listener-poller-polygon
+spec:
+  ports:
+    - name: metrics
+      port: 9100
+      targetPort: metrics
+    - name: healthcheck
+      port: 8080
+      targetPort: healthcheck
+  selector:
+    app: coprocessor-host-listener-poller-polygon
+    app.kubernetes.io/name: coprocessor-0-host-listener-poller-polygon
+  type: ClusterIP
+apiVersion: v1
+kind: Service
 metadata:
+  labels:
+    app: coprocessor-host-listener-poller-polygon
+    app.kubernetes.io/name: coprocessor-1-host-listener-poller-polygon
+  name: coprocessor-1-host-listener-poller-polygon
+spec:
+  ports:
+    - name: metrics
+      port: 9100
+      targetPort: metrics
+    - name: healthcheck
+      port: 8080
+      targetPort: healthcheck
+  selector:
+    app: coprocessor-host-listener-poller-polygon
+    app.kubernetes.io/name: coprocessor-1-host-listener-poller-polygon
+  type: ClusterIP
+apiVersion: v1
+kind: Service
 metadata:
+  labels:
+    app: coprocessor-host-listener-poller-polygon
+    app.kubernetes.io/name: coprocessor-2-host-listener-poller-polygon
+  name: coprocessor-2-host-listener-poller-polygon
+spec:
+  ports:
+    - name: metrics
+      port: 9100
+      targetPort: metrics
+    - name: healthcheck
+      port: 8080
+      targetPort: healthcheck
+  selector:
+    app: coprocessor-host-listener-poller-polygon
+    app.kubernetes.io/name: coprocessor-2-host-listener-poller-polygon
+  type: ClusterIP
+apiVersion: v1
+kind: Service
 metadata:
+  labels:
+    app: coprocessor-tfhe-worker
+    app.kubernetes.io/name: coprocessor-0-tfhe-worker
+  name: coprocessor-0-tfhe-worker
+spec:
+  ports:
+    - name: metrics
+      port: 9100
+      targetPort: metrics
+    - name: healthcheck
+      port: 8080
+      targetPort: healthcheck
+  selector:
+    app: coprocessor-tfhe-worker
+    app.kubernetes.io/name: coprocessor-0-tfhe-worker
+  type: ClusterIP
+apiVersion: v1
+kind: Service
 metadata:
+  labels:
+    app: coprocessor-tfhe-worker
+    app.kubernetes.io/name: coprocessor-1-tfhe-worker
+  name: coprocessor-1-tfhe-worker
+spec:
+  ports:
+    - name: metrics
+      port: 9100
+      targetPort: metrics
+    - name: healthcheck
+      port: 8080
+      targetPort: healthcheck
+  selector:
+    app: coprocessor-tfhe-worker
+    app.kubernetes.io/name: coprocessor-1-tfhe-worker
+  type: ClusterIP
+apiVersion: v1
+kind: Service
 metadata:
+  labels:
+    app: coprocessor-tfhe-worker
+    app.kubernetes.io/name: coprocessor-2-tfhe-worker
+  name: coprocessor-2-tfhe-worker
+spec:
+  ports:
+    - name: metrics
+      port: 9100
+      targetPort: metrics
+    - name: healthcheck
+      port: 8080
+      targetPort: healthcheck
+  selector:
+    app: coprocessor-tfhe-worker
+    app.kubernetes.io/name: coprocessor-2-tfhe-worker
+  type: ClusterIP
+apiVersion: v1
+kind: Service
 metadata:
+  labels:
+    app: coprocessor-tx-sender
+    app.kubernetes.io/name: coprocessor-0-tx-sender
+  name: coprocessor-0-tx-sender
+spec:
+  ports:
+    - name: metrics
+      port: 9100
+      targetPort: metrics
+    - name: healthcheck
+      port: 8080
+      targetPort: healthcheck
+  selector:
+    app: coprocessor-tx-sender
+    app.kubernetes.io/name: coprocessor-0-tx-sender
+  type: ClusterIP
+apiVersion: v1
+kind: Service
 metadata:
+  labels:
+    app: coprocessor-tx-sender
+    app.kubernetes.io/name: coprocessor-1-tx-sender
+  name: coprocessor-1-tx-sender
+spec:
+  ports:
+    - name: metrics
+      port: 9100
+      targetPort: metrics
+    - name: healthcheck
+      port: 8080
+      targetPort: healthcheck
+  selector:
+    app: coprocessor-tx-sender
+    app.kubernetes.io/name: coprocessor-1-tx-sender
+  type: ClusterIP
+apiVersion: v1
+kind: Service
 metadata:
+  labels:
+    app: coprocessor-tx-sender
+    app.kubernetes.io/name: coprocessor-2-tx-sender
+  name: coprocessor-2-tx-sender
+spec:
+  ports:
+    - name: metrics
+      port: 9100
+      targetPort: metrics
+    - name: healthcheck
+      port: 8080
+      targetPort: healthcheck
+  selector:
+    app: coprocessor-tx-sender
+    app.kubernetes.io/name: coprocessor-2-tx-sender
+  type: ClusterIP
+apiVersion: v1
+kind: Service
 metadata:
+  labels:
+    app: kms-connector-gw-listener
+    app.kubernetes.io/name: kms-connector-kms-connector-gw-listener
+  name: kms-connector-kms-connector-gw-listener
+spec:
+  ports:
+    - name: monitoring
+      port: 9100
+      targetPort: monitoring
+  selector:
+    app: kms-connector-gw-listener
+    app.kubernetes.io/name: kms-connector-kms-connector-gw-listener
+  type: ClusterIP
+apiVersion: v1
+kind: Service
 metadata:
+  labels:
+    app: kms-connector-kms-worker
+    app.kubernetes.io/name: kms-connector-kms-connector-kms-worker
+  name: kms-connector-kms-connector-kms-worker
+spec:
+  ports:
+    - name: monitoring
+      port: 9100
+      targetPort: monitoring
+  selector:
+    app: kms-connector-kms-worker
+    app.kubernetes.io/name: kms-connector-kms-connector-kms-worker
+  type: ClusterIP
+apiVersion: v1
+kind: Service
 metadata:
+  labels:
+    app: kms-connector-tx-sender
+    app.kubernetes.io/name: kms-connector-kms-connector-tx-sender
+  name: kms-connector-kms-connector-tx-sender
+spec:
+  ports:
+    - name: monitoring
+      port: 9100
+      targetPort: monitoring
+  selector:
+    app: kms-connector-tx-sender
+    app.kubernetes.io/name: kms-connector-kms-connector-tx-sender
+  type: ClusterIP
+apiVersion: v1
+kind: Service
 metadata:
+  name: anvil-node-anvil-node
+spec:
+  type: ClusterIP
+  selector:
+    app: anvil-node-anvil-node
+  ports:
+    - protocol: TCP
+      port: 8545
+      targetPort: 8545
+apiVersion: v1
+kind: ServiceAccount
 metadata:
+  name: host-contracts-config-writer
+  namespace: default
+apiVersion: v1
+kind: ServiceAccount
 metadata:
+  name: listener
+  labels:
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: listener
+automountServiceAccountToken: true
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-metadata:
-metadata:
-metadata:
-metadata:
-metadata:
-metadata:
-metadata:
-metadata:
-metadata:
-metadata:
-metadata:
-metadata:
-metadata:
-metadata:
-metadata:
-metadata:
-metadata:
-metadata:
-metadata:
-metadata:
-metadata:
-metadata:
-roleRef:
+  name: host-contracts-config-writer
+  namespace: default
 rules:
-spec:
-spec:
-spec:
-spec:
-spec:
-spec:
-spec:
-spec:
-spec:
-spec:
-spec:
-spec:
-spec:
-spec:
-spec:
-spec:
-spec:
-spec:
-spec:
-spec:
-spec:
-spec:
-spec:
-spec:
-spec:
-spec:
-spec:
-spec:
-spec:
-spec:
-spec:
-spec:
-spec:
-spec:
-spec:
-spec:
-spec:
-spec:
-spec:
-spec:
-spec:
-spec:
-spec:
-spec:
-spec:
-spec:
-spec:
-spec:
-spec:
-spec:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "watch", "list", "create", "patch"]
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: host-contracts-config-writer
+  namespace: default
 subjects:
+  - kind: ServiceAccount
+    name: host-contracts-config-writer
+    namespace: default
+roleRef:
+  kind: Role
+  name: host-contracts-config-writer
+  apiGroup: rbac.authorization.k8s.io
