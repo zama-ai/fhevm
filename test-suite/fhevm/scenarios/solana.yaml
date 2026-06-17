@@ -1,0 +1,19 @@
+version: 1
+kind: coprocessor-consensus
+name: Solana Host
+description: >-
+  EVM gateway + coprocessor stack with an RFC-021 Solana host chain. fhevm-cli owns the EVM stack
+  and the Solana host's relayer + kms-connector config; the Solana validator (host-native
+  solana-test-validator), program deploy, bootstrap, DB registration, gateway addHostChain, and
+  listeners are provisioned by the solana-side bring-up against the host validator.
+hostChains:
+  - key: host
+    chainId: "12345"
+    rpcPort: 8545
+  - key: solana
+    type: solana
+    chainId: "9223372036854788153"
+    rpcPort: 8899
+topology:
+  count: 1
+  threshold: 1

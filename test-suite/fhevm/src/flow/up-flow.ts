@@ -622,7 +622,8 @@ export const runStep = async (state: State, step: StepName) => {
         "HCU_LIMIT_CONTRACT_ADDRESS",
         ...(requiresModernHostAddressArtifacts(state) ? ["PROTOCOL_CONFIG_CONTRACT_ADDRESS", "KMS_GENERATION_CONTRACT_ADDRESS"] : []),
       ]);
-      for (const chain of extraHostChains(state)) {
+      // Solana hosts deploy their programs host-side (solana-side bring-up), not via host-sc.
+      for (const chain of extraHostChains(state).filter((c) => c.type !== "solana")) {
         const scKey = chain.sc;
         await timed(`[multi-chain] ${scKey}-deploy`, async () => {
           await multiChainComposeTask(scKey, [`${scKey}-deploy`]);

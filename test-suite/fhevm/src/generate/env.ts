@@ -333,10 +333,12 @@ export const renderEnvMaps = async (
 
   const instanceEnvs = await buildInstanceEnvs(envs, plan, deriveWallet);
 
-  // Uniform per-chain gateway-sc indexed vars for ALL host chains.
-  envs["gateway-sc"].NUM_HOST_CHAINS = String(chains.length);
-  for (const chain of chains) {
-    const chainIndex = chain.index;
+  // Uniform per-chain gateway-sc indexed vars for EVM host chains. Solana hosts are registered on
+  // the gateway by the solana-side bring-up (addHostChain with zero EVM addresses), so they're
+  // excluded here; indices stay contiguous (0..N-1) as the gateway task expects.
+  const gatewayHostChains = chains.filter((chain) => chain.type !== "solana");
+  envs["gateway-sc"].NUM_HOST_CHAINS = String(gatewayHostChains.length);
+  gatewayHostChains.forEach((chain, chainIndex) => {
     const hostAddresses = state.discovery?.hosts[chain.key] ?? {};
     const metadata = defaultHostChainMetadata(chain, chainIndex);
     envs["gateway-sc"][`HOST_CHAIN_CHAIN_ID_${chainIndex}`] = chain.chainId;
@@ -346,10 +348,11 @@ export const renderEnvMaps = async (
       hostAddresses.ACL_CONTRACT_ADDRESS ?? "";
     envs["gateway-sc"][`HOST_CHAIN_NAME_${chainIndex}`] = metadata.name;
     envs["gateway-sc"][`HOST_CHAIN_WEBSITE_${chainIndex}`] = metadata.website;
-  }
+  });
 
-  // Non-default chain infrastructure: host-node, host-sc, coprocessor, and test-suite env files.
-  for (const chain of chains.filter((item) => !item.isDefault)) {
+  // Non-default EVM chain infrastructure: host-node, host-sc, coprocessor, and test-suite env files.
+  // Solana hosts are externally provisioned, so they get none of these.
+  for (const chain of chains.filter((item) => !item.isDefault && item.type !== "solana")) {
     const chainIndex = chain.index;
     const hostHttp = `http://${chain.node}:${chain.rpcPort}`;
     const hostWs = `ws://${chain.node}:${chain.rpcPort}`;
