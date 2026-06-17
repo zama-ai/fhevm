@@ -49,6 +49,9 @@ pub async fn run_http_server(
     user_decrypt_shares_threshold: u32,
     bouncer_throttlers: BouncerThrottlers,
     host_chain_id_checker: Arc<HostChainIdChecker>,
+    keyurl_rx: tokio::sync::watch::Receiver<
+        crate::http::endpoints::v2::types::keyurl::KeyUrlResponseJson,
+    >,
 ) -> SocketAddr {
     let http_endpoint: SocketAddr = config
         .endpoint
@@ -151,8 +154,8 @@ pub async fn run_http_server(
     // Clone orchestrator for health endpoint before using it
     let orchestrator_for_health = orchestrator.clone();
 
-    // Create KeyUrlHandler - self-registers with orchestrator
-    let keyurl_handler_v2 = KeyUrlHandlerV2::new(orchestrator.clone());
+    // Create KeyUrlHandler - reads the latest chain-sourced value from the poller's watch channel
+    let keyurl_handler_v2 = KeyUrlHandlerV2::new(keyurl_rx);
 
     // Create the router by merging all handler routers
     let mut app = Router::new()
