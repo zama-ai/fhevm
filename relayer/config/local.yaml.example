@@ -14,17 +14,13 @@ host_chains:
 
 protocol_config:
   ethereum_http_rpc_url: "http://localhost:8545"
-  # ProtocolConfig contract (also serves getCurrentKmsContextAndEpoch for /v2/keyurl).
   address: "0x1234567890123456789012345678901234567890"
   retry:
     max_attempts: 3
     retry_interval_ms: 200
-  # KMSGeneration contract on the same Ethereum host chain. Source of the active
-  # key/CRS ids and materials served by /v2/keyurl.
+  # KMSGeneration contract address on the host chain (source for /v2/keyurl).
   kms_generation_address: "0x1234567890123456789012345678901234567890"
-  # Poll cadence for the /v2/keyurl host-chain poller. It reads getActiveKeyId /
-  # getActiveCrsId / getCurrentKmsContextAndEpoch at the FINALIZED block tag.
-  # Ethereum block time is ~12s, so 12000ms is sufficient.
+  # /v2/keyurl poll interval in ms; the poller reads at the finalized block.
   keyurl_poll_interval_ms: 12000
 
 # User-decryption signature check. Gas cap for the ERC-1271 isValidSignature static call.

@@ -31,12 +31,8 @@ use crate::http::endpoints::v2::types::keyurl::{KeyData, KeyUrlResponseJson};
 type HostKmsGeneration = KMSGenerationInstance<Arc<Provider>, alloy::network::AnyNetwork>;
 type HostProtocolConfig = IProtocolConfigInstance<Arc<Provider>, alloy::network::AnyNetwork>;
 
-/// The active ids serve the latest on-chain state from the **FINALIZED** block tag.
-///
-/// Ethereum block time is ~12s and finality lags by ~2 epochs, but reading finalized state
-/// avoids serving a reorged-away activation (which would cause transient SDK verification
-/// mismatches). This matches the kms-connector host-chain listener, which also reads
-/// finalized blocks.
+/// Read on-chain state at the finalized block tag to avoid serving a reorged-away activation,
+/// in parity with the kms-connector host-chain listener.
 fn finalized() -> BlockId {
     BlockId::finalized()
 }

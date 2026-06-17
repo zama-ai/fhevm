@@ -992,10 +992,6 @@ pub fn register_host_acl_partial_deny(
     );
 }
 
-// ---------------------------------------------------------------------------
-// KeyUrl poller mock helpers
-// ---------------------------------------------------------------------------
-
 /// Canned on-chain values the `/v2/keyurl` poller reads in tests. Exposed so test
 /// assertions can compare the served `dataId` / `contextId` / `epochId` against them.
 #[allow(dead_code)]
