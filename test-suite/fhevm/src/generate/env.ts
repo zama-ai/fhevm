@@ -322,15 +322,18 @@ export const renderEnvMaps = async (
   // as production rather than bypassing it via direct SQL. Applied BEFORE
   // `buildInstanceEnvs` so multi-coprocessor topology instances inherit
   // these env vars when they clone `envs["coprocessor"]`.
-  envs["coprocessor"].HOST_CHAINS_COUNT = String(chains.length);
-  for (const chain of chains) {
-    const chainIndex = chain.index;
+  // Externally-provisioned hosts (Solana) are seeded by their own bring-up — which maps the
+  // RFC-021 u64 chain id to the signed i64 the `bigint` column requires and mirrors the keyset
+  // (only available post-keygen) — so they're excluded here; indices stay contiguous (0..N-1).
+  const seedHostChains = chains.filter((chain) => !isExternalNode(chain));
+  envs["coprocessor"].HOST_CHAINS_COUNT = String(seedHostChains.length);
+  seedHostChains.forEach((chain, chainIndex) => {
     const hostAddresses = state.discovery?.hosts[chain.key] ?? {};
     envs["coprocessor"][`HOST_CHAIN_${chainIndex}_ID`] = chain.chainId;
     envs["coprocessor"][`HOST_CHAIN_${chainIndex}_NAME`] = chain.key;
     envs["coprocessor"][`HOST_CHAIN_${chainIndex}_ACL`] =
       hostAddresses.ACL_CONTRACT_ADDRESS ?? "";
-  }
+  });
 
   const instanceEnvs = await buildInstanceEnvs(envs, plan, deriveWallet);
 
