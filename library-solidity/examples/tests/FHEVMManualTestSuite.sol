@@ -370,4 +370,35 @@ contract FHEVMManualTestSuite {
         FHE.allowThis(result);
         resEuint64 = result;
     }
+
+    /// @dev Verifies the toExternal -> fromExternal (empty proof) round-trip for euint64.
+    ///      The handle is allowed to the caller so it can be re-imported without a proof.
+    function test_toExternalEuint64(externalEuint64 a, bytes calldata inputProof) public {
+        euint64 aProc = FHE.fromExternal(a, inputProof);
+        FHE.allow(aProc, msg.sender);
+        externalEuint64 ext = FHE.toExternal(aProc);
+        euint64 recovered = FHE.fromExternal(ext, bytes(""));
+        FHE.allowThis(recovered);
+        resEuint64 = recovered;
+    }
+
+    /// @dev Verifies the toExternal -> fromExternal (empty proof) round-trip for ebool.
+    function test_toExternalEbool(externalEbool a, bytes calldata inputProof) public {
+        ebool aProc = FHE.fromExternal(a, inputProof);
+        FHE.allow(aProc, msg.sender);
+        externalEbool ext = FHE.toExternal(aProc);
+        ebool recovered = FHE.fromExternal(ext, bytes(""));
+        FHE.allowThis(recovered);
+        resEbool = recovered;
+    }
+
+    /// @dev Verifies the toExternal -> fromExternal (empty proof) round-trip for eaddress.
+    function test_toExternalEaddress(externalEaddress a, bytes calldata inputProof) public {
+        eaddress aProc = FHE.fromExternal(a, inputProof);
+        FHE.allow(aProc, msg.sender);
+        externalEaddress ext = FHE.toExternal(aProc);
+        eaddress recovered = FHE.fromExternal(ext, bytes(""));
+        FHE.allowThis(recovered);
+        resAdd = recovered;
+    }
 }
