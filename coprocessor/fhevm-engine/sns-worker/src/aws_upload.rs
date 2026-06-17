@@ -234,8 +234,28 @@ async fn run_uploader_loop(
                         .await;
                     let outcome = match result {
                         Ok(()) => {
-                            AWS_UPLOAD_SUCCESS_COUNTER.inc();
-                            Ok(())
+                            if let Err(err) = trx.commit().await {
+                                let err = anyhow::Error::from(err);
+                                let is_fatal_db_error = is_fatal_upload_db_error(&err);
+                                error!(
+                                    error = %err,
+                                    "Failed to commit uploaded ciphertexts"
+                                );
+                                upload_span
+                                    .context()
+                                    .span()
+                                    .set_status(Status::error(err.to_string()));
+                                AWS_UPLOAD_FAILURE_COUNTER.inc();
+
+                                if is_fatal_db_error {
+                                    Err(err)
+                                } else {
+                                    Ok(())
+                                }
+                            } else {
+                                AWS_UPLOAD_SUCCESS_COUNTER.inc();
+                                Ok(())
+                            }
                         }
                         Err(err) => {
                             let is_s3_transient_error =
