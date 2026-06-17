@@ -54,8 +54,8 @@ rustls = { version = "0.23.36", features = [
 ], default-features = false }
 # Path dependency to stay up to date and in sync with the shared crate.
 fhevm_gateway_bindings = { path = "../gateway-contracts/rust_bindings", default-features = false }
-# Use a pinned version of fhevm host bindings contract as the feature branch is still unmerged.
-fhevm_host_bindings = { git = "https://github.com/zama-ai/fhevm.git", rev = "2a6cf820b", default-features = false }
+# Path dependency to stay up to date and in sync with the shared crate.
+fhevm_host_bindings = { path = "../host-contracts/rust_bindings", default-features = false }
 # Shared utils for signature verification in user-decrypt requests.
 user-decryption-signature = { path = "../shared/user-decryption-signature" }
 utoipa = { version = "5.4.0", features = ["axum_extras", "preserve_path_order"] }
