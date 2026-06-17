@@ -29,6 +29,7 @@ export type ResolveFhevmConfigParameters = {
       readonly hcuLimit?: OptionalChainContract | undefined;
       readonly inputVerifier?: OptionalChainContract | undefined;
       readonly kmsVerifier: { readonly address: string };
+      readonly protocolConfig: OptionalChainContract | undefined;
     };
     readonly gateway?:
       | {
@@ -52,6 +53,7 @@ export type ResolveFhevmConfigReturnType = {
   readonly fhevmExecutor: FhevmExecutorContractData;
   readonly inputVerifier: InputVerifierContractData;
   readonly kmsVerifier: KmsVerifierContractData;
+  readonly protocolConfig: ChecksummedAddress | undefined;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -63,6 +65,11 @@ export async function resolveFhevmConfig(
   // Input is loose
   const kmsVerifierAddress = parameters.fhevm.contracts.kmsVerifier.address;
   assertIsAddress(kmsVerifierAddress, {});
+
+  const protocolConfigAddress = parameters.fhevm.contracts.protocolConfig?.address;
+  if (protocolConfigAddress !== undefined) {
+    assertIsAddress(protocolConfigAddress, {});
+  }
 
   const id: Uint64BigInt = await resolveChainId(fhevm, parameters);
   const fhevmExecutorData = await _resolveFhevmExecutor(fhevm, parameters.fhevm.contracts);
@@ -86,6 +93,7 @@ export async function resolveFhevmConfig(
     () =>
       readKmsVerifierContractData(fhevm, {
         address: addressToChecksummedAddress(kmsVerifierAddress),
+        protocolConfigAddress: protocolConfigAddress ? addressToChecksummedAddress(protocolConfigAddress) : undefined,
       }),
   ];
 
@@ -120,6 +128,7 @@ export async function resolveFhevmConfig(
     fhevmExecutor: fhevmExecutorData,
     inputVerifier: inputVerifierData,
     kmsVerifier: kmsVerifierData,
+    protocolConfig: protocolConfigAddress ? addressToChecksummedAddress(protocolConfigAddress) : undefined,
   };
 
   return Object.freeze(returnValue);

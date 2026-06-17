@@ -13,6 +13,7 @@ export const polygon_devnet = /*#__PURE__*/ defineFhevmChain({
       kmsVerifier: {
         address: '0xBC4845A34ac1bfDa56644CA093084911Da86E57c',
       },
+      protocolConfig: undefined, // To be filled
     },
     relayerUrl: 'https://relayer.dev.zama.cloud',
     gateway: {

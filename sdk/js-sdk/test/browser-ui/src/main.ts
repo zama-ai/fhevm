@@ -448,6 +448,7 @@ function resolveChain(target: ChainTarget): FhevmChain {
             acl: { address: '0x05fD9B5EFE0a996095f42Ed7e77c390810CF660c' },
             inputVerifier: { address: '0x857Ca72A957920Fa0FB138602995839866Bd4005' },
             kmsVerifier: { address: '0xa1880e99d86F081E8D3868A8C4732C8f65dfdB11' },
+            protocolConfig: undefined, // To be filled
           },
           relayerUrl: LOCALSTACK_RELAYER_URL,
           gateway: {
@@ -467,6 +468,7 @@ function resolveChain(target: ChainTarget): FhevmChain {
             acl: { address: '0x50157CFfD6bBFA2DECe204a89ec419c23ef5755D' },
             inputVerifier: { address: '0x36772142b74871f255CbD7A3e89B401d3e45825f' },
             kmsVerifier: { address: '0x901F8942346f7AB3a01F6D7613119Bca447Bb030' },
+            protocolConfig: undefined, // To be filled
           },
           relayerUrl: 'http://localhost:8545',
           gateway: {
