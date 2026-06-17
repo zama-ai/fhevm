@@ -175,8 +175,15 @@ export default async function run(ctx: RolloutRunContext) {
   logPhase("01 contracts: testnet v0.12 -> v0.13.0 migration (prepare, then apply the proposal effect)");
   await prepareContractMigrationSources(ctx, contractsLock);
 
-  // Phase 0: preflight assertion.
-  await ctx.runHostContractTask("npx hardhat task:assertNoPendingKeyManagementRequest");
+  // RUNBOOK GAP (finding #1, confirmed by run 27684221770): the Notion runbook's
+  // "Step 0 -- assert no pending key-management request on the HOST KMSGeneration,
+  // before anything else" is not runnable at the v0.12 starting state. At v0.12
+  // KMSGeneration lives on the GATEWAY; the host KMSGeneration proxy only exists
+  // after deployEmptyProxies + deployKMSGenerationFromMigration, so
+  // `task:assertNoPendingKeyManagementRequest` (a host task) cannot resolve an
+  // address as step 0 and aborts. The intent (no pending keygen before migrating)
+  // must target the gateway KMSGeneration, or move post-migration. Skipped here;
+  // the post-migration state is validated by task:assertKmsMigrationSucceeded.
 
   // Phase 1: export gateway migration state (before gateway KMSGeneration goes view-only).
   const migrationCtx = await exportGatewayKmsMigrationEnv(ctx);
