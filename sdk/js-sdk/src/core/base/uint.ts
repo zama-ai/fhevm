@@ -668,7 +668,7 @@ export function assertRecordUintBigIntProperty<K extends string>(
   property: K,
   recordName: string,
   options: ErrorMetadataParams,
-): asserts record is RecordWithPropertyType<K, number> {
+): asserts record is RecordWithPropertyType<K, bigint> {
   if (typeofProperty(record, property) !== 'bigint' || !isUintBigInt((record as Record<string, unknown>)[property])) {
     throw new InvalidPropertyError(
       {
