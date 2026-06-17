@@ -331,7 +331,7 @@ jobs:
           trap - EXIT
 
       - name: Priority coprocessor e2e
-        if: ${{ inputs.compat-test == '' && (inputs.test-profile == '' || inputs.test-profile == 'standard') }}
+        if: ${{ inputs.test-profile == '' || inputs.test-profile == 'standard' }}
         working-directory: test-suite/fhevm
         run: |
           ./fhevm-cli test priority-coprocessor
