@@ -127,6 +127,22 @@ function transfer(
 2. **Type conversion**:\
    The function transforms `externalEbool`, `externalEaddress`, `externalEuintXX` into the appropriate encrypted type (`ebool`, `eaddress`, `euintXX`) for further operations within the contract.
 
+### Re-exporting a handle with `FHE.toExternal`
+
+`FHE.toExternal` is the inverse of `FHE.fromExternal`: it takes an on-chain encrypted value (`euintXX`, `ebool`, `eaddress`) that the contract already holds and re-wraps it into the matching external type (`externalEuintXX`, `externalEbool`, `externalEaddress`). The function is overloaded, so the target type is inferred from the argument — exactly like `fromExternal`.
+
+This is useful for **contract-to-contract composition**. Many functions — including standardized interfaces such as confidential tokens — type their entry points as `(externalEuintXX handle, bytes inputProof)` because the usual caller is an EOA submitting an encrypted input together with a zero-knowledge proof. A contract that already holds an `euintXX` cannot produce such a proof on-chain. `toExternal`, paired with the empty-proof path of `fromExternal`, bridges that gap:
+
+```solidity
+// Inside a contract that already holds `euint64 amount`:
+FHE.allow(amount, address(token)); // grant the callee access (ACL)
+token.transfer(to, FHE.toExternal(amount), ""); // re-wrap, pass an empty proof
+```
+
+On the receiving side, `FHE.fromExternal(encryptedAmount, "")` skips proof verification and simply checks that the handle is already allowed to the caller before returning it as a regular `euint64`. This is what enables smart-contract accounts to integrate with the FHEVM input ABI.
+
+> **Important:** `toExternal` only changes the static type — it performs no verification and grants no access. The empty-proof re-import reverts with `SenderNotAllowedToUseHandle` unless the handle has already been allowed (via `FHE.allow` / `FHE.allowThis`) to the relevant party. Always set up ACL permissions first.
+
 ## Best Practices
 
 - **Input packing**: Minimize the size and complexity of zero-knowledge proofs by packing all encrypted inputs into a single ciphertext.
