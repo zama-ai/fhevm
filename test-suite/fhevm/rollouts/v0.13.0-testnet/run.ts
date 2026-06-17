@@ -234,11 +234,17 @@ export default async function run(ctx: RolloutRunContext) {
   // artifact (the primary host migration tasks self-compile; this fresh-deploy path
   // does not).
   logPhase("01.polygon: fresh v0.13.0 host-contract deploy on the 2nd chain (chain-b)");
+  // Order mirrors gitops Phase 7 and is load-bearing: the upgradeable contracts
+  // (e.g. KMSGeneration) reference `protocolConfigAdd` from FHEVMHostAddresses.sol,
+  // so a full compile fails until the empty proxies are deployed and that address
+  // file is populated. Compile only immutable contracts first (PauserSet etc.),
+  // deploy the empty proxies, then full-compile, then deploy the rest.
   const polygonDeploy = [
-    "npx hardhat compile",
+    "npx hardhat compile:specific --contract contracts/immutable",
     "npx hardhat task:deployEmptyUUPSProxies --with-kms-generation false",
     "export $(cat addresses/.env.host | xargs)",
     "npx hardhat task:deployPauserSet",
+    "npx hardhat compile:specific --contract contracts",
     "npx hardhat task:deployACL",
     "npx hardhat task:deployFHEVMExecutor",
     "npx hardhat task:deployProtocolConfigFromMigration",
