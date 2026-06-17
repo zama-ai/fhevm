@@ -22,9 +22,9 @@ if (copyOnly) {
 // otherwise be evaluated under `_cjs/package.json {"type":"commonjs"}` and
 // produce a SyntaxError at load time.
 const TRANSPILE = [
-  'tfhe/tfhe.v1.5.3.js',
-  'tfhe/startWorkers.v1.5.3.js',
-  'tfhe/tfhe_bg.v1.5.3.wasm.base64.js',
+  'tfhe/tfhe.v1.6.2.js',
+  'tfhe/startWorkers.v1.6.2.js',
+  'tfhe/tfhe_bg.v1.6.2.wasm.base64.js',
   'tkms/kms_lib.v0.13.10.js',
   'tkms/kms_lib_bg.v0.13.10.wasm.base64.js',
   'wasmBaseUrl.js',

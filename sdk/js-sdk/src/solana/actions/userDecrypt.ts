@@ -2,17 +2,15 @@ import type { SolanaUserDecryptSigner } from '../signer.js';
 import type { FhevmSolanaChain } from '../../core/types/fhevmSolanaChain.js';
 import type { WithDecrypt } from '../../core/types/coreFhevmRuntime.js';
 import type { FetchUserDecryptResult, RelayerUserDecryptOptions } from '../../core/types/relayer.js';
-import type { TransportKeyPair } from '../../core/kms/TransportKeyPair-p.js';
 import type { EncryptedValueLike } from '../../core/types/encryptedTypes.js';
 import type { Handle } from '../../core/types/encryptedTypes-p.js';
-import type { Bytes32Hex } from '../../core/types/primitives.js';
+import type { Bytes32Hex, BytesHex } from '../../core/types/primitives.js';
 import {
   buildSolanaUserDecryptContextExtraData,
   solanaUserDecryptClientId,
   solanaUserDecryptSigningPreimage,
   SOLANA_USER_DECRYPT_ATTESTATION_TYPE,
 } from '../../core/coprocessor/SolanaUserDecrypt-p.js';
-import { generateTransportKeyPair } from '../../core/kms/TransportKeyPair-p.js';
 import { toFhevmHandle } from '../../core/handle/FhevmHandle.js';
 import { bytesToHex, hexToBytes, hexToBytes32 } from '../../core/base/bytes.js';
 import { removeSuffix } from '../../core/base/string.js';
@@ -21,9 +19,8 @@ import { RelayerAsyncRequest } from '../../core/modules/relayer/module/RelayerAs
 ////////////////////////////////////////////////////////////////////////////////
 
 /**
- * Context the {@link userDecrypt} action runs against. A decrypt-enabled runtime is required only to
- * generate the ML-KEM transport key pair (TKMS WASM) when the caller does not supply one — the
- * Solana host has no on-chain ACL/KMSVerifier to read.
+ * Context the {@link userDecrypt} action runs against. The Solana host has no on-chain
+ * ACL/KMSVerifier to read; the runtime is used only for the relayer request auth config.
  */
 export type SolanaUserDecryptContext = {
   readonly chain: FhevmSolanaChain;
@@ -35,11 +32,11 @@ export type SolanaUserDecryptParameters = {
   /** The ciphertext handles to decrypt (each a 32-byte handle). */
   readonly handles: readonly EncryptedValueLike[];
   /**
-   * Transport (ML-KEM re-encryption) key pair. Its public key is bound into the signed preimage and
-   * the KMS seals each share to it. A fresh pair is generated when omitted; it is returned so the
-   * caller can de-signcrypt the shares.
+   * The ML-KEM re-encryption public key (0x-hex) the KMS seals each share to; it is bound into the
+   * signed preimage. The caller owns the matching key pair and de-signcrypts the returned shares
+   * (the SDK does not de-signcrypt Solana responses yet — see {@link SolanaUserDecryptResult}).
    */
-  readonly transportKeyPair?: TransportKeyPair | undefined;
+  readonly transportPublicKey: BytesHex;
   /** Override the chain's ACL domain keys for this request (each a bytes32 0x-hex). */
   readonly allowedAclDomainKeys?: readonly Bytes32Hex[] | undefined;
   /** 32-byte big-endian context id. Defaults to all-zero (no explicit context). */
@@ -73,12 +70,11 @@ export type SolanaUserDecryptShare = {
  * keccak `compute_link_solana` digest (RFC-021), which the SDK's bundled TKMS WASM does not yet
  * expose — only kms-core (`process_user_decryption_resp_solana`) does. Completing the round-trip in
  * the SDK requires exposing that Solana link path in the TKMS WASM (a KMS/TKMS change, tracked
- * separately). Until then the caller de-signcrypts the returned {@link shares} with
- * {@link transportKeyPair} via kms-core.
+ * separately). Until then the caller de-signcrypts the returned {@link shares} with their own
+ * transport key pair (whose public key was passed as `transportPublicKey`) via kms-core.
  */
 export type SolanaUserDecryptResult = {
   readonly shares: readonly SolanaUserDecryptShare[];
-  readonly transportKeyPair: TransportKeyPair;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -101,9 +97,9 @@ function randomNonce(): Uint8Array {
  * 2. sign it via the {@link SolanaUserDecryptSigner} and build the v3 attested request,
  * 3. POST it to the relayer's `/v3/user-decrypt` Solana seam and poll for the signcrypted shares.
  *
- * It returns the {@link SolanaUserDecryptShare}s and the transport key pair; de-signcryption to
- * cleartext is intentionally out of scope until the Solana keccak-link path is exposed in the TKMS
- * WASM (see {@link SolanaUserDecryptResult}).
+ * It returns the {@link SolanaUserDecryptShare}s; de-signcryption to cleartext is intentionally out
+ * of scope until the Solana keccak-link path is exposed in the TKMS WASM (see
+ * {@link SolanaUserDecryptResult}).
  */
 export async function userDecrypt(
   context: SolanaUserDecryptContext,
@@ -120,8 +116,7 @@ export async function userDecrypt(
   const handles: readonly Handle[] = parameters.handles.map((h) => toFhevmHandle(h));
   const handleBytes: readonly Uint8Array[] = handles.map((h) => h.bytes32);
 
-  const transportKeyPair = parameters.transportKeyPair ?? (await generateTransportKeyPair({ runtime }));
-  const publicKey = hexToBytes(transportKeyPair.publicKey);
+  const publicKey = hexToBytes(parameters.transportPublicKey);
 
   const contextId = parameters.contextId ?? new Uint8Array(32);
   const nonce = parameters.nonce ?? randomNonce();
@@ -137,7 +132,7 @@ export async function userDecrypt(
   // signs from a raw seed; an abstract signer is opaque, so we route through the same exported
   // preimage + client-id helpers and attach the externally-produced signature.
   const input = {
-    contractsChainId: BigInt(chain.id),
+    contractsChainId: chain.id,
     publicKey,
     handles: handleBytes,
     identity,
@@ -211,5 +206,5 @@ export async function userDecrypt(
     extraData: r.extraData,
   }));
 
-  return { shares, transportKeyPair };
+  return { shares };
 }

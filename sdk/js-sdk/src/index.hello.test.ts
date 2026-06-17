@@ -2,7 +2,7 @@ import { describe, it } from 'node:test';
 // import { readFile } from "node:fs/promises";
 // import { resolve } from "node:path";
 import { threads } from 'wasm-feature-detect';
-import { terminateWorkers } from './wasm/tfhe/tfhe.v1.5.3.js';
+import { terminateWorkers } from './wasm/tfhe/tfhe.v1.6.2.js';
 // NOT OK
 import {
   createFhevmClient,

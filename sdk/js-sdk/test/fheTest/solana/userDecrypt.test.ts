@@ -1,4 +1,4 @@
-import type { Bytes32Hex, ChecksummedAddress, Uint8Number } from '../../../src/core/types/primitives.js';
+import type { Bytes32Hex, BytesHex } from '../../../src/core/types/primitives.js';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { ed25519 } from '@noble/curves/ed25519.js';
 import { keccak_256 } from '@noble/hashes/sha3.js';
@@ -32,19 +32,9 @@ const ZERO_BYTES32 = '0x' + '00'.repeat(32);
 // Test fixture: a Solana host chain built through the public factory. There is no shipped
 // placeholder Solana chain — consumers (and this test) construct one from their deployment.
 const testChain = defineFhevmSolanaChain({
-  id: 12_345,
+  id: 12_345n,
   fhevm: {
     relayerUrl: 'http://localhost:9000',
-    gateway: {
-      id: 54_321,
-      contracts: { decryption: { address: '0xF0bFB159C7381F7CB332586004d8247252C5b816' as ChecksummedAddress } },
-    },
-    kms: {
-      address: '0xa1880e99d86F081E8D3868A8C4732C8f65dfdB11' as ChecksummedAddress,
-      contextId: 0n,
-      signers: ['0x0971C80fF03B428fD2094dd5354600ab103201C5' as ChecksummedAddress],
-      threshold: 1 as Uint8Number,
-    },
     acl: { domainKeys: [ZERO_BYTES32 as Bytes32Hex] },
   },
 });
@@ -152,13 +142,13 @@ describe('createFhevmDecryptClient(...).userDecrypt', () => {
 
     const result = await client.userDecrypt({
       handles: [handleHex],
+      transportPublicKey: ('0x' + 'ab'.repeat(16)) as BytesHex,
       nonce,
       validity: { startTimestamp: 1000n, durationSeconds: 3600n },
     });
 
-    // The aggregated signcrypted shares are returned verbatim, with the transport key pair used.
+    // The aggregated signcrypted shares are returned verbatim.
     expect(result.shares).toEqual([{ signature: 'bb'.repeat(65), payload: 'aa', extraData: '0x00' }]);
-    expect(result.transportKeyPair.publicKey).toBe('0x' + 'ab'.repeat(16));
 
     // POSTed to the v3 Solana ed25519 seam.
     expect(postedUrl).toMatch(/\/v3\/user-decrypt$/);

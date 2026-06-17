@@ -1,6 +1,6 @@
 import type { FhevmRuntime, FhevmRuntimeConfig } from '../../../types/coreFhevmRuntime.js';
-import init_tfhe_lib from '../../../../wasm/tfhe/tfhe.v1.5.3.js';
-import { init_panic_hook, initThreadPool, setWorkerUrlConfig, getWasmInfo } from '../../../../wasm/tfhe/tfhe.v1.5.3.js';
+import init_tfhe_lib from '../../../../wasm/tfhe/tfhe.v1.6.2.js';
+import { init_panic_hook, initThreadPool, setWorkerUrlConfig, getWasmInfo } from '../../../../wasm/tfhe/tfhe.v1.6.2.js';
 import { isomorphicCompileWasm, isomorphicCompileWasmFromBase64 } from '../../../base/wasm.js';
 import { isBlobWorkerSupported, isBrowserLike } from '../../../base/isomorphicWorker.js';
 import { threads } from 'wasm-feature-detect';
@@ -19,11 +19,11 @@ function dynamicImportWasmBase64(): Promise<{
   readonly tfheWasmBase64: string;
 }> {
   // Bundler Alert: !! KEEP THE PATH AS-IS !!
-  return import('../../../../wasm/tfhe/tfhe_bg.v1.5.3.wasm.base64.js');
+  return import('../../../../wasm/tfhe/tfhe_bg.v1.6.2.wasm.base64.js');
 }
 
-const TFHE_WORKER_JS_FILENAME = 'tfhe-worker.v1.5.3.mjs';
-const TFHE_BG_WASM_FILENAME = 'tfhe_bg.v1.5.3.wasm';
+const TFHE_WORKER_JS_FILENAME = 'tfhe-worker.v1.6.2.mjs';
+const TFHE_BG_WASM_FILENAME = 'tfhe_bg.v1.6.2.wasm';
 
 ////////////////////////////////////////////////////////////////////////////////
 
