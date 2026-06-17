@@ -1,4 +1,39 @@
+import fs from "node:fs";
+
 import type { Discovery } from "../types";
+
+const BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+
+/** Encodes bytes as base58 (Bitcoin/Solana alphabet). */
+const base58Encode = (bytes: Uint8Array): string => {
+  let n = 0n;
+  for (const b of bytes) n = n * 256n + BigInt(b);
+  let out = "";
+  while (n > 0n) {
+    const rem = Number(n % 58n);
+    n /= 58n;
+    out = BASE58_ALPHABET[rem] + out;
+  }
+  // Preserve leading-zero bytes as leading '1's.
+  for (const b of bytes) {
+    if (b === 0) out = "1" + out;
+    else break;
+  }
+  return out;
+};
+
+/**
+ * Resolves a Solana program's base58 id from its keypair file (a 64-byte JSON array, the
+ * `[secret(32) || public(32)]` ed25519 layout) — the deterministic id `solana address -k` prints,
+ * computed without invoking the CLI.
+ */
+export const solanaProgramIdFromKeypairFile = (keypairPath: string): string => {
+  const bytes = Uint8Array.from(JSON.parse(fs.readFileSync(keypairPath, "utf8")) as number[]);
+  if (bytes.length !== 64) {
+    throw new Error(`${keypairPath}: expected a 64-byte solana keypair, got ${bytes.length} bytes`);
+  }
+  return base58Encode(bytes.subarray(32, 64));
+};
 
 // RFC-021 Solana host chain ids occupy the high half of u64 (chain-type high bit set), so they
 // exceed both i63 and Number.MAX_SAFE_INTEGER. Two consequences this module centralizes:
