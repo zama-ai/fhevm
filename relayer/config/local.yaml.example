@@ -19,6 +19,10 @@ protocol_config:
     max_attempts: 3
     retry_interval_ms: 200
 
+# User-decryption signature check. Gas cap for the ERC-1271 isValidSignature static call.
+user_decrypt_signature_check:
+  erc1271_gas_limit: 100000
+
 gateway:
   blockchain_rpc:
     # MUST support method eth_sendRawTransactionSync

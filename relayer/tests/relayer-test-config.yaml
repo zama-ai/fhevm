@@ -13,6 +13,9 @@ protocol_config:
     max_attempts: 3
     retry_interval_ms: 100
 
+user_decrypt_signature_check:
+  erc1271_gas_limit: 100000
+
 gateway:
   blockchain_rpc:
     # MUST support method eth_sendRawTransactionSync
