@@ -45,6 +45,9 @@ contract MyContract {
 }
 ```
 
+> Important: Functions that call `FHE.fromExternal()` or other FHE operators such as `FHE.add()` cannot be marked as `view`.
+> These operations trigger proof verification / FHE execution under the hood, so they must be executed as regular state-changing calls rather than read-only `eth_call` view functions.
+
 With `my_contract` the contract in question using `ethers` it is possible to call the add function as following.
 
 ```js
