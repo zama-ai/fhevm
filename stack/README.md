@@ -1,9 +1,12 @@
 # stack/ — fhevm-cli redesign exemplar
 
-This directory is a **skeleton / exemplar** for the fhevm-cli redesign. It is NOT a
-working implementation. Nothing here boots a cluster. The purpose is to record the
-intended architecture precisely enough that a developer can build the real thing from
-it, and to anchor every design decision to real code or real chart facts from this repo.
+This directory is the **exemplar** for the fhevm-cli redesign. The code here is still a
+**skeleton** — `lib/`, `cli/`, and `runbooks/` are stubs that do not yet boot a cluster.
+But the boot itself is no longer hypothetical: a full hand-driven boot on kind — from an
+empty cluster through a **finalized FHE keygen** — is recorded in `EXEMPLAR.md` §0, with
+the proven 15-step recipe and five invariants this skeleton must encode. The purpose is to
+record the intended architecture precisely enough that a developer can build the real
+thing from it, anchored to real code and real chart facts from this repo.
 
 ---
 

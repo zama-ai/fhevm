@@ -1,12 +1,108 @@
 # fhevm-cli redesign — exemplar findings
 
-This document records the chart-on-kind spike — both the offline render **and a live
-kind boot (see §0, which supersedes the registry claims in §1–§2 below)** — and maps
-every scaffolded file to the design idea it demonstrates.
+This document records the chart-on-kind work — from the offline render (§1–§2) through a
+**full live boot to a finalized FHE keygen (§0 below, 2026-06-17 — the authoritative
+current state)**. It maps every scaffolded file to the design idea it demonstrates, and
+captures the **proven boot recipe + invariants** that `stack/lib` must encode.
 
 ---
 
-## 0. Live kind test (2026-06-16) — supersedes the registry claims in §1–§2
+## 0. Full stack boot through FHE keygen — PROVEN on kind (2026-06-17)
+
+A hand-driven boot took the stack **from an empty kind cluster to a finalized FHE
+keygen** — the hardest, most load-bearing part of the protocol — validating the
+charts-on-kind + staging-env approach end to end. Everything here was run live and
+verified, not inferred. Cluster: `fhevm-p2`.
+
+### Live state
+
+| Layer | Status |
+|---|---|
+| anvil host (chainId 12345) + gateway (54321) + `host-node`/`gateway-node` alias svcs | Running, RPC verified |
+| postgres `db` (+ `coprocessor`, `kms-connector` databases) | Running |
+| minio (buckets `kms-public`/`ct64`/`ct128`, user `fhevm-access-key`) | Running |
+| gateway + host contracts | deployed; **deterministic addresses match staging exactly** |
+| `sc-addresses` ConfigMap | published |
+| kms-core (centralized, `core-service:v0.13.20-0`, signing key on a PVC) | Running on :50051 |
+| kms-connector (gw-listener / kms-worker / tx-sender + migration) | Running, polling host KMSGeneration |
+| **FHE keygen** | **FINALIZED** — `activeKeyId` set; `PublicKey` 32 KiB + `ServerKey` 1.6 GiB + `CRS` 4.4 MiB in minio; realized `FHE_KEY_ID = 0400…0001` |
+| coprocessor (9 svcs) → relayer → `erc20` + L2 golden | **remaining** |
+
+This supersedes the "still open: full multi-chart boot" note in §0a below — that boot is
+now done, through keygen.
+
+### Proven boot recipe (the spec for `stack/lib`)
+
+Versions (v0.13 train): `GATEWAY_VERSION`/`HOST_VERSION` = `v0.13.0-6`, `CORE_VERSION` =
+`v0.13.20-0`, `COPROCESSOR_*`/`CONNECTOR_*`/`LISTENER_CORE_VERSION` = `v0.13.0-6`,
+`RELAYER_SDK_VERSION` = `0.4.2`. Private ghcr images via a `registry-credentials` secret
+(`read:packages` token).
+
+1. kind cluster + `registry-credentials` secret.
+2. Chains: 2 `anvil-node` releases. **host** chainId 12345, mnemonic `adapt mosquito move
+   limb mobile illegal tree voyage juice mosquito burger raise father hope layer`, port
+   8545. **gateway** chainId 54321, mnemonic `coyote sketch defense hover finger envelope
+   celery urge panther venue verb cheese`, port 8546. Add alias Services
+   `host-node`/`gateway-node` (the chart names its service `<release>-anvil-node`; the
+   stack expects `host-node:8545` / `gateway-node:8546`). Anvil **requires** a mnemonic
+   (empty → `anvil --mnemonic ""` exit 1).
+3. postgres `db` (databases `coprocessor` + `kms-connector`) · minio (buckets + user +
+   `/minio_secrets/{access_key,secret_key}` files for kms-core).
+4. kms-core up: config = `templates/config/kms-core-modern.toml` (NOT the legacy
+   `config/kms-core/config.toml` — its `storage_cache_size` is rejected by v0.13.20-0).
+   Persist `/app/kms/core/service/keys` on a PVC so the signing key is stable.
+5. **Discover** kms-core's signer = the address in its own log
+   (`stored … ethereum address 0x…`). Do **not** trust minio `VerfAddress` (goes stale).
+6. Deploy gateway contracts: `gateway-contracts:v0.13.0-6`, RPC=`gateway-node:8546`,
+   env=`.env.gateway-sc` (deployer derived from the gateway "coyote sketch" mnemonic).
+7. Deploy host contracts: `host-contracts:v0.13.0-6`, RPC=`host-node:8545`,
+   env=`.env.host-sc`, **`KMS_SIGNER_ADDRESS_0` = discovered signer (step 5)**,
+   `KMS_TX_SENDER_ADDRESS_0=0x31de9c8a…`. KMSGeneration is a **host** contract in v0.13.
+   Write the deploy's `/app/addresses` to a shared volume (the trigger needs it).
+8. Publish `sc-addresses` (deterministic from deployer+nonce — a fresh chain reproduces
+   them: ACL `0x05fD9B…`, host KMSGeneration `0x3E0fBCcE…`).
+9. **Fund** the connector tx-sender (`0x31de9c8a…`) on host + gateway.
+10. kms-connector (4 svcs): `KMS_CONNECTOR_KMS_GENERATION_CONTRACT__ADDRESS` = the host
+    KMSGeneration `0x3E0fBCcE…`, watched over `KMS_CONNECTOR_ETHEREUM_URL=host-node:8545`
+    (NOT the staging gateway value `0x3576…`). Wait for the gw-listener log
+    `Started KMSGeneration polling from block N`.
+11. Trigger keygen+crsgen **host-side**: `task:triggerKeygen --params-type 0
+    --use-internal-proxy-address true` then `task:triggerCrsgen --params-type 0
+    --max-bit-length 2048 --use-internal-proxy-address true`, with the deploy's
+    `/app/addresses` mounted (else `HH404 FHEVMHostAddresses.sol`).
+12. Wait `activeKeyId ≠ 0` on the host KMSGeneration **and** `PublicKey`/`ServerKey`/`CRS`
+    in minio → the realized `FHE_KEY_ID` is discovered here; feed it forward.
+13. coprocessor (db-migration + 9 svcs): `AWS_ENDPOINT_URL=http://minio:9000` (staging
+    uses a compose IP), expand `${VAR}` in `DATABASE_URL`, `FHE_KEY_ID` = realized id.
+14. relayer (`.env.relayer`).
+15. `erc20` e2e from test-suite → PASS → record the L2 golden.
+
+### Five invariants (each hit live — encode as guardrails)
+
+1. **KMSGeneration is host-side in v0.13** (gateway KMSGeneration is read-only); trigger
+   on host, connector watches host over `ETHEREUM_URL`.
+2. **Discover the live signer; never hardcode.** `kms-gen-keys` won't overwrite an
+   existing minio object, so `VerfAddress` goes stale across pod restarts. Staging `.env`
+   constants (signer, KMSGen addr, FHE key id) are **seeds overwritten at runtime** — the
+   CLI's `generateRuntime` placeholder-overwrite pattern.
+3. **Order: deploy → connector → trigger.** Never reset a chain under a running
+   connector — its DB `last_block_polled` desyncs from the fresh chain.
+4. The keygen **tx-sender must be funded** on the host chain **and** its on-chain
+   registered signer must equal kms-core's actual signer (else `KmsSignerDoesNotMatchTxSender`).
+5. The connector must be **polling before** the trigger fires (no backfill); keygen is
+   **two-phase** (prep → keygen) — the prep response must land on-chain to emit the real
+   `KeygenRequest`.
+
+**How the CLI does steps 5–7 cleanly** (the pattern `stack/lib` must encode): the pipeline
+order is `base → kms-signer → gateway-deploy → host-deploy` (`src/types.ts`);
+`discoverKmsSigners` scrapes the signing-key handle from kms-core's logs and reads its
+`VerfAddress` from minio (`src/flow/readiness.ts:270`); `generateRuntime` then injects
+that address into the deploy env as `KMS_SIGNER_ADDRESS_x` (`src/generate/env.ts:150`). The
+hand-boot above inverts this (deploy-then-discover), which is exactly the bug to avoid.
+
+---
+
+## 0a. Initial mechanics spike (2026-06-16) — superseded by §0; still corrects §1–§2
 
 The offline render (§1–§2) *inferred* a registry blocker. A live run on a local kind
 cluster shows that inference was wrong for local kind. What was actually run:
@@ -285,38 +381,42 @@ only — they do not run and contain no implementation.
 - `values/*.yaml` — illustrative; not wired to any runner.
 - `runbooks/*.ts` — empty skeletons; no Stack API calls.
 - `.github/workflows/acceptance.yml` step bodies — all are `echo "PLACEHOLDER"`.
-- kind cluster bootstrap (cluster creation, local registry, image loading) — not written.
-- Helm install dependency ordering implementation — not written.
-- Golden-master record/replay harness (L0–L3) — not written.
-- PostgreSQL in-cluster dependency (needed by coprocessor, kms-connector, listener) —
-  not addressed.
+- Golden-master record/replay harness (L0–L3) — L0 runs locally; L1–L3 not written. No
+  L2 `erc20` golden recorded yet (the missing behavioral oracle).
+
+### PROVEN live but NOT yet encoded (the gap `stack/lib` must close)
+
+The §0 boot did all of these **by hand on `fhevm-p2`**; none is yet in `lib`:
+
+- kind cluster bootstrap, `registry-credentials`, in-cluster Postgres + minio — done live.
+- Boot dependency ordering (the 15-step recipe in §0) — proven, not codified.
+- KMS-signer discovery + the `generateRuntime` placeholder-overwrite pattern — understood
+  (§0 invariant 2), not implemented.
+- FHE keygen DKG (kms-core + connector + host-side trigger) — finalized live, not codified.
 
 ---
 
 ## 5. Recommended next steps
 
-### Step 1 — Run the full spike on a devbox with GHCR credentials
+### Step 1 — Finish the live boot to `erc20` (DONE through FHE keygen — see §0)
 
-The offline spike confirmed there are no chart-level blockers. The next verification is
-booting all five charts in a real kind cluster. Prerequisites for the devbox run:
+The full kind boot is no longer hypothetical: §0 records it run live, from an empty
+cluster through a **finalized FHE keygen** (the recipe + invariants are in §0). What
+remains on the live cluster (`fhevm-p2`):
 
-1. Create kind cluster with a default StorageClass (e.g. using `kind` defaults or
-   `kind create cluster --config` with `local-path-provisioner`).
-2. Execute the shared pre-steps from section 2 above (imagePullSecrets, wallet Secret,
-   database-credentials Secret).
-3. Spin up an in-cluster PostgreSQL (`helm install postgres bitnami/postgresql` or
-   equivalent).
-4. Write the minimal local-values overlay for each chart (storageClassName fix for
-   contracts; `commonConfig.databaseUrl` for coprocessor/kms-connector;
-   `listeners[]` + `externalSecret.enabled: false` for listener).
-5. Install charts in dependency order:
-   `anvil-node → contracts → kms-connector → coprocessor → listener`.
-6. Confirm all pods reach `Running`/`Completed` and readiness probes pass.
+1. **coprocessor** (db-migration + 9 svcs) against the generated keys —
+   `AWS_ENDPOINT_URL=http://minio:9000`, expand `${VAR}` in `DATABASE_URL`,
+   `FHE_KEY_ID` = the realized id from §0 step 12.
+2. **relayer**.
+3. **`erc20` e2e** → **record the first L2 golden** (the behavioral oracle the whole
+   acceptance plan depends on).
 
 ### Step 2 — Extract the Stack API implementation in place
 
-`lib/stack.ts` is currently an interface. Implement it against the real charts without
-introducing new abstractions:
+`lib/stack.ts` is currently an interface. Implement it against the real charts —
+**encoding the §0 boot recipe (the 15 ordered phases) and its five invariants** (esp.
+kms-signer discovery, the deploy→connector→trigger ordering, and the placeholder-overwrite
+convention) — without introducing new abstractions:
 
 - `up()`: shell out to `helm upgrade --install --wait` for each chart in order.
 - `discovery()`: `kubectl get configmap sc-addresses -o json` → parse
