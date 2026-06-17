@@ -6,7 +6,10 @@ use alloy::transports::http::reqwest::Url;
 use clap::Parser;
 use consensus_detector::Config;
 use fhevm_engine_common::{
-    database::{connect_pool_with_options, resolve_database_url_from_option},
+    database::{
+        apply_gcs_mode_search_path, connect_pool_with_options_and_connect_options,
+        resolve_database_url_from_option,
+    },
     utils::DatabaseURL,
 };
 use humantime::parse_duration;
@@ -67,7 +70,7 @@ struct Args {
     #[arg(long)]
     s3_endpoint: Option<String>,
 
-    /// Max pending blocks processed per state_hash sweep.
+    /// Max pending blocks processed per state_hash pass.
     #[arg(long, default_value_t = 256)]
     state_hash_batch_limit: i64,
 
@@ -152,10 +155,16 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
-    let (pool, _refresh) = connect_pool_with_options(
+    // consensus-detector's data plane lives in the versioned GCS schema
+    // (`"gcs-<stack version>"`, derived from `CARGO_PKG_VERSION`). Pin every
+    // pooled connection's search_path to `"gcs-<version>",public` so unqualified
+    // table references resolve to the GCS copies first, falling back to public
+    // for shared tables (e.g. `upgrade_state`, not duplicated into the GCS schema).
+    let (pool, _refresh) = connect_pool_with_options_and_connect_options(
         &config.database_url,
         PgPoolOptions::new().max_connections(config.database_pool_size),
         Some(&cancel),
+        apply_gcs_mode_search_path(true),
     )
     .await?;
 

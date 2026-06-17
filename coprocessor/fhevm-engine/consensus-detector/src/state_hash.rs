@@ -4,7 +4,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use aws_sdk_s3::primitives::ByteStream;
-use sqlx::{postgres::PgListener, Pool, Postgres};
+use fhevm_engine_common::database::GCS_SCHEMA_QUOTED;
+use sqlx::{postgres::PgListener, Pool, Postgres, Row};
 use tokio::select;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
@@ -25,59 +26,68 @@ pub fn state_hash_key(chain_id: i64, block_number: i64) -> String {
     format!("state_hash/chain={chain_id}/block={block_number}.bin")
 }
 
-/// GCS path: stamp `gcs.state_hash` for blocks in `[start, end]` that don't
+/// GCS path: stamp the GCS `state_hash` for blocks in `[start, end]` that don't
 /// already have an entry. Empty blocks (`fhe_event_count = 0`) get
 /// [`EMPTY_BLOCK_STATE_HASH`]; non-empty blocks get the SHA-256 over their
-/// `gcs.ciphertexts`.
+/// GCS `ciphertexts`.
 async fn compute_and_insert_gcs(
     pool: &Pool<Postgres>,
     start: i64,
     end: i64,
     batch_limit: i64,
 ) -> anyhow::Result<()> {
-    // Sourced from `gcs.host_chain_blocks_valid` (not `public.*`): only the
-    // GCS schema is guaranteed populated for the active window. `bool_and`
-    // treats a block as empty iff every row reports zero FHE events.
-    let pending = sqlx::query!(
+    // This is the write path, so both the pending-scan read and the INSERT
+    // explicitly qualify the versioned GCS schema (`GCS_SCHEMA_QUOTED`, e.g.
+    // `"gcs-0.14.0"`) instead of relying on the connection search_path. An
+    // accidental fallback to `public.state_hash` would corrupt the live (BCS)
+    // table, so these must never resolve anywhere but the GCS schema — and a
+    // missing GCS schema errors loudly rather than silently writing to public.
+    // Runtime `sqlx::query` (not the `query!` macro) because the schema name is
+    // only known at runtime. `bool_and` treats a block as empty iff every row
+    // reports zero FHE events.
+    let pending_sql = format!(
         r#"
-        SELECT b.chain_id AS "chain_id!", b.block_number AS "block_number!",
-               bool_and(b.fhe_event_count = 0) AS "is_empty!"
-          FROM gcs.host_chain_blocks_valid b
+        SELECT b.chain_id, b.block_number,
+               bool_and(b.fhe_event_count = 0) AS is_empty
+          FROM {GCS_SCHEMA_QUOTED}.host_chain_blocks_valid b
          WHERE b.block_number BETWEEN $1 AND $2
            AND NOT EXISTS (
-               SELECT 1 FROM gcs.state_hash sh
+               SELECT 1 FROM {GCS_SCHEMA_QUOTED}.state_hash sh
                 WHERE sh.chain_id = b.chain_id AND sh.block_number = b.block_number)
          GROUP BY b.chain_id, b.block_number
          ORDER BY b.block_number
          LIMIT $3
-        "#,
-        start,
-        end,
-        batch_limit,
-    )
-    .fetch_all(pool)
-    .await?;
+        "#
+    );
+    let pending = sqlx::query(&pending_sql)
+        .bind(start)
+        .bind(end)
+        .bind(batch_limit)
+        .fetch_all(pool)
+        .await?;
 
+    let insert_sql = format!(
+        "INSERT INTO {GCS_SCHEMA_QUOTED}.state_hash (chain_id, block_number, state_hash)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (chain_id, block_number) DO NOTHING"
+    );
     for row in pending {
-        let chain_id = row.chain_id;
-        let block_number = row.block_number;
-        let hash = if row.is_empty {
+        let chain_id: i64 = row.try_get("chain_id")?;
+        let block_number: i64 = row.try_get("block_number")?;
+        let is_empty: bool = row.try_get("is_empty")?;
+        let hash = if is_empty {
             Some(EMPTY_BLOCK_STATE_HASH.to_string())
         } else {
             compute_gcs_hash(pool, chain_id, block_number).await?
         };
         let Some(hash) = hash else { continue };
-        let affected = sqlx::query!(
-            "INSERT INTO gcs.state_hash (chain_id, block_number, state_hash)
-             VALUES ($1, $2, $3)
-             ON CONFLICT (chain_id, block_number) DO NOTHING",
-            chain_id,
-            block_number,
-            hash,
-        )
-        .execute(pool)
-        .await?
-        .rows_affected();
+        let affected = sqlx::query(&insert_sql)
+            .bind(chain_id)
+            .bind(block_number)
+            .bind(&hash)
+            .execute(pool)
+            .await?
+            .rows_affected();
         if affected > 0 {
             info!(chain_id, block_number, "gcs.state_hash inserted");
         }
@@ -85,18 +95,25 @@ async fn compute_and_insert_gcs(
     Ok(())
 }
 
-/// SHA-256 over the block's `gcs.ciphertexts`; `None` until every non-errored
+/// SHA-256 over the block's GCS `ciphertexts`; `None` until every non-errored
 /// computation completes. Errored computations are excluded so operators agree.
+///
+/// Like [`compute_and_insert_gcs`], the source tables are explicitly qualified
+/// with the versioned GCS schema (`GCS_SCHEMA_QUOTED`) and never fall back to
+/// `public`: hashing the live (BCS) `computations`/`ciphertexts` would silently
+/// produce the wrong digest, so a missing GCS schema must error rather than
+/// read public. Runtime `sqlx::query` because the schema name is only known at
+/// runtime.
 async fn compute_gcs_hash(
     pool: &Pool<Postgres>,
     chain_id: i64,
     block_number: i64,
 ) -> anyhow::Result<Option<String>> {
-    let row = sqlx::query!(
+    let sql = format!(
         r#"
         WITH bc AS (
             SELECT output_handle, tenant_id, is_completed
-              FROM gcs.computations
+              FROM {GCS_SCHEMA_QUOTED}.computations
              WHERE host_chain_id = $1 AND block_number = $2 AND is_error = false
         ),
         v AS (SELECT 1 FROM bc HAVING bool_and(is_completed))
@@ -106,18 +123,23 @@ async fn compute_gcs_hash(
             'hex'
         ) AS state_hash
           FROM v CROSS JOIN bc
-          JOIN gcs.ciphertexts ct
+          JOIN {GCS_SCHEMA_QUOTED}.ciphertexts ct
             ON ct.tenant_id = bc.tenant_id AND ct.handle = bc.output_handle
-        "#,
-        chain_id,
-        block_number,
-    )
-    .fetch_optional(pool)
-    .await?;
-    Ok(row.and_then(|r| r.state_hash))
+        "#
+    );
+    let Some(row) = sqlx::query(&sql)
+        .bind(chain_id)
+        .bind(block_number)
+        .fetch_optional(pool)
+        .await?
+    else {
+        return Ok(None);
+    };
+    let state_hash: Option<String> = row.try_get("state_hash")?;
+    Ok(state_hash)
 }
 
-/// Uploads `gcs.state_hash` rows with `s3_uploaded_at IS NULL`, attaching the
+/// Uploads GCS `state_hash` rows with `s3_uploaded_at IS NULL`, attaching the
 /// host-chain block_hash as S3 object metadata. Stamps `NOW()` on success;
 /// failures stay NULL and retry next sweep.
 async fn upload_pending_state_hashes(
@@ -130,8 +152,8 @@ async fn upload_pending_state_hashes(
         r#"
         SELECT sh.chain_id AS "chain_id!", sh.block_number AS "block_number!",
                sh.state_hash AS "state_hash!", b.block_hash AS "block_hash!"
-          FROM gcs.state_hash sh
-          JOIN gcs.host_chain_blocks_valid b
+          FROM state_hash sh
+          JOIN host_chain_blocks_valid b
             ON b.chain_id = sh.chain_id AND b.block_number = sh.block_number
          WHERE sh.s3_uploaded_at IS NULL
          ORDER BY sh.chain_id, sh.block_number
@@ -165,7 +187,7 @@ async fn upload_pending_state_hashes(
         {
             Ok(_) => {
                 sqlx::query!(
-                    "UPDATE gcs.state_hash SET s3_uploaded_at = NOW()
+                    "UPDATE state_hash SET s3_uploaded_at = NOW()
                       WHERE chain_id = $1 AND block_number = $2",
                     chain_id,
                     block_number,
@@ -182,7 +204,11 @@ async fn upload_pending_state_hashes(
     Ok(())
 }
 
-async fn sweep(
+/// One reconciliation pass: compute + insert any pending GCS state hashes for
+/// the active upgrade window, then upload any rows not yet in S3. Both steps are
+/// idempotent and drain-on-each-call, so a failed insert or PUT simply retries
+/// on the next pass.
+async fn compute_and_upload_state_hashes(
     pool: &Pool<Postgres>,
     s3: Option<&aws_sdk_s3::Client>,
     my_bucket: &str,
@@ -194,17 +220,18 @@ async fn sweep(
         compute_and_insert_gcs(pool, start, end, batch_limit).await?;
     }
 
-    // S3 upload: drains pending rows; runs every sweep so failed PUTs retry.
+    // S3 upload: drains pending rows; runs every pass so failed PUTs retry.
     if let Some(s3) = s3 {
         upload_pending_state_hashes(pool, s3, my_bucket, batch_limit).await?;
     }
     Ok(())
 }
 
-/// Pure pg-notify driven: startup sweep + sweep on `event_ciphertext_computed`
-/// or `event_new_block`. Listening on `event_new_block` covers windows with no
-/// FHE activity — `event_ciphertext_computed` only fires when work happens, so
-/// empty dry-run windows would otherwise never produce sentinel rows.
+/// Pure pg-notify driven: one pass at startup, then one on every
+/// `event_ciphertext_computed` or `event_new_block`. Listening on
+/// `event_new_block` covers windows with no FHE activity —
+/// `event_ciphertext_computed` only fires when work happens, so empty dry-run
+/// windows would otherwise never produce sentinel rows.
 pub async fn run(
     pool: Pool<Postgres>,
     s3: Option<Arc<aws_sdk_s3::Client>>,
@@ -219,17 +246,20 @@ pub async fn run(
         .listen_all([EVENT_CIPHERTEXT_COMPUTED, crate::NEW_BLOCK_CHANNEL])
         .await?;
 
-    if let Err(e) = sweep(&pool, s3.as_deref(), &my_bucket, batch_limit).await {
-        warn!(error = %e, "initial sweep failed");
+    if let Err(e) = compute_and_upload_state_hashes(&pool, s3.as_deref(), &my_bucket, batch_limit).await
+    {
+        warn!(error = %e, "initial state_hash pass failed");
     }
     loop {
         select! {
             _ = cancel.cancelled() => return Ok(()),
             recv = listener.recv() => match recv {
                 Ok(n) => {
-                    debug!(channel = n.channel(), "sweep trigger received");
-                    if let Err(e) = sweep(&pool, s3.as_deref(), &my_bucket, batch_limit).await {
-                        warn!(error = %e, "sweep failed");
+                    debug!(channel = n.channel(), "state_hash pass triggered");
+                    if let Err(e) =
+                        compute_and_upload_state_hashes(&pool, s3.as_deref(), &my_bucket, batch_limit).await
+                    {
+                        warn!(error = %e, "state_hash pass failed");
                     }
                 }
                 Err(e) => {

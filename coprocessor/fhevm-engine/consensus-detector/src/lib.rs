@@ -48,6 +48,7 @@ use crate::state_hash::state_hash_key;
 /// pg_notify channels this service listens on.
 pub const NEW_BLOCK_CHANNEL: &str = "event_new_block";
 pub const NEW_OPERATOR_ADDED_CHANNEL: &str = "event_new_operator_added";
+const EVENT_CIPHERTEXT_COMPUTED: &str = "event_ciphertext_computed";
 
 /// pg_notify channels this service emits.
 ///
@@ -78,7 +79,7 @@ pub struct Config {
     pub my_bucket: Option<String>,
     /// S3 endpoint override (e.g. `http://minio:9000`).
     pub s3_endpoint: Option<String>,
-    /// Max pending blocks processed per state_hash sweep.
+    /// Max pending blocks processed per state_hash pass.
     pub state_hash_batch_limit: i64,
 }
 
@@ -128,7 +129,7 @@ pub enum Error {
     Gateway(String),
 }
 
-/// HTTP-GETs `state_hash` for `(chain_id, block_height)` from each operator
+/// HTTP-GETs `state_hash` for `(chain_id, block_height)` from each opera
 /// whose slot is `None`, concurrently. Slots already populated by a prior
 /// attempt are left untouched, so retries only re-request the missing
 /// operators. Failure modes (404 / 5xx / transport) are logged distinctly
@@ -216,7 +217,9 @@ pub(crate) async fn active_upgrade_window(
     .fetch_optional(pool)
     .await?;
 
-    let Some((state, start_block, end_block)) = row else { return Ok(None) };
+    let Some((state, start_block, end_block)) = row else {
+        return Ok(None);
+    };
     if !matches!(state.as_str(), "UpgradeActivated" | "DryRunStarted") {
         debug!(state = %state, "GCS not in UpgradeActivated/DryRunStarted — ignoring");
         return Ok(None);
