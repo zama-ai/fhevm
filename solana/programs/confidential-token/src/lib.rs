@@ -50,7 +50,7 @@ pub use instructions::{
 /// Re-export account layouts and helper functions used by clients and tests.
 pub use state::*;
 
-declare_id!("9Sbhx7VF6vAGdYApPikwHgJ68Z367Au2tTyw9FpBxnAh");
+declare_id!("pS2gMMq6PNZKpjxiANeoN5XxJgwaFsUR6xaJkpUHcDg");
 
 /// Anchor entrypoint module for the confidential token PoC.
 #[program]

@@ -48,6 +48,13 @@ solana-test-validator --reset --rpc-port 8899 --bind-address 0.0.0.0 --ledger "$
 until curl -s -m2 "$VALIDATOR_RPC" -X POST -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"getHealth"}' 2>/dev/null | grep -q '"ok"'; do sleep 1; done
 solana airdrop 500 >/dev/null 2>&1 || true
+# Seed the committed well-known PoC program keypairs so build-sbf reuses them and the deployed
+# program IDs match each `declare_id!` (see scripts/poc/test-keypairs/README.md). `-n` keeps any
+# pre-existing local keypair; on a fresh checkout it seeds the committed test keys.
+mkdir -p "$SOLANA/target/deploy"
+for p in zama_host confidential_token confidential_token_receiver; do
+  cp -n "$SOLANA/scripts/poc/test-keypairs/$p-keypair.json" "$SOLANA/target/deploy/$p-keypair.json" 2>/dev/null || true
+done
 # SKIP_BUILD reuses the already-built program .so (SBF bytecode is portable across
 # validator versions); useful when the active build toolchain differs from the
 # validator (e.g. building under one Agave release, running the validator on another).

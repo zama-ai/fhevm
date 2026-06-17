@@ -11,7 +11,7 @@
 use anchor_lang::prelude::*;
 use confidential_token_receiver_sdk::{set_transfer_receiver_return_data, TransferReceiverReturn};
 
-declare_id!("55pb9LouMGGfFMLkRWCLEkk6cZMP34oFgHhmsfSMAkpK");
+declare_id!("8JdZ2wLbRJtc969bcY6rqSRUKFovxHeKhWPmQaLhHojd");
 
 #[program]
 pub mod confidential_token_receiver {

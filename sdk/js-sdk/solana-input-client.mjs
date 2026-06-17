@@ -13,10 +13,10 @@ import { createZkProofBuilder } from './src/_esm/core/coprocessor/ZkProofBuilder
 import { createTypedValue } from './src/_esm/core/base/typedValue.js';
 
 const SID = 9223372036854788153n; // RFC-021 Solana host chain id (high bit | 12345)
-const ACL = '0x9c7da263cccb5084844e292a2ce0db0e51bbf310100656aa4572b83dfe35fca5'; // zama-host program (bytes32)
-const CONTRACT = '0x7d6c42046bfdeae9834fa3e94370d5fcb819025ce76ec90e99eb057dc54f2c9e'; // confidential-token (bytes32)
+const ACL = '0x4cd3022dff504a675caf2d9b4f4014d0b3dc3ea17ffb97ba355cec5a933a30ee'; // zama-host program (bytes32)
+const CONTRACT = '0x0c26992cb06b8c2de7305099da15554866e2373d80cb0b597156b689d293249b'; // confidential-token (bytes32)
 const USER = '0x1f6f8fbf847ad9e4ebad6dcabd9529035a622d6ba245ef25fbd6e17e850f6e36'; // deployer (bytes32)
-const CONTRACT_B58 = '9Sbhx7VF6vAGdYApPikwHgJ68Z367Au2tTyw9FpBxnAh';
+const CONTRACT_B58 = 'pS2gMMq6PNZKpjxiANeoN5XxJgwaFsUR6xaJkpUHcDg';
 const USER_B58 = '37iJeLFz4Gfm3qRKQrY5ULnkuo67vXUEhYjXC9mC1CE9';
 const RELAYER = 'http://127.0.0.1:3000';
 

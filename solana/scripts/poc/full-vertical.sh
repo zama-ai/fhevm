@@ -23,7 +23,7 @@ LC="$ROOT/solana/scripts/poc/live-client/target/debug/poc-live-client"
 # Solana host identities the input client binds to (deterministic: zama-host/confidential-token
 # program ids + deployer pubkey, as bytes32). SID = RFC-021 Solana host chain id.
 SID=9223372036854788153
-CONTRACT=0x7d6c42046bfdeae9834fa3e94370d5fcb819025ce76ec90e99eb057dc54f2c9e
+CONTRACT=0x0c26992cb06b8c2de7305099da15554866e2373d80cb0b597156b689d293249b
 USER=0x1f6f8fbf847ad9e4ebad6dcabd9529035a622d6ba245ef25fbd6e17e850f6e36
 RPC=http://127.0.0.1:8899
 GW_RPC="${GW_RPC:-http://127.0.0.1:8546}"
@@ -92,16 +92,17 @@ done
 dv="$(echo "$r" | python3 -c "import sys,json;print(int(json.load(sys.stdin)['result']['decryptedValue'],16))")"
 [ "$dv" = "$VALUE" ] && echo "    public-decrypt cleartext=$dv OK" || fail "public-decrypt $dv != $VALUE"
 
-echo "==> [user-decrypt] V2 path: js-sdk buildSolanaUserDecryptRequest -> relayer /v3/user-decrypt (ed25519) + de-signcrypt"
-# The js-sdk signs the canonical 'zama-solana-user-decrypt-v1' preimage (ed25519 over the ML-KEM
-# re-encryption key + handles + identity + nonce + allowed ACL domain keys + validity window); the
-# Rust harness owns ML-KEM keygen + de-signcryption (kms-core process_user_decryption_resp_solana,
-# not exposed in the SDK WASM) and POSTs the v3 typed-attestation envelope.
+echo "==> [user-decrypt] V2 path: public @fhevm/sdk/solana client -> relayer /v3/user-decrypt (ed25519) + de-signcrypt"
+# The public @fhevm/sdk/solana client (test-suite/fhevm/solana-userdecrypt.ts, run by the Rust
+# harness via bun) builds the ed25519-signed v3 request, POSTs to /v3/user-decrypt, and returns the
+# aggregated KMS shares; the Rust harness owns ML-KEM keygen + de-signcryption (kms-core
+# process_user_decryption_resp_solana, not exposed in the SDK WASM) and asserts the cleartext.
 ( cd "$KMS" && SOLANA_UD_HANDLE="$H" SOLANA_UD_EXPECTED="$VALUE" SOLANA_UD_CONTEXT_ID="$CTX" \
     SOLANA_UD_CHAIN_ID="$SID" SOLANA_UD_SDK_DIR="$ROOT/sdk/js-sdk" \
+    SOLANA_UD_LAUNCHER_DIR="$ROOT/test-suite/fhevm" \
     cargo test -p kms --features non-wasm --test solana_user_decrypt_live -- --ignored --nocapture ) \
   || fail "user-decrypt test failed"
-echo "    user-decrypt cleartext=$VALUE OK (V2 ed25519 via js-sdk)"
+echo "    user-decrypt cleartext=$VALUE OK (V2 ed25519 via public @fhevm/sdk/solana client)"
 
 echo "==> [consume] confidential mint + USDC; wrap -> burn -> release -> public-decrypt -> redeem(secp) + disclose(secp)"
 LCDIR="$ROOT/solana/scripts/poc/live-client"

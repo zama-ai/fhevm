@@ -51,7 +51,7 @@ services:
       - solana_host_listener
       - --database-url=${DATABASE_URL}
       - --url=http://poc-solana-validator:8899
-      - --program-id=${ZAMA_HOST_PROGRAM_ID:-BXsiKq6Jg4vgdBqSd75NbMbKaB7WFKK48NVXx4zoeLsW}
+      - --program-id=${ZAMA_HOST_PROGRAM_ID:-6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu}
       # Coprocessor tenant chain id recorded against ingested handles; must match the
       # on-chain HostConfig chain_id and the configured Solana tenant in the coprocessor DB.
       - --host-chain-id=${SOLANA_HOST_CHAIN_ID:?set the Solana coprocessor tenant chain id}
