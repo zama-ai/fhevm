@@ -20,13 +20,31 @@
 //! `is_associated` flag on the `handle_bridged_events` row in the same
 //! transaction as the copy, and the readiness query skips flagged rows.
 
+use std::sync::LazyLock;
 use std::time::Duration;
 
 use fhevm_engine_common::database::{connect_pool_with_options, resolve_database_url_from_option};
+use prometheus::{register_int_counter, IntCounter};
 use sqlx::postgres::PgPoolOptions;
 use sqlx::{PgPool, Postgres, Transaction};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
+
+static BRIDGE_ASSOCIATED_COUNTER: LazyLock<IntCounter> = LazyLock::new(|| {
+    register_int_counter!(
+        "coprocessor_tfhe_worker_bridge_associated_counter",
+        "Number of bridged handle pairs associated by the confidential bridge worker"
+    )
+    .unwrap()
+});
+
+static BRIDGE_ERROR_COUNTER: LazyLock<IntCounter> = LazyLock::new(|| {
+    register_int_counter!(
+        "coprocessor_tfhe_worker_bridge_errors_counter",
+        "Number of failed association cycles in the confidential bridge worker"
+    )
+    .unwrap()
+});
 
 pub async fn run_confidential_bridge(
     args: crate::daemon_cli::Args,
@@ -58,6 +76,7 @@ pub async fn run_confidential_bridge(
             }
             Ok(_) => {}
             Err(err) => {
+                BRIDGE_ERROR_COUNTER.inc();
                 error!(target: "bridge", error = %err, "Bridge association cycle failed, retrying")
             }
         }
@@ -94,6 +113,7 @@ async fn associate_batch(pool: &PgPool, batch_size: i64) -> Result<u64, sqlx::Er
     let mut txn = pool.begin().await?;
 
     // A pair is ready to associate when:
+    // - the destination handle is not already materialized by another path
     // - both validated events are present: the destination `HandleBridged`
     //   and the matching source `BridgeHandle` one
     // - the source ciphertext is fully materialized: its ct64 blob exists and
@@ -104,6 +124,9 @@ async fn associate_batch(pool: &PgPool, batch_size: i64) -> Result<u64, sqlx::Er
         SELECT dst_event.id, dst_event.src_handle, dst_event.dst_handle, dst_event.dst_chain_id
         FROM handle_bridged_events dst_event
         WHERE NOT dst_event.is_associated
+          AND NOT EXISTS (
+                SELECT 1 FROM ciphertexts dst_ct
+                WHERE dst_ct.handle = dst_event.dst_handle)
           AND EXISTS (
                 SELECT 1 FROM bridge_handle_events src_event
                 WHERE src_event.src_handle = dst_event.src_handle
@@ -138,6 +161,7 @@ async fn associate_batch(pool: &PgPool, batch_size: i64) -> Result<u64, sqlx::Er
     }
 
     txn.commit().await?;
+    BRIDGE_ASSOCIATED_COUNTER.inc_by(associated);
     Ok(associated)
 }
 
@@ -145,19 +169,22 @@ async fn associate_batch(pool: &PgPool, batch_size: i64) -> Result<u64, sqlx::Er
 /// digest is retargeted to the destination chain so the transaction-sender
 /// publishes it there. The ct64/ct128 digests (and therefore the S3 blobs they
 /// reference) are unchanged because the ciphertext is identical.
-async fn associate_pair(
+pub(crate) async fn associate_pair(
     txn: &mut Transaction<'_, Postgres>,
     id: i64,
     src_handle: &[u8],
     dst_handle: &[u8],
     dst_chain_id: i64,
 ) -> Result<(), sqlx::Error> {
+    // Write-once: copy the source ciphertext only if the destination handle has no
+    // ciphertext yet.
     let ciphertext_copied = sqlx::query!(
         r#"
         INSERT INTO ciphertexts (handle, ciphertext, ciphertext_version, ciphertext_type)
         SELECT $1, ciphertext, ciphertext_version, ciphertext_type
         FROM ciphertexts
         WHERE handle = $2
+          AND NOT EXISTS (SELECT 1 FROM ciphertexts WHERE handle = $1)
         ON CONFLICT (handle, ciphertext_version) DO NOTHING
         "#,
         dst_handle,
@@ -168,14 +195,9 @@ async fn associate_pair(
     .rows_affected()
         > 0;
 
-    // The destination handle may already be materialized by another path (a
-    // `grantFallbackPlaintext` recovery converts to a trivial encryption). In that
-    // case the ciphertext copy is a no-op, and we must NOT copy the digest either:
-    // publishing the source digest while the stored ciphertext is the fallback's
-    // would leave the handle with a digest that does not match its ciphertext. We
-    // therefore copy the digest only when we actually placed the source ciphertext,
-    // keeping the ciphertext and its digest from the same source. Either way the
-    // event is marked associated so it is not reprocessed.
+    // Copy the digest and mark the event associated only when we actually placed
+    // the ciphertext. If the destination was already materialized by another path
+    // (e.g. a grantFallbackPlaintext recovery), the copy above is a no-op.
     if ciphertext_copied {
         sqlx::query!(
             r#"
@@ -192,14 +214,14 @@ async fn associate_pair(
         )
         .execute(txn.as_mut())
         .await?;
-    }
 
-    sqlx::query!(
-        "UPDATE handle_bridged_events SET is_associated = true WHERE id = $1",
-        id,
-    )
-    .execute(txn.as_mut())
-    .await?;
+        sqlx::query!(
+            "UPDATE handle_bridged_events SET is_associated = true WHERE id = $1",
+            id,
+        )
+        .execute(txn.as_mut())
+        .await?;
+    }
 
     Ok(())
 }

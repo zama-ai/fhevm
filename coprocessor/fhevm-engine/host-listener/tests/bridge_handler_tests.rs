@@ -455,20 +455,6 @@ async fn pbs_count(db: &Database, handle: FixedBytes<32>) -> i64 {
     .unwrap()
 }
 
-async fn handle_bridged_is_associated(
-    db: &Database,
-    dst_handle: FixedBytes<32>,
-) -> bool {
-    let pool = db.pool().await;
-    sqlx::query_scalar::<_, bool>(
-        "SELECT is_associated FROM handle_bridged_events WHERE dst_handle = $1",
-    )
-    .bind(dst_handle.as_slice())
-    .fetch_one(&pool)
-    .await
-    .unwrap()
-}
-
 #[tokio::test]
 #[serial(db)]
 async fn fallback_granted_plaintext_becomes_trivial_encrypt() {
@@ -498,6 +484,7 @@ async fn fallback_granted_plaintext_becomes_trivial_encrypt() {
     assert_trivial_encrypt_operands(&db, dst_handle, 123_456_789, 5).await;
 
     // PBS enqueued so the ct128/digest get computed and published.
+    assert_eq!(computation_count(&db, dst_handle).await, 1);
     assert_eq!(pbs_count(&db, dst_handle).await, 1);
 }
 
@@ -632,61 +619,20 @@ async fn fallback_duplicates_in_one_block_use_first_event() {
 
 #[tokio::test]
 #[serial(db)]
-async fn fallback_marks_matching_handle_bridged_associated() {
-    let (mut db, _inst) = fresh_db(DST_CHAIN_ID).await;
-    let mut src_bytes = [0x33; 32];
-    src_bytes[22..30].copy_from_slice(&SRC_CHAIN_ID.to_be_bytes());
-    src_bytes[30] = 5;
-    let src_handle = FixedBytes::from(src_bytes);
-    let prev = FixedBytes::from([0xBB; 32]);
-    let dst_handle = FixedBytes::from(derive_dst_handle(
-        &src_handle.0,
-        &ACL,
-        DST_CHAIN_ID,
-        &prev.0,
-        BLOCK_TIMESTAMP,
-    ));
-
-    // HandleBridged observed -> a pending row, not yet associated.
-    let event =
-        BridgeContractEvents::HandleBridged(BridgeContract::HandleBridged {
-            receiverDapp: Address::from([0xDB; 20]),
-            srcHandle: src_handle,
-            dstHandle: dst_handle,
-            guid: FixedBytes::from([0x44; 32]),
-        });
-    assert!(ingest(&db, event, prev, Some(Address::from(ACL))).await);
-    assert!(!handle_bridged_is_associated(&db, dst_handle).await);
-
-    // A fallback recovers the same handle -> the pending row is marked
-    // associated so the bridge worker stops re-scanning it.
-    ingest_fallback(&mut db, dst_handle, U256::from(7_u64)).await;
-    assert!(handle_bridged_is_associated(&db, dst_handle).await);
-}
-
-#[tokio::test]
-#[serial(db)]
-async fn fallback_ignored_when_handle_already_associated() {
+async fn fallback_ignored_when_handle_has_ciphertext() {
     let (mut db, _inst) = fresh_db(DST_CHAIN_ID).await;
     let dst_handle = fallback_dst_handle(DST_CHAIN_ID, 5);
 
-    // Simulate the bridge worker having already copied the real source
-    // ciphertext onto dst_handle: an *associated* handle_bridged_events row with
-    // NO computations row (the copy path writes none). A fallback arriving after
-    // this must be ignored — the copy already won.
     let pool = db.pool().await;
     sqlx::query(
-        "INSERT INTO handle_bridged_events
-            (src_handle, dst_handle, dst_chain_id, receiver_dapp, guid, block_number, is_associated)
-         VALUES ($1, $2, $3, '\\xdb'::bytea, '\\x44'::bytea, $4, true)",
+        "INSERT INTO ciphertexts (handle, ciphertext, ciphertext_version, ciphertext_type)
+         VALUES ($1, $2, 0, 5)",
     )
-    .bind(&[0x33u8; 32][..])
     .bind(dst_handle.as_slice())
-    .bind(DST_CHAIN_ID as i64)
-    .bind(BLOCK_NUMBER as i64)
+    .bind(&[0xCCu8; 4][..])
     .execute(&pool)
     .await
-    .expect("insert associated handle_bridged_events");
+    .expect("insert ciphertext");
 
     ingest_fallback(&mut db, dst_handle, U256::from(123_u64)).await;
 

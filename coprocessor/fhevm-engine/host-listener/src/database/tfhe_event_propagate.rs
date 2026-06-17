@@ -1120,38 +1120,20 @@ impl Database {
         Ok(exists)
     }
 
-    /// Returns whether the destination handle's `handle_bridged_events` row is
-    /// already associated — i.e. the bridge worker copied the real source
-    /// ciphertext, or an earlier fallback marked it.
-    pub async fn is_handle_bridged_associated(
+    pub async fn ciphertext_exists(
         &self,
         tx: &mut Transaction<'_>,
-        dst_handle: &[u8],
+        handle: &[u8],
     ) -> Result<bool, SqlxError> {
-        let associated = sqlx::query_scalar!(
+        let exists = sqlx::query_scalar!(
             r#"SELECT EXISTS(
-                   SELECT 1 FROM handle_bridged_events
-                   WHERE dst_handle = $1 AND is_associated
+                   SELECT 1 FROM ciphertexts WHERE handle = $1
                ) AS "exists!""#,
-            dst_handle,
+            handle,
         )
         .fetch_one(tx.deref_mut())
         .await?;
-        Ok(associated)
-    }
-
-    pub async fn mark_handle_bridged_associated(
-        &self,
-        tx: &mut Transaction<'_>,
-        dst_handle: &[u8],
-    ) -> Result<(), SqlxError> {
-        sqlx::query!(
-            "UPDATE handle_bridged_events SET is_associated = true WHERE dst_handle = $1",
-            dst_handle,
-        )
-        .execute(tx.deref_mut())
-        .await?;
-        Ok(())
+        Ok(exists)
     }
 
     /// Add the handle to the allowed_handles table

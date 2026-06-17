@@ -264,7 +264,7 @@ pub fn trivial_encrypt_be_bytes(
 }
 
 pub fn current_ciphertext_version() -> i16 {
-    crate::types::HANDLE_VERSION as i16
+    0
 }
 
 pub fn try_expand_ciphertext_list(

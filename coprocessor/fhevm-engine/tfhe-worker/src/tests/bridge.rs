@@ -342,7 +342,7 @@ async fn associates_only_once() {
 
 #[tokio::test]
 #[serial]
-async fn does_not_copy_digest_when_destination_already_materialized() {
+async fn skips_pair_when_destination_already_materialized() {
     let (_db, pool) = fresh_db().await;
     let src = handle(1);
     let dst = handle(2);
@@ -353,14 +353,15 @@ async fn does_not_copy_digest_when_destination_already_materialized() {
     let fallback_ct: &[u8] = &[0x99; 8];
     insert_ciphertext(&pool, &dst, fallback_ct).await;
 
+    // The pair is skipped: the destination already has a ciphertext, so there is
+    // nothing to copy.
     let associated = crate::bridge::drain_associations(&pool, 128, &CancellationToken::new())
         .await
         .unwrap();
-    assert_eq!(associated, 1);
+    assert_eq!(associated, 0);
 
-    // The destination ciphertext stays the fallback's (the copy no-ops), and the
-    // source digest is NOT copied: the published digest can therefore never
-    // disagree with the stored ciphertext.
+    // The destination ciphertext is untouched and no source digest is copied, so
+    // the published digest can never disagree with the stored ciphertext.
     let ciphertext: Vec<u8> =
         sqlx::query_scalar("SELECT ciphertext FROM ciphertexts WHERE handle = $1")
             .bind(&dst)
@@ -370,8 +371,43 @@ async fn does_not_copy_digest_when_destination_already_materialized() {
     assert_eq!(ciphertext, fallback_ct);
     assert_eq!(digest_count(&pool, &dst).await, 0);
 
-    // Still marked associated so the row is not reprocessed forever.
-    assert!(is_associated(&pool, &dst).await);
+    // The bridge did not associate this handle, so the flag stays false.
+    assert!(!is_associated(&pool, &dst).await);
+}
+
+#[tokio::test]
+#[serial]
+async fn associate_pair_skips_digest_and_flag_when_copy_no_ops() {
+    let (_db, pool) = fresh_db().await;
+    let src = handle(1);
+    let dst = handle(2);
+    insert_ready_pair(&pool, &src, &dst).await;
+
+    let fallback_ct: &[u8] = &[0x99; 8];
+    insert_ciphertext(&pool, &dst, fallback_ct).await;
+
+    let id: i64 = sqlx::query_scalar("SELECT id FROM handle_bridged_events WHERE dst_handle = $1")
+        .bind(&dst)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+    let mut txn = pool.begin().await.unwrap();
+    crate::bridge::associate_pair(&mut txn, id, &src, &dst, DST_CHAIN)
+        .await
+        .unwrap();
+    txn.commit().await.unwrap();
+
+    // Destination ciphertext untouched, no digest copied, not marked associated.
+    let ciphertext: Vec<u8> =
+        sqlx::query_scalar("SELECT ciphertext FROM ciphertexts WHERE handle = $1")
+            .bind(&dst)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(ciphertext, fallback_ct);
+    assert_eq!(digest_count(&pool, &dst).await, 0);
+    assert!(!is_associated(&pool, &dst).await);
 }
 
 #[tokio::test]

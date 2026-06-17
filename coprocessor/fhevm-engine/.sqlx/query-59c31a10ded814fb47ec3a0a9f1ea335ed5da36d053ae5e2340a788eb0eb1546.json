@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT EXISTS(\n                   SELECT 1 FROM handle_bridged_events\n                   WHERE dst_handle = $1 AND is_associated\n               ) AS \"exists!\"",
+  "query": "SELECT EXISTS(\n                   SELECT 1 FROM ciphertexts WHERE handle = $1\n               ) AS \"exists!\"",
   "describe": {
     "columns": [
       {
@@ -18,5 +18,5 @@
       null
     ]
   },
-  "hash": "c46132964a1c2309bb8fcde3c08c781c0f6ff6e5f11c3ddb14aba511cbf61bbb"
+  "hash": "59c31a10ded814fb47ec3a0a9f1ea335ed5da36d053ae5e2340a788eb0eb1546"
 }

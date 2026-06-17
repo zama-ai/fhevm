@@ -308,10 +308,10 @@ pub async fn ingest_block_logs(
                     // are emitted for the same handle, only the first one is
                     // the source of truth. Skip this event if the handle is
                     // already handled: seen earlier in this block, an earlier
-                    // fallback's committed computation, or the bridge worker's
-                    // copy of the real ciphertext. That last case has no
-                    // `computations` row (the copy path writes none), so it is
-                    // detected via the associated flag on handle_bridged_events.
+                    // fallback's committed computation, or a ciphertext already
+                    // materialized for it (e.g. the bridge worker's copy of the
+                    // real ciphertext, which writes no `computations` row). The
+                    // ciphertext check keeps materialization write-once.
                     let first_in_block =
                         seen_fallback_handles.insert(dst_handle.to_vec());
                     if !first_in_block
@@ -319,10 +319,7 @@ pub async fn ingest_block_logs(
                             .computation_exists(&mut tx, dst_handle.as_slice())
                             .await?
                         || db
-                            .is_handle_bridged_associated(
-                                &mut tx,
-                                dst_handle.as_slice(),
-                            )
+                            .ciphertext_exists(&mut tx, dst_handle.as_slice())
                             .await?
                     {
                         warn!(
@@ -372,11 +369,6 @@ pub async fn ingest_block_logs(
                             block_number,
                         )
                         .await?;
-                    db.mark_handle_bridged_associated(
-                        &mut tx,
-                        dst_handle.as_slice(),
-                    )
-                    .await?;
                 } else {
                     at_least_one_insertion |= db
                         .handle_bridge_event(

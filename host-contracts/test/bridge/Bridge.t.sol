@@ -348,6 +348,35 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
         assertEq(uint8(dst[31]), 0x00);
     }
 
+    /// @dev Golden constant for the destination-handle derivation. Minted by
+    ///      `test_DeriveDstHandle_GoldenVector` below (run `forge test`) and
+    ///      mirrored, with the same inputs, by the Rust `derive_dst_handle` test
+    ///      `matches_solidity_golden_vector`. Regenerate both together if the
+    ///      derivation formula changes.
+    bytes32 internal constant GOLDEN_DST_HANDLE =
+        0x89ee7803d65c29976056001f9db9ba5d8b38975ac4ff00000000000030390500;
+
+    /// @dev Cross-implementation lock for the destination-handle derivation. Pins
+    ///      the output of the *real* `_deriveDstHandle` (via a thin harness) for a
+    ///      fully-fixed input set; the Rust mirror asserts the same constant for the
+    ///      same inputs. A divergence between the two hand-written implementations
+    ///      breaks one side. Inputs are pinned (chain id, timestamp via cheatcodes;
+    ///      ACL address is the compile-time `aclAdd`) so the value is deterministic.
+    function test_DeriveDstHandle_GoldenVector() public {
+        // Fixed inputs — must match the Rust test byte-for-byte.
+        // src: bytes[0..4] = 01020304, byte 30 = 0x05 (FheType), rest 0.
+        bytes32 src = bytes32(uint256(0x01020304) << 224) | bytes32(uint256(0x05) << 8);
+        // prev: bytes[0..4] = 0a0b0c0d, rest 0.
+        bytes32 prev = bytes32(uint256(0x0a0b0c0d) << 224);
+
+        DeriveDstHandleHarness harness = new DeriveDstHandleHarness(endpoints[DST_EID]);
+        vm.chainId(12345);
+        vm.warp(1_700_000_000);
+
+        bytes32 got = harness.deriveDstHandle(src, prev);
+        assertEq(got, GOLDEN_DST_HANDLE);
+    }
+
     ////////////////////////////////////////////////////////////////////////////////
     // Destination-side lzCompose authentication + dispatch
     ////////////////////////////////////////////////////////////////////////////////
@@ -486,5 +515,18 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
         vm.prank(address(dstBridge));
         vm.expectRevert();
         acl.allowTransient(fresh, address(dstApp));
+    }
+}
+
+/// @dev Test-only harness exposing the internal `_deriveDstHandle`. Deployed
+///      directly (no proxy/initializer): the derivation reads only `block.chainid`,
+///      `block.timestamp`, the compile-time `aclAdd` constant, and its arguments —
+///      never initialized storage — so an uninitialized instance computes it
+///      identically to the production contract.
+contract DeriveDstHandleHarness is ConfidentialBridge {
+    constructor(address endpoint_) ConfidentialBridge(endpoint_) {}
+
+    function deriveDstHandle(bytes32 srcHandle, bytes32 prevBlockHash) external view returns (bytes32) {
+        return _deriveDstHandle(srcHandle, prevBlockHash);
     }
 }
