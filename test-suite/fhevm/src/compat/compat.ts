@@ -53,6 +53,12 @@ export const COMPAT_MATRIX = {
       unparsed: "modern" as const,
     },
     {
+      key: "COPROCESSOR_SNS_WORKER_VERSION",
+      below: [0, 14, 0] as CompatSemver,
+      profile: "legacy-sns-worker-no-signer-flags",
+      unparsed: "modern" as const,
+    },
+    {
       key: "COPROCESSOR_TX_SENDER_VERSION",
       below: [0, 12, 0] as CompatSemver,
       profile: "legacy-tx-sender-gateway-flags",
@@ -114,6 +120,14 @@ const SHIM_PROFILES = {
       "sns-worker": [["--tenant-api-key", { env: "TENANT_API_KEY" }]],
     },
     coprocessorDropFlags: {},
+    connectorEnv: {},
+    composeEnv: {},
+  },
+  "legacy-sns-worker-no-signer-flags": {
+    coprocessorArgs: {},
+    coprocessorDropFlags: {
+      "sns-worker": ["--signer-type", "--private-key"],
+    },
     connectorEnv: {},
     composeEnv: {},
   },
