@@ -58,30 +58,41 @@ export const solanaHostChainIdI64 = (chainId: string): string => {
 export const solanaProgramId = (discovery: Pick<Discovery, "hosts"> | undefined, key: string): string =>
   discovery?.hosts[key]?.ACL_CONTRACT_ADDRESS ?? "";
 
-/** A kms-connector `KMS_CONNECTOR_HOST_CHAINS` entry. */
+/**
+ * The Solana validator's RPC URL as reached from INSIDE the docker network.
+ *
+ * The Solana host runs a NATIVE `solana-test-validator` on the host (the ecosystem norm on macOS;
+ * the only published agave images are amd64, so a container would mean qemu emulation). Containers
+ * reach the host via Docker Desktop's `host.docker.internal`; the validator publishes `rpcPort`.
+ */
+export const solanaValidatorUrl = (chain: { readonly rpcPort: number }): string =>
+  `http://host.docker.internal:${chain.rpcPort}`;
+
+/** A kms-connector `KMS_CONNECTOR_HOST_CHAINS` entry. `aclAddress` is EVM-only. */
 export type KmsHostChainEntry = {
   readonly url: string;
   readonly chainId: string;
-  readonly aclAddress: string;
   readonly kind: "evm" | "solana";
+  readonly aclAddress?: string;
   readonly solanaProgramId?: string;
 };
 
 /**
- * Serializes `KMS_CONNECTOR_HOST_CHAINS`. EVM entries use a numeric `chain_id`; Solana entries
- * emit `chain_id` as a raw integer literal (RFC-021 ids exceed Number.MAX_SAFE_INTEGER, so
- * `JSON.stringify(Number(id))` would corrupt it) plus `chain_kind` + `solana_host_program_id`.
+ * Serializes `KMS_CONNECTOR_HOST_CHAINS`. EVM entries carry a numeric `chain_id` + `acl_address`.
+ * Solana entries emit `chain_id` as a raw integer literal (RFC-021 ids exceed
+ * Number.MAX_SAFE_INTEGER, so `JSON.stringify(Number(id))` would corrupt it), `chain_kind`, and
+ * `solana_host_program_id` — and OMIT `acl_address` (the connector's schema makes it optional and
+ * ignores it for Solana, whose ACL is verified via the program id).
  */
 export const serializeKmsHostChains = (entries: readonly KmsHostChainEntry[]): string => {
   const parts = entries.map((e) => {
     if (e.kind === "solana") {
       return (
         `{"url":${JSON.stringify(e.url)},"chain_id":${BigInt(e.chainId).toString()},` +
-        `"chain_kind":"solana","acl_address":${JSON.stringify(e.aclAddress)},` +
-        `"solana_host_program_id":${JSON.stringify(e.solanaProgramId ?? "")}}`
+        `"chain_kind":"solana","solana_host_program_id":${JSON.stringify(e.solanaProgramId ?? "")}}`
       );
     }
-    return JSON.stringify({ url: e.url, chain_id: Number(e.chainId), acl_address: e.aclAddress });
+    return JSON.stringify({ url: e.url, chain_id: Number(e.chainId), acl_address: e.aclAddress ?? "" });
   });
   return `[${parts.join(",")}]`;
 };

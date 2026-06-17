@@ -8,7 +8,7 @@ import {
   requiresLegacyRelayerReadinessConfig,
 } from "../compat/compat";
 import { hostChainRuntimes } from "../layout";
-import { solanaProgramId } from "./solana";
+import { solanaProgramId, solanaValidatorUrl } from "./solana";
 import type { StackSpec } from "../stack-spec/stack-spec";
 import type { HostChainScenario, State } from "../types";
 
@@ -53,11 +53,12 @@ const rewriteHostChains = (
   config.host_chains = hostChainRuntimes(chains).map((chain) => {
     if (chain.type === "solana") {
       // RFC-021 ids exceed i64::MAX; the relayer config parser accepts them only as strings (YAML
-      // quotes a JS string). acl_address = zama-host program (base58); the validator listens on
-      // 8899 in-container regardless of the published port.
+      // quotes a JS string). acl_address = zama-host program (base58) — the relayer uses it only as
+      // a Solana-host discriminant and never connects (Solana ACL is KMS-enforced), so `url` is
+      // inert config; it points at the host-native validator for consistency.
       return {
         chain_id: chain.chainId,
-        url: `http://${chain.node}:8899`,
+        url: solanaValidatorUrl(chain),
         acl_address: solanaProgramId(state.discovery, chain.key),
       };
     }

@@ -10,7 +10,7 @@ import {
   requiresModernHostAddressArtifacts,
 } from "../compat/compat";
 import { driftDatabaseName } from "../drift";
-import { serializeKmsHostChains, solanaProgramId, type KmsHostChainEntry } from "./solana";
+import { serializeKmsHostChains, solanaProgramId, solanaValidatorUrl, type KmsHostChainEntry } from "./solana";
 import type { StackSpec } from "../stack-spec/stack-spec";
 import {
   COPROCESSOR_WALLET_INDICES,
@@ -192,12 +192,12 @@ const applyDiscoveryEnv = (
     const hostAddresses = state.discovery!.hosts[chain.key] ?? {};
     const endpoints = state.discovery!.endpoints.hosts[chain.key];
     if (chain.type === "solana") {
-      // The connector reads the on-chain ACL record from the validator over RPC; reach it at the
-      // validator container's in-network address (8899 in-container). chain_id stays a raw bigint.
+      // The connector reads the on-chain ACL record from the validator over RPC; reach it via the
+      // host-native validator. chain_id stays a raw bigint; acl_address is omitted (Solana ACL is
+      // verified via solana_host_program_id).
       return {
-        url: `http://${chain.node}:8899`,
+        url: solanaValidatorUrl(chain),
         chainId: chain.chainId,
-        aclAddress: "0x0000000000000000000000000000000000000000",
         kind: "solana",
         solanaProgramId: solanaProgramId(state.discovery, chain.key),
       };

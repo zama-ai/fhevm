@@ -575,7 +575,9 @@ export const runStep = async (state: State, step: StepName) => {
         };
       }
       await generateRuntime(state, stackSpecForState(state));
-      for (const chain of extraHostChains(state)) {
+      // Solana hosts are externally provisioned (host-native validator + solana-side bring-up);
+      // fhevm-cli neither starts their node nor probes it.
+      for (const chain of extraHostChains(state).filter((c) => c.type !== "solana")) {
         await multiChainComposeUp(chain.node);
         await waitForRpc(`http://localhost:${chain.rpcPort}`, chain.type);
       }
@@ -684,7 +686,8 @@ export const runStep = async (state: State, step: StepName) => {
         await applyLegacyHostChainSeedShim(state);
       }
       await postBootHealthGate(coprocessorHealthContainers(state));
-      for (const chain of extraHostChains(state)) {
+      // Solana hosts register + start their listeners via the solana-side bring-up, not here.
+      for (const chain of extraHostChains(state).filter((c) => c.type !== "solana")) {
         const suffix = chain.suffix;
         await timed(`[multi-chain] register ${chain.key} in coprocessor DBs`, () =>
           registerExtraChainInCoprocessor(state, chain),
