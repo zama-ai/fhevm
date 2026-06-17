@@ -29,12 +29,19 @@ export const OVERRIDE_GROUPS = [
 ] as const;
 
 export const HOST_CHAIN_TYPES = ["evm", "solana"] as const;
+export const HOST_CHAIN_NODE_PROVISIONING = ["container", "external"] as const;
 
 export type StepName = (typeof STEP_NAMES)[number];
 export type VersionTarget = (typeof TARGETS)[number];
 export type OverrideGroup = (typeof OVERRIDE_GROUPS)[number];
 /** The kind of host chain. `evm` is the default; `solana` is the RFC-021 Solana host. */
 export type HostChainType = (typeof HOST_CHAIN_TYPES)[number];
+/**
+ * How the host node is provisioned. `container` = fhevm-cli runs it (and deploys + registers it);
+ * `external` = an outside process owns the node + deploy + registration (the Solana host-native
+ * validator). (A future `host` value could run a fhevm-cli-managed host process.)
+ */
+export type HostChainNodeProvisioning = (typeof HOST_CHAIN_NODE_PROVISIONING)[number];
 
 export type CoprocessorInstanceSource =
   | { mode: "inherit" }
@@ -60,6 +67,12 @@ export type HostChainScenario = {
    * Anchor program deploy, and the Solana host-listener/finalized-account-fetcher.
    */
   type?: HostChainType;
+  /**
+   * Who provisions the host node. Omitted defaults by `type`: `evm` ⇒ `container` (fhevm-cli runs
+   * the node + deploy + registration), `solana` ⇒ `external` (the host-native validator and the
+   * solana-side bring-up own them). Set explicitly to override.
+   */
+  nodeProvisioning?: HostChainNodeProvisioning;
 };
 
 export type CoprocessorScenario = {

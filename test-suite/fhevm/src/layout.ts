@@ -4,7 +4,13 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 
-import type { HostChainScenario, HostChainType, OverrideGroup, StepName } from "./types";
+import type {
+  HostChainNodeProvisioning,
+  HostChainScenario,
+  HostChainType,
+  OverrideGroup,
+  StepName,
+} from "./types";
 
 const CLI_DIR = path.resolve(import.meta.dir, "..");
 export const REPO_ROOT = path.resolve(CLI_DIR, "../..");
@@ -363,9 +369,25 @@ export const hostChainNames = (key: string, defaultKey = DEFAULT_HOST_CHAIN_KEY)
   copro: coprocessorHostKey(key),
   suffix: hostChainSuffix(key, defaultKey),
 });
+/**
+ * Resolves how a host node is provisioned. Explicit `nodeProvisioning` wins; otherwise defaults by
+ * kind: solana ⇒ external (host-native validator + solana-side bring-up own node/deploy/register),
+ * evm ⇒ container (fhevm-cli runs them).
+ */
+export const resolveNodeProvisioning = (
+  chain: Pick<HostChainScenario, "type" | "nodeProvisioning">,
+): HostChainNodeProvisioning =>
+  chain.nodeProvisioning ?? ((chain.type ?? "evm") === "solana" ? "external" : "container");
+
+/** True when the host node is provisioned outside fhevm-cli (no node/sc/coprocessor compose). */
+export const isExternalNode = (chain: Pick<HostChainScenario, "type" | "nodeProvisioning">): boolean =>
+  resolveNodeProvisioning(chain) === "external";
+
 export type HostChainRuntime = HostChainScenario & {
   /** Resolved host-chain kind: defaults to `evm` when the scenario omits `type`. */
   type: HostChainType;
+  /** Resolved node provisioning: see {@link resolveNodeProvisioning}. */
+  nodeProvisioning: HostChainNodeProvisioning;
   index: number;
   isDefault: boolean;
   suffix: string;
@@ -382,6 +404,7 @@ export const hostChainRuntime = (
 ): HostChainRuntime => ({
   ...chain,
   type: chain.type ?? "evm",
+  nodeProvisioning: resolveNodeProvisioning(chain),
   index,
   isDefault: chain.key === defaultKey,
   ...hostChainNames(chain.key, defaultKey),

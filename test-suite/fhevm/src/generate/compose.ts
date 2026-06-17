@@ -18,6 +18,7 @@ import {
   envPath,
   hostChainNames,
   hostChainRuntimes,
+  isExternalNode,
 } from "../layout";
 import type { HostChainRuntime } from "../layout";
 import { type StackSpec, topologyForState } from "../stack-spec/stack-spec";
@@ -583,12 +584,9 @@ export const generateComposeOverrides = async (_state: State, plan: StackSpec) =
   if (!defaultChain) {
     return;
   }
-  // Solana host chains are externally provisioned (a host-native solana-test-validator + the
-  // solana-side bring-up), so fhevm-cli generates no node/sc/coprocessor compose for them — only
-  // their relayer + kms-connector config entries (see generate/config.ts, generate/env.ts).
-  // TODO: surface node provisioning as a first-class option (host | container | external) rather
-  // than keying it implicitly off `type === "solana"`.
-  const extraChains = chains.filter((chain) => !chain.isDefault && chain.type !== "solana");
+  // Externally-provisioned hosts (e.g. the Solana host-native validator) get no node/sc/coprocessor
+  // compose from fhevm-cli — only their relayer + kms-connector config (generate/config.ts, env.ts).
+  const extraChains = chains.filter((chain) => !chain.isDefault && !isExternalNode(chain));
   const extraChainFileNames: string[] = [];
   for (const chain of extraChains) {
     const { node, sc, copro } = chain;

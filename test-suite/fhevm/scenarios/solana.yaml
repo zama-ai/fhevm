@@ -12,6 +12,7 @@ hostChains:
     rpcPort: 8545
   - key: solana
     type: solana
+    nodeProvisioning: external # host-native solana-test-validator; fhevm-cli owns only its config
     chainId: "9223372036854788153"
     rpcPort: 8899
 topology:

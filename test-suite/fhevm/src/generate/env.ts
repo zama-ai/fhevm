@@ -18,6 +18,7 @@ import {
   MINIO_INTERNAL_URL,
   POSTGRES_HOST,
   hostChainRuntimes,
+  isExternalNode,
 } from "../layout";
 import type { State } from "../types";
 import { predictedCrsId, predictedKeyId } from "../utils/fs";
@@ -333,10 +334,10 @@ export const renderEnvMaps = async (
 
   const instanceEnvs = await buildInstanceEnvs(envs, plan, deriveWallet);
 
-  // Uniform per-chain gateway-sc indexed vars for EVM host chains. Solana hosts are registered on
-  // the gateway by the solana-side bring-up (addHostChain with zero EVM addresses), so they're
-  // excluded here; indices stay contiguous (0..N-1) as the gateway task expects.
-  const gatewayHostChains = chains.filter((chain) => chain.type !== "solana");
+  // gateway-sc indexed vars for fhevm-cli-provisioned hosts. Externally-provisioned hosts (Solana)
+  // are registered on the gateway by their own bring-up (addHostChain), so they're excluded here;
+  // indices stay contiguous (0..N-1) as the gateway task expects.
+  const gatewayHostChains = chains.filter((chain) => !isExternalNode(chain));
   envs["gateway-sc"].NUM_HOST_CHAINS = String(gatewayHostChains.length);
   gatewayHostChains.forEach((chain, chainIndex) => {
     const hostAddresses = state.discovery?.hosts[chain.key] ?? {};
@@ -350,9 +351,9 @@ export const renderEnvMaps = async (
     envs["gateway-sc"][`HOST_CHAIN_WEBSITE_${chainIndex}`] = metadata.website;
   });
 
-  // Non-default EVM chain infrastructure: host-node, host-sc, coprocessor, and test-suite env files.
-  // Solana hosts are externally provisioned, so they get none of these.
-  for (const chain of chains.filter((item) => !item.isDefault && item.type !== "solana")) {
+  // Non-default fhevm-cli-provisioned chain infrastructure: host-node, host-sc, coprocessor, and
+  // test-suite env files. Externally-provisioned hosts (Solana) get none of these.
+  for (const chain of chains.filter((item) => !item.isDefault && !isExternalNode(item))) {
     const chainIndex = chain.index;
     const hostHttp = `http://${chain.node}:${chain.rpcPort}`;
     const hostWs = `ws://${chain.node}:${chain.rpcPort}`;
