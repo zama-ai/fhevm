@@ -1,21 +1,23 @@
 #!/usr/bin/env bash
 # Reproducible Solana side-stack setup against a LIVE fhevm-cli backend.
 #
-# Run AFTER `fhevm-cli up --override gateway-contracts \
-#   --override coprocessor:zkproof-worker,transaction-sender,db-migration \
-#   --override relayer --allow-schema-mismatch` has brought the EVM stack up with the
-# Solana code (gateway verifyProofRequestSolana, zkproof-worker 128B aux, tx-sender
-# Solana EIP-712, relayer bytes32 input + Solana host support) and keygen has completed.
+# Normally invoked by clean-e2e.sh, which runs `fhevm-cli up --scenario solana ...` first. That
+# brings the EVM stack up WITH the Solana code (gateway verifyProofRequestSolana, zkproof-worker
+# 128B aux, tx-sender Solana EIP-712, relayer bytes32 input + Solana host support), declares the
+# Solana host in the scenario, and — being the single config writer — generates the Solana
+# relayer + kms-connector host-chain config itself. Run this AFTER that `up` (keygen complete).
 #
-# This brings the Solana host online against that live backend, with NO stubs:
-#   1. (re)start a fresh local validator and deploy zama_host + confidential_token
+# This script owns only what depends on the freshly-deployed program / post-keygen state, with
+# NO stubs:
+#   1. (re)start a fresh host-native validator and deploy zama_host + confidential_token
 #   2. bootstrap zama-host from the REAL live gateway addresses + ProtocolConfig signer set
-#   3. register the Solana host chain in the coprocessor DB (host_chains + keyset mirror)
+#   3. register the Solana host chain in the coprocessor DB (host_chains i64 + keyset mirror)
 #      and on the gateway (GatewayConfig.addHostChain via the test-suite task)
-#   4. run the Solana host-listener against the live validator + coprocessor DB
+#   4. run the Solana host-listener + finalized-account fetcher against the validator + DB
+# It does NOT touch relayer.yaml / kms-connector.env — fhevm-cli generates those.
 #
-# All addresses/signers are read live (no hardcoded values), so it is reproducible
-# from a clean `fhevm-cli up`. MAINNET-safe: validator pinned to 127.0.0.1:8899.
+# All addresses/signers are read live (no hardcoded values), so it is reproducible from a clean
+# `fhevm-cli up --scenario solana`. MAINNET-safe: validator pinned to 127.0.0.1:8899.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
