@@ -1721,4 +1721,43 @@ describe('FHEVM manual operations', function () {
     const res = await this.instance.publicDecrypt([handle]);
     assert.equal(res.clearValues[handle], 0n);
   });
+
+  it('toExternalEuint64 round-trips through fromExternal with empty proof', async function () {
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [{ type: 'uint64', value: 123456789n }],
+      contractAddress: this.contractAddress,
+      userAddress: this.signer.address,
+    });
+    const tx = await this.contract.test_toExternalEuint64(encryptedAmount.handles[0], encryptedAmount.inputProof);
+    await tx.wait();
+    const handle = await this.contract.resEuint64();
+    const res = await this.instance.publicDecrypt([handle]);
+    assert.equal(res.clearValues[handle], 123456789n);
+  });
+
+  it('toExternalEbool round-trips through fromExternal with empty proof', async function () {
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [{ type: 'bool', value: true }],
+      contractAddress: this.contractAddress,
+      userAddress: this.signer.address,
+    });
+    const tx = await this.contract.test_toExternalEbool(encryptedAmount.handles[0], encryptedAmount.inputProof);
+    await tx.wait();
+    const handle = await this.contract.resEbool();
+    const res = await this.instance.publicDecrypt([handle]);
+    assert.equal(res.clearValues[handle], true);
+  });
+
+  it('toExternalEaddress round-trips through fromExternal with empty proof', async function () {
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [{ type: 'address', value: ADDR_A }],
+      contractAddress: this.contractAddress,
+      userAddress: this.signer.address,
+    });
+    const tx = await this.contract.test_toExternalEaddress(encryptedAmount.handles[0], encryptedAmount.inputProof);
+    await tx.wait();
+    const handle = await this.contract.resAdd();
+    const res = await this.instance.publicDecrypt([handle]);
+    assert.equal(res.clearValues[handle], ADDR_A);
+  });
 });
