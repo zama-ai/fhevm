@@ -28,7 +28,7 @@ pub mod validation_messages {
     pub const MUST_NOT_BE_EMPTY: &str = "Must not be empty";
 
     pub const INVALID_EXTRA_DATA_FORMAT: &str =
-        "Must be 0x00, or a versioned format: 0x01 + 32-byte contextId (33 bytes), or 0x02 + 32-byte contextId + 32-byte epochId (at least 65 bytes)";
+        "Must be 0x00, or a versioned format: 0x01 + 32-byte contextId (33 bytes), or 0x02 + 32-byte contextId + 32-byte epochId (65 bytes)";
     pub const TIMESTAMP_MUST_NOT_BE_IN_FUTURE: &str = "Timestamp must not be in the future";
 }
 
@@ -101,12 +101,13 @@ pub fn validate_0x_hexs(hex_strs: &Vec<String>) -> Result<(), ValidationError> {
 
 /// Validates the extraData field format for decryption requests.
 ///
-/// Accepted formats:
+/// Each version has a fixed size; trailing bytes are rejected. New fields are
+/// introduced by bumping the version byte, not by appending to an existing one.
 /// - `"0x00"`: Legacy format (version 0).
 /// - `"0x01" + 64 hex chars`: Version 1 — `[version(1B) | contextId(32B)]` = 33 bytes
 ///   (66 hex chars + `"0x"` prefix = 68 chars).
-/// - `"0x02" + at least 128 hex chars`: Version 2 — `[version(1B) | contextId(32B) | epochId(32B)]`,
-///   minimum 65 bytes (130 hex chars + `"0x"` prefix = 132 chars).
+/// - `"0x02" + 128 hex chars`: Version 2 — `[version(1B) | contextId(32B) | epochId(32B)]`
+///   = 65 bytes (130 hex chars + `"0x"` prefix = 132 chars).
 ///
 /// The contextId and epochId are opaque to the Relayer: they are not interpreted, only
 /// validated for shape, and the bytes are propagated verbatim to the Gateway.
@@ -117,8 +118,8 @@ pub fn validate_extra_data_field_decryption(extra_data: &str) -> Result<(), Vali
             // Version 1: [0x01 | contextId(32B)] = 33 bytes = 66 hex chars + "0x" prefix = 68 chars
             decode_versioned_extra_data(s)
         }
-        s if s.len() >= 132 && s.starts_with("0x02") => {
-            // Version 2: [0x02 | contextId(32B) | epochId(32B)] = minimum 65 bytes
+        s if s.len() == 132 && s.starts_with("0x02") => {
+            // Version 2: [0x02 | contextId(32B) | epochId(32B)] = 65 bytes
             // = 130 hex chars + "0x" prefix = 132 chars.
             decode_versioned_extra_data(s)
         }
@@ -378,8 +379,16 @@ mod extra_data_tests {
 
     #[test]
     fn rejects_version_0x02_missing_epoch_id() {
-        // [0x02 | contextId(32B)] = 33 bytes, below the 65-byte minimum.
+        // [0x02 | contextId(32B)] = 33 bytes, shorter than the fixed 65-byte size.
         let extra_data = format!("0x02{CONTEXT_ID_HEX}");
+        assert!(validate_extra_data_field_decryption(&extra_data).is_err());
+    }
+
+    #[test]
+    fn rejects_version_0x02_with_trailing_bytes() {
+        // v0x02 is exactly 65 bytes; any extra bytes past the epochId are rejected.
+        let extra_data = format!("0x02{CONTEXT_ID_HEX}{EPOCH_ID_HEX}ff");
+        assert_eq!(extra_data.len(), 134);
         assert!(validate_extra_data_field_decryption(&extra_data).is_err());
     }
 
