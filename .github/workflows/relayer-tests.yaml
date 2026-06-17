@@ -64,7 +64,8 @@ jobs:
 
       - name: Format
         working-directory: relayer
-        run: cargo fmt --all -- --check
+        # Use the Makefile target so local and CI run the exact same check.
+        run: make fmt
 
       - name: Build for tests (no rpc mock)
         working-directory: relayer
@@ -103,7 +104,8 @@ jobs:
 
       - name: Clippy
         working-directory: relayer
-        run: cargo clippy -- -D warnings
+        # Use the Makefile target so local and CI run the exact same check.
+        run: make clippy
 
   integration-test:
     name: relayer-test/integration-test (bpr)
