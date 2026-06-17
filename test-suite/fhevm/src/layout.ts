@@ -4,7 +4,7 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 
-import type { HostChainScenario, OverrideGroup, StepName } from "./types";
+import type { HostChainScenario, HostChainType, OverrideGroup, StepName } from "./types";
 
 const CLI_DIR = path.resolve(import.meta.dir, "..");
 export const REPO_ROOT = path.resolve(CLI_DIR, "../..");
@@ -364,6 +364,8 @@ export const hostChainNames = (key: string, defaultKey = DEFAULT_HOST_CHAIN_KEY)
   suffix: hostChainSuffix(key, defaultKey),
 });
 export type HostChainRuntime = HostChainScenario & {
+  /** Resolved host-chain kind: defaults to `evm` when the scenario omits `type`. */
+  type: HostChainType;
   index: number;
   isDefault: boolean;
   suffix: string;
@@ -379,6 +381,7 @@ export const hostChainRuntime = (
   defaultKey = DEFAULT_HOST_CHAIN_KEY,
 ): HostChainRuntime => ({
   ...chain,
+  type: chain.type ?? "evm",
   index,
   isDefault: chain.key === defaultKey,
   ...hostChainNames(chain.key, defaultKey),

@@ -577,7 +577,7 @@ export const runStep = async (state: State, step: StepName) => {
       await generateRuntime(state, stackSpecForState(state));
       for (const chain of extraHostChains(state)) {
         await multiChainComposeUp(chain.node);
-        await waitForRpc(`http://localhost:${chain.rpcPort}`);
+        await waitForRpc(`http://localhost:${chain.rpcPort}`, chain.type);
       }
       break;
     }

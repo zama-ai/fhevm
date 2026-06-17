@@ -10,6 +10,7 @@ import {
   requiresModernHostAddressArtifacts,
 } from "../compat/compat";
 import { driftDatabaseName } from "../drift";
+import { serializeKmsHostChains, solanaProgramId, type KmsHostChainEntry } from "./solana";
 import type { StackSpec } from "../stack-spec/stack-spec";
 import {
   COPROCESSOR_WALLET_INDICES,
@@ -187,20 +188,32 @@ const applyDiscoveryEnv = (
     KMS_GENERATION_ADDRESS: coprocessorKmsGenerationAddress ?? "",
   });
 
-  const kmsHostChains = chains.map((chain) => {
+  const kmsHostChains: KmsHostChainEntry[] = chains.map((chain) => {
     const hostAddresses = state.discovery!.hosts[chain.key] ?? {};
     const endpoints = state.discovery!.endpoints.hosts[chain.key];
+    if (chain.type === "solana") {
+      // The connector reads the on-chain ACL record from the validator over RPC; reach it at the
+      // validator container's in-network address (8899 in-container). chain_id stays a raw bigint.
+      return {
+        url: `http://${chain.node}:8899`,
+        chainId: chain.chainId,
+        aclAddress: "0x0000000000000000000000000000000000000000",
+        kind: "solana",
+        solanaProgramId: solanaProgramId(state.discovery, chain.key),
+      };
+    }
     return {
       url: endpoints?.http ?? `http://${chain.node}:${chain.rpcPort}`,
-      chain_id: Number(chain.chainId),
-      acl_address: hostAddresses.ACL_CONTRACT_ADDRESS ?? "",
+      chainId: chain.chainId,
+      aclAddress: hostAddresses.ACL_CONTRACT_ADDRESS ?? "",
+      kind: "evm",
     };
   });
   updateContracts(envs["kms-connector"], {
     KMS_CONNECTOR_DECRYPTION_CONTRACT__ADDRESS: state.discovery.gateway.DECRYPTION_ADDRESS,
     KMS_CONNECTOR_GATEWAY_CONFIG_CONTRACT__ADDRESS: state.discovery.gateway.GATEWAY_CONFIG_ADDRESS,
     KMS_CONNECTOR_KMS_GENERATION_CONTRACT__ADDRESS: connectorKmsGenerationAddress ?? "",
-    KMS_CONNECTOR_HOST_CHAINS: JSON.stringify(kmsHostChains),
+    KMS_CONNECTOR_HOST_CHAINS: serializeKmsHostChains(kmsHostChains),
   });
   updateContracts(envs["relayer"], {
     APP_GATEWAY__CONTRACTS__DECRYPTION_ADDRESS: state.discovery.gateway.DECRYPTION_ADDRESS,

@@ -8,6 +8,7 @@ import {
   requiresLegacyRelayerReadinessConfig,
 } from "../compat/compat";
 import { hostChainRuntimes } from "../layout";
+import { solanaProgramId } from "./solana";
 import type { StackSpec } from "../stack-spec/stack-spec";
 import type { HostChainScenario, State } from "../types";
 
@@ -50,6 +51,16 @@ const rewriteHostChains = (
 ) => {
   if (!Array.isArray(config.host_chains)) return config;
   config.host_chains = hostChainRuntimes(chains).map((chain) => {
+    if (chain.type === "solana") {
+      // RFC-021 ids exceed i64::MAX; the relayer config parser accepts them only as strings (YAML
+      // quotes a JS string). acl_address = zama-host program (base58); the validator listens on
+      // 8899 in-container regardless of the published port.
+      return {
+        chain_id: chain.chainId,
+        url: `http://${chain.node}:8899`,
+        acl_address: solanaProgramId(state.discovery, chain.key),
+      };
+    }
     const chainId = Number(chain.chainId);
     const aclAddress = state.discovery?.hosts[chain.key]?.ACL_CONTRACT_ADDRESS ?? "";
     return {

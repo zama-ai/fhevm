@@ -16,10 +16,12 @@ import {
   REPO_ROOT,
   resolveServiceOverrides,
 } from "../layout";
+import { HOST_CHAIN_TYPES } from "../types";
 import type {
   CoprocessorInstanceSource,
   CoprocessorScenario,
   HostChainScenario,
+  HostChainType,
   LocalOverride,
   OverrideGroup,
   ResolvedCoprocessorScenario,
@@ -137,11 +139,21 @@ const parseHostChains = (parsed: Record<string, unknown>, sourceLabel: string): 
         throw new Error(`${sourceLabel}: duplicate hostChains rpcPort "${rpcPort}"`);
       }
       seenPorts.add(rpcPort);
+      const type =
+        chain.type === undefined
+          ? undefined
+          : normalizeScalar(chain.type, `${sourceLabel}: hostChains[${index}].type`);
+      if (type !== undefined && !HOST_CHAIN_TYPES.includes(type as HostChainType)) {
+        throw new Error(
+          `${sourceLabel}: hostChains[${index}].type "${type}" must be one of: ${HOST_CHAIN_TYPES.join(", ")}`,
+        );
+      }
       return {
         key,
         chainId,
         rpcPort,
         name: normalizeOptionalText(chain.name, `${sourceLabel}: hostChains[${index}].name`),
+        type: type as HostChainType | undefined,
       };
     });
     if (!hostChains.length) {

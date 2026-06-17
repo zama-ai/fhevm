@@ -19,6 +19,7 @@ import {
   hostChainNames,
   hostChainRuntimes,
 } from "../layout";
+import type { HostChainRuntime } from "../layout";
 import { type StackSpec, topologyForState } from "../stack-spec/stack-spec";
 import type { HostChainScenario, ResolvedCoprocessorScenarioInstance, State } from "../types";
 import { ensureDir, exists, mergeArgs, readEnvFile, remove, toServiceName } from "../utils/fs";
@@ -448,11 +449,30 @@ const buildComposeOverride = async (component: string, plan: StackSpec) => {
   return { services };
 };
 
+/** Builds a solana-test-validator host-node compose override for a solana-type host chain. */
+const buildSolanaHostNodeOverride = async (chain: HostChainRuntime): Promise<ComposeDoc> => {
+  const doc = rewriteComposePaths(await loadComposeDoc("host-node-solana"));
+  const base = doc.services["host-node-solana"];
+  if (!base) return { services: {} };
+  const container = chain.node;
+  const clone = structuredClone(base);
+  clone.container_name = container;
+  // External port is the scenario rpcPort; the validator always listens on 8899 in-container,
+  // so other services reach it at `${container}:8899` regardless of the published port.
+  clone.ports = [`${chain.rpcPort}:8899`];
+  const volumeName = `solana-ledger${chain.suffix}`;
+  clone.volumes = [`${volumeName}:/root/.local/share/solana`];
+  return { services: { [container]: clone }, volumes: { [volumeName]: null } };
+};
+
 /** Builds a host-node compose override for an extra host chain. */
 const buildExtraHostNodeOverride = async (
-  chain: HostChainScenario,
+  chain: HostChainRuntime,
   defaultChain: HostChainScenario,
 ): Promise<ComposeDoc> => {
+  if (chain.type === "solana") {
+    return buildSolanaHostNodeOverride(chain);
+  }
   const doc = rewriteComposePaths(await loadComposeDoc("host-node"));
   const hostNode = doc.services["host-node"];
   if (!hostNode) return { services: {} };

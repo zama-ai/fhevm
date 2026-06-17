@@ -1,0 +1,29 @@
+# Solana host node: a `solana-test-validator`, the RFC-021 Solana host chain's node — the
+# counterpart of host-node-docker-compose.yml's anvil for EVM hosts. fhevm-cli generates one
+# per solana-type host chain (buildSolanaHostNodeOverride), so its lifecycle (and ledger reset)
+# is owned by `up`/`down`/`clean` alongside the rest of the stack.
+#
+# The agave image is linux/amd64 only; on arm64 hosts it runs under emulation. Override the
+# image with SOLANA_VALIDATOR_IMAGE if a native build is available.
+services:
+  host-node-solana:
+    image: ${SOLANA_VALIDATOR_IMAGE:-anzaxyz/agave:v2.1.21}
+    platform: linux/amd64
+    entrypoint: [solana-test-validator]
+    command:
+      - --reset
+      - --rpc-port
+      - "8899"
+      - --bind-address
+      - 0.0.0.0
+      - --ledger
+      - /root/.local/share/solana/ledger
+    healthcheck:
+      test: ["CMD-SHELL", "solana --url http://localhost:8899 cluster-version >/dev/null 2>&1 || exit 1"]
+      interval: 5s
+      timeout: 4s
+      retries: 60
+    volumes:
+      - solana-ledger:/root/.local/share/solana
+volumes:
+  solana-ledger:

@@ -28,9 +28,13 @@ export const OVERRIDE_GROUPS = [
   "test-suite",
 ] as const;
 
+export const HOST_CHAIN_TYPES = ["evm", "solana"] as const;
+
 export type StepName = (typeof STEP_NAMES)[number];
 export type VersionTarget = (typeof TARGETS)[number];
 export type OverrideGroup = (typeof OVERRIDE_GROUPS)[number];
+/** The kind of host chain. `evm` is the default; `solana` is the RFC-021 Solana host. */
+export type HostChainType = (typeof HOST_CHAIN_TYPES)[number];
 
 export type CoprocessorInstanceSource =
   | { mode: "inherit" }
@@ -50,6 +54,12 @@ export type HostChainScenario = {
   chainId: string;
   rpcPort: number;
   name?: string;
+  /**
+   * The host-chain kind. Omitted means `evm` (the historical default), so existing scenarios
+   * are unchanged. `solana` selects the RFC-021 Solana host: a `solana-test-validator` node,
+   * Anchor program deploy, and the Solana host-listener/finalized-account-fetcher.
+   */
+  type?: HostChainType;
 };
 
 export type CoprocessorScenario = {
