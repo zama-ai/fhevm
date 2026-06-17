@@ -283,7 +283,20 @@ export default async function run(ctx: RolloutRunContext) {
   // need rollout multi-chain contract-deploy support that isn't wired yet -- that
   // gap is itself a finding. We run addHostChainsToGatewayConfig to test the
   // registration path; flagged in the gap report.
+  // FINDING / modeling limit: the rollout's multi-chain scenario boots chain-b as
+  // an already-registered host chain, so addHostChain reverts with
+  // HostChainAlreadyRegistered (selector 0x96a56828). The runbook's "add a new
+  // host chain" proposal-effect therefore can't be freshly exercised here (the
+  // desired end-state -- chain-b registered -- already holds). Tolerate that one
+  // revert; any other failure still fails the rollout.
   logPhase("05 polygon: addHostChainsToGatewayConfig (registration proposal effect)");
-  await ctx.runGatewayContractTask("npx hardhat task:addHostChainsToGatewayConfig");
+  const addHostChain = [
+    "if out=$(npx hardhat task:addHostChainsToGatewayConfig 2>&1); then printf '%s\\n' \"$out\";",
+    "else status=$?; printf '%s\\n' \"$out\";",
+    "printf '%s\\n' \"$out\" | grep -qiE 'HostChainAlreadyRegistered|0x96a56828' || exit $status;",
+    "echo '[runbook] tolerated HostChainAlreadyRegistered: chain-b pre-registered by the rollout scenario';",
+    "fi",
+  ].join(" ");
+  await ctx.runGatewayContractTask(addHostChain);
   await ctx.test("rollout-standard", { parallel: false });
 }
