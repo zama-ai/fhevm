@@ -1065,10 +1065,8 @@ mod tests {
 
         let request = PublicDecryptRequest::try_from(json)?;
 
-        // The parsed bytes must equal the raw input bytes, unchanged.
+        // The parsed bytes must equal the raw input bytes, unchanged (verbatim propagation).
         assert_eq!(request.extra_data, Bytes::from_str(&extra_data)?);
-        assert_eq!(request.extra_data.len(), 65);
-        assert_eq!(request.extra_data[0], 0x02);
 
         Ok(())
     }
