@@ -218,6 +218,24 @@ export default async function run(ctx: RolloutRunContext) {
   logPhase("01.apply host proposal effect: ProtocolConfig + KMSGeneration migration, then KMSVerifier/HCULimit/FHEVMExecutor/ACL");
   await ctx.runHostContractTask("npx hardhat task:deployProtocolConfigFromMigration", { env: migrationEnv });
   await ctx.runHostContractTask("npx hardhat task:deployKMSGenerationFromMigration", { env: migrationEnv });
+
+  // Polygon (runbook Phase 7): fresh-deploy the new host chain. Must happen
+  // BEFORE refreshDiscovery, which (with HOST_VERSION>=0.13) requires a
+  // PROTOCOL_CONFIG_CONTRACT_ADDRESS on EVERY host chain. Polygon gets
+  // ProtocolConfig-from-migration but no standalone KMSGeneration
+  // (--with-kms-generation false), matching the gitops Eth/Polygon asymmetry.
+  // Ownership transfer (Phase 7.14/8) is intentionally skipped: the rollout owns
+  // the deployer key (no DAO/multisig), and transferring would lock later steps.
+  logPhase("01.polygon: fresh v0.13.0 host-contract deploy on the 2nd chain (chain-b)");
+  await ctx.runHostContractTaskOnChain("chain-b", "npx hardhat task:deployEmptyUUPSProxies --with-kms-generation false");
+  await ctx.runHostContractTaskOnChain("chain-b", "npx hardhat task:deployPauserSet");
+  await ctx.runHostContractTaskOnChain("chain-b", "npx hardhat task:deployACL");
+  await ctx.runHostContractTaskOnChain("chain-b", "npx hardhat task:deployFHEVMExecutor");
+  await ctx.runHostContractTaskOnChain("chain-b", "npx hardhat task:deployProtocolConfigFromMigration", { env: migrationEnv });
+  await ctx.runHostContractTaskOnChain("chain-b", "npx hardhat task:deployKMSVerifier");
+  await ctx.runHostContractTaskOnChain("chain-b", "npx hardhat task:deployInputVerifier");
+  await ctx.runHostContractTaskOnChain("chain-b", "npx hardhat task:deployHCULimit");
+
   await ctx.refreshDiscovery();
   await upgradeContract(host(ctx), "task:upgradeKMSVerifier", "KMSVerifier");
   await assertKmsMigration(ctx, migrationCtx);

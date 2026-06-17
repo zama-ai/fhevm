@@ -14,7 +14,7 @@ import {
   up,
   upgradeRuntimeGroup as upgradeStackRuntimeGroup,
 } from "../flow/up-flow";
-import { STATE_DIR } from "../layout";
+import { STATE_DIR, hostChainRuntimes } from "../layout";
 import { loadState } from "../state/state";
 import type { LocalOverride, State, UpOptions, VersionBundle, VersionTarget } from "../types";
 import { ensureDir, writeJson } from "../utils/fs";
@@ -56,6 +56,9 @@ export type RolloutRunContext = {
   refreshDiscovery(): Promise<void>;
   runGatewayContractTask(command: string, options?: RolloutContractTaskOptions): Promise<void>;
   runHostContractTask(command: string, options?: RolloutContractTaskOptions): Promise<void>;
+  // Runs a host contract task against a specific host chain's deploy container
+  // (e.g. a Polygon stand-in second chain). Enables multi-chain contract deploys.
+  runHostContractTaskOnChain(chainKey: string, command: string, options?: RolloutContractTaskOptions): Promise<void>;
   snapshotContracts(surface: "host" | "gateway"): Promise<void>;
   stateDir(): string;
   test(profile?: string, options?: RolloutTestOptions): Promise<void>;
@@ -115,6 +118,19 @@ export const createRolloutContext = (receipt: RolloutReceipt = createRolloutRece
     await runContractTask("host-sc", "host-sc-deploy", command, options);
     await receipt.record("host-contract-task", command, {
       details: { envKeys: Object.keys(options.env ?? {}).sort() },
+    });
+  },
+  async runHostContractTaskOnChain(chainKey, command, options = {}) {
+    const state = await loadState();
+    const runtime = hostChainRuntimes(state?.scenario.hostChains ?? []).find((chain) => chain.key === chainKey);
+    if (!runtime) {
+      throw new PreflightError(`unknown host chain "${chainKey}"; check the scenario hostChains`);
+    }
+    // The non-default chain's deploy container is `${runtime.sc}-deploy` with its
+    // env at envPath(runtime.sc) (RPC/CHAIN_ID/HOST_ADDRESS_DIR for that chain).
+    await runContractTask("host-sc", `${runtime.sc}-deploy`, command, { ...options, envComponent: runtime.sc });
+    await receipt.record("host-contract-task", `[chain ${chainKey}] ${command}`, {
+      details: { chain: chainKey, envKeys: Object.keys(options.env ?? {}).sort() },
     });
   },
   async snapshotContracts(surface) {

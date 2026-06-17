@@ -63,9 +63,11 @@ export const snapshotContractSources = async (surface: ContractSurface) => {
 /** Runs a host or gateway contract task inside its deploy container. */
 export const runContractTask = async (
   component: "host-sc" | "gateway-sc",
-  service: "host-sc-deploy" | "gateway-sc-deploy",
+  service: string,
   command: string,
-  options: { env?: Record<string, string> } = {},
+  // envComponent overrides which generated env file is loaded (used to target a
+  // non-default host chain's deploy container, whose env lives at envPath(<sc>)).
+  options: { env?: Record<string, string>; envComponent?: string } = {},
 ) => {
   const state = await loadState();
   if (!state) {
@@ -88,7 +90,7 @@ export const runContractTask = async (
     "-lc",
     withPreviousContractsSnapshot(command),
   ];
-  const env = { ...resolvedComposeEnv(runningState), ...(await readEnvFileIfExists(envPath(component))), ...options.env };
+  const env = { ...resolvedComposeEnv(runningState), ...(await readEnvFileIfExists(envPath(options.envComponent ?? component))), ...options.env };
   await runStreaming(argv, { env });
 };
 
