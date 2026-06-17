@@ -14,7 +14,7 @@ import {
   up,
   upgradeRuntimeGroup as upgradeStackRuntimeGroup,
 } from "../flow/up-flow";
-import { STATE_DIR, hostChainRuntimes } from "../layout";
+import { STATE_DIR, composePath, hostChainRuntimes } from "../layout";
 import { loadState } from "../state/state";
 import type { LocalOverride, State, UpOptions, VersionBundle, VersionTarget } from "../types";
 import { ensureDir, writeJson } from "../utils/fs";
@@ -128,7 +128,11 @@ export const createRolloutContext = (receipt: RolloutReceipt = createRolloutRece
     }
     // The non-default chain's deploy container is `${runtime.sc}-deploy` with its
     // env at envPath(runtime.sc) (RPC/CHAIN_ID/HOST_ADDRESS_DIR for that chain).
-    await runContractTask("host-sc", `${runtime.sc}-deploy`, command, { ...options, envComponent: runtime.sc });
+    await runContractTask("host-sc", `${runtime.sc}-deploy`, command, {
+      ...options,
+      envComponent: runtime.sc,
+      composeFile: composePath(runtime.sc),
+    });
     await receipt.record("host-contract-task", `[chain ${chainKey}] ${command}`, {
       details: { chain: chainKey, envKeys: Object.keys(options.env ?? {}).sort() },
     });
