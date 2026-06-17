@@ -226,15 +226,27 @@ export default async function run(ctx: RolloutRunContext) {
   // (--with-kms-generation false), matching the gitops Eth/Polygon asymmetry.
   // Ownership transfer (Phase 7.14/8) is intentionally skipped: the rollout owns
   // the deployer key (no DAO/multisig), and transferring would lock later steps.
+  // Run the Polygon fresh-deploy as ONE command in a single chain-b container
+  // (mirroring the gitops polygon-sc-deploy job): each runHostContractTaskOnChain
+  // is an ephemeral container, so compile + the deploy tasks must share one
+  // invocation and the deployed addresses must be re-exported between tasks.
+  // `npx hardhat compile` first because deployEmptyUUPSProxies needs the PauserSet
+  // artifact (the primary host migration tasks self-compile; this fresh-deploy path
+  // does not).
   logPhase("01.polygon: fresh v0.13.0 host-contract deploy on the 2nd chain (chain-b)");
-  await ctx.runHostContractTaskOnChain("chain-b", "npx hardhat task:deployEmptyUUPSProxies --with-kms-generation false");
-  await ctx.runHostContractTaskOnChain("chain-b", "npx hardhat task:deployPauserSet");
-  await ctx.runHostContractTaskOnChain("chain-b", "npx hardhat task:deployACL");
-  await ctx.runHostContractTaskOnChain("chain-b", "npx hardhat task:deployFHEVMExecutor");
-  await ctx.runHostContractTaskOnChain("chain-b", "npx hardhat task:deployProtocolConfigFromMigration", { env: migrationEnv });
-  await ctx.runHostContractTaskOnChain("chain-b", "npx hardhat task:deployKMSVerifier");
-  await ctx.runHostContractTaskOnChain("chain-b", "npx hardhat task:deployInputVerifier");
-  await ctx.runHostContractTaskOnChain("chain-b", "npx hardhat task:deployHCULimit");
+  const polygonDeploy = [
+    "npx hardhat compile",
+    "npx hardhat task:deployEmptyUUPSProxies --with-kms-generation false",
+    "export $(cat addresses/.env.host | xargs)",
+    "npx hardhat task:deployPauserSet",
+    "npx hardhat task:deployACL",
+    "npx hardhat task:deployFHEVMExecutor",
+    "npx hardhat task:deployProtocolConfigFromMigration",
+    "npx hardhat task:deployKMSVerifier",
+    "npx hardhat task:deployInputVerifier",
+    "npx hardhat task:deployHCULimit",
+  ].join(" && ");
+  await ctx.runHostContractTaskOnChain("chain-b", polygonDeploy, { env: migrationEnv });
 
   await ctx.refreshDiscovery();
   await upgradeContract(host(ctx), "task:upgradeKMSVerifier", "KMSVerifier");
