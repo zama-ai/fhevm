@@ -563,17 +563,12 @@ pub struct HostChainConfig {
 #[derive(Debug, Deserialize, Clone)]
 pub struct ProtocolConfigSettings {
     pub ethereum_http_rpc_url: String,
-    /// ProtocolConfig contract address. Also serves `getCurrentKmsContextAndEpoch`,
-    /// consumed by the `/v2/keyurl` poller.
     pub address: String,
     pub retry: RetrySettings,
-    /// KMSGeneration contract address on the same Ethereum host chain. Source of
-    /// `getActiveKeyId` / `getActiveCrsId` / `getKeyMaterials` / `getCrsMaterials`
-    /// for the `/v2/keyurl` poller.
+    /// KMSGeneration contract address on the Ethereum host chain.
     pub kms_generation_address: String,
-    /// Poll cadence (ms) for the `/v2/keyurl` host-chain poller. No default in code —
-    /// set explicitly per environment. Ethereum block time is ~12s, so ~12000ms is
-    /// typical (the poller reads at the FINALIZED block tag).
+    /// Poll interval (ms) for the `/v2/keyurl` host-chain poller. ~12000ms
+    /// (≈ Ethereum block time) is a sensible default.
     pub keyurl_poll_interval_ms: u64,
 }
 

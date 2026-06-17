@@ -1568,10 +1568,7 @@ components:
       properties:
         dataId:
           type: string
-          description: |-
-            On-chain identifier: `getActiveKeyId` / `getActiveCrsId` rendered as a decimal
-            string. Treated as an opaque cache key by the relayer-sdk, which round-trips it
-            back to a `uint256` for the on-chain digest lookup.
+          description: On-chain `getActiveKeyId` / `getActiveCrsId` as a decimal string.
           example: '3'
         urls:
           type: array
@@ -1746,11 +1743,7 @@ components:
       properties:
         contextId:
           type: string
-          description: |-
-            Active KMS context id, from on-chain `getCurrentKmsContextAndEpoch`.
-
-            Additive over the pre-RFC-005 response shape; older relayer-sdk parsers
-            ignore unknown fields, so this is a backward-compatible addition.
+          description: Active KMS context id, from on-chain `getCurrentKmsContextAndEpoch`.
           example: '1'
         crs:
           type: object

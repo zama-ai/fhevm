@@ -23,9 +23,6 @@ pub struct Response {
     pub fhe_key_info: Vec<FheKeyInfo>,
     pub crs: HashMap<String, KeyData>,
     /// Active KMS context id, from on-chain `getCurrentKmsContextAndEpoch`.
-    ///
-    /// Additive over the pre-RFC-005 response shape; older relayer-sdk parsers
-    /// ignore unknown fields, so this is a backward-compatible addition.
     #[schema(example = "1")]
     pub context_id: String,
     /// Active epoch id, from on-chain `getCurrentKmsContextAndEpoch`.
@@ -42,9 +39,7 @@ pub struct FheKeyInfo {
 #[derive(Serialize, Deserialize, Debug, Clone, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct KeyData {
-    /// On-chain identifier: `getActiveKeyId` / `getActiveCrsId` rendered as a decimal
-    /// string. Treated as an opaque cache key by the relayer-sdk, which round-trips it
-    /// back to a `uint256` for the on-chain digest lookup.
+    /// On-chain `getActiveKeyId` / `getActiveCrsId` as a decimal string.
     #[schema(example = "3")]
     pub data_id: String,
     /// Storage URLs from `getKeyMaterials` / `getCrsMaterials`.
