@@ -16,7 +16,8 @@ Lacking a direct signal, the SDK derives the right `tfhe.wasm` version from the 
 1. Read `ACL.version` on the host chain.
 2. Map it to a wasm version:
    - `ACL.version < 0.4.0` (Protocol ≤ `v0.12.0`) → `tfhe.wasm@v1.5.3`
-   - `ACL.version ≥ 0.4.0` (Protocol ≥ `v0.13.0`) → `tfhe.wasm@v1.6.1`
+   - `ACL.version = 0.4.0` (Protocol ≥ `v0.13.0`) → `tfhe.wasm@v1.6.1`
+   - `ACL.version ≥ 0.5.0` (Protocol ≥ `v0.14.0`) → ?
 
 This works as long as every protocol release bumps at least one host-contract version. See [the open question on this assumption](#open-question) below if it ever breaks.
 
@@ -24,9 +25,9 @@ This works as long as every protocol release bumps at least one host-contract ve
 
 ## KMS
 
-KMS releases pin an exact `tfhe` crate version via `tfhe = "=X.Y.Z"` in the workspace `Cargo.toml`.
+KMS releases pin an exact `tfhe-rs` crate version via `tfhe = "=X.Y.Z"` in the workspace `Cargo.toml`.
 
-| KMS version         | `tfhe` crate    | Notes                           |
+| KMS version         | `tfhe-rs` crate | Notes                           |
 | ------------------- | --------------- | ------------------------------- |
 | `0.12.4` – `0.12.7` | `1.4.0-alpha.3` | initial line, prerelease alpha  |
 | `0.13.0` – `0.13.3` | `1.5.1`         | tfhe minor bump (`1.4` → `1.5`) |
@@ -35,7 +36,7 @@ KMS releases pin an exact `tfhe` crate version via `tfhe = "=X.Y.Z"` in the work
 
 ## Chains
 
-kms `0.12.7` generated the PubKey/CRS in December 2025
+KMS `0.12.7` generated the PubKey/CRS in December 2025
 
 | Chain                 | Protocol | PubKey/CRS      |
 | --------------------- | -------- | --------------- |
@@ -46,30 +47,42 @@ kms `0.12.7` generated the PubKey/CRS in December 2025
 
 ## Contract and components versions
 
-| Protocol | ACL     | FHEVMExecutor | KMSVerifier | InputVerifier | HCULimit | ProtocolConfig | PauserSet | TFHE            | KMS         |
-| -------- | ------- | ------------- | ----------- | ------------- | -------- | -------------- | --------- | --------------- | ----------- |
-| `0.10.0` | `0.2.0` | `0.1.0`       | `0.1.0`     | `0.2.0`       | `0.1.0`  | -              | `0.1.0`   | `1.4.0-alpha.3` | `0.12.4`    |
-| `0.11.0` | `0.2.0` | `0.2.0`       | `0.1.0`     | `0.2.0`       | `0.1.0`  | -              | `0.1.0`   | `1.5.1`         | `0.13.3`    |
-| `0.12.0` | `0.3.0` | `0.3.0`       | `0.2.0`     | `0.2.0`       | `0.2.0`  | -              | `0.1.0`   | `1.5.4`         | `0.13.10`   |
-| `0.13.0` | `0.4.0` | `0.4.0`       | `0.3.0`     | `0.2.0`       | `0.3.0`  | `0.1.0`        | `0.1.0`   | `1.6.1`         | `0.13.20-0` |
-| `0.14.0` | `0.5.0` | ?             | `0.4.0`     | ?             | ?        | `0.2.0`        | ?         | ?               | ?           |
+### On-chain contracts
 
-## TFHE
+| Protocol | ACL     | FHEVMExecutor | KMSVerifier | InputVerifier | HCULimit | ProtocolConfig | PauserSet |
+| -------- | ------- | ------------- | ----------- | ------------- | -------- | -------------- | --------- |
+| `0.10.0` | `0.2.0` | `0.1.0`       | `0.1.0`     | `0.2.0`       | `0.1.0`  | -              | `0.1.0`   |
+| `0.11.0` | `0.2.0` | `0.2.0`       | `0.1.0`     | `0.2.0`       | `0.1.0`  | -              | `0.1.0`   |
+| `0.12.0` | `0.3.0` | `0.3.0`       | `0.2.0`     | `0.2.0`       | `0.2.0`  | -              | `0.1.0`   |
+| `0.13.0` | `0.4.0` | `0.4.0`       | `0.3.0`     | `0.2.0`       | `0.3.0`  | `0.1.0`        | `0.1.0`   |
+| `0.14.0` | `0.5.0` | ?             | `0.4.0`     | ?             | ?        | `0.2.0`        | ?         |
 
-| Protocol | PubKey/CRS (TFHE)         | TFHE 1.5.3 | TFHE 1.6.1 |
-| -------- | ------------------------- | ---------- | ---------- |
-| `0.11.0` | `1.4.0-alpha.3` (Mainnet) | ✅         | ❌         |
-| `0.12.0` | `1.4.0-alpha.3` (Testnet) | ✅         | ❌         |
-| `0.13.0` | `1.4.0-alpha.3` (Devnet)  | ✅         | ✅         |
+### Off-chain components
+
+| Protocol | TFHE            | KMS         | Extra data |
+| -------- | --------------- | ----------- | ---------- |
+| `0.10.0` | `1.4.0-alpha.3` | `0.12.4`    | `v0`       |
+| `0.11.0` | `1.5.1`         | `0.13.3`    | `v0`       |
+| `0.12.0` | `1.5.4`         | `0.13.10`   | `v1`       |
+| `0.13.0` | `1.6.1`         | `0.13.20-0` | `v1`       |
+| `0.14.0` | ?               | ?           | `v2`       |
+
+## PubKey/Crs versions on existing chains and compatibility with other TFHE versions
+
+| Chain   | Protocol | PubKey/CRS (TFHE) | TFHE 1.5.3 | TFHE 1.6.1 |
+| ------- | -------- | ----------------- | ---------- | ---------- |
+| Mainnet | `0.11.0` | `1.4.0-alpha.3`   | ✅         | ❌         |
+| Testnet | `0.12.0` | `1.4.0-alpha.3`   | ✅         | ❌         |
+| Devnet  | `0.13.0` | `1.4.0-alpha.3`   | ✅         | ✅         |
 
 ## Localstack
 
-| Protocol | PubKey/CRS (TFHE) | TFHE 1.5.3 | TFHE 1.6.1 |
-| -------- | ----------------- | ---------- | ---------- |
-| `0.11.0` | `1.5.1`           | ✅         | ❌         |
-| `0.12.0` | `1.5.4`           | ✅         | ❌         |
-| `0.13.0` | `1.6.1`           | ❌         | ✅         |
-| `0.14.0` | ?                 | ❌         | ?          |
+| Protocol | PubKey/CRS (TFHE) | Readable by TFHE 1.5.3 | Readable by TFHE 1.6.1 |
+| -------- | ----------------- | ---------------------- | ---------------------- |
+| `0.11.0` | `1.5.1`           | ✅                     | ✅                     |
+| `0.12.0` | `1.5.4`           | ✅                     | ✅                     |
+| `0.13.0` | `1.6.1`           | ❌                     | ✅                     |
+| `0.14.0` | ?                 | ❌                     | ?                      |
 
 ## TFHE API
 

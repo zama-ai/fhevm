@@ -1,6 +1,7 @@
 contracts
-docs
+docs/**
 *.md
+!docs/compatibility.md
 # Generated WASM wrappers and payloads are opt-in formatted by installer scripts.
 src/wasm
 test/manual-pack
