@@ -23,7 +23,9 @@
 use std::sync::LazyLock;
 use std::time::Duration;
 
-use fhevm_engine_common::database::{connect_pool_with_options, resolve_database_url_from_option};
+use fhevm_engine_common::database::{
+    connect_pool_with_options, resolve_database_url_from_option, EVENT_CIPHERTEXTS_UPLOADED,
+};
 use prometheus::{register_int_counter, IntCounter};
 use sqlx::postgres::PgPoolOptions;
 use sqlx::{PgPool, Postgres, Transaction};
@@ -158,6 +160,14 @@ async fn associate_batch(pool: &PgPool, batch_size: i64) -> Result<u64, sqlx::Er
             pair.dst_chain_id,
         )
         .await?;
+    }
+
+    // Wake the transaction-sender.
+    if associated > 0 {
+        sqlx::query("SELECT pg_notify($1, '')")
+            .bind(EVENT_CIPHERTEXTS_UPLOADED)
+            .execute(txn.as_mut())
+            .await?;
     }
 
     txn.commit().await?;
