@@ -49,19 +49,11 @@ export function readExistingHostEnv(): Record<string, string> {
   return readHostEnv();
 }
 
-<<<<<<< HEAD
-export async function waitForTaskReady(hre: HardhatRuntimeEnvironment, taskName: string, timeoutMs = 60_000): Promise {
-=======
-function formatError(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}
-
 export async function waitForTaskReady(
   hre: HardhatRuntimeEnvironment,
   taskName: string,
   timeoutMs = 60_000,
 ): Promise<void> {
->>>>>>> 89fdb447f (fix(host-contracts): restore generic type arguments in bridge types (#2785))
   const deadline = Date.now() + timeoutMs;
 
   while (true) {
@@ -77,36 +69,9 @@ export async function waitForTaskReady(
   }
 }
 
-<<<<<<< HEAD
 // Re-exported for existing call sites (taskMigrate). Lives in utils/contractVersion to avoid a
 // cyclic import: protocolConfigMirror needs it too, and taskDeploy already imports from there.
 export { assertContractMatchesVersionPrefix };
-=======
-export async function assertContractMatchesVersionPrefix(
-  hre: HardhatRuntimeEnvironment,
-  address: string,
-  versionPrefix: string,
-): Promise<void> {
-  const contract = new hre.ethers.Contract(
-    address,
-    ['function getVersion() view returns (string)'],
-    hre.ethers.provider,
-  );
-
-  let version: string;
-  try {
-    version = await contract.getVersion();
-  } catch (err) {
-    throw new Error(
-      `Contract at ${address} does not expose getVersion(); it is not a ${versionPrefix} proxy. (${formatError(err)})`,
-    );
-  }
-
-  if (!version.startsWith(versionPrefix)) {
-    throw new Error(`Contract at ${address} reports version "${version}"; expected "${versionPrefix} v…".`);
-  }
-}
->>>>>>> 89fdb447f (fix(host-contracts): restore generic type arguments in bridge types (#2785))
 
 ////////////////////////////////////////////////////////////////////////////////
 // All Host Contracts
@@ -141,7 +106,6 @@ task('task:deployAllHostContracts')
     types.string
   )
   .setAction(async function (
-<<<<<<< HEAD
     {
       withKmsGeneration,
       protocolConfigSource,
@@ -153,11 +117,7 @@ task('task:deployAllHostContracts')
       canonicalRpcUrl?: string;
       canonicalProtocolConfigAddress?: string;
     },
-    hre
-=======
-    { withKmsGeneration, protocolConfigSource }: { withKmsGeneration: boolean; protocolConfigSource: string },
     hre,
->>>>>>> 89fdb447f (fix(host-contracts): restore generic type arguments in bridge types (#2785))
   ) {
     if (!PROTOCOL_CONFIG_SOURCES.includes(protocolConfigSource as ProtocolConfigSource)) {
       throw new Error(
