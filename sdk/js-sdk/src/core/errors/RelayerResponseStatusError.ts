@@ -29,15 +29,17 @@ export type RelayerResponseStatusErrorParams = Prettify<
  */
 export class RelayerResponseStatusError extends RelayerResponseErrorBase {
   constructor({ responseMessage, ...params }: RelayerResponseStatusErrorParams) {
-    const baseMessage = `${humanReadableOperation(params.operation, true)}: Relayer returned unexpected response status: ${params.status}`;
     super({
       ...params,
       name: 'RelayerResponseStatusError',
-      message: responseMessage !== undefined ? `${baseMessage}: ${responseMessage}` : baseMessage,
+      message: `${humanReadableOperation(params.operation, true)}: Relayer returned unexpected response status: ${params.status}`,
+      // Surface the relayer/edge message (e.g. a Cloudflare/Kong 403 block) via
+      // the `Details:` line when present; otherwise keep the generic
+      // explanation. The primary message is unchanged for backward
+      // compatibility.
       details:
-        responseMessage !== undefined
-          ? `The Relayer server returned an unexpected response status (${params.status}): ${responseMessage}`
-          : `The Relayer server returned an unexpected response status (${params.status}). This status ${params.status} is not part of the expected API contract and may indicate a server configuration issue.`,
+        responseMessage ??
+        `The Relayer server returned an unexpected response status (${params.status}). This status ${params.status} is not part of the expected API contract and may indicate a server configuration issue.`,
     });
   }
 }

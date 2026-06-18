@@ -1,4 +1,4 @@
-import { isRecordStringProperty } from '../../../base/string.js';
+import { isNonEmptyString, isRecordStringProperty } from '../../../base/string.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 // readErrorMessage
@@ -19,9 +19,11 @@ import { isRecordStringProperty } from '../../../base/string.js';
  *
  * This function never throws.
  *
+ * Empty-string `message`/`label` values are treated as absent.
+ *
  * @param response - The non-2xx fetch {@link Response} to inspect.
- * @returns The surfaced `message` and/or `label`, or an empty object when the
- *          body is missing, unreadable, not JSON, or carries neither field.
+ * @returns The surfaced non-empty `message` and/or `label`, or an empty object
+ *          when the body is missing, unreadable, not JSON, or carries neither.
  */
 export async function readErrorMessage(
   response: Response,
@@ -40,8 +42,9 @@ export async function readErrorMessage(
   try {
     const json: unknown = JSON.parse(text);
     const err: unknown = typeof json === 'object' && json !== null && 'error' in json ? json.error : json;
-    const message = isRecordStringProperty(err, 'message') ? err.message : undefined;
-    const label = isRecordStringProperty(err, 'label') ? err.label : undefined;
+    // Treat empty strings as absent so callers can use `?? <fallback>` safely.
+    const message = isRecordStringProperty(err, 'message') && isNonEmptyString(err.message) ? err.message : undefined;
+    const label = isRecordStringProperty(err, 'label') && isNonEmptyString(err.label) ? err.label : undefined;
     if (message !== undefined || label !== undefined) {
       return { message, label };
     }

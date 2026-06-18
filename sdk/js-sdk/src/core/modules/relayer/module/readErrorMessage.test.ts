@@ -77,6 +77,11 @@ describe('readErrorMessage', () => {
     await expect(readErrorMessage(response)).resolves.toEqual({});
   });
 
+  it('treats empty-string message/label as absent', async () => {
+    const response = new Response(JSON.stringify({ error: { message: '', label: '' } }), { status: 401 });
+    await expect(readErrorMessage(response)).resolves.toEqual({});
+  });
+
   it('never throws when the body cannot be read', async () => {
     const broken = { text: () => Promise.reject(new Error('body unusable')) } as unknown as Response;
     await expect(readErrorMessage(broken)).resolves.toEqual({});
