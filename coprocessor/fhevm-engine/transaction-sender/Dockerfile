@@ -11,6 +11,7 @@ COPY listener ./listener
 COPY coprocessor/fhevm-engine ./coprocessor/fhevm-engine
 COPY coprocessor/proto ./coprocessor/proto
 COPY gateway-contracts/rust_bindings ./gateway-contracts/rust_bindings
+COPY shared/ciphertext-attestation ./shared/ciphertext-attestation
 
 WORKDIR /app/coprocessor/fhevm-engine
 

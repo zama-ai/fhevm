@@ -32,6 +32,7 @@ COPY coprocessor/proto ./coprocessor/proto
 COPY host-contracts/contracts/ ./host-contracts/contracts/
 COPY --from=contract_builder /app/host-contracts/artifacts/contracts /app/host-contracts/artifacts/contracts
 COPY gateway-contracts/rust_bindings ./gateway-contracts/rust_bindings
+COPY shared/ciphertext-attestation ./shared/ciphertext-attestation
 COPY .git/HEAD ./coprocessor/fhevm-engine/BUILD_ID
 
 WORKDIR /app/coprocessor/fhevm-engine
