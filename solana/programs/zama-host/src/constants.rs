@@ -29,8 +29,6 @@ pub const DENY_SUBJECT_SEED: &[u8] = b"deny-subject";
 pub const DELEGATION_SEED: &[u8] = b"user-decryption-delegation";
 /// Reserved app-context sentinel for wildcard user-decryption delegation rows.
 pub const WILDCARD_APP_CONTEXT_BYTES: [u8; 32] = [0xff; 32];
-/// Seed prefix for one-shot transient compute capability sessions.
-pub const TRANSIENT_SESSION_SEED: &[u8] = b"transient-session";
 /// Seed prefix for host-owned material commitment records.
 pub const HANDLE_MATERIAL_SEED: &[u8] = b"handle-material";
 
@@ -57,12 +55,6 @@ pub const MAX_FHE_EVAL_OPS: usize = 16;
 pub const MAX_INPUT_PROOF_HANDLES: usize = 16;
 /// Maximum opaque verifier payload bytes carried in one signed input proof.
 pub const MAX_INPUT_PROOF_EXTRA_DATA: usize = 256;
-/// Maximum number of capability entries stored in one transient session.
-pub const MAX_TRANSIENT_CAPABILITIES: usize = 1;
-/// Transient session accepts new capabilities.
-pub const TRANSIENT_SESSION_STATE_OPEN: u8 = 0;
-/// Transient session may be consumed but no longer mutated by append APIs.
-pub const TRANSIENT_SESSION_STATE_SEALED: u8 = 1;
 /// Material commitment state for committed/decryptable material.
 pub const HANDLE_MATERIAL_STATE_COMMITTED: u8 = 1;
 

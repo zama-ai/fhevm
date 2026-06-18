@@ -1,6 +1,5 @@
 use super::event_budget::assert_eval_log_budget;
 use super::*;
-use solana_instructions_sysvar::ID as INSTRUCTIONS_SYSVAR_ID;
 
 pub(super) fn assert_eval_step_birth_policy(step: &FheEvalStep) -> Result<()> {
     let output = match step {
@@ -9,7 +8,7 @@ pub(super) fn assert_eval_step_birth_policy(step: &FheEvalStep) -> Result<()> {
         | FheEvalStep::TrivialEncrypt { output, .. }
         | FheEvalStep::Rand { output, .. } => output,
     };
-    if let FheEvalOutput::Durable {
+    if let FheEvalOutput::AllowedDurable {
         output_public_decrypt,
         ..
     } = output
@@ -22,7 +21,6 @@ pub(super) fn assert_eval_step_birth_policy(step: &FheEvalStep) -> Result<()> {
 pub(super) fn preflight_eval_frame(
     remaining_accounts: &[AccountInfo],
     args: &FheEvalArgs,
-    instructions_sysvar: Option<&AccountInfo>,
 ) -> Result<()> {
     assert_unique_remaining_accounts(remaining_accounts)?;
     let mut preflight = EvalPreflight::new(remaining_accounts.len());
@@ -31,12 +29,11 @@ pub(super) fn preflight_eval_frame(
         preflight_eval_step(step, index, &mut preflight)?;
     }
     assert_eval_log_budget(args)?;
-    preflight.finish(instructions_sysvar)
+    preflight.finish()
 }
 
 struct EvalPreflight {
     remaining_accounts_used: Vec<bool>,
-    instructions_sysvar_needed: bool,
 }
 
 impl EvalPreflight {
@@ -44,7 +41,6 @@ impl EvalPreflight {
     fn new(remaining_account_count: usize) -> Self {
         Self {
             remaining_accounts_used: vec![false; remaining_account_count],
-            instructions_sysvar_needed: false,
         }
     }
 
@@ -58,26 +54,11 @@ impl EvalPreflight {
         Ok(())
     }
 
-    fn require_instructions_sysvar(&mut self) {
-        self.instructions_sysvar_needed = true;
-    }
-
-    fn finish(self, instructions_sysvar: Option<&AccountInfo>) -> Result<()> {
+    fn finish(self) -> Result<()> {
         require!(
             self.remaining_accounts_used.iter().all(|used| *used),
             ZamaHostError::InvalidFheEvalAccount
         );
-        if self.instructions_sysvar_needed {
-            require!(
-                instructions_sysvar.is_some_and(|account| account.key() == INSTRUCTIONS_SYSVAR_ID),
-                ZamaHostError::InvalidFheEvalAccount
-            );
-        } else {
-            require!(
-                instructions_sysvar.is_none(),
-                ZamaHostError::InvalidFheEvalAccount
-            );
-        }
         Ok(())
     }
 }
@@ -143,7 +124,7 @@ fn preflight_encrypted_operand(
     preflight: &mut EvalPreflight,
 ) -> Result<()> {
     match operand {
-        FheEvalOperand::Durable {
+        FheEvalOperand::AllowedDurable {
             acl_record_index,
             permission_index,
             ..
@@ -153,15 +134,11 @@ fn preflight_encrypted_operand(
                 preflight.mark_account(*index)?;
             }
         }
-        FheEvalOperand::Transient { producer_index } => {
+        FheEvalOperand::AllowedLocal { producer_index } => {
             require!(
                 (*producer_index as usize) < step_index,
                 ZamaHostError::FheEvalTransientMissing
             );
-        }
-        FheEvalOperand::TransientSession { session_index, .. } => {
-            preflight.require_instructions_sysvar();
-            preflight.mark_account(*session_index)?;
         }
         FheEvalOperand::VerifiedInput { .. } => {
             // No remaining account: the attestation is carried inline and verified in-frame.
@@ -173,11 +150,8 @@ fn preflight_encrypted_operand(
 
 fn preflight_output(output: &FheEvalOutput, preflight: &mut EvalPreflight) -> Result<()> {
     match output {
-        FheEvalOutput::Transient => {}
-        FheEvalOutput::TransientSession { session_index, .. } => {
-            preflight.mark_account(*session_index)?;
-        }
-        FheEvalOutput::Durable {
+        FheEvalOutput::AllowedLocal => {}
+        FheEvalOutput::AllowedDurable {
             output_acl_record_index,
             output_app_account_authority_index,
             ..
@@ -196,72 +170,29 @@ mod tests {
     use super::*;
 
     #[test]
-    fn preflight_requires_instructions_sysvar_when_needed() {
-        // A transient-session operand is the surviving path that requires the
-        // instructions sysvar (it is consumed by binding it to the top-level receiver).
-        let args = FheEvalArgs {
-            context_id: [1; 32],
-            steps: vec![FheEvalStep::Binary {
-                op: FheBinaryOpCode::Add,
-                lhs: FheEvalOperand::TransientSession {
-                    handle: [1; 32],
-                    session_index: 0,
-                    capability_index: 0,
-                },
-                rhs: FheEvalOperand::Scalar([0; 32]),
-                output_fhe_type: 5,
-                output: FheEvalOutput::Transient,
-            }],
-        };
-        let accounts = vec![test_account(Pubkey::new_unique())];
-        let sysvar = test_account(INSTRUCTIONS_SYSVAR_ID);
-        let wrong_sysvar = test_account(Pubkey::new_unique());
-
-        assert!(preflight_eval_frame(&accounts, &args, None).is_err());
-        assert!(preflight_eval_frame(&accounts, &args, Some(&wrong_sysvar)).is_err());
-        preflight_eval_frame(&accounts, &args, Some(&sysvar)).unwrap();
-    }
-
-    #[test]
-    fn preflight_rejects_unneeded_instructions_sysvar() {
-        let args = FheEvalArgs {
-            context_id: [1; 32],
-            steps: vec![FheEvalStep::TrivialEncrypt {
-                plaintext: [0; 32],
-                fhe_type: 1,
-                output: FheEvalOutput::Transient,
-            }],
-        };
-        let sysvar = test_account(INSTRUCTIONS_SYSVAR_ID);
-
-        assert!(preflight_eval_frame(&[], &args, Some(&sysvar)).is_err());
-        preflight_eval_frame(&[], &args, None).unwrap();
-    }
-
-    #[test]
     fn preflight_rejects_duplicate_remaining_account_keys() {
         let duplicate = Pubkey::new_unique();
         let args = FheEvalArgs {
             context_id: [1; 32],
             steps: vec![FheEvalStep::Binary {
                 op: FheBinaryOpCode::Add,
-                lhs: FheEvalOperand::Durable {
+                lhs: FheEvalOperand::AllowedDurable {
                     handle: [1; 32],
                     acl_record_index: 0,
                     permission_index: None,
                 },
-                rhs: FheEvalOperand::Durable {
+                rhs: FheEvalOperand::AllowedDurable {
                     handle: [2; 32],
                     acl_record_index: 1,
                     permission_index: None,
                 },
                 output_fhe_type: 5,
-                output: FheEvalOutput::Transient,
+                output: FheEvalOutput::AllowedLocal,
             }],
         };
         let accounts = vec![test_account(duplicate), test_account(duplicate)];
 
-        assert!(preflight_eval_frame(&accounts, &args, None).is_err());
+        assert!(preflight_eval_frame(&accounts, &args).is_err());
     }
 
     fn test_account(key: Pubkey) -> AccountInfo<'static> {

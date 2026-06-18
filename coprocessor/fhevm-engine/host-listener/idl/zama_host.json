@@ -202,133 +202,6 @@
       ]
     },
     {
-      "name": "allow_transient_handle",
-      "discriminator": [
-        218,
-        203,
-        74,
-        230,
-        69,
-        49,
-        20,
-        227
-      ],
-      "accounts": [
-        {
-          "name": "authority",
-          "docs": [
-            "Subject that must already be allowed to use the durable handle."
-          ],
-          "signer": true
-        },
-        {
-          "name": "authority_permission_record",
-          "docs": [
-            "Optional overflow permission witness when `authority` is not inline."
-          ],
-          "optional": true
-        },
-        {
-          "name": "acl_record",
-          "docs": [
-            "Canonical ACL record proving durable access to `handle`."
-          ]
-        },
-        {
-          "name": "session",
-          "docs": [
-            "Open transient session receiving the capability."
-          ],
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  116,
-                  114,
-                  97,
-                  110,
-                  115,
-                  105,
-                  101,
-                  110,
-                  116,
-                  45,
-                  115,
-                  101,
-                  115,
-                  115,
-                  105,
-                  111,
-                  110
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "session.authority",
-                "account": "TransientSession"
-              },
-              {
-                "kind": "account",
-                "path": "session.session_nonce",
-                "account": "TransientSession"
-              }
-            ]
-          }
-        },
-        {
-          "name": "host_config",
-          "docs": [
-            "Singleton config PDA."
-          ],
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  104,
-                  111,
-                  115,
-                  116,
-                  45,
-                  99,
-                  111,
-                  110,
-                  102,
-                  105,
-                  103
-                ]
-              }
-            ]
-          }
-        },
-        {
-          "name": "deny_subject_record",
-          "optional": true
-        }
-      ],
-      "args": [
-        {
-          "name": "handle",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        },
-        {
-          "name": "capability",
-          "type": {
-            "defined": {
-              "name": "TransientCapabilityGrant"
-            }
-          }
-        }
-      ]
-    },
-    {
       "name": "assert_acl_record",
       "discriminator": [
         192,
@@ -400,107 +273,6 @@
           "type": "pubkey"
         }
       ]
-    },
-    {
-      "name": "close_transient_session",
-      "discriminator": [
-        22,
-        46,
-        32,
-        169,
-        93,
-        117,
-        162,
-        105
-      ],
-      "accounts": [
-        {
-          "name": "authority",
-          "docs": [
-            "Optional session authority. Required before expiry; omitted for",
-            "permissionless post-expiry cleanup."
-          ],
-          "signer": true,
-          "optional": true
-        },
-        {
-          "name": "session",
-          "docs": [
-            "Host-owned transient session PDA."
-          ],
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  116,
-                  114,
-                  97,
-                  110,
-                  115,
-                  105,
-                  101,
-                  110,
-                  116,
-                  45,
-                  115,
-                  101,
-                  115,
-                  115,
-                  105,
-                  111,
-                  110
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "session.authority",
-                "account": "TransientSession"
-              },
-              {
-                "kind": "account",
-                "path": "session.session_nonce",
-                "account": "TransientSession"
-              }
-            ]
-          }
-        },
-        {
-          "name": "refund_recipient",
-          "docs": [
-            "Stored refund recipient."
-          ],
-          "writable": true
-        },
-        {
-          "name": "host_config",
-          "docs": [
-            "Singleton config PDA."
-          ],
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  104,
-                  111,
-                  115,
-                  116,
-                  45,
-                  99,
-                  111,
-                  110,
-                  102,
-                  105,
-                  103
-                ]
-              }
-            ]
-          }
-        }
-      ],
-      "args": []
     },
     {
       "name": "commit_handle_material",
@@ -652,138 +424,6 @@
               32
             ]
           }
-        }
-      ]
-    },
-    {
-      "name": "create_transient_session",
-      "discriminator": [
-        66,
-        118,
-        208,
-        235,
-        29,
-        112,
-        131,
-        4
-      ],
-      "accounts": [
-        {
-          "name": "payer",
-          "docs": [
-            "Pays rent for the transient session account."
-          ],
-          "writable": true,
-          "signer": true
-        },
-        {
-          "name": "authority",
-          "docs": [
-            "Session authority. This signer is required again for append, consume,",
-            "seal, and pre-expiry close."
-          ],
-          "signer": true
-        },
-        {
-          "name": "session",
-          "docs": [
-            "Host-owned transient session PDA."
-          ],
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  116,
-                  114,
-                  97,
-                  110,
-                  115,
-                  105,
-                  101,
-                  110,
-                  116,
-                  45,
-                  115,
-                  101,
-                  115,
-                  115,
-                  105,
-                  111,
-                  110
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "authority"
-              },
-              {
-                "kind": "arg",
-                "path": "session_nonce"
-              }
-            ]
-          }
-        },
-        {
-          "name": "host_config",
-          "docs": [
-            "Singleton config PDA."
-          ],
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  104,
-                  111,
-                  115,
-                  116,
-                  45,
-                  99,
-                  111,
-                  110,
-                  102,
-                  105,
-                  103
-                ]
-              }
-            ]
-          }
-        },
-        {
-          "name": "system_program",
-          "docs": [
-            "System program used for session account creation."
-          ],
-          "address": "11111111111111111111111111111111"
-        }
-      ],
-      "args": [
-        {
-          "name": "session_nonce",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        },
-        {
-          "name": "refund_recipient",
-          "type": "pubkey"
-        },
-        {
-          "name": "compute_subject",
-          "type": "pubkey"
-        },
-        {
-          "name": "expires_slot",
-          "type": "u64"
-        },
-        {
-          "name": "max_entries",
-          "type": "u8"
         }
       ]
     },
@@ -1489,13 +1129,6 @@
             "System program used for durable output ACL creation."
           ],
           "address": "11111111111111111111111111111111"
-        },
-        {
-          "name": "instructions_sysvar",
-          "docs": [
-            "Instructions sysvar used to bind transient capabilities to the top-level receiver program."
-          ],
-          "optional": true
         },
         {
           "name": "event_authority"
@@ -2218,98 +1851,6 @@
       "args": []
     },
     {
-      "name": "seal_transient_session",
-      "discriminator": [
-        168,
-        94,
-        183,
-        66,
-        31,
-        21,
-        157,
-        72
-      ],
-      "accounts": [
-        {
-          "name": "authority",
-          "docs": [
-            "Session authority."
-          ],
-          "signer": true
-        },
-        {
-          "name": "session",
-          "docs": [
-            "Host-owned transient session PDA."
-          ],
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  116,
-                  114,
-                  97,
-                  110,
-                  115,
-                  105,
-                  101,
-                  110,
-                  116,
-                  45,
-                  115,
-                  101,
-                  115,
-                  115,
-                  105,
-                  111,
-                  110
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "session.authority",
-                "account": "TransientSession"
-              },
-              {
-                "kind": "account",
-                "path": "session.session_nonce",
-                "account": "TransientSession"
-              }
-            ]
-          }
-        },
-        {
-          "name": "host_config",
-          "docs": [
-            "Singleton config PDA."
-          ],
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  104,
-                  111,
-                  115,
-                  116,
-                  45,
-                  99,
-                  111,
-                  110,
-                  102,
-                  105,
-                  103
-                ]
-              }
-            ]
-          }
-        }
-      ],
-      "args": []
-    },
-    {
       "name": "set_deny_subject",
       "discriminator": [
         138,
@@ -2827,19 +2368,6 @@
         63,
         201,
         149
-      ]
-    },
-    {
-      "name": "TransientSession",
-      "discriminator": [
-        148,
-        122,
-        21,
-        225,
-        84,
-        42,
-        153,
-        101
       ]
     },
     {
@@ -3410,93 +2938,23 @@
     },
     {
       "code": 6063,
-      "name": "InvalidTransientSessionNonce",
-      "msg": "transient session nonce is invalid"
-    },
-    {
-      "code": 6064,
-      "name": "TransientSessionPdaMismatch",
-      "msg": "transient session account does not match the canonical PDA"
-    },
-    {
-      "code": 6065,
-      "name": "TransientSessionStateInvalid",
-      "msg": "transient session state is invalid"
-    },
-    {
-      "code": 6066,
-      "name": "TransientSessionExpired",
-      "msg": "transient session is expired"
-    },
-    {
-      "code": 6067,
-      "name": "TransientSessionAuthorityMismatch",
-      "msg": "transient session authority does not match signer"
-    },
-    {
-      "code": 6068,
-      "name": "TransientSessionRefundMismatch",
-      "msg": "transient session refund recipient does not match"
-    },
-    {
-      "code": 6069,
-      "name": "TransientSessionCapacityInvalid",
-      "msg": "transient session capacity is invalid"
-    },
-    {
-      "code": 6070,
-      "name": "TransientCapabilityMismatch",
-      "msg": "transient capability is missing or mismatched"
-    },
-    {
-      "code": 6071,
-      "name": "TransientCapabilityConsumed",
-      "msg": "transient capability is consumed"
-    },
-    {
-      "code": 6072,
-      "name": "TransientSessionCreationMissing",
-      "msg": "transient session creation was not found in this transaction"
-    },
-    {
-      "code": 6073,
-      "name": "TransientCapabilityUnauthorized",
-      "msg": "transient capability is not authorized"
-    },
-    {
-      "code": 6074,
-      "name": "TransientCapabilityOutputDenied",
-      "msg": "transient capability does not allow this durable output"
-    },
-    {
-      "code": 6075,
       "name": "TransientCapabilityPublicDecryptDenied",
       "msg": "transient capability cannot authorize public decrypt"
     },
     {
-      "code": 6076,
-      "name": "TransientCapabilityReceiverMissing",
-      "msg": "transient capability receiver cannot be verified"
-    },
-    {
-      "code": 6077,
+      "code": 6064,
       "name": "DuplicateKmsSigner",
       "msg": "KMS context signer set contains a duplicate address"
     },
     {
-      "code": 6078,
+      "code": 6065,
       "name": "InputBindContractMismatch",
       "msg": "attested contract address does not match the output app account"
     },
     {
-      "code": 6079,
+      "code": 6066,
       "name": "InputBindUserNotSubject",
       "msg": "attested user address is not an output ACL subject"
-    },
-    {
-      "code": 6080,
-      "name": "InputBindTransientSessionUnsupported",
-      "msg": "verified-input-derived value cannot be written to a transient session"
     }
   ],
   "types": [
@@ -4216,7 +3674,7 @@
         "kind": "enum",
         "variants": [
           {
-            "name": "Durable",
+            "name": "AllowedDurable",
             "fields": [
               {
                 "name": "handle",
@@ -4249,43 +3707,12 @@
             ]
           },
           {
-            "name": "Transient",
+            "name": "AllowedLocal",
             "fields": [
               {
                 "name": "producer_index",
                 "docs": [
                   "Producer operation index."
-                ],
-                "type": "u16"
-              }
-            ]
-          },
-          {
-            "name": "TransientSession",
-            "fields": [
-              {
-                "name": "handle",
-                "docs": [
-                  "Handle expected in the session capability."
-                ],
-                "type": {
-                  "array": [
-                    "u8",
-                    32
-                  ]
-                }
-              },
-              {
-                "name": "session_index",
-                "docs": [
-                  "Index into `remaining_accounts` for the transient session account."
-                ],
-                "type": "u16"
-              },
-              {
-                "name": "capability_index",
-                "docs": [
-                  "Entry index inside the transient session."
                 ],
                 "type": "u16"
               }
@@ -4330,33 +3757,10 @@
         "kind": "enum",
         "variants": [
           {
-            "name": "Transient"
+            "name": "AllowedLocal"
           },
           {
-            "name": "TransientSession",
-            "fields": [
-              {
-                "name": "session_index",
-                "docs": [
-                  "Index into `remaining_accounts` for the transient session account."
-                ],
-                "type": "u16"
-              },
-              {
-                "name": "capability",
-                "docs": [
-                  "Capability policy for the produced result."
-                ],
-                "type": {
-                  "defined": {
-                    "name": "TransientCapabilityGrant"
-                  }
-                }
-              }
-            ]
-          },
-          {
-            "name": "Durable",
+            "name": "AllowedDurable",
             "fields": [
               {
                 "name": "output_acl_record_index",
@@ -5847,212 +5251,6 @@
               "Slot in which this update was applied."
             ],
             "type": "u64"
-          }
-        ]
-      }
-    },
-    {
-      "name": "TransientCapability",
-      "docs": [
-        "One one-shot transient handle capability."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "handle",
-            "docs": [
-              "Handle controlled by the capability."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "grant",
-            "docs": [
-              "Capability policy."
-            ],
-            "type": {
-              "defined": {
-                "name": "TransientCapabilityGrant"
-              }
-            }
-          },
-          {
-            "name": "used_count",
-            "docs": [
-              "Number of times the capability has been consumed."
-            ],
-            "type": "u8"
-          }
-        ]
-      }
-    },
-    {
-      "name": "TransientCapabilityGrant",
-      "docs": [
-        "Caller-supplied policy for adding a transient capability to a session."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "subject",
-            "docs": [
-              "Subject allowed to use the handle through the session."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "receiver_program",
-            "docs": [
-              "Top-level receiver program expected to consume the capability."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "acl_domain_key",
-            "docs": [
-              "App-level ACL domain to which durable output, if allowed, must remain bound."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "app_account",
-            "docs": [
-              "App account to which durable output, if allowed, must remain bound."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "role_flags",
-            "docs": [
-              "Roles granted by the transient capability."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "max_uses",
-            "docs": [
-              "Maximum number of successful uses before the capability is exhausted.",
-              "",
-              "The host currently requires this to be `1`."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "durable_output_allowed",
-            "docs": [
-              "Whether a computation using this capability may bind a durable output ACL record."
-            ],
-            "type": "bool"
-          },
-          {
-            "name": "public_decrypt_allowed",
-            "docs": [
-              "Whether a computation using this capability may make the durable output public-decryptable."
-            ],
-            "type": "bool"
-          }
-        ]
-      }
-    },
-    {
-      "name": "TransientSession",
-      "docs": [
-        "Host-owned one-shot transient compute capability account.",
-        "",
-        "This is not durable ACL state and must not be accepted for KMS/public/user",
-        "decrypt witnesses. It is a short-lived explicit account witness for",
-        "same-slot compute authorization across instructions or CPIs."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "session_nonce",
-            "docs": [
-              "Caller-chosen session nonce used in the PDA."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "authority",
-            "docs": [
-              "Authority that may append, seal, consume, and close before expiry."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "refund_recipient",
-            "docs": [
-              "Account that receives lamports when the session is closed."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "compute_subject",
-            "docs": [
-              "Subject allowed by capabilities in this session."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "created_slot",
-            "docs": [
-              "Slot in which the session was created."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "expires_slot",
-            "docs": [
-              "Last slot in which sealed capabilities may be consumed."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "state",
-            "docs": [
-              "Session state. See `TRANSIENT_SESSION_STATE_*`."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "max_entries",
-            "docs": [
-              "Caller-selected capacity, currently required to be `1`."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "entries",
-            "docs": [
-              "Capability entries."
-            ],
-            "type": {
-              "vec": {
-                "defined": {
-                  "name": "TransientCapability"
-                }
-              }
-            }
-          },
-          {
-            "name": "bump",
-            "docs": [
-              "PDA bump for this session."
-            ],
-            "type": "u8"
           }
         ]
       }

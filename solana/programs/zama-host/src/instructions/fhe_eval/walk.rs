@@ -31,15 +31,6 @@ pub(super) trait EvalStepVisitor {
         permission_index: Option<u16>,
     ) -> Result<ResolvedOperand>;
 
-    /// Resolves a transient-session capability input. Admission reads it and
-    /// plans the consume; execution consumes it (incrementing `used_count`).
-    fn resolve_transient_session_operand(
-        &mut self,
-        handle: [u8; 32],
-        session_index: u16,
-        capability_index: u16,
-    ) -> Result<ResolvedOperand>;
-
     /// Resolves an external input verified in-frame via the coprocessor attestation. Admission
     /// resolves it structurally (the handle is known from the operand data); execution re-runs the
     /// secp256k1 attestation authoritatively. Instruction-local — no account, no PDA.
@@ -52,14 +43,13 @@ pub(super) trait EvalStepVisitor {
     /// execution buffers it for transport.
     fn record_op_event(&mut self, event: EvalEvent);
 
-    /// Validates and applies a produced output (transient, transient-session, or
-    /// durable). Admission validates and plans; execution validates and mutates.
+    /// Validates and applies a produced output (instruction-local or durable).
+    /// Admission validates and plans; execution validates and mutates.
     fn accept_output<'info>(
         &mut self,
         ctx: &Context<'info, FheEval<'info>>,
         result: [u8; 32],
         output: &FheEvalOutput,
-        output_policies: Vec<SessionPolicy>,
         output_public_decrypt_allowed: bool,
         enforce_public_decrypt_role_propagation: bool,
         verified_input: Option<VerifiedInputBinding>,
@@ -68,21 +58,16 @@ pub(super) trait EvalStepVisitor {
     /// Resolves an operand that must be encrypted (rejects scalars).
     fn resolve_encrypted_operand(&mut self, operand: &FheEvalOperand) -> Result<ResolvedOperand> {
         match operand {
-            FheEvalOperand::Durable {
+            FheEvalOperand::AllowedDurable {
                 handle,
                 acl_record_index,
                 permission_index,
             } => self.resolve_durable_operand(*handle, *acl_record_index, *permission_index),
-            FheEvalOperand::Transient { producer_index } => self
+            FheEvalOperand::AllowedLocal { producer_index } => self
                 .produced()
                 .get(*producer_index as usize)
                 .map(ResolvedOperand::from_produced)
                 .ok_or_else(|| error!(ZamaHostError::FheEvalTransientMissing)),
-            FheEvalOperand::TransientSession {
-                handle,
-                session_index,
-                capability_index,
-            } => self.resolve_transient_session_operand(*handle, *session_index, *capability_index),
             FheEvalOperand::VerifiedInput { attestation } => {
                 self.resolve_verified_input_operand(attestation)
             }
@@ -159,7 +144,6 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor>(
                     ctx,
                     result,
                     output,
-                    input_session_policies(&lhs, &rhs),
                     inputs_allow_public_decrypt(&lhs, &rhs),
                     true,
                     verified_input,
@@ -207,7 +191,6 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor>(
                     ctx,
                     result,
                     output,
-                    input_session_policies3(&control, &if_true, &if_false),
                     inputs3_allow_public_decrypt(&control, &if_true, &if_false),
                     true,
                     verified_input,
@@ -233,7 +216,7 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor>(
                     fhe_type: *fhe_type,
                     result,
                 }));
-                visitor.accept_output(ctx, result, output, Vec::new(), false, false, None)?;
+                visitor.accept_output(ctx, result, output, false, false, None)?;
             }
             FheEvalStep::Rand { fhe_type, output } => {
                 assert_supported_rand_type(*fhe_type)?;
@@ -246,7 +229,7 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor>(
                     fhe_type: *fhe_type,
                     result,
                 }));
-                visitor.accept_output(ctx, result, output, Vec::new(), false, false, None)?;
+                visitor.accept_output(ctx, result, output, false, false, None)?;
             }
         }
     }

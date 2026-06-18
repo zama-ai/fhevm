@@ -350,9 +350,6 @@ pub(crate) struct EvalContext<'a, 'info> {
     pub compute_authority: ComputeAuthority<'info>,
     /// System program used for output ACL creation.
     pub system_program: &'a Program<'info, System>,
-    /// Optional Solana instructions sysvar for frames that use input proofs or
-    /// transient-session operands.
-    pub instructions_sysvar: Option<AccountInfo<'info>>,
 }
 
 /// Inputs required to evaluate an instruction-local FHE plan.
@@ -435,7 +432,6 @@ pub(crate) fn eval<'info>(request: Eval<'_, 'info>) -> Result<()> {
             app_account_authority: app_authority.account.clone(),
             host_config: request.context.host_config.to_account_info(),
             system_program: request.context.system_program.to_account_info(),
-            instructions_sysvar: request.context.instructions_sysvar,
             event_authority: request.context.event_authority.to_account_info(),
             program: request.context.zama_program.to_account_info(),
         },

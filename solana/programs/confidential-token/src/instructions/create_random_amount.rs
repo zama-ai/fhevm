@@ -141,7 +141,6 @@ fn create_random_amount_inner(
                     host_config: &ctx.accounts.host_config,
                     compute_authority,
                     system_program: &ctx.accounts.system_program,
-                    instructions_sysvar: None,
                 },
                 accounts: &eval_accounts,
                 plan,

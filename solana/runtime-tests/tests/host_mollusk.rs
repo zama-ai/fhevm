@@ -31,8 +31,7 @@ use zama_host::{
     },
     AclPermission, AclRecord, AclSubjectEntry, CoprocessorInputAttestation, DenySubjectRecord,
     FheBinaryOpCode, FheEvalArgs, FheEvalOperand, FheEvalOutput, FheEvalStep, FheTernaryOpCode,
-    HandleMaterialCommitment, HostConfig, TransientCapabilityGrant, TransientSession,
-    UserDecryptionDelegation,
+    HandleMaterialCommitment, HostConfig, UserDecryptionDelegation,
 };
 
 #[test]
@@ -444,217 +443,6 @@ fn mollusk_input_trivial_encrypt_bind_nonce_separates_equal_plaintexts_and_event
     assert_eq!(second_events[0].fhe_type, 5);
     assert_eq!(second_events[0].result, second_handle);
     assert_single_acl_allowed_event(&second_result, second_handle, authority);
-}
-
-#[test]
-fn mollusk_input_mock_verified_bind_creates_acl_record_and_event() {
-    let program_id = host::id();
-    let authority = Pubkey::new_unique();
-    // The mock path now authenticates against `HostConfig::input_verifier_authority`, which
-    // `host_config_account` sets to the admin (authority).
-    let (host_config, host_config_account) = host_config_account(authority);
-    let acl_domain_key = authority;
-    let app_account = authority;
-    let encrypted_value_label = label("input-gate");
-    let nonce_key = host::acl_nonce_key(acl_domain_key, app_account, encrypted_value_label);
-    let output_acl = host::acl_record_address(nonce_key, 13).0;
-    let input_handle = input_handle_for_chain(7, 0, 5);
-    let context = transient_context(
-        authority,
-        vec![
-            (host_config, host_config_account),
-            (output_acl, system_account(0)),
-            (event_authority(program_id), system_account(0)),
-            (program_id, executable_program_account()),
-        ],
-    );
-
-    let result = context.process_instruction(&mock_input_verified_and_bind_ix(
-        program_id,
-        authority,
-        authority,
-        host_config,
-        output_acl,
-        nonce_key,
-        13,
-        acl_domain_key,
-        app_account,
-        encrypted_value_label,
-        input_handle,
-        false,
-    ));
-    assert!(result.raw_result.is_ok());
-    let record = read_acl_record(&context, output_acl).expect("expected mock input ACL");
-    assert_bound_acl_record(
-        &record,
-        input_handle,
-        nonce_key,
-        13,
-        acl_domain_key,
-        app_account,
-        encrypted_value_label,
-        authority,
-        host::ACL_ROLE_COMPUTE_SUBJECT,
-        context.mollusk.sysvars.clock.slot,
-    );
-    let input_events: Vec<InputVerifiedEvent> = result
-        .inner_instructions
-        .iter()
-        .filter_map(|inner| decode_anchor_event(&inner.instruction.data))
-        .collect();
-    assert_eq!(input_events.len(), 1);
-    assert_eq!(input_events[0].version, host::EVENT_VERSION);
-    assert_eq!(input_events[0].input_handle, input_handle);
-    assert_eq!(input_events[0].result_handle, input_handle);
-    assert_eq!(input_events[0].user, authority.to_bytes());
-    assert_eq!(input_events[0].acl_domain_key, acl_domain_key.to_bytes());
-    assert_single_acl_allowed_event(&result, input_handle, authority);
-}
-
-#[test]
-fn mollusk_input_birth_rejects_invalid_trivial_and_mock_without_acl_birth() {
-    let program_id = host::id();
-    let authority = Pubkey::new_unique();
-    let (host_config, host_config_data) = host_config_account(authority);
-    let acl_domain_key = authority;
-    let app_account = authority;
-    let bad_type_label = label("bad-trivial-type");
-    let bad_type_nonce_key = host::acl_nonce_key(acl_domain_key, app_account, bad_type_label);
-    let bad_type_acl = host::acl_record_address(bad_type_nonce_key, 20).0;
-    let public_birth_label = label("trivial-public-birth");
-    let public_birth_nonce_key =
-        host::acl_nonce_key(acl_domain_key, app_account, public_birth_label);
-    let public_birth_acl = host::acl_record_address(public_birth_nonce_key, 21).0;
-    let bad_input_label = label("bad-input-handle");
-    let bad_input_nonce_key = host::acl_nonce_key(acl_domain_key, app_account, bad_input_label);
-    let bad_input_acl = host::acl_record_address(bad_input_nonce_key, 22).0;
-    let context = transient_context(
-        authority,
-        vec![
-            (host_config, host_config_data),
-            (bad_type_acl, system_account(0)),
-            (public_birth_acl, system_account(0)),
-            (bad_input_acl, system_account(0)),
-            (event_authority(program_id), system_account(0)),
-            (program_id, executable_program_account()),
-        ],
-    );
-
-    let unsupported_type = context.process_instruction(&trivial_encrypt_and_bind_ix(
-        program_id,
-        authority,
-        host_config,
-        bad_type_acl,
-        bad_type_nonce_key,
-        20,
-        acl_domain_key,
-        app_account,
-        bad_type_label,
-        amount_plaintext(7),
-        1,
-        false,
-    ));
-    assert!(unsupported_type.raw_result.is_err());
-    assert!(read_acl_record(&context, bad_type_acl).is_none());
-
-    let public_birth = context.process_instruction(&trivial_encrypt_and_bind_ix(
-        program_id,
-        authority,
-        host_config,
-        public_birth_acl,
-        public_birth_nonce_key,
-        21,
-        acl_domain_key,
-        app_account,
-        public_birth_label,
-        amount_plaintext(7),
-        5,
-        true,
-    ));
-    assert!(public_birth.raw_result.is_err());
-    assert!(read_acl_record(&context, public_birth_acl).is_none());
-
-    let computed_input = context.process_instruction(&mock_input_verified_and_bind_ix(
-        program_id,
-        authority,
-        authority,
-        host_config,
-        bad_input_acl,
-        bad_input_nonce_key,
-        22,
-        acl_domain_key,
-        app_account,
-        bad_input_label,
-        computed_like_handle_for_chain(7, 5),
-        false,
-    ));
-    assert!(computed_input.raw_result.is_err());
-    assert!(read_acl_record(&context, bad_input_acl).is_none());
-
-    let disabled_label = label("mock-disabled");
-    let disabled_nonce_key = host::acl_nonce_key(acl_domain_key, app_account, disabled_label);
-    let disabled_acl = host::acl_record_address(disabled_nonce_key, 23).0;
-    let (disabled_host_config, disabled_host_config_account) =
-        host_config_account_with_options(authority, authority, false, true, false);
-    let disabled_context = transient_context(
-        authority,
-        vec![
-            (disabled_host_config, disabled_host_config_account),
-            (disabled_acl, system_account(0)),
-            (event_authority(program_id), system_account(0)),
-            (program_id, executable_program_account()),
-        ],
-    );
-    let disabled = disabled_context.process_instruction(&mock_input_verified_and_bind_ix(
-        program_id,
-        authority,
-        authority,
-        disabled_host_config,
-        disabled_acl,
-        disabled_nonce_key,
-        23,
-        acl_domain_key,
-        app_account,
-        disabled_label,
-        input_handle_for_chain(8, 0, 5),
-        false,
-    ));
-    assert!(disabled.raw_result.is_err());
-    assert!(read_acl_record(&disabled_context, disabled_acl).is_none());
-
-    // A signer that is not the configured input_verifier_authority must be rejected.
-    let wrong_verifier = Pubkey::new_unique();
-    let wrong_verifier_label = label("mock-wrong-verifier");
-    let wrong_verifier_nonce_key =
-        host::acl_nonce_key(acl_domain_key, app_account, wrong_verifier_label);
-    let wrong_verifier_acl = host::acl_record_address(wrong_verifier_nonce_key, 24).0;
-    let (wrong_host_config, wrong_host_config_account) = host_config_account(authority);
-    let wrong_context = transient_context(
-        authority,
-        vec![
-            (wrong_verifier, system_account(1_000_000_000)),
-            (wrong_host_config, wrong_host_config_account),
-            (wrong_verifier_acl, system_account(0)),
-            (event_authority(program_id), system_account(0)),
-            (program_id, executable_program_account()),
-        ],
-    );
-    let wrong = wrong_context.process_instruction(&mock_input_verified_and_bind_ix(
-        program_id,
-        authority,
-        wrong_verifier,
-        wrong_host_config,
-        wrong_verifier_acl,
-        wrong_verifier_nonce_key,
-        24,
-        acl_domain_key,
-        app_account,
-        wrong_verifier_label,
-        input_handle_for_chain(9, 0, 5),
-        false,
-    ));
-    assert!(wrong.raw_result.is_err());
-    assert!(read_acl_record(&wrong_context, wrong_verifier_acl).is_none());
 }
 
 #[test]
@@ -1569,110 +1357,6 @@ fn mollusk_host_config_rejects_wrong_admin_and_oversized_singleton_without_mutat
 }
 
 #[test]
-fn mollusk_host_config_flag_setters_preserve_idempotent_state_and_slot() {
-    let program_id = host::id();
-    let admin = Pubkey::new_unique();
-    let (host_config, host_config_account) = host_config_account(admin);
-    let mut context = transient_context(admin, vec![(host_config, host_config_account)]);
-
-    let initial_config = read_host_config(&context, host_config).expect("expected host config");
-    assert!(initial_config.mock_input_enabled);
-    assert!(initial_config.test_shims_enabled);
-    assert_eq!(initial_config.updated_slot, 0);
-
-    let repeat_mock_true = context.process_instruction(&set_mock_input_enabled_ix(
-        program_id,
-        admin,
-        host_config,
-        true,
-    ));
-    assert!(repeat_mock_true.raw_result.is_ok());
-    let repeated_config = read_host_config(&context, host_config).expect("expected host config");
-    assert!(repeated_config.mock_input_enabled);
-    assert!(repeated_config.test_shims_enabled);
-    assert_eq!(repeated_config.updated_slot, 0);
-
-    context.mollusk.sysvars.warp_to_slot(10);
-    let disable_mock = context.process_instruction(&set_mock_input_enabled_ix(
-        program_id,
-        admin,
-        host_config,
-        false,
-    ));
-    assert!(disable_mock.raw_result.is_ok());
-    let disabled_mock_config =
-        read_host_config(&context, host_config).expect("expected host config");
-    assert!(!disabled_mock_config.mock_input_enabled);
-    assert!(disabled_mock_config.test_shims_enabled);
-    assert_eq!(disabled_mock_config.updated_slot, 10);
-
-    context.mollusk.sysvars.warp_to_slot(11);
-    let repeat_mock_false = context.process_instruction(&set_mock_input_enabled_ix(
-        program_id,
-        admin,
-        host_config,
-        false,
-    ));
-    assert!(repeat_mock_false.raw_result.is_ok());
-    let repeated_mock_false_config =
-        read_host_config(&context, host_config).expect("expected host config");
-    assert!(!repeated_mock_false_config.mock_input_enabled);
-    assert!(repeated_mock_false_config.test_shims_enabled);
-    assert_eq!(
-        repeated_mock_false_config.updated_slot,
-        disabled_mock_config.updated_slot
-    );
-
-    context.mollusk.sysvars.warp_to_slot(12);
-    let repeat_shims_true = context.process_instruction(&set_test_shims_enabled_ix(
-        program_id,
-        admin,
-        host_config,
-        true,
-    ));
-    assert!(repeat_shims_true.raw_result.is_ok());
-    let repeated_shims_true_config =
-        read_host_config(&context, host_config).expect("expected host config");
-    assert!(!repeated_shims_true_config.mock_input_enabled);
-    assert!(repeated_shims_true_config.test_shims_enabled);
-    assert_eq!(
-        repeated_shims_true_config.updated_slot,
-        disabled_mock_config.updated_slot
-    );
-
-    context.mollusk.sysvars.warp_to_slot(13);
-    let disable_shims = context.process_instruction(&set_test_shims_enabled_ix(
-        program_id,
-        admin,
-        host_config,
-        false,
-    ));
-    assert!(disable_shims.raw_result.is_ok());
-    let disabled_shims_config =
-        read_host_config(&context, host_config).expect("expected host config");
-    assert!(!disabled_shims_config.mock_input_enabled);
-    assert!(!disabled_shims_config.test_shims_enabled);
-    assert_eq!(disabled_shims_config.updated_slot, 13);
-
-    context.mollusk.sysvars.warp_to_slot(14);
-    let repeat_shims_false = context.process_instruction(&set_test_shims_enabled_ix(
-        program_id,
-        admin,
-        host_config,
-        false,
-    ));
-    assert!(repeat_shims_false.raw_result.is_ok());
-    let repeated_shims_false_config =
-        read_host_config(&context, host_config).expect("expected host config");
-    assert!(!repeated_shims_false_config.mock_input_enabled);
-    assert!(!repeated_shims_false_config.test_shims_enabled);
-    assert_eq!(
-        repeated_shims_false_config.updated_slot,
-        disabled_shims_config.updated_slot
-    );
-}
-
-#[test]
 fn mollusk_host_admin_pause_blocks_acl_grants_but_allows_unpause() {
     let program_id = host::id();
     let authority = Pubkey::new_unique();
@@ -1914,86 +1598,6 @@ fn mollusk_host_admin_grant_deny_list_flag_is_idempotent_and_drives_gate() {
     let record = read_acl_record(&context, acl_record).expect("expected ACL record");
     assert!(record.inline_subject_has_role(allowed_after_disable_subject, host::ACL_ROLE_USE));
     assert!(!record.inline_subject_has_role(denied_by_gate_subject, host::ACL_ROLE_USE));
-}
-
-#[test]
-fn mollusk_host_admin_pause_allows_transient_session_close_cleanup() {
-    let program_id = host::id();
-    let authority = Pubkey::new_unique();
-    let (host_config, host_config_account) = host_config_account(authority);
-    let authority_close_nonce = label("admin-close-auth");
-    let expired_close_nonce = label("admin-close-exp");
-    let (authority_close_session, _) =
-        host::transient_session_address(authority, authority_close_nonce);
-    let (expired_close_session, _) =
-        host::transient_session_address(authority, expired_close_nonce);
-    let mut context = transient_context(
-        authority,
-        vec![
-            (host_config, host_config_account),
-            (authority_close_session, system_account(0)),
-            (expired_close_session, system_account(0)),
-        ],
-    );
-    let current_slot = context.mollusk.sysvars.clock.slot;
-
-    assert_transaction_success(
-        &context,
-        &[
-            create_transient_session_ix(
-                program_id,
-                authority,
-                host_config,
-                authority_close_session,
-                authority_close_nonce,
-                authority,
-                current_slot,
-                1,
-            ),
-            create_transient_session_ix(
-                program_id,
-                authority,
-                host_config,
-                expired_close_session,
-                expired_close_nonce,
-                authority,
-                current_slot,
-                1,
-            ),
-        ],
-    );
-    assert!(read_transient_session(&context, authority_close_session).is_some());
-    assert!(read_transient_session(&context, expired_close_session).is_some());
-
-    let pause =
-        context.process_instruction(&set_host_pause_ix(program_id, authority, host_config, true));
-    assert!(pause.raw_result.is_ok());
-    assert!(
-        read_host_config(&context, host_config)
-            .expect("expected host config")
-            .paused
-    );
-
-    let authority_close = context.process_instruction(&close_transient_session_ix(
-        program_id,
-        Some(authority),
-        host_config,
-        authority_close_session,
-        authority,
-    ));
-    assert!(authority_close.raw_result.is_ok());
-    assert!(read_transient_session(&context, authority_close_session).is_none());
-
-    context.mollusk.sysvars.warp_to_slot(current_slot + 1);
-    let expired_close = context.process_instruction(&close_transient_session_ix(
-        program_id,
-        None,
-        host_config,
-        expired_close_session,
-        authority,
-    ));
-    assert!(expired_close.raw_result.is_ok());
-    assert!(read_transient_session(&context, expired_close_session).is_none());
 }
 
 #[test]
@@ -2347,614 +1951,6 @@ fn mollusk_material_commitment_rejects_zero_material_fields_without_sealing() {
 }
 
 #[test]
-fn mollusk_transient_session_consumes_capability_once() {
-    let program_id = host::id();
-    let authority = Pubkey::new_unique();
-    let host_config = host_config_account(authority).0;
-    let acl_domain_key = Pubkey::new_unique();
-    let app_account = authority;
-    let encrypted_value_label = label("balance");
-    let nonce_key = host::acl_nonce_key(acl_domain_key, app_account, encrypted_value_label);
-    let handle = handle_for_chain(7, 5);
-    let (acl_record, acl_account) = authorizing_acl_record_account(
-        nonce_key,
-        0,
-        acl_domain_key,
-        app_account,
-        encrypted_value_label,
-        handle,
-        authority,
-    );
-    let session_nonce = label("mollusk-session-1");
-    let (session, _) = host::transient_session_address(authority, session_nonce);
-    let context = transient_context(
-        authority,
-        vec![
-            host_config_account(authority),
-            (acl_record, acl_account),
-            (session, system_account(0)),
-        ],
-    );
-    let capability =
-        transient_capability(authority, program_id, acl_domain_key, app_account, false);
-
-    let create_ix = create_transient_session_ix(
-        program_id,
-        authority,
-        host_config,
-        session,
-        session_nonce,
-        authority,
-        0,
-        1,
-    );
-    let allow_ix = allow_transient_handle_ix(
-        program_id,
-        authority,
-        acl_record,
-        session,
-        host_config,
-        handle,
-        capability,
-    );
-    let seal_ix = seal_transient_session_ix(program_id, authority, host_config, session);
-    let context_id = label("consume-once");
-    let rhs = amount_plaintext(5);
-    let consume_ix = session_consume_eval_ix(
-        program_id,
-        authority,
-        host_config,
-        session,
-        context_id,
-        handle,
-        rhs,
-        FheEvalOutput::Transient,
-    );
-    assert_transaction_success(&context, &[create_ix, allow_ix, seal_ix, consume_ix]);
-
-    let session_account = read_transient_session(&context, session).expect("expected session");
-    assert_eq!(session_account.state, host::TRANSIENT_SESSION_STATE_SEALED);
-    assert_eq!(session_account.entries.len(), 1);
-    assert_eq!(session_account.entries[0].used_count, 1);
-
-    let second_context = label("consume-twice");
-    let second_consume_ix = session_consume_eval_ix(
-        program_id,
-        authority,
-        host_config,
-        session,
-        second_context,
-        handle,
-        rhs,
-        FheEvalOutput::Transient,
-    );
-    let result = context.process_instruction(&second_consume_ix);
-    assert!(result.raw_result.is_err());
-
-    let session_account = read_transient_session(&context, session).expect("expected session");
-    assert_eq!(session_account.entries[0].used_count, 1);
-}
-
-#[test]
-fn mollusk_transient_session_rejects_consume_without_same_transaction_create() {
-    let program_id = host::id();
-    let authority = Pubkey::new_unique();
-    let host_config = host_config_account(authority).0;
-    let acl_domain_key = Pubkey::new_unique();
-    let app_account = authority;
-    let session_nonce = label("late-consume");
-    let (session, bump) = host::transient_session_address(authority, session_nonce);
-    let handle = handle_for_chain(7, 5);
-    let capability =
-        transient_capability(authority, program_id, acl_domain_key, app_account, false);
-    let context = transient_context(
-        authority,
-        vec![
-            host_config_account(authority),
-            (
-                session,
-                Account {
-                    lamports: 1_000_000_000,
-                    data: serialized_account(TransientSession {
-                        session_nonce,
-                        authority,
-                        refund_recipient: authority,
-                        compute_subject: authority,
-                        created_slot: 0,
-                        expires_slot: u64::MAX,
-                        state: host::TRANSIENT_SESSION_STATE_SEALED,
-                        max_entries: 1,
-                        entries: vec![host::TransientCapability {
-                            handle,
-                            grant: capability,
-                            used_count: 0,
-                        }],
-                        bump,
-                    }),
-                    owner: program_id,
-                    executable: false,
-                    rent_epoch: 0,
-                },
-            ),
-        ],
-    );
-
-    let context_id = label("late-consume-eval");
-    let rhs = amount_plaintext(3);
-    let consume_ix = session_consume_eval_ix(
-        program_id,
-        authority,
-        host_config,
-        session,
-        context_id,
-        handle,
-        rhs,
-        FheEvalOutput::Transient,
-    );
-
-    let result = context.process_instruction(&consume_ix);
-    assert!(result.raw_result.is_err());
-    let session_account = read_transient_session(&context, session).expect("expected session");
-    assert_eq!(session_account.entries[0].used_count, 0);
-}
-
-#[test]
-fn mollusk_transient_session_denies_durable_output_without_policy() {
-    let program_id = host::id();
-    let authority = Pubkey::new_unique();
-    let host_config = host_config_account(authority).0;
-    let acl_domain_key = Pubkey::new_unique();
-    let app_account = authority;
-    let encrypted_value_label = label("balance");
-    let nonce_key = host::acl_nonce_key(acl_domain_key, app_account, encrypted_value_label);
-    let handle = handle_for_chain(7, 5);
-    let (acl_record, acl_account) = authorizing_acl_record_account(
-        nonce_key,
-        0,
-        acl_domain_key,
-        app_account,
-        encrypted_value_label,
-        handle,
-        authority,
-    );
-    let session_nonce = label("mollusk-session-2");
-    let (session, _) = host::transient_session_address(authority, session_nonce);
-    let output_acl_record = host::acl_record_address(nonce_key, 1).0;
-    let context = transient_context(
-        authority,
-        vec![
-            host_config_account(authority),
-            (acl_record, acl_account),
-            (session, system_account(0)),
-            (output_acl_record, system_account(0)),
-        ],
-    );
-
-    let create_ix = create_transient_session_ix(
-        program_id,
-        authority,
-        host_config,
-        session,
-        session_nonce,
-        authority,
-        0,
-        1,
-    );
-    let allow_ix = allow_transient_handle_ix(
-        program_id,
-        authority,
-        acl_record,
-        session,
-        host_config,
-        handle,
-        transient_capability(authority, program_id, acl_domain_key, app_account, false),
-    );
-    let seal_ix = seal_transient_session_ix(program_id, authority, host_config, session);
-    context.process_and_validate_instruction(&create_ix, &[Check::success()]);
-    context.process_and_validate_instruction(&allow_ix, &[Check::success()]);
-    context.process_and_validate_instruction(&seal_ix, &[Check::success()]);
-
-    let context_id = label("durable-denied");
-    let rhs = amount_plaintext(5);
-    let mut durable_ix = session_consume_eval_ix(
-        program_id,
-        authority,
-        host_config,
-        session,
-        context_id,
-        handle,
-        rhs,
-        FheEvalOutput::Durable {
-            output_acl_record_index: 1,
-            output_app_account_authority_index: None,
-            output_nonce_key: nonce_key,
-            output_nonce_sequence: 1,
-            output_acl_domain_key: acl_domain_key,
-            output_app_account: app_account,
-            output_encrypted_value_label: encrypted_value_label,
-            output_subjects: vec![AclSubjectEntry::user(authority)],
-            output_public_decrypt: false,
-        },
-    );
-    durable_ix
-        .accounts
-        .push(AccountMeta::new(output_acl_record, false));
-
-    let result = context.process_instruction(&durable_ix);
-    assert!(result.raw_result.is_err());
-    assert!(read_acl_record(&context, output_acl_record).is_none());
-    let session_account = read_transient_session(&context, session).expect("expected session");
-    assert_eq!(session_account.entries[0].used_count, 0);
-}
-
-#[test]
-fn mollusk_transient_policy_survives_chained_transient_output() {
-    let program_id = host::id();
-    let authority = Pubkey::new_unique();
-    let host_config = host_config_account(authority).0;
-    let acl_domain_key = Pubkey::new_unique();
-    let app_account = authority;
-    let encrypted_value_label = label("balance");
-    let nonce_key = host::acl_nonce_key(acl_domain_key, app_account, encrypted_value_label);
-    let handle = handle_for_chain(7, 5);
-    let (acl_record, acl_account) = authorizing_acl_record_account(
-        nonce_key,
-        0,
-        acl_domain_key,
-        app_account,
-        encrypted_value_label,
-        handle,
-        authority,
-    );
-    let session_nonce = label("mollusk-session-4");
-    let (session, _) = host::transient_session_address(authority, session_nonce);
-    let output_acl_record = host::acl_record_address(nonce_key, 1).0;
-    let context = transient_context(
-        authority,
-        vec![
-            host_config_account(authority),
-            (acl_record, acl_account),
-            (session, system_account(0)),
-            (output_acl_record, system_account(0)),
-        ],
-    );
-
-    let create_ix = create_transient_session_ix(
-        program_id,
-        authority,
-        host_config,
-        session,
-        session_nonce,
-        authority,
-        0,
-        1,
-    );
-    let allow_ix = allow_transient_handle_ix(
-        program_id,
-        authority,
-        acl_record,
-        session,
-        host_config,
-        handle,
-        transient_capability(authority, program_id, acl_domain_key, app_account, false),
-    );
-    let seal_ix = seal_transient_session_ix(program_id, authority, host_config, session);
-    context.process_and_validate_instruction(&create_ix, &[Check::success()]);
-    context.process_and_validate_instruction(&allow_ix, &[Check::success()]);
-    context.process_and_validate_instruction(&seal_ix, &[Check::success()]);
-
-    let context_id = label("chain-policy");
-    let rhs_first = amount_plaintext(5);
-    let rhs_second = amount_plaintext(3);
-    let mut ix = anchor_ix(
-        program_id,
-        host::accounts::FheEval {
-            payer: authority,
-            compute_subject: authority,
-            app_account_authority: authority,
-            host_config,
-            system_program: system_program::ID,
-            instructions_sysvar: Some(sysvar::instructions::ID),
-            event_authority: event_authority(program_id),
-            program: program_id,
-        },
-        host::instruction::FheEval {
-            args: FheEvalArgs {
-                context_id,
-                steps: vec![
-                    FheEvalStep::Binary {
-                        op: FheBinaryOpCode::Add,
-                        lhs: FheEvalOperand::TransientSession {
-                            handle,
-                            session_index: 0,
-                            capability_index: 0,
-                        },
-                        rhs: FheEvalOperand::Scalar(rhs_first),
-                        output_fhe_type: 5,
-                        output: FheEvalOutput::Transient,
-                    },
-                    FheEvalStep::Binary {
-                        op: FheBinaryOpCode::Add,
-                        lhs: FheEvalOperand::Transient { producer_index: 0 },
-                        rhs: FheEvalOperand::Scalar(rhs_second),
-                        output_fhe_type: 5,
-                        output: FheEvalOutput::Durable {
-                            output_acl_record_index: 1,
-                            output_app_account_authority_index: None,
-                            output_nonce_key: nonce_key,
-                            output_nonce_sequence: 1,
-                            output_acl_domain_key: acl_domain_key,
-                            output_app_account: app_account,
-                            output_encrypted_value_label: encrypted_value_label,
-                            output_subjects: vec![AclSubjectEntry::user(authority)],
-                            output_public_decrypt: false,
-                        },
-                    },
-                ],
-            },
-        },
-    );
-    ix.accounts.push(AccountMeta::new(session, false));
-    ix.accounts.push(AccountMeta::new(output_acl_record, false));
-
-    let result = context.process_instruction(&ix);
-    assert!(result.raw_result.is_err());
-    assert!(read_acl_record(&context, output_acl_record).is_none());
-    let session_account = read_transient_session(&context, session).expect("expected session");
-    assert_eq!(session_account.entries[0].used_count, 0);
-}
-
-#[test]
-fn mollusk_transient_policy_allows_chained_durable_output_when_narrowed() {
-    let program_id = host::id();
-    let authority = Pubkey::new_unique();
-    let host_config = host_config_account(authority).0;
-    let acl_domain_key = Pubkey::new_unique();
-    let app_account = authority;
-    let encrypted_value_label = label("session-narrow-output");
-    let nonce_key = host::acl_nonce_key(acl_domain_key, app_account, encrypted_value_label);
-    let handle = handle_for_chain(190, 5);
-    let (acl_record, acl_account) = authorizing_acl_record_account(
-        nonce_key,
-        0,
-        acl_domain_key,
-        app_account,
-        encrypted_value_label,
-        handle,
-        authority,
-    );
-    let session_nonce = label("session-narrow-ok");
-    let (session, _) = host::transient_session_address(authority, session_nonce);
-    let output_acl_record = host::acl_record_address(nonce_key, 1).0;
-    let context = transient_context(
-        authority,
-        vec![
-            host_config_account(authority),
-            (acl_record, acl_account),
-            (session, system_account(0)),
-            (output_acl_record, system_account(0)),
-        ],
-    );
-
-    let create_ix = create_transient_session_ix(
-        program_id,
-        authority,
-        host_config,
-        session,
-        session_nonce,
-        authority,
-        0,
-        1,
-    );
-    let allow_ix = allow_transient_handle_ix(
-        program_id,
-        authority,
-        acl_record,
-        session,
-        host_config,
-        handle,
-        transient_capability(authority, program_id, acl_domain_key, app_account, true),
-    );
-    let seal_ix = seal_transient_session_ix(program_id, authority, host_config, session);
-    let context_id = label("session-narrow-frame");
-    let rhs_first = amount_plaintext(5);
-    let rhs_second = amount_plaintext(3);
-    let first_handle = current_eval_handle(
-        &context.mollusk,
-        FheBinaryOpCode::Add,
-        handle,
-        rhs_first,
-        true,
-        5,
-        context_id,
-        0,
-    );
-    let output_handle = current_bound_eval_handle(
-        &context.mollusk,
-        FheBinaryOpCode::Add,
-        first_handle,
-        rhs_second,
-        true,
-        5,
-        context_id,
-        1,
-        nonce_key,
-        1,
-    );
-    let mut eval_ix = anchor_ix(
-        program_id,
-        host::accounts::FheEval {
-            payer: authority,
-            compute_subject: authority,
-            app_account_authority: authority,
-            host_config,
-            system_program: system_program::ID,
-            instructions_sysvar: Some(sysvar::instructions::ID),
-            event_authority: event_authority(program_id),
-            program: program_id,
-        },
-        host::instruction::FheEval {
-            args: FheEvalArgs {
-                context_id,
-                steps: vec![
-                    FheEvalStep::Binary {
-                        op: FheBinaryOpCode::Add,
-                        lhs: FheEvalOperand::TransientSession {
-                            handle,
-                            session_index: 0,
-                            capability_index: 0,
-                        },
-                        rhs: FheEvalOperand::Scalar(rhs_first),
-                        output_fhe_type: 5,
-                        output: FheEvalOutput::Transient,
-                    },
-                    FheEvalStep::Binary {
-                        op: FheBinaryOpCode::Add,
-                        lhs: FheEvalOperand::Transient { producer_index: 0 },
-                        rhs: FheEvalOperand::Scalar(rhs_second),
-                        output_fhe_type: 5,
-                        output: FheEvalOutput::Durable {
-                            output_acl_record_index: 1,
-                            output_app_account_authority_index: None,
-                            output_nonce_key: nonce_key,
-                            output_nonce_sequence: 1,
-                            output_acl_domain_key: acl_domain_key,
-                            output_app_account: app_account,
-                            output_encrypted_value_label: encrypted_value_label,
-                            output_subjects: vec![AclSubjectEntry::use_only(authority)],
-                            output_public_decrypt: false,
-                        },
-                    },
-                ],
-            },
-        },
-    );
-    eval_ix.accounts.push(AccountMeta::new(session, false));
-    eval_ix
-        .accounts
-        .push(AccountMeta::new(output_acl_record, false));
-
-    assert_transaction_success(&context, &[create_ix, allow_ix, seal_ix, eval_ix]);
-
-    let output_record =
-        read_acl_record(&context, output_acl_record).expect("expected narrowed output ACL");
-    assert_bound_acl_record(
-        &output_record,
-        output_handle,
-        nonce_key,
-        1,
-        acl_domain_key,
-        app_account,
-        encrypted_value_label,
-        authority,
-        host::ACL_ROLE_USE,
-        context.mollusk.sysvars.clock.slot,
-    );
-    let session_account = read_transient_session(&context, session).expect("expected session");
-    assert_eq!(session_account.entries[0].used_count, 1);
-}
-
-#[test]
-fn mollusk_transient_policy_blocks_rewrapping_to_broader_session() {
-    let program_id = host::id();
-    let authority = Pubkey::new_unique();
-    let host_config = host_config_account(authority).0;
-    let acl_domain_key = Pubkey::new_unique();
-    let app_account = authority;
-    let encrypted_value_label = label("balance");
-    let nonce_key = host::acl_nonce_key(acl_domain_key, app_account, encrypted_value_label);
-    let handle = handle_for_chain(7, 5);
-    let (acl_record, acl_account) = authorizing_acl_record_account(
-        nonce_key,
-        0,
-        acl_domain_key,
-        app_account,
-        encrypted_value_label,
-        handle,
-        authority,
-    );
-    let source_nonce = label("mollusk-source");
-    let target_nonce = label("mollusk-target");
-    let (source_session, _) = host::transient_session_address(authority, source_nonce);
-    let (target_session, _) = host::transient_session_address(authority, target_nonce);
-    let context = transient_context(
-        authority,
-        vec![
-            host_config_account(authority),
-            (acl_record, acl_account),
-            (source_session, system_account(0)),
-            (target_session, system_account(0)),
-        ],
-    );
-
-    let create_source_ix = create_transient_session_ix(
-        program_id,
-        authority,
-        host_config,
-        source_session,
-        source_nonce,
-        authority,
-        0,
-        1,
-    );
-    let create_target_ix = create_transient_session_ix(
-        program_id,
-        authority,
-        host_config,
-        target_session,
-        target_nonce,
-        authority,
-        0,
-        1,
-    );
-    let allow_ix = allow_transient_handle_ix(
-        program_id,
-        authority,
-        acl_record,
-        source_session,
-        host_config,
-        handle,
-        transient_capability(authority, program_id, acl_domain_key, app_account, false),
-    );
-    let seal_source_ix =
-        seal_transient_session_ix(program_id, authority, host_config, source_session);
-    context.process_and_validate_instruction(&create_source_ix, &[Check::success()]);
-    context.process_and_validate_instruction(&create_target_ix, &[Check::success()]);
-    context.process_and_validate_instruction(&allow_ix, &[Check::success()]);
-    context.process_and_validate_instruction(&seal_source_ix, &[Check::success()]);
-
-    let context_id = label("rewrap-policy");
-    let rhs = amount_plaintext(5);
-    let mut ix = session_consume_eval_ix(
-        program_id,
-        authority,
-        host_config,
-        source_session,
-        context_id,
-        handle,
-        rhs,
-        FheEvalOutput::TransientSession {
-            session_index: 1,
-            capability: transient_capability(
-                authority,
-                Pubkey::new_unique(),
-                acl_domain_key,
-                app_account,
-                true,
-            ),
-        },
-    );
-    ix.accounts.push(AccountMeta::new(target_session, false));
-
-    let result = context.process_instruction(&ix);
-    assert!(result.raw_result.is_err());
-    let source = read_transient_session(&context, source_session).expect("expected source session");
-    let target = read_transient_session(&context, target_session).expect("expected target session");
-    assert_eq!(source.entries[0].used_count, 0);
-    assert!(target.entries.is_empty());
-}
-
-#[test]
 fn mollusk_fhe_eval_rejects_public_decrypt_output_without_input_role() {
     let program_id = host::id();
     let authority = Pubkey::new_unique();
@@ -2994,7 +1990,6 @@ fn mollusk_fhe_eval_rejects_public_decrypt_output_without_input_role() {
             app_account_authority: authority,
             host_config,
             system_program: system_program::ID,
-            instructions_sysvar: None,
             event_authority: event_authority(program_id),
             program: program_id,
         },
@@ -3003,14 +1998,14 @@ fn mollusk_fhe_eval_rejects_public_decrypt_output_without_input_role() {
                 context_id,
                 steps: vec![FheEvalStep::Binary {
                     op: FheBinaryOpCode::Add,
-                    lhs: FheEvalOperand::Durable {
+                    lhs: FheEvalOperand::AllowedDurable {
                         handle,
                         acl_record_index: 0,
                         permission_index: None,
                     },
                     rhs: FheEvalOperand::Scalar(rhs),
                     output_fhe_type: 5,
-                    output: FheEvalOutput::Durable {
+                    output: FheEvalOutput::AllowedDurable {
                         output_acl_record_index: 1,
                         output_app_account_authority_index: None,
                         output_nonce_key: nonce_key,
@@ -3075,7 +2070,6 @@ fn mollusk_fhe_eval_rejects_system_account_public_decrypt_role_grant_without_inp
             app_account_authority: authority,
             host_config,
             system_program: system_program::ID,
-            instructions_sysvar: None,
             event_authority: event_authority(program_id),
             program: program_id,
         },
@@ -3084,14 +2078,14 @@ fn mollusk_fhe_eval_rejects_system_account_public_decrypt_role_grant_without_inp
                 context_id,
                 steps: vec![FheEvalStep::Binary {
                     op: FheBinaryOpCode::Add,
-                    lhs: FheEvalOperand::Durable {
+                    lhs: FheEvalOperand::AllowedDurable {
                         handle,
                         acl_record_index: 0,
                         permission_index: None,
                     },
                     rhs: FheEvalOperand::Scalar(rhs),
                     output_fhe_type: 5,
-                    output: FheEvalOutput::Durable {
+                    output: FheEvalOutput::AllowedDurable {
                         output_acl_record_index: 1,
                         output_app_account_authority_index: None,
                         output_nonce_key,
@@ -3167,7 +2161,6 @@ fn mollusk_fhe_eval_allows_app_owned_public_decrypt_role_grant_without_input_rol
             app_account_authority: authority,
             host_config,
             system_program: system_program::ID,
-            instructions_sysvar: None,
             event_authority: event_authority(program_id),
             program: program_id,
         },
@@ -3176,14 +2169,14 @@ fn mollusk_fhe_eval_allows_app_owned_public_decrypt_role_grant_without_input_rol
                 context_id,
                 steps: vec![FheEvalStep::Binary {
                     op: FheBinaryOpCode::Add,
-                    lhs: FheEvalOperand::Durable {
+                    lhs: FheEvalOperand::AllowedDurable {
                         handle,
                         acl_record_index: 0,
                         permission_index: None,
                     },
                     rhs: FheEvalOperand::Scalar(rhs),
                     output_fhe_type: 5,
-                    output: FheEvalOutput::Durable {
+                    output: FheEvalOutput::AllowedDurable {
                         output_acl_record_index: 1,
                         output_app_account_authority_index: Some(2),
                         output_nonce_key,
@@ -3296,7 +2289,6 @@ fn mollusk_fhe_eval_composes_transient_binary_ops_into_durable_ternary_output() 
             app_account_authority: app_account,
             host_config,
             system_program: system_program::ID,
-            instructions_sysvar: None,
             event_authority: event_authority(program_id),
             program: program_id,
         },
@@ -3306,45 +2298,45 @@ fn mollusk_fhe_eval_composes_transient_binary_ops_into_durable_ternary_output() 
                 steps: vec![
                     FheEvalStep::Binary {
                         op: FheBinaryOpCode::Ge,
-                        lhs: FheEvalOperand::Durable {
+                        lhs: FheEvalOperand::AllowedDurable {
                             handle: balance_handle,
                             acl_record_index: 0,
                             permission_index: None,
                         },
-                        rhs: FheEvalOperand::Durable {
+                        rhs: FheEvalOperand::AllowedDurable {
                             handle: amount_handle,
                             acl_record_index: 1,
                             permission_index: None,
                         },
                         output_fhe_type: 0,
-                        output: FheEvalOutput::Transient,
+                        output: FheEvalOutput::AllowedLocal,
                     },
                     FheEvalStep::Binary {
                         op: FheBinaryOpCode::Sub,
-                        lhs: FheEvalOperand::Durable {
+                        lhs: FheEvalOperand::AllowedDurable {
                             handle: balance_handle,
                             acl_record_index: 0,
                             permission_index: None,
                         },
-                        rhs: FheEvalOperand::Durable {
+                        rhs: FheEvalOperand::AllowedDurable {
                             handle: amount_handle,
                             acl_record_index: 1,
                             permission_index: None,
                         },
                         output_fhe_type: 5,
-                        output: FheEvalOutput::Transient,
+                        output: FheEvalOutput::AllowedLocal,
                     },
                     FheEvalStep::Ternary {
                         op: FheTernaryOpCode::IfThenElse,
-                        control: FheEvalOperand::Transient { producer_index: 0 },
-                        if_true: FheEvalOperand::Transient { producer_index: 1 },
-                        if_false: FheEvalOperand::Durable {
+                        control: FheEvalOperand::AllowedLocal { producer_index: 0 },
+                        if_true: FheEvalOperand::AllowedLocal { producer_index: 1 },
+                        if_false: FheEvalOperand::AllowedDurable {
                             handle: balance_handle,
                             acl_record_index: 0,
                             permission_index: None,
                         },
                         output_fhe_type: 5,
-                        output: FheEvalOutput::Durable {
+                        output: FheEvalOutput::AllowedDurable {
                             output_acl_record_index: 2,
                             output_app_account_authority_index: None,
                             output_nonce_key: balance_nonce_key,
@@ -3475,14 +2467,14 @@ fn mollusk_fhe_eval_identical_steps_derive_unique_transient_handles() {
     let steps = (0..3)
         .map(|_| FheEvalStep::Binary {
             op: FheBinaryOpCode::Add,
-            lhs: FheEvalOperand::Durable {
+            lhs: FheEvalOperand::AllowedDurable {
                 handle: input_handle,
                 acl_record_index: 0,
                 permission_index: None,
             },
             rhs: FheEvalOperand::Scalar(rhs),
             output_fhe_type: 5,
-            output: FheEvalOutput::Transient,
+            output: FheEvalOutput::AllowedLocal,
         })
         .collect();
     let mut ix = anchor_ix(
@@ -3493,7 +2485,6 @@ fn mollusk_fhe_eval_identical_steps_derive_unique_transient_handles() {
             app_account_authority: app_account,
             host_config,
             system_program: system_program::ID,
-            instructions_sysvar: None,
             event_authority: event_authority(program_id),
             program: program_id,
         },
@@ -3593,7 +2584,6 @@ fn mollusk_fhe_eval_binds_multiple_durable_outputs_with_distinct_authorities() {
             app_account_authority: authority,
             host_config,
             system_program: system_program::ID,
-            instructions_sysvar: None,
             event_authority: event_authority(program_id),
             program: program_id,
         },
@@ -3603,14 +2593,14 @@ fn mollusk_fhe_eval_binds_multiple_durable_outputs_with_distinct_authorities() {
                 steps: vec![
                     FheEvalStep::Binary {
                         op: FheBinaryOpCode::Add,
-                        lhs: FheEvalOperand::Durable {
+                        lhs: FheEvalOperand::AllowedDurable {
                             handle: input_handle,
                             acl_record_index: 0,
                             permission_index: None,
                         },
                         rhs: FheEvalOperand::Scalar(rhs_add),
                         output_fhe_type: 5,
-                        output: FheEvalOutput::Durable {
+                        output: FheEvalOutput::AllowedDurable {
                             output_acl_record_index: 1,
                             output_app_account_authority_index: None,
                             output_nonce_key: primary_nonce_key,
@@ -3624,14 +2614,14 @@ fn mollusk_fhe_eval_binds_multiple_durable_outputs_with_distinct_authorities() {
                     },
                     FheEvalStep::Binary {
                         op: FheBinaryOpCode::Sub,
-                        lhs: FheEvalOperand::Durable {
+                        lhs: FheEvalOperand::AllowedDurable {
                             handle: input_handle,
                             acl_record_index: 0,
                             permission_index: None,
                         },
                         rhs: FheEvalOperand::Scalar(rhs_sub),
                         output_fhe_type: 5,
-                        output: FheEvalOutput::Durable {
+                        output: FheEvalOutput::AllowedDurable {
                             output_acl_record_index: 3,
                             output_app_account_authority_index: Some(2),
                             output_nonce_key: secondary_nonce_key,
@@ -3746,7 +2736,6 @@ fn mollusk_fhe_eval_rolls_back_first_durable_output_when_second_output_exists() 
             app_account_authority: app_account,
             host_config,
             system_program: system_program::ID,
-            instructions_sysvar: None,
             event_authority: event_authority(program_id),
             program: program_id,
         },
@@ -3756,14 +2745,14 @@ fn mollusk_fhe_eval_rolls_back_first_durable_output_when_second_output_exists() 
                 steps: vec![
                     FheEvalStep::Binary {
                         op: FheBinaryOpCode::Add,
-                        lhs: FheEvalOperand::Durable {
+                        lhs: FheEvalOperand::AllowedDurable {
                             handle: input_handle,
                             acl_record_index: 0,
                             permission_index: None,
                         },
                         rhs: FheEvalOperand::Scalar(rhs_first),
                         output_fhe_type: 5,
-                        output: FheEvalOutput::Durable {
+                        output: FheEvalOutput::AllowedDurable {
                             output_acl_record_index: 1,
                             output_app_account_authority_index: None,
                             output_nonce_key: first_output_nonce_key,
@@ -3777,14 +2766,14 @@ fn mollusk_fhe_eval_rolls_back_first_durable_output_when_second_output_exists() 
                     },
                     FheEvalStep::Binary {
                         op: FheBinaryOpCode::Sub,
-                        lhs: FheEvalOperand::Durable {
+                        lhs: FheEvalOperand::AllowedDurable {
                             handle: input_handle,
                             acl_record_index: 0,
                             permission_index: None,
                         },
                         rhs: FheEvalOperand::Scalar(rhs_second),
                         output_fhe_type: 5,
-                        output: FheEvalOutput::Durable {
+                        output: FheEvalOutput::AllowedDurable {
                             output_acl_record_index: 2,
                             output_app_account_authority_index: None,
                             output_nonce_key: second_output_nonce_key,
@@ -3858,7 +2847,6 @@ fn mollusk_fhe_eval_rejects_duplicate_durable_output_reference_without_partial_b
             app_account_authority: app_account,
             host_config,
             system_program: system_program::ID,
-            instructions_sysvar: None,
             event_authority: event_authority(program_id),
             program: program_id,
         },
@@ -3868,14 +2856,14 @@ fn mollusk_fhe_eval_rejects_duplicate_durable_output_reference_without_partial_b
                 steps: vec![
                     FheEvalStep::Binary {
                         op: FheBinaryOpCode::Add,
-                        lhs: FheEvalOperand::Durable {
+                        lhs: FheEvalOperand::AllowedDurable {
                             handle: input_handle,
                             acl_record_index: 0,
                             permission_index: None,
                         },
                         rhs: FheEvalOperand::Scalar(rhs),
                         output_fhe_type: 5,
-                        output: FheEvalOutput::Durable {
+                        output: FheEvalOutput::AllowedDurable {
                             output_acl_record_index: 1,
                             output_app_account_authority_index: None,
                             output_nonce_key,
@@ -3889,14 +2877,14 @@ fn mollusk_fhe_eval_rejects_duplicate_durable_output_reference_without_partial_b
                     },
                     FheEvalStep::Binary {
                         op: FheBinaryOpCode::Sub,
-                        lhs: FheEvalOperand::Durable {
+                        lhs: FheEvalOperand::AllowedDurable {
                             handle: input_handle,
                             acl_record_index: 0,
                             permission_index: None,
                         },
                         rhs: FheEvalOperand::Scalar(rhs),
                         output_fhe_type: 5,
-                        output: FheEvalOutput::Durable {
+                        output: FheEvalOutput::AllowedDurable {
                             output_acl_record_index: 1,
                             output_app_account_authority_index: None,
                             output_nonce_key,
@@ -3976,14 +2964,14 @@ fn mollusk_fhe_eval_switches_event_transport_above_cpi_threshold() {
         let steps = (0..step_count)
             .map(|index| FheEvalStep::Binary {
                 op: FheBinaryOpCode::Add,
-                lhs: FheEvalOperand::Durable {
+                lhs: FheEvalOperand::AllowedDurable {
                     handle: input_handle,
                     acl_record_index: 0,
                     permission_index: None,
                 },
                 rhs: FheEvalOperand::Scalar(amount_plaintext(index as u64 + 1)),
                 output_fhe_type: 5,
-                output: FheEvalOutput::Transient,
+                output: FheEvalOutput::AllowedLocal,
             })
             .collect();
         let mut ix = anchor_ix(
@@ -3994,7 +2982,6 @@ fn mollusk_fhe_eval_switches_event_transport_above_cpi_threshold() {
                 app_account_authority: app_account,
                 host_config,
                 system_program: system_program::ID,
-                instructions_sysvar: None,
                 event_authority: event_authority(program_id),
                 program: program_id,
             },
@@ -4029,100 +3016,6 @@ fn mollusk_fhe_eval_switches_event_transport_above_cpi_threshold() {
 }
 
 #[test]
-fn mollusk_fhe_eval_rejects_transient_session_output_to_sealed_session() {
-    let program_id = host::id();
-    let authority = Pubkey::new_unique();
-    let host_config = host_config_account(authority).0;
-    let acl_domain_key = Pubkey::new_unique();
-    let app_account = authority;
-    let input_label = label("eval-sealed-input");
-    let input_nonce_key = host::acl_nonce_key(acl_domain_key, app_account, input_label);
-    let input_handle = handle_for_chain(187, 5);
-    let (input_acl_record, input_acl_account) = authorizing_acl_record_account(
-        input_nonce_key,
-        0,
-        acl_domain_key,
-        app_account,
-        input_label,
-        input_handle,
-        authority,
-    );
-    let session_nonce = label("eval-sealed-output");
-    let (session, _) = host::transient_session_address(authority, session_nonce);
-    let context = transient_context(
-        authority,
-        vec![
-            host_config_account(authority),
-            (input_acl_record, input_acl_account),
-            (session, system_account(0)),
-        ],
-    );
-    let create_ix = create_transient_session_ix(
-        program_id,
-        authority,
-        host_config,
-        session,
-        session_nonce,
-        authority,
-        0,
-        1,
-    );
-    let seal_ix = seal_transient_session_ix(program_id, authority, host_config, session);
-    assert_transaction_success(&context, &[create_ix, seal_ix]);
-
-    let rhs = amount_plaintext(6);
-    let mut eval_ix = anchor_ix(
-        program_id,
-        host::accounts::FheEval {
-            payer: authority,
-            compute_subject: authority,
-            app_account_authority: authority,
-            host_config,
-            system_program: system_program::ID,
-            instructions_sysvar: None,
-            event_authority: event_authority(program_id),
-            program: program_id,
-        },
-        host::instruction::FheEval {
-            args: FheEvalArgs {
-                context_id: label("eval-sealed-frame"),
-                steps: vec![FheEvalStep::Binary {
-                    op: FheBinaryOpCode::Add,
-                    lhs: FheEvalOperand::Durable {
-                        handle: input_handle,
-                        acl_record_index: 0,
-                        permission_index: None,
-                    },
-                    rhs: FheEvalOperand::Scalar(rhs),
-                    output_fhe_type: 5,
-                    output: FheEvalOutput::TransientSession {
-                        session_index: 1,
-                        capability: transient_capability(
-                            authority,
-                            program_id,
-                            acl_domain_key,
-                            app_account,
-                            false,
-                        ),
-                    },
-                }],
-            },
-        },
-    );
-    eval_ix
-        .accounts
-        .push(AccountMeta::new_readonly(input_acl_record, false));
-    eval_ix.accounts.push(AccountMeta::new(session, false));
-
-    let result = context.process_instruction(&eval_ix);
-
-    assert!(result.raw_result.is_err());
-    let session_account = read_transient_session(&context, session).expect("expected session");
-    assert_eq!(session_account.state, host::TRANSIENT_SESSION_STATE_SEALED);
-    assert!(session_account.entries.is_empty());
-}
-
-#[test]
 fn mollusk_fhe_eval_rejects_missing_transient_producer() {
     let fixture = EvalFixture::new();
     let context_id = label("v2-missing-transient");
@@ -4130,7 +3023,7 @@ fn mollusk_fhe_eval_rejects_missing_transient_producer() {
         context_id,
         vec![FheEvalStep::Ternary {
             op: FheTernaryOpCode::IfThenElse,
-            control: FheEvalOperand::Transient { producer_index: 0 },
+            control: FheEvalOperand::AllowedLocal { producer_index: 0 },
             if_true: fixture.balance_operand(0),
             if_false: fixture.amount_operand(1),
             output_fhe_type: 5,
@@ -4178,7 +3071,6 @@ fn mollusk_fhe_eval_rejects_scalar_lhs_before_events() {
             app_account_authority: fixture.app_account,
             host_config: fixture.host_config,
             system_program: system_program::ID,
-            instructions_sysvar: None,
             event_authority: event_authority(fixture.program_id),
             program: fixture.program_id,
         },
@@ -4190,7 +3082,7 @@ fn mollusk_fhe_eval_rejects_scalar_lhs_before_events() {
                     lhs: FheEvalOperand::Scalar(amount_plaintext(1)),
                     rhs: FheEvalOperand::Scalar(amount_plaintext(2)),
                     output_fhe_type: 5,
-                    output: FheEvalOutput::Transient,
+                    output: FheEvalOutput::AllowedLocal,
                 }],
             },
         },
@@ -4253,7 +3145,6 @@ fn mollusk_fhe_eval_rejects_binary_rhs_type_mismatch_before_output() {
             app_account_authority: app_account,
             host_config,
             system_program: system_program::ID,
-            instructions_sysvar: None,
             event_authority: event_authority(program_id),
             program: program_id,
         },
@@ -4262,18 +3153,18 @@ fn mollusk_fhe_eval_rejects_binary_rhs_type_mismatch_before_output() {
                 context_id,
                 steps: vec![FheEvalStep::Binary {
                     op: FheBinaryOpCode::Add,
-                    lhs: FheEvalOperand::Durable {
+                    lhs: FheEvalOperand::AllowedDurable {
                         handle: lhs_handle,
                         acl_record_index: 0,
                         permission_index: None,
                     },
-                    rhs: FheEvalOperand::Durable {
+                    rhs: FheEvalOperand::AllowedDurable {
                         handle: rhs_bool_handle,
                         acl_record_index: 1,
                         permission_index: None,
                     },
                     output_fhe_type: 5,
-                    output: FheEvalOutput::Durable {
+                    output: FheEvalOutput::AllowedDurable {
                         output_acl_record_index: 2,
                         output_app_account_authority_index: None,
                         output_nonce_key: lhs_nonce_key,
@@ -4408,7 +3299,7 @@ impl EvalFixture {
     }
 
     fn balance_operand(&self, acl_record_index: u16) -> FheEvalOperand {
-        FheEvalOperand::Durable {
+        FheEvalOperand::AllowedDurable {
             handle: self.balance_handle,
             acl_record_index,
             permission_index: None,
@@ -4416,7 +3307,7 @@ impl EvalFixture {
     }
 
     fn amount_operand(&self, acl_record_index: u16) -> FheEvalOperand {
-        FheEvalOperand::Durable {
+        FheEvalOperand::AllowedDurable {
             handle: self.amount_handle,
             acl_record_index,
             permission_index: None,
@@ -4428,7 +3319,7 @@ impl EvalFixture {
         output_app_account: Pubkey,
         output_public_decrypt: bool,
     ) -> FheEvalOutput {
-        FheEvalOutput::Durable {
+        FheEvalOutput::AllowedDurable {
             output_acl_record_index: 2,
             output_app_account_authority_index: None,
             output_nonce_key: self.balance_nonce_key,
@@ -4453,19 +3344,19 @@ impl EvalFixture {
                 lhs: self.balance_operand(0),
                 rhs: self.amount_operand(1),
                 output_fhe_type: 0,
-                output: FheEvalOutput::Transient,
+                output: FheEvalOutput::AllowedLocal,
             },
             FheEvalStep::Binary {
                 op: FheBinaryOpCode::Sub,
                 lhs: self.balance_operand(0),
                 rhs: self.amount_operand(1),
                 output_fhe_type: 5,
-                output: FheEvalOutput::Transient,
+                output: FheEvalOutput::AllowedLocal,
             },
             FheEvalStep::Ternary {
                 op: FheTernaryOpCode::IfThenElse,
-                control: FheEvalOperand::Transient { producer_index: 0 },
-                if_true: FheEvalOperand::Transient { producer_index: 1 },
+                control: FheEvalOperand::AllowedLocal { producer_index: 0 },
+                if_true: FheEvalOperand::AllowedLocal { producer_index: 1 },
                 if_false: self.balance_operand(0),
                 output_fhe_type: 5,
                 output: self.durable_output(output_app_account, output_public_decrypt),
@@ -4482,7 +3373,6 @@ impl EvalFixture {
                 app_account_authority: self.app_account,
                 host_config: self.host_config,
                 system_program: system_program::ID,
-                instructions_sysvar: None,
                 event_authority: event_authority(self.program_id),
                 program: self.program_id,
             },
@@ -4597,7 +3487,6 @@ fn mollusk_fhe_eval_rejects_unused_dynamic_accounts_without_events() {
         authority,
     );
     let extra_account = Pubkey::new_unique();
-    let unused_sysvar_slot = Pubkey::new_unique();
     let output_acl_record = host::acl_record_address(nonce_key, 1).0;
     let context = transient_context(
         authority,
@@ -4605,12 +3494,11 @@ fn mollusk_fhe_eval_rejects_unused_dynamic_accounts_without_events() {
             host_config_account(authority),
             (lhs_acl_record, lhs_acl_account),
             (extra_account, system_account(1_000_000)),
-            (unused_sysvar_slot, system_account(1_000_000)),
             (output_acl_record, system_account(0)),
         ],
     );
 
-    let build_eval_ix = |context_id: [u8; 32], instructions_sysvar: Option<Pubkey>| {
+    let build_eval_ix = |context_id: [u8; 32]| {
         let rhs = amount_plaintext(2);
         anchor_ix(
             program_id,
@@ -4620,7 +3508,6 @@ fn mollusk_fhe_eval_rejects_unused_dynamic_accounts_without_events() {
                 app_account_authority: app_account,
                 host_config,
                 system_program: system_program::ID,
-                instructions_sysvar,
                 event_authority: event_authority(program_id),
                 program: program_id,
             },
@@ -4629,21 +3516,21 @@ fn mollusk_fhe_eval_rejects_unused_dynamic_accounts_without_events() {
                     context_id,
                     steps: vec![FheEvalStep::Binary {
                         op: FheBinaryOpCode::Add,
-                        lhs: FheEvalOperand::Durable {
+                        lhs: FheEvalOperand::AllowedDurable {
                             handle: lhs,
                             acl_record_index: 0,
                             permission_index: None,
                         },
                         rhs: FheEvalOperand::Scalar(rhs),
                         output_fhe_type: 5,
-                        output: FheEvalOutput::Transient,
+                        output: FheEvalOutput::AllowedLocal,
                     }],
                 },
             },
         )
     };
 
-    let mut extra_remaining_ix = build_eval_ix(label("mollusk-eval-extra"), None);
+    let mut extra_remaining_ix = build_eval_ix(label("mollusk-eval-extra"));
     extra_remaining_ix
         .accounts
         .push(AccountMeta::new_readonly(lhs_acl_record, false));
@@ -4659,22 +3546,6 @@ fn mollusk_fhe_eval_rejects_unused_dynamic_accounts_without_events() {
     assert_eq!(record_after_extra.handle, lhs);
     assert!(record_after_extra.inline_subject_has_role(authority, host::ACL_ROLE_ALL));
 
-    let mut unused_sysvar_ix = build_eval_ix(
-        label("mollusk-eval-unused-sysvar"),
-        Some(unused_sysvar_slot),
-    );
-    unused_sysvar_ix
-        .accounts
-        .push(AccountMeta::new_readonly(lhs_acl_record, false));
-    let sysvar_result = context.process_instruction(&unused_sysvar_ix);
-
-    assert!(sysvar_result.raw_result.is_err());
-    assert!(sysvar_result.inner_instructions.is_empty());
-    let record_after_sysvar =
-        read_acl_record(&context, lhs_acl_record).expect("expected LHS ACL record");
-    assert_eq!(record_after_sysvar.handle, lhs);
-    assert!(record_after_sysvar.inline_subject_has_role(authority, host::ACL_ROLE_ALL));
-
     let rhs = amount_plaintext(3);
     let mut durable_extra_ix = anchor_ix(
         program_id,
@@ -4684,7 +3555,6 @@ fn mollusk_fhe_eval_rejects_unused_dynamic_accounts_without_events() {
             app_account_authority: app_account,
             host_config,
             system_program: system_program::ID,
-            instructions_sysvar: None,
             event_authority: event_authority(program_id),
             program: program_id,
         },
@@ -4693,14 +3563,14 @@ fn mollusk_fhe_eval_rejects_unused_dynamic_accounts_without_events() {
                 context_id: label("mollusk-eval-extra-out"),
                 steps: vec![FheEvalStep::Binary {
                     op: FheBinaryOpCode::Add,
-                    lhs: FheEvalOperand::Durable {
+                    lhs: FheEvalOperand::AllowedDurable {
                         handle: lhs,
                         acl_record_index: 0,
                         permission_index: None,
                     },
                     rhs: FheEvalOperand::Scalar(rhs),
                     output_fhe_type: 5,
-                    output: FheEvalOutput::Durable {
+                    output: FheEvalOutput::AllowedDurable {
                         output_acl_record_index: 1,
                         output_app_account_authority_index: None,
                         output_nonce_key: nonce_key,
@@ -5040,122 +3910,6 @@ fn mollusk_fhe_ternary_op_bind_rejects_public_decrypt_role_grant_without_input_r
     let result = context.process_instruction(&ix);
     assert!(result.raw_result.is_err());
     assert!(read_acl_record(&context, output_acl_record).is_none());
-}
-
-#[test]
-fn mollusk_fhe_eval_appends_transient_session_output_for_later_consumption() {
-    let program_id = host::id();
-    let authority = Pubkey::new_unique();
-    let host_config = host_config_account(authority).0;
-    let acl_domain_key = Pubkey::new_unique();
-    let app_account = authority;
-    let encrypted_value_label = label("balance");
-    let nonce_key = host::acl_nonce_key(acl_domain_key, app_account, encrypted_value_label);
-    let durable_handle = handle_for_chain(7, 5);
-    let (acl_record, acl_account) = authorizing_acl_record_account(
-        nonce_key,
-        0,
-        acl_domain_key,
-        app_account,
-        encrypted_value_label,
-        durable_handle,
-        authority,
-    );
-    let session_nonce = label("mollusk-session-3");
-    let (session, _) = host::transient_session_address(authority, session_nonce);
-    let context = transient_context(
-        authority,
-        vec![
-            host_config_account(authority),
-            (acl_record, acl_account),
-            (session, system_account(0)),
-        ],
-    );
-    let create_ix = create_transient_session_ix(
-        program_id,
-        authority,
-        host_config,
-        session,
-        session_nonce,
-        authority,
-        0,
-        1,
-    );
-    let first_context = label("append-session");
-    let rhs_first = amount_plaintext(5);
-    let session_handle = current_eval_handle(
-        &context.mollusk,
-        FheBinaryOpCode::Add,
-        durable_handle,
-        rhs_first,
-        true,
-        5,
-        first_context,
-        0,
-    );
-    let mut append_ix = anchor_ix(
-        program_id,
-        host::accounts::FheEval {
-            payer: authority,
-            compute_subject: authority,
-            app_account_authority: authority,
-            host_config,
-            system_program: system_program::ID,
-            instructions_sysvar: None,
-            event_authority: event_authority(program_id),
-            program: program_id,
-        },
-        host::instruction::FheEval {
-            args: FheEvalArgs {
-                context_id: first_context,
-                steps: vec![FheEvalStep::Binary {
-                    op: FheBinaryOpCode::Add,
-                    lhs: FheEvalOperand::Durable {
-                        handle: durable_handle,
-                        acl_record_index: 0,
-                        permission_index: None,
-                    },
-                    rhs: FheEvalOperand::Scalar(rhs_first),
-                    output_fhe_type: 5,
-                    output: FheEvalOutput::TransientSession {
-                        session_index: 1,
-                        capability: transient_capability(
-                            authority,
-                            program_id,
-                            acl_domain_key,
-                            app_account,
-                            false,
-                        ),
-                    },
-                }],
-            },
-        },
-    );
-    append_ix
-        .accounts
-        .push(AccountMeta::new_readonly(acl_record, false));
-    append_ix.accounts.push(AccountMeta::new(session, false));
-
-    let seal_ix = seal_transient_session_ix(program_id, authority, host_config, session);
-
-    let second_context = label("consume-appended");
-    let rhs_second = amount_plaintext(3);
-    let consume_ix = session_consume_eval_ix(
-        program_id,
-        authority,
-        host_config,
-        session,
-        second_context,
-        session_handle,
-        rhs_second,
-        FheEvalOutput::Transient,
-    );
-    assert_transaction_success(&context, &[create_ix, append_ix, seal_ix, consume_ix]);
-
-    let session_account = read_transient_session(&context, session).expect("expected session");
-    assert_eq!(session_account.entries.len(), 1);
-    assert_eq!(session_account.entries[0].handle, session_handle);
-    assert_eq!(session_account.entries[0].used_count, 1);
 }
 
 fn serialized_account<T: AccountSerialize>(account: T) -> Vec<u8> {
@@ -5505,47 +4259,6 @@ fn trivial_encrypt_and_bind_ix(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn mock_input_verified_and_bind_ix(
-    program_id: Pubkey,
-    authority: Pubkey,
-    input_verifier_authority: Pubkey,
-    host_config: Pubkey,
-    output_acl_record: Pubkey,
-    output_nonce_key: [u8; 32],
-    output_nonce_sequence: u64,
-    output_acl_domain_key: Pubkey,
-    output_app_account: Pubkey,
-    output_encrypted_value_label: [u8; 32],
-    input_handle: [u8; 32],
-    output_public_decrypt: bool,
-) -> Instruction {
-    anchor_ix(
-        program_id,
-        host::accounts::MockInputVerifiedAndBind {
-            payer: authority,
-            input_verifier_authority,
-            app_account_authority: authority,
-            host_config,
-            output_acl_record,
-            system_program: system_program::ID,
-            event_authority: event_authority(program_id),
-            program: program_id,
-        },
-        host::instruction::MockInputVerifiedAndBind {
-            input_handle,
-            user: authority,
-            output_nonce_key,
-            output_nonce_sequence,
-            output_acl_domain_key,
-            output_app_account,
-            output_encrypted_value_label,
-            output_subjects: vec![AclSubjectEntry::compute(authority)],
-            output_public_decrypt,
-        },
-    )
-}
-
-#[allow(clippy::too_many_arguments)]
 fn allow_acl_subjects_ix(
     program_id: Pubkey,
     payer: Pubkey,
@@ -5611,32 +4324,6 @@ fn set_host_pause_ix(
         program_id,
         host::accounts::HostAdmin { admin, host_config },
         host::instruction::SetHostPause { paused },
-    )
-}
-
-fn set_mock_input_enabled_ix(
-    program_id: Pubkey,
-    admin: Pubkey,
-    host_config: Pubkey,
-    enabled: bool,
-) -> Instruction {
-    anchor_ix(
-        program_id,
-        host::accounts::HostAdmin { admin, host_config },
-        host::instruction::SetMockInputEnabled { enabled },
-    )
-}
-
-fn set_test_shims_enabled_ix(
-    program_id: Pubkey,
-    admin: Pubkey,
-    host_config: Pubkey,
-    enabled: bool,
-) -> Instruction {
-    anchor_ix(
-        program_id,
-        host::accounts::HostAdmin { admin, host_config },
-        host::instruction::SetTestShimsEnabled { enabled },
     )
 }
 
@@ -5785,95 +4472,6 @@ fn rand_bounded_and_bind_ix(
     )
 }
 
-#[allow(clippy::too_many_arguments)]
-fn create_transient_session_ix(
-    program_id: Pubkey,
-    authority: Pubkey,
-    host_config: Pubkey,
-    session: Pubkey,
-    session_nonce: [u8; 32],
-    refund_recipient: Pubkey,
-    expires_slot: u64,
-    max_entries: u8,
-) -> Instruction {
-    anchor_ix(
-        program_id,
-        host::accounts::CreateTransientSession {
-            payer: authority,
-            authority,
-            session,
-            host_config,
-            system_program: system_program::ID,
-        },
-        host::instruction::CreateTransientSession {
-            session_nonce,
-            refund_recipient,
-            compute_subject: authority,
-            expires_slot,
-            max_entries,
-        },
-    )
-}
-
-fn allow_transient_handle_ix(
-    program_id: Pubkey,
-    authority: Pubkey,
-    acl_record: Pubkey,
-    session: Pubkey,
-    host_config: Pubkey,
-    handle: [u8; 32],
-    capability: TransientCapabilityGrant,
-) -> Instruction {
-    anchor_ix(
-        program_id,
-        host::accounts::AllowTransientHandle {
-            authority,
-            authority_permission_record: None,
-            acl_record,
-            session,
-            host_config,
-            deny_subject_record: None,
-        },
-        host::instruction::AllowTransientHandle { handle, capability },
-    )
-}
-
-fn seal_transient_session_ix(
-    program_id: Pubkey,
-    authority: Pubkey,
-    host_config: Pubkey,
-    session: Pubkey,
-) -> Instruction {
-    anchor_ix(
-        program_id,
-        host::accounts::SealTransientSession {
-            authority,
-            session,
-            host_config,
-        },
-        host::instruction::SealTransientSession {},
-    )
-}
-
-fn close_transient_session_ix(
-    program_id: Pubkey,
-    authority: Option<Pubkey>,
-    host_config: Pubkey,
-    session: Pubkey,
-    refund_recipient: Pubkey,
-) -> Instruction {
-    anchor_ix(
-        program_id,
-        host::accounts::CloseTransientSession {
-            authority,
-            session,
-            refund_recipient,
-            host_config,
-        },
-        host::instruction::CloseTransientSession {},
-    )
-}
-
 fn delegate_for_user_decryption_ix(
     program_id: Pubkey,
     authority: Pubkey,
@@ -5971,69 +4569,6 @@ fn allow_for_decryption_ix(
         },
         host::instruction::AllowForDecryption { handle },
     )
-}
-
-#[allow(clippy::too_many_arguments)]
-fn session_consume_eval_ix(
-    program_id: Pubkey,
-    authority: Pubkey,
-    host_config: Pubkey,
-    session: Pubkey,
-    context_id: [u8; 32],
-    lhs: [u8; 32],
-    rhs: [u8; 32],
-    output: FheEvalOutput,
-) -> Instruction {
-    let mut ix = anchor_ix(
-        program_id,
-        host::accounts::FheEval {
-            payer: authority,
-            compute_subject: authority,
-            app_account_authority: authority,
-            host_config,
-            system_program: system_program::ID,
-            instructions_sysvar: Some(sysvar::instructions::ID),
-            event_authority: event_authority(program_id),
-            program: program_id,
-        },
-        host::instruction::FheEval {
-            args: FheEvalArgs {
-                context_id,
-                steps: vec![FheEvalStep::Binary {
-                    op: FheBinaryOpCode::Add,
-                    lhs: FheEvalOperand::TransientSession {
-                        handle: lhs,
-                        session_index: 0,
-                        capability_index: 0,
-                    },
-                    rhs: FheEvalOperand::Scalar(rhs),
-                    output_fhe_type: 5,
-                    output,
-                }],
-            },
-        },
-    );
-    ix.accounts.push(AccountMeta::new(session, false));
-    ix
-}
-
-fn transient_capability(
-    subject: Pubkey,
-    receiver_program: Pubkey,
-    acl_domain_key: Pubkey,
-    app_account: Pubkey,
-    durable_output_allowed: bool,
-) -> TransientCapabilityGrant {
-    TransientCapabilityGrant {
-        subject,
-        receiver_program,
-        acl_domain_key,
-        app_account,
-        role_flags: host::ACL_ROLE_USE,
-        max_uses: 1,
-        durable_output_allowed,
-        public_decrypt_allowed: false,
-    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -6217,19 +4752,6 @@ fn previous_bank_hash(mollusk: &Mollusk) -> [u8; 32] {
                 .map(|hash| hash.to_bytes())
         })
         .unwrap_or([0; 32])
-}
-
-fn read_transient_session(
-    context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
-    address: Pubkey,
-) -> Option<TransientSession> {
-    let store = context.account_store.borrow();
-    let account = store.get(&address)?;
-    if account.owner != host::id() {
-        return None;
-    }
-    let mut data = account.data.as_slice();
-    TransientSession::try_deserialize(&mut data).ok()
 }
 
 fn read_delegation_record(
@@ -6847,12 +5369,6 @@ fn input_handle_for_chain(seed: u8, handle_index: u8, fhe_type: u8) -> [u8; 32] 
     handle
 }
 
-fn computed_like_handle_for_chain(seed: u8, fhe_type: u8) -> [u8; 32] {
-    let mut handle = handle_for_chain(seed, fhe_type);
-    handle[21] = 0xff;
-    handle
-}
-
 fn event_authority(program_id: Pubkey) -> Pubkey {
     Pubkey::find_program_address(&[b"__event_authority"], &program_id).0
 }
@@ -6947,7 +5463,6 @@ fn verified_input_add_eval_ix(
             app_account_authority: authority,
             host_config,
             system_program: system_program::ID,
-            instructions_sysvar: None,
             event_authority: event_authority(program_id),
             program: program_id,
         },
@@ -6959,7 +5474,7 @@ fn verified_input_add_eval_ix(
                     lhs: FheEvalOperand::VerifiedInput { attestation },
                     rhs: FheEvalOperand::Scalar(scalar),
                     output_fhe_type: 5,
-                    output: FheEvalOutput::Durable {
+                    output: FheEvalOutput::AllowedDurable {
                         output_acl_record_index: 0,
                         output_app_account_authority_index: None,
                         output_nonce_key: nonce_key,
@@ -7076,7 +5591,6 @@ fn durable_input_add_eval_ix(
             app_account_authority: authority,
             host_config,
             system_program: system_program::ID,
-            instructions_sysvar: None,
             event_authority: event_authority(program_id),
             program: program_id,
         },
@@ -7085,14 +5599,14 @@ fn durable_input_add_eval_ix(
                 context_id,
                 steps: vec![FheEvalStep::Binary {
                     op: FheBinaryOpCode::Add,
-                    lhs: FheEvalOperand::Durable {
+                    lhs: FheEvalOperand::AllowedDurable {
                         handle: input_handle,
                         acl_record_index: 0,
                         permission_index: None,
                     },
                     rhs: FheEvalOperand::Scalar(scalar),
                     output_fhe_type: 5,
-                    output: FheEvalOutput::Transient,
+                    output: FheEvalOutput::AllowedLocal,
                 }],
             },
         },
@@ -7401,85 +5915,5 @@ fn mollusk_fhe_eval_verified_input_rejects_consumption_by_non_attested_app() {
     assert_instruction_custom_error(
         &result,
         host::errors::ZamaHostError::InputBindContractMismatch,
-    );
-}
-
-/// (g) Replay guard through a transient session: a verified-input-derived value cannot be parked in
-/// a transient-session capability. The capability does not carry the attested binding, so consuming
-/// it in a later instruction would mint a durable output free of the (user, contract) check — the
-/// exact bypass that would otherwise defeat (f). The attempt to write
-/// `VerifiedInput + Scalar -> TransientSession` is rejected up front.
-#[test]
-fn mollusk_fhe_eval_verified_input_rejects_transient_session_output() {
-    let program_id = host::id();
-    let authority = Pubkey::new_unique(); // signs the eval and opens the session
-    let user = Pubkey::new_unique(); // the attested input owner
-    let key = k256::ecdsa::SigningKey::from_bytes(&[0x44u8; 32].into()).unwrap();
-    let (host_config, host_config_account) =
-        host_config_account_with_verifier(authority, evm_address_of(&key));
-
-    let session_nonce = label("verified-input-session");
-    let (session, _) = host::transient_session_address(authority, session_nonce);
-    let context = transient_context(
-        authority,
-        vec![
-            (host_config, host_config_account),
-            (session, system_account(0)),
-        ],
-    );
-
-    // Open a real session owned by `authority`, as an attacker would before trying to park the input.
-    let create_ix = create_transient_session_ix(
-        program_id,
-        authority,
-        host_config,
-        session,
-        session_nonce,
-        authority,
-        0,
-        1,
-    );
-    context.process_and_validate_instruction(&create_ix, &[Check::success()]);
-
-    let input_handle = input_handle_for_chain(0x01, 0, 5);
-    let attestation =
-        verified_input_attestation(&key, input_handle, user.to_bytes(), authority.to_bytes());
-
-    let mut eval_ix = anchor_ix(
-        program_id,
-        host::accounts::FheEval {
-            payer: authority,
-            compute_subject: authority,
-            app_account_authority: authority,
-            host_config,
-            system_program: system_program::ID,
-            instructions_sysvar: None,
-            event_authority: event_authority(program_id),
-            program: program_id,
-        },
-        host::instruction::FheEval {
-            args: FheEvalArgs {
-                context_id: label("verified-input-frame"),
-                steps: vec![FheEvalStep::Binary {
-                    op: FheBinaryOpCode::Add,
-                    lhs: FheEvalOperand::VerifiedInput { attestation },
-                    rhs: FheEvalOperand::Scalar(amount_plaintext(2)),
-                    output_fhe_type: 5,
-                    output: FheEvalOutput::TransientSession {
-                        session_index: 0,
-                        capability: transient_capability(
-                            authority, program_id, authority, authority, true,
-                        ),
-                    },
-                }],
-            },
-        },
-    );
-    eval_ix.accounts.push(AccountMeta::new(session, false));
-
-    let result = context.process_instruction(&eval_ix);
-    assert_instruction_custom_error(
-        &result,
-        host::errors::ZamaHostError::InputBindTransientSessionUnsupported,
     );
 }

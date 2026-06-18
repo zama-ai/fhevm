@@ -30,8 +30,6 @@ use anchor_lang::{
     InstructionData, Key, ToAccountInfos, ToAccountMetas,
 };
 
-#[cfg(feature = "raw-host-api")]
-use zama_host::TransientCapabilityGrant;
 use zama_host::{
     acl_nonce_key, acl_record_address, role_flags_are_known, subject_has_role, AclSubjectEntry,
     FheBinaryOpCode, FheEvalArgs, FheEvalOperand, FheEvalOutput, FheEvalStep, FheTernaryOpCode,
@@ -378,15 +376,6 @@ struct DurableOperand {
     permission: Option<Pubkey>,
 }
 
-/// Sealed one-shot transient session operand identified by account pubkey.
-#[cfg(feature = "raw-host-api")]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct TransientSessionOperand {
-    handle: [u8; 32],
-    session: Pubkey,
-    capability_index: u16,
-}
-
 /// Raw operand used by the lowering implementation.
 ///
 /// Public builders expose typed [`Encrypted`] values instead.
@@ -401,8 +390,6 @@ enum OperandKind {
         context_id: EvalContextId,
         builder_scope: EvalBuilderScope,
     },
-    #[cfg(feature = "raw-host-api")]
-    TransientSession(TransientSessionOperand),
     Scalar([u8; 32]),
 }
 
@@ -425,15 +412,6 @@ impl Operand {
             context_id,
             builder_scope,
         })
-    }
-
-    #[cfg(feature = "raw-host-api")]
-    fn transient_session(handle: [u8; 32], session: Pubkey, capability_index: u16) -> Self {
-        Self(OperandKind::TransientSession(TransientSessionOperand {
-            handle,
-            session,
-            capability_index,
-        }))
     }
 
     fn scalar(value: [u8; 32]) -> Self {
@@ -782,11 +760,6 @@ pub struct Output(OutputKind);
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum OutputKind {
     Transient,
-    #[cfg(feature = "raw-host-api")]
-    TransientSession {
-        session: Pubkey,
-        capability: TransientCapabilityGrant,
-    },
     Durable(DurableOutput),
 }
 
@@ -809,7 +782,6 @@ impl Output {
 pub enum EvalAccountPurpose {
     DurableInputAcl,
     PermissionRecord,
-    TransientSession,
     DurableOutputAcl,
     DurableOutputAuthority,
 }
@@ -1096,13 +1068,6 @@ impl EvalPlan {
             })
             .map(|account| account.pubkey)
     }
-
-    pub fn requires_instructions_sysvar(&self) -> bool {
-        self.args
-            .steps
-            .iter()
-            .any(step_requires_instructions_sysvar)
-    }
 }
 
 #[cfg(feature = "cpi")]
@@ -1188,29 +1153,6 @@ fn resolve_eval_accounts<'info>(
     }
 
     Ok(ResolvedEvalAccounts { accounts })
-}
-
-fn step_requires_instructions_sysvar(step: &FheEvalStep) -> bool {
-    match step {
-        FheEvalStep::Binary { lhs, rhs, .. } => {
-            operand_requires_instructions_sysvar(lhs) || operand_requires_instructions_sysvar(rhs)
-        }
-        FheEvalStep::Ternary {
-            control,
-            if_true,
-            if_false,
-            ..
-        } => {
-            operand_requires_instructions_sysvar(control)
-                || operand_requires_instructions_sysvar(if_true)
-                || operand_requires_instructions_sysvar(if_false)
-        }
-        FheEvalStep::TrivialEncrypt { .. } | FheEvalStep::Rand { .. } => false,
-    }
-}
-
-fn operand_requires_instructions_sysvar(operand: &FheEvalOperand) -> bool {
-    matches!(operand, FheEvalOperand::TransientSession { .. })
 }
 
 /// Pubkey-oriented builder for `FheEvalArgs`.
@@ -1607,7 +1549,7 @@ fn validate_lowered_encrypted_operand(
     used_accounts: &mut [bool],
 ) -> Result<()> {
     match operand {
-        FheEvalOperand::Durable {
+        FheEvalOperand::AllowedDurable {
             acl_record_index,
             permission_index,
             ..
@@ -1617,13 +1559,10 @@ fn validate_lowered_encrypted_operand(
                 mark_lowered_account(used_accounts, *index)?;
             }
         }
-        FheEvalOperand::Transient { producer_index } => {
+        FheEvalOperand::AllowedLocal { producer_index } => {
             if *producer_index as usize >= step_index {
                 return Err(EvalBuildError::InvalidTransientReference);
             }
-        }
-        FheEvalOperand::TransientSession { session_index, .. } => {
-            mark_lowered_account(used_accounts, *session_index)?;
         }
         FheEvalOperand::VerifiedInput { .. } => {
             // No remaining account: the attestation is carried inline and verified in-frame.
@@ -1635,11 +1574,8 @@ fn validate_lowered_encrypted_operand(
 
 fn validate_lowered_output(output: &FheEvalOutput, used_accounts: &mut [bool]) -> Result<()> {
     match output {
-        FheEvalOutput::Transient => {}
-        FheEvalOutput::TransientSession { session_index, .. } => {
-            mark_lowered_account(used_accounts, *session_index)?;
-        }
-        FheEvalOutput::Durable {
+        FheEvalOutput::AllowedLocal => {}
+        FheEvalOutput::AllowedDurable {
             output_acl_record_index,
             output_app_account_authority_index,
             ..
@@ -1779,8 +1715,6 @@ where
                 .map(Some)
                 .ok_or(EvalBuildError::InvalidTransientReference)
         }
-        #[cfg(feature = "raw-host-api")]
-        OperandKind::TransientSession(session) => Ok(Some(handle_fhe_type(session.handle))),
         OperandKind::Scalar(_) => Ok(None),
     }
 }
@@ -1881,7 +1815,7 @@ fn lower_operand(
                     )
                 })
                 .transpose()?;
-            Ok(FheEvalOperand::Durable {
+            Ok(FheEvalOperand::AllowedDurable {
                 handle: durable.handle,
                 acl_record_index,
                 permission_index,
@@ -1898,17 +1832,8 @@ fn lower_operand(
             if producer_index as usize >= produced_count {
                 return Err(EvalBuildError::InvalidTransientReference);
             }
-            Ok(FheEvalOperand::Transient { producer_index })
+            Ok(FheEvalOperand::AllowedLocal { producer_index })
         }
-        #[cfg(feature = "raw-host-api")]
-        OperandKind::TransientSession(session) => Ok(FheEvalOperand::TransientSession {
-            handle: session.handle,
-            session_index: account_index(
-                remaining_accounts,
-                EvalAccountMeta::writable(session.session, EvalAccountPurpose::TransientSession),
-            )?,
-            capability_index: session.capability_index,
-        }),
         OperandKind::Scalar(value) => Ok(FheEvalOperand::Scalar(value)),
     }
 }
@@ -1919,18 +1844,7 @@ fn lower_output(
     output: Output,
 ) -> Result<FheEvalOutput> {
     match output.0 {
-        OutputKind::Transient => Ok(FheEvalOutput::Transient),
-        #[cfg(feature = "raw-host-api")]
-        OutputKind::TransientSession {
-            session,
-            capability,
-        } => Ok(FheEvalOutput::TransientSession {
-            session_index: account_index(
-                remaining_accounts,
-                EvalAccountMeta::writable(session, EvalAccountPurpose::TransientSession),
-            )?,
-            capability,
-        }),
+        OutputKind::Transient => Ok(FheEvalOutput::AllowedLocal),
         OutputKind::Durable(output) => {
             let birth = output.birth()?;
             let output_acl_record_index = account_index(
@@ -1949,7 +1863,7 @@ fn lower_output(
                         ),
                     )?)
                 };
-            Ok(FheEvalOutput::Durable {
+            Ok(FheEvalOutput::AllowedDurable {
                 output_acl_record_index,
                 output_app_account_authority_index,
                 output_nonce_key: birth.nonce_key(),
@@ -1989,14 +1903,11 @@ fn account_index(
 pub mod advanced {
     use super::{
         handle_fhe_type, AccessPolicy, AccessSubject, Encrypted, EvalBuildError, EvalBuilder,
-        FheRandom, FheTyped, Operand, Output, OutputKind, PermissionRecord, Result,
+        FheRandom, FheTyped, Operand, Output, PermissionRecord, Result,
     };
     use anchor_lang::prelude::Pubkey;
 
-    pub use zama_host::{
-        AclSubjectEntry, FheEvalArgs, FheEvalOperand, FheEvalOutput, FheEvalStep,
-        TransientCapabilityGrant,
-    };
+    pub use zama_host::{AclSubjectEntry, FheEvalArgs, FheEvalOperand, FheEvalOutput, FheEvalStep};
 
     pub fn access_policy_from_subjects(subjects: Vec<AclSubjectEntry>) -> Result<AccessPolicy> {
         AccessPolicy::from_subjects(subjects.into_iter().map(AccessSubject::from_host).collect())
@@ -2026,31 +1937,6 @@ pub mod advanced {
         Ok(value)
     }
 
-    pub fn transient_session_output(
-        session: Pubkey,
-        capability: TransientCapabilityGrant,
-    ) -> Output {
-        Output(OutputKind::TransientSession {
-            session,
-            capability,
-        })
-    }
-
-    pub fn transient_session_operand<T: FheTyped>(
-        handle: [u8; 32],
-        session: Pubkey,
-        capability_index: u16,
-    ) -> Result<Encrypted<T>> {
-        if handle_fhe_type(handle) != T::FHE_TYPE.byte() {
-            return Err(EvalBuildError::UnsupportedFheType);
-        }
-        Ok(Encrypted::from_operand(Operand::transient_session(
-            handle,
-            session,
-            capability_index,
-        )))
-    }
-
     pub fn trivial_encrypt<T: FheTyped>(
         builder: &mut EvalBuilder,
         plaintext: [u8; 32],
@@ -2073,7 +1959,6 @@ pub struct EvalCpiAccounts<'info> {
     pub app_account_authority: AccountInfo<'info>,
     pub host_config: AccountInfo<'info>,
     pub system_program: AccountInfo<'info>,
-    pub instructions_sysvar: Option<AccountInfo<'info>>,
     pub event_authority: AccountInfo<'info>,
     pub program: AccountInfo<'info>,
 }
@@ -2222,16 +2107,12 @@ where
     if accounts.app_account_authority.key() != plan.app_authority.pubkey() {
         return Err(anchor_lang::error::ErrorCode::ConstraintAddress.into());
     }
-    if plan.requires_instructions_sysvar() && accounts.instructions_sysvar.is_none() {
-        return Err(anchor_lang::error::ErrorCode::AccountNotEnoughKeys.into());
-    }
     let fixed_accounts = zama_host::cpi::accounts::FheEval {
         payer: accounts.payer,
         compute_subject: accounts.compute_subject,
         app_account_authority: accounts.app_account_authority,
         host_config: accounts.host_config,
         system_program: accounts.system_program,
-        instructions_sysvar: accounts.instructions_sysvar,
         event_authority: accounts.event_authority,
         program: accounts.program,
     };
@@ -2373,7 +2254,6 @@ mod tests {
             app_account_authority: account_info(app_authority, false),
             host_config: account_info(Pubkey::new_unique(), false),
             system_program: account_info(Pubkey::new_unique(), false),
-            instructions_sysvar: None,
             event_authority: account_info(Pubkey::new_unique(), false),
             program: account_info(Pubkey::new_unique(), false),
         }
@@ -2410,9 +2290,9 @@ mod tests {
         assert_eq!(plan.args.steps.len(), 2);
         match &plan.args.steps[1] {
             FheEvalStep::Binary { lhs, output, .. } => {
-                assert_eq!(*lhs, FheEvalOperand::Transient { producer_index: 0 });
+                assert_eq!(*lhs, FheEvalOperand::AllowedLocal { producer_index: 0 });
                 match output {
-                    FheEvalOutput::Durable {
+                    FheEvalOutput::AllowedDurable {
                         output_app_account_authority_index,
                         ..
                     } => {
@@ -2460,14 +2340,14 @@ mod tests {
         let mut builder = EvalBuilder::new(context_id(9), app_authority(primary_authority));
         builder.steps.push(FheEvalStep::Binary {
             op: FheBinaryOpCode::Add,
-            lhs: FheEvalOperand::Durable {
+            lhs: FheEvalOperand::AllowedDurable {
                 handle: balance_handle(1),
                 acl_record_index: 0,
                 permission_index: None,
             },
             rhs: FheEvalOperand::Scalar(Scalar::<Uint<64>>::u64(1).bytes()),
             output_fhe_type: FheType::UINT64.byte(),
-            output: FheEvalOutput::Transient,
+            output: FheEvalOutput::AllowedLocal,
         });
         builder.produced_types.push(FheType::UINT64.byte());
 
@@ -2484,14 +2364,14 @@ mod tests {
         builder.steps.push(FheEvalStep::TrivialEncrypt {
             plaintext: Scalar::<Uint<64>>::u64(1).bytes(),
             fhe_type: FheType::UINT64.byte(),
-            output: FheEvalOutput::Transient,
+            output: FheEvalOutput::AllowedLocal,
         });
         builder.steps.push(FheEvalStep::Binary {
             op: FheBinaryOpCode::Add,
-            lhs: FheEvalOperand::Transient { producer_index: 1 },
+            lhs: FheEvalOperand::AllowedLocal { producer_index: 1 },
             rhs: FheEvalOperand::Scalar(Scalar::<Uint<64>>::u64(1).bytes()),
             output_fhe_type: FheType::UINT64.byte(),
-            output: FheEvalOutput::Transient,
+            output: FheEvalOutput::AllowedLocal,
         });
         builder.produced_types = vec![FheType::UINT64.byte(), FheType::UINT64.byte()];
 
@@ -2651,7 +2531,7 @@ mod tests {
         match &plan.args.steps[0] {
             FheEvalStep::Binary { op, output, .. } => {
                 assert_eq!(*op, FheBinaryOpCode::Ge);
-                assert_eq!(*output, FheEvalOutput::Transient);
+                assert_eq!(*output, FheEvalOutput::AllowedLocal);
             }
             other => panic!("unexpected step: {other:?}"),
         }
@@ -2663,10 +2543,10 @@ mod tests {
                 output,
                 ..
             } => {
-                assert_eq!(*control, FheEvalOperand::Transient { producer_index: 0 });
-                assert_eq!(*if_true, FheEvalOperand::Transient { producer_index: 1 });
+                assert_eq!(*control, FheEvalOperand::AllowedLocal { producer_index: 0 });
+                assert_eq!(*if_true, FheEvalOperand::AllowedLocal { producer_index: 1 });
                 match if_false {
-                    FheEvalOperand::Durable {
+                    FheEvalOperand::AllowedDurable {
                         acl_record_index, ..
                     } => {
                         assert_eq!(*acl_record_index, 0)
@@ -2674,7 +2554,7 @@ mod tests {
                     other => panic!("unexpected if_false: {other:?}"),
                 }
                 match output {
-                    FheEvalOutput::Durable {
+                    FheEvalOutput::AllowedDurable {
                         output_acl_record_index,
                         ..
                     } => {
@@ -2793,7 +2673,7 @@ mod tests {
         );
         match &plan.args.steps[0] {
             FheEvalStep::Binary { output, .. } => match output {
-                FheEvalOutput::Durable {
+                FheEvalOutput::AllowedDurable {
                     output_acl_record_index,
                     output_app_account_authority_index,
                     ..
@@ -3328,7 +3208,7 @@ mod tests {
         match &plan.args.steps[0] {
             FheEvalStep::TrivialEncrypt {
                 output:
-                    FheEvalOutput::Durable {
+                    FheEvalOutput::AllowedDurable {
                         output_acl_record_index,
                         output_nonce_key,
                         output_nonce_sequence,
