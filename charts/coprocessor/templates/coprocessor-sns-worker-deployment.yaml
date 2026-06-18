@@ -69,6 +69,16 @@ spec:
             {{- if not (has "bucket-name-ct128" $disabled) }}
             - --bucket-name-ct128=$(S3_BUCKET_NAME)
             {{- end }}
+            {{- if not (has "signer-type" $disabled) }}
+            {{- if .Values.snsWorker.wallet.awsKms.enabled }}
+            - --signer-type=aws-kms
+            {{- else }}
+            - --signer-type=private-key
+            {{- end }}
+            {{- end }}
+            {{- if and (not .Values.snsWorker.wallet.awsKms.enabled) (not (has "private-key" $disabled)) }}
+            - --private-key=$(TX_SENDER_PRIVATE_KEY)
+            {{- end }}
             {{- if not (has "metrics-addr" $disabled) }}
             - --metrics-addr=0.0.0.0:{{ .Values.snsWorker.ports.metrics }}
             {{- end }}
@@ -151,6 +161,22 @@ spec:
               valueFrom:
                 {{- toYaml .valueFrom | nindent 16 }}
               {{- end }}
+            {{- end }}
+            {{- if .Values.snsWorker.wallet.awsKms.enabled }}
+            - name: AWS_KEY_ID
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ .Values.snsWorker.wallet.awsKms.configmap.name | quote }}
+                  key: {{ .Values.snsWorker.wallet.awsKms.configmap.key | quote }}
+            {{- else if .Values.snsWorker.wallet.secret.value }}
+            - name: TX_SENDER_PRIVATE_KEY
+              value: {{ .Values.snsWorker.wallet.secret.value | quote }}
+            {{- else }}
+            - name: TX_SENDER_PRIVATE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.snsWorker.wallet.secret.name | quote }}
+                  key: {{ .Values.snsWorker.wallet.secret.key | quote }}
             {{- end }}
           {{- if default .Values.commonConfig.tracing.enabled .Values.snsWorker.tracing.enabled }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
