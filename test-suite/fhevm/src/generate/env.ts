@@ -211,6 +211,7 @@ const applyDiscoveryEnv = (
     APP_GATEWAY__CONTRACTS__INPUT_VERIFICATION_ADDRESS: state.discovery.gateway.INPUT_VERIFICATION_ADDRESS,
   });
   updateContracts(envs["test-suite"], {
+    GATEWAY_CONFIG_ADDRESS: state.discovery.gateway.GATEWAY_CONFIG_ADDRESS,
     DECRYPTION_ADDRESS: state.discovery.gateway.DECRYPTION_ADDRESS,
     INPUT_VERIFICATION_ADDRESS: state.discovery.gateway.INPUT_VERIFICATION_ADDRESS,
     KMS_VERIFIER_CONTRACT_ADDRESS: primaryHost.KMS_VERIFIER_CONTRACT_ADDRESS,
@@ -379,6 +380,9 @@ export const renderEnvMaps = async (
   envs["host-sc"].RPC_URL = `http://${defaultChain.node}:${defaultChain.rpcPort}`;
   envs["host-sc"].HOST_ADDRESS_DIR = defaultChain.key;
   envs["host-sc"].HOST_SC_DEPLOY_KMS_GENERATION_ARGS = hostDeployKmsGenerationArgs(plan, true);
+  // Canonical host seeds ProtocolConfig fresh; non-canonical chains get this patched at deploy time
+  // by the up flow (see `canonicalProtocolConfigSeedingArgs`) once the canonical address exists.
+  envs["host-sc"].HOST_SC_DEPLOY_PROTOCOL_CONFIG_ARGS = "";
   envs["coprocessor"].RPC_HTTP_URL = `http://${defaultChain.node}:${defaultChain.rpcPort}`;
   envs["coprocessor"].RPC_WS_URL = `ws://${defaultChain.node}:${defaultChain.rpcPort}`;
   envs["kms-connector"].KMS_CONNECTOR_ETHEREUM_URL = `http://${defaultChain.node}:${defaultChain.rpcPort}`;
@@ -404,6 +408,10 @@ export const renderEnvMaps = async (
   }
 
   const instanceEnvs = await buildInstanceEnvs(envs, plan, deriveWallet);
+  envs["test-suite"].GATEWAY_DEPLOYER_PRIVATE_KEY = envs["gateway-sc"].DEPLOYER_PRIVATE_KEY;
+  envs["test-suite"].GATEWAY_PAUSER_PRIVATE_KEY = envs["gateway-sc"].PAUSER_PRIVATE_KEY;
+  envs["test-suite"].PRIORITY_COPROCESSOR_TX_SENDER_ADDRESS =
+    envs["gateway-sc"].COPROCESSOR_TX_SENDER_ADDRESS_0;
   Object.assign(instanceEnvs, buildKmsConnectorInstanceEnvs(envs, kmsParties));
 
   // Uniform per-chain gateway-sc indexed vars for ALL host chains.
