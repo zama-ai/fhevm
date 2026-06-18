@@ -65,6 +65,7 @@ import {
   assertIsRelayerPostResponse202Queued,
 } from './guards/RelayerResponseQueued.js';
 import { assertIsRelayerUserDecryptSucceeded } from './guards/RelayerUserDecryptSucceeded.js';
+import { readErrorMessage } from './readErrorMessage.js';
 
 /*
     Actions:
@@ -490,6 +491,15 @@ export class RelayerAsyncRequest {
 
       // At this stage: `terminated` is guaranteed to be `false`.
 
+      // 403 is not part of the typed relayer contract: it is emitted by an
+      // edge proxy (Cloudflare/Kong), typically on a missing/invalid
+      // `x-api-key`. Intercept it before the typed switch, read the JSON body,
+      // and surface the edge message instead of discarding it.
+      if (response.status === 403) {
+        const { message } = await readErrorMessage(response);
+        this._throwUnexpectedStatusError(403, message);
+      }
+
       const responseStatus: RelayerPostResponseStatus = response.status as RelayerPostResponseStatus;
 
       switch (responseStatus) {
@@ -564,7 +574,10 @@ export class RelayerAsyncRequest {
         // RelayerApiError401
         // falls through
         case 401: {
-          this._throwUnauthorizedError(responseStatus);
+          // Surface the message the origin (Kong/relayer) actually sent for a
+          // missing/invalid `x-api-key`, falling back to the canned string.
+          const { message } = await readErrorMessage(response);
+          this._throwUnauthorizedError(responseStatus, message);
         }
         // RelayerResponseFailed
         // RelayerApiError429
@@ -723,6 +736,15 @@ export class RelayerAsyncRequest {
       // ======================= End Fetch Retry ===============================
 
       // At this stage: `terminated` is guaranteed to be `false`.
+
+      // 403 is not part of the typed relayer contract: it is emitted by an
+      // edge proxy (Cloudflare/Kong), typically on a missing/invalid
+      // `x-api-key`. Intercept it before the typed switch, read the JSON body,
+      // and surface the edge message instead of discarding it.
+      if (response.status === 403) {
+        const { message } = await readErrorMessage(response);
+        this._throwUnexpectedStatusError(403, message);
+      }
 
       const responseStatus: RelayerGetResponseStatus = response.status as RelayerGetResponseStatus;
 
@@ -961,7 +983,10 @@ export class RelayerAsyncRequest {
         }
         // falls through
         case 401: {
-          this._throwUnauthorizedError(responseStatus);
+          // Surface the message the origin (Kong/relayer) actually sent for a
+          // missing/invalid `x-api-key`, falling back to the canned string.
+          const { message } = await readErrorMessage(response);
+          this._throwUnauthorizedError(responseStatus, message);
         }
         // falls through
         case 404: {
@@ -1601,15 +1626,46 @@ export class RelayerAsyncRequest {
 
   /**
    * Throws an unauthorized error for 401 responses.
+   *
+   * The `message` surfaced from the response body (the relayer/edge JSON error)
+   * is used when present; otherwise the canned string is kept. The
+   * `'unauthorized'` label and error shape are preserved so downstream
+   * consumers reading `relayerApiError.message`/`.label` keep working.
+   *
+   * @param status - The 401 status.
+   * @param surfacedMessage - The message read from the response body, if any.
    * @throws {RelayerResponseApiError} Always throws with 'unauthorized' label.
    */
-  private _throwUnauthorizedError(status: Extract<RelayerFailureStatus, 401>): never {
+  private _throwUnauthorizedError(status: Extract<RelayerFailureStatus, 401>, surfacedMessage?: string): never {
     this._throwRelayerResponseApiError({
       status,
       relayerApiError: {
         label: 'unauthorized',
-        message: 'Unauthorized, missing or invalid Zama Fhevm API Key.',
+        message: surfacedMessage ?? 'Unauthorized, missing or invalid Zama Fhevm API Key.',
       },
+    });
+  }
+
+  /**
+   * Throws for an HTTP status that is not part of the typed relayer contract —
+   * e.g. a 403 emitted by an edge proxy (Cloudflare/Kong). The `message`
+   * surfaced from the JSON body is appended to the error when present.
+   *
+   * @param status - The unexpected HTTP status.
+   * @param surfacedMessage - The message read from the response body, if any.
+   * @throws {RelayerResponseStatusError} Always throws.
+   */
+  private _throwUnexpectedStatusError(status: number, surfacedMessage?: string): never {
+    throw new RelayerResponseStatusError({
+      fetchMethod: this._fetchMethod as unknown as RelayerFetchMethod,
+      status,
+      url: this._url,
+      ...(this._jobId !== undefined ? { jobId: this._jobId } : {}),
+      operation: this._relayerOperation,
+      elapsed: this._elapsed,
+      retryCount: this._retryCount,
+      state: { ...this._state },
+      ...(surfacedMessage !== undefined ? { responseMessage: surfacedMessage } : {}),
     });
   }
 
