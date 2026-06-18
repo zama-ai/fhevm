@@ -424,7 +424,7 @@ fn trivial_encrypt_eval(
         steps: vec![zama_host::FheEvalStep::TrivialEncrypt {
             plaintext,
             fhe_type,
-            output: zama_host::FheEvalOutput::Durable {
+            output: zama_host::FheEvalOutput::AllowedDurable {
                 output_acl_record_index: 0,
                 output_app_account_authority_index: None,
                 output_nonce_key,
@@ -448,7 +448,6 @@ fn trivial_encrypt_eval(
             app_account_authority: payer.pubkey(),
             host_config,
             system_program: system_program::ID,
-            instructions_sysvar: None,
             event_authority: zama_event_authority,
             program: zama_host::ID,
         })
@@ -574,7 +573,7 @@ fn fhe_eval_verified_input_add(
             lhs: zama_host::FheEvalOperand::VerifiedInput { attestation },
             rhs: zama_host::FheEvalOperand::Scalar(scalar),
             output_fhe_type: fhe_type,
-            output: zama_host::FheEvalOutput::Durable {
+            output: zama_host::FheEvalOutput::AllowedDurable {
                 output_acl_record_index: 0,
                 output_app_account_authority_index: None,
                 output_nonce_key,
@@ -598,7 +597,6 @@ fn fhe_eval_verified_input_add(
             app_account_authority: payer.pubkey(),
             host_config,
             system_program: system_program::ID,
-            instructions_sysvar: None,
             event_authority: zama_event_authority,
             program: zama_host::ID,
         })
