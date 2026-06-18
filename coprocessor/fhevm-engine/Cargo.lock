@@ -1958,6 +1958,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 
 [[package]]
+name = "autotools"
+version = "0.2.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ef941527c41b0fc0dd48511a8154cd5fc7e29200a0ff8b7203c5d777dbc795cf"
+dependencies = [
+ "cc",
+]
+
+[[package]]
 name = "aws-config"
 version = "1.8.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5226,6 +5235,7 @@ version = "0.7.0"
 dependencies = [
  "alloy",
  "alloy-primitives 1.5.2",
+ "anchor-lang",
  "anyhow",
  "async-trait",
  "aws-config",
@@ -5262,11 +5272,14 @@ dependencies = [
  "time",
  "tokio",
  "tokio-util",
+ "tonic",
  "tracing",
  "tracing-subscriber",
  "tracing-test",
  "union-find",
  "url",
+ "yellowstone-grpc-proto",
+ "zama-host",
 ]
 
 [[package]]
@@ -7331,6 +7344,15 @@ dependencies = [
  "once_cell",
  "protobuf-support",
  "thiserror 1.0.69",
+]
+
+[[package]]
+name = "protobuf-src"
+version = "1.1.0+21.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c7ac8852baeb3cc6fb83b93646fb93c0ffe5d14bf138c945ceb4b9948ee0e3c1"
+dependencies = [
+ "autotools",
 ]
 
 [[package]]
@@ -12524,6 +12546,7 @@ dependencies = [
  "axum",
  "base64 0.22.1",
  "bytes",
+ "flate2",
  "h2 0.4.12",
  "http 1.3.1",
  "http-body 1.0.1",
@@ -12541,6 +12564,7 @@ dependencies = [
  "tower-layer",
  "tower-service",
  "tracing",
+ "zstd",
 ]
 
 [[package]]
@@ -13916,6 +13940,19 @@ name = "yansi"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cfe53a6657fd280eaa890a3bc59152892ffa3e30101319d168b781ed6529b049"
+
+[[package]]
+name = "yellowstone-grpc-proto"
+version = "5.0.0+solana.2.1.21"
+source = "git+https://github.com/rpcpool/yellowstone-grpc?tag=v5.0.1%2Bsolana.2.1.21#eeaab8a1c40d5779fff012be87e0e647e440ba20"
+dependencies = [
+ "anyhow",
+ "prost",
+ "prost-types",
+ "protobuf-src",
+ "tonic",
+ "tonic-build",
+]
 
 [[package]]
 name = "yoke"

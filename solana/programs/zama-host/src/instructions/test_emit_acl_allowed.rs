@@ -31,6 +31,7 @@ pub fn test_emit_acl_allowed(
 ) -> Result<()> {
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
     assert_test_shim_authority(&ctx.accounts.host_config, ctx.accounts.test_authority.key())?;
+    #[cfg(feature = "emit-events")]
     emit_cpi!(AclAllowedEvent {
         version: EVENT_VERSION,
         handle,

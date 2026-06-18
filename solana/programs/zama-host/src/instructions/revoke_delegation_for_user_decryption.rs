@@ -68,6 +68,7 @@ pub fn revoke_delegation_for_user_decryption(
     ctx.accounts.delegation_record.expiration_slot = 0;
     ctx.accounts.delegation_record.delegation_counter = delegation_counter;
     ctx.accounts.delegation_record.last_update_slot = clock.slot;
+    #[cfg(feature = "emit-events")]
     emit!(UserDecryptionDelegationUpdatedEvent {
         version: EVENT_VERSION,
         delegator: ctx.accounts.delegation_record.delegator,

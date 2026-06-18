@@ -462,6 +462,9 @@ fn rust_type(idl_type: &Value) -> String {
             }
             return format!("Vec<[u8; {len}]>");
         }
+        if let Some(defined) = vec_inner["defined"]["name"].as_str() {
+            return format!("Vec<{defined}>");
+        }
         panic!("unsupported IDL vec inner type {vec_inner}");
     }
     if let Some(defined) = idl_type["defined"]["name"].as_str() {
@@ -500,6 +503,9 @@ fn read_expr(idl_type: &Value) -> String {
                 panic!("unsupported IDL vec array element type {element}");
             }
             return format!("cursor.read_vec_array::<{len}>()");
+        }
+        if let Some(defined) = vec_inner["defined"]["name"].as_str() {
+            return format!("cursor.read_vec(read_{})", snake_case(defined));
         }
         panic!("unsupported IDL vec inner type {vec_inner}");
     }
@@ -606,10 +612,342 @@ fn build_contracts() {
     println!("Ran npx hardhat compile successfully");
 }
 
+/// zama-host instructions whose raw (discriminator + borsh args) data we decode
+/// off-chain to reconstruct events without relying on `emit_cpi!`/`emit!`. Curated
+/// so the generator never trips over arg types used only by unrelated instructions;
+/// a listed instruction with an unexpected arg type fails the build loudly.
+const ZAMA_HOST_INSTRUCTION_ALLOWLIST: &[&str] = &[
+    "trivial_encrypt_and_bind",
+    "fhe_binary_op",
+    "fhe_binary_op_and_bind_output",
+    "fhe_ternary_op_and_bind_output",
+    "fhe_rand_and_bind",
+    "fhe_rand_bounded_and_bind",
+    "allow_for_decryption",
+    "allow_acl_subjects",
+    "commit_handle_material",
+];
+
+fn generate_zama_host_instructions() {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let idl_path = manifest_dir.join("idl").join("zama_host.json");
+    println!("cargo:rerun-if-changed={}", idl_path.display());
+    let idl = fs::read_to_string(&idl_path).unwrap_or_else(|err| {
+        panic!("failed to read {}: {err}", idl_path.display())
+    });
+    let idl: Value = serde_json::from_str(&idl).unwrap_or_else(|err| {
+        panic!("failed to parse {}: {err}", idl_path.display())
+    });
+
+    let types = idl["types"]
+        .as_array()
+        .expect("Anchor IDL must contain types")
+        .iter()
+        .map(|ty| (ty["name"].as_str().expect("IDL type must have a name"), ty))
+        .collect::<HashMap<_, _>>();
+
+    let instructions = idl["instructions"]
+        .as_array()
+        .expect("Anchor IDL must contain instructions")
+        .iter()
+        .filter(|ins| {
+            ZAMA_HOST_INSTRUCTION_ALLOWLIST
+                .contains(&ins["name"].as_str().unwrap_or_default())
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        instructions.len(),
+        ZAMA_HOST_INSTRUCTION_ALLOWLIST.len(),
+        "every allowlisted zama-host instruction must exist in the IDL"
+    );
+
+    // Defined enums + structs referenced by the allowlisted args (in first-seen order).
+    let mut enums = Vec::<&str>::new();
+    let mut structs = Vec::<&str>::new();
+    for ins in &instructions {
+        for arg in ins["args"].as_array().expect("instruction args") {
+            collect_defined_types(&types, &arg["type"], &mut enums, &mut structs);
+        }
+    }
+
+    let mut output = String::from(
+        "// Generated from `host-listener/idl/zama_host.json` by `host-listener/build.rs`.\n// Do not edit by hand.\n\n",
+    );
+
+    for name in &enums {
+        output.push_str("#[derive(Clone, Copy, Debug, PartialEq, Eq)]\npub enum ");
+        output.push_str(name);
+        output.push_str(" {\n");
+        for variant in enum_variants(&types, name) {
+            output.push_str("    ");
+            output.push_str(variant);
+            output.push_str(",\n");
+        }
+        output.push_str("}\n\n");
+    }
+
+    for name in &structs {
+        output.push_str("#[derive(Clone, Debug, PartialEq, Eq)]\npub struct ");
+        output.push_str(name);
+        output.push_str(" {\n");
+        for field in fields_for_event(&types, name) {
+            output.push_str("    pub ");
+            output.push_str(field["name"].as_str().expect("field name"));
+            output.push_str(": ");
+            output.push_str(&rust_type(&field["type"]));
+            output.push_str(",\n");
+        }
+        output.push_str("}\n\n");
+    }
+
+    for ins in &instructions {
+        let pascal = pascal_case(ins["name"].as_str().unwrap());
+        output.push_str("#[derive(Clone, Debug, PartialEq, Eq)]\npub struct ");
+        output.push_str(&pascal);
+        output.push_str("Args {\n");
+        for arg in ins["args"].as_array().unwrap() {
+            output.push_str("    pub ");
+            output.push_str(arg["name"].as_str().expect("arg name"));
+            output.push_str(": ");
+            output.push_str(&rust_type(&arg["type"]));
+            output.push_str(",\n");
+        }
+        output.push_str("}\n\n");
+    }
+
+    output.push_str("#[derive(Clone, Debug, PartialEq, Eq)]\npub enum ZamaHostInstruction {\n");
+    for ins in &instructions {
+        let pascal = pascal_case(ins["name"].as_str().unwrap());
+        output.push_str("    ");
+        output.push_str(&pascal);
+        output.push('(');
+        output.push_str(&pascal);
+        output.push_str("Args),\n");
+    }
+    output.push_str("}\n\n");
+
+    output.push_str(
+        "pub fn decode_zama_host_instruction(data: &[u8]) -> Option<ZamaHostInstruction> {\n    if data.len() < 8 {\n        return None;\n    }\n    let (discriminator, payload) = data.split_at(8);\n\n",
+    );
+    for ins in &instructions {
+        let name = ins["name"].as_str().unwrap();
+        let pascal = pascal_case(name);
+        let discriminator = ins["discriminator"]
+            .as_array()
+            .expect("instruction must contain discriminator");
+        output.push_str("    if discriminator == ");
+        output.push_str(&byte_array(discriminator));
+        output.push_str(" {\n        return decode_");
+        output.push_str(name);
+        output.push_str("_args(payload).map(ZamaHostInstruction::");
+        output.push_str(&pascal);
+        output.push_str(");\n    }\n");
+    }
+    output.push_str("\n    None\n}\n\n");
+
+    for ins in &instructions {
+        let name = ins["name"].as_str().unwrap();
+        let pascal = pascal_case(name);
+        output.push_str("fn decode_");
+        output.push_str(name);
+        output.push_str("_args(payload: &[u8]) -> Option<");
+        output.push_str(&pascal);
+        output.push_str("Args> {\n    let mut cursor = Cursor::new(payload);\n    let args = ");
+        output.push_str(&pascal);
+        output.push_str("Args {\n");
+        for arg in ins["args"].as_array().unwrap() {
+            output.push_str("        ");
+            output.push_str(arg["name"].as_str().unwrap());
+            output.push_str(": ");
+            output.push_str(&read_expr(&arg["type"]));
+            output.push_str("?,\n");
+        }
+        output.push_str("    };\n    cursor.is_finished().then_some(args)\n}\n\n");
+    }
+
+    for name in &enums {
+        output.push_str("fn read_");
+        output.push_str(&snake_case(name));
+        output.push_str("(cursor: &mut Cursor<'_>) -> Option<");
+        output.push_str(name);
+        output.push_str("> {\n    match cursor.read_u8()? {\n");
+        for (index, variant) in enum_variants(&types, name).iter().enumerate() {
+            output.push_str("        ");
+            output.push_str(&index.to_string());
+            output.push_str(" => Some(");
+            output.push_str(name);
+            output.push_str("::");
+            output.push_str(variant);
+            output.push_str("),\n");
+        }
+        output.push_str("        _ => None,\n    }\n}\n\n");
+    }
+
+    for name in &structs {
+        output.push_str("fn read_");
+        output.push_str(&snake_case(name));
+        output.push_str("(cursor: &mut Cursor<'_>) -> Option<");
+        output.push_str(name);
+        output.push_str("> {\n    Some(");
+        output.push_str(name);
+        output.push_str(" {\n");
+        for field in fields_for_event(&types, name) {
+            output.push_str("        ");
+            output.push_str(field["name"].as_str().unwrap());
+            output.push_str(": ");
+            output.push_str(&read_expr(&field["type"]));
+            output.push_str("?,\n");
+        }
+        output.push_str("    })\n}\n\n");
+    }
+
+    output.push_str(
+        r#"struct Cursor<'a> {
+    bytes: &'a [u8],
+    offset: usize,
+}
+
+impl<'a> Cursor<'a> {
+    fn new(bytes: &'a [u8]) -> Self {
+        Self { bytes, offset: 0 }
+    }
+
+    fn is_finished(&self) -> bool {
+        self.offset == self.bytes.len()
+    }
+
+    fn read_u8(&mut self) -> Option<u8> {
+        let byte = *self.bytes.get(self.offset)?;
+        self.offset += 1;
+        Some(byte)
+    }
+
+    fn read_bool(&mut self) -> Option<bool> {
+        match self.read_u8()? {
+            0 => Some(false),
+            1 => Some(true),
+            _ => None,
+        }
+    }
+
+    fn read_u32(&mut self) -> Option<u32> {
+        Some(u32::from_le_bytes(self.read_array::<4>()?))
+    }
+
+    fn read_u64(&mut self) -> Option<u64> {
+        Some(u64::from_le_bytes(self.read_array::<8>()?))
+    }
+
+    fn read_array<const N: usize>(&mut self) -> Option<[u8; N]> {
+        let end = self.offset.checked_add(N)?;
+        let bytes = self.bytes.get(self.offset..end)?;
+        self.offset = end;
+        bytes.try_into().ok()
+    }
+
+    // Borsh `Vec<T>`: u32 little-endian length, then `len` elements decoded by `f`.
+    fn read_vec<T>(
+        &mut self,
+        mut f: impl FnMut(&mut Cursor<'a>) -> Option<T>,
+    ) -> Option<Vec<T>> {
+        let len = self.read_u32()? as usize;
+        let mut out = Vec::with_capacity(len);
+        for _ in 0..len {
+            out.push(f(self)?);
+        }
+        Some(out)
+    }
+}
+"#,
+    );
+
+    let out_path =
+        Path::new(&env::var("OUT_DIR").expect("OUT_DIR must be set"))
+            .join("zama_host_instructions.rs");
+    fs::write(&out_path, output).unwrap_or_else(|err| {
+        panic!("failed to write {}: {err}", out_path.display())
+    });
+}
+
+/// Collects defined enums and structs referenced by an IDL type (recursing into
+/// `vec` inners and struct fields), classifying each by its IDL `kind`.
+fn collect_defined_types<'a>(
+    types: &'a HashMap<&str, &'a Value>,
+    idl_type: &'a Value,
+    enums: &mut Vec<&'a str>,
+    structs: &mut Vec<&'a str>,
+) {
+    if let Some(vec_inner) = idl_type.get("vec") {
+        collect_defined_types(types, vec_inner, enums, structs);
+        return;
+    }
+    if let Some(defined) = idl_type["defined"]["name"].as_str() {
+        let ty = types
+            .get(defined)
+            .unwrap_or_else(|| panic!("IDL must define {defined}"));
+        match ty["type"]["kind"].as_str() {
+            Some("enum") => {
+                if !enums.contains(&defined) {
+                    enums.push(defined);
+                }
+            }
+            Some("struct") => {
+                if !structs.contains(&defined) {
+                    structs.push(defined);
+                    for field in fields_for_event(types, defined) {
+                        collect_defined_types(
+                            types,
+                            &field["type"],
+                            enums,
+                            structs,
+                        );
+                    }
+                }
+            }
+            other => panic!("unsupported IDL defined kind {other:?} for {defined}"),
+        }
+    }
+}
+
+fn enum_variants<'a>(
+    types: &'a HashMap<&str, &'a Value>,
+    name: &str,
+) -> Vec<&'a str> {
+    types[name]["type"]["variants"]
+        .as_array()
+        .unwrap_or_else(|| panic!("IDL type {name} must be an enum"))
+        .iter()
+        .map(|variant| {
+            if variant.get("fields").is_some() {
+                panic!("enum {name} must use fieldless variants")
+            }
+            variant["name"].as_str().expect("enum variant must have a name")
+        })
+        .collect()
+}
+
+/// `trivial_encrypt_and_bind` -> `TrivialEncryptAndBind`.
+fn pascal_case(snake: &str) -> String {
+    let mut out = String::new();
+    let mut upper = true;
+    for ch in snake.chars() {
+        if ch == '_' {
+            upper = true;
+        } else if upper {
+            out.push(ch.to_ascii_uppercase());
+            upper = false;
+        } else {
+            out.push(ch);
+        }
+    }
+    out
+}
+
 fn main() {
     println!("cargo::warning=build.rs run ...");
     generate_zama_host_events();
     generate_confidential_token_events();
+    generate_zama_host_instructions();
     generate_solana_abi_schema_hashes();
     build_contracts();
     // build tests contracts

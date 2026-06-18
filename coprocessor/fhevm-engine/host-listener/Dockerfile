@@ -21,6 +21,9 @@ RUN cp host-contracts/.env.example host-contracts/.env && \
 FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:1.91.0 AS builder
 
 ARG CARGO_PROFILE=release
+# Extra cargo features for `-p host-listener` (empty for the mainline EVM build;
+# the Solana stack passes `solana-grpc` to compile the Yellowstone transport).
+ARG CARGO_FEATURES=""
 
 USER root
 
@@ -42,8 +45,11 @@ WORKDIR /app/coprocessor/fhevm-engine
 # to a non-mounted path (/tmp) during the same RUN instruction for COPY --from to work.
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/app/coprocessor/fhevm-engine/target,sharing=locked \
+    if echo "${CARGO_FEATURES}" | grep -q solana-grpc; then \
+        apt-get update && apt-get install -y --no-install-recommends cmake protobuf-compiler && rm -rf /var/lib/apt/lists/*; \
+    fi && \
     cargo fetch && \
-    SQLX_OFFLINE=true BUILD_ID=$(cat BUILD_ID) cargo build --profile=${CARGO_PROFILE} -p host-listener && \
+    SQLX_OFFLINE=true BUILD_ID=$(cat BUILD_ID) cargo build --profile=${CARGO_PROFILE} -p host-listener ${CARGO_FEATURES:+--features "${CARGO_FEATURES}"} && \
     cp target/${CARGO_PROFILE}/host_listener /tmp/host_listener && \
     cp target/${CARGO_PROFILE}/host_listener_poller /tmp/host_listener_poller && \
     cp target/${CARGO_PROFILE}/host_listener_consumer /tmp/host_listener_consumer && \

@@ -7,6 +7,8 @@ license.workspace = true
 [features]
 default = []
 test_bypass_key_extraction = []
+solana-grpc = ["dep:yellowstone-grpc-proto", "dep:tonic"]
+solana-reconstruct = ["dep:zama-host", "dep:anchor-lang"]
 
 [[bin]]
 path = "src/bin/main.rs"
@@ -73,6 +75,21 @@ solana-client = "3.0"
 solana-commitment-config = "3.1"
 solana-sdk = "3.0"
 solana-transaction-status = "3.0"
+
+# Yellowstone gRPC transport (optional; enabled via the `solana-grpc` feature).
+tonic = { workspace = true, optional = true }
+# Pinned to the SAME tag as the baked plugin so client proto == server proto.
+# default-features=false drops the `convert` feature, which would otherwise pull
+# solana-sdk 2.1.x and clash with the solana 3.0 crates above. We drive the tonic
+# GeyserClient directly (no yellowstone-grpc-client, which would re-enable convert).
+yellowstone-grpc-proto = { git = "https://github.com/rpcpool/yellowstone-grpc", tag = "v5.0.1+solana.2.1.21", default-features = false, features = ["tonic", "tonic-compression"], optional = true }
+
+# Phase 2 reconstruction (optional; enabled via the `solana-reconstruct` feature).
+# no-entrypoint builds the program crate as a host library so we can call its
+# deterministic computed_*_handle functions directly (parity, not a copy).
+zama-host = { path = "../../../solana/programs/zama-host", default-features = false, features = ["no-entrypoint"], optional = true }
+# AnchorDeserialize for reusing zama-host's FheEvalArgs to decode the fhe_eval plan.
+anchor-lang = { version = "1.0.2", optional = true }
 
 # local dependencies
 fhevm-engine-common = { path = "../fhevm-engine-common" }

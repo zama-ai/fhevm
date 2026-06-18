@@ -107,6 +107,7 @@ pub fn fhe_binary_op(
         ZamaHostError::ComputedHandleMismatch
     );
 
+    #[cfg(feature = "emit-events")]
     emit_cpi!(FheBinaryOpEvent {
         version: EVENT_VERSION,
         op,

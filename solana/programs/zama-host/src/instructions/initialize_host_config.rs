@@ -52,6 +52,7 @@ pub fn initialize_host_config(
     config.grant_deny_list_enabled = args.grant_deny_list_enabled;
     config.updated_slot = updated_slot;
     config.bump = ctx.bumps.host_config;
+    #[cfg(feature = "emit-events")]
     emit!(HostConfigInitializedEvent {
         version: EVENT_VERSION,
         config: config_key,

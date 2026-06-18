@@ -36,6 +36,7 @@ pub fn destroy_kms_context(ctx: Context<DestroyKmsContext>, context_id: u64) -> 
     );
     ctx.accounts.kms_context.destroyed = true;
 
+    #[cfg(feature = "emit-events")]
     emit!(KmsContextDestroyedEvent {
         version: EVENT_VERSION,
         kms_context_id: context_id,

@@ -57,6 +57,7 @@ pub fn allow_for_decryption(ctx: Context<AllowForDecryption>, handle: [u8; 32]) 
     if !ctx.accounts.acl_record.public_decrypt {
         let clock = Clock::get()?;
         ctx.accounts.acl_record.public_decrypt = true;
+        #[cfg(feature = "emit-events")]
         emit_cpi!(PublicDecryptAllowedEvent {
             version: EVENT_VERSION,
             acl_record: record_key,

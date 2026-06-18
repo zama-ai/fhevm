@@ -116,6 +116,7 @@ pub fn delegate_for_user_decryption(
             bump,
         },
     )?;
+    #[cfg(feature = "emit-events")]
     emit!(UserDecryptionDelegationUpdatedEvent {
         version: EVENT_VERSION,
         delegator,

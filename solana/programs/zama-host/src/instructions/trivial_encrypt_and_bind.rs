@@ -3,10 +3,9 @@
 use anchor_lang::prelude::*;
 
 use super::common::*;
-use crate::{
-    events::{AclAllowedEvent, TrivialEncryptEvent},
-    state::*,
-};
+#[cfg(feature = "emit-events")]
+use crate::events::{AclAllowedEvent, TrivialEncryptEvent};
+use crate::state::*;
 
 /// Accounts for trivial encryption plus initial ACL record birth.
 #[derive(Accounts)]
@@ -57,6 +56,8 @@ pub fn trivial_encrypt_and_bind(
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
     assert_not_paused(&ctx.accounts.host_config)?;
     assert_supported_fhe_type(fhe_type)?;
+    // Only used by the gated TrivialEncryptEvent emit below.
+    #[cfg(feature = "emit-events")]
     let subject = ctx.accounts.compute_subject.key();
     assert_output_acl_metadata(
         ctx.accounts.app_account_authority.key(),
@@ -97,6 +98,7 @@ pub fn trivial_encrypt_and_bind(
         ctx.bumps.output_acl_record,
     );
 
+    #[cfg(feature = "emit-events")]
     emit_cpi!(TrivialEncryptEvent {
         version: EVENT_VERSION,
         subject: subject.to_bytes(),
@@ -109,6 +111,7 @@ pub fn trivial_encrypt_and_bind(
         &ctx.accounts.output_acl_record,
     );
     for output_subject in output_subjects {
+        #[cfg(feature = "emit-events")]
         emit_cpi!(AclAllowedEvent {
             version: EVENT_VERSION,
             handle: result,

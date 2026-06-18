@@ -16,6 +16,7 @@ pub fn test_emit_fhe_rand(
 ) -> Result<()> {
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
     assert_test_shim_authority(&ctx.accounts.host_config, ctx.accounts.test_authority.key())?;
+    #[cfg(feature = "emit-events")]
     emit_cpi!(FheRandEvent {
         version: EVENT_VERSION,
         subject: subject.to_bytes(),

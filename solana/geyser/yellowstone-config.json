@@ -1,0 +1,28 @@
+{
+  "libpath": "/plugins/libyellowstone_grpc_geyser.so",
+  "log": { "level": "info" },
+  "tokio": { "worker_threads": 4, "affinity": null },
+  "grpc": {
+    "address": "0.0.0.0:10000",
+    "compression": { "accept": ["gzip", "zstd"], "send": ["gzip", "zstd"] },
+    "max_decoding_message_size": "4_194_304",
+    "snapshot_client_channel_capacity": "50_000_000",
+    "channel_capacity": "100_000",
+    "unary_concurrency_limit": 100,
+    "unary_disabled": false,
+    "replay_stored_slots": 0,
+    "filter_name_size_limit": 128,
+    "filter_names_size_limit": 4096,
+    "filter_names_cleanup_interval": "1s",
+    "filter_limits": {
+      "accounts": { "max": 1, "any": false, "account_max": 10, "account_reject": ["TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"], "owner_max": 10, "owner_reject": ["11111111111111111111111111111111"], "data_slice_max": 2 },
+      "slots": { "max": 1 },
+      "transactions": { "max": 1, "any": false, "account_include_max": 10, "account_include_reject": ["TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"], "account_exclude_max": 10, "account_required_max": 10 },
+      "transactions_status": { "max": 1, "any": false, "account_include_max": 10, "account_include_reject": ["TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"], "account_exclude_max": 10, "account_required_max": 10 },
+      "blocks": { "max": 1, "account_include_max": 10, "account_include_any": false, "account_include_reject": ["TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"], "include_transactions": true, "include_accounts": false, "include_entries": false },
+      "blocks_meta": { "max": 1 },
+      "entries": { "max": 1 }
+    }
+  },
+  "prometheus": { "address": "0.0.0.0:8999" }
+}
