@@ -9,6 +9,7 @@ use aws_sdk_s3::primitives::ByteStream;
 use aws_sdk_s3::Client;
 use bytesize::ByteSize;
 use fhevm_engine_common::chain_id::ChainId;
+use fhevm_engine_common::database::EVENT_CIPHERTEXTS_UPLOADED;
 use fhevm_engine_common::pg_pool::{is_fatal_connection_error, PostgresPoolManager, ServiceError};
 use fhevm_engine_common::{telemetry, utils::to_hex};
 use futures::future::join_all;
@@ -26,8 +27,6 @@ use tracing::{debug, error, error_span, info, warn, Instrument};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 // TODO: Use a config TOML to set these values
-pub const EVENT_CIPHERTEXTS_UPLOADED: &str = "event_ciphertexts_uploaded";
-
 // Default batch size for fetching pending uploads
 // There might be pending uploads in the database
 // with sizes of 32MiB so the batch size is set to 10
