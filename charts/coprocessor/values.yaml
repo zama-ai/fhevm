@@ -47,9 +47,24 @@ commonConfig:
   # (secretKeyRef/configMapKeyRef).
   databaseIamRegion: {}
 
-  # Required when databaseAuthMode=iam. Path inside the pod to the RDS CA
-  # bundle. The runtime enforces verify-full TLS. Accepts `value` or
-  # `valueFrom` (secretKeyRef/configMapKeyRef).
+  # RDS CA bundle injection (databaseAuthMode=iam only). When enabled, the chart
+  # renders configs/global-rds-ca-root.pem into a ConfigMap, mounts it read-only
+  # into every component, and AUTO-SETS DATABASE_SSL_ROOT_CERT_PATH to
+  # mountPath/fileName — so you do not also set databaseSslRootCertPath below.
+  # The runtime enforces verify-full TLS against this bundle.
+  databaseSslRootCert:
+    enabled: false
+    mountPath: /etc/ssl/rds
+    fileName: global-rds-ca-root.pem
+    # Optional: override the bundled AWS RDS global CA with your own PEM content.
+    # When empty, the chart uses configs/global-rds-ca-root.pem shipped here.
+    content: ""
+
+  # Path inside the pod to the RDS CA bundle, used when databaseAuthMode=iam.
+  # Only needed as a fallback when databaseSslRootCert.enabled=false and you
+  # mount the cert yourself (e.g. via your own volume or an IRSA sidecar); when
+  # databaseSslRootCert.enabled=true this field is ignored (the path is derived
+  # from the mount). Accepts `value` or `valueFrom` (secretKeyRef/configMapKeyRef).
   databaseSslRootCertPath: {}
 
   # Optional tenant API key. Accepts `value` or `valueFrom`
