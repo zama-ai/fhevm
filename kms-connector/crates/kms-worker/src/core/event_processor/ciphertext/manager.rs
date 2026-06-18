@@ -120,7 +120,7 @@ where
     ) -> anyhow::Result<()> {
         let handle = material.ctHandle;
         let attestations =
-            s3::fetch_attestations(handle, registry, &self.client, self.config.http_timeout).await;
+            s3::fetch_attestations(handle, registry, &self.client, self.config.head_timeout).await;
 
         let consensus = consensus::evaluate(
             handle,

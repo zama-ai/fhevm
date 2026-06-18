@@ -1,11 +1,10 @@
 //! TTL'd snapshot of the on-chain Coprocessor registry.
 //!
-//! The [`super::CiphertextManager`] needs three things from `GatewayConfig`: the set of
-//! authorized attestation signer addresses, the per-Coprocessor S3 bucket URLs (to fan
-//! attestation HEAD requests at, and to retrieve ciphertexts from), and the majority
-//! threshold. Querying these on every decryption request would trigger N+1 RPC calls, so
-//! the [`CoprocessorRegistry`] holds a whole snapshot behind a short TTL and tolerates
-//! registration changes within one refresh window.
+//! The [`CiphertextManager`] needs three things from `GatewayConfig`: the set of authorized
+//! attestation signer addresses, the per-Coprocessor S3 bucket URLs (to fan attestation HEAD
+//! requests at, and to retrieve ciphertexts from), and the majority threshold. Querying these on
+//! every decryption request would trigger N+1 RPC calls, so the [`CoprocessorRegistry`] holds a
+//! whole snapshot behind a short TTL and tolerates registration changes within one refresh window.
 
 use crate::core::config::Config;
 use alloy::{primitives::Address, providers::Provider};
@@ -21,16 +20,15 @@ use tokio_util::sync::CancellationToken;
 use tracing::{error, warn};
 
 /// The Coprocessor registry as seen from the connector: a periodically-synced mirror of the
-/// on-chain registry, read through immutable [`CoprocessorRegistrySnapshot`]s.
-///
-/// Cheap to clone: the outer `Arc` shares the lock across clones; the `RwLock` gives interior
-/// mutability for the swap; the inner `Arc` makes reads snapshot-and-release.
+/// on-chain registry.
 #[derive(Clone)]
 pub struct CoprocessorRegistry<P: Provider> {
     /// Used to (re)load the registry snapshot.
     gateway_config_contract: GatewayConfigInstance<P>,
 
     /// The current registry snapshot.
+    // Cheap to clone: the outer `Arc` shares the lock across clones; the `RwLock` gives interior
+    // mutability for the swap; the inner `Arc` makes reads snapshot-and-release.
     snapshot: Arc<RwLock<Arc<CoprocessorRegistrySnapshot>>>,
 }
 
@@ -89,7 +87,7 @@ impl CoprocessorRegistrySnapshot {
         .map_err(|e| RegistryError::Transient(e.into()))?;
 
         // A zero or oversized threshold can never come from a healthy `GatewayConfig`: treat it
-        // as critical so the worker refuses to run (startup) or shuts down (refresh).
+        // as critical so the worker refuses to run.
         let threshold = threshold_u256
             .try_into()
             .ok()

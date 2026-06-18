@@ -92,10 +92,18 @@ async fn fetch_single_attestation(
 ) -> Result<CiphertextAttestation, FetchAttestationError> {
     let url = rfc023_ciphertext_url(bucket, handle);
 
-    let response = tokio::time::timeout(head_timeout, client.head(&url).send())
+    let response = client
+        .head(&url)
+        .timeout(head_timeout)
+        .send()
         .await
-        .map_err(|_| FetchAttestationError::Timeout)?
-        .map_err(|e| FetchAttestationError::Http(e.to_string()))?;
+        .map_err(|e| {
+            if e.is_timeout() {
+                FetchAttestationError::Timeout
+            } else {
+                FetchAttestationError::Http(e.to_string())
+            }
+        })?;
 
     if !response.status().is_success() {
         return Err(FetchAttestationError::Http(format!(

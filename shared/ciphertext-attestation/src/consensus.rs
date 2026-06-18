@@ -27,6 +27,7 @@ pub struct ConsensusMaterial {
 
 /// Why the consensus could not be reached.
 #[derive(Debug, thiserror::Error)]
+#[cfg_attr(debug_assertions, derive(PartialEq))]
 #[error("consensus unreachable: {valid_signers} valid signer(s), threshold {threshold}")]
 pub struct ConsensusError {
     valid_signers: usize,
@@ -194,13 +195,13 @@ mod tests {
             nz(2),
         )
         .unwrap_err();
-        assert!(matches!(
+        assert_eq!(
             err,
             ConsensusError {
                 valid_signers: 1,
                 threshold: nz(2),
             }
-        ));
+        );
     }
 
     #[tokio::test]
@@ -248,13 +249,13 @@ mod tests {
             nz(2),
         )
         .unwrap_err();
-        assert!(matches!(
+        assert_eq!(
             err,
             ConsensusError {
                 valid_signers: 1,
                 threshold: nz(2),
             }
-        ));
+        );
     }
 
     #[tokio::test]
@@ -325,12 +326,12 @@ mod tests {
         let atts = vec![(s1.address(), a1.clone()), (Address::repeat_byte(0x99), a1)];
 
         let err = evaluate(HANDLE, COPROCESSOR_CONTEXT_ID, &atts, &signers, nz(2)).unwrap_err();
-        assert!(matches!(
+        assert_eq!(
             err,
             ConsensusError {
                 valid_signers: 1,
                 threshold: nz(2),
             }
-        ));
+        );
     }
 }

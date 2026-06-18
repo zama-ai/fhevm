@@ -104,12 +104,12 @@ pub struct CtAttestationConfig {
     #[serde(default = "default_ct_attestation_verifier_enabled")]
     pub enabled: bool,
 
-    /// Per-bucket S3 HEAD/GET timeout, in seconds. Defaults to 5.
+    /// Per-bucket S3 attestation HEAD request timeout, in seconds. Defaults to 5.
     #[serde(
         with = "humantime_serde",
-        default = "default_ct_attestation_http_timeout"
+        default = "default_ct_attestation_head_timeout"
     )]
-    pub http_timeout: Duration,
+    pub head_timeout: Duration,
 
     /// Coprocessor registry snapshot refresh interval, in seconds. Defaults to 60.
     #[serde(
@@ -123,7 +123,7 @@ impl Default for CtAttestationConfig {
     fn default() -> Self {
         Self {
             enabled: default_ct_attestation_verifier_enabled(),
-            http_timeout: default_ct_attestation_http_timeout(),
+            head_timeout: default_ct_attestation_head_timeout(),
             registry_refresh: default_copro_registry_refresh_interval(),
         }
     }
@@ -216,7 +216,7 @@ fn default_ct_attestation_verifier_enabled() -> bool {
     true
 }
 
-fn default_ct_attestation_http_timeout() -> Duration {
+fn default_ct_attestation_head_timeout() -> Duration {
     Duration::from_secs(5)
 }
 
