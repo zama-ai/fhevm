@@ -600,6 +600,17 @@ function handleSolidityTFHEConvertPlaintextAndEinputToRespectiveType(fheType: Ad
         }
     }
 
+    /**
+     * @dev Convert an encrypted e${fheType.type.toLowerCase()} handle to its externalE${fheType.type.toLowerCase()} representation.
+     * @dev This only re-wraps the underlying handle into the externalE${fheType.type.toLowerCase()} type; it performs no
+     *      verification or access control. The resulting externalE${fheType.type.toLowerCase()} can be passed to another
+     *      contract and turned back into an e${fheType.type.toLowerCase()} via fromExternal with an empty inputProof,
+     *      provided the handle has already been allowed to the caller.
+     */
+    function toExternal(e${fheType.type.toLowerCase()} value) internal pure returns (externalE${fheType.type.toLowerCase()}) {
+        return externalE${fheType.type.toLowerCase()}.wrap(e${fheType.type.toLowerCase()}.unwrap(value));
+    }
+
     `;
 
   /// If boolean, add also the asEbool function that allows casting bool
