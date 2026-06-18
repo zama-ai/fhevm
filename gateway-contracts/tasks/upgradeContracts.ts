@@ -132,6 +132,9 @@ async function checkImplementationArtifacts(
   }
 }
 
+// Relies on incremental compilation: run only on a clean working tree whose generated
+// addresses/GatewayAddresses.sol matches the target environment, otherwise the implementation
+// embeds the wrong addresses.
 async function deployImplementationForPreparedUpgrade(
   proxyAddress: string,
   expectedArtifactName: string,
@@ -178,21 +181,6 @@ async function deployImplementationForPreparedUpgrade(
   console.log("innerFunctionSignature:", reinitializeFunctionSignature);
   console.log(`${reinitializeFunction.name} calldata:`, reinitializeCalldata);
   console.log("upgradeToAndCall(address,bytes) calldata:", outerCalldata);
-  console.log(
-    "Prepared upgrade artifact:",
-    JSON.stringify(
-      {
-        proxyAddress,
-        newImplementationAddress: implementationAddress,
-        innerFunctionSignature: reinitializeFunctionSignature,
-        decodedArgs: reinitializeArgs,
-        innerCalldata: reinitializeCalldata,
-        outerCalldata,
-      },
-      (_, value: unknown) => (typeof value === "bigint" ? value.toString() : value),
-      2,
-    ),
-  );
   console.log(
     `To double check, run: cast calldata ${shellQuote(reinitializeFunctionSignature)} ${reinitializeArgs
       .map((arg) => shellQuote(formatCastArg(arg)))

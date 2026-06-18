@@ -59,6 +59,7 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         /// @notice KmsGen threshold per context.
         mapping(uint256 contextId => uint256) kmsGenThresholdForContext;
         /// @notice MPC threshold per context.
+        /// @dev The SDK derives the MPC threshold from the MPC nodes it knows about instead of reading this value.
         mapping(uint256 contextId => uint256) mpcThresholdForContext;
         /// @notice Whether a context has been destroyed.
         mapping(uint256 contextId => bool) destroyedContexts;
@@ -99,13 +100,16 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     ) public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
         $.currentKmsContextId = KMS_CONTEXT_COUNTER_BASE;
-        _defineKmsContext(initialKmsNodes, initialThresholds);
+        uint256 newContextId = _defineKmsContext(initialKmsNodes, initialThresholds);
+        emit NewKmsContext(newContextId, initialKmsNodes, initialThresholds);
     }
 
     /**
-     * @notice Migration initializer: seeds the migrated context from an existing KMSVerifier state.
-     * @param existingContextId The context ID from the old KMSVerifier to preserve. The counter is
-     *        seeded to `existingContextId - 1` so that `_defineKmsContext` increments to the exact
+     * @notice Migration initializer: seeds the migrated context from the existing GatewayConfig state.
+     * @dev GatewayConfig mirrors KMSVerifier per RFC-003 and carries the extra KMS node fields
+     *      needed for the migration.
+     * @param existingContextId The currnet context ID. The counter is seeded to
+     *        `existingContextId - 1` so that `_defineKmsContext` increments to the exact
      *        old ID, preserving context continuity for downstream readers.
      * @param existingKmsNodes The existing KMS node set to migrate.
      * @param existingThresholds The existing thresholds to migrate.
@@ -136,7 +140,8 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         KmsNode[] calldata kmsNodes,
         KmsThresholds calldata thresholds
     ) external virtual onlyACLOwner {
-        _defineKmsContext(kmsNodes, thresholds);
+        uint256 newContextId = _defineKmsContext(kmsNodes, thresholds);
+        emit NewKmsContext(newContextId, kmsNodes, thresholds);
     }
 
     /// @inheritdoc IProtocolConfig
@@ -152,6 +157,48 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
 
         $.destroyedContexts[kmsContextId] = true;
         emit KmsContextDestroyed(kmsContextId);
+    }
+
+    /// @inheritdoc IProtocolConfig
+    function updatePublicDecryptionThresholdForContext(
+        uint256 kmsContextId,
+        uint256 threshold
+    ) external virtual onlyACLOwner {
+        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
+        _requireValidContext(kmsContextId);
+        _checkThreshold("publicDecryption", threshold, $.kmsNodesForContext[kmsContextId].length);
+        $.publicDecryptionThresholdForContext[kmsContextId] = threshold;
+        emit PublicDecryptionThresholdUpdated(kmsContextId, threshold);
+    }
+
+    /// @inheritdoc IProtocolConfig
+    function updateUserDecryptionThresholdForContext(
+        uint256 kmsContextId,
+        uint256 threshold
+    ) external virtual onlyACLOwner {
+        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
+        _requireValidContext(kmsContextId);
+        _checkThreshold("userDecryption", threshold, $.kmsNodesForContext[kmsContextId].length);
+        $.userDecryptionThresholdForContext[kmsContextId] = threshold;
+        emit UserDecryptionThresholdUpdated(kmsContextId, threshold);
+    }
+
+    /// @inheritdoc IProtocolConfig
+    function updateKmsGenThresholdForContext(uint256 kmsContextId, uint256 threshold) external virtual onlyACLOwner {
+        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
+        _requireValidContext(kmsContextId);
+        _checkThreshold("kmsGen", threshold, $.kmsNodesForContext[kmsContextId].length);
+        $.kmsGenThresholdForContext[kmsContextId] = threshold;
+        emit KmsGenThresholdUpdated(kmsContextId, threshold);
+    }
+
+    /// @inheritdoc IProtocolConfig
+    function updateMpcThresholdForContext(uint256 kmsContextId, uint256 threshold) external virtual onlyACLOwner {
+        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
+        _requireValidContext(kmsContextId);
+        _checkThreshold("mpc", threshold, $.kmsNodesForContext[kmsContextId].length);
+        $.mpcThresholdForContext[kmsContextId] = threshold;
+        emit MpcThresholdUpdated(kmsContextId, threshold);
     }
 
     // -----------------------------------------------------------------------------------------
@@ -283,6 +330,8 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
 
     /**
      * @dev Creates a new KMS context, validates nodes and thresholds, and stores them.
+     *      Returns the new context ID. Callers are responsible for emitting `NewKmsContext`
+     *      when appropriate.
      */
     function _defineKmsContext(
         KmsNode[] calldata kmsNodes,
@@ -327,8 +376,6 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         $.userDecryptionThresholdForContext[newContextId] = thresholds.userDecryption;
         $.kmsGenThresholdForContext[newContextId] = thresholds.kmsGen;
         $.mpcThresholdForContext[newContextId] = thresholds.mpc;
-
-        emit NewKmsContext(newContextId, kmsNodes, thresholds);
     }
 
     /**

@@ -75,7 +75,7 @@ pub struct PollerConfig {
     pub url: String,
     pub acl_address: Address,
     pub tfhe_address: Address,
-    pub kms_generation_address: Address,
+    pub kms_generation_address: Option<Address>,
     pub database_url: DatabaseURL,
     pub finality_lag: u64,
     pub batch_size: u64,
@@ -350,18 +350,22 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
                     break;
                 }
             }
-            let db_pool = db.pool.read().await.clone();
-            tokio::spawn(async move {
-                if let Err(err) =
-                    process_kms_generation_activations(db_pool, aws_s3_client)
-                        .await
-                {
-                    error!(
-                        error = %err,
-                        "Error processing KMSGeneration activations"
-                    );
-                }
-            });
+            if kms_generation_address.is_some() {
+                let db_pool = db.pool.read().await.clone();
+                tokio::spawn(async move {
+                    if let Err(err) = process_kms_generation_activations(
+                        db_pool,
+                        aws_s3_client,
+                    )
+                    .await
+                    {
+                        error!(
+                            error = %err,
+                            "Error processing KMSGeneration activations"
+                        );
+                    }
+                });
+            }
         }
 
         let new_anchor = last_caught_up_block + processed_blocks;
@@ -411,14 +415,13 @@ async fn ingest_with_retry(
     block_logs: &BlockLogs<Log>,
     acl_address: Address,
     tfhe_address: Address,
-    kms_generation_address: Address,
+    kms_generation_address: Option<Address>,
     retry_interval: Duration,
     options: IngestOptions,
 ) -> Result<u64, (sqlx::Error, u64)> {
     let mut errors = 0;
     let acl = Some(acl_address);
     let tfhe = Some(tfhe_address);
-    let kms_gen_address = Some(kms_generation_address);
     loop {
         match ingest_block_logs(
             chain_id,
@@ -426,7 +429,7 @@ async fn ingest_with_retry(
             block_logs,
             &acl,
             &tfhe,
-            &kms_gen_address,
+            &kms_generation_address,
             options,
         )
         .await

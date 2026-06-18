@@ -69,7 +69,7 @@ interface IKMSGeneration {
     /**
      * @notice Emitted when the key is activated.
      * @param keyId The ID of the activated key.
-     * @param kmsNodeStorageUrls The KMS nodes' storage URL that participated in the consensus.
+     * @param kmsNodeStorageUrls The KMS nodes' storage URLs that participated in the consensus.
      * @param keyDigests The digests of the generated keys.
      */
     event ActivateKey(uint256 keyId, string[] kmsNodeStorageUrls, KeyDigest[] keyDigests);
@@ -95,7 +95,7 @@ interface IKMSGeneration {
     /**
      * @notice Emitted when the CRS is activated.
      * @param crsId The ID of the generated CRS.
-     * @param kmsNodeStorageUrls The KMS nodes' storage URL that participated in the consensus.
+     * @param kmsNodeStorageUrls The KMS nodes' storage URLs that participated in the consensus.
      * @param crsDigest The digest of the generated CRS.
      */
     event ActivateCrs(uint256 crsId, string[] kmsNodeStorageUrls, bytes crsDigest);
@@ -345,7 +345,8 @@ interface IKMSGeneration {
 
     /**
      * @notice Get the KMS transaction sender addresses that propagated valid signatures for a request.
-     * @dev Returns an empty list for requests that are pending or aborted, as no consensus digest is stored.
+     * @dev The returned list remains empty until the consensus is reached, including for aborted requests
+     *      (no consensus digest is stored in either case).
      * @param requestId The ID of the request.
      * @return The KMS transaction sender addresses.
      */
@@ -366,7 +367,7 @@ interface IKMSGeneration {
     function getCrsMaterials(uint256 crsId) external view returns (string[] memory, bytes memory);
 
     /**
-     * @notice Returns the versions of the KMSGeneration contract in SemVer format.
+     * @notice Returns the version of the KMSGeneration contract in SemVer format.
      * @dev This is conventionally used for upgrade features.
      */
     function getVersion() external pure returns (string memory);

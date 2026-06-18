@@ -49,6 +49,7 @@ const completeState = (): State => ({
     hostChains: [{ key: "host", chainId: "12345", rpcPort: 8545 }],
     topology: { count: 1, threshold: 1 },
     instances: [{ index: 0, source: { mode: "inherit" }, env: {}, args: {} }],
+    kms: { mode: "centralized", parties: 1, threshold: 1, fheParams: "Default" },
   },
   completedSteps: [
     "preflight",
@@ -93,7 +94,7 @@ const validDiscovery = (hostKeys: string[]): Discovery => ({
       },
     ]),
   ),
-  kmsSigner: "0x7",
+  kmsSigners: ["0x7"],
   fheKeyId: "a".repeat(64),
   crsKeyId: "b".repeat(64),
   endpoints: {
@@ -194,6 +195,32 @@ describe("resumeRepairStep", () => {
       "fhevm-test-suite-e2e-debug",
     ];
     expect(resumeRepairStep(completeState(), running)).toBeUndefined();
+  });
+
+  test("repairs from listener-core when the publisher is missing", () => {
+    const running = [
+      "fhevm-minio",
+      "coprocessor-and-kms-db",
+      "kms-core",
+      "host-node",
+      "gateway-node",
+      "listener-redis",
+      "coprocessor-host-listener",
+      "coprocessor-host-listener-poller",
+      "coprocessor-host-listener-consumer",
+      "coprocessor-gw-listener",
+      "coprocessor-tfhe-worker",
+      "coprocessor-zkproof-worker",
+      "coprocessor-sns-worker",
+      "coprocessor-transaction-sender",
+      "kms-connector-gw-listener",
+      "kms-connector-kms-worker",
+      "kms-connector-tx-sender",
+      "fhevm-relayer-db",
+      "fhevm-relayer",
+      "fhevm-test-suite-e2e-debug",
+    ];
+    expect(resumeRepairStep(completeState(), running)).toBe("listener-core");
   });
 
   test("does not expect host-listener consumer on legacy supported bundles", () => {
@@ -319,6 +346,8 @@ describe("resumeRepairStep", () => {
       ["kms-core", { status: "running" }],
       ["host-node", { status: "running" }],
       ["gateway-node", { status: "running" }],
+      ["listener-redis", { status: "running" }],
+      ["listener-publisher-for-anvil", { status: "running" }],
       ["coprocessor-host-listener", { status: "running" }],
       ["coprocessor-host-listener-poller", { status: "running" }],
       ["coprocessor-host-listener-consumer", { status: "running" }],
@@ -386,7 +415,7 @@ describe("runtime helpers", () => {
         "chain-a": {} as NonNullable<State["discovery"]>["hosts"][string],
         "chain-b": {} as NonNullable<State["discovery"]>["hosts"][string],
       },
-      kmsSigner: "0x1",
+      kmsSigners: ["0x1"],
       fheKeyId: "a".repeat(64),
       crsKeyId: "b".repeat(64),
       endpoints: {

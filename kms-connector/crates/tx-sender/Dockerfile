@@ -19,6 +19,7 @@ COPY .git ./.git
 # Copy sources
 COPY gateway-contracts/rust_bindings ./gateway-contracts/rust_bindings
 COPY host-contracts/rust_bindings ./host-contracts/rust_bindings
+COPY shared ./shared
 COPY kms-connector ./kms-connector
 
 # Build with improved caching

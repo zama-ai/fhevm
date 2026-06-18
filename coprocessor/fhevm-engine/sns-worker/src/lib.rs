@@ -28,7 +28,6 @@ use fhevm_engine_common::{
     types::FhevmError,
     utils::{to_hex, DatabaseURL},
 };
-use futures::join;
 use sqlx::{Postgres, Transaction};
 use thiserror::Error;
 use tokio::{
@@ -250,16 +249,44 @@ impl HandleItem {
         &self,
         db_txn: &mut Transaction<'_, Postgres>,
     ) -> Result<(), ExecutionError> {
-        sqlx::query!(
-            "INSERT INTO ciphertext_digest (host_chain_id, key_id_gw, handle, transaction_id)
-            VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
-            self.host_chain_id.as_i64(),
-            &self.key_id_gw,
-            self.handle,
-            self.transaction_id,
-        )
-        .execute(db_txn.as_mut())
-        .await?;
+        let ct128_format = self.ct128.format();
+
+        if self.ct128.is_empty() {
+            sqlx::query(
+                "INSERT INTO ciphertext_digest (host_chain_id, key_id_gw, handle, transaction_id)
+                VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
+            )
+            .bind(self.host_chain_id.as_i64())
+            .bind(&self.key_id_gw)
+            .bind(&self.handle)
+            .bind(&self.transaction_id)
+            .execute(db_txn.as_mut())
+            .await?;
+        } else if ct128_format == Ciphertext128Format::Unknown {
+            return Err(ExecutionError::InvalidCiphertext128Format(format!(
+                "non-empty ct128 has unknown format, host_chain_id: {}, handle: {}",
+                self.host_chain_id.as_i64(),
+                to_hex(&self.handle),
+            )));
+        } else {
+            let ct128_format: i16 = ct128_format.into();
+            sqlx::query(
+                "INSERT INTO ciphertext_digest (
+                    host_chain_id, key_id_gw, handle, transaction_id, ciphertext128_format
+                )
+                VALUES ($1, $2, $3, $4, $5)
+                ON CONFLICT (handle) DO UPDATE
+                SET ciphertext128_format = EXCLUDED.ciphertext128_format
+                WHERE ciphertext_digest.ciphertext128 IS NULL",
+            )
+            .bind(self.host_chain_id.as_i64())
+            .bind(&self.key_id_gw)
+            .bind(&self.handle)
+            .bind(&self.transaction_id)
+            .bind(ct128_format)
+            .execute(db_txn.as_mut())
+            .await?;
+        }
 
         Ok(())
     }
@@ -363,6 +390,9 @@ pub enum ExecutionError {
     #[error("Deserialization error: {0}")]
     DeserializationError(String),
 
+    #[error("Invalid ciphertext128 format: {0}")]
+    InvalidCiphertext128Format(String),
+
     #[error("Bucket not found {0}")]
     BucketNotFound(String),
 
@@ -405,7 +435,7 @@ pub async fn run_uploader_loop(
     let (is_ready_res, _) = check_is_ready(&client, conf).await;
     is_ready.store(is_ready_res, Ordering::Release);
 
-    let handle_resubmit = spawn_resubmit_task(
+    let mut handle_resubmit = spawn_resubmit_task(
         pool_mngr,
         conf.clone(),
         tx.clone(),
@@ -414,8 +444,16 @@ pub async fn run_uploader_loop(
     )
     .await?;
 
-    let handle_uploader = spawn_uploader(pool_mngr, conf.clone(), rx, client, is_ready).await?;
-    let _res = join!(handle_resubmit, handle_uploader);
+    let mut handle_uploader = spawn_uploader(pool_mngr, conf.clone(), rx, client, is_ready).await?;
+
+    // Return when either task ends; abort the other and propagate its result.
+    let res = tokio::select! {
+        r = &mut handle_resubmit => r,
+        r = &mut handle_uploader => r,
+    };
+    handle_resubmit.abort();
+    handle_uploader.abort();
+    res??;
 
     info!("Uploader stopped");
     Ok(())
@@ -548,16 +586,24 @@ pub async fn run_all(
     )
     .await?;
 
-    // Spawns a task to handle S3 uploads
-    spawn(async move {
-        if let Err(err) = run_uploader_loop(&pg_mngr, &conf, jobs_rx, tx, s3, is_ready).await {
-            error!(error = %err, "Failed to run the upload-worker");
-        }
-    });
+    // Keep the uploader's handle so its failure exits the process too.
+    let uploader =
+        spawn(async move { run_uploader_loop(&pg_mngr, &conf, jobs_rx, tx, s3, is_ready).await });
 
-    // Run the main service loop
-    service.run(&pool_mngr).await;
+    // Exit if either the service loop or the uploader fails.
+    let result: Result<(), Box<dyn std::error::Error + Send + Sync>> = tokio::select! {
+        res = service.run(&pool_mngr) => res.map_err(Into::into),
+        res = uploader => match res {
+            Ok(inner) => inner,
+            Err(join_err) => Err(join_err.into()),
+        },
+    };
     token.cancel();
+
+    if let Err(err) = result {
+        error!(error = %err, "SNS worker exited with a fatal error");
+        return Err(err);
+    }
 
     info!("Worker stopped");
     Ok(())

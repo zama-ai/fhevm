@@ -1,6 +1,9 @@
 use crate::{
     config::settings::{HostChainConfig, RetrySettings},
-    core::{event::HandleContractPair, job_id::JobId},
+    core::{
+        event::{HandleContractPair, HandleEntry},
+        job_id::JobId,
+    },
     host::{
         error_redact::redact_alloy_error,
         handle_chain_id::{extract_chain_id_from_handle, extract_chain_id_from_u256},
@@ -362,6 +365,114 @@ impl HostAclChecker {
         }
     }
 
+    /// Check ACL for a unified EIP-712 user decryption request.
+    ///
+    /// Each `HandleEntry` is classified per-handle by its `owner_address`:
+    /// - When `owner_address == user`, the entry is a direct access and
+    ///   only `isAllowed(handle, user)` is asserted.
+    /// - Otherwise the entry is delegated, and
+    ///   `isHandleDelegatedForUserDecryption(owner, user, contract, handle)`
+    ///   is asserted (the contract itself rolls in `isAllowed(handle,
+    ///   owner)`, `isAllowed(handle, contract)`, and the delegation lookup).
+    ///
+    /// Calls are grouped by host chain id (extracted from the handle bytes)
+    /// and dispatched through one multicall per chain.
+    pub async fn check_unified_user_decrypt(
+        &self,
+        job_id: &JobId,
+        handles: &[HandleEntry],
+        user: Address,
+    ) -> Result<(), HostAclError> {
+        if handles.is_empty() {
+            return Ok(());
+        }
+
+        let grouped = group_handle_entries_by_chain(handles);
+        let mut all_failures = Vec::new();
+
+        for (chain_id, chain_entries) in &grouped {
+            let chain_acl = self
+                .chains
+                .get(chain_id)
+                .ok_or(HostAclError::UnsupportedChain {
+                    chain_id: *chain_id,
+                })?;
+
+            let calls: Vec<Bytes> = chain_entries
+                .iter()
+                .map(|entry| {
+                    let handle_bytes: [u8; 32] = entry.ct_handle.to_be_bytes();
+                    let handle = FixedBytes::from(handle_bytes);
+                    if entry.owner_address == user {
+                        Bytes::from(
+                            ACL::isAllowedCall {
+                                handle,
+                                account: user,
+                            }
+                            .abi_encode(),
+                        )
+                    } else {
+                        Bytes::from(
+                            ACL::isHandleDelegatedForUserDecryptionCall {
+                                delegator: entry.owner_address,
+                                delegate: user,
+                                contractAddress: entry.contract_address,
+                                handle,
+                            }
+                            .abi_encode(),
+                        )
+                    }
+                })
+                .collect();
+
+            let results = self
+                .multicall_with_retry(job_id, chain_acl, &calls, *chain_id)
+                .await?;
+
+            if results.len() != chain_entries.len() {
+                return Err(HostAclError::CallFailed {
+                    chain_id: *chain_id,
+                    message: format!(
+                        "expected {} multicall results, got {}",
+                        chain_entries.len(),
+                        results.len()
+                    ),
+                });
+            }
+
+            for (i, entry) in chain_entries.iter().enumerate() {
+                let allowed = decode_bool(&results[i]).map_err(|msg| HostAclError::CallFailed {
+                    chain_id: *chain_id,
+                    message: msg.to_string(),
+                })?;
+                if !allowed {
+                    let handle_hex = format!("0x{:064x}", entry.ct_handle);
+                    let check = if entry.owner_address == user {
+                        format!("isAllowed(user {})", user)
+                    } else {
+                        format!(
+                            "isHandleDelegatedForUserDecryption(owner {}, user {})",
+                            entry.owner_address, user
+                        )
+                    };
+                    all_failures.push(AclFailure {
+                        handle: handle_hex,
+                        check,
+                    });
+                }
+            }
+        }
+
+        if all_failures.is_empty() {
+            Ok(())
+        } else {
+            Err(HostAclError::NotAllowed {
+                count: all_failures.len(),
+                failures: all_failures,
+            })
+        }
+    }
+
     /// Execute a multicall against a host chain ACL contract with retry on RPC errors.
     async fn multicall_with_retry(
         &self,
@@ -425,6 +536,15 @@ fn group_pairs_by_chain(pairs: &[HandleContractPair]) -> HashMap<u64, Vec<Handle
     for pair in pairs {
         let chain_id = extract_chain_id_from_u256(&pair.ct_handle);
         grouped.entry(chain_id).or_default().push(pair.clone());
+    }
+    grouped
+}
+
+fn group_handle_entries_by_chain(handles: &[HandleEntry]) -> HashMap<u64, Vec<HandleEntry>> {
+    let mut grouped: HashMap<u64, Vec<HandleEntry>> = HashMap::new();
+    for entry in handles {
+        let chain_id = extract_chain_id_from_u256(&entry.ct_handle);
+        grouped.entry(chain_id).or_default().push(entry.clone());
     }
     grouped
 }

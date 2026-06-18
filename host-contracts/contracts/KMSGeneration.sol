@@ -132,7 +132,7 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
     uint8 private constant EXTRA_DATA_V1 = 0x01;
 
     /**
-     * @dev Constant used for making sure the version number using in the `reinitializer` modifier
+     * @dev Constant used for making sure the version number used in the `reinitializer` modifier
      * is identical between `initializeFromEmptyProxy` and the migration initializer
      */
     uint64 private constant REINITIALIZER_VERSION = 2;
@@ -612,7 +612,6 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
 
     /**
      * @notice See {IKMSGeneration-getConsensusTxSenders}.
-     * The returned list remains empty until the consensus is reached, including for aborted requests.
      */
     function getConsensusTxSenders(uint256 requestId) external view virtual returns (address[] memory) {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
@@ -1069,7 +1068,7 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         bytes32 digest,
         uint256 contextId
     ) internal view virtual {
-        if (digest == bytes32(0) || txSenders.length < PROTOCOL_CONFIG.getKmsGenThreshold()) {
+        if (digest == bytes32(0) || txSenders.length < PROTOCOL_CONFIG.getKmsGenThresholdForContext(contextId)) {
             revert InvalidMigrationConsensusState(requestId);
         }
 
@@ -1082,7 +1081,7 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
     }
 
     function _encodeRequestExtraData(uint256 contextId) internal pure virtual returns (bytes memory) {
-        // Emit V1 (contextId only) until resharing (RFC 005) is implemented.
+        // Encode V1 (contextId only) until resharing (RFC 005) is implemented.
         return abi.encodePacked(EXTRA_DATA_V1, contextId);
     }
 }

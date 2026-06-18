@@ -9,7 +9,7 @@ use aws_sdk_s3::primitives::ByteStream;
 use aws_sdk_s3::Client;
 use bytesize::ByteSize;
 use fhevm_engine_common::chain_id::ChainId;
-use fhevm_engine_common::pg_pool::{PostgresPoolManager, ServiceError};
+use fhevm_engine_common::pg_pool::{is_fatal_connection_error, PostgresPoolManager, ServiceError};
 use fhevm_engine_common::{telemetry, utils::to_hex};
 use futures::future::join_all;
 use opentelemetry::trace::{Status, TraceContextExt};
@@ -19,7 +19,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::select;
 use tokio::sync::{mpsc, RwLock, Semaphore};
-use tokio::task::JoinHandle;
+use tokio::task::{JoinHandle, JoinSet};
 use tokio::time::interval;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, error_span, info, warn, Instrument};
@@ -39,7 +39,7 @@ pub(crate) async fn spawn_resubmit_task(
     jobs_tx: mpsc::Sender<UploadJob>,
     client: Arc<aws_sdk_s3::Client>,
     is_ready: Arc<AtomicBool>,
-) -> Result<JoinHandle<()>, ExecutionError> {
+) -> Result<JoinHandle<Result<(), ServiceError>>, ExecutionError> {
     let op = move |pool, token| {
         let client = client.clone();
         let is_ready = is_ready.clone();
@@ -63,7 +63,7 @@ pub(crate) async fn spawn_uploader(
     rx: Arc<RwLock<mpsc::Receiver<UploadJob>>>,
     client: Arc<aws_sdk_s3::Client>,
     is_ready: Arc<AtomicBool>,
-) -> Result<JoinHandle<()>, ExecutionError> {
+) -> Result<JoinHandle<Result<(), ServiceError>>, ExecutionError> {
     let op = move |pool, token| {
         let client = client.clone();
         let is_ready = is_ready.clone();
@@ -89,7 +89,7 @@ async fn run_uploader_loop(
     pool: Pool<Postgres>,
     conf: S3Config,
 ) -> Result<(), ExecutionError> {
-    let mut ongoing_upload_tasks: Vec<JoinHandle<()>> = Vec::new();
+    let mut ongoing_upload_tasks: JoinSet<Result<(), ExecutionError>> = JoinSet::new();
     let max_concurrent_uploads = conf.max_concurrent_uploads as usize;
     let semaphore = Arc::new(Semaphore::new(max_concurrent_uploads));
     let mut jobs_rx = jobs_rx.write().await;
@@ -111,39 +111,66 @@ async fn run_uploader_loop(
                 let mut trx = pool.begin().await?;
 
                 let item = match job {
-                    UploadJob::Normal(item) =>
-                    {
+                    UploadJob::Normal(item) => {
                         item.enqueue_upload_task(&mut trx).await?;
                         item
-                    },
-                    UploadJob::DatabaseLock(item) => {
-                        if let Err(err) = sqlx::query!(
-                            "SELECT * FROM ciphertext_digest
-                                    WHERE handle = $1 AND
-                                    (ciphertext128 IS NULL OR ciphertext IS NULL)
-                                    FOR UPDATE SKIP LOCKED",
-                                    item.handle
+                    }
+                    UploadJob::DatabaseLock(mut item) => {
+                        let row = match sqlx::query!(
+                            "SELECT ciphertext, ciphertext128, ciphertext128_format
+                             FROM ciphertext_digest
+                             WHERE handle = $1 AND
+                             (ciphertext128 IS NULL OR ciphertext IS NULL)
+                             FOR UPDATE SKIP LOCKED",
+                            item.handle,
                         )
                         .fetch_one(trx.as_mut())
                         .await
                         {
-                            warn!(
-                                error = %err,
-                                handle = to_hex(&item.handle),
-                                "Failed to lock pending uploads",
-                            );
-                            trx.rollback().await?;
-                            continue;
+                            Ok(row) => row,
+                            Err(err) => {
+                                warn!(
+                                    error = %err,
+                                    handle = to_hex(&item.handle),
+                                    "Failed to lock pending uploads",
+                                );
+                                trx.rollback().await?;
+                                continue;
+                            }
+                        };
+
+                        // A non-null digest means another worker already uploaded that
+                        // ciphertext variant, so this recovery job must not retry it.
+                        if row.ciphertext.is_some() {
+                            item.ct64_compressed = Arc::new(Vec::new());
                         }
+
+                        if row.ciphertext128.is_some() {
+                            item.ct128 = Arc::new(BigCiphertext::default());
+                        } else if !item.ct128.is_empty() {
+                            item.ct128 = Arc::new(
+                                BigCiphertext::new_with_format_id(
+                                    item.ct128.bytes().to_vec(),
+                                    row.ciphertext128_format,
+                                )
+                                .ok_or_else(|| {
+                                    ExecutionError::InvalidCiphertext128Format(format!(
+                                        "pending ct128 has invalid format id, host_chain_id: {}, handle: {}, format_id: {}",
+                                        item.host_chain_id.as_i64(),
+                                        to_hex(&item.handle),
+                                        row.ciphertext128_format,
+                                    ))
+                                })?,
+                            );
+                        }
+
                         item
-                    },
-                 };
+                    }
+                };
 
 
                 debug!(handle = hex::encode(&item.handle), "Received task, handle");
 
-                // Cleanup completed tasks
-                ongoing_upload_tasks.retain(|h| !h.is_finished());
                 // Check if we have reached the max concurrent uploads
                 if ongoing_upload_tasks.len() >= max_concurrent_uploads {
                     warn!({target = "worker", action = "review", max_concurrent_uploads = max_concurrent_uploads},
@@ -162,18 +189,20 @@ async fn run_uploader_loop(
                 let conf = conf.clone();
                 let ready_flag = is_ready.clone();
 
-                // Spawn a new task to upload the ciphertexts
-                let h = tokio::spawn(async move {
+                // Spawn an upload. A lost connection is returned so the loop
+                // fails fast; other failures are best-effort (resubmit retries).
+                ongoing_upload_tasks.spawn(async move {
                     // Cross-boundary: spawned task; restore the OTel context
                     // that was captured when the upload item was created.
                     let upload_span = error_span!("upload_s3");
                     upload_span.set_parent(item.span.context());
-                    match upload_ciphertexts(trx, item, &client, &conf)
+                    let result = upload_ciphertexts(trx, item, &client, &conf)
                         .instrument(upload_span.clone())
-                        .await
-                    {
+                        .await;
+                    let outcome = match result {
                         Ok(()) => {
                             AWS_UPLOAD_SUCCESS_COUNTER.inc();
+                            Ok(())
                         }
                         Err(err) => {
                             if let ExecutionError::S3TransientError(_) = err {
@@ -187,25 +216,35 @@ async fn run_uploader_loop(
                                 .span()
                                 .set_status(Status::error(err.to_string()));
                             AWS_UPLOAD_FAILURE_COUNTER.inc();
+                            // Only a lost connection is fatal; retry the rest.
+                            match &err {
+                                ExecutionError::DbError(e) if is_fatal_connection_error(e) => {
+                                    Err(err)
+                                }
+                                _ => Ok(()),
+                            }
                         }
-                    }
+                    };
                     drop(upload_span);
                     drop(permit);
+                    outcome
                 });
-
-                ongoing_upload_tasks.push(h);
             },
+            // Drain finished uploads; exit if one lost the connection.
+            Some(joined) = ongoing_upload_tasks.join_next() => {
+                if let Ok(Err(err)) = joined {
+                    return Err(err);
+                }
+            }
             _ = token.cancelled() => {
-                // Cleanup completed tasks
-                ongoing_upload_tasks.retain(|h| !h.is_finished());
-
                 info!("Waiting for all uploads to finish...");
-                for handle in ongoing_upload_tasks {
-                    if let Err(err) = handle.await {
-                        error!(error = %err, "Failed to join upload task");
+                while let Some(joined) = ongoing_upload_tasks.join_next().await {
+                    match joined {
+                        Ok(Err(err)) => error!(error = %err, "Upload task failed during shutdown"),
+                        Err(err) => error!(error = %err, "Failed to join upload task"),
+                        Ok(Ok(())) => {}
                     }
                 }
-
                 return Ok(())
             }
         }
@@ -236,16 +275,27 @@ async fn upload_ciphertexts(
 
     let mut jobs = vec![];
 
-    if !task.ct128.is_empty() && task.ct128.format() != Ciphertext128Format::Unknown {
+    if !task.ct128.is_empty() {
+        let ct128_format = task.ct128.format();
+        if ct128_format == Ciphertext128Format::Unknown {
+            return Err(ExecutionError::InvalidCiphertext128Format(format!(
+                "non-empty ct128 has unknown format, host_chain_id: {}, handle: {}",
+                task.host_chain_id.as_i64(),
+                handle_as_hex,
+            )));
+        }
+
         let ct128_bytes = task.ct128.bytes();
         let ct128_digest = compute_digest(ct128_bytes);
         info!(
             handle = handle_as_hex,
             len = ?ByteSize::b(ct128_bytes.len() as u64),
+            format = %ct128_format,
+            host_chain_id = task.host_chain_id.as_i64(),
             "Uploading ct128"
         );
 
-        let format_as_str = task.ct128.format().to_string();
+        let format_as_str = ct128_format.to_string();
 
         let key = if cfg!(feature = "test_s3_use_handle_as_key") {
             hex::encode(&task.handle)
@@ -517,7 +567,14 @@ async fn fetch_pending_uploads(
 
         let ct128 = if !is_ct128_empty {
             match BigCiphertext::new_with_format_id(ct128, row.ciphertext128_format) {
-                Some(ct) => ct,
+                Some(ct) => {
+                    info!(
+                        handle = to_hex(&handle),
+                        format = %ct.format(),
+                        "Recovered pending ct128 upload from DB"
+                    );
+                    ct
+                }
                 None => {
                     error!(
                         handle = to_hex(&handle),

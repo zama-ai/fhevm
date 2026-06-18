@@ -378,8 +378,9 @@ interface IGatewayConfig {
 
     /**
      * @notice Update the KMS context: nodes and thresholds for a given context ID.
-     * @dev ⚠️ This function should be used with caution as it can lead to unexpected behavior in
-     * some requests and the contracts should first be paused. It will be deprecated in the future.
+     * @dev WARNING: This mutates state read by `Decryption` without enforcing an on-chain pause.
+     *      Operators must follow the runbook to avoid racing in-flight decryption requests when
+     *      shifting `currentKmsContextId`.
      * @param newContextId The new context ID to associate with the KMS nodes.
      * @param newKmsNodes The new KMS nodes.
      * @param newMpcThreshold The new MPC threshold.
@@ -401,6 +402,10 @@ interface IGatewayConfig {
      * @dev Once destroyed, the context's signers and tx senders are reported as not registered by
      *      `isKmsSignerForContext` / `isKmsTxSenderForContext`, and `getKmsNodeForContext` returns
      *      the zero `KmsNode`. The current context cannot be destroyed.
+     *
+     *      WARNING: This mutates state read by `Decryption` without enforcing an on-chain pause.
+     *      Operators must follow the runbook before destroying a context, because any in-flight
+     *      request pinned to the destroyed context becomes permanently unresolvable.
      * @param kmsContextId The non-current KMS context to destroy.
      */
     function destroyKmsContext(uint256 kmsContextId) external;
@@ -424,9 +429,8 @@ interface IGatewayConfig {
     /**
      * @notice Update the MPC threshold for a given KMS context.
      * @dev The new threshold must verify `0 <= t < n`, with `n` the number of KMS nodes registered
-     *      for the given context. Updating the *current* KMS context's threshold can affect in-flight
-     *      decryption requests pinned to that context (they may fail to reach the new threshold or
-     *      reach it earlier than originally configured); the operator should ensure timing accordingly.
+     *      for the given context. The SDK derives the MPC threshold from the MPC nodes it knows
+     *      about instead of reading this value.
      * @param contextId The KMS context to update.
      * @param newMpcThreshold The new MPC threshold.
      */
@@ -435,8 +439,8 @@ interface IGatewayConfig {
     /**
      * @notice Update the public decryption threshold for a given KMS context.
      * @dev The new threshold must verify `1 <= t <= n`, with `n` the number of KMS nodes registered
-     *      for the given context. Updating the *current* KMS context's threshold can affect in-flight
-     *      decryption requests pinned to that context; the operator should ensure timing accordingly.
+     *      for the given context. WARNING: This mutates state read by `Decryption` without enforcing
+     *      an on-chain pause. Operators must follow the runbook to avoid racing in-flight requests.
      * @param contextId The KMS context to update.
      * @param newPublicDecryptionThreshold The new public decryption threshold.
      */
@@ -448,8 +452,8 @@ interface IGatewayConfig {
     /**
      * @notice Update the user decryption threshold for a given KMS context.
      * @dev The new threshold must verify `1 <= t <= n`, with `n` the number of KMS nodes registered
-     *      for the given context. Updating the *current* KMS context's threshold can affect in-flight
-     *      decryption requests pinned to that context; the operator should ensure timing accordingly.
+     *      for the given context. WARNING: This mutates state read by `Decryption` without enforcing
+     *      an on-chain pause. Operators must follow the runbook to avoid racing in-flight requests.
      * @param contextId The KMS context to update.
      * @param newUserDecryptionThreshold The new user decryption threshold.
      */
@@ -458,8 +462,8 @@ interface IGatewayConfig {
     /**
      * @notice Update the key and CRS generation threshold for a given KMS context.
      * @dev The new threshold must verify `1 <= t <= n`, with `n` the number of KMS nodes registered
-     *      for the given context. Updating the *current* KMS context's threshold can affect in-flight
-     *      key/CRS generation requests pinned to that context; the operator should ensure timing accordingly.
+     *      for the given context. This threshold is consumed by host-side KMS generation, not
+     *      Gateway-side decryption.
      * @param contextId The KMS context to update.
      * @param newKmsGenThreshold The new key and CRS generation threshold.
      */

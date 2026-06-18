@@ -74,7 +74,7 @@ spec:
             {{- if not (has "tfhe-contract-address" $disabled) }}
             - --tfhe-contract-address=$(FHEVM_EXECUTOR_CONTRACT_ADDRESS)
             {{- end }}
-            {{- if not (has "kms-generation-address" $disabled) }}
+            {{- if and (not (has "kms-generation-address" $disabled)) (or $chain.kmsGenerationContractAddress $chain.kmsGenerationContractAddressValueFrom) }}
             - --kms-generation-address=$(KMS_GENERATION_ADDRESS)
             {{- end }}
             {{- if not (has "health-port" $disabled) }}

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import {Vm} from "forge-std/Test.sol";
 import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
 import {KMSGeneration} from "@fhevm-host-contracts/contracts/KMSGeneration.sol";
@@ -91,13 +90,6 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
     // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
-
-    function _assertNoEventEmitted(bytes32 eventSelector, string memory message) internal {
-        Vm.Log[] memory logs = vm.getRecordedLogs();
-        for (uint256 i = 0; i < logs.length; i++) {
-            assertTrue(logs[i].topics[0] != eventSelector, message);
-        }
-    }
 
     function _deployMigrationProxyAndState()
         internal
@@ -1376,13 +1368,10 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         );
         bytes memory keySig = _computeSignature(kmsPk1, keyDigest);
 
-        vm.recordLogs();
+        vm.expectEmit(false, false, false, false, address(migrated), 0);
+        emit IKMSGeneration.ActivateKey(0, new string[](0), new IKMSGeneration.KeyDigest[](0));
         vm.prank(kmsTxSender1);
         migrated.keygenResponse(state.activeKeyId, _mockKeyDigests(), keySig);
-        _assertNoEventEmitted(
-            IKMSGeneration.ActivateKey.selector,
-            "late migrated keygen response should not emit ActivateKey"
-        );
 
         address[] memory keyConsTxSenders = migrated.getConsensusTxSenders(state.activeKeyId);
         assertEq(keyConsTxSenders.length, 2);
@@ -1429,12 +1418,9 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         _doPrepKeygenResponse(prepKeygenId, kmsPk2, kmsTxSender2);
 
         // 4th response should be silently ignored (no KeygenRequest event, no revert)
-        vm.recordLogs();
+        vm.expectEmit(false, false, false, false, address(kmsGeneration), 0);
+        emit IKMSGeneration.KeygenRequest(0, 0, "");
         _doPrepKeygenResponse(prepKeygenId, kmsPk3, kmsTxSender3);
-        _assertNoEventEmitted(
-            IKMSGeneration.KeygenRequest.selector,
-            "4th prepKeygen response should not emit KeygenRequest"
-        );
     }
 
     function test_postConsensusKeygenResponseIgnored() public {
@@ -1457,9 +1443,9 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         _doKeygenResponse(prepKeygenId, keyId, kmsPk2, kmsTxSender2);
 
         // 4th response should be silently ignored (no ActivateKey event, no revert)
-        vm.recordLogs();
+        vm.expectEmit(false, false, false, false, address(kmsGeneration), 0);
+        emit IKMSGeneration.ActivateKey(0, new string[](0), new IKMSGeneration.KeyDigest[](0));
         _doKeygenResponse(prepKeygenId, keyId, kmsPk3, kmsTxSender3);
-        _assertNoEventEmitted(IKMSGeneration.ActivateKey.selector, "4th keygen response should not emit ActivateKey");
     }
 
     function test_postConsensusCrsgenResponseIgnored() public {
@@ -1476,9 +1462,9 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         _doCrsgenResponse(crsId, kmsPk2, kmsTxSender2);
 
         // 4th response should be silently ignored (no ActivateCrs event, no revert)
-        vm.recordLogs();
+        vm.expectEmit(false, false, false, false, address(kmsGeneration), 0);
+        emit IKMSGeneration.ActivateCrs(0, new string[](0), "");
         _doCrsgenResponse(crsId, kmsPk3, kmsTxSender3);
-        _assertNoEventEmitted(IKMSGeneration.ActivateCrs.selector, "4th crsgen response should not emit ActivateCrs");
     }
 
     function test_fullKeygenCycleMultiSigner() public {

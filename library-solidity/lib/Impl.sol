@@ -284,14 +284,19 @@ interface IFHEVMExecutor {
     function fheIsIn(bytes32 value, bytes32[] calldata values, FheType valueType) external returns (bytes32 result);
 
     /**
-     * @notice              Computes fheMulDiv operation: (lhs * rhs) / divisor with intermediate widening.
-     * @param lhs           LHS (always encrypted).
-     * @param rhs           RHS (encrypted when scalarByte=0x00, plaintext scalar when scalarByte=0x01).
+     * @notice              Computes fheMulDiv operation: (factor1 * factor2) / divisor with intermediate widening.
+     * @param factor1       First multiplication factor (always encrypted).
+     * @param factor2       Second multiplication factor (encrypted when scalarByte=0x01, plaintext scalar when scalarByte=0x03).
      * @param divisor       Divisor (always a plaintext scalar encoded as bytes32).
-     * @param scalarByte    Scalar byte.
+     * @param scalarByte    0x01 if factor2 is an encrypted handle; 0x03 if factor2 is a plaintext scalar.
      * @return result       Result.
      */
-    function fheMulDiv(bytes32 lhs, bytes32 rhs, bytes32 divisor, bytes1 scalarByte) external returns (bytes32 result);
+    function fheMulDiv(
+        bytes32 factor1,
+        bytes32 factor2,
+        bytes32 divisor,
+        bytes1 scalarByte
+    ) external returns (bytes32 result);
 
     /**
      * @notice                      Returns the address of the InputVerifier contract used by the coprocessor.
@@ -436,6 +441,10 @@ library Impl {
     /// keccak256(abi.encode(uint256(keccak256("confidential.storage.config")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant COPROCESSOR_CONFIG_LOCATION =
         0x9e7b61f58c47dc699ac88507c4f5bb9f121c03808c5676a8078fe583e4649700;
+
+    /// `fheMulDiv` `scalarByte` bitmask: bit 0 (divisor) is always set; bit 1 marks `factor2` as scalar.
+    bytes1 private constant FHE_MUL_DIV_FACTOR2_ENCRYPTED = 0x01;
+    bytes1 private constant FHE_MUL_DIV_FACTOR2_SCALAR = 0x03;
 
     /**
      * @dev Returns the Coprocessor config.
@@ -741,10 +750,10 @@ library Impl {
         result = IFHEVMExecutor($.CoprocessorAddress).fheIsIn(value, values, valueType);
     }
 
-    function mulDiv(bytes32 lhs, bytes32 rhs, bytes32 divisor, bool scalar) internal returns (bytes32 result) {
+    function mulDiv(bytes32 factor1, bytes32 factor2, bytes32 divisor, bool scalar) internal returns (bytes32 result) {
         CoprocessorConfig storage $ = getCoprocessorConfig();
-        bytes1 scalarByte = scalar ? bytes1(0x01) : bytes1(0x00);
-        result = IFHEVMExecutor($.CoprocessorAddress).fheMulDiv(lhs, rhs, divisor, scalarByte);
+        bytes1 scalarByte = scalar ? FHE_MUL_DIV_FACTOR2_SCALAR : FHE_MUL_DIV_FACTOR2_ENCRYPTED;
+        result = IFHEVMExecutor($.CoprocessorAddress).fheMulDiv(factor1, factor2, divisor, scalarByte);
     }
 
     /**

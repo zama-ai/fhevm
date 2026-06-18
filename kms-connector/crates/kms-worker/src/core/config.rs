@@ -72,6 +72,11 @@ pub struct Config {
     #[serde(with = "humantime_serde", default = "default_s3_connect_timeout")]
     pub s3_connect_timeout: Duration,
 
+    /// Gas cap for the host-chain `IERC1271.isValidSignature` static call (RFC-012).
+    /// Bounded to prevent resource exhaustion from malicious smart-account contracts.
+    #[serde(default = "default_erc1271_gas_limit")]
+    pub erc1271_gas_limit: u64,
+
     /// The service name used for tracing.
     #[serde(default = "default_service_name")]
     pub service_name: String,
@@ -165,6 +170,10 @@ fn default_s3_connect_timeout() -> Duration {
     Duration::from_secs(3)
 }
 
+fn default_erc1271_gas_limit() -> u64 {
+    100_000
+}
+
 impl DeserializeConfig for Config {}
 
 // Default implementation for testing purpose
@@ -192,6 +201,7 @@ impl Default for Config {
             max_decryption_attempts: default_max_decryption_attempts(),
             s3_ciphertext_retrieval_retries: default_s3_ciphertext_retrieval_retries(),
             s3_connect_timeout: default_s3_connect_timeout(),
+            erc1271_gas_limit: default_erc1271_gas_limit(),
             service_name: default_service_name(),
             task_limit: default_task_limit(),
             monitoring_endpoint: default_monitoring_endpoint(),

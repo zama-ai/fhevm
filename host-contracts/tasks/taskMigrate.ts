@@ -24,7 +24,7 @@ import {
 // Proposal artifact helpers
 ////////////////////////////////////////////////////////////////////////////////
 
-export function stringifyForProposal(value: unknown): string {
+export function toJsonString(value: unknown): string {
   return JSON.stringify(
     value,
     (_, nestedValue: unknown) => (typeof nestedValue === 'bigint' ? nestedValue.toString() : nestedValue),
@@ -110,20 +110,9 @@ function printPreparedDaoUpgrade(data: PreparedDaoUpgrade): void {
   console.log('proxyAddress:', data.proxyAddress);
   console.log('newImplementationAddress:', data.newImplementationAddress);
   console.log('innerFunctionSignature:', data.innerFunctionSignature);
-  console.log('decodedArgs:', stringifyForProposal(data.decodedArgs));
+  console.log('decodedArgs:', toJsonString(data.decodedArgs));
   console.log(`${data.innerFunctionSignature} calldata:`, data.innerCalldata);
   console.log('upgradeToAndCall(address,bytes) calldata:', data.outerCalldata);
-  console.log(
-    'Prepared upgrade artifact:',
-    stringifyForProposal({
-      proxyAddress: data.proxyAddress,
-      newImplementationAddress: data.newImplementationAddress,
-      innerFunctionSignature: data.innerFunctionSignature,
-      decodedArgs: data.decodedArgs,
-      innerCalldata: data.innerCalldata,
-      outerCalldata: data.outerCalldata,
-    }),
-  );
   console.log(
     `Cast command: cast calldata 'upgradeToAndCall(address,bytes)' ${data.newImplementationAddress} ${data.innerCalldata}`,
   );
@@ -136,8 +125,8 @@ function assertEqual<T>(label: string, actual: T, expected: NoInfer<T>): void {
 }
 
 function assertJsonEqual(label: string, actual: unknown, expected: unknown): void {
-  const actualJson = stringifyForProposal(actual);
-  const expectedJson = stringifyForProposal(expected);
+  const actualJson = toJsonString(actual);
+  const expectedJson = toJsonString(expected);
   if (actualJson !== expectedJson) {
     throw new Error(`${label} mismatch: expected ${expectedJson}, got ${actualJson}.`);
   }

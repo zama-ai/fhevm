@@ -26,12 +26,8 @@ use crate::{
     gateway::arbitrum::{
         parse_private_key,
         transaction::{
-            nonce_manager::NonceManagerNonOptimistic,
-            provider::NonceManagedProvider,
-            selectors::{
-                SELECTOR_ACCOUNT_NOT_ALLOWED_TO_USE_CIPHERTEXT,
-                SELECTOR_CIPHERTEXT_MATERIAL_NOT_READY, SELECTOR_PUBLIC_DECRYPT_NOT_ALLOWED,
-            },
+            nonce_manager::NonceManagerNonOptimistic, provider::NonceManagedProvider,
+            selectors::SELECTOR_CIPHERTEXT_MATERIAL_NOT_READY,
         },
     },
     logging::TxEngineStep,
@@ -317,10 +313,6 @@ impl
                             // NOTE (Nico): This control flow makes the tx engine less generic.
                             if response_error_string
                                 .contains(SELECTOR_CIPHERTEXT_MATERIAL_NOT_READY)
-                                || response_error_string
-                                    .contains(SELECTOR_PUBLIC_DECRYPT_NOT_ALLOWED)
-                                || response_error_string
-                                    .contains(SELECTOR_ACCOUNT_NOT_ALLOWED_TO_USE_CIPHERTEXT)
                             {
                                 // Not passing in loop initial check to get a max retry exceeded fails 1 retry before.
                                 if retries >= self.gas_estimation_max_retries - 1 {

@@ -62,7 +62,7 @@ pub struct Args {
     #[arg(long)]
     pub tfhe_contract_address: String,
 
-    #[arg(long)]
+    #[arg(long, default_value = "")]
     pub kms_generation_address: String,
 
     #[arg(
@@ -391,46 +391,33 @@ impl InfiniteLogIter {
         }
     }
 
-    async fn deduce_block_summary(
+    async fn get_block_summary(
         &self,
         number: u64,
         log: &Log,
-        previous_block: Option<&BlockLogs<Log>>,
-    ) -> BlockSummary {
+    ) -> Result<BlockSummary> {
         // find in memory
         if let Some(summary) = self.block_history.find_block_by_number(number) {
-            return *summary;
+            return Ok(*summary);
         };
-        // ask to chain
+        // ask the chain
         if let Ok(block_header) = self.get_block_by_number(number).await {
-            return block_header.into();
+            return Ok(block_header.into());
         };
-        error!(log = ?log, number, "Cannot get block header from chain, using log data and previous block data");
-        let hash = log.block_hash.unwrap_or(BlockHash::ZERO);
-        // fake hash may cause this block to be refetched later because it's considered missing
-        let estimated_timestamp =
-            previous_block.map(|b| b.summary.timestamp).unwrap_or(0)
-                + self.block_time;
-        let timestamp = log.block_timestamp.unwrap_or(estimated_timestamp);
-        // inaccurate timestamp is ok
-        let parent_hash = previous_block
-            .map(|bl| bl.summary.hash)
-            .unwrap_or(BlockHash::ZERO);
-        // inaccurate parent hash is ok
-        BlockSummary {
+        error!(
+            log = ?log,
             number,
-            hash,
-            parent_hash,
-            timestamp,
-        }
+            "Cannot get block header from chain, stalling catchup until it is available"
+        );
+        anyhow::bail!("Cannot get block header for block {number}")
     }
 
     async fn split_by_block(
         &mut self,
         mut logs: Vec<Log>,
-    ) -> Vec<BlockLogs<Log>> {
+    ) -> Result<Vec<BlockLogs<Log>>> {
         if logs.is_empty() {
-            return vec![];
+            return Ok(vec![]);
         }
         let mut is_sorted = true;
         let mut last_of_block = vec![false; logs.len()];
@@ -466,12 +453,8 @@ impl InfiniteLogIter {
                 continue;
             }
             let summary = self
-                .deduce_block_summary(
-                    log.block_number.unwrap(),
-                    &log,
-                    blocks_logs.last(),
-                )
-                .await;
+                .get_block_summary(log.block_number.unwrap(), &log)
+                .await?;
             current_logs.push(log);
             let block_logs = BlockLogs {
                 logs: std::mem::take(&mut current_logs),
@@ -482,7 +465,7 @@ impl InfiniteLogIter {
             blocks_logs.push(block_logs);
         }
         assert!(current_logs.is_empty());
-        blocks_logs
+        Ok(blocks_logs)
     }
 
     async fn consume_catchup_blocks(&mut self) {
@@ -552,7 +535,13 @@ impl InfiniteLogIter {
             to_block = to_block,
             "Catchup get_logs step done"
         );
-        let by_blocks = self.split_by_block(logs).await;
+        let by_blocks = match self.split_by_block(logs).await {
+            Ok(by_blocks) => by_blocks,
+            Err(err) => {
+                error!(error = ?err, from_block, "Catchup failed, will retry this range later");
+                return;
+            }
+        };
         self.next_blocklogs.extend(by_blocks);
         self.catchup_blocks = Some((paging_to_block + 1, to_block)); // end is detected at function start
     }
@@ -1175,10 +1164,12 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
                 )
                 .await;
             }
-            background_tasks.spawn(process_kms_generation_activations(
-                db.pool.read().await.clone(),
-                aws_s3_client,
-            ));
+            if kms_generation_address.is_some() {
+                background_tasks.spawn(process_kms_generation_activations(
+                    db.pool.read().await.clone(),
+                    aws_s3_client,
+                ));
+            }
         }
 
         if !args.only_catchup_loop {
@@ -1339,5 +1330,31 @@ mod tests {
         iter.check_missing_ancestors(block_b).await;
         assert!(iter.block_history.is_known(&block_b.hash));
         assert!(iter.block_history.is_ready_to_detect_reorg());
+    }
+
+    #[tokio::test]
+    async fn get_block_summary_fails_when_header_unavailable() {
+        let iter = new_test_iter(50);
+        assert!(iter.get_block_summary(42, &Log::default()).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn get_block_summary_uses_known_block_from_history() {
+        let mut iter = new_test_iter(50);
+        let summary = BlockSummary {
+            number: 7,
+            hash: BlockHash::with_last_byte(0xAA),
+            parent_hash: BlockHash::with_last_byte(0x99),
+            timestamp: 1000,
+        };
+        iter.block_history.add_block(summary);
+
+        let got = iter
+            .get_block_summary(7, &Log::default())
+            .await
+            .expect("known block resolves");
+        assert_eq!(got.hash, summary.hash);
+        assert_eq!(got.parent_hash, summary.parent_hash);
+        assert_eq!(got.timestamp, summary.timestamp);
     }
 }

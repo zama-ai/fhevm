@@ -34,7 +34,7 @@ impl HttpChainClient {
         rpc_url: &str,
         acl_address: Address,
         tfhe_address: Address,
-        kms_generation_address: Address,
+        kms_generation_address: Option<Address>,
         retry_interval: Duration,
         max_retries: u32,
         compute_units_per_second: u64,
@@ -58,7 +58,11 @@ impl HttpChainClient {
         let client = RpcClient::builder().layer(retry_layer).http(url);
         let provider = ProviderBuilder::new().connect_client(client);
 
-        let addresses = vec![acl_address, tfhe_address, kms_generation_address];
+        let addresses = Self::monitored_addresses(
+            acl_address,
+            tfhe_address,
+            kms_generation_address,
+        );
 
         Ok(Self {
             provider: Box::new(provider),
@@ -107,6 +111,18 @@ impl HttpChainClient {
         }
         filter
     }
+
+    fn monitored_addresses(
+        acl_address: Address,
+        tfhe_address: Address,
+        kms_generation_address: Option<Address>,
+    ) -> Vec<Address> {
+        let mut addresses = vec![acl_address, tfhe_address];
+        if let Some(kms_generation_address) = kms_generation_address {
+            addresses.push(kms_generation_address);
+        }
+        addresses
+    }
 }
 
 #[cfg(test)]
@@ -153,5 +169,27 @@ mod tests {
         let filter = HttpChainClient::build_filter(1, &[]);
         let serialized = serde_json::to_value(filter).unwrap();
         assert!(serialized.get("address").is_none());
+    }
+
+    #[test]
+    fn optional_kms_generation_address_is_not_monitored_when_absent() {
+        let acl_address = Address::from([1u8; 20]);
+        let tfhe_address = Address::from([2u8; 20]);
+        let addresses = HttpChainClient::monitored_addresses(
+            acl_address,
+            tfhe_address,
+            None,
+        );
+
+        let filter = HttpChainClient::build_filter(7, &addresses);
+        let serialized = serde_json::to_value(filter).unwrap();
+        let mut actual: Vec<Address> =
+            serde_json::from_value(serialized.get("address").cloned().unwrap())
+                .unwrap();
+        actual.sort();
+
+        let mut expected = vec![acl_address, tfhe_address];
+        expected.sort();
+        assert_eq!(actual, expected);
     }
 }

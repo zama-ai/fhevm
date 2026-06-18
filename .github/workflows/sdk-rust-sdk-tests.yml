@@ -19,7 +19,7 @@ jobs:
       actions: 'read' # Required to read workflow run information
       contents: 'read' # Required to checkout repository code
       pull-requests: 'read' # Required to read pull request information
-    runs-on: ubuntu-latest
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
     outputs:
       # Each output indicates if files in a specific component were modified
       changes-rust-sdk: ${{ steps.filter.outputs.rust-sdk }}
@@ -38,42 +38,19 @@ jobs:
             - 'sdk/rust-sdk/src/**'
             - 'sdk/rust-sdk/examples/**'
             - 'sdk/rust-sdk/Cargo.toml'
-            - gateway-contracts/rust-bindings/**
-
-  start-runner:
-    name: sdk-rust-sdk-tests/start-runner
-    needs: check-changes
-    if: ${{ needs.check-changes.outputs.changes-rust-sdk == 'true' }}
-    permissions:
-      actions: 'read' # Required to read workflow run information
-      contents: 'read' # Required to checkout repository code
-      packages: 'read' # Required to read GitHub packages/container registry
-      pull-requests: 'read' # Required to read pull request information
-    runs-on: ubuntu-latest
-    outputs:
-      label: ${{ steps.start-ec2-runner.outputs.label }}
-    steps:
-      - name: Start EC2 runner
-        id: start-ec2-runner
-        uses: zama-ai/slab-github-runner@79939325c3c429837c10d6041e4fd8589d328bac # v1.4.1
-        with:
-          mode: start
-          github-token: ${{ secrets.SLAB_ACTION_TOKEN }}
-          slab-url: ${{ secrets.SLAB_BASE_URL }}
-          job-secret: ${{ secrets.JOB_SECRET }}
-          backend: aws
-          profile: big-instance
+            - gateway-contracts/rust_bindings/**
 
   test-rust-sdk:
     name: sdk-rust-sdk-tests/test-rust-sdk (bpr)
-    needs: start-runner
+    needs: check-changes
+    if: ${{ needs.check-changes.outputs.changes-rust-sdk == 'true' }}
     timeout-minutes: 50
     permissions:
       actions: 'read' # Required to read workflow run information
       contents: 'read' # Required to checkout repository code
       packages: 'read' # Required to read GitHub packages/container registry
       pull-requests: 'read' # Required to read pull request information
-    runs-on: ${{ needs.start-runner.outputs.label }}
+    runs-on: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64
     defaults:
       run:
         shell: bash
@@ -89,11 +66,10 @@ jobs:
 
       - name: Setup common environment variables
         run: |
-          echo "HOME=/home/ubuntu" >> "${GITHUB_ENV}"
           echo "CARGO_NET_GIT_FETCH_WITH_CLI=true" >> "${GITHUB_ENV}"
 
       - name: Login to GitHub Container Registry
-        uses: zama-ai/ci-templates/.github/actions/retry@f3b6046d0ce6f2eab83353e0fb788bd781be9f2e # v1.0.6
+        uses: zama-ai/ci-templates/.github/actions/retry@542103e14b9ae6a9aea27787b8724b3b35bb3918 # v1.0.9
         env:
           GHCR_USERNAME: ${{ github.actor }}
           GHCR_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
@@ -141,25 +117,3 @@ jobs:
           BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
         run: |
           bash scripts/run-examples.sh
-
-  stop-runner:
-    name: sdk-rust-sdk-tests/stop-runner
-    needs:
-      - start-runner
-      - test-rust-sdk
-    permissions:
-      actions: 'read' # Required to read workflow run information
-      contents: 'read' # Required to checkout repository code
-      packages: 'read' # Required to read GitHub packages/container registry
-      pull-requests: 'read' # Required to read pull request information
-    runs-on: ubuntu-latest
-    if: ${{ always() && needs.start-runner.result != 'skipped' }} # required to stop the runner even if the error happened in the previous jobs, but only if start-runner was not skipped
-    steps:
-      - name: Stop EC2 runner
-        uses: zama-ai/slab-github-runner@79939325c3c429837c10d6041e4fd8589d328bac # v1.4.1
-        with:
-          mode: stop
-          github-token: ${{ secrets.SLAB_ACTION_TOKEN }}
-          slab-url: ${{ secrets.SLAB_BASE_URL }}
-          job-secret: ${{ secrets.JOB_SECRET }}
-          label: ${{ needs.start-runner.outputs.label }}

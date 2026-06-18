@@ -1025,7 +1025,7 @@ async fn test_fhe_mul_div_events() -> Result<(), Box<dyn std::error::Error>> {
         .filter(|t| enabled.contains(t))
         .collect();
 
-    // (lhs_value, rhs_value, divisor, is_scalar_rhs, expected_result)
+    // (factor1_value, factor2_value, divisor, is_scalar_factor2, expected_result)
     let test_cases: &[(u64, u64, u64, bool, &str)] = &[
         (20, 10, 2, false, "100"), // enc * enc / scalar
         (20, 10, 2, true, "100"),  // enc * scalar / scalar
@@ -1035,9 +1035,9 @@ async fn test_fhe_mul_div_events() -> Result<(), Box<dyn std::error::Error>> {
     let mut cases: Vec<(Handle, i32, &str)> = vec![];
 
     for &fhe_type in &types {
-        for &(lhs_val, rhs_val, divisor_val, scalar_rhs, expected) in test_cases {
+        for &(factor1_val, factor2_val, divisor_val, scalar_factor2, expected) in test_cases {
             let tx_id = next_handle();
-            let lhs_handle = next_handle_with_type(fhe_type);
+            let factor1_handle = next_handle_with_type(fhe_type);
             let output = next_handle_with_type(fhe_type);
 
             let mut out = [0u8; 32];
@@ -1049,22 +1049,30 @@ async fn test_fhe_mul_div_events() -> Result<(), Box<dyn std::error::Error>> {
                 &listener_db,
                 &mut tx,
                 tx_id,
-                lhs_val,
+                factor1_val,
                 fhe_type,
-                lhs_handle,
+                factor1_handle,
                 true,
             )
             .await?;
-            allow_handle(&listener_db, &mut tx, &lhs_handle).await?;
+            allow_handle(&listener_db, &mut tx, &factor1_handle).await?;
 
-            let rhs_handle = if scalar_rhs {
-                let mut rhs_bytes = [0u8; 32];
-                rhs_bytes[16..].copy_from_slice(&(rhs_val as u128).to_be_bytes());
-                Handle::from(rhs_bytes)
+            let factor2_handle = if scalar_factor2 {
+                let mut factor2_bytes = [0u8; 32];
+                factor2_bytes[16..].copy_from_slice(&(factor2_val as u128).to_be_bytes());
+                Handle::from(factor2_bytes)
             } else {
                 let h = next_handle_with_type(fhe_type);
-                insert_trivial_encrypt(&listener_db, &mut tx, tx_id, rhs_val, fhe_type, h, true)
-                    .await?;
+                insert_trivial_encrypt(
+                    &listener_db,
+                    &mut tx,
+                    tx_id,
+                    factor2_val,
+                    fhe_type,
+                    h,
+                    true,
+                )
+                .await?;
                 allow_handle(&listener_db, &mut tx, &h).await?;
                 h
             };
@@ -1075,10 +1083,14 @@ async fn test_fhe_mul_div_events() -> Result<(), Box<dyn std::error::Error>> {
                 tx_id,
                 TfheContractEvents::FheMulDiv(TfheContract::FheMulDiv {
                     caller: zero_address(),
-                    lhs: lhs_handle,
-                    rhs: rhs_handle,
+                    factor1: factor1_handle,
+                    factor2: factor2_handle,
                     divisor: divisor_handle,
-                    scalarByte: alloy::primitives::FixedBytes([if scalar_rhs { 1u8 } else { 0u8 }]),
+                    scalarByte: alloy::primitives::FixedBytes([if scalar_factor2 {
+                        0x03u8
+                    } else {
+                        0x01u8
+                    }]),
                     result: output,
                 }),
                 true,

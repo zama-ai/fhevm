@@ -56,6 +56,49 @@ pub enum V2ErrorLabel {
 pub const UNWIRED_LABELS: &[&str] = &["gateway_not_reachable"];
 
 /// Derives the canonical label list from [`ERROR_LABEL_DEFS`].
+/// Walk a `validator::ValidationErrors` tree and emit one
+/// `RelayerV2ErrorDetail` per leaf field error, with dot-notation paths for
+/// nested structs (e.g. `attestedPayload.version`) and bracket indexing for
+/// lists (e.g. `handles[0].ctHandle`). Field names are converted to
+/// camelCase to match the wire format.
+fn collect_flat_validation_errors(
+    errors: &validator::ValidationErrors,
+    prefix: &str,
+    out: &mut Vec<RelayerV2ErrorDetail>,
+) {
+    for (field, kind) in errors.errors() {
+        let field_camel = to_camel_case(field);
+        let path = if prefix.is_empty() {
+            field_camel.clone()
+        } else {
+            format!("{}.{}", prefix, field_camel)
+        };
+        match kind {
+            validator::ValidationErrorsKind::Field(field_errors) => {
+                for e in field_errors {
+                    out.push(RelayerV2ErrorDetail {
+                        field: path.clone(),
+                        issue: e
+                            .message
+                            .as_ref()
+                            .map(|m| m.to_string())
+                            .unwrap_or_else(|| format!("Invalid {}", path)),
+                    });
+                }
+            }
+            validator::ValidationErrorsKind::Struct(nested) => {
+                collect_flat_validation_errors(nested, &path, out);
+            }
+            validator::ValidationErrorsKind::List(items) => {
+                for (idx, nested) in items {
+                    let indexed = format!("{}[{}]", path, idx);
+                    collect_flat_validation_errors(nested, &indexed, out);
+                }
+            }
+        }
+    }
+}
+
 pub fn all_error_labels() -> Vec<&'static str> {
     crate::http::openapi::expected_labels::ERROR_LABEL_DEFS
         .iter()
@@ -463,21 +506,13 @@ impl RelayerV2ResponseFailed {
                 )
             }
             ParseError::ValidationFailed(errors) => {
-                let details: Vec<RelayerV2ErrorDetail> = errors
-                    .field_errors()
-                    .iter()
-                    .flat_map(|(field, field_errors)| {
-                        let field = to_camel_case(field);
-                        field_errors.iter().map(move |e| RelayerV2ErrorDetail {
-                            field: field.clone(),
-                            issue: e
-                                .message
-                                .as_ref()
-                                .map(|m| m.to_string())
-                                .unwrap_or_else(|| format!("Invalid {}", field)),
-                        })
-                    })
-                    .collect();
+                // Flatten nested ValidationErrors so violations on inner
+                // structs (e.g. `attested_payload.version`) surface in the
+                // response. `validator::ValidationErrors::field_errors()`
+                // only returns top-level Field entries and silently drops
+                // Struct/List nested errors.
+                let mut details: Vec<RelayerV2ErrorDetail> = Vec::new();
+                collect_flat_validation_errors(errors, "", &mut details);
 
                 let field_count = details.len();
                 let message = if field_count == 1 {

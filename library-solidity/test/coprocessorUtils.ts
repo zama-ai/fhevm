@@ -154,7 +154,7 @@ const abi = [
   'event FheRandBounded(address indexed caller, uint256 upperBound, uint8 randType, bytes16 seed, bytes32 result)',
   'event FheSum(address indexed caller, bytes32[] values, bytes32 result)',
   'event FheIsIn(address indexed caller, bytes32 value, bytes32[] values, bytes32 result)',
-  'event FheMulDiv(address indexed caller, bytes32 lhs, bytes32 rhs, bytes32 divisor, bytes1 scalarByte, bytes32 result)',
+  'event FheMulDiv(address indexed caller, bytes32 factor1, bytes32 factor2, bytes32 divisor, bytes1 scalarByte, bytes32 result)',
 ];
 
 async function processAllPastFHEVMExecutorEvents() {
@@ -633,13 +633,14 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
     case 'FheMulDiv': {
       handle = ethers.toBeHex(event.args[5], 32);
       resultType = parseInt(handle.slice(-4, -2), 16);
-      clearLHS = await getClearText(event.args[1]);
+      const clearFactor1 = await getClearText(event.args[1]);
       const divisor = BigInt(event.args[3]);
-      if (event.args[4] === '0x01') {
-        clearText = (BigInt(clearLHS) * BigInt(event.args[2])) / divisor;
+      const factor2IsScalar = (BigInt(event.args[4]) & 0x02n) !== 0n;
+      if (factor2IsScalar) {
+        clearText = (BigInt(clearFactor1) * BigInt(event.args[2])) / divisor;
       } else {
-        clearRHS = await getClearText(event.args[2]);
-        clearText = (BigInt(clearLHS) * BigInt(clearRHS)) / divisor;
+        const clearFactor2 = await getClearText(event.args[2]);
+        clearText = (BigInt(clearFactor1) * BigInt(clearFactor2)) / divisor;
       }
       clearText = clearText % 2n ** NumBits[resultType as keyof typeof NumBits];
       insertSQL(handle, clearText);
@@ -1420,7 +1421,8 @@ export function getTxHCUFromTxReceipt(
         if (!type) {
           throw new Error(`Invalid FheType index: ${typeIndex}`);
         }
-        if (event.args[4] === '0x01') {
+        const rhsIsScalar = (BigInt(event.args[4]) & 0x02n) !== 0n;
+        if (rhsIsScalar) {
           hcuConsumed = (ALL_OPERATORS_PRICES['fheMulDiv'].scalar as Record<string, number>)[type];
           hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
         } else {

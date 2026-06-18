@@ -24,7 +24,7 @@ services:
     environment:
       - KEY_ID=${FHE_KEY_ID}
     command:
-      - /initialize_db.sh && ( [ ! -x /insert_test_host_chain.sh ] || /insert_test_host_chain.sh )
+      - /initialize_db.sh
     volumes:
       - keys-cache:/fhevm-keys
 

@@ -4,9 +4,6 @@ import { ethers } from 'hardhat';
 import { createInstances } from '../instance';
 import { getSigners, initSigners } from '../signers';
 
-const CIPHERTEXT_DRIFT_FORBIDDEN_NETWORKS = new Set(['sepolia', 'mainnet', 'zwsDev']);
-const activeNetwork = () => process.env.NETWORK ?? process.env.HARDHAT_NETWORK ?? '';
-
 describe('Input Flow', function () {
   before(async function () {
     await initSigners(2);
@@ -28,10 +25,6 @@ describe('Input Flow', function () {
   });
 
   it('test user input uint64 (non-trivial)', async function () {
-    if (CIPHERTEXT_DRIFT_FORBIDDEN_NETWORKS.has(activeNetwork())) {
-      this.skip();
-    }
-
     const encryptedAmount = await this.instances.alice.encryptUint64({
       value: 18446744073709550042n,
       contractAddress: this.contractAddress,
