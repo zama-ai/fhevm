@@ -49,7 +49,7 @@ Design rationale for the divergences below is recorded in
 | `_burn(from, amount)` | decrease balance + total supply | `confidential_burn` (rotate balance + total supply) + `redeem_burned_amount` (release underlying from vault — KMS-cert gated, public-decrypt gated) | **MET** + Solana-only redeem leg (no ERC7984 analogue; wrapper needs underlying release) |
 | `_update` safe-math (`tryIncrease`/`tryDecrease`, `select`, allow/allowThis) | overflow/underflow-safe FHE balance update, conditional transfer of `select(success, amount, 0)` | `confidential-token/src/fhe.rs` + host `fhe_binary_op*`/`fhe_ternary_op_*` (add/sub/ge/select) + producer ACL birth | **PARTIAL** — `tryDecrease` reproduced (transfer/burn debit: `ge` → `sub` → `select(success, candidate, balance)`); `tryIncrease` NOT reproduced — the wrap/mint total-supply increase and the recipient credit use a plain `add`. Total-supply overflow is instead bounded by the 1:1 SPL backing (a real `u64` mint), per the `_mint` DIVERGENCE above. Output ACL via authorized producer paths |
 | `FHE.allow / allowThis` | durable ACL grant to user / contract | output `*_and_bind` producer paths (births canonical `AclRecord` with subjects) + `allow_acl_subjects` (append) | **MET** |
-| `FHE.allowTransient(transferred, sender)` | transaction-local grant | one-shot `TransientSession`/capability (host) or signer propagation | **DIVERGENCE** (no tstore; DD-008 / TRANSIENT_ALLOW.md) |
+| `FHE.allowTransient(transferred, sender)` | transaction-local grant | instruction-local `AllowedLocal` value within one `fhe_eval`, or CPI signer propagation | **DIVERGENCE** (no tstore; DD-008 / TRANSIENT_ALLOW.md) |
 | `ConfidentialTransfer` / `OperatorSet` / `AmountDisclose(d/Requested)` events | indexing | token-local + host events (`AclAllowedEvent`, transfer/disclosure events); no operator events | **PARTIAL** (DD-003: events are indexing hints, not authorization) |
 | self-transfer | (EVM updates regardless) | `confidential_transfer` no-op when from==to (no handle rotation, no output ACL) | **MET** (RFC 024 explicit; avoids useless historical handles) |
 
@@ -64,7 +64,7 @@ fromExternal** — all implemented. The confidential token is therefore **op-com
 |---|---|---|---|
 | `ACL.allow(handle, account)` | persistent grant; caller must be allowed | `allow_acl_subjects` — authority `Signer` + `ACL_ROLE_GRANT` on record + canonical PDA + deny-list + pause; append-only | **MET** (stricter: explicit grant role) |
 | `ACL.allowForDecryption(handles[])` | mark publicly decryptable | `allow_for_decryption` — dedicated `ACL_ROLE_PUBLIC_DECRYPT`, never set at birth, idempotent | **MET** (DIVERGENCE: per-handle; DD-005) |
-| `ACL.allowTransient(handle, account)` | tx-local grant | `allow_transient_handle` + one-shot `TransientSession` PDA (same-tx creation proof via instructions sysvar) | **DIVERGENCE** (no tstore; DD-008) |
+| `ACL.allowTransient(handle, account)` | tx-local grant | no durable analog; instruction-local `AllowedLocal` within one `fhe_eval`, or CPI signer propagation | **DIVERGENCE** (no tstore; DD-008) |
 | `ACL.isAllowed(handle, account)` | transient OR persistent | `assert_acl_record` / `assert_record_subject_role(ACL_ROLE_USE)` | **MET** |
 | `ACL.isAllowedForDecryption(handle)` | public-decrypt flag | `AclRecord.public_decrypt` | **MET** |
 | `ACL.persistAllowed` / `allowedTransient` | read pair | inline subject lookup + `AclPermission` overflow PDA / sealed session | **MET** / **DIVERGENCE** |

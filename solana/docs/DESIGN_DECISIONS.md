@@ -575,7 +575,7 @@ enforces the signer the RFC had removed.
 
 The OpenZeppelin-track `execute_frame` ABI is intentionally not ported as a host instruction. Its
 useful ergonomic idea — symbolic previous results inside one instruction — is represented by
-`FheEvalOperand::Transient` in the host ABI and by the app-facing `zama-fhe::EvalBuilder`. The SDK
+`FheEvalOperand::AllowedLocal` in the host ABI and by the app-facing `zama-fhe::EvalBuilder`. The SDK
 builder hides raw producer indices and `remaining_accounts` indices from app code, returns typed
 `Encrypted<T>` values for intermediate results, derives durable output nonce keys / ACL record PDAs
 from `DurableSlot`, stores ACL subjects behind `AccessPolicy`, and returns an opaque `EvalPlan`.
