@@ -1,21 +1,23 @@
 #!/usr/bin/env bash
 # Reproducible Solana side-stack setup against a LIVE fhevm-cli backend.
 #
-# Run AFTER `fhevm-cli up --override gateway-contracts \
-#   --override coprocessor:zkproof-worker,transaction-sender,db-migration \
-#   --override relayer --allow-schema-mismatch` has brought the EVM stack up with the
-# Solana code (gateway verifyProofRequestSolana, zkproof-worker 128B aux, tx-sender
-# Solana EIP-712, relayer bytes32 input + Solana host support) and keygen has completed.
+# Normally invoked by clean-e2e.sh, which runs `fhevm-cli up --scenario solana ...` first. That
+# brings the EVM stack up WITH the Solana code (gateway verifyProofRequestSolana, zkproof-worker
+# 128B aux, tx-sender Solana EIP-712, relayer bytes32 input + Solana host support), declares the
+# Solana host in the scenario, and — being the single config writer — generates the Solana
+# relayer + kms-connector host-chain config itself. Run this AFTER that `up` (keygen complete).
 #
-# This brings the Solana host online against that live backend, with NO stubs:
-#   1. (re)start a fresh local validator and deploy zama_host + confidential_token
+# This script owns only what depends on the freshly-deployed program / post-keygen state, with
+# NO stubs:
+#   1. (re)start a fresh host-native validator and deploy zama_host + confidential_token
 #   2. bootstrap zama-host from the REAL live gateway addresses + ProtocolConfig signer set
-#   3. register the Solana host chain in the coprocessor DB (host_chains + keyset mirror)
+#   3. register the Solana host chain in the coprocessor DB (host_chains i64 + keyset mirror)
 #      and on the gateway (GatewayConfig.addHostChain via the test-suite task)
-#   4. run the Solana host-listener against the live validator + coprocessor DB
+#   4. run the Solana host-listener + finalized-account fetcher against the validator + DB
+# It does NOT touch relayer.yaml / kms-connector.env — fhevm-cli generates those.
 #
-# All addresses/signers are read live (no hardcoded values), so it is reproducible
-# from a clean `fhevm-cli up`. MAINNET-safe: validator pinned to 127.0.0.1:8899.
+# All addresses/signers are read live (no hardcoded values), so it is reproducible from a clean
+# `fhevm-cli up --scenario solana`. MAINNET-safe: validator pinned to 127.0.0.1:8899.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
@@ -48,6 +50,13 @@ solana-test-validator --reset --rpc-port 8899 --bind-address 0.0.0.0 --ledger "$
 until curl -s -m2 "$VALIDATOR_RPC" -X POST -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"getHealth"}' 2>/dev/null | grep -q '"ok"'; do sleep 1; done
 solana airdrop 500 >/dev/null 2>&1 || true
+# Seed the committed well-known PoC program keypairs so build-sbf reuses them and the deployed
+# program IDs match each `declare_id!` (see scripts/poc/test-keypairs/README.md). `-n` keeps any
+# pre-existing local keypair; on a fresh checkout it seeds the committed test keys.
+mkdir -p "$SOLANA/target/deploy"
+for p in zama_host confidential_token confidential_token_receiver; do
+  cp -n "$SOLANA/scripts/poc/test-keypairs/$p-keypair.json" "$SOLANA/target/deploy/$p-keypair.json" 2>/dev/null || true
+done
 # SKIP_BUILD reuses the already-built program .so (SBF bytecode is portable across
 # validator versions); useful when the active build toolchain differs from the
 # validator (e.g. building under one Agave release, running the validator on another).
@@ -112,65 +121,12 @@ elif echo "$add_out" | grep -qiE 'reverted|error occurred'; then
   echo "gateway addHostChain failed"; exit 1
 fi
 
-echo "==> [4b/5] register Solana host chain in the relayer config + restart"
-# fhevm-cli generates relayer.yaml from the chains known at `up` time, so the post-hoc Solana
-# host must be added here. chain_id is QUOTED: RFC-021 Solana ids exceed i64::MAX and the relayer
-# config parser only accepts them as strings. acl_address = zama-host program (base58) so the
-# relayer treats it as a Solana host (KMS-enforced ACL, no EVM provider connection).
-RELAYER_YAML="$ROOT/.fhevm/runtime/config/relayer.yaml"
-if [ -f "$RELAYER_YAML" ]; then
-  python3 - "$RELAYER_YAML" "$SID_U64" "$ZAMA_HOST_ID" <<'PY'
-import sys
-path, sid, zama = sys.argv[1], sys.argv[2], sys.argv[3]
-txt = open(path).read()
-if sid in txt:
-    print("[relayer] Solana host chain already present"); sys.exit(0)
-out = []
-for ln in txt.splitlines(keepends=True):
-    out.append(ln)
-    if ln.startswith("host_chains:"):
-        out += [f'  - chain_id: "{sid}"\n', '    url: http://host-node:8545\n', f'    acl_address: "{zama}"\n']
-open(path, "w").write("".join(out))
-print(f"[relayer] added Solana host chain {sid} ({zama})")
-PY
-  docker restart fhevm-relayer >/dev/null 2>&1 || true
-  for _ in $(seq 1 30); do
-    docker logs fhevm-relayer --since 60s 2>&1 | grep -q 'All servers are ready' && break
-    sleep 2
-  done
-fi
-
-echo "==> [4c/5] register Solana host chain in the kms-connector config + recreate kms-worker"
-# The connector's PUBLIC-decrypt ACL check routes by host_chain_kind from KMS_CONNECTOR_HOST_CHAINS
-# (user-decrypt is event-driven and needs no config). Add a Solana entry: chain_kind=solana,
-# solana_host_program_id=zama-host (base58), url=validator over host.docker.internal (bound 0.0.0.0
-# above so the dockerized worker can read the on-chain ACL record). acl_address is a placeholder
-# (ignored for Solana). The env_file is read at container create, so recreate the kms-worker.
-CONNECTOR_ENV="$ROOT/.fhevm/runtime/env/kms-connector.env"
-if [ -f "$CONNECTOR_ENV" ] && ! grep -q "$SID_U64" "$CONNECTOR_ENV"; then
-  python3 - "$CONNECTOR_ENV" "$SID_U64" "$ZAMA_HOST_ID" <<'PY'
-import sys, json, re
-path, sid, zama = sys.argv[1], int(sys.argv[2]), sys.argv[3]
-lines = open(path).read().splitlines(keepends=True)
-out = []
-for ln in lines:
-    if ln.startswith("KMS_CONNECTOR_HOST_CHAINS="):
-        raw = ln.split("=", 1)[1].strip().strip("'\"\n")
-        arr = json.loads(raw)
-        arr.append({"url": "http://host.docker.internal:8899", "chain_id": sid,
-                    "chain_kind": "solana",
-                    "acl_address": "0x0000000000000000000000000000000000000000",
-                    "solana_host_program_id": zama})
-        out.append("KMS_CONNECTOR_HOST_CHAINS='" + json.dumps(arr) + "'\n")
-    else:
-        out.append(ln)
-open(path, "w").write("".join(out))
-print(f"[kms-connector] added Solana host chain {sid} ({zama})")
-PY
-  ( cd "$FHEVM" && bun run solana-recreate-kms-worker.ts )
-else
-  echo "[kms-connector] Solana host chain already present"
-fi
+# NOTE: the Solana relayer + kms-connector config (host_chains / KMS_CONNECTOR_HOST_CHAINS) is now
+# generated by `fhevm-cli up --scenario solana` itself — fhevm-cli is the single writer of that
+# config. This script no longer patches relayer.yaml or kms-connector.env. (The relayer never
+# connects to a Solana host, and the kms-worker's Solana fetcher is lazy, so both come up cleanly
+# before this host validator exists.) DB host_chains + gateway addHostChain remain here because
+# they depend on the freshly-deployed program id and post-keygen state.
 
 echo "==> [5/5] run Solana host-listener"
 pkill -f solana_host_listener 2>/dev/null || true

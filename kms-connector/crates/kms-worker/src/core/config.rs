@@ -117,9 +117,10 @@ pub struct HostChainConfig {
     pub chain_kind: HostChainKind,
     /// The `ACL` contract address on the Host Chain.
     ///
-    /// Required for EVM chains. Ignored for Solana chains.
-    #[serde(alias = "aclAddress")]
-    pub acl_address: Address,
+    /// Required for EVM chains (the worker binds the ACL contract here to gate decryptions).
+    /// Omitted for Solana chains, whose ACL is verified via `solana_host_program_id` instead.
+    #[serde(default, alias = "aclAddress")]
+    pub acl_address: Option<Address>,
     /// The expected ZamaHost program id for Solana-owned ACL/material witnesses.
     ///
     /// Required for Solana ACL verification. If omitted for a Solana chain, the
@@ -237,7 +238,7 @@ impl Default for Config {
                 url: Url::from_str("http://localhost:8545").unwrap(),
                 chain_id: 12345,
                 chain_kind: HostChainKind::Evm,
-                acl_address: Address::default(),
+                acl_address: Some(Address::default()),
                 solana_host_program_id: None,
             }],
             kms_core_endpoints: vec!["http://localhost:50051".to_string()],
@@ -369,8 +370,9 @@ mod tests {
                 url: Url::from_str("http://localhost:9545").unwrap(),
                 chain_id: 31888,
                 chain_kind: HostChainKind::Evm,
-                acl_address: Address::from_str("0x5fbdb2315678afecb367f032d93f642f64180aa3")
-                    .unwrap(),
+                acl_address: Some(
+                    Address::from_str("0x5fbdb2315678afecb367f032d93f642f64180aa3").unwrap(),
+                ),
                 solana_host_program_id: None,
             }]
         );
@@ -451,8 +453,9 @@ mod tests {
                 url: Url::from_str("http://localhost:9545").unwrap(),
                 chain_id: 31888,
                 chain_kind: HostChainKind::Solana,
-                acl_address: Address::from_str("0x5fbdb2315678afecb367f032d93f642f64180aa3")
-                    .unwrap(),
+                acl_address: Some(
+                    Address::from_str("0x5fbdb2315678afecb367f032d93f642f64180aa3").unwrap(),
+                ),
                 solana_host_program_id: Some([0; 32]),
             }]
         );

@@ -70,6 +70,7 @@ import {
   envPath,
   gatewayAddressesPath,
   hostChainAddressesPath,
+  isExternalNode,
 } from "../layout";
 import type {
   BuiltImage,
@@ -186,7 +187,9 @@ const SCHEMA_GUARDS = {
 
 const SCHEMA_GUARD_TARGETS = new Set<VersionBundle["target"]>(["latest-supported", "latest-main", "sha"]);
 export const preflightPorts = (state: Pick<State, "scenario">) =>
-  [...new Set([...PORTS, ...state.scenario.hostChains.map((chain) => chain.rpcPort)])];
+  // Externally-provisioned hosts (Solana host-native validator) bind their own port outside
+  // fhevm-cli, so that port being "in use" is expected, not a conflict — exclude it.
+  [...new Set([...PORTS, ...state.scenario.hostChains.filter((c) => !isExternalNode(c)).map((c) => c.rpcPort)])];
 
 /** Throws if Docker memory is below the scenario minimum: 16 GB standard, 32 GB for multi-chain + multi-coprocessor.
  *  Uses a 1 GB slack to account for VM overhead. */
@@ -575,9 +578,11 @@ export const runStep = async (state: State, step: StepName) => {
         };
       }
       await generateRuntime(state, stackSpecForState(state));
-      for (const chain of extraHostChains(state)) {
+      // Solana hosts are externally provisioned (host-native validator + solana-side bring-up);
+      // fhevm-cli neither starts their node nor probes it.
+      for (const chain of extraHostChains(state).filter((c) => !isExternalNode(c))) {
         await multiChainComposeUp(chain.node);
-        await waitForRpc(`http://localhost:${chain.rpcPort}`);
+        await waitForRpc(`http://localhost:${chain.rpcPort}`, chain.type);
       }
       break;
     }
@@ -620,7 +625,8 @@ export const runStep = async (state: State, step: StepName) => {
         "HCU_LIMIT_CONTRACT_ADDRESS",
         ...(requiresModernHostAddressArtifacts(state) ? ["PROTOCOL_CONFIG_CONTRACT_ADDRESS", "KMS_GENERATION_CONTRACT_ADDRESS"] : []),
       ]);
-      for (const chain of extraHostChains(state)) {
+      // Solana hosts deploy their programs host-side (solana-side bring-up), not via host-sc.
+      for (const chain of extraHostChains(state).filter((c) => !isExternalNode(c))) {
         const scKey = chain.sc;
         await timed(`[multi-chain] ${scKey}-deploy`, async () => {
           await multiChainComposeTask(scKey, [`${scKey}-deploy`]);
@@ -684,7 +690,8 @@ export const runStep = async (state: State, step: StepName) => {
         await applyLegacyHostChainSeedShim(state);
       }
       await postBootHealthGate(coprocessorHealthContainers(state));
-      for (const chain of extraHostChains(state)) {
+      // Solana hosts register + start their listeners via the solana-side bring-up, not here.
+      for (const chain of extraHostChains(state).filter((c) => !isExternalNode(c))) {
         const suffix = chain.suffix;
         await timed(`[multi-chain] register ${chain.key} in coprocessor DBs`, () =>
           registerExtraChainInCoprocessor(state, chain),

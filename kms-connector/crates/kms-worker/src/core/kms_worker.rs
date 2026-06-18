@@ -143,7 +143,13 @@ impl
                 continue;
             }
             let provider = connect_to_rpc_node(host_chain.url.clone(), host_chain.chain_id).await?;
-            let acl_contract = ACL::new(host_chain.acl_address, provider);
+            let acl_address = host_chain.acl_address.ok_or_else(|| {
+                anyhow!(
+                    "EVM host chain {} requires acl_address (the ACL contract to gate decryptions)",
+                    host_chain.chain_id
+                )
+            })?;
+            let acl_contract = ACL::new(acl_address, provider);
             let host_chain_id = host_chain.chain_id;
             if acl_contracts.insert(host_chain_id, acl_contract).is_some() {
                 return Err(anyhow!(

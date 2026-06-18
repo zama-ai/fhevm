@@ -23,8 +23,10 @@ LC="$ROOT/solana/scripts/poc/live-client/target/debug/poc-live-client"
 # Solana host identities the input client binds to (deterministic: zama-host/confidential-token
 # program ids + deployer pubkey, as bytes32). SID = RFC-021 Solana host chain id.
 SID=9223372036854788153
-CONTRACT=0x7d6c42046bfdeae9834fa3e94370d5fcb819025ce76ec90e99eb057dc54f2c9e
+CONTRACT=0x0c26992cb06b8c2de7305099da15554866e2373d80cb0b597156b689d293249b
 USER=0x1f6f8fbf847ad9e4ebad6dcabd9529035a622d6ba245ef25fbd6e17e850f6e36
+ACL=0x4cd3022dff504a675caf2d9b4f4014d0b3dc3ea17ffb97ba355cec5a933a30ee  # zama-host program (bytes32) = Solana ACL identity
+USER_B58=37iJeLFz4Gfm3qRKQrY5ULnkuo67vXUEhYjXC9mC1CE9                    # deployer pubkey (base58, relayer-facing)
 RPC=http://127.0.0.1:8899
 GW_RPC="${GW_RPC:-http://127.0.0.1:8546}"
 # Live coprocessor signer set (ProtocolConfig-mirrored) for the consume material commitment.
@@ -32,8 +34,7 @@ GW_RPC="${GW_RPC:-http://127.0.0.1:8546}"
 source "$ROOT/.fhevm/runtime/addresses/gateway/.env.gateway"
 COPROCESSOR_SIGNER="$(cast call "$GATEWAY_CONFIG_ADDRESS" 'getCoprocessorSigners()(address[])' --rpc-url "$GW_RPC" | tr -d '[]' | tr ',' '\n' | head -1 | tr -d ' ')"
 
-echo "==> [input] REAL ZK proof via js-sdk -> relayer /v2/input-proof -> zama-host secp256k1 bind"
-( cd "$ROOT/sdk/js-sdk" && [ -d node_modules/ethers ] || npm install ethers --no-audit --no-fund --silent )
+echo "==> [input] REAL ZK proof via public @fhevm/sdk/solana client -> relayer /v2/input-proof -> zama-host secp256k1 bind"
 # The relayer was just restarted with the Solana host chain (clean-e2e step 4b); wait until it
 # accepts input-proof POSTs before submitting (curl returns 0 on any HTTP reply, non-zero only
 # when the connection is refused).
@@ -41,8 +42,16 @@ for _ in $(seq 1 30); do
   curl -s -m3 -o /dev/null localhost:3000/v2/input-proof -X POST -H 'content-type: application/json' -d '{}' && break
   sleep 2
 done
-# Capture the client output first (piping node directly into head/grep under pipefail can SIGPIPE).
-iout="$(cd "$ROOT/sdk/js-sdk" && node solana-input-client.mjs 2>/dev/null || true)"
+# Capture the client output first (piping the launcher into head/grep under pipefail can SIGPIPE).
+# The public @fhevm/sdk/solana encrypt client (test-suite/fhevm/solana-input.ts) builds the ZK proof
+# and POSTs it; it prints the relayer's JSON response (carrying the jobId) on stdout.
+# Run under node (not bun): the TFHE WASM prover resolves its worker/wasm via node's locate-file
+# path, which bun's browser-like environment detection bypasses. Node 24 runs the .ts directly.
+iout="$(cd "$ROOT/test-suite/fhevm" && \
+  IN_RELAYER_URL=http://127.0.0.1:3000 IN_CONTRACTS_CHAIN_ID="$SID" IN_ACL_PROGRAM="$ACL" \
+  IN_CONTRACT="$USER" IN_USER="$USER" IN_CONTRACT_B58="$USER_B58" IN_USER_B58="$USER_B58" \
+  IN_VALUE=42 IN_TYPE=uint64 \
+  node solana-input.ts 2>/dev/null || true)"
 ipost="$(printf '%s\n' "$iout" | grep -oE '"jobId":"[^"]+"' | head -1 | cut -d'"' -f4 || true)"
 [ -n "$ipost" ] || fail "input-proof POST failed (last client output: $(printf '%s\n' "$iout" | tail -2))"
 for i in $(seq 1 40); do
@@ -92,16 +101,17 @@ done
 dv="$(echo "$r" | python3 -c "import sys,json;print(int(json.load(sys.stdin)['result']['decryptedValue'],16))")"
 [ "$dv" = "$VALUE" ] && echo "    public-decrypt cleartext=$dv OK" || fail "public-decrypt $dv != $VALUE"
 
-echo "==> [user-decrypt] V2 path: js-sdk buildSolanaUserDecryptRequest -> relayer /v3/user-decrypt (ed25519) + de-signcrypt"
-# The js-sdk signs the canonical 'zama-solana-user-decrypt-v1' preimage (ed25519 over the ML-KEM
-# re-encryption key + handles + identity + nonce + allowed ACL domain keys + validity window); the
-# Rust harness owns ML-KEM keygen + de-signcryption (kms-core process_user_decryption_resp_solana,
-# not exposed in the SDK WASM) and POSTs the v3 typed-attestation envelope.
+echo "==> [user-decrypt] V2 path: public @fhevm/sdk/solana client -> relayer /v3/user-decrypt (ed25519) + de-signcrypt"
+# The public @fhevm/sdk/solana client (test-suite/fhevm/solana-userdecrypt.ts, run by the Rust
+# harness via bun) builds the ed25519-signed v3 request, POSTs to /v3/user-decrypt, and returns the
+# aggregated KMS shares; the Rust harness owns ML-KEM keygen + de-signcryption (kms-core
+# process_user_decryption_resp_solana, not exposed in the SDK WASM) and asserts the cleartext.
 ( cd "$KMS" && SOLANA_UD_HANDLE="$H" SOLANA_UD_EXPECTED="$VALUE" SOLANA_UD_CONTEXT_ID="$CTX" \
     SOLANA_UD_CHAIN_ID="$SID" SOLANA_UD_SDK_DIR="$ROOT/sdk/js-sdk" \
+    SOLANA_UD_LAUNCHER_DIR="$ROOT/test-suite/fhevm" \
     cargo test -p kms --features non-wasm --test solana_user_decrypt_live -- --ignored --nocapture ) \
   || fail "user-decrypt test failed"
-echo "    user-decrypt cleartext=$VALUE OK (V2 ed25519 via js-sdk)"
+echo "    user-decrypt cleartext=$VALUE OK (V2 ed25519 via public @fhevm/sdk/solana client)"
 
 echo "==> [consume] confidential mint + USDC; wrap -> burn -> release -> public-decrypt -> redeem(secp) + disclose(secp)"
 LCDIR="$ROOT/solana/scripts/poc/live-client"

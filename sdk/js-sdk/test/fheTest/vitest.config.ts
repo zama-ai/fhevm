@@ -13,6 +13,7 @@ export default defineConfig({
       '@fhevm/sdk/ethers': join(__dirname, '../../src/ethers/index.ts'),
       '@fhevm/sdk/viem/cleartext': join(__dirname, '../../src/viem/cleartext/index.ts'),
       '@fhevm/sdk/viem': join(__dirname, '../../src/viem/index.ts'),
+      '@fhevm/sdk/solana': join(__dirname, '../../src/solana/index.ts'),
       '@fhevm/sdk/base': join(__dirname, '../../src/core/base/index.ts'),
       '@fhevm/sdk/chains': join(__dirname, '../../src/core/chains/index.ts'),
       '@fhevm/sdk/types': join(__dirname, '../../src/core/types/index.ts'),

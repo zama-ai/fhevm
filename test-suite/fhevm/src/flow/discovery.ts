@@ -1,17 +1,24 @@
+import path from "node:path";
+
 import {
   requiresGatewayKmsGenerationAddress,
   requiresMultichainAclAddress,
   requiresModernHostAddressArtifacts,
 } from "../compat/compat";
 import { PreflightError } from "../errors";
+import { solanaProgramIdFromKeypairFile } from "../generate/solana";
 import {
   DEFAULT_GATEWAY_RPC_PORT,
   MINIO_EXTERNAL_URL,
   MINIO_INTERNAL_URL,
   MINIO_PORT,
+  REPO_ROOT,
   gatewayAddressesPath,
   hostChainAddressesPath,
 } from "../layout";
+
+/** The committed, deterministic zama-host program keypair — the Solana host's ACL identity. */
+const SOLANA_ZAMA_HOST_KEYPAIR = path.join(REPO_ROOT, "solana/scripts/poc/test-keypairs/zama_host-keypair.json");
 import type { Discovery, State } from "../types";
 import { predictedCrsId, predictedKeyId, readEnvFile } from "../utils/fs";
 import { run } from "../utils/process";
@@ -99,7 +106,14 @@ export const discoverContracts = async (state: Pick<State, "scenario">) => {
     gateway: await readAddressEnv(gatewayAddressesPath),
     hosts: Object.fromEntries(
       await Promise.all(
-        hostChains.map(async (chain) => [chain.key, await readAddressEnv(hostChainAddressesPath(chain.key))] as const),
+        hostChains.map(async (chain) => {
+          // Solana hosts have no EVM address artifacts; their ACL identity is the zama-host program
+          // id, deterministic from the committed keypair (resolved without deploying).
+          if (chain.type === "solana") {
+            return [chain.key, { ACL_CONTRACT_ADDRESS: solanaProgramIdFromKeypairFile(SOLANA_ZAMA_HOST_KEYPAIR) }] as const;
+          }
+          return [chain.key, await readAddressEnv(hostChainAddressesPath(chain.key))] as const;
+        }),
       ),
     ),
   };
@@ -138,6 +152,13 @@ export const validateDiscovery = (
     const host = discovery.hosts[chain.key];
     if (!host) {
       throw new PreflightError(`Missing discovery for host chain "${chain.key}"`);
+    }
+    // Solana hosts have no EVM contracts; only the ACL identity (zama-host program id) is required.
+    if (chain.type === "solana") {
+      if (!host.ACL_CONTRACT_ADDRESS) {
+        throw new PreflightError(`Missing host discovery value ACL_CONTRACT_ADDRESS for chain "${chain.key}"`);
+      }
+      continue;
     }
     const requiredHostForChain = [
       ...requiredHost,

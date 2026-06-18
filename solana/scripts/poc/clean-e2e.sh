@@ -23,7 +23,14 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 FHEVM="$ROOT/test-suite/fhevm"
-LOCK="$ROOT/.fhevm/state/locks/latest-main-feaf86e.json"
+# Pin the EVM stack to the main SHA this PoC was validated against. RFC-021 / Solana host support
+# is not yet on a release bundle, so we resolve a specific main commit explicitly.
+BASE_SHA="feaf86e"
+LOCK="$ROOT/.fhevm/state/locks/sha-$BASE_SHA.json"
+
+# 0. Resolve the pinned bundle so the lock exists even from a fully clean state (fhevm-cli clean
+#    removes .fhevm). Idempotent.
+( cd "$FHEVM" && ./fhevm-cli resolve --target sha --sha "$BASE_SHA" )
 
 # 1. Pin the Solana-capable kms-core image in the lock (idempotent).
 python3 - "$LOCK" <<'PY'
@@ -36,7 +43,11 @@ print(f"[clean-e2e] pinned CORE_VERSION=solana-ud-c57f52f-fix in {p}")
 PY
 
 # 2. Clean rebuild of the whole EVM stack with the Solana code baked in from bootstrap.
+#    The `solana` scenario declares the RFC-021 Solana host alongside the default EVM host, so
+#    fhevm-cli generates the Solana relayer + kms-connector config itself (the solana-side bring-up
+#    below no longer patches those — single config writer).
 ( cd "$FHEVM" && ./fhevm-cli up \
+    --scenario solana \
     --lock-file "$LOCK" \
     --override gateway-contracts \
     --override coprocessor \

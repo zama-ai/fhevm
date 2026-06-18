@@ -13,7 +13,7 @@ import {
   hostChainSuffix,
 } from "../layout";
 import { topologyForState } from "../stack-spec/stack-spec";
-import type { State } from "../types";
+import type { HostChainType, State } from "../types";
 import { hostReachableMaterialUrl, hostReachableRpcUrl, predictedCrsId, predictedKeyId, toServiceName, withHexPrefix } from "../utils/fs";
 import { run } from "../utils/process";
 
@@ -109,20 +109,28 @@ export const waitForLog = async (container: string, pattern: RegExp) => {
   }
 };
 
-/** Waits until an RPC endpoint answers a basic `eth_chainId` request. */
-export const waitForRpc = async (url: string) => {
+/**
+ * Waits until a host RPC endpoint answers a basic liveness request. EVM hosts are probed with
+ * `eth_chainId` (expects a hex string); Solana hosts with `getHealth` (expects `result === "ok"`).
+ */
+export const waitForRpc = async (url: string, kind: HostChainType = "evm") => {
+  const method = kind === "solana" ? "getHealth" : "eth_chainId";
   for (let attempt = 0; attempt <= 60; attempt += 1) {
     try {
       const response = await fetch(url, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_chainId", params: [] }),
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params: [] }),
       });
       if (response.ok) {
         const body = await response.json().catch(() => null) as
           | { jsonrpc?: string; result?: unknown; error?: unknown }
           | null;
-        if (body?.jsonrpc === "2.0" && typeof body.result === "string" && !body.error) {
+        const ready =
+          kind === "solana"
+            ? body?.result === "ok"
+            : body?.jsonrpc === "2.0" && typeof body.result === "string" && !body.error;
+        if (ready) {
           return;
         }
       }

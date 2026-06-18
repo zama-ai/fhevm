@@ -18,7 +18,9 @@ import {
   envPath,
   hostChainNames,
   hostChainRuntimes,
+  isExternalNode,
 } from "../layout";
+import type { HostChainRuntime } from "../layout";
 import { type StackSpec, topologyForState } from "../stack-spec/stack-spec";
 import type { HostChainScenario, ResolvedCoprocessorScenarioInstance, State } from "../types";
 import { ensureDir, exists, mergeArgs, readEnvFile, remove, toServiceName } from "../utils/fs";
@@ -448,7 +450,7 @@ const buildComposeOverride = async (component: string, plan: StackSpec) => {
   return { services };
 };
 
-/** Builds a host-node compose override for an extra host chain. */
+/** Builds a host-node compose override for an extra (EVM) host chain. */
 const buildExtraHostNodeOverride = async (
   chain: HostChainScenario,
   defaultChain: HostChainScenario,
@@ -582,7 +584,9 @@ export const generateComposeOverrides = async (_state: State, plan: StackSpec) =
   if (!defaultChain) {
     return;
   }
-  const extraChains = chains.filter((chain) => !chain.isDefault);
+  // Externally-provisioned hosts (e.g. the Solana host-native validator) get no node/sc/coprocessor
+  // compose from fhevm-cli — only their relayer + kms-connector config (generate/config.ts, env.ts).
+  const extraChains = chains.filter((chain) => !chain.isDefault && !isExternalNode(chain));
   const extraChainFileNames: string[] = [];
   for (const chain of extraChains) {
     const { node, sc, copro } = chain;

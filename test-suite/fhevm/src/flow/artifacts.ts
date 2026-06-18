@@ -15,6 +15,7 @@ import {
   composePath,
   hostChainAddressesPath,
   hostChainAddressesSolidityPath,
+  isExternalNode,
 } from "../layout";
 import type { State, StepName } from "../types";
 import { exists, readEnvFile } from "../utils/fs";
@@ -100,7 +101,9 @@ export const ensureRuntimeArtifacts = async (state: State, reason: string) => {
 /** Returns multi-chain compose file names and their owning step for the current scenario. */
 export const multiChainComposeEntries = (state: Pick<State, "scenario">): Array<[string, StepName]> => {
   const entries: Array<[string, StepName]> = [];
-  for (const chain of extraHostChains(state)) {
+  // Externally-provisioned hosts (Solana) have no fhevm-cli node/sc/coprocessor compose, so there
+  // is nothing to bring up or tear down here.
+  for (const chain of extraHostChains(state).filter((c) => !isExternalNode(c))) {
     const { node, sc, copro } = chain;
     entries.push([node, "base"]);
     entries.push([sc, "host-deploy"]);
@@ -108,3 +111,4 @@ export const multiChainComposeEntries = (state: Pick<State, "scenario">): Array<
   }
   return entries;
 };
+

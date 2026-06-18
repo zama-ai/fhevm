@@ -1,5 +1,5 @@
 {
-  "address": "9Sbhx7VF6vAGdYApPikwHgJ68Z367Au2tTyw9FpBxnAh",
+  "address": "pS2gMMq6PNZKpjxiANeoN5XxJgwaFsUR6xaJkpUHcDg",
   "metadata": {
     "name": "confidential_token",
     "version": "0.1.0",
@@ -277,7 +277,7 @@
           "docs": [
             "ZamaHost program used for FHE operations."
           ],
-          "address": "BXsiKq6Jg4vgdBqSd75NbMbKaB7WFKK48NVXx4zoeLsW"
+          "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
         },
         {
           "name": "host_config",
@@ -580,7 +580,7 @@
           "docs": [
             "ZamaHost program used for FHE operations."
           ],
-          "address": "BXsiKq6Jg4vgdBqSd75NbMbKaB7WFKK48NVXx4zoeLsW"
+          "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
         },
         {
           "name": "host_config",
@@ -794,7 +794,7 @@
           "docs": [
             "ZamaHost program used for FHE operations."
           ],
-          "address": "BXsiKq6Jg4vgdBqSd75NbMbKaB7WFKK48NVXx4zoeLsW"
+          "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
         },
         {
           "name": "host_config",
@@ -950,7 +950,7 @@
           "docs": [
             "ZamaHost program used for FHE operations."
           ],
-          "address": "BXsiKq6Jg4vgdBqSd75NbMbKaB7WFKK48NVXx4zoeLsW"
+          "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
         },
         {
           "name": "host_config",
@@ -1060,7 +1060,7 @@
           "docs": [
             "ZamaHost program used to create the random handle."
           ],
-          "address": "BXsiKq6Jg4vgdBqSd75NbMbKaB7WFKK48NVXx4zoeLsW"
+          "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
         },
         {
           "name": "host_config",
@@ -1169,7 +1169,7 @@
           "docs": [
             "ZamaHost program used to create the random handle."
           ],
-          "address": "BXsiKq6Jg4vgdBqSd75NbMbKaB7WFKK48NVXx4zoeLsW"
+          "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
         },
         {
           "name": "host_config",
@@ -1280,38 +1280,38 @@
             "program": {
               "kind": "const",
               "value": [
-                156,
-                125,
-                162,
-                99,
-                204,
-                203,
+                76,
+                211,
+                2,
+                45,
+                255,
                 80,
-                132,
-                132,
-                78,
-                41,
-                42,
-                44,
-                224,
-                219,
-                14,
-                81,
-                187,
-                243,
-                16,
-                16,
-                6,
-                86,
-                170,
-                69,
-                114,
-                184,
-                61,
-                254,
+                74,
+                103,
+                92,
+                175,
+                45,
+                155,
+                79,
+                64,
+                20,
+                208,
+                179,
+                220,
+                62,
+                161,
+                127,
+                251,
+                151,
+                186,
                 53,
-                252,
-                165
+                92,
+                236,
+                90,
+                147,
+                58,
+                48,
+                238
               ]
             }
           }
@@ -1437,38 +1437,38 @@
             "program": {
               "kind": "const",
               "value": [
-                156,
-                125,
-                162,
-                99,
-                204,
-                203,
+                76,
+                211,
+                2,
+                45,
+                255,
                 80,
-                132,
-                132,
-                78,
-                41,
-                42,
-                44,
-                224,
-                219,
-                14,
-                81,
-                187,
-                243,
-                16,
-                16,
-                6,
-                86,
-                170,
-                69,
-                114,
-                184,
-                61,
-                254,
+                74,
+                103,
+                92,
+                175,
+                45,
+                155,
+                79,
+                64,
+                20,
+                208,
+                179,
+                220,
+                62,
+                161,
+                127,
+                251,
+                151,
+                186,
                 53,
-                252,
-                165
+                92,
+                236,
+                90,
+                147,
+                58,
+                48,
+                238
               ]
             }
           }
@@ -1615,7 +1615,7 @@
           "docs": [
             "ZamaHost program used to create the initial total-supply handle."
           ],
-          "address": "BXsiKq6Jg4vgdBqSd75NbMbKaB7WFKK48NVXx4zoeLsW"
+          "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
         },
         {
           "name": "host_config",
@@ -1742,7 +1742,7 @@
           "docs": [
             "ZamaHost program used to create the initial balance handle."
           ],
-          "address": "BXsiKq6Jg4vgdBqSd75NbMbKaB7WFKK48NVXx4zoeLsW"
+          "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
         },
         {
           "name": "host_config",
@@ -1944,38 +1944,38 @@
             "program": {
               "kind": "const",
               "value": [
-                156,
-                125,
-                162,
-                99,
-                204,
-                203,
+                76,
+                211,
+                2,
+                45,
+                255,
                 80,
-                132,
-                132,
-                78,
-                41,
-                42,
-                44,
-                224,
-                219,
-                14,
-                81,
-                187,
-                243,
-                16,
-                16,
-                6,
-                86,
-                170,
-                69,
-                114,
-                184,
-                61,
-                254,
+                74,
+                103,
+                92,
+                175,
+                45,
+                155,
+                79,
+                64,
+                20,
+                208,
+                179,
+                220,
+                62,
+                161,
+                127,
+                251,
+                151,
+                186,
                 53,
-                252,
-                165
+                92,
+                236,
+                90,
+                147,
+                58,
+                48,
+                238
               ]
             }
           }
@@ -2172,7 +2172,7 @@
           "docs": [
             "ZamaHost program used to update the ACL record."
           ],
-          "address": "BXsiKq6Jg4vgdBqSd75NbMbKaB7WFKK48NVXx4zoeLsW"
+          "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
         },
         {
           "name": "host_config",
@@ -2328,7 +2328,7 @@
           "docs": [
             "ZamaHost program used to update the ACL record."
           ],
-          "address": "BXsiKq6Jg4vgdBqSd75NbMbKaB7WFKK48NVXx4zoeLsW"
+          "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
         },
         {
           "name": "host_config",
@@ -2491,7 +2491,7 @@
           "docs": [
             "ZamaHost program used to update the ACL record."
           ],
-          "address": "BXsiKq6Jg4vgdBqSd75NbMbKaB7WFKK48NVXx4zoeLsW"
+          "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
         },
         {
           "name": "host_config",
@@ -2701,7 +2701,7 @@
           "docs": [
             "ZamaHost program used for FHE operations."
           ],
-          "address": "BXsiKq6Jg4vgdBqSd75NbMbKaB7WFKK48NVXx4zoeLsW"
+          "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
         },
         {
           "name": "host_config",

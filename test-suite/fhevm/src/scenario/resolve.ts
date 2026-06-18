@@ -16,10 +16,13 @@ import {
   REPO_ROOT,
   resolveServiceOverrides,
 } from "../layout";
+import { HOST_CHAIN_NODE_PROVISIONING, HOST_CHAIN_TYPES } from "../types";
 import type {
   CoprocessorInstanceSource,
   CoprocessorScenario,
+  HostChainNodeProvisioning,
   HostChainScenario,
+  HostChainType,
   LocalOverride,
   OverrideGroup,
   ResolvedCoprocessorScenario,
@@ -137,11 +140,34 @@ const parseHostChains = (parsed: Record<string, unknown>, sourceLabel: string): 
         throw new Error(`${sourceLabel}: duplicate hostChains rpcPort "${rpcPort}"`);
       }
       seenPorts.add(rpcPort);
+      const type =
+        chain.type === undefined
+          ? undefined
+          : normalizeScalar(chain.type, `${sourceLabel}: hostChains[${index}].type`);
+      if (type !== undefined && !HOST_CHAIN_TYPES.includes(type as HostChainType)) {
+        throw new Error(
+          `${sourceLabel}: hostChains[${index}].type "${type}" must be one of: ${HOST_CHAIN_TYPES.join(", ")}`,
+        );
+      }
+      const nodeProvisioning =
+        chain.nodeProvisioning === undefined
+          ? undefined
+          : normalizeScalar(chain.nodeProvisioning, `${sourceLabel}: hostChains[${index}].nodeProvisioning`);
+      if (
+        nodeProvisioning !== undefined &&
+        !HOST_CHAIN_NODE_PROVISIONING.includes(nodeProvisioning as HostChainNodeProvisioning)
+      ) {
+        throw new Error(
+          `${sourceLabel}: hostChains[${index}].nodeProvisioning "${nodeProvisioning}" must be one of: ${HOST_CHAIN_NODE_PROVISIONING.join(", ")}`,
+        );
+      }
       return {
         key,
         chainId,
         rpcPort,
         name: normalizeOptionalText(chain.name, `${sourceLabel}: hostChains[${index}].name`),
+        type: type as HostChainType | undefined,
+        nodeProvisioning: nodeProvisioning as HostChainNodeProvisioning | undefined,
       };
     });
     if (!hostChains.length) {

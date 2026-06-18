@@ -10,6 +10,7 @@ import {
   requiresModernHostAddressArtifacts,
 } from "../compat/compat";
 import { driftDatabaseName } from "../drift";
+import { serializeKmsHostChains, solanaProgramId, solanaValidatorUrl, type KmsHostChainEntry } from "./solana";
 import type { StackSpec } from "../stack-spec/stack-spec";
 import {
   COPROCESSOR_WALLET_INDICES,
@@ -17,6 +18,7 @@ import {
   MINIO_INTERNAL_URL,
   POSTGRES_HOST,
   hostChainRuntimes,
+  isExternalNode,
 } from "../layout";
 import type { State } from "../types";
 import { predictedCrsId, predictedKeyId } from "../utils/fs";
@@ -187,20 +189,32 @@ const applyDiscoveryEnv = (
     KMS_GENERATION_ADDRESS: coprocessorKmsGenerationAddress ?? "",
   });
 
-  const kmsHostChains = chains.map((chain) => {
+  const kmsHostChains: KmsHostChainEntry[] = chains.map((chain) => {
     const hostAddresses = state.discovery!.hosts[chain.key] ?? {};
     const endpoints = state.discovery!.endpoints.hosts[chain.key];
+    if (chain.type === "solana") {
+      // The connector reads the on-chain ACL record from the validator over RPC; reach it via the
+      // host-native validator. chain_id stays a raw bigint; acl_address is omitted (Solana ACL is
+      // verified via solana_host_program_id).
+      return {
+        url: solanaValidatorUrl(chain),
+        chainId: chain.chainId,
+        kind: "solana",
+        solanaProgramId: solanaProgramId(state.discovery, chain.key),
+      };
+    }
     return {
       url: endpoints?.http ?? `http://${chain.node}:${chain.rpcPort}`,
-      chain_id: Number(chain.chainId),
-      acl_address: hostAddresses.ACL_CONTRACT_ADDRESS ?? "",
+      chainId: chain.chainId,
+      aclAddress: hostAddresses.ACL_CONTRACT_ADDRESS ?? "",
+      kind: "evm",
     };
   });
   updateContracts(envs["kms-connector"], {
     KMS_CONNECTOR_DECRYPTION_CONTRACT__ADDRESS: state.discovery.gateway.DECRYPTION_ADDRESS,
     KMS_CONNECTOR_GATEWAY_CONFIG_CONTRACT__ADDRESS: state.discovery.gateway.GATEWAY_CONFIG_ADDRESS,
     KMS_CONNECTOR_KMS_GENERATION_CONTRACT__ADDRESS: connectorKmsGenerationAddress ?? "",
-    KMS_CONNECTOR_HOST_CHAINS: JSON.stringify(kmsHostChains),
+    KMS_CONNECTOR_HOST_CHAINS: serializeKmsHostChains(kmsHostChains),
   });
   updateContracts(envs["relayer"], {
     APP_GATEWAY__CONTRACTS__DECRYPTION_ADDRESS: state.discovery.gateway.DECRYPTION_ADDRESS,
@@ -308,22 +322,27 @@ export const renderEnvMaps = async (
   // as production rather than bypassing it via direct SQL. Applied BEFORE
   // `buildInstanceEnvs` so multi-coprocessor topology instances inherit
   // these env vars when they clone `envs["coprocessor"]`.
-  envs["coprocessor"].HOST_CHAINS_COUNT = String(chains.length);
-  for (const chain of chains) {
-    const chainIndex = chain.index;
+  // Externally-provisioned hosts (Solana) are seeded by their own bring-up — which maps the
+  // RFC-021 u64 chain id to the signed i64 the `bigint` column requires and mirrors the keyset
+  // (only available post-keygen) — so they're excluded here; indices stay contiguous (0..N-1).
+  const seedHostChains = chains.filter((chain) => !isExternalNode(chain));
+  envs["coprocessor"].HOST_CHAINS_COUNT = String(seedHostChains.length);
+  seedHostChains.forEach((chain, chainIndex) => {
     const hostAddresses = state.discovery?.hosts[chain.key] ?? {};
     envs["coprocessor"][`HOST_CHAIN_${chainIndex}_ID`] = chain.chainId;
     envs["coprocessor"][`HOST_CHAIN_${chainIndex}_NAME`] = chain.key;
     envs["coprocessor"][`HOST_CHAIN_${chainIndex}_ACL`] =
       hostAddresses.ACL_CONTRACT_ADDRESS ?? "";
-  }
+  });
 
   const instanceEnvs = await buildInstanceEnvs(envs, plan, deriveWallet);
 
-  // Uniform per-chain gateway-sc indexed vars for ALL host chains.
-  envs["gateway-sc"].NUM_HOST_CHAINS = String(chains.length);
-  for (const chain of chains) {
-    const chainIndex = chain.index;
+  // gateway-sc indexed vars for fhevm-cli-provisioned hosts. Externally-provisioned hosts (Solana)
+  // are registered on the gateway by their own bring-up (addHostChain), so they're excluded here;
+  // indices stay contiguous (0..N-1) as the gateway task expects.
+  const gatewayHostChains = chains.filter((chain) => !isExternalNode(chain));
+  envs["gateway-sc"].NUM_HOST_CHAINS = String(gatewayHostChains.length);
+  gatewayHostChains.forEach((chain, chainIndex) => {
     const hostAddresses = state.discovery?.hosts[chain.key] ?? {};
     const metadata = defaultHostChainMetadata(chain, chainIndex);
     envs["gateway-sc"][`HOST_CHAIN_CHAIN_ID_${chainIndex}`] = chain.chainId;
@@ -333,10 +352,11 @@ export const renderEnvMaps = async (
       hostAddresses.ACL_CONTRACT_ADDRESS ?? "";
     envs["gateway-sc"][`HOST_CHAIN_NAME_${chainIndex}`] = metadata.name;
     envs["gateway-sc"][`HOST_CHAIN_WEBSITE_${chainIndex}`] = metadata.website;
-  }
+  });
 
-  // Non-default chain infrastructure: host-node, host-sc, coprocessor, and test-suite env files.
-  for (const chain of chains.filter((item) => !item.isDefault)) {
+  // Non-default fhevm-cli-provisioned chain infrastructure: host-node, host-sc, coprocessor, and
+  // test-suite env files. Externally-provisioned hosts (Solana) get none of these.
+  for (const chain of chains.filter((item) => !item.isDefault && !isExternalNode(item))) {
     const chainIndex = chain.index;
     const hostHttp = `http://${chain.node}:${chain.rpcPort}`;
     const hostWs = `ws://${chain.node}:${chain.rpcPort}`;
