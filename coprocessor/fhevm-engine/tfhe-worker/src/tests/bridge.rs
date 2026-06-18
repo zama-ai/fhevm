@@ -7,6 +7,7 @@ use tokio_util::sync::CancellationToken;
 
 const SRC_CHAIN: i64 = 100;
 const DST_CHAIN: i64 = 200;
+const SAME_CHAIN: i64 = 300;
 
 const CT64: &[u8] = &[0x11; 8];
 const CT64_DIGEST: &[u8] = &[0xA1; 4];
@@ -73,7 +74,7 @@ async fn insert_digest(
     .expect("insert ciphertext_digest");
 }
 
-async fn insert_src_event(pool: &PgPool, src_handle: &[u8], dst_chain_id: i64) {
+async fn insert_src_event(pool: &PgPool, src_handle: &[u8], src_chain_id: i64, dst_chain_id: i64) {
     sqlx::query(
         "INSERT INTO bridge_handle_events
              (src_handle, dst_chain_id, src_chain_id, sender_dapp, guid, block_number)
@@ -81,7 +82,7 @@ async fn insert_src_event(pool: &PgPool, src_handle: &[u8], dst_chain_id: i64) {
     )
     .bind(src_handle)
     .bind(dst_chain_id)
-    .bind(SRC_CHAIN)
+    .bind(src_chain_id)
     .execute(pool)
     .await
     .expect("insert bridge_handle_events");
@@ -113,7 +114,7 @@ async fn insert_ready_pair(pool: &PgPool, src_handle: &[u8], dst_handle: &[u8]) 
         SRC_CHAIN,
     )
     .await;
-    insert_src_event(pool, src_handle, DST_CHAIN).await;
+    insert_src_event(pool, src_handle, SRC_CHAIN, DST_CHAIN).await;
     insert_dst_event(pool, src_handle, dst_handle, DST_CHAIN).await;
 }
 
@@ -254,7 +255,7 @@ async fn associates_when_source_event_arrives_last() {
     assert!(!is_associated(&pool, &dst).await);
 
     // The source `BridgeHandle` approval arrives last -> the pair associates.
-    insert_src_event(&pool, &src, DST_CHAIN).await;
+    insert_src_event(&pool, &src, SRC_CHAIN, DST_CHAIN).await;
     assert_eq!(
         crate::bridge::drain_associations(&pool, 128, &CancellationToken::new())
             .await
@@ -272,7 +273,7 @@ async fn associates_only_when_source_fully_materialized() {
     let dst = handle(2);
 
     // Both events present, but the source ciphertext has not materialized yet.
-    insert_src_event(&pool, &src, DST_CHAIN).await;
+    insert_src_event(&pool, &src, SRC_CHAIN, DST_CHAIN).await;
     insert_dst_event(&pool, &src, &dst, DST_CHAIN).await;
     assert_eq!(
         crate::bridge::drain_associations(&pool, 128, &CancellationToken::new())
@@ -431,4 +432,58 @@ async fn drains_across_multiple_batches() {
         assert!(is_associated(&pool, dst).await);
         assert_eq!(digest_count(&pool, dst).await, 1);
     }
+}
+
+/// A same-chain bridge (source and destination on one chain) is allowed: the
+/// worker copies the source ciphertext onto the distinct destination handle,
+/// retargets the digest to that chain, and leaves the source intact — a clone,
+/// not a move.
+#[tokio::test]
+#[serial]
+async fn associates_same_chain_pair() {
+    let (_db, pool) = fresh_db().await;
+    let src = handle(1);
+    let dst = handle(2);
+
+    insert_ciphertext(&pool, &src, CT64).await;
+    insert_digest(
+        &pool,
+        &src,
+        Some(CT64_DIGEST),
+        Some(CT128_DIGEST),
+        SAME_CHAIN,
+    )
+    .await;
+    // Source approval and destination event share one chain (src == dst).
+    insert_src_event(&pool, &src, SAME_CHAIN, SAME_CHAIN).await;
+    insert_dst_event(&pool, &src, &dst, SAME_CHAIN).await;
+
+    let associated = crate::bridge::drain_associations(&pool, 128, &CancellationToken::new())
+        .await
+        .unwrap();
+    assert_eq!(associated, 1);
+
+    // Ciphertext copied onto the destination handle; digest retargeted to the
+    // same chain and queued for publication there.
+    let dst_ct: Vec<u8> =
+        sqlx::query_scalar("SELECT ciphertext FROM ciphertexts WHERE handle = $1")
+            .bind(&dst)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(dst_ct, CT64);
+    assert_eq!(digest_count(&pool, &dst).await, 1);
+    assert!(in_publish_queue(&pool, &dst, SAME_CHAIN).await);
+    assert!(is_associated(&pool, &dst).await);
+
+    // Source untouched: a same-chain bridge clones to a new handle.
+    let src_ct: Vec<u8> =
+        sqlx::query_scalar("SELECT ciphertext FROM ciphertexts WHERE handle = $1")
+            .bind(&src)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(src_ct, CT64);
+    assert_eq!(digest_count(&pool, &src).await, 1);
+    assert!(in_publish_queue(&pool, &src, SAME_CHAIN).await);
 }
