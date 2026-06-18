@@ -117,7 +117,10 @@ impl
     KmsWorker<DbEventPicker, DbEventProcessor<DefaultProvider, DefaultProvider, DbContextManager>>
 {
     /// Creates a new `KmsWorker` instance from a valid `Config`.
-    pub async fn from_config(config: Config) -> anyhow::Result<(Self, State<DefaultProvider>)> {
+    pub async fn from_config(
+        config: Config,
+        cancel_token: CancellationToken,
+    ) -> anyhow::Result<(Self, State<DefaultProvider>)> {
         let db_pool = connect_to_db(&config.database_url, config.database_pool_size).await?;
 
         let gateway_provider =
@@ -146,7 +149,8 @@ impl
 
         let context_manager = DbContextManager::new(db_pool.clone());
         let ciphertext_manager =
-            CiphertextManager::connect(gateway_provider.clone(), s3_client, &config).await?;
+            CiphertextManager::connect(gateway_provider.clone(), s3_client, &config, cancel_token)
+                .await?;
         let decryption_processor = DecryptionProcessor::new(
             &config,
             context_manager.clone(),

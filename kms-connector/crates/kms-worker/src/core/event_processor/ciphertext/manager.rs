@@ -11,6 +11,7 @@ use anyhow::{Context, anyhow};
 use ciphertext_attestation::consensus::{self, ConsensusMaterial};
 use fhevm_gateway_bindings::decryption::Decryption::SnsCiphertextMaterial;
 use kms_grpc::kms::v1::TypedCiphertext;
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
 /// Manages the ciphertext materials of incoming decryption requests: off-chain attestation
@@ -36,12 +37,17 @@ impl<P> CiphertextManager<P>
 where
     P: Provider + Clone + 'static,
 {
-    pub async fn connect(provider: P, client: Client, config: &Config) -> anyhow::Result<Self> {
+    pub async fn connect(
+        provider: P,
+        client: Client,
+        config: &Config,
+        cancel_token: CancellationToken,
+    ) -> anyhow::Result<Self> {
         if !config.ct_attestation.enabled {
             info!("Ciphertext-attestation verification disabled by config");
         }
 
-        let registry = CoprocessorRegistry::connect(provider, config).await?;
+        let registry = CoprocessorRegistry::connect(provider, config, cancel_token).await?;
 
         Ok(Self {
             registry,

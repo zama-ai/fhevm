@@ -17,7 +17,8 @@ use std::{
     sync::{Arc, RwLock},
     time::Duration,
 };
-use tracing::warn;
+use tokio_util::sync::CancellationToken;
+use tracing::{error, warn};
 
 /// The Coprocessor registry as seen from the connector: a periodically-synced mirror of the
 /// on-chain registry, read through immutable [`CoprocessorRegistrySnapshot`]s.
@@ -45,6 +46,19 @@ pub struct CoprocessorRegistrySnapshot {
     pub threshold: NonZeroUsize,
 }
 
+/// Why loading or refreshing the Coprocessor registry failed.
+#[derive(Debug, thiserror::Error)]
+pub enum RegistryError {
+    /// A condition that can never arise from a healthy protocol: an invalid on-chain threshold
+    /// or a poisoned snapshot lock. The worker must stop in such case.
+    #[error("critical Coprocessor registry error: {0}")]
+    Critical(String),
+
+    /// A recoverable failure, e.g. a transient RPC error. The previous snapshot is kept.
+    #[error(transparent)]
+    Transient(#[from] anyhow::Error),
+}
+
 impl CoprocessorRegistrySnapshot {
     pub fn new(
         signers: HashSet<Address>,
@@ -59,7 +73,9 @@ impl CoprocessorRegistrySnapshot {
     }
 
     /// Loads a fresh snapshot from the `GatewayConfig` contract.
-    pub async fn load<P: Provider>(contract: &GatewayConfigInstance<P>) -> anyhow::Result<Self> {
+    pub async fn load<P: Provider>(
+        contract: &GatewayConfigInstance<P>,
+    ) -> Result<Self, RegistryError> {
         let get_copro_signers = contract.getCoprocessorSigners();
         let get_copro_tx_senders = contract.getCoprocessorTxSenders();
         let get_copro_threshold = contract.getCoprocessorMajorityThreshold();
@@ -69,29 +85,36 @@ impl CoprocessorRegistrySnapshot {
             get_copro_signers.call(),
             get_copro_tx_senders.call(),
             get_copro_threshold.call()
-        )?;
+        )
+        .map_err(|e| RegistryError::Transient(e.into()))?;
 
-        // An invalid threshold would be a serious protocol-level misconfiguration, refuse to run.
+        // A zero or oversized threshold can never come from a healthy `GatewayConfig`: treat it
+        // as critical so the worker refuses to run (startup) or shuts down (refresh).
         let threshold = threshold_u256
             .try_into()
-            .map(NonZeroUsize::new)
-            .expect("On-chain threshold is way too big")
-            .expect("On-chain threshold is 0");
+            .ok()
+            .and_then(NonZeroUsize::new)
+            .ok_or_else(|| {
+                RegistryError::Critical(format!(
+                    "invalid on-chain Coprocessor majority threshold: {threshold_u256}"
+                ))
+            })?;
 
         let tx_sender_to_bucket: HashMap<Address, String> = try_join_all(
             tx_senders
                 .into_iter()
                 .map(|tx_sender| async move { get_copro_bucket(contract, tx_sender).await }),
         )
-        .await?
+        .await
+        .map_err(RegistryError::Transient)?
         .into_iter()
         .flatten()
         .collect();
 
         if tx_sender_to_bucket.is_empty() {
-            return Err(anyhow::anyhow!(
+            return Err(RegistryError::Transient(anyhow::anyhow!(
                 "Not a single Coprocessor with a non-empty S3 bucket URL in the registry"
-            ));
+            )));
         }
 
         Ok(Self::new(
@@ -123,7 +146,14 @@ where
     P: Provider + Clone + 'static,
 {
     /// Loads the initial snapshot and spawns the background refresh task.
-    pub async fn connect(provider: P, config: &Config) -> anyhow::Result<Self> {
+    ///
+    /// `cancel_token` is the worker-wide shutdown token: the refresh task cancels it on a
+    /// critical failure (see [`Self::spawn_refresh_task`]).
+    pub async fn connect(
+        provider: P,
+        config: &Config,
+        cancel_token: CancellationToken,
+    ) -> anyhow::Result<Self> {
         let gateway_config_contract =
             GatewayConfig::new(config.gateway_config_contract.address, provider);
 
@@ -132,7 +162,7 @@ where
             gateway_config_contract,
             snapshot: Arc::new(RwLock::new(Arc::new(snapshot))),
         };
-        registry.spawn_refresh_task(config.ct_attestation.registry_refresh);
+        registry.spawn_refresh_task(config.ct_attestation.registry_refresh, cancel_token);
 
         Ok(registry)
     }
@@ -146,8 +176,11 @@ where
     }
 
     /// Spawns the background task that reloads the registry on the configured TTL.
-    /// A failed reload keeps the previous snapshot.
-    fn spawn_refresh_task(&self, refresh_interval: Duration) {
+    ///
+    /// A transient reload failure keeps the previous snapshot. A critical failure (invalid
+    /// on-chain threshold or a poisoned snapshot lock) cancels `cancel_token` to bring the whole
+    /// worker down.
+    fn spawn_refresh_task(&self, refresh_interval: Duration, cancel_token: CancellationToken) {
         let this = self.clone();
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(refresh_interval);
@@ -156,18 +189,36 @@ where
             interval.tick().await;
 
             loop {
-                interval.tick().await;
-                match CoprocessorRegistrySnapshot::load(&this.gateway_config_contract).await {
-                    Ok(new_snapshot) => {
-                        *this.snapshot.write().expect("copro registry lock poisoned") =
-                            Arc::new(new_snapshot);
-                    }
-                    Err(e) => warn!(
+                tokio::select! {
+                    _ = cancel_token.cancelled() => break,
+                    _ = interval.tick() => {}
+                }
+
+                match CoprocessorRegistrySnapshot::load(&this.gateway_config_contract)
+                    .await
+                    .and_then(|s| this.store_snapshot(s))
+                {
+                    Ok(()) => (),
+                    Err(RegistryError::Transient(e)) => warn!(
                         "Failed to refresh Coprocessor registry, keeping previous snapshot: {e}"
                     ),
-                }
+                    Err(RegistryError::Critical(critical)) => {
+                        error!("Shutting down worker on critical registry failure: {critical}");
+                        cancel_token.cancel();
+                        break;
+                    }
+                };
             }
         });
+    }
+
+    /// Swaps in a fresh snapshot.
+    fn store_snapshot(&self, snapshot: CoprocessorRegistrySnapshot) -> Result<(), RegistryError> {
+        let mut guard = self.snapshot.write().map_err(|_| {
+            RegistryError::Critical("Coprocessor registry lock poisoned".to_string())
+        })?;
+        *guard = Arc::new(snapshot);
+        Ok(())
     }
 }
 
@@ -199,8 +250,6 @@ impl Default for CoprocessorRegistrySnapshot {
 
 #[cfg(test)]
 mod tests {
-    use std::panic::AssertUnwindSafe;
-
     use super::*;
     use alloy::{
         primitives::U256,
@@ -209,7 +258,6 @@ mod tests {
     };
     use connector_utils::tests::rand::rand_address;
     use fhevm_gateway_bindings::gateway_config::GatewayConfig::Coprocessor;
-    use futures::FutureExt;
 
     fn mocked_contract(asserter: &Asserter) -> GatewayConfigInstance<impl Provider + Clone> {
         let provider = ProviderBuilder::new()
@@ -259,17 +307,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn load_panics_on_zero_threshold() {
+    async fn load_rejects_zero_threshold_as_critical() {
         let asserter = Asserter::new();
         asserter.push_success(&vec![rand_address()].abi_encode());
         asserter.push_success(&vec![rand_address()].abi_encode());
         asserter.push_success(&U256::ZERO.abi_encode());
 
-        AssertUnwindSafe(CoprocessorRegistrySnapshot::load(&mocked_contract(
-            &asserter,
-        )))
-        .catch_unwind()
-        .await
-        .unwrap_err();
+        let err = CoprocessorRegistrySnapshot::load(&mocked_contract(&asserter))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, RegistryError::Critical(_)));
     }
 }

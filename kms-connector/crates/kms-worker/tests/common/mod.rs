@@ -26,6 +26,7 @@ use kms_worker::core::{
 };
 use sqlx::{Pool, Postgres};
 use std::{collections::HashMap, time::Duration};
+use tokio_util::sync::CancellationToken;
 
 /// Mocks the Gateway RPC responses for the initial Coprocessor registry load of the
 /// `CiphertextManager`.
@@ -52,9 +53,15 @@ where
     GP: Provider + Clone + 'static,
     HP: Provider + Clone + 'static,
 {
-    let ciphertext_manager =
-        CiphertextManager::connect(gateway_provider.clone(), reqwest::Client::new(), &config)
-            .await?;
+    // The 24h refresh interval (see `testing_ct_attestation_config`) means the refresh task
+    // never fires during a test, so a throwaway token is fine here.
+    let ciphertext_manager = CiphertextManager::connect(
+        gateway_provider.clone(),
+        reqwest::Client::new(),
+        &config,
+        CancellationToken::new(),
+    )
+    .await?;
 
     let kms_client = KmsClient::connect(&config).await?;
     let event_picker = DbEventPicker::connect(db.clone(), &config).await?;
