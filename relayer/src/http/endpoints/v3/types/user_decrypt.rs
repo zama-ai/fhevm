@@ -33,13 +33,9 @@ pub struct AttestedUserDecryptRequestJson {
     #[validate(nested)]
     pub attested_payload: Eip712UnifiedUserDecryptPayloadJson,
 
-    /// Attestation signature. Opaque to the relayer — forwarded verbatim
-    /// to the gateway, where the KMS Connector verifies it.
-    /// `0x` + arbitrary hex.
-    #[validate(
-        length(min = 4, message = "Must not be empty"),
-        custom(function = "crate::http::validate_0x_hex")
-    )]
+    /// Attestation signature: `0x`-hex, or empty for the ERC-1271
+    /// empty-signature path.
+    #[validate(custom(function = "crate::http::validate_0x_hex_allow_empty"))]
     #[derivative(Debug(format_with = "redact_len"))]
     #[schema(example = "0xaabbccddeeff")]
     pub signature: String,
