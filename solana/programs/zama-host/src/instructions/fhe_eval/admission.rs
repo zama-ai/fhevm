@@ -257,7 +257,11 @@ impl EvalStepVisitor for AdmissionState<'_, '_> {
     ) -> Result<ResolvedOperand> {
         // Structural only — the handle is known from the operand; execution re-verifies the
         // attestation authoritatively (matches how transient-session consume is execution-gated).
-        Ok(ResolvedOperand::encrypted(attestation.input_handle, false))
+        // The attested domain is still tracked so admission rejects a wrong output acl_domain_key.
+        Ok(ResolvedOperand::verified_input(
+            attestation.input_handle,
+            Pubkey::new_from_array(attestation.contract_address),
+        ))
     }
 
     fn record_op_event(&mut self, _event: EvalEvent) {}
@@ -270,6 +274,7 @@ impl EvalStepVisitor for AdmissionState<'_, '_> {
         output_policies: Vec<SessionPolicy>,
         output_public_decrypt_allowed: bool,
         enforce_public_decrypt_role_propagation: bool,
+        verified_input_domain: Option<Pubkey>,
     ) -> Result<()> {
         require!(
             !self.produced.iter().any(|value| value.handle == result),
@@ -302,6 +307,13 @@ impl EvalStepVisitor for AdmissionState<'_, '_> {
                 output_subjects,
                 output_public_decrypt,
             } => {
+                if let Some(domain) = verified_input_domain {
+                    require_keys_eq!(
+                        *output_acl_domain_key,
+                        domain,
+                        ZamaHostError::AclDomainKeyMismatch
+                    );
+                }
                 assert_session_policies_allow_output(
                     &output_policies,
                     *output_acl_domain_key,
@@ -343,6 +355,7 @@ impl EvalStepVisitor for AdmissionState<'_, '_> {
             handle: result,
             public_decrypt_allowed: output_public_decrypt_allowed,
             session_policies: output_policies,
+            verified_input_domain,
         });
         Ok(())
     }

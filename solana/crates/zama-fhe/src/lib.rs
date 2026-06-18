@@ -1625,6 +1625,9 @@ fn validate_lowered_encrypted_operand(
         FheEvalOperand::TransientSession { session_index, .. } => {
             mark_lowered_account(used_accounts, *session_index)?;
         }
+        FheEvalOperand::VerifiedInput { .. } => {
+            // No remaining account: the attestation is carried inline and verified in-frame.
+        }
         FheEvalOperand::Scalar(_) => return Err(EvalBuildError::ScalarEncryptedOperand),
     }
     Ok(())

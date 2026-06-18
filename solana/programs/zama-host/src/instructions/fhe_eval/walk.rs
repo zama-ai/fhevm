@@ -62,6 +62,7 @@ pub(super) trait EvalStepVisitor {
         output_policies: Vec<SessionPolicy>,
         output_public_decrypt_allowed: bool,
         enforce_public_decrypt_role_propagation: bool,
+        verified_input_domain: Option<Pubkey>,
     ) -> Result<()>;
 
     /// Resolves an operand that must be encrypted (rejects scalars).
@@ -127,6 +128,7 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor>(
             } => {
                 let lhs = visitor.resolve_lhs_operand(lhs)?;
                 let rhs = visitor.resolve_rhs_operand(rhs)?;
+                let verified_input_domain = combine_verified_input_domain(&[&lhs, &rhs])?;
                 assert_binary_operand_types(
                     *op,
                     lhs.handle,
@@ -160,6 +162,7 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor>(
                     input_session_policies(&lhs, &rhs),
                     inputs_allow_public_decrypt(&lhs, &rhs),
                     true,
+                    verified_input_domain,
                 )?;
             }
             FheEvalStep::Ternary {
@@ -173,6 +176,8 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor>(
                 let control = visitor.resolve_encrypted_operand(control)?;
                 let if_true = visitor.resolve_encrypted_operand(if_true)?;
                 let if_false = visitor.resolve_encrypted_operand(if_false)?;
+                let verified_input_domain =
+                    combine_verified_input_domain(&[&control, &if_true, &if_false])?;
                 assert_ternary_operand_types(
                     control.handle,
                     if_true.handle,
@@ -205,6 +210,7 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor>(
                     input_session_policies3(&control, &if_true, &if_false),
                     inputs3_allow_public_decrypt(&control, &if_true, &if_false),
                     true,
+                    verified_input_domain,
                 )?;
             }
             FheEvalStep::TrivialEncrypt {
@@ -227,7 +233,7 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor>(
                     fhe_type: *fhe_type,
                     result,
                 }));
-                visitor.accept_output(ctx, result, output, Vec::new(), false, false)?;
+                visitor.accept_output(ctx, result, output, Vec::new(), false, false, None)?;
             }
             FheEvalStep::Rand { fhe_type, output } => {
                 assert_supported_rand_type(*fhe_type)?;
@@ -240,7 +246,7 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor>(
                     fhe_type: *fhe_type,
                     result,
                 }));
-                visitor.accept_output(ctx, result, output, Vec::new(), false, false)?;
+                visitor.accept_output(ctx, result, output, Vec::new(), false, false, None)?;
             }
         }
     }

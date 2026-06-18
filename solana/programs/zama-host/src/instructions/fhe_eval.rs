@@ -282,7 +282,10 @@ impl EvalStepVisitor for EvalExecutionState<'_, '_> {
             &attestation.extra_data,
             &attestation.signatures,
         )?;
-        Ok(ResolvedOperand::encrypted(attestation.input_handle, false))
+        Ok(ResolvedOperand::verified_input(
+            attestation.input_handle,
+            Pubkey::new_from_array(attestation.contract_address),
+        ))
     }
 
     fn record_op_event(&mut self, event: EvalEvent) {
@@ -298,6 +301,7 @@ impl EvalStepVisitor for EvalExecutionState<'_, '_> {
         output_policies: Vec<SessionPolicy>,
         output_public_decrypt_allowed: bool,
         enforce_public_decrypt_role_propagation: bool,
+        verified_input_domain: Option<Pubkey>,
     ) -> Result<()> {
         accept_eval_output(
             ctx,
@@ -309,6 +313,7 @@ impl EvalStepVisitor for EvalExecutionState<'_, '_> {
             output_policies,
             output_public_decrypt_allowed,
             enforce_public_decrypt_role_propagation,
+            verified_input_domain,
             self.current_slot,
         )
     }
@@ -341,6 +346,7 @@ fn accept_eval_output<'info>(
     output_policies: Vec<SessionPolicy>,
     output_public_decrypt_allowed: bool,
     enforce_public_decrypt_role_propagation: bool,
+    verified_input_domain: Option<Pubkey>,
     current_slot: u64,
 ) -> Result<()> {
     require!(
@@ -379,6 +385,13 @@ fn accept_eval_output<'info>(
             output_subjects,
             output_public_decrypt,
         } => {
+            if let Some(domain) = verified_input_domain {
+                require_keys_eq!(
+                    *output_acl_domain_key,
+                    domain,
+                    ZamaHostError::AclDomainKeyMismatch
+                );
+            }
             assert_session_policies_allow_output(
                 &output_policies,
                 *output_acl_domain_key,
@@ -422,6 +435,7 @@ fn accept_eval_output<'info>(
         handle: result,
         public_decrypt_allowed: output_public_decrypt_allowed,
         session_policies: output_policies,
+        verified_input_domain,
     });
     Ok(())
 }
@@ -453,6 +467,7 @@ pub(super) struct ProducedValue {
     handle: [u8; 32],
     public_decrypt_allowed: bool,
     session_policies: Vec<SessionPolicy>,
+    verified_input_domain: Option<Pubkey>,
 }
 
 #[derive(Clone)]
@@ -461,6 +476,9 @@ pub(super) struct ResolvedOperand {
     pub(super) scalar: bool,
     pub(super) public_decrypt_allowed: bool,
     pub(super) session_policies: Vec<SessionPolicy>,
+    /// Set when this value traces back to a verified external input: the acl_domain_key the
+    /// coprocessor attested it for. Any durable output derived from it must bind that exact domain.
+    pub(super) verified_input_domain: Option<Pubkey>,
 }
 
 impl ResolvedOperand {
@@ -470,6 +488,7 @@ impl ResolvedOperand {
             scalar: false,
             public_decrypt_allowed,
             session_policies: Vec::new(),
+            verified_input_domain: None,
         }
     }
 
@@ -479,6 +498,20 @@ impl ResolvedOperand {
             scalar: true,
             public_decrypt_allowed: true,
             session_policies: Vec::new(),
+            verified_input_domain: None,
+        }
+    }
+
+    /// Builds an operand from an in-frame verified external input, pinning its derived outputs to
+    /// the attested acl_domain_key. public_decrypt is not implied (the durable output asks
+    /// explicitly).
+    fn verified_input(handle: [u8; 32], domain: Pubkey) -> Self {
+        Self {
+            handle,
+            scalar: false,
+            public_decrypt_allowed: false,
+            session_policies: Vec::new(),
+            verified_input_domain: Some(domain),
         }
     }
 
@@ -488,6 +521,7 @@ impl ResolvedOperand {
             scalar: false,
             public_decrypt_allowed: value.public_decrypt_allowed,
             session_policies: value.session_policies.clone(),
+            verified_input_domain: value.verified_input_domain,
         }
     }
 
@@ -498,6 +532,7 @@ impl ResolvedOperand {
             handle,
             scalar: false,
             public_decrypt_allowed: grant.public_decrypt_allowed,
+            verified_input_domain: None,
             session_policies: vec![SessionPolicy {
                 subject: grant.subject,
                 receiver_program: grant.receiver_program,
@@ -555,6 +590,24 @@ fn inputs3_allow_public_decrypt(
     third: &ResolvedOperand,
 ) -> bool {
     first.public_decrypt_allowed && second.public_decrypt_allowed && third.public_decrypt_allowed
+}
+
+/// The attested acl_domain_key a verified external input pins its derived outputs to. Folds the
+/// operands' taints: at most one attested domain may flow into a single op (mixing two would be
+/// ambiguous), and a durable output derived from it must bind that exact acl_domain_key.
+fn combine_verified_input_domain(operands: &[&ResolvedOperand]) -> Result<Option<Pubkey>> {
+    let mut domain: Option<Pubkey> = None;
+    for operand in operands {
+        if let Some(input_domain) = operand.verified_input_domain {
+            match domain {
+                None => domain = Some(input_domain),
+                Some(existing) => {
+                    require_keys_eq!(existing, input_domain, ZamaHostError::AclDomainKeyMismatch)
+                }
+            }
+        }
+    }
+    Ok(domain)
 }
 
 fn assert_session_policies_allow_output(
