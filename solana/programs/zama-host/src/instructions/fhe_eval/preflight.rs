@@ -163,6 +163,9 @@ fn preflight_encrypted_operand(
             preflight.require_instructions_sysvar();
             preflight.mark_account(*session_index)?;
         }
+        FheEvalOperand::VerifiedInput { .. } => {
+            // No remaining account: the attestation is carried inline and verified in-frame.
+        }
         FheEvalOperand::Scalar(_) => return Err(error!(ZamaHostError::InvalidFheEvalAccount)),
     }
     Ok(())

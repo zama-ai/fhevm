@@ -11,6 +11,11 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 KMS="$(cd "$ROOT/../../zama/kms" 2>/dev/null && pwd || echo /Users/work/code/zama/kms)"
 VALUE="${TE_VALUE:-55}"
+# Input-flow leg: encrypt IV (default 56) as an external input, then one fhe_eval adds ADD (default 2)
+# to it on-chain and the result is public-decrypted == IV+ADD (parametrized so it can't pass on a
+# trivial/hardcoded value).
+IV="${INPUT_VALUE:-56}"
+ADD="${INPUT_ADD:-2}"
 CTX="${SOLANA_UD_CONTEXT_ID:-3166189940082864718613269121331309980362851143201109172953918312716374638593}"
 # extraData = version 0x01 ‖ 32-byte BE gateway KMS context id. The gateway/KMS context is the
 # uint256 `0x07..01` (chain-type tag 0x07 in the high byte ‖ u64 id 1 in the low 8 bytes); the KMS
@@ -50,7 +55,7 @@ done
 iout="$(cd "$ROOT/test-suite/fhevm" && \
   IN_RELAYER_URL=http://127.0.0.1:3000 IN_CONTRACTS_CHAIN_ID="$SID" IN_ACL_PROGRAM="$ACL" \
   IN_CONTRACT="$USER" IN_USER="$USER" IN_CONTRACT_B58="$USER_B58" IN_USER_B58="$USER_B58" \
-  IN_VALUE=42 IN_TYPE=uint64 \
+  IN_VALUE="$IV" IN_TYPE=uint64 \
   node solana-input.ts 2>/dev/null || true)"
 ipost="$(printf '%s\n' "$iout" | grep -oE '"jobId":"[^"]+"' | head -1 | cut -d'"' -f4 || true)"
 [ -n "$ipost" ] || fail "input-proof POST failed (last client output: $(printf '%s\n' "$iout" | tail -2))"
@@ -112,6 +117,45 @@ echo "==> [user-decrypt] V2 path: public @fhevm/sdk/solana client -> relayer /v3
     cargo test -p kms --features non-wasm --test solana_user_decrypt_live -- --ignored --nocapture ) \
   || fail "user-decrypt test failed"
 echo "    user-decrypt cleartext=$VALUE OK (V2 ed25519 via public @fhevm/sdk/solana client)"
+
+# Input flow (#1539): compute on the VERIFIED external input itself. One fhe_eval adds $ADD to the
+# attested input in-frame (FheEvalOperand::VerifiedInput — re-verified on-chain via secp256k1, no
+# scratch PDA) and binds the result to a durable output ACL record under the attested acl_domain_key
+# ($USER). Reuses the proof captured above ($ih/$isig/$iextra, value $IV), so this proves the result
+# is a function of the encrypted input, not a fresh value.
+EXPECT=$((IV + ADD))
+echo "==> [input-flow] fhe_eval VerifiedInput($IV) + $ADD -> durable @ acl_domain_key -> public-decrypt (expect $EXPECT)"
+eout="$(cd "$ROOT/solana/scripts/poc/live-client" && \
+  FHE_EVAL_VERIFIED_INPUT=1 BIND_HANDLE="$ih" BIND_COPRO_SIG="$isig" BIND_USER="$USER" \
+  BIND_CONTRACT="$USER" BIND_CHAIN_ID="$SID" BIND_EXTRA="$iextra" TE_ADD="$ADD" TE_ALLOW=1 \
+  ./target/debug/poc-live-client 2>&1)"
+echo "$eout" | grep -E 'result handle|allow_for_decryption' || fail "fhe_eval verified-input: $eout"
+RH="$(echo "$eout" | grep -oE 'result handle 0x[0-9a-f]+' | grep -oE '0x[0-9a-f]+')"
+[ -n "$RH" ] || fail "no input-flow result handle"
+echo "    result handle=$RH"
+
+echo "==> [input-flow] wait for SNS commit (tfhe/sns-worker computes input + $ADD)"
+RHH="${RH#0x}"
+for i in $(seq 1 30); do
+  row="$(docker exec coprocessor-and-kms-db psql -U postgres -d coprocessor -tAc \
+    "SELECT ciphertext IS NOT NULL, ciphertext128 IS NOT NULL FROM ciphertext_digest WHERE handle=decode('$RHH','hex')" 2>/dev/null | tr -d '[:space:]')"
+  [ "$row" = "t|t" ] && { echo "    committed"; break; }
+  [ "$i" = 30 ] && fail "input-flow SNS commit timed out"; sleep 6
+done
+
+echo "==> [input-flow] public-decrypt result"
+ejob="$(curl -s -m15 localhost:3000/v2/public-decrypt -H 'content-type: application/json' \
+  -d "{\"ciphertextHandles\":[\"$RH\"],\"extraData\":\"$EXTRA\"}" | python3 -c "import sys,json;print(json.load(sys.stdin)['result']['jobId'])")"
+for i in $(seq 1 40); do
+  er="$(curl -s -m10 "localhost:3000/v2/public-decrypt/$ejob")"
+  est="$(echo "$er" | python3 -c "import sys,json;print(json.load(sys.stdin).get('status',''))" 2>/dev/null)"
+  [ "$est" = succeeded ] && break
+  [ "$est" = failed ] && fail "input-flow public-decrypt failed: $er"
+  [ "$i" = 40 ] && fail "input-flow public-decrypt timed out"; sleep 3
+done
+edv="$(echo "$er" | python3 -c "import sys,json;print(int(json.load(sys.stdin)['result']['decryptedValue'],16))")"
+[ "$edv" = "$EXPECT" ] && echo "    input-flow public-decrypt cleartext=$edv == $IV+$ADD OK" \
+  || fail "input-flow $edv != $EXPECT"
 
 echo "==> [consume] confidential mint + USDC; wrap -> burn -> release -> public-decrypt -> redeem(secp) + disclose(secp)"
 LCDIR="$ROOT/solana/scripts/poc/live-client"
@@ -200,4 +244,4 @@ disout="$(lc CONSUME_DISCLOSE=1 TS_ACL="$BURNED_ACL" TS_HANDLE="$BURNED_HANDLE" 
 echo "$disout" | grep -q 'OK disclose_amount_secp' || fail "disclose_amount_secp: $(echo "$disout" | tail -3)"
 echo "    disclose_amount_secp OK -- witness-bound secp256k1 KMS-cert verify emitted cleartext $CLEARTEXT"
 
-echo "==> FULL VERTICAL GREEN: input(ZK+secp bind) -> compute -> public-decrypt($VALUE) + user-decrypt($VALUE) -> consume redeem($CLEARTEXT)+disclose($CLEARTEXT) [secp256k1 KMS cert]"
+echo "==> FULL VERTICAL GREEN: input(ZK+secp bind) -> compute -> public-decrypt($VALUE) + user-decrypt($VALUE) -> input-flow(VerifiedInput $IV+$ADD -> public-decrypt $EXPECT) -> consume redeem($CLEARTEXT)+disclose($CLEARTEXT) [secp256k1 KMS cert]"

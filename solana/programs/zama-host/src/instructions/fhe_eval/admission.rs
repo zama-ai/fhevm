@@ -251,6 +251,23 @@ impl EvalStepVisitor for AdmissionState<'_, '_> {
         self.resolve_transient_session(handle, session_index, capability_index)
     }
 
+    fn resolve_verified_input_operand(
+        &mut self,
+        attestation: &CoprocessorInputAttestation,
+    ) -> Result<ResolvedOperand> {
+        // Structural only — the handle is known from the operand; execution re-verifies the
+        // attestation authoritatively (matches how transient-session consume is execution-gated).
+        // The attested identities are still tracked so admission rejects an output that does not
+        // bind them.
+        Ok(ResolvedOperand::verified_input(
+            attestation.input_handle,
+            VerifiedInputBinding {
+                user_address: Pubkey::new_from_array(attestation.user_address),
+                contract_address: Pubkey::new_from_array(attestation.contract_address),
+            },
+        ))
+    }
+
     fn record_op_event(&mut self, _event: EvalEvent) {}
 
     fn accept_output<'info>(
@@ -261,6 +278,7 @@ impl EvalStepVisitor for AdmissionState<'_, '_> {
         output_policies: Vec<SessionPolicy>,
         output_public_decrypt_allowed: bool,
         enforce_public_decrypt_role_propagation: bool,
+        verified_input: Option<VerifiedInputBinding>,
     ) -> Result<()> {
         require!(
             !self.produced.iter().any(|value| value.handle == result),
@@ -273,6 +291,10 @@ impl EvalStepVisitor for AdmissionState<'_, '_> {
                 session_index,
                 capability,
             } => {
+                require!(
+                    verified_input.is_none(),
+                    ZamaHostError::InputBindTransientSessionUnsupported
+                );
                 assert_session_policies_allow_transient_grant(&output_policies, *capability)?;
                 self.admit_transient_session_append(
                     ctx.remaining_accounts,
@@ -293,6 +315,14 @@ impl EvalStepVisitor for AdmissionState<'_, '_> {
                 output_subjects,
                 output_public_decrypt,
             } => {
+                if let Some(binding) = verified_input {
+                    assert_verified_input_output_binding(
+                        &binding,
+                        *output_acl_domain_key,
+                        *output_app_account,
+                        output_subjects,
+                    )?;
+                }
                 assert_session_policies_allow_output(
                     &output_policies,
                     *output_acl_domain_key,
@@ -334,6 +364,7 @@ impl EvalStepVisitor for AdmissionState<'_, '_> {
             handle: result,
             public_decrypt_allowed: output_public_decrypt_allowed,
             session_policies: output_policies,
+            verified_input,
         });
         Ok(())
     }

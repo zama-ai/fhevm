@@ -29,9 +29,10 @@ use zama_host::{
         HandleMaterialSealedEvent, InputVerifiedEvent, PublicDecryptAllowedEvent,
         TrivialEncryptEvent,
     },
-    AclPermission, AclRecord, AclSubjectEntry, DenySubjectRecord, FheBinaryOpCode, FheEvalArgs,
-    FheEvalOperand, FheEvalOutput, FheEvalStep, FheTernaryOpCode, HandleMaterialCommitment,
-    HostConfig, TransientCapabilityGrant, TransientSession, UserDecryptionDelegation,
+    AclPermission, AclRecord, AclSubjectEntry, CoprocessorInputAttestation, DenySubjectRecord,
+    FheBinaryOpCode, FheEvalArgs, FheEvalOperand, FheEvalOutput, FheEvalStep, FheTernaryOpCode,
+    HandleMaterialCommitment, HostConfig, TransientCapabilityGrant, TransientSession,
+    UserDecryptionDelegation,
 };
 
 #[test]
@@ -6447,7 +6448,10 @@ fn host_config_account_with_verifier(
                 test_authority: admin,
                 paused: false,
                 mock_input_enabled: false,
-                test_shims_enabled: false,
+                // Enable zero birth entropy (test_shims + local poc chain) so eval handle
+                // derivation is deterministic; the real secp256k1 verify path is still exercised
+                // because mock_input_enabled stays false.
+                test_shims_enabled: true,
                 grant_deny_list_enabled: false,
                 updated_slot: 0,
                 bump,
@@ -6876,4 +6880,606 @@ fn label(name: &str) -> [u8; 32] {
     assert!(bytes.len() <= out.len());
     out[..bytes.len()].copy_from_slice(bytes);
     out
+}
+
+// --- fhe_eval VerifiedInput operand: consume an attested input in-frame, no scratch PDA (#1539) ---
+
+/// Signs a coprocessor EIP-712 attestation over `[input_handle]` for (user, contract) and packs it
+/// into a `VerifiedInput` operand attestation. The attested `contract_address` is the input's
+/// acl_domain_key.
+fn verified_input_attestation(
+    key: &k256::ecdsa::SigningKey,
+    input_handle: [u8; 32],
+    user_address: [u8; 32],
+    contract_address: [u8; 32],
+) -> CoprocessorInputAttestation {
+    let ct_handles = vec![input_handle];
+    let contract_chain_id = 12345u64;
+    let extra_data = vec![0x00u8];
+    let digest = host::eip712::typed_data_digest(
+        &host::eip712::domain_separator(
+            b"InputVerification",
+            b"1",
+            GATEWAY_CHAIN_ID,
+            &INPUT_VERIFICATION_CONTRACT,
+        ),
+        &host::eip712::ciphertext_verification_struct_hash(
+            &ct_handles,
+            &user_address,
+            &contract_address,
+            contract_chain_id,
+            &extra_data,
+        ),
+    );
+    CoprocessorInputAttestation {
+        input_handle,
+        ct_handles,
+        handle_index: 0,
+        user_address,
+        contract_address,
+        contract_chain_id,
+        extra_data,
+        signatures: vec![sign_eip712(key, &digest)],
+    }
+}
+
+/// Builds a one-step `fhe_eval` that adds `scalar` to a `VerifiedInput` operand and binds a durable
+/// output ACL record under `acl_domain` (the `output_acl_record` PDA goes in `remaining_accounts`).
+#[allow(clippy::too_many_arguments)]
+fn verified_input_add_eval_ix(
+    program_id: Pubkey,
+    authority: Pubkey,
+    host_config: Pubkey,
+    attestation: CoprocessorInputAttestation,
+    scalar: [u8; 32],
+    context_id: [u8; 32],
+    acl_domain: Pubkey,
+    nonce_key: [u8; 32],
+    encrypted_value_label: [u8; 32],
+    output_acl_record: Pubkey,
+    output_subjects: Vec<AclSubjectEntry>,
+) -> Instruction {
+    let mut eval_ix = anchor_ix(
+        program_id,
+        host::accounts::FheEval {
+            payer: authority,
+            compute_subject: authority,
+            app_account_authority: authority,
+            host_config,
+            system_program: system_program::ID,
+            instructions_sysvar: None,
+            event_authority: event_authority(program_id),
+            program: program_id,
+        },
+        host::instruction::FheEval {
+            args: FheEvalArgs {
+                context_id,
+                steps: vec![FheEvalStep::Binary {
+                    op: FheBinaryOpCode::Add,
+                    lhs: FheEvalOperand::VerifiedInput { attestation },
+                    rhs: FheEvalOperand::Scalar(scalar),
+                    output_fhe_type: 5,
+                    output: FheEvalOutput::Durable {
+                        output_acl_record_index: 0,
+                        output_app_account_authority_index: None,
+                        output_nonce_key: nonce_key,
+                        output_nonce_sequence: 0,
+                        output_acl_domain_key: acl_domain,
+                        output_app_account: authority,
+                        output_encrypted_value_label: encrypted_value_label,
+                        output_subjects,
+                        output_public_decrypt: false,
+                    },
+                }],
+            },
+        },
+    );
+    eval_ix
+        .accounts
+        .push(AccountMeta::new(output_acl_record, false));
+    eval_ix
+}
+
+/// (a) A verified input feeds a scalar add in one `fhe_eval`; the durable output binds the expected
+/// handle + AclRecord under the app-level acl_domain_key — no scratch PDA for the input.
+#[test]
+fn mollusk_fhe_eval_verified_input_scalar_add_binds_durable_output() {
+    let program_id = host::id();
+    let authority = Pubkey::new_unique();
+    let key = k256::ecdsa::SigningKey::from_bytes(&[0x44u8; 32].into()).unwrap();
+    let (host_config, host_config_account) =
+        host_config_account_with_verifier(authority, evm_address_of(&key));
+
+    // `authority` is the app's signing authority — the attested contract (a mint/token PDA signing
+    // via CPI in a real app). The attested input owner is a DIFFERENT end user, recorded as a
+    // subject. The output binds to the app authority: acl_domain == app_account == attested contract.
+    let user = Pubkey::new_unique();
+    let encrypted_value_label = label("verified-input-add");
+    let nonce_key = host::acl_nonce_key(authority, authority, encrypted_value_label);
+    let input_handle = input_handle_for_chain(0x01, 0, 5);
+    let attestation =
+        verified_input_attestation(&key, input_handle, user.to_bytes(), authority.to_bytes());
+
+    let output_acl_record = host::acl_record_address(nonce_key, 0).0;
+    let context = transient_context(
+        authority,
+        vec![
+            (host_config, host_config_account),
+            (output_acl_record, system_account(0)),
+        ],
+    );
+
+    let scalar = amount_plaintext(2);
+    let context_id = label("verified-input-frame");
+    let output_handle = current_bound_eval_handle(
+        &context.mollusk,
+        FheBinaryOpCode::Add,
+        input_handle,
+        scalar,
+        true,
+        5,
+        context_id,
+        0,
+        nonce_key,
+        0,
+    );
+
+    let eval_ix = verified_input_add_eval_ix(
+        program_id,
+        authority,
+        host_config,
+        attestation,
+        scalar,
+        context_id,
+        authority,
+        nonce_key,
+        encrypted_value_label,
+        output_acl_record,
+        vec![AclSubjectEntry::use_only(user)],
+    );
+
+    assert_transaction_success(&context, &[eval_ix]);
+
+    let output_record =
+        read_acl_record(&context, output_acl_record).expect("expected durable output ACL");
+    assert_bound_acl_record(
+        &output_record,
+        output_handle,
+        nonce_key,
+        0,
+        authority,
+        authority,
+        encrypted_value_label,
+        user,
+        host::ACL_ROLE_USE,
+        context.mollusk.sysvars.clock.slot,
+    );
+}
+
+/// Builds a one-step `fhe_eval` that adds `scalar` to a *durable* input operand (its ACL record
+/// goes in `remaining_accounts`), producing a transient result. Used to show a verified input
+/// leaves behind no durable ACL a later instruction could ride on.
+fn durable_input_add_eval_ix(
+    program_id: Pubkey,
+    authority: Pubkey,
+    host_config: Pubkey,
+    input_handle: [u8; 32],
+    input_acl_record: Pubkey,
+    scalar: [u8; 32],
+    context_id: [u8; 32],
+) -> Instruction {
+    let mut eval_ix = anchor_ix(
+        program_id,
+        host::accounts::FheEval {
+            payer: authority,
+            compute_subject: authority,
+            app_account_authority: authority,
+            host_config,
+            system_program: system_program::ID,
+            instructions_sysvar: None,
+            event_authority: event_authority(program_id),
+            program: program_id,
+        },
+        host::instruction::FheEval {
+            args: FheEvalArgs {
+                context_id,
+                steps: vec![FheEvalStep::Binary {
+                    op: FheBinaryOpCode::Add,
+                    lhs: FheEvalOperand::Durable {
+                        handle: input_handle,
+                        acl_record_index: 0,
+                        permission_index: None,
+                    },
+                    rhs: FheEvalOperand::Scalar(scalar),
+                    output_fhe_type: 5,
+                    output: FheEvalOutput::Transient,
+                }],
+            },
+        },
+    );
+    eval_ix
+        .accounts
+        .push(AccountMeta::new_readonly(input_acl_record, false));
+    eval_ix
+}
+
+/// (b) An attestation signed by a key the host config does not trust as the coprocessor signer is
+/// rejected: VerifiedInput resolution enforces the secp256k1 verification in-frame, it is not
+/// assumed from the operand being present.
+#[test]
+fn mollusk_fhe_eval_verified_input_rejects_forged_attestation() {
+    let program_id = host::id();
+    let authority = Pubkey::new_unique();
+    let trusted = k256::ecdsa::SigningKey::from_bytes(&[0x44u8; 32].into()).unwrap();
+    let attacker = k256::ecdsa::SigningKey::from_bytes(&[0x99u8; 32].into()).unwrap();
+    let (host_config, host_config_account) =
+        host_config_account_with_verifier(authority, evm_address_of(&trusted));
+
+    let user = Pubkey::new_unique();
+    let value_label = label("verified-input-forged");
+    let nonce_key = host::acl_nonce_key(authority, authority, value_label);
+    let input_handle = input_handle_for_chain(0x01, 0, 5);
+    // A well-formed (user, app) binding, but signed by the attacker — not the trusted coprocessor
+    // signer. The output binding passes; the in-frame secp256k1 verify is what rejects it.
+    let attestation = verified_input_attestation(
+        &attacker,
+        input_handle,
+        user.to_bytes(),
+        authority.to_bytes(),
+    );
+
+    let output_acl_record = host::acl_record_address(nonce_key, 0).0;
+    let context = transient_context(
+        authority,
+        vec![
+            (host_config, host_config_account),
+            (output_acl_record, system_account(0)),
+        ],
+    );
+
+    let eval_ix = verified_input_add_eval_ix(
+        program_id,
+        authority,
+        host_config,
+        attestation,
+        amount_plaintext(2),
+        label("verified-input-frame"),
+        authority,
+        nonce_key,
+        value_label,
+        output_acl_record,
+        vec![AclSubjectEntry::use_only(user)],
+    );
+
+    let result = context.process_instruction(&eval_ix);
+    assert!(
+        result.raw_result.is_err(),
+        "forged attestation must be rejected"
+    );
+}
+
+/// (c) No leak: a verified input grants access only inside the instruction that carries its
+/// attestation. After it is consumed, no durable or scratch state persists, so a later instruction
+/// cannot reach the same input handle without re-supplying the attestation — this is what justifies
+/// resolving it in-frame with no PDA.
+#[test]
+fn mollusk_fhe_eval_verified_input_does_not_leak_to_a_later_instruction() {
+    let program_id = host::id();
+    let authority = Pubkey::new_unique();
+    let key = k256::ecdsa::SigningKey::from_bytes(&[0x44u8; 32].into()).unwrap();
+    let (host_config, host_config_account) =
+        host_config_account_with_verifier(authority, evm_address_of(&key));
+
+    let user = Pubkey::new_unique();
+    let value_label = label("verified-input-noleak");
+    let nonce_key = host::acl_nonce_key(authority, authority, value_label);
+    let input_handle = input_handle_for_chain(0x01, 0, 5);
+    let attestation =
+        verified_input_attestation(&key, input_handle, user.to_bytes(), authority.to_bytes());
+
+    let output_acl_record = host::acl_record_address(nonce_key, 0).0;
+    // An empty account standing in for the ACL record the input would need but was never granted.
+    let absent_input_acl = Pubkey::new_unique();
+    let context = transient_context(
+        authority,
+        vec![
+            (host_config, host_config_account),
+            (output_acl_record, system_account(0)),
+            (absent_input_acl, system_account(0)),
+        ],
+    );
+    let context_id = label("verified-input-frame");
+
+    // 1) Consume the verified input in-frame: succeeds and binds the durable output.
+    let consume_ix = verified_input_add_eval_ix(
+        program_id,
+        authority,
+        host_config,
+        attestation,
+        amount_plaintext(2),
+        context_id,
+        authority,
+        nonce_key,
+        value_label,
+        output_acl_record,
+        vec![AclSubjectEntry::use_only(user)],
+    );
+    assert_transaction_success(&context, &[consume_ix]);
+
+    // 2) A separate instruction cannot use the same input handle durably — nothing persisted it.
+    let reuse_ix = durable_input_add_eval_ix(
+        program_id,
+        authority,
+        host_config,
+        input_handle,
+        absent_input_acl,
+        amount_plaintext(2),
+        label("verified-input-reuse"),
+    );
+    let result = context.process_instruction(&reuse_ix);
+    assert!(
+        result.raw_result.is_err(),
+        "verified input must not be reachable without re-verifying"
+    );
+}
+
+/// (d) The output of a verified input must bind the acl_domain_key the input was attested for.
+/// Binding the output under a different domain (a cross-domain move) is rejected — the only
+/// violation here is attested-domain != bound-domain (the output metadata is otherwise consistent).
+#[test]
+fn mollusk_fhe_eval_verified_input_rejects_wrong_output_acl_domain_key() {
+    let program_id = host::id();
+    let authority = Pubkey::new_unique();
+    let key = k256::ecdsa::SigningKey::from_bytes(&[0x44u8; 32].into()).unwrap();
+    let (host_config, host_config_account) =
+        host_config_account_with_verifier(authority, evm_address_of(&key));
+
+    let user = Pubkey::new_unique();
+    let wrong_domain = Pubkey::new_unique();
+    let value_label = label("verified-input-domain");
+    // The attested contract is the app authority (`authority`); the output is bound under a WRONG
+    // domain. Output metadata is internally consistent with the wrong domain, isolating the failure
+    // to the verified-input domain binding rather than a nonce-key / metadata mismatch.
+    let nonce_key = host::acl_nonce_key(wrong_domain, authority, value_label);
+    let input_handle = input_handle_for_chain(0x01, 0, 5);
+    let attestation =
+        verified_input_attestation(&key, input_handle, user.to_bytes(), authority.to_bytes());
+
+    let output_acl_record = host::acl_record_address(nonce_key, 0).0;
+    let context = transient_context(
+        authority,
+        vec![
+            (host_config, host_config_account),
+            (output_acl_record, system_account(0)),
+        ],
+    );
+
+    let eval_ix = verified_input_add_eval_ix(
+        program_id,
+        authority,
+        host_config,
+        attestation,
+        amount_plaintext(2),
+        label("verified-input-frame"),
+        wrong_domain,
+        nonce_key,
+        value_label,
+        output_acl_record,
+        vec![AclSubjectEntry::use_only(user)],
+    );
+
+    let result = context.process_instruction(&eval_ix);
+    assert_instruction_custom_error(&result, host::errors::ZamaHostError::AclDomainKeyMismatch);
+}
+
+/// (e) A verified input is authorized by its provider for the attested domain, so it propagates
+/// public-decrypt like a public scalar: a durable output derived from it may grant the
+/// PUBLIC_DECRYPT-capable `user` role (so the app can later allow_for_decryption) even though the
+/// app account authority is a plain signer. Before binding the input's domain this same shape was
+/// rejected as an un-propagated public-decrypt escalation.
+#[test]
+fn mollusk_fhe_eval_verified_input_propagates_public_decrypt_to_durable_output() {
+    let program_id = host::id();
+    let authority = Pubkey::new_unique();
+    let key = k256::ecdsa::SigningKey::from_bytes(&[0x44u8; 32].into()).unwrap();
+    let (host_config, host_config_account) =
+        host_config_account_with_verifier(authority, evm_address_of(&key));
+
+    let user = Pubkey::new_unique();
+    let value_label = label("verified-input-pubdec");
+    let nonce_key = host::acl_nonce_key(authority, authority, value_label);
+    let input_handle = input_handle_for_chain(0x01, 0, 5);
+    let attestation =
+        verified_input_attestation(&key, input_handle, user.to_bytes(), authority.to_bytes());
+
+    let output_acl_record = host::acl_record_address(nonce_key, 0).0;
+    let context = transient_context(
+        authority,
+        vec![
+            (host_config, host_config_account),
+            (output_acl_record, system_account(0)),
+        ],
+    );
+
+    let scalar = amount_plaintext(2);
+    let context_id = label("verified-input-frame");
+    let output_handle = current_bound_eval_handle(
+        &context.mollusk,
+        FheBinaryOpCode::Add,
+        input_handle,
+        scalar,
+        true,
+        5,
+        context_id,
+        0,
+        nonce_key,
+        0,
+    );
+
+    let eval_ix = verified_input_add_eval_ix(
+        program_id,
+        authority,
+        host_config,
+        attestation,
+        scalar,
+        context_id,
+        authority,
+        nonce_key,
+        value_label,
+        output_acl_record,
+        vec![AclSubjectEntry::user(user)],
+    );
+
+    assert_transaction_success(&context, &[eval_ix]);
+
+    let output_record =
+        read_acl_record(&context, output_acl_record).expect("expected durable output ACL");
+    assert_bound_acl_record(
+        &output_record,
+        output_handle,
+        nonce_key,
+        0,
+        authority,
+        authority,
+        value_label,
+        user,
+        host::ACL_ROLE_ALL,
+        context.mollusk.sysvars.clock.slot,
+    );
+}
+
+/// (f) Replay guard: a copied (public) attestation cannot be consumed by a signer other than the
+/// attested app authority. An attacker who lifts a victim's on-chain attestation and submits their
+/// own `fhe_eval` — claiming the derived output for themselves — is rejected because the output app
+/// account is forced to equal the attested `contract_address`, and the output app account must
+/// itself sign (here the attacker signs as themselves, not as the attested app). This is the
+/// non-replayable binding: only the attested app (signing directly or via CPI) can consume.
+#[test]
+fn mollusk_fhe_eval_verified_input_rejects_consumption_by_non_attested_app() {
+    let program_id = host::id();
+    let attacker = Pubkey::new_unique(); // signs the malicious eval (app_account_authority)
+    let attested_app = Pubkey::new_unique(); // the attested contract — the attacker does not control it
+    let user = Pubkey::new_unique(); // the attested input owner (the victim the proof was made for)
+    let key = k256::ecdsa::SigningKey::from_bytes(&[0x44u8; 32].into()).unwrap();
+    let (host_config, host_config_account) =
+        host_config_account_with_verifier(attacker, evm_address_of(&key));
+
+    let value_label = label("verified-input-replay");
+    // The attacker binds the output domain to the attested app (so the domain pin passes) but owns
+    // the output themselves; the app_account == attested-contract check is what trips.
+    let nonce_key = host::acl_nonce_key(attested_app, attacker, value_label);
+    let input_handle = input_handle_for_chain(0x01, 0, 5);
+    // A VALID attestation for (user, attested_app), as if copied from the victim's instruction data.
+    let attestation =
+        verified_input_attestation(&key, input_handle, user.to_bytes(), attested_app.to_bytes());
+
+    let output_acl_record = host::acl_record_address(nonce_key, 0).0;
+    let context = transient_context(
+        attacker,
+        vec![
+            (host_config, host_config_account),
+            (output_acl_record, system_account(0)),
+        ],
+    );
+
+    // attacker signs as app_account_authority/output_app_account (= `attacker`, != attested_app).
+    let eval_ix = verified_input_add_eval_ix(
+        program_id,
+        attacker,
+        host_config,
+        attestation,
+        amount_plaintext(2),
+        label("verified-input-frame"),
+        attested_app,
+        nonce_key,
+        value_label,
+        output_acl_record,
+        vec![AclSubjectEntry::use_only(user)],
+    );
+
+    let result = context.process_instruction(&eval_ix);
+    assert_instruction_custom_error(
+        &result,
+        host::errors::ZamaHostError::InputBindContractMismatch,
+    );
+}
+
+/// (g) Replay guard through a transient session: a verified-input-derived value cannot be parked in
+/// a transient-session capability. The capability does not carry the attested binding, so consuming
+/// it in a later instruction would mint a durable output free of the (user, contract) check — the
+/// exact bypass that would otherwise defeat (f). The attempt to write
+/// `VerifiedInput + Scalar -> TransientSession` is rejected up front.
+#[test]
+fn mollusk_fhe_eval_verified_input_rejects_transient_session_output() {
+    let program_id = host::id();
+    let authority = Pubkey::new_unique(); // signs the eval and opens the session
+    let user = Pubkey::new_unique(); // the attested input owner
+    let key = k256::ecdsa::SigningKey::from_bytes(&[0x44u8; 32].into()).unwrap();
+    let (host_config, host_config_account) =
+        host_config_account_with_verifier(authority, evm_address_of(&key));
+
+    let session_nonce = label("verified-input-session");
+    let (session, _) = host::transient_session_address(authority, session_nonce);
+    let context = transient_context(
+        authority,
+        vec![
+            (host_config, host_config_account),
+            (session, system_account(0)),
+        ],
+    );
+
+    // Open a real session owned by `authority`, as an attacker would before trying to park the input.
+    let create_ix = create_transient_session_ix(
+        program_id,
+        authority,
+        host_config,
+        session,
+        session_nonce,
+        authority,
+        0,
+        1,
+    );
+    context.process_and_validate_instruction(&create_ix, &[Check::success()]);
+
+    let input_handle = input_handle_for_chain(0x01, 0, 5);
+    let attestation =
+        verified_input_attestation(&key, input_handle, user.to_bytes(), authority.to_bytes());
+
+    let mut eval_ix = anchor_ix(
+        program_id,
+        host::accounts::FheEval {
+            payer: authority,
+            compute_subject: authority,
+            app_account_authority: authority,
+            host_config,
+            system_program: system_program::ID,
+            instructions_sysvar: None,
+            event_authority: event_authority(program_id),
+            program: program_id,
+        },
+        host::instruction::FheEval {
+            args: FheEvalArgs {
+                context_id: label("verified-input-frame"),
+                steps: vec![FheEvalStep::Binary {
+                    op: FheBinaryOpCode::Add,
+                    lhs: FheEvalOperand::VerifiedInput { attestation },
+                    rhs: FheEvalOperand::Scalar(amount_plaintext(2)),
+                    output_fhe_type: 5,
+                    output: FheEvalOutput::TransientSession {
+                        session_index: 0,
+                        capability: transient_capability(
+                            authority, program_id, authority, authority, true,
+                        ),
+                    },
+                }],
+            },
+        },
+    );
+    eval_ix.accounts.push(AccountMeta::new(session, false));
+
+    let result = context.process_instruction(&eval_ix);
+    assert_instruction_custom_error(
+        &result,
+        host::errors::ZamaHostError::InputBindTransientSessionUnsupported,
+    );
 }

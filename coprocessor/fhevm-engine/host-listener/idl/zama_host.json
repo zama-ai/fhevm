@@ -3492,6 +3492,11 @@
       "code": 6079,
       "name": "InputBindUserNotSubject",
       "msg": "attested user address is not an output ACL subject"
+    },
+    {
+      "code": 6080,
+      "name": "InputBindTransientSessionUnsupported",
+      "msg": "verified-input-derived value cannot be written to a transient session"
     }
   ],
   "types": [
@@ -3917,6 +3922,103 @@
       }
     },
     {
+      "name": "CoprocessorInputAttestation",
+      "docs": [
+        "A coprocessor input attestation carried inline by a [`FheEvalOperand::VerifiedInput`], re-verified",
+        "in-frame (no account, no PDA) — the instruction-local analog of EVM `allowTransient(input, contract)`."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "input_handle",
+            "docs": [
+              "The verified input handle used as the operand."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "ct_handles",
+            "docs": [
+              "All ciphertext handles covered by the proof."
+            ],
+            "type": {
+              "vec": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
+            }
+          },
+          {
+            "name": "handle_index",
+            "docs": [
+              "Index of `input_handle` within `ct_handles`."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "user_address",
+            "docs": [
+              "Attested user identity (bytes32)."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "contract_address",
+            "docs": [
+              "Attested contract identity — the input's ACL domain key (bytes32)."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "contract_chain_id",
+            "docs": [
+              "Gateway-side contract chain id the attestation binds."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "extra_data",
+            "docs": [
+              "Opaque extra data covered by the attestation."
+            ],
+            "type": "bytes"
+          },
+          {
+            "name": "signatures",
+            "docs": [
+              "Coprocessor EIP-712 signatures (65-byte secp256k1)."
+            ],
+            "type": {
+              "vec": {
+                "array": [
+                  "u8",
+                  65
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
       "name": "DenySubjectUpdatedEvent",
       "docs": [
         "Emitted when a subject deny-list record is updated."
@@ -4197,6 +4299,22 @@
                   "u8",
                   32
                 ]
+              }
+            ]
+          },
+          {
+            "name": "VerifiedInput",
+            "fields": [
+              {
+                "name": "attestation",
+                "docs": [
+                  "The inline attestation re-verified to authorize this operand."
+                ],
+                "type": {
+                  "defined": {
+                    "name": "CoprocessorInputAttestation"
+                  }
+                }
               }
             ]
           }

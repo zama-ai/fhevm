@@ -3,6 +3,7 @@
 use anchor_lang::prelude::*;
 
 use super::common::*;
+use super::verify_coprocessor_input::{verify_input_attestation, InputVerifierParams};
 use crate::{
     errors::ZamaHostError,
     events::{
@@ -126,6 +127,7 @@ fn execute_eval_frame<'info>(
         handle_context.chain_id,
         current_slot,
         instructions_sysvar,
+        InputVerifierParams::from_config(&ctx.accounts.host_config),
     );
     walk_eval_frame(&mut execution, ctx, args, handle_context)?;
     execution.finish(ctx)
@@ -145,6 +147,7 @@ struct EvalExecutionState<'a, 'info> {
     chain_id: u64,
     current_slot: u64,
     instructions_sysvar: Option<&'a AccountInfo<'info>>,
+    verifier_params: InputVerifierParams,
 }
 
 impl<'a, 'info> EvalExecutionState<'a, 'info> {
@@ -158,6 +161,7 @@ impl<'a, 'info> EvalExecutionState<'a, 'info> {
         chain_id: u64,
         current_slot: u64,
         instructions_sysvar: Option<&'a AccountInfo<'info>>,
+        verifier_params: InputVerifierParams,
     ) -> Self {
         Self {
             remaining_accounts,
@@ -170,6 +174,7 @@ impl<'a, 'info> EvalExecutionState<'a, 'info> {
             chain_id,
             current_slot,
             instructions_sysvar,
+            verifier_params,
         }
     }
 
@@ -258,6 +263,34 @@ impl EvalStepVisitor for EvalExecutionState<'_, '_> {
         Ok(ResolvedOperand::transient_session(handle, capability.grant))
     }
 
+    #[inline(never)]
+    fn resolve_verified_input_operand(
+        &mut self,
+        attestation: &CoprocessorInputAttestation,
+    ) -> Result<ResolvedOperand> {
+        // Authoritative in-frame verification: re-run the coprocessor attestation. No account, no
+        // PDA — the "allow" exists only for this instruction's execution. public_decrypt is NOT
+        // implied by a verified input; the durable output gets an explicit allow_for_decryption.
+        verify_input_attestation(
+            &self.verifier_params,
+            attestation.input_handle,
+            &attestation.ct_handles,
+            attestation.handle_index,
+            &attestation.user_address,
+            &attestation.contract_address,
+            attestation.contract_chain_id,
+            &attestation.extra_data,
+            &attestation.signatures,
+        )?;
+        Ok(ResolvedOperand::verified_input(
+            attestation.input_handle,
+            VerifiedInputBinding {
+                user_address: Pubkey::new_from_array(attestation.user_address),
+                contract_address: Pubkey::new_from_array(attestation.contract_address),
+            },
+        ))
+    }
+
     fn record_op_event(&mut self, event: EvalEvent) {
         self.events.push(event);
     }
@@ -271,6 +304,7 @@ impl EvalStepVisitor for EvalExecutionState<'_, '_> {
         output_policies: Vec<SessionPolicy>,
         output_public_decrypt_allowed: bool,
         enforce_public_decrypt_role_propagation: bool,
+        verified_input: Option<VerifiedInputBinding>,
     ) -> Result<()> {
         accept_eval_output(
             ctx,
@@ -282,6 +316,7 @@ impl EvalStepVisitor for EvalExecutionState<'_, '_> {
             output_policies,
             output_public_decrypt_allowed,
             enforce_public_decrypt_role_propagation,
+            verified_input,
             self.current_slot,
         )
     }
@@ -314,6 +349,7 @@ fn accept_eval_output<'info>(
     output_policies: Vec<SessionPolicy>,
     output_public_decrypt_allowed: bool,
     enforce_public_decrypt_role_propagation: bool,
+    verified_input: Option<VerifiedInputBinding>,
     current_slot: u64,
 ) -> Result<()> {
     require!(
@@ -327,6 +363,10 @@ fn accept_eval_output<'info>(
             session_index,
             capability,
         } => {
+            require!(
+                verified_input.is_none(),
+                ZamaHostError::InputBindTransientSessionUnsupported
+            );
             assert_session_policies_allow_transient_grant(&output_policies, *capability)?;
             let session_info = remaining_account(
                 ctx.remaining_accounts,
@@ -352,6 +392,14 @@ fn accept_eval_output<'info>(
             output_subjects,
             output_public_decrypt,
         } => {
+            if let Some(binding) = verified_input {
+                assert_verified_input_output_binding(
+                    &binding,
+                    *output_acl_domain_key,
+                    *output_app_account,
+                    output_subjects,
+                )?;
+            }
             assert_session_policies_allow_output(
                 &output_policies,
                 *output_acl_domain_key,
@@ -395,7 +443,39 @@ fn accept_eval_output<'info>(
         handle: result,
         public_decrypt_allowed: output_public_decrypt_allowed,
         session_policies: output_policies,
+        verified_input,
     });
+    Ok(())
+}
+
+/// A durable output derived from a verified external input must bind the attested identities: the
+/// output domain and app account must both be the attested `contract_address` (so the attested
+/// domain owns the output — and since the output app account must itself sign, the attested domain
+/// must sign, the EVM `contractAddress == msg.sender` invariant), and the attested `user_address`
+/// must be one of the output subjects. This stops a copied (public) attestation from being turned
+/// into a decryptable derived value by any signer other than the attested domain.
+fn assert_verified_input_output_binding(
+    binding: &VerifiedInputBinding,
+    output_acl_domain_key: Pubkey,
+    output_app_account: Pubkey,
+    output_subjects: &[AclSubjectEntry],
+) -> Result<()> {
+    require_keys_eq!(
+        output_acl_domain_key,
+        binding.contract_address,
+        ZamaHostError::AclDomainKeyMismatch
+    );
+    require_keys_eq!(
+        output_app_account,
+        binding.contract_address,
+        ZamaHostError::InputBindContractMismatch
+    );
+    require!(
+        output_subjects
+            .iter()
+            .any(|subject| subject.pubkey == binding.user_address),
+        ZamaHostError::InputBindUserNotSubject
+    );
     Ok(())
 }
 
@@ -426,6 +506,19 @@ pub(super) struct ProducedValue {
     handle: [u8; 32],
     public_decrypt_allowed: bool,
     session_policies: Vec<SessionPolicy>,
+    verified_input: Option<VerifiedInputBinding>,
+}
+
+/// The coprocessor-attested identities a verified external input carries forward. A durable output
+/// derived from it must bind these: `output_acl_domain_key` and `output_app_account` must equal the
+/// attested `contract_address` (so the attested domain — which `app_account` must sign for — owns
+/// the output, the EVM `contractAddress == msg.sender` invariant), and the attested `user_address`
+/// must be one of the output subjects. This makes a copied (public) attestation unusable by any
+/// signer other than the attested domain.
+#[derive(Clone, Copy)]
+pub(super) struct VerifiedInputBinding {
+    pub(super) user_address: Pubkey,
+    pub(super) contract_address: Pubkey,
 }
 
 #[derive(Clone)]
@@ -434,6 +527,9 @@ pub(super) struct ResolvedOperand {
     pub(super) scalar: bool,
     pub(super) public_decrypt_allowed: bool,
     pub(super) session_policies: Vec<SessionPolicy>,
+    /// Set when this value traces back to a verified external input: the attested identities its
+    /// derived durable outputs must bind to (see [`VerifiedInputBinding`]).
+    pub(super) verified_input: Option<VerifiedInputBinding>,
 }
 
 impl ResolvedOperand {
@@ -443,6 +539,7 @@ impl ResolvedOperand {
             scalar: false,
             public_decrypt_allowed,
             session_policies: Vec::new(),
+            verified_input: None,
         }
     }
 
@@ -452,6 +549,22 @@ impl ResolvedOperand {
             scalar: true,
             public_decrypt_allowed: true,
             session_policies: Vec::new(),
+            verified_input: None,
+        }
+    }
+
+    /// Builds an operand from an in-frame verified external input, carrying the attested identities
+    /// its derived durable outputs must bind to. The input is authorized by its provider for that
+    /// domain, so it propagates public-decrypt like a public scalar (EVM `fromExternal` parity: the
+    /// app that received the input controls whether results are made publicly decryptable, via an
+    /// explicit allow_for_decryption — it is not blocked by the input itself).
+    fn verified_input(handle: [u8; 32], binding: VerifiedInputBinding) -> Self {
+        Self {
+            handle,
+            scalar: false,
+            public_decrypt_allowed: true,
+            session_policies: Vec::new(),
+            verified_input: Some(binding),
         }
     }
 
@@ -461,6 +574,7 @@ impl ResolvedOperand {
             scalar: false,
             public_decrypt_allowed: value.public_decrypt_allowed,
             session_policies: value.session_policies.clone(),
+            verified_input: value.verified_input,
         }
     }
 
@@ -471,6 +585,7 @@ impl ResolvedOperand {
             handle,
             scalar: false,
             public_decrypt_allowed: grant.public_decrypt_allowed,
+            verified_input: None,
             session_policies: vec![SessionPolicy {
                 subject: grant.subject,
                 receiver_program: grant.receiver_program,
@@ -528,6 +643,35 @@ fn inputs3_allow_public_decrypt(
     third: &ResolvedOperand,
 ) -> bool {
     first.public_decrypt_allowed && second.public_decrypt_allowed && third.public_decrypt_allowed
+}
+
+/// The verified-input binding a derived output must satisfy. Folds the operands' taints: at most one
+/// attested input may flow into a single op (mixing two distinct attestations would be ambiguous),
+/// and a durable output derived from it must bind the attested domain/user (see [`accept_eval_output`]).
+fn combine_verified_input_binding(
+    operands: &[&ResolvedOperand],
+) -> Result<Option<VerifiedInputBinding>> {
+    let mut binding: Option<VerifiedInputBinding> = None;
+    for operand in operands {
+        if let Some(input) = operand.verified_input {
+            match binding {
+                None => binding = Some(input),
+                Some(existing) => {
+                    require_keys_eq!(
+                        existing.contract_address,
+                        input.contract_address,
+                        ZamaHostError::AclDomainKeyMismatch
+                    );
+                    require_keys_eq!(
+                        existing.user_address,
+                        input.user_address,
+                        ZamaHostError::InputBindUserNotSubject
+                    );
+                }
+            }
+        }
+    }
+    Ok(binding)
 }
 
 fn assert_session_policies_allow_output(
