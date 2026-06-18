@@ -1,0 +1,70 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT d.handle,\n               d.ciphertext,\n               d.ciphertext128,\n               d.ciphertext128_format,\n               d.s3_format_version,\n               d.transaction_id,\n               d.host_chain_id,\n               d.key_id_gw,\n               EXISTS (\n                 SELECT 1\n                 FROM ciphertexts128 c\n                 WHERE c.handle = d.handle\n                   AND c.ciphertext IS NOT NULL\n               ) AS \"has_ct128_ciphertext!\"\n        FROM ciphertext_digest d\n        WHERE d.ciphertext IS NULL\n           OR (\n             d.ciphertext128 IS NULL\n             AND EXISTS (\n               SELECT 1\n               FROM ciphertexts128 c\n               WHERE c.handle = d.handle\n                 AND c.ciphertext IS NOT NULL\n             )\n           )\n        FOR UPDATE SKIP LOCKED\n        LIMIT $1;\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "handle",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "ciphertext",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 2,
+        "name": "ciphertext128",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 3,
+        "name": "ciphertext128_format",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 4,
+        "name": "s3_format_version",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 5,
+        "name": "transaction_id",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 6,
+        "name": "host_chain_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 7,
+        "name": "key_id_gw",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 8,
+        "name": "has_ct128_ciphertext!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      false,
+      true,
+      true,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "748f58558f4745470ce651333b2c5e6ad21aebce7dc0ec85ae625411e1cf60a9"
+}

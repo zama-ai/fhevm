@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                SELECT COUNT(*)::BIGINT\n                FROM ciphertext_digest d\n                WHERE d.ciphertext IS NULL\n                   OR (\n                     d.ciphertext128 IS NULL\n                     AND EXISTS (\n                       SELECT 1\n                       FROM ciphertexts128 c\n                       WHERE c.handle = d.handle\n                         AND c.ciphertext IS NOT NULL\n                     )\n                   )\n                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "f85c91777fd4dc195151dceb66366e4b7738fa6e8b8fa4978bc3994410f0f2cd"
+}

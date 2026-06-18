@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT ciphertext, ciphertext128, ciphertext128_format, s3_format_version\n                             FROM ciphertext_digest\n                             WHERE handle = $1 AND\n                             (ciphertext128 IS NULL OR ciphertext IS NULL)\n                             FOR UPDATE SKIP LOCKED",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "ciphertext",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "ciphertext128",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 2,
+        "name": "ciphertext128_format",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 3,
+        "name": "s3_format_version",
+        "type_info": "Int2"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      false,
+      true
+    ]
+  },
+  "hash": "0d9af3e0938dce965c8f2cfcca5605bbe8285c819864fcbba211a567ffd58f4b"
+}
