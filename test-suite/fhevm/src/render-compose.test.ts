@@ -194,6 +194,37 @@ describe("render-compose", () => {
     expect(services).not.toContain("coprocessor1-host-listener-consumer");
   });
 
+  test("renders websocket gateway URLs for legacy gateway-facing coprocessor images", async () => {
+    const legacyState: State = {
+      ...state,
+      versions: {
+        ...state.versions,
+        env: {
+          ...state.versions.env,
+          COPROCESSOR_GW_LISTENER_VERSION: "v0.12.2",
+          COPROCESSOR_TX_SENDER_VERSION: "v0.12.2",
+        },
+      },
+      scenario: testDefaultScenario(),
+    };
+
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      await writeFile(
+        envPath("coprocessor"),
+        "GATEWAY_HTTP_URL=http://gateway-node:8546\nGATEWAY_WS_URL=ws://gateway-node:8546\n",
+      );
+      await generateComposeOverrides(legacyState, stackSpecForState(legacyState));
+      const doc = YAML.parse(await readFile(composePath("coprocessor"), "utf8")) as {
+        services: Record<string, { command?: string[] }>;
+      };
+      expect(doc.services["coprocessor-gw-listener"]?.command).toContain("ws://gateway-node:8546");
+      expect(doc.services["coprocessor-gw-listener"]?.command).not.toContain("http://gateway-node:8546");
+      expect(doc.services["coprocessor-transaction-sender"]?.command).toContain("ws://gateway-node:8546");
+      expect(doc.services["coprocessor-transaction-sender"]?.command).not.toContain("http://gateway-node:8546");
+    });
+  });
+
   test("renders inherited two-of-two instances with local build tags when coprocessor build is active", async () => {
     await withTempStateDir(async () => {
       await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });

@@ -1,5 +1,6 @@
 use alloy::primitives::Address;
 use alloy::transports::http::reqwest::Url;
+use fhevm_engine_common::gateway_http::DEFAULT_GATEWAY_HTTP_REQUEST_TIMEOUT;
 use fhevm_engine_common::utils::DatabaseURL;
 use std::time::Duration;
 
@@ -49,11 +50,11 @@ impl Default for ConfigSettings {
             database_url: DatabaseURL::default(),
             database_pool_size: 16,
             verify_proof_req_db_channel: "event_zkpok_new_work".to_owned(),
-            gw_url: "ws://127.0.0.1:8546".try_into().expect("Invalid URL"),
+            gw_url: "http://127.0.0.1:8545".try_into().expect("Invalid URL"),
             error_sleep_initial_secs: 1,
             error_sleep_max_secs: 10,
             health_check_port: 8080,
-            health_check_timeout: Duration::from_secs(4),
+            health_check_timeout: DEFAULT_GATEWAY_HTTP_REQUEST_TIMEOUT,
             get_logs_poll_interval: Duration::from_millis(500),
             get_logs_block_batch_size: 100,
             log_last_processed_every_number_of_updates: 50,

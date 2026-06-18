@@ -150,7 +150,7 @@ spec:
               {{- end }}
             {{- end }}
             {{- end }}
-            {{- with .Values.commonConfig.gatewayUrl }}
+            {{- with .Values.commonConfig.gatewayHttpUrl }}
             - name: GATEWAY_URL
               {{- if .value }}
               value: {{ .value | quote }}

@@ -17,7 +17,9 @@ use alloy::{
 };
 use anyhow::bail;
 use async_trait::async_trait;
-use fhevm_engine_common::{telemetry, utils::to_hex};
+use fhevm_engine_common::{
+    gateway_http::is_gateway_transient_transport_error, telemetry, utils::to_hex,
+};
 use sqlx::{Pool, Postgres};
 use tokio::task::JoinSet;
 use tracing::{error, info, warn};
@@ -80,9 +82,9 @@ where
                 return Ok(());
             }
             Err(e) => {
-                // Consider transport retryable errors, BackendGone and local usage errors as something that must be retried infinitely.
+                // Consider transport retryable errors, gateway transient errors, exhausted provider retries and local usage errors as something that must be retried infinitely.
                 // Local usage are included as they might be transient due to external AWS KMS signers.
-                if matches!(&e, RpcError::Transport(inner) if inner.is_retry_err() || matches!(inner, TransportErrorKind::BackendGone))
+                if matches!(&e, RpcError::Transport(inner) if is_gateway_transient_transport_error(inner))
                     || matches!(&e, RpcError::LocalUsageError(_))
                 {
                     ADD_CIPHERTEXT_MATERIAL_FAIL_COUNTER.inc();

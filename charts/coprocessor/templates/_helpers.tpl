@@ -34,6 +34,12 @@
 {{- end -}}
 {{- end -}}
 
+{{- define "coprocessor.failIfDeprecatedGatewayUrlKeyPresent" -}}
+{{- if and (hasKey .Values "commonConfig") (hasKey .Values.commonConfig "gatewayUrl") -}}
+{{- fail "deprecated commonConfig.gatewayUrl is no longer supported. Use commonConfig.gatewayHttpUrl for gwListener and txSender" -}}
+{{- end -}}
+{{- end -}}
+
 {{- define "coprocessor.failIfMultipleLegacyNameClaims" -}}
 {{- $componentKey := .componentKey -}}
 {{- $claims := 0 -}}

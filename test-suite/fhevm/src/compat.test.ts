@@ -101,6 +101,54 @@ describe("compat", () => {
     ]);
   });
 
+  test("routes legacy gateway-facing coprocessor services to the gateway websocket URL", () => {
+    const policy = compatPolicyForState({
+      versions: {
+        target: "latest-supported",
+        lockName: "latest-supported.json",
+        env: {
+          COPROCESSOR_GW_LISTENER_VERSION: "v0.12.2",
+          COPROCESSOR_TX_SENDER_VERSION: "v0.12.2",
+        } as Record<string, string>,
+        sources: [],
+      },
+      overrides: [],
+      scenario: testDefaultScenario(),
+    });
+    expect(policy.coprocessorArgs["gw-listener"]).toContainEqual([
+      "--gw-url",
+      { env: "GATEWAY_WS_URL" },
+    ]);
+    expect(policy.coprocessorArgs["transaction-sender"]).toContainEqual([
+      "--gateway-url",
+      { env: "GATEWAY_WS_URL" },
+    ]);
+  });
+
+  test("keeps modern gateway-facing coprocessor services on the gateway HTTP URL", () => {
+    const policy = compatPolicyForState({
+      versions: {
+        target: "latest-main",
+        lockName: "latest-main.json",
+        env: {
+          COPROCESSOR_GW_LISTENER_VERSION: "abcdef0",
+          COPROCESSOR_TX_SENDER_VERSION: "abcdef0",
+        } as Record<string, string>,
+        sources: [],
+      },
+      overrides: [],
+      scenario: testDefaultScenario(),
+    });
+    expect(policy.coprocessorArgs["gw-listener"]).toContainEqual([
+      "--gw-url",
+      { env: "GATEWAY_HTTP_URL" },
+    ]);
+    expect(policy.coprocessorArgs["transaction-sender"]).toContainEqual([
+      "--gateway-url",
+      { env: "GATEWAY_HTTP_URL" },
+    ]);
+  });
+
   test("drops kms-generation-address for old host listener images", () => {
     const policy = compatPolicyForState({
       versions: {

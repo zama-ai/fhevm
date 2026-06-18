@@ -1,5 +1,9 @@
 use std::time::Duration;
 
+use fhevm_engine_common::gateway_http::{
+    DEFAULT_GATEWAY_HTTP_REQUEST_TIMEOUT, DEFAULT_GATEWAY_HTTP_REQUEST_TIMEOUT_SECS,
+};
+
 pub const DEFAULT_GAS_LIMIT_OVERPROVISION_PERCENT: u32 = 120;
 
 #[derive(Clone, Debug)]
@@ -46,10 +50,10 @@ impl Default for ConfigSettings {
             error_sleep_max_secs: 4,
             add_ciphertexts_batch_limit: 10,
             add_ciphertexts_max_retries: i32::MAX,
-            send_txn_sync_timeout_secs: 4,
+            send_txn_sync_timeout_secs: DEFAULT_GATEWAY_HTTP_REQUEST_TIMEOUT_SECS,
             review_after_unlimited_retries: 30,
             health_check_port: 8080,
-            health_check_timeout: Duration::from_secs(4),
+            health_check_timeout: DEFAULT_GATEWAY_HTTP_REQUEST_TIMEOUT,
             gas_limit_overprovision_percent: DEFAULT_GAS_LIMIT_OVERPROVISION_PERCENT,
             graceful_shutdown_timeout: Duration::from_secs(8),
         }

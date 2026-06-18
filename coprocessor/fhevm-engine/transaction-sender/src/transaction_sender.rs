@@ -7,8 +7,8 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};
 
 use crate::{
-    is_backend_gone, nonce_managed_provider::NonceManagedProvider, ops, AbstractSigner,
-    ConfigSettings, HealthStatus,
+    is_gateway_provider_exhausted, nonce_managed_provider::NonceManagedProvider, ops,
+    AbstractSigner, ConfigSettings, HealthStatus,
 };
 
 #[derive(Clone)]
@@ -99,11 +99,11 @@ where
 
                         match op.execute().await {
                             Err(e) => {
-                                if is_backend_gone(&e) {
+                                if is_gateway_provider_exhausted(&e) {
                                     error!(
                                         channel = op_channel,
                                         error = %e,
-                                        "Backend gone error, stopping operation and signaling other operations to stop"
+                                        "Gateway provider exhausted, stopping operation and signaling other operations to stop"
                                     );
                                     token.cancel();
                                     return Err(e);

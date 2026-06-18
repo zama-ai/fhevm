@@ -65,10 +65,12 @@ commonConfig:
   fhevmExecutorContractAddress: {}  # required — e.g. 0x...
   kmsGenerationContractAddress: {}  # optional — e.g. 0x...
 
-  # Gateway chain configuration. Consumed by gwListener and txSender.
+  # Gateway chain configuration.
   # Each field accepts either a literal `value` or a `valueFrom` block
   # (secretKeyRef or configMapKeyRef). Leave unset to inject nothing.
-  gatewayUrl: {}
+  # gatewayHttpUrl is used by gwListener and txSender and should point to the
+  # gateway HTTP RPC.
+  gatewayHttpUrl: {}
   gatewayContractAddresses:
     inputVerification: {}     # required by gwListener, txSender
     ciphertextCommits: {}     # required by txSender; optional for gwListener (drift detection)
@@ -764,8 +766,8 @@ gwListener:
   #     --verify-proof-req-database-channel=event_zkpok_new_work
   #     --error-sleep-initial-secs=1
   #     --error-sleep-max-secs=10
-  #     --health-check-timeout=4s
-  #     --provider-max-retries=4294967295
+  #     --health-check-timeout=70s
+  #     --provider-max-retries=15
   #     --provider-retry-interval=4s
   #     --log-level=INFO
   #     --host-chain-id=1                        # or set CHAIN_ID in env
@@ -816,6 +818,7 @@ gwListener:
         port: healthcheck
       initialDelaySeconds: 5
       periodSeconds: 10
+      timeoutSeconds: 75
 
   # Distributed tracing (inherits from commonConfig but can be overridden)
   tracing:
@@ -1320,11 +1323,11 @@ txSender:
   #     --add-ciphertexts-max-retries=2147483647
   #     --error-sleep-initial-secs=1
   #     --error-sleep-max-secs=4
-  #     --send-txn-sync-timeout-secs=4           # alias: --txn-receipt-timeout-secs
+  #     --send-txn-sync-timeout-secs=70           # alias: --txn-receipt-timeout-secs
   #     --review-after-unlimited-retries=30
-  #     --provider-max-retries=4294967295
+  #     --provider-max-retries=15
   #     --provider-retry-interval=4s
-  #     --health-check-timeout=4s
+  #     --health-check-timeout=70s
   #     --log-level=INFO
   #     --gas-limit-overprovision-percent=120
   #     --graceful-shutdown-timeout=8s
@@ -1376,6 +1379,7 @@ txSender:
         port: healthcheck
       initialDelaySeconds: 5
       periodSeconds: 10
+      timeoutSeconds: 75
 
   # Distributed tracing (inherits from commonConfig but can be overridden)
   tracing:

@@ -1,9 +1,12 @@
 use std::time::Duration;
 
-use alloy::providers::{ProviderBuilder, WsConnect};
+use alloy::providers::ProviderBuilder;
 use alloy::{primitives::Address, transports::http::reqwest::Url};
 use clap::Parser;
 use fhevm_engine_common::database::{connect_pool_with_options, resolve_database_url_from_option};
+use fhevm_engine_common::gateway_http::{
+    gateway_http_client, validate_gateway_http_timeout, DEFAULT_GATEWAY_HTTP_MAX_RETRIES,
+};
 use fhevm_engine_common::{
     drift_revert::{
         self, RevertRunnerConfig, WatcherTimeouts, DRIFT_REVERT_DB_DOWN_LIMIT,
@@ -19,7 +22,7 @@ use humantime::parse_duration;
 use sqlx::postgres::PgPoolOptions;
 use tokio::signal::unix::{signal, SignalKind};
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info, Level};
+use tracing::{info, Level};
 
 /// Parse `drift_auto_revert_grace_period` and reject values below
 /// `MIN_GRACE_PERIOD_MULTIPLIER * DRIFT_REVERT_DB_DOWN_LIMIT`.
@@ -47,7 +50,7 @@ struct Conf {
     #[arg(long, default_value = "event_zkpok_new_work")]
     verify_proof_req_database_channel: String,
 
-    #[arg(long)]
+    #[arg(long, help = "Gateway HTTP JSON-RPC URL")]
     gw_url: Url,
 
     #[arg(short, long)]
@@ -66,10 +69,10 @@ struct Conf {
     #[arg(long, default_value = "0.0.0.0:9100")]
     metrics_addr: Option<String>,
 
-    #[arg(long, default_value = "4s", value_parser = parse_duration)]
+    #[arg(long, default_value = "70s", value_parser = parse_duration)]
     health_check_timeout: Duration,
 
-    #[arg(long, default_value_t = u32::MAX)]
+    #[arg(long, default_value_t = DEFAULT_GATEWAY_HTTP_MAX_RETRIES)]
     provider_max_retries: u32,
 
     #[arg(long, default_value = "4s", value_parser = parse_duration)]
@@ -158,11 +161,21 @@ fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()
     Ok(())
 }
 
+fn validate_gateway_http_timeouts(conf: &Conf) -> anyhow::Result<()> {
+    validate_gateway_http_timeout(
+        "health_check_timeout",
+        conf.health_check_timeout,
+        conf.provider_max_retries,
+        conf.provider_retry_interval,
+    )
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
 
     let conf = Conf::parse();
+    validate_gateway_http_timeouts(&conf)?;
 
     let _otel_guard = telemetry::init_tracing_otel_with_logs_only_fallback(
         conf.log_level,
@@ -170,33 +183,20 @@ async fn main() -> anyhow::Result<()> {
         "otlp-layer",
     );
 
-    info!(gateway_url = %conf.gw_url, max_retries = %conf.provider_max_retries,
-         retry_interval = ?conf.provider_retry_interval, "Connecting to Gateway");
+    info!(
+        gateway_rpc_url = %conf.gw_url,
+        max_retries = %conf.provider_max_retries,
+        retry_interval = ?conf.provider_retry_interval,
+        "Creating Gateway HTTP RPC provider"
+    );
 
-    let provider = loop {
-        match ProviderBuilder::new()
-            .connect_ws(
-                WsConnect::new(conf.gw_url.clone())
-                    .with_max_retries(conf.provider_max_retries)
-                    .with_retry_interval(conf.provider_retry_interval),
-            )
-            .await
-        {
-            Ok(provider) => {
-                info!(gateway_url = %conf.gw_url, "Connected to Gateway");
-                break provider;
-            }
-            Err(e) => {
-                error!(
-                    gateway_url = %conf.gw_url,
-                    error = %e,
-                    provider_retry_interval = ?conf.provider_retry_interval,
-                    "Failed to connect to Gateway"
-                );
-                tokio::time::sleep(conf.provider_retry_interval).await;
-            }
-        }
-    };
+    let provider = ProviderBuilder::new().connect_client(gateway_http_client(
+        &conf.gw_url,
+        conf.provider_max_retries,
+        conf.provider_retry_interval,
+    ));
+
+    info!(gateway_rpc_url = %conf.gw_url, "Created Gateway HTTP RPC provider");
 
     let cancel_token = CancellationToken::new();
 

@@ -104,8 +104,7 @@ impl TestEnvironment {
         .await?;
 
         let anvil = Self::new_anvil()?;
-        let chain_id =
-            get_chain_id(anvil.ws_endpoint_url(), std::time::Duration::from_secs(1)).await;
+        let chain_id = get_chain_id(anvil.endpoint_url(), std::time::Duration::from_secs(1)).await;
         let abstract_signer;
         let localstack;
         match signer_type {
@@ -150,8 +149,8 @@ impl TestEnvironment {
         })
     }
 
-    pub fn ws_endpoint_url(&self) -> Url {
-        self.anvil.as_ref().unwrap().ws_endpoint_url()
+    pub fn http_endpoint_url(&self) -> Url {
+        self.anvil.as_ref().unwrap().endpoint_url()
     }
 
     pub fn recreate_anvil(&mut self) -> anyhow::Result<()> {
