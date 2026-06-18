@@ -16,7 +16,7 @@ jobs:
       actions: 'read' # Required to read workflow run information
       contents: 'read' # Required to checkout repository code
       pull-requests: 'read' # Required to read pull request information
-    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
+    runs-on: ubuntu-latest
     outputs:
       changes-rust-files: ${{ steps.filter.outputs.rust-files }}
     steps:
