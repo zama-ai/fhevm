@@ -64,6 +64,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
+    // FHE_EVAL_VERIFIED_INPUT drives the #1539 input flow in one fhe_eval: a Binary Add of a
+    // coprocessor-attested external input (FheEvalOperand::VerifiedInput, re-verified in-frame via
+    // secp256k1 with no scratch PDA) and a public scalar, binding the result to a durable output ACL
+    // record under the attested acl_domain_key. The attestation comes from the same relayer
+    // input-proof the BIND_INPUT leg uses (BIND_* env); TE_ADD is the scalar addend (default 2);
+    // TE_ALLOW makes the result publicly decryptable. Proves encrypt V -> +2 -> decrypt V+2.
+    if std::env::var("FHE_EVAL_VERIFIED_INPUT").is_ok() {
+        fhe_eval_verified_input_add(&host, &payer, host_config)?;
+        return Ok(());
+    }
+
     // CONSUME_WRAP: deposit public USDC into a confidential balance (wrap_usdc) — the balance
     // a subsequent confidential_burn draws from on the redeem path. MINT + WRAP_AMOUNT via env.
     if std::env::var("CONSUME_WRAP").is_ok() {
@@ -455,6 +466,156 @@ fn trivial_encrypt_eval(
     let handle_hex: String = record.handle.iter().map(|b| format!("{b:02x}")).collect();
     println!("  output ACL record {output_acl_record}");
     println!("  result handle 0x{handle_hex}  (tfhe-worker materializes this ciphertext)");
+
+    if std::env::var("TE_ALLOW").is_ok() {
+        let allow_sig = host
+            .request()
+            .accounts(zama_host::accounts::AllowForDecryption {
+                authority: payer.pubkey(),
+                authority_permission_record: None,
+                acl_record: output_acl_record,
+                host_config,
+                deny_subject_record: None,
+                event_authority: zama_event_authority,
+                program: zama_host::ID,
+            })
+            .args(zama_host::instruction::AllowForDecryption {
+                handle: record.handle,
+            })
+            .send()?;
+        println!("OK allow_for_decryption (public): {allow_sig}");
+    }
+    Ok(())
+}
+
+/// Input flow leg (#1539): one fhe_eval that adds a public scalar to a coprocessor-attested external
+/// input and binds the result to a durable output ACL record. The verified input is resolved in-frame
+/// (FheEvalOperand::VerifiedInput) — its attestation is re-verified on-chain via secp256k1 with no
+/// scratch PDA — and the durable output is pinned to the attested acl_domain_key (the input's domain;
+/// the on-chain binding rejects any other). The attestation is supplied via the same BIND_* env vars
+/// the standalone input-verify leg uses; TE_ADD is the scalar addend (default 2). The host-listener
+/// ingests the emitted FheBinaryOpEvent so the tfhe-worker materializes (input + TE_ADD); TE_ALLOW
+/// then makes the result publicly decryptable.
+fn fhe_eval_verified_input_add(
+    host: &Program<Rc<Keypair>>,
+    payer: &Rc<Keypair>,
+    host_config: Pubkey,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use anchor_lang::solana_program::instruction::AccountMeta;
+
+    // Attestation from the relayer input-proof (same inputs as BIND_INPUT).
+    let input_handle: [u8; 32] = hexdec(&std::env::var("BIND_HANDLE")?)
+        .try_into()
+        .expect("BIND_HANDLE must be 32 bytes");
+    let signature: [u8; 65] = hexdec(&std::env::var("BIND_COPRO_SIG")?)
+        .try_into()
+        .expect("BIND_COPRO_SIG must be 65 bytes");
+    let user_address: [u8; 32] = hexdec(&std::env::var("BIND_USER")?)
+        .try_into()
+        .expect("BIND_USER must be 32 bytes");
+    let contract_address: [u8; 32] = hexdec(&std::env::var("BIND_CONTRACT")?)
+        .try_into()
+        .expect("BIND_CONTRACT must be 32 bytes");
+    let contract_chain_id: u64 = std::env::var("BIND_CHAIN_ID")?.parse()?;
+    let extra_data = std::env::var("BIND_EXTRA")
+        .map(|s| hexdec(&s))
+        .unwrap_or_else(|_| vec![0u8]);
+
+    // The attested contract IS the input's acl_domain_key; the durable output must bind that exact
+    // domain (the on-chain VerifiedInput -> durable binding enforces it). app_account is the signer.
+    let acl_domain_key = Pubkey::new_from_array(contract_address);
+    let app_account = payer.pubkey();
+
+    // Scalar addend (default 2). ClearConst reads big-endian, so place the u64 in the low bytes.
+    let addend: u64 = std::env::var("TE_ADD")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(2);
+    let mut scalar = [0u8; 32];
+    scalar[24..32].copy_from_slice(&addend.to_be_bytes());
+    let fhe_type: u8 = 5; // euint64
+
+    // Label distinct from the trivial-encrypt legs ([1]/[2] markers) so output PDAs never collide;
+    // keyed on the input handle tail so distinct inputs derive distinct output records.
+    let mut encrypted_value_label = [3u8; 32];
+    encrypted_value_label[24..32].copy_from_slice(&input_handle[24..32]);
+    let output_nonce_key =
+        zama_host::acl_nonce_key(acl_domain_key, app_account, encrypted_value_label);
+    let output_nonce_sequence: u64 = 0;
+    let (output_acl_record, _) =
+        zama_host::acl_record_address(output_nonce_key, output_nonce_sequence);
+    let (zama_event_authority, _) =
+        Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
+    // ACL_ROLE_ALL (user) grants USE | GRANT | PUBLIC_DECRYPT so the subject can later mark the
+    // result publicly decryptable. public_decrypt MUST be false at birth; allow_for_decryption flips
+    // it after.
+    let subjects = vec![zama_host::AclSubjectEntry::user(payer.pubkey())];
+
+    // Non-zero context-id domain separator for this eval's transient handles.
+    let mut context_id = [0u8; 32];
+    context_id[0] = 0xe0;
+    context_id[24..32].copy_from_slice(&input_handle[24..32]);
+
+    let attestation = zama_host::CoprocessorInputAttestation {
+        input_handle,
+        ct_handles: vec![input_handle],
+        handle_index: 0,
+        user_address,
+        contract_address,
+        contract_chain_id,
+        extra_data,
+        signatures: vec![signature],
+    };
+
+    let args = zama_host::FheEvalArgs {
+        context_id,
+        steps: vec![zama_host::FheEvalStep::Binary {
+            op: zama_host::FheBinaryOpCode::Add,
+            lhs: zama_host::FheEvalOperand::VerifiedInput { attestation },
+            rhs: zama_host::FheEvalOperand::Scalar(scalar),
+            output_fhe_type: fhe_type,
+            output: zama_host::FheEvalOutput::Durable {
+                output_acl_record_index: 0,
+                output_app_account_authority_index: None,
+                output_nonce_key,
+                output_nonce_sequence,
+                output_acl_domain_key: acl_domain_key,
+                output_app_account: app_account,
+                output_encrypted_value_label: encrypted_value_label,
+                output_subjects: subjects,
+                output_public_decrypt: false,
+            },
+        }],
+    };
+
+    let input_hex: String = input_handle.iter().map(|b| format!("{b:02x}")).collect();
+    println!("fhe_eval verified input 0x{input_hex} + {addend} (euint64)");
+    let sig = host
+        .request()
+        .accounts(zama_host::accounts::FheEval {
+            payer: payer.pubkey(),
+            compute_subject: payer.pubkey(),
+            app_account_authority: payer.pubkey(),
+            host_config,
+            system_program: system_program::ID,
+            instructions_sysvar: None,
+            event_authority: zama_event_authority,
+            program: zama_host::ID,
+        })
+        // The single durable output ACL record is remaining_accounts[0] (writable, created by the
+        // eval executor); referenced by output_acl_record_index: 0 in the plan.
+        .accounts(vec![AccountMeta::new(output_acl_record, false)])
+        .args(zama_host::instruction::FheEval { args })
+        .send_with_spinner_and_config(anchor_client::RpcSendTransactionConfig {
+            skip_preflight: true,
+            ..Default::default()
+        })?;
+    println!("OK fhe_eval verified-input add: {sig}");
+
+    let record: zama_host::AclRecord = host.account(output_acl_record)?;
+    let handle_hex: String = record.handle.iter().map(|b| format!("{b:02x}")).collect();
+    println!("  output ACL record {output_acl_record}");
+    println!("  result handle 0x{handle_hex}  (tfhe-worker materializes input + {addend})");
 
     if std::env::var("TE_ALLOW").is_ok() {
         let allow_sig = host
