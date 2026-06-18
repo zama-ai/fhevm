@@ -1,4 +1,5 @@
 import { expect } from 'chai';
+import fs from 'fs';
 import hre, { ethers, run } from 'hardhat';
 
 import {
@@ -7,11 +8,18 @@ import {
   parseSnapshotArtifact,
   readCanonicalSnapshot,
 } from '../../tasks/protocolConfigMirror';
-import { CRS_COUNTER_BASE, KEY_COUNTER_BASE, PREP_KEYGEN_COUNTER_BASE } from '../../tasks/utils/kmsGenerationConstants';
+import {
+  CRS_COUNTER_BASE,
+  KEY_COUNTER_BASE,
+  KMS_CONTEXT_COUNTER_BASE,
+  PREP_KEYGEN_COUNTER_BASE,
+} from '../../tasks/utils/kmsGenerationConstants';
 import { getRequiredEnvVar } from '../../tasks/utils/loadVariables';
 import { executeUpgradeProposal } from '../../tasks/utils/upgradeProposal';
 import type { KMSGeneration, ProtocolConfig } from '../../types';
 import {
+  HOST_ADDRESSES_SOL_FILE,
+  HOST_ENV_FILE,
   buildControllableKmsCommittee,
   buildProtocolConfigNodes,
   buildProtocolConfigThresholds,
@@ -24,6 +32,53 @@ import {
 } from './taskHelpers';
 
 describe('task:deployAllHostContracts', function () {
+  const canonicalSnapshotEnv = {
+    CANONICAL_KMS_CONTEXT_ID: (KMS_CONTEXT_COUNTER_BASE + 1n).toString(),
+    CANONICAL_SOURCE_CHAIN_ID: '1',
+    CANONICAL_SOURCE_BLOCK_NUMBER: '12345678',
+    CANONICAL_PROTOCOL_CONFIG_ADDRESS: '0x0000000000000000000000000000000000C0FFEE',
+    KMS_PCR_VALUES: '[]',
+    KMS_SOFTWARE_VERSION: 'kms-v1',
+  };
+  let previousEnv: Partial<Record<keyof typeof canonicalSnapshotEnv, string | undefined>>;
+  let previousSolidityCoverage: string | undefined;
+  let originalEnvHost: string;
+  let originalAddressesSol: string;
+
+  beforeEach(function () {
+    previousEnv = {};
+    previousSolidityCoverage = process.env.SOLIDITY_COVERAGE;
+    // Snapshot .env.host: the fresh-deploy test rewrites PROTOCOL_CONFIG_CONTRACT_ADDRESS.
+    originalEnvHost = fs.readFileSync(HOST_ENV_FILE, 'utf-8');
+    // Snapshot FHEVMHostAddresses.sol: the withKmsGeneration=false path regenerates this shared
+    // file without kmsGenerationAdd, which would break the subsequent `forge test` compile of
+    // contracts that unconditionally import that constant.
+    originalAddressesSol = fs.readFileSync(HOST_ADDRESSES_SOL_FILE, 'utf-8');
+    for (const [key, value] of Object.entries(canonicalSnapshotEnv)) {
+      const envKey = key as keyof typeof canonicalSnapshotEnv;
+      previousEnv[envKey] = process.env[envKey];
+      process.env[envKey] = value;
+    }
+  });
+
+  afterEach(function () {
+    for (const key of Object.keys(canonicalSnapshotEnv) as (keyof typeof canonicalSnapshotEnv)[]) {
+      const previousValue = previousEnv[key];
+      if (previousValue === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = previousValue;
+      }
+    }
+    if (previousSolidityCoverage === undefined) {
+      delete process.env.SOLIDITY_COVERAGE;
+    } else {
+      process.env.SOLIDITY_COVERAGE = previousSolidityCoverage;
+    }
+    fs.writeFileSync(HOST_ENV_FILE, originalEnvHost);
+    fs.writeFileSync(HOST_ADDRESSES_SOL_FILE, originalAddressesSol);
+  });
+
   it('requires the KMSGeneration deployment role to be explicit', async function () {
     await expect(run('task:deployAllHostContracts')).to.be.rejectedWith(/withKmsGeneration/);
   });
@@ -44,6 +99,29 @@ describe('task:deployAllHostContracts', function () {
     await expect(
       run('task:deployAllHostContracts', { withKmsGeneration: false, protocolConfigSource: 'canonical' }),
     ).to.be.rejectedWith(/requires --canonical-rpc-url and --canonical-protocol-config-address/);
+  });
+
+  it('rejects migration source for non-canonical multichain deployments', async function () {
+    await expect(
+      run('task:deployAllHostContracts', { withKmsGeneration: false, protocolConfigSource: 'migration' }),
+    ).to.be.rejectedWith(
+      /--protocol-config-source migration is canonical-host only\. Use fresh multichain deployment with canonical snapshot env vars\./,
+    );
+  });
+
+  it('deploys a fresh non-canonical host without a KMSGeneration proxy', async function () {
+    process.env.SOLIDITY_COVERAGE = 'true';
+    await run('task:deployAllHostContracts', { withKmsGeneration: false, protocolConfigSource: 'fresh' });
+
+    const protocolConfig = await ethers.getContractAt(
+      'ProtocolConfigMultichain',
+      readHostAddress('PROTOCOL_CONFIG_CONTRACT_ADDRESS'),
+    );
+
+    expect(await protocolConfig.getVersion()).to.equal('ProtocolConfigMultichain v0.2.0');
+    expect(await protocolConfig.getCurrentKmsContextId()).to.equal(
+      BigInt(canonicalSnapshotEnv.CANONICAL_KMS_CONTEXT_ID),
+    );
   });
 });
 

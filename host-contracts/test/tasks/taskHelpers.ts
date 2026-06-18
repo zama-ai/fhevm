@@ -9,6 +9,8 @@ import { deployEmptyProxy } from '../utils/deploymentHelpers';
 
 export const HOST_ENV_FILE = path.join(__dirname, '../../addresses/.env.host');
 
+export const HOST_ADDRESSES_SOL_FILE = path.join(__dirname, '../../addresses/FHEVMHostAddresses.sol');
+
 export function readHostAddress(key: string): string {
   const value = dotenv.parse(fs.readFileSync(HOST_ENV_FILE))[key];
   if (!value) {

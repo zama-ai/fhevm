@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {IProtocolConfig} from "./interfaces/IProtocolConfig.sol";
+import {IProtocolConfigCommon} from "./interfaces/IProtocolConfigCommon.sol";
 import {IKMSGeneration} from "./interfaces/IKMSGeneration.sol";
 import {KmsContextAnchor, KmsNode, KmsNodeParams, PcrValues} from "./shared/Structs.sol";
 import {EPOCH_COUNTER_BASE, EXTRA_DATA_V2, KMS_CONTEXT_COUNTER_BASE} from "./shared/Constants.sol";
@@ -65,6 +66,8 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     bytes32 private constant EIP712_CRSGEN_TYPE_HASH =
         keccak256("CrsgenVerification(uint256 crsId,uint256 maxBitLength,bytes crsDigest,bytes extraData)");
 
+    /// @notice Lifecycle state of a KMS context: created Pending, promoted to Created once the
+    ///         creation quorum confirms, then Active when its first epoch activates.
     enum ContextState {
         None,
         Pending,
@@ -72,6 +75,8 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         Active
     }
 
+    /// @notice Lifecycle state of an epoch: opened Pending for resharing, then Active once the
+    ///         activation quorum confirms.
     enum EpochState {
         None,
         Pending,
@@ -541,7 +546,7 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     // View functions
     // -----------------------------------------------------------------------------------------
 
-    /// @inheritdoc IProtocolConfig
+    /// @inheritdoc IProtocolConfigCommon
     function getCurrentKmsContextId() external view virtual returns (uint256) {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
         return $.activeKmsContextId;
@@ -565,7 +570,7 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         return (anchor.emissionBlockNumber, anchor.contextInfoHash);
     }
 
-    /// @inheritdoc IProtocolConfig
+    /// @inheritdoc IProtocolConfigCommon
     function isValidKmsContext(uint256 kmsContextId) external view virtual returns (bool) {
         return _isValidKmsContext(kmsContextId);
     }
@@ -576,37 +581,37 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         return $.epochState[epochId] == EpochState.Active && $.contextForEpoch[epochId] == kmsContextId;
     }
 
-    /// @inheritdoc IProtocolConfig
+    /// @inheritdoc IProtocolConfigCommon
     function getKmsSigners() external view virtual returns (address[] memory) {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
         return $.kmsSignerAddressesForContext[$.activeKmsContextId];
     }
 
-    /// @inheritdoc IProtocolConfig
+    /// @inheritdoc IProtocolConfigCommon
     function getKmsSignersForContext(uint256 kmsContextId) external view virtual returns (address[] memory) {
         _requireValidContext(kmsContextId);
         return _getProtocolConfigStorage().kmsSignerAddressesForContext[kmsContextId];
     }
 
-    /// @inheritdoc IProtocolConfig
+    /// @inheritdoc IProtocolConfigCommon
     function isKmsSigner(address signer) external view virtual returns (bool) {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
         return $.isKmsSignerForContext[$.activeKmsContextId][signer];
     }
 
-    /// @inheritdoc IProtocolConfig
+    /// @inheritdoc IProtocolConfigCommon
     function isKmsSignerForContext(uint256 kmsContextId, address signer) external view virtual returns (bool) {
         _requireValidContext(kmsContextId);
         return _getProtocolConfigStorage().isKmsSignerForContext[kmsContextId][signer];
     }
 
-    /// @inheritdoc IProtocolConfig
+    /// @inheritdoc IProtocolConfigCommon
     function getKmsNodesForContext(uint256 kmsContextId) external view virtual returns (KmsNode[] memory) {
         _requireValidContext(kmsContextId);
         return _getProtocolConfigStorage().kmsNodesForContext[kmsContextId];
     }
 
-    /// @inheritdoc IProtocolConfig
+    /// @inheritdoc IProtocolConfigCommon
     function isKmsTxSenderForContext(uint256 kmsContextId, address txSender) external view virtual returns (bool) {
         // `_isLiveKmsContext` is used so a `Created` (not yet `Active`) context's nodes are readable during resharing.
         if (!_isLiveKmsContext(kmsContextId)) {
@@ -615,7 +620,7 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         return _getProtocolConfigStorage().isKmsTxSenderForContext[kmsContextId][txSender];
     }
 
-    /// @inheritdoc IProtocolConfig
+    /// @inheritdoc IProtocolConfigCommon
     function getKmsNodeForContext(
         uint256 kmsContextId,
         address txSender
@@ -627,37 +632,37 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         return _getProtocolConfigStorage().kmsNodeByTxSenderForContext[kmsContextId][txSender];
     }
 
-    /// @inheritdoc IProtocolConfig
+    /// @inheritdoc IProtocolConfigCommon
     function getPublicDecryptionThreshold() external view virtual returns (uint256) {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
         return $.publicDecryptionThresholdForContext[$.activeKmsContextId];
     }
 
-    /// @inheritdoc IProtocolConfig
+    /// @inheritdoc IProtocolConfigCommon
     function getPublicDecryptionThresholdForContext(uint256 kmsContextId) external view virtual returns (uint256) {
         _requireValidContext(kmsContextId);
         return _getProtocolConfigStorage().publicDecryptionThresholdForContext[kmsContextId];
     }
 
-    /// @inheritdoc IProtocolConfig
+    /// @inheritdoc IProtocolConfigCommon
     function getUserDecryptionThreshold() external view virtual returns (uint256) {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
         return $.userDecryptionThresholdForContext[$.activeKmsContextId];
     }
 
-    /// @inheritdoc IProtocolConfig
+    /// @inheritdoc IProtocolConfigCommon
     function getUserDecryptionThresholdForContext(uint256 kmsContextId) external view virtual returns (uint256) {
         _requireValidContext(kmsContextId);
         return _getProtocolConfigStorage().userDecryptionThresholdForContext[kmsContextId];
     }
 
-    /// @inheritdoc IProtocolConfig
+    /// @inheritdoc IProtocolConfigCommon
     function getKmsGenThreshold() external view virtual returns (uint256) {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
         return $.kmsGenThresholdForContext[$.activeKmsContextId];
     }
 
-    /// @inheritdoc IProtocolConfig
+    /// @inheritdoc IProtocolConfigCommon
     function getKmsGenThresholdForContext(uint256 kmsContextId) external view virtual returns (uint256) {
         if (!_isLiveKmsContext(kmsContextId)) {
             revert InvalidKmsContext(kmsContextId);
@@ -665,19 +670,19 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         return _getProtocolConfigStorage().kmsGenThresholdForContext[kmsContextId];
     }
 
-    /// @inheritdoc IProtocolConfig
+    /// @inheritdoc IProtocolConfigCommon
     function getMpcThreshold() external view virtual returns (uint256) {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
         return $.mpcThresholdForContext[$.activeKmsContextId];
     }
 
-    /// @inheritdoc IProtocolConfig
+    /// @inheritdoc IProtocolConfigCommon
     function getMpcThresholdForContext(uint256 kmsContextId) external view virtual returns (uint256) {
         _requireValidContext(kmsContextId);
         return _getProtocolConfigStorage().mpcThresholdForContext[kmsContextId];
     }
 
-    /// @inheritdoc IProtocolConfig
+    /// @inheritdoc IProtocolConfigCommon
     function getVersion() external pure virtual returns (string memory) {
         return
             string(

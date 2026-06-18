@@ -11,6 +11,7 @@ import {ProtocolConfig} from "@fhevm-host-contracts/contracts/ProtocolConfig.sol
 import {KMSGeneration} from "@fhevm-host-contracts/contracts/KMSGeneration.sol";
 import {IKMSGeneration} from "@fhevm-host-contracts/contracts/interfaces/IKMSGeneration.sol";
 import {IProtocolConfig} from "@fhevm-host-contracts/contracts/interfaces/IProtocolConfig.sol";
+import {IProtocolConfigCommon} from "@fhevm-host-contracts/contracts/interfaces/IProtocolConfigCommon.sol";
 import {KmsNode, KmsNodeParams, PcrValues} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
 import {EmptyUUPSProxy} from "../../contracts/emptyProxy/EmptyUUPSProxy.sol";
 import {KMS_CONTEXT_COUNTER_BASE} from "@fhevm-host-contracts/contracts/shared/Constants.sol";
@@ -70,7 +71,7 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
 
     function _defineNewKmsContextAndEpoch(
         KmsNodeParams[] memory nodes,
-        IProtocolConfig.KmsThresholds memory thresholds
+        IProtocolConfigCommon.KmsThresholds memory thresholds
     ) internal {
         PcrValues[] memory pcrValues = new PcrValues[](0);
         protocolConfig.defineNewKmsContextAndEpoch(nodes, thresholds, "", pcrValues);
@@ -274,7 +275,7 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
     }
 
     function _rotateToThresholdTwoContext() internal {
-        IProtocolConfig.KmsThresholds memory thresholds = _defaultThresholds();
+        IProtocolConfigCommon.KmsThresholds memory thresholds = _defaultThresholds();
         thresholds.publicDecryption = 2;
 
         vm.prank(owner);
@@ -339,11 +340,11 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
         vm.prank(owner);
         protocolConfig.destroyKmsContext(ctx1);
 
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, ctx1));
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfigCommon.InvalidKmsContext.selector, ctx1));
         kmsVerifier.getSignersForKmsContext(ctx1);
 
         uint256 nonExistent = KMS_CONTEXT_COUNTER_BASE + 999;
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, nonExistent));
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfigCommon.InvalidKmsContext.selector, nonExistent));
         kmsVerifier.getSignersForKmsContext(nonExistent);
     }
 
@@ -525,7 +526,7 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
 
     function test_VerificationUsesPerContextThresholdForHistoricalContext() public {
         // Rotate to a new context with 3 signers and threshold=2
-        IProtocolConfig.KmsThresholds memory t2 = _defaultThresholds();
+        IProtocolConfigCommon.KmsThresholds memory t2 = _defaultThresholds();
         t2.publicDecryption = 2;
         vm.prank(owner);
         _defineNewKmsContextAndEpoch(_makeKmsNodeParams(3), t2);
@@ -574,7 +575,7 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
             extraData
         );
 
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, ctx1));
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfigCommon.InvalidKmsContext.selector, ctx1));
         kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, proof);
     }
 
@@ -636,7 +637,7 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
             privateKeySigner0,
             abi.encodePacked(uint8(0x01), invalidCtx)
         );
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, invalidCtx));
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfigCommon.InvalidKmsContext.selector, invalidCtx));
         kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, proof);
     }
 
@@ -745,7 +746,7 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
         _defineNewKmsContextAndEpoch(_makeKmsNodeParamsFromSigners(nextSigners), _defaultThresholds());
         uint256 pendingCtx = ctx1 + 1;
         bytes memory pendingV1ExtraData = abi.encodePacked(uint8(0x01), pendingCtx);
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, pendingCtx));
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfigCommon.InvalidKmsContext.selector, pendingCtx));
         kmsVerifier.getContextSignersAndThresholdFromExtraData(pendingV1ExtraData);
     }
 }

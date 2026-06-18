@@ -10,9 +10,9 @@ import { getRequiredEnvVar, loadHostAddresses } from './utils/loadVariables';
 // When a per-contract `task:verify*` is called straight from a deploy script (the gitops sc-deploy
 // pattern), that error combines with `set -eo pipefail` to abort the whole deploy. Genuine failures
 // (bad API key, explorer down, bytecode mismatch) are rethrown unchanged.
-export async function verifyContract(run: RunTaskFunction, address: string): Promise<void> {
+export async function verifyContract(run: RunTaskFunction, address: string, contract?: string): Promise<void> {
   try {
-    await run('verify:verify', { address, constructorArguments: [] });
+    await run('verify:verify', { address, contract, constructorArguments: [] });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (/already verified/i.test(message)) {
@@ -22,6 +22,9 @@ export async function verifyContract(run: RunTaskFunction, address: string): Pro
     }
   }
 }
+
+const PROTOCOL_CONFIG_CONTRACT = 'contracts/ProtocolConfig.sol:ProtocolConfig';
+const PROTOCOL_CONFIG_MULTICHAIN_CONTRACT = 'contracts/ProtocolConfigMultichain.sol:ProtocolConfigMultichain';
 
 task('task:verifyACL')
   .addOptionalParam(
@@ -130,13 +133,19 @@ task('task:verifyProtocolConfig')
     false,
     types.boolean,
   )
-  .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
+  .addOptionalParam(
+    'contract',
+    'Fully qualified implementation contract to verify, eg contracts/ProtocolConfig.sol:ProtocolConfig or contracts/ProtocolConfigMultichain.sol:ProtocolConfigMultichain',
+    PROTOCOL_CONFIG_CONTRACT,
+    types.string,
+  )
+  .setAction(async function ({ useInternalProxyAddress, contract }, { upgrades, run }) {
     if (useInternalProxyAddress) {
       loadHostAddresses();
     }
     const proxyAddress = getRequiredEnvVar('PROTOCOL_CONFIG_CONTRACT_ADDRESS');
     const implementationProtocolConfigAddress = await upgrades.erc1967.getImplementationAddress(proxyAddress);
-    await verifyContract(run, implementationProtocolConfigAddress);
+    await verifyContract(run, implementationProtocolConfigAddress, contract);
     await verifyContract(run, proxyAddress);
   });
 
@@ -164,7 +173,22 @@ task('task:verifyAllHostContracts')
     false,
     types.boolean,
   )
-  .setAction(async function ({ useInternalProxyAddress }, hre) {
+  .addOptionalParam(
+    'withKmsGeneration',
+    'Whether this host deployment includes canonical-host-only KMSGeneration.',
+    true,
+    types.boolean,
+  )
+  .addOptionalParam(
+    'protocolConfigContract',
+    'Fully qualified ProtocolConfig implementation contract to verify.',
+    '',
+    types.string,
+  )
+  .setAction(async function ({ useInternalProxyAddress, withKmsGeneration, protocolConfigContract }, hre) {
+    const selectedProtocolConfigContract =
+      protocolConfigContract || (withKmsGeneration ? PROTOCOL_CONFIG_CONTRACT : PROTOCOL_CONFIG_MULTICHAIN_CONTRACT);
+
     console.log('Verify ACL contract:');
     try {
       // to not panic if Etherscan throws an error due to already verified implementation
@@ -216,17 +240,22 @@ task('task:verifyAllHostContracts')
     try {
       // to not panic if Etherscan throws an error due to already verified implementation
       console.log('Verify ProtocolConfig contract:');
-      await hre.run('task:verifyProtocolConfig', { useInternalProxyAddress });
+      await hre.run('task:verifyProtocolConfig', {
+        useInternalProxyAddress,
+        contract: selectedProtocolConfigContract,
+      });
     } catch (error) {
       console.error('An error occurred:', error);
     }
 
-    try {
-      // to not panic if Etherscan throws an error due to already verified implementation
-      console.log('Verify KMSGeneration contract:');
-      await hre.run('task:verifyKMSGeneration', { useInternalProxyAddress });
-    } catch (error) {
-      console.error('An error occurred:', error);
+    if (withKmsGeneration) {
+      try {
+        // to not panic if Etherscan throws an error due to already verified implementation
+        console.log('Verify KMSGeneration contract:');
+        await hre.run('task:verifyKMSGeneration', { useInternalProxyAddress });
+      } catch (error) {
+        console.error('An error occurred:', error);
+      }
     }
 
     console.log('Contract verification done!');

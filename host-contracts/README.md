@@ -112,11 +112,24 @@ deploy the common host contracts only.
 
 ### Non-canonical host chains
 
-`KMSGeneration` is NOT deployed on non-canonical host chains. `ProtocolConfig` on
-non-canonical chains is a replica whose state is mirrored manually (Phase 1) or via
-LayerZero / LzRead (Phase 2) from the canonical chain. Operators mirroring a canonical
-rotation to non-canonical chains call `defineNewKmsContext` directly on each non-canonical
-`ProtocolConfig`, using the same `kmsNodes` and `thresholds` as the canonical rotation.
+`KMSGeneration` is NOT deployed on non-canonical host chains. These chains deploy or
+upgrade `ProtocolConfig` to `ProtocolConfigMultichain`, which exposes only the common
+verifier reads plus owner-only mirror methods.
+
+Fresh non-canonical deployments must initialize `ProtocolConfigMultichain` from a canonical
+snapshot: the active canonical context ID, KMS nodes, thresholds, KMS software version, PCR
+values, source chain ID, source block number, and canonical `ProtocolConfig` address.
+Mirrored updates must use explicit, strictly increasing canonical context IDs. Gaps are
+allowed when canonical pending contexts were aborted or never activated, but unknown gap IDs
+remain invalid for `KMSVerifier`.
+
+Polygon is an existing non-canonical deployment with `ProtocolConfig v0.1.0` already behind
+the proxy. Upgrade it in place to `ProtocolConfigMultichain`. Do not
+redeploy the proxy or use the Ethereum `ProtocolConfig.reinitializeV2(...)` lifecycle
+calldata. For OpenZeppelin upgrade tooling, force-import the existing proxy with the old
+`ProtocolConfig` artifact, then prepare or execute the upgrade against
+`contracts/ProtocolConfigMultichain.sol:ProtocolConfigMultichain` with the multichain
+reinitializer provenance arguments.
 
 No on-chain guard prevents a non-canonical replica from drifting if a mirror transaction is
 skipped. Operators are responsible for fan-out correctness.
