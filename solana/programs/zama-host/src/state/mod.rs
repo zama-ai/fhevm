@@ -118,11 +118,11 @@ pub enum FheTernaryOpCode {
 /// Arguments for composed instruction-local FHE evaluation.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
 pub struct FheEvalArgs {
-    /// Caller-chosen domain separator for transient handles in this eval.
+    /// Caller-chosen domain separator for the instruction-local handles in this eval.
     ///
     /// Callers should use a fresh value for each logical eval session.
     pub context_id: [u8; 32],
-    /// Ordered step list. Each transient operand may only reference an output
+    /// Ordered step list. Each `AllowedLocal` operand may only reference an output
     /// produced by an earlier index in this vector.
     pub steps: Vec<FheEvalStep>,
 }

@@ -67,13 +67,4 @@ impl HostConfig {
     pub fn zero_birth_entropy_allowed(&self) -> bool {
         self.test_shims_enabled && self.is_local_poc_chain()
     }
-
-    /// True when the mock encrypted-input bind path may run.
-    ///
-    /// Mock input is a PoC short-circuit for the real signed input-verifier
-    /// path and is confined to the local PoC chain even when `mock_input_enabled`
-    /// is set, so it cannot become a generic ACL-minting path on a deployed chain.
-    pub fn mock_input_allowed(&self) -> bool {
-        self.mock_input_enabled && self.is_local_poc_chain()
-    }
 }

@@ -61,10 +61,10 @@ pub(super) fn assert_test_shim_authority(
 ) -> Result<()> {
     assert_not_paused(config)?;
     // Confine the `test_emit_*` event shims to the local PoC chain, matching the
-    // confinement already applied to mock input and the zero birth-entropy
-    // fallback (state.rs `mock_input_allowed`/`zero_birth_entropy_allowed`). This
-    // prevents an admin on a deployed chain from emitting forged protocol events
-    // that a downstream host-listener/indexer could ingest as genuine.
+    // confinement already applied to the zero birth-entropy fallback
+    // (state.rs `zero_birth_entropy_allowed`). This prevents an admin on a
+    // deployed chain from emitting forged protocol events that a downstream
+    // host-listener/indexer could ingest as genuine.
     require!(
         config.test_shims_enabled && config.is_local_poc_chain(),
         ZamaHostError::TestShimsDisabled
@@ -275,7 +275,7 @@ pub(super) fn assert_derived_public_decrypt_roles_allowed(
         *app_account_authority.owner != system_program::ID
             && !app_account_authority.executable
             && !app_account_authority.data_is_empty(),
-        ZamaHostError::TransientCapabilityPublicDecryptDenied
+        ZamaHostError::DerivedOutputPublicDecryptDenied
     );
     Ok(())
 }

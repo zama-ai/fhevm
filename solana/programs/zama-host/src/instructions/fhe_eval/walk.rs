@@ -67,7 +67,7 @@ pub(super) trait EvalStepVisitor {
                 .produced()
                 .get(*producer_index as usize)
                 .map(ResolvedOperand::from_produced)
-                .ok_or_else(|| error!(ZamaHostError::FheEvalTransientMissing)),
+                .ok_or_else(|| error!(ZamaHostError::FheEvalAllowedLocalMissing)),
             FheEvalOperand::VerifiedInput { attestation } => {
                 self.resolve_verified_input_operand(attestation)
             }

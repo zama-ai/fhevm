@@ -57,15 +57,6 @@ fn zero_birth_entropy_requires_poc_chain_and_test_shims() {
     assert!(!host_config_with(1, true, false).zero_birth_entropy_allowed());
 }
 
-#[test]
-fn mock_input_requires_poc_chain() {
-    assert!(host_config_with(SOLANA_POC_CHAIN_ID, false, true).mock_input_allowed());
-    assert!(!host_config_with(SOLANA_POC_CHAIN_ID, false, false).mock_input_allowed());
-    // A deployed chain can never run the mock input bind path, even if an
-    // admin sets mock_input_enabled.
-    assert!(!host_config_with(101, false, true).mock_input_allowed());
-}
-
 /// Bit 63 of the uint64 chain id is the reserved Solana `chain_type` marker
 /// (RFC-021 / #1494). It is derived from the chain id, never a schema column.
 const SOLANA_CHAIN_TYPE_BIT: u64 = 1 << 63;

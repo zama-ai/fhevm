@@ -188,7 +188,7 @@ pub enum ZamaHostError {
     InvalidFheEvalAccount,
     /// An FHE eval instruction referenced a transient output that was not produced earlier.
     #[msg("FHE eval transient operand is missing")]
-    FheEvalTransientMissing,
+    FheEvalAllowedLocalMissing,
     /// An FHE eval instruction produced the same transient handle twice.
     #[msg("FHE eval output handle is duplicated")]
     FheEvalDuplicateHandle,
@@ -200,7 +200,7 @@ pub enum ZamaHostError {
     InvalidFheEvalContext,
     /// A derived durable output may not be made public-decryptable by a non-authorized subject.
     #[msg("transient capability cannot authorize public decrypt")]
-    TransientCapabilityPublicDecryptDenied,
+    DerivedOutputPublicDecryptDenied,
     /// A KMS context was defined with a duplicate signer address.
     #[msg("KMS context signer set contains a duplicate address")]
     DuplicateKmsSigner,

@@ -2918,7 +2918,7 @@
     },
     {
       "code": 6059,
-      "name": "FheEvalTransientMissing",
+      "name": "FheEvalAllowedLocalMissing",
       "msg": "FHE eval transient operand is missing"
     },
     {
@@ -2938,7 +2938,7 @@
     },
     {
       "code": 6063,
-      "name": "TransientCapabilityPublicDecryptDenied",
+      "name": "DerivedOutputPublicDecryptDenied",
       "msg": "transient capability cannot authorize public decrypt"
     },
     {
@@ -3637,7 +3637,7 @@
           {
             "name": "context_id",
             "docs": [
-              "Caller-chosen domain separator for transient handles in this eval.",
+              "Caller-chosen domain separator for the instruction-local handles in this eval.",
               "",
               "Callers should use a fresh value for each logical eval session."
             ],
@@ -3651,7 +3651,7 @@
           {
             "name": "steps",
             "docs": [
-              "Ordered step list. Each transient operand may only reference an output",
+              "Ordered step list. Each `AllowedLocal` operand may only reference an output",
               "produced by an earlier index in this vector."
             ],
             "type": {

@@ -137,7 +137,7 @@ fn preflight_encrypted_operand(
         FheEvalOperand::AllowedLocal { producer_index } => {
             require!(
                 (*producer_index as usize) < step_index,
-                ZamaHostError::FheEvalTransientMissing
+                ZamaHostError::FheEvalAllowedLocalMissing
             );
         }
         FheEvalOperand::VerifiedInput { .. } => {

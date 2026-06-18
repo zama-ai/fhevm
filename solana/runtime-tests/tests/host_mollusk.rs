@@ -161,7 +161,7 @@ fn mollusk_rand_and_bounded_bind_create_acl_records_and_events() {
     let bounded_nonce_key = host::acl_nonce_key(acl_domain_key, app_account, bounded_label);
     let bounded_nonce_sequence = 8;
     let bounded_acl = host::acl_record_address(bounded_nonce_key, bounded_nonce_sequence).0;
-    let context = transient_context(
+    let context = mollusk_eval_context(
         authority,
         vec![
             (host_config, host_config_account),
@@ -278,7 +278,7 @@ fn mollusk_rand_bind_rejects_invalid_types_and_bounds_without_acl_birth() {
     let bad_bound_label = label("bad-bound");
     let bad_bound_nonce_key = host::acl_nonce_key(acl_domain_key, app_account, bad_bound_label);
     let bad_bound_acl = host::acl_record_address(bad_bound_nonce_key, 12).0;
-    let context = transient_context(
+    let context = mollusk_eval_context(
         authority,
         vec![
             (host_config, host_config_account),
@@ -349,7 +349,7 @@ fn mollusk_input_trivial_encrypt_bind_nonce_separates_equal_plaintexts_and_event
     let nonce_key = host::acl_nonce_key(acl_domain_key, app_account, encrypted_value_label);
     let first_acl = host::acl_record_address(nonce_key, 0).0;
     let second_acl = host::acl_record_address(nonce_key, 1).0;
-    let context = transient_context(
+    let context = mollusk_eval_context(
         authority,
         vec![
             (host_config, host_config_account),
@@ -465,7 +465,7 @@ fn mollusk_acl_allow_subjects_extends_inline_record_and_is_idempotent() {
         handle,
         authority,
     );
-    let context = transient_context(
+    let context = mollusk_eval_context(
         authority,
         vec![
             (host_config, host_config_account),
@@ -527,7 +527,7 @@ fn mollusk_acl_allow_subjects_rejects_oversized_grant_batch_without_mutation() {
         handle,
         authority,
     );
-    let context = transient_context(
+    let context = mollusk_eval_context(
         authority,
         vec![
             (host_config, host_config_account),
@@ -582,7 +582,7 @@ fn mollusk_acl_allow_subjects_rejects_compute_only_authority_without_mutation() 
         authority,
         host::ACL_ROLE_COMPUTE,
     );
-    let context = transient_context(
+    let context = mollusk_eval_context(
         authority,
         vec![
             (host_config, host_config_account),
@@ -639,7 +639,7 @@ fn mollusk_acl_allow_subjects_creates_overflow_permission_and_asserts_membership
     let overflow_subject = Pubkey::new_unique();
     let (permission_record, permission_bump) =
         host::acl_permission_address(acl_record, overflow_subject);
-    let context = transient_context(
+    let context = mollusk_eval_context(
         authority,
         vec![
             (host_config, host_config_account),
@@ -715,7 +715,7 @@ fn mollusk_acl_allow_subjects_rejects_bad_overflow_witnesses_without_mutation() 
         handle,
         &full_subjects,
     );
-    let missing_context = transient_context(
+    let missing_context = mollusk_eval_context(
         authority,
         vec![
             (missing_host_config, missing_host_config_account),
@@ -756,7 +756,7 @@ fn mollusk_acl_allow_subjects_rejects_bad_overflow_witnesses_without_mutation() 
     );
     let dirty_subject = Pubkey::new_unique();
     let (dirty_permission, _) = host::acl_permission_address(dirty_acl, dirty_subject);
-    let dirty_context = transient_context(
+    let dirty_context = mollusk_eval_context(
         authority,
         vec![
             (dirty_host_config, dirty_host_config_account),
@@ -813,7 +813,7 @@ fn mollusk_acl_allow_subjects_rejects_bad_overflow_witnesses_without_mutation() 
     );
     let inline_subject = Pubkey::new_unique();
     let (extra_permission, _) = host::acl_permission_address(extra_acl, Pubkey::new_unique());
-    let extra_context = transient_context(
+    let extra_context = mollusk_eval_context(
         authority,
         vec![
             (extra_host_config, extra_host_config_account),
@@ -865,7 +865,7 @@ fn mollusk_acl_grant_deny_list_blocks_denied_authority_without_mutation() {
         authority,
     );
     let (deny_subject_record, deny_account) = deny_subject_record_account(authority, true);
-    let context = transient_context(
+    let context = mollusk_eval_context(
         authority,
         vec![
             (host_config, host_config_account),
@@ -916,7 +916,7 @@ fn mollusk_acl_grant_deny_list_rejects_missing_or_noncanonical_authority_witness
     );
 
     for deny_subject_record in [None, Some(Pubkey::new_unique())] {
-        let context = transient_context(
+        let context = mollusk_eval_context(
             authority,
             vec![
                 (host_config, host_config_account.clone()),
@@ -967,7 +967,7 @@ fn mollusk_acl_grant_deny_list_allows_absent_or_clear_authority_deny_record() {
         handle,
         authority,
     );
-    let absent_context = transient_context(
+    let absent_context = mollusk_eval_context(
         authority,
         vec![
             (host_config, host_config_account.clone()),
@@ -998,7 +998,7 @@ fn mollusk_acl_grant_deny_list_allows_absent_or_clear_authority_deny_record() {
         deny_subject_record_account(authority, false);
     let (denied_new_subject_record, denied_new_subject_account) =
         deny_subject_record_account(denied_new_subject, true);
-    let clear_context = transient_context(
+    let clear_context = mollusk_eval_context(
         authority,
         vec![
             (host_config, host_config_account),
@@ -1055,7 +1055,7 @@ fn mollusk_acl_grant_deny_list_rejects_witness_when_disabled() {
         authority,
     );
     let (deny_subject_record, deny_account) = deny_subject_record_account(authority, false);
-    let context = transient_context(
+    let context = mollusk_eval_context(
         authority,
         vec![
             (host_config, host_config_account),
@@ -1091,7 +1091,7 @@ fn mollusk_host_admin_deny_subject_setter_preserves_idempotent_state() {
     let subject = Pubkey::new_unique();
     let (host_config, host_config_account) = host_config_account(admin);
     let (deny_subject_record, expected_bump) = host::deny_subject_address(subject);
-    let mut context = transient_context(
+    let mut context = mollusk_eval_context(
         admin,
         vec![
             (host_config, host_config_account),
@@ -1220,7 +1220,7 @@ fn mollusk_host_config_initialize_creates_state_and_rejects_zero_profile_fields(
         test_shims_enabled: false,
         grant_deny_list_enabled: true,
     };
-    let context = transient_context(payer, vec![(host_config, system_account(0))]);
+    let context = mollusk_eval_context(payer, vec![(host_config, system_account(0))]);
 
     let result = context.process_instruction(&initialize_host_config_ix(
         program_id,
@@ -1266,7 +1266,7 @@ fn mollusk_host_config_initialize_creates_state_and_rejects_zero_profile_fields(
             grant_deny_list_enabled: false,
         };
         mutate(&mut args);
-        let context = transient_context(payer, vec![(host_config, system_account(0))]);
+        let context = mollusk_eval_context(payer, vec![(host_config, system_account(0))]);
 
         let result = context.process_instruction(&initialize_host_config_ix(
             program_id,
@@ -1287,7 +1287,7 @@ fn mollusk_host_config_rejects_wrong_admin_and_oversized_singleton_without_mutat
     let admin = Pubkey::new_unique();
     let wrong_admin = Pubkey::new_unique();
     let (host_config, host_config_account) = host_config_account(admin);
-    let wrong_admin_context = transient_context(admin, vec![(host_config, host_config_account)]);
+    let wrong_admin_context = mollusk_eval_context(admin, vec![(host_config, host_config_account)]);
 
     let wrong_admin_result = wrong_admin_context.process_instruction(&set_host_pause_ix(
         program_id,
@@ -1317,7 +1317,7 @@ fn mollusk_host_config_rejects_wrong_admin_and_oversized_singleton_without_mutat
         admin,
     );
     let (oversized_host_config, oversized_account) = host_config_account_with_extra_bytes(admin, 1);
-    let oversized_context = transient_context(
+    let oversized_context = mollusk_eval_context(
         admin,
         vec![
             (oversized_host_config, oversized_account),
@@ -1376,7 +1376,7 @@ fn mollusk_host_admin_pause_blocks_acl_grants_but_allows_unpause() {
         handle,
         authority,
     );
-    let mut context = transient_context(
+    let mut context = mollusk_eval_context(
         authority,
         vec![
             (host_config, host_config_account),
@@ -1501,7 +1501,7 @@ fn mollusk_host_admin_grant_deny_list_flag_is_idempotent_and_drives_gate() {
         handle,
         authority,
     );
-    let mut context = transient_context(
+    let mut context = mollusk_eval_context(
         authority,
         vec![
             (host_config, host_config_account),
@@ -1607,7 +1607,7 @@ fn mollusk_delegation_rejects_zero_wildcard_and_equal_subjects() {
     let delegate = Pubkey::new_unique();
     let app_account = Pubkey::new_unique();
     let host_config = host_config_account(authority).0;
-    let context = transient_context(authority, vec![host_config_account(authority)]);
+    let context = mollusk_eval_context(authority, vec![host_config_account(authority)]);
     let expiration_slot = context.mollusk.sysvars.clock.slot + 100;
 
     for (bad_delegate, bad_app_account) in [
@@ -1648,7 +1648,7 @@ fn mollusk_delegation_counter_tracks_regrant_revoke_and_reactivation() {
     let host_config = host_config_account(authority).0;
     let (delegation_record, _) =
         host::user_decryption_delegation_address(authority, delegate, app_account);
-    let mut context = transient_context(
+    let mut context = mollusk_eval_context(
         authority,
         vec![
             host_config_account(authority),
@@ -1777,7 +1777,7 @@ fn mollusk_material_commitment_seals_acl_and_public_decrypt_readiness() {
         authority,
     );
     let (material_commitment, _) = host::handle_material_address(acl_record);
-    let context = transient_context(
+    let context = mollusk_eval_context(
         authority,
         vec![
             (host_config, host_config_account),
@@ -1917,7 +1917,7 @@ fn mollusk_material_commitment_rejects_zero_material_fields_without_sealing() {
         authority,
     );
     let (material_commitment, _) = host::handle_material_address(acl_record);
-    let context = transient_context(
+    let context = mollusk_eval_context(
         authority,
         vec![
             (host_config, host_config_account),
@@ -1971,7 +1971,7 @@ fn mollusk_fhe_eval_rejects_public_decrypt_output_without_input_role() {
         host::ACL_ROLE_USE,
     );
     let output_acl_record = host::acl_record_address(nonce_key, 1).0;
-    let context = transient_context(
+    let context = mollusk_eval_context(
         authority,
         vec![
             host_config_account(authority),
@@ -2052,7 +2052,7 @@ fn mollusk_fhe_eval_rejects_system_account_public_decrypt_role_grant_without_inp
         host::ACL_ROLE_USE,
     );
     let output_acl_record = host::acl_record_address(output_nonce_key, 0).0;
-    let context = transient_context(
+    let context = mollusk_eval_context(
         authority,
         vec![
             host_config_account(authority),
@@ -2133,7 +2133,7 @@ fn mollusk_fhe_eval_allows_app_owned_public_decrypt_role_grant_without_input_rol
         host::ACL_ROLE_USE,
     );
     let output_acl_record = host::acl_record_address(output_nonce_key, 0).0;
-    let context = transient_context(
+    let context = mollusk_eval_context(
         authority,
         vec![
             host_config_account(authority),
@@ -2239,7 +2239,7 @@ fn mollusk_fhe_eval_composes_transient_binary_ops_into_durable_ternary_output() 
         authority,
     );
     let output_acl_record = host::acl_record_address(balance_nonce_key, 1).0;
-    let context = transient_context(
+    let context = mollusk_eval_context(
         authority,
         vec![
             host_config_account(authority),
@@ -2421,7 +2421,7 @@ fn mollusk_fhe_eval_identical_steps_derive_unique_transient_handles() {
         input_handle,
         authority,
     );
-    let context = transient_context(
+    let context = mollusk_eval_context(
         authority,
         vec![
             host_config_account(authority),
@@ -2539,7 +2539,7 @@ fn mollusk_fhe_eval_binds_multiple_durable_outputs_with_distinct_authorities() {
     );
     let primary_output_acl = host::acl_record_address(primary_nonce_key, 0).0;
     let secondary_output_acl = host::acl_record_address(secondary_nonce_key, 0).0;
-    let context = transient_context(
+    let context = mollusk_eval_context(
         authority,
         vec![
             host_config_account(authority),
@@ -2715,7 +2715,7 @@ fn mollusk_fhe_eval_rolls_back_first_durable_output_when_second_output_exists() 
         stale_second_handle,
         authority,
     );
-    let context = transient_context(
+    let context = mollusk_eval_context(
         authority,
         vec![
             host_config_account(authority),
@@ -2829,7 +2829,7 @@ fn mollusk_fhe_eval_rejects_duplicate_durable_output_reference_without_partial_b
         authority,
     );
     let output_acl = host::acl_record_address(output_nonce_key, 0).0;
-    let context = transient_context(
+    let context = mollusk_eval_context(
         authority,
         vec![
             host_config_account(authority),
@@ -2953,7 +2953,7 @@ fn mollusk_fhe_eval_switches_event_transport_above_cpi_threshold() {
         input_handle,
         authority,
     );
-    let context = transient_context(
+    let context = mollusk_eval_context(
         authority,
         vec![
             host_config_account(authority),
@@ -3127,7 +3127,7 @@ fn mollusk_fhe_eval_rejects_binary_rhs_type_mismatch_before_output() {
         authority,
     );
     let output_acl_record = host::acl_record_address(lhs_nonce_key, 1).0;
-    let context = transient_context(
+    let context = mollusk_eval_context(
         authority,
         vec![
             host_config_account(authority),
@@ -3271,7 +3271,7 @@ impl EvalFixture {
             authority,
         );
         let output_acl_record = host::acl_record_address(balance_nonce_key, 1).0;
-        let context = transient_context(
+        let context = mollusk_eval_context(
             authority,
             vec![
                 host_config_account(authority),
@@ -3415,7 +3415,7 @@ fn mollusk_fhe_binary_op_rejects_unexpected_remaining_account() {
     );
     let dummy_rhs_account = Pubkey::new_unique();
     let unexpected_account = Pubkey::new_unique();
-    let context = transient_context(
+    let context = mollusk_eval_context(
         authority,
         vec![
             host_config_account(authority),
@@ -3488,7 +3488,7 @@ fn mollusk_fhe_eval_rejects_unused_dynamic_accounts_without_events() {
     );
     let extra_account = Pubkey::new_unique();
     let output_acl_record = host::acl_record_address(nonce_key, 1).0;
-    let context = transient_context(
+    let context = mollusk_eval_context(
         authority,
         vec![
             host_config_account(authority),
@@ -3623,7 +3623,7 @@ fn mollusk_fhe_binary_op_scalar_rhs_rejects_unused_permission_witness() {
     let dummy_rhs_account = Pubkey::new_unique();
     let unused_rhs_permission = Pubkey::new_unique();
     let output_acl_record = host::acl_record_address(nonce_key, 1).0;
-    let context = transient_context(
+    let context = mollusk_eval_context(
         authority,
         vec![
             host_config_account(authority),
@@ -3744,7 +3744,7 @@ fn mollusk_fhe_binary_op_bind_rejects_public_decrypt_role_grant_without_input_ro
         host::ACL_ROLE_USE,
     );
     let output_acl_record = host::acl_record_address(nonce_key, 1).0;
-    let context = transient_context(
+    let context = mollusk_eval_context(
         authority,
         vec![
             host_config_account(authority),
@@ -3850,7 +3850,7 @@ fn mollusk_fhe_ternary_op_bind_rejects_public_decrypt_role_grant_without_input_r
         host::ACL_ROLE_USE,
     );
     let output_acl_record = host::acl_record_address(output_nonce_key, 1).0;
-    let context = transient_context(
+    let context = mollusk_eval_context(
         authority,
         vec![
             host_config_account(authority),
@@ -3926,7 +3926,7 @@ fn mollusk() -> Mollusk {
     Mollusk::new(&host::id(), "zama_host")
 }
 
-fn transient_context(
+fn mollusk_eval_context(
     payer: Pubkey,
     seeded_accounts: Vec<(Pubkey, Account)>,
 ) -> mollusk_svm::MolluskContext<HashMap<Pubkey, Account>> {
@@ -5054,7 +5054,7 @@ fn mollusk_verify_coprocessor_input_accepts_real_secp256k1_attestation() {
     );
     let signatures = vec![sign_eip712(&key, &digest)];
 
-    let context = transient_context(authority, vec![(host_config, host_config_account)]);
+    let context = mollusk_eval_context(authority, vec![(host_config, host_config_account)]);
     let ix = verify_coprocessor_input_ix(
         program_id,
         host_config,
@@ -5116,7 +5116,7 @@ fn mollusk_verify_coprocessor_input_rejects_unauthorized_signer() {
     );
     let signatures = vec![sign_eip712(&attacker, &digest)];
 
-    let context = transient_context(authority, vec![(host_config, host_config_account)]);
+    let context = mollusk_eval_context(authority, vec![(host_config, host_config_account)]);
     let ix = verify_coprocessor_input_ix(
         program_id,
         host_config,
@@ -5200,7 +5200,7 @@ fn mollusk_define_kms_context_records_signers_and_advances_current() {
     let (host_config, host_config_account) =
         host_config_account_with_options(admin, admin, false, false, false);
     let (kms_context, _) = host::kms_context_address(1);
-    let context = transient_context(
+    let context = mollusk_eval_context(
         admin,
         vec![
             (host_config, host_config_account),
@@ -5250,7 +5250,7 @@ fn mollusk_define_kms_context_rejects_duplicate_signers() {
     let (host_config, host_config_account) =
         host_config_account_with_options(admin, admin, false, false, false);
     let (kms_context, _) = host::kms_context_address(1);
-    let context = transient_context(
+    let context = mollusk_eval_context(
         admin,
         vec![
             (host_config, host_config_account),
@@ -5290,7 +5290,7 @@ fn mollusk_destroy_kms_context_rejects_current_but_destroys_prior() {
         host_config_account_with_options(admin, admin, false, false, false);
     let (kc1, _) = host::kms_context_address(1);
     let (kc2, _) = host::kms_context_address(2);
-    let context = transient_context(
+    let context = mollusk_eval_context(
         admin,
         vec![
             (host_config, host_config_account),
@@ -5516,7 +5516,7 @@ fn mollusk_fhe_eval_verified_input_scalar_add_binds_durable_output() {
         verified_input_attestation(&key, input_handle, user.to_bytes(), authority.to_bytes());
 
     let output_acl_record = host::acl_record_address(nonce_key, 0).0;
-    let context = transient_context(
+    let context = mollusk_eval_context(
         authority,
         vec![
             (host_config, host_config_account),
@@ -5643,7 +5643,7 @@ fn mollusk_fhe_eval_verified_input_rejects_forged_attestation() {
     );
 
     let output_acl_record = host::acl_record_address(nonce_key, 0).0;
-    let context = transient_context(
+    let context = mollusk_eval_context(
         authority,
         vec![
             (host_config, host_config_account),
@@ -5694,7 +5694,7 @@ fn mollusk_fhe_eval_verified_input_does_not_leak_to_a_later_instruction() {
     let output_acl_record = host::acl_record_address(nonce_key, 0).0;
     // An empty account standing in for the ACL record the input would need but was never granted.
     let absent_input_acl = Pubkey::new_unique();
-    let context = transient_context(
+    let context = mollusk_eval_context(
         authority,
         vec![
             (host_config, host_config_account),
@@ -5760,7 +5760,7 @@ fn mollusk_fhe_eval_verified_input_rejects_wrong_output_acl_domain_key() {
         verified_input_attestation(&key, input_handle, user.to_bytes(), authority.to_bytes());
 
     let output_acl_record = host::acl_record_address(nonce_key, 0).0;
-    let context = transient_context(
+    let context = mollusk_eval_context(
         authority,
         vec![
             (host_config, host_config_account),
@@ -5807,7 +5807,7 @@ fn mollusk_fhe_eval_verified_input_propagates_public_decrypt_to_durable_output()
         verified_input_attestation(&key, input_handle, user.to_bytes(), authority.to_bytes());
 
     let output_acl_record = host::acl_record_address(nonce_key, 0).0;
-    let context = transient_context(
+    let context = mollusk_eval_context(
         authority,
         vec![
             (host_config, host_config_account),
@@ -5888,7 +5888,7 @@ fn mollusk_fhe_eval_verified_input_rejects_consumption_by_non_attested_app() {
         verified_input_attestation(&key, input_handle, user.to_bytes(), attested_app.to_bytes());
 
     let output_acl_record = host::acl_record_address(nonce_key, 0).0;
-    let context = transient_context(
+    let context = mollusk_eval_context(
         attacker,
         vec![
             (host_config, host_config_account),
