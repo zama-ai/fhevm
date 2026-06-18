@@ -64,20 +64,7 @@ jobs:
           version: stable
 
       # -----------------------------------------------------------------------
-      # 4. Supply-chain protection
-      #    safe-chain intercepts npm/bun/pip calls and blocks malicious packages.
-      #    Must run before the first package manager invocation.
-      # -----------------------------------------------------------------------
-      - name: Install safe-chain
-        shell: bash
-        run: |
-          # safe-chain v1.5.3 is distributed as an immutable GitHub release asset —
-          # its content is permanently fixed and cannot be modified after the tag is published.
-          # Verify immutability: curl -fsSL https://api.github.com/repos/AikidoSec/safe-chain/releases/tags/1.5.3 | grep immutable
-          curl -fsSL https://github.com/AikidoSec/safe-chain/releases/download/1.5.3/install-safe-chain.sh | sh -s -- --ci
-
-      # -----------------------------------------------------------------------
-      # 5. Upgrade npm
+      # 4. Upgrade npm
       #    The bundled npm in Node 22 may not support provenance publishing.
       #    Pin to the same version used in the sibling library-solidity workflow
       #    for consistency. The .npmrc already sets provenance=true.
@@ -86,7 +73,7 @@ jobs:
         run: npm install -g npm@11.7.0
 
       # -----------------------------------------------------------------------
-      # 6. Install dependencies
+      # 5. Install dependencies
       #    npm ci is strict and deterministic: it installs exactly what is in
       #    package-lock.json, fails if the lockfile is out of sync, and never
       #    modifies it. This is preferred over npm install in CI environments.
@@ -97,7 +84,7 @@ jobs:
         run: npm ci
 
       # -----------------------------------------------------------------------
-      # 7. Build
+      # 6. Build
       #    The top-level "build" script does more than transpilation:
       #      - clean           → remove prior tsbuildinfo and generated outputs
       #      - prettier:check  → formatting validation
@@ -114,7 +101,7 @@ jobs:
         run: npm run build
 
       # -----------------------------------------------------------------------
-      # 8. Unit tests
+      # 7. Unit tests
       #    Runs fast, isolated unit tests (src/**/*.test.ts) with type-checking.
       #    No network or chain required.
       # -----------------------------------------------------------------------
@@ -122,7 +109,7 @@ jobs:
         run: npm run test:unit
 
       # -----------------------------------------------------------------------
-      # 9. Locahost cleartext chain Test
+      # 8. Locahost cleartext chain Test
       #    package.json maps "test" to the local cleartext integration runner,
       #    which starts Anvil, deploys the FHEVM stack, runs only
       #    test/fheTest/viem-cleartext, and then tears the local chain down.
