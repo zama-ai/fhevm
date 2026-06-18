@@ -105,6 +105,59 @@ npm run test:full:testnet
 npm run test
 ```
 
+## Localstack (per protocol version)
+
+Each command runs the suite against a localstack started with a specific
+protocol version (a `--chain` + `--fhevm-cli-profile` pair). The runner
+restarts localstack via `fhevm-cli` before the tests and stops it afterwards,
+so these share a single stack and must be run **one at a time** (sequentially),
+not in parallel.
+
+```sh
+# Latest / default
+npm run test:localstack
+
+# A specific protocol version
+npm run test:localstack:v11   # localstack_v11 + v0.11.0-mainnet.json
+npm run test:localstack:v12   # localstack_v12 + v0.12.0-testnet.json
+npm run test:localstack:v13   # localstack_v13 + v0.13.0.json
+
+# All versions, sequentially (stops at the first failure)
+npm run test:localstack:v11 && \
+  npm run test:localstack:v12 && \
+  npm run test:localstack:v13 && \
+  npm run test:localstack
+```
+
+Prerequisites: the Solidity dependencies must be installed once
+(`cd contracts && forge soldeer install`, see [Setup](#setup)), and `forge`
+must be available on `PATH`.
+
+> Note (macOS): the test scripts require Bash. The default `/bin/bash` (3.2) is
+> fine; the scripts avoid Bash 4-only syntax.
+
+## Definition of Done (run everything)
+
+`dod` runs the full Definition-of-Done gate. Use `--help` to print the exact
+command list.
+
+```sh
+# Standard gate: clean, codegen, prettier, lint, unit tests, dev + prod builds,
+# browser test, and cleartext suites (v12, v13, latest).
+npm run dod
+
+# Everything above PLUS the long suites: testnet, devnet, and every localstack
+# version (v11, v12, v13, latest), run sequentially.
+npm run dod:full
+
+# List the exact commands without running them.
+node test/scripts/dod.mjs --help
+```
+
+`dod` stops at the first failing command. `dod:full` additionally requires
+testnet/devnet credentials (`ZAMA_FHEVM_API_KEY`, `RPC_URL`) and a Playwright
+browser for the browser test.
+
 ## Addresses
 
 ```sh
