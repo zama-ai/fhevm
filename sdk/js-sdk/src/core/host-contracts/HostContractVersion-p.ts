@@ -64,7 +64,7 @@ function _getVersionCacheKey(context: Context, parameters: Parameters): string {
  *   Use this after a known contract upgrade to ensure all subsequent callers
  *   see the updated version.
  */
-export function getVersion(
+export function getHostContractVersion(
   context: Context,
   parameters: Parameters & { readonly forceRefresh?: boolean },
 ): Promise<ReturnType> {

@@ -2,7 +2,7 @@ import type { ChecksummedAddress, Uint8Number } from '../types/primitives.js';
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
 import { assertIsChecksummedAddressArray } from '../base/address.js';
 import { asUint8Number, isUint8 } from '../base/uint.js';
-import { getVersion } from './HostContractVersion-p.js';
+import { getHostContractVersion } from './HostContractVersion-p.js';
 import { isVersionStrictlyBefore } from '../host-contracts/HostContractVersion-p.js';
 import { executeWithBatching } from '../base/promise.js';
 import { getTrustedClient } from '../runtime/CoreFhevm-p.js';
@@ -64,7 +64,7 @@ export function getKmsSignersAndThreshold(
 ////////////////////////////////////////////////////////////////////////////////
 
 async function _getKmsContextSignersAndThreshold(context: Context, parameters: Parameters): Promise<ReturnType> {
-  const version = await getVersion(context, { address: parameters.address });
+  const version = await getHostContractVersion(context, { address: parameters.address });
   if (!isVersionStrictlyBefore(version, { major: 0, minor: 2 })) {
     throw new Error('getContextSignersAndThreshold requires KMSVerifier < v0.2.0');
   }

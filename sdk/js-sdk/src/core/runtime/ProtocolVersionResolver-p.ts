@@ -13,7 +13,7 @@ import { asAddress, addressToChecksummedAddress } from '../base/address.js';
 import { compareSemver, isSemverInInterval, semverComparatorImpliesRange } from '../base/semver.js';
 import { mainnet } from '../chains/definitions/mainnet.js';
 import { sepolia } from '../chains/definitions/sepolia.js';
-import { assertIsHostContractVersionOf, getVersion } from '../host-contracts/HostContractVersion-p.js';
+import { assertIsHostContractVersionOf, getHostContractVersion } from '../host-contracts/HostContractVersion-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -24,7 +24,7 @@ export async function resolveProtocolContext(
   parameters: ResolveProtocolContextParameters,
 ): Promise<FhevmProtocolContext> {
   const aclAddress = addressToChecksummedAddress(asAddress(parameters.chain.fhevm.contracts.acl.address));
-  const aclVersion = await getVersion(parameters, { address: aclAddress });
+  const aclVersion = await getHostContractVersion(parameters, { address: aclAddress });
 
   assertIsHostContractVersionOf(aclVersion, 'ACL');
 

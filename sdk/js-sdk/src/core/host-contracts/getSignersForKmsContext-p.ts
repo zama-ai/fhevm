@@ -1,6 +1,6 @@
 import type { ChecksummedAddress, Uint256BigInt } from '../types/primitives.js';
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
-import { getVersion, isVersionStrictlyBefore } from './HostContractVersion-p.js';
+import { getHostContractVersion, isVersionStrictlyBefore } from './HostContractVersion-p.js';
 import { getTrustedClient } from '../runtime/CoreFhevm-p.js';
 import { getKmsSignersAbi, getSignersForKmsContextAbi } from './abi-fragments/fragments.js';
 import { assertIsChecksummedAddressArray } from '../base/address.js';
@@ -34,7 +34,7 @@ type ReturnType = ChecksummedAddress[];
  * @param parameters.kmsContextId - The context ID to query signers for.
  */
 export async function getSignersForKmsContext(context: Context, parameters: Parameters): Promise<ReturnType> {
-  const version = await getVersion(context, parameters);
+  const version = await getHostContractVersion(context, parameters);
   // getCurrentKmsContextId has been introduced in KMSVerifier.sol v0.2.0
   if (isVersionStrictlyBefore(version, { major: 0, minor: 2 })) {
     if (parameters.kmsContextId === 0n) {

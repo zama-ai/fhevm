@@ -10,7 +10,7 @@ import { getAclAddress } from '../../host-contracts/getAclAddress-p.js';
 import { getHandleVersion } from '../../host-contracts/getHandleVersion-p.js';
 import { getHcuLimitAddress } from '../../host-contracts/getHcuLimitAddress-p.js';
 import { assertIsHostContractVersionOf } from '../../host-contracts/HostContractVersion-p.js';
-import { getVersion } from '../../host-contracts/HostContractVersion-p.js';
+import { getHostContractVersion } from '../../host-contracts/HostContractVersion-p.js';
 import { getInputVerifierAddress } from '../../host-contracts/getInputVerifierAddress-p.js';
 
 export type ReadFhevmExecutorContractDataParameters = {
@@ -36,7 +36,7 @@ export async function readFhevmExecutorContractData(
   ////////////////////////////////////////////////////////////////////////////
 
   const rpcCalls = [
-    () => getVersion(fhevm, parameters),
+    () => getHostContractVersion(fhevm, parameters),
     () => getAclAddress(fhevm, parameters),
     () => getHcuLimitAddress(fhevm, parameters),
     () => getInputVerifierAddress(fhevm, parameters),

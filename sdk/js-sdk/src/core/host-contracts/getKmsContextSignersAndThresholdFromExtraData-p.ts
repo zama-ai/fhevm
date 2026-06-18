@@ -1,6 +1,6 @@
 import type { BytesHex, ChecksummedAddress, Uint8Number } from '../types/primitives.js';
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
-import { getVersion, isVersionStrictlyBefore } from './HostContractVersion-p.js';
+import { getHostContractVersion, isVersionStrictlyBefore } from './HostContractVersion-p.js';
 import { createCachedFetch } from '../base/cachedFetch.js';
 import { assertIsKmsExtraData, fromKmsExtraData } from '../kms/kmsExtraData.js';
 import { assertIsChecksummedAddressArray } from '../base/address.js';
@@ -69,7 +69,7 @@ async function _getKmsContextSignersAndThresholdFromExtraData(
   context: Context,
   parameters: Parameters,
 ): Promise<ReturnType> {
-  const version = await getVersion(context, { address: parameters.address });
+  const version = await getHostContractVersion(context, { address: parameters.address });
   if (isVersionStrictlyBefore(version, { major: 0, minor: 2 })) {
     throw new Error('getContextSignersAndThresholdFromExtraData requires KMSVerifier >= v0.2.0');
   }

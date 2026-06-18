@@ -6,7 +6,7 @@ import { PRIVATE_ETHERS_TOKEN } from '../../ethers/internal/ethers-p.js';
 import { sepolia } from '../chains/definitions/sepolia.js';
 import { createCoreFhevm } from '../runtime/CoreFhevm-p.js';
 import { createFhevmRuntime } from '../runtime/CoreFhevmRuntime-p.js';
-import { getVersion, invalidateVersionCache } from './HostContractVersion-p.js';
+import { getHostContractVersion, invalidateVersionCache } from './HostContractVersion-p.js';
 
 const ACL_ADDRESS = sepolia.fhevm.contracts.acl.address as ChecksummedAddress;
 const KMS_VERIFIER_ADDRESS = sepolia.fhevm.contracts.kmsVerifier.address as ChecksummedAddress;
@@ -58,16 +58,20 @@ describe('HostContractVersion cache', () => {
     );
     const client = makeClient(readContract);
 
-    await expect(getVersion(client, { address: ACL_ADDRESS })).resolves.toMatchObject({ version: 'ACL v0.1.0' });
-    await expect(getVersion(client, { address: KMS_VERIFIER_ADDRESS })).resolves.toMatchObject({
+    await expect(getHostContractVersion(client, { address: ACL_ADDRESS })).resolves.toMatchObject({
+      version: 'ACL v0.1.0',
+    });
+    await expect(getHostContractVersion(client, { address: KMS_VERIFIER_ADDRESS })).resolves.toMatchObject({
       version: 'KMSVerifier v0.1.0',
     });
     expect(readContract).toHaveBeenCalledTimes(2);
 
     invalidateVersionCache(client, { address: ACL_ADDRESS });
 
-    await expect(getVersion(client, { address: ACL_ADDRESS })).resolves.toMatchObject({ version: 'ACL v0.2.0' });
-    await expect(getVersion(client, { address: KMS_VERIFIER_ADDRESS })).resolves.toMatchObject({
+    await expect(getHostContractVersion(client, { address: ACL_ADDRESS })).resolves.toMatchObject({
+      version: 'ACL v0.2.0',
+    });
+    await expect(getHostContractVersion(client, { address: KMS_VERIFIER_ADDRESS })).resolves.toMatchObject({
       version: 'KMSVerifier v0.1.0',
     });
     expect(readContract).toHaveBeenCalledTimes(3);
@@ -82,16 +86,20 @@ describe('HostContractVersion cache', () => {
     );
     const client = makeClient(readContract);
 
-    await expect(getVersion(client, { address: ACL_ADDRESS })).resolves.toMatchObject({ version: 'ACL v0.1.0' });
-    await expect(getVersion(client, { address: KMS_VERIFIER_ADDRESS })).resolves.toMatchObject({
+    await expect(getHostContractVersion(client, { address: ACL_ADDRESS })).resolves.toMatchObject({
+      version: 'ACL v0.1.0',
+    });
+    await expect(getHostContractVersion(client, { address: KMS_VERIFIER_ADDRESS })).resolves.toMatchObject({
       version: 'KMSVerifier v0.1.0',
     });
     expect(readContract).toHaveBeenCalledTimes(2);
 
     invalidateVersionCache();
 
-    await expect(getVersion(client, { address: ACL_ADDRESS })).resolves.toMatchObject({ version: 'ACL v0.2.0' });
-    await expect(getVersion(client, { address: KMS_VERIFIER_ADDRESS })).resolves.toMatchObject({
+    await expect(getHostContractVersion(client, { address: ACL_ADDRESS })).resolves.toMatchObject({
+      version: 'ACL v0.2.0',
+    });
+    await expect(getHostContractVersion(client, { address: KMS_VERIFIER_ADDRESS })).resolves.toMatchObject({
       version: 'KMSVerifier v0.2.0',
     });
     expect(readContract).toHaveBeenCalledTimes(4);

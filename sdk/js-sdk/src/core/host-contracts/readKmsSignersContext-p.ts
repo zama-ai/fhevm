@@ -7,7 +7,7 @@ import {
   kmsSignersContextToExtraData,
 } from './KmsSignersContext-p.js';
 import { getCurrentKmsContextId } from './getCurrentKmsContextId-p.js';
-import { getVersion, isVersionStrictlyBefore } from './HostContractVersion-p.js';
+import { getHostContractVersion, isVersionStrictlyBefore } from './HostContractVersion-p.js';
 import { assertIsKmsExtraData, fromKmsExtraData, toKmsExtraData } from '../kms/kmsExtraData.js';
 import { getKmsContextSignersAndThresholdFromExtraData } from './getKmsContextSignersAndThresholdFromExtraData-p.js';
 import { getKmsSignersAndThreshold } from './getKmsContextSignersAndThreshold-p.js';
@@ -34,7 +34,7 @@ export async function readKmsSignersContext(context: Context, parameters: Parame
   const kmsVerifierContractAddress = parameters.address;
 
   // TTL-cached
-  const version = await getVersion(context, {
+  const version = await getHostContractVersion(context, {
     address: kmsVerifierContractAddress,
   });
 
