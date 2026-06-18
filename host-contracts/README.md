@@ -120,3 +120,63 @@ rotation to non-canonical chains call `defineNewKmsContext` directly on each non
 
 No on-chain guard prevents a non-canonical replica from drifting if a mirror transaction is
 skipped. Operators are responsible for fan-out correctness.
+
+### Initializing a non-canonical ProtocolConfig from the canonical chain
+
+The Ethereum `ProtocolConfig` is the source of truth for protocol state, so **new** host chains
+seed their replica from it. (The Gateway-based export `task:exportKmsMigrationState` remains the
+mechanism for the one-time Gateway → Ethereum migration of existing deployments; it is just no
+longer the state source for seeding non-canonical chains.)
+
+The flow is artifact-centric — the same three steps in every environment, only the signer of
+step 3 changes:
+
+**1. Export** the canonical KMS context to a reviewable JSON artifact (works from a clean
+checkout; needs only RPC access):
+
+```bash
+npx hardhat task:exportCanonicalProtocolConfig \
+  --canonical-rpc-url https://mainnet.example \
+  --canonical-protocol-config-address 0x... \
+  --out canonical-protocol-config-snapshot.json
+```
+
+The artifact records the canonical chainId, the block number the read was pinned to, the
+contract address, the current KMS context id, the KMS node set, and all four thresholds
+(bigints serialized as strings).
+
+**2. Review.** All reads happen at one block, so reviewers (e.g. DAO signers) reproduce the
+artifact byte-for-byte — even after a later `defineNewKmsContext` rotation — by re-running the
+export with `--block-number <N>` from the artifact and diffing the output.
+
+**3. Apply** the reviewed artifact to the local `ProtocolConfig` proxy. Both environments run the
+same prepare step — deploy the implementation and build the
+`upgradeToAndCall(initializeFromMigration(…))` payload, landing the replica on canonical's
+`currentKmsContextId` instead of a fresh counter. They differ only in who executes that payload:
+the devnet task sends it immediately with the deployer key, so **what runs on devnet is
+byte-identical to what the DAO signs**.
+
+| Environment       | Task                                                                       | Signer                                              |
+| ----------------- | -------------------------------------------------------------------------- | --------------------------------------------------- |
+| devnet / local    | `task:deployProtocolConfigFromCanonical --snapshot <artifact.json>`        | `DEPLOYER_PRIVATE_KEY`                              |
+| testnet / mainnet | `task:prepareDeployProtocolConfigFromCanonical --snapshot <artifact.json>` | DAO executes the printed `upgradeToAndCall` payload |
+
+```bash
+# devnet: direct upgrade with the deployer key
+npx hardhat task:deployProtocolConfigFromCanonical --snapshot canonical-protocol-config-snapshot.json
+
+# testnet/mainnet: deploy the implementation and print the DAO payload, without touching the proxy
+npx hardhat task:prepareDeployProtocolConfigFromCanonical --snapshot canonical-protocol-config-snapshot.json
+```
+
+For quick devnet iteration, `task:deployProtocolConfigFromCanonical` also accepts
+`--canonical-rpc-url` + `--canonical-protocol-config-address` instead of `--snapshot` to read
+canonical live at deploy time — but then what is deployed is whatever canonical holds at that
+moment, not a reviewed artifact. The DAO path is artifact-only by design.
+
+When deploying a full non-canonical host stack, `task:deployAllHostContracts
+--protocol-config-source canonical --canonical-rpc-url … --canonical-protocol-config-address …`
+runs the mirror in sequence with the other host contracts (this is what the fhevm-cli multi-chain
+stack uses, so e2e seeds non-canonical chains exactly like production).
+
+Later canonical rotations are mirrored manually with `defineNewKmsContext`, as described above.

@@ -297,6 +297,14 @@ export const coprocessorUsesHostKmsGeneration = (state: CompatState) =>
 /** Detects the KMSGeneration source used for key/CRS bootstrap probes and trigger tasks. */
 export const bootstrapUsesHostKmsGeneration = kmsConnectorUsesHostKmsGeneration;
 
+/**
+ * Detects when host images ship `task:deployProtocolConfigFromCanonical` (0.13.1+), so non-canonical
+ * chains can seed ProtocolConfig from the canonical chain like production instead of "fresh".
+ */
+export const supportsCanonicalProtocolConfigSeeding = (state: CompatState) =>
+  effectiveCompatOverrides(state).some((override) => override.group === "host-contracts") ||
+  !versionLt(state.versions.env.HOST_VERSION ?? "", [0, 13, 1], { unparsed: "modern" });
+
 type BundleIncompatibility = { severity: "error"; code: string; message: string };
 
 /** Detects whether the resolved bundle supports multi-chain listener/database topology. */

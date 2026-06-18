@@ -305,6 +305,7 @@ describe("render-compose", () => {
     const cmd = (template.services["host-sc-deploy"]?.command ?? []).join(" ");
     expect(cmd).toContain("task:deployAllHostContracts");
     expect(cmd).toContain("$${HOST_SC_DEPLOY_KMS_GENERATION_ARGS}");
+    expect(cmd).toContain("$${HOST_SC_DEPLOY_PROTOCOL_CONFIG_ARGS}");
   });
 
   test("merges instance env into list-form service environments without dropping KEY_ID", async () => {
