@@ -50,7 +50,7 @@ static BRIDGE_ERROR_COUNTER: LazyLock<IntCounter> = LazyLock::new(|| {
 
 // Grace period before an unassociated handle is counted, so normal in-flight
 // handles (briefly unassociated while their ciphertext materializes) are excluded.
-const IN_FLIGHT_GRACE_SECS: f64 = 300.0;
+const IN_FLIGHT_GRACE_SECS: i32 = 300;
 
 static UNASSOCIATED_HANDLES: LazyLock<IntGauge> = LazyLock::new(|| {
     register_int_gauge!(
@@ -135,7 +135,7 @@ async fn count_unassociated_handles(pool: &PgPool) -> Result<i64, sqlx::Error> {
         SELECT count(*) AS "count!"
         FROM handle_bridged_events
         WHERE NOT is_associated
-          AND created_at <= now() - make_interval(secs => $1)
+          AND created_at <= now() - make_interval(secs => $1::int)
         "#,
         IN_FLIGHT_GRACE_SECS,
     )
