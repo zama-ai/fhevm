@@ -257,10 +257,14 @@ impl EvalStepVisitor for AdmissionState<'_, '_> {
     ) -> Result<ResolvedOperand> {
         // Structural only — the handle is known from the operand; execution re-verifies the
         // attestation authoritatively (matches how transient-session consume is execution-gated).
-        // The attested domain is still tracked so admission rejects a wrong output acl_domain_key.
+        // The attested identities are still tracked so admission rejects an output that does not
+        // bind them.
         Ok(ResolvedOperand::verified_input(
             attestation.input_handle,
-            Pubkey::new_from_array(attestation.contract_address),
+            VerifiedInputBinding {
+                user_address: Pubkey::new_from_array(attestation.user_address),
+                contract_address: Pubkey::new_from_array(attestation.contract_address),
+            },
         ))
     }
 
@@ -274,7 +278,7 @@ impl EvalStepVisitor for AdmissionState<'_, '_> {
         output_policies: Vec<SessionPolicy>,
         output_public_decrypt_allowed: bool,
         enforce_public_decrypt_role_propagation: bool,
-        verified_input_domain: Option<Pubkey>,
+        verified_input: Option<VerifiedInputBinding>,
     ) -> Result<()> {
         require!(
             !self.produced.iter().any(|value| value.handle == result),
@@ -307,12 +311,13 @@ impl EvalStepVisitor for AdmissionState<'_, '_> {
                 output_subjects,
                 output_public_decrypt,
             } => {
-                if let Some(domain) = verified_input_domain {
-                    require_keys_eq!(
+                if let Some(binding) = verified_input {
+                    assert_verified_input_output_binding(
+                        &binding,
                         *output_acl_domain_key,
-                        domain,
-                        ZamaHostError::AclDomainKeyMismatch
-                    );
+                        *output_app_account,
+                        output_subjects,
+                    )?;
                 }
                 assert_session_policies_allow_output(
                     &output_policies,
@@ -355,7 +360,7 @@ impl EvalStepVisitor for AdmissionState<'_, '_> {
             handle: result,
             public_decrypt_allowed: output_public_decrypt_allowed,
             session_policies: output_policies,
-            verified_input_domain,
+            verified_input,
         });
         Ok(())
     }

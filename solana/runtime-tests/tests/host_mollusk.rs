@@ -6990,17 +6990,15 @@ fn mollusk_fhe_eval_verified_input_scalar_add_binds_durable_output() {
     let (host_config, host_config_account) =
         host_config_account_with_verifier(authority, evm_address_of(&key));
 
-    // The attested contract IS the app-level ACL domain key (#3).
-    let acl_domain = Pubkey::new_unique();
+    // `authority` is the app's signing authority — the attested contract (a mint/token PDA signing
+    // via CPI in a real app). The attested input owner is a DIFFERENT end user, recorded as a
+    // subject. The output binds to the app authority: acl_domain == app_account == attested contract.
+    let user = Pubkey::new_unique();
     let encrypted_value_label = label("verified-input-add");
-    let nonce_key = host::acl_nonce_key(acl_domain, authority, encrypted_value_label);
+    let nonce_key = host::acl_nonce_key(authority, authority, encrypted_value_label);
     let input_handle = input_handle_for_chain(0x01, 0, 5);
-    let attestation = verified_input_attestation(
-        &key,
-        input_handle,
-        authority.to_bytes(),
-        acl_domain.to_bytes(),
-    );
+    let attestation =
+        verified_input_attestation(&key, input_handle, user.to_bytes(), authority.to_bytes());
 
     let output_acl_record = host::acl_record_address(nonce_key, 0).0;
     let context = transient_context(
@@ -7033,11 +7031,11 @@ fn mollusk_fhe_eval_verified_input_scalar_add_binds_durable_output() {
         attestation,
         scalar,
         context_id,
-        acl_domain,
+        authority,
         nonce_key,
         encrypted_value_label,
         output_acl_record,
-        vec![AclSubjectEntry::use_only(authority)],
+        vec![AclSubjectEntry::use_only(user)],
     );
 
     assert_transaction_success(&context, &[eval_ix]);
@@ -7049,10 +7047,10 @@ fn mollusk_fhe_eval_verified_input_scalar_add_binds_durable_output() {
         output_handle,
         nonce_key,
         0,
-        acl_domain,
+        authority,
         authority,
         encrypted_value_label,
-        authority,
+        user,
         host::ACL_ROLE_USE,
         context.mollusk.sysvars.clock.slot,
     );
@@ -7117,16 +7115,17 @@ fn mollusk_fhe_eval_verified_input_rejects_forged_attestation() {
     let (host_config, host_config_account) =
         host_config_account_with_verifier(authority, evm_address_of(&trusted));
 
-    let acl_domain = Pubkey::new_unique();
+    let user = Pubkey::new_unique();
     let value_label = label("verified-input-forged");
-    let nonce_key = host::acl_nonce_key(acl_domain, authority, value_label);
+    let nonce_key = host::acl_nonce_key(authority, authority, value_label);
     let input_handle = input_handle_for_chain(0x01, 0, 5);
-    // Signed by the attacker, not the trusted coprocessor signer.
+    // A well-formed (user, app) binding, but signed by the attacker — not the trusted coprocessor
+    // signer. The output binding passes; the in-frame secp256k1 verify is what rejects it.
     let attestation = verified_input_attestation(
         &attacker,
         input_handle,
+        user.to_bytes(),
         authority.to_bytes(),
-        acl_domain.to_bytes(),
     );
 
     let output_acl_record = host::acl_record_address(nonce_key, 0).0;
@@ -7145,11 +7144,11 @@ fn mollusk_fhe_eval_verified_input_rejects_forged_attestation() {
         attestation,
         amount_plaintext(2),
         label("verified-input-frame"),
-        acl_domain,
+        authority,
         nonce_key,
         value_label,
         output_acl_record,
-        vec![AclSubjectEntry::use_only(authority)],
+        vec![AclSubjectEntry::use_only(user)],
     );
 
     let result = context.process_instruction(&eval_ix);
@@ -7171,16 +7170,12 @@ fn mollusk_fhe_eval_verified_input_does_not_leak_to_a_later_instruction() {
     let (host_config, host_config_account) =
         host_config_account_with_verifier(authority, evm_address_of(&key));
 
-    let acl_domain = Pubkey::new_unique();
+    let user = Pubkey::new_unique();
     let value_label = label("verified-input-noleak");
-    let nonce_key = host::acl_nonce_key(acl_domain, authority, value_label);
+    let nonce_key = host::acl_nonce_key(authority, authority, value_label);
     let input_handle = input_handle_for_chain(0x01, 0, 5);
-    let attestation = verified_input_attestation(
-        &key,
-        input_handle,
-        authority.to_bytes(),
-        acl_domain.to_bytes(),
-    );
+    let attestation =
+        verified_input_attestation(&key, input_handle, user.to_bytes(), authority.to_bytes());
 
     let output_acl_record = host::acl_record_address(nonce_key, 0).0;
     // An empty account standing in for the ACL record the input would need but was never granted.
@@ -7203,11 +7198,11 @@ fn mollusk_fhe_eval_verified_input_does_not_leak_to_a_later_instruction() {
         attestation,
         amount_plaintext(2),
         context_id,
-        acl_domain,
+        authority,
         nonce_key,
         value_label,
         output_acl_record,
-        vec![AclSubjectEntry::use_only(authority)],
+        vec![AclSubjectEntry::use_only(user)],
     );
     assert_transaction_success(&context, &[consume_ix]);
 
@@ -7239,19 +7234,16 @@ fn mollusk_fhe_eval_verified_input_rejects_wrong_output_acl_domain_key() {
     let (host_config, host_config_account) =
         host_config_account_with_verifier(authority, evm_address_of(&key));
 
-    let attested_domain = Pubkey::new_unique();
+    let user = Pubkey::new_unique();
     let wrong_domain = Pubkey::new_unique();
     let value_label = label("verified-input-domain");
-    // Output ACL metadata is internally consistent with the WRONG domain, isolating the failure to
-    // the verified-input domain binding rather than a nonce-key / metadata mismatch.
+    // The attested contract is the app authority (`authority`); the output is bound under a WRONG
+    // domain. Output metadata is internally consistent with the wrong domain, isolating the failure
+    // to the verified-input domain binding rather than a nonce-key / metadata mismatch.
     let nonce_key = host::acl_nonce_key(wrong_domain, authority, value_label);
     let input_handle = input_handle_for_chain(0x01, 0, 5);
-    let attestation = verified_input_attestation(
-        &key,
-        input_handle,
-        authority.to_bytes(),
-        attested_domain.to_bytes(),
-    );
+    let attestation =
+        verified_input_attestation(&key, input_handle, user.to_bytes(), authority.to_bytes());
 
     let output_acl_record = host::acl_record_address(nonce_key, 0).0;
     let context = transient_context(
@@ -7273,7 +7265,7 @@ fn mollusk_fhe_eval_verified_input_rejects_wrong_output_acl_domain_key() {
         nonce_key,
         value_label,
         output_acl_record,
-        vec![AclSubjectEntry::use_only(authority)],
+        vec![AclSubjectEntry::use_only(user)],
     );
 
     let result = context.process_instruction(&eval_ix);
@@ -7293,16 +7285,12 @@ fn mollusk_fhe_eval_verified_input_propagates_public_decrypt_to_durable_output()
     let (host_config, host_config_account) =
         host_config_account_with_verifier(authority, evm_address_of(&key));
 
-    let acl_domain = Pubkey::new_unique();
+    let user = Pubkey::new_unique();
     let value_label = label("verified-input-pubdec");
-    let nonce_key = host::acl_nonce_key(acl_domain, authority, value_label);
+    let nonce_key = host::acl_nonce_key(authority, authority, value_label);
     let input_handle = input_handle_for_chain(0x01, 0, 5);
-    let attestation = verified_input_attestation(
-        &key,
-        input_handle,
-        authority.to_bytes(),
-        acl_domain.to_bytes(),
-    );
+    let attestation =
+        verified_input_attestation(&key, input_handle, user.to_bytes(), authority.to_bytes());
 
     let output_acl_record = host::acl_record_address(nonce_key, 0).0;
     let context = transient_context(
@@ -7335,11 +7323,11 @@ fn mollusk_fhe_eval_verified_input_propagates_public_decrypt_to_durable_output()
         attestation,
         scalar,
         context_id,
-        acl_domain,
+        authority,
         nonce_key,
         value_label,
         output_acl_record,
-        vec![AclSubjectEntry::user(authority)],
+        vec![AclSubjectEntry::user(user)],
     );
 
     assert_transaction_success(&context, &[eval_ix]);
@@ -7351,11 +7339,67 @@ fn mollusk_fhe_eval_verified_input_propagates_public_decrypt_to_durable_output()
         output_handle,
         nonce_key,
         0,
-        acl_domain,
+        authority,
         authority,
         value_label,
-        authority,
+        user,
         host::ACL_ROLE_ALL,
         context.mollusk.sysvars.clock.slot,
+    );
+}
+
+/// (f) Replay guard: a copied (public) attestation cannot be consumed by a signer other than the
+/// attested app authority. An attacker who lifts a victim's on-chain attestation and submits their
+/// own `fhe_eval` — claiming the derived output for themselves — is rejected because the output app
+/// account is forced to equal the attested `contract_address`, and the output app account must
+/// itself sign (here the attacker signs as themselves, not as the attested app). This is the
+/// non-replayable binding: only the attested app (signing directly or via CPI) can consume.
+#[test]
+fn mollusk_fhe_eval_verified_input_rejects_consumption_by_non_attested_app() {
+    let program_id = host::id();
+    let attacker = Pubkey::new_unique(); // signs the malicious eval (app_account_authority)
+    let attested_app = Pubkey::new_unique(); // the attested contract — the attacker does not control it
+    let user = Pubkey::new_unique(); // the attested input owner (the victim the proof was made for)
+    let key = k256::ecdsa::SigningKey::from_bytes(&[0x44u8; 32].into()).unwrap();
+    let (host_config, host_config_account) =
+        host_config_account_with_verifier(attacker, evm_address_of(&key));
+
+    let value_label = label("verified-input-replay");
+    // The attacker binds the output domain to the attested app (so the domain pin passes) but owns
+    // the output themselves; the app_account == attested-contract check is what trips.
+    let nonce_key = host::acl_nonce_key(attested_app, attacker, value_label);
+    let input_handle = input_handle_for_chain(0x01, 0, 5);
+    // A VALID attestation for (user, attested_app), as if copied from the victim's instruction data.
+    let attestation =
+        verified_input_attestation(&key, input_handle, user.to_bytes(), attested_app.to_bytes());
+
+    let output_acl_record = host::acl_record_address(nonce_key, 0).0;
+    let context = transient_context(
+        attacker,
+        vec![
+            (host_config, host_config_account),
+            (output_acl_record, system_account(0)),
+        ],
+    );
+
+    // attacker signs as app_account_authority/output_app_account (= `attacker`, != attested_app).
+    let eval_ix = verified_input_add_eval_ix(
+        program_id,
+        attacker,
+        host_config,
+        attestation,
+        amount_plaintext(2),
+        label("verified-input-frame"),
+        attested_app,
+        nonce_key,
+        value_label,
+        output_acl_record,
+        vec![AclSubjectEntry::use_only(user)],
+    );
+
+    let result = context.process_instruction(&eval_ix);
+    assert_instruction_custom_error(
+        &result,
+        host::errors::ZamaHostError::InputBindContractMismatch,
     );
 }
