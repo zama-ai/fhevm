@@ -332,6 +332,14 @@ describe("cli", () => {
     });
   });
 
+  test("gates priority coprocessor before launching tests on a single-coprocessor stack", async () => {
+    await withState(bootstrappedState(), async (env) => {
+      const result = await execCli(["test", "priority-coprocessor"], env);
+      expect(result.code).toBe(1);
+      expect(result.stderr).toContain("priority-coprocessor requires a multi-coprocessor topology");
+    });
+  });
+
   test("drift profile rejects shared networks explicitly", async () => {
     await withState(bootstrappedState(), async (env) => {
       const result = await execCli(["test", "ciphertext-drift", "--network", "sepolia"], env);

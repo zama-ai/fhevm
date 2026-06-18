@@ -29,6 +29,11 @@ import {
 import type { State, TestOptions } from "../types";
 
 const DRIFT_WARNING = '"message":"Drift detected: observed multiple digest variants for handle"';
+// Peer-submission divergence (DRIFT_WARNING) only flags that submissions differ; it never starts a
+// revert. Auto-recovery is driven solely by the consensus-vs-local mismatch below, which is emitted
+// right where on_drift_detected (the revert trigger) runs. Gating the recovery test on this avoids
+// racing ahead of consensus formation and landing on an empty drift_revert_signal.
+const DRIFT_CONSENSUS_WARNING = '"message":"Drift detected: local digest does not match consensus"';
 const DRIFT_HANDLE = /"handle":"0x([0-9a-f]+)"/i;
 const DB_REVERT_CONTAINERS = [
   "host-listener",
@@ -88,6 +93,7 @@ const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[numb
   "paused-gateway-contracts": "Run pause-mode checks with gateway contracts paused.",
   "input-proof": "Run basic user input proof coverage.",
   "input-proof-compute-decrypt": "Run compute-and-decrypt input proof coverage.",
+  "priority-coprocessor": "Run input proof coverage with gateway priority-coprocessor mode enabled.",
   "user-decryption": "Run user decryption coverage.",
   "delegated-user-decryption": "Run delegated user decryption coverage.",
   "public-decryption": "Run async public decryption coverage.",
@@ -244,9 +250,9 @@ const coprocessorGwListeners = async () => {
 };
 
 /** Finds the expected drift warning for a specific injected handle. */
-const findDriftWarning = (output: string, expectedHandleHex: string) => {
+const findDriftWarning = (output: string, expectedHandleHex: string, needle: string = DRIFT_WARNING) => {
   for (const line of output.split(/\r?\n/)) {
-    if (!line.includes(DRIFT_WARNING)) {
+    if (!line.includes(needle)) {
       continue;
     }
     const matchedHandle = line.match(DRIFT_HANDLE)?.[1];
@@ -260,14 +266,14 @@ const findDriftWarning = (output: string, expectedHandleHex: string) => {
 /** Waits until a gateway listener emits the expected drift warning. */
 const waitForDriftWarning = async (
   handleHex: string,
-  options: { since: string; timeoutSeconds: number; pollIntervalSeconds: number },
+  options: { since: string; timeoutSeconds: number; pollIntervalSeconds: number; needle?: string },
 ) => {
   const attempts = Math.max(0, Math.ceil(options.timeoutSeconds / options.pollIntervalSeconds));
   for (let attempt = 0; attempt <= attempts; attempt += 1) {
     const containers = await coprocessorGwListeners();
     for (const container of containers) {
       const logs = await run(["docker", "logs", "--since", options.since, container], { allowFailure: true });
-      const matched = findDriftWarning(logs.stdout + logs.stderr, handleHex);
+      const matched = findDriftWarning(logs.stdout + logs.stderr, handleHex, options.needle);
       if (matched) {
         return { container, handleHex: matched };
       }
@@ -901,6 +907,13 @@ export const test = async (testName: string | undefined, options: TestOptions) =
       ? undefined
       : "multi-chain-isolation requires a multi-chain topology; rerun `fhevm-cli up --scenario multi-chain` first";
 
+  const priorityCoprocessorRequirement = () => {
+    const topology = topologyForState(state);
+    return topology.count > 1
+      ? undefined
+      : "priority-coprocessor requires a multi-coprocessor topology; rerun `fhevm-cli up --scenario two-of-three-multi-chain` first";
+  };
+
   const multiChainIsolationSkipReason = () =>
     state.scenario.hostChains.length > 1 ? undefined : "topology has fewer than 2 host chains";
 
@@ -1091,10 +1104,14 @@ export const test = async (testName: string | undefined, options: TestOptions) =
         });
 
         const injectedHandleHex = await injector;
+        // Wait for the consensus-vs-local mismatch (the warning co-located with on_drift_detected),
+        // not the weaker peer-submission divergence. This ensures the revert has actually been
+        // triggered before we poll drift_revert_signal, instead of racing consensus formation.
         const warning = await waitForDriftWarning(injectedHandleHex, {
           since: logSince,
           timeoutSeconds: driftAlertTimeoutSeconds,
           pollIntervalSeconds: driftAlertPollIntervalSeconds,
+          needle: DRIFT_CONSENSUS_WARNING,
         });
         console.log(
           `[drift-auto-recovery] drift detected in ${warning.container} for handle 0x${injectedHandleHex}`,
@@ -1187,6 +1204,12 @@ export const test = async (testName: string | undefined, options: TestOptions) =
     }
     if (name === "multi-chain-isolation") {
       const precondition = multiChainIsolationRequirement();
+      if (precondition) {
+        throw new PreflightError(precondition);
+      }
+    }
+    if (name === "priority-coprocessor") {
+      const precondition = priorityCoprocessorRequirement();
       if (precondition) {
         throw new PreflightError(precondition);
       }
