@@ -122,7 +122,7 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
         bytes32[] calldata handleList,
         uint128 lzComposeGas,
         bytes calldata options
-    ) external payable returns (MessagingReceipt memory receipt) {
+    ) external payable virtual returns (MessagingReceipt memory receipt) {
         uint256 nHandles = handleList.length;
         if (nHandles > MAX_HANDLES) revert TooManyHandles(nHandles, MAX_HANDLES);
 
@@ -143,7 +143,7 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
 
     /// @dev Per-handle ACL check, extracted to keep `send`'s frame within the 16-slot
     ///      stack limit (without-via-ir builds otherwise trip stack-too-deep).
-    function _checkAllAllowed(bytes32[] calldata handleList) private view {
+    function _checkAllAllowed(bytes32[] calldata handleList) internal view virtual {
         uint256 n = handleList.length;
         for (uint256 i = 0; i < n; i++) {
             if (!ACL_CONTRACT.isAllowed(handleList[i], msg.sender)) {
@@ -169,7 +169,7 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
         bytes32[] calldata handleList,
         uint128 lzComposeGas,
         bytes calldata options
-    ) private returns (MessagingReceipt memory receipt) {
+    ) internal virtual returns (MessagingReceipt memory receipt) {
         bytes memory finalOptions = _resolveOptions(options, handleList.length, lzComposeGas);
         bytes32 srcApp = bytes32(uint256(uint160(msg.sender)));
         bytes memory message = abi.encode(srcApp, dstApp, payload, handleList);
@@ -179,7 +179,7 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
 
     /// @dev Event-emission loop, extracted from `send` for the same stack-pressure
     ///      reason as `_checkAllAllowed`.
-    function _emitBridgeHandle(bytes32[] calldata handleList, uint64 dstChainId, bytes32 guid) private {
+    function _emitBridgeHandle(bytes32[] calldata handleList, uint64 dstChainId, bytes32 guid) internal virtual {
         uint256 n = handleList.length;
         for (uint256 i = 0; i < n; i++) {
             emit BridgeHandle(msg.sender, handleList[i], dstChainId, guid);
@@ -203,7 +203,7 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
         bytes32[] calldata handleList,
         uint128 lzComposeGas,
         bytes calldata options
-    ) external view returns (MessagingFee memory fee) {
+    ) external view virtual returns (MessagingFee memory fee) {
         if (_getHandlesSenderStorage().dstChainIdForEid[dstEid] == 0) revert UnknownDstEid(dstEid);
 
         bytes memory finalOptions = _resolveOptions(options, handleList.length, lzComposeGas);
@@ -217,17 +217,17 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
      *         coprocessor bridge-agnostic: it consumes `dstChainId` from emitted events
      *         and does not need to know about LayerZero endpoint ids.
      */
-    function setDstChainId(uint32 dstEid, uint64 dstChainId) external onlyACLOwner {
+    function setDstChainId(uint32 dstEid, uint64 dstChainId) external virtual onlyACLOwner {
         _setDstChainId(dstEid, dstChainId);
     }
 
-    function _setDstChainId(uint32 dstEid, uint64 dstChainId) internal {
+    function _setDstChainId(uint32 dstEid, uint64 dstChainId) internal virtual {
         _getHandlesSenderStorage().dstChainIdForEid[dstEid] = dstChainId;
         emit DstChainIdSet(dstEid, dstChainId);
     }
 
     /// @notice Returns the destination chain id registered for `dstEid`, or 0 if unset.
-    function getDstChainId(uint32 dstEid) external view returns (uint256) {
+    function getDstChainId(uint32 dstEid) external view virtual returns (uint256) {
         return _getHandlesSenderStorage().dstChainIdForEid[dstEid];
     }
 
@@ -235,7 +235,7 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
         bytes calldata options,
         uint256 nHandles,
         uint128 lzComposeGas
-    ) private pure returns (bytes memory) {
+    ) internal pure virtual returns (bytes memory) {
         if (options.length == 0) {
             uint128 lzReceiveGas = LZ_RECEIVE_BASE_GAS + uint128(nHandles) * LZ_RECEIVE_PER_HANDLE_GAS;
             bytes memory built = OptionsBuilder.newOptions().addExecutorLzReceiveOption(lzReceiveGas, 0);

@@ -126,7 +126,7 @@ abstract contract HandlesReceiver is OAppReceiverUpgradeable, ILayerZeroComposer
 
     /// @dev Reverts if `plaintext` cannot be represented in the bit width of `fheType`.
     ///      Caller is responsible for ensuring `fheType` is in the supported allowlist.
-    function _checkPlaintextFits(uint256 plaintext, FheType fheType) private pure {
+    function _checkPlaintextFits(uint256 plaintext, FheType fheType) internal pure virtual {
         if (fheType == FheType.Bool) {
             if (plaintext > 1) revert PlaintextOutOfRange();
         } else if (fheType == FheType.Uint8) {
@@ -208,7 +208,7 @@ abstract contract HandlesReceiver is OAppReceiverUpgradeable, ILayerZeroComposer
      * @dev Inbound flow: decode message, derive destination handles, emit events,
      *      dispatch compose-to-self with the augmented payload.
      */
-    function _handleInbound(uint32 srcEid, bytes32 guid, bytes calldata message) private {
+    function _handleInbound(uint32 srcEid, bytes32 guid, bytes calldata message) internal virtual {
         // Wire format mirrors HandlesSender._dispatch: srcApp+dstApp as bytes32.
         (bytes32 srcApp, bytes32 dstApp, bytes memory payload, bytes32[] memory srcHandleList) = abi.decode(
             message,
@@ -236,7 +236,7 @@ abstract contract HandlesReceiver is OAppReceiverUpgradeable, ILayerZeroComposer
         bytes32 dstApp,
         bytes32[] memory srcHandleList,
         bytes32 guid
-    ) private returns (bytes32[] memory dstHandleList) {
+    ) internal virtual returns (bytes32[] memory dstHandleList) {
         uint256 n = srcHandleList.length;
         dstHandleList = new bytes32[](n);
         bytes32 prevBlockHash = blockhash(block.number - 1);
