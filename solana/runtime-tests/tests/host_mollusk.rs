@@ -7403,3 +7403,83 @@ fn mollusk_fhe_eval_verified_input_rejects_consumption_by_non_attested_app() {
         host::errors::ZamaHostError::InputBindContractMismatch,
     );
 }
+
+/// (g) Replay guard through a transient session: a verified-input-derived value cannot be parked in
+/// a transient-session capability. The capability does not carry the attested binding, so consuming
+/// it in a later instruction would mint a durable output free of the (user, contract) check — the
+/// exact bypass that would otherwise defeat (f). The attempt to write
+/// `VerifiedInput + Scalar -> TransientSession` is rejected up front.
+#[test]
+fn mollusk_fhe_eval_verified_input_rejects_transient_session_output() {
+    let program_id = host::id();
+    let authority = Pubkey::new_unique(); // signs the eval and opens the session
+    let user = Pubkey::new_unique(); // the attested input owner
+    let key = k256::ecdsa::SigningKey::from_bytes(&[0x44u8; 32].into()).unwrap();
+    let (host_config, host_config_account) =
+        host_config_account_with_verifier(authority, evm_address_of(&key));
+
+    let session_nonce = label("verified-input-session");
+    let (session, _) = host::transient_session_address(authority, session_nonce);
+    let context = transient_context(
+        authority,
+        vec![
+            (host_config, host_config_account),
+            (session, system_account(0)),
+        ],
+    );
+
+    // Open a real session owned by `authority`, as an attacker would before trying to park the input.
+    let create_ix = create_transient_session_ix(
+        program_id,
+        authority,
+        host_config,
+        session,
+        session_nonce,
+        authority,
+        0,
+        1,
+    );
+    context.process_and_validate_instruction(&create_ix, &[Check::success()]);
+
+    let input_handle = input_handle_for_chain(0x01, 0, 5);
+    let attestation =
+        verified_input_attestation(&key, input_handle, user.to_bytes(), authority.to_bytes());
+
+    let mut eval_ix = anchor_ix(
+        program_id,
+        host::accounts::FheEval {
+            payer: authority,
+            compute_subject: authority,
+            app_account_authority: authority,
+            host_config,
+            system_program: system_program::ID,
+            instructions_sysvar: None,
+            event_authority: event_authority(program_id),
+            program: program_id,
+        },
+        host::instruction::FheEval {
+            args: FheEvalArgs {
+                context_id: label("verified-input-frame"),
+                steps: vec![FheEvalStep::Binary {
+                    op: FheBinaryOpCode::Add,
+                    lhs: FheEvalOperand::VerifiedInput { attestation },
+                    rhs: FheEvalOperand::Scalar(amount_plaintext(2)),
+                    output_fhe_type: 5,
+                    output: FheEvalOutput::TransientSession {
+                        session_index: 0,
+                        capability: transient_capability(
+                            authority, program_id, authority, authority, true,
+                        ),
+                    },
+                }],
+            },
+        },
+    );
+    eval_ix.accounts.push(AccountMeta::new(session, false));
+
+    let result = context.process_instruction(&eval_ix);
+    assert_instruction_custom_error(
+        &result,
+        host::errors::ZamaHostError::InputBindTransientSessionUnsupported,
+    );
+}

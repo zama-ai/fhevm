@@ -249,4 +249,9 @@ pub enum ZamaHostError {
     /// The coprocessor-attested user is not among the output ACL subjects.
     #[msg("attested user address is not an output ACL subject")]
     InputBindUserNotSubject,
+    /// A value derived from a verified external input may not be parked in a transient session:
+    /// the session capability does not carry the attested binding, so consuming it later would
+    /// drop the replay guard. Such values must flow to a durable output that binds the attestation.
+    #[msg("verified-input-derived value cannot be written to a transient session")]
+    InputBindTransientSessionUnsupported,
 }

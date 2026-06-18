@@ -291,6 +291,10 @@ impl EvalStepVisitor for AdmissionState<'_, '_> {
                 session_index,
                 capability,
             } => {
+                require!(
+                    verified_input.is_none(),
+                    ZamaHostError::InputBindTransientSessionUnsupported
+                );
                 assert_session_policies_allow_transient_grant(&output_policies, *capability)?;
                 self.admit_transient_session_append(
                     ctx.remaining_accounts,

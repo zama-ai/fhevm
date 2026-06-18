@@ -3492,6 +3492,11 @@
       "code": 6079,
       "name": "InputBindUserNotSubject",
       "msg": "attested user address is not an output ACL subject"
+    },
+    {
+      "code": 6080,
+      "name": "InputBindTransientSessionUnsupported",
+      "msg": "verified-input-derived value cannot be written to a transient session"
     }
   ],
   "types": [

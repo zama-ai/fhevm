@@ -363,6 +363,10 @@ fn accept_eval_output<'info>(
             session_index,
             capability,
         } => {
+            require!(
+                verified_input.is_none(),
+                ZamaHostError::InputBindTransientSessionUnsupported
+            );
             assert_session_policies_allow_transient_grant(&output_policies, *capability)?;
             let session_info = remaining_account(
                 ctx.remaining_accounts,
