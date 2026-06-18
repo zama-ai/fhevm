@@ -2,7 +2,7 @@ import { Interface, Wallet } from 'ethers';
 import { task, types } from 'hardhat/config';
 import { HardhatRuntimeEnvironment, TaskArguments } from 'hardhat/types';
 
-import { buildProtocolConfigContextArgs } from './taskDeploy';
+import { buildProtocolConfigContextArgs, buildProtocolConfigMultichainReinitializeArgs } from './taskDeploy';
 import { getRequiredEnvVar, loadHostAddresses } from './utils/loadVariables';
 
 const REINITIALIZE_FUNCTION_PREFIX = 'reinitializeV'; // Prefix for reinitialize functions
@@ -14,6 +14,8 @@ type AbiFunction = {
   name?: string;
   inputs?: { type?: string }[];
 };
+
+type ExpectedArtifactNames = string | { current: string[]; new: string[] };
 
 function getImplementationDirectory(input: string): string {
   const colonIndex = input.lastIndexOf('/');
@@ -98,7 +100,7 @@ async function upgradeCurrentToNew(
 // embeds the wrong addresses.
 async function deployImplementationForPreparedUpgrade(
   proxyAddress: string,
-  expectedArtifactName: string,
+  expectedArtifactName: ExpectedArtifactNames,
   currentImplementation: string,
   newImplementation: string,
   verifyContract: boolean,
@@ -170,22 +172,29 @@ async function compileImplementations(
 }
 
 async function checkImplementationArtifacts(
-  expectedArtifactName: string,
+  expectedArtifactName: ExpectedArtifactNames,
   currentImplementation: string,
   newImplementation: string,
   hre: HardhatRuntimeEnvironment,
 ): Promise<void> {
+  const expectedCurrentNames =
+    typeof expectedArtifactName === 'string' ? [expectedArtifactName] : expectedArtifactName.current;
+  const expectedNewNames = typeof expectedArtifactName === 'string' ? [expectedArtifactName] : expectedArtifactName.new;
   const currentImplementationArtifact = await hre.artifacts.readArtifact(currentImplementation);
-  if (currentImplementationArtifact.contractName !== expectedArtifactName) {
+  if (!expectedCurrentNames.includes(currentImplementationArtifact.contractName)) {
     throw new Error(
-      `The current implementation artifact does not match the expected contract name "${expectedArtifactName}". Found: ${currentImplementationArtifact.contractName}`,
+      `The current implementation artifact does not match the expected contract names "${expectedCurrentNames.join(
+        ', ',
+      )}". Found: ${currentImplementationArtifact.contractName}`,
     );
   }
 
   const newImplementationArtifact = await hre.artifacts.readArtifact(newImplementation);
-  if (newImplementationArtifact.contractName !== expectedArtifactName) {
+  if (!expectedNewNames.includes(newImplementationArtifact.contractName)) {
     throw new Error(
-      `The new implementation artifact does not match the expected contract name "${expectedArtifactName}". Found: ${newImplementationArtifact.contractName}`,
+      `The new implementation artifact does not match the expected contract names "${expectedNewNames.join(
+        ', ',
+      )}". Found: ${newImplementationArtifact.contractName}`,
     );
   }
 
@@ -201,7 +210,7 @@ async function checkImplementationArtifacts(
 
 // Helper to perform a standard upgrade: compile, check artifacts, load address, upgrade
 async function upgradeContract(
-  contractName: string,
+  contractName: ExpectedArtifactNames,
   addressEnvVar: string,
   taskArgs: TaskArguments,
   hre: HardhatRuntimeEnvironment,
@@ -226,7 +235,7 @@ async function upgradeContract(
 }
 
 async function prepareUpgradeContract(
-  contractName: string,
+  contractName: ExpectedArtifactNames,
   addressEnvVar: string,
   taskArgs: TaskArguments,
   hre: HardhatRuntimeEnvironment,
@@ -416,14 +425,20 @@ task('task:upgradeProtocolConfig')
     true,
     types.boolean,
   )
+  .addOptionalParam(
+    'withKmsGeneration',
+    'Whether this is a canonical-host upgrade. true expects ProtocolConfig reinitializeV2 args, false expects ProtocolConfigMultichain reinitializeV2 args.',
+    true,
+    types.boolean,
+  )
   .setAction(async function (taskArgs: TaskArguments, hre) {
-    await upgradeContract(
-      'ProtocolConfig',
-      'PROTOCOL_CONFIG_CONTRACT_ADDRESS',
-      taskArgs,
-      hre,
-      buildProtocolConfigContextArgs(),
-    );
+    const expectedArtifactNames = taskArgs.withKmsGeneration
+      ? 'ProtocolConfig'
+      : { current: ['ProtocolConfig', 'ProtocolConfigMultichain'], new: ['ProtocolConfigMultichain'] };
+    const reinitializeArgs = taskArgs.withKmsGeneration
+      ? buildProtocolConfigContextArgs()
+      : buildProtocolConfigMultichainReinitializeArgs();
+    await upgradeContract(expectedArtifactNames, 'PROTOCOL_CONFIG_CONTRACT_ADDRESS', taskArgs, hre, reinitializeArgs);
   });
 
 task('task:prepareUpgradeProtocolConfig')
@@ -447,13 +462,25 @@ task('task:prepareUpgradeProtocolConfig')
     true,
     types.boolean,
   )
+  .addOptionalParam(
+    'withKmsGeneration',
+    'Whether this is a canonical-host prepared upgrade. true expects ProtocolConfig reinitializeV2 args, false expects ProtocolConfigMultichain reinitializeV2 args.',
+    true,
+    types.boolean,
+  )
   .setAction(async function (taskArgs: TaskArguments, hre) {
+    const expectedArtifactNames = taskArgs.withKmsGeneration
+      ? 'ProtocolConfig'
+      : { current: ['ProtocolConfig', 'ProtocolConfigMultichain'], new: ['ProtocolConfigMultichain'] };
+    const reinitializeArgs = taskArgs.withKmsGeneration
+      ? buildProtocolConfigContextArgs()
+      : buildProtocolConfigMultichainReinitializeArgs();
     await prepareUpgradeContract(
-      'ProtocolConfig',
+      expectedArtifactNames,
       'PROTOCOL_CONFIG_CONTRACT_ADDRESS',
       taskArgs,
       hre,
-      buildProtocolConfigContextArgs(),
+      reinitializeArgs,
     );
   });
 

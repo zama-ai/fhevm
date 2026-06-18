@@ -6,7 +6,7 @@ import {UUPSUpgradeableEmptyProxy} from "./shared/UUPSUpgradeableEmptyProxy.sol"
 import {EIP712UpgradeableCrossChain} from "./shared/EIP712UpgradeableCrossChain.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {ACLOwnable} from "./shared/ACLOwnable.sol";
-import {IProtocolConfig} from "./interfaces/IProtocolConfig.sol";
+import {IProtocolConfigCommon} from "./interfaces/IProtocolConfigCommon.sol";
 import {EXTRA_DATA_V1, EXTRA_DATA_V2} from "./shared/Constants.sol";
 import {protocolConfigAdd} from "../addresses/FHEVMHostAddresses.sol";
 
@@ -97,7 +97,7 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, 
     uint64 private constant REINITIALIZER_VERSION = 5;
 
     /// @notice Canonical ProtocolConfig used for context reads.
-    IProtocolConfig private constant PROTOCOL_CONFIG = IProtocolConfig(protocolConfigAdd);
+    IProtocolConfigCommon private constant PROTOCOL_CONFIG = IProtocolConfigCommon(protocolConfigAdd);
 
     /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.KMSVerifier")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant KMS_VERIFIER_STORAGE_LOCATION =

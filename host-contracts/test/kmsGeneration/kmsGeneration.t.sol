@@ -7,6 +7,7 @@ import {KMSGeneration} from "@fhevm-host-contracts/contracts/KMSGeneration.sol";
 import {IKMSGeneration} from "@fhevm-host-contracts/contracts/interfaces/IKMSGeneration.sol";
 import {ProtocolConfig} from "@fhevm-host-contracts/contracts/ProtocolConfig.sol";
 import {IProtocolConfig} from "@fhevm-host-contracts/contracts/interfaces/IProtocolConfig.sol";
+import {IProtocolConfigCommon} from "@fhevm-host-contracts/contracts/interfaces/IProtocolConfigCommon.sol";
 import {KmsNode, KmsNodeParams, PcrValues} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
 import {EmptyUUPSProxy} from "@fhevm-host-contracts/contracts/emptyProxy/EmptyUUPSProxy.sol";
 import {ACLOwnable} from "@fhevm-host-contracts/contracts/shared/ACLOwnable.sol";
@@ -87,7 +88,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
 
     function _defineNewKmsContextAndEpoch(
         KmsNodeParams[] memory nodes,
-        IProtocolConfig.KmsThresholds memory thresholds
+        IProtocolConfigCommon.KmsThresholds memory thresholds
     ) internal {
         PcrValues[] memory pcrValues = new PcrValues[](0);
         protocolConfig.defineNewKmsContextAndEpoch(nodes, thresholds, "", pcrValues);
@@ -348,7 +349,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
     /// @dev Define a new KMS context with 4 nodes and kmsGen threshold 3.
     function _switchToMultiSignerContext() internal {
         KmsNodeParams[] memory nodes = _makeKmsNodeParams(4);
-        IProtocolConfig.KmsThresholds memory thresholds = IProtocolConfig.KmsThresholds({
+        IProtocolConfigCommon.KmsThresholds memory thresholds = IProtocolConfigCommon.KmsThresholds({
             publicDecryption: 3,
             userDecryption: 3,
             kmsGen: 3,

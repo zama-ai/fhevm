@@ -169,7 +169,7 @@ describe('Migration prepare tasks', function () {
       patchHostEnv('PROTOCOL_CONFIG_CONTRACT_ADDRESS', protocolConfigProxyAddress);
 
       await expect(run('task:assertProtocolConfigReady')).to.be.rejectedWith(
-        `Cannot deploy KMSVerifier: Contract at ${protocolConfigProxyAddress} does not expose getVersion(); it is not a ProtocolConfig proxy.`,
+        `Cannot deploy KMSVerifier: Contract at ${protocolConfigProxyAddress} does not expose getVersion(); expected one of: ProtocolConfig v…, ProtocolConfigMultichain v….`,
       );
     });
 
@@ -193,10 +193,36 @@ describe('Migration prepare tasks', function () {
       const kmsVerifierImplBefore = await upgrades.erc1967.getImplementationAddress(kmsVerifierProxyAddress);
 
       await expect(run('task:deployKMSVerifier')).to.be.rejectedWith(
-        `Cannot deploy KMSVerifier: Contract at ${protocolConfigProxyAddress} does not expose getVersion(); it is not a ProtocolConfig proxy.`,
+        `Cannot deploy KMSVerifier: Contract at ${protocolConfigProxyAddress} does not expose getVersion(); expected one of: ProtocolConfig v…, ProtocolConfigMultichain v….`,
       );
 
       expect(await upgrades.erc1967.getImplementationAddress(kmsVerifierProxyAddress)).to.equal(kmsVerifierImplBefore);
+    });
+
+    it('passes the standalone readiness check when ProtocolConfigMultichain is initialized', async function () {
+      const protocolConfigProxyAddress = await deployEmptyUUPSProxy(deployer);
+
+      patchHostEnv('PROTOCOL_CONFIG_CONTRACT_ADDRESS', protocolConfigProxyAddress);
+
+      const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
+      const newImplementation = await ethers.getContractFactory('ProtocolConfigMultichain', deployer);
+      const proxy = await upgrades.forceImport(protocolConfigProxyAddress, currentImplementation);
+      const protocolConfig = await upgrades.upgradeProxy(proxy, newImplementation, {
+        call: {
+          fn: 'initializeFromEmptyProxy',
+          args: [
+            KMS_CONTEXT_COUNTER_BASE + BigInt(7),
+            buildProtocolConfigNodes(),
+            buildProtocolConfigThresholds(),
+            '',
+            [],
+            [1, 12345, readHostAddress('PROTOCOL_CONFIG_CONTRACT_ADDRESS')],
+          ],
+        },
+      });
+      await protocolConfig.waitForDeployment();
+
+      await run('task:assertProtocolConfigReady');
     });
 
     it('prepares KMSVerifier upgrade calldata without mutating the proxy implementation', async function () {

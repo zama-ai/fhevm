@@ -2,6 +2,9 @@ import { task, types } from 'hardhat/config';
 
 import { getRequiredEnvVar, loadHostAddresses } from './utils/loadVariables';
 
+const PROTOCOL_CONFIG_CONTRACT = 'contracts/ProtocolConfig.sol:ProtocolConfig';
+const PROTOCOL_CONFIG_MULTICHAIN_CONTRACT = 'contracts/ProtocolConfigMultichain.sol:ProtocolConfigMultichain';
+
 task('task:verifyACL')
   .addOptionalParam(
     'useInternalProxyAddress',
@@ -142,7 +145,13 @@ task('task:verifyProtocolConfig')
     false,
     types.boolean,
   )
-  .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
+  .addOptionalParam(
+    'contract',
+    'Fully qualified implementation contract to verify, eg contracts/ProtocolConfig.sol:ProtocolConfig or contracts/ProtocolConfigMultichain.sol:ProtocolConfigMultichain',
+    PROTOCOL_CONFIG_CONTRACT,
+    types.string,
+  )
+  .setAction(async function ({ useInternalProxyAddress, contract }, { upgrades, run }) {
     if (useInternalProxyAddress) {
       loadHostAddresses();
     }
@@ -150,6 +159,7 @@ task('task:verifyProtocolConfig')
     const implementationProtocolConfigAddress = await upgrades.erc1967.getImplementationAddress(proxyAddress);
     await run('verify:verify', {
       address: implementationProtocolConfigAddress,
+      contract,
       constructorArguments: [],
     });
     await run('verify:verify', {
@@ -188,7 +198,22 @@ task('task:verifyAllHostContracts')
     false,
     types.boolean,
   )
-  .setAction(async function ({ useInternalProxyAddress }, hre) {
+  .addOptionalParam(
+    'withKmsGeneration',
+    'Whether this host deployment includes canonical-host-only KMSGeneration.',
+    true,
+    types.boolean,
+  )
+  .addOptionalParam(
+    'protocolConfigContract',
+    'Fully qualified ProtocolConfig implementation contract to verify.',
+    '',
+    types.string,
+  )
+  .setAction(async function ({ useInternalProxyAddress, withKmsGeneration, protocolConfigContract }, hre) {
+    const selectedProtocolConfigContract =
+      protocolConfigContract || (withKmsGeneration ? PROTOCOL_CONFIG_CONTRACT : PROTOCOL_CONFIG_MULTICHAIN_CONTRACT);
+
     console.log('Verify ACL contract:');
     try {
       // to not panic if Etherscan throws an error due to already verified implementation
@@ -240,17 +265,22 @@ task('task:verifyAllHostContracts')
     try {
       // to not panic if Etherscan throws an error due to already verified implementation
       console.log('Verify ProtocolConfig contract:');
-      await hre.run('task:verifyProtocolConfig', { useInternalProxyAddress });
+      await hre.run('task:verifyProtocolConfig', {
+        useInternalProxyAddress,
+        contract: selectedProtocolConfigContract,
+      });
     } catch (error) {
       console.error('An error occurred:', error);
     }
 
-    try {
-      // to not panic if Etherscan throws an error due to already verified implementation
-      console.log('Verify KMSGeneration contract:');
-      await hre.run('task:verifyKMSGeneration', { useInternalProxyAddress });
-    } catch (error) {
-      console.error('An error occurred:', error);
+    if (withKmsGeneration) {
+      try {
+        // to not panic if Etherscan throws an error due to already verified implementation
+        console.log('Verify KMSGeneration contract:');
+        await hre.run('task:verifyKMSGeneration', { useInternalProxyAddress });
+      } catch (error) {
+        console.error('An error occurred:', error);
+      }
     }
 
     console.log('Contract verification done!');
