@@ -21,6 +21,9 @@ queue_rules:
     merge_method: squash
     update_method: rebase
     merge_conditions:
+      # Fail fast: this job throws on a failed docker build, so the batch is
+      # dequeued immediately instead of waiting on the never-emitted e2e check.
+      # `or check-skipped` keeps non-orchestrated contributor PRs (job skipped) green.
       - or:
         - check-success = create-e2e-tests-input
         - check-skipped = create-e2e-tests-input
