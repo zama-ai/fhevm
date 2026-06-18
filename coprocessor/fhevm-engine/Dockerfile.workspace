@@ -79,6 +79,7 @@ COPY coprocessor/proto ./coprocessor/proto
 COPY gateway-contracts/rust_bindings ./gateway-contracts/rust_bindings
 COPY gateway-contracts/contracts ./gateway-contracts/contracts
 COPY host-contracts/contracts ./host-contracts/contracts
+COPY shared/ciphertext-attestation ./shared/ciphertext-attestation
 
 WORKDIR /app/coprocessor/fhevm-engine
 

@@ -9,6 +9,7 @@ pub mod metrics;
 mod tests;
 
 use std::{
+    str::FromStr,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc,
@@ -16,6 +17,11 @@ use std::{
     time::Duration,
 };
 
+use alloy::signers::{
+    aws::{aws_sdk_kms, AwsSigner},
+    local::PrivateKeySigner,
+};
+use anyhow::Context;
 use aws_config::{retry::RetryConfig, timeout::TimeoutConfig, BehaviorVersion};
 use aws_sdk_s3::{config::Builder, Client};
 use fhevm_engine_common::{
@@ -25,7 +31,7 @@ use fhevm_engine_common::{
     healthz_server::{self},
     metrics_server,
     pg_pool::{PostgresPoolManager, ServiceError},
-    types::FhevmError,
+    types::{CoproSigner, FhevmError, SignerType},
     utils::{to_hex, DatabaseURL},
 };
 use sqlx::{Postgres, Transaction};
@@ -48,6 +54,9 @@ use crate::{
 
 pub const UPLOAD_QUEUE_SIZE: usize = 20;
 pub const SAFE_SER_LIMIT: u64 = 1024 * 1024 * 66;
+pub(crate) const S3_FORMAT_VERSION_LEGACY: i16 = 0;
+pub(crate) const S3_FORMAT_VERSION_V1: i16 = 1;
+pub(crate) const CURRENT_S3_FORMAT_VERSION: i16 = S3_FORMAT_VERSION_V1;
 pub type InternalEvents = Option<tokio::sync::mpsc::Sender<&'static str>>;
 
 #[cfg(feature = "gpu")]
@@ -93,6 +102,7 @@ pub struct S3Config {
     pub bucket_ct64: String,
     pub max_concurrent_uploads: u32,
     pub retry_policy: S3RetryPolicy,
+    pub verify_sha256_checksum: bool,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -121,6 +131,8 @@ pub struct Config {
     pub enable_compression: bool,
     pub schedule_policy: SchedulePolicy,
     pub pg_auto_explain_with_min_duration: Option<Duration>,
+    pub signer_type: SignerType,
+    pub private_key: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -179,10 +191,19 @@ impl From<Ciphertext128Format> for i16 {
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Default)]
 pub struct BigCiphertext {
     format: Ciphertext128Format,
     bytes: Vec<u8>,
+}
+
+impl std::fmt::Debug for BigCiphertext {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BigCiphertext")
+            .field("format", &self.format)
+            .field("bytes_len", &self.bytes.len())
+            .finish()
+    }
 }
 
 impl BigCiphertext {
@@ -236,8 +257,34 @@ pub struct HandleItem {
     /// The computed 128-bit ciphertext
     pub(crate) ct128: Arc<BigCiphertext>,
 
+    pub(crate) ct64_digest: Option<Vec<u8>>,
+    pub(crate) ct128_digest: Option<Vec<u8>>,
+    pub(crate) s3_format_version: Option<i16>,
+
     pub span: tracing::Span,
     pub transaction_id: Option<Vec<u8>>,
+}
+
+impl std::fmt::Debug for HandleItem {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let handle = to_hex(&self.handle);
+        let key_id_gw = to_hex(&self.key_id_gw);
+        let ct64_digest = self.ct64_digest.as_deref().map(to_hex);
+        let ct128_digest = self.ct128_digest.as_deref().map(to_hex);
+        let transaction_id = self.transaction_id.as_deref().map(to_hex);
+
+        f.debug_struct("HandleItem")
+            .field("host_chain_id", &self.host_chain_id.as_i64())
+            .field("key_id_gw", &key_id_gw)
+            .field("handle", &handle)
+            .field("ct64_compressed_len", &self.ct64_compressed.len())
+            .field("ct128", &self.ct128) // only superficial debug print
+            .field("ct64_digest", &ct64_digest)
+            .field("ct128_digest", &ct128_digest)
+            .field("s3_format_version", &self.s3_format_version)
+            .field("transaction_id", &transaction_id)
+            .finish()
+    }
 }
 
 impl HandleItem {
@@ -249,8 +296,6 @@ impl HandleItem {
         &self,
         db_txn: &mut Transaction<'_, Postgres>,
     ) -> Result<(), ExecutionError> {
-        let ct128_format = self.ct128.format();
-
         if self.ct128.is_empty() {
             sqlx::query(
                 "INSERT INTO ciphertext_digest (host_chain_id, key_id_gw, handle, transaction_id)
@@ -262,14 +307,14 @@ impl HandleItem {
             .bind(&self.transaction_id)
             .execute(db_txn.as_mut())
             .await?;
-        } else if ct128_format == Ciphertext128Format::Unknown {
+        } else if self.ct128.format() == Ciphertext128Format::Unknown {
             return Err(ExecutionError::InvalidCiphertext128Format(format!(
                 "non-empty ct128 has unknown format, host_chain_id: {}, handle: {}",
                 self.host_chain_id.as_i64(),
                 to_hex(&self.handle),
             )));
         } else {
-            let ct128_format: i16 = ct128_format.into();
+            let ct128_format: i16 = self.ct128.format().into();
             sqlx::query(
                 "INSERT INTO ciphertext_digest (
                     host_chain_id, key_id_gw, handle, transaction_id, ciphertext128_format
@@ -291,53 +336,46 @@ impl HandleItem {
         Ok(())
     }
 
-    pub(crate) async fn update_ct128_uploaded(
+    pub(crate) async fn mark_ciphertexts_uploaded(
         &self,
         trx: &mut Transaction<'_, Postgres>,
-        digest: Vec<u8>,
+        ct64_digest: Vec<u8>,
+        ct128_digest: Vec<u8>,
+        s3_format_version: i16,
     ) -> Result<(), ExecutionError> {
         let format: i16 = self.ct128.format().into();
 
-        sqlx::query!(
+        let result = sqlx::query!(
             "UPDATE ciphertext_digest
-            SET ciphertext128 = $1, ciphertext128_format = $2
-            WHERE handle = $3",
-            digest,
+            SET ciphertext = $1,
+                ciphertext128 = $2,
+                ciphertext128_format = $3,
+                s3_format_version = $4
+            WHERE handle = $5",
+            &ct64_digest,
+            &ct128_digest,
             format,
-            self.handle,
+            s3_format_version,
+            &self.handle,
         )
         .execute(trx.as_mut())
         .await?;
 
-        info!(
-            "Mark ct128 as uploaded, handle: {}, digest: {}, format: {:?}",
-            to_hex(&self.handle),
-            to_hex(&digest),
-            format,
-        );
-
-        Ok(())
-    }
-
-    pub(crate) async fn update_ct64_uploaded(
-        &self,
-        trx: &mut Transaction<'_, Postgres>,
-        digest: Vec<u8>,
-    ) -> Result<(), ExecutionError> {
-        sqlx::query!(
-            "UPDATE ciphertext_digest
-             SET ciphertext = $1
-             WHERE handle = $2",
-            digest,
-            self.handle
-        )
-        .execute(trx.as_mut())
-        .await?;
+        if result.rows_affected() != 1 {
+            return Err(ExecutionError::InternalError(format!(
+                "expected to mark exactly one ciphertext_digest row as uploaded for handle {}, updated {}",
+                to_hex(&self.handle),
+                result.rows_affected(),
+            )));
+        }
 
         info!(
-            "Mark ct64 as uploaded, handle: {}, digest: {}",
+            "Mark ciphertexts as uploaded, handle: {}, ct64_digest: {}, ct128_digest: {}, format: {:?}, s3_format_version: {}",
             to_hex(&self.handle),
-            to_hex(&digest)
+            to_hex(&ct64_digest),
+            to_hex(&ct128_digest),
+            self.ct128.format(),
+            s3_format_version,
         );
 
         Ok(())
@@ -401,6 +439,9 @@ pub enum ExecutionError {
 
     #[error("Internal send error: {0}")]
     InternalSendError(String),
+
+    #[error("Internal error: {0}")]
+    InternalError(String),
 }
 
 #[derive(Clone)]
@@ -431,6 +472,7 @@ pub async fn run_uploader_loop(
     tx: Sender<UploadJob>,
     client: Arc<Client>,
     is_ready: Arc<AtomicBool>,
+    signer: CoproSigner,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let (is_ready_res, _) = check_is_ready(&client, conf).await;
     is_ready.store(is_ready_res, Ordering::Release);
@@ -444,7 +486,8 @@ pub async fn run_uploader_loop(
     )
     .await?;
 
-    let mut handle_uploader = spawn_uploader(pool_mngr, conf.clone(), rx, client, is_ready).await?;
+    let mut handle_uploader =
+        spawn_uploader(pool_mngr, conf.clone(), rx, client, is_ready, signer).await?;
 
     // Return when either task ends; abort the other and propagate its result.
     let res = tokio::select! {
@@ -543,6 +586,25 @@ pub async fn run_all(
         );
         spawn_gauge_update_routine(Duration::from_secs(interval_secs.into()), pg_mngr.pool());
     }
+    let signer: CoproSigner = match conf.signer_type {
+        SignerType::PrivateKey => {
+            let Some(private_key) = conf.private_key.clone() else {
+                error!("Private key is required for PrivateKey signer");
+                return Err(
+                    anyhow::anyhow!("Private key is required for PrivateKey signer").into(),
+                );
+            };
+            let signer = PrivateKeySigner::from_str(private_key.trim())?;
+            Arc::new(signer)
+        }
+        SignerType::AwsKms => {
+            let key_id = std::env::var("AWS_KEY_ID")
+                .context("AWS_KEY_ID environment variable is required for AwsKms signer")?;
+            let aws_conf = aws_config::load_defaults(BehaviorVersion::latest()).await;
+            let aws_kms_client = aws_sdk_kms::Client::new(&aws_conf);
+            Arc::new(AwsSigner::new(aws_kms_client, key_id, None).await?)
+        }
+    };
 
     // Build the service.
     // create() is a pure struct constructor — no DB or
@@ -587,8 +649,9 @@ pub async fn run_all(
     .await?;
 
     // Keep the uploader's handle so its failure exits the process too.
-    let uploader =
-        spawn(async move { run_uploader_loop(&pg_mngr, &conf, jobs_rx, tx, s3, is_ready).await });
+    let uploader = spawn(async move {
+        run_uploader_loop(&pg_mngr, &conf, jobs_rx, tx, s3, is_ready, signer).await
+    });
 
     // Exit if either the service loop or the uploader fails.
     let result: Result<(), Box<dyn std::error::Error + Send + Sync>> = tokio::select! {

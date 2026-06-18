@@ -32,6 +32,13 @@ pub mod sign;
 /// over similar-looking inputs.
 pub const DOMAIN_TAG: [u8; 8] = *b"FHEVMCTA";
 
+/// S3 user-defined metadata key that carries the JSON-serialized
+/// [`CiphertextAttestation`] on every ciphertext object.
+///
+/// AWS SDK metadata APIs expect this key without the `x-amz-meta-` HTTP
+/// header prefix.
+pub const S3_METADATA_ATTESTATION_KEY: &str = "ct-attestation";
+
 /// S3 user-defined metadata header that carries the JSON-serialized
 /// [`CiphertextAttestation`] on every ciphertext object.
 pub const S3_METADATA_ATTESTATION_HEADER: &str = "x-amz-meta-ct-attestation";
