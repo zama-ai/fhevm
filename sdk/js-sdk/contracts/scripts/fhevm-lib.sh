@@ -80,7 +80,10 @@ assert_fhetest_address() {
         exit 1
     fi
 
-    local key expected_addr
+    local key expected_addr expected_addr_lc deployed_addr_lc
+    # Lower-case via `tr` rather than the bash 4 `${var,,}` expansion, which is
+    # unsupported by the bash 3.2 shipped on macOS ("bad substitution").
+    deployed_addr_lc="$(printf '%s' "$deployed_addr" | tr '[:upper:]' '[:lower:]')"
     for key in "${keys[@]}"; do
         expected_addr="$(_extract_fhetest_address_from_json "$chain_defaults_file" "$key")"
         if [[ -z "$expected_addr" || "$expected_addr" == "null" ]]; then
@@ -88,7 +91,8 @@ assert_fhetest_address() {
             exit 1
         fi
 
-        if [[ "${expected_addr,,}" != "${deployed_addr,,}" ]]; then
+        expected_addr_lc="$(printf '%s' "$expected_addr" | tr '[:upper:]' '[:lower:]')"
+        if [[ "$expected_addr_lc" != "$deployed_addr_lc" ]]; then
             boxed_error "fheTestAddress for '${key}' in $chain_defaults_file does not match deployed FHETest.
   expected from JSON: $expected_addr
   deployed:           $deployed_addr"
