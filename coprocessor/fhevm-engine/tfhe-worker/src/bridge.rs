@@ -26,7 +26,7 @@ use std::time::Duration;
 use fhevm_engine_common::database::{
     connect_pool_with_options, resolve_database_url_from_option, EVENT_CIPHERTEXTS_UPLOADED,
 };
-use prometheus::{register_int_counter, IntCounter};
+use prometheus::{register_int_counter, register_int_gauge, IntCounter, IntGauge};
 use sqlx::postgres::PgPoolOptions;
 use sqlx::{PgPool, Postgres, Transaction};
 use tokio_util::sync::CancellationToken;
@@ -44,6 +44,18 @@ static BRIDGE_ERROR_COUNTER: LazyLock<IntCounter> = LazyLock::new(|| {
     register_int_counter!(
         "coprocessor_tfhe_worker_bridge_errors_counter",
         "Number of failed association cycles in the confidential bridge worker"
+    )
+    .unwrap()
+});
+
+// Grace period before an unassociated handle is counted, so normal in-flight
+// handles (briefly unassociated while their ciphertext materializes) are excluded.
+const IN_FLIGHT_GRACE_SECS: i32 = 300;
+
+static UNASSOCIATED_HANDLES: LazyLock<IntGauge> = LazyLock::new(|| {
+    register_int_gauge!(
+        "coprocessor_bridge_unassociated_handles",
+        "Unassociated bridged handles past the in-flight grace period"
     )
     .unwrap()
 });
@@ -82,6 +94,12 @@ pub async fn run_confidential_bridge(
                 error!(target: "bridge", error = %err, "Bridge association cycle failed, retrying")
             }
         }
+        match count_unassociated_handles(&pool).await {
+            Ok(count) => UNASSOCIATED_HANDLES.set(count),
+            Err(err) => {
+                error!(target: "bridge", error = %err, "Failed to refresh unassociated-handles gauge")
+            }
+        }
         tokio::select! {
             _ = tokio::time::sleep(poll_interval) => {}
             _ = cancel_token.cancelled() => break,
@@ -109,6 +127,20 @@ pub(crate) async fn drain_associations(
         }
     }
     Ok(total)
+}
+
+async fn count_unassociated_handles(pool: &PgPool) -> Result<i64, sqlx::Error> {
+    sqlx::query_scalar!(
+        r#"
+        SELECT count(*) AS "count!"
+        FROM handle_bridged_events
+        WHERE NOT is_associated
+          AND created_at <= now() - make_interval(secs => $1::int)
+        "#,
+        IN_FLIGHT_GRACE_SECS,
+    )
+    .fetch_one(pool)
+    .await
 }
 
 async fn associate_batch(pool: &PgPool, batch_size: i64) -> Result<u64, sqlx::Error> {

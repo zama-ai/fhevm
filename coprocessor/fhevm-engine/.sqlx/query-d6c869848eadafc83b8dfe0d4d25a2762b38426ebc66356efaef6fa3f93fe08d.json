@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT count(*) AS \"count!\"\n        FROM handle_bridged_events\n        WHERE NOT is_associated\n          AND created_at <= now() - make_interval(secs => $1::int)\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "d6c869848eadafc83b8dfe0d4d25a2762b38426ebc66356efaef6fa3f93fe08d"
+}
