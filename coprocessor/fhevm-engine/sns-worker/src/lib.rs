@@ -25,8 +25,10 @@ use fhevm_engine_common::{
     healthz_server::{self},
     metrics_server,
     pg_pool::{PostgresPoolManager, ServiceError},
+    tfhe_ops::current_ciphertext_version,
     types::FhevmError,
     utils::{to_hex, DatabaseURL},
+    versioning::{run_stack_version_listener, StackMode},
 };
 use futures::join;
 use sqlx::{postgres::PgListener, Pool, Postgres, Transaction};
@@ -268,12 +270,14 @@ impl HandleItem {
         db_txn: &mut Transaction<'_, Postgres>,
     ) -> Result<(), ExecutionError> {
         sqlx::query!(
-            "INSERT INTO ciphertext_digest (host_chain_id, key_id_gw, handle, transaction_id)
-            VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
+            "INSERT INTO ciphertext_digest
+                (host_chain_id, key_id_gw, handle, transaction_id, ciphertext_version)
+            VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING",
             self.host_chain_id.as_i64(),
             &self.key_id_gw,
             self.handle,
             self.transaction_id,
+            current_ciphertext_version(),
         )
         .execute(db_txn.as_mut())
         .await?;
@@ -411,6 +415,7 @@ impl UploadJob {
 }
 
 /// Runs the uploader loop
+#[allow(clippy::too_many_arguments)]
 pub async fn run_uploader_loop(
     pool_mngr: &PostgresPoolManager,
     conf: &Config,
@@ -418,7 +423,23 @@ pub async fn run_uploader_loop(
     tx: Sender<UploadJob>,
     client: Arc<Client>,
     is_ready: Arc<AtomicBool>,
+    mode: Arc<StackMode>,
+    token: CancellationToken,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    // Park until uploads are enabled. A blue (live) worker has `gcs_mode == false`
+    // and proceeds immediately; a green worker parks for the whole dry-run
+    // window and only begins uploading after cutover flips the mode (on
+    // `event_stack_version_upgraded`), at which point it drains the accumulated
+    // `ciphertext_digest` backlog via the resubmit loop.
+    while mode.gcs_mode() {
+        if token.is_cancelled() {
+            info!("Uploader cancelled before activation");
+            return Ok(());
+        }
+        tokio::time::sleep(Duration::from_secs(2)).await;
+    }
+    info!("uploads enabled — starting S3 uploader and resubmit loops");
+
     let (is_ready_res, _) = check_is_ready(&client, conf).await;
     is_ready.store(is_ready_res, Ordering::Release);
 
@@ -516,6 +537,25 @@ pub async fn run_all(
 
     let pg_mngr = pool_mngr.clone();
 
+    // Shared blue-green stack mode, seeded from the startup-resolved gcs_mode.
+    // The version-upgrade listener flips it out of GCS mode when the cutover
+    // commits (on `event_stack_version_upgraded`); that transition is what
+    // re-enables S3 uploads + GC for the now-live green worker. A blue (live)
+    // worker starts with `gcs_mode == false`, so uploads run immediately.
+    let stack_mode = StackMode::new(conf.gcs_mode);
+    {
+        let listener_pool = pool_mngr.pool();
+        let listener_mode = stack_mode.clone();
+        let listener_token = token.child_token();
+        spawn(async move {
+            if let Err(err) =
+                run_stack_version_listener(listener_pool, listener_mode, listener_token).await
+            {
+                error!(error = %err, "stack-version listener exited with error");
+            }
+        });
+    }
+
     // GCS gating: spawn the activation watcher and pause until it observes
     // `upgrade_state.start_block` for stack_role='GCS'. In BCS mode this is
     // a no-op — the loop falls through immediately.
@@ -573,6 +613,7 @@ pub async fn run_all(
             token.child_token(),
             client,
             events_tx.clone(),
+            stack_mode.clone(),
         )
         .await?,
     );
@@ -604,9 +645,16 @@ pub async fn run_all(
     )
     .await?;
 
-    // Spawns a task to handle S3 uploads
+    // Spawns a task to handle S3 uploads. In GCS mode the loop parks until the
+    // cutover flips `stack_mode` out of GCS mode, so nothing is uploaded during
+    // the dry-run window.
+    let uploader_mode = stack_mode.clone();
+    let uploader_token = token.child_token();
     spawn(async move {
-        if let Err(err) = run_uploader_loop(&pg_mngr, &conf, jobs_rx, tx, s3, is_ready).await {
+        if let Err(err) =
+            run_uploader_loop(&pg_mngr, &conf, jobs_rx, tx, s3, is_ready, uploader_mode, uploader_token)
+                .await
+        {
             error!(error = %err, "Failed to run the upload-worker");
         }
     });

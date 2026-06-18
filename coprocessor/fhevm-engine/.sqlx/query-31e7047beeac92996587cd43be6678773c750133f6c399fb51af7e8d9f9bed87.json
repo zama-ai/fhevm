@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT handle, ciphertext, ciphertext128, ciphertext128_format, transaction_id, host_chain_id, key_id_gw\n        FROM ciphertext_digest \n        WHERE ciphertext IS NULL OR ciphertext128 IS NULL\n        FOR UPDATE SKIP LOCKED\n        LIMIT $1;",
+  "query": "SELECT handle, ciphertext, ciphertext128, ciphertext128_format, transaction_id, host_chain_id, key_id_gw\n        FROM ciphertext_digest\n        WHERE (ciphertext IS NULL OR ciphertext128 IS NULL)\n          AND ciphertext_version = $1\n        FOR UPDATE SKIP LOCKED\n        LIMIT $2;",
   "describe": {
     "columns": [
       {
@@ -41,6 +41,7 @@
     ],
     "parameters": {
       "Left": [
+        "Int2",
         "Int8"
       ]
     },
@@ -54,5 +55,5 @@
       false
     ]
   },
-  "hash": "c9baf1542b684063be66cae40108e096dc603a296fc403c52bd58cb6c8e7071e"
+  "hash": "31e7047beeac92996587cd43be6678773c750133f6c399fb51af7e8d9f9bed87"
 }

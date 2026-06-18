@@ -82,6 +82,11 @@
         "ordinal": 15,
         "name": "key_id_gw",
         "type_info": "Bytea"
+      },
+      {
+        "ordinal": 16,
+        "name": "ciphertext_version",
+        "type_info": "Int2"
       }
     ],
     "parameters": {
@@ -103,6 +108,7 @@
       true,
       true,
       true,
+      false,
       false,
       false,
       false

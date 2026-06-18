@@ -608,6 +608,11 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
         stack_version, "versioning row updated"
     );
 
+    info!(
+        ciphertext_version = new_ciphertext_version,
+        stack_version, "cutover: merging ciphertexts from gcs schema into public"
+    );
+
     // 4. Merge gcs.ciphertexts → public.ciphertexts. The SELECT re-stamps
     //    `ciphertext_version` with the upgrade target so the
     //    `enforce_ciphertext_version` trigger accepts the rows regardless of
@@ -641,6 +646,75 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
         merged = merged.rows_affected(),
         ciphertext_version = new_ciphertext_version,
         "merged gcs.ciphertexts into public.ciphertexts"
+    );
+
+    info!(
+        ciphertext_version = new_ciphertext_version,
+        stack_version, "cutover: merging ciphertexts128 and digest from gcs schema into public"
+    );
+
+    // 4b. Merge gcs.ciphertexts128 → public.ciphertexts128. These are the
+    //     expensive squashed-noise (PBS) outputs the green worker computed
+    //     during the dry-run. They are re-stamped with the new
+    //     ciphertext_version and the GCS rows win on PK collisions (GCS is the
+    //     canonical writer for its window). The now-live green uploader reads
+    //     these bytes to (re)upload ct128 to S3 after cutover.
+    let merge_ct128_sql = format!(
+        "INSERT INTO public.ciphertexts128
+             (tenant_id, handle, ciphertext, created_at, ciphertext_version)
+         SELECT tenant_id, handle, ciphertext, created_at, $1::smallint
+         FROM {GCS_SCHEMA_QUOTED}.ciphertexts128
+         ON CONFLICT (tenant_id, handle) DO UPDATE
+         SET ciphertext         = EXCLUDED.ciphertext,
+             created_at         = EXCLUDED.created_at,
+             ciphertext_version = EXCLUDED.ciphertext_version"
+    );
+    let merged_ct128 = sqlx::query(&merge_ct128_sql)
+        .bind(new_ciphertext_version)
+        .execute(&mut *tx)
+        .await?;
+    info!(
+        merged = merged_ct128.rows_affected(),
+        ciphertext_version = new_ciphertext_version,
+        "merged gcs.ciphertexts128 into public.ciphertexts128"
+    );
+
+    info!(
+        ciphertext_version = new_ciphertext_version,
+        stack_version, "cutover: merging ciphertext_digest from gcs schema into public"
+    );
+
+    // 4c. Merge gcs.ciphertext_digest → public.ciphertext_digest, RE-ARMED for
+    //     re-upload: both digests are NULLed and the row is stamped with the new
+    //     ciphertext_version. The now-live green uploader's resubmit loop keys
+    //     off NULL digests (scoped to its version) and re-uploads ct64+ct128,
+    //     overwriting the blue stack's S3 objects. `txn_is_sent` is left
+    //     untouched on conflict — this backfill is scoped to S3 only and does
+    //     not re-drive the on-chain transaction-sender for already-sent handles.
+    let merge_digest_sql = format!(
+        "INSERT INTO public.ciphertext_digest
+             (tenant_id, handle, host_chain_id, key_id_gw, transaction_id,
+              ciphertext, ciphertext128, ciphertext128_format, ciphertext_version)
+         SELECT tenant_id, handle, host_chain_id, key_id_gw, transaction_id,
+                NULL, NULL, ciphertext128_format, $1::smallint
+         FROM {GCS_SCHEMA_QUOTED}.ciphertext_digest
+         ON CONFLICT (tenant_id, handle) DO UPDATE
+         SET host_chain_id        = EXCLUDED.host_chain_id,
+             key_id_gw            = EXCLUDED.key_id_gw,
+             transaction_id       = EXCLUDED.transaction_id,
+             ciphertext           = NULL,
+             ciphertext128        = NULL,
+             ciphertext128_format = EXCLUDED.ciphertext128_format,
+             ciphertext_version   = EXCLUDED.ciphertext_version"
+    );
+    let merged_digest = sqlx::query(&merge_digest_sql)
+        .bind(new_ciphertext_version)
+        .execute(&mut *tx)
+        .await?;
+    info!(
+        merged = merged_digest.rows_affected(),
+        ciphertext_version = new_ciphertext_version,
+        "merged gcs.ciphertext_digest into public.ciphertext_digest (re-armed for re-upload)"
     );
 
     // 5. Drop the gcs schema (and everything in it) now that its data has been

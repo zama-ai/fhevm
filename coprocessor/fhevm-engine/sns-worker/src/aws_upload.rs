@@ -10,6 +10,7 @@ use aws_sdk_s3::Client;
 use bytesize::ByteSize;
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::pg_pool::{PostgresPoolManager, ServiceError};
+use fhevm_engine_common::tfhe_ops::current_ciphertext_version;
 use fhevm_engine_common::{telemetry, utils::to_hex};
 use futures::future::join_all;
 use opentelemetry::trace::{Status, TraceContextExt};
@@ -453,10 +454,12 @@ async fn fetch_pending_uploads(
 ) -> Result<Vec<UploadJob>, ExecutionError> {
     let rows = sqlx::query!(
         "SELECT handle, ciphertext, ciphertext128, ciphertext128_format, transaction_id, host_chain_id, key_id_gw
-        FROM ciphertext_digest 
-        WHERE ciphertext IS NULL OR ciphertext128 IS NULL
+        FROM ciphertext_digest
+        WHERE (ciphertext IS NULL OR ciphertext128 IS NULL)
+          AND ciphertext_version = $1
         FOR UPDATE SKIP LOCKED
-        LIMIT $1;",
+        LIMIT $2;",
+        current_ciphertext_version(),
         limit
     )
     .fetch_all(db_pool)
@@ -475,8 +478,9 @@ async fn fetch_pending_uploads(
         // Fetch missing ciphertext
         if ciphertext_digest.is_none() {
             if let Ok(row) = sqlx::query!(
-                "SELECT ciphertext FROM ciphertexts WHERE handle = $1;",
-                handle
+                "SELECT ciphertext FROM ciphertexts WHERE handle = $1 AND ciphertext_version = $2;",
+                handle,
+                current_ciphertext_version(),
             )
             .fetch_optional(db_pool)
             .await
@@ -492,8 +496,9 @@ async fn fetch_pending_uploads(
         // Fetch missing ciphertext128
         if ciphertext128_digest.is_none() {
             if let Ok(row) = sqlx::query!(
-                "SELECT ciphertext FROM ciphertexts128 WHERE handle = $1;",
-                handle
+                "SELECT ciphertext FROM ciphertexts128 WHERE handle = $1 AND ciphertext_version = $2;",
+                handle,
+                current_ciphertext_version(),
             )
             .fetch_optional(db_pool)
             .await

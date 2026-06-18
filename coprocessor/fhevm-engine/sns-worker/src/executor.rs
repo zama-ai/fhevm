@@ -19,7 +19,9 @@ use fhevm_engine_common::healthz_server::{HealthCheckService, HealthStatus, Vers
 use fhevm_engine_common::pg_pool::PostgresPoolManager;
 use fhevm_engine_common::pg_pool::ServiceError;
 use fhevm_engine_common::telemetry;
+use fhevm_engine_common::tfhe_ops::current_ciphertext_version;
 use fhevm_engine_common::types::{get_ct_type, SupportedFheCiphertexts};
+use fhevm_engine_common::versioning::StackMode;
 use fhevm_engine_common::utils::to_hex;
 use opentelemetry::trace::{Status, TraceContextExt};
 use rayon::prelude::*;
@@ -71,6 +73,10 @@ pub struct SwitchNSquashService {
 
     /// Channel to emit internal events, e.g. keys-loaded event
     events_tx: InternalEvents,
+
+    /// Shared blue-green stack mode. While `gcs_mode` is set the worker is the
+    /// green stack in its dry-run window and suppresses S3 uploads + GC.
+    mode: Arc<StackMode>,
 }
 impl HealthCheckService for SwitchNSquashService {
     async fn health_check(&self) -> HealthStatus {
@@ -133,6 +139,7 @@ impl SwitchNSquashService {
         token: CancellationToken,
         s3_client: Arc<Client>,
         events_tx: InternalEvents,
+        mode: Arc<StackMode>,
     ) -> Result<SwitchNSquashService, ExecutionError> {
         Ok(SwitchNSquashService {
             pool: pool_mngr.pool(),
@@ -142,6 +149,7 @@ impl SwitchNSquashService {
             s3_client,
             tx,
             events_tx,
+            mode,
         })
     }
 
@@ -156,6 +164,7 @@ impl SwitchNSquashService {
             let last_active_at = self.last_active_at.clone();
             let keys_cache = keys_cache.clone();
             let events_tx = self.events_tx.clone();
+            let mode = self.mode.clone();
 
             async move {
                 run_loop(
@@ -166,6 +175,7 @@ impl SwitchNSquashService {
                     last_active_at.clone(),
                     keys_cache,
                     events_tx,
+                    mode,
                 )
                 .await
                 .map_err(ServiceError::from)
@@ -193,6 +203,7 @@ pub(crate) async fn run_loop(
     last_active_at: Arc<RwLock<SystemTime>>,
     keys_cache: Arc<RwLock<lru::LruCache<DbKeyId, KeySet>>>,
     events_tx: InternalEvents,
+    mode: Arc<StackMode>,
 ) -> Result<(), ExecutionError> {
     update_last_active(last_active_at.clone()).await;
 
@@ -238,8 +249,15 @@ pub(crate) async fn run_loop(
         // keys is guaranteed by the branch above; panic here if that invariant ever regresses.
         let (_, keys) = keys.as_ref().expect("keyset should be available");
 
+        // While the green stack is in its dry-run window (`gcs_mode`) uploads
+        // and GC are suppressed: ct128 bytes accumulate in `ciphertexts128` and
+        // are only pushed to S3 after cutover flips the mode (on
+        // `event_stack_version_upgraded`). A blue (live) worker has
+        // `gcs_mode == false` from the start, so this is always true for it.
+        let uploads_enabled = !mode.gcs_mode();
+
         let (maybe_remaining, _tasks_processed) =
-            fetch_and_execute_sns_tasks(&pool, &tx, keys, &conf, &token)
+            fetch_and_execute_sns_tasks(&pool, &tx, keys, &conf, &token, uploads_enabled)
                 .await
                 .inspect(|(_, tasks_processed)| {
                     TASK_EXECUTE_SUCCESS_COUNTER.inc_by(*tasks_processed as u64);
@@ -253,12 +271,14 @@ pub(crate) async fn run_loop(
             }
 
             info!("more tasks to process, continuing");
-            if let Ok(elapsed) = gc_timestamp.elapsed() {
-                if elapsed >= conf.db.cleanup_interval {
-                    info!("gc interval, cleaning up");
-                    gc_ticker.reset();
-                    gc_timestamp = SystemTime::now();
-                    garbage_collect(&pool, conf.db.gc_batch_limit).await?;
+            if uploads_enabled {
+                if let Ok(elapsed) = gc_timestamp.elapsed() {
+                    if elapsed >= conf.db.cleanup_interval {
+                        info!("gc interval, cleaning up");
+                        gc_ticker.reset();
+                        gc_timestamp = SystemTime::now();
+                        garbage_collect(&pool, conf.db.gc_batch_limit).await?;
+                    }
                 }
             }
 
@@ -277,7 +297,9 @@ pub(crate) async fn run_loop(
             _ = gc_ticker.tick() => {
                 info!("gc tick, on_idle");
                 gc_timestamp = SystemTime::now();
-                garbage_collect(&pool, conf.db.gc_batch_limit).await?;
+                if uploads_enabled {
+                    garbage_collect(&pool, conf.db.gc_batch_limit).await?;
+                }
             }
         }
     }
@@ -295,7 +317,9 @@ pub async fn garbage_collect(pool: &PgPool, limit: u32) -> Result<(), ExecutionE
         "
         SELECT COUNT(*)::BIGINT
         FROM ciphertexts128
-        "
+        WHERE ciphertext_version = $1
+        ",
+        current_ciphertext_version()
     )
     .fetch_one(pool)
     .await?;
@@ -321,6 +345,7 @@ pub async fn garbage_collect(pool: &PgPool, limit: u32) -> Result<(), ExecutionE
             JOIN ciphertext_digest d
             ON d.handle = c.handle
             WHERE d.ciphertext128 IS NOT NULL
+              AND c.ciphertext_version = $2
             FOR UPDATE OF c SKIP LOCKED
             LIMIT $1
         )
@@ -329,7 +354,8 @@ pub async fn garbage_collect(pool: &PgPool, limit: u32) -> Result<(), ExecutionE
         USING uploaded_ct128 r
         WHERE c.handle = r.handle;
         ",
-                limit as i32
+                limit as i32,
+                current_ciphertext_version(),
             )
             .execute(pool)
             .await?
@@ -358,6 +384,7 @@ async fn fetch_and_execute_sns_tasks(
     keys: &KeySet,
     conf: &Config,
     token: &CancellationToken,
+    uploads_enabled: bool,
 ) -> Result<(bool, usize), ExecutionError> {
     let mut db_txn = match pool.begin().await {
         Ok(txn) => txn,
@@ -393,6 +420,7 @@ async fn fetch_and_execute_sns_tasks(
                 conf.enable_compression,
                 conf.schedule_policy,
                 token.clone(),
+                uploads_enabled,
             )
         })?;
 
@@ -529,6 +557,7 @@ fn process_tasks(
     enable_compression: bool,
     policy: SchedulePolicy,
     token: CancellationToken,
+    uploads_enabled: bool,
 ) -> Result<(), ExecutionError> {
     set_server_key(keys.server_key.clone());
 
@@ -541,6 +570,7 @@ fn process_tasks(
                     enable_compression,
                     token.clone(),
                     &keys.client_key,
+                    uploads_enabled,
                 );
             }
         }
@@ -556,6 +586,7 @@ fn process_tasks(
                     enable_compression,
                     token.clone(),
                     &keys.client_key,
+                    uploads_enabled,
                 );
             });
         }
@@ -570,6 +601,7 @@ fn compute_task(
     enable_compression: bool,
     token: CancellationToken,
     _client_key: &Option<ClientKey>,
+    uploads_enabled: bool,
 ) {
     let started_at = SystemTime::now();
     let thread_id = format!("{:?}", std::thread::current().id());
@@ -635,6 +667,20 @@ fn compute_task(
 
             task.ct128 = Arc::new(BigCiphertext::new(bytes, format));
 
+            // In GCS (green) dry-run mode uploads are suppressed: the ct128 is
+            // persisted to `ciphertexts128` + `ciphertext_digest` (with NULL
+            // digests) only. The backfill happens after cutover, when the
+            // resubmit loop drains those rows. Skipping the dispatch here avoids
+            // filling the bounded upload channel (and the resulting error-log
+            // spam) for the whole evaluation window.
+            if !uploads_enabled {
+                let elapsed = started_at.elapsed().map(|d| d.as_secs_f64()).unwrap_or(0.0);
+                if elapsed > 0.0 {
+                    SNS_LATENCY_OP_HISTOGRAM.observe(elapsed);
+                }
+                return;
+            }
+
             // Start uploading the ciphertexts as soon as the ct128 is computed
             //
             // The service must continue running the squashed noise algorithm,
@@ -693,11 +739,13 @@ async fn update_ciphertext128(
                 "
                 INSERT INTO ciphertexts128 (
                         handle,
-                        ciphertext
+                        ciphertext,
+                        ciphertext_version
                 )
-                VALUES ($1, $2)",
+                VALUES ($1, $2, $3)",
                 task.handle,
                 ciphertext128,
+                current_ciphertext_version(),
             )
             .execute(db_txn.as_mut())
             .instrument(persist_span.clone())
