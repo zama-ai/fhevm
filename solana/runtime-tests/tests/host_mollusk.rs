@@ -6937,6 +6937,7 @@ fn verified_input_add_eval_ix(
     nonce_key: [u8; 32],
     encrypted_value_label: [u8; 32],
     output_acl_record: Pubkey,
+    output_subjects: Vec<AclSubjectEntry>,
 ) -> Instruction {
     let mut eval_ix = anchor_ix(
         program_id,
@@ -6966,7 +6967,7 @@ fn verified_input_add_eval_ix(
                         output_acl_domain_key: acl_domain,
                         output_app_account: authority,
                         output_encrypted_value_label: encrypted_value_label,
-                        output_subjects: vec![AclSubjectEntry::use_only(authority)],
+                        output_subjects,
                         output_public_decrypt: false,
                     },
                 }],
@@ -7036,6 +7037,7 @@ fn mollusk_fhe_eval_verified_input_scalar_add_binds_durable_output() {
         nonce_key,
         encrypted_value_label,
         output_acl_record,
+        vec![AclSubjectEntry::use_only(authority)],
     );
 
     assert_transaction_success(&context, &[eval_ix]);
@@ -7147,6 +7149,7 @@ fn mollusk_fhe_eval_verified_input_rejects_forged_attestation() {
         nonce_key,
         value_label,
         output_acl_record,
+        vec![AclSubjectEntry::use_only(authority)],
     );
 
     let result = context.process_instruction(&eval_ix);
@@ -7204,6 +7207,7 @@ fn mollusk_fhe_eval_verified_input_does_not_leak_to_a_later_instruction() {
         nonce_key,
         value_label,
         output_acl_record,
+        vec![AclSubjectEntry::use_only(authority)],
     );
     assert_transaction_success(&context, &[consume_ix]);
 
@@ -7269,8 +7273,89 @@ fn mollusk_fhe_eval_verified_input_rejects_wrong_output_acl_domain_key() {
         nonce_key,
         value_label,
         output_acl_record,
+        vec![AclSubjectEntry::use_only(authority)],
     );
 
     let result = context.process_instruction(&eval_ix);
     assert_instruction_custom_error(&result, host::errors::ZamaHostError::AclDomainKeyMismatch);
+}
+
+/// (e) A verified input is authorized by its provider for the attested domain, so it propagates
+/// public-decrypt like a public scalar: a durable output derived from it may grant the
+/// PUBLIC_DECRYPT-capable `user` role (so the app can later allow_for_decryption) even though the
+/// app account authority is a plain signer. Before binding the input's domain this same shape was
+/// rejected as an un-propagated public-decrypt escalation.
+#[test]
+fn mollusk_fhe_eval_verified_input_propagates_public_decrypt_to_durable_output() {
+    let program_id = host::id();
+    let authority = Pubkey::new_unique();
+    let key = k256::ecdsa::SigningKey::from_bytes(&[0x44u8; 32].into()).unwrap();
+    let (host_config, host_config_account) =
+        host_config_account_with_verifier(authority, evm_address_of(&key));
+
+    let acl_domain = Pubkey::new_unique();
+    let value_label = label("verified-input-pubdec");
+    let nonce_key = host::acl_nonce_key(acl_domain, authority, value_label);
+    let input_handle = input_handle_for_chain(0x01, 0, 5);
+    let attestation = verified_input_attestation(
+        &key,
+        input_handle,
+        authority.to_bytes(),
+        acl_domain.to_bytes(),
+    );
+
+    let output_acl_record = host::acl_record_address(nonce_key, 0).0;
+    let context = transient_context(
+        authority,
+        vec![
+            (host_config, host_config_account),
+            (output_acl_record, system_account(0)),
+        ],
+    );
+
+    let scalar = amount_plaintext(2);
+    let context_id = label("verified-input-frame");
+    let output_handle = current_bound_eval_handle(
+        &context.mollusk,
+        FheBinaryOpCode::Add,
+        input_handle,
+        scalar,
+        true,
+        5,
+        context_id,
+        0,
+        nonce_key,
+        0,
+    );
+
+    let eval_ix = verified_input_add_eval_ix(
+        program_id,
+        authority,
+        host_config,
+        attestation,
+        scalar,
+        context_id,
+        acl_domain,
+        nonce_key,
+        value_label,
+        output_acl_record,
+        vec![AclSubjectEntry::user(authority)],
+    );
+
+    assert_transaction_success(&context, &[eval_ix]);
+
+    let output_record =
+        read_acl_record(&context, output_acl_record).expect("expected durable output ACL");
+    assert_bound_acl_record(
+        &output_record,
+        output_handle,
+        nonce_key,
+        0,
+        acl_domain,
+        authority,
+        value_label,
+        authority,
+        host::ACL_ROLE_ALL,
+        context.mollusk.sysvars.clock.slot,
+    );
 }

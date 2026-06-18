@@ -503,13 +503,15 @@ impl ResolvedOperand {
     }
 
     /// Builds an operand from an in-frame verified external input, pinning its derived outputs to
-    /// the attested acl_domain_key. public_decrypt is not implied (the durable output asks
-    /// explicitly).
+    /// the attested acl_domain_key. The input is authorized by its provider for that domain, so it
+    /// propagates public-decrypt like a public scalar (EVM `fromExternal` parity: the app that
+    /// received the input controls whether results are made publicly decryptable, via an explicit
+    /// allow_for_decryption — it is not blocked by the input itself).
     fn verified_input(handle: [u8; 32], domain: Pubkey) -> Self {
         Self {
             handle,
             scalar: false,
-            public_decrypt_allowed: false,
+            public_decrypt_allowed: true,
             session_policies: Vec::new(),
             verified_input_domain: Some(domain),
         }
