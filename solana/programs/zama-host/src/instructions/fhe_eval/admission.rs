@@ -251,6 +251,15 @@ impl EvalStepVisitor for AdmissionState<'_, '_> {
         self.resolve_transient_session(handle, session_index, capability_index)
     }
 
+    fn resolve_verified_input_operand(
+        &mut self,
+        attestation: &CoprocessorInputAttestation,
+    ) -> Result<ResolvedOperand> {
+        // Structural only — the handle is known from the operand; execution re-verifies the
+        // attestation authoritatively (matches how transient-session consume is execution-gated).
+        Ok(ResolvedOperand::encrypted(attestation.input_handle, false))
+    }
+
     fn record_op_event(&mut self, _event: EvalEvent) {}
 
     fn accept_output<'info>(

@@ -3,6 +3,7 @@
 use anchor_lang::prelude::*;
 
 use super::common::*;
+use super::verify_coprocessor_input::{verify_input_attestation, InputVerifierParams};
 use crate::{
     errors::ZamaHostError,
     events::{
@@ -126,6 +127,7 @@ fn execute_eval_frame<'info>(
         handle_context.chain_id,
         current_slot,
         instructions_sysvar,
+        InputVerifierParams::from_config(&ctx.accounts.host_config),
     );
     walk_eval_frame(&mut execution, ctx, args, handle_context)?;
     execution.finish(ctx)
@@ -145,6 +147,7 @@ struct EvalExecutionState<'a, 'info> {
     chain_id: u64,
     current_slot: u64,
     instructions_sysvar: Option<&'a AccountInfo<'info>>,
+    verifier_params: InputVerifierParams,
 }
 
 impl<'a, 'info> EvalExecutionState<'a, 'info> {
@@ -158,6 +161,7 @@ impl<'a, 'info> EvalExecutionState<'a, 'info> {
         chain_id: u64,
         current_slot: u64,
         instructions_sysvar: Option<&'a AccountInfo<'info>>,
+        verifier_params: InputVerifierParams,
     ) -> Self {
         Self {
             remaining_accounts,
@@ -170,6 +174,7 @@ impl<'a, 'info> EvalExecutionState<'a, 'info> {
             chain_id,
             current_slot,
             instructions_sysvar,
+            verifier_params,
         }
     }
 
@@ -256,6 +261,28 @@ impl EvalStepVisitor for EvalExecutionState<'_, '_> {
             self.instructions_sysvar,
         )?;
         Ok(ResolvedOperand::transient_session(handle, capability.grant))
+    }
+
+    #[inline(never)]
+    fn resolve_verified_input_operand(
+        &mut self,
+        attestation: &CoprocessorInputAttestation,
+    ) -> Result<ResolvedOperand> {
+        // Authoritative in-frame verification: re-run the coprocessor attestation. No account, no
+        // PDA — the "allow" exists only for this instruction's execution. public_decrypt is NOT
+        // implied by a verified input; the durable output gets an explicit allow_for_decryption.
+        verify_input_attestation(
+            &self.verifier_params,
+            attestation.input_handle,
+            &attestation.ct_handles,
+            attestation.handle_index,
+            &attestation.user_address,
+            &attestation.contract_address,
+            attestation.contract_chain_id,
+            &attestation.extra_data,
+            &attestation.signatures,
+        )?;
+        Ok(ResolvedOperand::encrypted(attestation.input_handle, false))
     }
 
     fn record_op_event(&mut self, event: EvalEvent) {

@@ -222,6 +222,28 @@ pub enum FheEvalStep {
     },
 }
 
+/// A coprocessor input attestation carried inline by a [`FheEvalOperand::VerifiedInput`], re-verified
+/// in-frame (no account, no PDA) — the instruction-local analog of EVM `allowTransient(input, contract)`.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
+pub struct CoprocessorInputAttestation {
+    /// The verified input handle used as the operand.
+    pub input_handle: [u8; 32],
+    /// All ciphertext handles covered by the proof.
+    pub ct_handles: Vec<[u8; 32]>,
+    /// Index of `input_handle` within `ct_handles`.
+    pub handle_index: u8,
+    /// Attested user identity (bytes32).
+    pub user_address: [u8; 32],
+    /// Attested contract identity — the input's ACL domain key (bytes32).
+    pub contract_address: [u8; 32],
+    /// Gateway-side contract chain id the attestation binds.
+    pub contract_chain_id: u64,
+    /// Opaque extra data covered by the attestation.
+    pub extra_data: Vec<u8>,
+    /// Coprocessor EIP-712 signatures (65-byte secp256k1).
+    pub signatures: Vec<[u8; 65]>,
+}
+
 /// Operand source for a composed FHE eval operation.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
 pub enum FheEvalOperand {
@@ -250,6 +272,13 @@ pub enum FheEvalOperand {
     },
     /// Plaintext scalar bytes. Scalar operands are only valid on the RHS.
     Scalar([u8; 32]),
+    /// External encrypted input verified in-frame by re-running the coprocessor attestation.
+    /// The "allow" is instruction-local (no ACL record, no session, no PDA): the input is usable
+    /// only where it is consumed in the same `fhe_eval`. Valid as an encrypted operand, not a scalar.
+    VerifiedInput {
+        /// The inline attestation re-verified to authorize this operand.
+        attestation: CoprocessorInputAttestation,
+    },
 }
 
 /// Output policy for a composed FHE eval operation.

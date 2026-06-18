@@ -40,6 +40,14 @@ pub(super) trait EvalStepVisitor {
         capability_index: u16,
     ) -> Result<ResolvedOperand>;
 
+    /// Resolves an external input verified in-frame via the coprocessor attestation. Admission
+    /// resolves it structurally (the handle is known from the operand data); execution re-runs the
+    /// secp256k1 attestation authoritatively. Instruction-local — no account, no PDA.
+    fn resolve_verified_input_operand(
+        &mut self,
+        attestation: &CoprocessorInputAttestation,
+    ) -> Result<ResolvedOperand>;
+
     /// Records the per-op event for the produced handle. Admission ignores it;
     /// execution buffers it for transport.
     fn record_op_event(&mut self, event: EvalEvent);
@@ -74,6 +82,9 @@ pub(super) trait EvalStepVisitor {
                 session_index,
                 capability_index,
             } => self.resolve_transient_session_operand(*handle, *session_index, *capability_index),
+            FheEvalOperand::VerifiedInput { attestation } => {
+                self.resolve_verified_input_operand(attestation)
+            }
             FheEvalOperand::Scalar(_) => Err(error!(ZamaHostError::InvalidFheEvalAccount)),
         }
     }
