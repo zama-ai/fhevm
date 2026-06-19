@@ -67,7 +67,7 @@ where
         sns_materials: &[SnsCiphertextMaterial],
     ) -> anyhow::Result<Vec<TypedCiphertext>> {
         if let Err(e) = self.verify_attestations(sns_materials).await {
-            warn!("{e}");
+            warn!("{e:#}");
         }
 
         s3::retrieve_sns_ciphertext_materials(

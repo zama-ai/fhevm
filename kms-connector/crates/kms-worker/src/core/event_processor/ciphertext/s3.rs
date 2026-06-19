@@ -291,7 +291,7 @@ fn ct_format_from_http_headers(headers: &HeaderMap) -> GrpcCiphertextFormat {
 
         // Fallback to old format header if attestation is not available
         Err(e) => {
-            warn!("attestation fetch error: {e}. Falling back to {OLD_CT_FORMAT_HEADER} header");
+            debug!("attestation fetch error: {e}. Falling back to {OLD_CT_FORMAT_HEADER} header");
             match headers.get(OLD_CT_FORMAT_HEADER).map(AsRef::as_ref) {
                 Some(b"compressed_on_cpu") | Some(b"compressed_on_gpu") => {
                     GrpcCiphertextFormat::BigCompressed

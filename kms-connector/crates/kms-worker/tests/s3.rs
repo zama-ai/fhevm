@@ -93,7 +93,7 @@ async fn test_get_unstored_s3_ciphertext() -> anyhow::Result<()> {
         ..Default::default()
     };
     if let Ok(ct) = retrieve_s3_ciphertext(&s3_client, &bucket_url, &sns_ct, S3_CT_UNSTORED).await {
-        panic!("Unexpected ciphertext retrievd {ct:?}");
+        panic!("Unexpected ciphertext retrieved {ct:?}");
     }
 
     Ok(())
