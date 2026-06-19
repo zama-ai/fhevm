@@ -41,7 +41,11 @@ export type SolanaUserDecryptParameters = {
   readonly allowedAclDomainKeys?: readonly Bytes32Hex[] | undefined;
   /** 32-byte big-endian context id. Defaults to all-zero (no explicit context). */
   readonly contextId?: Uint8Array | undefined;
-  /** Per-request 32-byte anti-replay nonce. A random one is generated when omitted. */
+  /**
+   * Per-request 32-byte nonce, bound into the ed25519 signing preimage (a random one is generated
+   * when omitted). It binds the nonce to the signed request but is NOT dedup-enforced on-chain or in
+   * the connector; replay is bounded by the validity window, matching the EVM user-decrypt path.
+   */
   readonly nonce?: Uint8Array | undefined;
   /** Validity window. Defaults to `now` for 1 day. */
   readonly validity?:

@@ -57,7 +57,8 @@ pub struct SolanaUserDecryptSigningInput<'a> {
     pub identity: &'a [u8; SOLANA_PUBKEY_LEN],
     /// The 32-byte big-endian context id (zero when none).
     pub context_id: &'a [u8; 32],
-    /// Per-request anti-replay nonce.
+    /// Per-request nonce bound into the signed preimage (not dedup-enforced; replay is bounded by
+    /// the validity window, matching EVM).
     pub nonce: &'a [u8; SOLANA_PUBKEY_LEN],
     /// The authorized ACL domain keys (the signed `allowedContracts` scope).
     pub allowed_acl_domain_keys: &'a [[u8; SOLANA_PUBKEY_LEN]],

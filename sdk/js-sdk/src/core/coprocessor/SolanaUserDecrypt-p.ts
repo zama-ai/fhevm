@@ -66,7 +66,7 @@ export interface SolanaUserDecryptInput {
   readonly identity: Uint8Array;
   /** The 32-byte big-endian context id (all-zero when no explicit context). */
   readonly contextId: Uint8Array;
-  /** Per-request 32-byte anti-replay nonce. */
+  /** Per-request 32-byte nonce bound into the signed preimage (not dedup-enforced; replay is bounded by the validity window, matching EVM). */
   readonly nonce: Uint8Array;
   /** The authorized ACL domain keys (the signed `allowedContracts` scope), each 32 bytes. */
   readonly allowedAclDomainKeys: readonly Uint8Array[];
@@ -156,7 +156,7 @@ export interface SolanaUserDecryptRequest {
   readonly userAddress: Bytes20Hex;
   /** The user's 32-byte ed25519 identity public key, 0x-hex (typed gateway field). */
   readonly solanaUserIdentity: BytesHex;
-  /** The per-request 32-byte anti-replay nonce, 0x-hex (typed gateway field). */
+  /** The per-request 32-byte nonce, 0x-hex (typed gateway field). Bound into the signed preimage; not dedup-enforced (replay bounded by the validity window, matching EVM). */
   readonly solanaNonce: BytesHex;
   /** The allowed Solana ACL domain keys, each 0x-hex 32 bytes (typed gateway field). */
   readonly solanaAllowedAclDomainKeys: readonly BytesHex[];
