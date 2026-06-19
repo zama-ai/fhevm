@@ -107,7 +107,7 @@ async function deliver(
 
 /**
  * Relays one bridged message; returns the dst handles (HandleBridged) in source handleList order.
- * With `skipCompose`, only `lzReceive` is delivered (the dst app's `onReceive` is left pending) —
+ * With `skipCompose`, only `lzReceive` is delivered (the dst app's `onConfidentialBridgeReceived` is left pending) —
  * run it later with {@link relayCompose} using the returned `compose`.
  */
 export async function relayBridgeMessage(
@@ -124,7 +124,7 @@ export async function relayBridgeMessage(
   return { dstHandles, guid: pkt.guid, compose };
 }
 
-/** Delivers the compose leg captured by {@link relayBridgeMessage} (runs the dst app's onReceive). */
+/** Delivers the compose leg captured by {@link relayBridgeMessage} (runs the dst app's onConfidentialBridgeReceived). */
 export async function relayCompose(ctx: RelayContext, compose: PendingCompose): Promise<void> {
   resyncNonce(ctx.dstSigner);
   const endpoint = new ethers.Contract(ctx.dstEndpoint, ENDPOINT_ABI, ctx.dstSigner);
@@ -156,7 +156,7 @@ function encodePacket(p: {
 }
 
 /**
- * Forges a destination delivery (HandleBridged + onReceive) with **no matching source
+ * Forges a destination delivery (HandleBridged + onConfidentialBridgeReceived) with **no matching source
  * BridgeHandle**, so the coprocessor never associates the derived handle — used to exercise
  * `grantFallbackPlaintext`. Bypasses `bridge.send` by crafting + verifying the packet directly.
  *

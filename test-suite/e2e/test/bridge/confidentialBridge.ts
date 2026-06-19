@@ -207,11 +207,11 @@ describe('Confidential Bridge', function () {
       return;
     }
     const srcHandle = await mint(host, 13);
-    // Deliver lzReceive only: the handle associates, but onReceive (makePubliclyDecryptable) hasn't run.
+    // Deliver lzReceive only: the handle associates, but onConfidentialBridgeReceived (makePubliclyDecryptable) hasn't run.
     const { dstHandles, ctx, compose } = await bridge(host, chainB, [srcHandle], '0x', true);
     expect(await notPubliclyDecryptable(chainB, dstHandles[0]), 'not decryptable before the compose leg').to.equal(true);
 
-    // Now run the compose leg -> onReceive -> makePubliclyDecryptable -> decryptable.
+    // Now run the compose leg -> onConfidentialBridgeReceived -> makePubliclyDecryptable -> decryptable.
     await relayCompose(ctx, compose!);
     expect(await publicDecrypt(chainB, dstHandles[0])).to.equal(13n);
   });
@@ -242,7 +242,7 @@ describe('Confidential Bridge', function () {
     await (await bridgeOwner.setPeer(FAKE_EID, ethers.zeroPadValue(fakeSrcBridge, 32))).wait();
 
     // Mint a real euint64 handle on host but DO NOT bridge.send it, so there is no source BridgeHandle.
-    // Forging the delivery leaves the handle unassociated (no ciphertext) while onReceive still grants
+    // Forging the delivery leaves the handle unassociated (no ciphertext) while onConfidentialBridgeReceived still grants
     // on-chain public ACL — the exact state the fallback exists to rescue.
     const srcHandle = await mint(host, 0); // value irrelevant: it's never bridged/associated
     const ctx = { srcEndpoint: host.endpoint, dstEndpoint: chainB.endpoint, dstBridge: chainB.bridge, dstSigner: chainB.alice };

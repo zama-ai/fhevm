@@ -7,18 +7,19 @@ import {E2ECoprocessorConfig} from "../E2ECoprocessorConfigLocal.sol";
 /// @notice Bridge destination callback (mirror of host-contracts' IDstApp; inlined since the
 ///         bridge interfaces aren't part of the e2e contract project).
 interface IDstApp {
-    function onReceive(
+    function onConfidentialBridgeReceived(
         uint32 srcEid,
         bytes32 srcApp,
         bytes calldata payload,
         bytes32[] calldata srcHandleList,
-        bytes32[] calldata dstHandleList
+        bytes32[] calldata dstHandleList,
+        bytes32 guid
     ) external;
 }
 
 /// @notice Test dapp exercising the confidential bridge end-to-end (deployed on each chain).
 /// @dev Source: {makeHandle}/{makeComputedHandle} produce a handle ACL-allowed to the caller for
-///      `ConfidentialBridge.send`. Destination: {onReceive} (called by the bridge's lzCompose, which
+///      `ConfidentialBridge.send`. Destination: {onConfidentialBridgeReceived} (called by the bridge's lzCompose, which
 ///      has granted transient ACL allowance) makes each bridged handle decryptable so the test can
 ///      assert it — publicly when `payload` is empty, or to a user when `payload` encodes an address.
 contract BridgeProbe is E2ECoprocessorConfig, IDstApp {
@@ -52,12 +53,13 @@ contract BridgeProbe is E2ECoprocessorConfig, IDstApp {
     ///         `payload == abi.encode(address user)` => grant persistent ACL allowance to `user`
     ///         (and this contract) so it can be user-decrypted.
     /// @dev The transient ACL allowance granted before this call suffices within the lzCompose tx.
-    function onReceive(
+    function onConfidentialBridgeReceived(
         uint32 /* srcEid */,
         bytes32 /* srcApp */,
         bytes calldata payload,
         bytes32[] calldata /* srcHandleList */,
-        bytes32[] calldata dstHandleList
+        bytes32[] calldata dstHandleList,
+        bytes32 /* guid */
     ) external override {
         address user = payload.length == 32 ? abi.decode(payload, (address)) : address(0);
         for (uint256 i = 0; i < dstHandleList.length; i++) {
