@@ -1,4 +1,4 @@
-//! S3 bucket URL resolver, modelled on kms-worker's `S3Service`
+//! S3 bucket URL resolver, modeled on kms-worker's `S3Service`
 //! (`fhevm/kms-connector/crates/kms-worker/src/core/event_processor/s3.rs`).
 //!
 //! Wraps a `GatewayConfigInstance` and a `DashMap` cache keyed by coprocessor

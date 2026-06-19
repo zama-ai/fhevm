@@ -14,3 +14,16 @@ struct KmsNode {
     /// @notice URL address of the KMS node's storage where ciphertexts are stored
     string storageUrl;
 }
+
+/**
+ * @notice Struct that represents a per-host-chain replay window used during a coprocessor blue-green upgrade.
+ */
+struct ChainUpgradeWindow {
+    /// @notice Host chain id the window applies to
+    uint64 chainId;
+    /// @notice First block GCS replays in dry-run, inclusive
+    uint64 startBlock;
+    /// @notice Last block GCS replays in dry-run, inclusive
+    uint64 endBlock;
+}
+

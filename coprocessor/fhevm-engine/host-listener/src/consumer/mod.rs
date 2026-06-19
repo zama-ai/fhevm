@@ -35,6 +35,7 @@ pub struct ConsumerConfig {
     pub acl_address: Address,
     pub tfhe_address: Address,
     pub kms_generation_address: Address,
+    pub protocol_config_address: Address,
     pub database_url: DatabaseURL,
     pub database_retry_interval: Duration,
     pub service_name: String,
@@ -46,6 +47,7 @@ pub struct ConsumerConfig {
     pub dependent_ops_max_per_chain: u32,
     pub chain_id: String,
     pub gcs_mode: bool,
+    pub ethereum_chain_id: Option<u64>,
 }
 
 pub fn collect_logs(payload: &BlockPayload) -> Vec<Log> {
@@ -197,9 +199,15 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
         config.acl_address,
         config.tfhe_address,
         config.kms_generation_address,
+        config.protocol_config_address,
     ];
     let chain_id: u64 = config.chain_id.parse()?;
     let chain_id = ChainId::try_from(chain_id)?;
+    let is_protocol_config_listener =
+        crate::protocol_config::resolve_protocol_config_listener(
+            config.ethereum_chain_id,
+            chain_id.as_u64(),
+        )?;
 
     let blockchain_tick = HeartBeat::new();
     let blockchain_timeout_tick = HeartBeat::new();
@@ -248,6 +256,7 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
         dependence_by_connexity: config.dependence_by_connexity,
         dependence_cross_block: config.dependence_cross_block,
         dependent_ops_max_per_chain: config.dependent_ops_max_per_chain,
+        is_protocol_config_listener,
     };
 
     // Runtime stack mode + `event_stack_version_upgraded` listener: at cutover
@@ -304,6 +313,15 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
                 ingest_options.dependent_ops_max_per_chain,
             )
             .await;
+            if payload.chain_id != chain_id.as_u64() {
+                error!(
+                    payload_chain_id = payload.chain_id,
+                    configured_chain_id = chain_id.as_u64(),
+                    block_number = payload.block_number,
+                    "Block delivered for wrong chain — broker routing misconfigured; dropping"
+                );
+                return Ok(AckDecision::Ack);
+            }
             let block_summary = BlockSummary {
                 number: payload.block_number,
                 hash: payload.block_hash,
@@ -332,6 +350,7 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
                 config.acl_address,
                 config.tfhe_address,
                 config.kms_generation_address,
+                config.protocol_config_address,
                 config.database_retry_interval,
                 ingest_options.clone(),
             )
@@ -393,6 +412,7 @@ async fn ingest_with_retry(
     acl_address: Address,
     tfhe_address: Address,
     kms_generation_address: Address,
+    protocol_config_address: Address,
     retry_interval: Duration,
     options: IngestOptions,
 ) -> Result<u64, (sqlx::Error, u64)> {
@@ -400,6 +420,7 @@ async fn ingest_with_retry(
     let acl = Some(acl_address);
     let tfhe = Some(tfhe_address);
     let kms_generation = Some(kms_generation_address);
+    let protocol_config = Some(protocol_config_address);
     loop {
         match ingest_block_logs(
             chain_id,
@@ -408,6 +429,7 @@ async fn ingest_with_retry(
             &acl,
             &tfhe,
             &kms_generation,
+            &protocol_config,
             options.clone(),
         )
         .await

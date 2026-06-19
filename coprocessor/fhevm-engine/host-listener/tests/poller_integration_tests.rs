@@ -173,6 +173,7 @@ async fn poller_catches_up_to_safe_tip(
         acl_address: *acl_contract.address(),
         tfhe_address: *tfhe_contract.address(),
         kms_generation_address: *kms_generation_contract.address(),
+        protocol_config_address: alloy::primitives::Address::ZERO,
         database_url: db_url.clone(),
         finality_lag,
         batch_size: 2,
@@ -187,6 +188,7 @@ async fn poller_catches_up_to_safe_tip(
         dependence_cross_block: false,
         dependent_ops_max_per_chain: 0,
         gcs_mode: false,
+        ethereum_chain_id: Some(chain_id.as_u64()),
     };
 
     let poller_handle = tokio::spawn(run_poller(config));

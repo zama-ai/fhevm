@@ -6,11 +6,11 @@ import {HostContractsDeployerTestUtils} from "@fhevm-foundry/HostContractsDeploy
 import {ProtocolConfig} from "@fhevm-host-contracts/contracts/ProtocolConfig.sol";
 import {ProtocolConfigUpgradedExample} from "@fhevm-host-contracts/examples/ProtocolConfigUpgradedExample.sol";
 import {IProtocolConfig} from "@fhevm-host-contracts/contracts/interfaces/IProtocolConfig.sol";
-import {KmsNode} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
+import {KmsNode, ChainUpgradeWindow} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
 import {EmptyUUPSProxy} from "@fhevm-host-contracts/contracts/emptyProxy/EmptyUUPSProxy.sol";
 import {UUPSUpgradeableEmptyProxy} from "@fhevm-host-contracts/contracts/shared/UUPSUpgradeableEmptyProxy.sol";
 import {ACLOwnable} from "@fhevm-host-contracts/contracts/shared/ACLOwnable.sol";
-import {KMS_CONTEXT_COUNTER_BASE} from "@fhevm-host-contracts/contracts/shared/Constants.sol";
+import {KMS_CONTEXT_COUNTER_BASE, COPROC_CONTEXT_COUNTER_BASE} from "@fhevm-host-contracts/contracts/shared/Constants.sol";
 import {protocolConfigAdd} from "@fhevm-host-contracts/addresses/FHEVMHostAddresses.sol";
 
 contract ProtocolConfigTest is HostContractsDeployerTestUtils {
@@ -618,5 +618,279 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         assertEq(protocolConfig.getVersion(), "ProtocolConfig v0.2.0");
         // State preserved across upgrade.
         assertTrue(protocolConfig.isValidKmsContext(protocolConfig.getCurrentKmsContextId()));
+    }
+
+    // -----------------------------------------------------------------------
+    // Coprocessor context tests
+    // -----------------------------------------------------------------------
+
+    function _makeChainUpgradeWindows(uint256 count) internal pure returns (ChainUpgradeWindow[] memory windows) {
+        windows = new ChainUpgradeWindow[](count);
+        for (uint256 i = 0; i < count; i++) {
+            windows[i] = ChainUpgradeWindow({
+                chainId: uint64(i + 1),
+                startBlock: uint64(100 + i),
+                endBlock: uint64(200 + i)
+            });
+        }
+    }
+
+    function _defaultSoftwareVersion() internal pure returns (string memory) {
+        return "v0.14.0";
+    }
+
+    function _defaultGwStartBlock() internal pure returns (uint64) {
+        return 8421337;
+    }
+
+    function _defaultCiphertextVersion() internal pure returns (uint16) {
+        return 1;
+    }
+
+    function test_initSeedsCoprocessorContextCounter() public {
+        _setupDefault();
+        assertEq(protocolConfig.getCurrentCoprocessorContextId(), COPROC_CONTEXT_COUNTER_BASE);
+        assertFalse(protocolConfig.isValidCoprocessorContext(COPROC_CONTEXT_COUNTER_BASE));
+        assertFalse(protocolConfig.isValidCoprocessorContext(COPROC_CONTEXT_COUNTER_BASE + 1));
+    }
+
+    function test_migrationSeedsCoprocessorContextCounter() public {
+        _setupMigration(KMS_CONTEXT_COUNTER_BASE + 3);
+        assertEq(protocolConfig.getCurrentCoprocessorContextId(), COPROC_CONTEXT_COUNTER_BASE);
+    }
+
+    function test_defineNewCoprocessorContext_singleChain() public {
+        _setupDefault();
+        ChainUpgradeWindow[] memory windows = _makeChainUpgradeWindows(1);
+        uint64 gwStart = _defaultGwStartBlock();
+        string memory version = _defaultSoftwareVersion();
+        uint256 expectedId = COPROC_CONTEXT_COUNTER_BASE + 1;
+
+        vm.expectEmit(true, false, false, true, address(protocolConfig));
+        emit IProtocolConfig.NewCoprocessorContext(expectedId, version, windows, gwStart, _defaultCiphertextVersion());
+        vm.prank(owner);
+        protocolConfig.defineNewCoprocessorContext(version, windows, gwStart, _defaultCiphertextVersion());
+
+        assertEq(protocolConfig.getCurrentCoprocessorContextId(), expectedId);
+        assertTrue(protocolConfig.isValidCoprocessorContext(expectedId));
+    }
+
+    function test_defineNewCoprocessorContext_multiChain() public {
+        _setupDefault();
+        ChainUpgradeWindow[] memory windows = _makeChainUpgradeWindows(3);
+        uint64 gwStart = _defaultGwStartBlock();
+        string memory version = _defaultSoftwareVersion();
+        uint256 expectedId = COPROC_CONTEXT_COUNTER_BASE + 1;
+
+        vm.expectEmit(true, false, false, true, address(protocolConfig));
+        emit IProtocolConfig.NewCoprocessorContext(expectedId, version, windows, gwStart, _defaultCiphertextVersion());
+        vm.prank(owner);
+        protocolConfig.defineNewCoprocessorContext(version, windows, gwStart, _defaultCiphertextVersion());
+
+        assertTrue(protocolConfig.isValidCoprocessorContext(expectedId));
+    }
+
+    function test_defineNewCoprocessorContext_monotonicCounter() public {
+        _setupDefault();
+        ChainUpgradeWindow[] memory windows = _makeChainUpgradeWindows(1);
+        uint64 gwStart = _defaultGwStartBlock();
+        string memory version = _defaultSoftwareVersion();
+
+        vm.prank(owner);
+        protocolConfig.defineNewCoprocessorContext(version, windows, gwStart, _defaultCiphertextVersion());
+        uint256 firstId = protocolConfig.getCurrentCoprocessorContextId();
+        vm.prank(owner);
+        protocolConfig.defineNewCoprocessorContext(version, windows, gwStart, _defaultCiphertextVersion());
+        uint256 secondId = protocolConfig.getCurrentCoprocessorContextId();
+
+        assertEq(firstId, COPROC_CONTEXT_COUNTER_BASE + 1);
+        assertEq(secondId, COPROC_CONTEXT_COUNTER_BASE + 2);
+        assertTrue(protocolConfig.isValidCoprocessorContext(firstId));
+        assertTrue(protocolConfig.isValidCoprocessorContext(secondId));
+    }
+
+    function test_revertCoprocessor_EmptySoftwareVersion() public {
+        _setupDefault();
+        vm.prank(owner);
+        vm.expectRevert(IProtocolConfig.EmptySoftwareVersion.selector);
+        protocolConfig.defineNewCoprocessorContext("", _makeChainUpgradeWindows(1), _defaultGwStartBlock(), _defaultCiphertextVersion());
+    }
+
+    function test_revertCoprocessor_EmptyChainUpgradeWindows() public {
+        _setupDefault();
+        ChainUpgradeWindow[] memory windows = new ChainUpgradeWindow[](0);
+        vm.prank(owner);
+        vm.expectRevert(IProtocolConfig.EmptyChainUpgradeWindows.selector);
+        protocolConfig.defineNewCoprocessorContext(_defaultSoftwareVersion(), windows, _defaultGwStartBlock(), _defaultCiphertextVersion());
+    }
+
+    function test_revertCoprocessor_ZeroChainId() public {
+        _setupDefault();
+        ChainUpgradeWindow[] memory windows = _makeChainUpgradeWindows(1);
+        windows[0].chainId = 0;
+        vm.prank(owner);
+        vm.expectRevert(IProtocolConfig.ZeroChainId.selector);
+        protocolConfig.defineNewCoprocessorContext(_defaultSoftwareVersion(), windows, _defaultGwStartBlock(), _defaultCiphertextVersion());
+    }
+
+    function test_revertCoprocessor_DuplicateChainId() public {
+        _setupDefault();
+        ChainUpgradeWindow[] memory windows = _makeChainUpgradeWindows(2);
+        windows[1].chainId = windows[0].chainId;
+        vm.prank(owner);
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.DuplicateChainId.selector, windows[0].chainId));
+        protocolConfig.defineNewCoprocessorContext(_defaultSoftwareVersion(), windows, _defaultGwStartBlock(), _defaultCiphertextVersion());
+    }
+
+    function test_revertCoprocessor_InvalidBlockWindow() public {
+        _setupDefault();
+        ChainUpgradeWindow[] memory windows = _makeChainUpgradeWindows(1);
+        windows[0].startBlock = 500;
+        windows[0].endBlock = 100; // start > end
+        vm.prank(owner);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IProtocolConfig.InvalidBlockWindow.selector,
+                windows[0].chainId,
+                uint64(500),
+                uint64(100)
+            )
+        );
+        protocolConfig.defineNewCoprocessorContext(_defaultSoftwareVersion(), windows, _defaultGwStartBlock(), _defaultCiphertextVersion());
+    }
+
+    function test_revertCoprocessor_ZeroGwStartBlock() public {
+        _setupDefault();
+        vm.prank(owner);
+        vm.expectRevert(IProtocolConfig.ZeroGwStartBlock.selector);
+        protocolConfig.defineNewCoprocessorContext(_defaultSoftwareVersion(), _makeChainUpgradeWindows(1), 0, _defaultCiphertextVersion());
+    }
+
+    function test_revertCoprocessor_CiphertextVersionTooLarge() public {
+        _setupDefault();
+        uint16 tooLarge = uint16(type(int16).max) + 1; // 32768 — overflows int16
+        vm.prank(owner);
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.CiphertextVersionTooLarge.selector, tooLarge));
+        protocolConfig.defineNewCoprocessorContext(
+            _defaultSoftwareVersion(),
+            _makeChainUpgradeWindows(1),
+            _defaultGwStartBlock(),
+            tooLarge
+        );
+    }
+
+    function test_destroyCoprocessorContext() public {
+        _setupDefault();
+        vm.prank(owner);
+        protocolConfig.defineNewCoprocessorContext(
+            _defaultSoftwareVersion(),
+            _makeChainUpgradeWindows(1),
+            _defaultGwStartBlock(),
+            _defaultCiphertextVersion()
+        );
+        uint256 id = protocolConfig.getCurrentCoprocessorContextId();
+
+        vm.expectEmit(true, false, false, true, address(protocolConfig));
+        emit IProtocolConfig.CoprocessorContextDestroyed(id);
+        vm.prank(owner);
+        protocolConfig.destroyCoprocessorContext(id);
+        assertFalse(protocolConfig.isValidCoprocessorContext(id));
+    }
+
+    function test_destroyCurrentCoprocessorContext_allowed() public {
+        _setupDefault();
+        vm.prank(owner);
+        protocolConfig.defineNewCoprocessorContext(
+            _defaultSoftwareVersion(),
+            _makeChainUpgradeWindows(1),
+            _defaultGwStartBlock(),
+            _defaultCiphertextVersion()
+        );
+        uint256 id = protocolConfig.getCurrentCoprocessorContextId();
+
+        vm.prank(owner);
+        protocolConfig.destroyCoprocessorContext(id);
+        assertFalse(protocolConfig.isValidCoprocessorContext(id));
+    }
+
+    function test_revertDestroyAlreadyDestroyedCoprocessorContext() public {
+        _setupDefault();
+        vm.prank(owner);
+        protocolConfig.defineNewCoprocessorContext(
+            _defaultSoftwareVersion(),
+            _makeChainUpgradeWindows(1),
+            _defaultGwStartBlock(),
+            _defaultCiphertextVersion()
+        );
+        uint256 id = protocolConfig.getCurrentCoprocessorContextId();
+
+        vm.prank(owner);
+        protocolConfig.destroyCoprocessorContext(id);
+
+        vm.prank(owner);
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidCoprocessorContext.selector, id));
+        protocolConfig.destroyCoprocessorContext(id);
+    }
+
+    function testFuzz_revertDestroyInvalidCoprocessorContext(uint256 invalidId) public {
+        _setupDefault();
+        vm.prank(owner);
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidCoprocessorContext.selector, invalidId));
+        protocolConfig.destroyCoprocessorContext(invalidId);
+    }
+
+    function test_isValidCoprocessorContext_branches() public {
+        _setupDefault();
+        assertFalse(protocolConfig.isValidCoprocessorContext(0));
+        assertFalse(protocolConfig.isValidCoprocessorContext(COPROC_CONTEXT_COUNTER_BASE));
+        assertFalse(protocolConfig.isValidCoprocessorContext(COPROC_CONTEXT_COUNTER_BASE + 1));
+
+        vm.prank(owner);
+        protocolConfig.defineNewCoprocessorContext(
+            _defaultSoftwareVersion(),
+            _makeChainUpgradeWindows(1),
+            _defaultGwStartBlock(),
+            _defaultCiphertextVersion()
+        );
+        uint256 id = protocolConfig.getCurrentCoprocessorContextId();
+        assertTrue(protocolConfig.isValidCoprocessorContext(id));
+
+        vm.prank(owner);
+        protocolConfig.destroyCoprocessorContext(id);
+        assertFalse(protocolConfig.isValidCoprocessorContext(id));
+    }
+
+    function test_revertDefineCoprocessorContextNotOwner() public {
+        _setupDefault();
+        vm.prank(address(0x999));
+        vm.expectRevert(abi.encodeWithSelector(ACLOwnable.NotHostOwner.selector, address(0x999)));
+        protocolConfig.defineNewCoprocessorContext(
+            _defaultSoftwareVersion(),
+            _makeChainUpgradeWindows(1),
+            _defaultGwStartBlock(),
+            _defaultCiphertextVersion()
+        );
+    }
+
+    function test_revertDestroyCoprocessorContextNotOwner() public {
+        _setupDefault();
+        vm.prank(owner);
+        protocolConfig.defineNewCoprocessorContext(
+            _defaultSoftwareVersion(),
+            _makeChainUpgradeWindows(1),
+            _defaultGwStartBlock(),
+            _defaultCiphertextVersion()
+        );
+        uint256 id = protocolConfig.getCurrentCoprocessorContextId();
+
+        vm.prank(address(0x999));
+        vm.expectRevert(abi.encodeWithSelector(ACLOwnable.NotHostOwner.selector, address(0x999)));
+        protocolConfig.destroyCoprocessorContext(id);
+    }
+
+    function test_revertReinitializeV3_afterFullInit() public {
+        _setupDefault();
+        vm.expectRevert(Initializable.InvalidInitialization.selector);
+        protocolConfig.reinitializeV3();
     }
 }

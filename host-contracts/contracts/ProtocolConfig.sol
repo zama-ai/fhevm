@@ -2,8 +2,8 @@
 pragma solidity ^0.8.24;
 
 import {IProtocolConfig} from "./interfaces/IProtocolConfig.sol";
-import {KmsNode} from "./shared/Structs.sol";
-import {KMS_CONTEXT_COUNTER_BASE} from "./shared/Constants.sol";
+import {KmsNode, ChainUpgradeWindow} from "./shared/Structs.sol";
+import {KMS_CONTEXT_COUNTER_BASE, COPROC_CONTEXT_COUNTER_BASE} from "./shared/Constants.sol";
 import {UUPSUpgradeableEmptyProxy} from "./shared/UUPSUpgradeableEmptyProxy.sol";
 import {ACLOwnable} from "./shared/ACLOwnable.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
@@ -24,7 +24,7 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     uint256 private constant PATCH_VERSION = 0;
 
     /// @dev Shared between `initializeFromEmptyProxy` and `initializeFromMigration`.
-    uint64 private constant REINITIALIZER_VERSION = 2;
+    uint64 private constant REINITIALIZER_VERSION = 3;
 
     /// @notice Upper bound on the KMS committee size and on every per-context threshold.
     /// @dev Driven by the proof format consumed in
@@ -62,6 +62,8 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         mapping(uint256 contextId => uint256) mpcThresholdForContext;
         /// @notice Whether a context has been destroyed.
         mapping(uint256 contextId => bool) destroyedContexts;
+        /// @notice Current coprocessor context ID counter.
+        uint256 currentCoprocessorContextId;
     }
 
     /// @dev keccak256(abi.encode(uint256(keccak256("fhevm.storage.ProtocolConfig")) - 1)) & ~bytes32(uint256(0xff))
@@ -99,6 +101,7 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     ) public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
         $.currentKmsContextId = KMS_CONTEXT_COUNTER_BASE;
+        $.currentCoprocessorContextId = COPROC_CONTEXT_COUNTER_BASE;
         _defineKmsContext(initialKmsNodes, initialThresholds);
     }
 
@@ -124,7 +127,19 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
         // Seed counter so _defineKmsContext's ++counter lands on the original context ID
         $.currentKmsContextId = existingContextId - 1;
+        $.currentCoprocessorContextId = COPROC_CONTEXT_COUNTER_BASE;
         _defineKmsContext(existingKmsNodes, existingThresholds);
+    }
+
+    /**
+     * @notice Reinitializer for proxies previously initialized at version 2 (KMS-context only).
+     *         Seeds `currentCoprocessorContextId` at the namespace base so the first
+     *         `defineNewCoprocessorContext` call lands at `COPROC_CONTEXT_COUNTER_BASE + 1`.
+     */
+    /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
+    /// @custom:oz-upgrades-validate-as-initializer
+    function reinitializeV3() public virtual reinitializer(REINITIALIZER_VERSION) {
+        _getProtocolConfigStorage().currentCoprocessorContextId = COPROC_CONTEXT_COUNTER_BASE;
     }
 
     // -----------------------------------------------------------------------------------------
@@ -152,6 +167,61 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
 
         $.destroyedContexts[kmsContextId] = true;
         emit KmsContextDestroyed(kmsContextId);
+    }
+
+    /// @inheritdoc IProtocolConfig
+    function defineNewCoprocessorContext(
+        string calldata softwareVersion,
+        ChainUpgradeWindow[] calldata chainUpgradeWindows,
+        uint64 gwStartBlock,
+        uint16 ciphertextVersion
+    ) external virtual onlyACLOwner {
+        if (bytes(softwareVersion).length == 0) {
+            revert EmptySoftwareVersion();
+        }
+        if (chainUpgradeWindows.length == 0) {
+            revert EmptyChainUpgradeWindows();
+        }
+        if (gwStartBlock == 0) {
+            revert ZeroGwStartBlock();
+        }
+        if (ciphertextVersion > uint16(type(int16).max)) {
+            revert CiphertextVersionTooLarge(ciphertextVersion);
+        }
+
+        for (uint256 i = 0; i < chainUpgradeWindows.length; i++) {
+            ChainUpgradeWindow calldata cw = chainUpgradeWindows[i];
+            if (cw.chainId == 0) {
+                revert ZeroChainId();
+            }
+            if (cw.startBlock > cw.endBlock) {
+                revert InvalidBlockWindow(cw.chainId, cw.startBlock, cw.endBlock);
+            }
+            for (uint256 j = 0; j < i; j++) {
+                if (chainUpgradeWindows[j].chainId == cw.chainId) {
+                    revert DuplicateChainId(cw.chainId);
+                }
+            }
+        }
+
+        uint256 newCoprocessorContextId = ++_getProtocolConfigStorage().currentCoprocessorContextId;
+        emit NewCoprocessorContext(
+            newCoprocessorContextId,
+            softwareVersion,
+            chainUpgradeWindows,
+            gwStartBlock,
+            ciphertextVersion
+        );
+    }
+
+    /// @inheritdoc IProtocolConfig
+    function destroyCoprocessorContext(uint256 coprocessorContextId) external virtual onlyACLOwner {
+        if (!_isValidCoprocessorContext(coprocessorContextId)) {
+            revert InvalidCoprocessorContext(coprocessorContextId);
+        }
+
+        _getProtocolConfigStorage().destroyedContexts[coprocessorContextId] = true;
+        emit CoprocessorContextDestroyed(coprocessorContextId);
     }
 
     // -----------------------------------------------------------------------------------------
@@ -262,6 +332,16 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     }
 
     /// @inheritdoc IProtocolConfig
+    function getCurrentCoprocessorContextId() external view virtual returns (uint256) {
+        return _getProtocolConfigStorage().currentCoprocessorContextId;
+    }
+
+    /// @inheritdoc IProtocolConfig
+    function isValidCoprocessorContext(uint256 coprocessorContextId) external view virtual returns (bool) {
+        return _isValidCoprocessorContext(coprocessorContextId);
+    }
+
+    /// @inheritdoc IProtocolConfig
     function getVersion() external pure virtual returns (string memory) {
         return
             string(
@@ -369,6 +449,17 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         if (!_isValidKmsContext(kmsContextId)) {
             revert InvalidKmsContext(kmsContextId);
         }
+    }
+
+    /**
+     * @dev Checks whether a context ID is in range and not destroyed.
+     */
+    function _isValidCoprocessorContext(uint256 coprocessorContextId) internal view virtual returns (bool) {
+        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
+        return
+            coprocessorContextId >= COPROC_CONTEXT_COUNTER_BASE + 1 &&
+            coprocessorContextId <= $.currentCoprocessorContextId &&
+            !$.destroyedContexts[coprocessorContextId];
     }
 
     /**

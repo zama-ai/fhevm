@@ -11,13 +11,16 @@ use tracing::{error, info};
 
 use crate::cmd::block_history::{BlockHash, BlockSummary};
 use crate::cmd::InfiniteLogIter;
-use crate::contracts::{AclContract, KMSGeneration, TfheContract};
+use crate::contracts::{
+    AclContract, KMSGeneration, ProtocolConfig, TfheContract,
+};
 use crate::database::dependence_chains::dependence_chains;
 use crate::database::tfhe_event_propagate::{
     acl_result_handles, tfhe_result_handle, Chain, ChainHash, Database, LogTfhe,
 };
 use crate::kms_generation::insert_kms_generation_events_tx;
 use crate::kms_generation::metrics::KMS_EVENT_DECODE_FAIL_COUNTER;
+use crate::protocol_config::metrics::PROTOCOL_CONFIG_EVENT_DECODE_FAIL_COUNTER;
 
 pub struct BlockLogs<T> {
     pub logs: Vec<T>,
@@ -31,6 +34,10 @@ pub struct IngestOptions {
     pub dependence_by_connexity: bool,
     pub dependence_cross_block: bool,
     pub dependent_ops_max_per_chain: u32,
+    /// Resolved once at startup from the listener's own `chain_id` and the
+    /// configured `--ethereum-chain-id`. When false, the listener silently
+    /// skips `ProtocolConfig.NewCoprocessorContext` events.
+    pub is_protocol_config_listener: bool,
 }
 
 /// Converts a block timestamp to a UTC `PrimitiveDateTime`.
@@ -148,6 +155,7 @@ fn classify_slow_by_split_dependency_closure(
 /// per the channel-name convention.
 const NEW_BLOCK_CHANNEL: &str = "event_new_block";
 
+#[allow(clippy::too_many_arguments)]
 pub async fn ingest_block_logs(
     chain_id: ChainId,
     db: &mut Database,
@@ -155,6 +163,7 @@ pub async fn ingest_block_logs(
     acl_contract_address: &Option<Address>,
     tfhe_contract_address: &Option<Address>,
     kms_generation_contract_address: &Option<Address>,
+    protocol_config_contract_address: &Option<Address>,
     options: IngestOptions,
 ) -> Result<(), sqlx::Error> {
     let mut tx = db.new_transaction().await?;
@@ -173,7 +182,7 @@ pub async fn ingest_block_logs(
     info!(
         channel = NEW_BLOCK_CHANNEL,
         payload = %new_block_payload,
-        "Queueing new_block pg_notify in ingest transaction"
+        "Queuing new_block pg_notify in ingest transaction"
     );
     sqlx::query("SELECT pg_notify($1, $2)")
         .bind(NEW_BLOCK_CHANNEL)
@@ -181,11 +190,9 @@ pub async fn ingest_block_logs(
         .execute(&mut *tx)
         .await?;
 
-    // In GCS mode the listener is NOT paused before activation: it processes
-    // events from startup, writing to the `gcs.*` schema via the connection's
-    // `search_path`. Pre-`start_block` rows are cleaned up by the
-    // upgrade-controller after the readiness check (see
-    // `prune_gcs_computations_before_start`).
+    // Only the listener watching the configured Ethereum host chain decodes
+    // `NewCoprocessorContext`; every other listener skips the channel.
+    let is_protocol_config_listener = options.is_protocol_config_listener;
 
     let mut is_allowed = HashSet::<Handle>::new();
     let mut tfhe_event_log = vec![];
@@ -279,7 +286,20 @@ pub async fn ingest_block_logs(
             }
         }
 
-        if is_acl_address || is_tfhe_address || is_kms_gen_address {
+        let is_protocol_config_address = is_protocol_config_listener
+            && protocol_config_contract_address
+                .as_ref()
+                .is_some_and(|addr| &log.inner.address == addr);
+        if is_protocol_config_address {
+            handle_protocol_config_log(&mut tx, chain_id, log).await?;
+            continue;
+        }
+
+        if is_acl_address
+            || is_tfhe_address
+            || is_kms_gen_address
+            || is_protocol_config_address
+        {
             error!(
                 event_address = ?log.inner.address,
                 acl_contract_address = ?acl_contract_address,
@@ -397,6 +417,90 @@ pub async fn ingest_block_logs(
         .await?;
     }
     tx.commit().await
+}
+
+/// Channel name the upgrade-controller LISTENs on for `NewCoprocessorContext` events.
+const UPGRADE_ACTIVATED_CHANNEL: &str = "event_upgrade_activated";
+
+/// Decodes a log known to come from the configured ProtocolConfig contract on
+/// the authority chain and dispatches it. Caller must pre-gate on
+/// `is_protocol_config_listener && log.address == protocol_config_contract_address`.
+async fn handle_protocol_config_log(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    chain_id: ChainId,
+    log: &Log,
+) -> Result<(), sqlx::Error> {
+    match ProtocolConfig::ProtocolConfigEvents::decode_log(&log.inner) {
+        Ok(event) => match &event.data {
+            ProtocolConfig::ProtocolConfigEvents::NewCoprocessorContext(new_ctx) => {
+                notify_new_coprocessor_context(tx, chain_id, new_ctx).await?;
+            }
+            other => {
+                info!(
+                    ?other,
+                    block_number = ?log.block_number,
+                    tx_hash = ?log.transaction_hash,
+                    log_index = ?log.log_index,
+                    "ProtocolConfig event decoded but not actionable; skipping",
+                );
+            }
+        },
+        Err(_) => {
+            PROTOCOL_CONFIG_EVENT_DECODE_FAIL_COUNTER.inc();
+        }
+    }
+    Ok(())
+}
+
+async fn notify_new_coprocessor_context(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    chain_id: ChainId,
+    event: &ProtocolConfig::NewCoprocessorContext,
+) -> Result<(), sqlx::Error> {
+    let listener_chain_id = chain_id.as_u64();
+    let Some(window) = event
+        .chainUpgradeWindows
+        .iter()
+        .find(|w| w.chainId == listener_chain_id)
+    else {
+        info!(
+            listener_chain_id,
+            "NewCoprocessorContext does not include this chain — skipping pg_notify"
+        );
+        return Ok(());
+    };
+
+    let context_id_bytes = event.coprocessorContextId.to_be_bytes::<32>();
+    let context_id_hex =
+        format!("0x{}", alloy_primitives::hex::encode(context_id_bytes));
+
+    info!(
+        coprocessor_context_id = %context_id_hex,
+        software_version = %event.softwareVersion,
+        chain_id = listener_chain_id,
+        start_block = window.startBlock,
+        end_block = window.endBlock,
+        gw_start_block = event.gwStartBlock,
+        ciphertext_version = event.ciphertextVersion,
+        "Decoded NewCoprocessorContext, emitting pg_notify('event_upgrade_activated')"
+    );
+
+    let payload = serde_json::json!({
+        "proposal_id":        &context_id_hex,
+        "chain_id":           listener_chain_id as i64,
+        "start_block":        window.startBlock as i64,
+        "end_block":          window.endBlock as i64,
+        "gw_start_block":     event.gwStartBlock as i64,
+        "ciphertext_version": event.ciphertextVersion as i16,
+        "version":            &event.softwareVersion,
+    });
+
+    sqlx::query("SELECT pg_notify($1, $2)")
+        .bind(UPGRADE_ACTIVATED_CHANNEL)
+        .bind(payload.to_string())
+        .execute(&mut **tx)
+        .await
+        .map(|_| ())
 }
 
 pub async fn update_finalized_blocks(

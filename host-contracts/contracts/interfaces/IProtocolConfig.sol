@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import {KmsNode} from "../shared/Structs.sol";
+import {KmsNode, ChainUpgradeWindow} from "../shared/Structs.sol";
 
 /**
  * @title Interface for the ProtocolConfig contract.
@@ -40,6 +40,28 @@ interface IProtocolConfig {
      * @param kmsContextId The destroyed context ID.
      */
     event KmsContextDestroyed(uint256 indexed kmsContextId);
+
+    /**
+     * @notice Emitted when a new coprocessor context is defined.
+     * @param coprocessorContextId The new coprocessor context ID.
+     * @param softwareVersion The coprocessor software version for the new context.
+     * @param chainUpgradeWindows The per-host-chain replay windows for the upgrade.
+     * @param gwStartBlock The Gateway block at which GCS's gateway-listener resumes from.
+     * @param ciphertextVersion The ciphertext version the new software writes; promoted into the `versioning` singleton at cutover.
+     */
+    event NewCoprocessorContext(
+        uint256 indexed coprocessorContextId,
+        string softwareVersion,
+        ChainUpgradeWindow[] chainUpgradeWindows,
+        uint64 gwStartBlock,
+        uint16 ciphertextVersion
+    );
+
+    /**
+     * @notice Emitted when a coprocessor context is destroyed.
+     * @param coprocessorContextId The destroyed coprocessor context ID.
+     */
+    event CoprocessorContextDestroyed(uint256 indexed coprocessorContextId);
 
     // -----------------------------------------------------------------------------------------
     // Errors
@@ -93,6 +115,36 @@ interface IProtocolConfig {
     /// @param kmsContextId The current context ID.
     error CurrentKmsContextCannotBeDestroyed(uint256 kmsContextId);
 
+    /// @notice The coprocessor `softwareVersion` argument is the empty string.
+    error EmptySoftwareVersion();
+
+    /// @notice The `chainUpgradeWindows` array argument is empty.
+    error EmptyChainUpgradeWindows();
+
+    /// @notice A chain entry has a zero `chainId`.
+    error ZeroChainId();
+
+    /// @notice The same `chainId` appears more than once in the `chainUpgradeWindows` array.
+    /// @param chainId The duplicated chain id.
+    error DuplicateChainId(uint64 chainId);
+
+    /// @notice The block window for a chain entry is invalid (`startBlock > endBlock`).
+    /// @param chainId The chain id whose window is invalid.
+    /// @param startBlock The provided start block.
+    /// @param endBlock The provided end block.
+    error InvalidBlockWindow(uint64 chainId, uint64 startBlock, uint64 endBlock);
+
+    /// @notice The `gwStartBlock` argument is zero.
+    error ZeroGwStartBlock();
+
+    /// @notice `ciphertextVersion` exceeds the off-chain `int16` storage range.
+    /// @param ciphertextVersion The rejected value.
+    error CiphertextVersionTooLarge(uint16 ciphertextVersion);
+
+    /// @notice The coprocessor context ID does not exist or has been destroyed.
+    /// @param coprocessorContextId The invalid coprocessor context ID.
+    error InvalidCoprocessorContext(uint256 coprocessorContextId);
+
     // -----------------------------------------------------------------------------------------
     // State-changing functions
     // -----------------------------------------------------------------------------------------
@@ -109,6 +161,26 @@ interface IProtocolConfig {
      * @param kmsContextId The context ID to destroy.
      */
     function destroyKmsContext(uint256 kmsContextId) external;
+
+    /**
+     * @notice Create a new coprocessor context with the given software version, replay windows, and Gateway start block.
+     * @param softwareVersion The coprocessor software version.
+     * @param chainUpgradeWindows The per-host-chain replay windows.
+     * @param gwStartBlock The Gateway block to resume from.
+     * @param ciphertextVersion The ciphertext version the new software writes.
+     */
+    function defineNewCoprocessorContext(
+        string calldata softwareVersion,
+        ChainUpgradeWindow[] calldata chainUpgradeWindows,
+        uint64 gwStartBlock,
+        uint16 ciphertextVersion
+    ) external;
+
+    /**
+     * @notice Destroy a coprocessor context, preventing it from being used.
+     * @param coprocessorContextId The context ID to destroy.
+     */
+    function destroyCoprocessorContext(uint256 coprocessorContextId) external;
 
     /**
      * @notice Returns the current active KMS context ID.
@@ -225,6 +297,19 @@ interface IProtocolConfig {
      * @return The MPC threshold for the context.
      */
     function getMpcThresholdForContext(uint256 kmsContextId) external view returns (uint256);
+
+    /**
+     * @notice Returns the current coprocessor context ID.
+     * @return The current context ID.
+     */
+    function getCurrentCoprocessorContextId() external view returns (uint256);
+
+    /**
+     * @notice Checks whether a coprocessor context ID is valid (exists and is not destroyed).
+     * @param coprocessorContextId The context ID to check.
+     * @return True if the context is valid.
+     */
+    function isValidCoprocessorContext(uint256 coprocessorContextId) external view returns (bool);
 
     /**
      * @notice Returns the contract version.

@@ -77,6 +77,9 @@ spec:
             {{- if not (has "kms-generation-address" $disabled) }}
             - --kms-generation-address=$(KMS_GENERATION_ADDRESS)
             {{- end }}
+            {{- if not (has "protocol-config-address" $disabled) }}
+            - --protocol-config-address=$(PROTOCOL_CONFIG_ADDRESS)
+            {{- end }}
             {{- if not (has "health-port" $disabled) }}
             - --health-port={{ $.Values.hostListenerCatchupOnlyShared.ports.healthcheck }}
             {{- end }}
@@ -194,6 +197,19 @@ spec:
               valueFrom:
                 {{- toYaml $chain.kmsGenerationContractAddressValueFrom | nindent 16 }}
               {{- end }}
+            {{- end }}
+            {{- if or $chain.protocolConfigContractAddress $chain.protocolConfigContractAddressValueFrom }}
+            - name: PROTOCOL_CONFIG_ADDRESS
+              {{- if $chain.protocolConfigContractAddress }}
+              value: {{ $chain.protocolConfigContractAddress | quote }}
+              {{- else if $chain.protocolConfigContractAddressValueFrom }}
+              valueFrom:
+                {{- toYaml $chain.protocolConfigContractAddressValueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- with $.Values.commonConfig.ethereumChainId }}
+            - name: ETHEREUM_CHAIN_ID
+              value: {{ . | quote }}
             {{- end }}
           {{- if default $.Values.commonConfig.tracing.enabled $.Values.hostListenerCatchupOnlyShared.tracing.enabled }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT

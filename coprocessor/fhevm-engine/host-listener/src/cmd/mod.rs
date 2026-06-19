@@ -66,6 +66,9 @@ pub struct Args {
     #[arg(long)]
     pub kms_generation_address: String,
 
+    #[command(flatten)]
+    pub protocol_config: crate::protocol_config::ProtocolConfigArgs,
+
     #[arg(
         long,
         default_value = "postgresql://postgres:postgres@localhost:5432/coprocessor"
@@ -253,6 +256,11 @@ impl InfiniteLogIter {
         if !args.kms_generation_address.is_empty() {
             contract_addresses
                 .push(Address::from_str(&args.kms_generation_address).unwrap());
+        };
+        if !args.protocol_config.address.is_empty() {
+            contract_addresses.push(
+                Address::from_str(&args.protocol_config.address).unwrap(),
+            );
         };
         Self {
             url: args.url.clone(),
@@ -959,7 +967,9 @@ async fn db_insert_block(
     acl_contract_address: &Option<Address>,
     tfhe_contract_address: &Option<Address>,
     kms_generation_address: &Option<Address>,
+    protocol_config_address: &Option<Address>,
     args: &Args,
+    is_protocol_config_listener: bool,
 ) -> anyhow::Result<()> {
     info!(
         block = ?block_logs.summary,
@@ -976,10 +986,12 @@ async fn db_insert_block(
             acl_contract_address,
             tfhe_contract_address,
             kms_generation_address,
+            protocol_config_address,
             IngestOptions {
                 dependence_by_connexity: args.dependence_by_connexity,
                 dependence_cross_block: args.dependence_cross_block,
                 dependent_ops_max_per_chain: args.dependent_ops_max_per_chain,
+                is_protocol_config_listener,
             },
         )
         .await;
@@ -1067,12 +1079,25 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
             },
         )?)
     };
+    let protocol_config_address = args.protocol_config.parsed_address()?;
     let aws_s3_client = AwsS3Client {};
 
     let mut log_iter = InfiniteLogIter::new(&args);
     let chain_id = log_iter.get_chain_id().await?;
 
     info!(chain_id = %chain_id, "Chain ID");
+    let is_protocol_config_listener =
+        crate::protocol_config::resolve_protocol_config_listener(
+            args.protocol_config.chain_id,
+            chain_id.as_u64(),
+        )?;
+    if is_protocol_config_listener && protocol_config_address.is_none() {
+        warn!(
+            chain_id = %chain_id,
+            "ProtocolConfig listener has no --protocol-config-address; \
+             ProtocolConfig.NewCoprocessorContext events will not be decoded"
+        );
+    }
     if args.database_url.as_str().is_empty() {
         error!("Database URL is required");
         panic!("Database URL is required");
@@ -1193,7 +1218,9 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
                 &acl_contract_address,
                 &tfhe_contract_address,
                 &kms_generation_address,
+                &protocol_config_address,
                 &args,
+                is_protocol_config_listener,
             )
             .await;
             if status.is_err() {

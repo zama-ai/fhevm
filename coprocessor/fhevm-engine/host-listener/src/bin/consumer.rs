@@ -32,6 +32,9 @@ struct Args {
     #[arg(long, help = "KMS generation contract address to monitor")]
     kms_generation_address: Address,
 
+    #[command(flatten)]
+    protocol_config: host_listener::protocol_config::ProtocolConfigArgs,
+
     #[arg(long, help = "PostgreSQL connection URL")]
     database_url: DatabaseURL,
 
@@ -106,6 +109,16 @@ async fn main() -> anyhow::Result<()> {
 
     let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
 
+    if matches!(args.protocol_config.chain_id, Some(0)) {
+        return Err(anyhow::anyhow!(
+            "--ethereum-chain-id=0 is not a valid chain id; omit the flag to disable ProtocolConfig decoding"
+        ));
+    }
+    let protocol_config_address = args
+        .protocol_config
+        .parsed_address()?
+        .ok_or_else(|| anyhow::anyhow!("--protocol-config-address is required"))?;
+
     let cancel_token = CancellationToken::new();
     metrics_server::spawn(
         args.metrics_addr.clone(),
@@ -129,6 +142,7 @@ async fn main() -> anyhow::Result<()> {
         acl_address: args.acl_contract_address,
         tfhe_address: args.tfhe_contract_address,
         kms_generation_address: args.kms_generation_address,
+        protocol_config_address,
         database_url: args.database_url,
         database_retry_interval: Duration::from_millis(
             args.database_retry_interval,
@@ -141,6 +155,7 @@ async fn main() -> anyhow::Result<()> {
         dependent_ops_max_per_chain: args.dependent_ops_max_per_chain,
         chain_id: args.chain_id,
         gcs_mode,
+        ethereum_chain_id: args.protocol_config.chain_id,
     };
 
     run_consumer(config).await

@@ -77,6 +77,7 @@ pub struct PollerConfig {
     pub acl_address: Address,
     pub tfhe_address: Address,
     pub kms_generation_address: Address,
+    pub protocol_config_address: Address,
     pub database_url: DatabaseURL,
     pub finality_lag: u64,
     pub batch_size: u64,
@@ -95,12 +96,14 @@ pub struct PollerConfig {
     pub dependence_cross_block: bool,
     pub dependent_ops_max_per_chain: u32,
     pub gcs_mode: bool,
+    pub ethereum_chain_id: Option<u64>,
 }
 
 pub async fn run_poller(config: PollerConfig) -> Result<()> {
     let acl_address = config.acl_address;
     let tfhe_address = config.tfhe_address;
     let kms_generation_address = config.kms_generation_address;
+    let protocol_config_address = config.protocol_config_address;
 
     let blockchain_tick = HeartBeat::new();
     let blockchain_timeout_tick = HeartBeat::new();
@@ -136,6 +139,11 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
         }
     };
     let chain_id_str = chain_id.to_string();
+    let is_protocol_config_listener =
+        crate::protocol_config::resolve_protocol_config_listener(
+            config.ethereum_chain_id,
+            chain_id.as_u64(),
+        )?;
     blockchain_timeout_tick.update();
 
     let mut db = Database::new_with_gcs_mode(
@@ -343,6 +351,7 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
                 dependence_by_connexity: config.dependence_by_connexity,
                 dependence_cross_block: config.dependence_cross_block,
                 dependent_ops_max_per_chain: config.dependent_ops_max_per_chain,
+                is_protocol_config_listener,
             };
             match ingest_with_retry(
                 chain_id,
@@ -351,6 +360,7 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
                 acl_address,
                 tfhe_address,
                 kms_generation_address,
+                protocol_config_address,
                 config.retry_interval,
                 ingest_options,
             )
@@ -435,6 +445,7 @@ async fn ingest_with_retry(
     acl_address: Address,
     tfhe_address: Address,
     kms_generation_address: Address,
+    protocol_config_address: Address,
     retry_interval: Duration,
     options: IngestOptions,
 ) -> Result<u64, (sqlx::Error, u64)> {
@@ -442,6 +453,7 @@ async fn ingest_with_retry(
     let acl = Some(acl_address);
     let tfhe = Some(tfhe_address);
     let kms_gen_address = Some(kms_generation_address);
+    let protocol_config = Some(protocol_config_address);
     loop {
         match ingest_block_logs(
             chain_id,
@@ -450,6 +462,7 @@ async fn ingest_with_retry(
             &acl,
             &tfhe,
             &kms_gen_address,
+            &protocol_config,
             options.clone(),
         )
         .await
