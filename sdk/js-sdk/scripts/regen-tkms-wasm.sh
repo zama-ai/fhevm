@@ -78,14 +78,11 @@ kms_base=$BASE_SHA
 tkms_wasm_version=v$VERSION
 EOF
 
-# 6. Rewire the SDK import sites from the previously-vendored version to the new one.
-OLD="$(ls "$TKMS_DIR"/kms_lib.v*.js 2>/dev/null | sed -E 's#.*/kms_lib\.v(.*)\.js#\1#' | grep -vx "$VERSION" | head -1 || true)"
-if [ -n "$OLD" ]; then
-  echo "[regen] rewiring imports v$OLD -> v$VERSION in decrypt/module/{init,api}-p.ts"
-  for f in "$SDK_DIR/src/core/modules/decrypt/module/init-p.ts" "$SDK_DIR/src/core/modules/decrypt/module/api-p.ts"; do
-    sed -i.bak "s/v$OLD/v$VERSION/g" "$f" && rm -f "$f.bak"
-  done
-  echo "[regen] NOTE: remove the old kms_lib.v$OLD.* blob in a separate step once the new build is verified."
-fi
-
-echo "[regen] done. Verify with the SDK decrypt tests, then commit the v$VERSION blob + KMS_BUILT_FROM."
+# 6. This is the SOLANA-ONLY blob. It is NOT swapped into the EVM decrypt module: kms
+#    `feature/solana` is a newer kms (v0.14.x) whose TKMS JS API differs from the EVM-vendored
+#    blob (e.g. `getWasmInfo` removed, `process_user_decryption_resp_from_js` gained a `threshold`
+#    arg), so reusing it for EVM would break the EVM path. Only the Solana de-signcryption path
+#    imports this blob by its versioned filename. The two blobs coexist until fhevm upgrades the
+#    EVM TKMS bindings to this kms version, at which point they converge (delete one).
+echo "[regen] vendored Solana-only TKMS blob: kms_lib.v$VERSION.* — imported by the Solana userDecrypt path; EVM blob untouched."
+echo "[regen] done. Verify the Solana de-signcryption against a live stack, then commit the v$VERSION blob + KMS_BUILT_FROM."
