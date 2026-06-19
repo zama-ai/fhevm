@@ -9,7 +9,6 @@
 #   TE_VALUE=55 bash solana/scripts/poc/full-vertical.sh
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-KMS="$(cd "$ROOT/../../zama/kms" 2>/dev/null && pwd || echo /Users/work/code/zama/kms)"
 VALUE="${TE_VALUE:-55}"
 # Input-flow leg: encrypt IV (default 56) as an external input, then one fhe_eval adds ADD (default 2)
 # to it on-chain and the result is public-decrypted == IV+ADD (parametrized so it can't pass on a
@@ -106,17 +105,19 @@ done
 dv="$(echo "$r" | python3 -c "import sys,json;print(int(json.load(sys.stdin)['result']['decryptedValue'],16))")"
 [ "$dv" = "$VALUE" ] && echo "    public-decrypt cleartext=$dv OK" || fail "public-decrypt $dv != $VALUE"
 
-echo "==> [user-decrypt] V2 path: public @fhevm/sdk/solana client -> relayer /v3/user-decrypt (ed25519) + de-signcrypt"
-# The public @fhevm/sdk/solana client (test-suite/fhevm/solana-userdecrypt.ts, run by the Rust
-# harness via bun) builds the ed25519-signed v3 request, POSTs to /v3/user-decrypt, and returns the
-# aggregated KMS shares; the Rust harness owns ML-KEM keygen + de-signcryption (kms-core
-# process_user_decryption_resp_solana, not exposed in the SDK WASM) and asserts the cleartext.
-( cd "$KMS" && SOLANA_UD_HANDLE="$H" SOLANA_UD_EXPECTED="$VALUE" SOLANA_UD_CONTEXT_ID="$CTX" \
-    SOLANA_UD_CHAIN_ID="$SID" SOLANA_UD_SDK_DIR="$ROOT/sdk/js-sdk" \
-    SOLANA_UD_LAUNCHER_DIR="$ROOT/test-suite/fhevm" \
-    cargo test -p kms --features non-wasm --test solana_user_decrypt_live -- --ignored --nocapture ) \
-  || fail "user-decrypt test failed"
-echo "    user-decrypt cleartext=$VALUE OK (V2 ed25519 via public @fhevm/sdk/solana client)"
+echo "==> [user-decrypt] PURE-SDK: @fhevm/sdk/solana keygen + /v3/user-decrypt (ed25519) + IN-SDK de-signcrypt (no kms checkout)"
+# Whole round-trip in JS: solana-userdecrypt-full.ts does ML-KEM keygen, the v3 ed25519 request, and
+# de-signcryption to cleartext via the SDK's deSigncryptSolanaUserDecrypt (vendored Solana TKMS WASM,
+# kms_lib.v0.14.0-solana). The deployer's default keypair is the user whose ACL grants USE; its
+# pubkey is the sole allowed acl_domain_key (matches the compute leg's TE_ALLOW). No kms-core build.
+UD_SK="0x$(python3 -c "import json,os;print(bytes(json.load(open(os.path.expanduser('~/.config/solana/id.json')))[:32]).hex())")"
+UD_CID="0x$(python3 -c "print(int('$CTX').to_bytes(32,'big').hex())")"
+( cd "$ROOT/test-suite/fhevm" && \
+    UD_RELAYER_URL=http://127.0.0.1:3000 UD_CONTRACTS_CHAIN_ID="$SID" UD_HANDLE="$H" \
+    UD_SECRET_KEY="$UD_SK" UD_CONTEXT_ID="$UD_CID" UD_ALLOWED_DOMAIN_KEYS="$USER" UD_EXPECTED="$VALUE" \
+    bun run solana-userdecrypt-full.ts ) \
+  || fail "pure-SDK user-decrypt failed"
+echo "    user-decrypt cleartext=$VALUE OK (PURE-SDK: ed25519 v3 + in-SDK de-signcryption, no kms checkout)"
 
 # Input flow (#1539): compute on the VERIFIED external input itself. One fhe_eval adds $ADD to the
 # attested input in-frame (FheEvalOperand::VerifiedInput — re-verified on-chain via secp256k1, no
