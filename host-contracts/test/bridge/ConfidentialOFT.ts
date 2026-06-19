@@ -17,7 +17,7 @@ describe('ConfidentialOFT', function () {
     this.oft = fx.oft;
     this.oftAddress = await fx.oft.getAddress();
     // The OFT is wired to the destination-side bridge — that is what authenticates
-    // `onReceive` calls and dispatches outbound sends.
+    // `onConfidentialBridgeReceived` calls and dispatches outbound sends.
     this.bridge = fx.dstBridge;
     this.instances = await createInstances(this.signers);
   });
@@ -48,13 +48,13 @@ describe('ConfidentialOFT', function () {
     });
   });
 
-  describe('onReceive authentication', function () {
+  describe('onConfidentialBridgeReceived authentication', function () {
     it('reverts when caller is not the ConfidentialBridge', async function () {
       // Caller is signers.bob; the OFT only accepts the bridge.
       await expect(
         this.oft
           .connect(this.signers.bob)
-          .onReceive(
+          .onConfidentialBridgeReceived(
             SRC_EID,
             ethers.zeroPadValue(this.signers.alice.address, 32),
             ethers.AbiCoder.defaultAbiCoder().encode(
@@ -62,7 +62,8 @@ describe('ConfidentialOFT', function () {
               [this.signers.alice.address, ethers.ZeroHash]
             ),
             [],
-            []
+            [],
+            ethers.ZeroHash
           )
       )
         .to.be.revertedWithCustomError(this.oft, 'OnlyConfidentialBridge')
@@ -79,7 +80,7 @@ describe('ConfidentialOFT', function () {
       await expect(
         this.oft
           .connect(bridgeSigner)
-          .onReceive(
+          .onConfidentialBridgeReceived(
             SRC_EID,
             untrustedPeer,
             ethers.AbiCoder.defaultAbiCoder().encode(
@@ -87,7 +88,8 @@ describe('ConfidentialOFT', function () {
               [this.signers.alice.address, ethers.ZeroHash]
             ),
             [],
-            []
+            [],
+            ethers.ZeroHash
           )
       )
         .to.be.revertedWithCustomError(this.oft, 'UntrustedPeer')

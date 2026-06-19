@@ -19,12 +19,12 @@ import {aclAdd, fhevmExecutorAdd} from "../../addresses/FHEVMHostAddresses.sol";
  * @dev    The FHE compute / encrypted balance behavior is exercised by EncryptedERC20
  *         tests elsewhere; these tests instead cover:
  *         - send authorization (must hold ACL on the amount handle)
- *         - onReceive authentication (bridge-only, trusted-peer-only)
+ *         - onConfidentialBridgeReceived authentication (bridge-only, trusted-peer-only)
  *         - setPeer governance
  *
  *         The cOFT is deployed on the destination chain (eid=DST_EID) so its
  *         `confidentialBridge` is the destination-side bridge — the contract that
- *         dispatches `onReceive` via lzCompose.
+ *         dispatches `onConfidentialBridgeReceived` via lzCompose.
  */
 contract ConfidentialOFTTest is TestHelperOz5, HostContractsDeployerTestUtils {
     uint32 internal constant SRC_EID = 1;
@@ -126,23 +126,23 @@ contract ConfidentialOFTTest is TestHelperOz5, HostContractsDeployerTestUtils {
     }
 
     ////////////////////////////////////////////////////////////////////////////////
-    // onReceive authentication
+    // onConfidentialBridgeReceived authentication
     ////////////////////////////////////////////////////////////////////////////////
 
     function test_OnReceive_RevertsIfCallerNotBridge() public {
         bytes32[] memory empty = new bytes32[](0);
         vm.expectRevert(abi.encodeWithSelector(ConfidentialOFT.OnlyConfidentialBridge.selector, address(this)));
-        oft.onReceive(SRC_EID, SRC_PEER_BEEF, abi.encode(bob, bytes32(0)), empty, empty);
+        oft.onConfidentialBridgeReceived(SRC_EID, SRC_PEER_BEEF, abi.encode(bob, bytes32(0)), empty, empty, bytes32(0));
     }
 
     function test_OnReceive_RevertsIfPeerUntrusted() public {
         bytes32[] memory empty = new bytes32[](0);
         vm.prank(address(dstBridge));
         vm.expectRevert(abi.encodeWithSelector(ConfidentialOFT.UntrustedPeer.selector, SRC_EID, SRC_PEER_BEEF));
-        oft.onReceive(SRC_EID, SRC_PEER_BEEF, abi.encode(bob, bytes32(0)), empty, empty);
+        oft.onConfidentialBridgeReceived(SRC_EID, SRC_PEER_BEEF, abi.encode(bob, bytes32(0)), empty, empty, bytes32(0));
     }
 
-    /// @dev When the peer is trusted, onReceive proceeds past authentication and runs
+    /// @dev When the peer is trusted, onConfidentialBridgeReceived proceeds past authentication and runs
     ///      `_mint(recipient, dstAmount)`. The FHE.add downstream requires ACL/coprocessor
     ///      state we don't seed here, so we accept that the call may revert inside FHE —
     ///      but it must revert AFTER passing our authentication checks. Inspect the
@@ -160,7 +160,7 @@ contract ConfidentialOFTTest is TestHelperOz5, HostContractsDeployerTestUtils {
         // Authentication should NOT revert with OnlyConfidentialBridge / UntrustedPeer.
         // If a revert happens, it must come from a later FHE.* call, not auth.
         vm.prank(address(dstBridge));
-        try oft.onReceive(SRC_EID, SRC_PEER_BEEF, abi.encode(bob, dst), srcList, dstList) {
+        try oft.onConfidentialBridgeReceived(SRC_EID, SRC_PEER_BEEF, abi.encode(bob, dst), srcList, dstList, bytes32(0)) {
             // Mint succeeded — pass.
         } catch (bytes memory reason) {
             // If we hit one of our auth errors, the test fails.

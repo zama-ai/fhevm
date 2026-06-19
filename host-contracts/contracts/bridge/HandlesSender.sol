@@ -39,15 +39,17 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
     /// @notice Maximum number of handles per bridge call.
     uint256 public constant MAX_HANDLES = 32;
 
-    /// @notice Base gas reserved for `lzReceive` on the destination, independent of
-    ///         the handle count. Covers payload decoding, event emission overhead, and
-    ///         the `sendCompose` call.
-    uint128 public constant LZ_RECEIVE_BASE_GAS = 80_000;
+    /// @notice Default base gas reserved for `lzReceive` on the destination, independent
+    ///         of the handle count. Covers payload decoding, event emission overhead, and
+    ///         the `sendCompose` call. Used for any `dstEid` without a custom override
+    ///         (see {setLzReceiveBaseGas}).
+    uint128 public constant LZ_RECEIVE_BASE_GAS_DEFAULT = 80_000;
 
-    /// @notice Per-handle gas reserved for `lzReceive` on the destination. Covers
-    ///         deriving the destination handle, emitting one `HandleBridged` event,
-    ///         and appending to the in-memory `DstHandleList`.
-    uint128 public constant LZ_RECEIVE_PER_HANDLE_GAS = 60_000;
+    /// @notice Default per-handle gas reserved for `lzReceive` on the destination. Covers
+    ///         deriving the destination handle, emitting one `HandleBridged` event, and
+    ///         appending to the in-memory `DstHandleList`. Used for any `dstEid` without a
+    ///         custom override (see {setLzReceivePerHandleGas}).
+    uint128 public constant LZ_RECEIVE_PER_HANDLE_GAS_DEFAULT = 60_000;
 
     /// @notice Returned when the handle list exceeds the per-call cap.
     error TooManyHandles(uint256 length, uint256 maxAllowed);
@@ -65,12 +67,26 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
     /// @notice ACL contract on this (source) chain.
     ACL private constant ACL_CONTRACT = ACL(aclAdd);
 
+    /// @notice Optional per-dstEid overrides for the `lzReceive` gas formula. The two
+    ///         `uint128` fields pack into a single storage slot. A field value of 0 means
+    ///         unset, in which case the matching `_DEFAULT` constant is used.
+    /// @param baseGas       Custom base gas (overrides {LZ_RECEIVE_BASE_GAS_DEFAULT}).
+    /// @param perHandleGas  Custom per-handle gas (overrides {LZ_RECEIVE_PER_HANDLE_GAS_DEFAULT}).
+    struct CustomLzReceiveGas {
+        uint128 baseGas;
+        uint128 perHandleGas;
+    }
+
     /// @custom:storage-location erc7201:fhevm.storage.HandlesSender
     struct HandlesSenderStorage {
         /// @dev LayerZero endpoint id → destination chain id used in handle derivation.
         ///      Configured by the ACL owner via {setDstChainId}. A value of 0 means the
         ///      endpoint id is not registered and `send` will revert for it.
         mapping(uint32 dstEid => uint64 dstChainId) dstChainIdForEid;
+        /// @dev Optional per-dstEid override for the `lzReceive` gas formula. Set via
+        ///      {setLzReceiveBaseGas} / {setLzReceivePerHandleGas}; unset fields fall back
+        ///      to the `_DEFAULT` constants.
+        mapping(uint32 dstEid => CustomLzReceiveGas) customLzReceiveGas;
     }
 
     /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.HandlesSender")) - 1)) & ~bytes32(uint256(0xff))
@@ -94,7 +110,7 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
      *
      * @param dstEid         LayerZero endpoint id of the destination chain.
      * @param dstApp         Destination app on the destination chain that should receive
-     *                       `payload` in its `onReceive` callback. Bytes32 (rather than
+     *                       `payload` in its `onConfidentialBridgeReceived` callback. Bytes32 (rather than
      *                       `address`) so non-EVM destinations (e.g. Solana, which uses
      *                       32-byte program IDs) can be addressed without a future
      *                       protocol change. EVM callers pass
@@ -104,11 +120,14 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
      *                       preserved on the destination, so apps can index into
      *                       `dstHandleList` by position.
      * @param lzComposeGas   Gas budget for the destination-side `lzCompose` (which runs
-     *                       the destination app's `onReceive`). Must be 0 if `options`
+     *                       the destination app's `onConfidentialBridgeReceived`). Must be 0 if `options`
      *                       is non-empty.
      * @param options        Raw LayerZero options; if empty the contract builds default
-     *                       options from `LZ_RECEIVE_BASE_GAS + handleList.length *
-     *                       LZ_RECEIVE_PER_HANDLE_GAS` and `lzComposeGas`.
+     *                       options from `baseGas(dstEid) + handleList.length *
+     *                       perHandleGas(dstEid)` and `lzComposeGas`, where the base and
+     *                       per-handle gas are the `dstEid`'s custom overrides if set, else
+     *                       the {LZ_RECEIVE_BASE_GAS_DEFAULT}/{LZ_RECEIVE_PER_HANDLE_GAS_DEFAULT}
+     *                       constants.
      *
      * @return receipt LayerZero messaging receipt (includes the GUID used in events).
      *
@@ -122,7 +141,7 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
         bytes32[] calldata handleList,
         uint128 lzComposeGas,
         bytes calldata options
-    ) external payable returns (MessagingReceipt memory receipt) {
+    ) external payable virtual returns (MessagingReceipt memory receipt) {
         uint256 nHandles = handleList.length;
         if (nHandles > MAX_HANDLES) revert TooManyHandles(nHandles, MAX_HANDLES);
 
@@ -143,7 +162,7 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
 
     /// @dev Per-handle ACL check, extracted to keep `send`'s frame within the 16-slot
     ///      stack limit (without-via-ir builds otherwise trip stack-too-deep).
-    function _checkAllAllowed(bytes32[] calldata handleList) private view {
+    function _checkAllAllowed(bytes32[] calldata handleList) internal view virtual {
         uint256 n = handleList.length;
         for (uint256 i = 0; i < n; i++) {
             if (!ACL_CONTRACT.isAllowed(handleList[i], msg.sender)) {
@@ -169,8 +188,8 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
         bytes32[] calldata handleList,
         uint128 lzComposeGas,
         bytes calldata options
-    ) private returns (MessagingReceipt memory receipt) {
-        bytes memory finalOptions = _resolveOptions(options, handleList.length, lzComposeGas);
+    ) internal virtual returns (MessagingReceipt memory receipt) {
+        bytes memory finalOptions = _resolveOptions(options, dstEid, handleList.length, lzComposeGas);
         bytes32 srcApp = bytes32(uint256(uint160(msg.sender)));
         bytes memory message = abi.encode(srcApp, dstApp, payload, handleList);
         MessagingFee memory fee = _quote(dstEid, message, finalOptions, false);
@@ -179,7 +198,7 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
 
     /// @dev Event-emission loop, extracted from `send` for the same stack-pressure
     ///      reason as `_checkAllAllowed`.
-    function _emitBridgeHandle(bytes32[] calldata handleList, uint64 dstChainId, bytes32 guid) private {
+    function _emitBridgeHandle(bytes32[] calldata handleList, uint64 dstChainId, bytes32 guid) internal virtual {
         uint256 n = handleList.length;
         for (uint256 i = 0; i < n; i++) {
             emit BridgeHandle(msg.sender, handleList[i], dstChainId, guid);
@@ -203,10 +222,10 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
         bytes32[] calldata handleList,
         uint128 lzComposeGas,
         bytes calldata options
-    ) external view returns (MessagingFee memory fee) {
+    ) external view virtual returns (MessagingFee memory fee) {
         if (_getHandlesSenderStorage().dstChainIdForEid[dstEid] == 0) revert UnknownDstEid(dstEid);
 
-        bytes memory finalOptions = _resolveOptions(options, handleList.length, lzComposeGas);
+        bytes memory finalOptions = _resolveOptions(options, dstEid, handleList.length, lzComposeGas);
         bytes memory message = abi.encode(bytes32(uint256(uint160(srcApp))), dstApp, payload, handleList);
         fee = _quote(dstEid, message, finalOptions, false);
     }
@@ -217,27 +236,74 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
      *         coprocessor bridge-agnostic: it consumes `dstChainId` from emitted events
      *         and does not need to know about LayerZero endpoint ids.
      */
-    function setDstChainId(uint32 dstEid, uint64 dstChainId) external onlyACLOwner {
+    function setDstChainId(uint32 dstEid, uint64 dstChainId) external virtual onlyACLOwner {
         _setDstChainId(dstEid, dstChainId);
     }
 
-    function _setDstChainId(uint32 dstEid, uint64 dstChainId) internal {
+    function _setDstChainId(uint32 dstEid, uint64 dstChainId) internal virtual {
         _getHandlesSenderStorage().dstChainIdForEid[dstEid] = dstChainId;
         emit DstChainIdSet(dstEid, dstChainId);
     }
 
     /// @notice Returns the destination chain id registered for `dstEid`, or 0 if unset.
-    function getDstChainId(uint32 dstEid) external view returns (uint256) {
+    function getDstChainId(uint32 dstEid) external view virtual returns (uint256) {
         return _getHandlesSenderStorage().dstChainIdForEid[dstEid];
+    }
+
+    /**
+     * @notice Set a custom base `lzReceive` gas for `dstEid`, overriding
+     *         {LZ_RECEIVE_BASE_GAS_DEFAULT} when the contract builds default options.
+     * @dev    Pass 0 to clear the override and fall back to the default constant.
+     */
+    function setLzReceiveBaseGas(uint32 dstEid, uint128 lzReceiveBaseGas) external virtual onlyACLOwner {
+        _getHandlesSenderStorage().customLzReceiveGas[dstEid].baseGas = lzReceiveBaseGas;
+        emit LzReceiveBaseGasSet(dstEid, lzReceiveBaseGas);
+    }
+
+    /**
+     * @notice Set a custom per-handle `lzReceive` gas for `dstEid`, overriding
+     *         {LZ_RECEIVE_PER_HANDLE_GAS_DEFAULT} when the contract builds default options.
+     * @dev    Pass 0 to clear the override and fall back to the default constant.
+     */
+    function setLzReceivePerHandleGas(uint32 dstEid, uint128 lzReceivePerHandleGas) external virtual onlyACLOwner {
+        _getHandlesSenderStorage().customLzReceiveGas[dstEid].perHandleGas = lzReceivePerHandleGas;
+        emit LzReceivePerHandleGasSet(dstEid, lzReceivePerHandleGas);
+    }
+
+    /// @notice Returns the effective base `lzReceive` gas for `dstEid`: the custom override
+    ///         if one is set, otherwise {LZ_RECEIVE_BASE_GAS_DEFAULT}.
+    function getLzReceiveBaseGas(uint32 dstEid) external view virtual returns (uint128) {
+        return _effectiveLzReceiveBaseGas(dstEid);
+    }
+
+    /// @notice Returns the effective per-handle `lzReceive` gas for `dstEid`: the custom
+    ///         override if one is set, otherwise {LZ_RECEIVE_PER_HANDLE_GAS_DEFAULT}.
+    function getLzReceivePerHandleGas(uint32 dstEid) external view virtual returns (uint128) {
+        return _effectiveLzReceivePerHandleGas(dstEid);
+    }
+
+    /// @dev Base gas used for `dstEid`: custom override when non-zero, else the default.
+    function _effectiveLzReceiveBaseGas(uint32 dstEid) internal view virtual returns (uint128) {
+        uint128 custom = _getHandlesSenderStorage().customLzReceiveGas[dstEid].baseGas;
+        return custom == 0 ? LZ_RECEIVE_BASE_GAS_DEFAULT : custom;
+    }
+
+    /// @dev Per-handle gas used for `dstEid`: custom override when non-zero, else default.
+    function _effectiveLzReceivePerHandleGas(uint32 dstEid) internal view virtual returns (uint128) {
+        uint128 custom = _getHandlesSenderStorage().customLzReceiveGas[dstEid].perHandleGas;
+        return custom == 0 ? LZ_RECEIVE_PER_HANDLE_GAS_DEFAULT : custom;
     }
 
     function _resolveOptions(
         bytes calldata options,
+        uint32 dstEid,
         uint256 nHandles,
         uint128 lzComposeGas
-    ) private pure returns (bytes memory) {
+    ) internal view virtual returns (bytes memory) {
         if (options.length == 0) {
-            uint128 lzReceiveGas = LZ_RECEIVE_BASE_GAS + uint128(nHandles) * LZ_RECEIVE_PER_HANDLE_GAS;
+            uint128 lzReceiveGas = _effectiveLzReceiveBaseGas(dstEid) +
+                uint128(nHandles) *
+                _effectiveLzReceivePerHandleGas(dstEid);
             bytes memory built = OptionsBuilder.newOptions().addExecutorLzReceiveOption(lzReceiveGas, 0);
             // Compose option only added when a compose gas budget is requested.
             // Compose index 0 because HandlesReceiver dispatches a single compose msg.

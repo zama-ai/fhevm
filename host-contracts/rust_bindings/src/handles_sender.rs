@@ -37,14 +37,18 @@ interface HandlesSender {
     event FallbackGrantedPlaintext(bytes32 indexed dstHandle, uint256 plaintext);
     event HandleBridged(address indexed receiverDapp, bytes32 srcHandle, bytes32 dstHandle, bytes32 guid);
     event Initialized(uint64 version);
+    event LzReceiveBaseGasSet(uint32 indexed dstEid, uint128 lzReceiveBaseGas);
+    event LzReceivePerHandleGasSet(uint32 indexed dstEid, uint128 lzReceivePerHandleGas);
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
     event PeerSet(uint32 eid, bytes32 peer);
 
-    function LZ_RECEIVE_BASE_GAS() external view returns (uint128);
-    function LZ_RECEIVE_PER_HANDLE_GAS() external view returns (uint128);
+    function LZ_RECEIVE_BASE_GAS_DEFAULT() external view returns (uint128);
+    function LZ_RECEIVE_PER_HANDLE_GAS_DEFAULT() external view returns (uint128);
     function MAX_HANDLES() external view returns (uint256);
     function endpoint() external view returns (address);
     function getDstChainId(uint32 dstEid) external view returns (uint256);
+    function getLzReceiveBaseGas(uint32 dstEid) external view returns (uint128);
+    function getLzReceivePerHandleGas(uint32 dstEid) external view returns (uint128);
     function oAppVersion() external pure returns (uint64 senderVersion, uint64 receiverVersion);
     function owner() external view returns (address);
     function peers(uint32 _eid) external view returns (bytes32);
@@ -53,6 +57,8 @@ interface HandlesSender {
     function send(uint32 dstEid, bytes32 dstApp, bytes memory payload, bytes32[] memory handleList, uint128 lzComposeGas, bytes memory options) external payable returns (MessagingReceipt memory receipt);
     function setDelegate(address _delegate) external;
     function setDstChainId(uint32 dstEid, uint64 dstChainId) external;
+    function setLzReceiveBaseGas(uint32 dstEid, uint128 lzReceiveBaseGas) external;
+    function setLzReceivePerHandleGas(uint32 dstEid, uint128 lzReceivePerHandleGas) external;
     function setPeer(uint32 _eid, bytes32 _peer) external;
     function transferOwnership(address newOwner) external;
 }
@@ -63,7 +69,7 @@ interface HandlesSender {
 [
   {
     "type": "function",
-    "name": "LZ_RECEIVE_BASE_GAS",
+    "name": "LZ_RECEIVE_BASE_GAS_DEFAULT",
     "inputs": [],
     "outputs": [
       {
@@ -76,7 +82,7 @@ interface HandlesSender {
   },
   {
     "type": "function",
-    "name": "LZ_RECEIVE_PER_HANDLE_GAS",
+    "name": "LZ_RECEIVE_PER_HANDLE_GAS_DEFAULT",
     "inputs": [],
     "outputs": [
       {
@@ -128,6 +134,44 @@ interface HandlesSender {
         "name": "",
         "type": "uint256",
         "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getLzReceiveBaseGas",
+    "inputs": [
+      {
+        "name": "dstEid",
+        "type": "uint32",
+        "internalType": "uint32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint128",
+        "internalType": "uint128"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getLzReceivePerHandleGas",
+    "inputs": [
+      {
+        "name": "dstEid",
+        "type": "uint32",
+        "internalType": "uint32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint128",
+        "internalType": "uint128"
       }
     ],
     "stateMutability": "view"
@@ -356,6 +400,42 @@ interface HandlesSender {
   },
   {
     "type": "function",
+    "name": "setLzReceiveBaseGas",
+    "inputs": [
+      {
+        "name": "dstEid",
+        "type": "uint32",
+        "internalType": "uint32"
+      },
+      {
+        "name": "lzReceiveBaseGas",
+        "type": "uint128",
+        "internalType": "uint128"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setLzReceivePerHandleGas",
+    "inputs": [
+      {
+        "name": "dstEid",
+        "type": "uint32",
+        "internalType": "uint32"
+      },
+      {
+        "name": "lzReceivePerHandleGas",
+        "type": "uint128",
+        "internalType": "uint128"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "setPeer",
     "inputs": [
       {
@@ -494,6 +574,44 @@ interface HandlesSender {
         "type": "uint64",
         "indexed": false,
         "internalType": "uint64"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "LzReceiveBaseGasSet",
+    "inputs": [
+      {
+        "name": "dstEid",
+        "type": "uint32",
+        "indexed": true,
+        "internalType": "uint32"
+      },
+      {
+        "name": "lzReceiveBaseGas",
+        "type": "uint128",
+        "indexed": false,
+        "internalType": "uint128"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "LzReceivePerHandleGasSet",
+    "inputs": [
+      {
+        "name": "dstEid",
+        "type": "uint32",
+        "indexed": true,
+        "internalType": "uint32"
+      },
+      {
+        "name": "lzReceivePerHandleGas",
+        "type": "uint128",
+        "indexed": false,
+        "internalType": "uint128"
       }
     ],
     "anonymous": false
@@ -3290,6 +3408,242 @@ event Initialized(uint64 version);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Event with signature `LzReceiveBaseGasSet(uint32,uint128)` and selector `0x4d78ee37c9ff48b8ddb4f9e60746bb7647ca6c3cc51225594f7b528a0605731d`.
+```solidity
+event LzReceiveBaseGasSet(uint32 indexed dstEid, uint128 lzReceiveBaseGas);
+```*/
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    #[derive(Clone)]
+    pub struct LzReceiveBaseGasSet {
+        #[allow(missing_docs)]
+        pub dstEid: u32,
+        #[allow(missing_docs)]
+        pub lzReceiveBaseGas: u128,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[automatically_derived]
+        impl alloy_sol_types::SolEvent for LzReceiveBaseGasSet {
+            type DataTuple<'a> = (alloy::sol_types::sol_data::Uint<128>,);
+            type DataToken<'a> = <Self::DataTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type TopicList = (
+                alloy_sol_types::sol_data::FixedBytes<32>,
+                alloy::sol_types::sol_data::Uint<32>,
+            );
+            const SIGNATURE: &'static str = "LzReceiveBaseGasSet(uint32,uint128)";
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
+                77u8, 120u8, 238u8, 55u8, 201u8, 255u8, 72u8, 184u8, 221u8, 180u8, 249u8,
+                230u8, 7u8, 70u8, 187u8, 118u8, 71u8, 202u8, 108u8, 60u8, 197u8, 18u8,
+                37u8, 89u8, 79u8, 123u8, 82u8, 138u8, 6u8, 5u8, 115u8, 29u8,
+            ]);
+            const ANONYMOUS: bool = false;
+            #[allow(unused_variables)]
+            #[inline]
+            fn new(
+                topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
+                data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                Self {
+                    dstEid: topics.1,
+                    lzReceiveBaseGas: data.0,
+                }
+            }
+            #[inline]
+            fn check_signature(
+                topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
+            ) -> alloy_sol_types::Result<()> {
+                if topics.0 != Self::SIGNATURE_HASH {
+                    return Err(
+                        alloy_sol_types::Error::invalid_event_signature_hash(
+                            Self::SIGNATURE,
+                            topics.0,
+                            Self::SIGNATURE_HASH,
+                        ),
+                    );
+                }
+                Ok(())
+            }
+            #[inline]
+            fn tokenize_body(&self) -> Self::DataToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        128,
+                    > as alloy_sol_types::SolType>::tokenize(&self.lzReceiveBaseGas),
+                )
+            }
+            #[inline]
+            fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
+                (Self::SIGNATURE_HASH.into(), self.dstEid.clone())
+            }
+            #[inline]
+            fn encode_topics_raw(
+                &self,
+                out: &mut [alloy_sol_types::abi::token::WordToken],
+            ) -> alloy_sol_types::Result<()> {
+                if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
+                    return Err(alloy_sol_types::Error::Overrun);
+                }
+                out[0usize] = alloy_sol_types::abi::token::WordToken(
+                    Self::SIGNATURE_HASH,
+                );
+                out[1usize] = <alloy::sol_types::sol_data::Uint<
+                    32,
+                > as alloy_sol_types::EventTopic>::encode_topic(&self.dstEid);
+                Ok(())
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::private::IntoLogData for LzReceiveBaseGasSet {
+            fn to_log_data(&self) -> alloy_sol_types::private::LogData {
+                From::from(self)
+            }
+            fn into_log_data(self) -> alloy_sol_types::private::LogData {
+                From::from(&self)
+            }
+        }
+        #[automatically_derived]
+        impl From<&LzReceiveBaseGasSet> for alloy_sol_types::private::LogData {
+            #[inline]
+            fn from(this: &LzReceiveBaseGasSet) -> alloy_sol_types::private::LogData {
+                alloy_sol_types::SolEvent::encode_log_data(this)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Event with signature `LzReceivePerHandleGasSet(uint32,uint128)` and selector `0xdcbae8961fd1cf3811fef5b8937defbda55c13537d31d2d6c7fa84a601a6a844`.
+```solidity
+event LzReceivePerHandleGasSet(uint32 indexed dstEid, uint128 lzReceivePerHandleGas);
+```*/
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    #[derive(Clone)]
+    pub struct LzReceivePerHandleGasSet {
+        #[allow(missing_docs)]
+        pub dstEid: u32,
+        #[allow(missing_docs)]
+        pub lzReceivePerHandleGas: u128,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[automatically_derived]
+        impl alloy_sol_types::SolEvent for LzReceivePerHandleGasSet {
+            type DataTuple<'a> = (alloy::sol_types::sol_data::Uint<128>,);
+            type DataToken<'a> = <Self::DataTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type TopicList = (
+                alloy_sol_types::sol_data::FixedBytes<32>,
+                alloy::sol_types::sol_data::Uint<32>,
+            );
+            const SIGNATURE: &'static str = "LzReceivePerHandleGasSet(uint32,uint128)";
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
+                220u8, 186u8, 232u8, 150u8, 31u8, 209u8, 207u8, 56u8, 17u8, 254u8, 245u8,
+                184u8, 147u8, 125u8, 239u8, 189u8, 165u8, 92u8, 19u8, 83u8, 125u8, 49u8,
+                210u8, 214u8, 199u8, 250u8, 132u8, 166u8, 1u8, 166u8, 168u8, 68u8,
+            ]);
+            const ANONYMOUS: bool = false;
+            #[allow(unused_variables)]
+            #[inline]
+            fn new(
+                topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
+                data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                Self {
+                    dstEid: topics.1,
+                    lzReceivePerHandleGas: data.0,
+                }
+            }
+            #[inline]
+            fn check_signature(
+                topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
+            ) -> alloy_sol_types::Result<()> {
+                if topics.0 != Self::SIGNATURE_HASH {
+                    return Err(
+                        alloy_sol_types::Error::invalid_event_signature_hash(
+                            Self::SIGNATURE,
+                            topics.0,
+                            Self::SIGNATURE_HASH,
+                        ),
+                    );
+                }
+                Ok(())
+            }
+            #[inline]
+            fn tokenize_body(&self) -> Self::DataToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        128,
+                    > as alloy_sol_types::SolType>::tokenize(
+                        &self.lzReceivePerHandleGas,
+                    ),
+                )
+            }
+            #[inline]
+            fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
+                (Self::SIGNATURE_HASH.into(), self.dstEid.clone())
+            }
+            #[inline]
+            fn encode_topics_raw(
+                &self,
+                out: &mut [alloy_sol_types::abi::token::WordToken],
+            ) -> alloy_sol_types::Result<()> {
+                if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
+                    return Err(alloy_sol_types::Error::Overrun);
+                }
+                out[0usize] = alloy_sol_types::abi::token::WordToken(
+                    Self::SIGNATURE_HASH,
+                );
+                out[1usize] = <alloy::sol_types::sol_data::Uint<
+                    32,
+                > as alloy_sol_types::EventTopic>::encode_topic(&self.dstEid);
+                Ok(())
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::private::IntoLogData for LzReceivePerHandleGasSet {
+            fn to_log_data(&self) -> alloy_sol_types::private::LogData {
+                From::from(self)
+            }
+            fn into_log_data(self) -> alloy_sol_types::private::LogData {
+                From::from(&self)
+            }
+        }
+        #[automatically_derived]
+        impl From<&LzReceivePerHandleGasSet> for alloy_sol_types::private::LogData {
+            #[inline]
+            fn from(
+                this: &LzReceivePerHandleGasSet,
+            ) -> alloy_sol_types::private::LogData {
+                alloy_sol_types::SolEvent::encode_log_data(this)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `OwnershipTransferred(address,address)` and selector `0x8be0079c531659141344cd1fd0a4f28419497f9722a3daafe3b4186f6b6457e0`.
 ```solidity
 event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
@@ -3523,19 +3877,19 @@ event PeerSet(uint32 eid, bytes32 peer);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `LZ_RECEIVE_BASE_GAS()` and selector `0xcd12f8ef`.
+    /**Function with signature `LZ_RECEIVE_BASE_GAS_DEFAULT()` and selector `0x4735192c`.
 ```solidity
-function LZ_RECEIVE_BASE_GAS() external view returns (uint128);
+function LZ_RECEIVE_BASE_GAS_DEFAULT() external view returns (uint128);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct LZ_RECEIVE_BASE_GASCall;
+    pub struct LZ_RECEIVE_BASE_GAS_DEFAULTCall;
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`LZ_RECEIVE_BASE_GAS()`](LZ_RECEIVE_BASE_GASCall) function.
+    ///Container type for the return parameters of the [`LZ_RECEIVE_BASE_GAS_DEFAULT()`](LZ_RECEIVE_BASE_GAS_DEFAULTCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct LZ_RECEIVE_BASE_GASReturn {
+    pub struct LZ_RECEIVE_BASE_GAS_DEFAULTReturn {
         #[allow(missing_docs)]
         pub _0: u128,
     }
@@ -3565,16 +3919,16 @@ function LZ_RECEIVE_BASE_GAS() external view returns (uint128);
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<LZ_RECEIVE_BASE_GASCall>
+            impl ::core::convert::From<LZ_RECEIVE_BASE_GAS_DEFAULTCall>
             for UnderlyingRustTuple<'_> {
-                fn from(value: LZ_RECEIVE_BASE_GASCall) -> Self {
+                fn from(value: LZ_RECEIVE_BASE_GAS_DEFAULTCall) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
             impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for LZ_RECEIVE_BASE_GASCall {
+            for LZ_RECEIVE_BASE_GAS_DEFAULTCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self
                 }
@@ -3598,23 +3952,23 @@ function LZ_RECEIVE_BASE_GAS() external view returns (uint128);
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<LZ_RECEIVE_BASE_GASReturn>
+            impl ::core::convert::From<LZ_RECEIVE_BASE_GAS_DEFAULTReturn>
             for UnderlyingRustTuple<'_> {
-                fn from(value: LZ_RECEIVE_BASE_GASReturn) -> Self {
+                fn from(value: LZ_RECEIVE_BASE_GAS_DEFAULTReturn) -> Self {
                     (value._0,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
             impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for LZ_RECEIVE_BASE_GASReturn {
+            for LZ_RECEIVE_BASE_GAS_DEFAULTReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { _0: tuple.0 }
                 }
             }
         }
         #[automatically_derived]
-        impl alloy_sol_types::SolCall for LZ_RECEIVE_BASE_GASCall {
+        impl alloy_sol_types::SolCall for LZ_RECEIVE_BASE_GAS_DEFAULTCall {
             type Parameters<'a> = ();
             type Token<'a> = <Self::Parameters<
                 'a,
@@ -3624,8 +3978,8 @@ function LZ_RECEIVE_BASE_GAS() external view returns (uint128);
             type ReturnToken<'a> = <Self::ReturnTuple<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "LZ_RECEIVE_BASE_GAS()";
-            const SELECTOR: [u8; 4] = [205u8, 18u8, 248u8, 239u8];
+            const SIGNATURE: &'static str = "LZ_RECEIVE_BASE_GAS_DEFAULT()";
+            const SELECTOR: [u8; 4] = [71u8, 53u8, 25u8, 44u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -3650,7 +4004,7 @@ function LZ_RECEIVE_BASE_GAS() external view returns (uint128);
                     '_,
                 > as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(|r| {
-                        let r: LZ_RECEIVE_BASE_GASReturn = r.into();
+                        let r: LZ_RECEIVE_BASE_GAS_DEFAULTReturn = r.into();
                         r._0
                     })
             }
@@ -3662,7 +4016,7 @@ function LZ_RECEIVE_BASE_GAS() external view returns (uint128);
                     '_,
                 > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(|r| {
-                        let r: LZ_RECEIVE_BASE_GASReturn = r.into();
+                        let r: LZ_RECEIVE_BASE_GAS_DEFAULTReturn = r.into();
                         r._0
                     })
             }
@@ -3670,19 +4024,19 @@ function LZ_RECEIVE_BASE_GAS() external view returns (uint128);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `LZ_RECEIVE_PER_HANDLE_GAS()` and selector `0xef5b52b3`.
+    /**Function with signature `LZ_RECEIVE_PER_HANDLE_GAS_DEFAULT()` and selector `0x7fd35779`.
 ```solidity
-function LZ_RECEIVE_PER_HANDLE_GAS() external view returns (uint128);
+function LZ_RECEIVE_PER_HANDLE_GAS_DEFAULT() external view returns (uint128);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct LZ_RECEIVE_PER_HANDLE_GASCall;
+    pub struct LZ_RECEIVE_PER_HANDLE_GAS_DEFAULTCall;
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`LZ_RECEIVE_PER_HANDLE_GAS()`](LZ_RECEIVE_PER_HANDLE_GASCall) function.
+    ///Container type for the return parameters of the [`LZ_RECEIVE_PER_HANDLE_GAS_DEFAULT()`](LZ_RECEIVE_PER_HANDLE_GAS_DEFAULTCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct LZ_RECEIVE_PER_HANDLE_GASReturn {
+    pub struct LZ_RECEIVE_PER_HANDLE_GAS_DEFAULTReturn {
         #[allow(missing_docs)]
         pub _0: u128,
     }
@@ -3712,16 +4066,16 @@ function LZ_RECEIVE_PER_HANDLE_GAS() external view returns (uint128);
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<LZ_RECEIVE_PER_HANDLE_GASCall>
+            impl ::core::convert::From<LZ_RECEIVE_PER_HANDLE_GAS_DEFAULTCall>
             for UnderlyingRustTuple<'_> {
-                fn from(value: LZ_RECEIVE_PER_HANDLE_GASCall) -> Self {
+                fn from(value: LZ_RECEIVE_PER_HANDLE_GAS_DEFAULTCall) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
             impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for LZ_RECEIVE_PER_HANDLE_GASCall {
+            for LZ_RECEIVE_PER_HANDLE_GAS_DEFAULTCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self
                 }
@@ -3745,23 +4099,23 @@ function LZ_RECEIVE_PER_HANDLE_GAS() external view returns (uint128);
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<LZ_RECEIVE_PER_HANDLE_GASReturn>
+            impl ::core::convert::From<LZ_RECEIVE_PER_HANDLE_GAS_DEFAULTReturn>
             for UnderlyingRustTuple<'_> {
-                fn from(value: LZ_RECEIVE_PER_HANDLE_GASReturn) -> Self {
+                fn from(value: LZ_RECEIVE_PER_HANDLE_GAS_DEFAULTReturn) -> Self {
                     (value._0,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
             impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for LZ_RECEIVE_PER_HANDLE_GASReturn {
+            for LZ_RECEIVE_PER_HANDLE_GAS_DEFAULTReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { _0: tuple.0 }
                 }
             }
         }
         #[automatically_derived]
-        impl alloy_sol_types::SolCall for LZ_RECEIVE_PER_HANDLE_GASCall {
+        impl alloy_sol_types::SolCall for LZ_RECEIVE_PER_HANDLE_GAS_DEFAULTCall {
             type Parameters<'a> = ();
             type Token<'a> = <Self::Parameters<
                 'a,
@@ -3771,8 +4125,8 @@ function LZ_RECEIVE_PER_HANDLE_GAS() external view returns (uint128);
             type ReturnToken<'a> = <Self::ReturnTuple<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "LZ_RECEIVE_PER_HANDLE_GAS()";
-            const SELECTOR: [u8; 4] = [239u8, 91u8, 82u8, 179u8];
+            const SIGNATURE: &'static str = "LZ_RECEIVE_PER_HANDLE_GAS_DEFAULT()";
+            const SELECTOR: [u8; 4] = [127u8, 211u8, 87u8, 121u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -3797,7 +4151,7 @@ function LZ_RECEIVE_PER_HANDLE_GAS() external view returns (uint128);
                     '_,
                 > as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(|r| {
-                        let r: LZ_RECEIVE_PER_HANDLE_GASReturn = r.into();
+                        let r: LZ_RECEIVE_PER_HANDLE_GAS_DEFAULTReturn = r.into();
                         r._0
                     })
             }
@@ -3809,7 +4163,7 @@ function LZ_RECEIVE_PER_HANDLE_GAS() external view returns (uint128);
                     '_,
                 > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(|r| {
-                        let r: LZ_RECEIVE_PER_HANDLE_GASReturn = r.into();
+                        let r: LZ_RECEIVE_PER_HANDLE_GAS_DEFAULTReturn = r.into();
                         r._0
                     })
             }
@@ -4250,6 +4604,314 @@ function getDstChainId(uint32 dstEid) external view returns (uint256);
                 > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(|r| {
                         let r: getDstChainIdReturn = r.into();
+                        r._0
+                    })
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `getLzReceiveBaseGas(uint32)` and selector `0x71844956`.
+```solidity
+function getLzReceiveBaseGas(uint32 dstEid) external view returns (uint128);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getLzReceiveBaseGasCall {
+        #[allow(missing_docs)]
+        pub dstEid: u32,
+    }
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    ///Container type for the return parameters of the [`getLzReceiveBaseGas(uint32)`](getLzReceiveBaseGasCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getLzReceiveBaseGasReturn {
+        #[allow(missing_docs)]
+        pub _0: u128,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<32>,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (u32,);
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getLzReceiveBaseGasCall>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: getLzReceiveBaseGasCall) -> Self {
+                    (value.dstEid,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for getLzReceiveBaseGasCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { dstEid: tuple.0 }
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<128>,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (u128,);
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getLzReceiveBaseGasReturn>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: getLzReceiveBaseGasReturn) -> Self {
+                    (value._0,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for getLzReceiveBaseGasReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { _0: tuple.0 }
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for getLzReceiveBaseGasCall {
+            type Parameters<'a> = (alloy::sol_types::sol_data::Uint<32>,);
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = u128;
+            type ReturnTuple<'a> = (alloy::sol_types::sol_data::Uint<128>,);
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "getLzReceiveBaseGas(uint32)";
+            const SELECTOR: [u8; 4] = [113u8, 132u8, 73u8, 86u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        32,
+                    > as alloy_sol_types::SolType>::tokenize(&self.dstEid),
+                )
+            }
+            #[inline]
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        128,
+                    > as alloy_sol_types::SolType>::tokenize(ret),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
+                        let r: getLzReceiveBaseGasReturn = r.into();
+                        r._0
+                    })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: getLzReceiveBaseGasReturn = r.into();
+                        r._0
+                    })
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `getLzReceivePerHandleGas(uint32)` and selector `0xb5778de4`.
+```solidity
+function getLzReceivePerHandleGas(uint32 dstEid) external view returns (uint128);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getLzReceivePerHandleGasCall {
+        #[allow(missing_docs)]
+        pub dstEid: u32,
+    }
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    ///Container type for the return parameters of the [`getLzReceivePerHandleGas(uint32)`](getLzReceivePerHandleGasCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getLzReceivePerHandleGasReturn {
+        #[allow(missing_docs)]
+        pub _0: u128,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<32>,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (u32,);
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getLzReceivePerHandleGasCall>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: getLzReceivePerHandleGasCall) -> Self {
+                    (value.dstEid,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for getLzReceivePerHandleGasCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { dstEid: tuple.0 }
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<128>,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (u128,);
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getLzReceivePerHandleGasReturn>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: getLzReceivePerHandleGasReturn) -> Self {
+                    (value._0,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for getLzReceivePerHandleGasReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { _0: tuple.0 }
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for getLzReceivePerHandleGasCall {
+            type Parameters<'a> = (alloy::sol_types::sol_data::Uint<32>,);
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = u128;
+            type ReturnTuple<'a> = (alloy::sol_types::sol_data::Uint<128>,);
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "getLzReceivePerHandleGas(uint32)";
+            const SELECTOR: [u8; 4] = [181u8, 119u8, 141u8, 228u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        32,
+                    > as alloy_sol_types::SolType>::tokenize(&self.dstEid),
+                )
+            }
+            #[inline]
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        128,
+                    > as alloy_sol_types::SolType>::tokenize(ret),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
+                        let r: getLzReceivePerHandleGasReturn = r.into();
+                        r._0
+                    })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: getLzReceivePerHandleGasReturn = r.into();
                         r._0
                     })
             }
@@ -5587,6 +6249,328 @@ function setDstChainId(uint32 dstEid, uint64 dstChainId) external;
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `setLzReceiveBaseGas(uint32,uint128)` and selector `0x654c3cf1`.
+```solidity
+function setLzReceiveBaseGas(uint32 dstEid, uint128 lzReceiveBaseGas) external;
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct setLzReceiveBaseGasCall {
+        #[allow(missing_docs)]
+        pub dstEid: u32,
+        #[allow(missing_docs)]
+        pub lzReceiveBaseGas: u128,
+    }
+    ///Container type for the return parameters of the [`setLzReceiveBaseGas(uint32,uint128)`](setLzReceiveBaseGasCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct setLzReceiveBaseGasReturn {}
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (
+                alloy::sol_types::sol_data::Uint<32>,
+                alloy::sol_types::sol_data::Uint<128>,
+            );
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (u32, u128);
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<setLzReceiveBaseGasCall>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: setLzReceiveBaseGasCall) -> Self {
+                    (value.dstEid, value.lzReceiveBaseGas)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for setLzReceiveBaseGasCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {
+                        dstEid: tuple.0,
+                        lzReceiveBaseGas: tuple.1,
+                    }
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = ();
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = ();
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<setLzReceiveBaseGasReturn>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: setLzReceiveBaseGasReturn) -> Self {
+                    ()
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for setLzReceiveBaseGasReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {}
+                }
+            }
+        }
+        impl setLzReceiveBaseGasReturn {
+            fn _tokenize(
+                &self,
+            ) -> <setLzReceiveBaseGasCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
+                ()
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for setLzReceiveBaseGasCall {
+            type Parameters<'a> = (
+                alloy::sol_types::sol_data::Uint<32>,
+                alloy::sol_types::sol_data::Uint<128>,
+            );
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = setLzReceiveBaseGasReturn;
+            type ReturnTuple<'a> = ();
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "setLzReceiveBaseGas(uint32,uint128)";
+            const SELECTOR: [u8; 4] = [101u8, 76u8, 60u8, 241u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        32,
+                    > as alloy_sol_types::SolType>::tokenize(&self.dstEid),
+                    <alloy::sol_types::sol_data::Uint<
+                        128,
+                    > as alloy_sol_types::SolType>::tokenize(&self.lzReceiveBaseGas),
+                )
+            }
+            #[inline]
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                setLzReceiveBaseGasReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Into::into)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `setLzReceivePerHandleGas(uint32,uint128)` and selector `0x89d7ce22`.
+```solidity
+function setLzReceivePerHandleGas(uint32 dstEid, uint128 lzReceivePerHandleGas) external;
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct setLzReceivePerHandleGasCall {
+        #[allow(missing_docs)]
+        pub dstEid: u32,
+        #[allow(missing_docs)]
+        pub lzReceivePerHandleGas: u128,
+    }
+    ///Container type for the return parameters of the [`setLzReceivePerHandleGas(uint32,uint128)`](setLzReceivePerHandleGasCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct setLzReceivePerHandleGasReturn {}
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (
+                alloy::sol_types::sol_data::Uint<32>,
+                alloy::sol_types::sol_data::Uint<128>,
+            );
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (u32, u128);
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<setLzReceivePerHandleGasCall>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: setLzReceivePerHandleGasCall) -> Self {
+                    (value.dstEid, value.lzReceivePerHandleGas)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for setLzReceivePerHandleGasCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {
+                        dstEid: tuple.0,
+                        lzReceivePerHandleGas: tuple.1,
+                    }
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = ();
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = ();
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<setLzReceivePerHandleGasReturn>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: setLzReceivePerHandleGasReturn) -> Self {
+                    ()
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for setLzReceivePerHandleGasReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {}
+                }
+            }
+        }
+        impl setLzReceivePerHandleGasReturn {
+            fn _tokenize(
+                &self,
+            ) -> <setLzReceivePerHandleGasCall as alloy_sol_types::SolCall>::ReturnToken<
+                '_,
+            > {
+                ()
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for setLzReceivePerHandleGasCall {
+            type Parameters<'a> = (
+                alloy::sol_types::sol_data::Uint<32>,
+                alloy::sol_types::sol_data::Uint<128>,
+            );
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = setLzReceivePerHandleGasReturn;
+            type ReturnTuple<'a> = ();
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "setLzReceivePerHandleGas(uint32,uint128)";
+            const SELECTOR: [u8; 4] = [137u8, 215u8, 206u8, 34u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        32,
+                    > as alloy_sol_types::SolType>::tokenize(&self.dstEid),
+                    <alloy::sol_types::sol_data::Uint<
+                        128,
+                    > as alloy_sol_types::SolType>::tokenize(&self.lzReceivePerHandleGas),
+                )
+            }
+            #[inline]
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                setLzReceivePerHandleGasReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Into::into)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `setPeer(uint32,bytes32)` and selector `0x3400288b`.
 ```solidity
 function setPeer(uint32 _eid, bytes32 _peer) external;
@@ -5895,15 +6879,19 @@ function transferOwnership(address newOwner) external;
     #[derive()]
     pub enum HandlesSenderCalls {
         #[allow(missing_docs)]
-        LZ_RECEIVE_BASE_GAS(LZ_RECEIVE_BASE_GASCall),
+        LZ_RECEIVE_BASE_GAS_DEFAULT(LZ_RECEIVE_BASE_GAS_DEFAULTCall),
         #[allow(missing_docs)]
-        LZ_RECEIVE_PER_HANDLE_GAS(LZ_RECEIVE_PER_HANDLE_GASCall),
+        LZ_RECEIVE_PER_HANDLE_GAS_DEFAULT(LZ_RECEIVE_PER_HANDLE_GAS_DEFAULTCall),
         #[allow(missing_docs)]
         MAX_HANDLES(MAX_HANDLESCall),
         #[allow(missing_docs)]
         endpoint(endpointCall),
         #[allow(missing_docs)]
         getDstChainId(getDstChainIdCall),
+        #[allow(missing_docs)]
+        getLzReceiveBaseGas(getLzReceiveBaseGasCall),
+        #[allow(missing_docs)]
+        getLzReceivePerHandleGas(getLzReceivePerHandleGasCall),
         #[allow(missing_docs)]
         oAppVersion(oAppVersionCall),
         #[allow(missing_docs)]
@@ -5921,6 +6909,10 @@ function transferOwnership(address newOwner) external;
         #[allow(missing_docs)]
         setDstChainId(setDstChainIdCall),
         #[allow(missing_docs)]
+        setLzReceiveBaseGas(setLzReceiveBaseGasCall),
+        #[allow(missing_docs)]
+        setLzReceivePerHandleGas(setLzReceivePerHandleGasCall),
+        #[allow(missing_docs)]
         setPeer(setPeerCall),
         #[allow(missing_docs)]
         transferOwnership(transferOwnershipCall),
@@ -5937,16 +6929,20 @@ function transferOwnership(address newOwner) external;
             [3u8, 248u8, 181u8, 38u8],
             [23u8, 68u8, 43u8, 112u8],
             [52u8, 0u8, 40u8, 139u8],
+            [71u8, 53u8, 25u8, 44u8],
             [90u8, 43u8, 250u8, 90u8],
             [94u8, 40u8, 15u8, 17u8],
+            [101u8, 76u8, 60u8, 241u8],
             [113u8, 80u8, 24u8, 166u8],
+            [113u8, 132u8, 73u8, 86u8],
+            [127u8, 211u8, 87u8, 121u8],
             [129u8, 23u8, 123u8, 60u8],
+            [137u8, 215u8, 206u8, 34u8],
             [141u8, 165u8, 203u8, 91u8],
             [172u8, 156u8, 42u8, 223u8],
+            [181u8, 119u8, 141u8, 228u8],
             [187u8, 11u8, 106u8, 83u8],
             [202u8, 94u8, 181u8, 225u8],
-            [205u8, 18u8, 248u8, 239u8],
-            [239u8, 91u8, 82u8, 179u8],
             [242u8, 253u8, 227u8, 139u8],
             [252u8, 234u8, 76u8, 169u8],
         ];
@@ -5955,15 +6951,15 @@ function transferOwnership(address newOwner) external;
     impl alloy_sol_types::SolInterface for HandlesSenderCalls {
         const NAME: &'static str = "HandlesSenderCalls";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 15usize;
+        const COUNT: usize = 19usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
-                Self::LZ_RECEIVE_BASE_GAS(_) => {
-                    <LZ_RECEIVE_BASE_GASCall as alloy_sol_types::SolCall>::SELECTOR
+                Self::LZ_RECEIVE_BASE_GAS_DEFAULT(_) => {
+                    <LZ_RECEIVE_BASE_GAS_DEFAULTCall as alloy_sol_types::SolCall>::SELECTOR
                 }
-                Self::LZ_RECEIVE_PER_HANDLE_GAS(_) => {
-                    <LZ_RECEIVE_PER_HANDLE_GASCall as alloy_sol_types::SolCall>::SELECTOR
+                Self::LZ_RECEIVE_PER_HANDLE_GAS_DEFAULT(_) => {
+                    <LZ_RECEIVE_PER_HANDLE_GAS_DEFAULTCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::MAX_HANDLES(_) => {
                     <MAX_HANDLESCall as alloy_sol_types::SolCall>::SELECTOR
@@ -5971,6 +6967,12 @@ function transferOwnership(address newOwner) external;
                 Self::endpoint(_) => <endpointCall as alloy_sol_types::SolCall>::SELECTOR,
                 Self::getDstChainId(_) => {
                     <getDstChainIdCall as alloy_sol_types::SolCall>::SELECTOR
+                }
+                Self::getLzReceiveBaseGas(_) => {
+                    <getLzReceiveBaseGasCall as alloy_sol_types::SolCall>::SELECTOR
+                }
+                Self::getLzReceivePerHandleGas(_) => {
+                    <getLzReceivePerHandleGasCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::oAppVersion(_) => {
                     <oAppVersionCall as alloy_sol_types::SolCall>::SELECTOR
@@ -5987,6 +6989,12 @@ function transferOwnership(address newOwner) external;
                 }
                 Self::setDstChainId(_) => {
                     <setDstChainIdCall as alloy_sol_types::SolCall>::SELECTOR
+                }
+                Self::setLzReceiveBaseGas(_) => {
+                    <setLzReceiveBaseGasCall as alloy_sol_types::SolCall>::SELECTOR
+                }
+                Self::setLzReceivePerHandleGas(_) => {
+                    <setLzReceivePerHandleGasCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::setPeer(_) => <setPeerCall as alloy_sol_types::SolCall>::SELECTOR,
                 Self::transferOwnership(_) => {
@@ -6043,6 +7051,17 @@ function transferOwnership(address newOwner) external;
                     setPeer
                 },
                 {
+                    fn LZ_RECEIVE_BASE_GAS_DEFAULT(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<HandlesSenderCalls> {
+                        <LZ_RECEIVE_BASE_GAS_DEFAULTCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(HandlesSenderCalls::LZ_RECEIVE_BASE_GAS_DEFAULT)
+                    }
+                    LZ_RECEIVE_BASE_GAS_DEFAULT
+                },
+                {
                     fn setDstChainId(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HandlesSenderCalls> {
@@ -6063,6 +7082,17 @@ function transferOwnership(address newOwner) external;
                     endpoint
                 },
                 {
+                    fn setLzReceiveBaseGas(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<HandlesSenderCalls> {
+                        <setLzReceiveBaseGasCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(HandlesSenderCalls::setLzReceiveBaseGas)
+                    }
+                    setLzReceiveBaseGas
+                },
+                {
                     fn renounceOwnership(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HandlesSenderCalls> {
@@ -6074,6 +7104,28 @@ function transferOwnership(address newOwner) external;
                     renounceOwnership
                 },
                 {
+                    fn getLzReceiveBaseGas(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<HandlesSenderCalls> {
+                        <getLzReceiveBaseGasCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(HandlesSenderCalls::getLzReceiveBaseGas)
+                    }
+                    getLzReceiveBaseGas
+                },
+                {
+                    fn LZ_RECEIVE_PER_HANDLE_GAS_DEFAULT(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<HandlesSenderCalls> {
+                        <LZ_RECEIVE_PER_HANDLE_GAS_DEFAULTCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(HandlesSenderCalls::LZ_RECEIVE_PER_HANDLE_GAS_DEFAULT)
+                    }
+                    LZ_RECEIVE_PER_HANDLE_GAS_DEFAULT
+                },
+                {
                     fn quote(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HandlesSenderCalls> {
@@ -6081,6 +7133,17 @@ function transferOwnership(address newOwner) external;
                             .map(HandlesSenderCalls::quote)
                     }
                     quote
+                },
+                {
+                    fn setLzReceivePerHandleGas(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<HandlesSenderCalls> {
+                        <setLzReceivePerHandleGasCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(HandlesSenderCalls::setLzReceivePerHandleGas)
+                    }
+                    setLzReceivePerHandleGas
                 },
                 {
                     fn owner(
@@ -6103,6 +7166,17 @@ function transferOwnership(address newOwner) external;
                     MAX_HANDLES
                 },
                 {
+                    fn getLzReceivePerHandleGas(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<HandlesSenderCalls> {
+                        <getLzReceivePerHandleGasCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(HandlesSenderCalls::getLzReceivePerHandleGas)
+                    }
+                    getLzReceivePerHandleGas
+                },
+                {
                     fn peers(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HandlesSenderCalls> {
@@ -6121,28 +7195,6 @@ function transferOwnership(address newOwner) external;
                             .map(HandlesSenderCalls::setDelegate)
                     }
                     setDelegate
-                },
-                {
-                    fn LZ_RECEIVE_BASE_GAS(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HandlesSenderCalls> {
-                        <LZ_RECEIVE_BASE_GASCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(HandlesSenderCalls::LZ_RECEIVE_BASE_GAS)
-                    }
-                    LZ_RECEIVE_BASE_GAS
-                },
-                {
-                    fn LZ_RECEIVE_PER_HANDLE_GAS(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HandlesSenderCalls> {
-                        <LZ_RECEIVE_PER_HANDLE_GASCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(HandlesSenderCalls::LZ_RECEIVE_PER_HANDLE_GAS)
-                    }
-                    LZ_RECEIVE_PER_HANDLE_GAS
                 },
                 {
                     fn transferOwnership(
@@ -6216,6 +7268,17 @@ function transferOwnership(address newOwner) external;
                     setPeer
                 },
                 {
+                    fn LZ_RECEIVE_BASE_GAS_DEFAULT(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<HandlesSenderCalls> {
+                        <LZ_RECEIVE_BASE_GAS_DEFAULTCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(HandlesSenderCalls::LZ_RECEIVE_BASE_GAS_DEFAULT)
+                    }
+                    LZ_RECEIVE_BASE_GAS_DEFAULT
+                },
+                {
                     fn setDstChainId(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HandlesSenderCalls> {
@@ -6238,6 +7301,17 @@ function transferOwnership(address newOwner) external;
                     endpoint
                 },
                 {
+                    fn setLzReceiveBaseGas(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<HandlesSenderCalls> {
+                        <setLzReceiveBaseGasCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(HandlesSenderCalls::setLzReceiveBaseGas)
+                    }
+                    setLzReceiveBaseGas
+                },
+                {
                     fn renounceOwnership(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HandlesSenderCalls> {
@@ -6249,6 +7323,28 @@ function transferOwnership(address newOwner) external;
                     renounceOwnership
                 },
                 {
+                    fn getLzReceiveBaseGas(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<HandlesSenderCalls> {
+                        <getLzReceiveBaseGasCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(HandlesSenderCalls::getLzReceiveBaseGas)
+                    }
+                    getLzReceiveBaseGas
+                },
+                {
+                    fn LZ_RECEIVE_PER_HANDLE_GAS_DEFAULT(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<HandlesSenderCalls> {
+                        <LZ_RECEIVE_PER_HANDLE_GAS_DEFAULTCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(HandlesSenderCalls::LZ_RECEIVE_PER_HANDLE_GAS_DEFAULT)
+                    }
+                    LZ_RECEIVE_PER_HANDLE_GAS_DEFAULT
+                },
+                {
                     fn quote(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HandlesSenderCalls> {
@@ -6258,6 +7354,17 @@ function transferOwnership(address newOwner) external;
                             .map(HandlesSenderCalls::quote)
                     }
                     quote
+                },
+                {
+                    fn setLzReceivePerHandleGas(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<HandlesSenderCalls> {
+                        <setLzReceivePerHandleGasCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(HandlesSenderCalls::setLzReceivePerHandleGas)
+                    }
+                    setLzReceivePerHandleGas
                 },
                 {
                     fn owner(
@@ -6282,6 +7389,17 @@ function transferOwnership(address newOwner) external;
                     MAX_HANDLES
                 },
                 {
+                    fn getLzReceivePerHandleGas(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<HandlesSenderCalls> {
+                        <getLzReceivePerHandleGasCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(HandlesSenderCalls::getLzReceivePerHandleGas)
+                    }
+                    getLzReceivePerHandleGas
+                },
+                {
                     fn peers(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HandlesSenderCalls> {
@@ -6302,28 +7420,6 @@ function transferOwnership(address newOwner) external;
                             .map(HandlesSenderCalls::setDelegate)
                     }
                     setDelegate
-                },
-                {
-                    fn LZ_RECEIVE_BASE_GAS(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HandlesSenderCalls> {
-                        <LZ_RECEIVE_BASE_GASCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(HandlesSenderCalls::LZ_RECEIVE_BASE_GAS)
-                    }
-                    LZ_RECEIVE_BASE_GAS
-                },
-                {
-                    fn LZ_RECEIVE_PER_HANDLE_GAS(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HandlesSenderCalls> {
-                        <LZ_RECEIVE_PER_HANDLE_GASCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(HandlesSenderCalls::LZ_RECEIVE_PER_HANDLE_GAS)
-                    }
-                    LZ_RECEIVE_PER_HANDLE_GAS
                 },
                 {
                     fn transferOwnership(
@@ -6359,13 +7455,13 @@ function transferOwnership(address newOwner) external;
         #[inline]
         fn abi_encoded_size(&self) -> usize {
             match self {
-                Self::LZ_RECEIVE_BASE_GAS(inner) => {
-                    <LZ_RECEIVE_BASE_GASCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                Self::LZ_RECEIVE_BASE_GAS_DEFAULT(inner) => {
+                    <LZ_RECEIVE_BASE_GAS_DEFAULTCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
                     )
                 }
-                Self::LZ_RECEIVE_PER_HANDLE_GAS(inner) => {
-                    <LZ_RECEIVE_PER_HANDLE_GASCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                Self::LZ_RECEIVE_PER_HANDLE_GAS_DEFAULT(inner) => {
+                    <LZ_RECEIVE_PER_HANDLE_GAS_DEFAULTCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -6379,6 +7475,16 @@ function transferOwnership(address newOwner) external;
                 }
                 Self::getDstChainId(inner) => {
                     <getDstChainIdCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::getLzReceiveBaseGas(inner) => {
+                    <getLzReceiveBaseGasCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::getLzReceivePerHandleGas(inner) => {
+                    <getLzReceivePerHandleGasCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -6414,6 +7520,16 @@ function transferOwnership(address newOwner) external;
                         inner,
                     )
                 }
+                Self::setLzReceiveBaseGas(inner) => {
+                    <setLzReceiveBaseGasCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::setLzReceivePerHandleGas(inner) => {
+                    <setLzReceivePerHandleGasCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
+                }
                 Self::setPeer(inner) => {
                     <setPeerCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
@@ -6427,14 +7543,14 @@ function transferOwnership(address newOwner) external;
         #[inline]
         fn abi_encode_raw(&self, out: &mut alloy_sol_types::private::Vec<u8>) {
             match self {
-                Self::LZ_RECEIVE_BASE_GAS(inner) => {
-                    <LZ_RECEIVE_BASE_GASCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                Self::LZ_RECEIVE_BASE_GAS_DEFAULT(inner) => {
+                    <LZ_RECEIVE_BASE_GAS_DEFAULTCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
                 }
-                Self::LZ_RECEIVE_PER_HANDLE_GAS(inner) => {
-                    <LZ_RECEIVE_PER_HANDLE_GASCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                Self::LZ_RECEIVE_PER_HANDLE_GAS_DEFAULT(inner) => {
+                    <LZ_RECEIVE_PER_HANDLE_GAS_DEFAULTCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -6453,6 +7569,18 @@ function transferOwnership(address newOwner) external;
                 }
                 Self::getDstChainId(inner) => {
                     <getDstChainIdCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::getLzReceiveBaseGas(inner) => {
+                    <getLzReceiveBaseGasCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::getLzReceivePerHandleGas(inner) => {
+                    <getLzReceivePerHandleGasCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -6489,6 +7617,18 @@ function transferOwnership(address newOwner) external;
                 }
                 Self::setDstChainId(inner) => {
                     <setDstChainIdCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::setLzReceiveBaseGas(inner) => {
+                    <setLzReceiveBaseGasCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::setLzReceivePerHandleGas(inner) => {
+                    <setLzReceivePerHandleGasCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -7283,6 +8423,10 @@ function transferOwnership(address newOwner) external;
         #[allow(missing_docs)]
         Initialized(Initialized),
         #[allow(missing_docs)]
+        LzReceiveBaseGasSet(LzReceiveBaseGasSet),
+        #[allow(missing_docs)]
+        LzReceivePerHandleGasSet(LzReceivePerHandleGasSet),
+        #[allow(missing_docs)]
         OwnershipTransferred(OwnershipTransferred),
         #[allow(missing_docs)]
         PeerSet(PeerSet),
@@ -7305,6 +8449,11 @@ function transferOwnership(address newOwner) external;
                 35u8, 131u8, 153u8, 212u8, 39u8, 185u8, 71u8, 137u8, 142u8, 219u8, 41u8,
                 15u8, 95u8, 240u8, 249u8, 16u8, 152u8, 73u8, 177u8, 195u8, 186u8, 25u8,
                 106u8, 66u8, 227u8, 95u8, 0u8, 197u8, 10u8, 84u8, 185u8, 139u8,
+            ],
+            [
+                77u8, 120u8, 238u8, 55u8, 201u8, 255u8, 72u8, 184u8, 221u8, 180u8, 249u8,
+                230u8, 7u8, 70u8, 187u8, 118u8, 71u8, 202u8, 108u8, 60u8, 197u8, 18u8,
+                37u8, 89u8, 79u8, 123u8, 82u8, 138u8, 6u8, 5u8, 115u8, 29u8,
             ],
             [
                 139u8, 224u8, 7u8, 156u8, 83u8, 22u8, 89u8, 20u8, 19u8, 68u8, 205u8,
@@ -7331,12 +8480,17 @@ function transferOwnership(address newOwner) external;
                 19u8, 244u8, 73u8, 158u8, 31u8, 38u8, 51u8, 167u8, 181u8, 147u8, 99u8,
                 33u8, 238u8, 209u8, 205u8, 174u8, 182u8, 17u8, 81u8, 129u8, 210u8,
             ],
+            [
+                220u8, 186u8, 232u8, 150u8, 31u8, 209u8, 207u8, 56u8, 17u8, 254u8, 245u8,
+                184u8, 147u8, 125u8, 239u8, 189u8, 165u8, 92u8, 19u8, 83u8, 125u8, 49u8,
+                210u8, 214u8, 199u8, 250u8, 132u8, 166u8, 1u8, 166u8, 168u8, 68u8,
+            ],
         ];
     }
     #[automatically_derived]
     impl alloy_sol_types::SolEventInterface for HandlesSenderEvents {
         const NAME: &'static str = "HandlesSenderEvents";
-        const COUNT: usize = 7usize;
+        const COUNT: usize = 9usize;
         fn decode_raw_log(
             topics: &[alloy_sol_types::Word],
             data: &[u8],
@@ -7378,6 +8532,24 @@ function transferOwnership(address newOwner) external;
                             data,
                         )
                         .map(Self::Initialized)
+                }
+                Some(
+                    <LzReceiveBaseGasSet as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
+                ) => {
+                    <LzReceiveBaseGasSet as alloy_sol_types::SolEvent>::decode_raw_log(
+                            topics,
+                            data,
+                        )
+                        .map(Self::LzReceiveBaseGasSet)
+                }
+                Some(
+                    <LzReceivePerHandleGasSet as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
+                ) => {
+                    <LzReceivePerHandleGasSet as alloy_sol_types::SolEvent>::decode_raw_log(
+                            topics,
+                            data,
+                        )
+                        .map(Self::LzReceivePerHandleGasSet)
                 }
                 Some(
                     <OwnershipTransferred as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
@@ -7425,6 +8597,12 @@ function transferOwnership(address newOwner) external;
                 Self::Initialized(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
+                Self::LzReceiveBaseGasSet(inner) => {
+                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
+                }
+                Self::LzReceivePerHandleGasSet(inner) => {
+                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
+                }
                 Self::OwnershipTransferred(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
@@ -7448,6 +8626,12 @@ function transferOwnership(address newOwner) external;
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
                 Self::Initialized(inner) => {
+                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
+                }
+                Self::LzReceiveBaseGasSet(inner) => {
+                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
+                }
+                Self::LzReceivePerHandleGasSet(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
                 Self::OwnershipTransferred(inner) => {
@@ -7618,17 +8802,21 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ) -> alloy_contract::SolCallBuilder<&P, C, N> {
             alloy_contract::SolCallBuilder::new_sol(&self.provider, &self.address, call)
         }
-        ///Creates a new call builder for the [`LZ_RECEIVE_BASE_GAS`] function.
-        pub fn LZ_RECEIVE_BASE_GAS(
+        ///Creates a new call builder for the [`LZ_RECEIVE_BASE_GAS_DEFAULT`] function.
+        pub fn LZ_RECEIVE_BASE_GAS_DEFAULT(
             &self,
-        ) -> alloy_contract::SolCallBuilder<&P, LZ_RECEIVE_BASE_GASCall, N> {
-            self.call_builder(&LZ_RECEIVE_BASE_GASCall)
+        ) -> alloy_contract::SolCallBuilder<&P, LZ_RECEIVE_BASE_GAS_DEFAULTCall, N> {
+            self.call_builder(&LZ_RECEIVE_BASE_GAS_DEFAULTCall)
         }
-        ///Creates a new call builder for the [`LZ_RECEIVE_PER_HANDLE_GAS`] function.
-        pub fn LZ_RECEIVE_PER_HANDLE_GAS(
+        ///Creates a new call builder for the [`LZ_RECEIVE_PER_HANDLE_GAS_DEFAULT`] function.
+        pub fn LZ_RECEIVE_PER_HANDLE_GAS_DEFAULT(
             &self,
-        ) -> alloy_contract::SolCallBuilder<&P, LZ_RECEIVE_PER_HANDLE_GASCall, N> {
-            self.call_builder(&LZ_RECEIVE_PER_HANDLE_GASCall)
+        ) -> alloy_contract::SolCallBuilder<
+            &P,
+            LZ_RECEIVE_PER_HANDLE_GAS_DEFAULTCall,
+            N,
+        > {
+            self.call_builder(&LZ_RECEIVE_PER_HANDLE_GAS_DEFAULTCall)
         }
         ///Creates a new call builder for the [`MAX_HANDLES`] function.
         pub fn MAX_HANDLES(
@@ -7646,6 +8834,24 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             dstEid: u32,
         ) -> alloy_contract::SolCallBuilder<&P, getDstChainIdCall, N> {
             self.call_builder(&getDstChainIdCall { dstEid })
+        }
+        ///Creates a new call builder for the [`getLzReceiveBaseGas`] function.
+        pub fn getLzReceiveBaseGas(
+            &self,
+            dstEid: u32,
+        ) -> alloy_contract::SolCallBuilder<&P, getLzReceiveBaseGasCall, N> {
+            self.call_builder(&getLzReceiveBaseGasCall { dstEid })
+        }
+        ///Creates a new call builder for the [`getLzReceivePerHandleGas`] function.
+        pub fn getLzReceivePerHandleGas(
+            &self,
+            dstEid: u32,
+        ) -> alloy_contract::SolCallBuilder<&P, getLzReceivePerHandleGasCall, N> {
+            self.call_builder(
+                &getLzReceivePerHandleGasCall {
+                    dstEid,
+                },
+            )
         }
         ///Creates a new call builder for the [`oAppVersion`] function.
         pub fn oAppVersion(
@@ -7738,6 +8944,32 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
                 },
             )
         }
+        ///Creates a new call builder for the [`setLzReceiveBaseGas`] function.
+        pub fn setLzReceiveBaseGas(
+            &self,
+            dstEid: u32,
+            lzReceiveBaseGas: u128,
+        ) -> alloy_contract::SolCallBuilder<&P, setLzReceiveBaseGasCall, N> {
+            self.call_builder(
+                &setLzReceiveBaseGasCall {
+                    dstEid,
+                    lzReceiveBaseGas,
+                },
+            )
+        }
+        ///Creates a new call builder for the [`setLzReceivePerHandleGas`] function.
+        pub fn setLzReceivePerHandleGas(
+            &self,
+            dstEid: u32,
+            lzReceivePerHandleGas: u128,
+        ) -> alloy_contract::SolCallBuilder<&P, setLzReceivePerHandleGasCall, N> {
+            self.call_builder(
+                &setLzReceivePerHandleGasCall {
+                    dstEid,
+                    lzReceivePerHandleGas,
+                },
+            )
+        }
         ///Creates a new call builder for the [`setPeer`] function.
         pub fn setPeer(
             &self,
@@ -7794,6 +9026,18 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ///Creates a new event filter for the [`Initialized`] event.
         pub fn Initialized_filter(&self) -> alloy_contract::Event<&P, Initialized, N> {
             self.event_filter::<Initialized>()
+        }
+        ///Creates a new event filter for the [`LzReceiveBaseGasSet`] event.
+        pub fn LzReceiveBaseGasSet_filter(
+            &self,
+        ) -> alloy_contract::Event<&P, LzReceiveBaseGasSet, N> {
+            self.event_filter::<LzReceiveBaseGasSet>()
+        }
+        ///Creates a new event filter for the [`LzReceivePerHandleGasSet`] event.
+        pub fn LzReceivePerHandleGasSet_filter(
+            &self,
+        ) -> alloy_contract::Event<&P, LzReceivePerHandleGasSet, N> {
+            self.event_filter::<LzReceivePerHandleGasSet>()
         }
         ///Creates a new event filter for the [`OwnershipTransferred`] event.
         pub fn OwnershipTransferred_filter(

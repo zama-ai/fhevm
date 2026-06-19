@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 /**
  * @title IDstApp
  * @notice Callback interface implemented by destination apps to receive bridged payloads.
- * @dev `onReceive` is invoked from `HandlesReceiver.lzCompose` inside a dedicated
+ * @dev `onConfidentialBridgeReceived` is invoked from `HandlesReceiver.lzCompose` inside a dedicated
  *      `lzCompose` transaction, after transient ACL allowance has been granted to the
  *      destination app for every derived handle in `dstHandleList`. Apps should treat
  *      `srcHandleList` entries as opaque bytes blobs (they are source-chain handles,
@@ -25,18 +25,22 @@ interface IDstApp {
      * @param dstHandleList   The list of destination-chain handles derived from
      *                        `srcHandleList`, one-to-one by index. The HandlesReceiver has
      *                        already granted transient ACL allowance to this app for each.
+     * @param guid            The LayerZero message GUID of the cross-chain transfer. Lets
+     *                        apps correlate this delivery with the source-side send (which
+     *                        emits the same GUID via `HandlesSender`'s `BridgeHandle`).
      *
-     * @dev Reverting from `onReceive` reverts only the lzCompose transaction. Bridge state
+     * @dev Reverting from `onConfidentialBridgeReceived` reverts only the lzCompose transaction. Bridge state
      *      from the lzReceive step (derivations + `HandleBridged` events) is already
      *      committed on-chain and the coprocessor's association is unaffected.
      *      Note that `lzCompose` can be retried. If the app determines the source chain is
      *      untrusted, it should revert here to prevent app-level state changes.
      */
-    function onReceive(
+    function onConfidentialBridgeReceived(
         uint32 srcEid,
         bytes32 srcApp,
         bytes calldata payload,
         bytes32[] calldata srcHandleList,
-        bytes32[] calldata dstHandleList
+        bytes32[] calldata dstHandleList,
+        bytes32 guid
     ) external;
 }

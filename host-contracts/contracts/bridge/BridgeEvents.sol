@@ -30,4 +30,16 @@ contract BridgeEvents {
     /// @param dstEid        The LayerZero endpoint id.
     /// @param dstChainId    The chain id.
     event DstChainIdSet(uint32 indexed dstEid, uint64 dstChainId);
+
+    /// @notice Emitted by the HandlesSender when governance sets a custom base `lzReceive`
+    ///         gas for a `dstEid`. A value of 0 clears the override, restoring the default.
+    /// @param dstEid              The LayerZero endpoint id.
+    /// @param lzReceiveBaseGas    The custom base gas (0 means fall back to LZ_RECEIVE_BASE_GAS_DEFAULT).
+    event LzReceiveBaseGasSet(uint32 indexed dstEid, uint128 lzReceiveBaseGas);
+
+    /// @notice Emitted by the HandlesSender when governance sets a custom per-handle
+    ///         `lzReceive` gas for a `dstEid`. A value of 0 clears the override.
+    /// @param dstEid                 The LayerZero endpoint id.
+    /// @param lzReceivePerHandleGas  The custom per-handle gas (0 means fall back to LZ_RECEIVE_PER_HANDLE_GAS_DEFAULT).
+    event LzReceivePerHandleGasSet(uint32 indexed dstEid, uint128 lzReceivePerHandleGas);
 }

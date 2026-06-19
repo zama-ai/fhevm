@@ -98,7 +98,7 @@ export async function deployConfidentialOFTFixture() {
   const base = await deployBridgeFixture();
   const oftFactory = await ethers.getContractFactory('ConfidentialOFT');
   // Deploy the OFT against the destination-side bridge — that is the contract whose
-  // address is checked in `onReceive` and which dispatches outbound sends from here.
+  // address is checked in `onConfidentialBridgeReceived` and which dispatches outbound sends from here.
   const oft = (await oftFactory
     .connect(base.owner)
     .deploy(await base.dstBridge.getAddress(), base.owner.address)) as unknown as ConfidentialOFT;
