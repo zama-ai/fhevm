@@ -18,10 +18,10 @@ fn eval_step_output(step: &FheEvalStep) -> &FheEvalOutput {
 
 fn durable_output_event_capacity(output: &FheEvalOutput) -> usize {
     match output {
-        FheEvalOutput::Durable {
+        FheEvalOutput::AllowedDurable {
             output_subjects, ..
         } => 1 + output_subjects.len() * 2,
-        FheEvalOutput::Transient | FheEvalOutput::TransientSession { .. } => 0,
+        FheEvalOutput::AllowedLocal => 0,
     }
 }
 
@@ -112,7 +112,7 @@ fn eval_step_program_data_log_bytes(step: &FheEvalStep, log_transport: bool) -> 
         bytes += anchor_program_data_log_bytes(eval_step_event_payload_bytes(step));
     }
 
-    if let FheEvalOutput::Durable {
+    if let FheEvalOutput::AllowedDurable {
         output_subjects, ..
     } = eval_step_output(step)
     {
@@ -157,7 +157,7 @@ mod tests {
                 FheEvalStep::TrivialEncrypt {
                     plaintext: [0; 32],
                     fhe_type: 1,
-                    output: FheEvalOutput::Transient,
+                    output: FheEvalOutput::AllowedLocal,
                 },
                 FheEvalStep::TrivialEncrypt {
                     plaintext: [1; 32],
@@ -209,12 +209,12 @@ mod tests {
             context_id: [1; 32],
             steps: vec![FheEvalStep::Binary {
                 op: FheBinaryOpCode::Add,
-                lhs: FheEvalOperand::Durable {
+                lhs: FheEvalOperand::AllowedDurable {
                     handle: [1; 32],
                     acl_record_index: 0,
                     permission_index: None,
                 },
-                rhs: FheEvalOperand::Durable {
+                rhs: FheEvalOperand::AllowedDurable {
                     handle: [2; 32],
                     acl_record_index: 1,
                     permission_index: None,
@@ -247,7 +247,7 @@ mod tests {
     }
 
     fn durable_output_with_subjects(subject_count: usize) -> FheEvalOutput {
-        FheEvalOutput::Durable {
+        FheEvalOutput::AllowedDurable {
             output_acl_record_index: 0,
             output_app_account_authority_index: None,
             output_nonce_key: [0; 32],

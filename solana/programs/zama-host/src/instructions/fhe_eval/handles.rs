@@ -19,7 +19,7 @@ pub(super) fn expected_binary_eval_result(
     output: &FheEvalOutput,
 ) -> [u8; 32] {
     match output {
-        FheEvalOutput::Transient | FheEvalOutput::TransientSession { .. } => computed_eval_handle(
+        FheEvalOutput::AllowedLocal => computed_eval_handle(
             op,
             lhs,
             rhs,
@@ -31,7 +31,7 @@ pub(super) fn expected_binary_eval_result(
             *handle_context.context_id,
             op_index,
         ),
-        FheEvalOutput::Durable {
+        FheEvalOutput::AllowedDurable {
             output_nonce_key,
             output_nonce_sequence,
             ..
@@ -64,21 +64,19 @@ pub(super) fn expected_ternary_eval_result(
     output: &FheEvalOutput,
 ) -> [u8; 32] {
     match output {
-        FheEvalOutput::Transient | FheEvalOutput::TransientSession { .. } => {
-            computed_eval_ternary_handle(
-                op,
-                control,
-                if_true,
-                if_false,
-                output_fhe_type,
-                handle_context.chain_id,
-                *handle_context.previous_bank_hash,
-                handle_context.unix_timestamp,
-                *handle_context.context_id,
-                op_index,
-            )
-        }
-        FheEvalOutput::Durable {
+        FheEvalOutput::AllowedLocal => computed_eval_ternary_handle(
+            op,
+            control,
+            if_true,
+            if_false,
+            output_fhe_type,
+            handle_context.chain_id,
+            *handle_context.previous_bank_hash,
+            handle_context.unix_timestamp,
+            *handle_context.context_id,
+            op_index,
+        ),
+        FheEvalOutput::AllowedDurable {
             output_nonce_key,
             output_nonce_sequence,
             ..
@@ -108,18 +106,16 @@ pub(super) fn expected_trivial_eval_result(
     output: &FheEvalOutput,
 ) -> [u8; 32] {
     match output {
-        FheEvalOutput::Transient | FheEvalOutput::TransientSession { .. } => {
-            computed_eval_trivial_handle(
-                plaintext,
-                fhe_type,
-                handle_context.chain_id,
-                *handle_context.previous_bank_hash,
-                handle_context.unix_timestamp,
-                *handle_context.context_id,
-                op_index,
-            )
-        }
-        FheEvalOutput::Durable {
+        FheEvalOutput::AllowedLocal => computed_eval_trivial_handle(
+            plaintext,
+            fhe_type,
+            handle_context.chain_id,
+            *handle_context.previous_bank_hash,
+            handle_context.unix_timestamp,
+            *handle_context.context_id,
+            op_index,
+        ),
+        FheEvalOutput::AllowedDurable {
             output_nonce_key,
             output_nonce_sequence,
             ..
@@ -143,16 +139,14 @@ pub(super) fn expected_rand_eval_seed(
     output: &FheEvalOutput,
 ) -> [u8; 16] {
     match output {
-        FheEvalOutput::Transient | FheEvalOutput::TransientSession { .. } => {
-            computed_eval_rand_seed(
-                handle_context.chain_id,
-                *handle_context.previous_bank_hash,
-                handle_context.unix_timestamp,
-                *handle_context.context_id,
-                op_index,
-            )
-        }
-        FheEvalOutput::Durable {
+        FheEvalOutput::AllowedLocal => computed_eval_rand_seed(
+            handle_context.chain_id,
+            *handle_context.previous_bank_hash,
+            handle_context.unix_timestamp,
+            *handle_context.context_id,
+            op_index,
+        ),
+        FheEvalOutput::AllowedDurable {
             output_nonce_key,
             output_nonce_sequence,
             ..

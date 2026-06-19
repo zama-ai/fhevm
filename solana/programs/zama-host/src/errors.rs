@@ -188,7 +188,7 @@ pub enum ZamaHostError {
     InvalidFheEvalAccount,
     /// An FHE eval instruction referenced a transient output that was not produced earlier.
     #[msg("FHE eval transient operand is missing")]
-    FheEvalTransientMissing,
+    FheEvalAllowedLocalMissing,
     /// An FHE eval instruction produced the same transient handle twice.
     #[msg("FHE eval output handle is duplicated")]
     FheEvalDuplicateHandle,
@@ -198,48 +198,9 @@ pub enum ZamaHostError {
     /// An FHE eval context id must be non-zero.
     #[msg("FHE eval context id is invalid")]
     InvalidFheEvalContext,
-    /// A transient session nonce must be non-zero.
-    #[msg("transient session nonce is invalid")]
-    InvalidTransientSessionNonce,
-    /// A transient session account is not canonical for its authority and nonce.
-    #[msg("transient session account does not match the canonical PDA")]
-    TransientSessionPdaMismatch,
-    /// A transient session has an invalid state for the requested operation.
-    #[msg("transient session state is invalid")]
-    TransientSessionStateInvalid,
-    /// A transient session is expired for capability consumption.
-    #[msg("transient session is expired")]
-    TransientSessionExpired,
-    /// A transient session authority does not match the required signer.
-    #[msg("transient session authority does not match signer")]
-    TransientSessionAuthorityMismatch,
-    /// A transient session refund recipient does not match the stored recipient.
-    #[msg("transient session refund recipient does not match")]
-    TransientSessionRefundMismatch,
-    /// A transient session capacity is invalid.
-    #[msg("transient session capacity is invalid")]
-    TransientSessionCapacityInvalid,
-    /// A transient session capability is missing or does not match the requested handle.
-    #[msg("transient capability is missing or mismatched")]
-    TransientCapabilityMismatch,
-    /// A transient session capability has already been consumed.
-    #[msg("transient capability is consumed")]
-    TransientCapabilityConsumed,
-    /// A transient session consume did not prove same-transaction creation.
-    #[msg("transient session creation was not found in this transaction")]
-    TransientSessionCreationMissing,
-    /// A transient session capability does not authorize the requested role or subject.
-    #[msg("transient capability is not authorized")]
-    TransientCapabilityUnauthorized,
-    /// A transient capability cannot authorize the requested durable output.
-    #[msg("transient capability does not allow this durable output")]
-    TransientCapabilityOutputDenied,
-    /// Transient capabilities are not allowed to authorize public decrypt.
+    /// A derived durable output may not be made public-decryptable by a non-authorized subject.
     #[msg("transient capability cannot authorize public decrypt")]
-    TransientCapabilityPublicDecryptDenied,
-    /// A transient capability requires the instructions sysvar for receiver validation.
-    #[msg("transient capability receiver cannot be verified")]
-    TransientCapabilityReceiverMissing,
+    DerivedOutputPublicDecryptDenied,
     /// A KMS context was defined with a duplicate signer address.
     #[msg("KMS context signer set contains a duplicate address")]
     DuplicateKmsSigner,
@@ -249,9 +210,4 @@ pub enum ZamaHostError {
     /// The coprocessor-attested user is not among the output ACL subjects.
     #[msg("attested user address is not an output ACL subject")]
     InputBindUserNotSubject,
-    /// A value derived from a verified external input may not be parked in a transient session:
-    /// the session capability does not carry the attested binding, so consuming it later would
-    /// drop the replay guard. Such values must flow to a durable output that binds the attestation.
-    #[msg("verified-input-derived value cannot be written to a transient session")]
-    InputBindTransientSessionUnsupported,
 }

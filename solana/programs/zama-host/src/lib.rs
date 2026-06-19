@@ -169,40 +169,6 @@ pub mod zama_host {
         )
     }
 
-    pub fn create_transient_session(
-        ctx: Context<CreateTransientSession>,
-        session_nonce: [u8; 32],
-        refund_recipient: Pubkey,
-        compute_subject: Pubkey,
-        expires_slot: u64,
-        max_entries: u8,
-    ) -> Result<()> {
-        instructions::create_transient_session(
-            ctx,
-            session_nonce,
-            refund_recipient,
-            compute_subject,
-            expires_slot,
-            max_entries,
-        )
-    }
-
-    pub fn allow_transient_handle(
-        ctx: Context<AllowTransientHandle>,
-        handle: [u8; 32],
-        capability: TransientCapabilityGrant,
-    ) -> Result<()> {
-        instructions::allow_transient_handle(ctx, handle, capability)
-    }
-
-    pub fn seal_transient_session(ctx: Context<SealTransientSession>) -> Result<()> {
-        instructions::seal_transient_session(ctx)
-    }
-
-    pub fn close_transient_session(ctx: Context<CloseTransientSession>) -> Result<()> {
-        instructions::close_transient_session(ctx)
-    }
-
     pub fn trivial_encrypt_and_bind(
         ctx: Context<TrivialEncryptAndBind>,
         plaintext: [u8; 32],
@@ -219,33 +185,6 @@ pub mod zama_host {
             ctx,
             plaintext,
             fhe_type,
-            output_nonce_key,
-            output_nonce_sequence,
-            output_acl_domain_key,
-            output_app_account,
-            output_encrypted_value_label,
-            output_subjects,
-            output_public_decrypt,
-        )
-    }
-
-    #[cfg(feature = "poc")]
-    pub fn mock_input_verified_and_bind(
-        ctx: Context<MockInputVerifiedAndBind>,
-        input_handle: [u8; 32],
-        user: Pubkey,
-        output_nonce_key: [u8; 32],
-        output_nonce_sequence: u64,
-        output_acl_domain_key: Pubkey,
-        output_app_account: Pubkey,
-        output_encrypted_value_label: [u8; 32],
-        output_subjects: Vec<AclSubjectEntry>,
-        output_public_decrypt: bool,
-    ) -> Result<()> {
-        instructions::mock_input_verified_and_bind(
-            ctx,
-            input_handle,
-            user,
             output_nonce_key,
             output_nonce_sequence,
             output_acl_domain_key,

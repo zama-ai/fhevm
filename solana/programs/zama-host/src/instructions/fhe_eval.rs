@@ -46,8 +46,6 @@ pub struct FheEval<'info> {
     pub host_config: Account<'info, HostConfig>,
     /// System program used for durable output ACL creation.
     pub system_program: Program<'info, System>,
-    /// Instructions sysvar used to bind transient capabilities to the top-level receiver program.
-    pub instructions_sysvar: Option<UncheckedAccount<'info>>,
 }
 
 /// Executes an ordered FHE plan with instruction-local transient outputs.
@@ -64,15 +62,9 @@ pub fn fhe_eval<'info>(ctx: Context<'info, FheEval<'info>>, args: FheEvalArgs) -
     for step in &args.steps {
         assert_eval_step_birth_policy(step)?;
     }
-    let instructions_sysvar = ctx
-        .accounts
-        .instructions_sysvar
-        .as_ref()
-        .map(|account| account.to_account_info());
-    preflight_eval_frame(ctx.remaining_accounts, &args, instructions_sysvar.as_ref())?;
+    preflight_eval_frame(ctx.remaining_accounts, &args)?;
 
     let subject = ctx.accounts.compute_subject.key();
-    let session_authority = ctx.accounts.app_account_authority.key();
     let clock = Clock::get()?;
     let previous_bank_hash = previous_bank_hash_with_test_fallback(
         clock.slot,
@@ -85,82 +77,54 @@ pub fn fhe_eval<'info>(ctx: Context<'info, FheEval<'info>>, args: FheEvalArgs) -
         unix_timestamp: clock.unix_timestamp,
         context_id: &args.context_id,
     };
-    admit_eval_frame(
-        &ctx,
-        &args,
-        subject,
-        session_authority,
-        current_slot,
-        &handle_context,
-        instructions_sysvar.as_ref(),
-    )?;
-    let events = execute_eval_frame(
-        &ctx,
-        &args,
-        subject,
-        session_authority,
-        current_slot,
-        &handle_context,
-        instructions_sysvar.as_ref(),
-    )?;
+    admit_eval_frame(&ctx, &args, subject, &handle_context)?;
+    let events = execute_eval_frame(&ctx, &args, subject, current_slot, &handle_context)?;
     emit_eval_events(&ctx, events)?;
     Ok(())
 }
 
 #[inline(never)]
-#[allow(clippy::too_many_arguments)]
 fn execute_eval_frame<'info>(
     ctx: &Context<'info, FheEval<'info>>,
     args: &FheEvalArgs,
     subject: Pubkey,
-    session_authority: Pubkey,
     current_slot: u64,
     handle_context: &EvalHandleContext<'_>,
-    instructions_sysvar: Option<&AccountInfo<'info>>,
 ) -> Result<Vec<EvalEvent>> {
     let mut execution = EvalExecutionState::new(
         ctx.remaining_accounts,
         args.steps.len(),
         eval_event_capacity(args),
         subject,
-        session_authority,
         handle_context.chain_id,
         current_slot,
-        instructions_sysvar,
         InputVerifierParams::from_config(&ctx.accounts.host_config),
     );
     walk_eval_frame(&mut execution, ctx, args, handle_context)?;
-    execution.finish(ctx)
+    execution.finish()
 }
 
 /// Execution phase: resolves operands while marking the dynamic accounts used,
-/// mutates transient sessions and creates durable output ACL records, and
-/// buffers the events for transport.
+/// creates durable output ACL records, and buffers the events for transport.
 struct EvalExecutionState<'a, 'info> {
     remaining_accounts: &'a [AccountInfo<'info>],
     remaining_accounts_used: Vec<bool>,
     produced: Vec<ProducedValue>,
     events: Vec<EvalEvent>,
-    instructions_sysvar_used: bool,
     subject: Pubkey,
-    session_authority: Pubkey,
     chain_id: u64,
     current_slot: u64,
-    instructions_sysvar: Option<&'a AccountInfo<'info>>,
     verifier_params: InputVerifierParams,
 }
 
 impl<'a, 'info> EvalExecutionState<'a, 'info> {
-    #[allow(clippy::too_many_arguments)]
     fn new(
         remaining_accounts: &'a [AccountInfo<'info>],
         step_count: usize,
         event_capacity: usize,
         subject: Pubkey,
-        session_authority: Pubkey,
         chain_id: u64,
         current_slot: u64,
-        instructions_sysvar: Option<&'a AccountInfo<'info>>,
         verifier_params: InputVerifierParams,
     ) -> Self {
         Self {
@@ -168,12 +132,9 @@ impl<'a, 'info> EvalExecutionState<'a, 'info> {
             remaining_accounts_used: vec![false; remaining_accounts.len()],
             produced: Vec::with_capacity(step_count),
             events: Vec::with_capacity(event_capacity),
-            instructions_sysvar_used: false,
             subject,
-            session_authority,
             chain_id,
             current_slot,
-            instructions_sysvar,
             verifier_params,
         }
     }
@@ -188,17 +149,11 @@ impl<'a, 'info> EvalExecutionState<'a, 'info> {
         Ok(account)
     }
 
-    fn finish(self, ctx: &Context<'info, FheEval<'info>>) -> Result<Vec<EvalEvent>> {
+    fn finish(self) -> Result<Vec<EvalEvent>> {
         require!(
             self.remaining_accounts_used.iter().all(|used| *used),
             ZamaHostError::InvalidFheEvalAccount
         );
-        if !self.instructions_sysvar_used {
-            require!(
-                ctx.accounts.instructions_sysvar.is_none(),
-                ZamaHostError::InvalidFheEvalAccount
-            );
-        }
         Ok(self.events)
     }
 }
@@ -242,28 +197,6 @@ impl EvalStepVisitor for EvalExecutionState<'_, '_> {
     }
 
     #[inline(never)]
-    fn resolve_transient_session_operand(
-        &mut self,
-        handle: [u8; 32],
-        session_index: u16,
-        capability_index: u16,
-    ) -> Result<ResolvedOperand> {
-        let session_info = self.remaining_account(session_index)?;
-        self.instructions_sysvar_used = true;
-        let capability = consume_transient_capability(
-            session_info,
-            self.session_authority,
-            self.current_slot,
-            handle,
-            self.subject,
-            ACL_ROLE_USE,
-            capability_index,
-            self.instructions_sysvar,
-        )?;
-        Ok(ResolvedOperand::transient_session(handle, capability.grant))
-    }
-
-    #[inline(never)]
     fn resolve_verified_input_operand(
         &mut self,
         attestation: &CoprocessorInputAttestation,
@@ -301,7 +234,6 @@ impl EvalStepVisitor for EvalExecutionState<'_, '_> {
         ctx: &Context<'info, FheEval<'info>>,
         result: [u8; 32],
         output: &FheEvalOutput,
-        output_policies: Vec<SessionPolicy>,
         output_public_decrypt_allowed: bool,
         enforce_public_decrypt_role_propagation: bool,
         verified_input: Option<VerifiedInputBinding>,
@@ -313,7 +245,6 @@ impl EvalStepVisitor for EvalExecutionState<'_, '_> {
             &mut self.events,
             result,
             output,
-            output_policies,
             output_public_decrypt_allowed,
             enforce_public_decrypt_role_propagation,
             verified_input,
@@ -346,7 +277,6 @@ fn accept_eval_output<'info>(
     events: &mut Vec<EvalEvent>,
     result: [u8; 32],
     output: &FheEvalOutput,
-    output_policies: Vec<SessionPolicy>,
     output_public_decrypt_allowed: bool,
     enforce_public_decrypt_role_propagation: bool,
     verified_input: Option<VerifiedInputBinding>,
@@ -358,30 +288,8 @@ fn accept_eval_output<'info>(
     );
 
     match output {
-        FheEvalOutput::Transient => {}
-        FheEvalOutput::TransientSession {
-            session_index,
-            capability,
-        } => {
-            require!(
-                verified_input.is_none(),
-                ZamaHostError::InputBindTransientSessionUnsupported
-            );
-            assert_session_policies_allow_transient_grant(&output_policies, *capability)?;
-            let session_info = remaining_account(
-                ctx.remaining_accounts,
-                remaining_accounts_used,
-                *session_index,
-            )?;
-            append_transient_capability(
-                session_info,
-                ctx.accounts.app_account_authority.key(),
-                current_slot,
-                result,
-                *capability,
-            )?;
-        }
-        FheEvalOutput::Durable {
+        FheEvalOutput::AllowedLocal => {}
+        FheEvalOutput::AllowedDurable {
             output_acl_record_index,
             output_app_account_authority_index,
             output_nonce_key,
@@ -400,13 +308,6 @@ fn accept_eval_output<'info>(
                     output_subjects,
                 )?;
             }
-            assert_session_policies_allow_output(
-                &output_policies,
-                *output_acl_domain_key,
-                *output_app_account,
-                output_subjects,
-                *output_public_decrypt,
-            )?;
             let app_account_authority = durable_output_authority(
                 ctx,
                 remaining_accounts_used,
@@ -442,7 +343,6 @@ fn accept_eval_output<'info>(
     produced.push(ProducedValue {
         handle: result,
         public_decrypt_allowed: output_public_decrypt_allowed,
-        session_policies: output_policies,
         verified_input,
     });
     Ok(())
@@ -505,7 +405,6 @@ fn durable_output_authority<'info>(
 pub(super) struct ProducedValue {
     handle: [u8; 32],
     public_decrypt_allowed: bool,
-    session_policies: Vec<SessionPolicy>,
     verified_input: Option<VerifiedInputBinding>,
 }
 
@@ -526,7 +425,6 @@ pub(super) struct ResolvedOperand {
     pub(super) handle: [u8; 32],
     pub(super) scalar: bool,
     pub(super) public_decrypt_allowed: bool,
-    pub(super) session_policies: Vec<SessionPolicy>,
     /// Set when this value traces back to a verified external input: the attested identities its
     /// derived durable outputs must bind to (see [`VerifiedInputBinding`]).
     pub(super) verified_input: Option<VerifiedInputBinding>,
@@ -538,7 +436,6 @@ impl ResolvedOperand {
             handle,
             scalar: false,
             public_decrypt_allowed,
-            session_policies: Vec::new(),
             verified_input: None,
         }
     }
@@ -548,7 +445,6 @@ impl ResolvedOperand {
             handle,
             scalar: true,
             public_decrypt_allowed: true,
-            session_policies: Vec::new(),
             verified_input: None,
         }
     }
@@ -563,7 +459,6 @@ impl ResolvedOperand {
             handle,
             scalar: false,
             public_decrypt_allowed: true,
-            session_policies: Vec::new(),
             verified_input: Some(binding),
         }
     }
@@ -573,64 +468,9 @@ impl ResolvedOperand {
             handle: value.handle,
             scalar: false,
             public_decrypt_allowed: value.public_decrypt_allowed,
-            session_policies: value.session_policies.clone(),
             verified_input: value.verified_input,
         }
     }
-
-    /// Builds an operand from a transient-session capability grant, carrying the
-    /// grant's policy forward so any output it produces stays within the grant.
-    fn transient_session(handle: [u8; 32], grant: TransientCapabilityGrant) -> Self {
-        Self {
-            handle,
-            scalar: false,
-            public_decrypt_allowed: grant.public_decrypt_allowed,
-            verified_input: None,
-            session_policies: vec![SessionPolicy {
-                subject: grant.subject,
-                receiver_program: grant.receiver_program,
-                role_flags: grant.role_flags,
-                max_uses: grant.max_uses,
-                durable_output_allowed: grant.durable_output_allowed,
-                public_decrypt_allowed: grant.public_decrypt_allowed,
-                acl_domain_key: grant.acl_domain_key,
-                app_account: grant.app_account,
-            }],
-        }
-    }
-}
-
-#[derive(Clone, Copy)]
-pub(super) struct SessionPolicy {
-    subject: Pubkey,
-    receiver_program: Pubkey,
-    role_flags: u8,
-    max_uses: u8,
-    durable_output_allowed: bool,
-    public_decrypt_allowed: bool,
-    acl_domain_key: Pubkey,
-    app_account: Pubkey,
-}
-
-fn input_session_policies(lhs: &ResolvedOperand, rhs: &ResolvedOperand) -> Vec<SessionPolicy> {
-    let mut policies = Vec::with_capacity(lhs.session_policies.len() + rhs.session_policies.len());
-    policies.extend_from_slice(&lhs.session_policies);
-    policies.extend_from_slice(&rhs.session_policies);
-    policies
-}
-
-fn input_session_policies3(
-    first: &ResolvedOperand,
-    second: &ResolvedOperand,
-    third: &ResolvedOperand,
-) -> Vec<SessionPolicy> {
-    let mut policies = Vec::with_capacity(
-        first.session_policies.len() + second.session_policies.len() + third.session_policies.len(),
-    );
-    policies.extend_from_slice(&first.session_policies);
-    policies.extend_from_slice(&second.session_policies);
-    policies.extend_from_slice(&third.session_policies);
-    policies
 }
 
 fn inputs_allow_public_decrypt(lhs: &ResolvedOperand, rhs: &ResolvedOperand) -> bool {
@@ -672,93 +512,6 @@ fn combine_verified_input_binding(
         }
     }
     Ok(binding)
-}
-
-fn assert_session_policies_allow_output(
-    policies: &[SessionPolicy],
-    output_acl_domain_key: Pubkey,
-    output_app_account: Pubkey,
-    output_subjects: &[AclSubjectEntry],
-    output_public_decrypt: bool,
-) -> Result<()> {
-    assert_public_decrypt_not_set_at_birth(output_public_decrypt)?;
-    for policy in policies {
-        require!(
-            policy.durable_output_allowed,
-            ZamaHostError::TransientCapabilityOutputDenied
-        );
-        require_keys_eq!(
-            policy.acl_domain_key,
-            output_acl_domain_key,
-            ZamaHostError::TransientCapabilityOutputDenied
-        );
-        require_keys_eq!(
-            policy.app_account,
-            output_app_account,
-            ZamaHostError::TransientCapabilityOutputDenied
-        );
-        for output_subject in output_subjects {
-            require_keys_eq!(
-                output_subject.pubkey,
-                policy.subject,
-                ZamaHostError::TransientCapabilityOutputDenied
-            );
-            require!(
-                output_subject.role_flags & !policy.role_flags == 0,
-                ZamaHostError::TransientCapabilityOutputDenied
-            );
-        }
-    }
-    Ok(())
-}
-
-fn assert_session_policies_allow_transient_grant(
-    policies: &[SessionPolicy],
-    grant: TransientCapabilityGrant,
-) -> Result<()> {
-    for policy in policies {
-        require_keys_eq!(
-            policy.subject,
-            grant.subject,
-            ZamaHostError::TransientCapabilityUnauthorized
-        );
-        require_keys_eq!(
-            policy.receiver_program,
-            grant.receiver_program,
-            ZamaHostError::TransientCapabilityUnauthorized
-        );
-        require!(
-            grant.role_flags & !policy.role_flags == 0,
-            ZamaHostError::TransientCapabilityUnauthorized
-        );
-        require!(
-            grant.max_uses <= policy.max_uses,
-            ZamaHostError::TransientCapabilityConsumed
-        );
-        if grant.durable_output_allowed {
-            require!(
-                policy.durable_output_allowed,
-                ZamaHostError::TransientCapabilityOutputDenied
-            );
-            require_keys_eq!(
-                policy.acl_domain_key,
-                grant.acl_domain_key,
-                ZamaHostError::TransientCapabilityOutputDenied
-            );
-            require_keys_eq!(
-                policy.app_account,
-                grant.app_account,
-                ZamaHostError::TransientCapabilityOutputDenied
-            );
-        }
-        if grant.public_decrypt_allowed {
-            require!(
-                policy.public_decrypt_allowed,
-                ZamaHostError::TransientCapabilityPublicDecryptDenied
-            );
-        }
-    }
-    Ok(())
 }
 
 #[inline(never)]

@@ -21,7 +21,6 @@ pub mod handle_material_commitment;
 pub mod host_chain_address;
 pub mod host_config;
 pub mod kms_context;
-pub mod transient_session;
 pub mod user_decryption_delegation;
 
 pub use acl_permission::*;
@@ -31,7 +30,6 @@ pub use handle_material_commitment::*;
 pub use host_chain_address::*;
 pub use host_config::*;
 pub use kms_context::*;
-pub use transient_session::*;
 pub use user_decryption_delegation::*;
 
 pub use crate::constants::*;
@@ -99,50 +97,6 @@ impl AclSubjectEntry {
     }
 }
 
-/// Caller-supplied policy for adding a transient capability to a session.
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq)]
-pub struct TransientCapabilityGrant {
-    /// Subject allowed to use the handle through the session.
-    pub subject: Pubkey,
-    /// Top-level receiver program expected to consume the capability.
-    pub receiver_program: Pubkey,
-    /// App-level ACL domain to which durable output, if allowed, must remain bound.
-    pub acl_domain_key: Pubkey,
-    /// App account to which durable output, if allowed, must remain bound.
-    pub app_account: Pubkey,
-    /// Roles granted by the transient capability.
-    pub role_flags: u8,
-    /// Maximum number of successful uses before the capability is exhausted.
-    ///
-    /// The host currently requires this to be `1`.
-    pub max_uses: u8,
-    /// Whether a computation using this capability may bind a durable output ACL record.
-    pub durable_output_allowed: bool,
-    /// Whether a computation using this capability may make the durable output public-decryptable.
-    pub public_decrypt_allowed: bool,
-}
-
-impl TransientCapabilityGrant {
-    /// Serialized size of the account body.
-    pub const SPACE: usize = 32 + 32 + 32 + 32 + 1 + 1 + 1 + 1;
-}
-
-/// One one-shot transient handle capability.
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq)]
-pub struct TransientCapability {
-    /// Handle controlled by the capability.
-    pub handle: [u8; 32],
-    /// Capability policy.
-    pub grant: TransientCapabilityGrant,
-    /// Number of times the capability has been consumed.
-    pub used_count: u8,
-}
-
-impl TransientCapability {
-    /// Serialized size of the account body.
-    pub const SPACE: usize = 32 + TransientCapabilityGrant::SPACE + 1;
-}
-
 /// Binary FHE operators currently modeled by the PoC.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FheBinaryOpCode {
@@ -164,11 +118,11 @@ pub enum FheTernaryOpCode {
 /// Arguments for composed instruction-local FHE evaluation.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
 pub struct FheEvalArgs {
-    /// Caller-chosen domain separator for transient handles in this eval.
+    /// Caller-chosen domain separator for the instruction-local handles in this eval.
     ///
     /// Callers should use a fresh value for each logical eval session.
     pub context_id: [u8; 32],
-    /// Ordered step list. Each transient operand may only reference an output
+    /// Ordered step list. Each `AllowedLocal` operand may only reference an output
     /// produced by an earlier index in this vector.
     pub steps: Vec<FheEvalStep>,
 }
@@ -247,8 +201,8 @@ pub struct CoprocessorInputAttestation {
 /// Operand source for a composed FHE eval operation.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
 pub enum FheEvalOperand {
-    /// Durable input authorized by a canonical ACL record in `remaining_accounts`.
-    Durable {
+    /// Input allowed through durable ACL state: a canonical ACL record in `remaining_accounts`.
+    AllowedDurable {
         /// Handle expected in the ACL record.
         handle: [u8; 32],
         /// Index into `remaining_accounts` for the ACL record.
@@ -256,19 +210,11 @@ pub enum FheEvalOperand {
         /// Optional index into `remaining_accounts` for overflow subject permission.
         permission_index: Option<u16>,
     },
-    /// Instruction-local output produced by an earlier operation.
-    Transient {
+    /// Instruction-local value produced by an earlier operation in this `fhe_eval`; allowed only
+    /// inside the current evaluation scope and never stored.
+    AllowedLocal {
         /// Producer operation index.
         producer_index: u16,
-    },
-    /// Sealed one-shot session capability in `remaining_accounts`.
-    TransientSession {
-        /// Handle expected in the session capability.
-        handle: [u8; 32],
-        /// Index into `remaining_accounts` for the transient session account.
-        session_index: u16,
-        /// Entry index inside the transient session.
-        capability_index: u16,
     },
     /// Plaintext scalar bytes. Scalar operands are only valid on the RHS.
     Scalar([u8; 32]),
@@ -284,17 +230,10 @@ pub enum FheEvalOperand {
 /// Output policy for a composed FHE eval operation.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
 pub enum FheEvalOutput {
-    /// Output remains instruction-local and has no durable ACL record.
-    Transient,
-    /// Output is appended to an open transient session instead of durable ACL state.
-    TransientSession {
-        /// Index into `remaining_accounts` for the transient session account.
-        session_index: u16,
-        /// Capability policy for the produced result.
-        capability: TransientCapabilityGrant,
-    },
-    /// Output is bound into a durable ACL record.
-    Durable {
+    /// Output stays allowed only inside the current `fhe_eval` scope; no durable ACL record.
+    AllowedLocal,
+    /// Output is bound into durable ACL state (a new ACL record).
+    AllowedDurable {
         /// Index into `remaining_accounts` for the output ACL record PDA.
         output_acl_record_index: u16,
         /// Optional index into `remaining_accounts` for the app account authority signer.
@@ -586,18 +525,6 @@ pub fn user_decryption_delegation_address(
             delegator.as_ref(),
             delegate.as_ref(),
             app_account.as_ref(),
-        ],
-        &crate::ID,
-    )
-}
-
-/// Returns the canonical transient session address for an authority and nonce.
-pub fn transient_session_address(authority: Pubkey, session_nonce: [u8; 32]) -> (Pubkey, u8) {
-    Pubkey::find_program_address(
-        &[
-            TRANSIENT_SESSION_SEED,
-            authority.as_ref(),
-            session_nonce.as_ref(),
         ],
         &crate::ID,
     )

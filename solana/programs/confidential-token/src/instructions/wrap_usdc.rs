@@ -222,7 +222,6 @@ pub fn wrap_usdc(ctx: Context<WrapUsdc>, amount: u64) -> Result<()> {
             host_config: &ctx.accounts.host_config,
             compute_authority,
             system_program: &ctx.accounts.system_program,
-            instructions_sysvar: None,
         },
         accounts: &eval_accounts,
         plan,

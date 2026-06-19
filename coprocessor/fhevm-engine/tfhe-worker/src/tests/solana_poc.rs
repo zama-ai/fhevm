@@ -201,7 +201,6 @@ fn solana_fhe_eval_replays_threshold_logs_from_litesvm_metadata() {
             )
             .0,
             system_program: system_program::ID,
-            instructions_sysvar: None,
             event_authority: event_authority(fixture.host_program_id),
             program: fixture.host_program_id,
         }
@@ -211,18 +210,18 @@ fn solana_fhe_eval_replays_threshold_logs_from_litesvm_metadata() {
                 context_id: [7; 32],
                 steps: vec![FheEvalStep::Binary {
                     op: host::FheBinaryOpCode::Add,
-                    lhs: FheEvalOperand::Durable {
+                    lhs: FheEvalOperand::AllowedDurable {
                         handle: lhs_handle,
                         acl_record_index: 0,
                         permission_index: None,
                     },
-                    rhs: FheEvalOperand::Durable {
+                    rhs: FheEvalOperand::AllowedDurable {
                         handle: rhs_handle,
                         acl_record_index: 1,
                         permission_index: None,
                     },
                     output_fhe_type: TOKEN_BALANCE_FHE_TYPE,
-                    output: FheEvalOutput::Durable {
+                    output: FheEvalOutput::AllowedDurable {
                         output_acl_record_index: 2,
                         output_app_account_authority_index: None,
                         output_nonce_key,
@@ -1009,46 +1008,51 @@ fn input_compute_acl_address(fixture: &TokenFixture, handle: [u8; 32]) -> Pubkey
 }
 
 fn authorize_input_compute_acl(fixture: &mut TokenFixture, handle: [u8; 32]) {
-    // Temporary mock short-circuit for the future Solana input verifier /
-    // transciphering boundary. This deliberately trusts the caller-supplied
-    // handle so tests can exercise ACL + compute semantics before the real
-    // input proof path exists.
-    let acl_record = input_compute_acl_address(fixture, handle);
+    // Test-only ACL fixture: inject a durable ACL record granting the compute
+    // signer the compute-subject role over `handle`, so the transfer/compute
+    // tests can run without the (removed) mock_input_verified_and_bind
+    // instruction. In production this record is born by the real verified-input
+    // -> fhe_eval -> durable-output path, exercised by the live full-vertical.
     let acl_domain_key = fixture.mint.pubkey();
     let app_account = fixture.alice.pubkey();
     let encrypted_value_label = token::transfer_amount_label();
     let nonce_key = token::nonce_key(acl_domain_key, app_account, encrypted_value_label);
     let nonce_sequence = u64::from(handle[0]);
-    send(
-        &mut fixture.svm,
-        &fixture.alice,
-        Instruction {
-            program_id: fixture.host_program_id,
-            accounts: host::accounts::MockInputVerifiedAndBind {
-                payer: fixture.alice.pubkey(),
-                input_verifier_authority: fixture.alice.pubkey(),
-                app_account_authority: app_account,
-                host_config: fixture.host_config,
-                output_acl_record: acl_record,
-                system_program: system_program::ID,
-                event_authority: event_authority(fixture.host_program_id),
-                program: fixture.host_program_id,
-            }
-            .to_account_metas(None),
-            data: host::instruction::MockInputVerifiedAndBind {
-                input_handle: handle,
-                user: fixture.alice.pubkey(),
-                output_nonce_key: nonce_key,
-                output_nonce_sequence: nonce_sequence,
-                output_acl_domain_key: acl_domain_key,
-                output_app_account: app_account,
-                output_encrypted_value_label: encrypted_value_label,
-                output_subjects: vec![AclSubjectEntry::compute(fixture.compute_signer)],
-                output_public_decrypt: false,
-            }
-            .data(),
-        },
-    );
+    let (address, bump) = host::acl_record_address(nonce_key, nonce_sequence);
+    let mut subjects = [Pubkey::default(); host::MAX_ACL_SUBJECTS];
+    let mut subject_roles = [0; host::MAX_ACL_SUBJECTS];
+    subjects[0] = fixture.compute_signer;
+    subject_roles[0] = host::ACL_ROLE_COMPUTE_SUBJECT;
+    fixture
+        .svm
+        .set_account(
+            address,
+            Account {
+                lamports: 1_000_000_000,
+                data: serialized_account(AclRecord {
+                    handle,
+                    nonce_key,
+                    nonce_sequence,
+                    acl_domain_key,
+                    app_account,
+                    encrypted_value_label,
+                    subjects,
+                    subject_roles,
+                    subject_count: 1,
+                    overflow_subject_count: 0,
+                    public_decrypt: false,
+                    material_commitment: Pubkey::default(),
+                    material_commitment_hash: [0; 32],
+                    material_key_id: [0; 32],
+                    created_slot: 0,
+                    bump,
+                }),
+                owner: host::id(),
+                executable: false,
+                rent_epoch: 0,
+            },
+        )
+        .unwrap();
 }
 
 fn transfer_ix(

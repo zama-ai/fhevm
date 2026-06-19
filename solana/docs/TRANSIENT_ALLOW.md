@@ -1,5 +1,12 @@
 # Transient Allow On Solana
 
+> **Status (Group A, zama-ai/fhevm#2834 / fhevm-internal#1543):** the persisted one-shot
+> `TransientSession`/capability tier described below has been **removed**. The lifetime model is
+> now `{AllowedLocal, AllowedDurable}`: an `fhe_eval`-local value (`AllowedLocal`) or a durable ACL
+> record (`AllowedDurable`). EVM `allowTransient` (tx-scoped) maps to `AllowedLocal` + CPI signer
+> propagation within one instruction's CPI tree; there is no analog for passing a not-yet-durable
+> value across separate top-level instructions. The text below is retained as design rationale.
+
 **Scope:** how to carry the EVM `FHE.allowTransient(handle, account)` idea into the Solana ACL
 design without creating durable ACL or decrypt authority by accident.
 
