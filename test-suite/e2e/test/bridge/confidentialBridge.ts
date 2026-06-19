@@ -9,7 +9,7 @@ import {
   getProvider,
   getSigners,
 } from '../multiChain/multiChainHelper';
-import { extractBridgeGuid, relayBridgeMessage, waitForBridgedHandles } from './relay';
+import { extractBridgeGuid, forgeDelivery, relayBridgeMessage, relayCompose, waitForBridgedHandles } from './relay';
 
 // Mock endpoint has no executor, so the test relays itself. With a real endpoint (BRIDGE_REAL_LZ),
 // LZ delivers and the test only waits for the HandleBridged event.
@@ -18,148 +18,250 @@ const USE_REAL_LZ = (process.env.BRIDGE_REAL_LZ || '').toLowerCase() === 'true';
 const BRIDGE_SEND_ABI = [
   'function send(uint32 dstEid, bytes32 dstApp, bytes payload, bytes32[] handleList, uint128 lzComposeGas, bytes options) payable',
 ];
+const LZ_COMPOSE_GAS = 1_000_000n;
+const DECRYPT_TIMEOUT_MS = 180_000;
 
 // Per-chain bridge/endpoint addresses: primary chain uses unindexed vars, others HOST_CHAIN_<i>_*.
-function bridgeAddrFor(index: number): string | undefined {
-  return index === 0
-    ? process.env.CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS || undefined
-    : process.env[`HOST_CHAIN_${index}_CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS`] || undefined;
-}
-function endpointAddrFor(index: number): string | undefined {
-  return index === 0
-    ? process.env.LZ_ENDPOINT_ADDRESS || undefined
-    : process.env[`HOST_CHAIN_${index}_LZ_ENDPOINT_ADDRESS`] || undefined;
+const bridgeAddrFor = (i: number) =>
+  (i === 0 ? process.env.CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS : process.env[`HOST_CHAIN_${i}_CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS`]) || undefined;
+const endpointAddrFor = (i: number) =>
+  (i === 0 ? process.env.LZ_ENDPOINT_ADDRESS : process.env[`HOST_CHAIN_${i}_LZ_ENDPOINT_ADDRESS`]) || undefined;
+
+/** Everything needed to act as a source or destination of a bridge transfer on one chain. */
+interface BridgeEnd {
+  cfg: ChainConfig;
+  bridge: string;
+  endpoint: string;
+  probe: ethers.Contract;
+  probeAddr: string;
+  alice: ReturnType<typeof getSigners>['alice'];
+  instance: Awaited<ReturnType<typeof createInstance>>;
 }
 
-/** Retries publicDecrypt until the destination coprocessor has associated the bridged handle. */
-async function pollPublicDecrypt(
-  instance: Awaited<ReturnType<typeof createInstance>>,
-  handle: string,
-  timeoutMs: number,
-): Promise<bigint> {
-  const deadline = Date.now() + timeoutMs;
+/** Retries an async decrypt until the destination coprocessor has associated the bridged handle. */
+async function pollDecrypt(fn: () => Promise<bigint | undefined>): Promise<bigint> {
+  const deadline = Date.now() + DECRYPT_TIMEOUT_MS;
   let lastError: unknown;
   while (Date.now() < deadline) {
     try {
-      const res = await instance.publicDecrypt([handle]);
-      const value = res.clearValues[handle];
-      if (value !== undefined) return BigInt(value as string | number | bigint);
+      const value = await fn();
+      if (value !== undefined) return value;
     } catch (error) {
       lastError = error;
     }
     await new Promise((resolve) => setTimeout(resolve, 3_000));
   }
-  throw new Error(`publicDecrypt did not resolve handle ${handle} within ${timeoutMs}ms: ${lastError}`);
+  throw new Error(`decrypt did not resolve within ${DECRYPT_TIMEOUT_MS}ms: ${lastError}`);
+}
+
+const publicDecrypt = (end: BridgeEnd, handle: string) =>
+  pollDecrypt(async () => {
+    const value = (await end.instance.publicDecrypt([handle])).clearValues[handle];
+    return value === undefined ? undefined : BigInt(value as string | number | bigint);
+  });
+
+const userDecrypt = (end: BridgeEnd, handle: string) =>
+  pollDecrypt(async () =>
+    BigInt(
+      await end.instance.userDecryptSingleHandle({ handle, contractAddress: end.probeAddr, signer: end.alice }),
+    ),
+  );
+
+/** True if publicDecrypt rejects the handle now (no public-decrypt ACL yet, or no ciphertext). */
+async function notPubliclyDecryptable(end: BridgeEnd, handle: string): Promise<boolean> {
+  try {
+    await end.instance.publicDecrypt([handle]);
+    return false;
+  } catch {
+    return true;
+  }
 }
 
 describe('Confidential Bridge', function () {
   this.timeout(600_000);
 
-  let host: ChainConfig;
-  let chainB: ChainConfig;
-  let srcBridge: string;
-  let dstBridge: string;
-  let srcEndpoint: string;
-  let dstEndpoint: string;
-  let probeSrc: ethers.Contract;
-  let probeDst: ethers.Contract;
-  let probeSrcAddress: string;
-  let probeDstAddress: string;
-  let aliceHost: ReturnType<typeof getSigners>['alice'];
-  let aliceB: ReturnType<typeof getSigners>['alice'];
-  let instanceHost: Awaited<ReturnType<typeof createInstance>>;
-  let instanceB: Awaited<ReturnType<typeof createInstance>>;
+  let host: BridgeEnd;
+  let chainB: BridgeEnd;
+
+  /** Mints a handle ACL-allowed to the source `alice`; `addend` switches to a computed handle. */
+  async function mint(end: BridgeEnd, value: number, addend?: number): Promise<string> {
+    const enc = await end.instance.encryptUint64({
+      value,
+      contractAddress: end.probeAddr,
+      userAddress: end.alice.address,
+    });
+    const fn = addend === undefined ? 'makeHandle' : 'makeComputedHandle';
+    const args = addend === undefined ? [enc.handles[0], enc.inputProof] : [enc.handles[0], enc.inputProof, addend];
+    const receipt = await (await end.probe.connect(end.alice).getFunction(fn)(...args, { gasLimit: 5_000_000 })).wait();
+    const minted = receipt!.logs
+      .map((log: ethers.Log) => {
+        try {
+          return end.probe.interface.parseLog({ topics: [...log.topics], data: log.data });
+        } catch {
+          return null;
+        }
+      })
+      .find((parsed: ethers.LogDescription | null) => parsed?.name === 'HandleMinted');
+    if (!minted) throw new Error('HandleMinted not emitted');
+    return minted.args.handle as string;
+  }
+
+  /** Bridges `handles` from `src` to `dst` (targeting dst's probe) and delivers them. */
+  async function bridge(src: BridgeEnd, dst: BridgeEnd, handles: string[], payload = '0x', skipCompose = false) {
+    const ctx = { srcEndpoint: src.endpoint, dstEndpoint: dst.endpoint, dstBridge: dst.bridge, dstSigner: dst.alice };
+    const fromBlock = await getProvider(dst.cfg).getBlockNumber();
+    const dstApp = ethers.zeroPadValue(dst.probeAddr, 32);
+    const bridgeContract = new ethers.Contract(src.bridge, BRIDGE_SEND_ABI, src.alice);
+    const sendReceipt = await (
+      await bridgeContract.send(dst.cfg.chainId, dstApp, payload, handles, LZ_COMPOSE_GAS, '0x', {
+        value: 0,
+        gasLimit: 5_000_000,
+      })
+    ).wait();
+
+    if (USE_REAL_LZ) {
+      const dstHandles = await waitForBridgedHandles(
+        getProvider(dst.cfg),
+        dst.bridge,
+        extractBridgeGuid(sendReceipt, src.endpoint),
+        fromBlock,
+        DECRYPT_TIMEOUT_MS,
+      );
+      return { dstHandles, ctx, compose: undefined };
+    }
+    const { dstHandles, compose } = await relayBridgeMessage(sendReceipt, ctx, { skipCompose });
+    return { dstHandles, ctx, compose };
+  }
 
   before(async function () {
     if (HOST_CHAINS.length < 2) {
       this.skip();
       return;
     }
-    host = HOST_CHAINS[0];
-    chainB = HOST_CHAINS[1];
-
-    const sb = bridgeAddrFor(0);
-    const db = bridgeAddrFor(1);
-    const se = endpointAddrFor(0);
-    const de = endpointAddrFor(1);
-    if (!sb || !db || !se || !de) {
+    const addrs = [0, 1].map((i) => ({ bridge: bridgeAddrFor(i), endpoint: endpointAddrFor(i) }));
+    if (addrs.some((a) => !a.bridge || !a.endpoint)) {
       // Bridge infra not deployed for this stack (e.g. bridge-deploy step skipped).
       this.skip();
       return;
     }
-    srcBridge = sb;
-    dstBridge = db;
-    srcEndpoint = se;
-    dstEndpoint = de;
-
-    aliceHost = getSigners(host).alice;
-    aliceB = getSigners(chainB).alice;
-
-    probeSrc = await deployContract('BridgeProbe', aliceHost);
-    probeDst = await deployContract('BridgeProbe', aliceB);
-    probeSrcAddress = await probeSrc.getAddress();
-    probeDstAddress = await probeDst.getAddress();
-
-    instanceHost = await createInstance(host);
-    instanceB = await createInstance(chainB);
+    const build = async (i: number): Promise<BridgeEnd> => {
+      const cfg = HOST_CHAINS[i];
+      const alice = getSigners(cfg).alice;
+      const probe = await deployContract('BridgeProbe', alice);
+      return {
+        cfg,
+        bridge: addrs[i].bridge!,
+        endpoint: addrs[i].endpoint!,
+        probe,
+        probeAddr: await probe.getAddress(),
+        alice,
+        instance: await createInstance(cfg),
+      };
+    };
+    host = await build(0);
+    chainB = await build(1);
   });
 
   it('bridges a handle host->chain-b and publicly decrypts it on the destination', async function () {
-    const value = 7n;
-
-    // 1. On host: encrypt an input and mint a handle ACL-allowed to the sender.
-    const enc = await instanceHost.encryptUint64({
-      value: Number(value),
-      contractAddress: probeSrcAddress,
-      userAddress: aliceHost.address,
-    });
-    const mintReceipt = await (
-      await probeSrc.connect(aliceHost).getFunction('makeHandle')(enc.handles[0], enc.inputProof, {
-        gasLimit: 5_000_000,
-      })
-    ).wait();
-    const minted = mintReceipt!.logs
-      .map((log: ethers.Log) => {
-        try {
-          return probeSrc.interface.parseLog({ topics: [...log.topics], data: log.data });
-        } catch {
-          return null;
-        }
-      })
-      .find((parsed: ethers.LogDescription | null) => parsed?.name === 'HandleMinted');
-    expect(minted, 'HandleMinted emitted').to.not.equal(undefined);
-    const srcHandle = minted!.args.handle as string;
-
-    // 2. On host: bridge the handle to chain-b, targeting the destination probe.
-    const dstFromBlock = await getProvider(chainB).getBlockNumber();
-    const bridge = new ethers.Contract(srcBridge, BRIDGE_SEND_ABI, aliceHost);
-    const dstApp = ethers.zeroPadValue(probeDstAddress, 32);
-    const sendReceipt = await (
-      await bridge.send(chainB.chainId, dstApp, '0x', [srcHandle], 1_000_000n, '0x', {
-        value: 0,
-        gasLimit: 5_000_000,
-      })
-    ).wait();
-
-    // 3. Deliver on chain-b. Local mock: relay manually (verify -> lzReceive -> lzCompose).
-    //    Real LayerZero: the executor delivers; just wait for the HandleBridged event.
-    const dstHandles = USE_REAL_LZ
-      ? await waitForBridgedHandles(
-          getProvider(chainB),
-          dstBridge,
-          extractBridgeGuid(sendReceipt, srcEndpoint),
-          dstFromBlock,
-          180_000,
-        )
-      : (await relayBridgeMessage(sendReceipt, { srcEndpoint, dstEndpoint, dstBridge, dstSigner: aliceB })).dstHandles;
+    const srcHandle = await mint(host, 7);
+    const { dstHandles } = await bridge(host, chainB, [srcHandle]);
     expect(dstHandles.length, 'one destination handle').to.equal(1);
-    const dstHandle = dstHandles[0];
-    expect(dstHandle).to.not.equal(ethers.ZeroHash);
+    expect(dstHandles[0]).to.not.equal(ethers.ZeroHash);
     // The derived handle carries the destination chain id in bytes 22-29.
-    expect(dstHandle.slice(46, 62)).to.equal(chainB.chainId.toString(16).padStart(16, '0'));
+    expect(dstHandles[0].slice(46, 62)).to.equal(chainB.cfg.chainId.toString(16).padStart(16, '0'));
+    expect(await publicDecrypt(chainB, dstHandles[0])).to.equal(7n);
+  });
 
-    // 4. Wait for the chain-b coprocessor to associate the bridged ciphertext, then decrypt.
-    const clear = await pollPublicDecrypt(instanceB, dstHandle, 180_000);
-    expect(clear).to.equal(value);
+  it('bridges a handle host->chain-b and lets a user decrypt it on the destination', async function () {
+    const srcHandle = await mint(host, 11);
+    const payload = ethers.AbiCoder.defaultAbiCoder().encode(['address'], [chainB.alice.address]);
+    const { dstHandles } = await bridge(host, chainB, [srcHandle], payload);
+    expect(await userDecrypt(chainB, dstHandles[0])).to.equal(11n);
+  });
+
+  it('bridges a computed (non-input) handle and decrypts it on the destination', async function () {
+    const srcHandle = await mint(host, 7, 1); // 7 + 1
+    const { dstHandles } = await bridge(host, chainB, [srcHandle]);
+    expect(await publicDecrypt(chainB, dstHandles[0])).to.equal(8n);
+  });
+
+  it('bridges multiple handles in a single send', async function () {
+    const handles = [await mint(host, 3), await mint(host, 5)];
+    const { dstHandles } = await bridge(host, chainB, handles);
+    expect(dstHandles.length, 'two destination handles').to.equal(2);
+    // dstHandles follow the source handleList order.
+    expect(await publicDecrypt(chainB, dstHandles[0])).to.equal(3n);
+    expect(await publicDecrypt(chainB, dstHandles[1])).to.equal(5n);
+  });
+
+  it('bridges a handle in the reverse direction (chain-b->host)', async function () {
+    const srcHandle = await mint(chainB, 9);
+    const { dstHandles } = await bridge(chainB, host, [srcHandle]);
+    expect(dstHandles[0].slice(46, 62)).to.equal(host.cfg.chainId.toString(16).padStart(16, '0'));
+    expect(await publicDecrypt(host, dstHandles[0])).to.equal(9n);
+  });
+
+  it('associates on lzReceive but defers the dapp callback until lzCompose runs', async function () {
+    if (USE_REAL_LZ) {
+      this.skip(); // real LZ always delivers the compose leg; the deferred path is mock-only.
+      return;
+    }
+    const srcHandle = await mint(host, 13);
+    // Deliver lzReceive only: the handle associates, but onReceive (makePubliclyDecryptable) hasn't run.
+    const { dstHandles, ctx, compose } = await bridge(host, chainB, [srcHandle], '0x', true);
+    expect(await notPubliclyDecryptable(chainB, dstHandles[0]), 'not decryptable before the compose leg').to.equal(true);
+
+    // Now run the compose leg -> onReceive -> makePubliclyDecryptable -> decryptable.
+    await relayCompose(ctx, compose!);
+    expect(await publicDecrypt(chainB, dstHandles[0])).to.equal(13n);
+  });
+
+  it('materializes an unassociated bridged handle via grantFallbackPlaintext (governance)', async function () {
+    if (USE_REAL_LZ) {
+      this.skip(); // forging a delivery bypasses bridge.send; only meaningful with the local mock.
+      return;
+    }
+    const value = 42n;
+    const FAKE_EID = 424242; // throwaway inbound channel, isolated from the real host<->chain-b nonces
+    const owner = new ethers.Wallet(process.env.DEPLOYER_PRIVATE_KEY!, getProvider(chainB.cfg));
+
+    // Register a throwaway receive path on chain-b (a lib + peer for FAKE_EID) so the forged delivery
+    // advances that channel's nonce instead of the real one — keeps the suite re-runnable on a
+    // persistent stack. Both setters are owner-gated; the e2e env carries the deployer (ACL owner) key.
+    const endpoint = new ethers.Contract(
+      chainB.endpoint,
+      ['function defaultReceiveLibrary(uint32) view returns (address)', 'function setDefaultReceiveLibrary(uint32,address,uint256)'],
+      owner,
+    );
+    if ((await endpoint.defaultReceiveLibrary(FAKE_EID)) === ethers.ZeroAddress) {
+      const lib = await endpoint.defaultReceiveLibrary(Number(host.cfg.chainId));
+      await (await endpoint.setDefaultReceiveLibrary(FAKE_EID, lib, 0)).wait();
+    }
+    const fakeSrcBridge = host.bridge; // arbitrary; just must match the registered peer
+    const bridgeOwner = new ethers.Contract(chainB.bridge, ['function setPeer(uint32,bytes32)'], owner);
+    await (await bridgeOwner.setPeer(FAKE_EID, ethers.zeroPadValue(fakeSrcBridge, 32))).wait();
+
+    // Mint a real euint64 handle on host but DO NOT bridge.send it, so there is no source BridgeHandle.
+    // Forging the delivery leaves the handle unassociated (no ciphertext) while onReceive still grants
+    // on-chain public ACL — the exact state the fallback exists to rescue.
+    const srcHandle = await mint(host, 0); // value irrelevant: it's never bridged/associated
+    const ctx = { srcEndpoint: host.endpoint, dstEndpoint: chainB.endpoint, dstBridge: chainB.bridge, dstSigner: chainB.alice };
+    const [dstHandle] = await forgeDelivery(ctx, {
+      srcEid: FAKE_EID,
+      dstEid: Number(chainB.cfg.chainId),
+      srcBridge: fakeSrcBridge,
+      srcHandle,
+      dstApp: chainB.probeAddr,
+      payload: '0x',
+    });
+
+    // No matching source BridgeHandle -> never associated -> no ciphertext -> not decryptable yet.
+    expect(await notPubliclyDecryptable(chainB, dstHandle), 'no ciphertext before the fallback grant').to.equal(true);
+
+    // Governance (the ACL owner) grants the plaintext fallback; the coprocessor materializes it.
+    const bridge = new ethers.Contract(chainB.bridge, ['function grantFallbackPlaintext(bytes32 dstHandle, uint256 plaintext)'], owner);
+    await (await bridge.grantFallbackPlaintext(dstHandle, value)).wait();
+
+    expect(await publicDecrypt(chainB, dstHandle)).to.equal(value);
   });
 });
