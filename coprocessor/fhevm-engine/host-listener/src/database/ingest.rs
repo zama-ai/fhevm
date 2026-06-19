@@ -452,11 +452,6 @@ async fn handle_protocol_config_log(
     Ok(())
 }
 
-/// Emits `pg_notify('event_upgrade_activated', payload)` for a decoded
-/// `NewCoprocessorContext` event when one of its `chainUpgradeWindows` matches
-/// this listener's `chain_id`. The notification rides on the existing block-
-/// ingestion transaction — if the block is later rolled back, the notify is
-/// rolled back too.
 async fn notify_new_coprocessor_context(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     chain_id: ChainId,
