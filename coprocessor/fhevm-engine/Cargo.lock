@@ -2546,6 +2546,7 @@ dependencies = [
  "serde_json",
  "sha3",
  "thiserror 2.0.16",
+ "tracing",
 ]
 
 [[package]]
