@@ -81,6 +81,7 @@ async function deliver(
   const recvReceipt = await (
     await endpoint.lzReceive(packet.origin, ctx.dstBridge, packet.guid, packet.message, '0x')
   ).wait();
+  if (!recvReceipt) throw new Error('relay: lzReceive transaction was dropped');
   const dstHandles = parseEvent(recvReceipt.logs, bridgeIface, 'HandleBridged', ctx.dstBridge).map(
     (e) => e.args.dstHandle as string,
   );

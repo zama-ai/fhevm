@@ -9,7 +9,14 @@ import {
   getProvider,
   getSigners,
 } from '../multiChain/multiChainHelper';
-import { extractBridgeGuid, forgeDelivery, relayBridgeMessage, relayCompose, resyncNonce, waitForBridgedHandles } from './relay';
+import {
+  extractBridgeGuid,
+  forgeDelivery,
+  relayBridgeMessage,
+  relayCompose,
+  resyncNonce,
+  waitForBridgedHandles,
+} from './relay';
 
 // Mock endpoint has no executor, so the test relays itself; with a real endpoint (BRIDGE_REAL_LZ), LZ delivers and the test only waits for the HandleBridged event.
 const USE_REAL_LZ = (process.env.BRIDGE_REAL_LZ || '').toLowerCase() === 'true';
@@ -93,7 +100,8 @@ describe('Confidential Bridge', function () {
     const args = addend === undefined ? [enc.handles[0], enc.inputProof] : [enc.handles[0], enc.inputProof, addend];
     resyncNonce(end.alice);
     const receipt = await (await end.app.connect(end.alice).getFunction(fn)(...args, { gasLimit: 5_000_000 })).wait();
-    const minted = receipt!.logs
+    if (!receipt) throw new Error('mint transaction was dropped');
+    const minted = receipt.logs
       .map((log: ethers.Log) => {
         try {
           return end.app.interface.parseLog({ topics: [...log.topics], data: log.data });
@@ -119,6 +127,7 @@ describe('Confidential Bridge', function () {
         gasLimit: 5_000_000,
       })
     ).wait();
+    if (!sendReceipt) throw new Error('bridge send transaction was dropped');
 
     if (USE_REAL_LZ) {
       const dstHandles = await waitForBridgedHandles(

@@ -75,5 +75,8 @@ services:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/host-sc.env
     command:
       - npx hardhat compile:specific --contract contracts && npx hardhat task:setBridgePeer --bridge-address ${BRIDGE_LOCAL_ADDRESS} --remote-eid ${BRIDGE_REMOTE_EID} --remote-bridge ${BRIDGE_REMOTE_ADDRESS} && npx hardhat task:setDstChainId --bridge-address ${BRIDGE_LOCAL_ADDRESS} --remote-eid ${BRIDGE_REMOTE_EID} --remote-chain-id ${BRIDGE_REMOTE_CHAIN_ID}
+    depends_on:
+      host-sc-deploy-bridge:
+        condition: service_completed_successfully
     volumes:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/addresses/${HOST_ADDRESS_DIR:-host}:/app/addresses
