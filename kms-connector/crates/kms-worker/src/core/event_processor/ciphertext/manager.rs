@@ -185,3 +185,82 @@ where
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloy::primitives::{B256, U256};
+    use ciphertext_attestation::CiphertextFormat;
+
+    fn onchain_material(key_id: U256, sns_digest: B256) -> SnsCiphertextMaterial {
+        SnsCiphertextMaterial {
+            keyId: key_id,
+            snsCiphertextDigest: sns_digest,
+            ..Default::default()
+        }
+    }
+
+    fn consensus_material(key_id: U256, sns_digest: B256) -> ConsensusMaterial {
+        ConsensusMaterial {
+            key_id,
+            // Off-chain-only fields: not part of the on-chain comparison.
+            ciphertext_digest: B256::repeat_byte(0xFF),
+            sns_ciphertext_digest: sns_digest,
+            format: CiphertextFormat::CompressedOnCpu,
+        }
+    }
+
+    #[test]
+    fn accepts_matching_tuple() {
+        let key_id = U256::from(69);
+        let sns_digest = B256::repeat_byte(0xAB);
+
+        let onchain = onchain_material(key_id, sns_digest);
+        let material = consensus_material(key_id, sns_digest);
+
+        assert!(compare_onchain(&onchain, &material).is_ok());
+    }
+
+    #[test]
+    fn ignores_offchain_only_fields() {
+        // `ciphertext_digest` and `format` live only off-chain (bound by the signature), so they
+        // must not influence the comparison: the matching `key_id`/`sns_digest` tuple is enough.
+        let key_id = U256::from(7);
+        let sns_digest = B256::repeat_byte(0xCD);
+
+        let onchain = onchain_material(key_id, sns_digest);
+        let mut material = consensus_material(key_id, sns_digest);
+        material.ciphertext_digest = B256::ZERO;
+        material.format = CiphertextFormat::UncompressedOnGpu;
+
+        assert!(compare_onchain(&onchain, &material).is_ok());
+    }
+
+    #[test]
+    fn rejects_key_id_mismatch() {
+        let sns_digest = B256::repeat_byte(0xAB);
+
+        let onchain = onchain_material(U256::from(1), sns_digest);
+        let material = consensus_material(U256::from(2), sns_digest);
+
+        let err = compare_onchain(&onchain, &material).unwrap_err();
+        assert!(
+            err.to_string().contains("key_id"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn rejects_sns_ciphertext_digest_mismatch() {
+        let key_id = U256::from(7);
+
+        let onchain = onchain_material(key_id, B256::repeat_byte(0x01));
+        let material = consensus_material(key_id, B256::repeat_byte(0x02));
+
+        let err = compare_onchain(&onchain, &material).unwrap_err();
+        assert!(
+            err.to_string().contains("sns_ciphertext_digest"),
+            "unexpected error: {err}"
+        );
+    }
+}
