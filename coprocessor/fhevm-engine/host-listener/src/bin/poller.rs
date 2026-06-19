@@ -38,8 +38,9 @@ struct Args {
     #[arg(
         long,
         env = "ETHEREUM_CHAIN_ID",
-        help = "Ethereum host chain id; only the listener on this chain decodes ProtocolConfig events. \
-                Omit on listeners that are never the authority."
+        help = "Ethereum host chain id. The listener decodes \
+                ProtocolConfig.NewCoprocessorContext only when its own chain id matches. \
+                Omit on listeners that don't run against the Ethereum host chain."
     )]
     pub ethereum_chain_id: Option<u64>,
 
