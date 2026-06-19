@@ -1,7 +1,6 @@
 import { dataSlice, ethers, toBigInt } from 'ethers';
 
-// Stand-in for LayerZero's executor (EndpointV2Mock doesn't deliver): reads PacketSent on the
-// source and replays it on the destination (validatePacket -> lzReceive -> lzCompose).
+// Stand-in for LayerZero's executor (EndpointV2Mock doesn't deliver): reads PacketSent on the source and replays it on the destination (validatePacket -> lzReceive -> lzCompose).
 
 // PacketV1Codec layout: version(1) nonce(8) srcEid(4) sender(32) dstEid(4) receiver(32) guid(32) message(...)
 function decodePacket(encoded: string) {
@@ -30,9 +29,8 @@ const BRIDGE_EVENTS_ABI = [
 const endpointIface = new ethers.Interface(ENDPOINT_ABI);
 const bridgeIface = new ethers.Interface(BRIDGE_EVENTS_ABI);
 
-// The dst signer is a shared NonceManager; re-sync its cached nonce from chain before a relay so
-// gaps between deliveries (e.g. a deferred lzCompose) can't leave it behind the real account nonce.
-function resyncNonce(signer: ethers.Signer) {
+// Re-sync a shared NonceManager's cached nonce from chain before sending (safe: every tx is awaited+mined).
+export function resyncNonce(signer: ethers.Signer) {
   const nonceManager = signer as Partial<ethers.NonceManager>;
   if (typeof nonceManager.reset === 'function') nonceManager.reset();
 }
@@ -69,10 +67,7 @@ export interface PendingCompose {
   message: string;
 }
 
-/**
- * Verifies + delivers a packet on the destination: validatePacket -> lzReceive (derives the dst
- * handles, emits HandleBridged, queues the compose-to-self) -> lzCompose unless `skipCompose`.
- */
+/** Verifies + delivers a packet on the destination: validatePacket -> lzReceive -> lzCompose unless `skipCompose`. */
 async function deliver(
   ctx: RelayContext,
   packet: { encodedPacket: string; origin: { srcEid: number; sender: string; nonce: bigint }; guid: string; message: string },
@@ -105,11 +100,7 @@ async function deliver(
   return { dstHandles, compose };
 }
 
-/**
- * Relays one bridged message; returns the dst handles (HandleBridged) in source handleList order.
- * With `skipCompose`, only `lzReceive` is delivered (the dst app's `onConfidentialBridgeReceived` is left pending) —
- * run it later with {@link relayCompose} using the returned `compose`.
- */
+/** Relays one bridged message, returning dst handles in source handleList order; with `skipCompose`, only `lzReceive` runs (dst app's `onConfidentialBridgeReceived` left pending for a later {@link relayCompose}). */
 export async function relayBridgeMessage(
   sendReceipt: ethers.TransactionReceipt,
   ctx: RelayContext,
@@ -155,15 +146,7 @@ function encodePacket(p: {
   ]);
 }
 
-/**
- * Forges a destination delivery (HandleBridged + onConfidentialBridgeReceived) with **no matching source
- * BridgeHandle**, so the coprocessor never associates the derived handle — used to exercise
- * `grantFallbackPlaintext`. Bypasses `bridge.send` by crafting + verifying the packet directly.
- *
- * `params.srcEid`/`srcBridge` should be a throwaway inbound channel (its own lib + peer), so the
- * forged delivery's nonce advances that channel rather than the real host<->chain-b one.
- * Returns the derived destination handles.
- */
+/** Forges a dst delivery with no matching source BridgeHandle (coprocessor never associates it) to exercise `grantFallbackPlaintext`, bypassing `bridge.send`; `params.srcEid`/`srcBridge` should be a throwaway inbound channel so its nonce doesn't touch the real host<->chain-b one. Returns the derived dst handles. */
 export async function forgeDelivery(
   ctx: RelayContext,
   params: { srcEid: number; dstEid: number; srcBridge: string; srcHandle: string; dstApp: string; payload: string },

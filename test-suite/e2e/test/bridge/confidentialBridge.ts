@@ -9,10 +9,9 @@ import {
   getProvider,
   getSigners,
 } from '../multiChain/multiChainHelper';
-import { extractBridgeGuid, forgeDelivery, relayBridgeMessage, relayCompose, waitForBridgedHandles } from './relay';
+import { extractBridgeGuid, forgeDelivery, relayBridgeMessage, relayCompose, resyncNonce, waitForBridgedHandles } from './relay';
 
-// Mock endpoint has no executor, so the test relays itself. With a real endpoint (BRIDGE_REAL_LZ),
-// LZ delivers and the test only waits for the HandleBridged event.
+// Mock endpoint has no executor, so the test relays itself; with a real endpoint (BRIDGE_REAL_LZ), LZ delivers and the test only waits for the HandleBridged event.
 const USE_REAL_LZ = (process.env.BRIDGE_REAL_LZ || '').toLowerCase() === 'true';
 
 const BRIDGE_SEND_ABI = [
@@ -92,6 +91,7 @@ describe('Confidential Bridge', function () {
     });
     const fn = addend === undefined ? 'makeHandle' : 'makeComputedHandle';
     const args = addend === undefined ? [enc.handles[0], enc.inputProof] : [enc.handles[0], enc.inputProof, addend];
+    resyncNonce(end.alice);
     const receipt = await (await end.app.connect(end.alice).getFunction(fn)(...args, { gasLimit: 5_000_000 })).wait();
     const minted = receipt!.logs
       .map((log: ethers.Log) => {
@@ -112,6 +112,7 @@ describe('Confidential Bridge', function () {
     const fromBlock = await getProvider(dst.cfg).getBlockNumber();
     const dstApp = ethers.zeroPadValue(dst.appAddr, 32);
     const bridgeContract = new ethers.Contract(src.bridge, BRIDGE_SEND_ABI, src.alice);
+    resyncNonce(src.alice);
     const sendReceipt = await (
       await bridgeContract.send(dst.cfg.chainId, dstApp, payload, handles, LZ_COMPOSE_GAS, '0x', {
         value: 0,
