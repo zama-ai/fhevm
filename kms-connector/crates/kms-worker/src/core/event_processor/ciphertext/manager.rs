@@ -6,12 +6,13 @@ use crate::core::{
     config::{Config, CtAttestationConfig},
     event_processor::ciphertext::COPROCESSOR_CONTEXT_ID,
 };
-use alloy::{hex, providers::Provider, transports::http::Client};
+use alloy::{hex, primitives::B256, providers::Provider, transports::http::Client};
 use anyhow::{Context, anyhow};
-use ciphertext_attestation::consensus::{self, ConsensusMaterial};
+use ciphertext_attestation::consensus::{self, Consensus, ConsensusMaterial};
 use fhevm_gateway_bindings::decryption::Decryption::SnsCiphertextMaterial;
 use futures::future::try_join_all;
 use kms_grpc::kms::v1::TypedCiphertext;
+use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
@@ -114,32 +115,84 @@ where
         Ok(())
     }
 
-    /// Verifies the off-chain attestations of a single material against the on-chain snapshot.
+    /// Verifies the off-chain attestations of a single material.
     async fn verify_material_attestations(
         &self,
         registry: &CoprocessorRegistrySnapshot,
         material: &SnsCiphertextMaterial,
     ) -> anyhow::Result<()> {
         let handle = material.ctHandle;
-        let attestations =
-            s3::fetch_attestations(handle, registry, &self.client, self.config.head_timeout).await;
-
-        let consensus = consensus::evaluate(
-            handle,
-            COPROCESSOR_CONTEXT_ID,
-            &attestations,
-            &registry.signers,
-            registry.threshold,
-        )?;
+        let consensus = self
+            .fetch_attestations_and_check_consensus(handle, registry)
+            .await?;
         compare_onchain(material, &consensus.material)?;
 
         debug!(
-            handle = hex::encode(handle),
+            %handle,
             valid_signers = consensus.valid_signers,
             threshold = registry.threshold.get(),
             "Successful attestation verification"
         );
         Ok(())
+    }
+
+    /// Fetches the attestation for a `handle` from the registered Coprocessor buckets concurrently.
+    ///
+    /// Tries to evaluate the consensus as soon as enough attestations are received, without waiting
+    /// for slow or unreachable buckets.
+    async fn fetch_attestations_and_check_consensus(
+        &self,
+        handle: B256,
+        registry: &CoprocessorRegistrySnapshot,
+    ) -> anyhow::Result<Consensus> {
+        let mut fetch_attestation_tasks = JoinSet::new();
+        for (tx_sender, bucket) in registry.tx_sender_to_bucket.iter() {
+            let (client, head_timeout) = (self.client.clone(), self.config.head_timeout);
+            let (bucket, tx_sender) = (bucket.clone(), *tx_sender);
+            fetch_attestation_tasks.spawn(async move {
+                let result =
+                    s3::fetch_single_attestation(&client, &bucket, handle, head_timeout).await;
+                (tx_sender, result)
+            });
+        }
+
+        let mut attestations = vec![];
+        let mut verdict = Err(anyhow!("Not enough attestations fetched yet (0)..."));
+        while let Some(joined) = fetch_attestation_tasks.join_next().await {
+            match joined {
+                Err(e) => {
+                    warn!("Attestation fetch task panicked: {e}");
+                    continue;
+                }
+                Ok((tx_sender, Err(e))) => {
+                    warn!(%tx_sender, %handle, "Failed to fetch attestation: {e}");
+                    continue;
+                }
+                Ok((tx_sender, Ok(attestation))) => attestations.push((tx_sender, attestation)),
+            };
+
+            if attestations.len() < registry.threshold.get() {
+                verdict = Err(anyhow!(
+                    "Not enough attestations fetched yet ({})...",
+                    attestations.len()
+                ));
+                continue;
+            }
+
+            verdict = consensus::evaluate(
+                handle,
+                COPROCESSOR_CONTEXT_ID,
+                &attestations,
+                &registry.signers,
+                registry.threshold,
+            )
+            .map_err(anyhow::Error::from);
+            if verdict.is_ok() {
+                // Early-exit: dropping remaining tasks aborts the other in-flight HEAD requests.
+                return verdict;
+            }
+        }
+        verdict
     }
 }
 

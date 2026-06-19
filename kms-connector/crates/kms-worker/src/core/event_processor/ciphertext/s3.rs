@@ -23,7 +23,6 @@ use futures::future::try_join_all;
 use kms_grpc::kms::v1::{CiphertextFormat as GrpcCiphertextFormat, TypedCiphertext};
 use sha3::{Digest, Keccak256};
 use std::time::Duration;
-use tokio::task::JoinSet;
 use tracing::{debug, info, trace, warn};
 
 /// The header used to retrieve the ciphertext format from the S3 HTTP response (pre RFC-023).
@@ -39,7 +38,7 @@ fn rfc023_ciphertext_url(bucket_url: &str, handle: B256) -> String {
 
 /// Why a single bucket's HEAD attempt did not yield an attestation.
 #[derive(Debug, thiserror::Error)]
-enum FetchAttestationError {
+pub(crate) enum FetchAttestationError {
     #[error("HEAD request timed out")]
     Timeout,
     #[error("HEAD request failed: {0}")]
@@ -50,41 +49,8 @@ enum FetchAttestationError {
     MissingHeader,
 }
 
-/// Fans out parallel S3 HEAD requests to every registered Coprocessor bucket.
-///
-/// Returns the attestations that were successfully fetched, keyed by the Coprocessor's `txSender`
-/// address. Failed fetches are logged and dropped.
-pub async fn fetch_attestations(
-    handle: B256,
-    registry: &CoprocessorRegistrySnapshot,
-    client: &Client,
-    head_timeout: Duration,
-) -> Vec<(Address, CiphertextAttestation)> {
-    let mut tasks = JoinSet::new();
-    for (tx_sender, bucket) in registry.tx_sender_to_bucket.iter() {
-        let (client, bucket, tx_sender) = (client.clone(), bucket.clone(), *tx_sender);
-        tasks.spawn(async move {
-            let result = fetch_single_attestation(&client, &bucket, handle, head_timeout).await;
-            (tx_sender, result)
-        });
-    }
-
-    let mut valid_attestations = vec![];
-    for (tx_sender, result) in tasks.join_all().await {
-        match result {
-            Ok(attestation) => valid_attestations.push((tx_sender, attestation)),
-            Err(e) => warn!(
-                %tx_sender,
-                handle = hex::encode(handle),
-                "Failed to fetch attestation: {e}"
-            ),
-        }
-    }
-    valid_attestations
-}
-
 /// Fetches the attestation for a `handle` from the specified bucket, using a `HEAD` request.
-async fn fetch_single_attestation(
+pub(crate) async fn fetch_single_attestation(
     client: &Client,
     bucket: &str,
     handle: B256,
@@ -202,7 +168,7 @@ pub async fn retrieve_s3_ciphertext(
     };
 
     info!(
-        handle = hex::encode(sns_material.ctHandle),
+        handle = %sns_material.ctHandle,
         "S3 CIPHERTEXT RETRIEVAL SUCCESS: format: {}, length: {}, FHE Type: {:?}",
         ct_format.as_str_name(),
         ciphertext.len(),
