@@ -23,7 +23,7 @@ use crate::solana_adapter::{
 /// retried until this many claim attempts have elapsed. Only then is it a hard
 /// failure — guarding against an account that genuinely never finalizes (e.g. a
 /// dropped/reorged transaction) so the queue cannot hot-loop forever.
-const MAX_FINALIZATION_ATTEMPTS: i32 = 30;
+const MAX_FINALIZATION_ATTEMPTS: i32 = 60;
 
 #[derive(Clone, Debug)]
 pub struct SolanaFinalizedAccountFetcherConfig {
@@ -224,6 +224,15 @@ pub async fn run_solana_finalized_account_fetcher(
                     processed,
                     "Processed Solana finalized-account fetch batch"
                 );
+                // Pace every batch to `poll_interval`, not just empty ones. A
+                // not-yet-finalized account is retried back to `pending` and
+                // re-counts as "processed", so without this sleep the loop
+                // hot-loops and burns the whole `MAX_FINALIZATION_ATTEMPTS`
+                // budget in milliseconds — defeating the finality-lag tolerance.
+                // Pacing makes the attempt budget track real time (~1 attempt /
+                // poll_interval), so finalization (which lags the tip by ~32
+                // slots) has time to catch up before a job is failed hard.
+                tokio::time::sleep(config.poll_interval).await;
             }
             Err(err) => {
                 warn!(
