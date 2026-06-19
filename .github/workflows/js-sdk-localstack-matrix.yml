@@ -1,0 +1,168 @@
+name: js-sdk-localstack-matrix
+
+# Runs the four SDK localstack suites — one per protocol version — as PARALLEL
+# matrix jobs, instead of the sequential run inside `npm run dod:full`.
+#
+#   npm run test:localstack:v11   (localstack_v11 + v0.11.0-mainnet.json)
+#   npm run test:localstack:v12   (localstack_v12 + v0.12.0-testnet.json)
+#   npm run test:localstack:v13   (localstack_v13 + v0.13.0.json)
+#   npm run test:localstack       (latest / default)
+#
+# Each job spins up its own localstack (its own runner) and runs fheTest on it,
+# so wall-clock time is ~one job (~20 min) instead of the sum of all four.
+#
+# Manual trigger only. Two modes (see the `mode` input):
+#   - dry-run (default): each job just sleeps ~1 min and prints traces. Use this
+#     to confirm the four jobs actually run in PARALLEL (the whole run should
+#     take ~1 min, not ~4 min) before paying for the heavy real jobs.
+#   - real: each job brings up the stack and runs the actual suite.
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'dry-run = sleep+traces (validate parallelism); real = run the actual localstack suites'
+        type: choice
+        default: dry-run
+        options:
+          - dry-run
+          - real
+
+# No permissions at the workflow level — each job declares only what it needs.
+permissions: {}
+
+# One run per ref+mode; a new dispatch cancels an in-flight one on the same ref.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event.inputs.mode }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # DRY RUN — cheap parallelism probe.
+  # Four jobs, each sleeps ~60s and prints start/end traces. If they run in
+  # parallel the whole matrix finishes in ~1 min; if sequential, ~4 min.
+  # ---------------------------------------------------------------------------
+  dry-run:
+    name: localstack ${{ matrix.name }} (dry-run)
+    if: ${{ inputs.mode == 'dry-run' }}
+    runs-on: ubuntu-latest
+    permissions: {}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        include:
+          - name: v11
+            script: test:localstack:v11
+          - name: v12
+            script: test:localstack:v12
+          - name: v13
+            script: test:localstack:v13
+          - name: latest
+            script: test:localstack
+    steps:
+      - name: Trace start
+        run: echo "::notice title=${{ matrix.name }}::start $(date -u +%T) on runner ${RUNNER_NAME} — would run 'npm run ${{ matrix.script }}'"
+
+      - name: Simulate the heavy job
+        run: sleep 60
+
+      - name: Trace end
+        run: echo "::notice title=${{ matrix.name }}::end $(date -u +%T)"
+
+  # ---------------------------------------------------------------------------
+  # REAL — brings up the full fhevm stack per version and runs the suite.
+  # Mirrors test-suite-e2e-tests.yml for the stack prerequisites (Docker, Bun,
+  # Foundry, registry logins) and js-sdk-tests.yml for the SDK prerequisites
+  # (Node, soldeer, .env).
+  # ---------------------------------------------------------------------------
+  localstack:
+    name: localstack ${{ matrix.name }}
+    if: ${{ inputs.mode == 'real' }}
+    runs-on: large_ubuntu_32
+    permissions:
+      contents: 'read' # checkout
+      packages: 'read' # pull images from ghcr.io
+      id-token: 'write' # OIDC, if needed by the stack
+    env:
+      GH_TOKEN: ${{ github.token }}
+    strategy:
+      fail-fast: false # one version failing must not cancel the others
+      max-parallel: 4
+      matrix:
+        include:
+          - name: v11
+            script: test:localstack:v11
+          - name: v12
+            script: test:localstack:v12
+          - name: v13
+            script: test:localstack:v13
+          - name: latest
+            script: test:localstack
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: 'false'
+          fetch-depth: 0
+
+      - name: Set up Docker
+        uses: docker/setup-buildx-action@d70bba72b1f3fd22344832f00baa16ece964efeb # v3.3.0
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@ecf28ddc73e819eb6fa29df6b34ef8921c743461 # v2.1.3
+
+      - name: Set up Foundry
+        uses: foundry-rs/foundry-toolchain@82dee4ba654bd2146511f85f0d013af94670c4de # v1.4.0
+        with:
+          version: stable
+
+      - name: Set up Node.js
+        uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        with:
+          node-version: 22.x
+
+      - name: Log in to GitHub Container Registry
+        uses: zama-ai/ci-templates/.github/actions/retry@542103e14b9ae6a9aea27787b8724b3b35bb3918 # v1.0.9
+        env:
+          GHCR_USERNAME: ${{ github.actor }}
+          GHCR_PASSWORD: ${{ secrets.GHCR_READ_TOKEN }}
+        with:
+          command: |
+            echo "Logging into ghcr.io..."
+            echo "$GHCR_PASSWORD" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
+
+      - name: Log in to Chainguard Registry
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: cgr.dev
+          username: ${{ secrets.CGR_USERNAME }}
+          password: ${{ secrets.CGR_PASSWORD }}
+
+      - name: Install fhevm-cli deps
+        working-directory: test-suite/fhevm
+        run: bun install --frozen-lockfile
+
+      - name: Install SDK dependencies
+        working-directory: sdk/js-sdk
+        run: npm ci
+
+      - name: Install Solidity dependencies (soldeer)
+        working-directory: sdk/js-sdk/contracts
+        run: forge soldeer install
+
+      - name: Generate WASM loaders
+        working-directory: sdk/js-sdk
+        run: npm run codegen:loaders:prod
+
+      - name: Write test .env
+        working-directory: sdk/js-sdk
+        run: |
+          echo 'MNEMONIC="test test test test test test test test test test test junk"' > test/.env
+          echo 'ZAMA_FHEVM_API_KEY="zmr_mainnet_blahblah"' >> test/.env
+
+      - name: Run localstack suite (${{ matrix.name }})
+        working-directory: sdk/js-sdk
+        run: |
+          ulimit -n 65536
+          npm run ${{ matrix.script }}
