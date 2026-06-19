@@ -1,0 +1,96 @@
+name: solana-e2e
+
+# Dispatch-only: brings up a fresh fhevm-cli stack with the Solana host (clean-e2e.sh) and drives the
+# Solana decrypt vertical (full-vertical.sh): input(ZK + on-chain secp256k1 bind) -> compute ->
+# public-decrypt -> PURE-SDK user-decrypt (no kms checkout) -> input-flow -> consume. The user-decrypt
+# de-signcryption runs entirely in @fhevm/sdk/solana, so this job needs no kms-core source checkout.
+on:
+  workflow_dispatch:
+    inputs:
+      te-value:
+        description: "Cleartext computed + decrypted by the vertical (fresh per run avoids PDA reuse)."
+        default: "55"
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  solana-e2e:
+    name: solana-e2e/full-vertical
+    runs-on: large_ubuntu_32
+    timeout-minutes: 120
+    permissions:
+      contents: "read" # checkout
+      packages: "read" # pull repo-owned images from ghcr.io
+    env:
+      TE_VALUE: ${{ inputs.te-value }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: "false"
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@ecf28ddc73e819eb6fa29df6b34ef8921c743461 # v2.1.3
+
+      - name: Setup Foundry
+        uses: foundry-rs/foundry-toolchain@82dee4ba654bd2146511f85f0d013af94670c4de # v1.4.0
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@d70bba72b1f3fd22344832f00baa16ece964efeb # v3.3.0
+
+      - name: Setup Solana + Anchor toolchain
+        run: |
+          set -euo pipefail
+          rustup target add wasm32-unknown-unknown
+          sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+          cargo install --git https://github.com/coral-xyz/anchor --tag v0.31.1 anchor-cli --locked
+
+      - name: Login to ghcr.io
+        uses: zama-ai/ci-templates/.github/actions/retry@542103e14b9ae6a9aea27787b8724b3b35bb3918 # v1.0.9
+        env:
+          GHCR_USERNAME: ${{ github.actor }}
+          GHCR_PASSWORD: ${{ secrets.GHCR_READ_TOKEN }} # zizmor: ignore[secrets-outside-env] registry read token, same pattern as test-suite-e2e workflows
+        with:
+          run: |
+            echo "$GHCR_PASSWORD" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
+
+      - name: Login to cgr.dev
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: cgr.dev
+          username: ${{ secrets.CGR_USERNAME }} # zizmor: ignore[secrets-outside-env] registry creds, same pattern as test-suite-e2e workflows
+          password: ${{ secrets.CGR_PASSWORD }} # zizmor: ignore[secrets-outside-env] registry creds, same pattern as test-suite-e2e workflows
+
+      - name: Install SDK deps (TKMS WASM consumers; pure-SDK user-decrypt)
+        run: cd sdk/js-sdk && npm ci
+
+      - name: Bring up fresh stack + Solana side (clean-e2e.sh)
+        run: bash solana/scripts/poc/clean-e2e.sh
+
+      - name: Drive the Solana decrypt vertical (full-vertical.sh)
+        run: bash solana/scripts/poc/full-vertical.sh
+
+      - name: Collect stack logs on failure
+        if: ${{ failure() }}
+        run: |
+          mkdir -p /tmp/solana-e2e-logs
+          cp /tmp/solana-*.log /tmp/solana-e2e-logs/ 2>/dev/null || true
+          docker ps -a > /tmp/solana-e2e-logs/docker-ps.txt 2>&1 || true
+
+      - name: Upload failure logs
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        with:
+          name: solana-e2e-logs
+          path: /tmp/solana-e2e-logs
+          retention-days: 7
+
+      - name: Tear down the stack
+        if: ${{ always() }}
+        run: cd test-suite/fhevm && ./fhevm-cli clean || true
