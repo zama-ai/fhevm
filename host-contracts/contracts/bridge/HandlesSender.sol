@@ -94,7 +94,7 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
      *
      * @param dstEid         LayerZero endpoint id of the destination chain.
      * @param dstApp         Destination app on the destination chain that should receive
-     *                       `payload` in its `onReceive` callback. Bytes32 (rather than
+     *                       `payload` in its `onConfidentialBridgeReceived` callback. Bytes32 (rather than
      *                       `address`) so non-EVM destinations (e.g. Solana, which uses
      *                       32-byte program IDs) can be addressed without a future
      *                       protocol change. EVM callers pass
@@ -104,7 +104,7 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
      *                       preserved on the destination, so apps can index into
      *                       `dstHandleList` by position.
      * @param lzComposeGas   Gas budget for the destination-side `lzCompose` (which runs
-     *                       the destination app's `onReceive`). Must be 0 if `options`
+     *                       the destination app's `onConfidentialBridgeReceived`). Must be 0 if `options`
      *                       is non-empty.
      * @param options        Raw LayerZero options; if empty the contract builds default
      *                       options from `LZ_RECEIVE_BASE_GAS + handleList.length *

@@ -39,7 +39,7 @@ interface HandlesReceiver {
     function endpoint() external view returns (address);
     function grantFallbackPlaintext(bytes32 dstHandle, uint256 plaintext) external;
     function isComposeMsgSender(Origin memory, bytes memory, address _sender) external view returns (bool);
-    function lzCompose(address from, bytes32, bytes memory message, address, bytes memory) external payable;
+    function lzCompose(address from, bytes32 guid, bytes memory message, address, bytes memory) external payable;
     function lzReceive(Origin memory _origin, bytes32 _guid, bytes memory _message, address _executor, bytes memory _extraData) external payable;
     function nextNonce(uint32, bytes32) external view returns (uint64 nonce);
     function oAppVersion() external pure returns (uint64 senderVersion, uint64 receiverVersion);
@@ -178,7 +178,7 @@ interface HandlesReceiver {
         "internalType": "address"
       },
       {
-        "name": "",
+        "name": "guid",
         "type": "bytes32",
         "internalType": "bytes32"
       },
@@ -3740,7 +3740,7 @@ function isComposeMsgSender(Origin memory, bytes memory, address _sender) extern
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `lzCompose(address,bytes32,bytes,address,bytes)` and selector `0xd0a10260`.
 ```solidity
-function lzCompose(address from, bytes32, bytes memory message, address, bytes memory) external payable;
+function lzCompose(address from, bytes32 guid, bytes memory message, address, bytes memory) external payable;
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -3748,7 +3748,7 @@ function lzCompose(address from, bytes32, bytes memory message, address, bytes m
         #[allow(missing_docs)]
         pub from: alloy::sol_types::private::Address,
         #[allow(missing_docs)]
-        pub _1: alloy::sol_types::private::FixedBytes<32>,
+        pub guid: alloy::sol_types::private::FixedBytes<32>,
         #[allow(missing_docs)]
         pub message: alloy::sol_types::private::Bytes,
         #[allow(missing_docs)]
@@ -3800,7 +3800,7 @@ function lzCompose(address from, bytes32, bytes memory message, address, bytes m
             #[doc(hidden)]
             impl ::core::convert::From<lzComposeCall> for UnderlyingRustTuple<'_> {
                 fn from(value: lzComposeCall) -> Self {
-                    (value.from, value._1, value.message, value._3, value._4)
+                    (value.from, value.guid, value.message, value._3, value._4)
                 }
             }
             #[automatically_derived]
@@ -3809,7 +3809,7 @@ function lzCompose(address from, bytes32, bytes memory message, address, bytes m
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         from: tuple.0,
-                        _1: tuple.1,
+                        guid: tuple.1,
                         message: tuple.2,
                         _3: tuple.3,
                         _4: tuple.4,
@@ -3888,7 +3888,7 @@ function lzCompose(address from, bytes32, bytes memory message, address, bytes m
                     ),
                     <alloy::sol_types::sol_data::FixedBytes<
                         32,
-                    > as alloy_sol_types::SolType>::tokenize(&self._1),
+                    > as alloy_sol_types::SolType>::tokenize(&self.guid),
                     <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
                         &self.message,
                     ),
@@ -7012,7 +7012,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         pub fn lzCompose(
             &self,
             from: alloy::sol_types::private::Address,
-            _1: alloy::sol_types::private::FixedBytes<32>,
+            guid: alloy::sol_types::private::FixedBytes<32>,
             message: alloy::sol_types::private::Bytes,
             _3: alloy::sol_types::private::Address,
             _4: alloy::sol_types::private::Bytes,
@@ -7020,7 +7020,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             self.call_builder(
                 &lzComposeCall {
                     from,
-                    _1,
+                    guid,
                     message,
                     _3,
                     _4,

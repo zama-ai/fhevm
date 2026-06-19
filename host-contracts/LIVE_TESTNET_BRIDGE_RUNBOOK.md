@@ -188,7 +188,7 @@ the runbook.
 `ConfidentialOFT` is a minimalistic cross-chain confidential token that rides
 on top of the bridge: each chain holds encrypted per-user balances, and
 `send(...)` burns from the sender on the source chain while the destination
-chain's `onReceive(...)` mints to the recipient.
+chain's `onConfidentialBridgeReceived(...)` mints to the recipient.
 
 ### 5.1 — Deploy on Sepolia
 
@@ -250,7 +250,7 @@ export POLYGON_AMOY_OFT_ADDRESS=$(grep '^CONFIDENTIAL_OFT_CONTRACT_ADDRESS=' add
 
 Each `ConfidentialOFT` resolves its destination peer internally from a single
 peer-per-eid registry (`setPeer`). The same registry authenticates inbound
-mints: `onReceive` rejects any `(srcEid, srcApp)` that doesn't match the
+mints: `onConfidentialBridgeReceived` rejects any `(srcEid, srcApp)` that doesn't match the
 configured peer (`UntrustedPeer`), and `send` reverts with `PeerNotSet` for an
 eid with no configured peer. Call `task:wireConfidentialOFT` once per direction.
 

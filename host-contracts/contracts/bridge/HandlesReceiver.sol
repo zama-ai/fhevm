@@ -28,7 +28,7 @@ import {IDstApp} from "./interfaces/IDstApp.sol";
  *
  *         2. `lzCompose` (a separate transaction with the executor as caller): grants
  *            transient ACL allowance to the destination app for each derived handle,
- *            then calls `DstApp.onReceive(...)`. If the app reverts, the lzCompose
+ *            then calls `DstApp.onConfidentialBridgeReceived(...)`. If the app reverts, the lzCompose
  *            transaction reverts and the transient grants do not land — but the bridge
  *            state from step 1 is already committed, and the coprocessor's association
  *            is unaffected. lzCompose could be retried independently.
@@ -152,14 +152,15 @@ abstract contract HandlesReceiver is OAppReceiverUpgradeable, ILayerZeroComposer
      * @dev    Authenticates: msg.sender == LayerZero endpoint, and the compose
      *         message originated from this contract (`from == address(this)`). Then
      *         grants transient ACL allowance for each derived handle to the
-     *         destination app and invokes its `onReceive` callback.
+     *         destination app and invokes its `onConfidentialBridgeReceived` callback, forwarding the
+     *         LayerZero `guid` so the app can correlate the delivery with the source send.
      *
-     *         Conforms to ILayerZeroComposer; unused parameters (`guid`, `executor`,
-     *         `extraData`) are still part of the interface.
+     *         Conforms to ILayerZeroComposer; unused parameters (`executor`, `extraData`)
+     *         are still part of the interface.
      */
     function lzCompose(
         address from,
-        bytes32 /* guid */,
+        bytes32 guid,
         bytes calldata message,
         address /* executor */,
         bytes calldata /* extraData */
@@ -167,6 +168,17 @@ abstract contract HandlesReceiver is OAppReceiverUpgradeable, ILayerZeroComposer
         if (msg.sender != address(endpoint)) revert NotLzEndpoint(msg.sender);
         if (from != address(this)) revert UnexpectedComposeOrigin(from);
 
+        // Decode + grant + dispatch in a separate frame: threading the LayerZero `guid`
+        // through to `onConfidentialBridgeReceived` alongside the six decoded fields trips the without-via-ir
+        // 16-slot stack limit if kept inline.
+        _grantAndDispatch(message, guid);
+    }
+
+    /// @dev Decodes the compose message, grants transient ACL allowance for each derived
+    ///      handle to the destination app, and invokes its `onConfidentialBridgeReceived` with the LayerZero
+    ///      `guid`. Extracted from {lzCompose} to keep the calling frame within the
+    ///      16-slot stack limit on without-via-ir builds.
+    function _grantAndDispatch(bytes calldata message, bytes32 guid) internal virtual {
         // Wire format: both srcApp and dstApp are bytes32 (see HandlesSender._dispatch
         // for the rationale). On EVM, srcApp is a zero-padded address; dstApp must
         // also fit in 20 bytes for the local IDstApp dispatch — non-EVM destinations
@@ -187,7 +199,7 @@ abstract contract HandlesReceiver is OAppReceiverUpgradeable, ILayerZeroComposer
             ACL_CONTRACT.allowTransient(dstHandleList[i], dstAppEvm);
         }
 
-        IDstApp(dstAppEvm).onReceive(srcEid, srcApp, payload, srcHandleList, dstHandleList);
+        IDstApp(dstAppEvm).onConfidentialBridgeReceived(srcEid, srcApp, payload, srcHandleList, dstHandleList, guid);
     }
 
     /**

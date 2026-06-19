@@ -19,7 +19,7 @@ import {IDstApp} from "../../contracts/bridge/interfaces/IDstApp.sol";
  * @dev    An instance of this contract is deployed on each supported chain. Peers are
  *         configured by the owner via `setPeer`.
  *         The ConfidentialBridge contract on this chain dispatches the cross-chain send and,
- *         on the destination chain, invokes `onReceive` via lzCompose.
+ *         on the destination chain, invokes `onConfidentialBridgeReceived` via lzCompose.
  */
 contract ConfidentialOFT is Ownable2Step, IDstApp {
     event Bridged(address indexed from, uint32 indexed dstEid, address indexed recipient);
@@ -33,14 +33,14 @@ contract ConfidentialOFT is Ownable2Step, IDstApp {
     error UnauthorizedUseOfEncryptedAmount(euint64 amount, address sender);
 
     /// @notice ConfidentialBridge on this chain. Used both to dispatch outbound sends and
-    ///         to authenticate inbound `onReceive` calls (the bridge is its own lzCompose
+    ///         to authenticate inbound `onConfidentialBridgeReceived` calls (the bridge is its own lzCompose
     ///         dispatcher, so the bridge address is also the only authorized caller of
-    ///         `onReceive`).
+    ///         `onConfidentialBridgeReceived`).
     ConfidentialBridge public immutable confidentialBridge;
 
     /// @dev The canonical peer app on each remote chain, keyed by eid. A single peer per
     ///      eid serves both directions: outbound `send` dispatches to `_peers[dstEid]`,
-    ///      and inbound `onReceive` rejects any `(srcEid, srcApp)` that doesn't match
+    ///      and inbound `onConfidentialBridgeReceived` rejects any `(srcEid, srcApp)` that doesn't match
     ///      `_peers[srcEid]`.
     ///      Stored as `bytes32` rather than `address` to support non-EVM peers
     ///      (e.g. Solana program IDs). For EVM peers, pass
@@ -65,7 +65,7 @@ contract ConfidentialOFT is Ownable2Step, IDstApp {
      * @param dstEid           LayerZero endpoint id of the destination chain.
      * @param amount           Encrypted amount handle to burn-and-send.
      * @param recipient        Recipient on the destination chain.
-     * @param mintComposeGas   Gas budget for destination-side lzCompose (the `onReceive`).
+     * @param mintComposeGas   Gas budget for destination-side lzCompose (the `onConfidentialBridgeReceived`).
      */
     function send(
         uint32 dstEid,
@@ -98,16 +98,17 @@ contract ConfidentialOFT is Ownable2Step, IDstApp {
      * @dev    Authentication:
      *         - msg.sender must be the trusted ConfidentialBridge on this chain.
      *         - (srcEid, srcApp) must be a peer the owner has trusted.
-     *         Reverting from `onReceive` only blocks the app-level mint; the bridge's
+     *         Reverting from `onConfidentialBridgeReceived` only blocks the app-level mint; the bridge's
      *         protocol-level association (already settled by the coprocessor) is
      *         independent and unaffected.
      */
-    function onReceive(
+    function onConfidentialBridgeReceived(
         uint32 srcEid,
         bytes32 srcApp,
         bytes calldata payload,
         bytes32[] calldata /* srcHandleList */,
-        bytes32[] calldata dstHandleList
+        bytes32[] calldata dstHandleList,
+        bytes32 /* guid */
     ) external override {
         if (msg.sender != address(confidentialBridge)) revert OnlyConfidentialBridge(msg.sender);
         bytes32 trustedPeer = _peers[srcEid];

@@ -442,7 +442,7 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
 
         // Assert the destination app received the dispatch with the expected args.
         MockDstApp.LastCall memory lc = dstApp.lastCall();
-        assertTrue(lc.wasCalled, "onReceive should have fired");
+        assertTrue(lc.wasCalled, "onConfidentialBridgeReceived should have fired");
         assertEq(lc.srcEid, SRC_EID);
         assertEq(lc.srcApp, _addressToBytes32(srcApp));
         assertEq(keccak256(lc.payload), keccak256(payload));
