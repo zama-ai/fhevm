@@ -20,7 +20,7 @@ jobs:
     permissions:
       contents: read # Required by actions/checkout to clone the repository
       pull-requests: read # Required by dorny/paths-filter to inspect changed files
-    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
+    runs-on: ubuntu-latest
     outputs:
       packages: ${{ steps.filter.outputs.changes }}
     steps:
