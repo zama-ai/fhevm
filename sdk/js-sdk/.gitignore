@@ -152,3 +152,4 @@ dist
 bundle/
 lib/
 .DS_Store
+scripts/.regen-tkms.env
