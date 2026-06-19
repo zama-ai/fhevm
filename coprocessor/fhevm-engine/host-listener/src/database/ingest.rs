@@ -36,7 +36,7 @@ pub struct IngestOptions {
     pub dependent_ops_max_per_chain: u32,
     /// Resolved once at startup from the listener's own `chain_id` and the
     /// configured `--ethereum-chain-id`. When false, the listener silently
-    /// skips `ProtocolConfig.NewCoprocessorContext` events.
+    /// skips `ProtocolConfig.CoprocessorUpgradeProposed` events.
     pub is_protocol_config_listener: bool,
 }
 
@@ -191,7 +191,7 @@ pub async fn ingest_block_logs(
         .await?;
 
     // Only the listener watching the configured Ethereum host chain decodes
-    // `NewCoprocessorContext`; every other listener skips the channel.
+    // `CoprocessorUpgradeProposed`; every other listener skips the channel.
     let is_protocol_config_listener = options.is_protocol_config_listener;
 
     let mut is_allowed = HashSet::<Handle>::new();
@@ -419,7 +419,7 @@ pub async fn ingest_block_logs(
     tx.commit().await
 }
 
-/// Channel name the upgrade-controller LISTENs on for `NewCoprocessorContext` events.
+/// Channel name the upgrade-controller LISTENs on for `CoprocessorUpgradeProposed` events.
 const UPGRADE_ACTIVATED_CHANNEL: &str = "event_upgrade_activated";
 
 /// Decodes a log known to come from the configured ProtocolConfig contract on
@@ -432,8 +432,8 @@ async fn handle_protocol_config_log(
 ) -> Result<(), sqlx::Error> {
     match ProtocolConfig::ProtocolConfigEvents::decode_log(&log.inner) {
         Ok(event) => match &event.data {
-            ProtocolConfig::ProtocolConfigEvents::NewCoprocessorContext(new_ctx) => {
-                notify_new_coprocessor_context(tx, chain_id, new_ctx).await?;
+            ProtocolConfig::ProtocolConfigEvents::CoprocessorUpgradeProposed(proposed) => {
+                notify_coprocessor_upgrade_proposed(tx, chain_id, proposed).await?;
             }
             other => {
                 info!(
@@ -452,10 +452,10 @@ async fn handle_protocol_config_log(
     Ok(())
 }
 
-async fn notify_new_coprocessor_context(
+async fn notify_coprocessor_upgrade_proposed(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     chain_id: ChainId,
-    event: &ProtocolConfig::NewCoprocessorContext,
+    event: &ProtocolConfig::CoprocessorUpgradeProposed,
 ) -> Result<(), sqlx::Error> {
     let listener_chain_id = chain_id.as_u64();
     let Some(window) = event
@@ -465,28 +465,28 @@ async fn notify_new_coprocessor_context(
     else {
         info!(
             listener_chain_id,
-            "NewCoprocessorContext does not include this chain — skipping pg_notify"
+            "CoprocessorUpgradeProposed does not include this chain — skipping pg_notify"
         );
         return Ok(());
     };
 
-    let context_id_bytes = event.coprocessorContextId.to_be_bytes::<32>();
-    let context_id_hex =
-        format!("0x{}", alloy_primitives::hex::encode(context_id_bytes));
+    let proposal_id_bytes = event.proposalId.to_be_bytes::<32>();
+    let proposal_id_hex =
+        format!("0x{}", alloy_primitives::hex::encode(proposal_id_bytes));
 
     info!(
-        coprocessor_context_id = %context_id_hex,
+        proposal_id = %proposal_id_hex,
         software_version = %event.softwareVersion,
         chain_id = listener_chain_id,
         start_block = window.startBlock,
         end_block = window.endBlock,
         gw_start_block = event.gwStartBlock,
         ciphertext_version = event.ciphertextVersion,
-        "Decoded NewCoprocessorContext, emitting pg_notify('event_upgrade_activated')"
+        "Decoded CoprocessorUpgradeProposed, emitting pg_notify('event_upgrade_activated')"
     );
 
     let payload = serde_json::json!({
-        "proposal_id":        &context_id_hex,
+        "proposal_id":        &proposal_id_hex,
         "chain_id":           listener_chain_id as i64,
         "start_block":        window.startBlock as i64,
         "end_block":          window.endBlock as i64,

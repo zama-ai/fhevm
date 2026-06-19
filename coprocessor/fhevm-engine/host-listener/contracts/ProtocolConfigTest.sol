@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.28;
 
-/// @dev Test mock of the host-chain ProtocolConfig contract (coprocessor context surface only).
+/// @dev Test mock of the host-chain ProtocolConfig contract (coprocessor proposal surface only).
 /// Event signatures match host-contracts/contracts/interfaces/IProtocolConfig.sol so that
 /// the production event decoders in host-listener can decode events emitted by this mock.
 contract ProtocolConfigTest {
@@ -11,35 +11,28 @@ contract ProtocolConfigTest {
         uint64 endBlock;
     }
 
-    event NewCoprocessorContext(
-        uint256 indexed coprocessorContextId,
+    event CoprocessorUpgradeProposed(
+        uint256 indexed proposalId,
         string softwareVersion,
         ChainUpgradeWindow[] chainUpgradeWindows,
         uint64 gwStartBlock,
         uint16 ciphertextVersion
     );
 
-    event CoprocessorContextDestroyed(uint256 indexed coprocessorContextId);
-
-    /// @notice Emit a `NewCoprocessorContext` event with caller-provided fields.
-    function emitNewCoprocessorContext(
-        uint256 coprocessorContextId,
+    /// @notice Emit a `CoprocessorUpgradeProposed` event with caller-provided fields.
+    function emitCoprocessorUpgradeProposed(
+        uint256 proposalId,
         string calldata softwareVersion,
         ChainUpgradeWindow[] calldata chainUpgradeWindows,
         uint64 gwStartBlock,
         uint16 ciphertextVersion
     ) external {
-        emit NewCoprocessorContext(
-            coprocessorContextId,
+        emit CoprocessorUpgradeProposed(
+            proposalId,
             softwareVersion,
             chainUpgradeWindows,
             gwStartBlock,
             ciphertextVersion
         );
-    }
-
-    /// @notice Emit a `CoprocessorContextDestroyed` event.
-    function emitCoprocessorContextDestroyed(uint256 coprocessorContextId) external {
-        emit CoprocessorContextDestroyed(coprocessorContextId);
     }
 }

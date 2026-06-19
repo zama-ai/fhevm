@@ -26,7 +26,7 @@ pub struct ProtocolConfigArgs {
         long = "ethereum-chain-id",
         env = "ETHEREUM_CHAIN_ID",
         help = "Ethereum host chain id. The listener decodes \
-                ProtocolConfig.NewCoprocessorContext only when its own chain id matches. \
+                ProtocolConfig.CoprocessorUpgradeProposed only when its own chain id matches. \
                 Omit on listeners that don't run against the Ethereum host chain."
     )]
     pub chain_id: Option<u64>,

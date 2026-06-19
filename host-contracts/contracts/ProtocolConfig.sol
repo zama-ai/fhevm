@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import {IProtocolConfig} from "./interfaces/IProtocolConfig.sol";
 import {KmsNode, ChainUpgradeWindow} from "./shared/Structs.sol";
-import {KMS_CONTEXT_COUNTER_BASE, COPROC_CONTEXT_COUNTER_BASE} from "./shared/Constants.sol";
+import {KMS_CONTEXT_COUNTER_BASE} from "./shared/Constants.sol";
 import {UUPSUpgradeableEmptyProxy} from "./shared/UUPSUpgradeableEmptyProxy.sol";
 import {ACLOwnable} from "./shared/ACLOwnable.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
@@ -62,8 +62,6 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         mapping(uint256 contextId => uint256) mpcThresholdForContext;
         /// @notice Whether a context has been destroyed.
         mapping(uint256 contextId => bool) destroyedContexts;
-        /// @notice Current coprocessor context ID counter.
-        uint256 currentCoprocessorContextId;
     }
 
     /// @dev keccak256(abi.encode(uint256(keccak256("fhevm.storage.ProtocolConfig")) - 1)) & ~bytes32(uint256(0xff))
@@ -101,7 +99,6 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     ) public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
         $.currentKmsContextId = KMS_CONTEXT_COUNTER_BASE;
-        $.currentCoprocessorContextId = COPROC_CONTEXT_COUNTER_BASE;
         _defineKmsContext(initialKmsNodes, initialThresholds);
     }
 
@@ -127,20 +124,18 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
         // Seed counter so _defineKmsContext's ++counter lands on the original context ID
         $.currentKmsContextId = existingContextId - 1;
-        $.currentCoprocessorContextId = COPROC_CONTEXT_COUNTER_BASE;
         _defineKmsContext(existingKmsNodes, existingThresholds);
     }
 
     /**
-     * @notice Reinitializer for proxies previously initialized at version 2 (KMS-context only).
-     *         Seeds `currentCoprocessorContextId` at the namespace base so the first
-     *         `defineNewCoprocessorContext` call lands at `COPROC_CONTEXT_COUNTER_BASE + 1`.
+     * @notice Reinitializer for proxies previously initialized at version 2. Reserved for
+     *         the version-3 storage layout; no state changes are required because coprocessor
+     *         context state is no longer tracked on chain (proposals are off-chain-driven and
+     *         identified by caller-supplied `proposalId`s emitted in `CoprocessorUpgradeProposed`).
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV3() public virtual reinitializer(REINITIALIZER_VERSION) {
-        _getProtocolConfigStorage().currentCoprocessorContextId = COPROC_CONTEXT_COUNTER_BASE;
-    }
+    function reinitializeV3() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     // -----------------------------------------------------------------------------------------
     // State-changing functions
@@ -170,12 +165,16 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     }
 
     /// @inheritdoc IProtocolConfig
-    function defineNewCoprocessorContext(
+    function proposeCoprocessorUpgrade(
+        uint256 proposalId,
         string calldata softwareVersion,
         ChainUpgradeWindow[] calldata chainUpgradeWindows,
         uint64 gwStartBlock,
         uint16 ciphertextVersion
     ) external virtual onlyACLOwner {
+        if (proposalId == 0) {
+            revert InvalidProposalId();
+        }
         if (bytes(softwareVersion).length == 0) {
             revert EmptySoftwareVersion();
         }
@@ -204,24 +203,13 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
             }
         }
 
-        uint256 newCoprocessorContextId = ++_getProtocolConfigStorage().currentCoprocessorContextId;
-        emit NewCoprocessorContext(
-            newCoprocessorContextId,
+        emit CoprocessorUpgradeProposed(
+            proposalId,
             softwareVersion,
             chainUpgradeWindows,
             gwStartBlock,
             ciphertextVersion
         );
-    }
-
-    /// @inheritdoc IProtocolConfig
-    function destroyCoprocessorContext(uint256 coprocessorContextId) external virtual onlyACLOwner {
-        if (!_isValidCoprocessorContext(coprocessorContextId)) {
-            revert InvalidCoprocessorContext(coprocessorContextId);
-        }
-
-        _getProtocolConfigStorage().destroyedContexts[coprocessorContextId] = true;
-        emit CoprocessorContextDestroyed(coprocessorContextId);
     }
 
     // -----------------------------------------------------------------------------------------
@@ -332,16 +320,6 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     }
 
     /// @inheritdoc IProtocolConfig
-    function getCurrentCoprocessorContextId() external view virtual returns (uint256) {
-        return _getProtocolConfigStorage().currentCoprocessorContextId;
-    }
-
-    /// @inheritdoc IProtocolConfig
-    function isValidCoprocessorContext(uint256 coprocessorContextId) external view virtual returns (bool) {
-        return _isValidCoprocessorContext(coprocessorContextId);
-    }
-
-    /// @inheritdoc IProtocolConfig
     function getVersion() external pure virtual returns (string memory) {
         return
             string(
@@ -449,17 +427,6 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         if (!_isValidKmsContext(kmsContextId)) {
             revert InvalidKmsContext(kmsContextId);
         }
-    }
-
-    /**
-     * @dev Checks whether a context ID is in range and not destroyed.
-     */
-    function _isValidCoprocessorContext(uint256 coprocessorContextId) internal view virtual returns (bool) {
-        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        return
-            coprocessorContextId >= COPROC_CONTEXT_COUNTER_BASE + 1 &&
-            coprocessorContextId <= $.currentCoprocessorContextId &&
-            !$.destroyedContexts[coprocessorContextId];
     }
 
     /**
