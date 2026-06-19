@@ -98,6 +98,13 @@ impl CoprocessorRegistrySnapshot {
                 ))
             })?;
 
+        let signers: HashSet<Address> = signers.into_iter().collect();
+        if signers.is_empty() {
+            return Err(RegistryError::Transient(anyhow::anyhow!(
+                "Not a single Coprocessor signer in the registry"
+            )));
+        }
+
         let tx_sender_to_bucket: HashMap<Address, String> = try_join_all(
             tx_senders
                 .into_iter()
@@ -115,11 +122,7 @@ impl CoprocessorRegistrySnapshot {
             )));
         }
 
-        Ok(Self::new(
-            signers.into_iter().collect(),
-            tx_sender_to_bucket,
-            threshold,
-        ))
+        Ok(Self::new(signers, tx_sender_to_bucket, threshold))
     }
 }
 
