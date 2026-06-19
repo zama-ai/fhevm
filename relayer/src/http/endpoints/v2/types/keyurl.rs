@@ -1,7 +1,13 @@
-use crate::config::settings::KeyUrl;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use utoipa::ToSchema;
+
+/// CRS parameter size used as the map key in the `/v2/keyurl` response.
+///
+/// The on-chain CRS material does not carry its parameter size, so this is fixed
+/// to the single supported size. Kept as a constant to preserve the response shape
+/// expected by the relayer-sdk (`crs."2048"`).
+pub const CRS_PARAM_SIZE_KEY: &str = "2048";
 
 #[derive(Serialize, Deserialize, Debug, Clone, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -16,6 +22,12 @@ pub struct KeyUrlResponseJson {
 pub struct Response {
     pub fhe_key_info: Vec<FheKeyInfo>,
     pub crs: HashMap<String, KeyData>,
+    /// Active KMS context id, from on-chain `getCurrentKmsContextAndEpoch`.
+    #[schema(example = "1")]
+    pub context_id: String,
+    /// Active epoch id, from on-chain `getCurrentKmsContextAndEpoch`.
+    #[schema(example = "1")]
+    pub epoch_id: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, ToSchema)]
@@ -27,61 +39,27 @@ pub struct FheKeyInfo {
 #[derive(Serialize, Deserialize, Debug, Clone, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct KeyData {
-    #[schema(example = "fhe_public_key_v1")]
+    /// On-chain `getActiveKeyId` / `getActiveCrsId` as a decimal string.
+    #[schema(example = "3")]
     pub data_id: String,
-    #[schema(example = json!(["https://keys.fhevm.io/v1/fhe_public_key_v1"]))]
+    /// Storage URLs from `getKeyMaterials` / `getCrsMaterials`.
     pub urls: Vec<String>,
 }
 
-impl From<KeyUrl> for KeyUrlResponseJson {
-    fn from(value: KeyUrl) -> Self {
-        KeyUrlResponseJson {
-            status: "succeeded".to_string(),
-            response: Response {
-                fhe_key_info: vec![FheKeyInfo {
-                    fhe_public_key: KeyData {
-                        data_id: value.fhe_public_key.data_id,
-                        urls: vec![value.fhe_public_key.url],
-                    },
-                }],
-                crs: {
-                    let mut map = std::collections::HashMap::new();
-                    map.insert(
-                        "2048".to_string(),
-                        KeyData {
-                            data_id: value.crs.data_id,
-                            urls: vec![value.crs.url],
-                        },
-                    );
-                    map
-                },
-            },
-        }
-    }
-}
+impl KeyUrlResponseJson {
+    /// Build a chain-sourced `/v2/keyurl` response from the values the host-chain
+    /// poller read on-chain.
+    pub fn new(fhe_public_key: KeyData, crs: KeyData, context_id: String, epoch_id: String) -> Self {
+        let mut crs_map = HashMap::new();
+        crs_map.insert(CRS_PARAM_SIZE_KEY.to_string(), crs);
 
-impl From<crate::core::event::KeyUrlData> for KeyUrlResponseJson {
-    fn from(value: crate::core::event::KeyUrlData) -> Self {
         KeyUrlResponseJson {
             status: "succeeded".to_string(),
             response: Response {
-                fhe_key_info: vec![FheKeyInfo {
-                    fhe_public_key: KeyData {
-                        data_id: value.fhe_public_key.data_id,
-                        urls: vec![value.fhe_public_key.url],
-                    },
-                }],
-                crs: {
-                    let mut map = std::collections::HashMap::new();
-                    map.insert(
-                        "2048".to_string(),
-                        KeyData {
-                            data_id: value.crs.data_id,
-                            urls: vec![value.crs.url],
-                        },
-                    );
-                    map
-                },
+                fhe_key_info: vec![FheKeyInfo { fhe_public_key }],
+                crs: crs_map,
+                context_id,
+                epoch_id,
             },
         }
     }

@@ -1,37 +1,16 @@
 use crate::{
     config::settings::{ProtocolConfigSettings, RetrySettings},
     host::error_redact::redact_alloy_error,
+    host::provider::{build_host_provider, Provider},
 };
-use alloy::{
-    primitives::{Address, U256},
-    providers::{fillers::FillProvider, ProviderBuilder, RootProvider},
-};
+use alloy::primitives::{Address, U256};
 use fhevm_host_bindings::i_protocol_config::IProtocolConfig;
 use fhevm_host_bindings::i_protocol_config::IProtocolConfig::IProtocolConfigInstance;
 use moka::future::Cache;
-use reqwest::Url;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 use tracing::{debug, error, warn};
-
-type Provider = FillProvider<
-    alloy::providers::fillers::JoinFill<
-        alloy::providers::Identity,
-        alloy::providers::fillers::JoinFill<
-            alloy::providers::fillers::GasFiller,
-            alloy::providers::fillers::JoinFill<
-                alloy::providers::fillers::BlobGasFiller,
-                alloy::providers::fillers::JoinFill<
-                    alloy::providers::fillers::NonceFiller,
-                    alloy::providers::fillers::ChainIdFiller,
-                >,
-            >,
-        >,
-    >,
-    RootProvider<alloy::network::AnyNetwork>,
-    alloy::network::AnyNetwork,
->;
 
 type HostProtocolConfig = IProtocolConfigInstance<Arc<Provider>, alloy::network::AnyNetwork>;
 
@@ -72,17 +51,10 @@ impl ThresholdResolver {
         default_threshold: u32,
         max_capacity: u64,
     ) -> anyhow::Result<Self> {
-        let url = Url::parse(&protocol_config_settings.ethereum_http_rpc_url)
-            .map_err(|e| anyhow::anyhow!("Invalid ProtocolConfig URL: {}", e))?;
-
         let address = Address::from_str(&protocol_config_settings.address)
             .map_err(|e| anyhow::anyhow!("Invalid ProtocolConfig address: {}", e))?;
 
-        let provider = Arc::new(
-            ProviderBuilder::new()
-                .network::<alloy::network::AnyNetwork>()
-                .connect_http(url),
-        );
+        let provider = build_host_provider(&protocol_config_settings.ethereum_http_rpc_url)?;
 
         let contract = IProtocolConfig::new(address, provider);
 
@@ -206,6 +178,8 @@ mod tests {
                 max_attempts: 1,
                 retry_interval_ms: 10,
             },
+            kms_generation_address: "0x1234567890123456789012345678901234567890".to_string(),
+            keyurl_poll_interval_ms: 12000,
         };
         let resolver = ThresholdResolver::new(&config, 9u32, 100).await.unwrap();
 
@@ -223,6 +197,8 @@ mod tests {
                 max_attempts: 1,
                 retry_interval_ms: 10,
             },
+            kms_generation_address: "0x1234567890123456789012345678901234567890".to_string(),
+            keyurl_poll_interval_ms: 12000,
         };
         let resolver = ThresholdResolver::new(&config, 9u32, 100).await.unwrap();
 

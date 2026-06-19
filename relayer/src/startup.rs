@@ -24,7 +24,7 @@
 //! See [`Settings`] for detailed configuration options.
 
 use crate::gateway::{self, throttlers::init_throttlers};
-use crate::host::HostChainIdChecker;
+use crate::host::{HostChainIdChecker, KeyUrlPoller};
 use anyhow::Context;
 use std::sync::Arc;
 use tokio::sync::oneshot;
@@ -91,7 +91,7 @@ pub async fn run_fhevm_relayer(
     let (gateway_throttlers, bouncer_throttlers) = init_throttlers(&settings);
 
     // Initialize all gateway components
-    let gateway_handler = gateway::initialize_gateway(
+    gateway::initialize_gateway(
         orchestrator.clone(),
         &settings,
         repositories.clone(),
@@ -136,6 +136,17 @@ pub async fn run_fhevm_relayer(
     if settings.http.endpoint.is_some() {
         info!("Starting Relayer HTTP server");
 
+        // Gate startup on the first successful host-chain poll so `/v2/keyurl` always serves
+        // a chain-sourced value. If it fails after retries the relayer exits and k8s restarts
+        // it (same fail-fast philosophy as fatal DB-connection loss).
+        let mut keyurl_poller = KeyUrlPoller::new(&settings.protocol_config)
+            .context("Failed to build KeyUrl poller")?;
+        let initial_keyurl = keyurl_poller
+            .initialize()
+            .await
+            .context("Failed to initialize /v2/keyurl from host chain")?;
+        let (keyurl_tx, keyurl_rx) = tokio::sync::watch::channel(initial_keyurl);
+
         let addr = run_http_server(
             &settings.http,
             Arc::clone(&orchestrator),
@@ -143,11 +154,24 @@ pub async fn run_fhevm_relayer(
             settings.gateway.contracts.user_decrypt_shares_threshold,
             bouncer_throttlers,
             host_chain_id_checker,
+            keyurl_rx,
         )
         .await;
 
         info!("HTTP server bound to actual address: {}", addr);
         settings.http.endpoint = Some(addr.to_string());
+
+        // Spawn the single host-chain KeyUrl poller now the endpoint is serving. Startup is
+        // already gated above, so the readiness future is trivially ready; the task is tracked
+        // by the orchestrator for graceful shutdown.
+        orchestrator
+            .spawn_task_and_wait_ready(
+                "keyurl_poller",
+                async move { keyurl_poller.run(keyurl_tx).await },
+                async { anyhow::Ok(()) },
+            )
+            .await
+            .context("Failed to start KeyUrl poller")?;
     };
 
     // Run metrics server
@@ -163,9 +187,6 @@ pub async fn run_fhevm_relayer(
         actual_metrics_addr
     );
     settings.metrics.endpoint = actual_metrics_addr.to_string();
-
-    // Initialize KeyUrl handler after HTTP server is up
-    gateway_handler.initialize().await;
 
     drop(setup_span);
 

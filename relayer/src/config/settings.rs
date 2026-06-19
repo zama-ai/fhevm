@@ -553,18 +553,6 @@ impl ContractConfig {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
-pub struct KeyUrl {
-    pub fhe_public_key: KeyData,
-    pub crs: KeyData,
-}
-
-#[derive(Debug, Deserialize, Serialize, Clone)]
-pub struct KeyData {
-    pub data_id: String,
-    pub url: String,
-}
-
 #[derive(Debug, Deserialize, Clone)]
 pub struct HostChainConfig {
     pub chain_id: u64,
@@ -577,6 +565,11 @@ pub struct ProtocolConfigSettings {
     pub ethereum_http_rpc_url: String,
     pub address: String,
     pub retry: RetrySettings,
+    /// KMSGeneration contract address on the Ethereum host chain.
+    pub kms_generation_address: String,
+    /// Poll interval (ms) for the `/v2/keyurl` host-chain poller. ~12000ms
+    /// (≈ Ethereum block time) is a sensible default.
+    pub keyurl_poll_interval_ms: u64,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -588,8 +581,6 @@ pub struct Settings {
     pub gateway: GatewayConfig,
     /// Logging configuration
     pub log: LogConfig,
-    /// Hard-coded data (from config for keyurl)
-    pub keyurl: KeyUrl,
     /// HTTP server configuration
     pub http: HttpConfig,
     /// Metrics server configuration
@@ -687,6 +678,10 @@ impl Settings {
                 &self.gateway.contracts.input_verification_address,
             ),
             ("protocol_config", &self.protocol_config.address),
+            (
+                "protocol_config.kms_generation_address",
+                &self.protocol_config.kms_generation_address,
+            ),
         ];
 
         for (name, address) in addresses {
@@ -748,6 +743,11 @@ impl Settings {
         if pc.retry.max_attempts < 1 {
             return Err(AppConfigError::Config(
                 "protocol_config.retry.max_attempts must be at least 1".to_string(),
+            ));
+        }
+        if pc.keyurl_poll_interval_ms < 1 {
+            return Err(AppConfigError::Config(
+                "protocol_config.keyurl_poll_interval_ms must be at least 1".to_string(),
             ));
         }
         Ok(())
@@ -1457,11 +1457,12 @@ mod tests {
             vec![0.01, 0.05, 0.1]
         );
 
-        // keyurl: env overrides
+        // protocol_config: env overrides
         assert_eq!(
-            settings.keyurl.fhe_public_key.data_id,
-            "env-override-key-id"
+            settings.protocol_config.kms_generation_address,
+            "0x00000000000000000000000000000000000000ff"
         );
+        assert_eq!(settings.protocol_config.keyurl_poll_interval_ms, 12000);
 
         // storage: env overrides
         assert!(settings.storage.sql_database_url.contains("env-override"));

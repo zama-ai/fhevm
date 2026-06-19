@@ -1,14 +1,12 @@
 pub mod arbitrum;
 pub mod ciphertext_checker;
 pub mod input_handlers;
-pub mod keyurl_handler;
 pub mod public_decrypt_handler;
 pub mod throttlers;
 pub mod user_decrypt_handler;
 pub mod utils;
 
 pub use input_handlers::InputProofGatewayHandler;
-pub use keyurl_handler::KeyUrlGatewayHandler;
 pub use public_decrypt_handler::GatewayHandler as PublicDecryptGatewayHandler;
 pub use user_decrypt_handler::GatewayHandler as UserDecryptGatewayHandler;
 
@@ -33,13 +31,13 @@ use arbitrum::{
 use std::{str::FromStr, sync::Arc};
 use tracing::{error, info};
 
-/// Initialize all gateway components including handlers, listener, and KeyUrl handler
+/// Initialize all gateway components including handlers and listeners.
 pub async fn initialize_gateway(
     orchestrator: Arc<Orchestrator>,
     settings: &Settings,
     repositories: Arc<Repositories>,
     gateway_throttlers: GatewayThrottlers,
-) -> anyhow::Result<KeyUrlGatewayHandler> {
+) -> anyhow::Result<()> {
     info!("Initializing gateway components");
 
     // Create transaction engine and helper
@@ -317,9 +315,5 @@ pub async fn initialize_gateway(
         }
     }
 
-    // Create KeyUrl handler (but don't initialize yet - that happens after HTTP server)
-    let keyurl_handler =
-        KeyUrlGatewayHandler::new(Arc::clone(&orchestrator), settings.keyurl.clone());
-
-    Ok(keyurl_handler)
+    Ok(())
 }

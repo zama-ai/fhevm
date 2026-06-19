@@ -1568,13 +1568,13 @@ components:
       properties:
         dataId:
           type: string
-          example: fhe_public_key_v1
+          description: On-chain `getActiveKeyId` / `getActiveCrsId` as a decimal string.
+          example: '3'
         urls:
           type: array
           items:
             type: string
-          example:
-          - https://keys.fhevm.io/v1/fhe_public_key_v1
+          description: Storage URLs from `getKeyMaterials` / `getCrsMaterials`.
     KeyUrlResponseJson:
       type: object
       required:
@@ -1738,13 +1738,23 @@ components:
       required:
       - fheKeyInfo
       - crs
+      - contextId
+      - epochId
       properties:
+        contextId:
+          type: string
+          description: Active KMS context id, from on-chain `getCurrentKmsContextAndEpoch`.
+          example: '1'
         crs:
           type: object
           additionalProperties:
             $ref: '#/components/schemas/KeyData'
           propertyNames:
             type: string
+        epochId:
+          type: string
+          description: Active epoch id, from on-chain `getCurrentKmsContextAndEpoch`.
+          example: '1'
         fheKeyInfo:
           type: array
           items:
