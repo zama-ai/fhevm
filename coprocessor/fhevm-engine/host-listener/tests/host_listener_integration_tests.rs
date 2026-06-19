@@ -243,7 +243,10 @@ async fn setup_with_block_time(
         acl_contract_address: acl_contract.address().to_string(),
         tfhe_contract_address: tfhe_contract.address().to_string(),
         kms_generation_address: kms_generation_contract.address().to_string(),
-        protocol_config_address: protocol_config_contract.address().to_string(),
+        protocol_config: host_listener::protocol_config::ProtocolConfigArgs {
+            address: protocol_config_contract.address().to_string(),
+            chain_id: Some(node_chain_id.unwrap_or(12345)),
+        },
         database_url: test_instance.db_url.clone(),
         start_at_block: None,
         end_at_block: None,
@@ -261,7 +264,6 @@ async fn setup_with_block_time(
         dependence_cross_block: true,
         dependent_ops_max_per_chain: 0,
         timeout_request_websocket: 30,
-        ethereum_chain_id: Some(node_chain_id.unwrap_or(12345)),
     };
     let health_check_url = format!("http://127.0.0.1:{}", args.health_port);
 
@@ -1015,7 +1017,10 @@ async fn test_only_catchup_loop_requires_negative_start_at_block(
         acl_contract_address: "".to_string(),
         tfhe_contract_address: "".to_string(),
         kms_generation_address: String::new(),
-        protocol_config_address: String::new(),
+        protocol_config: host_listener::protocol_config::ProtocolConfigArgs {
+            address: String::new(),
+            chain_id: None,
+        },
         database_url: fhevm_engine_common::utils::DatabaseURL::default(),
         start_at_block: Some(0),
         end_at_block: None,
@@ -1034,7 +1039,6 @@ async fn test_only_catchup_loop_requires_negative_start_at_block(
         dependence_cross_block: true,
         dependent_ops_max_per_chain: 0,
         timeout_request_websocket: 30,
-        ethereum_chain_id: None,
     };
 
     let result = main(args).await;

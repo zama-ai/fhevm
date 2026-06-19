@@ -66,17 +66,8 @@ pub struct Args {
     #[arg(long)]
     pub kms_generation_address: String,
 
-    #[arg(long)]
-    pub protocol_config_address: String,
-
-    #[arg(
-        long,
-        env = "ETHEREUM_CHAIN_ID",
-        help = "Ethereum host chain id. The listener decodes \
-                ProtocolConfig.NewCoprocessorContext only when its own chain id matches. \
-                Omit on listeners that don't run against the Ethereum host chain."
-    )]
-    pub ethereum_chain_id: Option<u64>,
+    #[command(flatten)]
+    pub protocol_config: crate::protocol_config::ProtocolConfigArgs,
 
     #[arg(
         long,
@@ -266,9 +257,9 @@ impl InfiniteLogIter {
             contract_addresses
                 .push(Address::from_str(&args.kms_generation_address).unwrap());
         };
-        if !args.protocol_config_address.is_empty() {
+        if !args.protocol_config.address.is_empty() {
             contract_addresses.push(
-                Address::from_str(&args.protocol_config_address).unwrap(),
+                Address::from_str(&args.protocol_config.address).unwrap(),
             );
         };
         Self {
@@ -1088,16 +1079,7 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
             },
         )?)
     };
-    let protocol_config_address = if args.protocol_config_address.is_empty() {
-        None
-    } else {
-        Some(Address::from_str(&args.protocol_config_address).map_err(
-            |err| {
-                error!(error = %err, "Invalid ProtocolConfig contract address");
-                anyhow!("Invalid ProtocolConfig contract address: {err}")
-            },
-        )?)
-    };
+    let protocol_config_address = args.protocol_config.parsed_address()?;
     let aws_s3_client = AwsS3Client {};
 
     let mut log_iter = InfiniteLogIter::new(&args);
@@ -1106,7 +1088,7 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
     info!(chain_id = %chain_id, "Chain ID");
     let is_protocol_config_listener =
         crate::protocol_config::resolve_protocol_config_listener(
-            args.ethereum_chain_id,
+            args.protocol_config.chain_id,
             chain_id.as_u64(),
         )?;
     if is_protocol_config_listener && protocol_config_address.is_none() {

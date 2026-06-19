@@ -32,17 +32,8 @@ struct Args {
     #[arg(long, help = "KMS generation contract address to monitor")]
     pub kms_generation_address: Address,
 
-    #[arg(long, help = "ProtocolConfig contract address to monitor")]
-    pub protocol_config_address: Address,
-
-    #[arg(
-        long,
-        env = "ETHEREUM_CHAIN_ID",
-        help = "Ethereum host chain id. The listener decodes \
-                ProtocolConfig.NewCoprocessorContext only when its own chain id matches. \
-                Omit on listeners that don't run against the Ethereum host chain."
-    )]
-    pub ethereum_chain_id: Option<u64>,
+    #[command(flatten)]
+    pub protocol_config: host_listener::protocol_config::ProtocolConfigArgs,
 
     #[arg(long, help = "PostgreSQL connection URL")]
     database_url: DatabaseURL,
@@ -150,11 +141,15 @@ async fn main() -> anyhow::Result<()> {
 
     let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
 
-    if matches!(args.ethereum_chain_id, Some(0)) {
+    if matches!(args.protocol_config.chain_id, Some(0)) {
         return Err(anyhow::anyhow!(
             "--ethereum-chain-id=0 is not a valid chain id; omit the flag to disable ProtocolConfig decoding"
         ));
     }
+    let protocol_config_address = args
+        .protocol_config
+        .parsed_address()?
+        .ok_or_else(|| anyhow::anyhow!("--protocol-config-address is required"))?;
 
     let cancel_token = CancellationToken::new();
     metrics_server::spawn(
@@ -179,7 +174,7 @@ async fn main() -> anyhow::Result<()> {
         acl_address: args.acl_contract_address,
         tfhe_address: args.tfhe_contract_address,
         kms_generation_address: args.kms_generation_address,
-        protocol_config_address: args.protocol_config_address,
+        protocol_config_address,
         database_url: args.database_url,
         finality_lag: args.finality_lag,
         batch_size: args.batch_size,
@@ -194,7 +189,7 @@ async fn main() -> anyhow::Result<()> {
         dependence_cross_block: args.dependence_cross_block,
         dependent_ops_max_per_chain: args.dependent_ops_max_per_chain,
         gcs_mode,
-        ethereum_chain_id: args.ethereum_chain_id,
+        ethereum_chain_id: args.protocol_config.chain_id,
     };
 
     run_poller(config).await
