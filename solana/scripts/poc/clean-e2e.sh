@@ -63,7 +63,6 @@ PY
 #    Reads gateway addresses + KMS/coprocessor signer set live, so it tracks the new signer.
 SKIP_BUILD=1 "$ROOT/solana/scripts/poc/setup-solana-side.sh"
 
-echo "[clean-e2e] stack ready. Drive the vertical:"
-echo "  - input/compute/public-decrypt/disclose/redeem : solana/scripts/poc/live-client"
-echo "  - user-decrypt : SOLANA_UD_HANDLE=0x.. SOLANA_UD_EXPECTED=.. \\"
-echo "      cargo test -p kms --features non-wasm --test solana_user_decrypt_live -- --ignored --nocapture"
+echo "[clean-e2e] stack ready. Drive the full vertical (input -> compute -> public/user-decrypt ->"
+echo "  input-flow -> consume), user-decrypt is now PURE-SDK (no kms checkout):"
+echo "    TE_VALUE=55 bash solana/scripts/poc/full-vertical.sh"
