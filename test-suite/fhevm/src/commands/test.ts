@@ -1263,10 +1263,10 @@ export const test = async (testName: string | undefined, options: TestOptions) =
     const started = Date.now();
     await runLogged("standard", started, async () => {
       for (const profile of STANDARD_TEST_PROFILES) {
-        if (profile === "multi-chain-isolation") {
+        if (profile === "multi-chain-isolation" || profile === "confidential-bridge") {
           const skipReason = multiChainIsolationSkipReason();
           if (skipReason) {
-            console.log(`[test] skipping multi-chain-isolation: ${skipReason}`);
+            console.log(`[test] skipping ${profile}: ${skipReason}`);
             continue;
           }
         }

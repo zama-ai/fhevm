@@ -294,39 +294,3 @@ jobs:
       scenario: four-party-threshold-kms
       test-profile: kms-generation
       test-suite-version: ${{ needs.create-e2e-tests-input.outputs.test-suite-version }}
-
-  # Confidential-bridge e2e (test-suite/e2e/test/bridge), multi-chain scenario. Reuses the
-  # orchestrated images + lock. Run standalone (builds from the branch):
-  #   gh workflow run test-suite-e2e-tests.yml -f scenario=two-of-three-multi-chain \
-  #     -f test-profile=confidential-bridge -f build=true
-  run-e2e-tests-confidential-bridge:
-    needs: [create-e2e-tests-input]
-    if: *build-trigger-condition
-    uses:
-      ./.github/workflows/test-suite-e2e-tests.yml
-    permissions: *e2e_permissions
-    secrets: *e2e_secrets
-    with:
-      orchestrated: true
-      build: false
-      coprocessor-db-migration-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-db-migration-version }}
-      coprocessor-gw-listener-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-gw-listener-version }}
-      coprocessor-host-listener-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-host-listener-version }}
-      coprocessor-sns-worker-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-sns-worker-version }}
-      coprocessor-tfhe-worker-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-tfhe-worker-version }}
-      coprocessor-tx-sender-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-tx-sender-version }}
-      coprocessor-zkproof-worker-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-zkproof-worker-version }}
-      listener-core-version: ${{ needs.create-e2e-tests-input.outputs.listener-core-version }}
-      connector-db-migration-version: ${{ needs.create-e2e-tests-input.outputs.connector-db-migration-version }}
-      connector-gw-listener-version: ${{ needs.create-e2e-tests-input.outputs.connector-gw-listener-version }}
-      connector-kms-worker-version: ${{ needs.create-e2e-tests-input.outputs.connector-kms-worker-version }}
-      connector-tx-sender-version: ${{ needs.create-e2e-tests-input.outputs.connector-tx-sender-version }}
-      gateway-version: ${{ needs.create-e2e-tests-input.outputs.gateway-version }}
-      host-version: ${{ needs.create-e2e-tests-input.outputs.host-version }}
-      kms-core-version: ${{ needs.create-e2e-tests-input.outputs.kms-core-version }}
-      lock-artifact-name: ${{ needs.create-e2e-tests-input.outputs.lock-artifact-name }}
-      relayer-migrate-version: ${{ needs.create-e2e-tests-input.outputs.relayer-migrate-version }}
-      relayer-version: ${{ needs.create-e2e-tests-input.outputs.relayer-version }}
-      scenario: two-of-three-multi-chain
-      test-profile: confidential-bridge
-      test-suite-version: ${{ needs.create-e2e-tests-input.outputs.test-suite-version }}

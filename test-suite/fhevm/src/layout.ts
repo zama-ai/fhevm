@@ -324,6 +324,7 @@ export const STANDARD_TEST_PROFILES = [
   "negative-acl",
   "random-subset",
   "multi-chain-isolation",
+  "confidential-bridge",
   "hcu-block-cap",
   // Covers both drift detection (incl. an on-chain divergence cross-check folded
   // in from the former `ciphertext-drift` profile) and full auto-recovery.
