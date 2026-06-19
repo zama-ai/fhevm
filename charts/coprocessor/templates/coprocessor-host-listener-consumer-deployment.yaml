@@ -143,14 +143,8 @@ spec:
                 {{- toYaml .valueFrom | nindent 16 }}
               {{- end }}
             {{- end }}
-            {{- with $.Values.commonConfig.databaseSslRootCertPath }}
-            - name: DATABASE_SSL_ROOT_CERT_PATH
-              {{- if .value }}
-              value: {{ .value | quote }}
-              {{- else if .valueFrom }}
-              valueFrom:
-                {{- toYaml .valueFrom | nindent 16 }}
-              {{- end }}
+            {{- if eq (include "coprocessor.databaseSslRootCertEnvEnabled" $) "true" }}
+            {{- include "coprocessor.databaseSslRootCertEnv" $ | nindent 12 }}
             {{- end }}
             {{- end }}
             {{- with $.Values.hostListenerConsumerShared.config.brokerUrl }}
@@ -233,5 +227,11 @@ spec:
           readinessProbe:
             {{- toYaml (omit $.Values.hostListenerConsumerShared.probes.readiness "enabled") | nindent 12 }}
           {{- end }}
+          {{- if eq (include "coprocessor.databaseSslRootCertMountEnabled" $) "true" }}
+          {{- include "coprocessor.databaseSslRootCertVolumeMount" $ | nindent 10 }}
+          {{- end }}
+      {{- if eq (include "coprocessor.databaseSslRootCertMountEnabled" $) "true" }}
+      {{- include "coprocessor.databaseSslRootCertVolume" $ | nindent 6 }}
+      {{- end }}
 {{- end }}
 {{- end }}
