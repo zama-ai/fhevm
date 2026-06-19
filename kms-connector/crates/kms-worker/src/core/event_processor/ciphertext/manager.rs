@@ -10,6 +10,7 @@ use alloy::{hex, providers::Provider, transports::http::Client};
 use anyhow::{Context, anyhow};
 use ciphertext_attestation::consensus::{self, ConsensusMaterial};
 use fhevm_gateway_bindings::decryption::Decryption::SnsCiphertextMaterial;
+use futures::future::try_join_all;
 use kms_grpc::kms::v1::TypedCiphertext;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
@@ -97,7 +98,7 @@ where
             "Starting attestation verification for {} materials...",
             materials.len()
         );
-        for material in materials {
+        let verification_futures = materials.iter().map(|material| async {
             self.verify_material_attestations(&registry, material)
                 .await
                 .with_context(|| {
@@ -105,8 +106,9 @@ where
                         "Attestation verification failed for handle {}",
                         hex::encode(material.ctHandle)
                     )
-                })?;
-        }
+                })
+        });
+        try_join_all(verification_futures).await?;
         info!("All materials passed the attestations verification!");
 
         Ok(())
