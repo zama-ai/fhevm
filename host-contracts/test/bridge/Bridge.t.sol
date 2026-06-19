@@ -161,6 +161,53 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
         assertEq(srcBridge.getDstChainId(DST_EID), 99);
     }
 
+    ////////////////////////////////////////////////////////////////////////////////
+    // Custom lzReceive gas overrides
+    ////////////////////////////////////////////////////////////////////////////////
+
+    function test_LzReceiveGas_DefaultsWhenUnset() public view {
+        assertEq(srcBridge.getLzReceiveBaseGas(DST_EID), srcBridge.LZ_RECEIVE_BASE_GAS_DEFAULT());
+        assertEq(srcBridge.getLzReceivePerHandleGas(DST_EID), srcBridge.LZ_RECEIVE_PER_HANDLE_GAS_DEFAULT());
+    }
+
+    function test_SetLzReceiveBaseGas_OnlyOwner() public {
+        vm.expectRevert();
+        srcBridge.setLzReceiveBaseGas(DST_EID, 123_000);
+    }
+
+    function test_SetLzReceivePerHandleGas_OnlyOwner() public {
+        vm.expectRevert();
+        srcBridge.setLzReceivePerHandleGas(DST_EID, 7_000);
+    }
+
+    function test_SetLzReceiveBaseGas_OverridesEmitsAndClears() public {
+        vm.expectEmit(true, false, false, true, address(srcBridge));
+        emit LzReceiveBaseGasSet(DST_EID, 123_000);
+        vm.prank(owner);
+        srcBridge.setLzReceiveBaseGas(DST_EID, 123_000);
+        assertEq(srcBridge.getLzReceiveBaseGas(DST_EID), 123_000);
+
+        // Other eids are unaffected and still resolve to the default.
+        assertEq(srcBridge.getLzReceiveBaseGas(SRC_EID), srcBridge.LZ_RECEIVE_BASE_GAS_DEFAULT());
+
+        // Setting back to 0 clears the override and restores the default.
+        vm.prank(owner);
+        srcBridge.setLzReceiveBaseGas(DST_EID, 0);
+        assertEq(srcBridge.getLzReceiveBaseGas(DST_EID), srcBridge.LZ_RECEIVE_BASE_GAS_DEFAULT());
+    }
+
+    function test_SetLzReceivePerHandleGas_OverridesEmitsAndClears() public {
+        vm.expectEmit(true, false, false, true, address(srcBridge));
+        emit LzReceivePerHandleGasSet(DST_EID, 7_000);
+        vm.prank(owner);
+        srcBridge.setLzReceivePerHandleGas(DST_EID, 7_000);
+        assertEq(srcBridge.getLzReceivePerHandleGas(DST_EID), 7_000);
+
+        vm.prank(owner);
+        srcBridge.setLzReceivePerHandleGas(DST_EID, 0);
+        assertEq(srcBridge.getLzReceivePerHandleGas(DST_EID), srcBridge.LZ_RECEIVE_PER_HANDLE_GAS_DEFAULT());
+    }
+
     function test_Send_RevertsOnUnknownDstEid() public {
         bytes32[] memory handleList = new bytes32[](1);
         handleList[0] = _makeHandle(0);

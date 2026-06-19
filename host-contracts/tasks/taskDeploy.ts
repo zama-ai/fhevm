@@ -1033,3 +1033,43 @@ task('task:setDstChainId')
     await confidentialBridge.setDstChainId(taskArguments.remoteEid, taskArguments.remoteChainId);
     console.log('setDstChainId done successfully!');
   });
+
+////////////////////////////////////////////////////////////////////////////////
+// Set custom per-dstEid `lzReceive` gas overrides
+////////////////////////////////////////////////////////////////////////////////
+
+task('task:setLzReceiveBaseGas')
+  .addParam('bridgeAddress', 'The address of the contract')
+  .addParam('remoteEid', 'The remote EID')
+  .addParam('baseGas', 'The custom base lzReceive gas (0 to clear and fall back to the default)')
+  .setAction(async function (taskArguments: TaskArguments, { ethers, network }) {
+    const deployerPrivateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
+    const deployer = new Wallet(deployerPrivateKey).connect(ethers.provider);
+    const confidentialBridgeAddress = taskArguments.bridgeAddress;
+    const confidentialBridge = await ethers.getContractAt('ConfidentialBridge', confidentialBridgeAddress, deployer);
+    const oldBaseGas = await confidentialBridge.getLzReceiveBaseGas(taskArguments.remoteEid);
+    await confidentialBridge.setLzReceiveBaseGas(taskArguments.remoteEid, taskArguments.baseGas);
+    const newBaseGas = await confidentialBridge.getLzReceiveBaseGas(taskArguments.remoteEid);
+    console.log(
+      `setLzReceiveBaseGas done on network "${network.name}" for bridge ${confidentialBridgeAddress} ` +
+        `(remoteEid=${taskArguments.remoteEid}): effective base gas ${oldBaseGas.toString()} -> ${newBaseGas.toString()}`,
+    );
+  });
+
+task('task:setLzReceivePerHandleGas')
+  .addParam('bridgeAddress', 'The address of the contract')
+  .addParam('remoteEid', 'The remote EID')
+  .addParam('perHandleGas', 'The custom per-handle lzReceive gas (0 to clear and fall back to the default)')
+  .setAction(async function (taskArguments: TaskArguments, { ethers, network }) {
+    const deployerPrivateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
+    const deployer = new Wallet(deployerPrivateKey).connect(ethers.provider);
+    const confidentialBridgeAddress = taskArguments.bridgeAddress;
+    const confidentialBridge = await ethers.getContractAt('ConfidentialBridge', confidentialBridgeAddress, deployer);
+    const oldPerHandleGas = await confidentialBridge.getLzReceivePerHandleGas(taskArguments.remoteEid);
+    await confidentialBridge.setLzReceivePerHandleGas(taskArguments.remoteEid, taskArguments.perHandleGas);
+    const newPerHandleGas = await confidentialBridge.getLzReceivePerHandleGas(taskArguments.remoteEid);
+    console.log(
+      `setLzReceivePerHandleGas done on network "${network.name}" for bridge ${confidentialBridgeAddress} ` +
+        `(remoteEid=${taskArguments.remoteEid}): effective per-handle gas ${oldPerHandleGas.toString()} -> ${newPerHandleGas.toString()}`,
+    );
+  });
