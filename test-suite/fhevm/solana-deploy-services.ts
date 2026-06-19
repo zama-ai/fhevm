@@ -9,6 +9,7 @@ import { loadState } from "./src/state/state";
 import { dockerArgs } from "./src/layout";
 import { resolvedComposeEnv } from "./src/generate/compose";
 import { runStreaming } from "./src/utils/process";
+import { solanaImages } from "./src/solana/images";
 
 const state = await loadState();
 if (!state) throw new Error("no fhevm state; the stack is not running");
@@ -16,11 +17,7 @@ if (!state) throw new Error("no fhevm state; the stack is not running");
 const env = {
   ...process.env,
   ...resolvedComposeEnv(state),
-  CORE_VERSION: "solana-ud-c57f52f",
-  CONNECTOR_GW_LISTENER_VERSION: "solana-ud",
-  CONNECTOR_KMS_WORKER_VERSION: "solana-ud-v2",
-  RELAYER_IMAGE_REPOSITORY: "solana-e2e/relayer",
-  RELAYER_VERSION: "solana-ud",
+  ...solanaImages,
 };
 
 const up = (component: string, services: string[]) =>
@@ -28,7 +25,7 @@ const up = (component: string, services: string[]) =>
     env,
   });
 
-console.log("[solana] recreating kms-core (solana-ud-c57f52f)...");
+console.log(`[solana] recreating kms-core (${solanaImages.CORE_VERSION})...`);
 await up("core", ["kms-core"]);
 console.log("[solana] recreating kms-connector gw-listener + kms-worker...");
 await up("kms-connector", ["kms-connector-gw-listener", "kms-connector-kms-worker"]);

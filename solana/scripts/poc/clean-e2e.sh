@@ -4,9 +4,10 @@
 # One command brings up the WHOLE stack from scratch with the Solana code baked in
 # (no hand-swapped containers), then the Solana side-stack, then drives the vertical.
 #
-# The kms-core image carrying `compute_link_solana` is pinned in the lock as
-# CORE_VERSION=solana-ud-c57f52f-fix (kms-core is not an fhevm override group). The four
-# source-built groups are passed as --override so they build from THIS worktree:
+# The kms-core image carrying `compute_link_solana` is pinned in the lock; its tag is the
+# single source of truth in test-suite/fhevm/solana-images.env (kms-core is not an fhevm
+# override group). The four source-built groups are passed as --override so they build from
+# THIS worktree:
 #   - gateway-contracts : userDecryptionRequestSolana + verifyProofRequestSolana
 #   - coprocessor       : FULL group from this worktree (zkproof-worker 128B aux, tx-sender
 #                         Solana EIP-712, plus host-listener/sns/tfhe + db-migration) so the
@@ -33,13 +34,16 @@ LOCK="$ROOT/.fhevm/state/locks/sha-$BASE_SHA.json"
 ( cd "$FHEVM" && ./fhevm-cli resolve --target sha --sha "$BASE_SHA" )
 
 # 1. Pin the Solana-capable kms-core image in the lock (idempotent).
-python3 - "$LOCK" <<'PY'
+#    CORE_VERSION comes from the single source of truth so it cannot drift from the TS call sites.
+# shellcheck source=/dev/null
+source "$FHEVM/solana-images.env"
+python3 - "$LOCK" "$CORE_VERSION" <<'PY'
 import json, sys
-p = sys.argv[1]
+p, core = sys.argv[1], sys.argv[2]
 d = json.load(open(p))
-d["env"]["CORE_VERSION"] = "solana-ud-c57f52f-fix"
+d["env"]["CORE_VERSION"] = core
 json.dump(d, open(p, "w"), indent=2)
-print(f"[clean-e2e] pinned CORE_VERSION=solana-ud-c57f52f-fix in {p}")
+print(f"[clean-e2e] pinned CORE_VERSION={core} in {p}")
 PY
 
 # 2. Clean rebuild of the whole EVM stack with the Solana code baked in from bootstrap.
