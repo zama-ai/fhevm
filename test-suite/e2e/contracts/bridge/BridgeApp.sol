@@ -22,7 +22,7 @@ interface IDstApp {
 ///      `ConfidentialBridge.send`. Destination: {onConfidentialBridgeReceived} (called by the bridge's lzCompose, which
 ///      has granted transient ACL allowance) makes each bridged handle decryptable so the test can
 ///      assert it — publicly when `payload` is empty, or to a user when `payload` encodes an address.
-contract BridgeProbe is E2ECoprocessorConfig, IDstApp {
+contract BridgeApp is E2ECoprocessorConfig, IDstApp {
     /// @notice Lets the test read the produced handle from the receipt.
     event HandleMinted(bytes32 handle);
 

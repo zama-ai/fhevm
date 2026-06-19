@@ -32,8 +32,8 @@ interface BridgeEnd {
   cfg: ChainConfig;
   bridge: string;
   endpoint: string;
-  probe: ethers.Contract;
-  probeAddr: string;
+  app: ethers.Contract;
+  appAddr: string;
   alice: ReturnType<typeof getSigners>['alice'];
   instance: Awaited<ReturnType<typeof createInstance>>;
 }
@@ -63,7 +63,7 @@ const publicDecrypt = (end: BridgeEnd, handle: string) =>
 const userDecrypt = (end: BridgeEnd, handle: string) =>
   pollDecrypt(async () =>
     BigInt(
-      await end.instance.userDecryptSingleHandle({ handle, contractAddress: end.probeAddr, signer: end.alice }),
+      await end.instance.userDecryptSingleHandle({ handle, contractAddress: end.appAddr, signer: end.alice }),
     ),
   );
 
@@ -87,16 +87,16 @@ describe('Confidential Bridge', function () {
   async function mint(end: BridgeEnd, value: number, addend?: number): Promise<string> {
     const enc = await end.instance.encryptUint64({
       value,
-      contractAddress: end.probeAddr,
+      contractAddress: end.appAddr,
       userAddress: end.alice.address,
     });
     const fn = addend === undefined ? 'makeHandle' : 'makeComputedHandle';
     const args = addend === undefined ? [enc.handles[0], enc.inputProof] : [enc.handles[0], enc.inputProof, addend];
-    const receipt = await (await end.probe.connect(end.alice).getFunction(fn)(...args, { gasLimit: 5_000_000 })).wait();
+    const receipt = await (await end.app.connect(end.alice).getFunction(fn)(...args, { gasLimit: 5_000_000 })).wait();
     const minted = receipt!.logs
       .map((log: ethers.Log) => {
         try {
-          return end.probe.interface.parseLog({ topics: [...log.topics], data: log.data });
+          return end.app.interface.parseLog({ topics: [...log.topics], data: log.data });
         } catch {
           return null;
         }
@@ -106,11 +106,11 @@ describe('Confidential Bridge', function () {
     return minted.args.handle as string;
   }
 
-  /** Bridges `handles` from `src` to `dst` (targeting dst's probe) and delivers them. */
+  /** Bridges `handles` from `src` to `dst` (targeting dst's app) and delivers them. */
   async function bridge(src: BridgeEnd, dst: BridgeEnd, handles: string[], payload = '0x', skipCompose = false) {
     const ctx = { srcEndpoint: src.endpoint, dstEndpoint: dst.endpoint, dstBridge: dst.bridge, dstSigner: dst.alice };
     const fromBlock = await getProvider(dst.cfg).getBlockNumber();
-    const dstApp = ethers.zeroPadValue(dst.probeAddr, 32);
+    const dstApp = ethers.zeroPadValue(dst.appAddr, 32);
     const bridgeContract = new ethers.Contract(src.bridge, BRIDGE_SEND_ABI, src.alice);
     const sendReceipt = await (
       await bridgeContract.send(dst.cfg.chainId, dstApp, payload, handles, LZ_COMPOSE_GAS, '0x', {
@@ -147,13 +147,13 @@ describe('Confidential Bridge', function () {
     const build = async (i: number): Promise<BridgeEnd> => {
       const cfg = HOST_CHAINS[i];
       const alice = getSigners(cfg).alice;
-      const probe = await deployContract('BridgeProbe', alice);
+      const app = await deployContract('BridgeApp', alice);
       return {
         cfg,
         bridge: addrs[i].bridge!,
         endpoint: addrs[i].endpoint!,
-        probe,
-        probeAddr: await probe.getAddress(),
+        app,
+        appAddr: await app.getAddress(),
         alice,
         instance: await createInstance(cfg),
       };
@@ -251,7 +251,7 @@ describe('Confidential Bridge', function () {
       dstEid: Number(chainB.cfg.chainId),
       srcBridge: fakeSrcBridge,
       srcHandle,
-      dstApp: chainB.probeAddr,
+      dstApp: chainB.appAddr,
       payload: '0x',
     });
 
