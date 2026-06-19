@@ -1100,3 +1100,51 @@ task('task:setLzReceivePerPayloadByteGas')
         `(remoteEid=${taskArguments.remoteEid}): effective per-payload-byte gas ${oldPerPayloadByteGas.toString()} -> ${newPerPayloadByteGas.toString()}`,
     );
   });
+
+////////////////////////////////////////////////////////////////////////////////
+// Local LayerZero endpoint (e2e only)
+////////////////////////////////////////////////////////////////////////////////
+
+// Deploys a local EndpointV2Mock + LocalSimpleMessageLib for the e2e setup (real networks use
+// the canonical LayerZero endpoint), giving task:deployBridge an LZ_ENDPOINT_ADDRESS.
+task('task:deployLocalLzEndpoint')
+  .addParam('eid', 'This chain LayerZero endpoint id', undefined, types.int)
+  .addParam('remoteEid', 'Remote endpoint id to default the libraries for', undefined, types.int)
+  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
+    const deployer = new Wallet(getRequiredEnvVar('DEPLOYER_PRIVATE_KEY')).connect(ethers.provider);
+
+    const endpoint = await (await ethers.getContractFactory('EndpointV2Mock', deployer)).deploy(
+      taskArguments.eid,
+      deployer.address,
+    );
+    await endpoint.waitForDeployment();
+    const endpointAddress = await endpoint.getAddress();
+
+    const lib = await (await ethers.getContractFactory('LocalSimpleMessageLib', deployer)).deploy(endpointAddress);
+    await lib.waitForDeployment();
+    const libAddress = await lib.getAddress();
+
+    await (await endpoint.registerLibrary(libAddress)).wait();
+    await (await endpoint.setDefaultSendLibrary(taskArguments.remoteEid, libAddress)).wait();
+    await (await endpoint.setDefaultReceiveLibrary(taskArguments.remoteEid, libAddress, 0)).wait();
+
+    // Persist for task:deployBridge, both in-process and across runs (via addresses/.env.host).
+    process.env.LZ_ENDPOINT_ADDRESS = endpointAddress;
+    ensureAddressesDirectoryExists();
+    writeHostEnvLine(`LZ_ENDPOINT_ADDRESS=${endpointAddress}\n`, 'a');
+
+    console.log(`Local LZ endpoint deployed at ${endpointAddress} (message lib ${libAddress})`);
+  });
+
+// Sets the LayerZero peer on the local bridge for a remote chain (run once per chain).
+task('task:setBridgePeer')
+  .addParam('bridgeAddress', 'Local ConfidentialBridge address')
+  .addParam('remoteEid', 'Remote endpoint id', undefined, types.int)
+  .addParam('remoteBridge', 'Remote ConfidentialBridge address')
+  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
+    const deployer = new Wallet(getRequiredEnvVar('DEPLOYER_PRIVATE_KEY')).connect(ethers.provider);
+    const bridge = await ethers.getContractAt('ConfidentialBridge', taskArguments.bridgeAddress, deployer);
+    const peer = ethers.zeroPadValue(taskArguments.remoteBridge, 32);
+    await (await bridge.setPeer(taskArguments.remoteEid, peer)).wait();
+    console.log(`setPeer(${taskArguments.remoteEid}, ${taskArguments.remoteBridge}) done successfully!`);
+  });
