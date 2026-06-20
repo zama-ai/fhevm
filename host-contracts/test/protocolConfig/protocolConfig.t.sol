@@ -755,6 +755,60 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         );
     }
 
+    function test_proposeCoprocessorUpgrade_sameIdTwice_bothEmit() public {
+        _setupDefault();
+        ChainUpgradeWindow[] memory windows = _makeChainUpgradeWindows(1);
+        uint256 proposalId = _defaultProposalId();
+
+        vm.prank(owner);
+        protocolConfig.proposeCoprocessorUpgrade(
+            proposalId, _defaultSoftwareVersion(), windows, _defaultGwStartBlock(), _defaultCiphertextVersion()
+        );
+
+        // Uniqueness is the caller's responsibility — contract does not enforce.
+        vm.expectEmit(true, false, false, true, address(protocolConfig));
+        emit IProtocolConfig.CoprocessorUpgradeProposed(
+            proposalId, _defaultSoftwareVersion(), windows, _defaultGwStartBlock(), _defaultCiphertextVersion()
+        );
+        vm.prank(owner);
+        protocolConfig.proposeCoprocessorUpgrade(
+            proposalId, _defaultSoftwareVersion(), windows, _defaultGwStartBlock(), _defaultCiphertextVersion()
+        );
+    }
+
+    function test_proposeCoprocessorUpgrade_maxUint256() public {
+        _setupDefault();
+        uint256 proposalId = type(uint256).max;
+
+        vm.expectEmit(true, false, false, true, address(protocolConfig));
+        emit IProtocolConfig.CoprocessorUpgradeProposed(
+            proposalId, _defaultSoftwareVersion(), _makeChainUpgradeWindows(1), _defaultGwStartBlock(), _defaultCiphertextVersion()
+        );
+        vm.prank(owner);
+        protocolConfig.proposeCoprocessorUpgrade(
+            proposalId, _defaultSoftwareVersion(), _makeChainUpgradeWindows(1), _defaultGwStartBlock(), _defaultCiphertextVersion()
+        );
+    }
+
+    function test_proposeCoprocessorUpgrade_twoDistinctPending_bothEmit() public {
+        _setupDefault();
+        ChainUpgradeWindow[] memory windows = _makeChainUpgradeWindows(1);
+
+        vm.prank(owner);
+        protocolConfig.proposeCoprocessorUpgrade(
+            1, _defaultSoftwareVersion(), windows, _defaultGwStartBlock(), _defaultCiphertextVersion()
+        );
+
+        vm.expectEmit(true, false, false, true, address(protocolConfig));
+        emit IProtocolConfig.CoprocessorUpgradeProposed(
+            2, _defaultSoftwareVersion(), windows, _defaultGwStartBlock(), _defaultCiphertextVersion()
+        );
+        vm.prank(owner);
+        protocolConfig.proposeCoprocessorUpgrade(
+            2, _defaultSoftwareVersion(), windows, _defaultGwStartBlock(), _defaultCiphertextVersion()
+        );
+    }
+
     function test_revertProposeCoprocessorUpgradeNotOwner() public {
         _setupDefault();
         vm.prank(address(0x999));
