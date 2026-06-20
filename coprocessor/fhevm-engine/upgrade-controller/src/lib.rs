@@ -197,7 +197,8 @@ pub async fn handle_upgrade_activated(
             ciphertext_version = EXCLUDED.ciphertext_version,
             last_error         = NULL,
             updated_at         = NOW()
-        WHERE upgrade_state.state = 'LIVE'
+        WHERE upgrade_state.state IN ('LIVE', 'PAUSED')
+           OR upgrade_state.status IN ('completed', 'failed')
            OR upgrade_state.proposal_id = EXCLUDED.proposal_id
         "#,
     )
@@ -215,7 +216,7 @@ pub async fn handle_upgrade_activated(
         warn!(
             stack_role,
             proposal_id = %payload.proposal_id,
-            "Rejected event_upgrade_activated: an in-flight upgrade with a different proposal_id is already underway"
+            "Rejected event_upgrade_activated: another upgrade is already in flight for this stack role"
         );
         return Ok(());
     }
@@ -1014,5 +1015,67 @@ mod tests {
         let s = hex_encode(&bytes);
         assert_eq!(s, "0001abff");
         assert_eq!(decode_hex(&s).unwrap(), bytes);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn handle_upgrade_activated_accepts_new_proposal_after_paused_cutover() {
+        use sqlx::postgres::PgPoolOptions;
+        use sqlx::Row;
+        use test_harness::instance::{setup_test_db, ImportMode};
+
+        let instance = setup_test_db(ImportMode::WithKeysNoSns)
+            .await
+            .expect("test db");
+        let pool = PgPoolOptions::new()
+            .max_connections(4)
+            .connect(instance.db_url())
+            .await
+            .expect("pool");
+
+        sqlx::query(
+            r#"
+            INSERT INTO upgrade_state (
+                stack_role, state, status, proposal_id, version,
+                start_block, end_block, gw_start_block, ciphertext_version, updated_at
+            )
+            VALUES ('BCS', 'PAUSED', 'completed', $1, 'v1', 100, 200, 1, 1, NOW())
+            ON CONFLICT (stack_role) DO UPDATE
+            SET state = EXCLUDED.state, status = EXCLUDED.status,
+                proposal_id = EXCLUDED.proposal_id, updated_at = NOW()
+            "#,
+        )
+        .bind(&[0x01u8][..])
+        .execute(&pool)
+        .await
+        .expect("seed");
+
+        let payload = serde_json::json!({
+            "proposal_id":        "0x02",
+            "chain_id":           1_i64,
+            "start_block":        100_i64,
+            "end_block":          200_i64,
+            "gw_start_block":     1_i64,
+            "ciphertext_version": 1_i16,
+            "version":            "v2",
+        })
+        .to_string();
+
+        let cancel = CancellationToken::new();
+        handle_upgrade_activated(&pool, &cancel, false, &payload)
+            .await
+            .expect("handler ok");
+
+        let row = sqlx::query(
+            "SELECT proposal_id, state, status FROM upgrade_state WHERE stack_role = 'BCS'",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("row");
+        assert_eq!(
+            row.try_get::<Vec<u8>, _>("proposal_id").unwrap(),
+            vec![0x02u8]
+        );
+        assert_eq!(row.try_get::<String, _>("state").unwrap(), "UpgradeActivated");
+        assert_eq!(row.try_get::<String, _>("status").unwrap(), "in_progress");
     }
 }
