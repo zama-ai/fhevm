@@ -7,7 +7,7 @@ use alloy::sol_types::SolEventInterface;
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::types::Handle;
 use sqlx::types::time::{OffsetDateTime, PrimitiveDateTime};
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use crate::cmd::block_history::{BlockHash, BlockSummary};
 use crate::cmd::InfiniteLogIter;
@@ -436,13 +436,14 @@ async fn handle_protocol_config_log(
                 notify_coprocessor_upgrade_proposed(tx, chain_id, proposed).await?;
             }
             other => {
-                info!(
+                warn!(
                     ?other,
                     block_number = ?log.block_number,
                     tx_hash = ?log.transaction_hash,
                     log_index = ?log.log_index,
-                    "ProtocolConfig event decoded but not actionable; skipping",
+                    "ProtocolConfig event decoded but no handler matched — likely a new variant added without updating host-listener",
                 );
+                PROTOCOL_CONFIG_EVENT_DECODE_FAIL_COUNTER.inc();
             }
         },
         Err(_) => {
@@ -458,21 +459,32 @@ async fn notify_coprocessor_upgrade_proposed(
     event: &ProtocolConfig::CoprocessorUpgradeProposed,
 ) -> Result<(), sqlx::Error> {
     let listener_chain_id = chain_id.as_u64();
+
+    if event.proposalId.is_zero() {
+        warn!(
+            chain_id = listener_chain_id,
+            "Rejecting CoprocessorUpgradeProposed with proposalId == 0 — production contract guards against this; defense in depth against test mocks or future callers"
+        );
+        return Ok(());
+    }
+
+    let proposal_id_bytes = event.proposalId.to_be_bytes::<32>();
+    let proposal_id_hex =
+        format!("0x{}", alloy_primitives::hex::encode(proposal_id_bytes));
+
     let Some(window) = event
         .chainUpgradeWindows
         .iter()
         .find(|w| w.chainId == listener_chain_id)
     else {
-        info!(
+        warn!(
             listener_chain_id,
-            "CoprocessorUpgradeProposed does not include this chain — skipping pg_notify"
+            proposal_id = %proposal_id_hex,
+            nb_windows = event.chainUpgradeWindows.len(),
+            "CoprocessorUpgradeProposed does not include this chain — authority listener will not emit event_upgrade_activated"
         );
         return Ok(());
     };
-
-    let proposal_id_bytes = event.proposalId.to_be_bytes::<32>();
-    let proposal_id_hex =
-        format!("0x{}", alloy_primitives::hex::encode(proposal_id_bytes));
 
     info!(
         proposal_id = %proposal_id_hex,
@@ -747,5 +759,13 @@ mod tests {
             slow.contains(&chains[3].hash),
             "D should be slow (depends on B and C)"
         );
+    }
+
+    #[test]
+    fn proposal_id_max_uint256_round_trips_to_hex() {
+        let proposal_id = alloy::primitives::U256::MAX;
+        let bytes = proposal_id.to_be_bytes::<32>();
+        let hex = format!("0x{}", alloy_primitives::hex::encode(bytes));
+        assert_eq!(hex, format!("0x{}", "ff".repeat(32)));
     }
 }
