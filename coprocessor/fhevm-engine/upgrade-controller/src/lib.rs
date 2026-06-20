@@ -179,7 +179,7 @@ pub async fn handle_upgrade_activated(
         "event_upgrade_activated received — inserting upgrade_state row"
     );
 
-    sqlx::query(
+    let result = sqlx::query(
         r#"
         INSERT INTO upgrade_state (
             stack_role, state, status, proposal_id, version,
@@ -197,6 +197,8 @@ pub async fn handle_upgrade_activated(
             ciphertext_version = EXCLUDED.ciphertext_version,
             last_error         = NULL,
             updated_at         = NOW()
+        WHERE upgrade_state.state = 'LIVE'
+           OR upgrade_state.proposal_id = EXCLUDED.proposal_id
         "#,
     )
     .bind(stack_role)
@@ -208,6 +210,15 @@ pub async fn handle_upgrade_activated(
     .bind(payload.ciphertext_version)
     .execute(pool)
     .await?;
+
+    if result.rows_affected() == 0 {
+        warn!(
+            stack_role,
+            proposal_id = %payload.proposal_id,
+            "Rejected event_upgrade_activated: an in-flight upgrade with a different proposal_id is already underway"
+        );
+        return Ok(());
+    }
 
     // Note: the `gcs` schema and its table duplicates are created once at
     // upgrade-controller startup (see `run`), not here — the GCS services start
