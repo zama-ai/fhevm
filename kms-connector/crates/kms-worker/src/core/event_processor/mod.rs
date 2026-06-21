@@ -1,11 +1,12 @@
+pub mod ciphertext;
 mod context;
 mod decryption;
 mod kms;
 mod kms_client;
 mod processor;
 mod protocol_config;
-pub mod s3;
 
+pub use ciphertext::CiphertextManager;
 pub use context::{ContextManager, DbContextManager};
 pub use decryption::DecryptionProcessor;
 pub use kms::KMSGenerationProcessor;

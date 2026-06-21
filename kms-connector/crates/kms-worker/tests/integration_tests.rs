@@ -1,6 +1,9 @@
 mod common;
 
-use crate::common::{create_mock_user_decryption_request_tx, init_kms_worker};
+use crate::common::{
+    create_mock_user_decryption_request_tx, init_kms_worker, mock_copro_registry_load,
+    testing_ct_attestation_config,
+};
 use alloy::{
     hex::FromHex,
     primitives::{Address, FixedBytes, Log, U256},
@@ -16,7 +19,7 @@ use connector_utils::{
         },
         rand::{rand_digest, rand_sns_ct},
         setup::{
-            DbInstance, S3_CT_DIGEST, S3_CT_HANDLE, S3Instance, TestInstanceBuilder,
+            DbInstance, S3_CT_DIGEST, S3_CT_HANDLE, S3_CT_KEY_ID, S3Instance, TestInstanceBuilder,
             erc1271_magic_response, init_host_chains_acl_contracts_mock,
         },
     },
@@ -25,7 +28,6 @@ use connector_utils::{
         u256_to_request_id,
     },
 };
-use fhevm_gateway_bindings::gateway_config::GatewayConfig::Coprocessor;
 use fhevm_host_bindings::protocol_config::ProtocolConfig::NewKmsContext;
 use kms_grpc::kms::v1::{
     CrsGenResult, Empty, EpochResultResponse as GrpcEpochResultResponse, KeyGenPreprocResult,
@@ -71,9 +73,13 @@ async fn test_processing_request(
 
     // Mocking Gateway/Ethereum
     let asserter = Asserter::new();
+    let copro_tx_sender = mock_copro_registry_load(&asserter, test_instance.s3_url());
     let mut sns_ct = rand_sns_ct();
+    sns_ct.keyId = S3_CT_KEY_ID;
     sns_ct.ctHandle = FixedBytes::<32>::from_hex(S3_CT_HANDLE)?;
     sns_ct.snsCiphertextDigest = FixedBytes::<32>::from_hex(S3_CT_DIGEST)?;
+    sns_ct.coprocessorTxSenderAddresses = vec![copro_tx_sender];
+
     let mut insert_options = InsertRequestOptions::new()
         .with_already_sent(already_sent)
         .with_sns_ct_materials(vec![sns_ct.clone()]);
@@ -107,11 +113,6 @@ async fn test_processing_request(
         _ => (),
     }
 
-    let get_copro_call_response = Coprocessor {
-        s3BucketUrl: format!("{}/ct128", test_instance.s3_url()),
-        ..Default::default()
-    };
-    asserter.push_success(&get_copro_call_response.abi_encode());
     let mock_provider = ProviderBuilder::new()
         .disable_recommended_fillers()
         .connect_mocked_client(asserter.clone());
@@ -152,6 +153,7 @@ async fn test_processing_request(
     // Starting kms_worker
     let config = Config {
         kms_core_endpoints: vec![kms_mock_server.base_url().unwrap().to_string()],
+        ct_attestation: testing_ct_attestation_config(true),
         ..Default::default()
     };
     let kms_worker = init_kms_worker(

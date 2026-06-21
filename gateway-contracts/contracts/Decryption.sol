@@ -222,7 +222,7 @@ contract Decryption is
      */
     string private constant CONTRACT_NAME = "Decryption";
     uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 5;
+    uint256 private constant MINOR_VERSION = 6;
     uint256 private constant PATCH_VERSION = 0;
 
     /**
@@ -231,7 +231,7 @@ contract Decryption is
      * This constant does not represent the number of time a specific contract have been upgraded,
      * as a contract deployed from version VX will have a REINITIALIZER_VERSION > 2.
      */
-    uint64 private constant REINITIALIZER_VERSION = 6;
+    uint64 private constant REINITIALIZER_VERSION = 7;
 
     /**
      * @notice The contract's variable storage struct (@dev see ERC-7201)
@@ -320,11 +320,11 @@ contract Decryption is
     }
 
     /**
-     * @notice Re-initializes the contract from V4.
+     * @notice Re-initializes the contract from V5.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV5() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    function reinitializeV6() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /**
      * @notice See {IDecryption-publicDecryptionRequest}.
@@ -368,7 +368,11 @@ contract Decryption is
         $.publicCtHandles[publicDecryptionId] = ctHandles;
 
         // Pin the KMS context at request time. See `decryptionContextId` storage docs.
-        $.decryptionContextId[publicDecryptionId] = _extractContextId(extraData);
+        {
+            uint256 contextId = _extractContextId(extraData);
+            _validateContextId(contextId);
+            $.decryptionContextId[publicDecryptionId] = contextId;
+        }
 
         // Collect the fee from the transaction sender for this public decryption request.
         _collectPublicDecryptionFee(msg.sender);
@@ -532,7 +536,11 @@ contract Decryption is
         $.userDecryptionPayloads[userDecryptionId] = UserDecryptionPayload(publicKey, ctHandles);
 
         // Pin the KMS context at request time. See `decryptionContextId` storage docs.
-        $.decryptionContextId[userDecryptionId] = _extractContextId(extraData);
+        {
+            uint256 contextId = _extractContextId(extraData);
+            _validateContextId(contextId);
+            $.decryptionContextId[userDecryptionId] = contextId;
+        }
 
         // Collect the fee from the transaction sender for this user decryption request.
         _collectUserDecryptionFee(msg.sender);
@@ -626,7 +634,11 @@ contract Decryption is
         $.userDecryptionPayloads[userDecryptionId] = UserDecryptionPayload(publicKey, ctHandles);
 
         // Pin the KMS context at request time. See `decryptionContextId` storage docs.
-        $.decryptionContextId[userDecryptionId] = _extractContextId(extraData);
+        {
+            uint256 contextId = _extractContextId(extraData);
+            _validateContextId(contextId);
+            $.decryptionContextId[userDecryptionId] = contextId;
+        }
 
         // Collect the fee from the transaction sender for this delegated user decryption request.
         _collectUserDecryptionFee(msg.sender);
@@ -973,6 +985,16 @@ contract Decryption is
 
         // Unsupported version
         revert UnsupportedExtraDataVersion(version);
+    }
+
+    /**
+     * @notice Checks that a context ID refers to a valid KMS context.
+     * @param contextId The context ID to validate.
+     */
+    function _validateContextId(uint256 contextId) internal view virtual {
+        if (!GATEWAY_CONFIG.isValidKmsContext(contextId)) {
+            revert IGatewayConfig.InvalidKmsContext(contextId);
+        }
     }
 
     /**

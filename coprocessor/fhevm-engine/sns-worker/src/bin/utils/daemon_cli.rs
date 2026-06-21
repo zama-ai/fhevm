@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use clap::{command, Parser};
 use fhevm_engine_common::telemetry::MetricsConfig;
+use fhevm_engine_common::types::SignerType;
 use fhevm_engine_common::utils::DatabaseURL;
 use humantime::parse_duration;
 use sns_worker::metrics::SNS_LATENCY_OP_HISTOGRAM_CONF;
@@ -77,6 +78,10 @@ pub struct Args {
     #[arg(long, default_value = "120s", value_parser = parse_duration)]
     pub s3_regular_recheck_duration: Duration,
 
+    /// Disable S3 SHA256 checksum upload and HEAD verification for incompatible S3 servers.
+    #[arg(long, default_value_t = false)]
+    pub s3_disable_sha256_checksum: bool,
+
     #[arg(long, default_value = "15min", value_parser = parse_duration)]
     pub cleanup_interval: Duration,
 
@@ -126,6 +131,12 @@ pub struct Args {
 
     #[arg(long, value_parser = clap::value_parser!(u32).range(1..))]
     pub gauge_update_interval_secs: Option<u32>,
+
+    #[arg(short, long, value_enum, default_value = "private-key")]
+    pub signer_type: SignerType,
+
+    #[arg(short, long)]
+    pub private_key: Option<String>,
 }
 
 pub fn parse_args() -> Args {

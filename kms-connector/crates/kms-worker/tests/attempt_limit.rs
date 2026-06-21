@@ -1,6 +1,9 @@
 mod common;
 
-use crate::common::{create_mock_user_decryption_request_tx, init_kms_worker};
+use crate::common::{
+    create_mock_user_decryption_request_tx, init_kms_worker, mock_copro_registry_load,
+    testing_ct_attestation_config,
+};
 use alloy::{
     hex::FromHex,
     primitives::{FixedBytes, U256},
@@ -15,13 +18,12 @@ use connector_utils::{
         },
         rand::{rand_digest, rand_sns_ct},
         setup::{
-            DbInstance, S3_CT_DIGEST, S3_CT_HANDLE, S3Instance, TestInstanceBuilder,
+            DbInstance, S3_CT_DIGEST, S3_CT_HANDLE, S3_CT_KEY_ID, S3Instance, TestInstanceBuilder,
             erc1271_magic_response, init_host_chains_acl_contracts_mock,
         },
     },
     types::ProtocolEventKind,
 };
-use fhevm_gateway_bindings::gateway_config::GatewayConfig::Coprocessor;
 use kms_grpc::kms::v1::Empty;
 use kms_worker::core::Config;
 use mocktail::{MockSet, StatusCode, server::MockServer};
@@ -54,27 +56,22 @@ async fn test_request_processing(#[case] event_type: TestEventType) -> anyhow::R
 
     // Mocking Gateway/Ethereum
     let asserter = Asserter::new();
+    let copro_tx_sender = mock_copro_registry_load(&asserter, test_instance.s3_url());
     let mut sns_ct = rand_sns_ct();
+    sns_ct.keyId = S3_CT_KEY_ID;
     sns_ct.ctHandle = FixedBytes::<32>::from_hex(S3_CT_HANDLE)?;
     sns_ct.snsCiphertextDigest = FixedBytes::<32>::from_hex(S3_CT_DIGEST)?;
+    sns_ct.coprocessorTxSenderAddresses = vec![copro_tx_sender];
+
     let tx_hash = rand_digest();
     let insert_options = InsertRequestOptions::new()
         .with_sns_ct_materials(vec![sns_ct.clone()])
         .with_tx_hash(tx_hash);
-    for attempt in 0..MAX_DECRYPTION_ATTEMPTS {
+    for _ in 0..MAX_DECRYPTION_ATTEMPTS {
         if matches!(event_type, TestEventType::UserDecryption) {
             // Mocking `get_transaction_by_hash` call result
             let mock_tx = create_mock_user_decryption_request_tx(tx_hash, sns_ct.ctHandle)?;
             asserter.push_success(&mock_tx);
-        }
-
-        // First attempt, the copro URL is not cached yet
-        if attempt == 0 {
-            let get_copro_call_response = Coprocessor {
-                s3BucketUrl: format!("{}/ct128", test_instance.s3_url()),
-                ..Default::default()
-            };
-            asserter.push_success(&get_copro_call_response.abi_encode());
         }
     }
 
@@ -124,6 +121,7 @@ async fn test_request_processing(#[case] event_type: TestEventType) -> anyhow::R
         grpc_request_retries: GRPC_REQUEST_RETRIES,
         db_fast_event_polling: Duration::from_millis(500),
         db_long_event_polling: Duration::from_millis(500),
+        ct_attestation: testing_ct_attestation_config(true),
         ..Default::default()
     };
     let kms_worker = init_kms_worker(

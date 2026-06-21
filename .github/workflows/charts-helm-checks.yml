@@ -15,7 +15,7 @@ jobs:
       actions: 'read' # Required to read workflow run information
       contents: 'read' # Required to checkout repository code
       pull-requests: 'read' # Required to read pull request information
-    runs-on: ubuntu-latest
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
     outputs:
       changes-charts: ${{ steps.filter.outputs.charts }}
     steps:
@@ -33,7 +33,7 @@ jobs:
     name: charts-helm-checks/lint
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-charts == 'true' }}
-    runs-on: 'ubuntu-latest'
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
     permissions:
       contents: 'read' # Required to checkout repository code
     steps:
@@ -48,7 +48,7 @@ jobs:
     name: charts-helm-checks/test (bpr)
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-charts == 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
     permissions:
       contents: 'read' # Required to checkout repository code
     steps:
@@ -83,4 +83,18 @@ jobs:
 
       - name: Run chart-testing (lint)
         if: steps.list-changed.outputs.changed == 'true'
-        run: ct lint --config .github/config/ct.yaml
+        env:
+          GITHUB_BASE_REF: ${{ github.base_ref }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+        run: |
+          # Compare chart versions against the branch this change targets, not a
+          # hardcoded main: PRs use the base branch (main or release/*), pushes
+          # use the branch that was pushed. Without this, backport PRs to
+          # release/* are checked against main and fail when main's chart version
+          # has moved ahead of the release line.
+          if [ -n "${GITHUB_BASE_REF}" ]; then
+            TARGET_BRANCH="${GITHUB_BASE_REF}"
+          else
+            TARGET_BRANCH="${GITHUB_REF_NAME}"
+          fi
+          ct lint --config .github/config/ct.yaml --target-branch "${TARGET_BRANCH}"

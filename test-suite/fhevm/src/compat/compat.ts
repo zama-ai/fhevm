@@ -53,6 +53,12 @@ export const COMPAT_MATRIX = {
       unparsed: "modern" as const,
     },
     {
+      key: "COPROCESSOR_SNS_WORKER_VERSION",
+      below: [0, 14, 0] as CompatSemver,
+      profile: "legacy-sns-worker-no-signer-flags",
+      unparsed: "modern" as const,
+    },
+    {
       key: "COPROCESSOR_TX_SENDER_VERSION",
       below: [0, 12, 0] as CompatSemver,
       profile: "legacy-tx-sender-gateway-flags",
@@ -114,6 +120,14 @@ const SHIM_PROFILES = {
       "sns-worker": [["--tenant-api-key", { env: "TENANT_API_KEY" }]],
     },
     coprocessorDropFlags: {},
+    connectorEnv: {},
+    composeEnv: {},
+  },
+  "legacy-sns-worker-no-signer-flags": {
+    coprocessorArgs: {},
+    coprocessorDropFlags: {
+      "sns-worker": ["--signer-type", "--private-key"],
+    },
     connectorEnv: {},
     composeEnv: {},
   },
@@ -232,14 +246,25 @@ export const supportsCoprocessorDbStateRevert = (state: Pick<CompatState, "versi
     unparsed: "modern",
   });
 
-/** Detects when the test harness must seed host_chains for legacy coprocessor images. */
-export const requiresLegacyHostChainSeedShim = (state: Pick<CompatState, "versions">) =>
-  versionBeforeReleaseFamily(state.versions.env.COPROCESSOR_DB_MIGRATION_VERSION ?? "", [0, 13, 0], {
-    unparsed: "modern",
-  }) ||
-  versionBeforeReleaseFamily(state.versions.env.COPROCESSOR_ZKPROOF_WORKER_VERSION ?? "", [0, 13, 0], {
-    unparsed: "modern",
-  });
+/**
+ * Detects when the test harness must seed host_chains for legacy coprocessor images.
+ *
+ * The host_chains table only exists from v0.12.0 onward (the remove_tenants
+ * migration splits it out of the old `tenants` table); v0.11.x images have no
+ * such table, so seeding it would fail. Within [0.12.0, 0.13.0) the table
+ * exists but the runtime does not reliably seed it before zkproof caches it, so
+ * the harness seeds it manually. From v0.13.0 the runtime self-seeds.
+ */
+export const requiresLegacyHostChainSeedShim = (state: Pick<CompatState, "versions">) => {
+  const dbMigrationVersion = state.versions.env.COPROCESSOR_DB_MIGRATION_VERSION ?? "";
+  const hostChainsTableExists = !versionBeforeReleaseFamily(dbMigrationVersion, [0, 12, 0], { unparsed: "modern" });
+  const runtimeNeedsManualSeed =
+    versionBeforeReleaseFamily(dbMigrationVersion, [0, 13, 0], { unparsed: "modern" }) ||
+    versionBeforeReleaseFamily(state.versions.env.COPROCESSOR_ZKPROOF_WORKER_VERSION ?? "", [0, 13, 0], {
+      unparsed: "modern",
+    });
+  return hostChainsTableExists && runtimeNeedsManualSeed;
+};
 
 /** Detects when the resolved host-listener bundle includes the listener-core consumer topology. */
 export const supportsHostListenerConsumer = (state: Pick<CompatState, "versions">) => {
@@ -285,6 +310,14 @@ export const coprocessorUsesHostKmsGeneration = (state: CompatState) =>
 
 /** Detects the KMSGeneration source used for key/CRS bootstrap probes and trigger tasks. */
 export const bootstrapUsesHostKmsGeneration = kmsConnectorUsesHostKmsGeneration;
+
+/**
+ * Detects when host images ship `task:deployProtocolConfigFromCanonical` (0.13.1+), so non-canonical
+ * chains can seed ProtocolConfig from the canonical chain like production instead of "fresh".
+ */
+export const supportsCanonicalProtocolConfigSeeding = (state: CompatState) =>
+  effectiveCompatOverrides(state).some((override) => override.group === "host-contracts") ||
+  !versionLt(state.versions.env.HOST_VERSION ?? "", [0, 13, 1], { unparsed: "modern" });
 
 type BundleIncompatibility = { severity: "error"; code: string; message: string };
 

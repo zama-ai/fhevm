@@ -2,6 +2,7 @@
  * Runs named e2e test profiles, standard/heavy CI suites, and topology-specific test flows.
  */
 import { compatPolicyForState, supportsCoprocessorDbStateRevert } from "../compat/compat";
+import { type DecryptionRunner, runKmsGenerationProfile } from "./kms-generation";
 import { DRIFT_CLEANUP_SQL, DRIFT_INSTALL_SQL, driftDatabaseName, parseDriftInstanceIndex, parsePositiveInteger } from "../drift";
 import { PreflightError, formatCliError } from "../errors";
 import { dockerInspect } from "../flow/readiness";
@@ -28,6 +29,11 @@ import {
 import type { State, TestOptions } from "../types";
 
 const DRIFT_WARNING = '"message":"Drift detected: observed multiple digest variants for handle"';
+// Peer-submission divergence (DRIFT_WARNING) only flags that submissions differ; it never starts a
+// revert. Auto-recovery is driven solely by the consensus-vs-local mismatch below, which is emitted
+// right where on_drift_detected (the revert trigger) runs. Gating the recovery test on this avoids
+// racing ahead of consensus formation and landing on an empty drift_revert_signal.
+const DRIFT_CONSENSUS_WARNING = '"message":"Drift detected: local digest does not match consensus"';
 const DRIFT_HANDLE = /"handle":"0x([0-9a-f]+)"/i;
 const DB_REVERT_CONTAINERS = [
   "host-listener",
@@ -54,14 +60,26 @@ const TEST_PROFILE_NAMES = [
   "ciphertext-drift-auto-recovery",
   "coprocessor-db-state-revert",
   "heavy",
+  "kms-generation",
   "light",
   "rollout-standard",
   "standard",
 ].sort();
+// The below-quorum probe is expected to hang waiting for KMS responses, so it is killed after
+// this bound. Only a timeout — or a run that demonstrably executed the tests and failed — is
+// read as "the 2t+1 quorum held"; any other failure is an infra error, not a quorum proof.
+// Pass-expected probes use the same invocation, streamed and unbounded (runNamedE2e).
+const QUORUM_FLOOR_TIMEOUT_MS = 300_000;
 const ZERO_TESTS_RE = /\b0 passing\b/;
 // Mocha prints "N pending" when tests exist but were skipped. If any are pending,
 // the grep did match — don't treat all-skipped as "matched zero tests".
 const SOME_PENDING_RE = /\b[1-9]\d* pending\b/;
+// Mocha prints "0 passing" alongside "N failing" when every matched test failed —
+// the grep DID match; the run failed for a different reason than an empty grep.
+const SOME_FAILING_RE = /\b[1-9]\d* failing\b/;
+/** True when the grep actually matched tests (some passed, failed, or are pending). */
+const matchedTests = (output: string) =>
+  !(ZERO_TESTS_RE.test(output) && !SOME_PENDING_RE.test(output) && !SOME_FAILING_RE.test(output));
 const PAUSE_PROFILE_SCOPE: Record<string, string> = {
   "paused-host-contracts": "host",
   "paused-gateway-contracts": "gateway",
@@ -75,6 +93,7 @@ const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[numb
   "paused-gateway-contracts": "Run pause-mode checks with gateway contracts paused.",
   "input-proof": "Run basic user input proof coverage.",
   "input-proof-compute-decrypt": "Run compute-and-decrypt input proof coverage.",
+  "priority-coprocessor": "Run input proof coverage with gateway priority-coprocessor mode enabled.",
   "user-decryption": "Run user decryption coverage.",
   "delegated-user-decryption": "Run delegated user decryption coverage.",
   "public-decryption": "Run async public decryption coverage.",
@@ -91,6 +110,8 @@ const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[numb
   "ciphertext-drift-auto-recovery":
     "Run ciphertext drift auto-recovery checks — services self-recover (requires 2+ coprocessors).",
   "coprocessor-db-state-revert": "Run coprocessor DB state revert checks.",
+  "kms-generation":
+    "Audit the on-chain key/CRS generation state (KMSGeneration contract) and prove the 2t+1 decryption quorum (threshold-mode KMS).",
 };
 
 /** Validates whether a named profile supports an extra grep narrowing expression. */
@@ -229,9 +250,9 @@ const coprocessorGwListeners = async () => {
 };
 
 /** Finds the expected drift warning for a specific injected handle. */
-const findDriftWarning = (output: string, expectedHandleHex: string) => {
+const findDriftWarning = (output: string, expectedHandleHex: string, needle: string = DRIFT_WARNING) => {
   for (const line of output.split(/\r?\n/)) {
-    if (!line.includes(DRIFT_WARNING)) {
+    if (!line.includes(needle)) {
       continue;
     }
     const matchedHandle = line.match(DRIFT_HANDLE)?.[1];
@@ -245,14 +266,14 @@ const findDriftWarning = (output: string, expectedHandleHex: string) => {
 /** Waits until a gateway listener emits the expected drift warning. */
 const waitForDriftWarning = async (
   handleHex: string,
-  options: { since: string; timeoutSeconds: number; pollIntervalSeconds: number },
+  options: { since: string; timeoutSeconds: number; pollIntervalSeconds: number; needle?: string },
 ) => {
   const attempts = Math.max(0, Math.ceil(options.timeoutSeconds / options.pollIntervalSeconds));
   for (let attempt = 0; attempt <= attempts; attempt += 1) {
     const containers = await coprocessorGwListeners();
     for (const container of containers) {
       const logs = await run(["docker", "logs", "--since", options.since, container], { allowFailure: true });
-      const matched = findDriftWarning(logs.stdout + logs.stderr, handleHex);
+      const matched = findDriftWarning(logs.stdout + logs.stderr, handleHex, options.needle);
       if (matched) {
         return { container, handleHex: matched };
       }
@@ -303,6 +324,68 @@ const assertOnChainDivergence = async (
   console.log(`[drift] on-chain divergence confirmed: ${logs.length} submissions with ${unique.size} distinct digest(s)`);
 };
 
+/** Number of most-recent AddCiphertextMaterial events sampled when checking
+ * that every coprocessor is still participating in consensus. */
+const CLUSTER_HEALTH_SAMPLE = 24;
+
+/** Extracts the distinct coprocessor tx-sender addresses (lowercased) from the
+ * most recent `sampleSize` AddCiphertextMaterial event logs. The sender is the
+ * 4th 32-byte word of the event data:
+ * keyId | ciphertextDigest | snsCiphertextDigest | coprocessorTxSender. */
+export const recentCoprocessorSenders = (logs: { data: string }[], sampleSize: number): string[] => {
+  const senders = new Set<string>();
+  for (const log of logs.slice(-sampleSize)) {
+    if (typeof log.data !== "string" || log.data.length < 2 + 4 * 64) {
+      continue;
+    }
+    senders.add(`0x${log.data.slice(2 + 3 * 64, 2 + 4 * 64).slice(-40)}`.toLowerCase());
+  }
+  return [...senders].sort();
+};
+
+/** Fails fast when fewer than the full coprocessor set is still submitting
+ * AddCiphertextMaterial. A crashed coprocessor worker (e.g. an sns-worker that
+ * exited on a fatal DB error) silently stops submitting; with one fewer honest
+ * node the drift test can no longer form the consensus its auto-revert depends
+ * on, which otherwise surfaces only as a confusing injection or revert timeout. */
+const assertClusterFullyParticipating = async (
+  gatewayRpcUrl: string,
+  contractAddress: string,
+  expectedCount: number,
+) => {
+  const response = await fetch(gatewayRpcUrl, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "eth_getLogs",
+      params: [{ fromBlock: "0x0", toBlock: "latest", address: contractAddress, topics: [ADD_CIPHERTEXT_MATERIAL_TOPIC] }],
+    }),
+  });
+  if (!response.ok) {
+    throw new PreflightError(`eth_getLogs failed: ${response.status} ${response.statusText}`);
+  }
+  const payload = (await response.json()) as { result?: { data: string }[] };
+  const senders = recentCoprocessorSenders(payload.result ?? [], CLUSTER_HEALTH_SAMPLE);
+  if (senders.length === 0) {
+    // No AddCiphertextMaterial activity to measure yet (e.g. running this profile
+    // standalone on a fresh stack with no prior submissions). With nothing to
+    // judge, skip the preflight rather than false-failing; a genuinely degraded
+    // cluster still surfaces via the injection/recovery timeout.
+    console.log("[drift-auto-recovery] no recent coprocessor submissions observed; skipping cluster-health preflight");
+    return;
+  }
+  if (senders.length < expectedCount) {
+    throw new PreflightError(
+      `ciphertext-drift-auto-recovery needs all ${expectedCount} coprocessors submitting, but only ${senders.length} did across the last ${CLUSTER_HEALTH_SAMPLE} AddCiphertextMaterial events (${senders.join(", ") || "none"}). A coprocessor worker has likely crashed — the cluster is degraded, so consensus-based auto-revert cannot be exercised.`,
+    );
+  }
+  console.log(
+    `[drift-auto-recovery] cluster healthy: ${senders.length}/${expectedCount} coprocessors submitting recently`,
+  );
+};
+
 type DriftRevertDbOptions = {
   instanceIndex: number;
   postgresContainer: string;
@@ -351,7 +434,7 @@ const waitForComputationsCatchup = async (
 /** Polls drift_revert_signal until the latest row reaches a given status. */
 const waitForDriftRevertStatus = async (
   options: DriftRevertDbOptions & {
-    targetStatus: "reverting" | "done";
+    targetStatus: "pending" | "reverting" | "done";
     timeoutSeconds: number;
     pollIntervalSeconds: number;
   },
@@ -418,10 +501,15 @@ const runTestsCommand = (
 
 /** Runs a narrow e2e grep inside the test-suite container. */
 const assertMatchedTests = (output: string, label: string) => {
-  if (ZERO_TESTS_RE.test(output) && !SOME_PENDING_RE.test(output)) {
+  if (!matchedTests(output)) {
     throw new PreflightError(`${label} matched zero tests`);
   }
 };
+
+/** The canonical in-container argv for a named e2e grep. The kms-generation quorum probes
+ * reuse it so they can never drift from the invocation they are compared against. */
+const namedE2eArgs = (options: Pick<TestOptions, "network" | "noHardhatCompile">, grep: string) =>
+  buildTestContainerArgs(runTestsArgs({ ...options, verbose: false, parallel: false, grep }));
 
 /** Runs a narrow e2e grep inside the test-suite container. */
 const runNamedE2e = async (
@@ -429,10 +517,7 @@ const runNamedE2e = async (
   grep: string,
   label: string,
 ) => {
-  const result = await runWithHeartbeat(
-    buildTestContainerArgs(runTestsArgs({ ...options, verbose: false, parallel: false, grep })),
-    label,
-  );
+  const result = await runWithHeartbeat(namedE2eArgs(options, grep), label);
   assertMatchedTests(result.stdout + result.stderr, label);
 };
 
@@ -822,6 +907,13 @@ export const test = async (testName: string | undefined, options: TestOptions) =
       ? undefined
       : "multi-chain-isolation requires a multi-chain topology; rerun `fhevm-cli up --scenario multi-chain` first";
 
+  const priorityCoprocessorRequirement = () => {
+    const topology = topologyForState(state);
+    return topology.count > 1
+      ? undefined
+      : "priority-coprocessor requires a multi-coprocessor topology; rerun `fhevm-cli up --scenario two-of-three-multi-chain` first";
+  };
+
   const multiChainIsolationSkipReason = () =>
     state.scenario.hostChains.length > 1 ? undefined : "topology has fewer than 2 host chains";
 
@@ -830,7 +922,61 @@ export const test = async (testName: string | undefined, options: TestOptions) =
       ? undefined
       : `COPROCESSOR_DB_MIGRATION_VERSION=${state.versions.env.COPROCESSOR_DB_MIGRATION_VERSION || "unknown"} is older than v0.12.0`;
 
+  // Runs the user-decryption grep and reports pass/fail instead of throwing, so the
+  // kms-generation quorum probes can assert both success and (below quorum) non-success.
+  // Both branches run the canonical user-decryption invocation (namedE2eArgs); only the
+  // execution differs — streamed and unbounded when a pass is expected, bounded when the
+  // decryption is expected to hang below quorum.
+  const runUserDecryption: DecryptionRunner = async (label, decryptOpts) => {
+    const grep = TEST_GREP["user-decryption"];
+    if (!grep) {
+      throw new PreflightError("kms-generation: missing user-decryption grep pattern");
+    }
+    console.log(`[test] ${label}`);
+    if (!decryptOpts?.expectFailure) {
+      try {
+        await runNamedE2e(options, grep, label);
+        return true;
+      } catch (error) {
+        console.log(`[kms-generation] decryption probe reported failure: ${formatCliError(error) ?? "unknown error"}`);
+        return false;
+      }
+    }
+    // Below quorum: bound the wait. Print the captured output so a wrongly-successful run
+    // is debuggable.
+    const result = await run(namedE2eArgs(options, grep), { allowFailure: true, timeoutMs: QUORUM_FLOOR_TIMEOUT_MS });
+    if (result.stdout.trim()) console.log(result.stdout);
+    if (result.stderr.trim()) console.log(result.stderr);
+    const output = `${result.stdout}\n${result.stderr}`;
+    if (result.code === 0 && matchedTests(output)) {
+      return true; // decrypted below quorum — the caller turns this into a hard failure
+    }
+    const timedOut = result.code === 124;
+    if (timedOut) {
+      // The timeout only kills the local `docker exec` client; best-effort-reap the test run
+      // still going inside the container so it cannot overlap the recovery probe. The bracketed
+      // patterns avoid pkill matching its own command line.
+      await run(
+        buildTestContainerArgs(["sh", "-lc", "pkill -f 'run-tests[.]sh' 2>/dev/null; pkill -f '[h]ardhat' 2>/dev/null; true"]),
+        { allowFailure: true },
+      );
+    }
+    // "Did not decrypt" only proves the quorum when the probe demonstrably ran: it timed out
+    // mid-decryption, or mocha executed the matched tests and they failed. Anything else
+    // (docker error, missing container, zero tests matched) is an infra problem — fail loudly
+    // instead of reading it as "the quorum held".
+    if (!timedOut && !SOME_FAILING_RE.test(output)) {
+      throw new PreflightError(
+        `${label}: probe did not run to a decryption verdict (exit ${result.code}); cannot interpret the failure as a quorum proof`,
+      );
+    }
+    return false;
+  };
+
   const runProfile = async (name: string) => {
+    if (name === "kms-generation") {
+      return runKmsGenerationProfile(state, runUserDecryption);
+    }
     if (name === "coprocessor-db-state-revert") {
       return runDbStateRevert(state, options);
     }
@@ -920,6 +1066,19 @@ export const test = async (testName: string | undefined, options: TestOptions) =
         // input drift is out of scope for auto-recovery.
         const grepPattern = process.env.GREP_PATTERN ?? "test add 42 to uint64 input and decrypt";
 
+        // Before injecting, confirm the whole coprocessor set is alive and
+        // submitting. Auto-revert needs the honest majority to form consensus;
+        // if a coprocessor worker has crashed (so it submits nothing) the test
+        // would otherwise hang until an injection or consensus timeout and
+        // report a misleading error instead of the real "degraded cluster".
+        const ciphertextCommitsAddress = state.discovery!.gateway.CIPHERTEXT_COMMITS_ADDRESS;
+        const gatewayRpcUrl = ciphertextCommitsAddress
+          ? hostReachableRpcUrl(state.discovery!.endpoints.gateway.http)
+          : undefined;
+        if (ciphertextCommitsAddress && gatewayRpcUrl) {
+          await assertClusterFullyParticipating(gatewayRpcUrl, ciphertextCommitsAddress, topologyForState(state).count);
+        }
+
         const injector = injectCiphertextDrift({
           instanceIndex: faultyInstanceIndex,
           timeoutSeconds: driftInjectTimeoutSeconds,
@@ -945,10 +1104,14 @@ export const test = async (testName: string | undefined, options: TestOptions) =
         });
 
         const injectedHandleHex = await injector;
+        // Wait for the consensus-vs-local mismatch (the warning co-located with on_drift_detected),
+        // not the weaker peer-submission divergence. This ensures the revert has actually been
+        // triggered before we poll drift_revert_signal, instead of racing consensus formation.
         const warning = await waitForDriftWarning(injectedHandleHex, {
           since: logSince,
           timeoutSeconds: driftAlertTimeoutSeconds,
           pollIntervalSeconds: driftAlertPollIntervalSeconds,
+          needle: DRIFT_CONSENSUS_WARNING,
         });
         console.log(
           `[drift-auto-recovery] drift detected in ${warning.container} for handle 0x${injectedHandleHex}`,
@@ -958,9 +1121,7 @@ export const test = async (testName: string | undefined, options: TestOptions) =
         // across the AddCiphertextMaterial submissions). Folded in from the
         // former `ciphertext-drift` profile so this single test covers both
         // detection and recovery.
-        const ciphertextCommitsAddress = state.discovery!.gateway.CIPHERTEXT_COMMITS_ADDRESS;
-        if (ciphertextCommitsAddress) {
-          const gatewayRpcUrl = hostReachableRpcUrl(state.discovery!.endpoints.gateway.http);
+        if (ciphertextCommitsAddress && gatewayRpcUrl) {
           await assertOnChainDivergence(gatewayRpcUrl, ciphertextCommitsAddress, injectedHandleHex);
         }
 
@@ -971,6 +1132,16 @@ export const test = async (testName: string | undefined, options: TestOptions) =
           postgresPassword: postgres.postgresPassword,
         };
         const hostChainId = process.env.CHAIN_ID ?? "12345";
+
+        // The peer-submission drift warning only proves that some listener
+        // observed divergent submissions. Auto-revert starts when the faulty
+        // coprocessor records drift_revert_signal after its local digest check.
+        await waitForDriftRevertStatus({
+          ...dbOptions,
+          targetStatus: "pending",
+          timeoutSeconds: driftAlertTimeoutSeconds,
+          pollIntervalSeconds: driftAlertPollIntervalSeconds,
+        });
 
         // Snapshot row counts before the revert runs. The gw-listener is
         // still in the grace period (pending status), so this is stable.
@@ -1033,6 +1204,12 @@ export const test = async (testName: string | undefined, options: TestOptions) =
     }
     if (name === "multi-chain-isolation") {
       const precondition = multiChainIsolationRequirement();
+      if (precondition) {
+        throw new PreflightError(precondition);
+      }
+    }
+    if (name === "priority-coprocessor") {
+      const precondition = priorityCoprocessorRequirement();
       if (precondition) {
         throw new PreflightError(precondition);
       }

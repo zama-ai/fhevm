@@ -139,7 +139,7 @@ describe("env", () => {
       discovery: {
         gateway: {},
         hosts: {},
-        kmsSigner: "",
+        kmsSigners: [],
         fheKeyId: "f".repeat(64),
         crsKeyId: "c".repeat(64),
         endpoints: {
@@ -192,7 +192,7 @@ describe("env", () => {
             KMS_GENERATION_CONTRACT_ADDRESS: "0x0000000000000000000000000000000000000015",
           },
         },
-        kmsSigner: "",
+        kmsSigners: [],
         fheKeyId: "f".repeat(64),
         crsKeyId: "c".repeat(64),
         endpoints: {
@@ -257,7 +257,7 @@ describe("env", () => {
             KMS_GENERATION_CONTRACT_ADDRESS: "0x0000000000000000000000000000000000000015",
           },
         },
-        kmsSigner: "",
+        kmsSigners: [],
         fheKeyId: "f".repeat(64),
         crsKeyId: "c".repeat(64),
         endpoints: {
@@ -321,7 +321,7 @@ describe("env", () => {
             KMS_GENERATION_CONTRACT_ADDRESS: "0x0000000000000000000000000000000000000015",
           },
         },
-        kmsSigner: "",
+        kmsSigners: [],
         fheKeyId: "f".repeat(64),
         crsKeyId: "c".repeat(64),
         endpoints: {
@@ -384,6 +384,10 @@ describe("env", () => {
     expect(rendered.instanceEnvs["host-sc-chain-b"]?.HOST_SC_DEPLOY_KMS_GENERATION_ARGS).toBe(
       "--with-kms-generation false",
     );
+    // Rendered as an empty placeholder: the up flow patches the non-canonical chains' value with
+    // the canonical seeding args once the canonical ProtocolConfig address exists on disk.
+    expect(rendered.componentEnvs["host-sc"].HOST_SC_DEPLOY_PROTOCOL_CONFIG_ARGS).toBe("");
+    expect(rendered.instanceEnvs["host-sc-chain-b"]?.HOST_SC_DEPLOY_PROTOCOL_CONFIG_ARGS).toBe("");
     const legacy = {
       ...state,
       versions: { ...state.versions, env: { ...state.versions.env, HOST_VERSION: "v0.12.0" } },

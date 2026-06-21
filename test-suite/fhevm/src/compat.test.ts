@@ -101,6 +101,40 @@ describe("compat", () => {
     ]);
   });
 
+  test("drops signer flags for legacy sns-worker images", () => {
+    const policy = compatPolicyForState({
+      versions: {
+        target: "latest-supported",
+        lockName: "latest-supported.json",
+        env: {
+          COPROCESSOR_SNS_WORKER_VERSION: "v0.11.0",
+        } as Record<string, string>,
+        sources: [],
+      },
+      overrides: [],
+      scenario: testDefaultScenario(),
+    });
+    expect(policy.coprocessorDropFlags["sns-worker"]).toContain("--signer-type");
+    expect(policy.coprocessorDropFlags["sns-worker"]).toContain("--private-key");
+  });
+
+  test("keeps signer flags for non-semver sns-worker images", () => {
+    const policy = compatPolicyForState({
+      versions: {
+        target: "latest-main",
+        lockName: "latest-main.json",
+        env: {
+          COPROCESSOR_SNS_WORKER_VERSION: "80f2357",
+        } as Record<string, string>,
+        sources: [],
+      },
+      overrides: [],
+      scenario: testDefaultScenario(),
+    });
+    expect(policy.coprocessorDropFlags["sns-worker"] ?? []).not.toContain("--signer-type");
+    expect(policy.coprocessorDropFlags["sns-worker"] ?? []).not.toContain("--private-key");
+  });
+
   test("drops kms-generation-address for old host listener images", () => {
     const policy = compatPolicyForState({
       versions: {
@@ -166,6 +200,24 @@ describe("compat", () => {
         },
       }),
     ).toBe(true);
+  });
+
+  test("does not require legacy host chain seed shim for v0.11 coprocessor images", () => {
+    // v0.11 images predate the remove_tenants migration, so host_chains does
+    // not exist and the harness must not try to seed it.
+    expect(
+      requiresLegacyHostChainSeedShim({
+        versions: {
+          target: "latest-supported",
+          lockName: "v0.11.json",
+          env: {
+            COPROCESSOR_DB_MIGRATION_VERSION: "v0.11.0",
+            COPROCESSOR_ZKPROOF_WORKER_VERSION: "v0.11.0",
+          } as Record<string, string>,
+          sources: [],
+        },
+      }),
+    ).toBe(false);
   });
 
   test("does not require legacy host chain seed shim for v0.13 coprocessor images", () => {

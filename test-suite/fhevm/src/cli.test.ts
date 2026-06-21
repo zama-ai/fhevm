@@ -8,6 +8,7 @@ import {
   dbRevertDeleteExpectations,
   dbRevertTargetBlock,
   keyBootstrapLogArgs,
+  recentCoprocessorSenders,
   validateNamedProfileGrep,
   waitForKeyBootstrap,
 } from "./commands/test";
@@ -87,7 +88,7 @@ const bootstrappedState = (target: State["target"] = "latest-main"): State => ({
       minioExternal: `http://127.0.0.1:${MINIO_PORT}`,
       minioInternal: `http://minio:${MINIO_PORT}`,
     },
-    kmsSigner: "0x0000000000000000000000000000000000000014",
+    kmsSigners: ["0x0000000000000000000000000000000000000014"],
     fheKeyId: "a".repeat(64),
     crsKeyId: "b".repeat(64),
     actualFheKeyId: "a".repeat(64),
@@ -331,6 +332,14 @@ describe("cli", () => {
     });
   });
 
+  test("gates priority coprocessor before launching tests on a single-coprocessor stack", async () => {
+    await withState(bootstrappedState(), async (env) => {
+      const result = await execCli(["test", "priority-coprocessor"], env);
+      expect(result.code).toBe(1);
+      expect(result.stderr).toContain("priority-coprocessor requires a multi-coprocessor topology");
+    });
+  });
+
   test("drift profile rejects shared networks explicitly", async () => {
     await withState(bootstrappedState(), async (env) => {
       const result = await execCli(["test", "ciphertext-drift", "--network", "sepolia"], env);
@@ -345,6 +354,28 @@ describe("cli", () => {
       expect(result.code).toBe(1);
       expect(result.stderr).not.toContain("not allowed on devnet");
     });
+  });
+
+  test("recentCoprocessorSenders extracts distinct submitters from the recent event window", () => {
+    // AddCiphertextMaterial data layout (4 words): keyId | ciphertextDigest | snsCiphertextDigest | sender.
+    const log = (addr: string) =>
+      ({ data: `0x${"11".repeat(32)}${"22".repeat(32)}${"33".repeat(32)}${"00".repeat(12)}${addr}` });
+    const a = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const b = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+    const c = "cccccccccccccccccccccccccccccccccccccccc";
+
+    // Three coprocessors each submitting twice → three distinct senders.
+    expect(recentCoprocessorSenders([a, b, c, a, b, c].map(log), 24)).toEqual([`0x${a}`, `0x${b}`, `0x${c}`]);
+
+    // A crashed coprocessor (only a and b submit) → only two distinct senders.
+    expect(recentCoprocessorSenders([a, b, a, b].map(log), 24)).toEqual([`0x${a}`, `0x${b}`]);
+
+    // Sampling keeps only the most recent events: an old submitter that stopped
+    // drops out of the window once newer events push past the sample size.
+    expect(recentCoprocessorSenders([c, a, b, a, b].map(log), 4)).toEqual([`0x${a}`, `0x${b}`]);
+
+    // Malformed/short data is ignored rather than throwing.
+    expect(recentCoprocessorSenders([{ data: "0x1234" }, log(a)], 24)).toEqual([`0x${a}`]);
   });
 
   test("grep-backed named profiles accept targeted grep narrowing", () => {

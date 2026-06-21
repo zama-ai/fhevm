@@ -6,8 +6,8 @@ use crate::{
         GatewayTxTask, TxSenders, TxThrottlers, TxThrottlingSender, TxThrottlingType,
     },
     readiness::throttler::{
-        DelegatedUserDecryptReadinessTask, PublicDecryptReadinessTask, ReadinessSender,
-        ReadinessSenders, ReadinessThrottlers, ReadinessThrottlingType, UserDecryptReadinessTask,
+        PublicDecryptReadinessTask, ReadinessSender, ReadinessSenders, ReadinessThrottlers,
+        ReadinessThrottlingType, UserDecryptReadinessTask,
     },
 };
 
@@ -96,13 +96,6 @@ pub fn init_throttlers(settings: &Settings) -> (GatewayThrottlers, BouncerThrott
             rd_cfg.user_decrypt.safety_margin,
             rd_cfg.user_decrypt.max_concurrency,
         );
-    let (delegated_user_decrypt_readiness_throttler, delegated_user_decrypt_readiness_worker) =
-        ReadinessSender::<DelegatedUserDecryptReadinessTask>::new(
-            ReadinessThrottlingType::UserDecrypt,
-            rd_cfg.delegated_user_decrypt.capacity,
-            rd_cfg.delegated_user_decrypt.safety_margin,
-            rd_cfg.delegated_user_decrypt.max_concurrency,
-        );
 
     let tx_throttlers = TxThrottlers::new(
         input_proof_tx_throttler.clone(),
@@ -116,8 +109,6 @@ pub fn init_throttlers(settings: &Settings) -> (GatewayThrottlers, BouncerThrott
     let readiness_throttlers = ReadinessThrottlers::new(
         user_decrypt_readiness_throttler.clone(),
         user_decrypt_readiness_worker,
-        delegated_user_decrypt_readiness_throttler.clone(),
-        delegated_user_decrypt_readiness_worker,
         public_decrypt_readiness_throttler.clone(),
         public_decrypt_readiness_worker,
     );
@@ -130,7 +121,6 @@ pub fn init_throttlers(settings: &Settings) -> (GatewayThrottlers, BouncerThrott
 
     let readiness_throttling_senders = ReadinessSenders::new(
         user_decrypt_readiness_throttler.clone(),
-        delegated_user_decrypt_readiness_throttler.clone(),
         public_decrypt_readiness_throttler.clone(),
     );
 

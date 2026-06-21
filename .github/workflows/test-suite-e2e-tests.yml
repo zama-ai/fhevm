@@ -7,7 +7,6 @@ on:
       - synchronize
       - reopened
       - labeled
-      - unlabeled
   workflow_dispatch:
     inputs: &shared_inputs
       orchestrated:
@@ -114,21 +113,29 @@ on:
 
 permissions: {}
 
-# Cancel stale PR runs on new pushes while keeping manual dispatches independent.
+# Cancel stale PR runs on new pushes while keeping manual dispatches independent. The scenario +
+# test-profile are part of the key so that an orchestrated suite calling this workflow more than
+# once (standard + threshold legs) gets a distinct group per leg — otherwise the legs share a group
+# and cancel-in-progress kills one. Same leg + same PR still collapses on a new push, as intended.
 concurrency:
   group:
     ${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number)
-    || github.ref }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || 'auto' }}
+    || github.ref }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || 'auto' }}-${{ inputs.scenario }}-${{ inputs.test-profile }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' || github.ref != 'refs/heads/main' }}
 
 jobs:
   fhevm-e2e-test:
     name: fhevm-e2e-test
     # Run on manual/reusable invocations. For direct PRs, require the `e2e` label.
-    if:
-      ${{ github.event_name != 'pull_request' || inputs.orchestrated || (github.event.pull_request.head.repo.full_name
-      == github.repository && !startsWith(github.head_ref, 'mergify/merge-queue/') &&
-      contains(github.event.pull_request.labels.*.name, 'e2e')) }}
+    if: |
+      github.event_name != 'pull_request' ||
+      inputs.orchestrated ||
+      (
+        github.event.pull_request.head.repo.full_name == github.repository &&
+        !startsWith(github.head_ref, 'mergify/merge-queue/') &&
+        contains(github.event.pull_request.labels.*.name, 'e2e') &&
+        (github.event.action != 'labeled' || github.event.label.name == 'e2e')
+      )
     permissions:
       contents: "read" # Required to checkout repository code
       id-token: "write" # Required for OIDC authentication
@@ -192,6 +199,14 @@ jobs:
           registry: cgr.dev
           username: ${{ secrets.CGR_USERNAME }}
           password: ${{ secrets.CGR_PASSWORD }}
+
+      - name: Install safe-chain
+        shell: bash
+        run: |
+          # safe-chain v1.5.3 is distributed as an immutable GitHub release asset —
+          # its content is permanently fixed and cannot be modified after the tag is published.
+          # Verify immutability: curl -fsSL https://api.github.com/repos/AikidoSec/safe-chain/releases/tags/1.5.3 | grep immutable
+          curl -fsSL https://github.com/AikidoSec/safe-chain/releases/download/1.5.3/install-safe-chain.sh | sh -s -- --ci
 
       - name: Install CLI deps
         working-directory: test-suite/fhevm
@@ -323,6 +338,12 @@ jobs:
           docker start coprocessor-host-listener coprocessor-host-listener-consumer
           trap - EXIT
 
+      - name: Priority coprocessor e2e
+        if: ${{ inputs.test-profile == '' || inputs.test-profile == 'standard' }}
+        working-directory: test-suite/fhevm
+        run: |
+          ./fhevm-cli test priority-coprocessor
+
       - name: Show logs
         working-directory: test-suite/fhevm
         if: always()
@@ -360,6 +381,21 @@ jobs:
             snapshot_logs "${label} - Transaction Sender (filtered)" "${prefix}-transaction-sender" "Selected 0 rows to process"
             snapshot_logs "${label} - ZKProof Worker" "${prefix}-zkproof-worker"
             snapshot_logs "${label} - TFHE Worker" "${prefix}-tfhe-worker"
+          done
+          # Threshold-mode KMS only (no-op on a centralized single-core stack): party 1 is the bare
+          # `kms-core` / `kms-connector-*` already captured above; parties 2..N use the `-{i}-`
+          # suffix. Use `docker ps -a` so a crashed or exited party core/connector (the usual
+          # threshold flake) still has its logs surfaced. `kms-core-init` is the one-shot
+          # PRSS/epoch setup; gen-keys is dropped before boot so it is not expected here.
+          snapshot_logs "KMS Core Init" kms-core-init
+          for core in $(docker ps -a --format '{{.Names}}' | grep -E '^kms-core-[0-9]+$' | sort); do
+            snapshot_logs "KMS Core (${core})" "${core}"
+          done
+          for container in $(docker ps -a --format '{{.Names}}' | grep -E '^kms-connector-[0-9]+-gw-listener$' | sort); do
+            prefix="${container%-gw-listener}"
+            snapshot_logs "${prefix} - Gateway Listener" "${prefix}-gw-listener"
+            snapshot_logs "${prefix} - KMS Worker" "${prefix}-kms-worker"
+            snapshot_logs "${prefix} - Transaction Sender" "${prefix}-tx-sender"
           done
 
       - name: Cleanup

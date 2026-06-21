@@ -24,8 +24,9 @@ fhevm_gateway_bindings = { path = "../gateway-contracts/rust_bindings", default-
 fhevm_host_bindings = { git = "https://github.com/zama-ai/fhevm.git", rev = "7d2b85e6818779df5720f34f926469aa944655b4", default-features = true }
 kms-grpc = { git = "https://github.com/zama-ai/kms.git", rev = "1edf3a089f8cc10e7bc5052e8f26d9cbaac66a57", default-features = true }
 bc2wrap = { git = "https://github.com/zama-ai/kms.git", rev = "1edf3a089f8cc10e7bc5052e8f26d9cbaac66a57", default-features = true }
-tfhe = "=1.6.1"
+tfhe = { version = "=1.6.1", default-features = false }
 user-decryption-signature = { path = "../shared/user-decryption-signature", default-features = false }
+ciphertext-attestation = { path = "../shared/ciphertext-attestation" }
 
 #####################################################################
 #                       External dependencies                       #
@@ -115,3 +116,9 @@ inherits = "release"
 opt-level = 1
 lto = false
 codegen-units = 16
+
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.test]
+debug = "line-tables-only"

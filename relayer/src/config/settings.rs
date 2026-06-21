@@ -62,7 +62,6 @@ impl GatewayConfig {
         self.contracts.validate()?;
         self.readiness_checker.public_decrypt.validate()?;
         self.readiness_checker.user_decrypt.validate()?;
-        self.readiness_checker.delegated_user_decrypt.validate()?;
         self.tx_engine
             .tx_throttlers
             .input_proof
@@ -280,7 +279,6 @@ pub struct ReadinessCheckConfig {
     pub gw_ciphertext_check: GwCiphertextCheckConfig,
     pub public_decrypt: PublicDecryptQueueSettings,
     pub user_decrypt: UserDecryptQueueSettings,
-    pub delegated_user_decrypt: UserDecryptQueueSettings,
 }
 
 #[derive(Debug, Deserialize, Clone)]
