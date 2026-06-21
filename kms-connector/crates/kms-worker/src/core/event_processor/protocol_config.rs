@@ -146,9 +146,12 @@ fn build_new_kms_context_grpc_from_event(
             external_url: n.ipAddress.clone(),
             ca_cert: Some(n.caCert.to_vec()),
             public_storage_url: n.storageUrl.clone(),
-            verification_key: Some(n.verificationKey.to_vec()),
+            // Public key used to verify the signature of this KMS node
+            verification_key: Some(n.signerAddress.to_vec()),
             public_storage_prefix: Some(n.storagePrefix.clone()),
-            extra_verification_keys: vec![], // Not used by KMS for now
+            // Public keys allowed to sign transactions on behalf of this KMS node, i.e. the
+            // connector transaction sender's address of this node
+            extra_verification_keys: vec![n.txSenderAddress.to_vec()],
         })
         .collect();
 
