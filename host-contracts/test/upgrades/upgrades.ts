@@ -70,7 +70,7 @@ describe('Upgrades', function () {
       call: { fn: 'initializeFromEmptyProxy' },
     });
     await kg.waitForDeployment();
-    expect(await kg.getVersion()).to.equal('KMSGeneration v0.1.0');
+    expect(await kg.getVersion()).to.equal('KMSGeneration v0.2.0');
     const expectInitialState = async (c: any) => {
       expect(await c.getActiveKeyId()).to.equal(0n);
       expect(await c.getActiveCrsId()).to.equal(0n);
@@ -80,7 +80,7 @@ describe('Upgrades', function () {
     await expectInitialState(kg);
     const kg2 = await upgrades.upgradeProxy(kg, factoryUpgraded);
     await kg2.waitForDeployment();
-    expect(await kg2.getVersion()).to.equal('KMSGeneration v0.2.0');
+    expect(await kg2.getVersion()).to.equal('KMSGeneration v0.3.0');
     await expectInitialState(kg2);
   });
 
