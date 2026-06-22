@@ -43,6 +43,8 @@ use tracing::{info, Level};
 const LISTEN_CHANNEL: &str = "sns_worker_chan";
 static TRACING_INIT: OnceLock<()> = OnceLock::new();
 
+mod s3_migration_dry_run;
+
 pub fn init_tracing() {
     TRACING_INIT.get_or_init(|| {
         tracing_subscriber::fmt().json().with_level(true).init();
