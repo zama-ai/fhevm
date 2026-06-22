@@ -23,7 +23,7 @@ import { generateSolidityHCULimit } from './hcuLimitGenerator';
 import { ALL_OPERATORS } from './operators';
 import { ALL_OPERATORS_PRICES } from './operatorsPrices';
 import { fromDirToFile, fromFileToFile, isDirectory } from './paths';
-import { generateFhevmECDSALib, generateSolidityFHELib } from './templateFHEDotSol';
+import { generateFhevmECDSALib, generateIConfidentialBridgeLib, generateSolidityFHELib } from './templateFHEDotSol';
 import { generateSolidityFheType } from './templateFheTypeDotSol';
 import { generateSolidityImplLib } from './templateImpDotSol';
 import {
@@ -148,6 +148,7 @@ export async function commandGenerateAllFiles(options: any) {
   const fheTypesDotSol = `${path.join(absConfig.lib.fheTypeDir, 'FheType.sol')}`;
   const implDotSol = `${path.join(absConfig.lib.outDir, 'Impl.sol')}`;
   const ecdsaDotSol = `${path.join(absConfig.lib.outDir, 'cryptography', 'FhevmECDSA.sol')}`;
+  const iConfidentialBridgeDotSol = `${path.join(absConfig.lib.outDir, 'bridge', 'IConfidentialBridge.sol')}`;
   const fheDotSol = `${path.join(absConfig.lib.outDir, 'FHE.sol')}`;
   const hcuLimitDotSol = `${path.join(absConfig.hostContracts.outDir, 'HCULimit.sol')}`;
 
@@ -199,13 +200,14 @@ export async function commandGenerateAllFiles(options: any) {
 
   if (config.noLib !== true) {
     const fheTypesCode = generateSolidityFheType(ALL_FHE_TYPE_INFOS);
-    const implCode = generateSolidityImplLib(ALL_OPERATORS, implRelFheTypesDotSol);
+    const implCode = generateSolidityImplLib(ALL_OPERATORS, implRelFheTypesDotSol, absConfig.lib.bridge);
     const fheCode = generateSolidityFHELib({
       operators: ALL_OPERATORS,
       fheTypes: ALL_FHE_TYPE_INFOS,
       fheTypeDotSol: fheRelFheTypesDotSol,
       implDotSol: fheRelImplDotSol,
       ecdsaDotSol: fheRelEcdsaDotSol,
+      bridge: absConfig.lib.bridge,
     });
     const ecdsaCode = generateFhevmECDSALib();
 
@@ -219,6 +221,13 @@ export async function commandGenerateAllFiles(options: any) {
     await formatAndWriteFile(`${implDotSol}`, implCode);
     await formatAndWriteFile(`${ecdsaDotSol}`, ecdsaCode);
     await formatAndWriteFile(`${fheDotSol}`, fheCode);
+
+    // The bridge interface is only needed (and only safe — it redeclares LayerZero structs)
+    // when the bridge wrappers are generated.
+    if (absConfig.lib.bridge) {
+      mkDir(path.dirname(iConfidentialBridgeDotSol));
+      await formatAndWriteFile(`${iConfidentialBridgeDotSol}`, generateIConfidentialBridgeLib());
+    }
   } else {
     debugLog(`Skipping lib generation.`);
   }

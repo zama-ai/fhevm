@@ -768,4 +768,15 @@ library FHE {
     //$$ -----------------------------------------------------------------------
     $${FHEtoBytes32}$$
     //$$ -----------------------------------------------------------------------
+
+    //$$ -----------------------------------------------------------------------
+    //$$ -
+    //$$ -             🌉 FHE Bridge Template Placeholder
+    //$$ -
+    //$$ -   Per-type single-handle and homogeneous-list `bridge` / `quoteBridge`
+    //$$ -   overloads. The low-level `bytes32[]` + `options` escape hatch below is
+    //$$ -   type-agnostic and handles mixed-type or advanced payloads.
+    //$$ -----------------------------------------------------------------------
+    $${FHEBridge}$$
+    //$$ -----------------------------------------------------------------------
 }
