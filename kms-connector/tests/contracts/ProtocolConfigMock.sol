@@ -41,7 +41,6 @@ contract ProtocolConfigMock {
         int32 partyId;
         string mpcIdentity;
         bytes caCert;
-        bytes verificationKey;
         string storagePrefix;
     }
 
@@ -98,7 +97,7 @@ contract ProtocolConfigMock {
     event KmsContextCreationConfirmation(
         uint256 indexed kmsContextId,
         address indexed signer,
-        bool isOldSigner,
+        bool isPreviousSigner,
         bool isNewSigner
     );
 

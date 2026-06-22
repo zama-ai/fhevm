@@ -27,7 +27,8 @@ use fhevm_gateway_bindings::decryption::{
 use fhevm_host_bindings::{
     kms_generation::KMSGeneration::{CrsgenRequest, KeygenRequest, PrepKeygenRequest},
     protocol_config::{
-        IProtocolConfig::{KmsThresholds, PreviousCrsInfo, PreviousKeyInfo},
+        IProtocolConfig::{PreviousCrsInfo, PreviousKeyInfo},
+        IProtocolConfigCommon::KmsThresholds,
         ProtocolConfig::{KmsNodeParams, NewKmsContext, NewKmsEpoch, PcrValues},
     },
 };

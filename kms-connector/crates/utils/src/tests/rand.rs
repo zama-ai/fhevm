@@ -1,7 +1,7 @@
 use alloy::primitives::{Address, FixedBytes, U256};
 use fhevm_gateway_bindings::decryption::Decryption::SnsCiphertextMaterial;
 use fhevm_host_bindings::protocol_config::{
-    IProtocolConfig::KmsThresholds,
+    IProtocolConfigCommon::KmsThresholds,
     ProtocolConfig::{KmsNodeParams, PcrValues},
 };
 use rand::Rng;

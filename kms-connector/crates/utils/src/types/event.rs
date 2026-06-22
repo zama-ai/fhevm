@@ -20,7 +20,8 @@ use fhevm_host_bindings::{
         CrsgenRequest, KMSGenerationEvents, KeygenRequest, PrepKeygenRequest,
     },
     protocol_config::{
-        IProtocolConfig::{KmsThresholds, PreviousCrsInfo, PreviousKeyInfo},
+        IProtocolConfig::{PreviousCrsInfo, PreviousKeyInfo},
+        IProtocolConfigCommon::KmsThresholds,
         ProtocolConfig::{
             KmsNodeParams, NewKmsContext, NewKmsEpoch, PcrValues, ProtocolConfigEvents,
         },
