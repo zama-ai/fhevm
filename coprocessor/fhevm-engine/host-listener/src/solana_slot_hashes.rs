@@ -14,8 +14,7 @@ pub const SLOT_HASHES_SYSVAR: &str =
 /// Address of the Clock sysvar account. Handle derivation uses
 /// `Clock.unix_timestamp`, which differs from the RPC `getBlockTime`/block-meta
 /// value, so the reconstruction path must source it from this account's data.
-pub const CLOCK_SYSVAR: &str =
-    "SysvarC1ock11111111111111111111111111111111";
+pub const CLOCK_SYSVAR: &str = "SysvarC1ock11111111111111111111111111111111";
 
 /// Parses `Clock.unix_timestamp` (i64) from the Clock sysvar account data.
 /// Layout: slot u64, epoch_start_timestamp i64, epoch u64,

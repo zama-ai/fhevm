@@ -21,17 +21,19 @@ use anchor_lang::AnchorDeserialize;
 use zama_host::state::{
     computed_bound_eval_handle, computed_bound_eval_rand_seed,
     computed_bound_eval_ternary_handle, computed_bound_eval_trivial_handle,
-    computed_eval_handle, computed_eval_rand_seed, computed_eval_ternary_handle,
-    computed_eval_trivial_handle, computed_rand_bounded_handle,
-    computed_rand_handle, computed_rand_seed, computed_trivial_handle,
-    FheBinaryOpCode as PgmBinaryOpCode, FheEvalArgs, FheEvalOperand,
-    FheEvalOutput, FheEvalStep, FheTernaryOpCode as PgmTernaryOpCode,
+    computed_eval_handle, computed_eval_rand_seed,
+    computed_eval_ternary_handle, computed_eval_trivial_handle,
+    computed_rand_bounded_handle, computed_rand_handle, computed_rand_seed,
+    computed_trivial_handle, FheBinaryOpCode as PgmBinaryOpCode, FheEvalArgs,
+    FheEvalOperand, FheEvalOutput, FheEvalStep,
+    FheTernaryOpCode as PgmTernaryOpCode,
 };
 
 use crate::generated::zama_host_instructions::{
     AllowForDecryptionArgs, FheBinaryOpCode as InstrBinaryOpCode,
-    FheTernaryOpCode as InstrTernaryOpCode, FheRandAndBindArgs,
-    FheRandBoundedAndBindArgs, TrivialEncryptAndBindArgs, ZamaHostInstruction,
+    FheRandAndBindArgs, FheRandBoundedAndBindArgs,
+    FheTernaryOpCode as InstrTernaryOpCode, TrivialEncryptAndBindArgs,
+    ZamaHostInstruction,
 };
 use crate::generated::{
     FheBinaryOpCode, FheBinaryOpEvent, FheRandBoundedEvent, FheRandEvent,
@@ -218,22 +220,49 @@ pub fn reconstruct_instruction_events(
         // Compute (+ optional durable bind): (compute_subject index, Some(
         // output_acl_record index) if it binds, subject count). fhe_binary_op is
         // non-bind (compute_subject at 0, no durable output).
-        I::FheBinaryOp(_) => compute_with_bind(instruction, accounts, ctx, 0, None, 0),
-        I::TrivialEncryptAndBind(a) => {
-            compute_with_bind(instruction, accounts, ctx, 1, Some(4), a.output_subjects.len())
+        I::FheBinaryOp(_) => {
+            compute_with_bind(instruction, accounts, ctx, 0, None, 0)
         }
-        I::FheBinaryOpAndBindOutput(a) => {
-            compute_with_bind(instruction, accounts, ctx, 1, Some(8), a.output_subjects.len())
-        }
-        I::FheTernaryOpAndBindOutput(a) => {
-            compute_with_bind(instruction, accounts, ctx, 1, Some(10), a.output_subjects.len())
-        }
-        I::FheRandAndBind(a) => {
-            compute_with_bind(instruction, accounts, ctx, 1, Some(4), a.output_subjects.len())
-        }
-        I::FheRandBoundedAndBind(a) => {
-            compute_with_bind(instruction, accounts, ctx, 1, Some(4), a.output_subjects.len())
-        }
+        I::TrivialEncryptAndBind(a) => compute_with_bind(
+            instruction,
+            accounts,
+            ctx,
+            1,
+            Some(4),
+            a.output_subjects.len(),
+        ),
+        I::FheBinaryOpAndBindOutput(a) => compute_with_bind(
+            instruction,
+            accounts,
+            ctx,
+            1,
+            Some(8),
+            a.output_subjects.len(),
+        ),
+        I::FheTernaryOpAndBindOutput(a) => compute_with_bind(
+            instruction,
+            accounts,
+            ctx,
+            1,
+            Some(10),
+            a.output_subjects.len(),
+        ),
+        I::FheRandAndBind(a) => compute_with_bind(
+            instruction,
+            accounts,
+            ctx,
+            1,
+            Some(4),
+            a.output_subjects.len(),
+        ),
+        I::FheRandBoundedAndBind(a) => compute_with_bind(
+            instruction,
+            accounts,
+            ctx,
+            1,
+            Some(4),
+            a.output_subjects.len(),
+        ),
         // Allow instructions: fetch-only (no compute event). The handle was computed
         // by an earlier instruction; these only flip its allow state.
         // allow_for_decryption accounts: authority, authority_permission_record,
@@ -253,11 +282,13 @@ pub fn reconstruct_instruction_events(
             Some(
                 (0..args.subjects.len())
                     .map(|_| {
-                        SolanaHostEvent::FinalizedAccountFetch(acl_record_fetch(
-                            acl_record,
-                            args.handle,
-                            "acl_subject_allowed",
-                        ))
+                        SolanaHostEvent::FinalizedAccountFetch(
+                            acl_record_fetch(
+                                acl_record,
+                                args.handle,
+                                "acl_subject_allowed",
+                            ),
+                        )
                     })
                     .collect(),
             )
@@ -337,7 +368,11 @@ fn compute_with_bind(
         ));
         for _ in 0..subject_count {
             events.push(SolanaHostEvent::FinalizedAccountFetch(
-                acl_record_fetch(output_acl_record, result, "acl_subject_allowed"),
+                acl_record_fetch(
+                    output_acl_record,
+                    result,
+                    "acl_subject_allowed",
+                ),
             ));
         }
     }
@@ -384,8 +419,7 @@ pub fn reconstruct_public_decrypt_allowed_fetch(
 }
 
 /// Discriminator for the `fhe_eval` instruction (sha256("global:fhe_eval")[..8]).
-const FHE_EVAL_DISCRIMINATOR: [u8; 8] =
-    [176, 42, 63, 177, 244, 167, 120, 109];
+const FHE_EVAL_DISCRIMINATOR: [u8; 8] = [176, 42, 63, 177, 244, 167, 120, 109];
 
 /// Decodes a `fhe_eval` instruction's data into the program's own `FheEvalArgs`
 /// step plan, reusing the zama-host type (so there is no bespoke decoder to drift
@@ -580,18 +614,20 @@ pub fn reconstruct_fhe_eval_steps(
                         *output_nonce_key,
                         *output_nonce_sequence,
                     ),
-                    FheEvalOutput::AllowedLocal => computed_eval_ternary_handle(
-                        *op,
-                        c,
-                        t,
-                        f,
-                        *output_fhe_type,
-                        ctx.chain_id,
-                        ctx.previous_bank_hash,
-                        ctx.unix_timestamp,
-                        context_id,
-                        op_index,
-                    ),
+                    FheEvalOutput::AllowedLocal => {
+                        computed_eval_ternary_handle(
+                            *op,
+                            c,
+                            t,
+                            f,
+                            *output_fhe_type,
+                            ctx.chain_id,
+                            ctx.previous_bank_hash,
+                            ctx.unix_timestamp,
+                            context_id,
+                            op_index,
+                        )
+                    }
                 };
                 produced.push(result);
                 SolanaHostEvent::FheTernaryOp(FheTernaryOpEvent {
@@ -625,15 +661,17 @@ pub fn reconstruct_fhe_eval_steps(
                         *output_nonce_key,
                         *output_nonce_sequence,
                     ),
-                    FheEvalOutput::AllowedLocal => computed_eval_trivial_handle(
-                        *plaintext,
-                        *fhe_type,
-                        ctx.chain_id,
-                        ctx.previous_bank_hash,
-                        ctx.unix_timestamp,
-                        context_id,
-                        op_index,
-                    ),
+                    FheEvalOutput::AllowedLocal => {
+                        computed_eval_trivial_handle(
+                            *plaintext,
+                            *fhe_type,
+                            ctx.chain_id,
+                            ctx.previous_bank_hash,
+                            ctx.unix_timestamp,
+                            context_id,
+                            op_index,
+                        )
+                    }
                 };
                 produced.push(result);
                 SolanaHostEvent::TrivialEncrypt(TrivialEncryptEvent {
@@ -805,7 +843,8 @@ mod tests {
     fn handles_are_pinned() {
         let t = reconstruct_trivial_encrypt(&trivial_args(), SUBJECT, &ctx());
         let r = reconstruct_fhe_rand(&rand_args(), SUBJECT, &ctx());
-        let rb = reconstruct_fhe_rand_bounded(&rand_bounded_args(), SUBJECT, &ctx());
+        let rb =
+            reconstruct_fhe_rand_bounded(&rand_bounded_args(), SUBJECT, &ctx());
         assert_eq!(t.subject, SUBJECT);
         assert_eq!(t.fhe_type, 5);
         assert_eq!(t.result, GOLDEN_TRIVIAL);
@@ -822,15 +861,14 @@ mod tests {
 
     #[test]
     fn binary_op_takes_result_from_args() {
-        let args =
-            crate::generated::zama_host_instructions::FheBinaryOpArgs {
-                op: InstrBinaryOpCode::Add,
-                lhs: [2u8; 32],
-                rhs: [3u8; 32],
-                scalar: false,
-                output_fhe_type: 5,
-                result: [42u8; 32],
-            };
+        let args = crate::generated::zama_host_instructions::FheBinaryOpArgs {
+            op: InstrBinaryOpCode::Add,
+            lhs: [2u8; 32],
+            rhs: [3u8; 32],
+            scalar: false,
+            output_fhe_type: 5,
+            result: [42u8; 32],
+        };
         let ev = reconstruct_compute_event(
             &ZamaHostInstruction::FheBinaryOp(args),
             SUBJECT,
@@ -958,8 +996,8 @@ mod tests {
                 },
             ],
         };
-        let events = reconstruct_fhe_eval_events(&plan, SUBJECT, &ctx())
-            .expect("walk");
+        let events =
+            reconstruct_fhe_eval_events(&plan, SUBJECT, &ctx()).expect("walk");
         assert_eq!(events.len(), 2);
         let step0 = match &events[0] {
             SolanaHostEvent::TrivialEncrypt(e) => {
@@ -1076,8 +1114,13 @@ mod tests {
             &HashMap::new(),
         )
         .expect("rand bounded bind reconstructs");
-        assert_eq!(evs.len(), 3, "compute + acl_record_bound + acl_subject_allowed");
-        for (i, reason) in [(1usize, "acl_record_bound"), (2, "acl_subject_allowed")]
+        assert_eq!(
+            evs.len(),
+            3,
+            "compute + acl_record_bound + acl_subject_allowed"
+        );
+        for (i, reason) in
+            [(1usize, "acl_record_bound"), (2, "acl_subject_allowed")]
         {
             match &evs[i] {
                 SolanaHostEvent::FinalizedAccountFetch(f) => {
@@ -1170,7 +1213,7 @@ mod tests {
         let mut accounts = vec![[0u8; 32]; 6];
         accounts[3] = [0x33u8; 32]; // acl_record
         accounts[4] = [0x44u8; 32]; // material_commitment
-        // handle comes from acl_record account state, pre-fetched by the caller.
+                                    // handle comes from acl_record account state, pre-fetched by the caller.
         let mut acl_handles = HashMap::new();
         acl_handles.insert([0x33u8; 32], [0x99u8; 32]);
         let evs = reconstruct_instruction_events(
@@ -1180,7 +1223,11 @@ mod tests {
             &acl_handles,
         )
         .expect("commit_handle_material reconstructs");
-        assert_eq!(evs.len(), 3, "material committed + sealed + acl_record sealed");
+        assert_eq!(
+            evs.len(),
+            3,
+            "material committed + sealed + acl_record sealed"
+        );
         match &evs[0] {
             SolanaHostEvent::FinalizedAccountFetch(f) => {
                 assert_eq!(f.account_key, [0x44u8; 32]); // material_commitment
@@ -1202,5 +1249,4 @@ mod tests {
             o => panic!("expected acl_record fetch, got {o:?}"),
         }
     }
-
 }

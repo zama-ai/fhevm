@@ -666,7 +666,12 @@ fn generate_zama_host_instructions() {
     let mut structs = Vec::<&str>::new();
     for ins in &instructions {
         for arg in ins["args"].as_array().expect("instruction args") {
-            collect_defined_types(&types, &arg["type"], &mut enums, &mut structs);
+            collect_defined_types(
+                &types,
+                &arg["type"],
+                &mut enums,
+                &mut structs,
+            );
         }
     }
 
@@ -675,7 +680,9 @@ fn generate_zama_host_instructions() {
     );
 
     for name in &enums {
-        output.push_str("#[derive(Clone, Copy, Debug, PartialEq, Eq)]\npub enum ");
+        output.push_str(
+            "#[derive(Clone, Copy, Debug, PartialEq, Eq)]\npub enum ",
+        );
         output.push_str(name);
         output.push_str(" {\n");
         for variant in enum_variants(&types, name) {
@@ -762,7 +769,9 @@ fn generate_zama_host_instructions() {
             output.push_str(&read_expr(&arg["type"]));
             output.push_str("?,\n");
         }
-        output.push_str("    };\n    cursor.is_finished().then_some(args)\n}\n\n");
+        output.push_str(
+            "    };\n    cursor.is_finished().then_some(args)\n}\n\n",
+        );
     }
 
     for name in &enums {
@@ -904,7 +913,9 @@ fn collect_defined_types<'a>(
                     }
                 }
             }
-            other => panic!("unsupported IDL defined kind {other:?} for {defined}"),
+            other => {
+                panic!("unsupported IDL defined kind {other:?} for {defined}")
+            }
         }
     }
 }
@@ -921,7 +932,9 @@ fn enum_variants<'a>(
             if variant.get("fields").is_some() {
                 panic!("enum {name} must use fieldless variants")
             }
-            variant["name"].as_str().expect("enum variant must have a name")
+            variant["name"]
+                .as_str()
+                .expect("enum variant must have a name")
         })
         .collect()
 }

@@ -21,9 +21,9 @@ use futures_util::stream::StreamExt;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use time::{OffsetDateTime, PrimitiveDateTime};
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info};
 #[cfg(feature = "solana-reconstruct")]
 use tracing::warn;
+use tracing::{debug, error, info};
 
 use tonic::metadata::{Ascii, MetadataValue};
 use tonic::transport::Channel;
@@ -301,7 +301,10 @@ async fn ingest_transaction(
 ) -> Result<()> {
     #[cfg(not(feature = "solana-reconstruct"))]
     let _ = (slot_bank_hash, slot_clock_ts); // only used by the shadow-compare
-    let meta = info.meta.as_ref().ok_or_else(|| anyhow!("tx has no meta"))?;
+    let meta = info
+        .meta
+        .as_ref()
+        .ok_or_else(|| anyhow!("tx has no meta"))?;
     let tx = info
         .transaction
         .as_ref()
@@ -336,7 +339,10 @@ async fn ingest_transaction(
             let program = account_keys
                 .get(ix.program_id_index as usize)
                 .ok_or_else(|| {
-                    anyhow!("program_id_index {} out of range", ix.program_id_index)
+                    anyhow!(
+                        "program_id_index {} out of range",
+                        ix.program_id_index
+                    )
                 })?;
             inner.push((program.clone(), ix.data.clone()));
         }
@@ -379,10 +385,9 @@ async fn ingest_transaction(
             .iter()
             .map(|ix| decode(ix.program_id_index, &ix.data, &ix.accounts))
             .chain(meta.inner_instructions.iter().flat_map(|group| {
-                group
-                    .instructions
-                    .iter()
-                    .map(|ix| decode(ix.program_id_index, &ix.data, &ix.accounts))
+                group.instructions.iter().map(|ix| {
+                    decode(ix.program_id_index, &ix.data, &ix.accounts)
+                })
             }))
             .collect()
     };
@@ -579,7 +584,8 @@ async fn reconstruct_events_for_insert(
         else {
             continue;
         };
-        let Some(acl_record) = ix.accounts.get(COMMIT_ACL_RECORD_INDEX).copied()
+        let Some(acl_record) =
+            ix.accounts.get(COMMIT_ACL_RECORD_INDEX).copied()
         else {
             continue;
         };
@@ -634,8 +640,7 @@ async fn reconstruct_events_for_insert(
                     }
                 }
             }
-        } else if let Some(instruction) =
-            decode_zama_host_instruction(&ix.data)
+        } else if let Some(instruction) = decode_zama_host_instruction(&ix.data)
         {
             if let Some(evs) = reconstruct_instruction_events(
                 &instruction,
