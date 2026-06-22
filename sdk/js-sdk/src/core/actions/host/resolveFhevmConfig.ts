@@ -159,7 +159,7 @@ async function _resolveFhevmExecutor(
 
   if (acl !== undefined) {
     const aclFhevmExecutor = await getFhevmExecutorAddress(fhevm, {
-      address: addressToChecksummedAddress(acl),
+      aclAddress: addressToChecksummedAddress(acl),
     });
     if (fhevmExecutor !== undefined) {
       if (aclFhevmExecutor !== fhevmExecutor) {

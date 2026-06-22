@@ -20,7 +20,7 @@ export async function canDecryptPublicValue(
   parameters: CanDecryptPublicValueParameters,
 ): Promise<CanDecryptPublicValueReturnType> {
   const results = await isAllowedForDecryption(fhevm, {
-    address: fhevm.chain.fhevm.contracts.acl.address as ChecksummedAddress,
+    aclAddress: fhevm.chain.fhevm.contracts.acl.address as ChecksummedAddress,
     handles: [toFhevmHandle(parameters.encryptedValue)],
   });
 

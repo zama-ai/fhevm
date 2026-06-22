@@ -12,7 +12,7 @@ type Context = {
 };
 
 type Parameters = {
-  readonly address: ChecksummedAddress;
+  readonly fhevmExecutorAddress: ChecksummedAddress;
 };
 
 type ReturnType = ChecksummedAddress;
@@ -26,10 +26,9 @@ type ReturnType = ChecksummedAddress;
  */
 export async function getHcuLimitAddress(context: Context, parameters: Parameters): Promise<ReturnType> {
   const trustedClient = getTrustedClient(context);
-  const address = parameters.address;
 
   const res = await context.runtime.ethereum.readContract(trustedClient, {
-    address: address,
+    address: parameters.fhevmExecutorAddress,
     abi: getHCULimitAddressAbi,
     args: [],
     functionName: getHCULimitAddressAbi[0].name,

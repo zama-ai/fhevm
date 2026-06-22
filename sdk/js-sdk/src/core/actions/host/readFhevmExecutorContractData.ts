@@ -22,7 +22,7 @@ export async function readFhevmExecutorContractData(
   fhevm: Fhevm,
   parameters: ReadFhevmExecutorContractDataParameters,
 ): Promise<ReadFhevmExecutorContractDataReturnType> {
-  const fhevmExecutorContractAddress = parameters.address;
+  const fhevmExecutorAddress = parameters.address;
 
   ////////////////////////////////////////////////////////////////////////////
   //
@@ -37,10 +37,10 @@ export async function readFhevmExecutorContractData(
 
   const rpcCalls = [
     () => getHostContractVersion(fhevm, parameters),
-    () => getAclAddress(fhevm, parameters),
-    () => getHcuLimitAddress(fhevm, parameters),
-    () => getInputVerifierAddress(fhevm, parameters),
-    () => getHandleVersion(fhevm, parameters),
+    () => getAclAddress(fhevm, { fhevmExecutorAddress }),
+    () => getHcuLimitAddress(fhevm, { fhevmExecutorAddress }),
+    () => getInputVerifierAddress(fhevm, { fhevmExecutorAddress }),
+    () => getHandleVersion(fhevm, { fhevmExecutorAddress }),
   ];
 
   const res = await executeWithBatching<unknown>(rpcCalls, fhevm.options.batchRpcCalls);
@@ -63,7 +63,7 @@ export async function readFhevmExecutorContractData(
 
   const data = createFhevmExecutorContractData(new WeakRef(fhevm.runtime), {
     version: contractVersion,
-    address: fhevmExecutorContractAddress,
+    address: fhevmExecutorAddress,
     aclContractAddress,
     inputVerifierContractAddress,
     hcuLimitContractAddress,

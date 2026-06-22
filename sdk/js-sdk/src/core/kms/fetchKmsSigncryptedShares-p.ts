@@ -126,14 +126,14 @@ export async function fetchKmsSigncryptedShares(context: Context, parameters: Pa
   // 7. Check: ACL permissions (user is signer or delegatorAddress)
   if (signedPermit.isDelegated) {
     await checkDelegation(context, {
-      address: context.chain.fhevm.contracts.acl.address as ChecksummedAddress,
+      aclAddress: context.chain.fhevm.contracts.acl.address as ChecksummedAddress,
       delegate: signerAddress,
       delegator: encryptedDataOwnerAddress,
       handleContractPairs,
     });
   } else {
     await checkPersistAllowed(context, {
-      address: context.chain.fhevm.contracts.acl.address as ChecksummedAddress,
+      aclAddress: context.chain.fhevm.contracts.acl.address as ChecksummedAddress,
       userAddress: encryptedDataOwnerAddress,
       handleContractPairs,
     });

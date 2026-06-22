@@ -65,7 +65,7 @@ export async function publicDecrypt(context: Context, parameters: Parameters): P
 
   // 4. Check: ACL permissions
   await checkAllowedForDecryption(context, {
-    address: context.chain.fhevm.contracts.acl.address as ChecksummedAddress,
+    aclAddress: context.chain.fhevm.contracts.acl.address as ChecksummedAddress,
     handles: orderedHandles,
   });
 

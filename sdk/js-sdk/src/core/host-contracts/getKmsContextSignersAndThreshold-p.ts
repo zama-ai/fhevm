@@ -18,7 +18,7 @@ type Context = {
 };
 
 type Parameters = {
-  readonly address: ChecksummedAddress;
+  readonly kmsVerifierAddress: ChecksummedAddress;
 };
 
 type ReturnType = {
@@ -30,7 +30,7 @@ type ReturnType = {
 
 const cachedGetKmsContextSignersAndThreshold = createCachedFetch<Context, Parameters, ReturnType>({
   executeFn: _getKmsContextSignersAndThreshold,
-  cacheKeyFn: (context, params) => `${context.runtime.uid.toLowerCase()}:${params.address.toLowerCase()}`,
+  cacheKeyFn: (context, params) => `${context.runtime.uid.toLowerCase()}:${params.kmsVerifierAddress.toLowerCase()}`,
   // Host contract versions are immutable per deployment, so a long TTL is safe.
   ttlMs: CACHE_TTL_24H,
 });
@@ -64,8 +64,8 @@ export function getKmsSignersAndThreshold(
 ////////////////////////////////////////////////////////////////////////////////
 
 async function _getKmsContextSignersAndThreshold(context: Context, parameters: Parameters): Promise<ReturnType> {
-  const version = await getHostContractVersion(context, { address: parameters.address });
-  if (!isVersionStrictlyBefore(version, { major: 0, minor: 2 })) {
+  const kmsVerifierVersion = await getHostContractVersion(context, { address: parameters.kmsVerifierAddress });
+  if (!isVersionStrictlyBefore(kmsVerifierVersion, { major: 0, minor: 2 })) {
     throw new Error('getContextSignersAndThreshold requires KMSVerifier < v0.2.0');
   }
   ////////////////////////////////////////////////////////////////////////////
@@ -108,10 +108,9 @@ async function _getKmsContextSignersAndThreshold(context: Context, parameters: P
 
 async function _getThreshold(context: Context, parameters: Parameters): Promise<Uint8Number> {
   const trustedClient = getTrustedClient(context);
-  const address = parameters.address;
 
   const res = await context.runtime.ethereum.readContract(trustedClient, {
-    address: address,
+    address: parameters.kmsVerifierAddress,
     abi: getThresholdAbi,
     args: [],
     functionName: getThresholdAbi[0].name,
@@ -128,10 +127,9 @@ async function _getThreshold(context: Context, parameters: Parameters): Promise<
 
 async function _getKmsSigners(context: Context, parameters: Parameters): Promise<ChecksummedAddress[]> {
   const trustedClient = getTrustedClient(context);
-  const address = parameters.address;
 
   const res = await context.runtime.ethereum.readContract(trustedClient, {
-    address: address,
+    address: parameters.kmsVerifierAddress,
     abi: getKmsSignersAbi,
     args: [],
     functionName: getKmsSignersAbi[0].name,
