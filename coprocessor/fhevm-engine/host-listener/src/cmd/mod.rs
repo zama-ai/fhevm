@@ -1095,7 +1095,7 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
         warn!(
             chain_id = %chain_id,
             "ProtocolConfig listener has no --protocol-config-address; \
-             ProtocolConfig.NewCoprocessorContext events will not be decoded"
+             ProtocolConfig.CoprocessorUpgradeProposed events will not be decoded"
         );
     }
     if args.database_url.as_str().is_empty() {

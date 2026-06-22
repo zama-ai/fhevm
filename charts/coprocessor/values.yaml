@@ -67,7 +67,7 @@ commonConfig:
   protocolConfigContractAddress: {}  # required — e.g. 0x...
 
   # Ethereum host chain id. Only the host-listener whose own chain id matches
-  # this value decodes ProtocolConfig.NewCoprocessorContext events.
+  # this value decodes ProtocolConfig.CoprocessorUpgradeProposed events.
   ethereumChainId: ""
 
   # Gateway chain configuration. Consumed by gwListener and txSender.

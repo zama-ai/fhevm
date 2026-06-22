@@ -8869,6 +8869,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sqlx",
+ "test-harness",
  "thiserror 2.0.16",
  "tokio",
  "tokio-util",

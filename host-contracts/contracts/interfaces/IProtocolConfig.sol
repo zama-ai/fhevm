@@ -42,26 +42,23 @@ interface IProtocolConfig {
     event KmsContextDestroyed(uint256 indexed kmsContextId);
 
     /**
-     * @notice Emitted when a new coprocessor context is defined.
-     * @param coprocessorContextId The new coprocessor context ID.
-     * @param softwareVersion The coprocessor software version for the new context.
+     * @notice Emitted when a coprocessor upgrade is proposed. The proposal is identified
+     *         by a caller-supplied `proposalId`; the contract does not track adoption state.
+     *         Off-chain machinery (host-listener, upgrade-controller, consensus-detector)
+     *         observes this event and drives the dry-run / consensus / cutover lifecycle.
+     * @param proposalId Caller-supplied identifier for this upgrade attempt.
+     * @param softwareVersion The coprocessor software version for the proposal.
      * @param chainUpgradeWindows The per-host-chain replay windows for the upgrade.
      * @param gwStartBlock The Gateway block at which GCS's gateway-listener resumes from.
      * @param ciphertextVersion The ciphertext version the new software writes; promoted into the `versioning` singleton at cutover.
      */
-    event NewCoprocessorContext(
-        uint256 indexed coprocessorContextId,
+    event CoprocessorUpgradeProposed(
+        uint256 indexed proposalId,
         string softwareVersion,
         ChainUpgradeWindow[] chainUpgradeWindows,
         uint64 gwStartBlock,
         uint16 ciphertextVersion
     );
-
-    /**
-     * @notice Emitted when a coprocessor context is destroyed.
-     * @param coprocessorContextId The destroyed coprocessor context ID.
-     */
-    event CoprocessorContextDestroyed(uint256 indexed coprocessorContextId);
 
     // -----------------------------------------------------------------------------------------
     // Errors
@@ -141,9 +138,8 @@ interface IProtocolConfig {
     /// @param ciphertextVersion The rejected value.
     error CiphertextVersionTooLarge(uint16 ciphertextVersion);
 
-    /// @notice The coprocessor context ID does not exist or has been destroyed.
-    /// @param coprocessorContextId The invalid coprocessor context ID.
-    error InvalidCoprocessorContext(uint256 coprocessorContextId);
+    /// @notice The supplied `proposalId` is zero.
+    error InvalidProposalId();
 
     // -----------------------------------------------------------------------------------------
     // State-changing functions
@@ -163,24 +159,23 @@ interface IProtocolConfig {
     function destroyKmsContext(uint256 kmsContextId) external;
 
     /**
-     * @notice Create a new coprocessor context with the given software version, replay windows, and Gateway start block.
+     * @notice Propose a coprocessor upgrade. Emits `CoprocessorUpgradeProposed` and does not
+     *         change any on-chain state — the lifecycle of the proposal (dry-run, consensus,
+     *         cutover, failure) is driven entirely off-chain.
+     * @param proposalId Caller-supplied identifier for this upgrade attempt. Must be non-zero.
+     *        Uniqueness across calls is the caller's responsibility; the contract does not enforce it.
      * @param softwareVersion The coprocessor software version.
      * @param chainUpgradeWindows The per-host-chain replay windows.
      * @param gwStartBlock The Gateway block to resume from.
      * @param ciphertextVersion The ciphertext version the new software writes.
      */
-    function defineNewCoprocessorContext(
+    function proposeCoprocessorUpgrade(
+        uint256 proposalId,
         string calldata softwareVersion,
         ChainUpgradeWindow[] calldata chainUpgradeWindows,
         uint64 gwStartBlock,
         uint16 ciphertextVersion
     ) external;
-
-    /**
-     * @notice Destroy a coprocessor context, preventing it from being used.
-     * @param coprocessorContextId The context ID to destroy.
-     */
-    function destroyCoprocessorContext(uint256 coprocessorContextId) external;
 
     /**
      * @notice Returns the current active KMS context ID.
@@ -297,19 +292,6 @@ interface IProtocolConfig {
      * @return The MPC threshold for the context.
      */
     function getMpcThresholdForContext(uint256 kmsContextId) external view returns (uint256);
-
-    /**
-     * @notice Returns the current coprocessor context ID.
-     * @return The current context ID.
-     */
-    function getCurrentCoprocessorContextId() external view returns (uint256);
-
-    /**
-     * @notice Checks whether a coprocessor context ID is valid (exists and is not destroyed).
-     * @param coprocessorContextId The context ID to check.
-     * @return True if the context is valid.
-     */
-    function isValidCoprocessorContext(uint256 coprocessorContextId) external view returns (bool);
 
     /**
      * @notice Returns the contract version.

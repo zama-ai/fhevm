@@ -19,6 +19,9 @@ tracing-subscriber = { workspace = true }
 
 fhevm-engine-common = { path = "../fhevm-engine-common" }
 
+[dev-dependencies]
+test-harness = { path = "../test-harness" }
+
 [[bin]]
 name = "upgrade-controller"
 path = "src/bin/upgrade_controller.rs"
