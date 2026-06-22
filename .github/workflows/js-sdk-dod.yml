@@ -38,6 +38,14 @@ on:
 
 permissions: {}
 
+# Harden `npm ci` (run in every job) against transient registry blips such as
+# ECONNRESET / "network aborted" by giving npm more retries and longer timeouts.
+env:
+  NPM_CONFIG_FETCH_RETRIES: '5'
+  NPM_CONFIG_FETCH_RETRY_MINTIMEOUT: '20000'
+  NPM_CONFIG_FETCH_RETRY_MAXTIMEOUT: '120000'
+  NPM_CONFIG_FETCH_TIMEOUT: '600000'
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
