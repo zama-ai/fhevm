@@ -1,6 +1,5 @@
 use crate::database::{
-    apply_gcs_mode_search_path, connect_pool_with_options_and_connect_options,
-    PoolRefreshHandle,
+    apply_gcs_mode_search_path, connect_pool_with_options_and_connect_options, PoolRefreshHandle,
 };
 use sqlx::postgres::PgPoolOptions;
 use sqlx::Executor;

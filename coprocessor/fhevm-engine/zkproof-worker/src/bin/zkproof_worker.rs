@@ -72,7 +72,6 @@ pub struct Args {
     /// Prometheus metrics: "coprocessor_zkverify_op_latency_seconds",
     #[arg(long, default_value = "0.01:2.0:0.01", value_parser = clap::value_parser!(MetricsConfig))]
     pub metric_zkverify_op_latency: MetricsConfig,
-
 }
 
 pub fn parse_args() -> Args {
@@ -100,15 +99,14 @@ async fn main() {
         }
     };
 
-    let gcs_mode = match fhevm_engine_common::versioning::resolve_gcs_mode(database_url.as_str())
-        .await
-    {
-        Ok(gcs_mode) => gcs_mode,
-        Err(err) => {
-            error!(error = %err, "Failed to resolve gcs_mode from versioning table");
-            std::process::exit(1);
-        }
-    };
+    let gcs_mode =
+        match fhevm_engine_common::versioning::resolve_gcs_mode(database_url.as_str()).await {
+            Ok(gcs_mode) => gcs_mode,
+            Err(err) => {
+                error!(error = %err, "Failed to resolve gcs_mode from versioning table");
+                std::process::exit(1);
+            }
+        };
 
     let conf = zkproof_worker::Config {
         database_url,

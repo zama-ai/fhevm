@@ -16,13 +16,19 @@ use tokio::select;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn, Level};
 
-pub const UPGRADE_ACTIVATED_CHANNEL: &str = "event_upgrade_activated";
+pub const UPGRADE_ACTIVATED_CHANNEL: &str =
+    fhevm_engine_common::gcs_activation::EVENT_UPGRADE_ACTIVATED;
 /// Must stay in sync with `consensus_detector::UNANIMITY_CONSENSUS_CHANNEL`.
 pub const UNANIMITY_CONSENSUS_CHANNEL: &str = "event_unanimity_consensus";
 /// Re-triggers the GCS dry-run readiness check. Must stay in sync with the
 /// names emitted by `host-listener::ingest_block_logs` and the FHE workers.
 pub const NEW_BLOCK_CHANNEL: &str = "event_new_block";
 pub const EVENT_CIPHERTEXT_COMPUTED_CHANNEL: &str = "event_ciphertext_computed";
+/// Emitted by `transition_to_dry_run_started` once the GCS row enters
+/// `DryRunStarted`, unpausing the GCS-fleet workers. Single-sourced from the
+/// common crate, which the workers also use.
+pub const DRY_RUN_STARTED_CHANNEL: &str =
+    fhevm_engine_common::gcs_activation::EVENT_DRY_RUN_STARTED;
 
 /// Channel emitted by `execute_cutover`, atomically with the `versioning`
 /// bump, telling every service to re-evaluate its mode. Re-exported from the
@@ -525,6 +531,17 @@ async fn transition_to_dry_run_started(pool: &Pool<Postgres>) -> Result<(), Erro
         );
         return Ok(());
     }
+
+    // Unpause the GCS-fleet workers, which stay parked until they observe the
+    // GCS row in `DryRunStarted` (i.e. BCS has settled to start_block and
+    // pre-start rows have been pruned). The payload is unused — each worker's
+    // activation watcher re-reads upgrade_state on wake.
+    sqlx::query("SELECT pg_notify($1, $2)")
+        .bind(DRY_RUN_STARTED_CHANNEL)
+        .bind("")
+        .execute(pool)
+        .await?;
+    info!("transition_to_dry_run_started: GCS now in DryRunStarted; unpause notify sent");
 
     Ok(())
 }
@@ -1075,7 +1092,10 @@ mod tests {
             row.try_get::<Vec<u8>, _>("proposal_id").unwrap(),
             vec![0x02u8]
         );
-        assert_eq!(row.try_get::<String, _>("state").unwrap(), "UpgradeActivated");
+        assert_eq!(
+            row.try_get::<String, _>("state").unwrap(),
+            "UpgradeActivated"
+        );
         assert_eq!(row.try_get::<String, _>("status").unwrap(), "in_progress");
     }
 }

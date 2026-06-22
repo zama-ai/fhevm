@@ -414,9 +414,7 @@ pub const GCS_SEARCH_PATH: &str = concat!("\"gcs-", crate::stack_version!(), "\"
 /// zkproof-worker, sns-worker). The upgrade-controller itself should NOT
 /// use this — it always operates on `public` and explicitly qualifies any
 /// reads/writes against `gcs.*` during activation and cutover.
-pub fn apply_gcs_mode_search_path(
-    gcs_mode: bool,
-) -> fn(PgConnectOptions) -> PgConnectOptions {
+pub fn apply_gcs_mode_search_path(gcs_mode: bool) -> fn(PgConnectOptions) -> PgConnectOptions {
     if gcs_mode {
         apply_gcs_search_path
     } else {

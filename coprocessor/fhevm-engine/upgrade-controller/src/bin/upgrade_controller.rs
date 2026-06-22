@@ -1,7 +1,6 @@
 use std::time::Duration;
 
 use clap::Parser;
-use upgrade_controller::Config;
 use fhevm_engine_common::{
     database::{connect_pool_with_options, resolve_database_url_from_option},
     utils::DatabaseURL,
@@ -10,6 +9,7 @@ use sqlx::postgres::PgPoolOptions;
 use tokio::signal::unix::{signal, SignalKind};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, Level};
+use upgrade_controller::Config;
 
 #[derive(Parser, Debug, Clone)]
 #[command(version, about = "Coprocessor upgrade FSM controller", long_about = None)]

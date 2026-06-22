@@ -5,6 +5,7 @@ use fhevm_engine_common::database::{
     connect_pool_with_options_and_connect_options, resolve_database_url_from_option,
 };
 use fhevm_engine_common::db_keys::DbKeyCache;
+use fhevm_engine_common::gcs_activation::{run_gcs_activation_watcher, GCS_NOT_ACTIVATED};
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::tfhe_ops::check_fhe_operand_types;
 use fhevm_engine_common::types::{FhevmError, Handle, SupportedFheCiphertexts};
@@ -16,7 +17,7 @@ use scheduler::dfg::types::{CompressedCiphertext, DFGTxInput, SchedulerError};
 use scheduler::dfg::{build_component_nodes, ComponentNode, DFComponentGraph, DFGOp};
 use scheduler::dfg::{scheduler::Scheduler, types::DFGTaskInput};
 use sqlx::types::Uuid;
-use sqlx::{postgres::PgListener, query, Pool, Postgres};
+use sqlx::{postgres::PgListener, query, Postgres};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
@@ -25,14 +26,6 @@ use time::PrimitiveDateTime;
 use tracing::{debug, error, info, warn, Instrument};
 
 const EVENT_CIPHERTEXT_COMPUTED: &str = "event_ciphertext_computed";
-/// Wake-up channel for GCS activation. Must stay in sync with
-/// `upgrade_controller::UPGRADE_ACTIVATED_CHANNEL`.
-const EVENT_UPGRADE_ACTIVATED: &str = "event_upgrade_activated";
-
-/// Sentinel for `start_block_state`: the GCS row in `upgrade_state` has not
-/// been observed yet (the worker is paused). Any non-sentinel value is the
-/// real start_block.
-const GCS_NOT_ACTIVATED: i64 = -1i64;
 
 /// PostgreSQL advisory-lock key used to serialize cutover against in-flight
 /// BCS writes. Must match `upgrade_controller::CUTOVER_LOCK_ID`. The BCS
@@ -118,7 +111,7 @@ pub async fn run_tfhe_worker(
         let watcher_state = start_block_state.clone();
         tokio::spawn(async move {
             loop {
-                if let Err(err) = watch_gcs_activation(&watcher_pool, &watcher_state).await {
+                if let Err(err) = run_gcs_activation_watcher(&watcher_pool, &watcher_state).await {
                     error!(target: "tfhe_worker", error = %err, "GCS activation watcher errored; restarting in 5s");
                     tokio::time::sleep(Duration::from_secs(5)).await;
                 }
@@ -141,51 +134,6 @@ pub async fn run_tfhe_worker(
             error!(target: "tfhe_worker", { error = cycle_error }, "Error in background worker, retrying shortly");
         }
         tokio::time::sleep(tokio::time::Duration::from_millis(5000)).await;
-    }
-}
-
-/// LISTENs on `event_upgrade_activated` and mirrors
-/// `upgrade_state.start_block` (for `stack_role='GCS'`) into `state`. Polls
-/// once on entry so a worker started AFTER the activation notify fired still
-/// picks the value up.
-async fn watch_gcs_activation(
-    pool: &Pool<Postgres>,
-    state: &AtomicI64,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let mut listener = PgListener::connect_with(pool).await?;
-    listener.listen(EVENT_UPGRADE_ACTIVATED).await?;
-    info!(target: "tfhe_worker", channel = EVENT_UPGRADE_ACTIVATED, "GCS activation watcher listening");
-
-    loop {
-        let row: Option<(Option<i64>,)> =
-            sqlx::query_as("SELECT start_block FROM upgrade_state WHERE stack_role = 'GCS'")
-                .fetch_optional(pool)
-                .await?;
-
-        if let Some((Some(start_block),)) = row {
-            let prev = state.swap(start_block, Ordering::SeqCst);
-            if prev != start_block {
-                info!(
-                    target: "tfhe_worker",
-                    start_block,
-                    prev,
-                    "GCS start_block updated from upgrade_state"
-                );
-            }
-        } else {
-            debug!(target: "tfhe_worker", "GCS row in upgrade_state has no start_block yet");
-        }
-
-        // Fallback poll catches a missed NOTIFY (dropped connection, late start).
-        tokio::select! {
-            recv = listener.recv() => {
-                if let Err(err) = recv {
-                    warn!(target: "tfhe_worker", error = %err, "GCS activation listener recv error");
-                    tokio::time::sleep(Duration::from_secs(1)).await;
-                }
-            }
-            _ = tokio::time::sleep(Duration::from_secs(30)) => {}
-        }
     }
 }
 
@@ -241,9 +189,7 @@ async fn tfhe_worker_cycle(
         // writes to `gcs.*` automatically — we no longer need the actual
         // start_block value inside the cycle. In BCS mode this branch is a
         // no-op.
-        if gcs_mode
-            && start_block_state.load(Ordering::SeqCst) == GCS_NOT_ACTIVATED
-        {
+        if gcs_mode && start_block_state.load(Ordering::SeqCst) == GCS_NOT_ACTIVATED {
             debug!(target: "tfhe_worker", "GCS not yet activated; sleeping before re-check");
             tokio::time::sleep(tokio::time::Duration::from_millis(
                 args.worker_polling_interval_ms,
@@ -371,13 +317,10 @@ async fn tfhe_worker_cycle(
         )
         .instrument(loop_span.clone())
         .await?;
-        let has_progressed = upload_transaction_graph_results(
-            &mut tx_graph,
-            &mut trx,
-            &mut dcid_mngr,
-        )
-        .instrument(loop_span.clone())
-        .await?;
+        let has_progressed =
+            upload_transaction_graph_results(&mut tx_graph, &mut trx, &mut dcid_mngr)
+                .instrument(loop_span.clone())
+                .await?;
         if has_progressed {
             no_progress_cycles = 0;
         } else {

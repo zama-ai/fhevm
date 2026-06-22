@@ -3,6 +3,7 @@ use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::crs::{Crs, CrsCache};
 use fhevm_engine_common::db_keys::DbKey;
 use fhevm_engine_common::db_keys::DbKeyCache;
+use fhevm_engine_common::gcs_activation::{run_gcs_activation_watcher, GCS_NOT_ACTIVATED};
 use fhevm_engine_common::host_chains::HostChainsCache;
 use fhevm_engine_common::pg_pool::{PostgresPoolManager, ServiceError};
 use fhevm_engine_common::telemetry;
@@ -38,14 +39,6 @@ use tracing::{debug, error, info, warn};
 
 pub const MAX_CACHED_KEYS: usize = 100;
 const EVENT_CIPHERTEXT_COMPUTED: &str = "event_ciphertext_computed";
-
-/// Wake-up channel for GCS activation. Must stay in sync with
-/// `upgrade_controller::UPGRADE_ACTIVATED_CHANNEL`.
-const EVENT_UPGRADE_ACTIVATED: &str = "event_upgrade_activated";
-
-/// Sentinel for `start_block_state`: the GCS row in `upgrade_state` has not
-/// been observed yet. Any non-sentinel value is the real start_block.
-const GCS_NOT_ACTIVATED: i64 = -1i64;
 
 pub(crate) const RAW_CT_HASH_DOMAIN_SEPARATOR: [u8; 8] = *b"ZK-w_rct";
 pub(crate) const HANDLE_HASH_DOMAIN_SEPARATOR: [u8; 8] = *b"ZK-w_hdl";
@@ -139,7 +132,9 @@ impl ZkProofService {
             let watcher_state = start_block_state.clone();
             tokio::spawn(async move {
                 loop {
-                    if let Err(err) = watch_gcs_activation(&watcher_pool, &watcher_state).await {
+                    if let Err(err) =
+                        run_gcs_activation_watcher(&watcher_pool, &watcher_state).await
+                    {
                         error!(
                             target: "zkproof_worker",
                             error = %err,
@@ -174,58 +169,6 @@ impl ZkProofService {
     }
 }
 
-/// LISTENs on `event_upgrade_activated` and mirrors
-/// `upgrade_state.start_block` (for `stack_role='GCS'`) into `state`. Polls
-/// once on entry so a worker started AFTER the activation notify fired still
-/// picks the value up. A 30s fallback sleep catches any missed NOTIFY (dropped
-/// connection, late start).
-async fn watch_gcs_activation(pool: &PgPool, state: &AtomicI64) -> Result<(), ExecutionError> {
-    let mut listener = PgListener::connect_with(pool).await?;
-    listener.listen(EVENT_UPGRADE_ACTIVATED).await?;
-    info!(
-        target: "zkproof_worker",
-        channel = EVENT_UPGRADE_ACTIVATED,
-        "GCS activation watcher listening"
-    );
-
-    loop {
-        let row: Option<(Option<i64>,)> =
-            sqlx::query_as("SELECT start_block FROM upgrade_state WHERE stack_role = 'GCS'")
-                .fetch_optional(pool)
-                .await?;
-
-        if let Some((Some(start_block),)) = row {
-            let prev = state.swap(start_block, Ordering::SeqCst);
-            if prev != start_block {
-                info!(
-                    target: "zkproof_worker",
-                    start_block,
-                    prev,
-                    "GCS start_block updated from upgrade_state"
-                );
-            }
-        } else {
-            debug!(
-                target: "zkproof_worker",
-                "GCS row in upgrade_state has no start_block yet"
-            );
-        }
-
-        tokio::select! {
-            recv = listener.recv() => {
-                if let Err(err) = recv {
-                    warn!(
-                        target: "zkproof_worker",
-                        error = %err,
-                        "GCS activation listener recv error"
-                    );
-                    tokio::time::sleep(Duration::from_secs(1)).await;
-                }
-            }
-            _ = tokio::time::sleep(Duration::from_secs(30)) => {}
-        }
-    }
-}
 /// Executes the main loop for handling verify_proofs requests inserted in the
 /// database
 pub async fn execute_verify_proofs_loop(

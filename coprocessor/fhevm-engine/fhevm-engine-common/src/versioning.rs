@@ -99,10 +99,7 @@ impl StackMode {
 ///   - binary == live AND currently in GCS mode → leave GCS mode (become live);
 ///   - binary != live AND not in GCS mode → pause into no-op mode;
 ///   - otherwise no change.
-pub async fn reconcile_stack_mode(
-    pool: &Pool<Postgres>,
-    mode: &StackMode,
-) -> anyhow::Result<()> {
+pub async fn reconcile_stack_mode(pool: &Pool<Postgres>, mode: &StackMode) -> anyhow::Result<()> {
     let row: Option<(String,)> =
         sqlx::query_as("SELECT stack_version FROM versioning WHERE singleton = TRUE")
             .fetch_optional(pool)

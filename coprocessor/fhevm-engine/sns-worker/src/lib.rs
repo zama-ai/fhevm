@@ -22,6 +22,7 @@ use fhevm_engine_common::{
     chain_id::ChainId,
     db_keys::DbKeyId,
     drift_revert,
+    gcs_activation::{run_gcs_activation_watcher, GCS_NOT_ACTIVATED},
     healthz_server::{self},
     metrics_server,
     pg_pool::{PostgresPoolManager, ServiceError},
@@ -31,7 +32,7 @@ use fhevm_engine_common::{
     versioning::{run_stack_version_listener, StackMode},
 };
 use futures::join;
-use sqlx::{postgres::PgListener, Pool, Postgres, Transaction};
+use sqlx::{Postgres, Transaction};
 use thiserror::Error;
 use tokio::{
     spawn,
@@ -41,16 +42,7 @@ use tokio::{
     },
 };
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info, warn, Level};
-
-/// Wake-up channel for GCS activation. Must stay in sync with
-/// `upgrade_controller::UPGRADE_ACTIVATED_CHANNEL`.
-const EVENT_UPGRADE_ACTIVATED: &str = "event_upgrade_activated";
-
-/// Sentinel for the activation atomic: the GCS row in `upgrade_state` has
-/// not been observed yet (the worker is paused). Any non-sentinel value is
-/// the real start_block.
-const GCS_NOT_ACTIVATED: i64 = -1;
+use tracing::{error, info, Level};
 
 use crate::{
     aws_upload::{check_is_ready, spawn_resubmit_task, spawn_uploader},
@@ -565,9 +557,7 @@ pub async fn run_all(
         let watcher_state = start_block_state.clone();
         spawn(async move {
             loop {
-                if let Err(err) =
-                    watch_gcs_activation(&watcher_pool, &watcher_state).await
-                {
+                if let Err(err) = run_gcs_activation_watcher(&watcher_pool, &watcher_state).await {
                     error!(error = %err, "GCS activation watcher errored; restarting in 5s");
                     tokio::time::sleep(Duration::from_secs(5)).await;
                 }
@@ -651,9 +641,17 @@ pub async fn run_all(
     let uploader_mode = stack_mode.clone();
     let uploader_token = token.child_token();
     spawn(async move {
-        if let Err(err) =
-            run_uploader_loop(&pg_mngr, &conf, jobs_rx, tx, s3, is_ready, uploader_mode, uploader_token)
-                .await
+        if let Err(err) = run_uploader_loop(
+            &pg_mngr,
+            &conf,
+            jobs_rx,
+            tx,
+            s3,
+            is_ready,
+            uploader_mode,
+            uploader_token,
+        )
+        .await
         {
             error!(error = %err, "Failed to run the upload-worker");
         }
@@ -665,50 +663,4 @@ pub async fn run_all(
 
     info!("Worker stopped");
     Ok(())
-}
-
-/// LISTENs on `event_upgrade_activated` and mirrors
-/// `upgrade_state.start_block` (for `stack_role='GCS'`) into `state`. Polls
-/// once on entry so a worker started AFTER the activation notify fired still
-/// picks the value up. A 30s fallback sleep catches any missed NOTIFY.
-async fn watch_gcs_activation(
-    pool: &Pool<Postgres>,
-    state: &AtomicI64,
-) -> Result<(), sqlx::Error> {
-    let mut listener = PgListener::connect_with(pool).await?;
-    listener.listen(EVENT_UPGRADE_ACTIVATED).await?;
-    info!(
-        channel = EVENT_UPGRADE_ACTIVATED,
-        "GCS activation watcher listening"
-    );
-
-    loop {
-        let row: Option<(Option<i64>,)> = sqlx::query_as(
-            "SELECT start_block FROM upgrade_state WHERE stack_role = 'GCS'",
-        )
-        .fetch_optional(pool)
-        .await?;
-
-        if let Some((Some(start_block),)) = row {
-            let prev = state.swap(start_block, Ordering::SeqCst);
-            if prev != start_block {
-                info!(
-                    start_block,
-                    prev, "GCS start_block updated from upgrade_state"
-                );
-            }
-        } else {
-            debug!("GCS row in upgrade_state has no start_block yet");
-        }
-
-        tokio::select! {
-            recv = listener.recv() => {
-                if let Err(err) = recv {
-                    warn!(error = %err, "GCS activation listener recv error");
-                    tokio::time::sleep(Duration::from_secs(1)).await;
-                }
-            }
-            _ = tokio::time::sleep(Duration::from_secs(30)) => {}
-        }
-    }
 }

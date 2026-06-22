@@ -126,7 +126,6 @@ pub struct Args {
 
     #[arg(long, value_parser = clap::value_parser!(u32).range(1..))]
     pub gauge_update_interval_secs: Option<u32>,
-
 }
 
 pub fn parse_args() -> Args {
