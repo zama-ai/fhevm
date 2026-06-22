@@ -5,7 +5,7 @@ services:
     env_file:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/host-sc.env
     command:
-      - npx hardhat task:deployAllHostContracts $${HOST_SC_DEPLOY_KMS_GENERATION_ARGS}
+      - npx hardhat task:deployAllHostContracts $${HOST_SC_DEPLOY_KMS_GENERATION_ARGS} $${HOST_SC_DEPLOY_PROTOCOL_CONFIG_ARGS}
     volumes:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/addresses/${HOST_ADDRESS_DIR:-host}:/app/addresses # workdir in host's Dockerfile is /app
 
@@ -33,7 +33,7 @@ services:
     # tests fail with a high probability (1/2 chance), so we instead use default parameters (--params-type 0).
     # See https://github.com/zama-ai/fhevm-internal/issues/685
     command:
-      - npx hardhat task:triggerKeygen --params-type 0 --use-internal-proxy-address true
+      - npx hardhat task:triggerKeygen --params-type ${KEYGEN_PARAMS_TYPE:-0} --use-internal-proxy-address true
     depends_on:
       host-sc-add-pausers:
         condition: service_completed_successfully
@@ -48,7 +48,7 @@ services:
     # CRS parameters must match the same params type as the keygen request.
     # See https://github.com/zama-ai/fhevm-internal/issues/685
     command:
-      - npx hardhat task:triggerCrsgen --params-type 0 --max-bit-length 2048 --use-internal-proxy-address true
+      - npx hardhat task:triggerCrsgen --params-type ${KEYGEN_PARAMS_TYPE:-0} --max-bit-length 2048 --use-internal-proxy-address true
     depends_on:
       host-sc-trigger-keygen:
         condition: service_completed_successfully

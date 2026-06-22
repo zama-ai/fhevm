@@ -368,7 +368,11 @@ contract Decryption is
         $.publicCtHandles[publicDecryptionId] = ctHandles;
 
         // Pin the KMS context at request time. See `decryptionContextId` storage docs.
-        $.decryptionContextId[publicDecryptionId] = _extractContextId(extraData);
+        {
+            uint256 contextId = _extractContextId(extraData);
+            _validateContextId(contextId);
+            $.decryptionContextId[publicDecryptionId] = contextId;
+        }
 
         // Collect the fee from the transaction sender for this public decryption request.
         _collectPublicDecryptionFee(msg.sender);
@@ -532,7 +536,11 @@ contract Decryption is
         $.userDecryptionPayloads[userDecryptionId] = UserDecryptionPayload(publicKey, ctHandles);
 
         // Pin the KMS context at request time. See `decryptionContextId` storage docs.
-        $.decryptionContextId[userDecryptionId] = _extractContextId(extraData);
+        {
+            uint256 contextId = _extractContextId(extraData);
+            _validateContextId(contextId);
+            $.decryptionContextId[userDecryptionId] = contextId;
+        }
 
         // Collect the fee from the transaction sender for this user decryption request.
         _collectUserDecryptionFee(msg.sender);
@@ -626,7 +634,11 @@ contract Decryption is
         $.userDecryptionPayloads[userDecryptionId] = UserDecryptionPayload(publicKey, ctHandles);
 
         // Pin the KMS context at request time. See `decryptionContextId` storage docs.
-        $.decryptionContextId[userDecryptionId] = _extractContextId(extraData);
+        {
+            uint256 contextId = _extractContextId(extraData);
+            _validateContextId(contextId);
+            $.decryptionContextId[userDecryptionId] = contextId;
+        }
 
         // Collect the fee from the transaction sender for this delegated user decryption request.
         _collectUserDecryptionFee(msg.sender);
@@ -957,11 +969,12 @@ contract Decryption is
             return GATEWAY_CONFIG.getCurrentKmsContextId();
         }
 
-        // Version 1 -> extract contextId from bytes 1..33
-        if (version == 1) {
+        // Versions 1/2 -> extract contextId from bytes 1..33
+        if (version == 1 || version == 2) {
             if (extraData.length < 33) {
                 revert InvalidExtraDataLength(extraData.length, 33);
             }
+
             contextId = uint256(bytes32(extraData[1:33]));
             // Reject the all-zeros payload: contextId 0 is reserved for the pre-pinning
             // legacy fallback and must not be reachable from caller-supplied extraData.
@@ -973,6 +986,16 @@ contract Decryption is
 
         // Unsupported version
         revert UnsupportedExtraDataVersion(version);
+    }
+
+    /**
+     * @notice Checks that a context ID refers to a valid KMS context.
+     * @param contextId The context ID to validate.
+     */
+    function _validateContextId(uint256 contextId) internal view virtual {
+        if (!GATEWAY_CONFIG.isValidKmsContext(contextId)) {
+            revert IGatewayConfig.InvalidKmsContext(contextId);
+        }
     }
 
     /**

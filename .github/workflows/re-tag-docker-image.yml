@@ -21,7 +21,7 @@ permissions: {}
 jobs:
   prepare-image-tags:
     name: prepare-image-tags
-    runs-on: ubuntu-latest
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
     permissions:
       actions: 'read' # Required to read workflow run information
       contents: 'read' # Required to checkout repository code
@@ -60,7 +60,7 @@ jobs:
       actions: 'read' # Required to read workflow run information
       packages: 'write' # Required to publish Docker images
       id-token: 'write' # Required for OIDC authentication
-    runs-on: ubuntu-latest
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
     steps:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@d70bba72b1f3fd22344832f00baa16ece964efeb # v3.3.0

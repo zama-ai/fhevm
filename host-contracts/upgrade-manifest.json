@@ -1,1 +1,1 @@
-["ACL", "FHEVMExecutor", "KMSVerifier", "InputVerifier", "HCULimit"]
+["ACL", "FHEVMExecutor", "KMSVerifier", "InputVerifier", "HCULimit", "ProtocolConfig"]

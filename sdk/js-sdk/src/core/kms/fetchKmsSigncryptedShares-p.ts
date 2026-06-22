@@ -65,10 +65,10 @@ type ReturnType = KmsSigncryptedShares;
 const MAX_USER_DECRYPT_CONTRACT_ADDRESSES = 10;
 
 ////////////////////////////////////////////////////////////////////////////////
-// fetchKmsSignedcryptedShares
+// fetchKmsSigncryptedShares
 ////////////////////////////////////////////////////////////////////////////////
 
-export async function fetchKmsSignedcryptedShares(context: Context, parameters: Parameters): Promise<ReturnType> {
+export async function fetchKmsSigncryptedShares(context: Context, parameters: Parameters): Promise<ReturnType> {
   const { signedPermit, options, pairs } = parameters;
 
   // This helper must support base clients, where TKMS is not mandatory

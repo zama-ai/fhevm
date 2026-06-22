@@ -53,6 +53,12 @@ export const COMPAT_MATRIX = {
       unparsed: "modern" as const,
     },
     {
+      key: "COPROCESSOR_SNS_WORKER_VERSION",
+      below: [0, 14, 0] as CompatSemver,
+      profile: "legacy-sns-worker-no-signer-flags",
+      unparsed: "modern" as const,
+    },
+    {
       key: "COPROCESSOR_TX_SENDER_VERSION",
       below: [0, 12, 0] as CompatSemver,
       profile: "legacy-tx-sender-gateway-flags",
@@ -114,6 +120,14 @@ const SHIM_PROFILES = {
       "sns-worker": [["--tenant-api-key", { env: "TENANT_API_KEY" }]],
     },
     coprocessorDropFlags: {},
+    connectorEnv: {},
+    composeEnv: {},
+  },
+  "legacy-sns-worker-no-signer-flags": {
+    coprocessorArgs: {},
+    coprocessorDropFlags: {
+      "sns-worker": ["--signer-type", "--private-key"],
+    },
     connectorEnv: {},
     composeEnv: {},
   },
@@ -312,6 +326,14 @@ export const coprocessorUsesHostKmsGeneration = (state: CompatState) =>
 
 /** Detects the KMSGeneration source used for key/CRS bootstrap probes and trigger tasks. */
 export const bootstrapUsesHostKmsGeneration = kmsConnectorUsesHostKmsGeneration;
+
+/**
+ * Detects when host images ship `task:deployProtocolConfigFromCanonical` (0.13.1+), so non-canonical
+ * chains can seed ProtocolConfig from the canonical chain like production instead of "fresh".
+ */
+export const supportsCanonicalProtocolConfigSeeding = (state: CompatState) =>
+  effectiveCompatOverrides(state).some((override) => override.group === "host-contracts") ||
+  !versionLt(state.versions.env.HOST_VERSION ?? "", [0, 13, 1], { unparsed: "modern" });
 
 type BundleIncompatibility = { severity: "error"; code: string; message: string };
 

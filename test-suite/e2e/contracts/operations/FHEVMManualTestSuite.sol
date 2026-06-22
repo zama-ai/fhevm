@@ -545,4 +545,30 @@ contract FHEVMManualTestSuite is E2ECoprocessorConfig {
         resEbool = FHE.isIn(value, set);
         FHE.makePubliclyDecryptable(resEbool);
     }
+
+    // Verifies the toExternal -> fromExternal (empty proof) round-trip. The handle is allowed to the
+    // caller so it can be re-imported without a proof, then re-wrapped via toExternal and recovered.
+    function test_toExternalEuint64(externalEuint64 a, bytes calldata inputProof) external {
+        euint64 aProc = FHE.fromExternal(a, inputProof);
+        FHE.allow(aProc, msg.sender);
+        externalEuint64 ext = FHE.toExternal(aProc);
+        resEuint64 = FHE.fromExternal(ext, bytes(""));
+        FHE.makePubliclyDecryptable(resEuint64);
+    }
+
+    function test_toExternalEbool(externalEbool a, bytes calldata inputProof) external {
+        ebool aProc = FHE.fromExternal(a, inputProof);
+        FHE.allow(aProc, msg.sender);
+        externalEbool ext = FHE.toExternal(aProc);
+        resEbool = FHE.fromExternal(ext, bytes(""));
+        FHE.makePubliclyDecryptable(resEbool);
+    }
+
+    function test_toExternalEaddress(externalEaddress a, bytes calldata inputProof) external {
+        eaddress aProc = FHE.fromExternal(a, inputProof);
+        FHE.allow(aProc, msg.sender);
+        externalEaddress ext = FHE.toExternal(aProc);
+        resAdd = FHE.fromExternal(ext, bytes(""));
+        FHE.makePubliclyDecryptable(resAdd);
+    }
 }

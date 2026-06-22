@@ -20,7 +20,6 @@
   - [ERC-20 to Wrapped ERC-7984](openzeppelin/ERC7984ERC20WrapperMock.md)
   - [Swap ERC7984 to ERC20](openzeppelin/swapERC7984ToERC20.md)
 - [Vesting Wallet](openzeppelin/vesting-wallet.md)
-- [Integration guide for Wallets and Exchanges](./integration-guide.md)
 
 ## Auctions
 
