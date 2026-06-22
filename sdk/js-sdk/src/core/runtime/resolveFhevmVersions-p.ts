@@ -14,7 +14,7 @@ import { pubKeyCrsVersionFromProtocolVersion, resolveProtocolContext } from './P
 ////////////////////////////////////////////////////////////////////////////////
 
 /**
- * Resolves this client's FHEVM protocol version once and memoizes it on the
+ * Resolves this client's FHEVM protocol version once and memorizes it on the
  * client instance.
  *
  * Idempotent: the first call resolves the protocol version from the on-chain ACL

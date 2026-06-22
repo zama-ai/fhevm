@@ -145,7 +145,8 @@ export async function createKmsSigncryptedShares(
 
   // Reconcile KMS signer context using 'loose' mode.
   const reconciledKmsSignersContext: KmsSignersContext = await reconcileKmsSignersContext(context, {
-    address: context.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
+    kmsVerifierAddress: context.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
+    protocolConfigAddress: context.chain.fhevm.contracts.protocolConfig?.address as ChecksummedAddress | undefined,
     relayerExtraData,
     requestedKmsSignersContext: metadata.kmsSignersContext,
     mode: 'loose',

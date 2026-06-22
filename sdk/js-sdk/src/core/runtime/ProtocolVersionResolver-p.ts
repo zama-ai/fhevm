@@ -216,10 +216,10 @@ export function protocolContextFromAclVersion(
  * known protocol version as the SDK's strict upper bound.
  *
  * Examples:
- * - `ACL v0.4.0` -> `{ version: '0.13.0', comparator: 'eq' }`
- * - `ACL v0.4.1` -> `{ version: '0.13.0', comparator: 'eq' }`
- * - `ACL v0.6.0` -> `{ version: '0.14.0', comparator: 'gt' }`
- * - `ACL v0.1.0` -> `{ version: '0.11.0', comparator: 'lt' }`
+ * - `ACL v0.4.0` → `{ version: '0.13.0', comparator: 'eq' }`
+ * - `ACL v0.4.1` → `{ version: '0.13.0', comparator: 'eq' }`
+ * - `ACL v0.6.0` → `{ version: '0.14.0', comparator: 'gt' }`
+ * - `ACL v0.1.0` → `{ version: '0.11.0', comparator: 'lt' }`
  */
 export function protocolVersionFromAclVersion(aclVersion: HostContractVersion<'ACL'>): ProtocolVersionResolution {
   const aclSemver = _formatAclVersion(aclVersion);

@@ -157,7 +157,8 @@ export async function fetchKmsSigncryptedShares(context: Context, parameters: Pa
   // though the context ID matches. Consider comparing the decoded `kmsContextId`
   // instead of the raw `extraData` bytes.
   const requestedKmsSignersContext: KmsSignersContext = await readKmsSignersContext(context, {
-    address: context.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
+    kmsVerifierAddress: context.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
+    protocolConfigAddress: context.chain.fhevm.contracts.protocolConfig?.address as ChecksummedAddress | undefined,
   });
 
   assertExtraDataMatchesKmsSingersContext(
