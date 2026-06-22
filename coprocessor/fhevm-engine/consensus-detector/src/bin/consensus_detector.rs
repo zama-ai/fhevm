@@ -156,7 +156,7 @@ async fn main() -> anyhow::Result<()> {
     };
 
     // consensus-detector's data plane lives in the versioned GCS schema
-    // (`"gcs-<stack version>"`, derived from `CARGO_PKG_VERSION`). Pin every
+    // (`"gcs-<stack version>"`, from the hard-coded `STACK_VERSION`). Pin every
     // pooled connection's search_path to `"gcs-<version>",public` so unqualified
     // table references resolve to the GCS copies first, falling back to public
     // for shared tables (e.g. `upgrade_state`, not duplicated into the GCS schema).
