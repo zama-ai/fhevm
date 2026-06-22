@@ -1,7 +1,7 @@
 use crate::config::settings::HttpConfig;
 use crate::core::event::{ApiCategory, ApiVersion};
 use crate::gateway::throttlers::BouncerThrottlers;
-use crate::host::HostChainIdChecker;
+use crate::host::{HostChainIdChecker, UserDecryptSignaturePreChecker};
 use crate::http::admin::AdminConfigRegistry;
 use crate::http::endpoints::{
     admin, health_handler, liveness_handler,
@@ -49,6 +49,7 @@ pub async fn run_http_server(
     user_decrypt_shares_threshold: u32,
     bouncer_throttlers: BouncerThrottlers,
     host_chain_id_checker: Arc<HostChainIdChecker>,
+    signature_prechecker: Arc<UserDecryptSignaturePreChecker>,
 ) -> SocketAddr {
     let http_endpoint: SocketAddr = config
         .endpoint
@@ -145,6 +146,7 @@ pub async fn run_http_server(
         ),
         retry_after_state.clone(),
         host_chain_id_checker.clone(),
+        signature_prechecker,
         user_decrypt_handler_v2.clone(),
     ));
 
