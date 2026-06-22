@@ -182,6 +182,7 @@ dependencies = [
  "alloy-primitives",
  "alloy-rlp",
  "borsh",
+ "k256",
  "serde",
  "thiserror 2.0.18",
 ]
@@ -2526,6 +2527,7 @@ dependencies = [
  "tracing",
  "tracing-chrome",
  "tracing-subscriber",
+ "user-decryption-signature",
  "utoipa",
  "utoipa-redoc",
  "uuid",
@@ -2535,7 +2537,6 @@ dependencies = [
 [[package]]
 name = "fhevm_gateway_bindings"
 version = "0.1.0-rc14"
-source = "git+https://github.com/zama-ai/fhevm.git?rev=4d6867ef081ea8620186414b198b2d336f608372#4d6867ef081ea8620186414b198b2d336f608372"
 dependencies = [
  "alloy",
  "serde",
@@ -6274,6 +6275,15 @@ name = "urlencoding"
 version = "2.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "daf8dba3b7eb870caf1ddeed7bc9d2a049f3cfdfae7cb521b087cc33ae4c49da"
+
+[[package]]
+name = "user-decryption-signature"
+version = "0.14.0"
+dependencies = [
+ "alloy",
+ "fhevm_gateway_bindings",
+ "thiserror 2.0.18",
+]
 
 [[package]]
 name = "utf-8"
