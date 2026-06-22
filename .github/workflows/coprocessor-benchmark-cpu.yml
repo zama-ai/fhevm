@@ -36,6 +36,7 @@ on:
         options:
           - "ALL"
           - "THROUGHPUT"
+          - "THROUGHPUT_200"
           - "LATENCY"
         default: "ALL"
 
@@ -122,16 +123,25 @@ jobs:
 
       - name: Install cargo dependencies
         run: |
-          sudo systemctl stop docker
-          DEBIAN_FRONTEND=noninteractive sudo apt-get remove -y docker docker-engine docker.io containerd runc
-          DEBIAN_FRONTEND=noninteractive sudo apt-get purge -y docker-ce docker-ce-cli containerd.io docker-compose-plugin docker-compose
-          sudo rm -rf /etc/bash_completion.d/docker /usr/local/bin/docker-compose /etc/bash_completion.d/docker-compose
-          DEBIAN_FRONTEND=noninteractive sudo apt-get update
-          DEBIAN_FRONTEND=noninteractive sudo apt-get install -y protobuf-compiler cmake \
-                                                                 pkg-config libssl-dev \
-                                                                 libclang-dev docker-compose-v2 \
-                                                                 docker.io acl
-          sudo systemctl start docker
+          export DEBIAN_FRONTEND=noninteractive
+          APT_LOCK_TIMEOUT=900
+          sudo systemctl stop docker docker.socket containerd || true
+          sudo apt-get -o DPkg::Lock::Timeout="${APT_LOCK_TIMEOUT}" purge -y \
+            docker docker-engine docker.io docker-doc docker-compose docker-compose-v2 \
+            docker-ce docker-ce-cli docker-ce-rootless-extras docker-buildx-plugin \
+            docker-compose-plugin containerd containerd.io runc podman-docker || true
+          sudo apt-get -o DPkg::Lock::Timeout="${APT_LOCK_TIMEOUT}" autoremove -y || true
+          sudo rm -rf \
+            /etc/bash_completion.d/docker \
+            /etc/bash_completion.d/docker-compose \
+            /usr/local/bin/docker-compose
+          sudo apt-get -o DPkg::Lock::Timeout="${APT_LOCK_TIMEOUT}" update
+          sudo apt-get -o DPkg::Lock::Timeout="${APT_LOCK_TIMEOUT}" install -y \
+            protobuf-compiler cmake pkg-config libssl-dev libclang-dev acl \
+            docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+          sudo systemctl start docker || true
+          sudo usermod -aG docker "$USER"
+          sudo setfacl --modify user:"$USER":rw /var/run/docker.sock
           cargo +stable install sqlx-cli --version 0.7.2 --no-default-features --features postgres --locked
 
       - name: Install foundry
