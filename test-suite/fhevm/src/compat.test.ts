@@ -220,7 +220,9 @@ describe("compat", () => {
     ).toBe(false);
   });
 
-  test("does not require legacy host chain seed shim for v0.13 coprocessor images", () => {
+  test("requires legacy host chain seed shim for v0.13.0 coprocessor images", () => {
+    // initialize_db.sh gained declarative seeding after v0.13.0 was cut;
+    // all v0.13.0-N Docker builds still need the harness shim.
     expect(
       requiresLegacyHostChainSeedShim({
         versions: {
@@ -229,6 +231,22 @@ describe("compat", () => {
           env: {
             COPROCESSOR_DB_MIGRATION_VERSION: "v0.13.0-6",
             COPROCESSOR_ZKPROOF_WORKER_VERSION: "v0.13.0-6",
+          } as Record<string, string>,
+          sources: [],
+        },
+      }),
+    ).toBe(true);
+  });
+
+  test("does not require legacy host chain seed shim for v0.13.1+ coprocessor images", () => {
+    expect(
+      requiresLegacyHostChainSeedShim({
+        versions: {
+          target: "latest-supported",
+          lockName: "v0.13.1.json",
+          env: {
+            COPROCESSOR_DB_MIGRATION_VERSION: "v0.13.1",
+            COPROCESSOR_ZKPROOF_WORKER_VERSION: "v0.13.1",
           } as Record<string, string>,
           sources: [],
         },
