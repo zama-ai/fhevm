@@ -432,7 +432,7 @@ describe('Delegated user decryption', function () {
 
   describe('wildcard delegation', function () {
     // Wildcard delegation lets the delegator grant decryption rights for every
-    // contract in one shot via the ACL's `WILDCARD_DELEGATION_ADDRESS()` sentinel.
+    // contract in one shot via the ACL's `WILDCARD_CONTRACT_ADDRESS()` sentinel.
 
     // Distinct handle values seeded into each fixture target so test sites
     // can refer to them by purpose rather than by raw numeral.
@@ -447,7 +447,7 @@ describe('Delegated user decryption', function () {
     let wildcardAddress: string;
 
     const ACL_WILDCARD_ABI = [
-      'function WILDCARD_DELEGATION_ADDRESS() view returns (address)',
+      'function WILDCARD_CONTRACT_ADDRESS() view returns (address)',
       'function delegateForUserDecryption(address delegate, address contractAddress, uint64 expirationDate)',
     ];
 
@@ -476,7 +476,7 @@ describe('Delegated user decryption', function () {
       // Read the wildcard sentinel from the deployed ACL once and reuse it
       // via `wildcardAddress` across scenarios.
       const acl = new ethers.Contract(aclAddress, ACL_WILDCARD_ABI, ethers.provider);
-      wildcardAddress = await acl.WILDCARD_DELEGATION_ADDRESS();
+      wildcardAddress = await acl.WILDCARD_CONTRACT_ADDRESS();
 
       // Deploy a `WildcardDelegationTarget` so cross-contract coverage runs
       // against an address distinct from the outer `before`'s EncryptedERC20.
@@ -501,7 +501,7 @@ describe('Delegated user decryption', function () {
       delegatorHandleOnB = await targetB.euint64Of(smartWalletAddress);
     });
 
-    it('exposes WILDCARD_DELEGATION_ADDRESS() at the expected sentinel value', async function () {
+    it('exposes WILDCARD_CONTRACT_ADDRESS() at the expected sentinel value', async function () {
       expect(wildcardAddress).to.equal(EXPECTED_WILDCARD_ADDRESS);
     });
 

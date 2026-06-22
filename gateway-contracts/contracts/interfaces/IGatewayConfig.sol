@@ -135,9 +135,10 @@ interface IGatewayConfig {
 
     /**
      * @notice Emitted when a new host chain has been registered.
+     * @param chainId The new host chain's chain ID.
      * @param hostChain The new host chain metadata.
      */
-    event AddHostChain(HostChain hostChain);
+    event AddHostChain(uint256 indexed chainId, HostChain hostChain);
 
     /**
      * @notice Emitted when a registered host chain has been disabled.
@@ -794,6 +795,13 @@ interface IGatewayConfig {
      * @return The user decryption threshold.
      */
     function getUserDecryptionThresholdForContext(uint256 contextId) external view returns (uint256);
+
+    /**
+     * @notice Returns the maximum allowed KMS signer-set size, which is also the upper bound enforced
+     *         on every per-context threshold at registration time.
+     * @return The maximum number of KMS signers.
+     */
+    function getMaxKmsSigners() external pure returns (uint256);
 
     /**
      * @notice Returns the versions of the GatewayConfig contract in SemVer format.

@@ -47,7 +47,7 @@ contract GatewayConfigMock {
 
     event UpdatePriorityCoprocessorTxSender(address indexed coprocessorTxSenderAddress);
 
-    event AddHostChain(HostChain hostChain);
+    event AddHostChain(uint256 indexed chainId, HostChain hostChain);
 
     event DisableHostChain(uint256 indexed chainId);
 
@@ -145,7 +145,9 @@ contract GatewayConfigMock {
     }
 
     function addHostChain(HostChain calldata hostChain) external {
-        emit AddHostChain(hostChain);
+        uint256 chainId;
+
+        emit AddHostChain(chainId, hostChain);
     }
 
     function disableHostChain(uint256 chainId) external {

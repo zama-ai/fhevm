@@ -61,7 +61,7 @@ contract ACL is
      * @notice Returned if the delegate address is the wildcard contract address.
      * @param delegate The address of the delegate.
      */
-    error DelegateCannotBeWildcard(address delegate);
+    error DelegateCannotBeWildcardContract(address delegate);
 
     /**
      * @notice Returned if the requested expiration date was already set to same expiration for (delegate,contractAddress).
@@ -174,7 +174,7 @@ contract ACL is
      *      Pass as `contractAddress` in `delegateForUserDecryption` / `revokeDelegationForUserDecryption` to grant or
      *      revoke blanket delegation. This is a high-trust grant: SDKs should warn users explicitly.
      */
-    address public constant WILDCARD_DELEGATION_ADDRESS = address(type(uint160).max);
+    address public constant WILDCARD_CONTRACT_ADDRESS = address(type(uint160).max);
 
     /// Constant used for making sure the version number used in the `reinitializer` modifier is
     /// identical between `initializeFromEmptyProxy` and the `reinitializeVX` method
@@ -300,7 +300,7 @@ contract ACL is
      * @notice Delegates an account the access to handles for user decryption, for instance, in the context of account
      * abstraction for issuing user decryption requests from a smart contract account.
      * @param delegate The address of the account that receives the delegation.
-     * @param contractAddress The contract address to delegate access to, or `WILDCARD_DELEGATION_ADDRESS` for delegation across
+     * @param contractAddress The contract address to delegate access to, or `WILDCARD_CONTRACT_ADDRESS` for delegation across
      *        all contracts (until expiry). Mixing wildcard with per-contract delegations is allowed and can be useful,
      *        for example when different expiries are desired, although it is often unnecessary.
      * @param expirationDate The UNIX timestamp when the user decryption delegation expires.
@@ -326,8 +326,8 @@ contract ACL is
         if (delegate == msg.sender) {
             revert SenderCannotBeDelegate(delegate);
         }
-        if (delegate == WILDCARD_DELEGATION_ADDRESS) {
-            revert DelegateCannotBeWildcard(delegate);
+        if (delegate == WILDCARD_CONTRACT_ADDRESS) {
+            revert DelegateCannotBeWildcardContract(delegate);
         }
         if (delegate == contractAddress) {
             revert DelegateCannotBeContractAddress(contractAddress);
@@ -361,7 +361,7 @@ contract ACL is
     /**
      * @notice Revokes the access to handles for user decryption delegated to an account.
      * @param delegate The address of the account that receives the delegation.
-     * @param contractAddress The contract address to revoke access to, or `WILDCARD_DELEGATION_ADDRESS` to revoke the
+     * @param contractAddress The contract address to revoke access to, or `WILDCARD_CONTRACT_ADDRESS` to revoke the
      *        wildcard delegation across all contracts.
      */
     function revokeDelegationForUserDecryption(address delegate, address contractAddress) public virtual whenNotPaused {
@@ -502,7 +502,7 @@ contract ACL is
      * @notice Returns whether an account is delegated to access the handle for user decryption.
      * @dev Succeeds when the delegator and `contractAddress` are both persistently allowed on the handle, and either
      *      a non-expired delegation exists for `(delegator, delegate, contractAddress)` or for
-     *      `(delegator, delegate, WILDCARD_DELEGATION_ADDRESS)`. Wildcard does not bypass `allow`; it only avoids per-contract
+     *      `(delegator, delegate, WILDCARD_CONTRACT_ADDRESS)`. Wildcard does not bypass `allow`; it only avoids per-contract
      *      delegation entries.
      * @param delegator The address of the account that delegates access to its handles.
      * @param delegate The address of the account that receives the delegation.
@@ -521,7 +521,7 @@ contract ACL is
             return false;
         }
         return
-            _isUserDecryptionDelegationActive($, delegator, delegate, WILDCARD_DELEGATION_ADDRESS) ||
+            _isUserDecryptionDelegationActive($, delegator, delegate, WILDCARD_CONTRACT_ADDRESS) ||
             _isUserDecryptionDelegationActive($, delegator, delegate, contractAddress);
     }
 
@@ -626,7 +626,7 @@ contract ACL is
     function _authorizeUpgrade(address _newImplementation) internal virtual override onlyOwner {}
 
     /// @dev Looks up `userDecryptionDelegations[delegator][delegate][contractAddress]`.
-    /// @param contractAddress App contract from the decryption request, or `WILDCARD_DELEGATION_ADDRESS` for the wildcard row.
+    /// @param contractAddress App contract from the decryption request, or `WILDCARD_CONTRACT_ADDRESS` for the wildcard row.
     function _isUserDecryptionDelegationActive(
         ACLStorage storage $,
         address delegator,
