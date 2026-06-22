@@ -161,3 +161,9 @@ BA = "BA"                 # used in test variable names (e.g., wrongOrderBAInste
 
 # Doc
 PN = "PN"                 # abbreviation P1, ..., PN
+
+[default.extend-identifiers]
+# Solana SlotHashes sysvar address — a base58 "vanity" pubkey that reads as
+# "SysvarSlotHashes" with a digit 1 in place of the l; whitelist the whole
+# identifier so typos doesn't split it and flag the "ot" fragment.
+SysvarS1otHashes111111111111111111111111111 = "SysvarS1otHashes111111111111111111111111111"
