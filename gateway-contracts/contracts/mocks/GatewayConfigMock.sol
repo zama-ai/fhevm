@@ -45,6 +45,8 @@ contract GatewayConfigMock {
 
     event UpdateCoprocessorThreshold(uint256 newCoprocessorThreshold);
 
+    event UpdatePriorityCoprocessorTxSender(address indexed coprocessorTxSenderAddress);
+
     event AddHostChain(HostChain hostChain);
 
     event DisableHostChain(uint256 indexed chainId);
@@ -73,6 +75,10 @@ contract GatewayConfigMock {
         Custodian[] memory custodians = new Custodian[](1);
 
         emit InitializeGatewayConfig(kmsContextId, metadata, thresholds, kmsNodes, coprocessors, custodians);
+    }
+
+    function reinitializeV8(address coprocessorTxSenderAddress) public {
+        emit UpdatePriorityCoprocessorTxSender(coprocessorTxSenderAddress);
     }
 
     function updateKmsContext(
@@ -126,6 +132,16 @@ contract GatewayConfigMock {
 
     function updateCoprocessorThreshold(uint256 newCoprocessorThreshold) external {
         emit UpdateCoprocessorThreshold(newCoprocessorThreshold);
+    }
+
+    function setPriorityCoprocessorTxSender(address coprocessorTxSenderAddress) external {
+        emit UpdatePriorityCoprocessorTxSender(coprocessorTxSenderAddress);
+    }
+
+    function removePriorityCoprocessorTxSender() external {
+        address coprocessorTxSenderAddress;
+
+        emit UpdatePriorityCoprocessorTxSender(coprocessorTxSenderAddress);
     }
 
     function addHostChain(HostChain calldata hostChain) external {

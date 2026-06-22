@@ -1978,6 +1978,187 @@ async fn test_run_recovers_from_worker_panic() {
     );
 }
 
+// ── Adaptive drain: prefetch=1 drains far faster than prefetch_count/block_ms ──
+//
+// With a large block_ms (2s) and a near-instant handler, the pre-adaptive consumer
+// read one message per 2s tick, so draining N messages took ~(N-1)*block_ms. Adaptive
+// drain re-polls immediately after each completion (and after each non-empty read), so
+// draining is bounded by handler latency, not the timer. We assert the whole burst
+// drains in well under the naive timer cost.
+#[tokio::test]
+#[ignore = "requires Docker"]
+async fn test_adaptive_drain_fast_at_prefetch_one() {
+    let url = shared_redis_url().await;
+
+    let stream = "prefetch.adaptive-drain.events";
+    let dead_stream = "prefetch.adaptive-drain.events:dead";
+    let n: u64 = 6;
+    let block_ms: u64 = 2000;
+
+    let config = RedisConsumerConfigBuilder::new()
+        .stream(stream)
+        .group_name("adaptive-drain-group")
+        .consumer_name("consumer-1")
+        .dead_stream(dead_stream)
+        .max_retries(3)
+        // Keep ClaimSweeper out of the test window.
+        .claim_min_idle(Duration::from_secs(30))
+        .claim_interval(Duration::from_secs(10))
+        .prefetch_count(1)
+        .block_ms(block_ms as usize)
+        .build_prefetch()
+        .unwrap();
+
+    let processed = Arc::new(Mutex::new(HashSet::<u64>::new()));
+    let handler = {
+        let processed = processed.clone();
+        AsyncHandlerPayloadOnly::new(move |event: BlockEvent| {
+            let processed = processed.clone();
+            async move {
+                processed.lock().unwrap().insert(event.block_number);
+                Ok::<(), std::convert::Infallible>(())
+            }
+        })
+    };
+
+    let consumer = RedisConsumer::connect(url).await.unwrap();
+    let consumer_handle = tokio::spawn(async move {
+        let _ = consumer.run(config, handler).await;
+    });
+
+    tokio::time::sleep(Duration::from_millis(400)).await;
+
+    let conn = RedisConnectionManager::new(url).await.unwrap();
+    let publisher = RedisPublisher::new(conn);
+    for i in 0..n {
+        publisher
+            .publish(stream, &BlockEvent { block_number: i })
+            .await
+            .unwrap();
+    }
+
+    // Time from "all published" to "all consumed".
+    let start = tokio::time::Instant::now();
+    let deadline = start + Duration::from_secs(15);
+    while tokio::time::Instant::now() < deadline {
+        if processed.lock().unwrap().len() == n as usize {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    let elapsed = start.elapsed();
+
+    consumer_handle.abort();
+
+    assert_eq!(
+        processed.lock().unwrap().len(),
+        n as usize,
+        "every published message should be consumed"
+    );
+    // Pre-adaptive cost would be ~(n-1)*block_ms = 10s (one tick per message after the
+    // first). Adaptive drain pays at most ~one block_ms for the first read, then drains
+    // the rest immediately. Half the naive cost is a generous, deterministic ceiling.
+    let naive_timer_cost = Duration::from_millis(block_ms * (n - 1));
+    assert!(
+        elapsed < naive_timer_cost / 2,
+        "adaptive drain should beat the block_ms timer ceiling: elapsed={elapsed:?}, naive={naive_timer_cost:?}"
+    );
+}
+
+// ── Strict concurrency cap: in-flight handlers never exceed prefetch_count ─────
+//
+// With a slow handler and a backlog, the pre-adaptive consumer read prefetch_count new
+// messages every block_ms tick with no capacity check, so in-flight could leak above
+// prefetch_count. The capacity gate caps concurrent handlers at prefetch_count while
+// still draining at full speed.
+#[tokio::test]
+#[ignore = "requires Docker"]
+async fn test_strict_concurrency_cap_under_load() {
+    let url = shared_redis_url().await;
+
+    let stream = "prefetch.strict-cap.events";
+    let dead_stream = "prefetch.strict-cap.events:dead";
+    let prefetch: usize = 3;
+    let n: u64 = 12;
+
+    let config = RedisConsumerConfigBuilder::new()
+        .stream(stream)
+        .group_name("strict-cap-group")
+        .consumer_name("consumer-1")
+        .dead_stream(dead_stream)
+        .max_retries(3)
+        .claim_min_idle(Duration::from_secs(30))
+        .claim_interval(Duration::from_secs(10))
+        .prefetch_count(prefetch)
+        .block_ms(100)
+        .build_prefetch()
+        .unwrap();
+
+    let in_flight = Arc::new(AtomicU32::new(0));
+    let max_in_flight = Arc::new(AtomicU32::new(0));
+    let processed = Arc::new(Mutex::new(HashSet::<u64>::new()));
+
+    let handler = {
+        let in_flight = in_flight.clone();
+        let max_in_flight = max_in_flight.clone();
+        let processed = processed.clone();
+        AsyncHandlerPayloadOnly::new(move |event: BlockEvent| {
+            let in_flight = in_flight.clone();
+            let max_in_flight = max_in_flight.clone();
+            let processed = processed.clone();
+            async move {
+                let cur = in_flight.fetch_add(1, Ordering::SeqCst) + 1;
+                max_in_flight.fetch_max(cur, Ordering::SeqCst);
+                tokio::time::sleep(Duration::from_millis(300)).await;
+                processed.lock().unwrap().insert(event.block_number);
+                in_flight.fetch_sub(1, Ordering::SeqCst);
+                Ok::<(), std::convert::Infallible>(())
+            }
+        })
+    };
+
+    let consumer = RedisConsumer::connect(url).await.unwrap();
+    let consumer_handle = tokio::spawn(async move {
+        let _ = consumer.run(config, handler).await;
+    });
+
+    tokio::time::sleep(Duration::from_millis(400)).await;
+
+    let conn = RedisConnectionManager::new(url).await.unwrap();
+    let publisher = RedisPublisher::new(conn);
+    for i in 0..n {
+        publisher
+            .publish(stream, &BlockEvent { block_number: i })
+            .await
+            .unwrap();
+    }
+
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+    while tokio::time::Instant::now() < deadline {
+        if processed.lock().unwrap().len() == n as usize {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+
+    consumer_handle.abort();
+
+    assert_eq!(
+        processed.lock().unwrap().len(),
+        n as usize,
+        "every message should be consumed"
+    );
+    let observed_max = max_in_flight.load(Ordering::SeqCst);
+    assert!(
+        observed_max <= prefetch as u32,
+        "in-flight handlers must never exceed prefetch_count: observed_max={observed_max}, prefetch={prefetch}"
+    );
+    assert!(
+        observed_max >= 2,
+        "test should actually exercise concurrency (observed_max={observed_max})"
+    );
+}
+
 // Helpers for auto-trim assertions.
 async fn redis_xlen(url: &str, stream: &str) -> u64 {
     let client = redis::Client::open(url).unwrap();

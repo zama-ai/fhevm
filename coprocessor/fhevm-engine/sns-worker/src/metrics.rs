@@ -68,13 +68,14 @@ pub(crate) static UNCOMPLETE_AWS_UPLOADS: LazyLock<IntGauge> = LazyLock::new(|| 
 pub fn spawn_gauge_update_routine(period: std::time::Duration, db_pool: PgPool) -> JoinHandle<()> {
     tokio::spawn(async move {
         loop {
-            match sqlx::query_scalar(
-                "SELECT COUNT(*) FROM pbs_computations WHERE is_completed = FALSE",
+            match sqlx::query_scalar!(
+                "SELECT COUNT(*)::BIGINT FROM pbs_computations WHERE is_completed = FALSE",
             )
             .fetch_one(&db_pool)
             .await
             {
                 Ok(count) => {
+                    let count = count.unwrap_or(0);
                     info!(uncomplete_tasks = %count, "Fetched uncomplete tasks count");
                     UNCOMPLETE_TASKS.set(count);
                 }
@@ -83,13 +84,27 @@ pub fn spawn_gauge_update_routine(period: std::time::Duration, db_pool: PgPool) 
                 }
             }
 
-            match sqlx::query_scalar(
-                "SELECT COUNT(*) FROM ciphertext_digest WHERE (ciphertext128 IS NULL OR ciphertext IS NULL)",
+            match sqlx::query_scalar!(
+                "
+                SELECT COUNT(*)::BIGINT
+                FROM ciphertext_digest d
+                WHERE d.ciphertext IS NULL
+                   OR (
+                     d.ciphertext128 IS NULL
+                     AND EXISTS (
+                       SELECT 1
+                       FROM ciphertexts128 c
+                       WHERE c.handle = d.handle
+                         AND c.ciphertext IS NOT NULL
+                     )
+                   )
+                ",
             )
             .fetch_one(&db_pool)
             .await
             {
                 Ok(count) => {
+                    let count = count.unwrap_or(0);
                     info!(uncomplete_aws_uploads = %count, "Fetched uncomplete AWS uploads count");
                     UNCOMPLETE_AWS_UPLOADS.set(count);
                 }

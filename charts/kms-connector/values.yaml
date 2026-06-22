@@ -17,27 +17,39 @@ commonConfig:
   # Database connection string
   databaseUrl: "postgresql://$(DATABASE_ENDPOINT)/connector"
 
+  # Selects a bundled smart contract address preset from
+  # configs/contracts-<network>.yaml. Allowed values: "" (no preset), "devnet",
+  # "testnet", "mainnet". An unrecognized value fails the render. The per-chain
+  # *ContractAddresses below override individual preset entries when set.
+  network: ""
+
   # Gateway chain RPC node endpoint (HTTP)
   gatewayUrl: "http://gateway-node:8546"
-
-  # Gateway chain identifier
-  gatewayChainId: "54321"
-
-  # Gateway smart contract addresses
+  # Gateway chain identifier (override the network preset when set)
+  gatewayChainId: ""
+  # Gateway smart contract addresses (override the network preset when set)
   gatewayContractAddresses:
-    decryption: "0xc9bAE822fE6793e3B456144AdB776D5A318CB71e"
-    gatewayConfig: "0xeAC2EfFA07844aB326D92d1De29E136a6793DFFA"
-    kmsGeneration: "0xF0bFB159C7381F7CB332586004d8247252C5b816"
+    decryption: ""
+    gatewayConfig: ""
+    kmsGeneration: ""
 
   # Ethereum chain RPC node endpoint (HTTP)
   ethereumUrl: "http://ethereum-node:8545"
-
-  # Ethereum chain identifier
-  ethereumChainId: "11155111"
-
-  # Ethereum smart contract addresses
+  # Ethereum chain identifier (override the network preset when set)
+  ethereumChainId: ""
+  # Ethereum smart contract addresses (override the network preset when set)
   ethereumContractAddresses:
-    kmsVerifier: "0x0000000000000000000000000000000000000000"
+    acl: ""
+    # KMS Verifier is only present on Ethereum and not other host chains
+    kmsVerifier: ""
+
+  # Polygon chain RPC node endpoint (HTTP)
+  polygonUrl: "http://polygon-node:8545"
+  # Polygon chain identifier (override the network preset when set)
+  polygonChainId: ""
+  # Polygon smart contract addresses (override the network preset when set)
+  polygonContractAddresses:
+    acl: ""
 
   # Distributed tracing configuration
   tracing:
@@ -85,12 +97,6 @@ kmsConnectorDbMigration:
 
   # Environment variables for database migration
   env:
-    - name: DATABASE_ENDPOINT
-      value: "postgresql://db:5432/kms-connector"
-    - name: PGUSER
-      value: "postgres"
-    - name: PGPASSWORD
-      value: "postgres"
 
   serviceAccountName:
 
@@ -202,9 +208,12 @@ kmsConnectorKmsWorker:
 
     # List of host chain RPC node endpoints, chain ids, and ACL contract addresses
     hostChains:
-      - url: "http://host-node:8545"
-        chainId: 12345
-        aclAddress: "0x05fD9B5EFE0a996095f42Ed7e77c390810CF660c"
+      - url: "$(KMS_CONNECTOR_ETHEREUM_URL)"
+        chainId: "$(KMS_CONNECTOR_ETHEREUM_CHAIN_ID)"
+        aclAddress: "$(KMS_CONNECTOR_ETHEREUM_ACL_ADDRESS)"
+      - url: "$(KMS_CONNECTOR_POLYGON_URL)"
+        chainId: "$(KMS_CONNECTOR_POLYGON_CHAIN_ID)"
+        aclAddress: "$(KMS_CONNECTOR_POLYGON_ACL_ADDRESS)"
 
     # Override commonConfig.gatewayUrl if needed
     # gatewayUrl:
