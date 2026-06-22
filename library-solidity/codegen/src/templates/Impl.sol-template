@@ -7,6 +7,7 @@ pragma solidity ^0.8.24;
 //$$ -
 //$$ -----------------------------------------------------------------------
 import {FheType} from "$${FheTypeDotSol}$$";
+$${ImplBridgeImports}$$
 //$$ -----------------------------------------------------------------------
 
 /**
@@ -132,6 +133,7 @@ interface IACL {
      * @return results      Return payloads for each call in `data`.
      */
     function multicall(bytes[] calldata data) external payable returns (bytes[] memory results);
+    $${ImplBridgeACLGetter}$$
 
     /**
      * @notice              Allows the use of handle by address account for this transaction.
@@ -280,6 +282,8 @@ library Impl {
         $.CoprocessorAddress = coprocessorConfig.CoprocessorAddress;
         $.KMSVerifierAddress = coprocessorConfig.KMSVerifierAddress;
     }
+
+    $${ImplBridge}$$
 
     //$$ -----------------------------------------------------------------------
     //$$ -
