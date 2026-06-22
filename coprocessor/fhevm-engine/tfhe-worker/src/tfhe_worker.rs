@@ -16,7 +16,7 @@ use scheduler::dfg::types::{CompressedCiphertext, DFGTxInput, SchedulerError};
 use scheduler::dfg::{build_component_nodes, ComponentNode, DFComponentGraph, DFGOp};
 use scheduler::dfg::{scheduler::Scheduler, types::DFGTaskInput};
 use sqlx::types::Uuid;
-use sqlx::{postgres::PgListener, query, Acquire, Pool, Postgres};
+use sqlx::{postgres::PgListener, query, Pool, Postgres};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
@@ -275,7 +275,9 @@ async fn tfhe_worker_cycle(
         );
         let mut conn = pool.acquire().instrument(acq_span).await?;
         let txn_span = tracing::info_span!(parent: &loop_span, "begin_transaction");
-        let mut trx = conn.begin().instrument(txn_span).await?;
+        let mut trx = fhevm_engine_common::versioning::begin_guarded_conn(&mut conn)
+            .instrument(txn_span)
+            .await?;
 
         // Cutover safety (BCS only): take the shared cutover advisory lock
         // and re-read the FSM state. The shared lock blocks if execute_cutover

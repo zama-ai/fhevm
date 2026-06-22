@@ -12,7 +12,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use sqlx::postgres::PgListener;
-use sqlx::{Connection, PgConnection, Pool, Postgres};
+use sqlx::{Connection, PgConnection, Pool, Postgres, Transaction};
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
@@ -54,6 +54,12 @@ pub fn binary_is_newer_than(live: &str) -> bool {
 /// True iff this binary's [`STACK_VERSION`] equals `live` (same major.minor.patch).
 pub fn binary_matches(live: &str) -> bool {
     parse_version(STACK_VERSION) == parse_version(live)
+}
+
+/// True iff this binary's [`STACK_VERSION`] is strictly older than `live` — i.e.
+/// it belongs to a retired stack that should no longer touch the database.
+pub fn binary_is_older_than(live: &str) -> bool {
+    parse_version(STACK_VERSION) < parse_version(live)
 }
 
 /// Runtime stack mode, shared between a service's work loop and the
@@ -203,6 +209,58 @@ pub async fn resolve_gcs_mode(database_url: &str) -> anyhow::Result<bool> {
     Ok(gcs_mode)
 }
 
+/// Error returned by [`begin_guarded_pool`] / [`begin_guarded_conn`] when this
+/// binary belongs to a retired stack — its [`STACK_VERSION`] is strictly older
+/// than the live `versioning.stack_version`.
+#[derive(Debug, thiserror::Error)]
+#[error("stack version {binary} is older than live stack {live}; access denied (retired stack)")]
+pub struct StaleStackError {
+    pub binary: &'static str,
+    pub live: String,
+}
+
+/// Re-read the live stack version on `conn` and fail if this binary is strictly
+/// older (a retired stack). A missing `versioning` row is permissive, mirroring
+/// [`resolve_gcs_mode`]'s default, so a fresh/unseeded DB is not locked out.
+async fn assert_not_retired(conn: &mut PgConnection) -> Result<(), sqlx::Error> {
+    let row: Option<(String,)> =
+        sqlx::query_as("SELECT stack_version FROM versioning WHERE singleton = TRUE")
+            .fetch_optional(conn)
+            .await?;
+    if let Some((live,)) = row {
+        if binary_is_older_than(&live) {
+            return Err(sqlx::Error::Configuration(Box::new(StaleStackError {
+                binary: STACK_VERSION,
+                live,
+            })));
+        }
+    }
+    Ok(())
+}
+
+/// Begin a transaction on `pool` whose first action asserts this binary is not a
+/// retired stack (see [`assert_not_retired`]). On rejection the just-opened
+/// transaction is dropped (and thus rolled back) before it is returned, so a
+/// stale binary can neither read nor write through it.
+///
+/// Cost: one extra round-trip per transaction (a single indexed singleton read).
+pub async fn begin_guarded_pool(
+    pool: &Pool<Postgres>,
+) -> Result<Transaction<'static, Postgres>, sqlx::Error> {
+    let mut tx = pool.begin().await?;
+    assert_not_retired(&mut tx).await?;
+    Ok(tx)
+}
+
+/// Like [`begin_guarded_pool`] but begins on an already-acquired connection.
+pub async fn begin_guarded_conn(
+    conn: &mut PgConnection,
+) -> Result<Transaction<'_, Postgres>, sqlx::Error> {
+    let mut tx = conn.begin().await?;
+    assert_not_retired(&mut tx).await?;
+    Ok(tx)
+}
+
 #[cfg(test)]
 mod tests {
     use super::parse_version;
@@ -221,7 +279,7 @@ mod tests {
         assert!(parse_version("v0.14.1") > parse_version("v0.14"));
         // Missing patch component pads to 0, so these compare equal.
         assert_eq!(parse_version("v0.14.0"), parse_version("v0.14"));
-        assert!(!(parse_version("v0.14.0") > parse_version("v0.14.0")));
-        assert!(!(parse_version("v0.13") > parse_version("v0.14.0")));
+        assert!(parse_version("v0.14.0") <= parse_version("v0.14.0"));
+        assert!(parse_version("v0.13") <= parse_version("v0.14.0"));
     }
 }

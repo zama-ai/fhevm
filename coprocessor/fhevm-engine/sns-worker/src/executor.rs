@@ -195,6 +195,7 @@ async fn get_keyset(
 }
 
 /// Executes the worker logic for the SnS task.
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn run_loop(
     conf: Config,
     tx: Sender<UploadJob>,
@@ -386,7 +387,7 @@ async fn fetch_and_execute_sns_tasks(
     token: &CancellationToken,
     uploads_enabled: bool,
 ) -> Result<(bool, usize), ExecutionError> {
-    let mut db_txn = match pool.begin().await {
+    let mut db_txn = match fhevm_engine_common::versioning::begin_guarded_pool(pool).await {
         Ok(txn) => txn,
         Err(err) => {
             error!(error = %err, "Failed to begin transaction");

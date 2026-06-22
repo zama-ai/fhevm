@@ -383,7 +383,8 @@ async fn execute_verify_proof_routine(
     host_chain_cache: &HostChainsCache,
     conf: &Config,
 ) -> Result<(), ExecutionError> {
-    let mut txn: sqlx::Transaction<'_, sqlx::Postgres> = pool.begin().await?;
+    let mut txn: sqlx::Transaction<'_, sqlx::Postgres> =
+        fhevm_engine_common::versioning::begin_guarded_pool(pool).await?;
     if let Ok(row) = sqlx::query!(
         "SELECT zk_proof_id, input, chain_id, contract_address, user_address, transaction_id, block_number
             FROM verify_proofs

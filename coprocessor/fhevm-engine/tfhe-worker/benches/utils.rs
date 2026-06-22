@@ -92,7 +92,6 @@ async fn start_coprocessor(rx: Receiver<bool>, db_url: &str) {
         dcid_max_no_progress_cycles: 2,
         dcid_ignore_dependency_count_threshold: 100,
         drift_revert_watcher_timeouts: Default::default(),
-        gcs_mode: false,
     };
 
     std::thread::spawn(move || {

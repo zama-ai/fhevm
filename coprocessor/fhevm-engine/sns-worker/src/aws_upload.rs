@@ -109,7 +109,7 @@ async fn run_uploader_loop(
                     continue;
                 }
 
-                let mut trx = pool.begin().await?;
+                let mut trx = fhevm_engine_common::versioning::begin_guarded_pool(&pool).await?;
 
                 let item = match job {
                     UploadJob::Normal(item) =>

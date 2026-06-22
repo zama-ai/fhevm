@@ -34,4 +34,4 @@ pub mod common {
 /// parser in `versioning::parse_version` tolerates its absence.
 pub const STACK_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-pub const CIPHERTEXT_VERSION: i16 = 1;
+pub const CIPHERTEXT_VERSION: i16 = 2;
