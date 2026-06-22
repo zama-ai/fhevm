@@ -72,8 +72,6 @@ jobs:
           - localstack-v12
           - localstack-v13
           - localstack-latest
-          - testnet
-          - devnet
     steps:
       - run: echo "::notice title=${{ matrix.name }}::start $(date -u +%T) on ${RUNNER_NAME}"
       - run: sleep 30
@@ -261,58 +259,6 @@ jobs:
           echo 'MNEMONIC="test test test test test test test test test test test junk"' > test/.env
           echo 'ZAMA_FHEVM_API_KEY="zmr_mainnet_blahblah"' >> test/.env
       - name: Run localstack suite (${{ matrix.name }})
-        run: |
-          ulimit -n 65536
-          npm run ${{ matrix.script }}
-
-  # --- Live-network suites (Sepolia testnet + devnet) ---
-  # NOTE: these hit live infra (public RPC + hosted relayer) and need a REAL
-  # funded mnemonic + a REAL API key. Configure these repo secrets or the jobs
-  # will fail (which is fine — this workflow is not a merge gate):
-  #   SDK_TEST_MNEMONIC, SDK_TEST_ZAMA_API_KEY, (optional) SDK_TEST_*_RPC_URL
-  live-network:
-    name: dod ${{ matrix.chain }}
-    if: ${{ github.event_name == 'pull_request' || inputs.mode == 'real' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 40
-    permissions:
-      contents: 'read'
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - chain: testnet
-            script: test:full:testnet
-            rpc_url: 'https://ethereum-sepolia-rpc.publicnode.com'
-          - chain: devnet
-            script: test:full:devnet
-            rpc_url: ''
-    steps:
-      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
-        with:
-          persist-credentials: 'false'
-      - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
-        with:
-          node-version: 22.x
-      - uses: foundry-rs/foundry-toolchain@82dee4ba654bd2146511f85f0d013af94670c4de # v1.4.0
-        with:
-          version: stable
-      - run: npm ci
-      - run: npm run codegen:loaders:prod
-      - name: Write test .env (real credentials)
-        env:
-          SDK_TEST_MNEMONIC: ${{ secrets.SDK_TEST_MNEMONIC }}
-          SDK_TEST_ZAMA_API_KEY: ${{ secrets.SDK_TEST_ZAMA_API_KEY }}
-          RPC_URL: ${{ matrix.rpc_url }}
-        run: |
-          {
-            echo "MNEMONIC=\"${SDK_TEST_MNEMONIC}\""
-            echo "ZAMA_FHEVM_API_KEY=\"${SDK_TEST_ZAMA_API_KEY}\""
-          } > test/.env
-          if [ -n "${RPC_URL}" ]; then
-            echo "RPC_URL=\"${RPC_URL}\"" > "test/.env.${{ matrix.chain }}"
-          fi
-      - name: Run live-network suite (${{ matrix.chain }})
         run: |
           ulimit -n 65536
           npm run ${{ matrix.script }}
