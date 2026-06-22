@@ -969,11 +969,12 @@ contract Decryption is
             return GATEWAY_CONFIG.getCurrentKmsContextId();
         }
 
-        // Version 1 -> extract contextId from bytes 1..33
-        if (version == 1) {
+        // Versions 1/2 -> extract contextId from bytes 1..33
+        if (version == 1 || version == 2) {
             if (extraData.length < 33) {
                 revert InvalidExtraDataLength(extraData.length, 33);
             }
+
             contextId = uint256(bytes32(extraData[1:33]));
             // Reject the all-zeros payload: contextId 0 is reserved for the pre-pinning
             // legacy fallback and must not be reachable from caller-supplied extraData.
