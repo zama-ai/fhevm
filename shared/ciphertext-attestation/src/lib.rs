@@ -25,12 +25,20 @@
 use alloy_primitives::{Address, B256, U256};
 use serde::{Deserialize, Serialize};
 
+pub mod consensus;
 pub mod sign;
 
 /// Domain separator for the canonical signed payload. Scopes the keccak hash to
 /// "FHEVM CT Attestation" and prevents collisions with any other hash computed
 /// over similar-looking inputs.
 pub const DOMAIN_TAG: [u8; 8] = *b"FHEVMCTA";
+
+/// S3 user-defined metadata key that carries the JSON-serialized
+/// [`CiphertextAttestation`] on every ciphertext object.
+///
+/// AWS SDK metadata APIs expect this key without the `x-amz-meta-` HTTP
+/// header prefix.
+pub const S3_METADATA_ATTESTATION_KEY: &str = "ct-attestation";
 
 /// S3 user-defined metadata header that carries the JSON-serialized
 /// [`CiphertextAttestation`] on every ciphertext object.
@@ -67,7 +75,7 @@ impl From<Version> for u8 {
 ///
 /// The JSON representation is the snake_case variant name; unknown strings are rejected at
 /// deserialization. The canonical bytes encode the discriminant as `uint8`.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 #[repr(u8)]
 pub enum CiphertextFormat {
