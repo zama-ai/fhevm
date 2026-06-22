@@ -11,17 +11,21 @@ permissions: {}
 
 concurrency:
   group: test-suite-orchestrate-e2e-tests-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  # Do NOT cancel on `labeled` events: a Mergify merge-queue PR receives the
+  # `cla-signed` label moments after it's opened, on the same ref/concurrency
+  # group as the real run. Cancelling there would kill the in-flight e2e run.
+  # Only real code pushes (synchronize/opened/reopened) should cancel.
+  cancel-in-progress: ${{ github.event.action != 'labeled' && github.ref != 'refs/heads/main' }}
 
 jobs:
   resolve-baseline:
     name: resolve-baseline
     if: &build-trigger-condition |
-      startsWith(github.head_ref, 'mergify/merge-queue/') ||
-      startsWith(github.base_ref, 'release/') ||
+      (github.event.action != 'labeled' || github.event.label.name == 'e2e orchestrate test') &&
       (
-        contains(github.event.pull_request.labels.*.name, 'e2e orchestrate test') &&
-        (github.event.action != 'labeled' || github.event.label.name == 'e2e orchestrate test')
+        startsWith(github.head_ref, 'mergify/merge-queue/') ||
+        startsWith(github.base_ref, 'release/') ||
+        contains(github.event.pull_request.labels.*.name, 'e2e orchestrate test')
       )
     runs-on: ubuntu-latest
     permissions:
@@ -141,13 +145,11 @@ jobs:
       - relayer-docker-build
       - test-suite-docker-build
     if: |
-      (success() || failure()) && (
+      (success() || failure()) &&
+      (github.event.action != 'labeled' || github.event.label.name == 'e2e orchestrate test') && (
         startsWith(github.head_ref, 'mergify/merge-queue/') ||
         startsWith(github.base_ref, 'release/') ||
-        (
-          contains(github.event.pull_request.labels.*.name, 'e2e orchestrate test') &&
-          (github.event.action != 'labeled' || github.event.label.name == 'e2e orchestrate test')
-        )
+        contains(github.event.pull_request.labels.*.name, 'e2e orchestrate test')
       )
     env:
       NEW_COMMIT_HASH: ${{ github.event.pull_request.head.sha }}
