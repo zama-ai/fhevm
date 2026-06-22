@@ -1,8 +1,9 @@
-import { assert, expect } from 'chai';
+import { expect } from 'chai';
 import { ethers } from 'hardhat';
 
 import { createInstances } from '../instance';
 import { getSigners, initSigners } from '../signers';
+import { runAdd42InputAndDecrypt } from './runAdd42InputAndDecrypt';
 
 describe('Input Flow', function () {
   before(async function () {
@@ -42,36 +43,6 @@ describe('Input Flow', function () {
   });
 
   it('test add 42 to uint64 input and decrypt', async function () {
-    const encryptedInput = await this.instances.alice.encryptUint64({
-      value: 7n,
-      contractAddress: this.contractAddress,
-      userAddress: this.signers.alice.address,
-    });
-
-    encryptedInput.handles.forEach((handle: any, index: any) => {
-      // Assuming handle is a Uint8Array or Buffer
-      console.log(`  Handle ${index}: 0x${Buffer.from(handle).toString('hex')}`);
-    });
-    console.log('InputProof: 0x' + Buffer.from(encryptedInput.inputProof).toString('hex'));
-    const tx = await this.contract.add42ToInput64(encryptedInput.handles[0], encryptedInput.inputProof);
-    const receipt = await tx.wait();
-    expect(receipt.status).to.equal(1);
-
-    const handle = await this.contract.resUint64();
-
-    // User decrypt the result - should be 7 + 42 = 49.
-    const decryptedValue = await this.instances.alice.userDecryptSingleHandle({
-      handle,
-      contractAddress: this.contractAddress,
-      signer: this.signers.alice,
-    });
-    expect(decryptedValue).to.equal(49n);
-
-    // Public decrypt the result - should be 49.
-    const res = await this.instances.alice.publicDecrypt([handle]);
-    const expectedRes = {
-      [handle]: 49n,
-    };
-    assert.deepEqual(res.clearValues, expectedRes);
+    await runAdd42InputAndDecrypt.call(this);
   });
 });

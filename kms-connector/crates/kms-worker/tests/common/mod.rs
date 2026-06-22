@@ -1,21 +1,47 @@
 use alloy::{
-    hex, primitives::FixedBytes, providers::Provider, rpc::types::Transaction, sol_types::SolCall,
+    hex,
+    primitives::{Address, FixedBytes, U256},
+    providers::{Provider, mock::Asserter},
+    rpc::types::Transaction,
+    sol_types::{SolCall, SolValue},
     transports::http::reqwest,
 };
-use connector_utils::tests::rand::rand_address;
-use fhevm_gateway_bindings::decryption::Decryption::{
-    CtHandleContractPair, userDecryptionRequest_1Call as userDecryptionRequestCall,
+use connector_utils::tests::{
+    rand::rand_address,
+    setup::{S3_CT_RFC023_BUCKET, s3_ct_attestation_signer},
+};
+use fhevm_gateway_bindings::{
+    decryption::Decryption::{
+        CtHandleContractPair, userDecryptionRequest_1Call as userDecryptionRequestCall,
+    },
+    gateway_config::GatewayConfig::Coprocessor,
 };
 use fhevm_host_bindings::acl::ACL::ACLInstance;
 use kms_worker::core::{
-    Config, DbEventPicker, DbKmsResponsePublisher, KmsWorker,
+    Config, CtAttestationConfig, DbEventPicker, DbKmsResponsePublisher, KmsWorker,
     event_processor::{
-        DbContextManager, DbEventProcessor, DecryptionProcessor, KMSGenerationProcessor, KmsClient,
-        s3::S3Service,
+        CiphertextManager, DbContextManager, DbEventProcessor, DecryptionProcessor,
+        KMSGenerationProcessor, KmsClient,
     },
 };
 use sqlx::{Pool, Postgres};
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Duration};
+use tokio_util::sync::CancellationToken;
+
+/// Mocks the Gateway RPC responses for the initial Coprocessor registry load of the
+/// `CiphertextManager`.
+pub fn mock_copro_registry_load(asserter: &Asserter, s3_url: &str) -> Address {
+    let copro_tx_sender = rand_address();
+    asserter.push_success(&vec![s3_ct_attestation_signer().address()].abi_encode());
+    asserter.push_success(&vec![copro_tx_sender].abi_encode());
+    asserter.push_success(&U256::ONE.abi_encode());
+    let coprocessor = Coprocessor {
+        s3BucketUrl: format!("{s3_url}/{S3_CT_RFC023_BUCKET}"),
+        ..Default::default()
+    };
+    asserter.push_success(&coprocessor.abi_encode());
+    copro_tx_sender
+}
 
 pub async fn init_kms_worker<GP, HP>(
     config: Config,
@@ -27,18 +53,26 @@ where
     GP: Provider + Clone + 'static,
     HP: Provider + Clone + 'static,
 {
+    // The 24h refresh interval (see `testing_ct_attestation_config`) means the refresh task
+    // never fires during a test, so a throwaway token is fine here.
+    let ciphertext_manager = CiphertextManager::connect(
+        gateway_provider.clone(),
+        reqwest::Client::new(),
+        &config,
+        CancellationToken::new(),
+    )
+    .await?;
+
     let kms_client = KmsClient::connect(&config).await?;
-    let s3_client = reqwest::Client::new();
     let event_picker = DbEventPicker::connect(db.clone(), &config).await?;
 
     let context_manager = DbContextManager::new(db.clone());
-    let s3_service = S3Service::new(&config, gateway_provider.clone(), s3_client);
     let decryption_processor = DecryptionProcessor::new(
         &config,
         context_manager.clone(),
         gateway_provider.clone(),
         acl_contracts_mock,
-        s3_service,
+        ciphertext_manager,
     );
     let kms_generation_processor = KMSGenerationProcessor::new(&config, context_manager);
     let event_processor = DbEventProcessor::new(
@@ -51,6 +85,14 @@ where
     let response_publisher = DbKmsResponsePublisher::new(db.clone());
     let kms_worker = KmsWorker::new(event_picker, event_processor, response_publisher);
     Ok(kms_worker)
+}
+
+pub fn testing_ct_attestation_config(enabled: bool) -> CtAttestationConfig {
+    CtAttestationConfig {
+        enabled,
+        registry_refresh: Duration::from_hours(24), // Avoid refreshing the registry during test
+        ..Default::default()
+    }
 }
 
 pub fn create_mock_user_decryption_request_tx(

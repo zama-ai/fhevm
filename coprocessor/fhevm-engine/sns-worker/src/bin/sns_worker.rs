@@ -26,6 +26,8 @@ fn construct_config() -> Result<Config, fhevm_engine_common::database::DatabaseC
             addr: args.metrics_addr,
             gauge_update_interval_secs: args.gauge_update_interval_secs,
         },
+        signer_type: args.signer_type,
+        private_key: args.private_key,
         db: DBConfig {
             url: db_url,
             listen_channels: args.pg_listen_channels,
@@ -49,6 +51,7 @@ fn construct_config() -> Result<Config, fhevm_engine_common::database::DatabaseC
                 recheck_duration: args.s3_recheck_duration,
                 regular_recheck_duration: args.s3_regular_recheck_duration,
             },
+            verify_sha256_checksum: !args.s3_disable_sha256_checksum,
         },
         log_level: args.log_level,
         health_checks: HealthCheckConfig {
@@ -82,6 +85,7 @@ async fn main() {
         .await
         .unwrap_or_else(|err| {
             error!(error = %err, "Error running SNS worker");
+            telemetry::flush();
             std::process::exit(1);
         });
 }

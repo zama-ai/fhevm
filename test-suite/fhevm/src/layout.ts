@@ -89,6 +89,10 @@ export const TEMPLATE_KMS_CORE_CONFIG_MODERN = path.join(
   TEMPLATE_CONFIG_DIR,
   "kms-core-modern.toml",
 );
+export const TEMPLATE_KMS_CORE_CONFIG_THRESHOLD = path.join(
+  TEMPLATE_CONFIG_DIR,
+  "kms-core-threshold.toml",
+);
 export const LATEST_SUPPORTED_PROFILE = path.join(PROFILE_DIR, "latest-supported.json");
 export const PROJECT = "fhevm";
 export const DEFAULT_HOST_RPC_PORT = 8545;
@@ -114,6 +118,7 @@ export const COMPONENTS = [
   "minio",
   "database",
   "core",
+  "core-threshold",
   "gateway-node",
   "host-node",
   "gateway-mocked-payment",
@@ -253,6 +258,7 @@ export const TEST_GREP: Record<string, string> = {
     "test paused gateway user input|test paused gateway HTTP public decrypt",
   "input-proof": "test user input uint64",
   "input-proof-compute-decrypt": "test add 42 to uint64 input and decrypt",
+  "priority-coprocessor": "test priority coprocessor input flow",
   "user-decryption": "test user decrypt",
   "delegated-user-decryption": "test delegated user decrypt",
   "public-decryption":
@@ -318,6 +324,9 @@ export const HEAVY_TEST_PROFILES = [
 export const DEFAULT_TENANT_API_KEY = "00000000-0000-0000-0000-000000000000";
 export const COPROCESSOR_WALLET_INDICES = [5, 8, 9, 10, 11] as const;
 export const MAX_COPROCESSOR_INSTANCES = COPROCESSOR_WALLET_INDICES.length;
+// Mnemonic indices for per-party KMS connector tx-sender wallets (threshold
+// mode). Distinct from the coprocessor indices above to avoid address clashes.
+export const KMS_NODE_WALLET_INDICES = [12, 13, 14, 15, 16, 17, 18] as const;
 
 /** Returns the generated env-file path for a component or instance. */
 export const envPath = (name: string) => path.join(ENV_DIR, `${name}.env`);
