@@ -23,11 +23,11 @@ export type DecryptKmsSigncryptedSharesReturnType = readonly TypedValue[];
 
 export async function decryptKmsSigncryptedShares(
   fhevm: Fhevm<FhevmChain, WithDecrypt>,
-  parameters: DecryptKmsSignedcryptedSharesParameters,
-): Promise<DecryptKmsSignedcryptedSharesReturnType> {
+  parameters: DecryptKmsSigncryptedSharesParameters,
+): Promise<DecryptKmsSigncryptedSharesReturnType> {
   const f = asFhevmWithTkmsVersion(fhevm);
 
-  const clearValues = await decryptKmsSignedcryptedShares_(f, parameters);
+  const clearValues = await decryptKmsSigncryptedShares_(f, parameters);
 
   const originToken = Symbol('decryptKmsSigncryptedShares');
   return clearValues.map((cv) => clearValueToTypedValue(cv, originToken));
