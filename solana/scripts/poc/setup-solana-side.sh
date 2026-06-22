@@ -29,6 +29,18 @@ VALIDATOR_RPC="http://127.0.0.1:8899"
 SID_U64=9223372036854788153
 SID_I64=-9223372036854763463
 
+# Reconstruct mode (adjacent CI run, see solana-e2e.yml). When 1, deploy an EMITLESS
+# zama-host (no `emit-events`) and feed the coprocessor purely via the gRPC Yellowstone
+# transport with off-chain event RECONSTRUCTION — no on-chain emit-decode. That needs the
+# geyser plugin on the validator, so the validator runs from the prebuilt geyser Docker
+# image (RPC 8899 + gRPC 10000) instead of a native solana-test-validator. The dockerized
+# KMS worker still reaches RPC over host.docker.internal:8899 (published to the host), so
+# the rest of the fhevm-cli stack is unaffected. Default 0 = unchanged native/emit path.
+RECONSTRUCT="${RECONSTRUCT:-0}"
+GEYSER_IMAGE="${GEYSER_IMAGE:-poc-solana-validator-yellowstone:ci}"
+GRPC_URL="${GRPC_URL:-http://127.0.0.1:10000}"
+VAL_CONTAINER="${VAL_CONTAINER:-solana-e2e-validator}"
+
 echo "==> [1/5] gathering live gateway addresses + ProtocolConfig signer set"
 # shellcheck disable=SC1091
 source "$ROOT/.fhevm/runtime/addresses/gateway/.env.gateway"  # GATEWAY_CONFIG_ADDRESS, INPUT_VERIFICATION_ADDRESS, DECRYPTION_ADDRESS, ...
@@ -38,34 +50,69 @@ KMS_SIGNERS="$(cast call "$GATEWAY_CONFIG_ADDRESS" 'getKmsSigners()(address[])' 
 echo "    gateway_chain_id=$GATEWAY_CHAIN_ID input_verification=$INPUT_VERIFICATION_ADDRESS"
 echo "    decryption=$DECRYPTION_ADDRESS coprocessor_signer=$COPROCESSOR_SIGNER kms_signers=$KMS_SIGNERS"
 
-echo "==> [2/5] fresh validator + program deploy"
-pkill -f solana-test-validator 2>/dev/null || true
-sleep 2
-LEDGER="$ROOT/.solana-test-ledger"
-rm -rf "$LEDGER"
-# Bind 0.0.0.0 so the dockerized KMS worker can read ACL records from the validator over RPC
-# (via host.docker.internal); host-side clients still target 127.0.0.1:8899. Local only — no
-# mainnet exposure.
-solana-test-validator --reset --rpc-port 8899 --bind-address 0.0.0.0 --ledger "$LEDGER" >/tmp/solana-validator.log 2>&1 &
-until curl -s -m2 "$VALIDATOR_RPC" -X POST -H 'Content-Type: application/json' \
-  -d '{"jsonrpc":"2.0","id":1,"method":"getHealth"}' 2>/dev/null | grep -q '"ok"'; do sleep 1; done
-solana airdrop 500 >/dev/null 2>&1 || true
-# Seed the committed well-known PoC program keypairs so build-sbf reuses them and the deployed
+echo "==> [2/5] fresh validator + program deploy (reconstruct=$RECONSTRUCT)"
+# Seed the committed well-known PoC program keypairs so the build reuses them and the deployed
 # program IDs match each `declare_id!` (see scripts/poc/test-keypairs/README.md). `-n` keeps any
 # pre-existing local keypair; on a fresh checkout it seeds the committed test keys.
 mkdir -p "$SOLANA/target/deploy"
 for p in zama_host confidential_token confidential_token_receiver; do
   cp -n "$SOLANA/scripts/poc/test-keypairs/$p-keypair.json" "$SOLANA/target/deploy/$p-keypair.json" 2>/dev/null || true
 done
-# SKIP_BUILD reuses the already-built program .so (SBF bytecode is portable across
-# validator versions); useful when the active build toolchain differs from the
-# validator (e.g. building under one Agave release, running the validator on another).
-if [ "${SKIP_BUILD:-0}" != "1" ]; then
-  ( cd "$SOLANA" && cargo build-sbf --tools-version v1.52 )
+
+if [ "$RECONSTRUCT" = 1 ]; then
+  # Validator with the Yellowstone geyser plugin (gRPC :10000) from the prebuilt image
+  # (the workflow docker-builds solana/geyser/Dockerfile). Publish 8899+10000 to the host;
+  # the dockerized KMS worker reaches RPC the same way as the native validator — over
+  # host.docker.internal:8899. Local only — no mainnet exposure.
+  docker rm -f "$VAL_CONTAINER" >/dev/null 2>&1 || true
+  docker run -d --name "$VAL_CONTAINER" -p 8899:8899 -p 10000:10000 "$GEYSER_IMAGE" \
+    solana-test-validator --reset --rpc-port 8899 --bind-address 0.0.0.0 \
+    --geyser-plugin-config /plugins/yellowstone-config.json >/dev/null
+  until curl -s -m2 "$VALIDATOR_RPC" -X POST -H 'Content-Type: application/json' \
+    -d '{"jsonrpc":"2.0","id":1,"method":"getHealth"}' 2>/dev/null | grep -q '"ok"'; do
+    [ -z "$(docker ps -q -f name="$VAL_CONTAINER" -f status=running)" ] \
+      && { echo "[setup] geyser validator container died:" >&2; docker logs "$VAL_CONTAINER" 2>&1 | tail -20 >&2; exit 1; }
+    sleep 1
+  done
+  solana airdrop 500 >/dev/null 2>&1 || true
+  # EMITLESS build: drop the default `emit-events` feature on zama-host so the deployed
+  # program emits NOTHING — off-chain reconstruction from instructions is the sole event
+  # source. anchor build gives per-crate feature control (cargo build-sbf builds the whole
+  # workspace, so it can't disable defaults for just one crate); anchor-cli is installed by
+  # the workflow. The other programs keep their defaults, matching the emit-decode run.
+  echo "    building EMITLESS zama_host (--no-default-features) + default-feature deps"
+  ( cd "$SOLANA" \
+      && anchor build --ignore-keys --no-idl -p zama_host -- --no-default-features \
+      && anchor build --ignore-keys --no-idl -p confidential_token \
+      && anchor build --ignore-keys --no-idl -p confidential_token_receiver ) \
+    || { echo "[setup] emitless anchor build failed" >&2; exit 1; }
+  # --use-rpc: deploy over RPC (8899) since the container doesn't publish the TPU ports.
+  for p in zama_host confidential_token confidential_token_receiver; do
+    solana program deploy -u "$VALIDATOR_RPC" --use-rpc \
+      --program-id "$SOLANA/target/deploy/$p-keypair.json" "$SOLANA/target/deploy/$p.so" >/dev/null
+  done
+else
+  pkill -f solana-test-validator 2>/dev/null || true
+  sleep 2
+  LEDGER="$ROOT/.solana-test-ledger"
+  rm -rf "$LEDGER"
+  # Bind 0.0.0.0 so the dockerized KMS worker can read ACL records from the validator over RPC
+  # (via host.docker.internal); host-side clients still target 127.0.0.1:8899. Local only — no
+  # mainnet exposure.
+  solana-test-validator --reset --rpc-port 8899 --bind-address 0.0.0.0 --ledger "$LEDGER" >/tmp/solana-validator.log 2>&1 &
+  until curl -s -m2 "$VALIDATOR_RPC" -X POST -H 'Content-Type: application/json' \
+    -d '{"jsonrpc":"2.0","id":1,"method":"getHealth"}' 2>/dev/null | grep -q '"ok"'; do sleep 1; done
+  solana airdrop 500 >/dev/null 2>&1 || true
+  # SKIP_BUILD reuses the already-built program .so (SBF bytecode is portable across
+  # validator versions); useful when the active build toolchain differs from the
+  # validator (e.g. building under one Agave release, running the validator on another).
+  if [ "${SKIP_BUILD:-0}" != "1" ]; then
+    ( cd "$SOLANA" && cargo build-sbf --tools-version v1.52 )
+  fi
+  for p in zama_host confidential_token confidential_token_receiver; do
+    solana program deploy --program-id "$SOLANA/target/deploy/$p-keypair.json" "$SOLANA/target/deploy/$p.so" >/dev/null
+  done
 fi
-for p in zama_host confidential_token confidential_token_receiver; do
-  solana program deploy --program-id "$SOLANA/target/deploy/$p-keypair.json" "$SOLANA/target/deploy/$p.so" >/dev/null
-done
 ZAMA_HOST_ID="$(solana address -k "$SOLANA/target/deploy/zama_host-keypair.json")"
 echo "    zama_host=$ZAMA_HOST_ID deployed"
 
@@ -135,11 +182,24 @@ sleep 1
 # (build.rs -> OUT_DIR) from the program IDLs, so a stale prebuilt binary silently decodes zero
 # events when the program's event layout has moved (it drops every event whose generated struct
 # no longer matches), leaving the coprocessor with no work and the vertical hanging at SNS commit.
-( cd "$ROOT/coprocessor/fhevm-engine" && cargo build -p host-listener --bin solana_host_listener >/tmp/solana-host-listener-build.log 2>&1 ) \
-  || { echo "[setup] host-listener build failed; see /tmp/solana-host-listener-build.log" >&2; tail -20 /tmp/solana-host-listener-build.log >&2; exit 1; }
-( "$ROOT/coprocessor/fhevm-engine/target/debug/solana_host_listener" \
-    --database-url "$DBURL" --url "$VALIDATOR_RPC" --program-id "$ZAMA_HOST_ID" \
-    --host-chain-id="$SID_I64" >/tmp/solana-host-listener.log 2>&1 & )
+if [ "$RECONSTRUCT" = 1 ]; then
+  # gRPC transport + off-chain reconstruction: the listener INGESTS events rebuilt from
+  # the tx instructions (the program emits nothing), so this leg stands in for the whole
+  # Yellowstone effort end-to-end. Handle-derivation params are auto-detected from the
+  # on-chain HostConfig PDA at startup — no --chain-id / --zero-birth-entropy flags.
+  ( cd "$ROOT/coprocessor/fhevm-engine" && cargo build -p host-listener --features solana-grpc,solana-reconstruct --bin solana_host_listener >/tmp/solana-host-listener-build.log 2>&1 ) \
+    || { echo "[setup] host-listener (grpc,reconstruct) build failed; see /tmp/solana-host-listener-build.log" >&2; tail -20 /tmp/solana-host-listener-build.log >&2; exit 1; }
+  ( "$ROOT/coprocessor/fhevm-engine/target/debug/solana_host_listener" \
+      --transport grpc --grpc-url "$GRPC_URL" \
+      --database-url "$DBURL" --url "$VALIDATOR_RPC" --program-id "$ZAMA_HOST_ID" \
+      --host-chain-id="$SID_I64" --reconstruct >/tmp/solana-host-listener.log 2>&1 & )
+else
+  ( cd "$ROOT/coprocessor/fhevm-engine" && cargo build -p host-listener --bin solana_host_listener >/tmp/solana-host-listener-build.log 2>&1 ) \
+    || { echo "[setup] host-listener build failed; see /tmp/solana-host-listener-build.log" >&2; tail -20 /tmp/solana-host-listener-build.log >&2; exit 1; }
+  ( "$ROOT/coprocessor/fhevm-engine/target/debug/solana_host_listener" \
+      --database-url "$DBURL" --url "$VALIDATOR_RPC" --program-id "$ZAMA_HOST_ID" \
+      --host-chain-id="$SID_I64" >/tmp/solana-host-listener.log 2>&1 & )
+fi
 
 # The Solana decrypt pipeline is two-stage: the host-listener ingests events and, for
 # PublicDecryptAllowed / disclose+redeem request events, QUEUES a finalized-account fetch rather
