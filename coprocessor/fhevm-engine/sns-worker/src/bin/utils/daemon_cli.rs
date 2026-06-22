@@ -138,10 +138,12 @@ pub struct Args {
     #[arg(short, long)]
     pub private_key: Option<String>,
 
-    /// S3 object format migration mode: no, before, before-and-quit, or concurrent.
+    /// S3 object format migration mode: no, before, before-and-quit, concurrent, or dry-run.
     ///
     /// concurrent keeps the worker running and publishes legacy S3 object copies
     /// alongside the current format for mixed-version rollouts.
+    /// dry-run scans visible legacy rows and reports planned actions without S3
+    /// or database writes.
     ///
     /// The value can also be supplied via the S3_MIGRATION_MODE environment variable
     /// (useful for test-suite rollouts so that old pre-feature images are unaffected
@@ -150,8 +152,8 @@ pub struct Args {
     pub s3_migration: S3MigrationMode,
 
     /// Delay between S3 migration retries after idle concurrent scans or migration panics.
-    #[arg(long = "migration-sleep-duration", default_value = "5m", value_parser = parse_duration, env = "S3_MIGRATION_SLEEP_DURATION")]
-    pub migration_sleep_duration: Duration,
+    #[arg(long, default_value = "5m", value_parser = parse_duration, env = "S3_MIGRATION_SLEEP_DURATION")]
+    pub s3_migration_sleep_duration: Duration,
 
     /// Reserved flag for future cleanup of old S3 object formats after migration
     #[arg(long, default_value_t = false, env = "CLEAN_OLD_S3_FORMAT_VERSION")]

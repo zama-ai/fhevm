@@ -2,6 +2,7 @@ mod aws_upload;
 mod executor;
 mod keyset;
 mod s3_migration;
+mod s3_migration_dry_run;
 mod squash_noise;
 
 pub mod metrics;
@@ -53,6 +54,7 @@ use crate::{
     executor::SwitchNSquashService,
     metrics::spawn_gauge_update_routine,
     s3_migration::{run_startup_migrations, S3MigrationConfig},
+    s3_migration_dry_run::run_startup_migration_dry_run,
 };
 
 pub const UPLOAD_QUEUE_SIZE: usize = 20;
@@ -677,6 +679,14 @@ pub async fn run_all(
             let db_pool = pool_mngr.pool();
             run_startup_migrations(&migration_config, &db_pool, &client).await?;
         }
+        S3MigrationMode::DryRun => {
+            info!("S3 migration is enabled: {}", S3MigrationMode::DryRun);
+            if !is_ready_bool {
+                error!("S3 is not ready");
+            };
+            let db_pool = pool_mngr.pool();
+            run_startup_migration_dry_run(&migration_config, &db_pool, &client).await?;
+        }
         S3MigrationMode::Concurrent => {
             let db_pool = pool_mngr.pool();
             let client = client.clone();
@@ -696,7 +706,10 @@ pub async fn run_all(
         }
     }
 
-    if conf.s3_migration == S3MigrationMode::BeforeAndQuit {
+    if matches!(
+        conf.s3_migration,
+        S3MigrationMode::BeforeAndQuit | S3MigrationMode::DryRun
+    ) {
         info!("SNS worker stopped after S3 migration-only run");
         token.cancel();
         return Ok(());

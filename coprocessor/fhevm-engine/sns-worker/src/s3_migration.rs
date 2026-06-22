@@ -23,36 +23,36 @@ use crate::{
 const NO_SNS_CIPHERTEXT_DIGEST: [u8; 32] = [0; 32];
 
 #[derive(Debug, Clone, Copy)]
-enum CiphertextKind {
+pub(crate) enum CiphertextKind {
     Ct64,
     Ct128,
 }
 
 #[derive(Debug)]
-struct MigrationRow {
-    handle: Vec<u8>,
-    key_id_gw: Vec<u8>,
-    transaction_id: Option<Vec<u8>>,
-    ciphertext: Option<Vec<u8>>,
-    ciphertext128: Option<Vec<u8>>,
-    ciphertext128_format: i16,
+pub(crate) struct MigrationRow {
+    pub(crate) handle: Vec<u8>,
+    pub(crate) key_id_gw: Vec<u8>,
+    pub(crate) transaction_id: Option<Vec<u8>>,
+    pub(crate) ciphertext: Option<Vec<u8>>,
+    pub(crate) ciphertext128: Option<Vec<u8>>,
+    pub(crate) ciphertext128_format: i16,
 }
 
 #[derive(Debug, Clone)]
-struct CopySourceCandidate {
-    key: String,
+pub(crate) struct CopySourceCandidate {
+    pub(crate) key: String,
 }
 
-struct MigrationMaterial {
-    handle: Vec<u8>,
+pub(crate) struct MigrationMaterial {
+    pub(crate) handle: Vec<u8>,
     key_id_gw: Vec<u8>,
     row_ct64_digest: Option<Vec<u8>>,
     row_ct128_digest: Option<Vec<u8>>,
-    ct64_digest: Vec<u8>,
-    ct128_digest: Vec<u8>,
-    has_ct64: bool,
-    has_ct128: bool,
-    ct128_format: Ciphertext128Format,
+    pub(crate) ct64_digest: Vec<u8>,
+    pub(crate) ct128_digest: Vec<u8>,
+    pub(crate) has_ct64: bool,
+    pub(crate) has_ct128: bool,
+    pub(crate) ct128_format: Ciphertext128Format,
     signer: Address,
     metadata: S3MigrationMetadata,
 }
@@ -72,6 +72,7 @@ pub enum S3MigrationMode {
     Before,
     BeforeAndQuit,
     Concurrent,
+    DryRun,
 }
 
 impl std::str::FromStr for S3MigrationMode {
@@ -83,8 +84,9 @@ impl std::str::FromStr for S3MigrationMode {
             "before" => Ok(Self::Before),
             "before-and-quit" => Ok(Self::BeforeAndQuit),
             "concurrent" => Ok(Self::Concurrent),
+            "dry-run" => Ok(Self::DryRun),
             other => Err(format!(
-                "invalid S3 migration mode {other:?}, expected no, before, before-and-quit, or concurrent"
+                "invalid S3 migration mode {other:?}, expected no, before, before-and-quit, concurrent, or dry-run"
             )),
         }
     }
@@ -97,6 +99,7 @@ impl std::fmt::Display for S3MigrationMode {
             Self::Before => write!(f, "before"),
             Self::BeforeAndQuit => write!(f, "before-and-quit"),
             Self::Concurrent => write!(f, "concurrent"),
+            Self::DryRun => write!(f, "dry-run"),
         }
     }
 }
@@ -224,7 +227,7 @@ async fn migrate_s3_format_0_to_1(
     Ok(())
 }
 
-async fn count_pending_old_format_handles(pool: &PgPool) -> Result<i64, ExecutionError> {
+pub(crate) async fn count_pending_old_format_handles(pool: &PgPool) -> Result<i64, ExecutionError> {
     let count = sqlx::query_scalar!(
         r#"
         SELECT COUNT(*)::BIGINT AS "count!"
@@ -241,7 +244,7 @@ async fn count_pending_old_format_handles(pool: &PgPool) -> Result<i64, Executio
     Ok(count)
 }
 
-async fn count_failed_old_format_handles(pool: &PgPool) -> Result<i64, ExecutionError> {
+pub(crate) async fn count_failed_old_format_handles(pool: &PgPool) -> Result<i64, ExecutionError> {
     let count = sqlx::query_scalar!(
         r#"
         SELECT COUNT(*)::BIGINT AS "count!"
@@ -451,7 +454,7 @@ async fn migrate_handle_0_to_1(
     Ok(true)
 }
 
-async fn prepare_migration_material(
+pub(crate) async fn prepare_migration_material(
     pool: &PgPool,
     row: MigrationRow,
     signer: &CoproSigner,
@@ -807,7 +810,7 @@ async fn try_copy_existing_object(
     Ok(true)
 }
 
-async fn download_existing_object(
+pub(crate) async fn download_existing_object(
     client: &Client,
     bucket: &str,
     sources: &[CopySourceCandidate],
@@ -841,7 +844,7 @@ async fn download_existing_object(
     Ok(None)
 }
 
-async fn object_has_current_attestation(
+pub(crate) async fn object_has_current_attestation(
     client: &Client,
     bucket: &str,
     key: &str,
@@ -866,7 +869,7 @@ async fn object_has_current_attestation(
     .await
 }
 
-async fn object_body_matches_expected(
+pub(crate) async fn object_body_matches_expected(
     client: &Client,
     bucket: &str,
     key: &str,
@@ -1055,7 +1058,7 @@ async fn put_object_with_metadata(
     Ok(())
 }
 
-async fn fetch_ct64_bytes_from_db(
+pub(crate) async fn fetch_ct64_bytes_from_db(
     pool: &PgPool,
     handle: &[u8],
     expected_digest: Option<&[u8]>,
@@ -1077,7 +1080,7 @@ async fn fetch_ct64_bytes_from_db(
     Ok(None)
 }
 
-async fn fetch_ct128_bytes_from_db(
+pub(crate) async fn fetch_ct128_bytes_from_db(
     pool: &PgPool,
     handle: &[u8],
     expected_digest: Option<&[u8]>,
@@ -1169,11 +1172,11 @@ fn attestation_format(format: Ciphertext128Format) -> Result<CiphertextFormat, E
     }
 }
 
-fn current_s3_ciphertext_key(handle: &[u8]) -> String {
+pub(crate) fn current_s3_ciphertext_key(handle: &[u8]) -> String {
     s3_ciphertext_key(handle, COPROCESSOR_CONTEXT_ID_1)
 }
 
-fn legacy_s3_ciphertext_key(handle: &[u8]) -> String {
+pub(crate) fn legacy_s3_ciphertext_key(handle: &[u8]) -> String {
     hex::encode(handle)
 }
 
