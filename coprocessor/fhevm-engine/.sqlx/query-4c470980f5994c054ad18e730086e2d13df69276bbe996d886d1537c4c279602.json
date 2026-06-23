@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT COUNT(*) AS \"count!\"\n            FROM computations_branch c\n            JOIN host_chain_blocks_valid b\n              ON c.host_chain_id = b.chain_id\n             AND c.producer_block_hash = b.block_hash\n            WHERE b.block_status = 'orphaned'\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "4c470980f5994c054ad18e730086e2d13df69276bbe996d886d1537c4c279602"
+}
