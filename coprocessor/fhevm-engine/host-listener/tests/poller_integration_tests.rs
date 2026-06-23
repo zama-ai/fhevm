@@ -175,6 +175,8 @@ async fn poller_catches_up_to_safe_tip(
         kms_generation_address: Some(*kms_generation_contract.address()),
         database_url: db_url.clone(),
         finality_lag,
+        settlement_finality_lag: finality_lag,
+        reorg_maximum_duration_in_blocks: finality_lag,
         batch_size: 2,
         poll_interval: Duration::from_millis(200),
         retry_interval: Duration::from_millis(200),
@@ -183,7 +185,6 @@ async fn poller_catches_up_to_safe_tip(
         rpc_compute_units_per_second: 1000,
         health_port: 18081,
         dependence_cache_size: 10_000,
-        dependence_by_connexity: false,
         dependence_cross_block: false,
         dependent_ops_max_per_chain: 0,
     };

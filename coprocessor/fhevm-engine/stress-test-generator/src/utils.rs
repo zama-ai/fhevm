@@ -172,20 +172,20 @@ pub async fn allow_handle(
 
     let _query =
             sqlx::query!(
-                "INSERT INTO allowed_handles(handle, account_address, event_type, transaction_id) VALUES($1, $2, $3, $4)
+                "INSERT INTO allowed_handles_branch(handle, account_address, event_type, transaction_id) VALUES($1, $2, $3, $4)
                      ON CONFLICT DO NOTHING;",
                 handle,
                 account_address,
                 event_type as i16,
                 transaction_id.to_vec(),
             ).execute(tx.deref_mut()).await?;
-    let _query = sqlx::query!(
-        "INSERT INTO pbs_computations(handle, transaction_id, host_chain_id) VALUES($1, $2, $3) 
+    let _query = sqlx::query(
+        "INSERT INTO pbs_computations_branch(handle, transaction_id, host_chain_id) VALUES($1, $2, $3)
                      ON CONFLICT DO NOTHING;",
-        handle,
-        transaction_id.to_vec(),
-        HOST_CHAIN_ID
     )
+    .bind(handle)
+    .bind(transaction_id.to_vec())
+    .bind(HOST_CHAIN_ID)
     .execute(tx.deref_mut())
     .await?;
 
@@ -204,7 +204,7 @@ pub async fn allow_handles(
     let account_address = vec![account_address; handles.len()];
     let event_type = vec![event_type as i16; handles.len()];
     let _query = sqlx::query!(
-        "INSERT INTO allowed_handles(handle, account_address, event_type)
+        "INSERT INTO allowed_handles_branch(handle, account_address, event_type)
                  SELECT * FROM UNNEST($1::BYTEA[], $2::TEXT[], $3::SMALLINT[])
                  ON CONFLICT DO NOTHING;",
         handles,
@@ -218,7 +218,7 @@ pub async fn allow_handles(
         return Ok(());
     }
     let _query = sqlx::query!(
-        "INSERT INTO pbs_computations(handle, host_chain_id)
+        "INSERT INTO pbs_computations_branch(handle, host_chain_id)
                  SELECT * FROM UNNEST($1::BYTEA[], $2::BIGINT[])
                  ON CONFLICT DO NOTHING;",
         handles,
@@ -304,7 +304,7 @@ pub async fn get_ciphertext_digests(
         let digests = sqlx::query!(
             "
             SELECT ciphertext, ciphertext128
-            FROM ciphertext_digest
+            FROM ciphertext_digest_branch
             WHERE handle = $1
             ",
             handle,

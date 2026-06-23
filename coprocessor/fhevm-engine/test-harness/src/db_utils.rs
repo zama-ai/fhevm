@@ -5,7 +5,7 @@ use fhevm_engine_common::utils::{safe_deserialize_key, safe_serialize_key};
 use rand::distr::Alphanumeric;
 use rand::Rng;
 use sqlx::postgres::types::Oid;
-use sqlx::{query, PgPool};
+use sqlx::{PgPool, Row};
 use std::time::Duration;
 use tokio::fs;
 use tokio::io::AsyncReadExt;
@@ -117,18 +117,20 @@ pub async fn insert_ciphertext64(
     handle: &Vec<u8>,
     ciphertext: &Vec<u8>,
 ) -> anyhow::Result<()> {
-    let _ = query!(
-        "INSERT INTO ciphertexts(handle, ciphertext, ciphertext_version, ciphertext_type) 
-         VALUES ($1, $2, $3, $4)
+    let producer_block_hash = vec![1_u8; 32];
+    let _ = sqlx::query(
+        "INSERT INTO ciphertexts_branch(handle, producer_block_hash, ciphertext, ciphertext_version, ciphertext_type)
+         VALUES ($1, $2, $3, $4, $5)
          ON CONFLICT DO NOTHING;",
-        handle,
-        ciphertext,
-        current_ciphertext_version(),
-        0,
     )
+    .bind(handle)
+    .bind(&producer_block_hash)
+    .bind(ciphertext)
+    .bind(current_ciphertext_version())
+    .bind(0_i16)
     .execute(pool)
     .await
-    .expect("insert into ciphertexts");
+    .expect("insert into ciphertexts_branch");
 
     Ok(())
 }
@@ -138,15 +140,19 @@ pub async fn insert_into_pbs_computations(
     host_chain_id: i64,
     handle: &Vec<u8>,
 ) -> Result<(), anyhow::Error> {
-    let _ = query!(
-        "INSERT INTO pbs_computations(handle, host_chain_id) VALUES($1, $2) 
+    let producer_block_hash = vec![1_u8; 32];
+    let _ = sqlx::query(
+        "INSERT INTO pbs_computations_branch(handle, host_chain_id, block_number, producer_block_hash)
+             VALUES($1, $2, $3, $4)
              ON CONFLICT DO NOTHING;",
-        handle,
-        host_chain_id,
     )
+    .bind(handle)
+    .bind(host_chain_id)
+    .bind(1_i64)
+    .bind(&producer_block_hash)
     .execute(pool)
     .await
-    .expect("insert into pbs_computations");
+    .expect("insert into pbs_computations_branch");
 
     Ok(())
 }
@@ -160,10 +166,14 @@ pub async fn insert_ciphertext_digest(
     ciphertext128: &[u8],
     txn_limited_retries_count: i32,
 ) -> Result<(), sqlx::Error> {
+    // Tests that don't care about branch context get a true branchless row.
+    // Tests that need to control the branch identity should construct their
+    // own row (see drift_detector::tests::insert_ciphertext_digest_with_block_hash).
+    let producer_block_hash: Vec<u8> = Vec::new();
     sqlx::query!(
         r#"
-        INSERT INTO ciphertext_digest (host_chain_id, key_id_gw, handle, ciphertext, ciphertext128, txn_limited_retries_count)
-        VALUES ($1, $2, $3, $4, $5, $6)
+        INSERT INTO ciphertext_digest_branch (host_chain_id, key_id_gw, handle, ciphertext, ciphertext128, txn_limited_retries_count, producer_block_hash)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
         "#,
         host_chain_id,
         &key_id_gw,
@@ -171,6 +181,7 @@ pub async fn insert_ciphertext_digest(
         ciphertext,
         ciphertext128,
         txn_limited_retries_count,
+        &producer_block_hash,
     )
     .execute(pool)
     .await?;
@@ -185,15 +196,14 @@ pub async fn wait_for_ciphertext(
     retries: u64,
 ) -> anyhow::Result<Vec<u8>> {
     for retry in 0..retries {
-        let record = sqlx::query!(
-            "SELECT ciphertext FROM ciphertexts128 WHERE handle = $1",
-            handle
-        )
-        .fetch_one(pool)
-        .await;
+        let record = sqlx::query("SELECT ciphertext FROM ciphertexts128_branch WHERE handle = $1")
+            .bind(handle)
+            .fetch_one(pool)
+            .await;
 
         if let Ok(record) = record {
-            if let Some(ciphertext128) = record.ciphertext.filter(|c| !c.is_empty()) {
+            let ciphertext128: Option<Vec<u8>> = record.try_get("ciphertext").ok();
+            if let Some(ciphertext128) = ciphertext128.filter(|c| !c.is_empty()) {
                 return Ok(ciphertext128);
             }
         }

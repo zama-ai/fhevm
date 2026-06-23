@@ -10,7 +10,8 @@ use sqlx::types::time::PrimitiveDateTime;
 
 use crate::tests::utils::{
     decrypt_ciphertexts, default_dependence_cache_size, setup_test_app,
-    wait_until_all_allowed_handles_computed, DecryptionResult, TestInstance,
+    setup_test_app_with_worker_config, wait_until_all_allowed_handles_computed, DecryptionResult,
+    TestInstance,
 };
 
 pub const TEST_CHAIN_ID: u64 = 42;
@@ -22,7 +23,22 @@ pub struct EventHarness {
 }
 
 pub async fn setup_event_harness() -> Result<EventHarness, Box<dyn std::error::Error>> {
-    let app = setup_test_app().await?;
+    setup_event_harness_with_app(setup_test_app().await?).await
+}
+
+pub async fn setup_event_harness_with_worker_config(
+    branch_cutover_block: i64,
+    pg_pool_max_connections: u32,
+) -> Result<EventHarness, Box<dyn std::error::Error>> {
+    setup_event_harness_with_app(
+        setup_test_app_with_worker_config(branch_cutover_block, pg_pool_max_connections).await?,
+    )
+    .await
+}
+
+async fn setup_event_harness_with_app(
+    app: TestInstance,
+) -> Result<EventHarness, Box<dyn std::error::Error>> {
     let pool = sqlx::postgres::PgPoolOptions::new()
         .max_connections(2)
         .connect(app.db_url())
