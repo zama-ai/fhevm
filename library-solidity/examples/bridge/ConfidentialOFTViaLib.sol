@@ -29,8 +29,6 @@ contract ConfidentialOFTViaLib is Ownable2Step, ConfidentialOAppSender, Confiden
     event Received(uint32 indexed srcEid, address indexed recipient);
 
     error UnauthorizedUseOfEncryptedAmount(euint64 amount, address sender);
-    /// @notice `mintComposeGas` is 0, so the destination mint callback would never run.
-    error MintComposeGasRequired();
 
     mapping(address holder => euint64 balance) private _balances;
 
@@ -64,14 +62,13 @@ contract ConfidentialOFTViaLib is Ownable2Step, ConfidentialOAppSender, Confiden
         uint128 mintComposeGas
     ) external payable returns (MessagingReceipt memory) {
         if (!FHE.isSenderAllowed(amount)) revert UnauthorizedUseOfEncryptedAmount(amount, msg.sender);
-        // With empty LayerZero options the bridge sizes the destination mint (lzCompose) leg
-        // from `mintComposeGas`; a value of 0 means the mint callback never runs.
-        if (mintComposeGas == 0) revert MintComposeGasRequired();
 
         euint64 actualAmount = _burn(msg.sender, amount);
 
-        // Payload references the same handle at index 0 (so the receiver mints it).
-        bytes memory payload = abi.encode(recipient, euint64.unwrap(actualAmount));
+        // The bridged amount is delivered out-of-band in the bridge's handle list (minted from
+        // `handles[0]` on receipt), so the payload only needs to carry the recipient.
+        // `mintComposeGas` is validated (must be non-zero) by {ConfidentialOAppSender-_bridge}.
+        bytes memory payload = abi.encode(recipient);
 
         emit Bridged(msg.sender, dstEid, recipient);
         return _bridge(dstEid, payload, actualAmount, mintComposeGas, msg.value);
@@ -87,7 +84,7 @@ contract ConfidentialOFTViaLib is Ownable2Step, ConfidentialOAppSender, Confiden
         bytes32[] calldata handles,
         bytes32 /* guid */
     ) internal override {
-        (address recipient, ) = abi.decode(payload, (address, bytes32));
+        address recipient = abi.decode(payload, (address));
         _mint(recipient, euint64.wrap(handles[0]));
         emit Received(srcEid, recipient);
     }

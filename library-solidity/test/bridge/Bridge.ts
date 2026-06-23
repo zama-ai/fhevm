@@ -334,7 +334,13 @@ describe('Confidential bridge helpers', function () {
 
     it('reverts NoPeer when no peer is configured for the destination eid', async function () {
       const { oapp } = await deployOAppFixture();
-      await expect(oapp.bridgeToPeer(DST_EID, '0x', handleA, 0)).to.be.revertedWithCustomError(oapp, 'NoPeer');
+      await expect(oapp.bridgeToPeer(DST_EID, '0x', handleA, 50_000)).to.be.revertedWithCustomError(oapp, 'NoPeer');
+    });
+
+    it('reverts ZeroComposeGas when lzComposeGas is 0 (the receive callback would never run)', async function () {
+      const { oapp } = await deployOAppFixture();
+      await oapp.setPeer(DST_EID, padded(randAddr()));
+      await expect(oapp.bridgeToPeer(DST_EID, '0x', handleA, 0)).to.be.revertedWithCustomError(oapp, 'ZeroComposeGas');
     });
   });
 

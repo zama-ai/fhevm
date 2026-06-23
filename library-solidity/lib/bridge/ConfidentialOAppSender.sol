@@ -15,12 +15,17 @@ import {ConfidentialOAppCore} from "./ConfidentialOAppCore.sol";
  *          Quote the fee with {_quoteBridge} and forward it as `msg.value` to {_bridge}.
  */
 abstract contract ConfidentialOAppSender is ConfidentialOAppCore {
+    /// @notice `lzComposeGas` is 0; with the default (empty) options the destination receive
+    ///         callback would never run, so the bridged value would never be delivered.
+    error ZeroComposeGas();
+
     /**
      * @notice Bridge a single encrypted `euint64` handle to the peer on `dstEid`.
      * @param dstEid        Destination LayerZero endpoint id (must have a configured peer).
      * @param payload       Opaque app payload (the receiver decodes it).
      * @param handle        The encrypted value to bridge; the caller must hold ACL allowance on it.
-     * @param lzComposeGas  Gas budget for the destination receive callback (lzCompose leg).
+     * @param lzComposeGas  Gas budget for the destination receive callback (lzCompose leg); must
+     *                      be non-zero, since {_bridge} sends with default (empty) options.
      * @param nativeFee     LayerZero native fee to forward (query via {_quoteBridge}).
      */
     function _bridge(
@@ -30,6 +35,7 @@ abstract contract ConfidentialOAppSender is ConfidentialOAppCore {
         uint128 lzComposeGas,
         uint256 nativeFee
     ) internal returns (MessagingReceipt memory) {
+        if (lzComposeGas == 0) revert ZeroComposeGas();
         bytes32 peer = _getPeerOrRevert(dstEid);
         bytes32[] memory handleList = new bytes32[](1);
         handleList[0] = euint64.unwrap(handle);
