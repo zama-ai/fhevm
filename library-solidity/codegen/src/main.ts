@@ -23,7 +23,14 @@ import { generateSolidityHCULimit } from './hcuLimitGenerator';
 import { ALL_OPERATORS } from './operators';
 import { ALL_OPERATORS_PRICES } from './operatorsPrices';
 import { fromDirToFile, fromFileToFile, isDirectory } from './paths';
-import { generateFhevmECDSALib, generateIConfidentialBridgeLib, generateSolidityFHELib } from './templateFHEDotSol';
+import {
+  generateConfidentialOAppCoreLib,
+  generateConfidentialOAppReceiverLib,
+  generateConfidentialOAppSenderLib,
+  generateFhevmECDSALib,
+  generateIConfidentialBridgeLib,
+  generateSolidityFHELib,
+} from './templateFHEDotSol';
 import { generateSolidityFheType } from './templateFheTypeDotSol';
 import { generateSolidityImplLib } from './templateImpDotSol';
 import {
@@ -149,6 +156,9 @@ export async function commandGenerateAllFiles(options: any) {
   const implDotSol = `${path.join(absConfig.lib.outDir, 'Impl.sol')}`;
   const ecdsaDotSol = `${path.join(absConfig.lib.outDir, 'cryptography', 'FhevmECDSA.sol')}`;
   const iConfidentialBridgeDotSol = `${path.join(absConfig.lib.outDir, 'bridge', 'IConfidentialBridge.sol')}`;
+  const oAppCoreDotSol = `${path.join(absConfig.lib.outDir, 'bridge', 'ConfidentialOAppCore.sol')}`;
+  const oAppSenderDotSol = `${path.join(absConfig.lib.outDir, 'bridge', 'ConfidentialOAppSender.sol')}`;
+  const oAppReceiverDotSol = `${path.join(absConfig.lib.outDir, 'bridge', 'ConfidentialOAppReceiver.sol')}`;
   const fheDotSol = `${path.join(absConfig.lib.outDir, 'FHE.sol')}`;
   const hcuLimitDotSol = `${path.join(absConfig.hostContracts.outDir, 'HCULimit.sol')}`;
 
@@ -227,6 +237,9 @@ export async function commandGenerateAllFiles(options: any) {
     if (absConfig.lib.bridge) {
       mkDir(path.dirname(iConfidentialBridgeDotSol));
       await formatAndWriteFile(`${iConfidentialBridgeDotSol}`, generateIConfidentialBridgeLib());
+      await formatAndWriteFile(`${oAppCoreDotSol}`, generateConfidentialOAppCoreLib());
+      await formatAndWriteFile(`${oAppSenderDotSol}`, generateConfidentialOAppSenderLib());
+      await formatAndWriteFile(`${oAppReceiverDotSol}`, generateConfidentialOAppReceiverLib());
     }
   } else {
     debugLog(`Skipping lib generation.`);
