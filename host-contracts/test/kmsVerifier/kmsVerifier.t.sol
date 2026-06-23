@@ -594,7 +594,7 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
     }
 
     function testFuzz_VerificationFailsWithMalformedV1ExtraData(bytes calldata malformedSuffix) public {
-        vm.assume(malformedSuffix.length < 32);
+        vm.assume(malformedSuffix.length != 32);
         bytes memory extraData = abi.encodePacked(uint8(0x01), malformedSuffix);
         (bytes32[] memory handlesList, bytes memory decryptedResult, bytes memory proof) = _buildSingleSignerProof(
             privateKeySigner0,
@@ -605,7 +605,7 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
         kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, proof);
     }
 
-    function test_VerificationWithV1ExtraDataIgnoresTrailingBytes() public {
+    function test_VerificationFailsWithV1ExtraDataTrailingBytes() public {
         uint256 ctx1 = kmsVerifier.getCurrentKmsContextId();
         bytes memory extraData = abi.encodePacked(uint8(0x01), ctx1, uint256(12345));
         (bytes32[] memory handlesList, bytes memory decryptedResult, bytes memory proof) = _buildSingleSignerProof(
@@ -613,6 +613,7 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
             extraData
         );
 
+        vm.expectRevert(KMSVerifier.DeserializingExtraDataFail.selector);
         kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, proof);
     }
 

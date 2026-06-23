@@ -467,16 +467,17 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
     }
 
     function testFuzz_revertExtractContextIdMalformedV1ExtraData(bytes calldata malformedSuffix) public {
-        vm.assume(malformedSuffix.length < 32);
+        vm.assume(malformedSuffix.length != 32);
         bytes memory extraData = abi.encodePacked(uint8(0x01), malformedSuffix);
         vm.expectRevert(IKMSGeneration.DeserializingExtraDataFail.selector);
         kmsGenerationHarness.extractContextIdFromExtraData(extraData);
     }
 
-    function test_extractContextIdV1ExtraDataIgnoresTrailingBytes() public view {
+    function test_revertExtractContextIdV1ExtraDataTrailingBytes() public {
         uint256 contextId = protocolConfig.getCurrentKmsContextId();
         bytes memory extraData = abi.encodePacked(uint8(0x01), contextId, uint256(12345));
-        assertEq(kmsGenerationHarness.extractContextIdFromExtraData(extraData), contextId);
+        vm.expectRevert(IKMSGeneration.DeserializingExtraDataFail.selector);
+        kmsGenerationHarness.extractContextIdFromExtraData(extraData);
     }
 
     function testFuzz_revertExtractContextIdMalformedV2ExtraData(bytes calldata malformedSuffix) public {

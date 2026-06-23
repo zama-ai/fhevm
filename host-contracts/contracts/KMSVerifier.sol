@@ -309,7 +309,7 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, 
             // v1: [version(1)] [contextId(32)]
             // v2: [version(1)] [contextId(32)] [epochId(32)]
             if (
-                (version == EXTRA_DATA_V1 && extraData.length < 33) ||
+                (version == EXTRA_DATA_V1 && extraData.length != 33) ||
                 (version == EXTRA_DATA_V2 && extraData.length != 65)
             ) {
                 revert DeserializingExtraDataFail();

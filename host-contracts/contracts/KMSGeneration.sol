@@ -901,7 +901,7 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         if (version != EXTRA_DATA_V1 && version != EXTRA_DATA_V2) {
             revert UnsupportedExtraDataVersion(version);
         }
-        if (version == EXTRA_DATA_V1 && extraData.length < 33) {
+        if (version == EXTRA_DATA_V1 && extraData.length != 33) {
             revert DeserializingExtraDataFail();
         }
         if (version == EXTRA_DATA_V2 && extraData.length != 65) {
