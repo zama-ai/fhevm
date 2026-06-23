@@ -3,7 +3,7 @@ use crate::{
     keyset::fetch_client_key,
     squash_noise::safe_deserialize,
     Config, DBConfig, S3Config, S3MigrationMode, S3RetryPolicy, SchedulePolicy,
-    S3_FORMAT_VERSION_V0,
+    DEFAULT_S3_MIGRATION_MAX_RETRIES, S3_FORMAT_VERSION_V0,
 };
 use alloy::signers::local::PrivateKeySigner;
 use alloy_primitives::{B256, U256};
@@ -325,6 +325,7 @@ async fn test_before_and_quit_returns_s3_migration_error() {
     let mut conf = build_test_config(db_instance.db_url.clone(), true);
     conf.s3_migration = S3MigrationMode::BeforeAndQuit;
     conf.health_checks.port = test_harness::localstack::pick_free_port();
+    conf.s3_migration_max_retries = 2;
     conf.s3.retry_policy.max_retries_per_upload = 1;
     conf.s3.retry_policy.max_backoff = Duration::from_millis(10);
     conf.s3.retry_policy.max_retries_timeout = Duration::from_secs(2);
@@ -374,7 +375,7 @@ async fn test_before_and_quit_returns_s3_migration_error() {
 
     let err = run_result.expect_err("before-and-quit should return the S3 migration error");
     assert!(
-        err.to_string().contains("missing ct64 object"),
+        err.to_string().contains("after reaching max retry count 2"),
         "unexpected before-and-quit error: {err}"
     );
 
@@ -1157,6 +1158,7 @@ fn build_test_config(url: DatabaseURL, enable_compression: bool) -> Config {
         signer_type: fhevm_engine_common::types::SignerType::PrivateKey,
         s3_migration: S3MigrationMode::No,
         s3_migration_sleep_duration: Duration::from_mins(5),
+        s3_migration_max_retries: DEFAULT_S3_MIGRATION_MAX_RETRIES,
         clean_old_s3_format_version: false,
     }
 }

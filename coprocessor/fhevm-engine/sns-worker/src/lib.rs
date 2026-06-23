@@ -6,7 +6,7 @@ mod s3_migration_dry_run;
 mod squash_noise;
 
 pub mod metrics;
-pub use crate::s3_migration::S3MigrationMode;
+pub use crate::s3_migration::{S3MigrationMode, DEFAULT_S3_MIGRATION_MAX_RETRIES};
 
 #[cfg(test)]
 mod tests;
@@ -143,6 +143,7 @@ pub struct Config {
     pub private_key: Option<String>,
     pub s3_migration: S3MigrationMode,
     pub s3_migration_sleep_duration: Duration,
+    pub s3_migration_max_retries: i32,
     pub clean_old_s3_format_version: bool,
 }
 
@@ -665,6 +666,7 @@ pub async fn run_all(
         s3: conf.s3.clone(),
         mode: conf.s3_migration,
         sleep_duration: conf.s3_migration_sleep_duration,
+        max_retries: conf.s3_migration_max_retries,
     };
 
     match migration_config.mode {

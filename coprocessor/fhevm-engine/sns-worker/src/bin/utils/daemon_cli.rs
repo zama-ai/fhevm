@@ -6,7 +6,7 @@ use fhevm_engine_common::types::SignerType;
 use fhevm_engine_common::utils::DatabaseURL;
 use humantime::parse_duration;
 use sns_worker::metrics::SNS_LATENCY_OP_HISTOGRAM_CONF;
-use sns_worker::{S3MigrationMode, SchedulePolicy};
+use sns_worker::{S3MigrationMode, SchedulePolicy, DEFAULT_S3_MIGRATION_MAX_RETRIES};
 use tracing::Level;
 
 #[derive(Parser, Debug, Clone)]
@@ -154,6 +154,10 @@ pub struct Args {
     /// Delay between S3 migration retries after idle concurrent scans or migration panics.
     #[arg(long, default_value = "5m", value_parser = parse_duration, env = "S3_MIGRATION_SLEEP_DURATION")]
     pub s3_migration_sleep_duration: Duration,
+
+    /// Maximum recorded migration failures per handle before retry selection stops.
+    #[arg(long, default_value_t = DEFAULT_S3_MIGRATION_MAX_RETRIES, value_parser = clap::value_parser!(i32).range(1..), env = "S3_MIGRATION_MAX_RETRIES")]
+    pub s3_migration_max_retries: i32,
 
     /// Reserved flag for future cleanup of old S3 object formats after migration
     #[arg(long, default_value_t = false, env = "CLEAN_OLD_S3_FORMAT_VERSION")]
