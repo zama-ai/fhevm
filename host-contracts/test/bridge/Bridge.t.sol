@@ -213,7 +213,7 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
         handleList[0] = _makeHandle(0);
         vm.prank(srcApp);
         vm.expectRevert(abi.encodeWithSelector(HandlesSender.UnknownDstEid.selector, uint32(99)));
-        srcBridge.send{value: 0}(uint32(99), _addressToBytes32(address(dstApp)), "", handleList, uint128(0), "");
+        srcBridge.send{value: 0}(uint32(99), _addressToBytes32(address(dstApp)), "", handleList, uint128(0));
     }
 
     function test_Send_RevertsAboveMaxHandles() public {
@@ -222,7 +222,7 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
         for (uint256 i = 0; i < handleList.length; i++) handleList[i] = _makeHandle(i);
         vm.prank(srcApp);
         vm.expectRevert(abi.encodeWithSelector(HandlesSender.TooManyHandles.selector, cap + 1, cap));
-        srcBridge.send{value: 0}(DST_EID, _addressToBytes32(address(dstApp)), "", handleList, uint128(0), "");
+        srcBridge.send{value: 0}(DST_EID, _addressToBytes32(address(dstApp)), "", handleList, uint128(0));
     }
 
     function test_Send_RevertsOnHandleNotAllowed() public {
@@ -231,26 +231,7 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
         handleList[0] = h;
         vm.prank(srcApp);
         vm.expectRevert(abi.encodeWithSelector(HandlesSender.HandleNotAllowed.selector, h, srcApp));
-        srcBridge.send{value: 0}(DST_EID, _addressToBytes32(address(dstApp)), "", handleList, uint128(0), "");
-    }
-
-    function test_Send_RevertsOnComposeGasWithRawOptions() public {
-        bytes32 h = _makeHandle(0);
-        _allow(h, srcApp);
-        bytes32[] memory handleList = new bytes32[](1);
-        handleList[0] = h;
-        // Non-empty options + nonzero composeGas -> revert
-        bytes memory rawOpts = hex"00030100110100000000000000000000000000000186a0"; // arbitrary non-empty
-        vm.prank(srcApp);
-        vm.expectRevert(HandlesSender.ComposeGasMustBeZeroWithRawOptions.selector);
-        srcBridge.send{value: 1 ether}(
-            DST_EID,
-            _addressToBytes32(address(dstApp)),
-            "",
-            handleList,
-            uint128(50_000),
-            rawOpts
-        );
+        srcBridge.send{value: 0}(DST_EID, _addressToBytes32(address(dstApp)), "", handleList, uint128(0));
     }
 
     ////////////////////////////////////////////////////////////////////////////////
@@ -275,8 +256,7 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
             _addressToBytes32(address(dstApp)),
             payload,
             handleList,
-            uint128(200_000),
-            ""
+            uint128(200_000)
         );
 
         vm.recordLogs();
@@ -286,8 +266,7 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
             _addressToBytes32(address(dstApp)),
             payload,
             handleList,
-            uint128(200_000),
-            ""
+            uint128(200_000)
         );
 
         // Inspect logs: BridgeHandle is emitted once per handle, with the receipt's GUID.

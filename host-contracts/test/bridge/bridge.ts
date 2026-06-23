@@ -58,7 +58,7 @@ describe('Bridge', function () {
     it('reverts UnknownDstEid for an unregistered endpoint id', async function () {
       const handleList = [makeHandle(0)];
       const unknownEid = 99;
-      await expect(this.srcBridge.send(unknownEid, ethers.ZeroHash, '0x', handleList, 0, '0x'))
+      await expect(this.srcBridge.send(unknownEid, ethers.ZeroHash, '0x', handleList, 0))
         .to.be.revertedWithCustomError(this.srcBridge, 'UnknownDstEid')
         .withArgs(unknownEid);
     });
@@ -66,7 +66,7 @@ describe('Bridge', function () {
     it('reverts TooManyHandles when length exceeds the cap', async function () {
       const max = Number(await this.srcBridge.MAX_HANDLES());
       const handleList = Array.from({ length: max + 1 }, (_, i) => makeHandle(i));
-      await expect(this.srcBridge.send(DST_EID, ethers.ZeroHash, '0x', handleList, 0, '0x'))
+      await expect(this.srcBridge.send(DST_EID, ethers.ZeroHash, '0x', handleList, 0))
         .to.be.revertedWithCustomError(this.srcBridge, 'TooManyHandles')
         .withArgs(max + 1, max);
     });
@@ -76,31 +76,8 @@ describe('Bridge', function () {
       // signers.bob has no ACL allowance on this fresh handle.
       const bob = this.signers.bob;
       await expect(
-        this.srcBridge.connect(bob).send(DST_EID, ethers.ZeroHash, '0x', handleList, 0, '0x'),
+        this.srcBridge.connect(bob).send(DST_EID, ethers.ZeroHash, '0x', handleList, 0),
       ).to.be.revertedWithCustomError(this.srcBridge, 'HandleNotAllowed');
-    });
-
-    it('reverts ComposeGasMustBeZeroWithRawOptions when both options and compose gas are non-empty', async function () {
-      const aclAddr = await getAclAddress();
-      const acl = await ethers.getContractAt('ACL', aclAddr);
-      const fhevmExecutor = await acl.getFHEVMExecutorAddress();
-      const handle = makeHandle(0);
-
-      // Grant persistent allowance to signers.alice via a single multicall from the
-      // FHEVMExecutor. Two sub-calls inside the same tx (delegatecall preserves
-      // msg.sender), so transient storage persists between them:
-      //   1) allowTransient(h, fhevmExecutor)  — executor bypass triggers, grants transient
-      //   2) allow(h, alice)                   — executor is now isAllowed, can grant alice
-      await grantAllowanceToUser(acl, fhevmExecutor, handle, this.signers.alice.address);
-
-      // _resolveOptions is checked BEFORE the endpoint send, so this revert fires
-      // without us needing a registered send library.
-      const rawOpts = '0x00030100110100000000000000000000000000000186a0';
-      await expect(
-        this.srcBridge
-          .connect(this.signers.alice)
-          .send(DST_EID, ethers.ZeroHash, '0x', [handle], 50_000n, rawOpts, { value: ethers.parseEther('1') }),
-      ).to.be.revertedWithCustomError(this.srcBridge, 'ComposeGasMustBeZeroWithRawOptions');
     });
   });
 
@@ -205,12 +182,6 @@ async function makeDstHandle(seed: number): Promise<string> {
   return '0x' + top21 + 'ff' + chainIdHex + '05' + '00';
 }
 
-async function getAclAddress(): Promise<string> {
-  const dotenv = await import('dotenv');
-  const fs = await import('fs');
-  return dotenv.parse(fs.readFileSync('addresses/.env.host')).ACL_CONTRACT_ADDRESS;
-}
-
 async function impersonate(addr: string) {
   await ethers.provider.send('hardhat_impersonateAccount', [addr]);
 }
@@ -226,26 +197,4 @@ async function stopImpersonating(addr: string) {
  */
 async function fundAddress(addr: string, weiHex = '0xde0b6b3a7640000' /* 1 ether */) {
   await ethers.provider.send('hardhat_setBalance', [addr, weiHex]);
-}
-
-/**
- * Grant persistent ACL allowance on `handle` to `user`. Performs both calls inside
- * a single multicall (which delegatecalls so msg.sender is preserved across calls),
- * making transient storage live across the two sub-calls:
- *   1) allowTransient(handle, fhevmExecutor)  — executor bypass grants itself transient
- *   2) allow(handle, user)                    — executor is now isAllowed, grants `user`
- *
- * This is the Hardhat-friendly equivalent of acl.t.sol's `_allowHandle`, which works
- * implicitly because forge tests run sequential cheatcoded calls in the same tx.
- */
-export async function grantAllowanceToUser(acl: any, fhevmExecutor: string, handle: string, user: string) {
-  await ethers.provider.send('hardhat_impersonateAccount', [fhevmExecutor]);
-  await ethers.provider.send('hardhat_setBalance', [fhevmExecutor, '0xde0b6b3a7640000']);
-  const execSigner = await ethers.getSigner(fhevmExecutor);
-  const calls = [
-    acl.interface.encodeFunctionData('allowTransient', [handle, fhevmExecutor]),
-    acl.interface.encodeFunctionData('allow', [handle, user]),
-  ];
-  await (await acl.connect(execSigner).multicall(calls)).wait();
-  await ethers.provider.send('hardhat_stopImpersonatingAccount', [fhevmExecutor]);
 }

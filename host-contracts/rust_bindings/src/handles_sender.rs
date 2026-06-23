@@ -13,7 +13,6 @@ interface HandlesSender {
         MessagingFee fee;
     }
 
-    error ComposeGasMustBeZeroWithRawOptions();
     error HandleNotAllowed(bytes32 handle, address srcApp);
     error InvalidDelegate();
     error InvalidEndpointCall();
@@ -52,9 +51,9 @@ interface HandlesSender {
     function oAppVersion() external pure returns (uint64 senderVersion, uint64 receiverVersion);
     function owner() external view returns (address);
     function peers(uint32 _eid) external view returns (bytes32);
-    function quote(uint32 dstEid, address srcApp, bytes32 dstApp, bytes memory payload, bytes32[] memory handleList, uint128 lzComposeGas, bytes memory options) external view returns (MessagingFee memory fee);
+    function quote(uint32 dstEid, address srcApp, bytes32 dstApp, bytes memory payload, bytes32[] memory handleList, uint128 lzComposeGas) external view returns (MessagingFee memory fee);
     function renounceOwnership() external;
-    function send(uint32 dstEid, bytes32 dstApp, bytes memory payload, bytes32[] memory handleList, uint128 lzComposeGas, bytes memory options) external payable returns (MessagingReceipt memory receipt);
+    function send(uint32 dstEid, bytes32 dstApp, bytes memory payload, bytes32[] memory handleList, uint128 lzComposeGas) external payable returns (MessagingReceipt memory receipt);
     function setDelegate(address _delegate) external;
     function setDstChainId(uint32 dstEid, uint64 dstChainId) external;
     function setLzReceiveBaseGas(uint32 dstEid, uint128 lzReceiveBaseGas) external;
@@ -259,11 +258,6 @@ interface HandlesSender {
         "name": "lzComposeGas",
         "type": "uint128",
         "internalType": "uint128"
-      },
-      {
-        "name": "options",
-        "type": "bytes",
-        "internalType": "bytes"
       }
     ],
     "outputs": [
@@ -322,11 +316,6 @@ interface HandlesSender {
         "name": "lzComposeGas",
         "type": "uint128",
         "internalType": "uint128"
-      },
-      {
-        "name": "options",
-        "type": "bytes",
-        "internalType": "bytes"
       }
     ],
     "outputs": [
@@ -653,11 +642,6 @@ interface HandlesSender {
       }
     ],
     "anonymous": false
-  },
-  {
-    "type": "error",
-    "name": "ComposeGasMustBeZeroWithRawOptions",
-    "inputs": []
   },
   {
     "type": "error",
@@ -1339,81 +1323,6 @@ struct MessagingReceipt { bytes32 guid; uint64 nonce; MessagingFee fee; }
                 alloy_sol_types::abi::token::WordToken(
                     alloy_sol_types::private::keccak256(out),
                 )
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `ComposeGasMustBeZeroWithRawOptions()` and selector `0x11279253`.
-```solidity
-error ComposeGasMustBeZeroWithRawOptions();
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct ComposeGasMustBeZeroWithRawOptions;
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[doc(hidden)]
-        type UnderlyingSolTuple<'a> = ();
-        #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = ();
-        #[cfg(test)]
-        #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
-            match _t {
-                alloy_sol_types::private::AssertTypeEq::<
-                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                >(_) => {}
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<ComposeGasMustBeZeroWithRawOptions>
-        for UnderlyingRustTuple<'_> {
-            fn from(value: ComposeGasMustBeZeroWithRawOptions) -> Self {
-                ()
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>>
-        for ComposeGasMustBeZeroWithRawOptions {
-            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolError for ComposeGasMustBeZeroWithRawOptions {
-            type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "ComposeGasMustBeZeroWithRawOptions()";
-            const SELECTOR: [u8; 4] = [17u8, 39u8, 146u8, 83u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                ()
-            }
-            #[inline]
-            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
             }
         }
     };
@@ -5370,9 +5279,9 @@ function peers(uint32 _eid) external view returns (bytes32);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `quote(uint32,address,bytes32,bytes,bytes32[],uint128,bytes)` and selector `0x81177b3c`.
+    /**Function with signature `quote(uint32,address,bytes32,bytes,bytes32[],uint128)` and selector `0xa5decd7e`.
 ```solidity
-function quote(uint32 dstEid, address srcApp, bytes32 dstApp, bytes memory payload, bytes32[] memory handleList, uint128 lzComposeGas, bytes memory options) external view returns (MessagingFee memory fee);
+function quote(uint32 dstEid, address srcApp, bytes32 dstApp, bytes memory payload, bytes32[] memory handleList, uint128 lzComposeGas) external view returns (MessagingFee memory fee);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -5391,12 +5300,10 @@ function quote(uint32 dstEid, address srcApp, bytes32 dstApp, bytes memory paylo
         >,
         #[allow(missing_docs)]
         pub lzComposeGas: u128,
-        #[allow(missing_docs)]
-        pub options: alloy::sol_types::private::Bytes,
     }
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`quote(uint32,address,bytes32,bytes,bytes32[],uint128,bytes)`](quoteCall) function.
+    ///Container type for the return parameters of the [`quote(uint32,address,bytes32,bytes,bytes32[],uint128)`](quoteCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct quoteReturn {
@@ -5422,7 +5329,6 @@ function quote(uint32 dstEid, address srcApp, bytes32 dstApp, bytes memory paylo
                     alloy::sol_types::sol_data::FixedBytes<32>,
                 >,
                 alloy::sol_types::sol_data::Uint<128>,
-                alloy::sol_types::sol_data::Bytes,
             );
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (
@@ -5434,7 +5340,6 @@ function quote(uint32 dstEid, address srcApp, bytes32 dstApp, bytes memory paylo
                     alloy::sol_types::private::FixedBytes<32>,
                 >,
                 u128,
-                alloy::sol_types::private::Bytes,
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
@@ -5458,7 +5363,6 @@ function quote(uint32 dstEid, address srcApp, bytes32 dstApp, bytes memory paylo
                         value.payload,
                         value.handleList,
                         value.lzComposeGas,
-                        value.options,
                     )
                 }
             }
@@ -5473,7 +5377,6 @@ function quote(uint32 dstEid, address srcApp, bytes32 dstApp, bytes memory paylo
                         payload: tuple.3,
                         handleList: tuple.4,
                         lzComposeGas: tuple.5,
-                        options: tuple.6,
                     }
                 }
             }
@@ -5522,7 +5425,6 @@ function quote(uint32 dstEid, address srcApp, bytes32 dstApp, bytes memory paylo
                     alloy::sol_types::sol_data::FixedBytes<32>,
                 >,
                 alloy::sol_types::sol_data::Uint<128>,
-                alloy::sol_types::sol_data::Bytes,
             );
             type Token<'a> = <Self::Parameters<
                 'a,
@@ -5532,8 +5434,8 @@ function quote(uint32 dstEid, address srcApp, bytes32 dstApp, bytes memory paylo
             type ReturnToken<'a> = <Self::ReturnTuple<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "quote(uint32,address,bytes32,bytes,bytes32[],uint128,bytes)";
-            const SELECTOR: [u8; 4] = [129u8, 23u8, 123u8, 60u8];
+            const SIGNATURE: &'static str = "quote(uint32,address,bytes32,bytes,bytes32[],uint128)";
+            const SELECTOR: [u8; 4] = [165u8, 222u8, 205u8, 126u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -5561,9 +5463,6 @@ function quote(uint32 dstEid, address srcApp, bytes32 dstApp, bytes memory paylo
                     <alloy::sol_types::sol_data::Uint<
                         128,
                     > as alloy_sol_types::SolType>::tokenize(&self.lzComposeGas),
-                    <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
-                        &self.options,
-                    ),
                 )
             }
             #[inline]
@@ -5735,9 +5634,9 @@ function renounceOwnership() external;
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `send(uint32,bytes32,bytes,bytes32[],uint128,bytes)` and selector `0xfcea4ca9`.
+    /**Function with signature `send(uint32,bytes32,bytes,bytes32[],uint128)` and selector `0xccd1f9d6`.
 ```solidity
-function send(uint32 dstEid, bytes32 dstApp, bytes memory payload, bytes32[] memory handleList, uint128 lzComposeGas, bytes memory options) external payable returns (MessagingReceipt memory receipt);
+function send(uint32 dstEid, bytes32 dstApp, bytes memory payload, bytes32[] memory handleList, uint128 lzComposeGas) external payable returns (MessagingReceipt memory receipt);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -5754,12 +5653,10 @@ function send(uint32 dstEid, bytes32 dstApp, bytes memory payload, bytes32[] mem
         >,
         #[allow(missing_docs)]
         pub lzComposeGas: u128,
-        #[allow(missing_docs)]
-        pub options: alloy::sol_types::private::Bytes,
     }
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`send(uint32,bytes32,bytes,bytes32[],uint128,bytes)`](sendCall) function.
+    ///Container type for the return parameters of the [`send(uint32,bytes32,bytes,bytes32[],uint128)`](sendCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct sendReturn {
@@ -5784,7 +5681,6 @@ function send(uint32 dstEid, bytes32 dstApp, bytes memory payload, bytes32[] mem
                     alloy::sol_types::sol_data::FixedBytes<32>,
                 >,
                 alloy::sol_types::sol_data::Uint<128>,
-                alloy::sol_types::sol_data::Bytes,
             );
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (
@@ -5795,7 +5691,6 @@ function send(uint32 dstEid, bytes32 dstApp, bytes memory payload, bytes32[] mem
                     alloy::sol_types::private::FixedBytes<32>,
                 >,
                 u128,
-                alloy::sol_types::private::Bytes,
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
@@ -5818,7 +5713,6 @@ function send(uint32 dstEid, bytes32 dstApp, bytes memory payload, bytes32[] mem
                         value.payload,
                         value.handleList,
                         value.lzComposeGas,
-                        value.options,
                     )
                 }
             }
@@ -5832,7 +5726,6 @@ function send(uint32 dstEid, bytes32 dstApp, bytes memory payload, bytes32[] mem
                         payload: tuple.2,
                         handleList: tuple.3,
                         lzComposeGas: tuple.4,
-                        options: tuple.5,
                     }
                 }
             }
@@ -5880,7 +5773,6 @@ function send(uint32 dstEid, bytes32 dstApp, bytes memory payload, bytes32[] mem
                     alloy::sol_types::sol_data::FixedBytes<32>,
                 >,
                 alloy::sol_types::sol_data::Uint<128>,
-                alloy::sol_types::sol_data::Bytes,
             );
             type Token<'a> = <Self::Parameters<
                 'a,
@@ -5890,8 +5782,8 @@ function send(uint32 dstEid, bytes32 dstApp, bytes memory payload, bytes32[] mem
             type ReturnToken<'a> = <Self::ReturnTuple<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "send(uint32,bytes32,bytes,bytes32[],uint128,bytes)";
-            const SELECTOR: [u8; 4] = [252u8, 234u8, 76u8, 169u8];
+            const SIGNATURE: &'static str = "send(uint32,bytes32,bytes,bytes32[],uint128)";
+            const SELECTOR: [u8; 4] = [204u8, 209u8, 249u8, 214u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -5916,9 +5808,6 @@ function send(uint32 dstEid, bytes32 dstApp, bytes memory payload, bytes32[] mem
                     <alloy::sol_types::sol_data::Uint<
                         128,
                     > as alloy_sol_types::SolType>::tokenize(&self.lzComposeGas),
-                    <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
-                        &self.options,
-                    ),
                 )
             }
             #[inline]
@@ -6936,15 +6825,15 @@ function transferOwnership(address newOwner) external;
             [113u8, 80u8, 24u8, 166u8],
             [113u8, 132u8, 73u8, 86u8],
             [127u8, 211u8, 87u8, 121u8],
-            [129u8, 23u8, 123u8, 60u8],
             [137u8, 215u8, 206u8, 34u8],
             [141u8, 165u8, 203u8, 91u8],
+            [165u8, 222u8, 205u8, 126u8],
             [172u8, 156u8, 42u8, 223u8],
             [181u8, 119u8, 141u8, 228u8],
             [187u8, 11u8, 106u8, 83u8],
             [202u8, 94u8, 181u8, 225u8],
+            [204u8, 209u8, 249u8, 214u8],
             [242u8, 253u8, 227u8, 139u8],
-            [252u8, 234u8, 76u8, 169u8],
         ];
     }
     #[automatically_derived]
@@ -7126,15 +7015,6 @@ function transferOwnership(address newOwner) external;
                     LZ_RECEIVE_PER_HANDLE_GAS_DEFAULT
                 },
                 {
-                    fn quote(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HandlesSenderCalls> {
-                        <quoteCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
-                            .map(HandlesSenderCalls::quote)
-                    }
-                    quote
-                },
-                {
                     fn setLzReceivePerHandleGas(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HandlesSenderCalls> {
@@ -7153,6 +7033,15 @@ function transferOwnership(address newOwner) external;
                             .map(HandlesSenderCalls::owner)
                     }
                     owner
+                },
+                {
+                    fn quote(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<HandlesSenderCalls> {
+                        <quoteCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                            .map(HandlesSenderCalls::quote)
+                    }
+                    quote
                 },
                 {
                     fn MAX_HANDLES(
@@ -7197,6 +7086,13 @@ function transferOwnership(address newOwner) external;
                     setDelegate
                 },
                 {
+                    fn send(data: &[u8]) -> alloy_sol_types::Result<HandlesSenderCalls> {
+                        <sendCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                            .map(HandlesSenderCalls::send)
+                    }
+                    send
+                },
+                {
                     fn transferOwnership(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HandlesSenderCalls> {
@@ -7206,13 +7102,6 @@ function transferOwnership(address newOwner) external;
                             .map(HandlesSenderCalls::transferOwnership)
                     }
                     transferOwnership
-                },
-                {
-                    fn send(data: &[u8]) -> alloy_sol_types::Result<HandlesSenderCalls> {
-                        <sendCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
-                            .map(HandlesSenderCalls::send)
-                    }
-                    send
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
@@ -7345,17 +7234,6 @@ function transferOwnership(address newOwner) external;
                     LZ_RECEIVE_PER_HANDLE_GAS_DEFAULT
                 },
                 {
-                    fn quote(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HandlesSenderCalls> {
-                        <quoteCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(HandlesSenderCalls::quote)
-                    }
-                    quote
-                },
-                {
                     fn setLzReceivePerHandleGas(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HandlesSenderCalls> {
@@ -7376,6 +7254,17 @@ function transferOwnership(address newOwner) external;
                             .map(HandlesSenderCalls::owner)
                     }
                     owner
+                },
+                {
+                    fn quote(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<HandlesSenderCalls> {
+                        <quoteCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(HandlesSenderCalls::quote)
+                    }
+                    quote
                 },
                 {
                     fn MAX_HANDLES(
@@ -7422,6 +7311,15 @@ function transferOwnership(address newOwner) external;
                     setDelegate
                 },
                 {
+                    fn send(data: &[u8]) -> alloy_sol_types::Result<HandlesSenderCalls> {
+                        <sendCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(HandlesSenderCalls::send)
+                    }
+                    send
+                },
+                {
                     fn transferOwnership(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HandlesSenderCalls> {
@@ -7431,15 +7329,6 @@ function transferOwnership(address newOwner) external;
                             .map(HandlesSenderCalls::transferOwnership)
                     }
                     transferOwnership
-                },
-                {
-                    fn send(data: &[u8]) -> alloy_sol_types::Result<HandlesSenderCalls> {
-                        <sendCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(HandlesSenderCalls::send)
-                    }
-                    send
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
@@ -7650,8 +7539,6 @@ function transferOwnership(address newOwner) external;
     #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum HandlesSenderErrors {
         #[allow(missing_docs)]
-        ComposeGasMustBeZeroWithRawOptions(ComposeGasMustBeZeroWithRawOptions),
-        #[allow(missing_docs)]
         HandleNotAllowed(HandleNotAllowed),
         #[allow(missing_docs)]
         InvalidDelegate(InvalidDelegate),
@@ -7696,7 +7583,6 @@ function transferOwnership(address newOwner) external;
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
             [15u8, 189u8, 236u8, 10u8],
-            [17u8, 39u8, 146u8, 83u8],
             [17u8, 140u8, 218u8, 167u8],
             [30u8, 22u8, 200u8, 46u8],
             [30u8, 79u8, 189u8, 247u8],
@@ -7719,13 +7605,10 @@ function transferOwnership(address newOwner) external;
     impl alloy_sol_types::SolInterface for HandlesSenderErrors {
         const NAME: &'static str = "HandlesSenderErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 18usize;
+        const COUNT: usize = 17usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
-                Self::ComposeGasMustBeZeroWithRawOptions(_) => {
-                    <ComposeGasMustBeZeroWithRawOptions as alloy_sol_types::SolError>::SELECTOR
-                }
                 Self::HandleNotAllowed(_) => {
                     <HandleNotAllowed as alloy_sol_types::SolError>::SELECTOR
                 }
@@ -7802,17 +7685,6 @@ function transferOwnership(address newOwner) external;
                             .map(HandlesSenderErrors::InvalidEndpointCall)
                     }
                     InvalidEndpointCall
-                },
-                {
-                    fn ComposeGasMustBeZeroWithRawOptions(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HandlesSenderErrors> {
-                        <ComposeGasMustBeZeroWithRawOptions as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
-                            .map(HandlesSenderErrors::ComposeGasMustBeZeroWithRawOptions)
-                    }
-                    ComposeGasMustBeZeroWithRawOptions
                 },
                 {
                     fn OwnableUnauthorizedAccount(
@@ -8016,17 +7888,6 @@ function transferOwnership(address newOwner) external;
                     InvalidEndpointCall
                 },
                 {
-                    fn ComposeGasMustBeZeroWithRawOptions(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HandlesSenderErrors> {
-                        <ComposeGasMustBeZeroWithRawOptions as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(HandlesSenderErrors::ComposeGasMustBeZeroWithRawOptions)
-                    }
-                    ComposeGasMustBeZeroWithRawOptions
-                },
-                {
                     fn OwnableUnauthorizedAccount(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HandlesSenderErrors> {
@@ -8216,11 +8077,6 @@ function transferOwnership(address newOwner) external;
         #[inline]
         fn abi_encoded_size(&self) -> usize {
             match self {
-                Self::ComposeGasMustBeZeroWithRawOptions(inner) => {
-                    <ComposeGasMustBeZeroWithRawOptions as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
-                }
                 Self::HandleNotAllowed(inner) => {
                     <HandleNotAllowed as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
@@ -8303,12 +8159,6 @@ function transferOwnership(address newOwner) external;
         #[inline]
         fn abi_encode_raw(&self, out: &mut alloy_sol_types::private::Vec<u8>) {
             match self {
-                Self::ComposeGasMustBeZeroWithRawOptions(inner) => {
-                    <ComposeGasMustBeZeroWithRawOptions as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
                 Self::HandleNotAllowed(inner) => {
                     <HandleNotAllowed as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
@@ -8881,7 +8731,6 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
                 alloy::sol_types::private::FixedBytes<32>,
             >,
             lzComposeGas: u128,
-            options: alloy::sol_types::private::Bytes,
         ) -> alloy_contract::SolCallBuilder<&P, quoteCall, N> {
             self.call_builder(
                 &quoteCall {
@@ -8891,7 +8740,6 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
                     payload,
                     handleList,
                     lzComposeGas,
-                    options,
                 },
             )
         }
@@ -8911,7 +8759,6 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
                 alloy::sol_types::private::FixedBytes<32>,
             >,
             lzComposeGas: u128,
-            options: alloy::sol_types::private::Bytes,
         ) -> alloy_contract::SolCallBuilder<&P, sendCall, N> {
             self.call_builder(
                 &sendCall {
@@ -8920,7 +8767,6 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
                     payload,
                     handleList,
                     lzComposeGas,
-                    options,
                 },
             )
         }

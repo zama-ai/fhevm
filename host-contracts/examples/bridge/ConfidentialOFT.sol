@@ -86,9 +86,7 @@ contract ConfidentialOFT is Ownable2Step, IDstApp {
         bytes32[] memory handleList = new bytes32[](1);
         handleList[0] = euint64.unwrap(actualAmount);
 
-        // Empty `options` lets the bridge build defaults using its lzReceiveGas formula
-        // and `mintComposeGas`.
-        confidentialBridge.send{value: msg.value}(dstEid, dstApp, payload, handleList, mintComposeGas, "");
+        confidentialBridge.send{value: msg.value}(dstEid, dstApp, payload, handleList, mintComposeGas);
 
         emit Bridged(msg.sender, dstEid, recipient);
     }

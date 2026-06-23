@@ -210,7 +210,7 @@ task('task:bridgeCOFT', 'Bridges a ConfidentialOFT balance (or a specific amount
       ['address', 'bytes32'],
       [recipient, amountHandle],
     );
-    const fee = await bridge.quote(dstEid, oftAddress, dstOftBytes32, payload, [amountHandle], composeGas, '0x');
+    const fee = await bridge.quote(dstEid, oftAddress, dstOftBytes32, payload, [amountHandle], composeGas);
     console.log(
       `Bridging via ${oftAddress} → eid=${dstEid} oft=${dstOft} (recipient=${recipient}, handle=${amountHandle})`,
     );

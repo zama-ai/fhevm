@@ -130,9 +130,9 @@ contract HandlesListConfidentialOApp is Ownable2Step, IDstApp {
         // decryption rights on the derived handles (see onConfidentialBridgeReceived).
         bytes memory payload = abi.encode(msg.sender);
 
-        // Empty `options` lets the bridge build defaults from its lzReceiveGas formula
+        // The bridge builds execution options internally from its lzReceiveGas formula
         // (sized by handle count) and `lzComposeGas`.
-        receipt = confidentialBridge.send{value: msg.value}(dstEid, dstApp, payload, handleList, lzComposeGas, "");
+        receipt = confidentialBridge.send{value: msg.value}(dstEid, dstApp, payload, handleList, lzComposeGas);
 
         emit HandlesListConfidentialOAppSent(dstEid, dstApp, handles, receipt.guid);
     }
@@ -157,7 +157,7 @@ contract HandlesListConfidentialOApp is Ownable2Step, IDstApp {
         // zero handles of the right length quote identically to the real call.
         bytes memory payload = abi.encode(msg.sender);
         bytes32[] memory placeholder = new bytes32[](countHandles);
-        fee = confidentialBridge.quote(dstEid, address(this), dstApp, payload, placeholder, lzComposeGas, "");
+        fee = confidentialBridge.quote(dstEid, address(this), dstApp, payload, placeholder, lzComposeGas);
     }
 
     /**

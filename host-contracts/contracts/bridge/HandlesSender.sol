@@ -25,12 +25,10 @@ import {BridgeEvents} from "./BridgeEvents.sol";
  *         payload) so the payload encoding stays fully under the source app's control.
  *         A protocol-level cap `MAX_HANDLES` bounds the per-message gas cost.
  *
- * @dev    Two execution-control modes are supported and are mutually exclusive:
- *         - `options` empty: the contract builds default options using its own
- *           `lzReceiveGas` formula (sized from handle count) and the caller-supplied
- *           `lzComposeGas`.
- *         - `options` non-empty: the caller supplies raw LayerZero options. In this
- *           case `lzComposeGas` must be zero (the caller has full control via options).
+ * @dev    LayerZero execution options are built internally: the `lzReceive` gas
+ *         is computed from the bridge's own formula (base + per-handle, sized from the
+ *         handle count, with optional per-`dstEid` governance overrides), and the
+ *         `lzCompose` gas is the caller-supplied `lzComposeGas`.
  */
 /// @custom:security-contact https://github.com/zama-ai/fhevm/blob/main/SECURITY.md
 abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEvents {
@@ -59,10 +57,6 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
 
     /// @notice Returned when the caller is not allowed to use a handle.
     error HandleNotAllowed(bytes32 handle, address srcApp);
-
-    /// @notice Returned when caller-supplied options conflict with `lzComposeGas != 0`.
-    /// @dev    Options carry per-message gas budgets; supplying both would be ambiguous.
-    error ComposeGasMustBeZeroWithRawOptions();
 
     /// @notice ACL contract on this (source) chain.
     ACL private constant ACL_CONTRACT = ACL(aclAdd);
@@ -120,17 +114,15 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
      *                       preserved on the destination, so apps can index into
      *                       `dstHandleList` by position.
      * @param lzComposeGas   Gas budget for the destination-side `lzCompose` (which runs
-     *                       the destination app's `onConfidentialBridgeReceived`). Must be 0 if `options`
-     *                       is non-empty.
-     * @param options        Raw LayerZero options; if empty the contract builds default
-     *                       options from `baseGas(dstEid) + handleList.length *
-     *                       perHandleGas(dstEid)` and `lzComposeGas`, where the base and
-     *                       per-handle gas are the `dstEid`'s custom overrides if set, else
-     *                       the {LZ_RECEIVE_BASE_GAS_DEFAULT}/{LZ_RECEIVE_PER_HANDLE_GAS_DEFAULT}
-     *                       constants.
+     *                       the destination app's `onConfidentialBridgeReceived`).
      *
      * @return receipt LayerZero messaging receipt (includes the GUID used in events).
      *
+     * @dev    The `lzReceive` execution gas is computed internally as
+     *         `baseGas(dstEid) + handleList.length * perHandleGas(dstEid)`, where the base
+     *         and per-handle gas are the `dstEid`'s custom overrides if set, else the
+     *         {LZ_RECEIVE_BASE_GAS_DEFAULT}/{LZ_RECEIVE_PER_HANDLE_GAS_DEFAULT} constants.
+     *         Callers cannot override it (see the contract-level note for why).
      * @dev    Reverts if any handle is not ACL-allowed for `msg.sender` on this chain.
      *         Native fee is paid via `msg.value`; refund returns to `msg.sender`.
      */
@@ -139,8 +131,7 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
         bytes32 dstApp,
         bytes calldata payload,
         bytes32[] calldata handleList,
-        uint128 lzComposeGas,
-        bytes calldata options
+        uint128 lzComposeGas
     ) external payable virtual returns (MessagingReceipt memory receipt) {
         uint256 nHandles = handleList.length;
         if (nHandles > MAX_HANDLES) revert TooManyHandles(nHandles, MAX_HANDLES);
@@ -152,7 +143,7 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
         // LayerZero native fee on misconfigured calls.
         _checkAllAllowed(handleList);
 
-        receipt = _dispatch(dstEid, dstApp, payload, handleList, lzComposeGas, options);
+        receipt = _dispatch(dstEid, dstApp, payload, handleList, lzComposeGas);
 
         // Emit BridgeHandle once the LayerZero-assigned GUID is finalized. The
         // coprocessor records one outstanding `SrcHandle → DstChainId` approval per
@@ -186,10 +177,9 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
         bytes32 dstApp,
         bytes calldata payload,
         bytes32[] calldata handleList,
-        uint128 lzComposeGas,
-        bytes calldata options
+        uint128 lzComposeGas
     ) internal virtual returns (MessagingReceipt memory receipt) {
-        bytes memory finalOptions = _resolveOptions(options, dstEid, handleList.length, lzComposeGas);
+        bytes memory finalOptions = _buildOptions(dstEid, handleList.length, lzComposeGas);
         bytes32 srcApp = bytes32(uint256(uint160(msg.sender)));
         bytes memory message = abi.encode(srcApp, dstApp, payload, handleList);
         MessagingFee memory fee = _quote(dstEid, message, finalOptions, false);
@@ -220,12 +210,11 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
         bytes32 dstApp,
         bytes calldata payload,
         bytes32[] calldata handleList,
-        uint128 lzComposeGas,
-        bytes calldata options
+        uint128 lzComposeGas
     ) external view virtual returns (MessagingFee memory fee) {
         if (_getHandlesSenderStorage().dstChainIdForEid[dstEid] == 0) revert UnknownDstEid(dstEid);
 
-        bytes memory finalOptions = _resolveOptions(options, dstEid, handleList.length, lzComposeGas);
+        bytes memory finalOptions = _buildOptions(dstEid, handleList.length, lzComposeGas);
         bytes memory message = abi.encode(bytes32(uint256(uint160(srcApp))), dstApp, payload, handleList);
         fee = _quote(dstEid, message, finalOptions, false);
     }
@@ -294,28 +283,25 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
         return custom == 0 ? LZ_RECEIVE_PER_HANDLE_GAS_DEFAULT : custom;
     }
 
-    function _resolveOptions(
-        bytes calldata options,
+    /// @dev Builds the LayerZero execution options for a send. The `lzReceive` gas is the
+    ///      bridge formula (`baseGas + nHandles * perHandleGas`, with per-`dstEid`
+    ///      governance overrides); the `lzCompose` gas is the caller-supplied budget.
+    ///      Always built internally — callers cannot supply raw options (see the
+    ///      contract-level note for the rationale).
+    function _buildOptions(
         uint32 dstEid,
         uint256 nHandles,
         uint128 lzComposeGas
     ) internal view virtual returns (bytes memory) {
-        if (options.length == 0) {
-            uint128 lzReceiveGas = _effectiveLzReceiveBaseGas(dstEid) +
-                uint128(nHandles) *
-                _effectiveLzReceivePerHandleGas(dstEid);
-            bytes memory built = OptionsBuilder.newOptions().addExecutorLzReceiveOption(lzReceiveGas, 0);
-            // Compose option only added when a compose gas budget is requested.
-            // Compose index 0 because HandlesReceiver dispatches a single compose msg.
-            if (lzComposeGas > 0) {
-                built = built.addExecutorLzComposeOption(0, lzComposeGas, 0);
-            }
-            return built;
-        } else {
-            // Raw options mode: caller fully controls options; lzComposeGas would be
-            // redundant and is required to be zero to avoid ambiguity.
-            if (lzComposeGas != 0) revert ComposeGasMustBeZeroWithRawOptions();
-            return options;
+        uint128 lzReceiveGas = _effectiveLzReceiveBaseGas(dstEid) +
+            uint128(nHandles) *
+            _effectiveLzReceivePerHandleGas(dstEid);
+        bytes memory built = OptionsBuilder.newOptions().addExecutorLzReceiveOption(lzReceiveGas, 0);
+        // Compose option only added when a compose gas budget is requested.
+        // Compose index 0 because HandlesReceiver dispatches a single compose msg.
+        if (lzComposeGas > 0) {
+            built = built.addExecutorLzComposeOption(0, lzComposeGas, 0);
         }
+        return built;
     }
 }
