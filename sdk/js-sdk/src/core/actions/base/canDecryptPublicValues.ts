@@ -22,7 +22,7 @@ export async function canDecryptPublicValues(
   const handles = parameters.encryptedValues.map(toFhevmHandle);
 
   return isAllowedForDecryption(fhevm, {
-    address: fhevm.chain.fhevm.contracts.acl.address as ChecksummedAddress,
+    aclAddress: fhevm.chain.fhevm.contracts.acl.address as ChecksummedAddress,
     handles,
   });
 }

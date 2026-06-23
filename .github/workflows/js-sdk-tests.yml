@@ -6,15 +6,15 @@ on:
       - devex/js-sdk
       - main
     paths:
-      - '.github/workflows/js-sdk-*.yml'
-      - 'sdk/js-sdk/**'
+      - ".github/workflows/js-sdk-*.yml"
+      - "sdk/js-sdk/**"
   push:
     branches:
       - devex/js-sdk
   workflow_dispatch:
     inputs:
       release:
-        description: 'Set to true for release tagging'
+        description: "Set to true for release tagging"
         required: false
         default: false
 
@@ -29,8 +29,8 @@ jobs:
       run:
         working-directory: ./sdk/js-sdk
     permissions:
-      contents: 'read' # Required to checkout repository code
-      id-token: 'write' # Required for OIDC / npm provenance attestation
+      contents: "read" # Required to checkout repository code
+      id-token: "write" # Required for OIDC / npm provenance attestation
     steps:
       # -----------------------------------------------------------------------
       # 1. Checkout
@@ -41,7 +41,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
-          persist-credentials: 'false'
+          persist-credentials: "false"
 
       # -----------------------------------------------------------------------
       # 2. Node.js setup
@@ -95,39 +95,13 @@ jobs:
         run: npm ci
 
       # -----------------------------------------------------------------------
-      # 7. Build
-      #    The top-level "build" script does more than transpilation:
-      #      - clean           → remove prior tsbuildinfo and generated outputs
-      #      - prettier:check  → formatting validation
-      #      - prettier:ext    → repo-specific style/import checks
-      #      - codegen:loaders:check:dev → fail if generated WASM loaders/API declarations are stale
-      #      - lint            → eslint + full TypeScript noEmit check
-      #      - build:cjs       → CommonJS output under src/_cjs
-      #      - build:esm       → ES module output under src/_esm
-      #      - build:types     → declaration output under src/_types
-      #      - build:tests     → compile-check the test TypeScript project
-      #    The CJS/ESM builds each invoke their corresponding WASM copy step, so
-      #    running "build" prepares the package contents under src/ before pack.
-      # -----------------------------------------------------------------------
-      - name: Build package (CJS + ESM + types)
-        run: npm run build:prod
-
-      # -----------------------------------------------------------------------
-      # 8. Unit tests
-      #    Runs fast, isolated unit tests (src/**/*.test.ts) with type-checking.
-      #    No network or chain required.
-      # -----------------------------------------------------------------------
-      - name: Run unit tests
-        run: npm run test:unit
-
-      # -----------------------------------------------------------------------
-      # 9. Locahost cleartext chain Test
-      #    package.json maps "test" to the local cleartext integration runner,
-      #    which starts Anvil, deploys the FHEVM stack, runs only
-      #    test/fheTest/viem-cleartext, and then tears the local chain down.
+      # 7. DoD: everything we can test "quickly"
       # -----------------------------------------------------------------------
       - name: Setup Forge Soldeer
         run: cd contracts && forge soldeer install
+
+      - name: Setup playwright
+        run: cd test/browser && npx playwright install --with-deps
 
       - name: Set .env
         run: |
@@ -137,4 +111,4 @@ jobs:
       - name: Run cleartext tests with manual package
         run: |
           ulimit -n 65536
-          npm run test:localcleartext:pack
+          npm run dod

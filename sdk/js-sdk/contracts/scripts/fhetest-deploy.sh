@@ -94,6 +94,7 @@ fi
 
 acl_addr="$(fhevm_chain_address ${chain} acl)"
 kms_verifier_addr="$(fhevm_chain_address ${chain} kmsVerifier)"
+protocol_config_addr="$(fhevm_chain_address ${chain} protocolConfig)"
 
 # If this call fails, the ACL proxy isn't deployed (or hasn't been upgraded
 # past the empty UUPS impl) — that's the FHEVM host stack's job, not ours.
@@ -106,20 +107,21 @@ if ! coprocessor_addr="$(cast call "$acl_addr" "getFHEVMExecutorAddress()(addres
     exit 1
 fi
 
-echo "rpc-url:       $rpc_url"
-echo "ACL:           $acl_addr"
-echo "KMSVerifier:   $kms_verifier_addr"
-echo "Coprocessor:   $coprocessor_addr"
+echo "rpc-url:        $rpc_url"
+echo "ACL:            $acl_addr"
+echo "KMSVerifier:    $kms_verifier_addr"
+echo "ProtocolConfig: $protocol_config_addr"
+echo "Coprocessor:    $coprocessor_addr"
 
 # ==============================================================================
 
 private_key=$(cast wallet private-key --mnemonic "${fhevm_mnemonic}" --mnemonic-derivation-path "${fhevm_mnemonic_path}")
 deployer_addr=$(cast wallet address --private-key "${private_key}")
 
-echo "deployer:      $deployer_addr"
+echo "deployer:       $deployer_addr"
 
 deployer_balance_wei="$(cast balance "$deployer_addr" --rpc-url "$rpc_url")"
-echo "balance:       ${deployer_balance_wei} wei"
+echo "balance:        ${deployer_balance_wei} wei"
 
 if [[ "$dry_run" == true ]]; then
     # Predict the FHETest CREATE address: keccak256(rlp(deployer, nonce))[12:].
@@ -163,7 +165,7 @@ cast send "$fhe_test_addr" \
     --rpc-url "$rpc_url" --private-key "${private_key}" >/dev/null
 
 echo "✅ initFheTest"
-echo "✅ FheTest:   ${fhe_test_addr}"
+echo "✅ FheTest:     ${fhe_test_addr}"
 
 # ==============================================================================
 #

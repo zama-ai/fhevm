@@ -5,6 +5,18 @@
     "fheTestAddress": "0x61a8e950161daCCA06b0b623Efa2b7237BaBD4a0",
     "fheTestVersion": "v2"
   },
+  "localcleartext_v12": {
+    "rpcUrl": "http://127.0.0.1:8544",
+    "mnemonic": "test test test test test test test future home engine virtual motion",
+    "fheTestAddress": "0x61a8e950161daCCA06b0b623Efa2b7237BaBD4a0",
+    "fheTestVersion": "v2"
+  },
+  "localcleartext_v13": {
+    "rpcUrl": "http://127.0.0.1:8544",
+    "mnemonic": "test test test test test test test future home engine virtual motion",
+    "fheTestAddress": "0x61a8e950161daCCA06b0b623Efa2b7237BaBD4a0",
+    "fheTestVersion": "v2"
+  },
   "localstack": {
     "rpcUrl": "http://localhost:8545",
     "mnemonic": "test test test test test test test future home engine virtual motion",

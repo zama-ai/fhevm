@@ -1,5 +1,6 @@
 import type { FhevmChain } from '@fhevm/sdk/chains';
 import type { EncryptedValue, TypedValue } from '@fhevm/sdk/types';
+import type { ProtocolVersion } from '../../src/core/types/coreFhevmClient.js';
 import type { FhevmModuleVersions } from '../../src/core/types/moduleVersions.js';
 import { execFileSync } from 'node:child_process';
 import { readFileSync, existsSync } from 'node:fs';
@@ -25,6 +26,8 @@ export const FHE_TEST_CHAIN_NAMES = [
   'mainnet',
   'devnet',
   'localcleartext',
+  'localcleartext_v12',
+  'localcleartext_v13',
   'localstack',
   'localstack_v11',
   'localstack_v12',
@@ -45,6 +48,7 @@ export type FheTestBaseEnv = {
   readonly zamaApiKey: string;
   readonly fheTestAddress: string;
   readonly fheTestVersion: FheTestVersion;
+  readonly protocolVersion: ProtocolVersion;
   readonly fheEncryptionKeyTfheVersion: string;
   readonly moduleVersions?: FhevmModuleVersions | undefined;
 };
@@ -54,7 +58,31 @@ export type FheTestBaseEnv = {
 // ---------------------------------------------------------------------------
 
 export function isCleartext(chainName: FheTestChainName) {
-  return chainName === 'localcleartext';
+  return chainName === 'localcleartext' || chainName.startsWith('localcleartext_');
+}
+
+// ---------------------------------------------------------------------------
+// Protocol version per chain
+// ---------------------------------------------------------------------------
+
+const PROTOCOL_VERSION_BY_CHAIN: Readonly<Record<FheTestChainName, ProtocolVersion>> = {
+  sepolia: '0.12.0',
+  testnet: '0.12.0',
+  mainnet: '0.11.0',
+  localcleartext: '0.13.0',
+  localcleartext_v12: '0.12.0',
+  localcleartext_v13: '0.13.0',
+  localstack: '0.14.0',
+  localstack_v11: '0.11.0',
+  localstack_v12: '0.12.0',
+  localstack_v13: '0.13.0',
+  localstack_v14: '0.14.0',
+  devnet: '0.13.0',
+  polygon_devnet: '0.13.0',
+};
+
+export function getExpectedProtocolVersion(chainName: FheTestChainName): ProtocolVersion {
+  return PROTOCOL_VERSION_BY_CHAIN[chainName];
 }
 
 // ---------------------------------------------------------------------------
@@ -67,6 +95,9 @@ const TFHE_VERSION_BY_CHAIN: Readonly<Record<FheTestChainName, TfheVersion | und
   sepolia: '1.5.3',
   testnet: '1.5.3', // alias for sepolia
   mainnet: '1.5.3',
+  localcleartext: undefined,
+  localcleartext_v12: undefined,
+  localcleartext_v13: undefined,
   localstack_v11: '1.5.3',
   localstack_v12: '1.5.3',
   devnet: '1.6.1',
@@ -74,7 +105,6 @@ const TFHE_VERSION_BY_CHAIN: Readonly<Record<FheTestChainName, TfheVersion | und
   localstack: '1.6.1',
   localstack_v13: '1.6.1',
   localstack_v14: '1.6.1',
-  localcleartext: undefined,
 };
 
 /** Returns the TFHE wasm version for a given test chain, or `undefined` for cleartext chains. */
@@ -86,6 +116,8 @@ const FHE_ENCRYPTION_KEY_TFHE_VERSION_BY_CHAIN: Readonly<Partial<Record<FheTestC
   sepolia: '1.4.0-alpha.3',
   testnet: '1.4.0-alpha.3',
   localcleartext: 'cleartext',
+  localcleartext_v12: 'cleartext',
+  localcleartext_v13: 'cleartext',
   localstack_v11: '1.5.1',
   localstack_v12: '1.5.4',
   localstack_v13: '1.6.1',
@@ -206,8 +238,12 @@ function foundryCastEnv(): NodeJS.ProcessEnv {
   return env;
 }
 
+function isLocalCleartextChain(chainName: FheTestChainName): boolean {
+  return chainName === 'localcleartext' || chainName.startsWith('localcleartext_');
+}
+
 function isLocalAnvilChain(chainName: FheTestChainName): boolean {
-  return chainName === 'localcleartext' || chainName.startsWith('localstack');
+  return isLocalCleartextChain(chainName) || chainName.startsWith('localstack');
 }
 
 function tryFoundryCast(args: readonly string[]): string | undefined {
@@ -403,7 +439,11 @@ export function prepareChains(): FheTestBaseEnv[] {
 function _prepareChain(chainName: FheTestChainName): FheTestBaseEnv {
   const testDir = resolve(__dirname, '..');
   const isLocalstack = chainName.startsWith('localstack');
-  const envFilename = isLocalstack ? '.env.localstack' : `.env.${chainName}`;
+  const envFilename = isLocalCleartextChain(chainName)
+    ? '.env.localcleartext'
+    : isLocalstack
+      ? '.env.localstack'
+      : `.env.${chainName}`;
 
   // Load shared secrets
   const sharedEnv = parseEnvFile(resolve(testDir, '.env'));
@@ -441,6 +481,8 @@ function _prepareChain(chainName: FheTestChainName): FheTestBaseEnv {
     localstack_v13,
     localstack_v14,
     localcleartext,
+    localcleartext_v12: localcleartext,
+    localcleartext_v13: localcleartext,
     polygon_devnet,
     sepolia,
     mainnet,
@@ -466,6 +508,7 @@ function _prepareChain(chainName: FheTestChainName): FheTestBaseEnv {
     zamaApiKey,
     fheTestAddress,
     fheTestVersion,
+    protocolVersion: getExpectedProtocolVersion(chainName),
     fheEncryptionKeyTfheVersion: getFheEncryptionKeyTfheVersion(chainName),
     moduleVersions: tfheVersion === undefined ? undefined : { tfhe: tfheVersion },
   };

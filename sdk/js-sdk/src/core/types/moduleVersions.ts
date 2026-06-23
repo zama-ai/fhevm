@@ -3,6 +3,13 @@ import type { TfheVersion } from '../../wasm/tfhe/TfheApi.js';
 
 export type { TkmsVersion, TfheVersion };
 
+/**
+ * Controls how explicit WASM module-version overrides are checked against the
+ * resolved protocol compatibility table.
+ *
+ * This option only applies when a concrete `tfhe` or `kms` version is provided.
+ * It does not affect auto-resolution.
+ */
 export type ModuleVersionCompatibilityCheck = 'throw' | 'warn' | 'off';
 
 export type FhevmEncryptModuleVersions =

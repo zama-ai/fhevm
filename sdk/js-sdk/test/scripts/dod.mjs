@@ -41,7 +41,6 @@ const commands = [
   './test/scripts/rebuild_sdk_and_pack.sh --build-profile=skip',
   './test/scripts/localcleartext-run-tests.sh --use-pack --foundry-profile=v12',
   './test/scripts/localcleartext-run-tests.sh --use-pack --foundry-profile=v13',
-  './test/scripts/localcleartext-run-tests.sh --use-pack',
   //'node test/multi-wasm/run.mjs',
 ];
 

@@ -253,6 +253,7 @@ export function makeDummyChain(relayerUrl: string): FhevmChain {
         acl: { address: DUMMY_CONTRACT_ADDRESS },
         inputVerifier: { address: DUMMY_USER_ADDRESS },
         kmsVerifier: { address: '0xa1880e99d86F081E8D3868A8C4732C8f65dfdB11' },
+        protocolConfig: undefined, // To be filled
       },
       relayerUrl,
       gateway: {
