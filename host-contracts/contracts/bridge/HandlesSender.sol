@@ -122,7 +122,6 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
      *         `baseGas(dstEid) + handleList.length * perHandleGas(dstEid)`, where the base
      *         and per-handle gas are the `dstEid`'s custom overrides if set, else the
      *         {LZ_RECEIVE_BASE_GAS_DEFAULT}/{LZ_RECEIVE_PER_HANDLE_GAS_DEFAULT} constants.
-     *         Callers cannot override it (see the contract-level note for why).
      * @dev    Reverts if any handle is not ACL-allowed for `msg.sender` on this chain.
      *         Native fee is paid via `msg.value`; refund returns to `msg.sender`.
      */
@@ -286,8 +285,6 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
     /// @dev Builds the LayerZero execution options for a send. The `lzReceive` gas is the
     ///      bridge formula (`baseGas + nHandles * perHandleGas`, with per-`dstEid`
     ///      governance overrides); the `lzCompose` gas is the caller-supplied budget.
-    ///      Always built internally — callers cannot supply raw options (see the
-    ///      contract-level note for the rationale).
     function _buildOptions(
         uint32 dstEid,
         uint256 nHandles,
