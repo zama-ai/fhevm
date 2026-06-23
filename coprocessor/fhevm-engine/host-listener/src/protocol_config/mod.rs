@@ -23,7 +23,9 @@ pub struct ProtocolConfigArgs {
     pub address: String,
 
     #[arg(
+        id = "ethereum_chain_id",
         long = "ethereum-chain-id",
+        value_name = "ETHEREUM_CHAIN_ID",
         env = "ETHEREUM_CHAIN_ID",
         help = "Ethereum host chain id. The listener decodes \
                 ProtocolConfig.CoprocessorUpgradeProposed only when its own chain id matches. \
