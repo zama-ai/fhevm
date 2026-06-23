@@ -13,6 +13,7 @@ interface HandlesSender {
         MessagingFee fee;
     }
 
+    error EmptyHandleList();
     error HandleNotAllowed(bytes32 handle, address srcApp);
     error InvalidDelegate();
     error InvalidEndpointCall();
@@ -718,6 +719,11 @@ interface HandlesSender {
   },
   {
     "type": "error",
+    "name": "EmptyHandleList",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "HandleNotAllowed",
     "inputs": [
       {
@@ -1396,6 +1402,79 @@ struct MessagingReceipt { bytes32 guid; uint64 nonce; MessagingFee fee; }
                 alloy_sol_types::abi::token::WordToken(
                     alloy_sol_types::private::keccak256(out),
                 )
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `EmptyHandleList()` and selector `0x90e57a6f`.
+```solidity
+error EmptyHandleList();
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct EmptyHandleList;
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = ();
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = ();
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<EmptyHandleList> for UnderlyingRustTuple<'_> {
+            fn from(value: EmptyHandleList) -> Self {
+                ()
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for EmptyHandleList {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for EmptyHandleList {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "EmptyHandleList()";
+            const SELECTOR: [u8; 4] = [144u8, 229u8, 122u8, 111u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                ()
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
@@ -8314,6 +8393,8 @@ function transferOwnership(address newOwner) external;
     #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum HandlesSenderErrors {
         #[allow(missing_docs)]
+        EmptyHandleList(EmptyHandleList),
+        #[allow(missing_docs)]
         HandleNotAllowed(HandleNotAllowed),
         #[allow(missing_docs)]
         InvalidDelegate(InvalidDelegate),
@@ -8367,6 +8448,7 @@ function transferOwnership(address newOwner) external;
             [82u8, 116u8, 175u8, 231u8],
             [83u8, 115u8, 53u8, 42u8],
             [109u8, 252u8, 198u8, 80u8],
+            [144u8, 229u8, 122u8, 111u8],
             [159u8, 112u8, 65u8, 32u8],
             [181u8, 134u8, 54u8, 4u8],
             [194u8, 107u8, 235u8, 204u8],
@@ -8380,10 +8462,13 @@ function transferOwnership(address newOwner) external;
     impl alloy_sol_types::SolInterface for HandlesSenderErrors {
         const NAME: &'static str = "HandlesSenderErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 17usize;
+        const COUNT: usize = 18usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
+                Self::EmptyHandleList(_) => {
+                    <EmptyHandleList as alloy_sol_types::SolError>::SELECTOR
+                }
                 Self::HandleNotAllowed(_) => {
                     <HandleNotAllowed as alloy_sol_types::SolError>::SELECTOR
                 }
@@ -8557,6 +8642,17 @@ function transferOwnership(address newOwner) external;
                             .map(HandlesSenderErrors::SafeCastOverflowedUintDowncast)
                     }
                     SafeCastOverflowedUintDowncast
+                },
+                {
+                    fn EmptyHandleList(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<HandlesSenderErrors> {
+                        <EmptyHandleList as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
+                            .map(HandlesSenderErrors::EmptyHandleList)
+                    }
+                    EmptyHandleList
                 },
                 {
                     fn NotEnoughNative(
@@ -8762,6 +8858,17 @@ function transferOwnership(address newOwner) external;
                     SafeCastOverflowedUintDowncast
                 },
                 {
+                    fn EmptyHandleList(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<HandlesSenderErrors> {
+                        <EmptyHandleList as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(HandlesSenderErrors::EmptyHandleList)
+                    }
+                    EmptyHandleList
+                },
+                {
                     fn NotEnoughNative(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HandlesSenderErrors> {
@@ -8852,6 +8959,11 @@ function transferOwnership(address newOwner) external;
         #[inline]
         fn abi_encoded_size(&self) -> usize {
             match self {
+                Self::EmptyHandleList(inner) => {
+                    <EmptyHandleList as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
                 Self::HandleNotAllowed(inner) => {
                     <HandleNotAllowed as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
@@ -8934,6 +9046,12 @@ function transferOwnership(address newOwner) external;
         #[inline]
         fn abi_encode_raw(&self, out: &mut alloy_sol_types::private::Vec<u8>) {
             match self {
+                Self::EmptyHandleList(inner) => {
+                    <EmptyHandleList as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
                 Self::HandleNotAllowed(inner) => {
                     <HandleNotAllowed as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,

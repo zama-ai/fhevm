@@ -60,6 +60,9 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
     /// @notice Returned when the handle list exceeds the per-call cap.
     error TooManyHandles(uint256 length, uint256 maxAllowed);
 
+    /// @notice Returned when `send` is called with an empty handle list.
+    error EmptyHandleList();
+
     /// @notice Returned when the destination chain id is not registered for `dstEid`.
     error UnknownDstEid(uint32 dstEid);
 
@@ -135,6 +138,8 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
      *         if set, else the corresponding
      *         {LZ_RECEIVE_BASE_GAS_DEFAULT}/{LZ_RECEIVE_PER_HANDLE_GAS_DEFAULT}/{LZ_RECEIVE_PER_PAYLOAD_BYTE_DEFAULT}
      *         constant.
+     * @dev    Reverts with {EmptyHandleList} if `handleList` is empty and
+     *         with {TooManyHandles} if it exceeds {MAX_HANDLES}.
      * @dev    Reverts if any handle is not ACL-allowed for `msg.sender` on this chain.
      *         Native fee is paid via `msg.value`; refund returns to `msg.sender`.
      */
@@ -146,6 +151,7 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
         uint64 lzComposeGas
     ) external payable virtual returns (MessagingReceipt memory receipt) {
         uint256 nHandles = handleList.length;
+        if (nHandles == 0) revert EmptyHandleList();
         if (nHandles > MAX_HANDLES) revert TooManyHandles(nHandles, MAX_HANDLES);
 
         uint64 dstChainId = _getHandlesSenderStorage().dstChainIdForEid[dstEid];
@@ -253,7 +259,7 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
 
     /**
      * @notice Set a custom base `lzReceive` gas for `dstEid`, overriding
-     *         {LZ_RECEIVE_BASE_GAS_DEFAULT} when the contract builds default options.
+     *         {LZ_RECEIVE_BASE_GAS_DEFAULT}.
      * @dev    Pass 0 to clear the override and fall back to the default constant.
      */
     function setLzReceiveBaseGas(uint32 dstEid, uint64 lzReceiveBaseGas) external virtual onlyACLOwner {
@@ -263,7 +269,7 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
 
     /**
      * @notice Set a custom per-handle `lzReceive` gas for `dstEid`, overriding
-     *         {LZ_RECEIVE_PER_HANDLE_GAS_DEFAULT} when the contract builds default options.
+     *         {LZ_RECEIVE_PER_HANDLE_GAS_DEFAULT}.
      * @dev    Pass 0 to clear the override and fall back to the default constant.
      */
     function setLzReceivePerHandleGas(uint32 dstEid, uint64 lzReceivePerHandleGas) external virtual onlyACLOwner {
@@ -273,7 +279,7 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
 
     /**
      * @notice Set a custom per-payload-byte `lzReceive` gas for `dstEid`, overriding
-     *         {LZ_RECEIVE_PER_PAYLOAD_BYTE_DEFAULT} when the contract builds default options.
+     *         {LZ_RECEIVE_PER_PAYLOAD_BYTE_DEFAULT}.
      * @dev    Pass 0 to clear the override and fall back to the default constant.
      */
     function setLzReceivePerPayloadByteGas(

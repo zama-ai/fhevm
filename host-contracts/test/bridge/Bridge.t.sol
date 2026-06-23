@@ -247,6 +247,13 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
         srcBridge.send{value: 0}(DST_EID, _addressToBytes32(address(dstApp)), "", handleList, uint64(0));
     }
 
+    function test_Send_RevertsOnEmptyHandleList() public {
+        bytes32[] memory handleList = new bytes32[](0);
+        vm.prank(srcApp);
+        vm.expectRevert(HandlesSender.EmptyHandleList.selector);
+        srcBridge.send{value: 0}(DST_EID, _addressToBytes32(address(dstApp)), "", handleList, uint64(0));
+    }
+
     function test_Send_RevertsOnHandleNotAllowed() public {
         bytes32 h = _makeHandle(0);
         bytes32[] memory handleList = new bytes32[](1);
