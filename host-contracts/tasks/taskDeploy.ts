@@ -1048,7 +1048,8 @@ task('task:setLzReceiveBaseGas')
     const confidentialBridgeAddress = taskArguments.bridgeAddress;
     const confidentialBridge = await ethers.getContractAt('ConfidentialBridge', confidentialBridgeAddress, deployer);
     const oldBaseGas = await confidentialBridge.getLzReceiveBaseGas(taskArguments.remoteEid);
-    await confidentialBridge.setLzReceiveBaseGas(taskArguments.remoteEid, taskArguments.baseGas);
+    const receipt = await confidentialBridge.setLzReceiveBaseGas(taskArguments.remoteEid, taskArguments.baseGas);
+    await receipt.wait(1);
     const newBaseGas = await confidentialBridge.getLzReceiveBaseGas(taskArguments.remoteEid);
     console.log(
       `setLzReceiveBaseGas done on network "${network.name}" for bridge ${confidentialBridgeAddress} ` +
@@ -1066,7 +1067,8 @@ task('task:setLzReceivePerHandleGas')
     const confidentialBridgeAddress = taskArguments.bridgeAddress;
     const confidentialBridge = await ethers.getContractAt('ConfidentialBridge', confidentialBridgeAddress, deployer);
     const oldPerHandleGas = await confidentialBridge.getLzReceivePerHandleGas(taskArguments.remoteEid);
-    await confidentialBridge.setLzReceivePerHandleGas(taskArguments.remoteEid, taskArguments.perHandleGas);
+    const receipt = await confidentialBridge.setLzReceivePerHandleGas(taskArguments.remoteEid, taskArguments.perHandleGas);
+    await receipt.wait(1);
     const newPerHandleGas = await confidentialBridge.getLzReceivePerHandleGas(taskArguments.remoteEid);
     console.log(
       `setLzReceivePerHandleGas done on network "${network.name}" for bridge ${confidentialBridgeAddress} ` +
