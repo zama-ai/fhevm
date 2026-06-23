@@ -2,7 +2,7 @@ use crate::{
     dfg::{
         partition_components, partition_preserving_parallelism, types::*, ComponentEdge, ExecNode,
     },
-    FHE_BATCH_LATENCY_HISTOGRAM, RERAND_LATENCY_BATCH_HISTOGRAM,
+    FHE_BATCH_LATENCY_HISTOGRAM,
 };
 use anyhow::Result;
 use daggy::{
@@ -24,8 +24,31 @@ use tracing::{error, info, warn};
 
 use super::{DFComponentGraph, DFGraph, OpNode};
 
-const OPERATION_RERANDOMISATION_DOMAIN_SEPARATOR: [u8; 8] = *b"TFHE_Rrd";
 const COMPACT_PUBLIC_ENCRYPTION_DOMAIN_SEPARATOR: [u8; 8] = *b"TFHE_Enc";
+const BLOCK_RERANDOMISATION_DOMAIN_SEPARATOR: [u8; 8] = *b"TFHE_Brr";
+
+/// Re-randomize a single boundary ciphertext using a block-scoped seed
+/// derived from the current block hash and the ciphertext itself.
+/// This is the RFC 019 materialization step: each boundary input entering
+/// a block is re-randomized exactly once with `ReRand(Hash(H_B, ct))`.
+pub fn re_randomise_boundary_input(
+    ct: &mut SupportedFheCiphertexts,
+    block_hash: &[u8],
+    cpk: &tfhe::CompactPublicKey,
+) -> Result<()> {
+    if matches!(ct, SupportedFheCiphertexts::Scalar(_)) {
+        return Ok(());
+    }
+    let mut re_rand_context = ReRandomizationContext::new(
+        BLOCK_RERANDOMISATION_DOMAIN_SEPARATOR,
+        [block_hash],
+        COMPACT_PUBLIC_ENCRYPTION_DOMAIN_SEPARATOR,
+    );
+    ct.add_to_re_randomization_context(&mut re_rand_context);
+    let mut seed_gen = re_rand_context.finalize();
+    ct.re_randomise(cpk, seed_gen.next_seed()?)?;
+    Ok(())
+}
 
 pub enum PartitionStrategy {
     MaxParallelism,
@@ -51,7 +74,16 @@ pub struct Scheduler<'a> {
     activity_heartbeat: HeartBeat,
 }
 
-type PartitionResult = (HashMap<Handle, Result<TaskResult>>, NodeIndex);
+struct SchedulerKeys {
+    #[cfg(not(feature = "gpu"))]
+    sks: tfhe::ServerKey,
+    #[cfg(feature = "gpu")]
+    sks: tfhe::CudaServerKey,
+    cpk: tfhe::CompactPublicKey,
+    gpu_idx: usize,
+}
+
+type PartitionResult = (Vec<(Handle, TaskOutput)>, NodeIndex);
 impl<'a> Scheduler<'a> {
     fn is_ready_task(&self, node: &ExecNode) -> bool {
         node.dependence_counter
@@ -114,38 +146,52 @@ impl<'a> Scheduler<'a> {
     }
 
     #[cfg(not(feature = "gpu"))]
-    fn get_keys(
-        &self,
-        _target: DeviceSelection,
-    ) -> Result<(tfhe::ServerKey, tfhe::CompactPublicKey)> {
-        Ok((self.sks.clone(), self.cpk.clone()))
+    fn get_keys(&self, _target: DeviceSelection) -> Result<SchedulerKeys> {
+        Ok(SchedulerKeys {
+            sks: self.sks.clone(),
+            cpk: self.cpk.clone(),
+            gpu_idx: 0,
+        })
     }
     #[cfg(feature = "gpu")]
-    fn get_keys(
-        &self,
-        target: DeviceSelection,
-    ) -> Result<(tfhe::CudaServerKey, tfhe::CompactPublicKey)> {
+    fn get_keys(&self, target: DeviceSelection) -> Result<SchedulerKeys> {
+        if self.csks.is_empty() {
+            anyhow::bail!("No GPU server keys available");
+        }
         match target {
             DeviceSelection::Index(i) => {
-                if i < self.csks.len() {
-                    Ok((self.csks[i].clone(), self.cpk.clone()))
+                let gpu_idx = if i < self.csks.len() {
+                    i
                 } else {
                     error!(target: "scheduler", {index = ?i },
 			   "Wrong device index");
                     // Instead of giving up, we'll use device 0 (which
                     // should always be safe to use) and keep making
                     // progress even if suboptimally
-                    Ok((self.csks[0].clone(), self.cpk.clone()))
-                }
+                    0
+                };
+                Ok(SchedulerKeys {
+                    sks: self.csks[gpu_idx].clone(),
+                    cpk: self.cpk.clone(),
+                    gpu_idx,
+                })
             }
             DeviceSelection::RoundRobin => {
                 static LAST: std::sync::atomic::AtomicUsize =
                     std::sync::atomic::AtomicUsize::new(0);
                 // Use fetch_add to increment atomically
                 let i = LAST.fetch_add(1, std::sync::atomic::Ordering::Relaxed) % self.csks.len();
-                Ok((self.csks[i].clone(), self.cpk.clone()))
+                Ok(SchedulerKeys {
+                    sks: self.csks[i].clone(),
+                    cpk: self.cpk.clone(),
+                    gpu_idx: i,
+                })
             }
-            DeviceSelection::NA => Ok((self.csks[0].clone(), self.cpk.clone())),
+            DeviceSelection::NA => Ok(SchedulerKeys {
+                sks: self.csks[0].clone(),
+                cpk: self.cpk.clone(),
+                gpu_idx: 0,
+            }),
         }
     }
 
@@ -182,11 +228,11 @@ impl<'a> Scheduler<'a> {
                         tx.component_id,
                     ));
                 }
-                let (sks, cpk) = self.get_keys(DeviceSelection::RoundRobin)?;
+                let keys = self.get_keys(DeviceSelection::RoundRobin)?;
                 let parent_span = tracing::Span::current();
                 set.spawn_blocking(move || {
                     let span_guard = parent_span.enter();
-                    let result = execute_partition(args, index, 0, sks, cpk);
+                    let result = execute_partition(args, index, keys.gpu_idx, keys.sks, keys.cpk);
                     drop(span_guard);
                     result
                 });
@@ -198,15 +244,18 @@ impl<'a> Scheduler<'a> {
             // computed within the finished partition. Now check the
             // outputs and update the trnsaction inputs of downstream
             // transactions
-            let (sks, _cpk) = self.get_keys(DeviceSelection::RoundRobin)?;
-            tfhe::set_server_key(sks);
             let result = result?;
             let task_index = result.1;
-            for (handle, node_result) in result.0.into_iter() {
+            for (handle, output) in result.0.into_iter() {
                 // Add computed allowed handles to the graph. These
                 // can be used as inputs and forwarded to subsequent,
                 // dependent transactions
-                self.graph.add_output(&handle, node_result, &self.edges)?;
+                self.graph.add_output(
+                    &handle,
+                    &output.transaction_id,
+                    output.result,
+                    &self.edges,
+                )?;
             }
             for edge in task_dependences.edges_directed(task_index, Direction::Outgoing) {
                 let dependent_task_index = edge.target();
@@ -236,11 +285,17 @@ impl<'a> Scheduler<'a> {
                             tx.component_id,
                         ));
                     }
-                    let (sks, cpk) = self.get_keys(DeviceSelection::RoundRobin)?;
+                    let keys = self.get_keys(DeviceSelection::RoundRobin)?;
                     let parent_span = tracing::Span::current();
                     set.spawn_blocking(move || {
                         let span_guard = parent_span.enter();
-                        let result = execute_partition(args, dependent_task_index, 0, sks, cpk);
+                        let result = execute_partition(
+                            args,
+                            dependent_task_index,
+                            keys.gpu_idx,
+                            keys.sks,
+                            keys.cpk,
+                        );
                         drop(span_guard);
                         result
                     });
@@ -249,28 +304,6 @@ impl<'a> Scheduler<'a> {
         }
         Ok(())
     }
-}
-
-fn re_randomise_operation_inputs(
-    cts: &mut [SupportedFheCiphertexts],
-    opcode: i32,
-    cpk: &tfhe::CompactPublicKey,
-) -> Result<()> {
-    let mut re_rand_context = ReRandomizationContext::new(
-        OPERATION_RERANDOMISATION_DOMAIN_SEPARATOR,
-        [opcode.to_be_bytes().as_slice()],
-        COMPACT_PUBLIC_ENCRYPTION_DOMAIN_SEPARATOR,
-    );
-    for ct in cts.iter() {
-        ct.add_to_re_randomization_context(&mut re_rand_context);
-    }
-    let mut seed_gen = re_rand_context.finalize();
-    for ct in cts.iter_mut() {
-        if !matches!(ct, SupportedFheCiphertexts::Scalar(_)) {
-            ct.re_randomise(cpk, seed_gen.next_seed()?)?;
-        }
-    }
-    Ok(())
 }
 
 type ComponentSet = Vec<(DFGraph, HashMap<Handle, Option<DFGTxInput>>, Handle, usize)>;
@@ -283,7 +316,8 @@ fn execute_partition(
     cpk: tfhe::CompactPublicKey,
 ) -> PartitionResult {
     tfhe::set_server_key(sks);
-    let mut res: HashMap<Handle, Result<TaskResult>> = HashMap::with_capacity(transactions.len());
+    let mut outputs = Vec::with_capacity(transactions.len());
+    let mut available_outputs: HashMap<Handle, DFGTxInput> = HashMap::new();
     // Traverse transactions within the partition. The transactions
     // are topologically sorted so the order is executable
     'tx: for (ref mut dfg, ref mut tx_inputs, tid, _cid) in transactions {
@@ -295,8 +329,8 @@ fn execute_partition(
         // this transaction and possibly more downstream.
         for (h, i) in tx_inputs.iter_mut() {
             if i.is_none() {
-                let Some(Ok(ct)) = res.get(h) else {
-                    warn!(target: "scheduler", {transaction_id = ?hex::encode(tid) },
+                let Some(ct) = available_outputs.get(h).cloned() else {
+                    warn!(target: "scheduler", {transaction_id = ?hex::encode(&tid) },
 		       "Missing input to compute transaction - skipping");
                     for nidx in dfg.graph.node_identifiers() {
                         let Some(node) = dfg.graph.node_weight_mut(nidx) else {
@@ -304,18 +338,18 @@ fn execute_partition(
                             continue;
                         };
                         if node.is_allowed {
-                            res.insert(
+                            outputs.push((
                                 node.result_handle.clone(),
-                                Err(SchedulerError::MissingInputs.into()),
-                            );
+                                TaskOutput {
+                                    transaction_id: tid.clone(),
+                                    result: Err(SchedulerError::MissingInputs.into()),
+                                },
+                            ));
                         }
                     }
                     continue 'tx;
                 };
-                *i = Some(DFGTxInput::Compressed((
-                    ct.compressed_ct.clone(),
-                    ct.is_allowed,
-                )));
+                *i = Some(ct);
             }
         }
 
@@ -336,10 +370,13 @@ fn execute_partition(
                     continue;
                 };
                 if node.is_allowed {
-                    res.insert(
+                    outputs.push((
                         node.result_handle.clone(),
-                        Err(SchedulerError::CyclicDependence.into()),
-                    );
+                        TaskOutput {
+                            transaction_id: tid.clone(),
+                            result: Err(SchedulerError::CyclicDependence.into()),
+                        },
+                    ));
                 }
             }
             continue 'tx;
@@ -364,7 +401,7 @@ fn execute_partition(
                             // Update input of consumers
                             if let Ok(ref res) = result.1 {
                                 child_node.inputs[*edge.weight() as usize] =
-                                    DFGTaskInput::Compressed(res.clone());
+                                    DFGTaskInput::Value(res.working.clone());
                             }
                         }
                     }
@@ -373,14 +410,32 @@ fn execute_partition(
                         error!(target: "scheduler", {index = ?nidx.index() }, "Wrong dataflow graph index");
                         continue;
                     };
-                    res.insert(
-                        node.result_handle.clone(),
-                        result.1.map(|v| TaskResult {
-                            compressed_ct: v,
-                            is_allowed: node.is_allowed,
+                    let handle = node.result_handle.clone();
+                    let result = match result.1 {
+                        Ok(v) => {
+                            let task_result = TaskResult {
+                                compressed_ct: v.compressed,
+                                working_ct: Some(v.working),
+                                is_allowed: node.is_allowed,
+                                transaction_id: tid.clone(),
+                            };
+                            let working = task_result.working_ct.as_ref().expect(
+                                "same-block propagation invariant violation: successful output missing working ciphertext",
+                            );
+                            let input =
+                                DFGTxInput::Value((working.clone(), task_result.is_allowed));
+                            available_outputs.insert(handle.clone(), input);
+                            Ok(task_result)
+                        }
+                        Err(e) => Err(e),
+                    };
+                    outputs.push((
+                        handle,
+                        TaskOutput {
                             transaction_id: tid.clone(),
-                        }),
-                    );
+                            result,
+                        },
+                    ));
                 }
                 Err(e) => {
                     let Some(node) = dfg.graph.node_weight(*nidx) else {
@@ -388,7 +443,13 @@ fn execute_partition(
                         continue;
                     };
                     if node.is_allowed {
-                        res.insert(node.result_handle.clone(), Err(e));
+                        outputs.push((
+                            node.result_handle.clone(),
+                            TaskOutput {
+                                transaction_id: tid.clone(),
+                                result: Err(e),
+                            },
+                        ));
                     }
                 }
             }
@@ -397,7 +458,7 @@ fn execute_partition(
         let elapsed = started_at.elapsed();
         FHE_BATCH_LATENCY_HISTOGRAM.observe(elapsed.as_secs_f64());
     }
-    (res, task_id)
+    (outputs, task_id)
 }
 
 fn try_execute_node(
@@ -408,6 +469,7 @@ fn try_execute_node(
     transaction_id: &Handle,
     cpk: &tfhe::CompactPublicKey,
 ) -> Result<(usize, OpResult)> {
+    let _ = cpk;
     if !node.check_ready_inputs(tx_inputs) {
         return Err(SchedulerError::SchedulerError.into());
     }
@@ -415,10 +477,12 @@ fn try_execute_node(
     for i in std::mem::take(&mut node.inputs) {
         match i {
             DFGTaskInput::Value(v) => {
-                if !matches!(v, SupportedFheCiphertexts::Scalar(_)) {
-                    error!(target: "scheduler", { handle = ?hex::encode(&node.result_handle) },
-			   "Consensus risk: non-scalar uncompressed ciphertext");
-                }
+                // Boundary inputs arrive pre-materialized from the worker (D5)
+                // and same-block intermediates propagate as Values (D2/D3).
+                #[cfg(feature = "gpu")]
+                let mut v = v;
+                #[cfg(feature = "gpu")]
+                v.move_to_current_device();
                 cts.push(v);
             }
             DFGTaskInput::Compressed(cct) => {
@@ -443,19 +507,6 @@ fn try_execute_node(
                 return Err(SchedulerError::MissingInputs.into());
             }
         }
-    }
-    // Re-randomize inputs for this operation
-    {
-        let _guard = tracing::info_span!("rerandomise_op_inputs").entered();
-        let started_at = std::time::Instant::now();
-        if let Err(e) = re_randomise_operation_inputs(&mut cts, node.opcode, cpk) {
-            error!(target: "scheduler", { handle = ?hex::encode(&node.result_handle), error = ?e },
-                   "Error while re-randomising operation inputs");
-            telemetry::set_current_span_error(&e);
-            return Err(SchedulerError::ReRandomisationError.into());
-        }
-        let elapsed = started_at.elapsed();
-        RERAND_LATENCY_BATCH_HISTOGRAM.observe(elapsed.as_secs_f64());
     }
     let opcode = node.opcode;
     let output_type = get_ct_type(&node.result_handle).map_err(|e| {
@@ -492,7 +543,33 @@ fn try_execute_node(
     }
 }
 
-type OpResult = Result<CompressedCiphertext>;
+/// Compresses an operation result; when the compression keys reject carry
+/// residue (left by linear, no-PBS operations such as boolean scalar
+/// comparisons), the ciphertext is re-encoded through a deterministic
+/// value-preserving PBS and compressed again. The cleaned ciphertext is
+/// returned so it also replaces the forwarded working value — persisted
+/// bytes and in-memory propagation must stay identical.
+fn compress_or_clean_carries(
+    working: SupportedFheCiphertexts,
+) -> (
+    SupportedFheCiphertexts,
+    std::result::Result<Vec<u8>, fhevm_engine_common::types::FhevmError>,
+) {
+    match working.compress() {
+        Err(fhevm_engine_common::types::FhevmError::CiphertextCompressionRequiresEmptyCarries) => {
+            match working.clean_carries() {
+                Ok(cleaned) => {
+                    let compressed = cleaned.compress();
+                    (cleaned, compressed)
+                }
+                Err(error) => (working, Err(error)),
+            }
+        }
+        other => (working, other),
+    }
+}
+
+type OpResult = Result<ComputationOutput>;
 fn run_computation(
     operation: i32,
     inputs: Vec<SupportedFheCiphertexts>,
@@ -515,14 +592,21 @@ fn run_computation(
             )
             .entered();
 
-            let ct_type = inputs[0].type_num();
-            let compressed = inputs[0].compress();
+            let working = inputs
+                .into_iter()
+                .next()
+                .expect("FheGetCiphertext requires one input");
+            let ct_type = working.type_num();
+            let (working, compressed) = compress_or_clean_carries(working);
             match compressed {
                 Ok(ct_bytes) => {
                     tracing::Span::current().record("compressed_size", ct_bytes.len() as i64);
                     (
                         graph_node_index,
-                        Ok(CompressedCiphertext { ct_type, ct_bytes }),
+                        Ok(ComputationOutput {
+                            compressed: CompressedCiphertext { ct_type, ct_bytes },
+                            working,
+                        }),
                     )
                 }
                 Err(error) => {
@@ -550,25 +634,28 @@ fn run_computation(
             let result = perform_fhe_operation(operation as i16, &inputs, gpu_idx, output_type);
 
             match result {
-                Ok(result) => {
+                Ok(working) => {
                     // Compression span
                     let _guard = tracing::info_span!(
                         "compress_ciphertext",
                         txn_id = %txn_id_short,
-                        ct_type = result.type_name(),
+                        ct_type = working.type_name(),
                         operation = op_name,
                         compressed_size = tracing::field::Empty,
                     )
                     .entered();
-                    let ct_type = result.type_num();
-                    let compressed = result.compress();
+                    let ct_type = working.type_num();
+                    let (working, compressed) = compress_or_clean_carries(working);
                     match compressed {
                         Ok(ct_bytes) => {
                             tracing::Span::current()
                                 .record("compressed_size", ct_bytes.len() as i64);
                             (
                                 graph_node_index,
-                                Ok(CompressedCiphertext { ct_type, ct_bytes }),
+                                Ok(ComputationOutput {
+                                    compressed: CompressedCiphertext { ct_type, ct_bytes },
+                                    working,
+                                }),
                             )
                         }
                         Err(error) => {

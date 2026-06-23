@@ -66,7 +66,7 @@ pub fn spawn_gauge_update_routine(period: std::time::Duration, db_pool: PgPool) 
     tokio::spawn(async move {
         loop {
             match sqlx::query_scalar(
-                "SELECT COUNT(*) FROM ciphertext_digest WHERE txn_is_sent = FALSE",
+                "SELECT COUNT(*) FROM ciphertext_digest_branch WHERE txn_is_sent = FALSE",
             )
             .fetch_one(&db_pool)
             .await

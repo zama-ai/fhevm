@@ -24,7 +24,7 @@ use fhevm_gateway_bindings::ciphertext_commits::CiphertextCommits;
 use fhevm_gateway_bindings::gateway_config::GatewayConfig;
 use fhevm_gateway_bindings::input_verification::InputVerification;
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct ListenerProgress {
     last_processed_block_num: Option<u64>,
     earliest_open_ct_commits_block: Option<u64>,
@@ -476,26 +476,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
         &self,
         db_pool: &Pool<Postgres>,
     ) -> anyhow::Result<ListenerProgress> {
-        let row = sqlx::query(
-            "SELECT last_block_num, earliest_open_ct_commits_block
-            FROM gw_listener_last_block
-            WHERE dummy_id = true",
-        )
-        .fetch_optional(db_pool)
-        .await?;
-
-        let Some(row) = row else {
-            return Ok(ListenerProgress::default());
-        };
-
-        Ok(ListenerProgress {
-            last_processed_block_num: row
-                .get::<Option<i64>, _>("last_block_num")
-                .map(|n| n.try_into().expect("Got an invalid block number")),
-            earliest_open_ct_commits_block: row
-                .get::<Option<i64>, _>("earliest_open_ct_commits_block")
-                .map(|n| n.try_into().expect("Got an invalid block number")),
-        })
+        get_listener_progress(db_pool).await
     }
 
     async fn update_listener_progress(
@@ -504,36 +485,13 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
         progress: ListenerProgress,
         number_of_last_processed_updates: &mut u64,
     ) -> anyhow::Result<()> {
-        let last_block_num = progress
-            .last_processed_block_num
-            .map(i64::try_from)
-            .transpose()?;
-        let earliest_open_ct_commits_block = progress
-            .earliest_open_ct_commits_block
-            .map(i64::try_from)
-            .transpose()?;
-        sqlx::query(
-            "INSERT into gw_listener_last_block (dummy_id, last_block_num, earliest_open_ct_commits_block)
-            VALUES (true, $1, $2)
-            ON CONFLICT (dummy_id) DO UPDATE SET
-                last_block_num = EXCLUDED.last_block_num,
-                earliest_open_ct_commits_block = EXCLUDED.earliest_open_ct_commits_block",
+        update_listener_progress(
+            db_pool,
+            &self.conf,
+            progress,
+            number_of_last_processed_updates,
         )
-        .bind(last_block_num)
-        .bind(earliest_open_ct_commits_block)
-        .execute(db_pool)
-        .await?;
-
-        *number_of_last_processed_updates += 1;
-        if (*number_of_last_processed_updates)
-            .is_multiple_of(self.conf.log_last_processed_every_number_of_updates)
-        {
-            info!(
-                last_block_num,
-                earliest_open_ct_commits_block, "Updated listener progress"
-            );
-        }
-        Ok(())
+        .await
     }
 
     pub async fn health_check(&self) -> HealthStatus {
@@ -603,5 +561,136 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
                 error_details.join("; "),
             )
         }
+    }
+}
+
+async fn get_listener_progress(db_pool: &Pool<Postgres>) -> anyhow::Result<ListenerProgress> {
+    let row = sqlx::query(
+        "SELECT last_block_num, earliest_open_ct_commits_block
+            FROM gw_listener_last_block
+            WHERE dummy_id = true",
+    )
+    .fetch_optional(db_pool)
+    .await?;
+
+    let Some(row) = row else {
+        return Ok(ListenerProgress::default());
+    };
+
+    Ok(ListenerProgress {
+        last_processed_block_num: row
+            .get::<Option<i64>, _>("last_block_num")
+            .map(|n| n.try_into().expect("Got an invalid block number")),
+        earliest_open_ct_commits_block: row
+            .get::<Option<i64>, _>("earliest_open_ct_commits_block")
+            .map(|n| n.try_into().expect("Got an invalid block number")),
+    })
+}
+
+async fn update_listener_progress(
+    db_pool: &Pool<Postgres>,
+    conf: &ConfigSettings,
+    progress: ListenerProgress,
+    number_of_last_processed_updates: &mut u64,
+) -> anyhow::Result<()> {
+    let last_block_num = progress
+        .last_processed_block_num
+        .map(i64::try_from)
+        .transpose()?;
+    let earliest_open_ct_commits_block = progress
+        .earliest_open_ct_commits_block
+        .map(i64::try_from)
+        .transpose()?;
+    sqlx::query(
+        "INSERT into gw_listener_last_block (dummy_id, last_block_num, earliest_open_ct_commits_block)
+            VALUES (true, $1, $2)
+            ON CONFLICT (dummy_id) DO UPDATE SET
+                last_block_num = EXCLUDED.last_block_num,
+                earliest_open_ct_commits_block = EXCLUDED.earliest_open_ct_commits_block",
+    )
+    .bind(last_block_num)
+    .bind(earliest_open_ct_commits_block)
+    .execute(db_pool)
+    .await?;
+
+    *number_of_last_processed_updates += 1;
+    if (*number_of_last_processed_updates)
+        .is_multiple_of(conf.log_last_processed_every_number_of_updates)
+    {
+        info!(
+            last_block_num,
+            earliest_open_ct_commits_block, "Updated listener progress"
+        );
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use serial_test::serial;
+    use test_harness::instance::ImportMode;
+
+    use super::*;
+
+    #[tokio::test]
+    #[serial(db)]
+    async fn listener_progress_round_trips_earliest_open_watermark() -> anyhow::Result<()> {
+        let db_instance = test_harness::instance::setup_test_db(ImportMode::None)
+            .await
+            .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+        let db_pool = PgPoolOptions::new()
+            .max_connections(1)
+            .connect(db_instance.db_url.as_str())
+            .await?;
+        sqlx::query("TRUNCATE gw_listener_last_block")
+            .execute(&db_pool)
+            .await?;
+
+        let conf = ConfigSettings::default();
+        assert_eq!(
+            get_listener_progress(&db_pool).await?,
+            ListenerProgress::default()
+        );
+
+        let mut update_count = 0;
+        update_listener_progress(
+            &db_pool,
+            &conf,
+            ListenerProgress {
+                last_processed_block_num: Some(42),
+                earliest_open_ct_commits_block: Some(17),
+            },
+            &mut update_count,
+        )
+        .await?;
+        assert_eq!(update_count, 1);
+        assert_eq!(
+            get_listener_progress(&db_pool).await?,
+            ListenerProgress {
+                last_processed_block_num: Some(42),
+                earliest_open_ct_commits_block: Some(17),
+            }
+        );
+
+        update_listener_progress(
+            &db_pool,
+            &conf,
+            ListenerProgress {
+                last_processed_block_num: Some(43),
+                earliest_open_ct_commits_block: None,
+            },
+            &mut update_count,
+        )
+        .await?;
+        assert_eq!(update_count, 2);
+        assert_eq!(
+            get_listener_progress(&db_pool).await?,
+            ListenerProgress {
+                last_processed_block_num: Some(43),
+                earliest_open_ct_commits_block: None,
+            }
+        );
+
+        Ok(())
     }
 }

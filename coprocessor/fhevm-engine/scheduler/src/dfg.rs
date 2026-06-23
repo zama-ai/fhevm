@@ -5,7 +5,7 @@ use std::{
     collections::{HashMap, HashSet},
     sync::atomic::AtomicUsize,
 };
-use tracing::{error, warn};
+use tracing::{error, info, warn};
 
 use crate::dfg::types::*;
 use anyhow::Result;
@@ -311,20 +311,66 @@ pub struct DFComponentGraph {
     pub produced: HashMap<Handle, Vec<(NodeIndex, Handle)>>,
     pub results: Vec<DFGTxResult>,
     deferred_dependences: Vec<(NodeIndex, NodeIndex, Handle)>,
+    /// Handles that are produced by more than one ComponentNode in this
+    /// graph. Key is the output handle; value is the list of non-canonical
+    /// producer `transaction_id`s — i.e. every `transaction_id` other than
+    /// the one the scheduler picks as canonical for that handle. Two
+    /// transactions in the same block can deterministically derive the
+    /// same output handle (handle = keccak256 of op, operands, ACL,
+    /// chain_id, block context; all constant within a block), and the
+    /// legacy `computations` PK `(tenant_id, output_handle,
+    /// transaction_id)` lets both rows coexist. `get_results()` uses this
+    /// map to synthesize a `DFGTxResult` for any producer `transaction_id`
+    /// missing from the partition output, so every producer row reaches
+    /// `is_completed = true` in the downstream DB UPDATE independent of
+    /// how partitioning distributes the producers.
+    aliased_tids: HashMap<Handle, Vec<Handle>>,
 }
 impl DFComponentGraph {
     pub fn build(&mut self, nodes: &mut Vec<ComponentNode>) -> Result<()> {
         while let Some(tx) = nodes.pop() {
             self.graph.add_node(tx);
         }
-        // Gather handles produced within the graph
+        // Gather handles produced within the graph. When the same
+        // handle is produced by multiple ComponentNodes (two transactions
+        // in the same block deriving the same output handle — see
+        // `aliased_tids` on DFComponentGraph), we sort producers by
+        // `transaction_id` lexicographically so the canonical choice is
+        // deterministic and reproducible across coprocessors regardless
+        // of Vec insertion order: the lowest `transaction_id` is
+        // canonical; the rest go into `aliased_tids` for
+        // completion-broadcast at `get_results()` time.
         for (producer, tx) in self.graph.node_references() {
             for r in tx.results.iter() {
                 self.produced
                     .entry(r.clone())
-                    .and_modify(|p| p.push((producer, tx.transaction_id.clone())))
-                    .or_insert(vec![(producer, tx.transaction_id.clone())]);
+                    .or_insert_with(Vec::new)
+                    .push((producer, tx.transaction_id.clone()));
             }
+        }
+        for (handle, producers) in self.produced.iter_mut() {
+            if producers.len() <= 1 {
+                continue;
+            }
+            producers.sort_by(|a, b| a.1.cmp(&b.1));
+            let aliased: Vec<Handle> = producers
+                .iter()
+                .skip(1)
+                .map(|(_, tid)| tid.clone())
+                .collect();
+            let canonical_tid = producers[0].1.clone();
+            info!(
+                target: "scheduler",
+                output_handle = %hex::encode(handle),
+                canonical_transaction_id = %hex::encode(&canonical_tid),
+                aliased_transaction_ids = ?aliased
+                    .iter()
+                    .map(hex::encode)
+                    .collect::<Vec<_>>(),
+                "Multi-producer handle detected; completion will broadcast \
+                 to all producer tids"
+            );
+            self.aliased_tids.insert(handle.clone(), aliased);
         }
         // Identify all dependence pairs (producer, consumer)
         let mut dependence_pairs = vec![];
@@ -342,9 +388,18 @@ impl DFComponentGraph {
                             dependence_pairs.push((*prod_idx, consumer));
                         }
                     } else if producer.len() > 1 {
-                        error!(target: "scheduler", { output_handle = ?hex::encode(i.clone()),
-							  count =  ?producer.len() },
-				   "Handle collision for computation output");
+                        // Multi-producer handle with a cross-transaction
+                        // consumer: route the consumer from the canonical
+                        // producer (producer[0]). Same-block selected
+                        // producers are never materialized through DB fetch,
+                        // so the canonical in-memory value defines the
+                        // consumer input and the persisted canonical bytes.
+                        self.deferred_dependences
+                            .push((producer[0].0, consumer, i.clone()));
+                        self.needed_map
+                            .entry(i.clone())
+                            .and_modify(|uses| uses.push(consumer))
+                            .or_insert(vec![consumer]);
                     } else if producer.is_empty() {
                         error!(target: "scheduler", { output_handle = ?hex::encode(i.clone()) },
 				   "Missing producer for handle");
@@ -477,6 +532,7 @@ impl DFComponentGraph {
     pub fn add_output(
         &mut self,
         handle: &[u8],
+        transaction_id: &Handle,
         result: Result<TaskResult>,
         edges: &Dag<(), ComponentEdge>,
     ) -> Result<()> {
@@ -484,19 +540,27 @@ impl DFComponentGraph {
             if producer.is_empty() {
                 error!(target: "scheduler", { output_handle = ?hex::encode(handle) },
 		       "Missing producer for handle");
+                return Err(SchedulerError::DataflowGraphError.into());
             } else {
-                let mut prod_idx = producer[0].0;
-                if let Ok(ref result) = result {
-                    if let Some((pid, _)) = producer
-                        .iter()
-                        .find(|(_, tid)| *tid == result.transaction_id)
-                    {
-                        prod_idx = *pid;
-                    }
-                }
+                let Some((prod_idx, _)) = producer.iter().find(|(_, tid)| tid == transaction_id)
+                else {
+                    error!(target: "scheduler", { output_handle = ?hex::encode(handle), transaction_id = ?hex::encode(transaction_id) },
+                        "Producer transaction id not found for output");
+                    return Err(SchedulerError::DataflowGraphError.into());
+                };
+                let prod_idx = *prod_idx;
                 let mut save_result = true;
                 if let Ok(ref result) = result {
                     save_result = result.is_allowed;
+                    let working = result.working_ct.as_ref().ok_or_else(|| {
+                        error!(
+                            target: "scheduler",
+                            output_handle = ?hex::encode(handle),
+                            transaction_id = ?hex::encode(transaction_id),
+                            "same-block propagation invariant violation: successful output missing working ciphertext"
+                        );
+                        SchedulerError::DataflowGraphError
+                    })?;
                     // Traverse immediate dependents and add this result as an input
                     for edge in edges.edges_directed(prod_idx, Direction::Outgoing) {
                         let dependent_tx_index = edge.target();
@@ -505,10 +569,7 @@ impl DFComponentGraph {
                             .node_weight_mut(dependent_tx_index)
                             .ok_or(SchedulerError::DataflowGraphError)?;
                         dependent_tx.inputs.entry(handle.to_vec()).and_modify(|v| {
-                            *v = Some(DFGTxInput::Compressed((
-                                result.compressed_ct.clone(),
-                                result.is_allowed,
-                            )))
+                            *v = Some(DFGTxInput::Value((working.clone(), result.is_allowed)))
                         });
                     }
                 } else {
@@ -572,7 +633,55 @@ impl DFComponentGraph {
         Ok(())
     }
     pub fn get_results(&mut self) -> Vec<DFGTxResult> {
-        std::mem::take(&mut self.results)
+        let mut results = std::mem::take(&mut self.results);
+        if self.aliased_tids.is_empty() {
+            return results;
+        }
+        // Completion broadcast for multi-producer handles. The canonical
+        // producer is the lexicographically smallest transaction_id selected
+        // in build(). Missing aliased rows are completed from the canonical
+        // bytes only. If the canonical result is absent, do not synthesize it
+        // from an aliased producer: that would make persisted bytes depend on
+        // partition layout in the exact failure mode this path is defending.
+        let mut additions = Vec::new();
+        for handle in self.aliased_tids.keys() {
+            let Some(producers) = self.produced.get(handle) else {
+                continue;
+            };
+            let Some((_, canonical_tid)) = producers.first() else {
+                continue;
+            };
+            let canonical_cct = results
+                .iter()
+                .find(|r| &r.handle == handle && &r.transaction_id == canonical_tid)
+                .and_then(|r| r.compressed_ct.as_ref().ok())
+                .cloned();
+            let Some(canonical_cct) = canonical_cct else {
+                warn!(
+                    target: "scheduler",
+                    output_handle = %hex::encode(handle),
+                    canonical_transaction_id = %hex::encode(canonical_tid),
+                    "Multi-producer handle missing canonical result; dropping aliased Ok results \
+                     instead of persisting partition-dependent bytes"
+                );
+                results.retain(|r| &r.handle != handle || r.compressed_ct.is_err());
+                continue;
+            };
+            for (_, tid) in producers.iter() {
+                let already_present = results
+                    .iter()
+                    .any(|r| &r.handle == handle && &r.transaction_id == tid);
+                if !already_present {
+                    additions.push(DFGTxResult {
+                        transaction_id: tid.clone(),
+                        handle: handle.clone(),
+                        compressed_ct: Ok(canonical_cct.clone()),
+                    });
+                }
+            }
+        }
+        results.extend(additions);
+        results
     }
     pub fn get_intermediate_handles(&mut self) -> Vec<(Handle, Handle)> {
         let mut res = vec![];
@@ -808,4 +917,366 @@ pub fn partition_components<TNode, TEdge>(
     // components within the DFG, there are no dependences (edges) to
     // add to the execution graph.
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use fhevm_engine_common::types::SupportedFheCiphertexts;
+
+    fn handle(byte: u8) -> Handle {
+        vec![byte; 32]
+    }
+
+    fn make_cnode(tid: Handle, result: Handle) -> ComponentNode {
+        let mut node = ComponentNode::default();
+        node.transaction_id = tid;
+        node.results = vec![result];
+        node
+    }
+
+    fn make_cnode_with_allowed_op(tid: Handle, result: Handle) -> ComponentNode {
+        let mut node = make_cnode(tid, result.clone());
+        node.graph.add_node(
+            result,
+            (SupportedFheOperations::FheTrivialEncrypt as i16).into(),
+            vec![],
+            true,
+        );
+        node
+    }
+
+    fn trivial_encrypt_op(output: Handle, transaction_id: &Handle) -> ComponentNode {
+        let ops = vec![DFGOp {
+            output_handle: output,
+            fhe_op: SupportedFheOperations::FheTrivialEncrypt,
+            inputs: vec![
+                DFGTaskInput::Value(SupportedFheCiphertexts::Scalar(vec![0; 32])),
+                DFGTaskInput::Value(SupportedFheCiphertexts::Scalar(vec![5])),
+            ],
+            is_allowed: true,
+        }];
+        build_component_nodes(ops, transaction_id)
+            .expect("component build")
+            .0
+            .pop()
+            .expect("one component")
+    }
+
+    fn ct(bytes: &[u8]) -> CompressedCiphertext {
+        CompressedCiphertext {
+            ct_type: 4,
+            ct_bytes: bytes.to_vec(),
+        }
+    }
+
+    /// Two ComponentNodes produce the same output handle. `build()` must
+    /// pick the lexicographically smallest `transaction_id` as canonical
+    /// and record the other in `aliased_tids` regardless of Vec
+    /// insertion order.
+    #[test]
+    fn build_sorts_producers_and_records_aliased_tids() {
+        let out = handle(0xAA);
+        let tid_lo = handle(0x01);
+        let tid_hi = handle(0x02);
+
+        for (label, order) in [
+            ("lo-then-hi", vec![tid_lo.clone(), tid_hi.clone()]),
+            ("hi-then-lo", vec![tid_hi.clone(), tid_lo.clone()]),
+        ] {
+            let mut nodes: Vec<ComponentNode> = order
+                .iter()
+                .map(|tid| make_cnode(tid.clone(), out.clone()))
+                .collect();
+            let mut g = DFComponentGraph::default();
+            g.build(&mut nodes).expect("build");
+
+            let producers = g.produced.get(&out).expect("produced entry");
+            assert_eq!(producers.len(), 2, "{label}");
+            assert_eq!(
+                &producers[0].1, &tid_lo,
+                "{label}: canonical must be the lexicographically smallest tid"
+            );
+            assert_eq!(&producers[1].1, &tid_hi, "{label}");
+
+            let aliased = g.aliased_tids.get(&out).expect("aliased_tids entry");
+            assert_eq!(aliased, &vec![tid_hi.clone()], "{label}");
+        }
+    }
+
+    /// Single-producer handles do not appear in `aliased_tids`.
+    #[test]
+    fn build_single_producer_leaves_aliased_tids_empty() {
+        let mut nodes = vec![make_cnode(handle(0x01), handle(0xAA))];
+        let mut g = DFComponentGraph::default();
+        g.build(&mut nodes).expect("build");
+        assert!(g.aliased_tids.is_empty());
+    }
+
+    #[test]
+    fn build_does_not_require_scalar_trivial_encrypt_literals() {
+        let mut nodes = vec![
+            trivial_encrypt_op(handle(0xAA), &handle(0x01)),
+            trivial_encrypt_op(handle(0xAA), &handle(0x02)),
+        ];
+        let mut g = DFComponentGraph::default();
+        g.build(&mut nodes).expect("build");
+
+        assert!(
+            !g.needed_map.contains_key(&vec![0; 32]),
+            "zero literal must not be fetched as ciphertext"
+        );
+        assert!(
+            !g.needed_map.contains_key(&vec![5]),
+            "type literal must not be fetched as ciphertext"
+        );
+    }
+
+    /// `get_results()` synthesises a `DFGTxResult` for every aliased tid
+    /// that did not already receive one. The broadcast uses the canonical's
+    /// compressed ciphertext bytes verbatim; aliased bytes may never define
+    /// the canonical persistent image.
+    #[test]
+    fn get_results_broadcasts_to_missing_aliased_tids() {
+        let out = handle(0xAA);
+        let tid_canonical = handle(0x01);
+        let tid_aliased_1 = handle(0x02);
+        let tid_aliased_2 = handle(0x03);
+
+        let mut nodes = vec![
+            make_cnode(tid_canonical.clone(), out.clone()),
+            make_cnode(tid_aliased_1.clone(), out.clone()),
+            make_cnode(tid_aliased_2.clone(), out.clone()),
+        ];
+        let mut g = DFComponentGraph::default();
+        g.build(&mut nodes).expect("build");
+
+        // Simulate a same-partition scenario: only the canonical tid
+        // received a `DFGTxResult` via `add_output`; the aliased tids
+        // were overwritten in `res` and never routed through
+        // `add_output` at all.
+        let canonical_bytes = b"canonical-bytes".to_vec();
+        g.results.push(DFGTxResult {
+            transaction_id: tid_canonical.clone(),
+            handle: out.clone(),
+            compressed_ct: Ok(ct(&canonical_bytes)),
+        });
+
+        let out_results = g.get_results();
+        assert_eq!(out_results.len(), 3, "canonical + both aliased must appear");
+        for tid in [&tid_canonical, &tid_aliased_1, &tid_aliased_2] {
+            let entry = out_results
+                .iter()
+                .find(|r| &r.transaction_id == tid)
+                .unwrap_or_else(|| panic!("missing result for tid {tid:?}"));
+            let cct = entry.compressed_ct.as_ref().expect("Ok result");
+            assert_eq!(
+                cct.ct_bytes, canonical_bytes,
+                "bytes must be cloned from canonical"
+            );
+            assert_eq!(cct.ct_type, 4);
+        }
+    }
+
+    /// If a partition-layout regression leaves only an aliased producer
+    /// result, do not synthesize the missing canonical row from aliased bytes.
+    /// Persisting those bytes would make consensus depend on partition layout.
+    #[test]
+    fn get_results_drops_aliased_ok_when_canonical_missing() {
+        let out = handle(0xAA);
+        let tid_canonical = handle(0x01);
+        let tid_aliased = handle(0x02);
+
+        let mut nodes = vec![
+            make_cnode(tid_canonical.clone(), out.clone()),
+            make_cnode(tid_aliased.clone(), out.clone()),
+        ];
+        let mut g = DFComponentGraph::default();
+        g.build(&mut nodes).expect("build");
+
+        let aliased_bytes = b"aliased-bytes".to_vec();
+        g.results.push(DFGTxResult {
+            transaction_id: tid_aliased.clone(),
+            handle: out.clone(),
+            compressed_ct: Ok(ct(&aliased_bytes)),
+        });
+
+        let out_results = g.get_results();
+        assert!(
+            out_results.is_empty(),
+            "aliased Ok result must not be persisted when the canonical result is absent"
+        );
+    }
+
+    /// When an aliased tid already has its own `DFGTxResult` (the common
+    /// different-partition case), the broadcast must be a no-op — we do
+    /// not synthesise a second entry for the same `(handle, tid)` pair.
+    #[test]
+    fn get_results_does_not_duplicate_existing_aliased_entries() {
+        let out = handle(0xAA);
+        let tid_canonical = handle(0x01);
+        let tid_aliased = handle(0x02);
+
+        let mut nodes = vec![
+            make_cnode(tid_canonical.clone(), out.clone()),
+            make_cnode(tid_aliased.clone(), out.clone()),
+        ];
+        let mut g = DFComponentGraph::default();
+        g.build(&mut nodes).expect("build");
+
+        g.results.push(DFGTxResult {
+            transaction_id: tid_canonical.clone(),
+            handle: out.clone(),
+            compressed_ct: Ok(ct(b"canonical")),
+        });
+        g.results.push(DFGTxResult {
+            transaction_id: tid_aliased.clone(),
+            handle: out.clone(),
+            compressed_ct: Ok(ct(b"aliased-independently-computed")),
+        });
+
+        let out_results = g.get_results();
+        assert_eq!(out_results.len(), 2);
+        let aliased_entries: Vec<_> = out_results
+            .iter()
+            .filter(|r| r.transaction_id == tid_aliased)
+            .collect();
+        assert_eq!(
+            aliased_entries.len(),
+            1,
+            "aliased tid must appear exactly once"
+        );
+        assert_eq!(
+            aliased_entries[0].compressed_ct.as_ref().unwrap().ct_bytes,
+            b"aliased-independently-computed",
+            "existing aliased result is preserved, not overwritten"
+        );
+    }
+
+    /// If every producer failed (no Ok result for the handle), the
+    /// broadcast must not invent a synthetic Ok entry — the aliased
+    /// tids are left alone so their own error rows remain the source
+    /// of truth.
+    #[test]
+    fn get_results_skips_broadcast_when_canonical_errored() {
+        let out = handle(0xAA);
+        let tid_canonical = handle(0x01);
+        let tid_aliased = handle(0x02);
+
+        let mut nodes = vec![
+            make_cnode(tid_canonical.clone(), out.clone()),
+            make_cnode(tid_aliased.clone(), out.clone()),
+        ];
+        let mut g = DFComponentGraph::default();
+        g.build(&mut nodes).expect("build");
+
+        g.results.push(DFGTxResult {
+            transaction_id: tid_canonical.clone(),
+            handle: out.clone(),
+            compressed_ct: Err(SchedulerError::MissingInputs.into()),
+        });
+
+        let out_results = g.get_results();
+        assert_eq!(out_results.len(), 1, "no Ok ciphertext to broadcast");
+        assert_eq!(out_results[0].transaction_id, tid_canonical);
+    }
+
+    /// Duplicate-handle errors must be attributed to the producer tid that
+    /// emitted the error. Falling back to the canonical producer poisons the
+    /// wrong dependency path and can leave the failed aliased row pending.
+    #[test]
+    fn add_output_error_uses_result_transaction_id_for_duplicate_handles() {
+        let out = handle(0xAA);
+        let tid_canonical = handle(0x01);
+        let tid_aliased = handle(0x02);
+
+        let mut nodes = vec![
+            make_cnode_with_allowed_op(tid_canonical.clone(), out.clone()),
+            make_cnode_with_allowed_op(tid_aliased.clone(), out.clone()),
+        ];
+        let mut g = DFComponentGraph::default();
+        g.build(&mut nodes).expect("build");
+
+        let edges = g.graph.map(|_, _| (), |_, edge| *edge);
+        g.add_output(
+            &out,
+            &tid_aliased,
+            Err(SchedulerError::MissingInputs.into()),
+            &edges,
+        )
+        .expect("add output");
+
+        let producers = g.produced.get(&out).expect("produced entry");
+        let canonical_idx = producers
+            .iter()
+            .find(|(_, tid)| tid == &tid_canonical)
+            .expect("canonical producer")
+            .0;
+        let aliased_idx = producers
+            .iter()
+            .find(|(_, tid)| tid == &tid_aliased)
+            .expect("aliased producer")
+            .0;
+
+        assert!(
+            !g.graph
+                .node_weight(canonical_idx)
+                .expect("canonical node")
+                .is_uncomputable,
+            "canonical producer must not be marked uncomputable"
+        );
+        assert!(
+            g.graph
+                .node_weight(aliased_idx)
+                .expect("aliased node")
+                .is_uncomputable,
+            "aliased producer must be marked uncomputable"
+        );
+
+        let out_results = g.get_results();
+        assert!(
+            !out_results.is_empty(),
+            "the aliased failure should emit at least one error result"
+        );
+        assert!(
+            out_results
+                .iter()
+                .all(|result| result.transaction_id == tid_aliased),
+            "all emitted error results must belong to the failed aliased producer"
+        );
+    }
+
+    #[test]
+    fn add_output_errors_when_transaction_id_is_not_a_producer() {
+        let out = handle(0xAA);
+        let tid_canonical = handle(0x01);
+        let tid_aliased = handle(0x02);
+        let tid_unknown = handle(0x03);
+
+        let mut nodes = vec![
+            make_cnode_with_allowed_op(tid_canonical.clone(), out.clone()),
+            make_cnode_with_allowed_op(tid_aliased.clone(), out.clone()),
+        ];
+        let mut g = DFComponentGraph::default();
+        g.build(&mut nodes).expect("build");
+
+        let edges = g.graph.map(|_, _| (), |_, edge| *edge);
+        let error = g
+            .add_output(
+                &out,
+                &tid_unknown,
+                Err(SchedulerError::MissingInputs.into()),
+                &edges,
+            )
+            .expect_err("unknown producer transaction id should fail closed");
+
+        assert_eq!(
+            error.to_string(),
+            SchedulerError::DataflowGraphError.to_string()
+        );
+        assert!(
+            g.get_results().is_empty(),
+            "unknown producer output must not be saved under another producer"
+        );
+    }
 }
