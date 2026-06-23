@@ -228,7 +228,7 @@ async function run() {
     const signedPermit = await client.signDecryptionPermit({
       transportKeyPair,
       contractAddresses: [fheTestAddress],
-      durationDays: 1,
+      durationSeconds: 24 * 3600,
       startTimestamp: Math.floor(Date.now() / 1000) - 5,
       signerAddress: wallet.address,
       signer,

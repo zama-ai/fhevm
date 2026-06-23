@@ -282,7 +282,7 @@ async function decrypt(): Promise<void> {
       const signedPermit = await state.client.signDecryptionPermit({
         transportKeyPair,
         contractAddresses: [state.fheTestAddress],
-        durationDays: 1,
+        durationSeconds: 24 * 3600,
         startTimestamp: Math.floor(Date.now() / 1000) - 5,
         signerAddress: state.walletAddress,
         signer: state.signer,

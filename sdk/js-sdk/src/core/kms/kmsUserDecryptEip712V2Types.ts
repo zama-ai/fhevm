@@ -4,6 +4,7 @@ import type { KmsUserDecryptEip712V2Types } from '../types/kms.js';
 // KmsUserDecryptEIP712V2Types (RFC-016)
 ////////////////////////////////////////////////////////////////////////////////
 
+// Careful: do not change any fields in this structure
 export const kmsUserDecryptEip712V2Types: KmsUserDecryptEip712V2Types = {
   EIP712Domain: [
     { name: 'name', type: 'string' },

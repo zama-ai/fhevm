@@ -71,13 +71,17 @@ export function defineClientDecryptDecryptTests(parameters: {
       const signedPermit = await client.signDecryptionPermit({
         transportKeyPair: keyPair,
         contractAddresses: [config.fheTestAddress],
-        durationDays: 1,
+        durationSeconds: 24 * 3600,
         startTimestamp: Math.floor(Date.now() / 1000) - 5,
         signerAddress: config.wallet.address,
         signer: config.signer,
       });
 
       expect(signedPermit).toBeDefined();
+      const [major, minor] = client.protocolVersion!.version.split('.').map(Number);
+      const expectedPermitVersion = major! * 1000 + minor! < 14 ? 1 : 2;
+      expect(signedPermit.version).toBe(expectedPermitVersion);
+      expect(signedPermit.eip712.primaryType).toBe('UserDecryptRequestVerification');
       expect(signedPermit.isDelegated).toBe(false);
     });
 
@@ -118,7 +122,7 @@ export function defineClientDecryptDecryptTests(parameters: {
         const signedPermit = await client.signDecryptionPermit({
           transportKeyPair: transportKeyPair,
           contractAddresses: [config.fheTestAddress],
-          durationDays: 1,
+          durationSeconds: 24 * 3600,
           startTimestamp: Math.floor(Date.now() / 1000) - 5,
           signerAddress: config.wallet.address,
           signer: config.signer,
@@ -188,7 +192,7 @@ export function defineClientDecryptDecryptTests(parameters: {
       const signedPermit = await client.signDecryptionPermit({
         transportKeyPair: transportKeyPair,
         contractAddresses: [config.fheTestAddress],
-        durationDays: 1,
+        durationSeconds: 24 * 3600,
         startTimestamp: Math.floor(Date.now() / 1000) - 5,
         signerAddress: config.wallet.address,
         signer: config.signer,
