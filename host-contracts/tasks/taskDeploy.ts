@@ -1075,3 +1075,25 @@ task('task:setLzReceivePerHandleGas')
         `(remoteEid=${taskArguments.remoteEid}): effective per-handle gas ${oldPerHandleGas.toString()} -> ${newPerHandleGas.toString()}`,
     );
   });
+
+task('task:setLzReceivePerPayloadByteGas')
+  .addParam('bridgeAddress', 'The address of the contract')
+  .addParam('remoteEid', 'The remote EID')
+  .addParam('perPayloadByteGas', 'The custom per-payload-byte lzReceive gas (0 to clear and fall back to the default)')
+  .setAction(async function (taskArguments: TaskArguments, { ethers, network }) {
+    const deployerPrivateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
+    const deployer = new Wallet(deployerPrivateKey).connect(ethers.provider);
+    const confidentialBridgeAddress = taskArguments.bridgeAddress;
+    const confidentialBridge = await ethers.getContractAt('ConfidentialBridge', confidentialBridgeAddress, deployer);
+    const oldPerPayloadByteGas = await confidentialBridge.getLzReceivePerPayloadByteGas(taskArguments.remoteEid);
+    const receipt = await confidentialBridge.setLzReceivePerPayloadByteGas(
+      taskArguments.remoteEid,
+      taskArguments.perPayloadByteGas,
+    );
+    await receipt.wait(1);
+    const newPerPayloadByteGas = await confidentialBridge.getLzReceivePerPayloadByteGas(taskArguments.remoteEid);
+    console.log(
+      `setLzReceivePerPayloadByteGas done on network "${network.name}" for bridge ${confidentialBridgeAddress} ` +
+        `(remoteEid=${taskArguments.remoteEid}): effective per-payload-byte gas ${oldPerPayloadByteGas.toString()} -> ${newPerPayloadByteGas.toString()}`,
+    );
+  });

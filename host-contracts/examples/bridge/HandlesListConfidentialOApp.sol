@@ -154,7 +154,7 @@ contract HandlesListConfidentialOApp is Ownable2Step, IDstApp {
         if (dstApp == bytes32(0)) revert PeerNotSet(dstEid);
         // Mirror the real send: the payload is the abi-encoded caller (32 bytes) and the
         // message is otherwise measured by `handleList.length`. An array of
-        // null bytes32 handles of the right length quote identically to the real call.
+        // null bytes32 handles of the right length quotes identically to the real call.
         bytes memory payload = abi.encode(msg.sender);
         bytes32[] memory placeholder = new bytes32[](countHandles);
         fee = confidentialBridge.quote(dstEid, address(this), dstApp, payload, placeholder, lzComposeGas);
