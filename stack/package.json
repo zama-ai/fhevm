@@ -1,0 +1,5 @@
+{
+  "name": "@fhevm/stack",
+  "type": "module",
+  "private": true
+}

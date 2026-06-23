@@ -1,0 +1,161 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kmsconn-gw-listener
+  namespace: fhevm
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: kmsconn-gw-listener
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/restartedAt: '2026-06-17T11:28:35+02:00'
+      labels:
+        app: kmsconn-gw-listener
+    spec:
+      containers:
+      - envFrom:
+        - configMapRef:
+            name: connector-env
+        image: ghcr.io/zama-ai/fhevm/kms-connector/gw-listener:v0.13.0-6
+        imagePullPolicy: IfNotPresent
+        name: gw-listener
+        resources: {}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+      dnsPolicy: ClusterFirst
+      imagePullSecrets:
+      - name: registry-credentials
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kmsconn-kms-worker
+  namespace: fhevm
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: kmsconn-kms-worker
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/restartedAt: '2026-06-17T11:28:35+02:00'
+      labels:
+        app: kmsconn-kms-worker
+    spec:
+      containers:
+      - envFrom:
+        - configMapRef:
+            name: connector-env
+        image: ghcr.io/zama-ai/fhevm/kms-connector/kms-worker:v0.13.0-6
+        imagePullPolicy: IfNotPresent
+        name: kms-worker
+        resources: {}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+      dnsPolicy: ClusterFirst
+      imagePullSecrets:
+      - name: registry-credentials
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kmsconn-tx-sender
+  namespace: fhevm
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: kmsconn-tx-sender
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/restartedAt: '2026-06-17T11:28:35+02:00'
+      labels:
+        app: kmsconn-tx-sender
+    spec:
+      containers:
+      - envFrom:
+        - configMapRef:
+            name: connector-env
+        image: ghcr.io/zama-ai/fhevm/kms-connector/tx-sender:v0.13.0-6
+        imagePullPolicy: IfNotPresent
+        name: tx-sender
+        resources: {}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+      dnsPolicy: ClusterFirst
+      imagePullSecrets:
+      - name: registry-credentials
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  labels:
+    job-name: kmsconn-migration
+  name: kmsconn-migration
+  namespace: fhevm
+spec:
+  backoffLimit: 1
+  completions: 1
+  parallelism: 1
+  # No selector / controller-uid: let the Job controller generate them so this Job is
+  # re-runnable after `kubectl delete job` (a recorded UID is rejected on re-create).
+  template:
+    metadata:
+      labels:
+        job-name: kmsconn-migration
+    spec:
+      containers:
+      - envFrom:
+        - configMapRef:
+            name: connector-env
+        image: ghcr.io/zama-ai/fhevm/kms-connector/db-migration:v0.13.0-6
+        imagePullPolicy: IfNotPresent
+        name: migrate
+        resources: {}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+      dnsPolicy: ClusterFirst
+      imagePullSecrets:
+      - name: registry-credentials
+      restartPolicy: Never
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30

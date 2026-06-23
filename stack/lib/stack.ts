@@ -18,13 +18,33 @@
 // Shared option bags (mirrors existing rollout-run.ts types)
 // ---------------------------------------------------------------------------
 
+/** KMS topology selector parsed from the user-facing `--kms` flag. */
+export type KmsTopology =
+  | { mode: "centralized" }
+  | { mode: "threshold"; parties: number; threshold: number };
+
+export type CleanOptions = {
+  /** Keep pulled images in the local cache (skip image pruning). */
+  keepImages?: boolean;
+};
+
 export type UpOptions = {
   /** Path to a values file (MANIFEST) that pins image.tag for every chart. */
-  lockFile: string;
+  lockFile?: string;
   /** Per-group local overrides applied as additional --set-file flags. */
   overrides?: GroupOverride[];
-  /** Optional scenario values file (charts/<chart>/values/<scenario>.yaml). */
+  /** Scenario preset name or path (charts/<chart>/values/<scenario>.yaml). */
   scenario?: string;
+  /** KMS topology: centralized or N-party threshold. */
+  kms?: KmsTopology;
+  /** Number of host chains (default 1). */
+  chains?: number;
+  /** Rebuild workspace-owned images before booting. */
+  build?: boolean;
+  /** Extra Helm values overlay file. */
+  valuesFile?: string;
+  /** Resolve + print the Helm plan; make no cluster changes. */
+  dryRun?: boolean;
 };
 
 export type UpgradeOptions = {
@@ -113,6 +133,12 @@ export interface Stack {
   down(): Promise<void>;
 
   /**
+   * clean — `down()` plus deletion of generated local state (lockfiles,
+   * receipts); prunes pulled images unless `options.keepImages` is set.
+   */
+  clean(options?: CleanOptions): Promise<void>;
+
+  /**
    * upgrade — `helm upgrade` a single release group with a new image.tag
    * (sets image.tag via --set); Kubernetes rolls the Deployment in-place.
    * Waits for the rollout to complete (`kubectl rollout status`).
@@ -177,6 +203,22 @@ export interface Stack {
   refreshDiscovery(): Promise<void>;
 
   /**
+   * patchConfigMap — merge `data` into an existing ConfigMap (`kubectl patch
+   * configmap <name> --type merge`). This is the `regenerate` primitive: it
+   * threads discovered addresses/ids into a service's env ConfigMap before the
+   * service starts. The single write-point for discovered values.
+   */
+  patchConfigMap(name: string, data: Record<string, string>): Promise<void>;
+
+  /**
+   * serviceClusterIP — the ClusterIP of a Service. The coprocessor's S3 client
+   * needs an IP endpoint (not the `minio` hostname): a hostname triggers AWS
+   * virtual-hosted-style addressing (`<bucket>.minio:9000` → DNS failure), an IP
+   * forces path-style. Discovered at boot and threaded into AWS_ENDPOINT_URL.
+   */
+  serviceClusterIP(name: string): Promise<string>;
+
+  /**
    * pin — writes `options.values` into `options.outputFile` as a Helm
    * values file (YAML), creating the MANIFEST artefact consumed by `up`.
    */
@@ -192,10 +234,11 @@ export interface Stack {
   exec(pod: string, command: string[]): Promise<string>;
 
   /**
-   * sql — `kubectl exec <pod> -- psql -c <query>` (or equivalent DB CLI);
-   * convenience wrapper around exec for the postgres sidecar.
+   * sql — `kubectl exec <pod> -- psql -U postgres [-d <db>] -tAc <query>`;
+   * convenience wrapper around exec for the postgres pod. `db` defaults to the
+   * postgres maintenance DB; pass it to query a specific database (e.g. "coprocessor").
    */
-  sql(pod: string, query: string): Promise<string>;
+  sql(pod: string, query: string, db?: string): Promise<string>;
 
   /**
    * stop — `kubectl scale deployment/<name> --replicas=0`; halts the pod
@@ -226,6 +269,14 @@ export interface Stack {
    * or `timeoutMs` elapses; rejects with a timeout error on expiry.
    */
   waitForLog(pod: string, pattern: RegExp, timeoutMs?: number): Promise<void>;
+
+  /**
+   * waitForJob — block until a Job completes (`kubectl wait
+   * --for=condition=complete job/<name>`); rejects if it fails or times out.
+   * Job phases MUST call this before reading the Job's output or proceeding —
+   * applying a Job is async, so reading its log too early yields a partial parse.
+   */
+  waitForJob(name: string, timeoutMs?: number): Promise<void>;
 
   /**
    * chain — sends a JSON-RPC request directly to the anvil-node endpoint

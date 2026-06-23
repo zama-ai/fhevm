@@ -19,6 +19,7 @@
  * The Stack instance is injected so the module is testable without a real cluster.
  */
 
+import { createStack } from "../lib/engine";
 import type { Stack } from "../lib/stack";
 import { runUp } from "./up";
 import { runTest } from "./test";
@@ -153,6 +154,8 @@ const handleUp = async (stack: Stack, argv: string[]): Promise<void> => {
     build: asBool(flags.build),
     values: asString(flags.values),
     dryRun: asBool(flags["dry-run"]),
+    from: asString(flags.from),
+    until: asString(flags.until),
   });
 };
 
@@ -257,36 +260,12 @@ export const main = async (stack: Stack, argv = process.argv.slice(2)): Promise<
 };
 
 // ---------------------------------------------------------------------------
-// Stub stack — surfaces help text without a real engine
-// ---------------------------------------------------------------------------
-
-/**
- * Returns a Stack proxy that throws "engine not wired" for any real operation
- * but allows the help-flag branches to reach their console.log() calls before
- * any Stack method is invoked.
- */
-const stubStack = (): Stack =>
-  new Proxy({} as Stack, {
-    get(_, prop) {
-      return () => {
-        throw new Error(
-          `Stack engine not wired (called .${String(prop)}()). ` +
-            "Replace the TODO in main.ts with a real createStack() import.",
-        );
-      };
-    },
-  });
-
-// ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
 
 // Run when invoked directly via `bun stack/cli/main.ts …` or the fhevm launcher.
+// The KubectlStack constructor only stores config (no cluster contact), so `--help`
+// branches still return before any Stack method is invoked.
 if (import.meta.main) {
-  // TODO: import the real Stack implementation once the engine exists:
-  //   import { createStack } from "../lib/engine";
-  //   await main(createStack(), process.argv.slice(2));
-  //
-  // Until then, the stub lets help flags render without crashing on boot.
-  await main(stubStack(), process.argv.slice(2));
+  await main(createStack(), process.argv.slice(2));
 }

@@ -1,0 +1,167 @@
+apiVersion: v1
+data:
+  config.toml: '# See default_1.toml for the documentation.
+
+
+    [service]
+
+    listen_address = "0.0.0.0"
+
+    listen_port = 50051
+
+    timeout_secs = 360
+
+    grpc_max_message_size = 104857600 # 100 MiB
+
+
+    [telemetry]
+
+    tracing_service_name = "kms-centralized"
+
+    tracing_otlp_timeout_ms = 10000
+
+    metrics_bind_address = "0.0.0.0:9646"
+
+
+    [telemetry.batch]
+
+    max_queue_size = 8192
+
+    max_export_batch_size = 2048
+
+    max_concurrent_exports = 4
+
+    scheduled_delay_ms = 500
+
+    export_timeout_ms = 5000
+
+
+    [aws]
+
+    region = "eu-west-1"
+
+    s3_endpoint = "http://minio:9000"
+
+
+    [public_vault]
+
+
+    [public_vault.storage.s3]
+
+    bucket = "kms-public"
+
+    prefix = "PUB"
+
+
+    [private_vault.storage.file]
+
+    path = "./keys"
+
+
+    [rate_limiter_conf]
+
+    bucket_size = 50000
+
+    pub_decrypt = 1
+
+    user_decrypt = 1
+
+    crsgen = 100
+
+    preproc = 25000
+
+    keygen = 1000
+
+    new_epoch = 1
+
+    '
+kind: ConfigMap
+metadata:
+  name: kms-core-config
+  namespace: fhevm
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kms-core
+  namespace: fhevm
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: kms-core
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/restartedAt: '2026-06-16T18:41:10+02:00'
+      labels:
+        app: kms-core
+    spec:
+      containers:
+      - command:
+        - /bin/sh
+        - -c
+        - 'set -e
+
+          mkdir -p "$KMS_CORE__PRIVATE_VAULT__STORAGE__FILE__PATH"
+
+          export AWS_ACCESS_KEY_ID=$(cat /minio_secrets/access_key)
+
+          export AWS_SECRET_ACCESS_KEY=$(cat /minio_secrets/secret_key)
+
+          echo "===GEN SIGNING KEYS==="
+
+          kms-gen-keys --public-storage s3 --public-s3-bucket "$KMS_CORE__PUBLIC_VAULT__STORAGE__S3__BUCKET"
+          --public-s3-prefix "$KMS_CORE__PUBLIC_VAULT__STORAGE__S3__PREFIX" --aws-s3-endpoint
+          "$S3_ENDPOINT" --aws-region "$S3_REGION" --private-storage file --private-file-path
+          "$KMS_CORE__PRIVATE_VAULT__STORAGE__FILE__PATH" --cmd signing-keys centralized
+
+          echo "===START KMS SERVER==="
+
+          kms-server --config-file config/config.toml
+
+          '
+        envFrom:
+        - configMapRef:
+            name: core-env
+        image: ghcr.io/zama-ai/kms/core-service:v0.13.20-0
+        imagePullPolicy: IfNotPresent
+        name: kms-core
+        ports:
+        - containerPort: 50051
+          protocol: TCP
+        resources: {}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /app/kms/core/service/config/config.toml
+          name: config
+          subPath: config.toml
+        - mountPath: /minio_secrets
+          name: secrets
+        - mountPath: /app/kms/core/service/keys
+          name: keys
+        workingDir: /app/kms/core/service
+      dnsPolicy: ClusterFirst
+      imagePullSecrets:
+      - name: registry-credentials
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+      volumes:
+      - configMap:
+          defaultMode: 420
+          name: kms-core-config
+        name: config
+      - name: secrets
+        secret:
+          defaultMode: 420
+          secretName: minio-secrets
+      - name: keys
+        persistentVolumeClaim:
+          claimName: kms-keys

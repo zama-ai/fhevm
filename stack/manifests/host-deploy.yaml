@@ -1,0 +1,42 @@
+# Host contracts deploy (ACL, FHEVMExecutor, KMSGeneration [HOST in v0.13], KMSVerifier,
+# InputVerifier, HCULimit). Faithful to the fhevm-cli host-sc-deploy compose service.
+#
+# host-sc-env already carries the DISCOVERED kms signer (the recipe's kms-signer phase
+# regenerated KMS_SIGNER_ADDRESS_0 before this runs) so the on-chain KMS registration matches
+# kms-core's actual signer. The recipe discovers the deployed addresses from this Job's log
+# (parseHostAddresses). Mounts host-addr so the generated FHEVMHostAddresses.sol persists for
+# the keygen trigger (host-trigger.yaml), which compiles contracts importing it.
+# The host-addr PVC is created by setup.yaml (the single owner of cluster PVCs); this Job
+# just mounts it — defining it here too would conflict ("PVC spec is immutable").
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: host-deploy
+  namespace: fhevm
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels: { job-name: host-deploy }
+    spec:
+      restartPolicy: Never
+      imagePullSecrets:
+        - name: registry-credentials
+      containers:
+        - name: deploy
+          image: ghcr.io/zama-ai/fhevm/host-contracts:v0.13.0-6
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: host-sc-env
+          command:
+            - /bin/sh
+            - -c
+            - npx hardhat task:deployAllHostContracts --with-kms-generation true
+          volumeMounts:
+            - name: host-addr
+              mountPath: /app/addresses
+      volumes:
+        - name: host-addr
+          persistentVolumeClaim:
+            claimName: host-addr

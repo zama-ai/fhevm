@@ -1,0 +1,17 @@
+  EncryptedERC20:HCU
+    ✔ should transfer tokens between two users
+    ✔ should be able to transferFrom only if allowance is sufficient
+        - should keep transfer HCU within deployed caps
+        - should keep transferFrom HCU within deployed caps
+        ✔ should accumulate HCU across users until the block cap is exhausted
+        ✔ should allow previously blocked caller to succeed after block rollover
+        ✔ should count HCU after whitelist removal
+        ✔ should reject setHCUPerBlock from non-owner
+  EncryptedERC20
+    ✔ should mint the contract
+    ✔ should transfer tokens between two users.
+    ✔ should not transfer tokens between two users
+    ✔ should be able to transferFrom only if allowance is sufficient
+      ✔ should reject when user is not allowed for handle
+  11 passing
+  2 pending

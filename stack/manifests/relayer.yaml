@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: relayer-migrate
+  namespace: fhevm
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: relayer-migrate }
+  template:
+    metadata:
+      labels: { app: relayer-migrate }
+    spec:
+      imagePullSecrets: [{ name: registry-credentials }]
+      containers:
+        - name: relayer-migrate
+          image: ghcr.io/zama-ai/fhevm/relayer-migrate:v0.13.0-6
+          envFrom: [{ configMapRef: { name: relayer-env } }]
+          command: ["/bin/server"]
+          ports: [{ containerPort: 3001 }]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: relayer-migrate
+  namespace: fhevm
+spec:
+  selector: { app: relayer-migrate }
+  ports: [{ port: 3001, targetPort: 3001 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: relayer
+  namespace: fhevm
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: relayer }
+  template:
+    metadata:
+      labels: { app: relayer }
+    spec:
+      imagePullSecrets: [{ name: registry-credentials }]
+      containers:
+        - name: relayer
+          image: ghcr.io/zama-ai/fhevm/relayer:v0.13.0-6
+          envFrom: [{ configMapRef: { name: relayer-env } }]
+          command: ["/bin/server", "--config-file=/app/config/local.yaml"]
+          ports: [{ containerPort: 3000 }]
+          volumeMounts:
+            - name: cfg
+              mountPath: /app/config/local.yaml
+              subPath: local.yaml
+      volumes:
+        - name: cfg
+          configMap:
+            name: relayer-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: relayer
+  namespace: fhevm
+spec:
+  selector: { app: relayer }
+  ports: [{ port: 3000, targetPort: 3000 }]

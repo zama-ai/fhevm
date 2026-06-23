@@ -1,0 +1,29 @@
+# erc20 e2e — the L2 behavioral golden. Runs IN-CLUSTER (the on-chain key URL is
+# minio:9000, resolvable only inside the cluster) using @fhevm/sdk (tfhe-1.6.2 wasm).
+# All addresses come from erc20-env (envFrom), which render.threadDiscovery populates
+# with the DISCOVERED host+gateway addresses — nothing here is hardcoded.
+#
+# Image fhevm-e2e:js-sdk is built from test-suite/e2e (RELAYER_SDK_VERSION="") and loaded
+# into the kind node (imagePullPolicy: Never). `fhevm up --build` rebuilds + loads it.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: erc20-e2e
+  namespace: fhevm
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels: { app: erc20-e2e }
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: e2e
+          image: fhevm-e2e:js-sdk
+          imagePullPolicy: Never
+          # ENTRYPOINT is ["/bin/bash","-c"]; stream output (no `| tail`, which buffers
+          # until the non-exiting tfhe worker threads close the pipe).
+          args:
+            - "npx hardhat test --grep 'EncryptedERC20' --network staging 2>&1"
+          envFrom:
+            - configMapRef: { name: erc20-env }

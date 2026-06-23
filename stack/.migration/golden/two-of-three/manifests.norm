@@ -1180,8 +1180,18 @@ spec:
               value: "0xTODO_DECRYPTION_ADDRESS"
             - name: KMS_CONNECTOR_GATEWAY_CONFIG_CONTRACT__ADDRESS
               value: "0xTODO_GATEWAY_CONFIG_ADDRESS"
+            - name: KMS_CONNECTOR_ETHEREUM_URL
+              value: "http://anvil-node-eth:8545"
             - name: KMS_CONNECTOR_ETHEREUM_CHAIN_ID
               value: "31337"
+            - name: KMS_CONNECTOR_ETHEREUM_ACL_ADDRESS
+              value: 
+            - name: KMS_CONNECTOR_POLYGON_URL
+              value: "http://polygon-node:8545"
+            - name: KMS_CONNECTOR_POLYGON_CHAIN_ID
+              value: 
+            - name: KMS_CONNECTOR_POLYGON_ACL_ADDRESS
+              value: 
             - name: KMS_CONNECTOR_KMS_GENERATION_CONTRACT__ADDRESS
               value: "0xTODO_KMS_GENERATION_ADDRESS"
             - name: KMS_CONNECTOR_KMS_CORE_ENDPOINTS
@@ -1328,6 +1338,16 @@ spec:
             - "10"
             - "--mnemonic"
             - "$(MNEMONIC)"
+            # NO --state persistence. anvil dumps state.json non-atomically (in-place),
+            # so ANY interrupted write — a SIGKILL, an eviction, a graceful dump that
+            # exceeds the grace period — truncates the file, and on restart anvil
+            # refuses to boot ("EOF while parsing", proven live TWICE, even without
+            # --state-interval). The crashloop takes the whole host chain down and
+            # poisons the PVC. The recipe boots from genesis every time (clean()), so
+            # in-memory chain state is the correct model: if anvil restarts it comes up
+            # clean instead of crashlooping, and a mid-run restart means a reboot
+            # regardless. Cross-restart persistence would need atomic dumps, which anvil
+            # does not provide.
           ports:
             - containerPort: 8545
           resources:
@@ -1644,12 +1664,6 @@ spec:
           - --source
           - /migrations
         env:
-          - name: DATABASE_ENDPOINT
-            value: postgresql://db:5432/kms-connector
-          - name: PGUSER
-            value: postgres
-          - name: PGPASSWORD
-            value: postgres
           - name: DATABASE_URL
             value: "postgresql://kms-connector:kms-connector@db:5432/kms-connector"
         resources:

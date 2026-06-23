@@ -1,0 +1,15 @@
+network:
+  chainId: "12345"
+  mnemonic: adapt mosquito move limb mobile illegal tree voyage juice mosquito burger
+    raise father hope layer
+port: 8545
+# Generous memory: the chain has NO --state (in-memory; a restart loses all contracts),
+# and the erc20 HCU "accumulate until block cap exhausted" test spams transactions. At the
+# 512Mi chart default anvil was OOMKilled mid-run → restart → genesis → dead stack.
+resources:
+  requests:
+    cpu: 250m
+    memory: 1Gi
+  limits:
+    cpu: "2"
+    memory: 4Gi

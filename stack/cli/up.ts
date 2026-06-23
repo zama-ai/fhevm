@@ -1,12 +1,13 @@
 // EXEMPLAR — thin CLI subcommand; no orchestration logic of its own.
 /**
- * `fhevm up` — boot or reconcile the stack.
+ * `fhevm up` — boot the stack by walking the declarative RECIPE (bootStack).
  *
- * Parses the user-facing flags, translates them into a Stack.UpOptions bag,
- * and delegates entirely to stack.up().  The CLI layer owns nothing except
- * the flag→type mapping shown here.
+ * The CLI layer owns nothing except flag parsing + phase logging; ALL the boot
+ * knowledge lives in the recipe (../lib/recipe). This delegates to bootStack —
+ * the faithful discover→regenerate driver — not the placeholder helm path.
  */
 
+import { bootStack, DEFAULT_CONFIG, RECIPE } from "../lib/recipe";
 import type { Stack, UpOptions } from "../lib/stack";
 
 export type UpArgs = {
@@ -18,6 +19,10 @@ export type UpArgs = {
   /** Path to an extra Helm values overlay file. */
   values?: string;
   dryRun?: boolean;
+  /** Resume from this phase id (skip everything before it). */
+  from?: string;
+  /** Stop after this phase id (boot a prefix of the recipe). */
+  until?: string;
 };
 
 /**
@@ -45,15 +50,19 @@ export const parseKmsFlag = (raw: string): UpOptions["kms"] => {
   return { mode: "threshold", parties, threshold };
 };
 
-/** Map parsed CLI args → Stack.UpOptions and call stack.up(). */
+/** Walk the declarative RECIPE over the Stack. --dry-run prints the phase plan. */
 export const runUp = async (stack: Stack, args: UpArgs): Promise<void> => {
-  const options: UpOptions = {
-    scenario: args.scenario,
-    kms: args.kms !== undefined ? parseKmsFlag(args.kms) : undefined,
-    chains: args.chains,
-    build: args.build,
-    valuesFile: args.values,
-    dryRun: args.dryRun,
-  };
-  await stack.up(options);
+  // Validate the topology flag (a threshold value adjusts the kms-core phase; centralized = default).
+  const kms = args.kms !== undefined ? parseKmsFlag(args.kms) : { mode: "centralized" as const };
+  void (kms satisfies UpOptions["kms"]);
+
+  if (args.dryRun) {
+    for (const p of RECIPE) console.log(`  ${p.id.padEnd(16)} ${p.title}`);
+    return;
+  }
+  await bootStack(stack, DEFAULT_CONFIG, {
+    from: args.from,
+    until: args.until,
+    onPhase: (r) => console.log(`[${r.status === "ok" ? "ok  " : "FAIL"}] ${r.id} — ${r.title}`),
+  });
 };

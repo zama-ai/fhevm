@@ -1,0 +1,30 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: host-trigger-2
+  namespace: fhevm
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      imagePullSecrets:
+        - name: registry-credentials
+      containers:
+        - name: trigger
+          image: ghcr.io/zama-ai/fhevm/host-contracts:v0.13.0-6
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: host-sc-env
+          command:
+            - /bin/sh
+            - -c
+            - "set -e; echo ==keygen==; npx hardhat task:triggerKeygen --params-type 0 --use-internal-proxy-address true; echo ==crsgen==; npx hardhat task:triggerCrsgen --params-type 0 --max-bit-length 2048 --use-internal-proxy-address true; echo ==done=="
+          volumeMounts:
+            - name: addr
+              mountPath: /app/addresses
+      volumes:
+        - name: addr
+          persistentVolumeClaim:
+            claimName: host-addr

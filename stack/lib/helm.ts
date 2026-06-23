@@ -1,11 +1,14 @@
-// EXEMPLAR — interface skeleton, not a working implementation
+// EXEMPLAR — concrete helm wrappers.
+//
+// Thin wrapper for running helm subprocesses. Every function maps to a single `helm`
+// CLI invocation and returns raw stdout (callers parse YAML/JSON). Rejects with stderr
+// on non-zero exit. `helmTemplate` is the L0 acceptance path (helm-template golden diff);
+// `helmUpgrade`/`helmUninstall` back Stack.up()/down().
 
-/**
- * Thin wrapper for running helm subprocesses.
- *
- * Every function here maps to a single `helm` CLI invocation and returns the
- * raw stdout string.  Callers are responsible for parsing YAML/JSON output.
- */
+import { spawn } from "node:child_process";
+
+const HELM = process.env.HELM_BIN ?? "helm";
+const MAX_BUFFER = 256 * 1024 * 1024;
 
 export type HelmInstallOptions = {
   /** Kubernetes namespace for this release. */
@@ -37,43 +40,62 @@ export type HelmTemplateOptions = {
   set?: Record<string, string>;
 };
 
-/**
- * helmUpgrade — runs `helm upgrade [--install] <release> <chart> [flags]`
- * and resolves with stdout when the command exits 0.
- *
- * TODO: implement by spawning `helm upgrade` with the assembled flag list.
- */
+function runHelm(args: string[]): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(HELM, args, { stdio: ["ignore", "pipe", "pipe"] });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (d) => {
+      stdout += d;
+      if (stdout.length > MAX_BUFFER) {
+        child.kill("SIGKILL");
+        reject(new Error(`helm ${args[0]}: output exceeded ${MAX_BUFFER} bytes`));
+      }
+    });
+    child.stderr.on("data", (d) => (stderr += d));
+    child.on("error", reject);
+    child.on("close", (code) =>
+      code === 0
+        ? resolve(stdout)
+        : reject(new Error(`helm ${args.join(" ")} exited ${code}: ${stderr.trim() || stdout.trim()}`)),
+    );
+  });
+}
+
+const valuesArgs = (files?: string[]): string[] => (files ?? []).flatMap((f) => ["-f", f]);
+const setArgs = (set?: Record<string, string>): string[] =>
+  Object.entries(set ?? {}).flatMap(([k, v]) => ["--set", `${k}=${v}`]);
+
+/** helmUpgrade — `helm upgrade [--install] <release> <chart> -n <ns> [flags]`. */
 export async function helmUpgrade(
   releaseName: string,
   chartPath: string,
   options: HelmUpgradeOptions,
 ): Promise<string> {
-  // TODO: build argv from options, spawn helm, capture stdout, reject on non-zero exit
-  throw new Error(`helmUpgrade(${releaseName}, ${chartPath}) — TODO`);
+  const args = ["upgrade"];
+  if (options.install) args.push("--install");
+  args.push(releaseName, chartPath, "-n", options.namespace);
+  args.push(...valuesArgs(options.valuesFiles), ...setArgs(options.set));
+  if (options.wait) args.push("--wait");
+  if (options.timeout) args.push("--timeout", options.timeout);
+  return runHelm(args);
 }
 
-/**
- * helmUninstall — runs `helm uninstall <release> -n <namespace>` and
- * resolves with stdout when the command exits 0.
- *
- * TODO: implement by spawning `helm uninstall` with the assembled flag list.
- */
+/** helmUninstall — `helm uninstall <release> -n <ns> [--wait]`. */
 export async function helmUninstall(releaseName: string, options: HelmUninstallOptions): Promise<string> {
-  // TODO: build argv from options, spawn helm, capture stdout, reject on non-zero exit
-  throw new Error(`helmUninstall(${releaseName}) — TODO`);
+  const args = ["uninstall", releaseName, "-n", options.namespace];
+  if (options.wait) args.push("--wait");
+  return runHelm(args);
 }
 
-/**
- * helmTemplate — runs `helm template <release> <chart> [flags]` and
- * resolves with the rendered YAML string.  Used for L0 golden-master diffs.
- *
- * TODO: implement by spawning `helm template` with the assembled flag list.
- */
+/** helmTemplate — `helm template <release> <chart> [flags]`; rendered YAML for L0 diffs. */
 export async function helmTemplate(
   releaseName: string,
   chartPath: string,
-  options?: HelmTemplateOptions,
+  options: HelmTemplateOptions = {},
 ): Promise<string> {
-  // TODO: build argv from options, spawn helm, capture stdout, reject on non-zero exit
-  throw new Error(`helmTemplate(${releaseName}, ${chartPath}) — TODO`);
+  const args = ["template", releaseName, chartPath];
+  if (options.namespace) args.push("-n", options.namespace);
+  args.push(...valuesArgs(options.valuesFiles), ...setArgs(options.set));
+  return runHelm(args);
 }
