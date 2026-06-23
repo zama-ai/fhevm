@@ -71,7 +71,7 @@ contract ConfidentialOFT is Ownable2Step, IDstApp {
         uint32 dstEid,
         euint64 amount,
         address recipient,
-        uint128 mintComposeGas
+        uint64 mintComposeGas
     ) external payable {
         if(!FHE.isSenderAllowed(amount)) revert UnauthorizedUseOfEncryptedAmount(amount, msg.sender);
 

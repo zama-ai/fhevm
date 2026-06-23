@@ -163,19 +163,19 @@ contract HandlesListConfidentialOAppTest is TestHelperOz5, HostContractsDeployer
     function test_SendHandles_RevertsWhenPeerNotSet() public {
         vm.prank(user);
         vm.expectRevert(abi.encodeWithSelector(HandlesListConfidentialOApp.PeerNotSet.selector, UNCONFIGURED_EID));
-        appSrc.generateAndSendHandlesList{value: 0}(UNCONFIGURED_EID, 1, uint128(0));
+        appSrc.generateAndSendHandlesList{value: 0}(UNCONFIGURED_EID, 1, uint64(0));
     }
 
     function test_QuoteSendHandles_RevertsWhenPeerNotSet() public {
         vm.expectRevert(abi.encodeWithSelector(HandlesListConfidentialOApp.PeerNotSet.selector, UNCONFIGURED_EID));
-        appSrc.quoteGenerateAndSendHandlesList(UNCONFIGURED_EID, 1, uint128(0));
+        appSrc.quoteGenerateAndSendHandlesList(UNCONFIGURED_EID, 1, uint64(0));
     }
 
     /// @dev A zero count has nothing to bridge and is rejected before any LZ work.
     function test_SendHandles_RevertsOnEmptyCount() public {
         vm.prank(user);
         vm.expectRevert(HandlesListConfidentialOApp.EmptyHandleList.selector);
-        appSrc.generateAndSendHandlesList{value: 0}(DST_EID, 0, uint128(0));
+        appSrc.generateAndSendHandlesList{value: 0}(DST_EID, 0, uint64(0));
     }
 
     ////////////////////////////////////////////////////////////////////////////////
@@ -187,14 +187,14 @@ contract HandlesListConfidentialOAppTest is TestHelperOz5, HostContractsDeployer
     function test_SendHandles_EndToEnd_EmitsSentEventAndBridgeHandle() public {
         uint256 count = 2;
 
-        MessagingFee memory fee = appSrc.quoteGenerateAndSendHandlesList(DST_EID, count, uint128(200_000));
+        MessagingFee memory fee = appSrc.quoteGenerateAndSendHandlesList(DST_EID, count, uint64(200_000));
 
         vm.recordLogs();
         vm.prank(user);
         MessagingReceipt memory receipt = appSrc.generateAndSendHandlesList{value: fee.nativeFee}(
             DST_EID,
             count,
-            uint128(200_000)
+            uint64(200_000)
         );
         assertTrue(receipt.guid != bytes32(0), "guid should be assigned");
 
@@ -227,12 +227,12 @@ contract HandlesListConfidentialOAppTest is TestHelperOz5, HostContractsDeployer
 
     /// @dev Demonstrates the reverse direction: the same contract type bridges dst→src.
     function test_SendHandles_ReverseDirection() public {
-        MessagingFee memory fee = appDst.quoteGenerateAndSendHandlesList(SRC_EID, 1, uint128(150_000));
+        MessagingFee memory fee = appDst.quoteGenerateAndSendHandlesList(SRC_EID, 1, uint64(150_000));
         vm.prank(user);
         MessagingReceipt memory receipt = appDst.generateAndSendHandlesList{value: fee.nativeFee}(
             SRC_EID,
             1,
-            uint128(150_000)
+            uint64(150_000)
         );
         assertTrue(receipt.guid != bytes32(0));
 

@@ -185,6 +185,6 @@ contract ConfidentialOFTTest is TestHelperOz5, HostContractsDeployerTestUtils {
 
         vm.prank(alice);
         vm.expectRevert();
-        oft.send{value: 1 ether}(DST_EID, euint64.wrap(_makeHandle(0)), bob, uint128(150_000));
+        oft.send{value: 1 ether}(DST_EID, euint64.wrap(_makeHandle(0)), bob, uint64(150_000));
     }
 }

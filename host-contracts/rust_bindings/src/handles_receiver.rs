@@ -32,8 +32,9 @@ interface HandlesReceiver {
     event FallbackGrantedPlaintext(bytes32 indexed dstHandle, uint256 plaintext);
     event HandleBridged(address indexed receiverDapp, bytes32 srcHandle, bytes32 dstHandle, bytes32 guid);
     event Initialized(uint64 version);
-    event LzReceiveBaseGasSet(uint32 indexed dstEid, uint128 lzReceiveBaseGas);
-    event LzReceivePerHandleGasSet(uint32 indexed dstEid, uint128 lzReceivePerHandleGas);
+    event LzReceiveBaseGasSet(uint32 indexed dstEid, uint64 lzReceiveBaseGas);
+    event LzReceivePerHandleGasSet(uint32 indexed dstEid, uint64 lzReceivePerHandleGas);
+    event LzReceivePerPayloadByteGasSet(uint32 indexed dstEid, uint64 lzReceivePerPayloadByteGas);
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
     event PeerSet(uint32 eid, bytes32 peer);
 
@@ -503,9 +504,9 @@ interface HandlesReceiver {
       },
       {
         "name": "lzReceiveBaseGas",
-        "type": "uint128",
+        "type": "uint64",
         "indexed": false,
-        "internalType": "uint128"
+        "internalType": "uint64"
       }
     ],
     "anonymous": false
@@ -522,9 +523,28 @@ interface HandlesReceiver {
       },
       {
         "name": "lzReceivePerHandleGas",
-        "type": "uint128",
+        "type": "uint64",
         "indexed": false,
-        "internalType": "uint128"
+        "internalType": "uint64"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "LzReceivePerPayloadByteGasSet",
+    "inputs": [
+      {
+        "name": "dstEid",
+        "type": "uint32",
+        "indexed": true,
+        "internalType": "uint32"
+      },
+      {
+        "name": "lzReceivePerPayloadByteGas",
+        "type": "uint64",
+        "indexed": false,
+        "internalType": "uint64"
       }
     ],
     "anonymous": false
@@ -2907,9 +2927,9 @@ event Initialized(uint64 version);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Event with signature `LzReceiveBaseGasSet(uint32,uint128)` and selector `0x4d78ee37c9ff48b8ddb4f9e60746bb7647ca6c3cc51225594f7b528a0605731d`.
+    /**Event with signature `LzReceiveBaseGasSet(uint32,uint64)` and selector `0x3ef48f367039970bf87a27a88d8bd1b03fc1c2d110a7fea199c679ce3d9b3777`.
 ```solidity
-event LzReceiveBaseGasSet(uint32 indexed dstEid, uint128 lzReceiveBaseGas);
+event LzReceiveBaseGasSet(uint32 indexed dstEid, uint64 lzReceiveBaseGas);
 ```*/
     #[allow(
         non_camel_case_types,
@@ -2922,7 +2942,7 @@ event LzReceiveBaseGasSet(uint32 indexed dstEid, uint128 lzReceiveBaseGas);
         #[allow(missing_docs)]
         pub dstEid: u32,
         #[allow(missing_docs)]
-        pub lzReceiveBaseGas: u128,
+        pub lzReceiveBaseGas: u64,
     }
     #[allow(
         non_camel_case_types,
@@ -2934,7 +2954,7 @@ event LzReceiveBaseGasSet(uint32 indexed dstEid, uint128 lzReceiveBaseGas);
         use alloy::sol_types as alloy_sol_types;
         #[automatically_derived]
         impl alloy_sol_types::SolEvent for LzReceiveBaseGasSet {
-            type DataTuple<'a> = (alloy::sol_types::sol_data::Uint<128>,);
+            type DataTuple<'a> = (alloy::sol_types::sol_data::Uint<64>,);
             type DataToken<'a> = <Self::DataTuple<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
@@ -2942,11 +2962,11 @@ event LzReceiveBaseGasSet(uint32 indexed dstEid, uint128 lzReceiveBaseGas);
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Uint<32>,
             );
-            const SIGNATURE: &'static str = "LzReceiveBaseGasSet(uint32,uint128)";
+            const SIGNATURE: &'static str = "LzReceiveBaseGasSet(uint32,uint64)";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                77u8, 120u8, 238u8, 55u8, 201u8, 255u8, 72u8, 184u8, 221u8, 180u8, 249u8,
-                230u8, 7u8, 70u8, 187u8, 118u8, 71u8, 202u8, 108u8, 60u8, 197u8, 18u8,
-                37u8, 89u8, 79u8, 123u8, 82u8, 138u8, 6u8, 5u8, 115u8, 29u8,
+                62u8, 244u8, 143u8, 54u8, 112u8, 57u8, 151u8, 11u8, 248u8, 122u8, 39u8,
+                168u8, 141u8, 139u8, 209u8, 176u8, 63u8, 193u8, 194u8, 209u8, 16u8,
+                167u8, 254u8, 161u8, 153u8, 198u8, 121u8, 206u8, 61u8, 155u8, 55u8, 119u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -2979,7 +2999,7 @@ event LzReceiveBaseGasSet(uint32 indexed dstEid, uint128 lzReceiveBaseGas);
             fn tokenize_body(&self) -> Self::DataToken<'_> {
                 (
                     <alloy::sol_types::sol_data::Uint<
-                        128,
+                        64,
                     > as alloy_sol_types::SolType>::tokenize(&self.lzReceiveBaseGas),
                 )
             }
@@ -3023,9 +3043,9 @@ event LzReceiveBaseGasSet(uint32 indexed dstEid, uint128 lzReceiveBaseGas);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Event with signature `LzReceivePerHandleGasSet(uint32,uint128)` and selector `0xdcbae8961fd1cf3811fef5b8937defbda55c13537d31d2d6c7fa84a601a6a844`.
+    /**Event with signature `LzReceivePerHandleGasSet(uint32,uint64)` and selector `0x25aeec3268f1810b2b3d0c7b8eaadc98df276318210e6a375937fed56ea6436b`.
 ```solidity
-event LzReceivePerHandleGasSet(uint32 indexed dstEid, uint128 lzReceivePerHandleGas);
+event LzReceivePerHandleGasSet(uint32 indexed dstEid, uint64 lzReceivePerHandleGas);
 ```*/
     #[allow(
         non_camel_case_types,
@@ -3038,7 +3058,7 @@ event LzReceivePerHandleGasSet(uint32 indexed dstEid, uint128 lzReceivePerHandle
         #[allow(missing_docs)]
         pub dstEid: u32,
         #[allow(missing_docs)]
-        pub lzReceivePerHandleGas: u128,
+        pub lzReceivePerHandleGas: u64,
     }
     #[allow(
         non_camel_case_types,
@@ -3050,7 +3070,7 @@ event LzReceivePerHandleGasSet(uint32 indexed dstEid, uint128 lzReceivePerHandle
         use alloy::sol_types as alloy_sol_types;
         #[automatically_derived]
         impl alloy_sol_types::SolEvent for LzReceivePerHandleGasSet {
-            type DataTuple<'a> = (alloy::sol_types::sol_data::Uint<128>,);
+            type DataTuple<'a> = (alloy::sol_types::sol_data::Uint<64>,);
             type DataToken<'a> = <Self::DataTuple<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
@@ -3058,11 +3078,11 @@ event LzReceivePerHandleGasSet(uint32 indexed dstEid, uint128 lzReceivePerHandle
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Uint<32>,
             );
-            const SIGNATURE: &'static str = "LzReceivePerHandleGasSet(uint32,uint128)";
+            const SIGNATURE: &'static str = "LzReceivePerHandleGasSet(uint32,uint64)";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                220u8, 186u8, 232u8, 150u8, 31u8, 209u8, 207u8, 56u8, 17u8, 254u8, 245u8,
-                184u8, 147u8, 125u8, 239u8, 189u8, 165u8, 92u8, 19u8, 83u8, 125u8, 49u8,
-                210u8, 214u8, 199u8, 250u8, 132u8, 166u8, 1u8, 166u8, 168u8, 68u8,
+                37u8, 174u8, 236u8, 50u8, 104u8, 241u8, 129u8, 11u8, 43u8, 61u8, 12u8,
+                123u8, 142u8, 170u8, 220u8, 152u8, 223u8, 39u8, 99u8, 24u8, 33u8, 14u8,
+                106u8, 55u8, 89u8, 55u8, 254u8, 213u8, 110u8, 166u8, 67u8, 107u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -3095,7 +3115,7 @@ event LzReceivePerHandleGasSet(uint32 indexed dstEid, uint128 lzReceivePerHandle
             fn tokenize_body(&self) -> Self::DataToken<'_> {
                 (
                     <alloy::sol_types::sol_data::Uint<
-                        128,
+                        64,
                     > as alloy_sol_types::SolType>::tokenize(
                         &self.lzReceivePerHandleGas,
                     ),
@@ -3136,6 +3156,126 @@ event LzReceivePerHandleGasSet(uint32 indexed dstEid, uint128 lzReceivePerHandle
             #[inline]
             fn from(
                 this: &LzReceivePerHandleGasSet,
+            ) -> alloy_sol_types::private::LogData {
+                alloy_sol_types::SolEvent::encode_log_data(this)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Event with signature `LzReceivePerPayloadByteGasSet(uint32,uint64)` and selector `0x9365fb160bf0e4372e7c1b99983ee71b41cb5d94189d58d4097c5c5db0dc10eb`.
+```solidity
+event LzReceivePerPayloadByteGasSet(uint32 indexed dstEid, uint64 lzReceivePerPayloadByteGas);
+```*/
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    #[derive(Clone)]
+    pub struct LzReceivePerPayloadByteGasSet {
+        #[allow(missing_docs)]
+        pub dstEid: u32,
+        #[allow(missing_docs)]
+        pub lzReceivePerPayloadByteGas: u64,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[automatically_derived]
+        impl alloy_sol_types::SolEvent for LzReceivePerPayloadByteGasSet {
+            type DataTuple<'a> = (alloy::sol_types::sol_data::Uint<64>,);
+            type DataToken<'a> = <Self::DataTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type TopicList = (
+                alloy_sol_types::sol_data::FixedBytes<32>,
+                alloy::sol_types::sol_data::Uint<32>,
+            );
+            const SIGNATURE: &'static str = "LzReceivePerPayloadByteGasSet(uint32,uint64)";
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
+                147u8, 101u8, 251u8, 22u8, 11u8, 240u8, 228u8, 55u8, 46u8, 124u8, 27u8,
+                153u8, 152u8, 62u8, 231u8, 27u8, 65u8, 203u8, 93u8, 148u8, 24u8, 157u8,
+                88u8, 212u8, 9u8, 124u8, 92u8, 93u8, 176u8, 220u8, 16u8, 235u8,
+            ]);
+            const ANONYMOUS: bool = false;
+            #[allow(unused_variables)]
+            #[inline]
+            fn new(
+                topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
+                data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                Self {
+                    dstEid: topics.1,
+                    lzReceivePerPayloadByteGas: data.0,
+                }
+            }
+            #[inline]
+            fn check_signature(
+                topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
+            ) -> alloy_sol_types::Result<()> {
+                if topics.0 != Self::SIGNATURE_HASH {
+                    return Err(
+                        alloy_sol_types::Error::invalid_event_signature_hash(
+                            Self::SIGNATURE,
+                            topics.0,
+                            Self::SIGNATURE_HASH,
+                        ),
+                    );
+                }
+                Ok(())
+            }
+            #[inline]
+            fn tokenize_body(&self) -> Self::DataToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        64,
+                    > as alloy_sol_types::SolType>::tokenize(
+                        &self.lzReceivePerPayloadByteGas,
+                    ),
+                )
+            }
+            #[inline]
+            fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
+                (Self::SIGNATURE_HASH.into(), self.dstEid.clone())
+            }
+            #[inline]
+            fn encode_topics_raw(
+                &self,
+                out: &mut [alloy_sol_types::abi::token::WordToken],
+            ) -> alloy_sol_types::Result<()> {
+                if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
+                    return Err(alloy_sol_types::Error::Overrun);
+                }
+                out[0usize] = alloy_sol_types::abi::token::WordToken(
+                    Self::SIGNATURE_HASH,
+                );
+                out[1usize] = <alloy::sol_types::sol_data::Uint<
+                    32,
+                > as alloy_sol_types::EventTopic>::encode_topic(&self.dstEid);
+                Ok(())
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::private::IntoLogData for LzReceivePerPayloadByteGasSet {
+            fn to_log_data(&self) -> alloy_sol_types::private::LogData {
+                From::from(self)
+            }
+            fn into_log_data(self) -> alloy_sol_types::private::LogData {
+                From::from(&self)
+            }
+        }
+        #[automatically_derived]
+        impl From<&LzReceivePerPayloadByteGasSet> for alloy_sol_types::private::LogData {
+            #[inline]
+            fn from(
+                this: &LzReceivePerPayloadByteGasSet,
             ) -> alloy_sol_types::private::LogData {
                 alloy_sol_types::SolEvent::encode_log_data(this)
             }
@@ -6914,6 +7054,8 @@ function transferOwnership(address newOwner) external;
         #[allow(missing_docs)]
         LzReceivePerHandleGasSet(LzReceivePerHandleGasSet),
         #[allow(missing_docs)]
+        LzReceivePerPayloadByteGasSet(LzReceivePerPayloadByteGasSet),
+        #[allow(missing_docs)]
         OwnershipTransferred(OwnershipTransferred),
         #[allow(missing_docs)]
         PeerSet(PeerSet),
@@ -6938,9 +7080,14 @@ function transferOwnership(address newOwner) external;
                 106u8, 66u8, 227u8, 95u8, 0u8, 197u8, 10u8, 84u8, 185u8, 139u8,
             ],
             [
-                77u8, 120u8, 238u8, 55u8, 201u8, 255u8, 72u8, 184u8, 221u8, 180u8, 249u8,
-                230u8, 7u8, 70u8, 187u8, 118u8, 71u8, 202u8, 108u8, 60u8, 197u8, 18u8,
-                37u8, 89u8, 79u8, 123u8, 82u8, 138u8, 6u8, 5u8, 115u8, 29u8,
+                37u8, 174u8, 236u8, 50u8, 104u8, 241u8, 129u8, 11u8, 43u8, 61u8, 12u8,
+                123u8, 142u8, 170u8, 220u8, 152u8, 223u8, 39u8, 99u8, 24u8, 33u8, 14u8,
+                106u8, 55u8, 89u8, 55u8, 254u8, 213u8, 110u8, 166u8, 67u8, 107u8,
+            ],
+            [
+                62u8, 244u8, 143u8, 54u8, 112u8, 57u8, 151u8, 11u8, 248u8, 122u8, 39u8,
+                168u8, 141u8, 139u8, 209u8, 176u8, 63u8, 193u8, 194u8, 209u8, 16u8,
+                167u8, 254u8, 161u8, 153u8, 198u8, 121u8, 206u8, 61u8, 155u8, 55u8, 119u8,
             ],
             [
                 139u8, 224u8, 7u8, 156u8, 83u8, 22u8, 89u8, 20u8, 19u8, 68u8, 205u8,
@@ -6951,6 +7098,11 @@ function transferOwnership(address newOwner) external;
                 142u8, 99u8, 15u8, 175u8, 60u8, 71u8, 152u8, 2u8, 112u8, 176u8, 142u8,
                 34u8, 248u8, 69u8, 209u8, 7u8, 78u8, 93u8, 239u8, 104u8, 220u8, 241u8,
                 158u8, 253u8, 19u8, 69u8, 208u8, 112u8, 54u8, 10u8, 74u8, 165u8,
+            ],
+            [
+                147u8, 101u8, 251u8, 22u8, 11u8, 240u8, 228u8, 55u8, 46u8, 124u8, 27u8,
+                153u8, 152u8, 62u8, 231u8, 27u8, 65u8, 203u8, 93u8, 148u8, 24u8, 157u8,
+                88u8, 212u8, 9u8, 124u8, 92u8, 93u8, 176u8, 220u8, 16u8, 235u8,
             ],
             [
                 158u8, 249u8, 31u8, 222u8, 8u8, 144u8, 36u8, 122u8, 177u8, 167u8, 80u8,
@@ -6967,17 +7119,12 @@ function transferOwnership(address newOwner) external;
                 19u8, 244u8, 73u8, 158u8, 31u8, 38u8, 51u8, 167u8, 181u8, 147u8, 99u8,
                 33u8, 238u8, 209u8, 205u8, 174u8, 182u8, 17u8, 81u8, 129u8, 210u8,
             ],
-            [
-                220u8, 186u8, 232u8, 150u8, 31u8, 209u8, 207u8, 56u8, 17u8, 254u8, 245u8,
-                184u8, 147u8, 125u8, 239u8, 189u8, 165u8, 92u8, 19u8, 83u8, 125u8, 49u8,
-                210u8, 214u8, 199u8, 250u8, 132u8, 166u8, 1u8, 166u8, 168u8, 68u8,
-            ],
         ];
     }
     #[automatically_derived]
     impl alloy_sol_types::SolEventInterface for HandlesReceiverEvents {
         const NAME: &'static str = "HandlesReceiverEvents";
-        const COUNT: usize = 9usize;
+        const COUNT: usize = 10usize;
         fn decode_raw_log(
             topics: &[alloy_sol_types::Word],
             data: &[u8],
@@ -7039,6 +7186,15 @@ function transferOwnership(address newOwner) external;
                         .map(Self::LzReceivePerHandleGasSet)
                 }
                 Some(
+                    <LzReceivePerPayloadByteGasSet as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
+                ) => {
+                    <LzReceivePerPayloadByteGasSet as alloy_sol_types::SolEvent>::decode_raw_log(
+                            topics,
+                            data,
+                        )
+                        .map(Self::LzReceivePerPayloadByteGasSet)
+                }
+                Some(
                     <OwnershipTransferred as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
                 ) => {
                     <OwnershipTransferred as alloy_sol_types::SolEvent>::decode_raw_log(
@@ -7090,6 +7246,9 @@ function transferOwnership(address newOwner) external;
                 Self::LzReceivePerHandleGasSet(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
+                Self::LzReceivePerPayloadByteGasSet(inner) => {
+                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
+                }
                 Self::OwnershipTransferred(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
@@ -7119,6 +7278,9 @@ function transferOwnership(address newOwner) external;
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
                 Self::LzReceivePerHandleGasSet(inner) => {
+                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
+                }
+                Self::LzReceivePerPayloadByteGasSet(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
                 Self::OwnershipTransferred(inner) => {
@@ -7472,6 +7634,12 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             &self,
         ) -> alloy_contract::Event<&P, LzReceivePerHandleGasSet, N> {
             self.event_filter::<LzReceivePerHandleGasSet>()
+        }
+        ///Creates a new event filter for the [`LzReceivePerPayloadByteGasSet`] event.
+        pub fn LzReceivePerPayloadByteGasSet_filter(
+            &self,
+        ) -> alloy_contract::Event<&P, LzReceivePerPayloadByteGasSet, N> {
+            self.event_filter::<LzReceivePerPayloadByteGasSet>()
         }
         ///Creates a new event filter for the [`OwnershipTransferred`] event.
         pub fn OwnershipTransferred_filter(

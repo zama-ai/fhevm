@@ -117,7 +117,7 @@ contract HandlesListConfidentialOApp is Ownable2Step, IDstApp {
     function generateAndSendHandlesList(
         uint32 dstEid,
         uint256 countHandles,
-        uint128 lzComposeGas
+        uint64 lzComposeGas
     ) external payable returns (MessagingReceipt memory receipt) {
         if (countHandles == 0) revert EmptyHandleList();
 
@@ -148,13 +148,13 @@ contract HandlesListConfidentialOApp is Ownable2Step, IDstApp {
     function quoteGenerateAndSendHandlesList(
         uint32 dstEid,
         uint256 countHandles,
-        uint128 lzComposeGas
+        uint64 lzComposeGas
     ) external view returns (MessagingFee memory fee) {
         bytes32 dstApp = _peers[dstEid];
         if (dstApp == bytes32(0)) revert PeerNotSet(dstEid);
         // Mirror the real send: the payload is the abi-encoded caller (32 bytes) and the
-        // message is otherwise measured by `handleList.length`. A placeholder address and
-        // zero handles of the right length quote identically to the real call.
+        // message is otherwise measured by `handleList.length`. An array of
+        // null bytes32 handles of the right length quote identically to the real call.
         bytes memory payload = abi.encode(msg.sender);
         bytes32[] memory placeholder = new bytes32[](countHandles);
         fee = confidentialBridge.quote(dstEid, address(this), dstApp, payload, placeholder, lzComposeGas);

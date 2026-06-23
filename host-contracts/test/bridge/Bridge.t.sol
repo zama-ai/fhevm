@@ -168,6 +168,7 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
     function test_LzReceiveGas_DefaultsWhenUnset() public view {
         assertEq(srcBridge.getLzReceiveBaseGas(DST_EID), srcBridge.LZ_RECEIVE_BASE_GAS_DEFAULT());
         assertEq(srcBridge.getLzReceivePerHandleGas(DST_EID), srcBridge.LZ_RECEIVE_PER_HANDLE_GAS_DEFAULT());
+        assertEq(srcBridge.getLzReceivePerPayloadByteGas(DST_EID), srcBridge.LZ_RECEIVE_PER_PAYLOAD_BYTE_DEFAULT());
     }
 
     function test_SetLzReceiveBaseGas_OnlyOwner() public {
@@ -178,6 +179,11 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
     function test_SetLzReceivePerHandleGas_OnlyOwner() public {
         vm.expectRevert();
         srcBridge.setLzReceivePerHandleGas(DST_EID, 7_000);
+    }
+
+    function test_SetLzReceivePerPayloadByteGas_OnlyOwner() public {
+        vm.expectRevert();
+        srcBridge.setLzReceivePerPayloadByteGas(DST_EID, 32);
     }
 
     function test_SetLzReceiveBaseGas_OverridesEmitsAndClears() public {
@@ -208,12 +214,28 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
         assertEq(srcBridge.getLzReceivePerHandleGas(DST_EID), srcBridge.LZ_RECEIVE_PER_HANDLE_GAS_DEFAULT());
     }
 
+    function test_SetLzReceivePerPayloadByteGas_OverridesEmitsAndClears() public {
+        vm.expectEmit(true, false, false, true, address(srcBridge));
+        emit LzReceivePerPayloadByteGasSet(DST_EID, 32);
+        vm.prank(owner);
+        srcBridge.setLzReceivePerPayloadByteGas(DST_EID, 32);
+        assertEq(srcBridge.getLzReceivePerPayloadByteGas(DST_EID), 32);
+
+        // Other eids are unaffected and still resolve to the default.
+        assertEq(srcBridge.getLzReceivePerPayloadByteGas(SRC_EID), srcBridge.LZ_RECEIVE_PER_PAYLOAD_BYTE_DEFAULT());
+
+        // Setting back to 0 clears the override and restores the default.
+        vm.prank(owner);
+        srcBridge.setLzReceivePerPayloadByteGas(DST_EID, 0);
+        assertEq(srcBridge.getLzReceivePerPayloadByteGas(DST_EID), srcBridge.LZ_RECEIVE_PER_PAYLOAD_BYTE_DEFAULT());
+    }
+
     function test_Send_RevertsOnUnknownDstEid() public {
         bytes32[] memory handleList = new bytes32[](1);
         handleList[0] = _makeHandle(0);
         vm.prank(srcApp);
         vm.expectRevert(abi.encodeWithSelector(HandlesSender.UnknownDstEid.selector, uint32(99)));
-        srcBridge.send{value: 0}(uint32(99), _addressToBytes32(address(dstApp)), "", handleList, uint128(0));
+        srcBridge.send{value: 0}(uint32(99), _addressToBytes32(address(dstApp)), "", handleList, uint64(0));
     }
 
     function test_Send_RevertsAboveMaxHandles() public {
@@ -222,7 +244,7 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
         for (uint256 i = 0; i < handleList.length; i++) handleList[i] = _makeHandle(i);
         vm.prank(srcApp);
         vm.expectRevert(abi.encodeWithSelector(HandlesSender.TooManyHandles.selector, cap + 1, cap));
-        srcBridge.send{value: 0}(DST_EID, _addressToBytes32(address(dstApp)), "", handleList, uint128(0));
+        srcBridge.send{value: 0}(DST_EID, _addressToBytes32(address(dstApp)), "", handleList, uint64(0));
     }
 
     function test_Send_RevertsOnHandleNotAllowed() public {
@@ -231,7 +253,7 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
         handleList[0] = h;
         vm.prank(srcApp);
         vm.expectRevert(abi.encodeWithSelector(HandlesSender.HandleNotAllowed.selector, h, srcApp));
-        srcBridge.send{value: 0}(DST_EID, _addressToBytes32(address(dstApp)), "", handleList, uint128(0));
+        srcBridge.send{value: 0}(DST_EID, _addressToBytes32(address(dstApp)), "", handleList, uint64(0));
     }
 
     ////////////////////////////////////////////////////////////////////////////////
@@ -256,7 +278,7 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
             _addressToBytes32(address(dstApp)),
             payload,
             handleList,
-            uint128(200_000)
+            uint64(200_000)
         );
 
         vm.recordLogs();
@@ -266,7 +288,7 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
             _addressToBytes32(address(dstApp)),
             payload,
             handleList,
-            uint128(200_000)
+            uint64(200_000)
         );
 
         // Inspect logs: BridgeHandle is emitted once per handle, with the receipt's GUID.
