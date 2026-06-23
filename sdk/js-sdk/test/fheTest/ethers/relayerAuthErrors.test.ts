@@ -13,8 +13,9 @@ import { fetchFheEncryptionKeySource } from '../../../src/core/modules/relayer/m
 //
 // These hit the real hosted relayer `v2/keyurl` endpoint with deliberately
 // invalid credentials, so they only run against Zama-hosted endpoints
-// (*.zama.org) that enforce auth at the edge. Local/self-hosted relayers that
-// don't enforce auth are skipped.
+// (*.zama.org) that enforce auth at the edge. Sepolia/testnet currently serves
+// key metadata without auth, and local/self-hosted relayers may do the same, so
+// those environments are skipped.
 //
 // CHAIN=testnet npx vitest run --config test/fheTest/vitest.config.ts ethers/relayerAuthErrors.test.ts
 // CHAIN=mainnet npx vitest run --config test/fheTest/vitest.config.ts ethers/relayerAuthErrors.test.ts
@@ -31,8 +32,9 @@ function isZamaHostedRelayer(relayerUrl: string): boolean {
 
 const config: FheTestEthersConfig = getEthersTestConfig();
 const relayerUrl: string = config.fhevmChain.fhevm.relayerUrl;
+const shouldRunAuthErrorTests = isZamaHostedRelayer(relayerUrl) && config.chainName === 'mainnet';
 
-describe.runIf(isZamaHostedRelayer(relayerUrl))('Relayer auth-error surfacing (keyurl)', () => {
+describe.runIf(shouldRunAuthErrorTests)('Relayer auth-error surfacing (keyurl)', () => {
   let relayerClient: { relayerUrl: string; chainId: number };
 
   beforeAll(() => {
