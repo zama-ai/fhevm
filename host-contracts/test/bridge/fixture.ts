@@ -1,8 +1,13 @@
-import { HardhatEthersSigner } from '@nomicfoundation/hardhat-ethers/signers';
 import { ethers, upgrades } from 'hardhat';
 
 import type { ConfidentialBridge, ConfidentialOFT } from '../../types';
 import { getSigners } from '../signers';
+
+// The bridge intentionally opts into several OZ upgrade-safety exceptions (immutable
+// LZ endpoint, constructor, `_unchained` initializers — see `_deployBridgeProxy`).
+// Each fixture deployment re-emits the same acknowledged advisories, which flood the
+// test output across the many tests that use this fixture. Silence them once here.
+upgrades.silenceWarnings();
 
 export const SRC_EID = 1;
 export const SRC_CHAIN_ID = 3535n;
@@ -12,7 +17,7 @@ export const DST_CHAIN_ID = 4242n;
 /**
  * Deploys two LayerZero V2 endpoint mocks (one per eid) and one ConfidentialBridge per
  * endpoint, each behind a UUPS proxy. The bridge merges the source-side (`send`) and
- * destination-side (`_lzReceive` + lzCompose) roles into a single deployed contract; in
+ * destination-side (`_lzReceive` + `lzCompose) roles into a single deployed contract; in
  * this two-endpoint topology each instance plays one role. Peers are configured
  * bidirectionally and the source-side dstEid → dstChainId map is seeded.
  *
@@ -65,11 +70,7 @@ export async function deployBridgeFixture() {
  * empty proxy during `npm run compile` (see `task:deployEmptyUUPSProxies`). The
  * bridge's operational owner (`bridgeOwner`) can be a different account.
  */
-async function _deployBridgeProxy(
-  lzEndpoint: string,
-  dstEids: number[],
-  dstChainIds: bigint[],
-): Promise<ConfidentialBridge> {
+async function _deployBridgeProxy(lzEndpoint: string, dstEids: number[], dstChainIds: bigint[]): Promise {
   const aclOwner = new ethers.Wallet(process.env.DEPLOYER_PRIVATE_KEY!).connect(ethers.provider);
 
   const emptyFactory = await ethers.getContractFactory('EmptyUUPSProxy', aclOwner);
