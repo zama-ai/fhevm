@@ -18,6 +18,7 @@ export function generateSolidityImplLib(operators: Operator[], fheTypeDotSol: st
   // $${CoprocessorInterfaceOperators}$$
   // $${ImplOperators}$$
   // $${ImplBridgeImports}$$
+  // $${ImplBridgeACLGetter}$$
   // $${ImplBridge}$$
   const file = resolveTemplatePath('Impl.sol-template');
   const template = readFileSync(file, 'utf8');

@@ -29,6 +29,8 @@ contract ConfidentialOFTViaLib is Ownable2Step, ConfidentialOAppSender, Confiden
     event Received(uint32 indexed srcEid, address indexed recipient);
 
     error UnauthorizedUseOfEncryptedAmount(euint64 amount, address sender);
+    /// @notice `mintComposeGas` is 0, so the destination mint callback would never run.
+    error MintComposeGasRequired();
 
     mapping(address holder => euint64 balance) private _balances;
 
@@ -62,6 +64,9 @@ contract ConfidentialOFTViaLib is Ownable2Step, ConfidentialOAppSender, Confiden
         uint128 mintComposeGas
     ) external payable returns (MessagingReceipt memory) {
         if (!FHE.isSenderAllowed(amount)) revert UnauthorizedUseOfEncryptedAmount(amount, msg.sender);
+        // With empty LayerZero options the bridge sizes the destination mint (lzCompose) leg
+        // from `mintComposeGas`; a value of 0 means the mint callback never runs.
+        if (mintComposeGas == 0) revert MintComposeGasRequired();
 
         euint64 actualAmount = _burn(msg.sender, amount);
 
