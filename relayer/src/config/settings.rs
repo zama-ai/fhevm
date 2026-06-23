@@ -62,7 +62,6 @@ impl GatewayConfig {
         self.contracts.validate()?;
         self.readiness_checker.public_decrypt.validate()?;
         self.readiness_checker.user_decrypt.validate()?;
-        self.readiness_checker.delegated_user_decrypt.validate()?;
         self.tx_engine
             .tx_throttlers
             .input_proof
@@ -280,7 +279,6 @@ pub struct ReadinessCheckConfig {
     pub gw_ciphertext_check: GwCiphertextCheckConfig,
     pub public_decrypt: PublicDecryptQueueSettings,
     pub user_decrypt: UserDecryptQueueSettings,
-    pub delegated_user_decrypt: UserDecryptQueueSettings,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -544,6 +542,12 @@ pub struct ContractConfig {
     pub user_decrypt_shares_threshold: u32,
 }
 
+/// User-decryption signature check configuration.
+#[derive(Debug, Deserialize, Clone)]
+pub struct UserDecryptSignatureCheckConfig {
+    pub erc1271_gas_limit: u64,
+}
+
 impl ContractConfig {
     pub fn validate(&self) -> Result<(), AppConfigError> {
         if self.user_decrypt_shares_threshold < 1 {
@@ -603,6 +607,8 @@ pub struct Settings {
     pub host_chains: Vec<HostChainConfig>,
     /// ProtocolConfig contract settings for dynamic threshold resolution
     pub protocol_config: ProtocolConfigSettings,
+    /// User-decryption signature check configuration
+    pub user_decrypt_signature_check: UserDecryptSignatureCheckConfig,
 }
 
 // Error type for application-specific configuration errors

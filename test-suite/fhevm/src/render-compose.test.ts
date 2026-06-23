@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import YAML from "yaml";
 
-import { generateComposeOverrides, loadMergedComposeDoc } from "./generate/compose";
+import { generateComposeOverrides, loadMergedComposeDoc, serviceNameList } from "./generate/compose";
 import { TEMPLATE_COMPOSE_DIR, composePath, envPath } from "./layout";
 import { presetBundle } from "./resolve/target";
 import { parseCoprocessorScenario, resolveScenarioFile } from "./scenario/resolve";
@@ -72,6 +72,12 @@ const relayerOverrideState: State = {
   overrides: [{ group: "relayer" }],
 };
 
+const listenerCoreOverrideState: State = {
+  ...state,
+  overrides: [{ group: "listener-core" }],
+  scenario: testDefaultScenario(),
+};
+
 const gatewayContractsOverrideState: State = {
   ...state,
   overrides: [{ group: "gateway-contracts" }],
@@ -112,6 +118,7 @@ describe("render-compose", () => {
       const gatewaySc = await loadMergedComposeDoc("gateway-sc");
       const gatewayMockedPayment = await loadMergedComposeDoc("gateway-mocked-payment");
       const relayer = await loadMergedComposeDoc("relayer");
+      const listenerCore = await loadMergedComposeDoc("listener-core");
       const testSuite = await loadMergedComposeDoc("test-suite");
       expect(coprocessor.services["coprocessor-host-listener"]?.build).toBeUndefined();
       expect(connector.services["kms-connector-gw-listener"]?.build).toBeUndefined();
@@ -119,6 +126,7 @@ describe("render-compose", () => {
       expect(gatewaySc.services["gateway-sc-deploy"]?.build).toBeUndefined();
       expect(gatewayMockedPayment.services["gateway-deploy-mocked-zama-oft"]?.build).toBeUndefined();
       expect(relayer.services.relayer?.build).toBeUndefined();
+      expect(listenerCore.services["listener-publisher-for-anvil"]?.build).toBeUndefined();
       expect(testSuite.services["test-suite-e2e-debug"]?.build).toBeUndefined();
     });
   });
@@ -126,6 +134,27 @@ describe("render-compose", () => {
   test("exports the active state dir to compose env", async () => {
     await withTempStateDir(async (stateDir) => {
       expect((await composeEnv("coprocessor")).FHEVM_STATE_DIR).toBe(stateDir);
+    });
+  });
+
+  test("persists kms-core private vault across container recreates", async () => {
+    const doc = await loadMergedComposeDoc("core");
+    const volumes = doc.services["kms-core"]?.volumes as string[] | undefined;
+    expect(doc.services["kms-core"]?.user).toBe("root");
+    expect(volumes).toContain("fhevm_kms_core_keys:/app/kms/core/service/keys");
+  });
+
+  test("renders listener-core local override for the publisher only", async () => {
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      await writeFile(envPath("coprocessor"), "\n");
+      await generateComposeOverrides(listenerCoreOverrideState, stackSpecForState(listenerCoreOverrideState));
+      const doc = YAML.parse(await readFile(composePath("listener-core"), "utf8")) as {
+        services: Record<string, { image?: string; build?: unknown }>;
+      };
+      expect(doc.services["listener-publisher-for-anvil"]?.image).toContain(":fhevm-local");
+      expect(doc.services["listener-publisher-for-anvil"]?.build).toBeTruthy();
+      expect(doc.services["listener-redis"]).toBeUndefined();
     });
   });
 
@@ -143,9 +172,26 @@ describe("render-compose", () => {
       expect(doc.services["coprocessor1-host-listener"]?.image).toContain(":fhevm-local-i1");
       expect(doc.services["coprocessor1-host-listener-poller"]?.image).toContain(":fhevm-local-i1");
       expect(String((doc.services["coprocessor-db-migration"]?.command as string[] | undefined)?.[0] ?? "")).toContain(
-        "/initialize_db.sh && ( [ ! -x /insert_test_host_chain.sh ] || /insert_test_host_chain.sh )",
+        "/initialize_db.sh",
       );
     });
+  });
+
+  test("does not request host-listener consumer services for legacy coprocessor bundles", () => {
+    const legacyState: State = {
+      ...state,
+      versions: {
+        ...state.versions,
+        env: {
+          ...state.versions.env,
+          COPROCESSOR_HOST_LISTENER_VERSION: "v0.12.2",
+        },
+      },
+    };
+
+    const services = serviceNameList(legacyState, "coprocessor");
+    expect(services).not.toContain("coprocessor-host-listener-consumer");
+    expect(services).not.toContain("coprocessor1-host-listener-consumer");
   });
 
   test("renders inherited two-of-two instances with local build tags when coprocessor build is active", async () => {
@@ -259,6 +305,7 @@ describe("render-compose", () => {
     const cmd = (template.services["host-sc-deploy"]?.command ?? []).join(" ");
     expect(cmd).toContain("task:deployAllHostContracts");
     expect(cmd).toContain("$${HOST_SC_DEPLOY_KMS_GENERATION_ARGS}");
+    expect(cmd).toContain("$${HOST_SC_DEPLOY_PROTOCOL_CONFIG_ARGS}");
   });
 
   test("merges instance env into list-form service environments without dropping KEY_ID", async () => {

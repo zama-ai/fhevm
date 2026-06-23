@@ -146,7 +146,6 @@ struct Conf {
     /// Time window over which `--drift-auto-revert-max-recent-attempts` is counted.
     #[arg(long, default_value = "30m", value_parser = parse_duration)]
     drift_auto_revert_recent_attempts_window: Duration,
-
 }
 
 fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()> {
@@ -225,17 +224,15 @@ async fn main() -> anyhow::Result<()> {
         gcs_mode: false,
     };
 
-    config.gcs_mode = match fhevm_engine_common::versioning::resolve_gcs_mode(
-        config.database_url.as_str(),
-    )
-    .await
-    {
-        Ok(gcs_mode) => gcs_mode,
-        Err(err) => {
-            error!(error = %err, "Failed to resolve gcs_mode from versioning table");
-            std::process::exit(1);
-        }
-    };
+    config.gcs_mode =
+        match fhevm_engine_common::versioning::resolve_gcs_mode(config.database_url.as_str()).await
+        {
+            Ok(gcs_mode) => gcs_mode,
+            Err(err) => {
+                error!(error = %err, "Failed to resolve gcs_mode from versioning table");
+                std::process::exit(1);
+            }
+        };
 
     let gw_listener = std::sync::Arc::new(GatewayListener::new(
         conf.input_verification_address,

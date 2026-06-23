@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import {Vm} from "forge-std/Test.sol";
 import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
 import {KMSGeneration} from "@fhevm-host-contracts/contracts/KMSGeneration.sol";
@@ -26,12 +25,6 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
     KMSGeneration internal kmsGeneration;
     KMSGenerationHarness internal kmsGenerationHarness;
     ProtocolConfig internal protocolConfig;
-
-    struct MigrationFixture {
-        address migrateProxy;
-        address kmsGenImpl;
-        KMSGeneration.MigrationState state;
-    }
 
     // Counter bases (matching contract)
     uint256 internal constant PREP_KEYGEN_COUNTER_BASE = uint256(3) << 248;
@@ -91,26 +84,6 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
     // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
-
-    function _assertNoEventEmitted(bytes32 eventSelector, string memory message) internal {
-        Vm.Log[] memory logs = vm.getRecordedLogs();
-        for (uint256 i = 0; i < logs.length; i++) {
-            assertTrue(logs[i].topics[0] != eventSelector, message);
-        }
-    }
-
-    function _deployMigrationProxyAndState()
-        internal
-        returns (address migrateProxy, address kmsGenImpl, KMSGeneration.MigrationState memory state)
-    {
-        (migrateProxy, kmsGenImpl) = _deployMigrationProxy();
-        state = _defaultMigrationState(migrateProxy);
-    }
-
-    function _deployMigrationFixture() internal returns (MigrationFixture memory fixture) {
-        (fixture.migrateProxy, fixture.kmsGenImpl) = _deployMigrationProxy();
-        fixture.state = _defaultMigrationState(fixture.migrateProxy);
-    }
 
     function _computeDomainSeparator(address verifier) internal view returns (bytes32) {
         return
@@ -322,86 +295,6 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         assertTrue(kmsGeneration.isRequestDone(crsId));
     }
 
-    function _defaultMigrationState(
-        address verifier
-    ) internal view returns (KMSGeneration.MigrationState memory state) {
-        IKMSGeneration.KeyDigest[] memory keyDigests = _mockKeyDigests();
-        uint256 contextId = protocolConfig.getCurrentKmsContextId();
-        bytes memory extraData = _buildExtraDataForContextId(contextId);
-        uint256 activePrepKeygenId = PREP_KEYGEN_COUNTER_BASE + 1;
-        uint256 activeKeyId = KEY_COUNTER_BASE + 1;
-        uint256 activeCrsId = CRS_COUNTER_BASE + 1;
-
-        address[] memory keyTxSenders = new address[](1);
-        keyTxSenders[0] = kmsTxSender0;
-        address[] memory crsTxSenders = new address[](1);
-        crsTxSenders[0] = kmsTxSender0;
-        address[] memory prepTxSenders = new address[](1);
-        prepTxSenders[0] = kmsTxSender0;
-
-        state = KMSGeneration.MigrationState({
-            prepKeygenCounter: PREP_KEYGEN_COUNTER_BASE + 1,
-            keyCounter: KEY_COUNTER_BASE + 1,
-            crsCounter: CRS_COUNTER_BASE + 1,
-            activeKeyId: activeKeyId,
-            activeCrsId: activeCrsId,
-            activePrepKeygenId: activePrepKeygenId,
-            activeKeyDigests: keyDigests,
-            activeCrsDigest: hex"deadbeef",
-            keyConsensusTxSenders: keyTxSenders,
-            keyConsensusDigest: _hashKeygen(verifier, activePrepKeygenId, activeKeyId, keyDigests, extraData),
-            crsConsensusTxSenders: crsTxSenders,
-            crsConsensusDigest: _hashCrsgen(verifier, activeCrsId, 4096, hex"deadbeef", extraData),
-            prepKeygenConsensusTxSenders: prepTxSenders,
-            prepKeygenConsensusDigest: _hashPrepKeygen(verifier, activePrepKeygenId, extraData),
-            crsMaxBitLength: 4096,
-            prepKeygenParamsType: IKMSGeneration.ParamsType.Default,
-            crsParamsType: IKMSGeneration.ParamsType.Default,
-            contextId: contextId
-        });
-    }
-
-    function _deployMigrationProxy() internal returns (address migrateProxy, address kmsGenImpl) {
-        address emptyImpl = address(new EmptyUUPSProxy());
-        migrateProxy = address(new DeployableERC1967Proxy(emptyImpl, abi.encodeCall(EmptyUUPSProxy.initialize, ())));
-        kmsGenImpl = address(new KMSGeneration());
-    }
-
-    function _deployMigratedKmsGeneration(
-        KMSGeneration.MigrationState memory state
-    ) internal returns (KMSGeneration migrated) {
-        (address migrateProxy, address kmsGenImpl) = _deployMigrationProxy();
-        _upgradeMigrationProxy(migrateProxy, kmsGenImpl, state);
-        migrated = KMSGeneration(migrateProxy);
-    }
-
-    function _deployMigratedKmsGeneration()
-        internal
-        returns (KMSGeneration migrated, KMSGeneration.MigrationState memory state)
-    {
-        (address migrateProxy, address kmsGenImpl) = _deployMigrationProxy();
-        state = _defaultMigrationState(migrateProxy);
-        _upgradeMigrationProxy(migrateProxy, kmsGenImpl, state);
-        migrated = KMSGeneration(migrateProxy);
-    }
-
-    function _upgradeMigrationProxy(
-        address migrateProxy,
-        address kmsGenImpl,
-        KMSGeneration.MigrationState memory state
-    ) internal {
-        vm.prank(owner);
-        EmptyUUPSProxy(migrateProxy).upgradeToAndCall(
-            kmsGenImpl,
-            abi.encodeCall(KMSGeneration.initializeFromMigration, (state))
-        );
-    }
-
-    function _expectMigrationRevert(MigrationFixture memory fixture, bytes memory expectedRevert) internal {
-        vm.expectRevert(expectedRevert);
-        _upgradeMigrationProxy(fixture.migrateProxy, fixture.kmsGenImpl, fixture.state);
-    }
-
     function _assumeNotCurrentKmsTxSender(address caller) internal view {
         vm.assume(!protocolConfig.isKmsTxSenderForContext(protocolConfig.getCurrentKmsContextId(), caller));
     }
@@ -411,7 +304,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
     // -----------------------------------------------------------------------
 
     function test_initSuccess() public view {
-        assertEq(kmsGeneration.getVersion(), "KMSGeneration v0.1.0");
+        assertEq(kmsGeneration.getVersion(), "KMSGeneration v0.2.0");
         assertEq(kmsGeneration.getActiveKeyId(), 0);
         assertEq(kmsGeneration.getActiveCrsId(), 0);
         assertEq(kmsGeneration.getKeyCounter(), KEY_COUNTER_BASE);
@@ -422,13 +315,6 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         vm.prank(owner);
         vm.expectRevert(UUPSUpgradeableEmptyProxy.NotInitializingFromEmptyProxy.selector);
         kmsGeneration.initializeFromEmptyProxy();
-    }
-
-    function test_revertMigrationAfterInit() public {
-        KMSGeneration.MigrationState memory state;
-        vm.prank(owner);
-        vm.expectRevert(UUPSUpgradeableEmptyProxy.NotInitializingFromEmptyProxy.selector);
-        kmsGeneration.initializeFromMigration(state);
     }
 
     function testFuzz_revertExtractContextIdMalformedV1ExtraData(bytes calldata malformedSuffix) public {
@@ -1195,220 +1081,27 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
     }
 
     // -----------------------------------------------------------------------
-    // Upgrade (V1 -> V2)
+    // Upgrade (V2 -> V3)
     // -----------------------------------------------------------------------
 
-    function test_upgradeToV2() public {
+    function test_upgradeToV3() public {
         // Verify initial version
-        assertEq(kmsGeneration.getVersion(), "KMSGeneration v0.1.0");
+        assertEq(kmsGeneration.getVersion(), "KMSGeneration v0.2.0");
         assertEq(kmsGeneration.getActiveKeyId(), 0);
         assertEq(kmsGeneration.getActiveCrsId(), 0);
 
-        // Deploy the V2 implementation and upgrade
-        address v2Impl = address(new KMSGenerationUpgradedExample());
+        // Deploy the upgraded implementation and upgrade
+        address v3Impl = address(new KMSGenerationUpgradedExample());
         vm.prank(owner);
-        kmsGeneration.upgradeToAndCall(v2Impl, "");
+        kmsGeneration.upgradeToAndCall(v3Impl, "");
 
         // Verify new version
         string memory newVersion = kmsGeneration.getVersion();
-        assertEq(newVersion, "KMSGeneration v0.2.0");
+        assertEq(newVersion, "KMSGeneration v0.3.0");
 
         // Verify state is preserved
         assertEq(kmsGeneration.getActiveKeyId(), 0);
         assertEq(kmsGeneration.getActiveCrsId(), 0);
-    }
-
-    // -----------------------------------------------------------------------
-    // Migration reinitializer
-    // -----------------------------------------------------------------------
-
-    function test_migrationReinitializer() public {
-        (KMSGeneration migrated, ) = _deployMigratedKmsGeneration();
-        assertEq(migrated.getVersion(), "KMSGeneration v0.1.0");
-        assertEq(migrated.getActiveKeyId(), KEY_COUNTER_BASE + 1);
-        assertEq(migrated.getActiveCrsId(), CRS_COUNTER_BASE + 1);
-
-        // Verify material lookups work post-migration
-        (string[] memory keyUrls, IKMSGeneration.KeyDigest[] memory migratedDigests) = migrated.getKeyMaterials(
-            KEY_COUNTER_BASE + 1
-        );
-        assertEq(keyUrls.length, 1);
-        assertEq(keyUrls[0], "https://s0.example.com");
-        assertEq(migratedDigests.length, 1);
-
-        (string[] memory crsUrls, bytes memory crsDigest) = migrated.getCrsMaterials(CRS_COUNTER_BASE + 1);
-        assertEq(crsUrls.length, 1);
-        assertEq(crsUrls[0], "https://s0.example.com");
-        assertEq(crsDigest, hex"deadbeef");
-
-        // Verify params types
-        assertEq(uint256(migrated.getKeyParamsType(KEY_COUNTER_BASE + 1)), uint256(IKMSGeneration.ParamsType.Default));
-        assertEq(uint256(migrated.getCrsParamsType(CRS_COUNTER_BASE + 1)), uint256(IKMSGeneration.ParamsType.Default));
-
-        // Verify consensus tx senders
-        address[] memory keyConsTxSenders = migrated.getConsensusTxSenders(KEY_COUNTER_BASE + 1);
-        assertEq(keyConsTxSenders.length, 1);
-        assertEq(keyConsTxSenders[0], kmsTxSender0);
-    }
-
-    function test_migrationRestoresDuplicateSignerProtection() public {
-        (KMSGeneration migrated, KMSGeneration.MigrationState memory state) = _deployMigratedKmsGeneration();
-
-        bytes32 keyDigest = _hashKeygen(
-            address(migrated),
-            state.activePrepKeygenId,
-            state.activeKeyId,
-            _mockKeyDigests(),
-            _buildExtraDataForContextId(state.contextId)
-        );
-        bytes memory keySig = _computeSignature(kmsPk0, keyDigest);
-
-        vm.prank(kmsTxSender0);
-        vm.expectRevert(
-            abi.encodeWithSelector(IKMSGeneration.KmsAlreadySignedForKeygen.selector, state.activeKeyId, kmsSigner0)
-        );
-        migrated.keygenResponse(state.activeKeyId, _mockKeyDigests(), keySig);
-    }
-
-    function test_migrationRejectsEmptyKeyDigests() public {
-        MigrationFixture memory fixture = _deployMigrationFixture();
-        fixture.state.activeKeyDigests = new IKMSGeneration.KeyDigest[](0);
-
-        _expectMigrationRevert(
-            fixture,
-            abi.encodeWithSelector(KMSGeneration.InvalidMigrationMaterial.selector, fixture.state.activeKeyId)
-        );
-    }
-
-    function test_migrationRejectsEmptyCrsDigest() public {
-        MigrationFixture memory fixture = _deployMigrationFixture();
-        fixture.state.activeCrsDigest = "";
-
-        _expectMigrationRevert(
-            fixture,
-            abi.encodeWithSelector(KMSGeneration.InvalidMigrationMaterial.selector, fixture.state.activeCrsId)
-        );
-    }
-
-    function test_migrationRejectsActiveKeyWithoutConsensusTxSenders() public {
-        MigrationFixture memory fixture = _deployMigrationFixture();
-        fixture.state.keyConsensusTxSenders = new address[](0);
-
-        _expectMigrationRevert(
-            fixture,
-            abi.encodeWithSelector(KMSGeneration.InvalidMigrationConsensusState.selector, fixture.state.activeKeyId)
-        );
-    }
-
-    function test_migrationRejectsActivePrepKeygenWithoutConsensusDigest() public {
-        MigrationFixture memory fixture = _deployMigrationFixture();
-        fixture.state.prepKeygenConsensusDigest = bytes32(0);
-
-        _expectMigrationRevert(
-            fixture,
-            abi.encodeWithSelector(
-                KMSGeneration.InvalidMigrationConsensusState.selector,
-                fixture.state.activePrepKeygenId
-            )
-        );
-    }
-
-    function test_migrationRejectsBelowKmsGenThresholdQuorum() public {
-        // Raise kmsGen threshold to 3 on a freshly-defined context before building migration state.
-        _switchToMultiSignerContext();
-
-        MigrationFixture memory fixture = _deployMigrationFixture();
-        // _defaultMigrationState ships only 1 tx sender per request, below the kmsGen threshold of 3.
-        // The first validated request (the active key) is the one that reverts.
-        _expectMigrationRevert(
-            fixture,
-            abi.encodeWithSelector(KMSGeneration.InvalidMigrationConsensusState.selector, fixture.state.activeKeyId)
-        );
-    }
-
-    function test_migrationAcceptsExactlyKmsGenThresholdQuorum() public {
-        _switchToMultiSignerContext();
-
-        (
-            address migrateProxy,
-            address kmsGenImpl,
-            KMSGeneration.MigrationState memory state
-        ) = _deployMigrationProxyAndState();
-
-        address[] memory threeSenders = new address[](3);
-        threeSenders[0] = kmsTxSender0;
-        threeSenders[1] = kmsTxSender1;
-        threeSenders[2] = kmsTxSender2;
-        state.keyConsensusTxSenders = threeSenders;
-        state.crsConsensusTxSenders = threeSenders;
-        state.prepKeygenConsensusTxSenders = threeSenders;
-
-        _upgradeMigrationProxy(migrateProxy, kmsGenImpl, state);
-
-        address[] memory recorded = KMSGeneration(migrateProxy).getConsensusTxSenders(state.activeKeyId);
-        assertEq(recorded.length, 3);
-    }
-
-    function testFuzz_migrationRejectsUnknownConsensusTxSender(address unknownTxSender) public {
-        MigrationFixture memory fixture = _deployMigrationFixture();
-        vm.assume(!protocolConfig.isKmsTxSenderForContext(fixture.state.contextId, unknownTxSender));
-        fixture.state.keyConsensusTxSenders[0] = unknownTxSender;
-
-        _expectMigrationRevert(
-            fixture,
-            abi.encodeWithSelector(
-                KMSGeneration.UnknownMigrationConsensusTxSender.selector,
-                fixture.state.activeKeyId,
-                unknownTxSender
-            )
-        );
-    }
-
-    function test_migrationLateSignerStillUpdatesConsensusTxSenders() public {
-        (KMSGeneration migrated, KMSGeneration.MigrationState memory state) = _deployMigratedKmsGeneration();
-
-        bytes32 keyDigest = _hashKeygen(
-            address(migrated),
-            state.activePrepKeygenId,
-            state.activeKeyId,
-            _mockKeyDigests(),
-            _buildExtraDataForContextId(state.contextId)
-        );
-        bytes memory keySig = _computeSignature(kmsPk1, keyDigest);
-
-        vm.recordLogs();
-        vm.prank(kmsTxSender1);
-        migrated.keygenResponse(state.activeKeyId, _mockKeyDigests(), keySig);
-        _assertNoEventEmitted(
-            IKMSGeneration.ActivateKey.selector,
-            "late migrated keygen response should not emit ActivateKey"
-        );
-
-        address[] memory keyConsTxSenders = migrated.getConsensusTxSenders(state.activeKeyId);
-        assertEq(keyConsTxSenders.length, 2);
-        assertEq(keyConsTxSenders[0], kmsTxSender0);
-        assertEq(keyConsTxSenders[1], kmsTxSender1);
-    }
-
-    function test_migrationRejectsKeyCounterAheadOfImportedState() public {
-        MigrationFixture memory fixture = _deployMigrationFixture();
-        fixture.state.keyCounter++;
-
-        _expectMigrationRevert(fixture, abi.encodeWithSelector(KMSGeneration.InvalidMigrationCounterState.selector));
-    }
-
-    function test_migrationRejectsCrsCounterAheadOfImportedState() public {
-        MigrationFixture memory fixture = _deployMigrationFixture();
-        fixture.state.crsCounter++;
-
-        _expectMigrationRevert(fixture, abi.encodeWithSelector(KMSGeneration.InvalidMigrationCounterState.selector));
-    }
-
-    function test_migrationRejectsPrepCounterAheadOfImportedState() public {
-        MigrationFixture memory fixture = _deployMigrationFixture();
-        fixture.state.prepKeygenCounter++;
-
-        _expectMigrationRevert(fixture, abi.encodeWithSelector(KMSGeneration.InvalidMigrationCounterState.selector));
     }
 
     // -----------------------------------------------------------------------
@@ -1429,12 +1122,9 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         _doPrepKeygenResponse(prepKeygenId, kmsPk2, kmsTxSender2);
 
         // 4th response should be silently ignored (no KeygenRequest event, no revert)
-        vm.recordLogs();
+        vm.expectEmit(false, false, false, false, address(kmsGeneration), 0);
+        emit IKMSGeneration.KeygenRequest(0, 0, "");
         _doPrepKeygenResponse(prepKeygenId, kmsPk3, kmsTxSender3);
-        _assertNoEventEmitted(
-            IKMSGeneration.KeygenRequest.selector,
-            "4th prepKeygen response should not emit KeygenRequest"
-        );
     }
 
     function test_postConsensusKeygenResponseIgnored() public {
@@ -1457,9 +1147,9 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         _doKeygenResponse(prepKeygenId, keyId, kmsPk2, kmsTxSender2);
 
         // 4th response should be silently ignored (no ActivateKey event, no revert)
-        vm.recordLogs();
+        vm.expectEmit(false, false, false, false, address(kmsGeneration), 0);
+        emit IKMSGeneration.ActivateKey(0, new string[](0), new IKMSGeneration.KeyDigest[](0));
         _doKeygenResponse(prepKeygenId, keyId, kmsPk3, kmsTxSender3);
-        _assertNoEventEmitted(IKMSGeneration.ActivateKey.selector, "4th keygen response should not emit ActivateKey");
     }
 
     function test_postConsensusCrsgenResponseIgnored() public {
@@ -1476,9 +1166,9 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         _doCrsgenResponse(crsId, kmsPk2, kmsTxSender2);
 
         // 4th response should be silently ignored (no ActivateCrs event, no revert)
-        vm.recordLogs();
+        vm.expectEmit(false, false, false, false, address(kmsGeneration), 0);
+        emit IKMSGeneration.ActivateCrs(0, new string[](0), "");
         _doCrsgenResponse(crsId, kmsPk3, kmsTxSender3);
-        _assertNoEventEmitted(IKMSGeneration.ActivateCrs.selector, "4th crsgen response should not emit ActivateCrs");
     }
 
     function test_fullKeygenCycleMultiSigner() public {

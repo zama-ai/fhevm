@@ -22,7 +22,9 @@ fhevm_gateway_bindings = { path = "../gateway-contracts/rust_bindings", default-
 fhevm_host_bindings = { path = "../host-contracts/rust_bindings", default-features = false }
 kms-grpc = { git = "https://github.com/zama-ai/kms.git", tag = "v0.13.20-0", default-features = true }
 bc2wrap = { git = "https://github.com/zama-ai/kms.git", tag = "v0.13.20-0", default-features = true }
-tfhe = "=1.6.1"
+tfhe = { version = "=1.6.1", default-features = false }
+user-decryption-signature = { path = "../shared/user-decryption-signature", default-features = false }
+ciphertext-attestation = { path = "../shared/ciphertext-attestation" }
 
 #####################################################################
 #                       External dependencies                       #
@@ -94,6 +96,7 @@ tracing-opentelemetry = "=0.31.0"
 tracing-subscriber = { version = "=0.3.20", default-features = true, features = [
     "env-filter",
 ] }
+url = { version = "=2.5.8", default-features = false, features = ["serde"] }
 
 #####################################################################
 #                       Testing dependencies                        #
@@ -111,3 +114,10 @@ inherits = "release"
 opt-level = 1
 lto = false
 codegen-units = 16
+
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.test]
+debug = "line-tables-only"
+

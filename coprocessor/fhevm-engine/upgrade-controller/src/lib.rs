@@ -822,7 +822,8 @@ pub async fn handle_unanimity_consensus(
     let payload: UnanimityConsensusPayload =
         serde_json::from_str(raw_payload).map_err(|e| Error::Payload(e.to_string()))?;
 
-    let row: Option<(String, Option<i64>, Option<i64>, Option<Vec<u8>>)> = sqlx::query_as(
+    type GcsUpgradeStateRow = (String, Option<i64>, Option<i64>, Option<Vec<u8>>);
+    let row: Option<GcsUpgradeStateRow> = sqlx::query_as(
         "SELECT state, start_block, end_block, proposal_id FROM upgrade_state WHERE stack_role = 'GCS'",
     )
     .fetch_optional(pool)

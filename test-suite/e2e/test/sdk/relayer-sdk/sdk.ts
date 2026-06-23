@@ -159,9 +159,7 @@ export class RelayerSdk implements SdkInstance {
     const durationDays = 10;
     const contractAddresses = [contractAddress];
 
-    // Build the extraData field
-    const extraData = await this.#instance.getExtraData();
-
+    const extraData = await this.#instance.getExtraData?.();
     // The `delegate` creates a EIP712 with the `delegator` address
     const eip712 = this.#instance.createDelegatedUserDecryptEIP712(
       delegateTransportKeypair.publicKey,
@@ -227,9 +225,7 @@ export class RelayerSdk implements SdkInstance {
     const { publicKey, privateKey } = transportKeypair ?? this.#instance.generateKeypair();
     const contractAddresses = [contractAddress];
 
-    // Build the extraData field
-    const extraData = await this.#instance.getExtraData();
-
+    const extraData = await this.#instance.getExtraData?.();
     const eip712 = this.#instance.createEIP712(publicKey, contractAddresses, startTimestamp, durationDays, extraData);
 
     const signature = await signer.signTypedData(

@@ -27,12 +27,12 @@ describe('Upgrades', function () {
     });
     await acl.waitForDeployment();
     const ownerBef = await acl.owner();
-    expect(await acl.getVersion()).to.equal('ACL v0.4.0');
+    expect(await acl.getVersion()).to.equal('ACL v0.5.0');
     const acl2 = await upgrades.upgradeProxy(acl, this.aclFactoryUpgraded);
     await acl2.waitForDeployment();
     const ownerAft = await acl2.owner();
     expect(ownerBef).to.equal(ownerAft);
-    expect(await acl2.getVersion()).to.equal('ACL v0.5.0');
+    expect(await acl2.getVersion()).to.equal('ACL v0.6.0');
     const aclAddress = ethers.getCreateAddress({
       from: this.signers.alice.address,
       nonce: nonceBef + 1,
@@ -70,7 +70,7 @@ describe('Upgrades', function () {
       call: { fn: 'initializeFromEmptyProxy' },
     });
     await kg.waitForDeployment();
-    expect(await kg.getVersion()).to.equal('KMSGeneration v0.1.0');
+    expect(await kg.getVersion()).to.equal('KMSGeneration v0.2.0');
     const expectInitialState = async (c: any) => {
       expect(await c.getActiveKeyId()).to.equal(0n);
       expect(await c.getActiveCrsId()).to.equal(0n);
@@ -80,7 +80,7 @@ describe('Upgrades', function () {
     await expectInitialState(kg);
     const kg2 = await upgrades.upgradeProxy(kg, factoryUpgraded);
     await kg2.waitForDeployment();
-    expect(await kg2.getVersion()).to.equal('KMSGeneration v0.2.0');
+    expect(await kg2.getVersion()).to.equal('KMSGeneration v0.3.0');
     await expectInitialState(kg2);
   });
 
@@ -122,10 +122,10 @@ describe('Upgrades', function () {
       call: { fn: 'initializeFromEmptyProxy' },
     });
     await executor.waitForDeployment();
-    expect(await executor.getVersion()).to.equal('FHEVMExecutor v0.4.0');
+    expect(await executor.getVersion()).to.equal('FHEVMExecutor v0.5.0');
     const executor2 = await upgrades.upgradeProxy(executor, executorFactoryUpgraded);
     await executor2.waitForDeployment();
-    expect(await executor2.getVersion()).to.equal('FHEVMExecutor v0.5.0');
+    expect(await executor2.getVersion()).to.equal('FHEVMExecutor v0.6.0');
   });
 
   it('deploy upgradeable HCULimit', async function () {
@@ -139,21 +139,21 @@ describe('Upgrades', function () {
       },
     });
     await payment.waitForDeployment();
-    expect(await payment.getVersion()).to.equal('HCULimit v0.3.0');
+    expect(await payment.getVersion()).to.equal('HCULimit v0.4.0');
     const payment2 = await upgrades.upgradeProxy(payment, paymentFactoryUpgraded);
     await payment2.waitForDeployment();
-    expect(await payment2.getVersion()).to.equal('HCULimit v0.4.0');
+    expect(await payment2.getVersion()).to.equal('HCULimit v0.5.0');
   });
 
   it('original owner upgrades the original ACL and transfer ownership', async function () {
     const origACLAdd = readHostAddress('ACL_CONTRACT_ADDRESS');
     const deployer = new ethers.Wallet(process.env.DEPLOYER_PRIVATE_KEY!).connect(ethers.provider);
     const acl = (await this.aclFactory.attach(origACLAdd, deployer)) as ACL;
-    expect(await acl.getVersion()).to.equal('ACL v0.4.0');
+    expect(await acl.getVersion()).to.equal('ACL v0.5.0');
     const newaclFactoryUpgraded = await ethers.getContractFactory('ACLUpgradedExample', deployer);
     const acl2 = (await upgrades.upgradeProxy(acl, newaclFactoryUpgraded)) as unknown as ACLUpgradedExample;
     await acl2.waitForDeployment();
-    expect(await acl2.getVersion()).to.equal('ACL v0.5.0');
+    expect(await acl2.getVersion()).to.equal('ACL v0.6.0');
     expect(await acl2.getAddress()).to.equal(origACLAdd);
     const newSigner = (await ethers.getSigners())[1];
     await acl2.transferOwnership(newSigner);
@@ -163,6 +163,6 @@ describe('Upgrades', function () {
     const newaclFactoryUpgraded3 = await ethers.getContractFactory('ACLUpgradedExample2', newSigner);
     const acl3 = await upgrades.upgradeProxy(acl2, newaclFactoryUpgraded3); // new owner can upgrade ACL
     await acl3.waitForDeployment();
-    expect(await acl3.getVersion()).to.equal('ACL v0.5.0');
+    expect(await acl3.getVersion()).to.equal('ACL v0.7.0');
   });
 });

@@ -60,6 +60,34 @@ interface IProtocolConfig {
         uint16 ciphertextVersion
     );
 
+    /**
+     * @notice Emitted when the public decryption threshold for a KMS context is updated.
+     * @param kmsContextId The updated context ID.
+     * @param threshold The new public decryption threshold.
+     */
+    event PublicDecryptionThresholdUpdated(uint256 indexed kmsContextId, uint256 threshold);
+
+    /**
+     * @notice Emitted when the user decryption threshold for a KMS context is updated.
+     * @param kmsContextId The updated context ID.
+     * @param threshold The new user decryption threshold.
+     */
+    event UserDecryptionThresholdUpdated(uint256 indexed kmsContextId, uint256 threshold);
+
+    /**
+     * @notice Emitted when the KMS generation threshold for a KMS context is updated.
+     * @param kmsContextId The updated context ID.
+     * @param threshold The new KMS generation threshold.
+     */
+    event KmsGenThresholdUpdated(uint256 indexed kmsContextId, uint256 threshold);
+
+    /**
+     * @notice Emitted when the MPC threshold for a KMS context is updated.
+     * @param kmsContextId The updated context ID.
+     * @param threshold The new MPC threshold.
+     */
+    event MpcThresholdUpdated(uint256 indexed kmsContextId, uint256 threshold);
+
     // -----------------------------------------------------------------------------------------
     // Errors
     // -----------------------------------------------------------------------------------------
@@ -176,6 +204,34 @@ interface IProtocolConfig {
         uint64 gwStartBlock,
         uint16 ciphertextVersion
     ) external;
+
+    /**
+     * @notice Update the public decryption threshold for a KMS context.
+     * @param kmsContextId The context ID to update.
+     * @param threshold The new public decryption threshold.
+     */
+    function updatePublicDecryptionThresholdForContext(uint256 kmsContextId, uint256 threshold) external;
+
+    /**
+     * @notice Update the user decryption threshold for a KMS context.
+     * @param kmsContextId The context ID to update.
+     * @param threshold The new user decryption threshold.
+     */
+    function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 threshold) external;
+
+    /**
+     * @notice Update the KMS generation threshold for a KMS context.
+     * @param kmsContextId The context ID to update.
+     * @param threshold The new KMS generation threshold.
+     */
+    function updateKmsGenThresholdForContext(uint256 kmsContextId, uint256 threshold) external;
+
+    /**
+     * @notice Update the MPC threshold for a KMS context.
+     * @param kmsContextId The context ID to update.
+     * @param threshold The new MPC threshold.
+     */
+    function updateMpcThresholdForContext(uint256 kmsContextId, uint256 threshold) external;
 
     /**
      * @notice Returns the current active KMS context ID.

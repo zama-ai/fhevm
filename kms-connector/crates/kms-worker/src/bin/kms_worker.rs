@@ -45,7 +45,7 @@ async fn run() -> anyhow::Result<()> {
             let monitoring_endpoint = config.monitoring_endpoint;
 
             info!("Starting KmsWorker");
-            let (kms_worker, state) = KmsWorker::from_config(config).await?;
+            let (kms_worker, state) = KmsWorker::from_config(config, cancel_token.clone()).await?;
             start_monitoring_server(monitoring_endpoint, state, cancel_token.clone());
             kms_worker.start(cancel_token).await;
         }

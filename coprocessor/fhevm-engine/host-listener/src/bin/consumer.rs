@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use alloy::primitives::Address;
+use anyhow::Context;
 use clap::Parser;
 use tokio_util::sync::CancellationToken;
 use tracing::Level;
@@ -29,8 +30,12 @@ struct Args {
     #[arg(long, help = "TFHE contract address to monitor")]
     tfhe_contract_address: Address,
 
-    #[arg(long, help = "KMS generation contract address to monitor")]
-    kms_generation_address: Address,
+    #[arg(
+        long,
+        default_value = "",
+        help = "Optional KMS generation contract address to monitor"
+    )]
+    kms_generation_address: String,
 
     #[command(flatten)]
     protocol_config: host_listener::protocol_config::ProtocolConfigArgs,
@@ -94,7 +99,21 @@ struct Args {
 
     #[arg(long)]
     pub chain_id: String,
+}
 
+fn parse_optional_address(
+    value: &str,
+    name: &str,
+) -> anyhow::Result<Option<Address>> {
+    let value = value.trim();
+    if value.is_empty() {
+        Ok(None)
+    } else {
+        value
+            .parse::<Address>()
+            .with_context(|| format!("Invalid {name} address: {value}"))
+            .map(Some)
+    }
 }
 
 #[tokio::main]
@@ -114,10 +133,10 @@ async fn main() -> anyhow::Result<()> {
             "--ethereum-chain-id=0 is not a valid chain id; omit the flag to disable ProtocolConfig decoding"
         ));
     }
-    let protocol_config_address = args
-        .protocol_config
-        .parsed_address()?
-        .ok_or_else(|| anyhow::anyhow!("--protocol-config-address is required"))?;
+    let protocol_config_address =
+        args.protocol_config.parsed_address()?.ok_or_else(|| {
+            anyhow::anyhow!("--protocol-config-address is required")
+        })?;
 
     let cancel_token = CancellationToken::new();
     metrics_server::spawn(
@@ -141,7 +160,10 @@ async fn main() -> anyhow::Result<()> {
         url: args.url,
         acl_address: args.acl_contract_address,
         tfhe_address: args.tfhe_contract_address,
-        kms_generation_address: args.kms_generation_address,
+        kms_generation_address: parse_optional_address(
+            &args.kms_generation_address,
+            "KMS generation contract",
+        )?,
         protocol_config_address,
         database_url: args.database_url,
         database_retry_interval: Duration::from_millis(

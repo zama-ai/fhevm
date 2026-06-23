@@ -49,10 +49,7 @@ where
     /// Returns `Err` for RPC failures. Returns `Ok("")` (and warns) when the
     /// contract has no S3 URL registered for `copro_addr` — matches the
     /// kms-worker behaviour so the bulk caller can decide what to do.
-    pub async fn get_coprocessor_s3_url(
-        &self,
-        copro_addr: Address,
-    ) -> anyhow::Result<String> {
+    pub async fn get_coprocessor_s3_url(&self, copro_addr: Address) -> anyhow::Result<String> {
         log_cache(&self.cache, "S3 cache state before S3 URL fetching");
         if let Some(url) = self.cache.get(&copro_addr) {
             info!(

@@ -77,7 +77,7 @@ jobs:
         || (github.event_name == 'push' && needs.is-latest-commit.outputs.is_latest == 'true' && needs.check-changes.outputs.changes == 'true')
         || (inputs.is_workflow_call && needs.check-changes.outputs.changes == 'true')
       )
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@f3ad2e177a5247777349447608ba20f0977a824f # v1.0.7
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@542103e14b9ae6a9aea27787b8724b3b35bb3918 # v1.0.9
     secrets:
       AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }}
       AWS_SECRET_KEY_S3_USER: ${{ secrets.AWS_SECRET_KEY_S3_USER }}

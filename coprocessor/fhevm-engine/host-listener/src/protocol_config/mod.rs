@@ -42,9 +42,9 @@ impl ProtocolConfigArgs {
         if self.address.is_empty() {
             return Ok(None);
         }
-        Address::from_str(&self.address)
-            .map(Some)
-            .map_err(|err| anyhow!("Invalid ProtocolConfig contract address: {err}"))
+        Address::from_str(&self.address).map(Some).map_err(|err| {
+            anyhow!("Invalid ProtocolConfig contract address: {err}")
+        })
     }
 }
 

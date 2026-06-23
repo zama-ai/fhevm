@@ -4,15 +4,22 @@ use crate::{
     squash_noise::safe_deserialize,
     Config, DBConfig, S3Config, S3RetryPolicy, SchedulePolicy,
 };
+use alloy::signers::local::PrivateKeySigner;
+use alloy_primitives::{B256, U256};
 use anyhow::{anyhow, Ok};
 use aws_config::BehaviorVersion;
+use ciphertext_attestation::{
+    CiphertextAttestation, CiphertextFormat, S3_METADATA_ATTESTATION_KEY,
+};
 use fhevm_engine_common::db_keys::DbKeyId;
 use fhevm_engine_common::utils::{to_hex, DatabaseURL};
 use serde::{Deserialize, Serialize};
 use serial_test::serial;
+use sqlx::Row;
 use std::{
     fs::File,
     io::{Read, Write},
+    str::FromStr,
     sync::{Arc, OnceLock},
     time::Duration,
 };
@@ -26,11 +33,13 @@ use test_harness::{
 use tfhe::{
     prelude::FheDecrypt, ClientKey, CompressedSquashedNoiseCiphertextList, SquashedNoiseFheUint,
 };
-use tokio::{sync::mpsc, time::timeout};
+use tokio::{
+    sync::mpsc,
+    time::{sleep, timeout},
+};
 use tracing::{info, Level};
 
 const LISTEN_CHANNEL: &str = "sns_worker_chan";
-
 static TRACING_INIT: OnceLock<()> = OnceLock::new();
 
 pub fn init_tracing() {
@@ -206,8 +215,8 @@ async fn run_batch_computations(
     let elapsed = start.elapsed();
     info!(elapsed = ?elapsed, batch_size, "Batch execution completed");
 
-    // Assert that all ciphertext128 objects are uploaded to S3
-    assert_ciphertext_s3_object_count(test_env, bucket128, batch_size as i64).await;
+    // Assert that all ciphertext objects are uploaded to S3
+    assert_ciphertext_s3_object_count(test_env, bucket128, batch_size as i64 + 1).await;
     assert_ciphertext_s3_object_count(test_env, bucket64, batch_size as i64).await;
 
     anyhow::Result::<()>::Ok(())
@@ -355,15 +364,44 @@ async fn test_garbage_collect() {
         .expect("insert into ciphertext_digest");
     }
 
-    let count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM ciphertexts128 where ciphertext IS not NULL")
-            .fetch_one(&pool)
-            .await
-            .expect("count ciphertexts128");
+    let count = sqlx::query_scalar!(
+        "SELECT COUNT(*)::BIGINT FROM ciphertexts128 WHERE ciphertext IS NOT NULL"
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("count ciphertexts128")
+    .unwrap_or(0);
     assert_eq!(
         count, HANDLES_COUNT as i64,
         "ciphertext128 should not be empty before garbage_collect"
     );
+
+    let partial_handle = vec![0xffu8; 32];
+    let partial_ciphertext = vec![0xffu8; 32];
+    let partial_digest = vec![0xffu8; 32];
+    sqlx::query!(
+        "INSERT INTO ciphertexts128(handle, ciphertext)
+            VALUES ($1, $2)
+        ON CONFLICT DO NOTHING;",
+        &partial_handle,
+        &partial_ciphertext,
+    )
+    .execute(&pool)
+    .await
+    .expect("insert partial ciphertexts128");
+
+    sqlx::query!(
+        "INSERT INTO ciphertext_digest(host_chain_id, key_id_gw, handle, ciphertext128)
+            VALUES ($1, $2, $3, $4)
+        ON CONFLICT DO NOTHING;",
+        host_chain_id,
+        &key_id_gw,
+        &partial_handle,
+        &partial_digest,
+    )
+    .execute(&pool)
+    .await
+    .expect("insert partial ciphertext_digest");
 
     let handles: Vec<_> = (0..CONCURRENT_TASKS)
         .map(|_| {
@@ -389,13 +427,27 @@ async fn test_garbage_collect() {
         "garbage_collect tasks did not complete in time"
     );
 
-    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM ciphertexts128")
+    let count = sqlx::query_scalar!("SELECT COUNT(*)::BIGINT FROM ciphertexts128")
         .fetch_one(&pool)
         .await
-        .expect("ciphertexts128 has been GCd");
+        .expect("ciphertexts128 has been GCd")
+        .unwrap_or(0);
     assert!(
         count <= 100,
         "ciphertext128 should have less entries than threshold after garbage_collect"
+    );
+
+    let partial_count = sqlx::query_scalar!(
+        "SELECT COUNT(*)::BIGINT FROM ciphertexts128 WHERE handle = $1",
+        &partial_handle
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("partial ciphertext128 should remain queryable")
+    .unwrap_or(0);
+    assert_eq!(
+        partial_count, 1,
+        "garbage_collect should keep ct128 material until both upload digests are committed"
     );
 }
 
@@ -410,6 +462,7 @@ struct TestEnvironment {
     pub s3_instance: Option<Arc<LocalstackContainer>>, // If None, the global LocalStack is used
     pub s3_client: aws_sdk_s3::Client,
     pub conf: Config,
+    pub private_key: Vec<u8>,
 }
 
 async fn setup(enable_compression: bool) -> anyhow::Result<TestEnvironment> {
@@ -440,7 +493,10 @@ async fn setup(enable_compression: bool) -> anyhow::Result<TestEnvironment> {
     };
 
     let token = db_instance.parent_token.child_token();
-    let config: Config = conf.clone();
+    let mut config: Config = conf.clone();
+    let signer = PrivateKeySigner::random();
+    let private_key = signer.to_bytes().to_vec();
+    config.private_key = Some(hex::encode(&private_key));
 
     let key_id_gw = fetch_latest_key_id_gw(&pool).await;
     let host_chain_id = fetch_host_chain_id(&pool).await;
@@ -470,6 +526,7 @@ async fn setup(enable_compression: bool) -> anyhow::Result<TestEnvironment> {
         s3_instance,
         s3_client,
         conf,
+        private_key,
     })
 }
 
@@ -531,25 +588,83 @@ struct TestFile {
     pub cleartext: i64,
 }
 
-/// Creates a test-file from handle, ciphertext64 and plaintext
-/// Can be used to update/create_new ciphertext64.json file
-#[expect(dead_code)]
+/// Regenerates `ciphertext64.json` against the current
+/// `fhevm-keys/xof-keyset` LFS fixture.
+///
+/// The on-disk fixture is bound to a specific `CompactPublicKey`, so
+/// every rotation of `xof-keyset` invalidates it: SNS converts the
+/// stored ciphertext64 under the new server key, but the decrypted
+/// value no longer matches `cleartext` because the input bytes were
+/// encrypted under the old key.
+///
+/// Re-run via:
+///   `cargo test -p sns-worker --features test_decrypt_128 \
+///       -- --ignored regenerate_ciphertext64_fixture`
+/// then commit the updated `ciphertext64.json`.
 fn write_test_file(filename: &str) {
-    let handle: [u8; 32] = hex::decode("TBD").unwrap().try_into().unwrap();
-    let ciphertext64 = hex::decode("TBD").unwrap();
-    let plaintext = 0;
+    use fhevm_engine_common::types::SupportedFheCiphertexts;
+    use fhevm_engine_common::utils::safe_deserialize_key;
+    use tfhe::prelude::CiphertextList;
+    use tfhe::xof_key_set::CompressedXofKeySet;
+
+    let keyset_bytes = std::fs::read("../fhevm-keys/xof-keyset").expect("read xof-keyset fixture");
+    let keyset: CompressedXofKeySet =
+        safe_deserialize_key(&keyset_bytes).expect("deserialize CompressedXofKeySet");
+    // Whole-keyset decompression: same XOF stream the production
+    // readers (sns-worker, tfhe-worker GPU) traverse, so the
+    // CompactPublicKey we encrypt under matches what the DB pks_key
+    // column will carry.
+    let (compact_public_key, server_key) = keyset
+        .decompress()
+        .expect("decompress xof keyset")
+        .into_raw_parts();
+
+    // CompactCiphertextList expansion and CompressedCiphertextList
+    // build both consult the thread-local server key.
+    tfhe::set_server_key(server_key);
+
+    let mut builder = tfhe::CompactCiphertextList::builder(&compact_public_key);
+    builder.push(0_u64);
+    let compact_list = builder.build();
+    let expanded = compact_list
+        .expand()
+        .expect("expand compact ciphertext list");
+    let ct: tfhe::FheUint64 = expanded
+        .get(0)
+        .expect("get(0) from expanded list")
+        .expect("expanded list has element 0");
+
+    let ciphertext64 = SupportedFheCiphertexts::FheUint64(ct)
+        .compress()
+        .expect("compress FheUint64 to CompressedCiphertextList");
+
+    // Handle preserved verbatim: byte 30 = 5 is the FheUint64 type
+    // tag consumed by get_ct_type, and bytes 0-1 are overwritten per
+    // batch entry by test_batch_execution; the rest is arbitrary
+    // padding.
+    let handle: [u8; 32] = [
+        82, 179, 54, 227, 20, 74, 138, 57, 192, 160, 141, 228, 185, 10, 90, 70, 138, 165, 113, 249,
+        28, 54, 93, 45, 102, 136, 242, 216, 124, 6, 5, 3,
+    ];
 
     let v = TestFile {
         handle,
         ciphertext64,
-        cleartext: plaintext,
+        cleartext: 0,
     };
 
-    // Write bytes to a file
     File::create(filename)
         .expect("Failed to create file")
         .write_all(&serde_json::to_vec(&v).unwrap())
         .expect("Failed to write to file");
+}
+
+/// Run only when intentionally regenerating the LFS-bound fixture.
+/// See [`write_test_file`] for the workflow.
+#[test]
+#[ignore = "regenerates ciphertext64.json against the current xof-keyset fixture"]
+fn regenerate_ciphertext64_fixture() {
+    write_test_file("ciphertext64.json");
 }
 
 fn read_test_file(filename: &str) -> TestFile {
@@ -672,21 +787,35 @@ async fn assert_ciphertext128(
 
     // Assert that ciphertext128 is uploaded to S3
     // Note: The tests rely on the `test_s3_use_handle_as_key` feature,
-    // which uses the handle as the key instead of the digest.
+    // which uses the handle/context-id S3 key instead of the digest.
     // This approach allows reusing the same ct128 when uploading a batch of ciphertexts to S3 under different keys.
 
     #[cfg(feature = "test_s3_use_handle_as_key")]
     {
         info!("Asserting ciphertext uploaded to S3");
 
+        let expected_ct_format = if with_compression {
+            crate::Ciphertext128Format::CompressedOnCpu
+        } else {
+            crate::Ciphertext128Format::UncompressedOnCpu
+        };
+        let expected_attestation_format = if with_compression {
+            CiphertextFormat::CompressedOnCpu
+        } else {
+            CiphertextFormat::UncompressedOnCpu
+        };
+        let expected_ct_format = expected_ct_format.to_string();
+
         assert_ciphertext_uploaded(
             test_env,
             &test_env.conf.s3.bucket_ct128,
             handle,
             Some(ct.len() as i64),
+            Some((&expected_ct_format, expected_attestation_format)),
         )
-        .await;
-        assert_ciphertext_uploaded(test_env, &test_env.conf.s3.bucket_ct64, handle, None).await;
+        .await?;
+        assert_ciphertext_uploaded(test_env, &test_env.conf.s3.bucket_ct64, handle, None, None)
+            .await?;
     }
 
     Ok(())
@@ -699,15 +828,159 @@ async fn assert_ciphertext_uploaded(
     bucket: &String,
     handle: &Vec<u8>,
     expected_ct_len: Option<i64>,
-) {
+    expected_ct_format: Option<(&str, CiphertextFormat)>,
+) -> anyhow::Result<()> {
+    let ciphertext_key =
+        crate::aws_upload::s3_ciphertext_key(handle, crate::aws_upload::COPROCESSOR_CONTEXT_ID_1);
+    use crate::S3_FORMAT_VERSION_V1;
+
+    let (ciphertext_digest, sns_ciphertext_digest, s3_format_version) =
+        wait_for_ciphertext_digest_upload_state(&test_env.pool, handle, 100).await?;
+
     s3_utils::assert_key_exists(
         test_env.s3_client.to_owned(),
         bucket,
-        &hex::encode(handle),
+        &ciphertext_key,
         expected_ct_len,
         100,
     )
     .await;
+
+    let output = test_env
+        .s3_client
+        .head_object()
+        .bucket(bucket)
+        .key(ciphertext_key)
+        .send()
+        .await
+        .expect("head ciphertext object");
+    let metadata = output.metadata().expect("ciphertext metadata");
+    let key_id = hex::encode(&test_env.key_id_gw);
+    let attestation_json = metadata
+        .get(S3_METADATA_ATTESTATION_KEY)
+        .expect("ciphertext object should include ct-attestation metadata");
+    let attestation: CiphertextAttestation = serde_json::from_str(attestation_json)?;
+    attestation.verify(
+        B256::from_slice(handle),
+        crate::aws_upload::COPROCESSOR_CONTEXT_ID_1,
+    )?;
+
+    let signer = PrivateKeySigner::from_str(&hex::encode(&test_env.private_key))?;
+
+    assert_eq!(
+        attestation.key_id,
+        U256::from_be_slice(&test_env.key_id_gw),
+        "attestation should include the expected key_id"
+    );
+    assert_eq!(
+        attestation.ciphertext_digest,
+        B256::from_slice(&ciphertext_digest),
+        "attestation should include the expected ct64 digest"
+    );
+    assert_eq!(
+        attestation.sns_ciphertext_digest,
+        B256::from_slice(&sns_ciphertext_digest),
+        "attestation should include the expected ct128 digest"
+    );
+    assert_eq!(
+        attestation.signer,
+        signer.address(),
+        "attestation should include the expected signer"
+    );
+    assert_eq!(
+        s3_format_version, S3_FORMAT_VERSION_V1,
+        "ciphertext_digest should record the current S3 format version"
+    );
+    assert_eq!(
+        metadata.get("key-id"),
+        Some(&key_id),
+        "ciphertext object should include Key-Id metadata"
+    );
+    assert!(
+        metadata.contains_key("transaction-id"),
+        "ciphertext object should include Transaction-Id metadata"
+    );
+    assert!(
+        metadata.contains_key("signer"),
+        "ciphertext object should include Signer metadata"
+    );
+    if let Some((expected_ct_format, expected_attestation_format)) = expected_ct_format {
+        assert_eq!(
+            attestation.format, expected_attestation_format,
+            "ciphertext128 attestation should include the expected ct format"
+        );
+        assert_eq!(
+            metadata.get("ct-format").map(String::as_str),
+            Some(expected_ct_format),
+            "ciphertext128 object should include Ct-Format metadata"
+        );
+
+        let digest_key = hex::encode(&sns_ciphertext_digest);
+        s3_utils::assert_key_exists(
+            test_env.s3_client.to_owned(),
+            bucket,
+            &digest_key,
+            expected_ct_len,
+            100,
+        )
+        .await;
+
+        let digest_output = test_env
+            .s3_client
+            .head_object()
+            .bucket(bucket)
+            .key(digest_key)
+            .send()
+            .await
+            .expect("head ciphertext128 digest object");
+        let digest_metadata = digest_output
+            .metadata()
+            .expect("ciphertext128 digest object metadata");
+        assert_eq!(
+            digest_metadata.get("ct-format").map(String::as_str),
+            Some(expected_ct_format),
+            "ciphertext128 digest object should include Ct-Format metadata"
+        );
+    }
+
+    Ok(())
+}
+
+async fn wait_for_ciphertext_digest_upload_state(
+    pool: &sqlx::PgPool,
+    handle: &Vec<u8>,
+    retries: u64,
+) -> anyhow::Result<(Vec<u8>, Vec<u8>, i16)> {
+    for retry in 0..retries {
+        let row = sqlx::query(
+            "SELECT ciphertext, ciphertext128, s3_format_version
+            FROM ciphertext_digest
+            WHERE handle = $1",
+        )
+        .bind(handle)
+        .fetch_optional(pool)
+        .await?;
+
+        if let Some(row) = row {
+            let ciphertext_digest: Option<Vec<u8>> = row.try_get("ciphertext")?;
+            let sns_ciphertext_digest: Option<Vec<u8>> = row.try_get("ciphertext128")?;
+            let s3_format_version: Option<i16> = row.try_get("s3_format_version")?;
+
+            if let (Some(ciphertext_digest), Some(sns_ciphertext_digest), Some(s3_format_version)) =
+                (ciphertext_digest, sns_ciphertext_digest, s3_format_version)
+            {
+                return Ok((ciphertext_digest, sns_ciphertext_digest, s3_format_version));
+            }
+        }
+
+        info!(retry, "Waiting for ciphertext_digest upload state");
+        sleep(Duration::from_millis(100)).await;
+    }
+
+    Err(anyhow!(
+        "ciphertext_digest upload state was not complete for handle {}",
+        to_hex(handle)
+    ))
 }
 
 #[cfg(feature = "gpu")]
@@ -716,8 +989,10 @@ async fn assert_ciphertext_uploaded(
     _bucket: &String,
     _handle: &Vec<u8>,
     _expected_ct_len: Option<i64>,
-) {
+    _expected_ct_format: Option<(&str, CiphertextFormat)>,
+) -> anyhow::Result<()> {
     // No-op when GPU feature is enabled
+    Ok(())
 }
 
 /// Asserts that the number of ciphertext128 objects in S3 matches the expected count
@@ -775,6 +1050,7 @@ fn build_test_config(url: DatabaseURL, enable_compression: bool) -> Config {
                 recheck_duration: Duration::from_secs(2),
                 regular_recheck_duration: Duration::from_secs(120),
             },
+            verify_sha256_checksum: true,
         },
         service_name: "".to_owned(),
         log_level: Level::INFO,
@@ -787,5 +1063,7 @@ fn build_test_config(url: DatabaseURL, enable_compression: bool) -> Config {
         pg_auto_explain_with_min_duration: Some(Duration::from_secs(1)),
         metrics: Default::default(),
         gcs_mode: false,
+        private_key: None,
+        signer_type: fhevm_engine_common::types::SignerType::PrivateKey,
     }
 }

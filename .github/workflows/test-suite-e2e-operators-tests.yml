@@ -42,7 +42,7 @@ on:
 
 permissions: {}
 
-# Allow to run multiple instances of the same workflow in parallel when triggered manually 
+# Allow to run multiple instances of the same workflow in parallel when triggered manually
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || 'auto' }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
@@ -50,7 +50,7 @@ concurrency:
 jobs:
   setup-instance:
     name: test-suite-e2e-operators-tests/setup-instance
-    runs-on: ubuntu-latest
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
     permissions:
       contents: 'read' # Required to checkout repository code
     outputs:
@@ -121,8 +121,16 @@ jobs:
       - name: Install foundry
         uses: foundry-rs/foundry-toolchain@82dee4ba654bd2146511f85f0d013af94670c4de # v1.4.0
 
+      - name: Install safe-chain
+        shell: bash
+        run: |
+          # safe-chain v1.5.3 is distributed as an immutable GitHub release asset —
+          # its content is permanently fixed and cannot be modified after the tag is published.
+          # Verify immutability: curl -fsSL https://api.github.com/repos/AikidoSec/safe-chain/releases/tags/1.5.3 | grep immutable
+          curl -fsSL https://github.com/AikidoSec/safe-chain/releases/download/1.5.3/install-safe-chain.sh | sh -s -- --ci
+
       - name: Login to GitHub Container Registry
-        uses: zama-ai/ci-templates/.github/actions/retry@f3b6046d0ce6f2eab83353e0fb788bd781be9f2e # v1.0.6
+        uses: zama-ai/ci-templates/.github/actions/retry@542103e14b9ae6a9aea27787b8724b3b35bb3918 # v1.0.9
         env:
           GHCR_USERNAME: ${{ github.actor }}
           GHCR_PASSWORD: ${{ secrets.GHCR_READ_TOKEN }}
@@ -223,7 +231,7 @@ jobs:
     name: test-suite-e2e-operators-tests/teardown
     if: ${{ always() && needs.setup-instance.result == 'success' }}
     needs: [ setup-instance, operators-e2e-test]
-    runs-on: ubuntu-latest
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
     permissions:
       contents: 'read' # Required to checkout repository code
     steps:

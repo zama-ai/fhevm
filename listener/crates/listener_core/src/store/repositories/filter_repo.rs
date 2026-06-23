@@ -71,6 +71,28 @@ impl FilterRepository {
         Ok(rows)
     }
 
+    /// Fetch all active filters for a single consumer on this chain.
+    ///
+    /// Uses the leftmost-prefix of the existing unique index
+    /// `(chain_id, consumer_id, ...)` — no dedicated index needed.
+    pub async fn get_filters_by_consumer_id(&self, consumer_id: &str) -> SqlResult<Vec<Filter>> {
+        let mut conn = self.client.get_app_connection().await?;
+        let rows = sqlx::query_as!(
+            Filter,
+            r#"
+            SELECT id, chain_id, consumer_id, "from", "to", "log_address", created_at
+            FROM filters
+            WHERE chain_id = $1 AND consumer_id = $2
+            ORDER BY id
+            "#,
+            self.chain_id,
+            consumer_id,
+        )
+        .fetch_all(&mut *conn)
+        .await?;
+        Ok(rows)
+    }
+
     /// Remove a filter matching the given (chain_id, consumer_id, from, to).
     ///
     /// Returns `Some(Filter)` if a filter was removed, `None` if no matching filter found.

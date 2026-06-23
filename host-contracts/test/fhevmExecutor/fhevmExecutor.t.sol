@@ -40,6 +40,10 @@ contract SupportedTypesConstants {
             (1 << uint8(FheType.Uint16)) +
             (1 << uint8(FheType.Uint32)) +
             (1 << uint8(FheType.Uint64));
+
+    /// Mirrors `FHEVMExecutor`'s private constants.
+    bytes1 internal constant FHE_MUL_DIV_FACTOR2_ENCRYPTED = 0x01;
+    bytes1 internal constant FHE_MUL_DIV_FACTOR2_SCALAR = 0x03;
     uint256 internal supportedTypesFheRem = supportedTypesFheDiv;
 
     uint256 internal supportedTypesFheBitAnd =
@@ -466,7 +470,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         assertEq(fhevmExecutor.getInputVerifierAddress(), inputVerifierAdd);
         assertEq(fhevmExecutor.getACLAddress(), aclAdd);
         assertEq(fhevmExecutor.getHCULimitAddress(), hcuLimitAdd);
-        assertEq(fhevmExecutor.getVersion(), string(abi.encodePacked("FHEVMExecutor v0.4.0")));
+        assertEq(fhevmExecutor.getVersion(), string(abi.encodePacked("FHEVMExecutor v0.5.0")));
     }
 
     /// @dev This function exists for the test below to call it externally.
@@ -2211,19 +2215,18 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
     }
 
     function _computeExpectedResultFheMulDiv(
-        bytes32 lhs,
-        bytes32 rhs,
+        bytes32 factor1,
+        bytes32 factor2,
         bytes32 divisor,
         bytes1 scalarByte,
         FheType resultType
     ) internal view returns (bytes32 result) {
-        scalarByte = scalarByte & 0x01;
         result = keccak256(
             abi.encodePacked(
                 COMPUTATION_DOMAIN_SEPARATOR,
                 FHEVMExecutor.Operators.fheMulDiv,
-                lhs,
-                rhs,
+                factor1,
+                factor2,
                 divisor,
                 scalarByte,
                 acl,
@@ -2239,42 +2242,43 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(fheType), supportedTypesFheMulDiv));
         address sender = address(123);
-        bytes1 scalarByte = 0x00;
+        bytes1 scalarByte = FHE_MUL_DIV_FACTOR2_ENCRYPTED;
 
-        bytes32 lhs = _generateMockHandle(FheType(fheType));
-        bytes32 rhs = _generateMockHandle(FheType(fheType));
+        bytes32 factor1 = _generateMockHandle(FheType(fheType));
+        bytes32 factor2 = _generateMockHandle(FheType(fheType));
         bytes32 divisor = bytes32(uint256(2)); // plaintext divisor = 2
 
-        _approveHandleInACL(lhs, sender);
-        _approveHandleInACL(rhs, sender);
+        _approveHandleInACL(factor1, sender);
+        _approveHandleInACL(factor2, sender);
 
-        bytes32 expectedResult = _computeExpectedResultFheMulDiv(lhs, rhs, divisor, scalarByte, FheType(fheType));
+        bytes32 expectedResult = _computeExpectedResultFheMulDiv(factor1, factor2, divisor, scalarByte, FheType(fheType));
 
         vm.prank(sender);
         vm.expectEmit(true, true, true, true);
-        emit FHEEvents.FheMulDiv(sender, lhs, rhs, divisor, scalarByte, expectedResult);
-        bytes32 result = fhevmExecutor.fheMulDiv(lhs, rhs, divisor, scalarByte);
+        emit FHEEvents.FheMulDiv(sender, factor1, factor2, divisor, scalarByte, expectedResult);
+        bytes32 result = fhevmExecutor.fheMulDiv(factor1, factor2, divisor, scalarByte);
         assertEq(result, expectedResult);
     }
 
-    function test_FheMulDivScalarRhsSupportedTypesWorkAsExpected(uint8 fheType) public {
+    function test_FheMulDivScalarFactor2SupportedTypesWorkAsExpected(uint8 fheType) public {
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(fheType), supportedTypesFheMulDiv));
         address sender = address(123);
-        bytes1 scalarByte = 0x01;
+        // enc×scalar: divisor (bit 0) + factor2 (bit 1) both set → 0x03.
+        bytes1 scalarByte = FHE_MUL_DIV_FACTOR2_SCALAR;
 
-        bytes32 lhs = _generateMockHandle(FheType(fheType));
-        bytes32 rhs = bytes32(uint256(300)); // scalar rhs = 300
+        bytes32 factor1 = _generateMockHandle(FheType(fheType));
+        bytes32 factor2 = bytes32(uint256(300)); // scalar factor2 = 300
         bytes32 divisor = bytes32(uint256(3)); // scalar divisor = 3
 
-        _approveHandleInACL(lhs, sender);
+        _approveHandleInACL(factor1, sender);
 
-        bytes32 expectedResult = _computeExpectedResultFheMulDiv(lhs, rhs, divisor, scalarByte, FheType(fheType));
+        bytes32 expectedResult = _computeExpectedResultFheMulDiv(factor1, factor2, divisor, scalarByte, FheType(fheType));
 
         vm.prank(sender);
         vm.expectEmit(true, true, true, true);
-        emit FHEEvents.FheMulDiv(sender, lhs, rhs, divisor, scalarByte, expectedResult);
-        bytes32 result = fhevmExecutor.fheMulDiv(lhs, rhs, divisor, scalarByte);
+        emit FHEEvents.FheMulDiv(sender, factor1, factor2, divisor, scalarByte, expectedResult);
+        bytes32 result = fhevmExecutor.fheMulDiv(factor1, factor2, divisor, scalarByte);
         assertEq(result, expectedResult);
     }
 
@@ -2282,12 +2286,12 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheMulDiv));
 
-        bytes32 lhs = _generateMockHandle(FheType(fheType));
-        bytes32 rhs = _generateMockHandle(FheType(fheType));
+        bytes32 factor1 = _generateMockHandle(FheType(fheType));
+        bytes32 factor2 = _generateMockHandle(FheType(fheType));
         bytes32 divisor = bytes32(uint256(1));
 
         vm.expectRevert(FHEVMExecutor.UnsupportedType.selector);
-        fhevmExecutor.fheMulDiv(lhs, rhs, divisor, 0x00);
+        fhevmExecutor.fheMulDiv(factor1, factor2, divisor, FHE_MUL_DIV_FACTOR2_ENCRYPTED);
     }
 
     function test_FheMulDivRevertsOnDivisionByZero(uint8 fheType) public {
@@ -2295,76 +2299,93 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         vm.assume(_isTypeSupported(FheType(fheType), supportedTypesFheMulDiv));
         address sender = address(123);
 
-        bytes32 lhs = _generateMockHandle(FheType(fheType));
-        bytes32 rhs = _generateMockHandle(FheType(fheType));
+        bytes32 factor1 = _generateMockHandle(FheType(fheType));
+        bytes32 factor2 = _generateMockHandle(FheType(fheType));
         bytes32 zeroDivisor = bytes32(0);
 
-        _approveHandleInACL(lhs, sender);
-        _approveHandleInACL(rhs, sender);
+        _approveHandleInACL(factor1, sender);
+        _approveHandleInACL(factor2, sender);
 
         vm.prank(sender);
         vm.expectRevert(FHEVMExecutor.DivisionByZero.selector);
-        fhevmExecutor.fheMulDiv(lhs, rhs, zeroDivisor, 0x00);
+        fhevmExecutor.fheMulDiv(factor1, factor2, zeroDivisor, FHE_MUL_DIV_FACTOR2_ENCRYPTED);
     }
 
-    function test_FheMulDivRevertsIfScalarByteIsNotBoolean(uint8 fheType) public {
+    function test_FheMulDivRevertsIfScalarByteIsInvalid(uint8 fheType) public {
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(fheType), supportedTypesFheMulDiv));
         address sender = address(123);
 
-        bytes32 lhs = _generateMockHandle(FheType(fheType));
-        bytes32 rhs = _generateMockHandle(FheType(fheType));
+        bytes32 factor1 = _generateMockHandle(FheType(fheType));
+        bytes32 factor2 = _generateMockHandle(FheType(fheType));
         bytes32 divisor = bytes32(uint256(1));
 
-        _approveHandleInACL(lhs, sender);
-        _approveHandleInACL(rhs, sender);
+        _approveHandleInACL(factor1, sender);
+        _approveHandleInACL(factor2, sender);
 
         vm.prank(sender);
-        vm.expectRevert(FHEVMExecutor.ScalarByteIsNotBoolean.selector);
-        fhevmExecutor.fheMulDiv(lhs, rhs, divisor, 0x42);
+        vm.expectRevert(FHEVMExecutor.InvalidMulDivScalarByte.selector);
+        fhevmExecutor.fheMulDiv(factor1, factor2, divisor, 0x42);
+    }
+
+    function test_FheMulDivRevertsIfScalarByteIsZero(uint8 fheType) public {
+        vm.assume(fheType <= uint8(FheType.Int248));
+        vm.assume(_isTypeSupported(FheType(fheType), supportedTypesFheMulDiv));
+        address sender = address(123);
+
+        bytes32 factor1 = _generateMockHandle(FheType(fheType));
+        bytes32 factor2 = _generateMockHandle(FheType(fheType));
+        bytes32 divisor = bytes32(uint256(1));
+
+        _approveHandleInACL(factor1, sender);
+        _approveHandleInACL(factor2, sender);
+
+        vm.prank(sender);
+        vm.expectRevert(FHEVMExecutor.InvalidMulDivScalarByte.selector);
+        fhevmExecutor.fheMulDiv(factor1, factor2, divisor, 0x00);
     }
 
     function test_RevertsIfACLNotAllowed_FheMulDiv() public {
         address account = address(123);
-        bytes32 lhs = _generateMockHandle(FheType.Uint32);
-        bytes32 rhs = _generateMockHandle(FheType.Uint32);
+        bytes32 factor1 = _generateMockHandle(FheType.Uint32);
+        bytes32 factor2 = _generateMockHandle(FheType.Uint32);
         bytes32 divisor = bytes32(uint256(1));
-        // lhs is NOT approved in ACL
+        // factor1 is NOT approved in ACL
 
         vm.prank(account);
         vm.expectPartialRevert(FHEVMExecutor.ACLNotAllowed.selector);
-        fhevmExecutor.fheMulDiv(lhs, rhs, divisor, 0x00);
+        fhevmExecutor.fheMulDiv(factor1, factor2, divisor, FHE_MUL_DIV_FACTOR2_ENCRYPTED);
     }
 
-    function test_RevertsIfACLNotAllowed_FheMulDiv_RHS() public {
+    function test_RevertsIfACLNotAllowed_FheMulDiv_Factor2() public {
         address account = address(123);
-        bytes32 lhs = _generateMockHandle(FheType.Uint32);
-        bytes32 rhs = _generateMockHandle(FheType.Uint32);
+        bytes32 factor1 = _generateMockHandle(FheType.Uint32);
+        bytes32 factor2 = _generateMockHandle(FheType.Uint32);
         bytes32 divisor = bytes32(uint256(1));
-        _approveHandleInACL(lhs, account);
-        // rhs is NOT approved in ACL
+        _approveHandleInACL(factor1, account);
+        // factor2 is NOT approved in ACL
 
         vm.prank(account);
         vm.expectPartialRevert(FHEVMExecutor.ACLNotAllowed.selector);
-        fhevmExecutor.fheMulDiv(lhs, rhs, divisor, 0x00);
+        fhevmExecutor.fheMulDiv(factor1, factor2, divisor, FHE_MUL_DIV_FACTOR2_ENCRYPTED);
     }
 
-    function test_RevertsIfFheMulDivTypesNotCompatible(uint8 fheTypeLhs, uint8 fheTypeRhs) public {
-        vm.assume(fheTypeLhs <= uint8(FheType.Int248));
-        vm.assume(fheTypeRhs <= uint8(FheType.Int248));
-        vm.assume(_isTypeSupported(FheType(fheTypeLhs), supportedTypesFheMulDiv));
-        vm.assume(fheTypeLhs != fheTypeRhs);
+    function test_RevertsIfFheMulDivTypesNotCompatible(uint8 fheTypeFactor1, uint8 fheTypeFactor2) public {
+        vm.assume(fheTypeFactor1 <= uint8(FheType.Int248));
+        vm.assume(fheTypeFactor2 <= uint8(FheType.Int248));
+        vm.assume(_isTypeSupported(FheType(fheTypeFactor1), supportedTypesFheMulDiv));
+        vm.assume(fheTypeFactor1 != fheTypeFactor2);
 
-        bytes32 lhs = _generateMockHandle(FheType(fheTypeLhs));
-        bytes32 rhs = _generateMockHandle(FheType(fheTypeRhs));
+        bytes32 factor1 = _generateMockHandle(FheType(fheTypeFactor1));
+        bytes32 factor2 = _generateMockHandle(FheType(fheTypeFactor2));
         bytes32 divisor = bytes32(uint256(1));
         address account = address(123);
-        _approveHandleInACL(lhs, account);
-        _approveHandleInACL(rhs, account);
+        _approveHandleInACL(factor1, account);
+        _approveHandleInACL(factor2, account);
 
         vm.expectRevert(FHEVMExecutor.IncompatibleTypes.selector);
         vm.prank(account);
-        fhevmExecutor.fheMulDiv(lhs, rhs, divisor, 0x00);
+        fhevmExecutor.fheMulDiv(factor1, factor2, divisor, FHE_MUL_DIV_FACTOR2_ENCRYPTED);
     }
 
     function test_RevertsIfFheMulDivScalarDivisorTruncatesToZero(uint8 fheType) public {
@@ -2381,31 +2402,31 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         else if (FheType(fheType) == FheType.Uint64) divisorValue = 1 << 64;
         else revert("unsupported type in test setup");
 
-        bytes32 lhs = _generateMockHandle(FheType(fheType));
-        bytes32 rhs = _generateMockHandle(FheType(fheType));
+        bytes32 factor1 = _generateMockHandle(FheType(fheType));
+        bytes32 factor2 = _generateMockHandle(FheType(fheType));
         bytes32 divisor = bytes32(divisorValue);
         address account = address(123);
-        _approveHandleInACL(lhs, account);
-        _approveHandleInACL(rhs, account);
+        _approveHandleInACL(factor1, account);
+        _approveHandleInACL(factor2, account);
 
         vm.prank(account);
         vm.expectRevert(FHEVMExecutor.DivisionByZero.selector);
-        fhevmExecutor.fheMulDiv(lhs, rhs, divisor, 0x00);
+        fhevmExecutor.fheMulDiv(factor1, factor2, divisor, FHE_MUL_DIV_FACTOR2_ENCRYPTED);
     }
 
     function test_FheMulDivRevertsForUint128() public {
         // Uint128 is intentionally NOT supported by fheMulDiv even though the
         // surrounding ops (fheMul/fheDiv/fheRem) accept it — see operatorsPrices.ts
         // and the per-tx HCU depth cap analysis. Explicit named test for clarity.
-        bytes32 lhs = _generateMockHandle(FheType.Uint128);
-        bytes32 rhs = _generateMockHandle(FheType.Uint128);
+        bytes32 factor1 = _generateMockHandle(FheType.Uint128);
+        bytes32 factor2 = _generateMockHandle(FheType.Uint128);
         bytes32 divisor = bytes32(uint256(1));
         address account = address(123);
-        _approveHandleInACL(lhs, account);
-        _approveHandleInACL(rhs, account);
+        _approveHandleInACL(factor1, account);
+        _approveHandleInACL(factor2, account);
 
         vm.prank(account);
         vm.expectRevert(FHEVMExecutor.UnsupportedType.selector);
-        fhevmExecutor.fheMulDiv(lhs, rhs, divisor, 0x00);
+        fhevmExecutor.fheMulDiv(factor1, factor2, divisor, FHE_MUL_DIV_FACTOR2_ENCRYPTED);
     }
 }

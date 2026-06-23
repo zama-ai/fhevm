@@ -1,0 +1,20 @@
+[package]
+authors = ["Zama"]
+name = "ciphertext-attestation"
+version = "0.14.0"
+edition = "2024"
+license = "BSD-3-Clause-Clear"
+
+[dependencies]
+alloy-primitives = { version = "1", default-features = false, features = ["std", "serde"] }
+alloy-signer = { version = "1", default-features = false }
+serde = { version = "1", default-features = false, features = ["std", "derive"] }
+serde_json = { version = "1", default-features = false, features = ["std"] }
+sha3 = { version = "0.10.8", default-features = false }
+hex = { version = "0.4.3", default-features = false, features = ["std"] }
+thiserror = { version = "2", default-features = false }
+tracing = { version = "0.1", default-features = false }
+
+[dev-dependencies]
+alloy-signer-local = { version = "1", default-features = false }
+tokio = { version = "1", features = ["macros", "rt"] }

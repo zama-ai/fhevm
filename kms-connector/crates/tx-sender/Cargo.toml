@@ -23,6 +23,7 @@ tokio.workspace = true
 tokio-util.workspace = true
 tracing.workspace = true
 tracing-opentelemetry.workspace = true
+url.workspace = true
 
 [dev-dependencies]
 alloy = { workspace = true, features = ["json-rpc"] }

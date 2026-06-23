@@ -21,18 +21,23 @@ use tracing::{debug, info};
 pub use fhevm_gateway_bindings::decryption::Decryption;
 pub use fhevm_gateway_bindings::input_verification::InputVerification;
 
-/// Selects between direct and delegated user decryption mock patterns.
+/// Selects which user-decryption gateway overload the mock should match
+/// when registering a success pattern. `Direct` / `Delegated` are the
+/// legacy EIP-712 types (`_1Call` / `delegatedUserDecryptionRequestCall`);
+/// `Unified` is the unified EIP-712 overload (`_0Call`).
 #[derive(Debug, Clone, Copy)]
 pub enum UserDecryptKind {
     Direct,
     Delegated,
+    Unified,
 }
 
 impl UserDecryptKind {
     fn selector(&self) -> [u8; 4] {
         match self {
-            Self::Direct => Decryption::userDecryptionRequestCall::SELECTOR,
+            Self::Direct => Decryption::userDecryptionRequest_1Call::SELECTOR,
             Self::Delegated => Decryption::delegatedUserDecryptionRequestCall::SELECTOR,
+            Self::Unified => Decryption::userDecryptionRequest_0Call::SELECTOR,
         }
     }
 }
@@ -76,6 +81,82 @@ fn matches_contract_and_selector_for_txn(
 ) -> impl Fn(&crate::mock_server::TxParams) -> bool + Send + Sync + 'static {
     move |params: &crate::mock_server::TxParams| -> bool {
         params.to == Some(contract) && params.data.len() >= 4 && params.data[0..4] == selector
+    }
+}
+
+/// Like `matches_contract_and_selector_for_txn`, but also decodes the matching
+/// transaction's calldata and panics if the embedded handles + address-of-interest
+/// don't match what the test passed to `on_user_decrypt_success`. Panics propagate
+/// out of the mock task as a test failure naming the offending field.
+fn matches_and_asserts_user_decrypt_txn(
+    contract: Address,
+    kind: UserDecryptKind,
+    expected_handles: Vec<B256>,
+    expected_user: Address,
+) -> impl Fn(&crate::mock_server::TxParams) -> bool + Send + Sync + 'static {
+    let selector = kind.selector();
+    move |params: &crate::mock_server::TxParams| -> bool {
+        let matches =
+            params.to == Some(contract) && params.data.len() >= 4 && params.data[0..4] == selector;
+        if matches {
+            assert_user_decrypt_calldata(kind, &expected_handles, expected_user, &params.data);
+        }
+        matches
+    }
+}
+
+fn assert_user_decrypt_calldata(
+    kind: UserDecryptKind,
+    expected_handles: &[B256],
+    expected_user: Address,
+    data: &[u8],
+) {
+    let payload = &data[4..];
+    match kind {
+        UserDecryptKind::Direct => {
+            let decoded = Decryption::userDecryptionRequest_1Call::abi_decode_raw(payload)
+                .expect("calldata: failed to decode userDecryptionRequest_1Call");
+            assert_eq!(
+                decoded.userAddress, expected_user,
+                "calldata.userAddress mismatch (direct)"
+            );
+            let got: Vec<B256> = decoded
+                .ctHandleContractPairs
+                .iter()
+                .map(|p| p.ctHandle)
+                .collect();
+            assert_eq!(
+                got, expected_handles,
+                "calldata.ctHandles mismatch (direct)"
+            );
+        }
+        UserDecryptKind::Delegated => {
+            let decoded = Decryption::delegatedUserDecryptionRequestCall::abi_decode_raw(payload)
+                .expect("calldata: failed to decode delegatedUserDecryptionRequestCall");
+            assert_eq!(
+                decoded.delegationAccounts.delegateAddress, expected_user,
+                "calldata.delegationAccounts.delegateAddress mismatch"
+            );
+            let got: Vec<B256> = decoded
+                .ctHandleContractPairs
+                .iter()
+                .map(|p| p.ctHandle)
+                .collect();
+            assert_eq!(
+                got, expected_handles,
+                "calldata.ctHandles mismatch (delegated)"
+            );
+        }
+        UserDecryptKind::Unified => {
+            let decoded = Decryption::userDecryptionRequest_0Call::abi_decode_raw(payload)
+                .expect("calldata: failed to decode userDecryptionRequest_0Call");
+            assert_eq!(
+                decoded.userAddress, expected_user,
+                "calldata.userAddress mismatch (unified)"
+            );
+            let got: Vec<B256> = decoded.handles.iter().map(|h| h.handle).collect();
+            assert_eq!(got, expected_handles, "calldata.handles mismatch (unified)");
+        }
     }
 }
 
@@ -305,7 +386,7 @@ impl FhevmMockWrapper {
         target: mock_server::SubscriptionTarget,
     ) {
         self.register_user_decrypt_success(
-            kind.selector(),
+            kind,
             handles,
             user,
             vec![target],
@@ -325,13 +406,7 @@ impl FhevmMockWrapper {
         user: Address,
         targets: Vec<mock_server::SubscriptionTarget>,
     ) {
-        self.register_user_decrypt_success(
-            kind.selector(),
-            handles,
-            user,
-            targets,
-            UsageLimit::Once,
-        );
+        self.register_user_decrypt_success(kind, handles, user, targets, UsageLimit::Once);
     }
 
     /// Register user decryption that reverts with specified reason.
@@ -341,10 +416,15 @@ impl FhevmMockWrapper {
 
     // Shared internals for user / delegated-user decryption
 
-    /// Internal: register a user-decrypt success pattern for the given TX selector.
+    /// Internal: register a user-decrypt success pattern for the given
+    /// attestation type. The request log emitted in the immediate
+    /// response uses `UserDecryptionRequest_0` for `Direct` / `Delegated`
+    /// (legacy EIP-712) and `UserDecryptionRequest_1` for `Unified`
+    /// (unified EIP-712). The 10 `UserDecryptionResponse` shares emitted
+    /// afterwards are the same for every attestation type.
     fn register_user_decrypt_success(
         &self,
-        selector: [u8; 4],
+        kind: UserDecryptKind,
         handles: Vec<B256>,
         user: Address,
         targets: Vec<mock_server::SubscriptionTarget>,
@@ -364,8 +444,23 @@ impl FhevmMockWrapper {
         let signatures = generate_mock_signatures(9);
         let extra_data = Bytes::from(vec![0x00]); // Same extraData for all events in a decryption
 
-        // Build the request log (immediate response)
-        let request_log = build_user_decrypt_request(self.decryption_contract, id, user, handles);
+        // Build the request log (immediate response). Pick the event
+        // signature that matches the attestation type: the relayer's
+        // `on_receipt_received` scans the receipt for both
+        // `UserDecryptionRequest_0` (legacy) and `_1` (unified).
+        let handles_for_assertion = handles.clone();
+        let request_log = match kind {
+            UserDecryptKind::Direct | UserDecryptKind::Delegated => {
+                build_legacy_user_decrypt_request(self.decryption_contract, id, user, handles)
+            }
+            UserDecryptKind::Unified => build_unified_user_decrypt_request(
+                self.decryption_contract,
+                id,
+                user,
+                handles,
+                extra_data.clone(),
+            ),
+        };
 
         // Build events using hard-coded 3-3-3-1 block pattern (targets resolved later)
         let events: Vec<(Duration, Log)> = vec![
@@ -501,9 +596,16 @@ impl FhevmMockWrapper {
         // Set up default readiness patterns (ready state)
         self.register_readiness_patterns(true);
 
-        // Register pattern that returns immediate response with scheduled transaction
+        // Register pattern that returns immediate response with scheduled transaction.
+        // Predicate also asserts that the calldata's handles and address-of-interest
+        // match what the test passed in — guards against silent forwarding bugs.
         self.json_rpc_server.on_transaction(
-            matches_contract_and_selector_for_txn(self.decryption_contract, selector),
+            matches_and_asserts_user_decrypt_txn(
+                self.decryption_contract,
+                kind,
+                handles_for_assertion,
+                user,
+            ),
             immediate_response,
             usage_limit,
         );
@@ -703,7 +805,8 @@ impl FhevmMockWrapper {
     ) {
         self.set_readiness_success();
         let id = self.next_decryption_id();
-        let request_log = build_user_decrypt_request(self.decryption_contract, id, user, handles);
+        let request_log =
+            build_legacy_user_decrypt_request(self.decryption_contract, id, user, handles);
         self.register_request_only(self.decryption_contract, selector, request_log);
     }
 
@@ -716,7 +819,7 @@ impl FhevmMockWrapper {
             mock_server::SubscriptionTarget::All,
             UsageLimit::Once,
             |id, contract| {
-                let request_log = build_user_decrypt_request(contract, id, user, handles);
+                let request_log = build_legacy_user_decrypt_request(contract, id, user, handles);
                 let response_log = build_user_decrypt_response(contract, id, vec![]); // Error response has empty decrypted shares
                 (request_log, response_log)
             },
@@ -851,13 +954,15 @@ fn build_event_log<T: SolEvent>(contract: Address, event: &T, topics: Vec<B256>)
     }
 }
 
-fn build_user_decrypt_request(
+/// Legacy v2 `UserDecryptionRequest` event (the relayer scans receipts for
+/// this signature when handling `Direct` / `Delegated` calls).
+fn build_legacy_user_decrypt_request(
     contract: Address,
     decryption_id: U256,
     user_address: Address,
     handles: Vec<B256>,
 ) -> Log {
-    let request = Decryption::UserDecryptionRequest {
+    let request = Decryption::UserDecryptionRequest_0 {
         decryptionId: decryption_id,
         snsCtMaterials: create_sns_materials(handles),
         userAddress: user_address,
@@ -869,7 +974,65 @@ fn build_user_decrypt_request(
         contract,
         &request,
         vec![
-            Decryption::UserDecryptionRequest::SIGNATURE_HASH,
+            Decryption::UserDecryptionRequest_0::SIGNATURE_HASH,
+            B256::from(decryption_id),
+        ],
+    )
+}
+
+/// unified EIP-712 `UserDecryptionRequest` event with `HandleEntry[]` and a
+/// `UserDecryptionRequestPayload` struct. The relayer's
+/// `on_receipt_received` extracts only `decryptionId` from the indexed
+/// topic, so the inner fields are populated with mock data sufficient to
+/// round-trip the ABI encoding.
+fn build_unified_user_decrypt_request(
+    contract: Address,
+    decryption_id: U256,
+    user_address: Address,
+    handles: Vec<B256>,
+    extra_data: Bytes,
+) -> Log {
+    // `UserDecryptionRequest_1.payload` is the file-level
+    // `decryption::IDecryption::UserDecryptionRequestPayload` (the sol!
+    // macro emits it once at the top of `decryption.rs`). Import it
+    // directly from the bindings crate.
+    use fhevm_gateway_bindings::decryption::IDecryption::{
+        RequestValiditySeconds, UserDecryptionRequestPayload,
+    };
+
+    let handle_entries: Vec<Decryption::HandleEntry> = handles
+        .iter()
+        .map(|h| Decryption::HandleEntry {
+            handle: *h,
+            contractAddress: contract,
+            ownerAddress: user_address,
+        })
+        .collect();
+
+    let payload = UserDecryptionRequestPayload {
+        userAddress: user_address,
+        publicKey: Bytes::from(vec![0x00; MOCK_PUBLIC_KEY_SIZE]),
+        allowedContracts: vec![],
+        requestValidity: RequestValiditySeconds {
+            startTimestamp: U256::from(0),
+            durationSeconds: U256::from(0),
+        },
+        extraData: extra_data,
+        signature: Bytes::from(vec![0x00; MOCK_SIGNATURE_SIZE]),
+    };
+
+    let request = Decryption::UserDecryptionRequest_1 {
+        decryptionId: decryption_id,
+        snsCtMaterials: create_sns_materials(handles),
+        handles: handle_entries,
+        payload,
+    };
+
+    build_event_log(
+        contract,
+        &request,
+        vec![
+            Decryption::UserDecryptionRequest_1::SIGNATURE_HASH,
             B256::from(decryption_id),
         ],
     )

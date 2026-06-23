@@ -128,6 +128,12 @@ interface IGatewayConfig {
     event UpdateCoprocessorThreshold(uint256 newCoprocessorThreshold);
 
     /**
+     * @notice Emitted when the priority coprocessor transaction sender has been updated.
+     * @param coprocessorTxSenderAddress The new priority coprocessor transaction sender, or zero when disabled.
+     */
+    event UpdatePriorityCoprocessorTxSender(address indexed coprocessorTxSenderAddress);
+
+    /**
      * @notice Emitted when a new host chain has been registered.
      * @param hostChain The new host chain metadata.
      */
@@ -266,6 +272,30 @@ interface IGatewayConfig {
     error InvalidHighCoprocessorThreshold(uint256 coprocessorThreshold, uint256 nCoprocessors);
 
     /**
+     * @notice Error emitted when the priority coprocessor transaction sender is not registered.
+     * @param coprocessorTxSenderAddress The invalid priority coprocessor transaction sender.
+     */
+    error PriorityCoprocessorTxSenderNotRegistered(address coprocessorTxSenderAddress);
+
+    /**
+     * @notice Error emitted when a coprocessor update would remove the active priority coprocessor.
+     * @param coprocessorTxSenderAddress The active priority coprocessor transaction sender.
+     */
+    error PriorityCoprocessorNotInNewCoprocessors(address coprocessorTxSenderAddress);
+
+    /**
+     * @notice Error emitted when a coprocessor update would rotate the active priority coprocessor signer.
+     * @param coprocessorTxSenderAddress The active priority coprocessor transaction sender.
+     * @param currentSignerAddress The currently registered signer address.
+     * @param newSignerAddress The signer address in the new coprocessor list.
+     */
+    error PriorityCoprocessorSignerChanged(
+        address coprocessorTxSenderAddress,
+        address currentSignerAddress,
+        address newSignerAddress
+    );
+
+    /**
      * @notice Emitted when all the pausable gateway contracts are paused.
      */
     event PauseAllGatewayContracts();
@@ -330,13 +360,6 @@ interface IGatewayConfig {
     error ThresholdExceedsProofFormatLimit(string thresholdName, uint256 threshold, uint256 maxAllowed);
 
     /**
-     * @notice Error emitted when an admin operation requires `InputVerification` to be paused first.
-     * @dev `updateCoprocessors` and `updateCoprocessorThreshold` rewrite consensus state read by
-     *      every input verification, so the contract must be paused first to drain in-flight requests.
-     */
-    error InputVerificationMustBePaused();
-
-    /**
      * @notice Error emitted when the KMS context ID is not strictly greater than the current one.
      * @param contextId The provided context ID.
      * @param currentKmsContextId The current KMS context ID.
@@ -378,8 +401,9 @@ interface IGatewayConfig {
 
     /**
      * @notice Update the KMS context: nodes and thresholds for a given context ID.
-     * @dev ⚠️ This function should be used with caution as it can lead to unexpected behavior in
-     * some requests and the contracts should first be paused. It will be deprecated in the future.
+     * @dev WARNING: This mutates state read by `Decryption` without enforcing an on-chain pause.
+     *      Operators must follow the runbook to avoid racing in-flight decryption requests when
+     *      shifting `currentKmsContextId`.
      * @param newContextId The new context ID to associate with the KMS nodes.
      * @param newKmsNodes The new KMS nodes.
      * @param newMpcThreshold The new MPC threshold.
@@ -401,14 +425,24 @@ interface IGatewayConfig {
      * @dev Once destroyed, the context's signers and tx senders are reported as not registered by
      *      `isKmsSignerForContext` / `isKmsTxSenderForContext`, and `getKmsNodeForContext` returns
      *      the zero `KmsNode`. The current context cannot be destroyed.
+     *
+     *      WARNING: This mutates state read by `Decryption` without enforcing an on-chain pause.
+     *      Operators must follow the runbook before destroying a context, because any in-flight
+     *      request pinned to the destroyed context becomes permanently unresolvable.
      * @param kmsContextId The non-current KMS context to destroy.
      */
     function destroyKmsContext(uint256 kmsContextId) external;
 
     /**
      * @notice Update the list of coprocessors and their threshold.
-     * @dev Requires `InputVerification` to be paused first — this call rewrites the coprocessor
-     *      set, which input verification reads on every call.
+     * @dev Applied live — `InputVerification` no longer has to be paused first (the pause coupling was
+     *      removed, see fhevm-internal#1487). This rewrites the coprocessor set and threshold that input
+     *      verification reads on every call, so any in-flight per-proof tally sees the new values
+     *      mid-flight; that is the accepted trade-off, managed by ordering the coprocessor-set changes
+     *      rather than by a pause. If priority mode is active, the active priority coprocessor transaction
+     *      sender and signer must remain unchanged. Per host chain the ordering invariant must hold at every
+     *      step: the host signer set must be a superset of the gateway's signers, and the host threshold
+     *      must not exceed the number of signatures the gateway emits.
      * @param newCoprocessors The new coprocessors.
      * @param newCoprocessorThreshold The new coprocessor threshold.
      */
@@ -424,9 +458,8 @@ interface IGatewayConfig {
     /**
      * @notice Update the MPC threshold for a given KMS context.
      * @dev The new threshold must verify `0 <= t < n`, with `n` the number of KMS nodes registered
-     *      for the given context. Updating the *current* KMS context's threshold can affect in-flight
-     *      decryption requests pinned to that context (they may fail to reach the new threshold or
-     *      reach it earlier than originally configured); the operator should ensure timing accordingly.
+     *      for the given context. The SDK derives the MPC threshold from the MPC nodes it knows
+     *      about instead of reading this value.
      * @param contextId The KMS context to update.
      * @param newMpcThreshold The new MPC threshold.
      */
@@ -435,8 +468,8 @@ interface IGatewayConfig {
     /**
      * @notice Update the public decryption threshold for a given KMS context.
      * @dev The new threshold must verify `1 <= t <= n`, with `n` the number of KMS nodes registered
-     *      for the given context. Updating the *current* KMS context's threshold can affect in-flight
-     *      decryption requests pinned to that context; the operator should ensure timing accordingly.
+     *      for the given context. WARNING: This mutates state read by `Decryption` without enforcing
+     *      an on-chain pause. Operators must follow the runbook to avoid racing in-flight requests.
      * @param contextId The KMS context to update.
      * @param newPublicDecryptionThreshold The new public decryption threshold.
      */
@@ -448,8 +481,8 @@ interface IGatewayConfig {
     /**
      * @notice Update the user decryption threshold for a given KMS context.
      * @dev The new threshold must verify `1 <= t <= n`, with `n` the number of KMS nodes registered
-     *      for the given context. Updating the *current* KMS context's threshold can affect in-flight
-     *      decryption requests pinned to that context; the operator should ensure timing accordingly.
+     *      for the given context. WARNING: This mutates state read by `Decryption` without enforcing
+     *      an on-chain pause. Operators must follow the runbook to avoid racing in-flight requests.
      * @param contextId The KMS context to update.
      * @param newUserDecryptionThreshold The new user decryption threshold.
      */
@@ -458,8 +491,8 @@ interface IGatewayConfig {
     /**
      * @notice Update the key and CRS generation threshold for a given KMS context.
      * @dev The new threshold must verify `1 <= t <= n`, with `n` the number of KMS nodes registered
-     *      for the given context. Updating the *current* KMS context's threshold can affect in-flight
-     *      key/CRS generation requests pinned to that context; the operator should ensure timing accordingly.
+     *      for the given context. This threshold is consumed by host-side KMS generation, not
+     *      Gateway-side decryption.
      * @param contextId The KMS context to update.
      * @param newKmsGenThreshold The new key and CRS generation threshold.
      */
@@ -468,10 +501,43 @@ interface IGatewayConfig {
     /**
      * @notice Update the coprocessor threshold.
      * @dev The new threshold must verify `1 <= t <= n`, with `n` the number of coprocessors currently registered.
-     *      Requires `InputVerification` to be paused first — input verification reads this threshold on every call.
+     *      Applied live — `InputVerification` no longer has to be paused first (the pause coupling was removed,
+     *      see fhevm-internal#1487); input verification reads this threshold on every call. While priority mode
+     *      is active the threshold is inert (the priority sender alone finalizes), so a batched
+     *      `updateCoprocessorThreshold(n)` + `removePriorityCoprocessorTxSender()` flips to true threshold
+     *      consensus atomically. Raise each host chain's threshold only after that flip, never before —
+     *      otherwise the host reverts with `SignatureThresholdNotReached`.
      * @param newCoprocessorThreshold The new coprocessor threshold.
      */
     function updateCoprocessorThreshold(uint256 newCoprocessorThreshold) external;
+
+    /**
+     * @notice Set the priority coprocessor transaction sender.
+     * @dev When set, coprocessor consensus is finalized only by this registered transaction sender.
+     *      Applied live — `InputVerification` no longer has to be paused first (the pause coupling was
+     *      removed, see fhevm-internal#1487); the in-flight per-proof tally is the accepted trade-off.
+     *      Known edge case: if the priority sender already responded to an in-flight request (proof or
+     *      ciphertext material) before priority mode was enabled, that request cannot finalize while
+     *      priority is set — duplicate responses revert and non-priority senders cannot finalize. It is
+     *      not lost: counters keep accumulating, so it finalizes through threshold consensus on the next
+     *      response after priority is removed. In the staged rollout this cannot occur (priority is
+     *      enabled while Zama is the sole coprocessor, so its response finalizes at threshold 1).
+     *      Every host-chain `InputVerifier` must accept this coprocessor signer with threshold 1 before
+     *      priority mode is used for user input proofs.
+     * @param coprocessorTxSenderAddress The registered coprocessor transaction sender to prioritize.
+     */
+    function setPriorityCoprocessorTxSender(address coprocessorTxSenderAddress) external;
+
+    /**
+     * @notice Remove the priority coprocessor transaction sender.
+     * @dev Restores normal threshold-based coprocessor consensus. Applied live — `InputVerification` no
+     *      longer has to be paused first (the pause coupling was removed, see fhevm-internal#1487). Every
+     *      host-chain `InputVerifier` must already accept the full gateway signer set (host signer set must
+     *      be a superset of the gateway signers) before priority is removed, otherwise partner signatures
+     *      reach the host and it reverts with `InvalidSigner`. Pair this with `updateCoprocessorThreshold`
+     *      in one batched tx so the raised threshold stays inert until priority is removed (atomic flip).
+     */
+    function removePriorityCoprocessorTxSender() external;
 
     /**
      * @notice Add a new host chain metadata to the GatewayConfig contract.
@@ -589,6 +655,12 @@ interface IGatewayConfig {
      * @return The coprocessor majority threshold.
      */
     function getCoprocessorMajorityThreshold() external view returns (uint256);
+
+    /**
+     * @notice Get the priority coprocessor transaction sender.
+     * @return The priority coprocessor transaction sender, or zero when disabled.
+     */
+    function getPriorityCoprocessorTxSender() external view returns (address);
 
     /**
      * @notice Get the metadata of the KMS node with the given transaction sender address.

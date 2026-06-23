@@ -11,6 +11,7 @@
 #   - kms-connector/
 #   - host-contracts/
 #   - library-solidity/
+#   - shared/
 #   - test-suite/
 #   - package.json, package-lock.json
 #   - .git/ (used for build metadata in some Dockerfiles)

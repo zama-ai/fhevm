@@ -13,7 +13,28 @@ use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, Instrument};
 
-const CODE_DEADLOCK_DETECTED: &str = "40P01";
+/// True if the DB connection is lost/unusable, so we should exit and let k8s
+/// restart us rather than retry on a dead pool.
+pub fn is_fatal_connection_error(err: &sqlx::Error) -> bool {
+    match err {
+        sqlx::Error::Io(_)
+        | sqlx::Error::Tls(_)
+        | sqlx::Error::Protocol(_)
+        | sqlx::Error::PoolClosed
+        | sqlx::Error::WorkerCrashed => true,
+        sqlx::Error::Database(db) => db.code().as_deref().is_some_and(fatal_connection_sqlstate),
+        _ => false,
+    }
+}
+
+/// Postgres SQLSTATEs for a dead connection/session (e.g. 28000, the auth
+/// rejection from the RDS failover). Deadlock (40P01) is excluded, it's retryable.
+fn fatal_connection_sqlstate(code: &str) -> bool {
+    matches!(
+        code,
+        "28000" | "28P01" | "08006" | "08001" | "08004" | "57P01" | "53300"
+    )
+}
 
 #[derive(Clone)]
 pub struct PostgresPoolManager {
@@ -152,11 +173,15 @@ impl PostgresPoolManager {
     ///     let handle = db.spawn_with_db_retry(op, "my_task").await;
     ///
     ///     // Wait for the task to finish (or let it run in background)
-    ///     handle.await.unwrap();
+    ///     handle.await.unwrap()?;
     ///     Ok(())
     /// }
     /// ```
-    pub async fn spawn_with_db_retry<F, Fut>(&self, op: F, name: &str) -> JoinHandle<()>
+    pub async fn spawn_with_db_retry<F, Fut>(
+        &self,
+        op: F,
+        name: &str,
+    ) -> JoinHandle<Result<(), ServiceError>>
     where
         F: Fn(Pool<Postgres>, CancellationToken) -> Fut + Send + 'static,
         Fut: Future<Output = Result<(), ServiceError>> + Send + 'static,
@@ -164,19 +189,14 @@ impl PostgresPoolManager {
         let pool_mngr = self.clone();
         let fut = pool_mngr.run_with_db_retry(op);
 
-        tokio::spawn(
-            async move {
-                let _ = fut.await;
-            }
-            .instrument(Self::span(name)),
-        )
+        tokio::spawn(fut.instrument(Self::span(name)))
     }
 
     /// Calls run_with_db_retry on the specific JoinSet
     pub async fn spawn_join_set_with_db_retry<F, Fut>(
         &self,
         op: F,
-        join_set: &mut JoinSet<()>,
+        join_set: &mut JoinSet<Result<(), ServiceError>>,
         name: &str,
     ) -> AbortHandle
     where
@@ -186,12 +206,7 @@ impl PostgresPoolManager {
         let pool_mngr = self.clone();
         let fut = pool_mngr.run_with_db_retry(op);
 
-        join_set.spawn(
-            async move {
-                let _ = fut.await;
-            }
-            .instrument(Self::span(name)),
-        )
+        join_set.spawn(fut.instrument(Self::span(name)))
     }
 
     /// Run the given closure with a database pool, retrying on transient errors.
@@ -217,7 +232,6 @@ impl PostgresPoolManager {
         Fut: Future<Output = Result<(), ServiceError>>,
     {
         let ct = self.cancel_token.child_token();
-        let retry_delay = self.params.retry_db_conn_interval;
         let mut backoff_delay = self.params.retry_db_conn_interval;
 
         loop {
@@ -228,41 +242,20 @@ impl PostgresPoolManager {
 
             backoff_delay = std::cmp::min(backoff_delay * 2, Duration::from_secs(60));
 
-            if let Err(err) = operation(self.pool.clone(), ct.clone()).await {
-                error!(error=%err, "service failure; retrying...");
-                match err {
-                    ServiceError::Database(sqlx::Error::PoolTimedOut) => {
-                        // PoolTimedOut is considered a transient error; retry after sleeping.
-                        cancellable_sleep(&ct, retry_delay).await;
-                    }
-                    ServiceError::Database(
-                        sqlx::Error::Io(_) | sqlx::Error::Protocol(_) | sqlx::Error::Tls(_),
-                    ) => {
-                        // IO, Protocol, and TLS errors are usually transient (e.g., network issues)
-                        cancellable_sleep(&ct, backoff_delay).await;
-                    }
-                    ServiceError::Database(sqlx::Error::Database(ref db_err)) => {
-                        // Only retry on transient database errors (deadlock, etc.)
-                        let code = db_err.code().unwrap_or("".into());
-                        if code == CODE_DEADLOCK_DETECTED {
-                            error!(error=%err, code=%code, "Transient DB error; retrying...");
-                        } else {
-                            error!(error=%db_err, code=%code, "Non-transient DB error; not retrying");
+            match operation(self.pool.clone(), ct.clone()).await {
+                Ok(()) => return Ok(()),
+                Err(err) => {
+                    // Only a lost connection is fatal (a restart gives a fresh
+                    // pool); retry everything else.
+                    if let ServiceError::Database(db_err) = &err {
+                        if is_fatal_connection_error(db_err) {
+                            error!(error=%err, "Fatal DB connection error; not retrying");
                             return Err(err);
                         }
                     }
-                    ServiceError::Database(other) => {
-                        error!(error=%other, "Non-transient DB error; longer backoff");
-                        cancellable_sleep(&ct, backoff_delay).await;
-                    }
-                    _ => {
-                        // Non-database errors are returned immediately.
-                        error!(error = %err, "unrecoverable error, a restart required");
-                        return Err(err);
-                    }
+                    error!(error=%err, "Service error; retrying...");
+                    cancellable_sleep(&ct, backoff_delay).await;
                 }
-            } else {
-                return Ok(());
             }
         }
     }
@@ -337,5 +330,40 @@ async fn cancellable_sleep(cancel_token: &CancellationToken, duration: Duration)
         _ = sleep(duration) => {
             // Sleep completed
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sqlstate_classification() {
+        for code in [
+            "28000", "28P01", "08006", "08001", "08004", "57P01", "53300",
+        ] {
+            assert!(fatal_connection_sqlstate(code), "{code} should be fatal");
+        }
+        // Deadlock is retryable; ordinary errors and unknown codes are not fatal.
+        for code in ["40P01", "23505", "23503", ""] {
+            assert!(
+                !fatal_connection_sqlstate(code),
+                "{code} should not be fatal"
+            );
+        }
+    }
+
+    #[test]
+    fn error_variant_classification() {
+        assert!(is_fatal_connection_error(&sqlx::Error::PoolClosed));
+        assert!(is_fatal_connection_error(&sqlx::Error::WorkerCrashed));
+        assert!(is_fatal_connection_error(&sqlx::Error::Io(
+            std::io::Error::other("boom")
+        )));
+        assert!(is_fatal_connection_error(&sqlx::Error::Protocol(
+            "bad".into()
+        )));
+        assert!(!is_fatal_connection_error(&sqlx::Error::PoolTimedOut));
+        assert!(!is_fatal_connection_error(&sqlx::Error::RowNotFound));
     }
 }

@@ -12,7 +12,7 @@ use alloy::{
 };
 use anyhow::Context;
 use aws_config::BehaviorVersion;
-use clap::{Parser, ValueEnum};
+use clap::Parser;
 use fhevm_engine_common::database::{
     apply_gcs_mode_search_path, connect_pool_with_options_and_connect_options,
     resolve_database_url_from_option,
@@ -30,15 +30,10 @@ use transaction_sender::{
 use fhevm_engine_common::{
     metrics_server,
     telemetry::{self, MetricsConfig},
+    types::SignerType,
     utils::DatabaseURL,
 };
 use humantime::parse_duration;
-
-#[derive(Parser, Debug, Clone, ValueEnum)]
-enum SignerType {
-    PrivateKey,
-    AwsKms,
-}
 
 #[derive(Parser, Debug, Clone)]
 #[command(version, about, long_about = None)]
@@ -152,7 +147,6 @@ struct Conf {
 
     #[arg(long, default_value_t = 10, value_parser = clap::value_parser!(u64).range(1..))]
     pub gauge_update_interval_secs: u64,
-
 }
 
 fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()> {
@@ -325,15 +319,14 @@ async fn main() -> anyhow::Result<()> {
 
     let database_url = resolve_database_url_from_option(conf.database_url)?;
 
-    let gcs_mode = match fhevm_engine_common::versioning::resolve_gcs_mode(database_url.as_str())
-        .await
-    {
-        Ok(gcs_mode) => gcs_mode,
-        Err(err) => {
-            tracing::error!(error = %err, "Failed to resolve gcs_mode from versioning table");
-            std::process::exit(1);
-        }
-    };
+    let gcs_mode =
+        match fhevm_engine_common::versioning::resolve_gcs_mode(database_url.as_str()).await {
+            Ok(gcs_mode) => gcs_mode,
+            Err(err) => {
+                tracing::error!(error = %err, "Failed to resolve gcs_mode from versioning table");
+                std::process::exit(1);
+            }
+        };
     config.gcs_mode = gcs_mode;
 
     // In GCS mode the pool is pinned to `search_path = gcs,public` so

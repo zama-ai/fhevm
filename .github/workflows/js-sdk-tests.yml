@@ -3,11 +3,14 @@ name: js-sdk-tests
 on:
   pull_request:
     branches:
-      - devex/js-sdk # triggers on PRs targeting devex/js-sdk branch
-      - main # triggers on PRs targeting main branch
+      - devex/js-sdk
+      - main
+    paths:
+      - '.github/workflows/js-sdk-*.yml'
+      - 'sdk/js-sdk/**'
   push:
     branches:
-      - devex/js-sdk # triggers on every push to devex/js-sdk branch
+      - devex/js-sdk
   workflow_dispatch:
     inputs:
       release:
@@ -21,7 +24,7 @@ permissions: {}
 jobs:
   run-tests:
     name: js-sdk-tests/test
-    runs-on: ubuntu-latest
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
     defaults:
       run:
         working-directory: ./sdk/js-sdk

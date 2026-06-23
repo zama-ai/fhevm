@@ -123,10 +123,15 @@ impl CiphertextChecker {
 
     /// Check user decryption readiness, accepting core `HandleContractPair` types.
     /// Converts to gateway binding types internally.
+    ///
+    /// All attestation types (legacy direct/delegated and unified EIP-712)
+    /// route through the same `isUserDecryptionReady_1((bytes32,address)[],
+    /// bytes)` overload: the contract only checks that ciphertext material
+    /// exists for each handle, so per-pair contract addresses and the
+    /// requesting user/delegator address play no role here.
     pub async fn check_user_decryption_readiness(
         &self,
         job_id: &JobId,
-        address: Address,
         pairs: &[HandleContractPair],
         extra_data: Bytes,
     ) -> Result<(), ReadinessCheckError> {
@@ -148,7 +153,7 @@ impl CiphertextChecker {
                 let extra_data = extra_data.clone();
                 async move {
                     decryption
-                        .isUserDecryptionReady_1(address, pairs, extra_data)
+                        .isUserDecryptionReady_1(pairs, extra_data)
                         .call()
                         .await
                 }

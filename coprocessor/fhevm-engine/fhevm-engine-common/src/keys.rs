@@ -1,4 +1,4 @@
-use std::{fs::read, sync::Arc};
+use std::sync::Arc;
 
 #[cfg(feature = "gpu")]
 use tfhe::core_crypto::gpu::get_number_of_gpus;
@@ -16,7 +16,7 @@ use tfhe::{
     ClientKey, CompactPublicKey, CompressedServerKey, Config, ConfigBuilder, ServerKey,
 };
 
-use crate::utils::{safe_deserialize_key, safe_serialize_key};
+use crate::utils::safe_serialize_key;
 
 #[cfg(not(feature = "gpu"))]
 pub const TFHE_PARAMS: AtomicPatternParameters = cpu_meta_parameters.compute_parameters;
@@ -47,27 +47,20 @@ pub const MAX_BITS_TO_PROVE: usize = 2048;
 #[derive(Clone)]
 pub struct FhevmKeys {
     pub server_key: ServerKey,
-    #[cfg(not(feature = "gpu"))]
     pub server_key_without_ns: ServerKey,
     pub client_key: Option<ClientKey>,
     pub compact_public_key: CompactPublicKey,
     pub public_params: Arc<CompactPkeCrs>,
     #[cfg(feature = "gpu")]
-    pub compressed_server_key: CompressedServerKey,
-    #[cfg(feature = "gpu")]
     pub gpu_server_key: Vec<tfhe::CudaServerKey>,
 }
 
 pub struct SerializedFhevmKeys {
-    #[cfg(not(feature = "gpu"))]
     pub server_key: Vec<u8>,
-    #[cfg(not(feature = "gpu"))]
     pub server_key_without_ns: Vec<u8>,
     pub client_key: Option<Vec<u8>>,
     pub compact_public_key: Vec<u8>,
     pub public_params: Vec<u8>,
-    #[cfg(feature = "gpu")]
-    pub compressed_server_key: Vec<u8>,
 }
 
 impl Default for FhevmKeys {
@@ -88,7 +81,6 @@ impl FhevmKeys {
         let server_key = compressed_server_key.decompress();
         #[cfg(feature = "gpu")]
         let server_key = compressed_server_key.clone().decompress();
-        #[cfg(not(feature = "gpu"))]
         let (
             sks,
             kskm,
@@ -100,7 +92,6 @@ impl FhevmKeys {
             _oprf_key,
             tag,
         ) = server_key.clone().into_raw_parts();
-        #[cfg(not(feature = "gpu"))]
         let server_key_without_ns = ServerKey::from_raw_parts(
             sks,
             kskm,
@@ -115,13 +106,10 @@ impl FhevmKeys {
 
         FhevmKeys {
             server_key,
-            #[cfg(not(feature = "gpu"))]
             server_key_without_ns,
             client_key: Some(client_key),
             compact_public_key,
             public_params: Arc::new(crs),
-            #[cfg(feature = "gpu")]
-            compressed_server_key: compressed_server_key.clone(),
             #[cfg(feature = "gpu")]
             #[cfg(feature = "latency")]
             gpu_server_key: vec![compressed_server_key.decompress_to_gpu()],
@@ -163,93 +151,33 @@ impl FhevmKeys {
 
 impl SerializedFhevmKeys {
     const DIRECTORY: &'static str = "../fhevm-keys";
-    #[cfg(not(feature = "gpu"))]
     const SKS: &'static str = "../fhevm-keys/sks";
-    #[cfg(not(feature = "gpu"))]
     const CKS: &'static str = "../fhevm-keys/cks";
-    #[cfg(not(feature = "gpu"))]
     const PKS: &'static str = "../fhevm-keys/pks";
-    #[cfg(not(feature = "gpu"))]
     const PUBLIC_PARAMS: &'static str = "../fhevm-keys/pp";
-    #[cfg(not(feature = "gpu"))]
     const FULL_SKS: &'static str = "../fhevm-keys/sns_pk";
-
-    #[cfg(feature = "gpu")]
-    const GPU_CSKS: &'static str = "../fhevm-keys/gpu-csks";
-    #[cfg(feature = "gpu")]
-    const GPU_CKS: &'static str = "../fhevm-keys/gpu-cks";
-    #[cfg(feature = "gpu")]
-    const GPU_PKS: &'static str = "../fhevm-keys/gpu-pks";
-    #[cfg(feature = "gpu")]
-    const GPU_PUBLIC_PARAMS: &'static str = "../fhevm-keys/gpu-pp";
 
     // generating keys is only for testing, so it is okay these are hardcoded
     pub fn save_to_disk(self) {
         println!("Creating directory {}", Self::DIRECTORY);
         std::fs::create_dir_all(Self::DIRECTORY).expect("create keys directory");
-        #[cfg(not(feature = "gpu"))]
-        {
-            println!("Creating file {}", Self::SKS);
-            std::fs::write(Self::SKS, self.server_key_without_ns).expect("write sks");
 
-            println!("Creating file {}", Self::FULL_SKS);
-            std::fs::write(Self::FULL_SKS, self.server_key).expect("write sns_pk");
+        println!("Creating file {}", Self::SKS);
+        std::fs::write(Self::SKS, self.server_key_without_ns).expect("write sks");
 
-            if self.client_key.is_some() {
-                println!("Creating file {}", Self::CKS);
-                std::fs::write(Self::CKS, self.client_key.unwrap()).expect("write cks");
-            }
+        println!("Creating file {}", Self::FULL_SKS);
+        std::fs::write(Self::FULL_SKS, self.server_key).expect("write sns_pk");
 
-            println!("Creating file {}", Self::PKS);
-            std::fs::write(Self::PKS, self.compact_public_key).expect("write pks");
-
-            println!("Creating file {}", Self::PUBLIC_PARAMS);
-            std::fs::write(Self::PUBLIC_PARAMS, self.public_params).expect("write public params");
+        if self.client_key.is_some() {
+            println!("Creating file {}", Self::CKS);
+            std::fs::write(Self::CKS, self.client_key.unwrap()).expect("write cks");
         }
-        #[cfg(feature = "gpu")]
-        {
-            println!("Creating file {}", Self::GPU_CSKS);
-            std::fs::write(Self::GPU_CSKS, self.compressed_server_key).expect("write gpu csks");
 
-            if self.client_key.is_some() {
-                println!("Creating file {}", Self::GPU_CKS);
-                std::fs::write(Self::GPU_CKS, self.client_key.unwrap()).expect("write gpu cks");
-            }
+        println!("Creating file {}", Self::PKS);
+        std::fs::write(Self::PKS, self.compact_public_key).expect("write pks");
 
-            println!("Creating file {}", Self::GPU_PKS);
-            std::fs::write(Self::GPU_PKS, self.compact_public_key).expect("write gpu pks");
-
-            println!("Creating file {}", Self::GPU_PUBLIC_PARAMS);
-            std::fs::write(Self::GPU_PUBLIC_PARAMS, self.public_params)
-                .expect("write gpu public params");
-        }
-    }
-
-    pub fn load_from_disk(keys_directory: &str) -> Self {
-        let keys_dir = std::path::Path::new(&keys_directory);
-        #[cfg_attr(feature = "gpu", allow(unused_variables))]
-        let (sns_pk, sks, cks, pks, pp) = if !cfg!(feature = "gpu") {
-            ("sns_pk", "sks", "cks", "pks", "pp")
-        } else {
-            ("_unused_", "gpu-csks", "gpu-cks", "gpu-pks", "gpu-pp")
-        };
-        let server_key = read(keys_dir.join(sns_pk)).expect("read full server key (sns_pk)");
-        #[cfg(not(feature = "gpu"))]
-        let server_key_without_ns = read(keys_dir.join(sks)).expect("read server key");
-        let client_key = read(keys_dir.join(cks)).ok();
-        let compact_public_key = read(keys_dir.join(pks)).expect("read compact public key");
-        let public_params = read(keys_dir.join(pp)).expect("read public params");
-        SerializedFhevmKeys {
-            client_key,
-            compact_public_key,
-            public_params,
-            #[cfg(not(feature = "gpu"))]
-            server_key,
-            #[cfg(not(feature = "gpu"))]
-            server_key_without_ns,
-            #[cfg(feature = "gpu")]
-            compressed_server_key: server_key,
-        }
+        println!("Creating file {}", Self::PUBLIC_PARAMS);
+        std::fs::write(Self::PUBLIC_PARAMS, self.public_params).expect("write public params");
     }
 }
 
@@ -259,51 +187,8 @@ impl From<FhevmKeys> for SerializedFhevmKeys {
             client_key: f.client_key.map(|c| safe_serialize_key(&c)),
             compact_public_key: safe_serialize_key(&f.compact_public_key),
             public_params: safe_serialize_key(f.public_params.as_ref()),
-            #[cfg(not(feature = "gpu"))]
             server_key: safe_serialize_key(&f.server_key),
-            #[cfg(not(feature = "gpu"))]
             server_key_without_ns: safe_serialize_key(&f.server_key_without_ns),
-            #[cfg(feature = "gpu")]
-            compressed_server_key: safe_serialize_key(&f.compressed_server_key),
-        }
-    }
-}
-
-impl From<SerializedFhevmKeys> for FhevmKeys {
-    fn from(f: SerializedFhevmKeys) -> Self {
-        let client_key = f
-            .client_key
-            .map(|c| safe_deserialize_key(&c).expect("deserialize client key"));
-        #[cfg(feature = "gpu")]
-        let compressed_server_key: CompressedServerKey =
-            safe_deserialize_key(&f.compressed_server_key)
-                .expect("deserialize compressed server key");
-
-        FhevmKeys {
-            client_key,
-            compact_public_key: safe_deserialize_key(&f.compact_public_key)
-                .expect("deserialize compact public key"),
-            public_params: Arc::new(
-                safe_deserialize_key(&f.public_params).expect("deserialize public params"),
-            ),
-            #[cfg(not(feature = "gpu"))]
-            server_key: safe_deserialize_key(&f.server_key)
-                .expect("deserialize full server key (sns_pk)"),
-            #[cfg(not(feature = "gpu"))]
-            server_key_without_ns: safe_deserialize_key(&f.server_key_without_ns)
-                .expect("deserialize server key"),
-            #[cfg(feature = "gpu")]
-            compressed_server_key: compressed_server_key.clone(),
-            #[cfg(feature = "gpu")]
-            #[cfg(feature = "latency")]
-            gpu_server_key: vec![compressed_server_key.decompress_to_gpu()],
-            #[cfg(feature = "gpu")]
-            #[cfg(not(feature = "latency"))]
-            gpu_server_key: (0..get_number_of_gpus())
-                .map(|i| compressed_server_key.decompress_to_specific_gpu(tfhe::GpuIndex::new(i)))
-                .collect::<Vec<_>>(),
-            #[cfg(feature = "gpu")]
-            server_key: compressed_server_key.decompress(),
         }
     }
 }

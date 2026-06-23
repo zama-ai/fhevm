@@ -119,10 +119,14 @@ describe('FHEVM operations 99', function () {
   });
 
   it('test operator "ge" overload (euint128, euint8) => ebool test 1 (340282366920938463463372200021177982373, 99)', async function () {
-    const input = this.instance.createEncryptedInput(this.contract7Address, this.signer.address);
-    input.add128(340282366920938463463372200021177982373n);
-    input.add8(99n);
-    const encryptedAmount = await input.encrypt();
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [
+        { type: 'uint128', value: 340282366920938463463372200021177982373n },
+        { type: 'uint8', value: 99n },
+      ],
+      contractAddress: this.contract7Address,
+      userAddress: this.signer.address,
+    });
     const tx = await this.contract7.ge_euint128_euint8(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -138,10 +142,14 @@ describe('FHEVM operations 99', function () {
   });
 
   it('test operator "ge" overload (euint128, euint8) => ebool test 2 (95, 99)', async function () {
-    const input = this.instance.createEncryptedInput(this.contract7Address, this.signer.address);
-    input.add128(95n);
-    input.add8(99n);
-    const encryptedAmount = await input.encrypt();
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [
+        { type: 'uint128', value: 95n },
+        { type: 'uint8', value: 99n },
+      ],
+      contractAddress: this.contract7Address,
+      userAddress: this.signer.address,
+    });
     const tx = await this.contract7.ge_euint128_euint8(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -157,10 +165,14 @@ describe('FHEVM operations 99', function () {
   });
 
   it('test operator "ge" overload (euint128, euint8) => ebool test 3 (99, 99)', async function () {
-    const input = this.instance.createEncryptedInput(this.contract7Address, this.signer.address);
-    input.add128(99n);
-    input.add8(99n);
-    const encryptedAmount = await input.encrypt();
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [
+        { type: 'uint128', value: 99n },
+        { type: 'uint8', value: 99n },
+      ],
+      contractAddress: this.contract7Address,
+      userAddress: this.signer.address,
+    });
     const tx = await this.contract7.ge_euint128_euint8(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -176,10 +188,14 @@ describe('FHEVM operations 99', function () {
   });
 
   it('test operator "ge" overload (euint128, euint8) => ebool test 4 (99, 95)', async function () {
-    const input = this.instance.createEncryptedInput(this.contract7Address, this.signer.address);
-    input.add128(99n);
-    input.add8(95n);
-    const encryptedAmount = await input.encrypt();
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [
+        { type: 'uint128', value: 99n },
+        { type: 'uint8', value: 95n },
+      ],
+      contractAddress: this.contract7Address,
+      userAddress: this.signer.address,
+    });
     const tx = await this.contract7.ge_euint128_euint8(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -195,10 +211,11 @@ describe('FHEVM operations 99', function () {
   });
 
   it('test operator "max" overload (euint32, uint32) => euint32 test 1 (2203566275, 1083505052)', async function () {
-    const input = this.instance.createEncryptedInput(this.contract7Address, this.signer.address);
-    input.add32(2203566275n);
-
-    const encryptedAmount = await input.encrypt();
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [{ type: 'uint32', value: 2203566275n }],
+      contractAddress: this.contract7Address,
+      userAddress: this.signer.address,
+    });
     const tx = await this.contract7.max_euint32_uint32(
       encryptedAmount.handles[0],
       1083505052n,
@@ -214,10 +231,11 @@ describe('FHEVM operations 99', function () {
   });
 
   it('test operator "max" overload (euint32, uint32) => euint32 test 2 (242006176, 242006180)', async function () {
-    const input = this.instance.createEncryptedInput(this.contract7Address, this.signer.address);
-    input.add32(242006176n);
-
-    const encryptedAmount = await input.encrypt();
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [{ type: 'uint32', value: 242006176n }],
+      contractAddress: this.contract7Address,
+      userAddress: this.signer.address,
+    });
     const tx = await this.contract7.max_euint32_uint32(
       encryptedAmount.handles[0],
       242006180n,
@@ -233,10 +251,11 @@ describe('FHEVM operations 99', function () {
   });
 
   it('test operator "max" overload (euint32, uint32) => euint32 test 3 (242006180, 242006180)', async function () {
-    const input = this.instance.createEncryptedInput(this.contract7Address, this.signer.address);
-    input.add32(242006180n);
-
-    const encryptedAmount = await input.encrypt();
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [{ type: 'uint32', value: 242006180n }],
+      contractAddress: this.contract7Address,
+      userAddress: this.signer.address,
+    });
     const tx = await this.contract7.max_euint32_uint32(
       encryptedAmount.handles[0],
       242006180n,
@@ -252,10 +271,11 @@ describe('FHEVM operations 99', function () {
   });
 
   it('test operator "max" overload (euint32, uint32) => euint32 test 4 (242006180, 242006176)', async function () {
-    const input = this.instance.createEncryptedInput(this.contract7Address, this.signer.address);
-    input.add32(242006180n);
-
-    const encryptedAmount = await input.encrypt();
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [{ type: 'uint32', value: 242006180n }],
+      contractAddress: this.contract7Address,
+      userAddress: this.signer.address,
+    });
     const tx = await this.contract7.max_euint32_uint32(
       encryptedAmount.handles[0],
       242006176n,
@@ -271,10 +291,14 @@ describe('FHEVM operations 99', function () {
   });
 
   it('test operator "add" overload (euint8, euint32) => euint32 test 1 (2, 172)', async function () {
-    const input = this.instance.createEncryptedInput(this.contract7Address, this.signer.address);
-    input.add8(2n);
-    input.add32(172n);
-    const encryptedAmount = await input.encrypt();
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [
+        { type: 'uint8', value: 2n },
+        { type: 'uint32', value: 172n },
+      ],
+      contractAddress: this.contract7Address,
+      userAddress: this.signer.address,
+    });
     const tx = await this.contract7.add_euint8_euint32(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -290,10 +314,14 @@ describe('FHEVM operations 99', function () {
   });
 
   it('test operator "add" overload (euint8, euint32) => euint32 test 2 (68, 70)', async function () {
-    const input = this.instance.createEncryptedInput(this.contract7Address, this.signer.address);
-    input.add8(68n);
-    input.add32(70n);
-    const encryptedAmount = await input.encrypt();
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [
+        { type: 'uint8', value: 68n },
+        { type: 'uint32', value: 70n },
+      ],
+      contractAddress: this.contract7Address,
+      userAddress: this.signer.address,
+    });
     const tx = await this.contract7.add_euint8_euint32(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -309,10 +337,14 @@ describe('FHEVM operations 99', function () {
   });
 
   it('test operator "add" overload (euint8, euint32) => euint32 test 3 (70, 70)', async function () {
-    const input = this.instance.createEncryptedInput(this.contract7Address, this.signer.address);
-    input.add8(70n);
-    input.add32(70n);
-    const encryptedAmount = await input.encrypt();
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [
+        { type: 'uint8', value: 70n },
+        { type: 'uint32', value: 70n },
+      ],
+      contractAddress: this.contract7Address,
+      userAddress: this.signer.address,
+    });
     const tx = await this.contract7.add_euint8_euint32(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -328,10 +360,14 @@ describe('FHEVM operations 99', function () {
   });
 
   it('test operator "add" overload (euint8, euint32) => euint32 test 4 (70, 68)', async function () {
-    const input = this.instance.createEncryptedInput(this.contract7Address, this.signer.address);
-    input.add8(70n);
-    input.add32(68n);
-    const encryptedAmount = await input.encrypt();
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [
+        { type: 'uint8', value: 70n },
+        { type: 'uint32', value: 68n },
+      ],
+      contractAddress: this.contract7Address,
+      userAddress: this.signer.address,
+    });
     const tx = await this.contract7.add_euint8_euint32(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -347,10 +383,14 @@ describe('FHEVM operations 99', function () {
   });
 
   it('test operator "sub" overload (euint16, euint128) => euint128 test 1 (5031, 5031)', async function () {
-    const input = this.instance.createEncryptedInput(this.contract7Address, this.signer.address);
-    input.add16(5031n);
-    input.add128(5031n);
-    const encryptedAmount = await input.encrypt();
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [
+        { type: 'uint16', value: 5031n },
+        { type: 'uint128', value: 5031n },
+      ],
+      contractAddress: this.contract7Address,
+      userAddress: this.signer.address,
+    });
     const tx = await this.contract7.sub_euint16_euint128(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -366,10 +406,14 @@ describe('FHEVM operations 99', function () {
   });
 
   it('test operator "sub" overload (euint16, euint128) => euint128 test 2 (5031, 5027)', async function () {
-    const input = this.instance.createEncryptedInput(this.contract7Address, this.signer.address);
-    input.add16(5031n);
-    input.add128(5027n);
-    const encryptedAmount = await input.encrypt();
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [
+        { type: 'uint16', value: 5031n },
+        { type: 'uint128', value: 5027n },
+      ],
+      contractAddress: this.contract7Address,
+      userAddress: this.signer.address,
+    });
     const tx = await this.contract7.sub_euint16_euint128(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -385,10 +429,14 @@ describe('FHEVM operations 99', function () {
   });
 
   it('test operator "shr" overload (euint128, euint8) => euint128 test 1 (340282366920938463463369869815014359481, 6)', async function () {
-    const input = this.instance.createEncryptedInput(this.contract7Address, this.signer.address);
-    input.add128(340282366920938463463369869815014359481n);
-    input.add8(6n);
-    const encryptedAmount = await input.encrypt();
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [
+        { type: 'uint128', value: 340282366920938463463369869815014359481n },
+        { type: 'uint8', value: 6n },
+      ],
+      contractAddress: this.contract7Address,
+      userAddress: this.signer.address,
+    });
     const tx = await this.contract7.shr_euint128_euint8(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -404,10 +452,14 @@ describe('FHEVM operations 99', function () {
   });
 
   it('test operator "shr" overload (euint128, euint8) => euint128 test 2 (2, 6)', async function () {
-    const input = this.instance.createEncryptedInput(this.contract7Address, this.signer.address);
-    input.add128(2n);
-    input.add8(6n);
-    const encryptedAmount = await input.encrypt();
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [
+        { type: 'uint128', value: 2n },
+        { type: 'uint8', value: 6n },
+      ],
+      contractAddress: this.contract7Address,
+      userAddress: this.signer.address,
+    });
     const tx = await this.contract7.shr_euint128_euint8(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -423,10 +475,14 @@ describe('FHEVM operations 99', function () {
   });
 
   it('test operator "shr" overload (euint128, euint8) => euint128 test 3 (6, 6)', async function () {
-    const input = this.instance.createEncryptedInput(this.contract7Address, this.signer.address);
-    input.add128(6n);
-    input.add8(6n);
-    const encryptedAmount = await input.encrypt();
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [
+        { type: 'uint128', value: 6n },
+        { type: 'uint8', value: 6n },
+      ],
+      contractAddress: this.contract7Address,
+      userAddress: this.signer.address,
+    });
     const tx = await this.contract7.shr_euint128_euint8(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -442,10 +498,14 @@ describe('FHEVM operations 99', function () {
   });
 
   it('test operator "shr" overload (euint128, euint8) => euint128 test 4 (6, 2)', async function () {
-    const input = this.instance.createEncryptedInput(this.contract7Address, this.signer.address);
-    input.add128(6n);
-    input.add8(2n);
-    const encryptedAmount = await input.encrypt();
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [
+        { type: 'uint128', value: 6n },
+        { type: 'uint8', value: 2n },
+      ],
+      contractAddress: this.contract7Address,
+      userAddress: this.signer.address,
+    });
     const tx = await this.contract7.shr_euint128_euint8(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -461,10 +521,14 @@ describe('FHEVM operations 99', function () {
   });
 
   it('test operator "and" overload (euint16, euint256) => euint256 test 1 (65456, 115792089237316195423570985008687907853269984665640564039457581000826433146139)', async function () {
-    const input = this.instance.createEncryptedInput(this.contract7Address, this.signer.address);
-    input.add16(65456n);
-    input.add256(115792089237316195423570985008687907853269984665640564039457581000826433146139n);
-    const encryptedAmount = await input.encrypt();
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [
+        { type: 'uint16', value: 65456n },
+        { type: 'uint256', value: 115792089237316195423570985008687907853269984665640564039457581000826433146139n },
+      ],
+      contractAddress: this.contract7Address,
+      userAddress: this.signer.address,
+    });
     const tx = await this.contract7.and_euint16_euint256(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -480,10 +544,14 @@ describe('FHEVM operations 99', function () {
   });
 
   it('test operator "and" overload (euint16, euint256) => euint256 test 2 (65452, 65456)', async function () {
-    const input = this.instance.createEncryptedInput(this.contract7Address, this.signer.address);
-    input.add16(65452n);
-    input.add256(65456n);
-    const encryptedAmount = await input.encrypt();
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [
+        { type: 'uint16', value: 65452n },
+        { type: 'uint256', value: 65456n },
+      ],
+      contractAddress: this.contract7Address,
+      userAddress: this.signer.address,
+    });
     const tx = await this.contract7.and_euint16_euint256(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -499,10 +567,14 @@ describe('FHEVM operations 99', function () {
   });
 
   it('test operator "and" overload (euint16, euint256) => euint256 test 3 (65456, 65456)', async function () {
-    const input = this.instance.createEncryptedInput(this.contract7Address, this.signer.address);
-    input.add16(65456n);
-    input.add256(65456n);
-    const encryptedAmount = await input.encrypt();
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [
+        { type: 'uint16', value: 65456n },
+        { type: 'uint256', value: 65456n },
+      ],
+      contractAddress: this.contract7Address,
+      userAddress: this.signer.address,
+    });
     const tx = await this.contract7.and_euint16_euint256(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -518,10 +590,14 @@ describe('FHEVM operations 99', function () {
   });
 
   it('test operator "and" overload (euint16, euint256) => euint256 test 4 (65456, 65452)', async function () {
-    const input = this.instance.createEncryptedInput(this.contract7Address, this.signer.address);
-    input.add16(65456n);
-    input.add256(65452n);
-    const encryptedAmount = await input.encrypt();
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [
+        { type: 'uint16', value: 65456n },
+        { type: 'uint256', value: 65452n },
+      ],
+      contractAddress: this.contract7Address,
+      userAddress: this.signer.address,
+    });
     const tx = await this.contract7.and_euint16_euint256(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],

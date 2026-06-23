@@ -123,7 +123,7 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
      */
     string private constant CONTRACT_NAME = "KMSGeneration";
     uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 1;
+    uint256 private constant MINOR_VERSION = 2;
     uint256 private constant PATCH_VERSION = 0;
 
     /**
@@ -132,10 +132,10 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
     uint8 private constant EXTRA_DATA_V1 = 0x01;
 
     /**
-     * @dev Constant used for making sure the version number using in the `reinitializer` modifier
-     * is identical between `initializeFromEmptyProxy` and the migration initializer
+     * @dev Constant used for making sure the version number used in the `reinitializer` modifier
+     * is identical between `initializeFromEmptyProxy` and `reinitializeV2`.
      */
-    uint64 private constant REINITIALIZER_VERSION = 2;
+    uint64 private constant REINITIALIZER_VERSION = 3;
 
     // ----------------------------------------------------------------------------------------------
     // Contract storage:
@@ -237,6 +237,13 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         $.keyCounter = KEY_COUNTER_BASE;
         $.crsCounter = CRS_COUNTER_BASE;
     }
+
+    /**
+     * @notice Re-initializes the contract from V1.
+     */
+    /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
+    /// @custom:oz-upgrades-validate-as-initializer
+    function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /**
      * @notice See {IKMSGeneration-keygen}.
@@ -612,7 +619,6 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
 
     /**
      * @notice See {IKMSGeneration-getConsensusTxSenders}.
-     * The returned list remains empty until the consensus is reached, including for aborted requests.
      */
     function getConsensusTxSenders(uint256 requestId) external view virtual returns (address[] memory) {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
@@ -883,206 +889,8 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         }
     }
 
-    // ----------------------------------------------------------------------------------------------
-    // Migration-only errors, types, entrypoints, and helpers:
-    // ----------------------------------------------------------------------------------------------
-
-    /// @notice Thrown when migrated counters and active IDs do not describe a valid finalized state.
-    error InvalidMigrationCounterState();
-
-    /// @notice Thrown when migrated finalized consensus data is incomplete or inconsistent.
-    error InvalidMigrationConsensusState(uint256 requestId);
-
-    /// @notice Thrown when a migrated consensus tx sender is not registered in the migrated request context.
-    error UnknownMigrationConsensusTxSender(uint256 requestId, address txSender);
-
-    /// @notice Thrown when migrated key digests or CRS digest material is empty for a finalized request.
-    error InvalidMigrationMaterial(uint256 requestId);
-
-    /**
-     * @notice Migration state for initializeFromMigration.
-     * @dev Only active state is imported; historical Gateway state stays on the frozen Gateway contract.
-     *      Migration expects already-finalized active key/prep-keygen/CRS state with registered KMS senders.
-     */
-    struct MigrationState {
-        uint256 prepKeygenCounter;
-        uint256 keyCounter;
-        uint256 crsCounter;
-        uint256 activeKeyId;
-        uint256 activeCrsId;
-        // Active prep-keygen <-> key pairing
-        uint256 activePrepKeygenId;
-        // Active key digests / CRS digest
-        IKMSGeneration.KeyDigest[] activeKeyDigests;
-        bytes activeCrsDigest;
-        // Finalized consensus tx senders for migrated active items
-        address[] keyConsensusTxSenders;
-        bytes32 keyConsensusDigest;
-        address[] crsConsensusTxSenders;
-        bytes32 crsConsensusDigest;
-        address[] prepKeygenConsensusTxSenders;
-        bytes32 prepKeygenConsensusDigest;
-        // CRS max bit length
-        uint256 crsMaxBitLength;
-        // Params types
-        // The prep-keygen params type is also the keygen params type for the paired key lifecycle.
-        IKMSGeneration.ParamsType prepKeygenParamsType;
-        IKMSGeneration.ParamsType crsParamsType;
-        // KMS context ID for the migrated active prep-keygen, key, and CRS state.
-        uint256 contextId;
-    }
-
-    /**
-     * @notice Migration initializer: imports active state from the frozen Gateway contract.
-     * @param state The active state to import.
-     */
-    /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
-    /// @custom:oz-upgrades-validate-as-initializer
-    function initializeFromMigration(
-        MigrationState calldata state
-    ) public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
-        __EIP712_init(CONTRACT_NAME, "1");
-
-        KMSGenerationStorage storage $ = _getKMSGenerationStorage();
-
-        _validateMigrationCounters(state);
-        _validateMigratedConsensusState(
-            state.activeKeyId,
-            state.keyConsensusTxSenders,
-            state.keyConsensusDigest,
-            state.contextId
-        );
-        _validateMigratedConsensusState(
-            state.activeCrsId,
-            state.crsConsensusTxSenders,
-            state.crsConsensusDigest,
-            state.contextId
-        );
-        _validateMigratedConsensusState(
-            state.activePrepKeygenId,
-            state.prepKeygenConsensusTxSenders,
-            state.prepKeygenConsensusDigest,
-            state.contextId
-        );
-
-        if (state.activeKeyDigests.length == 0) {
-            revert InvalidMigrationMaterial(state.activeKeyId);
-        }
-        if (state.activeCrsDigest.length == 0) {
-            revert InvalidMigrationMaterial(state.activeCrsId);
-        }
-
-        // Counters
-        $.prepKeygenCounter = state.prepKeygenCounter;
-        $.keyCounter = state.keyCounter;
-        $.crsCounter = state.crsCounter;
-
-        // Active IDs
-        $.activeKeyId = state.activeKeyId;
-        $.activeCrsId = state.activeCrsId;
-
-        // Prep-keygen <-> key pairing
-        $.keygenIdPairs[state.activePrepKeygenId] = state.activeKeyId;
-        $.keygenIdPairs[state.activeKeyId] = state.activePrepKeygenId;
-
-        // Key digests
-        for (uint256 i = 0; i < state.activeKeyDigests.length; i++) {
-            $.keyDigests[state.activeKeyId].push(state.activeKeyDigests[i]);
-        }
-
-        // CRS digest
-        $.crsDigests[state.activeCrsId] = state.activeCrsDigest;
-        $.crsMaxBitLength[state.activeCrsId] = state.crsMaxBitLength;
-
-        // Finalized consensus tx senders
-        _setMigratedConsensusState(
-            $,
-            state.activeKeyId,
-            state.keyConsensusTxSenders,
-            state.keyConsensusDigest,
-            state.contextId
-        );
-        _setMigratedConsensusState(
-            $,
-            state.activeCrsId,
-            state.crsConsensusTxSenders,
-            state.crsConsensusDigest,
-            state.contextId
-        );
-        _setMigratedConsensusState(
-            $,
-            state.activePrepKeygenId,
-            state.prepKeygenConsensusTxSenders,
-            state.prepKeygenConsensusDigest,
-            state.contextId
-        );
-
-        // Mark finalized migrated requests as complete.
-        $.isRequestDone[state.activePrepKeygenId] = true;
-        $.isRequestDone[state.activeKeyId] = true;
-        $.isRequestDone[state.activeCrsId] = true;
-
-        // Params types
-        $.requestParamsType[state.activePrepKeygenId] = state.prepKeygenParamsType;
-        $.requestParamsType[state.activeCrsId] = state.crsParamsType;
-
-        // Extra data
-        $.requestExtraData[state.activePrepKeygenId] = _encodeRequestExtraData(state.contextId);
-        $.requestExtraData[state.activeKeyId] = _encodeRequestExtraData(state.contextId);
-        $.requestExtraData[state.activeCrsId] = _encodeRequestExtraData(state.contextId);
-    }
-
-    function _setMigratedConsensusState(
-        KMSGenerationStorage storage $,
-        uint256 requestId,
-        address[] calldata txSenders,
-        bytes32 digest,
-        uint256 contextId
-    ) internal virtual {
-        $.consensusDigest[requestId] = digest;
-        for (uint256 i = 0; i < txSenders.length; i++) {
-            address txSender = txSenders[i];
-            $.consensusTxSenderAddresses[requestId][digest].push(txSender);
-
-            address signer = PROTOCOL_CONFIG.getKmsNodeForContext(contextId, txSender).signerAddress;
-            $.kmsHasSignedForResponse[requestId][signer] = true;
-        }
-    }
-
-    function _validateMigrationCounters(MigrationState calldata state) internal pure virtual {
-        if (
-            state.activePrepKeygenId <= PREP_KEYGEN_COUNTER_BASE || state.prepKeygenCounter != state.activePrepKeygenId
-        ) {
-            revert InvalidMigrationCounterState();
-        }
-        if (state.activeKeyId <= KEY_COUNTER_BASE || state.keyCounter != state.activeKeyId) {
-            revert InvalidMigrationCounterState();
-        }
-        if (state.activeCrsId <= CRS_COUNTER_BASE || state.crsCounter != state.activeCrsId) {
-            revert InvalidMigrationCounterState();
-        }
-    }
-
-    function _validateMigratedConsensusState(
-        uint256 requestId,
-        address[] calldata txSenders,
-        bytes32 digest,
-        uint256 contextId
-    ) internal view virtual {
-        if (digest == bytes32(0) || txSenders.length < PROTOCOL_CONFIG.getKmsGenThreshold()) {
-            revert InvalidMigrationConsensusState(requestId);
-        }
-
-        for (uint256 i = 0; i < txSenders.length; i++) {
-            address txSender = txSenders[i];
-            if (!PROTOCOL_CONFIG.isKmsTxSenderForContext(contextId, txSender)) {
-                revert UnknownMigrationConsensusTxSender(requestId, txSender);
-            }
-        }
-    }
-
     function _encodeRequestExtraData(uint256 contextId) internal pure virtual returns (bytes memory) {
-        // Emit V1 (contextId only) until resharing (RFC 005) is implemented.
+        // Encode V1 (contextId only) until resharing (RFC 005) is implemented.
         return abi.encodePacked(EXTRA_DATA_V1, contextId);
     }
 }

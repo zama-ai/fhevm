@@ -138,7 +138,9 @@ describe("Mock contracts", function () {
     it("Should emit UserDecryptionRequest event on user decryption request", async function () {
       userDecryptionCounterId++;
       await expect(
-        decryptionMock.userDecryptionRequest(
+        decryptionMock[
+          "userDecryptionRequest((bytes32,address)[],(uint256,uint256),(uint256,address[]),address,bytes,bytes,bytes)"
+        ](
           EmptyArray,
           DefaultRequestValidity,
           DefaultContractsInfo,
@@ -148,7 +150,10 @@ describe("Mock contracts", function () {
           DefaultBytes,
         ),
       )
-        .to.emit(decryptionMock, "UserDecryptionRequest")
+        .to.emit(
+          decryptionMock,
+          "UserDecryptionRequest(uint256,(bytes32,uint256,bytes32,address[])[],address,bytes,bytes)",
+        )
         .withArgs(
           userDecryptionCounterId,
           toValues([DefaultSnsCiphertextMaterial]),
@@ -171,7 +176,10 @@ describe("Mock contracts", function () {
           DefaultBytes,
         ),
       )
-        .to.emit(decryptionMock, "UserDecryptionRequest")
+        .to.emit(
+          decryptionMock,
+          "UserDecryptionRequest(uint256,(bytes32,uint256,bytes32,address[])[],address,bytes,bytes)",
+        )
         .withArgs(
           userDecryptionCounterId,
           toValues([DefaultSnsCiphertextMaterial]),
@@ -284,6 +292,18 @@ describe("Mock contracts", function () {
       await expect(gatewayConfigMock.updateCoprocessorThreshold(DefaultUint256))
         .to.emit(gatewayConfigMock, "UpdateCoprocessorThreshold")
         .withArgs(DefaultUint256);
+    });
+
+    it("Should emit UpdatePriorityCoprocessorTxSender event on set priority coprocessor call", async function () {
+      await expect(gatewayConfigMock.setPriorityCoprocessorTxSender(DefaultAddress))
+        .to.emit(gatewayConfigMock, "UpdatePriorityCoprocessorTxSender")
+        .withArgs(DefaultAddress);
+    });
+
+    it("Should emit UpdatePriorityCoprocessorTxSender event on remove priority coprocessor call", async function () {
+      await expect(gatewayConfigMock.removePriorityCoprocessorTxSender())
+        .to.emit(gatewayConfigMock, "UpdatePriorityCoprocessorTxSender")
+        .withArgs(DefaultAddress);
     });
 
     it("Should emit AddHostChain event on add host chain call", async function () {

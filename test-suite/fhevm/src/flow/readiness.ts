@@ -1,6 +1,5 @@
-import { supportsHostListenerConsumer } from "../compat/compat";
+import { bootstrapUsesHostKmsGeneration, kmsConnectorUsesHostKmsGeneration, supportsHostListenerConsumer } from "../compat/compat";
 import { BootstrapTimeout, ContainerCrashed, MinioError, PreflightError, ProbeTimeout, RpcError } from "../errors";
-import { requiresModernHostAddressArtifacts } from "../compat/compat";
 import {
   COPROCESSOR_DB_CONTAINER,
   CRSGEN_ID_SELECTOR,
@@ -13,18 +12,31 @@ import {
   defaultHostChainKey,
   hostChainSuffix,
 } from "../layout";
+import { kmsConnectorPrefix, kmsPublicPrefix } from "../kms-party";
 import { topologyForState } from "../stack-spec/stack-spec";
 import type { State } from "../types";
 import { hostReachableMaterialUrl, hostReachableRpcUrl, predictedCrsId, predictedKeyId, toServiceName, withHexPrefix } from "../utils/fs";
 import { run } from "../utils/process";
 
 const POST_BOOT_HEALTH_GATE_DELAY_MS = 5_000;
+const KMS_CONNECTOR_DECRYPTION_READY =
+  /Started Decryption polling from block|Last block polled updated for \d+\/\d+ event types in \[PublicDecryptionRequest, UserDecryptionRequest\]/;
+const KMS_CONNECTOR_KMS_GENERATION_READY =
+  /Started KMSGeneration polling from block|Last block polled updated for \d+\/\d+ event types in \[PrepKeygenRequest, KeygenRequest, CrsgenRequest, PrssInit, KeyReshareSameSet\]/;
 
-export const KMS_CONNECTOR_HEALTH_CONTAINERS = [
-  "kms-connector-gw-listener",
-  "kms-connector-kms-worker",
-  "kms-connector-tx-sender",
-];
+/** Number of KMS connector instances: one per party in threshold mode, else one. */
+// `kms.parties` is the canonical connector/party count: 1 for centralized, N for threshold.
+const kmsConnectorPartyCount = (state: State) => state.scenario.kms.parties;
+
+/** gw-listener / kms-worker / tx-sender health containers across every KMS party. */
+export const kmsConnectorHealthContainers = (state: State): string[] => {
+  const containers: string[] = [];
+  for (let party = 1; party <= kmsConnectorPartyCount(state); party += 1) {
+    const prefix = kmsConnectorPrefix(party);
+    containers.push(`${prefix}-gw-listener`, `${prefix}-kms-worker`, `${prefix}-tx-sender`);
+  }
+  return containers;
+};
 
 /** Reads docker inspect data for a container and validates the JSON payload. */
 export const dockerInspect = async (name: string) => {
@@ -226,33 +238,65 @@ export const waitForStableChainListeners = async (state: Pick<State, "scenario">
   await postBootHealthGate(listenerContainersForChain(state, chainKey));
 };
 
-/** Discovers the KMS signer address and MinIO key prefix after bootstrap. */
-export const discoverSigner = async () => {
+/** MinIO prefixes that hold a party's VerfAddress. Centralized stores it under
+ * `PUB/PUB` (or legacy `PUB`); a threshold-mode cluster stores party i under its own prefix. */
+const verfAddressPrefixes = (parties: number, party: number): string[] =>
+  parties === 1 ? ["PUB/PUB", "PUB"] : [kmsPublicPrefix(party)];
+
+/** Reads a single party's VerfAddress for `handle`, trying each candidate prefix. */
+const fetchVerfAddress = async (
+  prefixes: string[],
+  handle: string,
+): Promise<{ address: string; prefix: string } | null> => {
+  for (const prefix of prefixes) {
+    try {
+      const response = await fetch(`${MINIO_EXTERNAL_URL}/kms-public/${prefix}/VerfAddress/${handle}`);
+      if (response.ok) {
+        return { address: (await response.text()).trim(), prefix };
+      }
+    } catch {
+      // try the next prefix / retry the whole discovery
+    }
+  }
+  return null;
+};
+
+/**
+ * Discovers the KMS signer addresses after bootstrap: one for a centralized node,
+ * one per party for a threshold-mode cluster (`parties` is 1 in the centralized case).
+ * The signing-key handle is scraped from the core logs and is shared across parties;
+ * each party's address lives at its own MinIO prefix.
+ */
+export const discoverKmsSigners = async (
+  parties: number,
+): Promise<{ signers: string[]; minioKeyPrefix: string }> => {
+  let lastFailure = "no signing-key handle in the kms-core logs yet";
   for (let attempt = 0; attempt <= 60; attempt += 1) {
     const logs = await run(["docker", "logs", KMS_CORE_CONTAINER], { allowFailure: true });
-    const match = logs.stdout.match(/handle ([a-zA-Z0-9]+)/) ?? logs.stderr.match(/handle ([a-zA-Z0-9]+)/);
-    if (match) {
-      const handle = match[1];
-      for (const prefix of ["PUB/PUB", "PUB"]) {
-        try {
-          const response = await fetch(`${MINIO_EXTERNAL_URL}/kms-public/${prefix}/VerfAddress/${handle}`);
-          if (response.ok) {
-            return {
-              address: (await response.text()).trim(),
-              minioKeyPrefix: prefix,
-            };
-          }
-        } catch {
-          // retry
+    const text = `${logs.stdout}\n${logs.stderr}`;
+    const handle = (text.match(/SigningKey\/([a-f0-9]{64})/) ?? text.match(/handle ([a-zA-Z0-9]+)/))?.[1];
+    if (handle) {
+      const signers: string[] = [];
+      let minioKeyPrefix = "";
+      for (let party = 1; party <= parties; party += 1) {
+        const prefixes = verfAddressPrefixes(parties, party);
+        const found = await fetchVerfAddress(prefixes, handle);
+        if (!found) {
+          lastFailure = `party ${party}: no VerfAddress/${handle} under ${prefixes.join(" or ")}`;
+          break;
+        }
+        signers.push(found.address);
+        if (party === 1) {
+          minioKeyPrefix = found.prefix;
         }
       }
-    }
-    if (attempt === 60) {
-      throw new MinioError("Could not discover KMS signer after 60 attempts");
+      if (signers.length === parties) {
+        return { signers, minioKeyPrefix };
+      }
     }
     await Bun.sleep(1_000);
   }
-  throw new MinioError("Could not discover KMS signer after 60 attempts");
+  throw new MinioError(`Could not discover ${parties} KMS signer(s) after 60 attempts (${lastFailure})`);
 };
 
 /** Waits until one material artifact becomes available through host-reachable MinIO. */
@@ -284,34 +328,49 @@ export const castBool = async (rpcUrl: string, to: string, signature: string, ..
   }
 };
 
+/** Calls a contract view through cast and returns its decoded stdout (per the signature's return type). */
+export const castCall = async (rpcUrl: string, to: string, signature: string, ...args: string[]) => {
+  const result = await run(["cast", "call", to, signature, ...args, "--rpc-url", hostReachableRpcUrl(rpcUrl)]);
+  return result.stdout.trim();
+};
+
+/**
+ * Resolves the chain the KMSGeneration contract is deployed on (host on v0.13+, else gateway) and the
+ * contract addresses on it. Throws PreflightError when a required endpoint/address is missing;
+ * `configAddress` (ProtocolConfig / GatewayConfig) is optional on pre-v0.13 bundles.
+ */
+export const resolveKmsGenerationTarget = (state: State) => {
+  const discovery = state.discovery!;
+  const useHostKms = bootstrapUsesHostKmsGeneration(state);
+  const defaultHostKey = defaultHostChainKey(state.scenario.hostChains);
+  const where = useHostKms ? `host chain "${defaultHostKey}"` : "gateway";
+  const rawRpcUrl = useHostKms ? discovery.endpoints.hosts[defaultHostKey]?.http : discovery.endpoints.gateway.http;
+  if (!rawRpcUrl) {
+    throw new PreflightError(`Missing ${where} RPC endpoint for the KMSGeneration probe`);
+  }
+  const kmsGenerationAddress = useHostKms
+    ? discovery.hosts[defaultHostKey]?.KMS_GENERATION_CONTRACT_ADDRESS
+    : discovery.gateway.KMS_GENERATION_ADDRESS;
+  if (!kmsGenerationAddress) {
+    throw new PreflightError(`Missing ${where} KMSGeneration contract address for the KMSGeneration probe`);
+  }
+  const configAddress = useHostKms
+    ? discovery.hosts[defaultHostKey]?.PROTOCOL_CONFIG_CONTRACT_ADDRESS
+    : discovery.gateway.GATEWAY_CONFIG_ADDRESS;
+  return {
+    rpcUrl: hostReachableRpcUrl(rawRpcUrl),
+    kmsGenerationAddress: withHexPrefix(kmsGenerationAddress),
+    configAddress: configAddress ? withHexPrefix(configAddress) : undefined,
+    where,
+  };
+};
+
 /** Probes whether bootstrap produced stable key ids and published materials. */
 export const probeBootstrap = async (state: State) => {
   const discovery = state.discovery!;
   const keyPrefix = discovery.minioKeyPrefix ?? "PUB";
   try {
-    const defaultHostKey = defaultHostChainKey(state.scenario.hostChains);
-    const useHostKms = requiresModernHostAddressArtifacts(state);
-    const rawRpcUrl = useHostKms
-      ? discovery.endpoints.hosts[defaultHostKey]?.http
-      : discovery.endpoints.gateway.http;
-    const contractAddress = useHostKms
-      ? discovery.hosts[defaultHostKey]?.KMS_GENERATION_CONTRACT_ADDRESS
-      : discovery.gateway.KMS_GENERATION_ADDRESS;
-    if (!rawRpcUrl) {
-      throw new PreflightError(
-        useHostKms
-          ? `Missing host RPC endpoint for chain "${defaultHostKey}" during bootstrap probe`
-          : "Missing gateway RPC endpoint for bootstrap probe",
-      );
-    }
-    const rpcUrl = hostReachableRpcUrl(rawRpcUrl);
-    if (!contractAddress) {
-      throw new PreflightError(
-        useHostKms
-          ? `Missing host KMS_GENERATION_CONTRACT_ADDRESS for chain "${defaultHostKey}" during bootstrap probe`
-          : "Missing gateway KMS_GENERATION_ADDRESS for bootstrap probe",
-      );
-    }
+    const { rpcUrl, kmsGenerationAddress } = resolveKmsGenerationTarget(state);
     const ethCallRaw = async (data: string) => {
       const response = await fetch(rpcUrl, {
         method: "POST",
@@ -320,7 +379,7 @@ export const probeBootstrap = async (state: State) => {
           jsonrpc: "2.0",
           id: 1,
           method: "eth_call",
-          params: [{ to: withHexPrefix(contractAddress), data }, "latest"],
+          params: [{ to: kmsGenerationAddress, data }, "latest"],
         }),
       });
       if (!response.ok) return 0n;
@@ -381,15 +440,19 @@ export const waitForBootstrap = async (state: State, attempts = 120) => {
 
 /** Waits for the kms-connector runtime services to become ready. */
 export const waitForKmsConnector = async (state: State) => {
-  await waitForContainer("kms-connector-db-migration", "complete");
-  await waitForContainer("kms-connector-gw-listener", "running");
-  await waitForContainer("kms-connector-kms-worker", "running");
-  await waitForContainer("kms-connector-tx-sender", "running");
-  // v0.11.0 connector uses "✓ Subscribed to ... events" log format; the
-  // "Started * polling from block" lines were introduced in v0.13.0+.
-  if (requiresModernHostAddressArtifacts(state)) {
-    await waitForLog("kms-connector-gw-listener", /Started Decryption polling from block/);
-    await waitForLog("kms-connector-gw-listener", /Started KMSGeneration polling from block/);
+  const usesHostKmsGeneration = kmsConnectorUsesHostKmsGeneration(state);
+  // Threshold runs one connector per party; every party must be ready or the
+  // on-chain 2t+1 quorum can never be reached. Centralized = a single party.
+  for (let party = 1; party <= kmsConnectorPartyCount(state); party += 1) {
+    const prefix = kmsConnectorPrefix(party);
+    await waitForContainer(`${prefix}-db-migration`, "complete");
+    await waitForContainer(`${prefix}-gw-listener`, "running");
+    await waitForContainer(`${prefix}-kms-worker`, "running");
+    await waitForContainer(`${prefix}-tx-sender`, "running");
+    if (usesHostKmsGeneration) {
+      await waitForLog(`${prefix}-gw-listener`, KMS_CONNECTOR_DECRYPTION_READY);
+      await waitForLog(`${prefix}-gw-listener`, KMS_CONNECTOR_KMS_GENERATION_READY);
+    }
   }
 };
 

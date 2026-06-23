@@ -21,7 +21,7 @@ interface FHEEvents {
     event FheMax(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
     event FheMin(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
     event FheMul(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
-    event FheMulDiv(address indexed caller, bytes32 lhs, bytes32 rhs, bytes32 divisor, bytes1 scalarByte, bytes32 result);
+    event FheMulDiv(address indexed caller, bytes32 factor1, bytes32 factor2, bytes32 divisor, bytes1 scalarByte, bytes32 result);
     event FheNe(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
     event FheNeg(address indexed caller, bytes32 ct, bytes32 result);
     event FheNot(address indexed caller, bytes32 ct, bytes32 result);
@@ -633,13 +633,13 @@ interface FHEEvents {
         "internalType": "address"
       },
       {
-        "name": "lhs",
+        "name": "factor1",
         "type": "bytes32",
         "indexed": false,
         "internalType": "bytes32"
       },
       {
-        "name": "rhs",
+        "name": "factor2",
         "type": "bytes32",
         "indexed": false,
         "internalType": "bytes32"
@@ -3527,7 +3527,7 @@ event FheMul(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `FheMulDiv(address,bytes32,bytes32,bytes32,bytes1,bytes32)` and selector `0xe5ed6be31c35a5bc572746ab3347fc754669f58bc0e9eaa3257350f10a62321e`.
 ```solidity
-event FheMulDiv(address indexed caller, bytes32 lhs, bytes32 rhs, bytes32 divisor, bytes1 scalarByte, bytes32 result);
+event FheMulDiv(address indexed caller, bytes32 factor1, bytes32 factor2, bytes32 divisor, bytes1 scalarByte, bytes32 result);
 ```*/
     #[allow(
         non_camel_case_types,
@@ -3540,9 +3540,9 @@ event FheMulDiv(address indexed caller, bytes32 lhs, bytes32 rhs, bytes32 diviso
         #[allow(missing_docs)]
         pub caller: alloy::sol_types::private::Address,
         #[allow(missing_docs)]
-        pub lhs: alloy::sol_types::private::FixedBytes<32>,
+        pub factor1: alloy::sol_types::private::FixedBytes<32>,
         #[allow(missing_docs)]
-        pub rhs: alloy::sol_types::private::FixedBytes<32>,
+        pub factor2: alloy::sol_types::private::FixedBytes<32>,
         #[allow(missing_docs)]
         pub divisor: alloy::sol_types::private::FixedBytes<32>,
         #[allow(missing_docs)]
@@ -3589,8 +3589,8 @@ event FheMulDiv(address indexed caller, bytes32 lhs, bytes32 rhs, bytes32 diviso
             ) -> Self {
                 Self {
                     caller: topics.1,
-                    lhs: data.0,
-                    rhs: data.1,
+                    factor1: data.0,
+                    factor2: data.1,
                     divisor: data.2,
                     scalarByte: data.3,
                     result: data.4,
@@ -3616,10 +3616,10 @@ event FheMulDiv(address indexed caller, bytes32 lhs, bytes32 rhs, bytes32 diviso
                 (
                     <alloy::sol_types::sol_data::FixedBytes<
                         32,
-                    > as alloy_sol_types::SolType>::tokenize(&self.lhs),
+                    > as alloy_sol_types::SolType>::tokenize(&self.factor1),
                     <alloy::sol_types::sol_data::FixedBytes<
                         32,
-                    > as alloy_sol_types::SolType>::tokenize(&self.rhs),
+                    > as alloy_sol_types::SolType>::tokenize(&self.factor2),
                     <alloy::sol_types::sol_data::FixedBytes<
                         32,
                     > as alloy_sol_types::SolType>::tokenize(&self.divisor),

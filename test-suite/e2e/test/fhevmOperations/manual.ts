@@ -61,9 +61,11 @@ describe('FHEVM manual operations', function () {
   // oversized-index path without pulling the whole manual suite.
   describe('FHEVM oversized shift and rotate indexes', function () {
     it('shr(euint64, uint8) applies modulo semantics for indexes > bit width', async function () {
-      const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-      input.add64(SHIFT_ROTATE_VALUE_64);
-      const encryptedAmount = await input.encrypt();
+      const encryptedAmount = await this.instance.encryptTypedValues({
+        values: [{ type: 'uint64', value: SHIFT_ROTATE_VALUE_64 }],
+        contractAddress: this.contractAddress,
+        userAddress: this.signer.address,
+      });
       const res = await decrypt64Result(
         this.instance,
         this.contract,
@@ -77,10 +79,11 @@ describe('FHEVM manual operations', function () {
     });
 
     it('shr(euint64, euint8) applies modulo semantics for indexes > bit width', async function () {
-      const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-      input.add64(SHIFT_ROTATE_VALUE_64);
-      input.add8(OVERSIZED_SHIFT_64);
-      const encryptedAmount = await input.encrypt();
+      const encryptedAmount = await this.instance.encryptTypedValues({
+        values: [{ type: 'uint64', value: SHIFT_ROTATE_VALUE_64 }, { type: 'uint8', value: OVERSIZED_SHIFT_64 }],
+        contractAddress: this.contractAddress,
+        userAddress: this.signer.address,
+      });
       const res = await decrypt64Result(
         this.instance,
         this.contract,
@@ -94,9 +97,11 @@ describe('FHEVM manual operations', function () {
     });
 
     it('shl(euint64, uint8) applies modulo semantics for indexes > bit width', async function () {
-      const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-      input.add64(SHIFT_ROTATE_VALUE_64);
-      const encryptedAmount = await input.encrypt();
+      const encryptedAmount = await this.instance.encryptTypedValues({
+        values: [{ type: 'uint64', value: SHIFT_ROTATE_VALUE_64 }],
+        contractAddress: this.contractAddress,
+        userAddress: this.signer.address,
+      });
       const res = await decrypt64Result(
         this.instance,
         this.contract,
@@ -110,10 +115,11 @@ describe('FHEVM manual operations', function () {
     });
 
     it('shl(euint64, euint8) applies modulo semantics for indexes > bit width', async function () {
-      const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-      input.add64(SHIFT_ROTATE_VALUE_64);
-      input.add8(OVERSIZED_SHIFT_64);
-      const encryptedAmount = await input.encrypt();
+      const encryptedAmount = await this.instance.encryptTypedValues({
+        values: [{ type: 'uint64', value: SHIFT_ROTATE_VALUE_64 }, { type: 'uint8', value: OVERSIZED_SHIFT_64 }],
+        contractAddress: this.contractAddress,
+        userAddress: this.signer.address,
+      });
       const res = await decrypt64Result(
         this.instance,
         this.contract,
@@ -127,9 +133,11 @@ describe('FHEVM manual operations', function () {
     });
 
     it('rotl(euint64, uint8) applies modulo semantics for indexes > bit width', async function () {
-      const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-      input.add64(SHIFT_ROTATE_VALUE_64);
-      const encryptedAmount = await input.encrypt();
+      const encryptedAmount = await this.instance.encryptTypedValues({
+        values: [{ type: 'uint64', value: SHIFT_ROTATE_VALUE_64 }],
+        contractAddress: this.contractAddress,
+        userAddress: this.signer.address,
+      });
       const res = await decrypt64Result(
         this.instance,
         this.contract,
@@ -143,9 +151,11 @@ describe('FHEVM manual operations', function () {
     });
 
     it('rotr(euint64, uint8) applies modulo semantics for indexes > bit width', async function () {
-      const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-      input.add64(SHIFT_ROTATE_VALUE_64);
-      const encryptedAmount = await input.encrypt();
+      const encryptedAmount = await this.instance.encryptTypedValues({
+        values: [{ type: 'uint64', value: SHIFT_ROTATE_VALUE_64 }],
+        contractAddress: this.contractAddress,
+        userAddress: this.signer.address,
+      });
       const res = await decrypt64Result(
         this.instance,
         this.contract,
@@ -159,10 +169,11 @@ describe('FHEVM manual operations', function () {
     });
 
     it('rotr(euint64, euint8) applies modulo semantics for indexes > bit width', async function () {
-      const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-      input.add64(SHIFT_ROTATE_VALUE_64);
-      input.add8(OVERSIZED_SHIFT_64);
-      const encryptedAmount = await input.encrypt();
+      const encryptedAmount = await this.instance.encryptTypedValues({
+        values: [{ type: 'uint64', value: SHIFT_ROTATE_VALUE_64 }, { type: 'uint8', value: OVERSIZED_SHIFT_64 }],
+        contractAddress: this.contractAddress,
+        userAddress: this.signer.address,
+      });
       const res = await decrypt64Result(
         this.instance,
         this.contract,
@@ -176,10 +187,11 @@ describe('FHEVM manual operations', function () {
     });
 
     it('rotl(euint64, euint8) applies modulo semantics for indexes > bit width', async function () {
-      const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-      input.add64(SHIFT_ROTATE_VALUE_64);
-      input.add8(OVERSIZED_SHIFT_64);
-      const encryptedAmount = await input.encrypt();
+      const encryptedAmount = await this.instance.encryptTypedValues({
+        values: [{ type: 'uint64', value: SHIFT_ROTATE_VALUE_64 }, { type: 'uint8', value: OVERSIZED_SHIFT_64 }],
+        contractAddress: this.contractAddress,
+        userAddress: this.signer.address,
+      });
       const res = await decrypt64Result(
         this.instance,
         this.contract,
@@ -194,11 +206,11 @@ describe('FHEVM manual operations', function () {
   });
 
   it('Select works returning if false', async function () {
-    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.addBool(false);
-    input.add32(3);
-    input.add32(4);
-    const encryptedAmount = await input.encrypt();
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [{ type: 'bool', value: false }, { type: 'uint32', value: 3 }, { type: 'uint32', value: 4 }],
+      contractAddress: this.contractAddress,
+      userAddress: this.signer.address,
+    });
     const tx = await this.contract.test_select(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -215,11 +227,11 @@ describe('FHEVM manual operations', function () {
   });
 
   it('Select works returning if true', async function () {
-    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.addBool(true);
-    input.add32(3);
-    input.add32(4);
-    const encryptedAmount = await input.encrypt();
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [{ type: 'bool', value: true }, { type: 'uint32', value: 3 }, { type: 'uint32', value: 4 }],
+      contractAddress: this.contractAddress,
+      userAddress: this.signer.address,
+    });
     const tx = await this.contract.test_select(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -251,11 +263,11 @@ describe('FHEVM manual operations', function () {
   });
 
   it('Select works for eaddress returning if false', async function () {
-    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.addBool(false);
-    input.addAddress(ADDR_A);
-    input.addAddress(ADDR_B);
-    const encryptedAmount = await input.encrypt();
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [{ type: 'bool', value: false }, { type: 'address', value: ADDR_A }, { type: 'address', value: ADDR_B }],
+      contractAddress: this.contractAddress,
+      userAddress: this.signer.address,
+    });
     const tx = await this.contract.test_select_eaddress(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -272,11 +284,11 @@ describe('FHEVM manual operations', function () {
   });
 
   it('Select works for eaddress returning if true', async function () {
-    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.addBool(true);
-    input.addAddress(ADDR_A);
-    input.addAddress(ADDR_B);
-    const encryptedAmount = await input.encrypt();
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [{ type: 'bool', value: true }, { type: 'address', value: ADDR_A }, { type: 'address', value: ADDR_B }],
+      contractAddress: this.contractAddress,
+      userAddress: this.signer.address,
+    });
     const tx = await this.contract.test_select_eaddress(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -431,10 +443,11 @@ describe('FHEVM manual operations', function () {
   });
 
   it('eaddress eq eaddress,eaddress true', async function () {
-    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.addAddress(ADDR_A);
-    input.addAddress(ADDR_A);
-    const encryptedAmount = await input.encrypt();
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [{ type: 'address', value: ADDR_A }, { type: 'address', value: ADDR_A }],
+      contractAddress: this.contractAddress,
+      userAddress: this.signer.address,
+    });
     const tx = await this.contract.test_eq_eaddress_eaddress(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -450,10 +463,11 @@ describe('FHEVM manual operations', function () {
   });
 
   it('eaddress eq eaddress,eaddress false', async function () {
-    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.addAddress(ADDR_A);
-    input.addAddress(ADDR_C);
-    const encryptedAmount = await input.encrypt();
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [{ type: 'address', value: ADDR_A }, { type: 'address', value: ADDR_C }],
+      contractAddress: this.contractAddress,
+      userAddress: this.signer.address,
+    });
     const tx = await this.contract.test_eq_eaddress_eaddress(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -469,10 +483,12 @@ describe('FHEVM manual operations', function () {
   });
 
   it('eaddress eq scalar eaddress,address true', async function () {
-    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.addAddress(ADDR_A);
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [{ type: 'address', value: ADDR_A }],
+      contractAddress: this.contractAddress,
+      userAddress: this.signer.address,
+    });
     const b = ADDR_A;
-    const encryptedAmount = await input.encrypt();
     const tx = await this.contract.test_eq_eaddress_address(encryptedAmount.handles[0], b, encryptedAmount.inputProof);
     await tx.wait();
     const handle = await this.contract.resEbool();
@@ -484,10 +500,12 @@ describe('FHEVM manual operations', function () {
   });
 
   it('eaddress eq scalar eaddress,address false', async function () {
-    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.addAddress(ADDR_A);
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [{ type: 'address', value: ADDR_A }],
+      contractAddress: this.contractAddress,
+      userAddress: this.signer.address,
+    });
     const b = ADDR_D;
-    const encryptedAmount = await input.encrypt();
     const tx = await this.contract.test_eq_eaddress_address(encryptedAmount.handles[0], b, encryptedAmount.inputProof);
     await tx.wait();
     const handle = await this.contract.resEbool();
@@ -499,10 +517,12 @@ describe('FHEVM manual operations', function () {
   });
 
   it('eaddress eq scalar address,eaddress true', async function () {
-    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.addAddress(ADDR_A);
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [{ type: 'address', value: ADDR_A }],
+      contractAddress: this.contractAddress,
+      userAddress: this.signer.address,
+    });
     const b = ADDR_A;
-    const encryptedAmount = await input.encrypt();
     const tx = await this.contract.test_eq_address_eaddress(encryptedAmount.handles[0], b, encryptedAmount.inputProof);
     await tx.wait();
     const handle = await this.contract.resEbool();
@@ -514,10 +534,12 @@ describe('FHEVM manual operations', function () {
   });
 
   it('eaddress eq scalar address,eaddress false', async function () {
-    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.addAddress(ADDR_A);
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [{ type: 'address', value: ADDR_A }],
+      contractAddress: this.contractAddress,
+      userAddress: this.signer.address,
+    });
     const b = ADDR_D;
-    const encryptedAmount = await input.encrypt();
     const tx = await this.contract.test_eq_address_eaddress(encryptedAmount.handles[0], b, encryptedAmount.inputProof);
     await tx.wait();
     const handle = await this.contract.resEbool();
@@ -529,10 +551,11 @@ describe('FHEVM manual operations', function () {
   });
 
   it('eaddress ne eaddress,eaddress false', async function () {
-    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.addAddress(ADDR_A);
-    input.addAddress(ADDR_A);
-    const encryptedAmount = await input.encrypt();
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [{ type: 'address', value: ADDR_A }, { type: 'address', value: ADDR_A }],
+      contractAddress: this.contractAddress,
+      userAddress: this.signer.address,
+    });
     const tx = await this.contract.test_ne_eaddress_eaddress(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -548,10 +571,11 @@ describe('FHEVM manual operations', function () {
   });
 
   it('eaddress ne eaddress,eaddress true', async function () {
-    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.addAddress(ADDR_A);
-    input.addAddress(ADDR_C);
-    const encryptedAmount = await input.encrypt();
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [{ type: 'address', value: ADDR_A }, { type: 'address', value: ADDR_C }],
+      contractAddress: this.contractAddress,
+      userAddress: this.signer.address,
+    });
     const tx = await this.contract.test_ne_eaddress_eaddress(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -567,10 +591,12 @@ describe('FHEVM manual operations', function () {
   });
 
   it('eaddress ne scalar eaddress,address false', async function () {
-    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.addAddress(ADDR_A);
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [{ type: 'address', value: ADDR_A }],
+      contractAddress: this.contractAddress,
+      userAddress: this.signer.address,
+    });
     const b = ADDR_A;
-    const encryptedAmount = await input.encrypt();
     const tx = await this.contract.test_ne_eaddress_address(encryptedAmount.handles[0], b, encryptedAmount.inputProof);
     await tx.wait();
     const handle = await this.contract.resEbool();
@@ -582,10 +608,12 @@ describe('FHEVM manual operations', function () {
   });
 
   it('eaddress ne scalar eaddress,address true', async function () {
-    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.addAddress(ADDR_A);
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [{ type: 'address', value: ADDR_A }],
+      contractAddress: this.contractAddress,
+      userAddress: this.signer.address,
+    });
     const b = ADDR_D;
-    const encryptedAmount = await input.encrypt();
     const tx = await this.contract.test_ne_eaddress_address(encryptedAmount.handles[0], b, encryptedAmount.inputProof);
     await tx.wait();
     const handle = await this.contract.resEbool();
@@ -597,10 +625,12 @@ describe('FHEVM manual operations', function () {
   });
 
   it('eaddress ne scalar address,eaddress false', async function () {
-    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.addAddress(ADDR_A);
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [{ type: 'address', value: ADDR_A }],
+      contractAddress: this.contractAddress,
+      userAddress: this.signer.address,
+    });
     const b = ADDR_A;
-    const encryptedAmount = await input.encrypt();
     const tx = await this.contract.test_ne_address_eaddress(encryptedAmount.handles[0], b, encryptedAmount.inputProof);
     await tx.wait();
     const handle = await this.contract.resEbool();
@@ -612,10 +642,12 @@ describe('FHEVM manual operations', function () {
   });
 
   it('eaddress ne scalar address,eaddress true', async function () {
-    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.addAddress(ADDR_A);
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [{ type: 'address', value: ADDR_A }],
+      contractAddress: this.contractAddress,
+      userAddress: this.signer.address,
+    });
     const b = ADDR_D;
-    const encryptedAmount = await input.encrypt();
     const tx = await this.contract.test_ne_address_eaddress(encryptedAmount.handles[0], b, encryptedAmount.inputProof);
     await tx.wait();
     const handle = await this.contract.resEbool();
@@ -1104,10 +1136,11 @@ describe('FHEVM manual operations', function () {
   });
 
   it('test operator "sum" euint16 - two elements', async function () {
-    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.add16(1000n);
-    input.add16(2000n);
-    const encryptedAmount = await input.encrypt();
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [{ type: 'uint16', value: 1000n }, { type: 'uint16', value: 2000n }],
+      contractAddress: this.contractAddress,
+      userAddress: this.signer.address,
+    });
     const tx = await this.contract.test_sum_euint16(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1120,10 +1153,11 @@ describe('FHEVM manual operations', function () {
   });
 
   it('test operator "sum" euint32 - two elements', async function () {
-    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.add32(100000n);
-    input.add32(200000n);
-    const encryptedAmount = await input.encrypt();
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [{ type: 'uint32', value: 100000n }, { type: 'uint32', value: 200000n }],
+      contractAddress: this.contractAddress,
+      userAddress: this.signer.address,
+    });
     const tx = await this.contract.test_sum_euint32(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1136,11 +1170,11 @@ describe('FHEVM manual operations', function () {
   });
 
   it('test operator "sum" euint8 - three elements', async function () {
-    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.add8(10n);
-    input.add8(20n);
-    input.add8(30n);
-    const encryptedAmount = await input.encrypt();
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [{ type: 'uint8', value: 10n }, { type: 'uint8', value: 20n }, { type: 'uint8', value: 30n }],
+      contractAddress: this.contractAddress,
+      userAddress: this.signer.address,
+    });
     const tx = await this.contract.test_sum_euint8(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1154,10 +1188,11 @@ describe('FHEVM manual operations', function () {
   });
 
   it('test operator "sum" euint64 - two elements', async function () {
-    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.add64(1000000n);
-    input.add64(2000000n);
-    const encryptedAmount = await input.encrypt();
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [{ type: 'uint64', value: 1000000n }, { type: 'uint64', value: 2000000n }],
+      contractAddress: this.contractAddress,
+      userAddress: this.signer.address,
+    });
     const tx = await this.contract.test_sum_euint64(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1170,10 +1205,11 @@ describe('FHEVM manual operations', function () {
   });
 
   it('test operator "sum" euint128 - two elements', async function () {
-    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.add128(100000000000000000000n);
-    input.add128(200000000000000000000n);
-    const encryptedAmount = await input.encrypt();
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [{ type: 'uint128', value: 100000000000000000000n }, { type: 'uint128', value: 200000000000000000000n }],
+      contractAddress: this.contractAddress,
+      userAddress: this.signer.address,
+    });
     const tx = await this.contract.test_sum_euint128(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1187,9 +1223,11 @@ describe('FHEVM manual operations', function () {
 
   it('test operator "sum" euint8 - duplicate handle counted twice', async function () {
     const value = 7;
-    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.add8(value);
-    const encryptedAmount = await input.encrypt();
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [{ type: 'uint8', value: value }],
+      contractAddress: this.contractAddress,
+      userAddress: this.signer.address,
+    });
     const tx = await this.contract.test_sum_euint8_duplicate(encryptedAmount.handles[0], encryptedAmount.inputProof);
     await tx.wait();
     const handle = await this.contract.resEuint8();
@@ -1215,9 +1253,11 @@ describe('FHEVM manual operations', function () {
 
   it('test operator "sum" euint8 - single element returns fresh handle', async function () {
     const value = 42;
-    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.add8(value);
-    const encryptedAmount = await input.encrypt();
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [{ type: 'uint8', value: value }],
+      contractAddress: this.contractAddress,
+      userAddress: this.signer.address,
+    });
     const tx = await this.contract.test_sum_euint8_single(encryptedAmount.handles[0], encryptedAmount.inputProof);
     await tx.wait();
     const handle = await this.contract.resEuint8();
@@ -1235,9 +1275,11 @@ describe('FHEVM manual operations', function () {
   });
 
   it('test operator "isIn" euint8 - value found in set', async function () {
-    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.add8(20n);
-    const encryptedAmount = await input.encrypt();
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [{ type: 'uint8', value: 20n }],
+      contractAddress: this.contractAddress,
+      userAddress: this.signer.address,
+    });
     const tx = await this.contract.test_isIn_euint8_found(encryptedAmount.handles[0], encryptedAmount.inputProof);
     await tx.wait();
     const handle = await this.contract.resEbool();
@@ -1246,9 +1288,11 @@ describe('FHEVM manual operations', function () {
   });
 
   it('test operator "isIn" euint8 - value not found in set', async function () {
-    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.add8(99n);
-    const encryptedAmount = await input.encrypt();
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [{ type: 'uint8', value: 99n }],
+      contractAddress: this.contractAddress,
+      userAddress: this.signer.address,
+    });
     const tx = await this.contract.test_isIn_euint8_not_found(encryptedAmount.handles[0], encryptedAmount.inputProof);
     await tx.wait();
     const handle = await this.contract.resEbool();
@@ -1257,9 +1301,11 @@ describe('FHEVM manual operations', function () {
   });
 
   it('test operator "isIn" euint16 - value found in set', async function () {
-    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.add16(1000n);
-    const encryptedAmount = await input.encrypt();
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [{ type: 'uint16', value: 1000n }],
+      contractAddress: this.contractAddress,
+      userAddress: this.signer.address,
+    });
     const tx = await this.contract.test_isIn_euint16(encryptedAmount.handles[0], encryptedAmount.inputProof);
     await tx.wait();
     const handle = await this.contract.resEbool();
@@ -1268,9 +1314,11 @@ describe('FHEVM manual operations', function () {
   });
 
   it('test operator "isIn" euint32 - value found in set', async function () {
-    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.add32(100000n);
-    const encryptedAmount = await input.encrypt();
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [{ type: 'uint32', value: 100000n }],
+      contractAddress: this.contractAddress,
+      userAddress: this.signer.address,
+    });
     const tx = await this.contract.test_isIn_euint32(encryptedAmount.handles[0], encryptedAmount.inputProof);
     await tx.wait();
     const handle = await this.contract.resEbool();
@@ -1279,9 +1327,11 @@ describe('FHEVM manual operations', function () {
   });
 
   it('test operator "isIn" euint64 - value found in set', async function () {
-    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.add64(1000000000n);
-    const encryptedAmount = await input.encrypt();
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [{ type: 'uint64', value: 1000000000n }],
+      contractAddress: this.contractAddress,
+      userAddress: this.signer.address,
+    });
     const tx = await this.contract.test_isIn_euint64(encryptedAmount.handles[0], encryptedAmount.inputProof);
     await tx.wait();
     const handle = await this.contract.resEbool();
@@ -1290,9 +1340,11 @@ describe('FHEVM manual operations', function () {
   });
 
   it('test operator "isIn" euint128 - value found in set', async function () {
-    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.add128(10000000000000000000n);
-    const encryptedAmount = await input.encrypt();
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [{ type: 'uint128', value: 10000000000000000000n }],
+      contractAddress: this.contractAddress,
+      userAddress: this.signer.address,
+    });
     const tx = await this.contract.test_isIn_euint128(encryptedAmount.handles[0], encryptedAmount.inputProof);
     await tx.wait();
     const handle = await this.contract.resEbool();
@@ -1309,9 +1361,11 @@ describe('FHEVM manual operations', function () {
   });
 
   it('test operator "isIn" euint8 - single element set, found', async function () {
-    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.add8(42n);
-    const encryptedAmount = await input.encrypt();
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [{ type: 'uint8', value: 42n }],
+      contractAddress: this.contractAddress,
+      userAddress: this.signer.address,
+    });
     const tx = await this.contract.test_isIn_euint8_single_element(
       encryptedAmount.handles[0],
       encryptedAmount.inputProof,
@@ -1363,9 +1417,11 @@ describe('FHEVM manual operations', function () {
   });
 
   it('test operator "isIn" eaddress - value found in set', async function () {
-    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.addAddress('0x2222222222222222222222222222222222222222');
-    const encryptedAmount = await input.encrypt();
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [{ type: 'address', value: '0x2222222222222222222222222222222222222222' }],
+      contractAddress: this.contractAddress,
+      userAddress: this.signer.address,
+    });
     const tx = await this.contract.test_isIn_eaddress_found(encryptedAmount.handles[0], encryptedAmount.inputProof);
     await tx.wait();
     const handle = await this.contract.resEbool();
@@ -1374,9 +1430,11 @@ describe('FHEVM manual operations', function () {
   });
 
   it('test operator "isIn" eaddress - value not found in set', async function () {
-    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.addAddress('0x4444444444444444444444444444444444444444');
-    const encryptedAmount = await input.encrypt();
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [{ type: 'address', value: '0x4444444444444444444444444444444444444444' }],
+      contractAddress: this.contractAddress,
+      userAddress: this.signer.address,
+    });
     const tx = await this.contract.test_isIn_eaddress_not_found(encryptedAmount.handles[0], encryptedAmount.inputProof);
     await tx.wait();
     const handle = await this.contract.resEbool();
@@ -1385,9 +1443,11 @@ describe('FHEVM manual operations', function () {
   });
 
   it('test operator "isIn" euint256 - value found in set', async function () {
-    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.add256(42n);
-    const encryptedAmount = await input.encrypt();
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [{ type: 'uint256', value: 42n }],
+      contractAddress: this.contractAddress,
+      userAddress: this.signer.address,
+    });
     const tx = await this.contract.test_isIn_euint256_found(encryptedAmount.handles[0], encryptedAmount.inputProof);
     await tx.wait();
     const handle = await this.contract.resEbool();
@@ -1396,9 +1456,11 @@ describe('FHEVM manual operations', function () {
   });
 
   it('test operator "isIn" euint256 - value not found in set', async function () {
-    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.add256(99n);
-    const encryptedAmount = await input.encrypt();
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [{ type: 'uint256', value: 99n }],
+      contractAddress: this.contractAddress,
+      userAddress: this.signer.address,
+    });
     const tx = await this.contract.test_isIn_euint256_not_found(encryptedAmount.handles[0], encryptedAmount.inputProof);
     await tx.wait();
     const handle = await this.contract.resEbool();
@@ -1408,10 +1470,11 @@ describe('FHEVM manual operations', function () {
 
   // euint8: 200 * 200 / 200 = 200 (intermediate 40000 overflows uint8, widening required)
   it('test operator "mulDiv" euint8 enc*enc: (200 * 200) / 200 = 200', async function () {
-    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.add8(200n);
-    input.add8(200n);
-    const encryptedAmount = await input.encrypt();
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [{ type: 'uint8', value: 200n }, { type: 'uint8', value: 200n }],
+      contractAddress: this.contractAddress,
+      userAddress: this.signer.address,
+    });
     const tx = await this.contract.test_mulDiv_euint8_enc_enc(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1425,9 +1488,11 @@ describe('FHEVM manual operations', function () {
   });
 
   it('test operator "mulDiv" euint8 enc*scalar: (50 * 3) / 5 = 30', async function () {
-    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.add8(50n);
-    const encryptedAmount = await input.encrypt();
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [{ type: 'uint8', value: 50n }],
+      contractAddress: this.contractAddress,
+      userAddress: this.signer.address,
+    });
     const tx = await this.contract.test_mulDiv_euint8_enc_scalar(
       encryptedAmount.handles[0],
       3n,
@@ -1442,10 +1507,11 @@ describe('FHEVM manual operations', function () {
 
   // euint16: 60000 * 60000 / 60000 = 60000 (intermediate overflows uint16)
   it('test operator "mulDiv" euint16 enc*enc: (60000 * 60000) / 60000 = 60000', async function () {
-    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.add16(60000n);
-    input.add16(60000n);
-    const encryptedAmount = await input.encrypt();
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [{ type: 'uint16', value: 60000n }, { type: 'uint16', value: 60000n }],
+      contractAddress: this.contractAddress,
+      userAddress: this.signer.address,
+    });
     const tx = await this.contract.test_mulDiv_euint16_enc_enc(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1459,9 +1525,11 @@ describe('FHEVM manual operations', function () {
   });
 
   it('test operator "mulDiv" euint16 enc*scalar: (1000 * 3) / 5 = 600', async function () {
-    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.add16(1000n);
-    const encryptedAmount = await input.encrypt();
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [{ type: 'uint16', value: 1000n }],
+      contractAddress: this.contractAddress,
+      userAddress: this.signer.address,
+    });
     const tx = await this.contract.test_mulDiv_euint16_enc_scalar(
       encryptedAmount.handles[0],
       3n,
@@ -1475,10 +1543,11 @@ describe('FHEVM manual operations', function () {
   });
 
   it('test operator "mulDiv" euint32 enc*enc: (300000 * 300000) / 300000 = 300000', async function () {
-    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.add32(300000n);
-    input.add32(300000n);
-    const encryptedAmount = await input.encrypt();
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [{ type: 'uint32', value: 300000n }, { type: 'uint32', value: 300000n }],
+      contractAddress: this.contractAddress,
+      userAddress: this.signer.address,
+    });
     const tx = await this.contract.test_mulDiv_euint32_enc_enc(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1492,9 +1561,11 @@ describe('FHEVM manual operations', function () {
   });
 
   it('test operator "mulDiv" euint32 enc*scalar: (1000000 * 3) / 5 = 600000', async function () {
-    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.add32(1000000n);
-    const encryptedAmount = await input.encrypt();
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [{ type: 'uint32', value: 1000000n }],
+      contractAddress: this.contractAddress,
+      userAddress: this.signer.address,
+    });
     const tx = await this.contract.test_mulDiv_euint32_enc_scalar(
       encryptedAmount.handles[0],
       3n,
@@ -1509,10 +1580,11 @@ describe('FHEVM manual operations', function () {
 
   // euint64: 10^10 * 10^10 / 10^10 = 10^10 (intermediate 10^20 overflows uint64)
   it('test operator "mulDiv" euint64 enc*enc: (10^10 * 10^10) / 10^10 = 10^10', async function () {
-    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.add64(10000000000n);
-    input.add64(10000000000n);
-    const encryptedAmount = await input.encrypt();
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [{ type: 'uint64', value: 10000000000n }, { type: 'uint64', value: 10000000000n }],
+      contractAddress: this.contractAddress,
+      userAddress: this.signer.address,
+    });
     const tx = await this.contract.test_mulDiv_euint64_enc_enc(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1526,9 +1598,11 @@ describe('FHEVM manual operations', function () {
   });
 
   it('test operator "mulDiv" euint64 enc*scalar: (10^9 * 3) / 5 = 6*10^8', async function () {
-    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.add64(1000000000n);
-    const encryptedAmount = await input.encrypt();
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [{ type: 'uint64', value: 1000000000n }],
+      contractAddress: this.contractAddress,
+      userAddress: this.signer.address,
+    });
     const tx = await this.contract.test_mulDiv_euint64_enc_scalar(
       encryptedAmount.handles[0],
       3n,
@@ -1543,10 +1617,11 @@ describe('FHEVM manual operations', function () {
 
   // Edge cases
   it('test operator "mulDiv" - division by zero reverts', async function () {
-    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.add8(100n);
-    input.add8(100n);
-    const encryptedAmount = await input.encrypt();
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [{ type: 'uint8', value: 100n }, { type: 'uint8', value: 100n }],
+      contractAddress: this.contractAddress,
+      userAddress: this.signer.address,
+    });
     // divisor = 0 -> FHEVMExecutor reverts with DivisionByZero()
     const promise = this.contract.test_mulDiv_euint8_enc_enc(
       encryptedAmount.handles[0],
@@ -1557,11 +1632,12 @@ describe('FHEVM manual operations', function () {
     await expect(promise).to.be.reverted;
   });
 
-  it('test operator "mulDiv" euint8 enc*enc: (0 * 100) / 50 = 0 (zero lhs)', async function () {
-    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.add8(0n);
-    input.add8(100n);
-    const encryptedAmount = await input.encrypt();
+  it('test operator "mulDiv" euint8 enc*enc: (0 * 100) / 50 = 0 (zero factor1)', async function () {
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [{ type: 'uint8', value: 0n }, { type: 'uint8', value: 100n }],
+      contractAddress: this.contractAddress,
+      userAddress: this.signer.address,
+    });
     const tx = await this.contract.test_mulDiv_euint8_enc_enc(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1574,11 +1650,12 @@ describe('FHEVM manual operations', function () {
     assert.equal(res.clearValues[handle], 0n);
   });
 
-  it('test operator "mulDiv" euint8 enc*enc: (100 * 0) / 50 = 0 (zero rhs encrypted)', async function () {
-    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.add8(100n);
-    input.add8(0n);
-    const encryptedAmount = await input.encrypt();
+  it('test operator "mulDiv" euint8 enc*enc: (100 * 0) / 50 = 0 (zero factor2 encrypted)', async function () {
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [{ type: 'uint8', value: 100n }, { type: 'uint8', value: 0n }],
+      contractAddress: this.contractAddress,
+      userAddress: this.signer.address,
+    });
     const tx = await this.contract.test_mulDiv_euint8_enc_enc(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
@@ -1591,10 +1668,12 @@ describe('FHEVM manual operations', function () {
     assert.equal(res.clearValues[handle], 0n);
   });
 
-  it('test operator "mulDiv" euint8 enc*scalar: (100 * 0) / 50 = 0 (zero rhs scalar)', async function () {
-    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.add8(100n);
-    const encryptedAmount = await input.encrypt();
+  it('test operator "mulDiv" euint8 enc*scalar: (100 * 0) / 50 = 0 (zero factor2 scalar)', async function () {
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [{ type: 'uint8', value: 100n }],
+      contractAddress: this.contractAddress,
+      userAddress: this.signer.address,
+    });
     const tx = await this.contract.test_mulDiv_euint8_enc_scalar(
       encryptedAmount.handles[0],
       0n, // scalar b = 0
@@ -1608,9 +1687,11 @@ describe('FHEVM manual operations', function () {
   });
 
   it('test operator "mulDiv" euint8 enc*scalar: (7 * 3) / 4 = 5 (truncating division)', async function () {
-    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.add8(7n);
-    const encryptedAmount = await input.encrypt();
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [{ type: 'uint8', value: 7n }],
+      contractAddress: this.contractAddress,
+      userAddress: this.signer.address,
+    });
     const tx = await this.contract.test_mulDiv_euint8_enc_scalar(
       encryptedAmount.handles[0],
       3n,
@@ -1624,9 +1705,11 @@ describe('FHEVM manual operations', function () {
   });
 
   it('test operator "mulDiv" euint8 enc*scalar: (1 * 1) / 2 = 0 (truncation to zero)', async function () {
-    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    input.add8(1n);
-    const encryptedAmount = await input.encrypt();
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [{ type: 'uint8', value: 1n }],
+      contractAddress: this.contractAddress,
+      userAddress: this.signer.address,
+    });
     const tx = await this.contract.test_mulDiv_euint8_enc_scalar(
       encryptedAmount.handles[0],
       1n,
@@ -1637,5 +1720,44 @@ describe('FHEVM manual operations', function () {
     const handle = await this.contract.resEuint8();
     const res = await this.instance.publicDecrypt([handle]);
     assert.equal(res.clearValues[handle], 0n);
+  });
+
+  it('toExternalEuint64 round-trips through fromExternal with empty proof', async function () {
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [{ type: 'uint64', value: 123456789n }],
+      contractAddress: this.contractAddress,
+      userAddress: this.signer.address,
+    });
+    const tx = await this.contract.test_toExternalEuint64(encryptedAmount.handles[0], encryptedAmount.inputProof);
+    await tx.wait();
+    const handle = await this.contract.resEuint64();
+    const res = await this.instance.publicDecrypt([handle]);
+    assert.equal(res.clearValues[handle], 123456789n);
+  });
+
+  it('toExternalEbool round-trips through fromExternal with empty proof', async function () {
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [{ type: 'bool', value: true }],
+      contractAddress: this.contractAddress,
+      userAddress: this.signer.address,
+    });
+    const tx = await this.contract.test_toExternalEbool(encryptedAmount.handles[0], encryptedAmount.inputProof);
+    await tx.wait();
+    const handle = await this.contract.resEbool();
+    const res = await this.instance.publicDecrypt([handle]);
+    assert.equal(res.clearValues[handle], true);
+  });
+
+  it('toExternalEaddress round-trips through fromExternal with empty proof', async function () {
+    const encryptedAmount = await this.instance.encryptTypedValues({
+      values: [{ type: 'address', value: ADDR_A }],
+      contractAddress: this.contractAddress,
+      userAddress: this.signer.address,
+    });
+    const tx = await this.contract.test_toExternalEaddress(encryptedAmount.handles[0], encryptedAmount.inputProof);
+    await tx.wait();
+    const handle = await this.contract.resAdd();
+    const res = await this.instance.publicDecrypt([handle]);
+    assert.equal(res.clearValues[handle], ADDR_A);
   });
 });

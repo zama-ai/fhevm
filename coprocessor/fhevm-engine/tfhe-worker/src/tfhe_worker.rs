@@ -131,7 +131,12 @@ pub async fn run_tfhe_worker(
         .await
         {
             WORKER_ERRORS_COUNTER.inc();
-            error!(target: "tfhe_worker", { error = cycle_error }, "Error in background worker, retrying shortly");
+            if cycle_error.is_fatal_connection() {
+                error!(target: "tfhe_worker", error = %cycle_error, "Fatal DB connection error; exiting for k8s restart");
+                fhevm_engine_common::telemetry::flush();
+                std::process::exit(1);
+            }
+            error!(target: "tfhe_worker", { error = %cycle_error }, "Error in background worker, retrying shortly");
         }
         tokio::time::sleep(tokio::time::Duration::from_millis(5000)).await;
     }
@@ -143,8 +148,9 @@ async fn tfhe_worker_cycle(
     gcs_mode: bool,
     start_block_state: Arc<AtomicI64>,
     health_check: crate::health_check::HealthCheck,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let db_url = resolve_database_url_from_option(args.database_url.clone())?;
+) -> Result<(), CoprocessorError> {
+    let db_url = resolve_database_url_from_option(args.database_url.clone())
+        .map_err(|e| CoprocessorError::Other(e.into()))?;
     // In --gcs-mode, every connection in the data-plane pool is pinned to
     // `search_path = gcs,public` so unqualified writes land in `gcs.*` and
     // shared read-only tables (keys, crs, host_chains, upgrade_state, …)
@@ -157,7 +163,8 @@ async fn tfhe_worker_cycle(
     )
     .await?;
 
-    let db_key_cache = DbKeyCache::new(args.key_cache_size)?;
+    let db_key_cache =
+        DbKeyCache::new(args.key_cache_size).map_err(|e| CoprocessorError::Other(e.into()))?;
     let mut listener = PgListener::connect_with(&pool).await?;
     listener.listen("work_available").await?;
 
@@ -177,7 +184,10 @@ async fn tfhe_worker_cycle(
 
     #[cfg(feature = "bench")]
     {
-        let _ = db_key_cache.fetch_latest_from_pool(&pool).await?;
+        let _ = db_key_cache
+            .fetch_latest_from_pool(&pool)
+            .await
+            .map_err(|e| CoprocessorError::Other(e.into()))?;
     }
     let mut immediately_poll_more_work = false;
     let mut no_progress_cycles = 0;
@@ -201,9 +211,17 @@ async fn tfhe_worker_cycle(
         // only if previous iteration had no work done do the wait
         if !immediately_poll_more_work {
             tokio::select! {
-                _ = listener.try_recv() => {
-                    WORK_ITEMS_NOTIFICATIONS_COUNTER.inc();
-                    info!(target: "tfhe_worker", "Received work_available notification from postgres");
+                notification = listener.try_recv() => {
+                    match notification? {
+                        Some(_) => {
+                            WORK_ITEMS_NOTIFICATIONS_COUNTER.inc();
+                            info!(target: "tfhe_worker", "Received work_available notification from postgres");
+                        }
+                        None => {
+                            // sqlx already reconnected the LISTEN connection; poll for work.
+                            warn!(target: "tfhe_worker", "postgres LISTEN connection reset; reconnected");
+                        }
+                    }
                 },
                 _ = tokio::time::sleep(tokio::time::Duration::from_millis(args.worker_polling_interval_ms)) => {
                     WORK_ITEMS_POLL_COUNTER.inc();
@@ -355,7 +373,7 @@ async fn query_ciphertexts<'a>(
     cts_to_query: &[Vec<u8>],
     trx: &mut sqlx::Transaction<'a, Postgres>,
     gcs_mode: bool,
-) -> Result<HashMap<Vec<u8>, (i16, Vec<u8>)>, Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<HashMap<Vec<u8>, (i16, Vec<u8>)>, CoprocessorError> {
     // BCS: the connection's `search_path = public`, so the unqualified
     // `ciphertexts` resolves to `public.ciphertexts` directly. Done in one
     // query.
@@ -422,8 +440,7 @@ async fn query_for_work<'a>(
     trx: &mut sqlx::Transaction<'a, Postgres>,
     deps_chain_mngr: &mut dependence_chain::LockMngr,
     no_progress_cycles: &mut u32,
-) -> Result<(Vec<ComponentNode>, PrimitiveDateTime, bool), Box<dyn std::error::Error + Send + Sync>>
-{
+) -> Result<(Vec<ComponentNode>, PrimitiveDateTime, bool), CoprocessorError> {
     let s_dcid = tracing::info_span!(
         "query_dependence_chain",
         dependence_chain_id = tracing::field::Empty
@@ -444,7 +461,7 @@ async fn query_for_work<'a>(
                 }
             }
         };
-        Ok::<_, Box<dyn std::error::Error + Send + Sync>>(result)
+        Ok::<_, CoprocessorError>(result)
     }
     .instrument(s_dcid.clone())
     .await?;
@@ -566,8 +583,7 @@ WHERE c.transaction_id IN (
                         inputs.push(DFGTaskInput::Dependence(dh.clone()));
                     }
                 }
-                check_fhe_operand_types(w.fhe_operation.into(), &this_comp_inputs, &is_scalar_op_vec)
-                    .map_err(CoprocessorError::FhevmError)?;
+                check_fhe_operand_types(w.fhe_operation.into(), &this_comp_inputs, &is_scalar_op_vec)?;
                 ops.push(DFGOp {
                     output_handle: w.output_handle.clone(),
                     fhe_op,
@@ -581,10 +597,11 @@ WHERE c.transaction_id IN (
                     earliest_schedule_order = w.schedule_order;
                 }
             }
-            let (mut components, _) = build_component_nodes(ops, transaction_id)?;
+            let (mut components, _) = build_component_nodes(ops, transaction_id)
+                .map_err(|e| CoprocessorError::Other(e.into()))?;
             transactions.append(&mut components);
         }
-        Ok::<_, Box<dyn std::error::Error + Send + Sync>>((transactions, earliest_schedule_order))
+        Ok::<_, CoprocessorError>((transactions, earliest_schedule_order))
     }
     .instrument(s_prep)
     .await?;
@@ -599,7 +616,7 @@ async fn build_transaction_graph_and_execute<'a>(
     trx: &mut sqlx::Transaction<'a, Postgres>,
     dcid_mngr: &dependence_chain::LockMngr,
     gcs_mode: bool,
-) -> Result<DFComponentGraph, Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<DFComponentGraph, CoprocessorError> {
     let mut tx_graph = DFComponentGraph::default();
     if let Err(e) = tx_graph.build(txs) {
         // If we had an error while building the graph, we don't
@@ -618,16 +635,18 @@ async fn build_transaction_graph_and_execute<'a>(
         }
     }
     for (handle, (ct_type, mut ct)) in ciphertext_map.into_iter() {
-        tx_graph.add_input(
-            &handle,
-            &DFGTxInput::Compressed((
-                CompressedCiphertext {
-                    ct_type,
-                    ct_bytes: std::mem::take(&mut ct),
-                },
-                true,
-            )),
-        )?;
+        tx_graph
+            .add_input(
+                &handle,
+                &DFGTxInput::Compressed((
+                    CompressedCiphertext {
+                        ct_type,
+                        ct_bytes: std::mem::take(&mut ct),
+                    },
+                    true,
+                )),
+            )
+            .map_err(|e| CoprocessorError::Other(e.into()))?;
     }
     // Resolve deferred cross-transaction dependences: edges whose
     // handle was fetched from DB are dropped (data already available),
@@ -643,13 +662,18 @@ async fn build_transaction_graph_and_execute<'a>(
         let keys = match db_key_cache.fetch_latest(trx.as_mut()).await {
             Ok(k) => k,
             Err(err) => {
-                let cerr = CoprocessorError::MissingKeys {
-                    reason: err.to_string(),
+                // Extract the sqlx error from anyhow so it classifies as a
+                // fatal connection (fail fast) instead of looking like missing keys.
+                let cerr: CoprocessorError = match err.downcast::<sqlx::Error>() {
+                    Ok(sqlx_err) => sqlx_err.into(),
+                    Err(other) => CoprocessorError::MissingKeys {
+                        reason: other.to_string(),
+                    },
                 };
                 error!(target: "tfhe_worker", { error = %cerr }, "failed to fetch latest key");
                 telemetry::set_current_span_error(&cerr);
                 WORKER_ERRORS_COUNTER.inc();
-                return Err(cerr.into());
+                return Err(cerr);
             }
         };
 
@@ -664,8 +688,11 @@ async fn build_transaction_graph_and_execute<'a>(
             keys.gpu_sks.clone(),
             health_check.activity_heartbeat.clone(),
         );
-        sched.schedule().await?;
-        Ok::<(), Box<dyn std::error::Error + Send + Sync>>(())
+        sched
+            .schedule()
+            .await
+            .map_err(|e| CoprocessorError::Other(e.into()))?;
+        Ok::<(), CoprocessorError>(())
     }
     .instrument(s_compute)
     .await?;
@@ -677,7 +704,7 @@ async fn upload_transaction_graph_results<'a>(
     tx_graph: &mut DFComponentGraph,
     trx: &mut sqlx::Transaction<'a, Postgres>,
     deps_mngr: &mut dependence_chain::LockMngr,
-) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<bool, CoprocessorError> {
     // Schema isolation: the connection's `search_path` already routes
     // unqualified writes to the stack's own schema (`public` for BCS,
     // `gcs` for GCS post-activation). The two-step ciphertext read in
@@ -780,7 +807,7 @@ async fn upload_transaction_graph_results<'a>(
             let _ = sqlx::query!("SELECT pg_notify($1, '')", EVENT_CIPHERTEXT_COMPUTED)
                 .execute(trx.as_mut())
                 .await?;
-            Ok::<u64, Box<dyn std::error::Error + Send + Sync>>(cts_inserted)
+            Ok::<u64, CoprocessorError>(cts_inserted)
         }
         .instrument(s_insert)
         .await?;
@@ -808,8 +835,7 @@ async fn upload_transaction_graph_results<'a>(
                 error!(target: "tfhe_worker", { error = %err }, "error while updating computations as completed");
                 err
             })?.rows_affected();
-
-            Ok::<u64, Box<dyn std::error::Error + Send + Sync>>(comp_updated)
+            Ok::<u64, CoprocessorError>(comp_updated)
         }
         .instrument(s_update)
         .await?;
@@ -825,7 +851,7 @@ async fn set_computation_error<'a>(
     cerr: &(dyn std::error::Error + Send + Sync),
     trx: &mut sqlx::Transaction<'a, Postgres>,
     deps_mngr: &mut dependence_chain::LockMngr,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<(), CoprocessorError> {
     WORKER_ERRORS_COUNTER.inc();
     let err_string = cerr.to_string();
     error!(target: "tfhe_worker", error = %err_string, output_handle = %format!("0x{}", hex::encode(output_handle)), "error while processing work item");

@@ -820,7 +820,7 @@ describe('FHEVM manual operations', function () {
     expect(res).to.equal(42);
   });
 
-  // mulDiv: (lhs * rhs) / divisor with intermediate widening
+  // mulDiv: (factor1 * factor2) / divisor with intermediate widening
   it('mulDiv euint8 enc*enc: (200 * 200) / 200 = 200 (intermediate overflows uint8)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
     input.add8(200);
@@ -878,7 +878,7 @@ describe('FHEVM manual operations', function () {
     expect(await decrypt8(await this.contract.resEuint8())).to.equal(0);
   });
 
-  it('mulDiv euint8 enc*enc: (0 * 100) / 50 = 0 (zero lhs)', async function () {
+  it('mulDiv euint8 enc*enc: (0 * 100) / 50 = 0 (zero factor1)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
     input.add8(0);
     input.add8(100);
@@ -934,5 +934,34 @@ describe('FHEVM manual operations', function () {
     );
     await tx.wait();
     expect(await decrypt64(await this.contract.resEuint64())).to.equal(600_000_000n);
+  });
+
+  it('toExternalEuint64 round-trips through fromExternal with empty proof', async function () {
+    const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+    input.add64(123_456_789n);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract.test_toExternalEuint64(encryptedAmount.handles[0], encryptedAmount.inputProof);
+    await tx.wait();
+    expect(await decrypt64(await this.contract.resEuint64())).to.equal(123_456_789n);
+  });
+
+  it('toExternalEbool round-trips through fromExternal with empty proof', async function () {
+    const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+    input.addBool(true);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract.test_toExternalEbool(encryptedAmount.handles[0], encryptedAmount.inputProof);
+    await tx.wait();
+    expect(await decryptBool(await this.contract.resEbool())).to.equal(true);
+  });
+
+  it('toExternalEaddress round-trips through fromExternal with empty proof', async function () {
+    const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+    input.addAddress('0x8ba1f109551bd432803012645ac136ddd64dba72');
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract.test_toExternalEaddress(encryptedAmount.handles[0], encryptedAmount.inputProof);
+    await tx.wait();
+    expect((await decryptAddress(await this.contract.resAdd())).toLowerCase()).to.equal(
+      '0x8ba1f109551bd432803012645ac136ddd64dba72',
+    );
   });
 });

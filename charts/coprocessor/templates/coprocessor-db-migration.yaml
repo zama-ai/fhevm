@@ -95,27 +95,37 @@ spec:
               {{- toYaml .valueFrom | nindent 14 }}
             {{- end }}
           {{- end }}
-          {{- with .Values.dbMigration.config.chainId }}
-          - name: CHAIN_ID
-            value: {{ . | quote }}
-          {{- end }}
-          {{- with .Values.dbMigration.config.aclContractAddress }}
-          - name: ACL_CONTRACT_ADDRESS
-            {{- if .value }}
-            value: {{ .value | quote }}
-            {{- else if .valueFrom }}
+          {{- /*
+            Declarative host-chains seeding.
+            Rendered from .Values.chains so the dbMigration Job can seed the
+            `host_chains` Postgres table from the same source of truth the
+            listeners use. Each entry produces three env vars consumed by
+            initialize_db.sh -> seed_host_chains:
+              HOST_CHAIN_<i>_ID    (literal chainId)
+              HOST_CHAIN_<i>_NAME  (literal name)
+              HOST_CHAIN_<i>_ACL   (literal aclContractAddress, or valueFrom
+                                    pointing at the same ConfigMap the
+                                    per-chain listener uses)
+            Empty chains[] is a no-op (no host_chains rows seeded).
+          */}}
+          {{- if .Values.chains }}
+          - name: HOST_CHAINS_COUNT
+            value: {{ len .Values.chains | quote }}
+          {{- range $i, $chain := .Values.chains }}
+          - name: HOST_CHAIN_{{ $i }}_ID
+            value: {{ $chain.chainId | quote }}
+          - name: HOST_CHAIN_{{ $i }}_NAME
+            value: {{ $chain.name | quote }}
+          {{- if or $chain.aclContractAddress $chain.aclContractAddressValueFrom }}
+          - name: HOST_CHAIN_{{ $i }}_ACL
+            {{- if $chain.aclContractAddress }}
+            value: {{ $chain.aclContractAddress | quote }}
+            {{- else if $chain.aclContractAddressValueFrom }}
             valueFrom:
-              {{- toYaml .valueFrom | nindent 14 }}
+              {{- toYaml $chain.aclContractAddressValueFrom | nindent 14 }}
             {{- end }}
           {{- end }}
-          {{- with .Values.dbMigration.config.inputVerifierAddress }}
-          - name: INPUT_VERIFIER_ADDRESS
-            {{- if .value }}
-            value: {{ .value | quote }}
-            {{- else if .valueFrom }}
-            valueFrom:
-              {{- toYaml .valueFrom | nindent 14 }}
-            {{- end }}
+          {{- end }}
           {{- end }}
           {{- if eq (include "coprocessorDatabaseAuthMode" .) "iam" }}
           - name: DATABASE_IAM_AUTH_ENABLED
@@ -129,14 +139,8 @@ spec:
               {{- toYaml .valueFrom | nindent 14 }}
             {{- end }}
           {{- end }}
-          {{- with .Values.commonConfig.databaseSslRootCertPath }}
-          - name: DATABASE_SSL_ROOT_CERT_PATH
-            {{- if .value }}
-            value: {{ .value | quote }}
-            {{- else if .valueFrom }}
-            valueFrom:
-              {{- toYaml .valueFrom | nindent 14 }}
-            {{- end }}
+          {{- if eq (include "coprocessor.databaseSslRootCertEnvEnabled" .) "true" }}
+          {{- include "coprocessor.databaseSslRootCertEnv" . | nindent 10 }}
           {{- end }}
           {{- end }}
         {{- with .Values.commonConfig.env }}
@@ -152,4 +156,10 @@ spec:
           limits:
             cpu: {{ .Values.dbMigration.resources.limits.cpu | default "500m" }}
             memory: {{ .Values.dbMigration.resources.limits.memory | default "512Mi" }}
+        {{- if eq (include "coprocessor.databaseSslRootCertMountEnabled" .) "true" }}
+        {{- include "coprocessor.databaseSslRootCertVolumeMount" . | nindent 8 }}
+        {{- end }}
+      {{- if eq (include "coprocessor.databaseSslRootCertMountEnabled" .) "true" }}
+      {{- include "coprocessor.databaseSslRootCertVolume" . | nindent 6 }}
+      {{- end }}
 {{- end -}}

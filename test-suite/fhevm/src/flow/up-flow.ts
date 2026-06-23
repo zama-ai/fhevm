@@ -2,12 +2,17 @@
  * Orchestrates fhevm stack lifecycle commands such as up, down, resume, clean, upgrade, status, and logs.
  */
 
+import path from "node:path";
+
 import { ensureLockSnapshot, previewBundle, resolveBundle } from "../resolve/bundle-store";
 import {
   assertSupportedBundleScenario,
+  bootstrapUsesHostKmsGeneration,
   requiresGatewayKmsGenerationAddress,
+  requiresLegacyHostChainSeedShim,
   requiresMultichainAclAddress,
   requiresModernHostAddressArtifacts,
+  supportsCanonicalProtocolConfigSeeding,
   supportsHostListenerConsumer,
   validateBundleCompatibility,
 } from "../compat/compat";
@@ -86,18 +91,22 @@ import {
   hostReachableRpcUrl,
   predictedCrsId,
   predictedKeyId,
+  readJson,
   readEnvFile,
   remove,
+  toServiceName,
   withHexPrefix,
+  writeEnvFile,
   writeJson,
 } from "../utils/fs";
 import { ensureDiscovery, createDiscovery, defaultEndpoints, discoverContracts, minioIp, validateDiscovery } from "./discovery";
+import { kmsConnectorEnvName } from "../kms-party";
 import { defaultHostChain, extraHostChains, hostChainsForState } from "./topology";
 import {
-  KMS_CONNECTOR_HEALTH_CONTAINERS,
+  kmsConnectorHealthContainers,
   castBool,
   coprocessorHealthContainers,
-  discoverSigner,
+  discoverKmsSigners,
   dockerInspect,
   ensureMaterial,
   listenerContainersForChain,
@@ -124,6 +133,7 @@ import {
   multiChainCoprocessorUpgradeTargets,
   resolveUpgradePlan,
   resumeRepairStep,
+  type UpgradeGroup,
 } from "./repair";
 import {
   composeDown,
@@ -146,7 +156,7 @@ export {
   createDiscovery,
   defaultEndpoints,
   discoverContracts,
-  discoverSigner,
+  discoverKmsSigners,
   dockerInspect,
   ensureDiscovery,
   ensureMaterial,
@@ -433,16 +443,6 @@ const assertSchemaCompatibility = async (
   }
 };
 
-const assertUpgradeSchemaStable = async (bundle: VersionBundle, group: OverrideGroup) =>
-  assertSchemaRepoStable(
-    group,
-    bundle,
-    (ref) => `Cannot compare local ${group} migrations against ${ref}; local git ref is missing. Run \`git fetch --tags\` or do a fresh \`fhevm-cli up\`.`,
-    () =>
-      `${group}: local DB migrations changed. \`fhevm-cli upgrade ${group}\` only supports runtime rebuilds; do a fresh \`fhevm-cli up\` for schema changes.`,
-  );
-
-
 /** Checks whether the coprocessor database already contains seeded runtime data. */
 const coprocessorDbSeeded = async (database: string) => {
   const result = await postgresExec(database, ["-tAc", "select 1 from host_chains limit 1"]);
@@ -454,29 +454,94 @@ const coprocessorDbsSeeded = async (state: Pick<State, "scenario">) =>
     Array.from({ length: topologyForState(state).count }, (_, index) => driftDatabaseName(index)).map(coprocessorDbSeeded),
   )).every(Boolean);
 
-/** Registers an extra host chain in all coprocessor databases and restarts zkproof-workers. */
-const registerExtraChainInCoprocessor = async (state: State, chain: { key: string; chainId: string }) => {
-  const plan = stackSpecForState(state);
-  const chainHost = state.discovery?.hosts[chain.key] ?? {};
-  const aclAddress = chainHost.ACL_CONTRACT_ADDRESS ?? "";
-  for (let index = 0; index < plan.topology.count; index += 1) {
-    const dbName = driftDatabaseName(index);
-    const prefix = index === 0 ? "coprocessor-" : `coprocessor${index}-`;
-    console.log(`[multi-chain] registering ${chain.key} in ${dbName}`);
-    const result = await postgresExec(dbName, [
-      "-c",
-      `INSERT INTO host_chains (chain_id, name, acl_contract_address) VALUES (${chain.chainId}, ${sqlLiteral(chain.key)}, ${sqlLiteral(aclAddress)}) ON CONFLICT (chain_id) DO NOTHING;`,
-    ]);
-    if (result.code !== 0) {
-      throw new PreflightError(result.stderr.trim() || result.stdout.trim() || `failed to register ${chain.key} in ${dbName}`);
-    }
-    console.log(`[multi-chain] restarting ${prefix}zkproof-worker`);
-    await run(["docker", "stop", `${prefix}zkproof-worker`]);
-    await run(["docker", "start", `${prefix}zkproof-worker`]);
-    await waitForContainer(`${prefix}zkproof-worker`, "running");
+const restartZkproofWorker = async (index: number, reason: string) => {
+  const container = toServiceName("zkproof-worker", index);
+  console.log(`[coprocessor] restarting ${container} (${reason})`);
+  await run(["docker", "stop", container]);
+  await run(["docker", "start", container]);
+  await waitForContainer(container, "running");
+};
+
+const restartZkproofWorkers = async (state: Pick<State, "scenario">, reason: string) => {
+  for (let index = 0; index < topologyForState(state).count; index += 1) {
+    await restartZkproofWorker(index, reason);
   }
 };
 
+const upsertHostChainInCoprocessorDb = async (
+  state: State,
+  chain: { key: string; chainId: string },
+  index: number,
+  logPrefix: string,
+) => {
+  const dbName = driftDatabaseName(index);
+  const chainHost = state.discovery?.hosts[chain.key] ?? {};
+  const aclAddress = chainHost.ACL_CONTRACT_ADDRESS ?? "";
+  console.log(`${logPrefix} registering ${chain.key} in ${dbName}`);
+  const result = await postgresExec(dbName, [
+    "-c",
+    `INSERT INTO host_chains (chain_id, name, acl_contract_address) VALUES (${chain.chainId}, ${sqlLiteral(chain.key)}, ${sqlLiteral(aclAddress)}) ON CONFLICT (chain_id) DO UPDATE SET name = EXCLUDED.name, acl_contract_address = EXCLUDED.acl_contract_address;`,
+  ]);
+  if (result.code !== 0) {
+    throw new PreflightError(result.stderr.trim() || result.stdout.trim() || `failed to register ${chain.key} in ${dbName}`);
+  }
+};
+
+const upsertHostChainInCoprocessorDbs = async (state: State, chain: { key: string; chainId: string }, logPrefix: string) => {
+  const plan = stackSpecForState(state);
+  for (let index = 0; index < plan.topology.count; index += 1) {
+    await upsertHostChainInCoprocessorDb(state, chain, index, logPrefix);
+  }
+};
+
+/** Legacy runtime shim: v0.12.x coprocessor images do not reliably seed host_chains before zkproof caches it. */
+const applyLegacyHostChainSeedShim = async (state: State) => {
+  const defaultChain = defaultHostChain(state);
+  if (!defaultChain) {
+    throw new PreflightError("Missing default host chain");
+  }
+  await timed("[compat] legacy host_chains seed shim", () =>
+    upsertHostChainInCoprocessorDbs(state, defaultChain, "[compat]"),
+  );
+  await timed("[compat] refresh zkproof host-chain cache", () =>
+    restartZkproofWorkers(state, "after legacy host_chains seed shim"),
+  );
+};
+
+/** Registers an extra host chain in all coprocessor databases and restarts zkproof-workers. */
+const registerExtraChainInCoprocessor = async (state: State, chain: { key: string; chainId: string }) => {
+  const plan = stackSpecForState(state);
+  for (let index = 0; index < plan.topology.count; index += 1) {
+    await upsertHostChainInCoprocessorDb(state, chain, index, "[multi-chain]");
+    await restartZkproofWorker(index, `after registering ${chain.key}`);
+  }
+};
+
+/**
+ * Builds the `task:deployAllHostContracts` args that seed a non-canonical chain's ProtocolConfig
+ * from the canonical chain, mirroring production. Returns "" when the host image predates
+ * `task:deployProtocolConfigFromCanonical`, so older bundles keep the "fresh" seeding.
+ * Must run after the canonical host deploy: it reads the canonical ProtocolConfig address from the
+ * generated address file.
+ */
+const canonicalProtocolConfigSeedingArgs = async (state: State) => {
+  if (!supportsCanonicalProtocolConfigSeeding(state)) {
+    return "";
+  }
+  const canonicalChain = defaultHostChain(state)!;
+  const canonicalAddresses = await readEnvFile(hostChainAddressesPath(canonicalChain.key));
+  const canonicalProtocolConfigAddress = canonicalAddresses.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
+  if (!canonicalProtocolConfigAddress) {
+    throw new PreflightError(
+      `Canonical host addresses at ${hostChainAddressesPath(canonicalChain.key)} lack PROTOCOL_CONFIG_CONTRACT_ADDRESS; cannot seed non-canonical chains from canonical.`,
+    );
+  }
+  return [
+    "--protocol-config-source canonical",
+    `--canonical-rpc-url http://${canonicalChain.node}:${canonicalChain.rpcPort}`,
+    `--canonical-protocol-config-address ${canonicalProtocolConfigAddress}`,
+  ].join(" ");
+};
 
 export const runStep = async (state: State, step: StepName) => {
   const stepIndex = stateStepIndex(step) + 1;
@@ -501,8 +566,18 @@ export const runStep = async (state: State, step: StepName) => {
       await stepComposeUp("minio", state);
       await waitForContainer("fhevm-minio", "healthy");
       await waitForContainer("fhevm-minio-setup", "complete");
-      await stepComposeUp("core", state);
+      // Threshold mode boots the dedicated N-node cluster component instead of
+      // the single centralized core. Party 1 keeps the `kms-core` name, so the
+      // readiness wait below is unchanged.
+      await stepComposeUp(state.scenario.kms.mode === "threshold" ? "core-threshold" : "core", state);
       await waitForLog(KMS_CORE_CONTAINER, /KMS Server service socket address/);
+      if (state.scenario.kms.mode === "threshold") {
+        // The party-1 socket log only proves one core is up. The cluster cannot
+        // serve keygen/decryption until kms-core-init has run the cross-party MPC
+        // context/PRSS setup, so gate on its completion before signer discovery /
+        // bootstrap — otherwise we proceed against an uninitialized cluster.
+        await waitForContainer("kms-core-init", "complete");
+      }
       await stepComposeUp("database", state);
       await waitForContainer(COPROCESSOR_DB_CONTAINER, "healthy");
       const defaultChain = defaultHostChain(state);
@@ -511,11 +586,18 @@ export const runStep = async (state: State, step: StepName) => {
         throw new PreflightError("Missing default host chain");
       }
       await waitForRpc(`http://localhost:${defaultChain.rpcPort}`);
-      // Fund the kms-connector tx-sender on the host chain. The wallet is derived from the gateway
-      // mnemonic so anvil pre-funds it there, but not on the host chain (different mnemonic).
-      const kmsConnectorEnv = await readEnvFile(envPath("kms-connector"));
-      const txSenderKey = kmsConnectorEnv.KMS_CONNECTOR_PRIVATE_KEY;
-      if (txSenderKey) {
+      // Fund each KMS party's connector tx-sender on the host chain. The wallets are
+      // derived from the gateway mnemonic so anvil pre-funds them there, but not on the
+      // host chain (different mnemonic). A threshold-mode KMS runs one connector (and tx-sender)
+      // per party, and EVERY party must be funded — otherwise only the funded party can
+      // submit keygen/crsgen responses and on-chain consensus never completes.
+      // `kms.parties` is 1 for centralized and N for threshold.
+      for (let party = 1; party <= state.scenario.kms.parties; party += 1) {
+        const connectorEnv = await readEnvFile(envPath(kmsConnectorEnvName(party)));
+        const txSenderKey = connectorEnv.KMS_CONNECTOR_PRIVATE_KEY;
+        if (!txSenderKey) {
+          continue;
+        }
         const txSenderAddress = (await run(["cast", "wallet", "address", txSenderKey])).stdout.trim();
         await run([
           "cast", "rpc", "anvil_setBalance", txSenderAddress, "0x56BC75E2D63100000", // 100 ETH
@@ -545,10 +627,11 @@ export const runStep = async (state: State, step: StepName) => {
       break;
     }
     case "kms-signer": {
+      // `kms.parties` is 1 for centralized and N for threshold, so one call covers both.
       const discovery = await ensureDiscovery(state);
-      const signer = await discoverSigner();
-      discovery.kmsSigner = signer.address;
-      discovery.minioKeyPrefix = signer.minioKeyPrefix;
+      const { signers, minioKeyPrefix } = await discoverKmsSigners(state.scenario.kms.parties);
+      discovery.kmsSigners = signers;
+      discovery.minioKeyPrefix = minioKeyPrefix;
       await generateRuntime(state, stackSpecForState(state));
       break;
     }
@@ -583,8 +666,19 @@ export const runStep = async (state: State, step: StepName) => {
         "HCU_LIMIT_CONTRACT_ADDRESS",
         ...(requiresModernHostAddressArtifacts(state) ? ["PROTOCOL_CONFIG_CONTRACT_ADDRESS", "KMS_GENERATION_CONTRACT_ADDRESS"] : []),
       ]);
+      // Production topology: non-canonical chains seed ProtocolConfig from the canonical chain
+      // (export → mirror), not "fresh" from env. The canonical address only exists after the
+      // canonical deploy above, so the placeholder env var is patched here, per chain, before
+      // its deploy container starts.
+      const canonicalSeedingArgs = await canonicalProtocolConfigSeedingArgs(state);
       for (const chain of extraHostChains(state)) {
         const scKey = chain.sc;
+        if (canonicalSeedingArgs) {
+          const scEnvPath = envPath(scKey);
+          const scEnv = await readEnvFile(scEnvPath);
+          scEnv.HOST_SC_DEPLOY_PROTOCOL_CONFIG_ARGS = canonicalSeedingArgs;
+          await writeEnvFile(scEnvPath, scEnv);
+        }
         await timed(`[multi-chain] ${scKey}-deploy`, async () => {
           await multiChainComposeTask(scKey, [`${scKey}-deploy`]);
           await waitForContainer(`${scKey}-deploy`, "complete");
@@ -643,6 +737,9 @@ export const runStep = async (state: State, step: StepName) => {
       const services = skipMigration ? coprocessorHealthContainers(state) : serviceNameList(state, "coprocessor");
       await stepComposeUp("coprocessor", state, services, { noDeps: skipMigration });
       await waitForCoprocessorServices(state, skipMigration);
+      if (requiresLegacyHostChainSeedShim(state)) {
+        await applyLegacyHostChainSeedShim(state);
+      }
       await postBootHealthGate(coprocessorHealthContainers(state));
       for (const chain of extraHostChains(state)) {
         const suffix = chain.suffix;
@@ -659,7 +756,7 @@ export const runStep = async (state: State, step: StepName) => {
     case "kms-connector":
       await stepComposeUp("kms-connector", state);
       await waitForKmsConnector(state);
-      await postBootHealthGate(KMS_CONNECTOR_HEALTH_CONTAINERS);
+      await postBootHealthGate(kmsConnectorHealthContainers(state));
       break;
     case "bootstrap": {
       await ensureRuntimeArtifacts(state, "bootstrap");
@@ -726,7 +823,7 @@ export const runStep = async (state: State, step: StepName) => {
         );
         await waitForContainer("gateway-sc-add-pausers", "complete");
       }
-      if (requiresModernHostAddressArtifacts(state)) {
+      if (bootstrapUsesHostKmsGeneration(state)) {
         await timed("[bootstrap] trigger-keygen", () =>
           stepComposeTask("host-sc", state, ["host-sc-trigger-keygen"], { noDeps: true }),
         );
@@ -745,7 +842,14 @@ export const runStep = async (state: State, step: StepName) => {
         );
         await waitForContainer("gateway-sc-trigger-crsgen", "complete");
       }
-      await timed("[bootstrap] wait-for-materials", () => waitForBootstrap(state));
+      // wait-for-materials polls roughly once per second. Centralized keygen is quick; a
+      // threshold-mode cluster runs a real multi-party DKG (~360s for 4 parties), so it needs a
+      // much larger budget before we conclude bootstrap failed.
+      const CENTRALIZED_BOOTSTRAP_ATTEMPTS = 120;
+      const THRESHOLD_BOOTSTRAP_ATTEMPTS = 450;
+      const bootstrapAttempts =
+        state.scenario.kms.mode === "threshold" ? THRESHOLD_BOOTSTRAP_ATTEMPTS : CENTRALIZED_BOOTSTRAP_ATTEMPTS;
+      await timed("[bootstrap] wait-for-materials", () => waitForBootstrap(state, bootstrapAttempts));
       await generateRuntime(state, stackSpecForState(state));
       break;
     }
@@ -901,6 +1005,15 @@ export const up = async (options: UpOptions) => {
     }
     state = nextState;
     await saveState(state);
+  }
+  if ((options.resume || options.fromStep) && state.scenario.kms.mode === "threshold") {
+    // The resume/from-step lifecycle map (COMPONENT_BY_STEP, resumeSteadyStateServices) models a
+    // single `kms-core` + one connector tier. A threshold-mode cluster has kms-core-2..N, kms-core-init
+    // and per-party connectors that the map does not know about, so a partial restart would leave
+    // them stale. Block it like the threshold upgrade guard until the map is made scenario-aware.
+    throw new ResumeError(
+      "--resume / --from-step is not supported for a threshold-mode KMS cluster (the lifecycle map models a single kms-core/connector and would leave kms-core-2..N, kms-core-init, and per-party connectors stale); recreate the stack with a fresh `up`",
+    );
   }
   if (options.resume) {
     state.requiresGitHub = false;
@@ -1204,25 +1317,155 @@ export const listScenarios = async () => {
   }
 };
 
-/** Rebuilds and restarts one active local runtime override group in place. */
-export const upgrade = async (groupValue: string | undefined) => {
-  const state = await loadState();
-  if (!state || !(await projectContainers()).length) {
+type UpgradeOptions = {
+  lockFile?: string;
+};
+
+export const changedVersionKeys = (current: VersionBundle, next: VersionBundle) =>
+  [...new Set([...Object.keys(current.env), ...Object.keys(next.env)])]
+    .filter((key) => (current.env[key] ?? "") !== (next.env[key] ?? ""))
+    .sort();
+
+export const assertVersionLockChanges = (label: string, allowedVersionKeys: readonly string[], changedKeys: string[]) => {
+  const disallowed = changedKeys.filter((key) => !allowedVersionKeys.includes(key));
+  if (disallowed.length) {
     throw new PreflightError(
-      "Stack is not running; start one with `fhevm-cli up --override ...` or `fhevm-cli up --scenario ...` first",
+      `${label} lock changes unrelated version keys: ${disallowed.join(", ")}. Allowed: ${allowedVersionKeys.join(", ")}`,
     );
   }
-  await ensureRuntimeArtifacts(state, "upgrade");
-  const { component, group, runtimeServices, step } = resolveUpgradePlan(state, groupValue);
-  if (!state.completedSteps.includes(step)) {
-    throw new PreflightError(`upgrade requires a stack that has completed the ${step} step`);
+};
+
+const isOverrideGroup = (group: string): group is OverrideGroup =>
+  OVERRIDE_GROUPS.includes(group as OverrideGroup);
+
+export const runtimeUpgradeOverrideGroups = (group: UpgradeGroup): OverrideGroup[] => {
+  if (group === "kms") {
+    return ["kms-connector"];
   }
-  await assertSchemaCompatibility(state.versions, state.overrides, state.scenario, false);
-  await assertUpgradeSchemaStable(state.versions, group);
-  console.log(`[upgrade] ${group}`);
+  if (group === "kms-core") {
+    return [];
+  }
+  return isOverrideGroup(group) ? [group] : [];
+};
+
+export const removeRuntimeUpgradeOverrides = (overrides: LocalOverride[], group: UpgradeGroup) => {
+  const upgraded = new Set(runtimeUpgradeOverrideGroups(group));
+  return overrides.filter((override) => !upgraded.has(override.group));
+};
+
+const mergeLocalOverrides = (current: LocalOverride[], additions: LocalOverride[] = []) => {
+  // JSON-encoded identity dedupes structurally equal overrides regardless of key order.
+  const seen = new Set(current.map((override) => JSON.stringify(override)));
+  const next = [...current];
+  for (const override of additions) {
+    const key = JSON.stringify(override);
+    if (!seen.has(key)) {
+      seen.add(key);
+      next.push(override);
+    }
+  }
+  return next;
+};
+
+const buildLockedState = async (
+  label: string,
+  state: State,
+  lockFile: string,
+  allowedVersionKeys: readonly string[],
+  nextOverrides: LocalOverride[],
+) => {
+  const lockPath = path.resolve(lockFile);
+  const next = await readJson<VersionBundle>(lockPath);
+  if (!next.env || typeof next.env !== "object") {
+    throw new PreflightError(`Invalid ${label} lock ${lockFile}: missing env map`);
+  }
+  const changedKeys = changedVersionKeys(state.versions, next);
+  assertVersionLockChanges(label, allowedVersionKeys, changedKeys);
+  const nextState = {
+    ...state,
+    target: next.target,
+    lockPath,
+    requiresGitHub: targetNeedsGitHub({ target: next.target, lockFile }),
+    overrides: nextOverrides,
+    versions: next,
+    updatedAt: new Date().toISOString(),
+  } satisfies State;
+  assertSupportedTargetScenario(nextState.target, nextState.scenario);
+  assertSupportedBundleScenario({
+    versions: nextState.versions,
+    overrides: nextState.overrides,
+    scenario: nextState.scenario,
+  });
+  const incompatibilities = validateBundleCompatibility(nextState);
+  if (incompatibilities.length) {
+    throw new IncompatibleVersions(incompatibilities.map((item) => item.message));
+  }
+  return { changedKeys, state: nextState };
+};
+
+const applyRuntimeUpgradeLock = (
+  state: State,
+  group: UpgradeGroup,
+  allowedVersionKeys: readonly string[],
+  lockFile: string,
+) =>
+  buildLockedState(
+    `upgrade ${group}`,
+    state,
+    lockFile,
+    allowedVersionKeys,
+    removeRuntimeUpgradeOverrides(state.overrides, group),
+  );
+
+/** Applies an ordered rollout version lock without restarting runtime services. */
+export const applyVersionLock = async (
+  label: string,
+  lockFile: string,
+  allowedVersionKeys: readonly string[],
+  options: { overrides?: LocalOverride[] } = {},
+) => {
+  const state = await loadState();
+  if (!state || !(await projectContainers()).length) {
+    throw new PreflightError("Stack is not running; start one with `fhevm-cli up` first");
+  }
+  await ensureRuntimeArtifacts(state, "rollout version lock");
+  const { changedKeys, state: nextState } = await buildLockedState(
+    label,
+    state,
+    lockFile,
+    allowedVersionKeys,
+    mergeLocalOverrides(state.overrides, options.overrides),
+  );
+  await assertSchemaCompatibility(nextState.versions, nextState.overrides, nextState.scenario, false);
+  await saveState(nextState);
+  await generateRuntime(nextState, stackSpecForState(nextState));
+  console.log(`[rollout] ${label} versions=${changedKeys.join(", ") || "(none)"}`);
+};
+
+/** Re-reads deployed contract addresses after contract runbook tasks mutate proxies. */
+export const refreshDiscovery = async () => {
+  const state = await loadState();
+  if (!state || !(await projectContainers()).length) {
+    throw new PreflightError("Stack is not running; start one with `fhevm-cli up` first");
+  }
+  await ensureRuntimeArtifacts(state, "rollout discovery");
+  const contracts = await discoverContracts(state);
+  const discovery = await ensureDiscovery(state);
+  discovery.gateway = contracts.gateway;
+  discovery.hosts = { ...discovery.hosts, ...contracts.hosts };
+  validateDiscovery(state);
+  await saveState(state);
   await generateRuntime(state, stackSpecForState(state));
-  await maybeBuild(component, state, { force: true });
-  await composeUp(component, runtimeServices, { noDeps: true });
+  console.log("[rollout] discovery refreshed");
+};
+
+const waitForRelayer = async () => {
+  await waitForContainer("fhevm-relayer-db", "healthy");
+  await waitForContainer("fhevm-relayer", "running");
+  await waitForLog("fhevm-relayer", /All servers are ready and responding/);
+};
+
+const waitForUpgrade = async (state: State, group: UpgradeGroup, runtimeServices: string[]) => {
   if (group === "coprocessor") {
     const extraTargets = multiChainCoprocessorUpgradeTargets(state, runtimeServices);
     for (const target of extraTargets) {
@@ -1233,13 +1476,74 @@ export const upgrade = async (groupValue: string | undefined) => {
     }
     await waitForCoprocessor(state);
     await postBootHealthGate([...coprocessorHealthContainers(state), ...extraTargets.flatMap((target) => target.services)]);
-  } else if (group === "kms-connector") {
-    await waitForKmsConnector(state);
-    await postBootHealthGate(KMS_CONNECTOR_HEALTH_CONTAINERS);
-  } else {
-    await waitForContainer(TEST_SUITE_CONTAINER, "running");
+    return;
   }
-  await markStep(state, step);
+  if (group === "kms-connector" || group === "kms") {
+    await waitForContainer(KMS_CORE_CONTAINER, "running");
+    await waitForKmsConnector(state);
+    await postBootHealthGate(kmsConnectorHealthContainers(state));
+    return;
+  }
+  if (group === "kms-core") {
+    await waitForContainer(KMS_CORE_CONTAINER, "running");
+    return;
+  }
+  if (group === "listener-core") {
+    await waitForContainer("listener-redis", "running");
+    await waitForContainer("listener-publisher-for-anvil", "running");
+    return;
+  }
+  if (group === "relayer") {
+    await waitForRelayer();
+    return;
+  }
+  await waitForTestSuite();
+};
+
+/** Upgrades one runtime group in place, including allowed migrations and optional version-lock application. */
+export const upgradeRuntimeGroup = async (groupValue: string | undefined, options: UpgradeOptions = {}) => {
+  const state = await loadState();
+  if (!state || !(await projectContainers()).length) {
+    throw new PreflightError(
+      "Stack is not running; start one with `fhevm-cli up --override ...` or `fhevm-cli up --scenario ...` first",
+    );
+  }
+  await ensureRuntimeArtifacts(state, "upgrade");
+  const plan = resolveUpgradePlan(state, groupValue, { lockFile: !!options.lockFile });
+  for (const step of plan.steps) {
+    if (!state.completedSteps.includes(step)) {
+      throw new PreflightError(`upgrade requires a stack that has completed the ${step} step`);
+    }
+  }
+  const nextState = options.lockFile
+    ? (await applyRuntimeUpgradeLock(state, plan.group, plan.versionKeys, options.lockFile)).state
+    : state;
+  await assertSchemaCompatibility(nextState.versions, nextState.overrides, nextState.scenario, false);
+  console.log(`[upgrade] ${plan.group}`);
+  await saveState(nextState);
+  await generateRuntime(nextState, stackSpecForState(nextState));
+  if (plan.group === "listener-core") {
+    await postgresExec("", ["-c", "CREATE DATABASE listener;"]);
+  }
+  for (const component of plan.components) {
+    await maybeBuild(component.component, nextState, { force: true });
+  }
+  for (const component of plan.components) {
+    if (!component.migrationServices.length) {
+      continue;
+    }
+    await composeUp(component.component, component.migrationServices, { forceRecreate: true });
+    for (const service of component.migrationServices) {
+      await waitForContainer(service, "complete");
+    }
+  }
+  for (const component of plan.components) {
+    await composeUp(component.component, component.runtimeServices, { noDeps: true });
+  }
+  await waitForUpgrade(nextState, plan.group, plan.runtimeServices);
+  for (const step of plan.steps) {
+    await markStep(nextState, step);
+  }
 };
 
 const RESUME_HINT_BLOCKERS = new Set([

@@ -95,7 +95,9 @@ pub static DECRYPTION_LATENCY_HISTOGRAM: LazyLock<HistogramVec> = LazyLock::new(
 pub fn register_event_latency(event: &ProtocolEvent) {
     if matches!(
         event.kind,
-        ProtocolEventKind::PublicDecryption(_) | ProtocolEventKind::UserDecryption(_)
+        ProtocolEventKind::PublicDecryption(_)
+            | ProtocolEventKind::UserDecryption(_)
+            | ProtocolEventKind::UserDecryptionV2(_)
     ) {
         let elapsed = Utc::now() - event.created_at;
         DECRYPTION_LATENCY_HISTOGRAM

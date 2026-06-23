@@ -5,7 +5,7 @@ use crate::decryption::user::UserDecryptRequest;
 use alloy::primitives::{Address, Bytes, FixedBytes, U256};
 use alloy::sol_types::SolCall;
 use fhevm_gateway_bindings::decryption::Decryption::{
-    publicDecryptionRequestCall, userDecryptionRequestCall,
+    publicDecryptionRequestCall, userDecryptionRequest_1Call as userDecryptionRequestCall,
 };
 use fhevm_gateway_bindings::decryption::IDecryption::ContractsInfo;
 use fhevm_gateway_bindings::input_verification::InputVerification;

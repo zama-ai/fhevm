@@ -68,6 +68,13 @@ database_url = "postgres://postgres:postgres@localhost/kms-connector"
 # ENV: KMS_CONNECTOR_S3_CONNECT_TIMEOUT (format: https://docs.rs/humantime/latest/humantime/)
 # s3_connect_timeout = "3s"
 
+# Gas cap for the host-chain `IERC1271.isValidSignature` static call (RFC-012).
+# Bounds resource use when verifying signatures from smart-account users (Safe, Argent,
+# ERC-4337). 100k is the RFC's suggested starting point; tune up for deep multisig
+# thresholds. (optional, defaults to 100000)
+# ENV: KMS_CONNECTOR_ERC1271_GAS_LIMIT
+# erc1271_gas_limit = 100000
+
 # The maximum number of tasks to process events/responses concurrently (optional, defaults to 1000)
 # ENV: KMS_CONNECTOR_TASK_LIMIT
 # task_limit = 1000
@@ -110,6 +117,18 @@ address = "0x0000000000000000000000000000000000000000"
 # EIP-712 domain version for KMSGeneration contract (optional, defaults to "1")
 # ENV: KMS_CONNECTOR_KMS_GENERATION_CONTRACT__DOMAIN_VERSION
 # domain_version = "1"
+
+# Off-chain ciphertext-attestation verifier configuration
+# [ct_attestation]
+# Emergency kill switch (optional, defaults to true)
+# ENV: KMS_CONNECTOR_CT_ATTESTATION__ENABLED
+# enabled = true
+# Per-bucket S3 attestation HEAD request timeout in seconds (optional, defaults to 5)
+# ENV: KMS_CONNECTOR_CT_ATTESTATION__HEAD_TIMEOUT (format: https://docs.rs/humantime/latest/humantime/)
+# head_timeout = 5s
+# Coprocessor registry snapshot refresh interval in seconds (optional, defaults to 60)
+# ENV: KMS_CONNECTOR_CT_ATTESTATION__REGISTRY_REFRESH (format: https://docs.rs/humantime/latest/humantime/)
+# registry_refresh = 60s
 
 # List of supported host chains (required)
 # ENV: KMS_CONNECTOR_HOST_CHAINS

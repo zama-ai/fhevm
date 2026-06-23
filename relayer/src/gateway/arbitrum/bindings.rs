@@ -22,9 +22,14 @@ mod tests {
     #[test]
     fn test_decryption() {
         println!(
-            "DecryptionManager UserDecryptionRequest:\n{}\n{}\n",
-            Decryption::UserDecryptionRequest::SIGNATURE,
-            Decryption::UserDecryptionRequest::SIGNATURE_HASH
+            "DecryptionManager UserDecryptionRequest (legacy / v2):\n{}\n{}\n",
+            Decryption::UserDecryptionRequest_0::SIGNATURE,
+            Decryption::UserDecryptionRequest_0::SIGNATURE_HASH
+        );
+        println!(
+            "DecryptionManager UserDecryptionRequest (unified / v3):\n{}\n{}\n",
+            Decryption::UserDecryptionRequest_1::SIGNATURE,
+            Decryption::UserDecryptionRequest_1::SIGNATURE_HASH
         );
         println!(
             "DecryptionManager UserDecryptionResponse:\n{}\n{}\n",

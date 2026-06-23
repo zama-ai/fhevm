@@ -2,9 +2,8 @@ use std::sync::Arc;
 
 use crate::db_utils::setup_test_key;
 use fhevm_engine_common::utils::DatabaseURL;
-use sqlx::postgres::types::Oid;
 use sqlx::postgres::PgConnectOptions;
-use sqlx::{ConnectOptions, Row};
+use sqlx::ConnectOptions;
 use testcontainers::{core::WaitFor, runners::AsyncRunner, GenericImage, ImageExt};
 use tokio_util::sync::CancellationToken;
 use tracing::info;
@@ -188,21 +187,37 @@ async fn create_database(
 }
 
 pub async fn get_sns_pk_size(pool: &sqlx::PgPool) -> Result<i64, sqlx::Error> {
-    let row = sqlx::query("SELECT sns_pk FROM keys ORDER BY sequence_number DESC LIMIT 1")
-        .fetch_optional(pool)
-        .await?;
+    // Two storage shapes coexist: compressed_xof_keyset is BYTEA
+    // (size = octet_length), sns_pk is an OID pointing at a
+    // large-object (size = SUM(octet_length(data))). Prefer the
+    // compressed column, fall back to the legacy LOB.
+    let row = sqlx::query!(
+        r#"SELECT octet_length(compressed_xof_keyset)::bigint AS "compressed_size?",
+                  sns_pk AS "sns_pk_oid?"
+           FROM keys ORDER BY sequence_number DESC LIMIT 1"#,
+    )
+    .fetch_optional(pool)
+    .await?;
 
     let Some(row) = row else {
-        info!("No sns_pk found in keys");
+        info!("No keys row found");
         return Ok(0);
     };
 
-    let oid: Oid = row.try_get(0)?;
+    if let Some(size) = row.compressed_size {
+        info!(size = ?bytesize::ByteSize::b(size as u64), "Found compressed_xof_keyset BYTEA");
+        return Ok(size);
+    }
+
+    let Some(oid) = row.sns_pk_oid else {
+        info!("No sns_pk found in keys");
+        return Ok(0);
+    };
     info!(oid = ?oid, "Found sns_pk oid");
-    let row = sqlx::query_scalar(
-        "SELECT COALESCE(SUM(octet_length(data))::bigint, 0) FROM pg_largeobject WHERE loid = $1",
+    let row = sqlx::query_scalar!(
+        r#"SELECT COALESCE(SUM(octet_length(data))::bigint, 0) AS "size!" FROM pg_largeobject WHERE loid = $1"#,
+        oid
     )
-    .bind(oid)
     .fetch_one(pool)
     .await?;
 

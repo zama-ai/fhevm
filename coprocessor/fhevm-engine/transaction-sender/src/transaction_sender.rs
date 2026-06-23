@@ -100,9 +100,7 @@ where
             let watcher_state = start_block_state.clone();
             tokio::spawn(async move {
                 loop {
-                    if let Err(err) =
-                        watch_gcs_activation(&watcher_pool, &watcher_state).await
-                    {
+                    if let Err(err) = watch_gcs_activation(&watcher_pool, &watcher_state).await {
                         error!(error = %err, "GCS activation watcher errored; restarting in 5s");
                         tokio::time::sleep(Duration::from_secs(5)).await;
                     }
@@ -318,10 +316,7 @@ where
 /// `upgrade_state.start_block` (for `stack_role='GCS'`) into `state`. Polls
 /// once on entry so a sender started AFTER the activation notify fired still
 /// picks the value up. A 30s fallback sleep catches any missed NOTIFY.
-async fn watch_gcs_activation(
-    pool: &Pool<Postgres>,
-    state: &AtomicI64,
-) -> Result<(), sqlx::Error> {
+async fn watch_gcs_activation(pool: &Pool<Postgres>, state: &AtomicI64) -> Result<(), sqlx::Error> {
     let mut listener = PgListener::connect_with(pool).await?;
     listener.listen(EVENT_UPGRADE_ACTIVATED).await?;
     info!(
@@ -330,11 +325,10 @@ async fn watch_gcs_activation(
     );
 
     loop {
-        let row: Option<(Option<i64>,)> = sqlx::query_as(
-            "SELECT start_block FROM upgrade_state WHERE stack_role = 'GCS'",
-        )
-        .fetch_optional(pool)
-        .await?;
+        let row: Option<(Option<i64>,)> =
+            sqlx::query_as("SELECT start_block FROM upgrade_state WHERE stack_role = 'GCS'")
+                .fetch_optional(pool)
+                .await?;
 
         if let Some((Some(start_block),)) = row {
             let prev = state.swap(start_block, Ordering::SeqCst);

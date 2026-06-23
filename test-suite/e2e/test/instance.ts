@@ -1,15 +1,13 @@
-import { MainnetConfig, SepoliaConfig, createInstance as createFhevmInstance } from '@zama-fhe/relayer-sdk/node';
+import { MainnetConfig, SepoliaConfig } from '@zama-fhe/relayer-sdk/node';
 import { network } from 'hardhat';
 import { vars } from 'hardhat/config';
 
-import { relayer_sdk_version } from './_relayer_sdk_version';
 import { FhevmSdk } from './sdk/fhevm-sdk/sdk';
 import { RelayerSdk } from './sdk/relayer-sdk/sdk';
 import type { Signers } from './signers';
 import { FhevmInstances } from './types';
 
 console.log(`=========================================================`);
-console.log(`relayer_sdk_version=${relayer_sdk_version}`);
 console.log(`process.env.RELAYER_SDK_VERSION=${process.env.RELAYER_SDK_VERSION}`);
 
 let useFhevmSdk = false;

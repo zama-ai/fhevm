@@ -18,7 +18,7 @@ use sqlx::{Postgres, Transaction};
 use std::str::FromStr;
 use std::sync::atomic::{AtomicI64, Ordering};
 use tfhe::integer::ciphertext::IntegerProvenCompactCiphertextListConformanceParams;
-use tfhe::prelude::CiphertextList;
+use tfhe::zk::{ZkComputeLoad, ZkPkeV2SupportedHashConfig};
 use tfhe::ReRandomizationContext;
 use tokio::sync::RwLock;
 use tokio::task::JoinSet;
@@ -226,10 +226,20 @@ pub async fn execute_verify_proofs_loop(
             .await;
     }
 
-    // Wait for all tasks to complete
+    // Exit on the first worker to fail; clean exits just drain.
     while let Some(result) = task_set.join_next().await {
-        if let Err(err) = result {
-            error!(error = %err, "A worker failed");
+        match result {
+            Ok(Err(err)) => {
+                error!(error = %err, "A worker exited with a fatal DB error");
+                task_set.shutdown().await;
+                return Err(err.into());
+            }
+            Err(err) => {
+                error!(error = %err, "A worker task panicked");
+                task_set.shutdown().await;
+                return Err(ExecutionError::from(err));
+            }
+            Ok(Ok(())) => {}
         }
     }
 
@@ -268,6 +278,16 @@ async fn execute_worker(
             .ok_or_else(|| ExecutionError::DbError(sqlx::Error::RowNotFound))?,
     );
 
+    // Snapshot the registered chain ids once for the worker's lifetime.
+    // HostChainsCache is loaded one-shot at startup and doesn't change while
+    // the worker runs; the chart's `checksum/host-chains` annotation rolls
+    // pods (and thus rebuilds this slice) when .Values.chains changes.
+    let known_chain_ids: Vec<i64> = host_chain_cache
+        .all()
+        .iter()
+        .map(|c| c.chain_id.as_i64())
+        .collect();
+
     loop {
         update_last_active(last_active_at.clone()).await;
 
@@ -287,10 +307,11 @@ async fn execute_worker(
             latest_key.clone(),
             latest_crs.clone(),
             host_chain_cache.as_ref(),
+            &known_chain_ids,
             &conf,
         )
         .await?;
-        let count = get_remaining_tasks(&pool).await?;
+        let count = get_remaining_tasks(&pool, &known_chain_ids).await?;
         if count > 0 {
             info!({ count }, "zkproof requests available");
             continue;
@@ -302,7 +323,8 @@ async fn execute_worker(
                 match res {
                     Some(notification) => info!( src = %notification.process_id(), "Received notification"),
                     None => {
-                        error!("Connection lost");
+                        // sqlx already reconnected the LISTEN connection; keep going.
+                        warn!("postgres LISTEN connection reset; reconnected");
                         continue;
                     },
                 };
@@ -324,28 +346,67 @@ async fn execute_verify_proof_routine(
     db_key: Arc<DbKey>,
     crs: Arc<Crs>,
     host_chain_cache: &HostChainsCache,
+    known_chain_ids: &[i64],
     conf: &Config,
 ) -> Result<(), ExecutionError> {
+    // Pre-filter to known chains: workers only fetch rows whose chain_id is
+    // registered in HostChainsCache. If a proof arrives before its chain row
+    // has been seeded (race during chain-rollout — e.g., gateway add-network
+    // ran but the coproc seed Job has not yet), the row stays `verified IS NULL`
+    // and is picked up on the next worker poll once the cache reloads (forced
+    // by the chart's checksum/host-chains annotation rolling pods).
+    //
+    // Side effect we accept: a proof tagged with a chain_id that will never be
+    // registered (listener misconfiguration, manual SQL injection) stays NULL
+    // indefinitely. That state is observable (`COUNT(*) WHERE verified IS NULL`)
+    // and is rare enough to be a monitorable anomaly rather than a hot-path
+    // failure. Enforces the invariant: "one unknown chain on the queue must
+    // not stop processing for known chains" — workers simply don't see those
+    // rows.
     let mut txn: sqlx::Transaction<'_, sqlx::Postgres> =
         fhevm_engine_common::versioning::begin_guarded_pool(pool).await?;
     if let Ok(row) = sqlx::query!(
         "SELECT zk_proof_id, input, chain_id, contract_address, user_address, transaction_id, block_number
             FROM verify_proofs
             WHERE verified IS NULL
+              AND chain_id = ANY($1::bigint[])
             ORDER BY zk_proof_id ASC
             LIMIT 1 FOR UPDATE SKIP LOCKED",
+        known_chain_ids,
     )
     .fetch_one(&mut *txn)
     .await
     {
         let started_at = SystemTime::now();
         let request_id: i64 = row.zk_proof_id;
-        let input: Vec<u8> = row
-            .input
-            .ok_or(ExecutionError::NullInput(row.zk_proof_id))?;
+        let Some(input) = row.input else {
+            // A NULL input can never verify; mark it failed and commit so the
+            // malformed row isn't re-picked and crash-loops the worker.
+            error!(
+                message = "verify_proofs row has NULL input; marking failed",
+                request_id
+            );
+            sqlx::query(
+                "UPDATE verify_proofs SET verified = false, verified_at = NOW() WHERE zk_proof_id = $1",
+            )
+            .bind(request_id)
+            .execute(&mut *txn)
+            .await?;
+            txn.commit().await?;
+            return Ok(());
+        };
         let host_chain_id_raw: i64 = row.chain_id;
+
+        // The filter above guarantees host_chain_id_raw is in HostChainsCache.
+        // Both lookups below are infallible in practice; the `?` is a sanity
+        // backstop for the (impossible-in-current-code) case where the cache
+        // diverges from the SELECT result mid-routine.
         let host_chain_id = ChainId::try_from(host_chain_id_raw)
             .map_err(|_| ExecutionError::UnknownChainId(host_chain_id_raw))?;
+        let host_chain = host_chain_cache
+            .get_chain(host_chain_id)
+            .ok_or(ExecutionError::UnknownChainId(host_chain_id_raw))?;
+
         let contract_address = row.contract_address;
         let user_address = row.user_address;
         let transaction_id: Option<Vec<u8>> = row.transaction_id;
@@ -359,10 +420,6 @@ async fn execute_verify_proof_routine(
             contract_address,
             input_len = format!("{}", input.len()),
         );
-
-        let host_chain = host_chain_cache
-            .get_chain(host_chain_id)
-            .ok_or(ExecutionError::UnknownChainId(host_chain_id_raw))?;
 
         let acl_contract_address = host_chain.acl_contract_address.clone();
 
@@ -487,22 +544,25 @@ pub(crate) fn verify_proof(
     let verified_list = verify_proof_only(request_id, raw_ct, key, crs, aux_data)
         .inspect_err(telemetry::set_current_span_error)?;
 
-    // Step 2: Compute blob hash used to seed the compact-list re-randomization
+    // Step 2: Expand the verified ciphertext list
+    let mut cts = expand_verified_list(request_id, &verified_list)
+        .inspect_err(telemetry::set_current_span_error)?;
+
+    // Step 3: Compute blob hash and set re-randomization metadata on all ciphertexts
     let mut h = Keccak256::new();
     h.update(RAW_CT_HASH_DOMAIN_SEPARATOR);
     h.update(raw_ct);
     let blob_hash = h.finalize().to_vec();
 
-    // Step 3: Re-randomize the verified compact list, then expand
-    let mut cts = rerand_and_expand_verified_list(request_id, &verified_list, &blob_hash, &key.pks)
-        .inspect_err(telemetry::set_current_span_error)?;
-
-    // Step 4: Compute handle hashes
     let handles: Vec<Vec<u8>> = cts
         .iter_mut()
         .enumerate()
-        .map(|(idx, _ct)| compute_handle_hash(&blob_hash, idx, aux_data))
+        .map(|(idx, ct)| set_ciphertext_metadata(&blob_hash, idx, ct, aux_data))
         .collect::<Result<Vec<_>, ExecutionError>>()
+        .inspect_err(telemetry::set_current_span_error)?;
+
+    // Step 4: Re-randomize all ciphertexts before compression
+    re_randomise_ciphertexts(&mut cts, &blob_hash, &key.pks)
         .inspect_err(telemetry::set_current_span_error)?;
 
     // Step 5: Compress and build final ciphertext records
@@ -515,6 +575,35 @@ pub(crate) fn verify_proof(
         .inspect_err(telemetry::set_current_span_error)?;
 
     Ok((cts, blob_hash))
+}
+
+/// Builds the conformance parameters used to deserialize an incoming
+/// [`tfhe::ProvenCompactCiphertextList`] before its ZK proof is verified.
+///
+/// Beyond binding the list to the active public-key encryption parameters and the
+/// CRS, this hardens the verifier by accepting only the proof shapes the current
+/// stack actually produces. `safe_deserialize_conformant` rejects everything else
+/// during the conformance check, i.e. *before* any ZK verification runs, which
+/// keeps the attack surface of the proof verifier down to what is strictly needed:
+///
+/// * Hash config: only `V0_8_0` (tfhe-zk-pok 0.8.0+, produced by tfhe-rs 1.5.0+)
+///   is accepted; the legacy `V0_4_0` (tfhe-rs 0.11.x–1.2.x) and `V0_7_0`
+///   (tfhe-rs 1.3.0–1.4.x) configs are forbidden.
+/// * Compute load: only [`ZkComputeLoad::Verify`] is accepted — the load the
+///   clients emit — and `ZkComputeLoad::Proof` is forbidden.
+/// * Packing: `allow_unpacked` is left off, so only packed (and therefore
+///   sanitized) lists are accepted.
+pub(crate) fn proven_list_conformance_params(
+    pks: &tfhe::CompactPublicKey,
+    crs: &Crs,
+) -> IntegerProvenCompactCiphertextListConformanceParams {
+    IntegerProvenCompactCiphertextListConformanceParams::from_public_key_encryption_parameters_and_crs_parameters(
+        pks.parameters(),
+        &crs.crs,
+    )
+    .forbid_hash_config(ZkPkeV2SupportedHashConfig::V0_4_0)
+    .forbid_hash_config(ZkPkeV2SupportedHashConfig::V0_7_0)
+    .forbid_compute_load(ZkComputeLoad::Proof)
 }
 
 #[tracing::instrument(name = "verify_proof", skip_all, fields(list_len = tracing::field::Empty))]
@@ -530,13 +619,10 @@ fn verify_proof_only(
         .map_err(|e| ExecutionError::InvalidAuxData(e.to_string()))
         .inspect_err(telemetry::set_current_span_error)?;
 
-    let the_list: tfhe::ProvenCompactCiphertextList = safe_deserialize_conformant(
-        raw_ct,
-        &IntegerProvenCompactCiphertextListConformanceParams::from_public_key_encryption_parameters_and_crs_parameters(
-            key.pks.parameters(), &crs.crs,
-        ))
-        .map_err(ExecutionError::from)
-        .inspect_err(telemetry::set_current_span_error)?;
+    let the_list: tfhe::ProvenCompactCiphertextList =
+        safe_deserialize_conformant(raw_ct, &proven_list_conformance_params(&key.pks, crs))
+            .map_err(ExecutionError::from)
+            .inspect_err(telemetry::set_current_span_error)?;
 
     info!(
         message = "Input list deserialized",
@@ -571,42 +657,18 @@ fn verify_proof_only(
 }
 
 #[tracing::instrument(name = "expand_ciphertext_list", skip_all, fields(count = tracing::field::Empty))]
-fn rerand_and_expand_verified_list(
+fn expand_verified_list(
     request_id: i64,
     the_list: &tfhe::ProvenCompactCiphertextList,
-    blob_hash: &[u8],
-    cpk: &tfhe::CompactPublicKey,
 ) -> Result<Vec<SupportedFheCiphertexts>, ExecutionError> {
     if the_list.is_empty() {
         return Ok(vec![]);
     }
 
-    let mut re_rand_context = ReRandomizationContext::new(
-        RERANDOMISATION_DOMAIN_SEPARATOR,
-        [blob_hash],
-        COMPACT_PUBLIC_ENCRYPTION_DOMAIN_SEPARATOR,
-    );
-    re_rand_context.add_ciphertext(the_list);
-    let mut seed_gen = re_rand_context.finalize();
-    let seed = seed_gen
-        .next_seed()
-        .map_err(FhevmError::ReRandomisationError)?;
-
-    let rerand_expand_span = tracing::info_span!(
-        "rerandomize_and_expand_ciphertext_list",
-        request_id,
-        input_count = the_list.len(),
-        expanded_count = tracing::field::Empty,
-    );
-    let expanded: tfhe::CompactCiphertextListExpander = rerand_expand_span.in_scope(|| {
-        let expanded = the_list
-            .re_randomize_and_expand_without_verification(cpk, seed)
-            .map_err(|err| ExecutionError::InvalidProof(request_id, err.to_string()))
-            .inspect_err(telemetry::set_current_span_error)?;
-
-        tracing::Span::current().record("expanded_count", expanded.len());
-        Ok::<_, ExecutionError>(expanded)
-    })?;
+    let expanded: tfhe::CompactCiphertextListExpander = the_list
+        .expand_without_verification()
+        .map_err(|err| ExecutionError::InvalidProof(request_id, err.to_string()))
+        .inspect_err(telemetry::set_current_span_error)?;
 
     let cts = extract_ct_list(&expanded)
         .map_err(ExecutionError::from)
@@ -615,11 +677,12 @@ fn rerand_and_expand_verified_list(
     Ok(cts)
 }
 
-/// Computes the handle hash
+/// Computes the handle hash and sets re-randomization metadata on a ciphertext.
 /// Returns the full 256-bit handle hash (before index/chain/type/version are patched in).
-fn compute_handle_hash(
+fn set_ciphertext_metadata(
     blob_hash: &[u8],
     ct_idx: usize,
+    the_ct: &mut SupportedFheCiphertexts,
     aux_data: &auxiliary::ZkData,
 ) -> Result<Vec<u8>, ExecutionError> {
     if ct_idx > MAX_INPUT_INDEX as usize {
@@ -641,7 +704,36 @@ fn compute_handle_hash(
     let handle = handle_hash.finalize().to_vec();
     assert_eq!(handle.len(), 32);
 
+    // Add the full 256bit hash as re-randomization metadata, NOT the
+    // truncated hash of the handle
+    the_ct.add_re_randomization_metadata(&handle);
+
     Ok(handle)
+}
+
+/// Re-randomizes all ciphertexts using the compact public key.
+#[tracing::instrument(name = "rerandomise_cts", skip_all)]
+fn re_randomise_ciphertexts(
+    cts: &mut [SupportedFheCiphertexts],
+    blob_hash: &[u8],
+    cpk: &tfhe::CompactPublicKey,
+) -> Result<(), ExecutionError> {
+    let mut re_rand_context = ReRandomizationContext::new(
+        RERANDOMISATION_DOMAIN_SEPARATOR,
+        [blob_hash],
+        COMPACT_PUBLIC_ENCRYPTION_DOMAIN_SEPARATOR,
+    );
+    for ct in cts.iter() {
+        ct.add_to_re_randomization_context(&mut re_rand_context);
+    }
+    let mut seed_gen = re_rand_context.finalize();
+    for ct in cts.iter_mut() {
+        let seed = seed_gen
+            .next_seed()
+            .map_err(FhevmError::ReRandomisationError)?;
+        ct.re_randomise(cpk, seed)?;
+    }
+    Ok(())
 }
 
 /// Compresses the ciphertext and builds the final Ciphertext record with patched handle.
@@ -686,8 +778,14 @@ fn finalize_ciphertext(
     })
 }
 
-/// Returns the number of remaining tasks in the database.
-async fn get_remaining_tasks(pool: &PgPool) -> Result<i64, ExecutionError> {
+/// Returns the number of remaining tasks for chains this worker can handle.
+/// Mirrors the filter in `execute_verify_proof_routine`'s SELECT so the
+/// reported count matches what workers will actually pick up — proofs for
+/// unregistered chains are excluded.
+async fn get_remaining_tasks(
+    pool: &PgPool,
+    known_chain_ids: &[i64],
+) -> Result<i64, ExecutionError> {
     Ok(sqlx::query_scalar!(
         "
         SELECT COUNT(*)
@@ -695,10 +793,12 @@ async fn get_remaining_tasks(pool: &PgPool) -> Result<i64, ExecutionError> {
             SELECT 1
             FROM verify_proofs
             WHERE verified IS NULL
+              AND chain_id = ANY($1::bigint[])
             ORDER BY zk_proof_id ASC
             FOR UPDATE SKIP LOCKED
         ) AS unlocked_rows;
         ",
+        known_chain_ids,
     )
     .fetch_one(pool)
     .await

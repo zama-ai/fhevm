@@ -8,4 +8,5 @@
 !crates/shared/
 !crates/shared/broker/
 !crates/consumer/
+!crates/example/
 !crates/test-support/

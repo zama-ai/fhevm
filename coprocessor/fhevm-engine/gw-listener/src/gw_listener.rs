@@ -645,4 +645,3 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
         }
     }
 }
-

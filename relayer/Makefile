@@ -74,7 +74,7 @@ _check-cast:
 
 _check-sqlx-cli:
 	@command -v cargo-sqlx >/dev/null 2>&1 || { \
-		echo "$(RED)Error: sqlx-cli not installed. Run: cargo install sqlx-cli --no-default-features --features postgres,rustls$(RESET)"; exit 1; }
+		echo "$(RED)Error: sqlx-cli not installed. Run: cargo install sqlx-cli --version 0.8.6 --no-default-features --features postgres,rustls$(RESET)"; exit 1; }
 
 # Validate that a network config exists and has a non-empty private key.
 # Usage: $(MAKE) _check-network-config NET_CONFIG=config/local.testnet.yaml NET_NAME=Testnet
@@ -376,6 +376,7 @@ test-build: ## Build all test binaries (no Postgres needed — uses sqlx offline
 	@$(CARGO_TEST) --features integration-tests --test public_decrypt_v2_test --no-run
 	@$(CARGO_TEST) --features integration-tests --test user_decrypt_v2_test --no-run
 	@$(CARGO_TEST) --features integration-tests --test delegated_user_decrypt_v2_test --no-run
+	@$(CARGO_TEST) --features integration-tests --test user_decrypt_v3_test --no-run
 	@$(CARGO_TEST) --features integration-tests --test health_tests --no-run
 	@$(CARGO_TEST) --features integration-tests --test keyurl_test --no-run
 
@@ -386,6 +387,7 @@ test-run: _check-postgres ## Run pre-built test binaries
 	@$(CARGO_TEST) --features integration-tests --test public_decrypt_v2_test -- --test-threads=1
 	@$(CARGO_TEST) --features integration-tests --test user_decrypt_v2_test -- --test-threads=1
 	@$(CARGO_TEST) --features integration-tests --test delegated_user_decrypt_v2_test -- --test-threads=1
+	@$(CARGO_TEST) --features integration-tests --test user_decrypt_v3_test -- --test-threads=1
 	@$(CARGO_TEST) --features integration-tests --test health_tests -- --test-threads=1
 	@$(CARGO_TEST) --features integration-tests --test keyurl_test -- --test-threads=1
 
@@ -461,13 +463,14 @@ clippy-fix: ## Fix code issues with clippy
 	@cargo clippy --all-targets --all-features --fix --allow-dirty --allow-staged
 	@cargo clippy --all-targets --all-features --fix --allow-dirty --allow-staged --manifest-path $(MOCK_RPC_MANIFEST)
 
+# Scope fmt to owned packages; generated path dependencies are excluded.
 fmt: ## Check code formatting
-	@cargo fmt --all -- --check
-	@cargo fmt --all --manifest-path $(MOCK_RPC_MANIFEST) -- --check
+	@cargo fmt --package fhevm-relayer -- --check
+	@cargo fmt --manifest-path $(MOCK_RPC_MANIFEST) -- --check
 
 fmt-fix: ## Fix code formatting
-	@cargo fmt --all
-	@cargo fmt --all --manifest-path $(MOCK_RPC_MANIFEST)
+	@cargo fmt
+	@cargo fmt --manifest-path $(MOCK_RPC_MANIFEST)
 
 openapi-view: ## Preview OpenAPI spec in browser (requires npx)
 	@command -v npx >/dev/null 2>&1 || { echo "$(RED)Error: npx not found. Install Node.js$(RESET)"; exit 1; }

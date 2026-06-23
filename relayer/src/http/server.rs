@@ -1,7 +1,7 @@
 use crate::config::settings::HttpConfig;
 use crate::core::event::{ApiCategory, ApiVersion};
 use crate::gateway::throttlers::BouncerThrottlers;
-use crate::host::HostChainIdChecker;
+use crate::host::{HostChainIdChecker, UserDecryptSignaturePreChecker};
 use crate::http::admin::AdminConfigRegistry;
 use crate::http::endpoints::{
     admin, health_handler, liveness_handler,
@@ -9,6 +9,7 @@ use crate::http::endpoints::{
         InputProofHandler as InputProofHandlerV2, KeyUrlHandler as KeyUrlHandlerV2,
         PublicDecryptHandler as PublicDecryptHandlerV2, UserDecryptHandler as UserDecryptHandlerV2,
     },
+    v3::handlers::UserDecryptHandler as UserDecryptHandlerV3,
     version_handler,
 };
 use crate::http::openapi_middleware;
@@ -48,6 +49,7 @@ pub async fn run_http_server(
     user_decrypt_shares_threshold: u32,
     bouncer_throttlers: BouncerThrottlers,
     host_chain_id_checker: Arc<HostChainIdChecker>,
+    signature_prechecker: Arc<UserDecryptSignaturePreChecker>,
 ) -> SocketAddr {
     let http_endpoint: SocketAddr = config
         .endpoint
@@ -99,17 +101,6 @@ pub async fn run_http_server(
                 .clone(),
             config.api_retry_after_seconds,
         ),
-        BounceChecker::new(
-            bouncer_throttlers
-                .tx_throttlers
-                .user_decrypt_tx_throttler
-                .clone(),
-            bouncer_throttlers
-                .readiness_throttling_senders
-                .delegated_user_decrypt_readiness_throttler
-                .clone(),
-            config.api_retry_after_seconds,
-        ),
         retry_after_state.clone(),
         host_chain_id_checker.clone(),
     ));
@@ -133,6 +124,32 @@ pub async fn run_http_server(
         host_chain_id_checker.clone(),
     ));
 
+    // v3 (unified EIP-712) user-decrypt handler. Shares orchestrator + repo + queue
+    // state with v2; GET delegates to the v2 handler since the response
+    // schema is unchanged. Uses a distinct API version tag so dashboards
+    // separate v2 and v3 traffic.
+    let api_version_v3 = ApiVersion::new(ApiCategory::PRODUCTION, 2);
+    let user_decrypt_handler_v3 = Arc::new(UserDecryptHandlerV3::new(
+        orchestrator.clone(),
+        api_version_v3,
+        repositories.user_decrypt.clone(),
+        BounceChecker::new(
+            bouncer_throttlers
+                .tx_throttlers
+                .user_decrypt_tx_throttler
+                .clone(),
+            bouncer_throttlers
+                .readiness_throttling_senders
+                .user_decrypt_readiness_throttler
+                .clone(),
+            config.api_retry_after_seconds,
+        ),
+        retry_after_state.clone(),
+        host_chain_id_checker.clone(),
+        signature_prechecker,
+        user_decrypt_handler_v2.clone(),
+    ));
+
     // Clone orchestrator for health endpoint before using it
     let orchestrator_for_health = orchestrator.clone();
 
@@ -152,6 +169,7 @@ pub async fn run_http_server(
         .merge(input_proof_handler_v2.routes())
         .merge(public_decrypt_handler_v2.routes())
         .merge(user_decrypt_handler_v2.routes())
+        .merge(user_decrypt_handler_v3.routes())
         // Add keyurl routes (no rate limiting for GET)
         .merge(keyurl_handler_v2.routes())
         // Add OpenAPI documentation

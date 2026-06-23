@@ -112,7 +112,9 @@ describe("GatewayConfig", function () {
 
   describe("Deployment", function () {
     let gatewayConfig: GatewayConfig;
+    let inputVerification: InputVerification;
     let owner: Wallet;
+    let pauser: Wallet;
     let kmsNodes: KmsNodeStruct[];
     let coprocessors: CoprocessorStruct[];
     let custodians: CustodianStruct[];
@@ -124,13 +126,16 @@ describe("GatewayConfig", function () {
     let highKmsGenThreshold: number;
     let highCoprocessorThreshold: number;
     let proxyContract: EmptyUUPSProxyGatewayConfig;
+    let oldGatewayConfigFactory: ContractFactory;
     let newGatewayConfigFactory: ContractFactory;
 
     beforeEach(async function () {
       // Load fixture data locally
       const fixtureData = await loadFixture(getInputsForDeployFixture);
       gatewayConfig = fixtureData.gatewayConfig;
+      inputVerification = fixtureData.inputVerification;
       owner = fixtureData.owner;
+      pauser = fixtureData.pauser;
       kmsNodes = fixtureData.kmsNodes;
       coprocessors = fixtureData.coprocessors;
       custodians = fixtureData.custodians;
@@ -152,8 +157,25 @@ describe("GatewayConfig", function () {
       await proxyContract.waitForDeployment();
 
       // Get the GatewayConfig contract factory
+      oldGatewayConfigFactory = await hre.ethers.getContractFactory("GatewayConfigV7Example", owner);
       newGatewayConfigFactory = await hre.ethers.getContractFactory("GatewayConfig", owner);
     });
+
+    async function deployGatewayConfigPhase1Proxy() {
+      const proxyImplementation = await hre.ethers.getContractFactory("EmptyUUPSProxyGatewayConfig", owner);
+      const proxy = await hre.upgrades.deployProxy(proxyImplementation, [owner.address], {
+        initializer: "initialize",
+        kind: "uups",
+      });
+      await proxy.waitForDeployment();
+
+      return hre.upgrades.upgradeProxy(proxy, oldGatewayConfigFactory, {
+        call: {
+          fn: "initializeV7ForTest",
+          args: [owner.address, [coprocessors[0]], 1],
+        },
+      });
+    }
 
     // This test is not here for making sure the deployment works, as all contracts are deployed in the
     // hardhat "test" pre-hook, but rather to verify that the event is emitted correctly (since it
@@ -185,6 +207,112 @@ describe("GatewayConfig", function () {
         toValues(coprocessors).toString(),
         toValues(custodians).toString(),
       ]);
+    });
+
+    it("Should expose the GatewayConfig version", async function () {
+      expect(await gatewayConfig.getVersion()).to.equal("GatewayConfig v0.7.0");
+    });
+
+    it("Should set Zama as priority during the Phase 1 to Phase 2 reinitialization", async function () {
+      const gatewayConfigPhase1 = await deployGatewayConfigPhase1Proxy();
+      const zamaTxSender = coprocessors[0].txSenderAddress;
+
+      expect(await gatewayConfigPhase1.getCoprocessorTxSenders()).to.deep.equal([zamaTxSender]);
+      expect(await gatewayConfigPhase1.getCoprocessorMajorityThreshold()).to.equal(1);
+
+      await inputVerification.connect(pauser).pause();
+
+      const upgradedGatewayConfig = await hre.upgrades.upgradeProxy(gatewayConfigPhase1, newGatewayConfigFactory, {
+        call: {
+          fn: "reinitializeV8",
+          args: [zamaTxSender],
+        },
+      });
+
+      expect(await upgradedGatewayConfig.getPriorityCoprocessorTxSender()).to.equal(zamaTxSender);
+    });
+
+    it("Should register partners after Zama priority is active", async function () {
+      const gatewayConfigPhase1 = await deployGatewayConfigPhase1Proxy();
+      const zamaTxSender = coprocessors[0].txSenderAddress;
+
+      await inputVerification.connect(pauser).pause();
+
+      const upgradedGatewayConfig = await hre.upgrades.upgradeProxy(gatewayConfigPhase1, newGatewayConfigFactory, {
+        call: {
+          fn: "reinitializeV8",
+          args: [zamaTxSender],
+        },
+      });
+
+      await upgradedGatewayConfig.connect(owner).updateCoprocessors(coprocessors, coprocessorThreshold);
+
+      expect(await upgradedGatewayConfig.getCoprocessorTxSenders()).to.deep.equal(
+        coprocessors.map((coprocessor) => coprocessor.txSenderAddress),
+      );
+      expect(await upgradedGatewayConfig.getCoprocessorMajorityThreshold()).to.equal(coprocessorThreshold);
+      expect(await upgradedGatewayConfig.getPriorityCoprocessorTxSender()).to.equal(zamaTxSender);
+    });
+
+    it("Should allow reinitialization without priority while InputVerification is not paused", async function () {
+      const gatewayConfigPhase1 = await deployGatewayConfigPhase1Proxy();
+      expect(await inputVerification.paused()).to.be.false;
+
+      const upgradedGatewayConfig = await hre.upgrades.upgradeProxy(gatewayConfigPhase1, newGatewayConfigFactory, {
+        call: {
+          fn: "reinitializeV8",
+          args: [ZeroAddress],
+        },
+      });
+
+      expect(await upgradedGatewayConfig.getPriorityCoprocessorTxSender()).to.equal(ZeroAddress);
+    });
+
+    it("Should set priority during reinitialization while InputVerification is not paused", async function () {
+      const gatewayConfigPhase1 = await deployGatewayConfigPhase1Proxy();
+      expect(await inputVerification.paused()).to.be.false;
+
+      const upgradedGatewayConfig = await hre.upgrades.upgradeProxy(gatewayConfigPhase1, newGatewayConfigFactory, {
+        call: {
+          fn: "reinitializeV8",
+          args: [coprocessors[0].txSenderAddress],
+        },
+      });
+
+      expect(await upgradedGatewayConfig.getPriorityCoprocessorTxSender()).to.equal(coprocessors[0].txSenderAddress);
+    });
+
+    it("Should revert when reinitializing with an unregistered priority coprocessor transaction sender", async function () {
+      const gatewayConfigPhase1 = await deployGatewayConfigPhase1Proxy();
+      await inputVerification.connect(pauser).pause();
+
+      await expect(
+        hre.upgrades.upgradeProxy(gatewayConfigPhase1, newGatewayConfigFactory, {
+          call: {
+            fn: "reinitializeV8",
+            args: [fakeTxSender.address],
+          },
+        }),
+      )
+        .to.be.revertedWithCustomError(gatewayConfig, "PriorityCoprocessorTxSenderNotRegistered")
+        .withArgs(fakeTxSender.address);
+    });
+
+    it("Should revert when reinitializing a second time (reinitializer guard)", async function () {
+      const gatewayConfigPhase1 = await deployGatewayConfigPhase1Proxy();
+      const upgradedGatewayConfig = await hre.upgrades.upgradeProxy(gatewayConfigPhase1, newGatewayConfigFactory, {
+        call: {
+          fn: "reinitializeV8",
+          args: [ZeroAddress],
+        },
+      });
+
+      // reinitializeV8 is no longer owner-gated: the atomic upgradeToAndCall is authorized by
+      // _authorizeUpgrade, and the reinitializer guard prevents any later re-invocation.
+      await expect(upgradedGatewayConfig.connect(owner).reinitializeV8(ZeroAddress)).to.be.revertedWithCustomError(
+        gatewayConfig,
+        "InvalidInitialization",
+      );
     });
 
     it("Should revert because the KMS nodes list is empty", async function () {
@@ -559,6 +687,7 @@ describe("GatewayConfig", function () {
 
   describe("After deployment", function () {
     let gatewayConfig: GatewayConfig;
+    let decryption: Decryption;
     let inputVerification: InputVerification;
     let owner: Wallet;
     let pauser: Wallet;
@@ -582,6 +711,7 @@ describe("GatewayConfig", function () {
     beforeEach(async function () {
       const fixture = await loadFixture(getInputsForDeployFixture);
       gatewayConfig = fixture.gatewayConfig;
+      decryption = fixture.decryption;
       inputVerification = fixture.inputVerification;
       owner = fixture.owner;
       pauser = fixture.pauser;
@@ -611,6 +741,7 @@ describe("GatewayConfig", function () {
 
       describe("KMS nodes updates", function () {
         it("Should update the KMS nodes", async function () {
+
           const newKmsNode: KmsNodeStruct = {
             txSenderAddress: newTxSenderAddress,
             signerAddress: newSignerAddress,
@@ -933,6 +1064,14 @@ describe("GatewayConfig", function () {
           expect(await gatewayConfig.getPublicDecryptionThresholdForContext(nextKmsContextId)).to.equal(1);
           expect(await gatewayConfig.getUserDecryptionThresholdForContext(nextKmsContextId)).to.equal(1);
         });
+
+        it("Should update the KMS nodes when Decryption is paused", async function () {
+          await decryption.connect(pauser).pause();
+
+          await expect(gatewayConfig.connect(owner).updateKmsContext(nextKmsContextId, kmsNodes, 0, 1, 1, 1))
+            .to.emit(gatewayConfig, "UpdateKmsContext")
+            .withArgs(nextKmsContextId, toValues(kmsNodes), 0, 1, 1, 1);
+        });
       });
 
       describe("KMS context destruction", function () {
@@ -1000,6 +1139,14 @@ describe("GatewayConfig", function () {
           await gatewayConfig.connect(owner).destroyKmsContext(initialKmsContextId);
           await expect(gatewayConfig.connect(owner).destroyKmsContext(initialKmsContextId))
             .to.be.revertedWithCustomError(gatewayConfig, "InvalidKmsContext")
+            .withArgs(initialKmsContextId);
+        });
+
+        it("Should destroy a non-current KMS context when Decryption is paused", async function () {
+          await decryption.connect(pauser).pause();
+
+          await expect(gatewayConfig.connect(owner).destroyKmsContext(initialKmsContextId))
+            .to.emit(gatewayConfig, "DestroyKmsContext")
             .withArgs(initialKmsContextId);
         });
       });
@@ -1072,6 +1219,80 @@ describe("GatewayConfig", function () {
           }
         });
 
+        it("Should set and remove the priority coprocessor transaction sender", async function () {
+          const priorityTxSender = coprocessorTxSenders[0].address;
+
+          const setTx = await gatewayConfig.connect(owner).setPriorityCoprocessorTxSender(priorityTxSender);
+          await expect(setTx).to.emit(gatewayConfig, "UpdatePriorityCoprocessorTxSender").withArgs(priorityTxSender);
+          expect(await gatewayConfig.getPriorityCoprocessorTxSender()).to.equal(priorityTxSender);
+
+          const removeTx = await gatewayConfig.connect(owner).removePriorityCoprocessorTxSender();
+          await expect(removeTx).to.emit(gatewayConfig, "UpdatePriorityCoprocessorTxSender").withArgs(ZeroAddress);
+          expect(await gatewayConfig.getPriorityCoprocessorTxSender()).to.equal(ZeroAddress);
+        });
+
+        it("Should revert when setting an unregistered priority coprocessor transaction sender", async function () {
+          await expect(gatewayConfig.connect(owner).setPriorityCoprocessorTxSender(fakeTxSender.address))
+            .to.be.revertedWithCustomError(gatewayConfig, "PriorityCoprocessorTxSenderNotRegistered")
+            .withArgs(fakeTxSender.address);
+        });
+
+        it("Should revert when setting the priority coprocessor because the sender is not the owner", async function () {
+          await expect(gatewayConfig.connect(fakeOwner).setPriorityCoprocessorTxSender(coprocessorTxSenders[0].address))
+            .to.be.revertedWithCustomError(gatewayConfig, "OwnableUnauthorizedAccount")
+            .withArgs(fakeOwner.address);
+        });
+
+        it("Should revert when removing the priority coprocessor because the sender is not the owner", async function () {
+          await gatewayConfig.connect(owner).setPriorityCoprocessorTxSender(coprocessorTxSenders[0].address);
+
+          await expect(gatewayConfig.connect(fakeOwner).removePriorityCoprocessorTxSender())
+            .to.be.revertedWithCustomError(gatewayConfig, "OwnableUnauthorizedAccount")
+            .withArgs(fakeOwner.address);
+        });
+
+        it("Should set the priority coprocessor while InputVerification is not paused", async function () {
+          await inputVerification.connect(owner).unpause();
+
+          await gatewayConfig.connect(owner).setPriorityCoprocessorTxSender(coprocessorTxSenders[0].address);
+          expect(await gatewayConfig.getPriorityCoprocessorTxSender()).to.equal(coprocessorTxSenders[0].address);
+        });
+
+        it("Should remove the priority coprocessor while InputVerification is not paused", async function () {
+          await gatewayConfig.connect(owner).setPriorityCoprocessorTxSender(coprocessorTxSenders[0].address);
+          await inputVerification.connect(owner).unpause();
+
+          await gatewayConfig.connect(owner).removePriorityCoprocessorTxSender();
+          expect(await gatewayConfig.getPriorityCoprocessorTxSender()).to.equal(ZeroAddress);
+        });
+
+        it("Should revert when removing the priority coprocessor through a coprocessor update", async function () {
+          const priorityTxSender = coprocessorTxSenders[0].address;
+          await gatewayConfig.connect(owner).setPriorityCoprocessorTxSender(priorityTxSender);
+
+          await expect(gatewayConfig.connect(owner).updateCoprocessors(coprocessors.slice(1), 1))
+            .to.be.revertedWithCustomError(gatewayConfig, "PriorityCoprocessorNotInNewCoprocessors")
+            .withArgs(priorityTxSender);
+        });
+
+        it("Should revert when rotating the active priority coprocessor signer through a coprocessor update", async function () {
+          const priorityTxSender = coprocessorTxSenders[0].address;
+          const currentPrioritySigner = coprocessorSigners[0].address;
+          const newPrioritySigner = newSignerAddress;
+          await gatewayConfig.connect(owner).setPriorityCoprocessorTxSender(priorityTxSender);
+
+          const updatedCoprocessors = [...coprocessors];
+          updatedCoprocessors[0] = {
+            txSenderAddress: priorityTxSender,
+            signerAddress: newPrioritySigner,
+            s3BucketUrl: updatedCoprocessors[0].s3BucketUrl,
+          };
+
+          await expect(gatewayConfig.connect(owner).updateCoprocessors(updatedCoprocessors, coprocessorThreshold))
+            .to.be.revertedWithCustomError(gatewayConfig, "PriorityCoprocessorSignerChanged")
+            .withArgs(priorityTxSender, currentPrioritySigner, newPrioritySigner);
+        });
+
         it("Should revert because the sender is not the owner", async function () {
           await expect(gatewayConfig.connect(fakeOwner).updateCoprocessors(emptyCoprocessors, nullCoprocessorThreshold))
             .to.be.revertedWithCustomError(gatewayConfig, "OwnableUnauthorizedAccount")
@@ -1097,13 +1318,11 @@ describe("GatewayConfig", function () {
             .withArgs(highCoprocessorThreshold, nCoprocessors);
         });
 
-        it("Should revert because InputVerification is not paused", async function () {
-          // Rewrite coprocessor consensus state without first pausing InputVerification.
+        it("Should update coprocessors while InputVerification is not paused", async function () {
+          // Coprocessor consensus state can be rewritten without first pausing InputVerification.
           await inputVerification.connect(owner).unpause();
-          await expect(gatewayConfig.connect(owner).updateCoprocessors(coprocessors, 1)).to.be.revertedWithCustomError(
-            gatewayConfig,
-            "InputVerificationMustBePaused",
-          );
+          await gatewayConfig.connect(owner).updateCoprocessors(coprocessors, 1);
+          expect(await gatewayConfig.getCoprocessorMajorityThreshold()).to.equal(1);
         });
       });
 
@@ -1358,7 +1577,9 @@ describe("GatewayConfig", function () {
 
       it("Should update the MPC threshold for a non-current context after rotation", async function () {
         const originalKmsContextId = await gatewayConfig.getCurrentKmsContextId();
+        await decryption.connect(pauser).pause();
         await gatewayConfig.connect(owner).updateKmsContext(nextKmsContextId, kmsNodes, 0, 1, 1, 1);
+        await decryption.connect(owner).unpause();
 
         const newMpcThreshold = 0;
         const tx = await gatewayConfig
@@ -1377,6 +1598,17 @@ describe("GatewayConfig", function () {
         await expect(gatewayConfig.connect(owner).updateMpcThresholdForContext(currentContextId, highMpcThreshold))
           .to.be.revertedWithCustomError(gatewayConfig, "InvalidHighMpcThreshold")
           .withArgs(highMpcThreshold, nKmsNodes);
+      });
+
+      it("Should update the MPC threshold when Decryption is paused", async function () {
+        const currentContextId = await gatewayConfig.getCurrentKmsContextId();
+        const newMpcThreshold = 0;
+
+        await decryption.connect(pauser).pause();
+
+        await expect(gatewayConfig.connect(owner).updateMpcThresholdForContext(currentContextId, newMpcThreshold))
+          .to.emit(gatewayConfig, "UpdateMpcThresholdForContext")
+          .withArgs(currentContextId, newMpcThreshold);
       });
     });
 
@@ -1446,6 +1678,16 @@ describe("GatewayConfig", function () {
           .to.be.revertedWithCustomError(gatewayConfig, "InvalidHighPublicDecryptionThreshold")
           .withArgs(highPublicDecryptionThreshold, nKmsNodes);
       });
+
+      it("Should update the public decryption threshold when Decryption is paused", async function () {
+        const currentContextId = await gatewayConfig.getCurrentKmsContextId();
+
+        await decryption.connect(pauser).pause();
+
+        await expect(gatewayConfig.connect(owner).updatePublicDecryptionThresholdForContext(currentContextId, 1))
+          .to.emit(gatewayConfig, "UpdatePublicDecryptionThresholdForContext")
+          .withArgs(currentContextId, 1);
+      });
     });
 
     describe("Update user decryption threshold", function () {
@@ -1514,6 +1756,16 @@ describe("GatewayConfig", function () {
           .to.be.revertedWithCustomError(gatewayConfig, "InvalidHighUserDecryptionThreshold")
           .withArgs(highUserDecryptionThreshold, nKmsNodes);
       });
+
+      it("Should update the user decryption threshold when Decryption is paused", async function () {
+        const currentContextId = await gatewayConfig.getCurrentKmsContextId();
+
+        await decryption.connect(pauser).pause();
+
+        await expect(gatewayConfig.connect(owner).updateUserDecryptionThresholdForContext(currentContextId, 1))
+          .to.emit(gatewayConfig, "UpdateUserDecryptionThresholdForContext")
+          .withArgs(currentContextId, 1);
+      });
     });
 
     describe("Update KMS generation threshold", function () {
@@ -1541,7 +1793,9 @@ describe("GatewayConfig", function () {
 
       it("Should update the KMS generation threshold for a non-current context after rotation", async function () {
         const originalKmsContextId = await gatewayConfig.getCurrentKmsContextId();
+        await decryption.connect(pauser).pause();
         await gatewayConfig.connect(owner).updateKmsContext(nextKmsContextId, kmsNodes, 0, 1, 1, 1);
+        await decryption.connect(owner).unpause();
 
         const newKmsGenThreshold = 1;
         const tx = await gatewayConfig
@@ -1571,6 +1825,16 @@ describe("GatewayConfig", function () {
         )
           .to.be.revertedWithCustomError(gatewayConfig, "InvalidHighKmsGenThreshold")
           .withArgs(highKmsGenThreshold, nKmsNodes);
+      });
+
+      it("Should update the KMS generation threshold when Decryption is paused", async function () {
+        const currentContextId = await gatewayConfig.getCurrentKmsContextId();
+
+        await decryption.connect(pauser).pause();
+
+        await expect(gatewayConfig.connect(owner).updateKmsGenThresholdForContext(currentContextId, 1))
+          .to.emit(gatewayConfig, "UpdateKmsGenThresholdForContext")
+          .withArgs(currentContextId, 1);
       });
     });
 
@@ -1616,13 +1880,11 @@ describe("GatewayConfig", function () {
           .withArgs(highCoprocessorThreshold, nCoprocessors);
       });
 
-      it("Should revert because InputVerification is not paused", async function () {
-        // Rewrite coprocessor consensus state without first pausing InputVerification.
+      it("Should update the coprocessor threshold while InputVerification is not paused", async function () {
+        // Coprocessor consensus state can be rewritten without first pausing InputVerification.
         await inputVerification.connect(owner).unpause();
-        await expect(gatewayConfig.connect(owner).updateCoprocessorThreshold(1)).to.be.revertedWithCustomError(
-          gatewayConfig,
-          "InputVerificationMustBePaused",
-        );
+        await gatewayConfig.connect(owner).updateCoprocessorThreshold(1);
+        expect(await gatewayConfig.getCoprocessorMajorityThreshold()).to.equal(1);
       });
     });
 

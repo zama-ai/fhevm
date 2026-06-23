@@ -14,6 +14,7 @@ aws-config = { workspace = true }
 aws-credential-types = { workspace = true }
 aws-sigv4 = { workspace = true }
 bigdecimal = { workspace = true }
+clap = { workspace = true }
 hex = { workspace = true }
 lru = { workspace = true }
 prost = { workspace = true }

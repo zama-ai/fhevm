@@ -4,6 +4,7 @@ use crate::http::endpoints::v2::types::DelegatedUserDecryptRequestJson;
 use crate::http::endpoints::v2::types::{
     InputProofRequestJson, PublicDecryptRequestJson, UserDecryptRequestJson,
 };
+use crate::http::endpoints::v3::types::AttestedUserDecryptRequestJson;
 use crate::orchestrator::traits::Event;
 use alloy::primitives::{Address, Bytes, FixedBytes, TxHash};
 use alloy::{primitives::U256, rpc::types::Log};
@@ -165,7 +166,6 @@ impl Event for RelayerEvent {
             RelayerEventData::GatewayChain(e) => e.event_id(),
             RelayerEventData::PublicDecrypt(e) => e.event_id(),
             RelayerEventData::UserDecrypt(e) => e.event_id(),
-            RelayerEventData::DelegatedUserDecrypt(e) => e.event_id(),
             RelayerEventData::InputProof(e) => e.event_id(),
             RelayerEventData::KeyUrl(e) => e.event_id(),
         }
@@ -219,7 +219,6 @@ pub enum RelayerEventData {
     GatewayChain(GatewayChainEventData),
     PublicDecrypt(PublicDecryptEventData),
     UserDecrypt(UserDecryptEventData),
-    DelegatedUserDecrypt(DelegatedUserDecryptEventData),
     InputProof(InputProofEventData),
     KeyUrl(KeyUrlEventData),
 }
@@ -230,7 +229,6 @@ impl AsRef<str> for RelayerEventData {
             RelayerEventData::GatewayChain(gateway_event) => gateway_event.event_name(),
             RelayerEventData::PublicDecrypt(decrypt_event) => decrypt_event.event_name(),
             RelayerEventData::UserDecrypt(decrypt_event) => decrypt_event.event_name(),
-            RelayerEventData::DelegatedUserDecrypt(decrypt_event) => decrypt_event.event_name(),
             RelayerEventData::InputProof(input_event) => input_event.event_name(),
             RelayerEventData::KeyUrl(keyurl_event) => keyurl_event.event_name(),
         }
@@ -441,114 +439,6 @@ impl UserDecryptEventData {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum DelegatedUserDecryptEventData {
-    /// Event representing a delegated user decryption request for ciphertexts on fhevm.
-    ReqRcvdFromUser {
-        decrypt_request: DelegatedUserDecryptRequest,
-    },
-
-    /// Event representing that readiness check has passed for a delegated user decryption request.
-    ReadinessCheckPassed {
-        decrypt_request: DelegatedUserDecryptRequest,
-    },
-
-    /// Event representing that readiness check has timed out for a delegated user decryption request.
-    ReadinessCheckTimedOut {
-        decrypt_request: DelegatedUserDecryptRequest,
-        error: EventProcessingError,
-    },
-
-    /// Event representing that readiness check has failed for a delegated user decryption request.
-    ReadinessCheckFailed {
-        decrypt_request: DelegatedUserDecryptRequest,
-        error: EventProcessingError,
-    },
-
-    /// Event representing the result of sending a delegated user decryption request to
-    /// gateway. It will be used to map the response that will be received later
-    /// to the request.
-    ReqSentToGw { gw_req_reference_id: U256 },
-
-    /// Event representing the success response received from gateway for delegated user
-    /// decryption sent from this instance of relayer.
-    RespRcvdFromGw {
-        decrypt_response: UserDecryptResponse,
-    },
-
-    /// Event representing the user decryption response sent to the user.
-    RespSentToUser,
-
-    /// Event representing the failure in processing the delegated user decryption request.
-    /// Used to notify outside internal handlers only.
-    Failed { error: EventProcessingError },
-
-    /// Event representing the internal failure in processing the user decrypt request: will not notify the user directly.
-    InternalFailure { error: EventProcessingError },
-}
-
-impl DelegatedUserDecryptEventData {
-    pub fn event_name(&self) -> &'static str {
-        match self {
-            DelegatedUserDecryptEventData::ReqRcvdFromUser { .. } => "UserDecrypt::ReqRcvdFromUser",
-            DelegatedUserDecryptEventData::ReadinessCheckPassed { .. } => {
-                "DelegatedUserDecrypt::ReadinessCheckPassed"
-            }
-            DelegatedUserDecryptEventData::ReadinessCheckTimedOut { .. } => {
-                "DelegatedUserDecrypt::ReadinessCheckTimedOut"
-            }
-            DelegatedUserDecryptEventData::ReadinessCheckFailed { .. } => {
-                "DelegatedUserDecrypt::ReadinessCheckFailed"
-            }
-            DelegatedUserDecryptEventData::ReqSentToGw { .. } => {
-                "DelegatedUserDecrypt::ReqSentToGw"
-            }
-            DelegatedUserDecryptEventData::RespRcvdFromGw { .. } => {
-                "DelegatedUserDecrypt::RespRcvdFromGw"
-            }
-            DelegatedUserDecryptEventData::RespSentToUser => "DelegatedUserDecrypt::RespSentToUser",
-            DelegatedUserDecryptEventData::Failed { .. } => "DelegatedUserDecrypt::Failed",
-            DelegatedUserDecryptEventData::InternalFailure { .. } => {
-                "DelegatedUserDecrypt::InternalFailure"
-            }
-        }
-    }
-
-    /// Returns the event ID for this delegated user decrypt event.
-    /// Intentionally reuses `UserDecryptEventId` values — delegated and
-    /// non-delegated user decrypt flows share the same event ID space so
-    /// they are routed to the same set of handlers.
-    pub fn event_id(&self) -> u8 {
-        match self {
-            DelegatedUserDecryptEventData::ReqRcvdFromUser { .. } => {
-                UserDecryptEventId::ReqRcvdFromUser.into()
-            }
-            DelegatedUserDecryptEventData::ReadinessCheckPassed { .. } => {
-                UserDecryptEventId::ReadinessCheckPassed.into()
-            }
-            DelegatedUserDecryptEventData::ReadinessCheckTimedOut { .. } => {
-                UserDecryptEventId::ReadinessCheckTimedOut.into()
-            }
-            DelegatedUserDecryptEventData::ReadinessCheckFailed { .. } => {
-                UserDecryptEventId::ReadinessCheckFailed.into()
-            }
-            DelegatedUserDecryptEventData::ReqSentToGw { .. } => {
-                UserDecryptEventId::ReqSentToGw.into()
-            }
-            DelegatedUserDecryptEventData::RespRcvdFromGw { .. } => {
-                UserDecryptEventId::RespRcvdFromGw.into()
-            }
-            DelegatedUserDecryptEventData::RespSentToUser => {
-                UserDecryptEventId::RespSentToUser.into()
-            }
-            DelegatedUserDecryptEventData::Failed { .. } => UserDecryptEventId::Failed.into(),
-            DelegatedUserDecryptEventData::InternalFailure { .. } => {
-                UserDecryptEventId::InternalFailure.into()
-            }
-        }
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, Hash)]
 pub struct PublicDecryptRequest {
     #[serde(
@@ -559,32 +449,101 @@ pub struct PublicDecryptRequest {
     pub extra_data: Bytes,
 }
 
+/// A user-decryption request. Each variant owns the complete set of
+/// fields its attestation format expects on the wire and on the
+/// gateway — including the `signature`, `public_key`, and `extra_data`
+/// fields that all current formats happen to share. Pattern-matching
+/// on the request hands the caller every field for that format in one
+/// place, with no cross-format envelope.
+///
+/// `LegacyDirect` and `LegacyDelegated` should be removed once the
+/// legacy EIP-712 formats (direct + delegated) are deprecated; at that
+/// point only `Eip712UnifiedV1` remains and this enum collapses into a
+/// struct.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Hash)]
-pub struct UserDecryptRequest {
-    pub ct_handle_contract_pairs: Vec<HandleContractPair>,
-    pub request_validity: RequestValidity,
-    pub contracts_chain_id: u64,
-    pub contract_addresses: Vec<Address>,
-    pub user_address: Address,
-    pub signature: Bytes,
-    pub public_key: Bytes,
-    pub extra_data: Bytes,
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum UserDecryptRequest {
+    /// Legacy EIP-712 direct user-decryption: maps to
+    /// `userDecryptionRequest(CtHandleContractPair[], RequestValidity,
+    /// ContractsInfo, address userAddress, …)` on the gateway.
+    /// Should be removed once the legacy EIP-712 formats are deprecated.
+    LegacyDirect {
+        ct_handle_contract_pairs: Vec<HandleContractPair>,
+        request_validity: RequestValidity,
+        contracts_chain_id: u64,
+        contract_addresses: Vec<Address>,
+        user_address: Address,
+        signature: Bytes,
+        public_key: Bytes,
+        extra_data: Bytes,
+    },
+    /// Legacy EIP-712 delegated user-decryption: maps to
+    /// `delegatedUserDecryptionRequest(CtHandleContractPair[],
+    /// RequestValidity, DelegationAccounts, ContractsInfo, …)`. Should
+    /// be removed once the legacy EIP-712 formats are deprecated.
+    LegacyDelegated {
+        ct_handle_contract_pairs: Vec<HandleContractPair>,
+        request_validity: RequestValidity,
+        contracts_chain_id: u64,
+        contract_addresses: Vec<Address>,
+        delegator_address: Address,
+        delegate_address: Address,
+        signature: Bytes,
+        public_key: Bytes,
+        extra_data: Bytes,
+    },
+    /// Unified EIP-712 user-decryption (attestation_type
+    /// `"eip712-unified-user-decrypt-v1"`): maps to
+    /// `userDecryptionRequest(HandleEntry[], address userAddress,
+    /// bytes publicKey, address[] allowedContracts,
+    /// RequestValiditySeconds, …)`. `allowed_contracts` may be empty
+    /// (permissive mode). Per-handle owner addresses live inside each
+    /// `HandleEntry`.
+    Eip712UnifiedV1 {
+        handles: Vec<HandleEntry>,
+        user_address: Address,
+        allowed_contracts: Vec<Address>,
+        request_validity: RequestValiditySeconds,
+        signature: Bytes,
+        public_key: Bytes,
+        extra_data: Bytes,
+    },
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Hash)]
-pub struct DelegatedUserDecryptRequest {
-    pub ct_handle_contract_pairs: Vec<HandleContractPair>,
-    pub contracts_chain_id: u64,
-    pub contract_addresses: Vec<Address>,
-    pub delegator_address: Address,
-    pub delegate_address: Address,
-    #[serde(rename = "startTimestamp")]
-    pub start_timestamp: U256,
-    #[serde(rename = "durationDays")]
-    pub duration_days: U256,
-    pub signature: Bytes,
-    pub public_key: Bytes,
-    pub extra_data: Bytes,
+impl UserDecryptRequest {
+    /// Short label for logs / metrics. Matches the serde tag values.
+    pub fn attestation_kind(&self) -> &'static str {
+        match self {
+            UserDecryptRequest::LegacyDirect { .. } => "legacy_direct",
+            UserDecryptRequest::LegacyDelegated { .. } => "legacy_delegated",
+            UserDecryptRequest::Eip712UnifiedV1 { .. } => "eip712_unified_v1",
+        }
+    }
+
+    /// Whether this request uses the unified EIP-712 gateway overload.
+    pub fn is_unified(&self) -> bool {
+        matches!(self, UserDecryptRequest::Eip712UnifiedV1 { .. })
+    }
+
+    /// References to the ciphertext handles, regardless of variant shape.
+    pub fn ct_handles(&self) -> Vec<&U256> {
+        match self {
+            UserDecryptRequest::LegacyDirect {
+                ct_handle_contract_pairs,
+                ..
+            }
+            | UserDecryptRequest::LegacyDelegated {
+                ct_handle_contract_pairs,
+                ..
+            } => ct_handle_contract_pairs
+                .iter()
+                .map(|p| &p.ct_handle)
+                .collect(),
+            UserDecryptRequest::Eip712UnifiedV1 { handles, .. } => {
+                handles.iter().map(|h| &h.ct_handle).collect()
+            }
+        }
+    }
 }
 
 #[allow(non_snake_case)]
@@ -596,6 +555,20 @@ pub struct HandleContractPair {
     pub contract_address: Address,
 }
 
+/// Per-handle entry for the unified EIP-712 format: carries the originating
+/// contract plus the owner address used by the on-chain ACL check for
+/// each handle. Sibling to `HandleContractPair` (v2 shape).
+#[allow(non_snake_case)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Hash)]
+pub struct HandleEntry {
+    #[serde(rename = "ctHandle")]
+    pub ct_handle: U256,
+    #[serde(rename = "contractAddress")]
+    pub contract_address: Address,
+    #[serde(rename = "ownerAddress")]
+    pub owner_address: Address,
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Hash)]
 #[allow(non_snake_case)]
 pub struct RequestValidity {
@@ -603,6 +576,17 @@ pub struct RequestValidity {
     pub start_timestamp: U256,
     #[serde(rename = "durationDays")]
     pub duration_days: U256,
+}
+
+/// Request-validity window in seconds (unified EIP-712 shape). Sibling to
+/// `RequestValidity` (v2 days-based shape).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Hash)]
+#[allow(non_snake_case)]
+pub struct RequestValiditySeconds {
+    #[serde(rename = "startTimestamp")]
+    pub start_timestamp: U256,
+    #[serde(rename = "durationSeconds")]
+    pub duration_seconds: U256,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -683,7 +667,7 @@ impl TryFrom<UserDecryptRequestJson> for UserDecryptRequest {
         // Parse extraData (validated at HTTP layer)
         let extra_data = Bytes::from_str(&value.extra_data)?;
 
-        Ok(UserDecryptRequest {
+        Ok(UserDecryptRequest::LegacyDirect {
             ct_handle_contract_pairs,
             request_validity,
             contracts_chain_id,
@@ -696,11 +680,11 @@ impl TryFrom<UserDecryptRequestJson> for UserDecryptRequest {
     }
 }
 
-impl TryFrom<DelegatedUserDecryptRequestJson> for DelegatedUserDecryptRequest {
+impl TryFrom<DelegatedUserDecryptRequestJson> for UserDecryptRequest {
     type Error = anyhow::Error;
 
     fn try_from(value: DelegatedUserDecryptRequestJson) -> Result<Self, Self::Error> {
-        info!("Converting DelegatedUserDecryptRequestJson to DelegatedUserDecryptRequest");
+        info!("Converting DelegatedUserDecryptRequestJson to UserDecryptRequest (LegacyDelegated)");
 
         let mut ct_handle_contract_pairs = Vec::new();
         for json_data in &value.handle_contract_pairs {
@@ -747,17 +731,75 @@ impl TryFrom<DelegatedUserDecryptRequestJson> for DelegatedUserDecryptRequest {
         // Parse extraData (validated at HTTP layer)
         let extra_data = Bytes::from_str(&value.extra_data)?;
 
-        Ok(DelegatedUserDecryptRequest {
+        Ok(UserDecryptRequest::LegacyDelegated {
             ct_handle_contract_pairs,
+            request_validity: RequestValidity {
+                start_timestamp: U256::from_str(&value.start_timestamp)?,
+                duration_days,
+            },
             contracts_chain_id,
             contract_addresses: contract_addresses.clone(),
             delegator_address: Address::from_str(&value.delegator_address)?,
             delegate_address: Address::from_str(&value.delegate_address)?,
-            start_timestamp: U256::from_str(&value.start_timestamp)?,
-            duration_days,
             signature: Bytes::from_str(&value.signature)?,
             public_key: Bytes::from_str(&value.public_key)?,
             extra_data,
+        })
+    }
+}
+
+impl TryFrom<AttestedUserDecryptRequestJson> for UserDecryptRequest {
+    type Error = anyhow::Error;
+
+    fn try_from(value: AttestedUserDecryptRequestJson) -> Result<Self, Self::Error> {
+        info!("Converting AttestedUserDecryptRequestJson to UserDecryptRequest (Eip712UnifiedV1)");
+
+        // The envelope's `attestation_type` is validated at the HTTP layer
+        // to be exactly `"eip712-unified-user-decrypt-v1"`; the variant tag
+        // below carries that semantic implicitly, so we don't re-store it
+        // on the core type.
+        let payload_inner = value.attested_payload;
+
+        let mut handles = Vec::with_capacity(payload_inner.handles.len());
+        for entry in &payload_inner.handles {
+            let ct_handle = if let Some(rest) = entry.ct_handle.strip_prefix("0x") {
+                U256::from_str_radix(rest, 16)
+            } else {
+                U256::from_str_radix(&entry.ct_handle, 16)
+            }
+            .map_err(|e| anyhow::anyhow!("Failed to parse ctHandle: {}", e))?;
+
+            let contract_address = Address::from_str(&entry.contract_address)
+                .map_err(|e| anyhow::anyhow!("Failed to parse contractAddress: {}", e))?;
+            let owner_address = Address::from_str(&entry.owner_address)
+                .map_err(|e| anyhow::anyhow!("Failed to parse ownerAddress: {}", e))?;
+
+            handles.push(HandleEntry {
+                ct_handle,
+                contract_address,
+                owner_address,
+            });
+        }
+
+        let allowed_contracts = payload_inner
+            .allowed_contracts
+            .iter()
+            .map(|addr| Address::from_str(addr))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let request_validity = RequestValiditySeconds {
+            start_timestamp: U256::from_str(&payload_inner.request_validity.start_timestamp)?,
+            duration_seconds: U256::from_str(&payload_inner.request_validity.duration_seconds)?,
+        };
+
+        Ok(UserDecryptRequest::Eip712UnifiedV1 {
+            handles,
+            user_address: Address::from_str(&payload_inner.user_address)?,
+            allowed_contracts,
+            request_validity,
+            signature: Bytes::from_str(&value.signature)?,
+            public_key: Bytes::from_str(&payload_inner.public_key)?,
+            extra_data: Bytes::from_str(&payload_inner.extra_data)?,
         })
     }
 }
@@ -783,7 +825,7 @@ impl TryFrom<PublicDecryptRequestJson> for PublicDecryptRequest {
             ct_handles.push(ct_handle.to_be_bytes());
         }
 
-        // Note: we validate extraData to be 0x00 in the http listener.
+        // Parse extraData (validated at HTTP layer). It is propagated verbatim to the Gateway.
         let extra_data = Bytes::from_str(&value.extra_data)?;
 
         Ok(PublicDecryptRequest {
@@ -1002,6 +1044,29 @@ mod tests {
 
         let expected_bytes = hex::decode(CIPHERTEXT)?;
         assert_eq!(request.ciphetext_with_zk_proof, Bytes::from(expected_bytes));
+
+        Ok(())
+    }
+
+    /// The Relayer must propagate `extraData` to the Gateway verbatim, without
+    /// interpreting or rewriting any of its fields (version, contextId, epochId).
+    #[test]
+    fn test_public_decrypt_propagates_extra_data_verbatim() -> Result<(), Box<dyn std::error::Error>>
+    {
+        // Version 0x02: [version(1B) | contextId(32B) | epochId(32B)] = 65 bytes.
+        let context_id = "00000000000000000000000000000000000000000000000000000000000000a1";
+        let epoch_id = "00000000000000000000000000000000000000000000000000000000000000b2";
+        let extra_data = format!("0x02{context_id}{epoch_id}");
+
+        let json = PublicDecryptRequestJson {
+            ciphertext_handles: vec![format!("0x{}", "11".repeat(32))],
+            extra_data: extra_data.clone(),
+        };
+
+        let request = PublicDecryptRequest::try_from(json)?;
+
+        // The parsed bytes must equal the raw input bytes, unchanged (verbatim propagation).
+        assert_eq!(request.extra_data, Bytes::from_str(&extra_data)?);
 
         Ok(())
     }

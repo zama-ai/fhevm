@@ -2,7 +2,9 @@
  * Renders runtime env maps from resolved versions, scenario topology, discovery outputs, and compat policy.
  */
 import {
+  coprocessorUsesHostKmsGeneration,
   compatPolicyForState,
+  kmsConnectorUsesHostKmsGeneration,
   requiresLegacyRelayerUrl,
   requiresMultichainAclAddress,
   requiresModernHostAddressArtifacts,
@@ -12,10 +14,12 @@ import type { StackSpec } from "../stack-spec/stack-spec";
 import {
   COPROCESSOR_WALLET_INDICES,
   DEFAULT_TENANT_API_KEY,
+  KMS_NODE_WALLET_INDICES,
   MINIO_INTERNAL_URL,
   POSTGRES_HOST,
   hostChainRuntimes,
 } from "../layout";
+import { kmsConnectorDbName, kmsConnectorEnvName, kmsCoreName, kmsServicePort, reconstructionThreshold } from "../kms-party";
 import type { State } from "../types";
 import { predictedCrsId, predictedKeyId } from "../utils/fs";
 
@@ -141,10 +145,12 @@ const applyDiscoveryEnv = (
   state: Pick<State, "discovery">,
   plan: StackSpec,
 ) => {
-  if (state.discovery?.kmsSigner) {
-    envs["gateway-sc"].KMS_SIGNER_ADDRESS_0 = state.discovery.kmsSigner;
-    envs["host-sc"].KMS_SIGNER_ADDRESS_0 = state.discovery.kmsSigner;
-  }
+  // One registered signer per party; centralized is just the single-signer case. Each address
+  // is discovered from its PUB-p{i} prefix (party 1 = PUB for the centralized core).
+  (state.discovery?.kmsSigners ?? []).forEach((address, index) => {
+    envs["gateway-sc"][`KMS_SIGNER_ADDRESS_${index}`] = address;
+    envs["host-sc"][`KMS_SIGNER_ADDRESS_${index}`] = address;
+  });
   if (!state.discovery) {
     return;
   }
@@ -155,9 +161,14 @@ const applyDiscoveryEnv = (
     return;
   }
   const primaryHost = state.discovery.hosts[defaultChain.key] ?? {};
-  const kmsGenerationAddress = requiresModernHostAddressArtifacts(plan)
-    ? primaryHost.KMS_GENERATION_CONTRACT_ADDRESS
-    : state.discovery.gateway.KMS_GENERATION_ADDRESS;
+  const gatewayKmsGenerationAddress = state.discovery.gateway.KMS_GENERATION_ADDRESS;
+  const hostKmsGenerationAddress = primaryHost.KMS_GENERATION_CONTRACT_ADDRESS;
+  const coprocessorKmsGenerationAddress = coprocessorUsesHostKmsGeneration(plan)
+    ? hostKmsGenerationAddress
+    : gatewayKmsGenerationAddress;
+  const connectorKmsGenerationAddress = kmsConnectorUsesHostKmsGeneration(plan)
+    ? hostKmsGenerationAddress
+    : gatewayKmsGenerationAddress;
   const protocolConfigAddress = requiresModernHostAddressArtifacts(plan)
     ? primaryHost.PROTOCOL_CONFIG_CONTRACT_ADDRESS
     : "";
@@ -180,7 +191,7 @@ const applyDiscoveryEnv = (
     INPUT_VERIFICATION_ADDRESS: state.discovery.gateway.INPUT_VERIFICATION_ADDRESS,
     CIPHERTEXT_COMMITS_ADDRESS: state.discovery.gateway.CIPHERTEXT_COMMITS_ADDRESS,
     ...(requiresMultichainAclAddress(plan) ? { MULTICHAIN_ACL_ADDRESS: state.discovery.gateway.MULTICHAIN_ACL_ADDRESS } : {}),
-    KMS_GENERATION_ADDRESS: kmsGenerationAddress,
+    KMS_GENERATION_ADDRESS: coprocessorKmsGenerationAddress ?? "",
     PROTOCOL_CONFIG_ADDRESS: protocolConfigAddress,
   });
 
@@ -196,7 +207,7 @@ const applyDiscoveryEnv = (
   updateContracts(envs["kms-connector"], {
     KMS_CONNECTOR_DECRYPTION_CONTRACT__ADDRESS: state.discovery.gateway.DECRYPTION_ADDRESS,
     KMS_CONNECTOR_GATEWAY_CONFIG_CONTRACT__ADDRESS: state.discovery.gateway.GATEWAY_CONFIG_ADDRESS,
-    KMS_CONNECTOR_KMS_GENERATION_CONTRACT__ADDRESS: kmsGenerationAddress,
+    KMS_CONNECTOR_KMS_GENERATION_CONTRACT__ADDRESS: connectorKmsGenerationAddress ?? "",
     KMS_CONNECTOR_HOST_CHAINS: JSON.stringify(kmsHostChains),
   });
   updateContracts(envs["relayer"], {
@@ -204,6 +215,7 @@ const applyDiscoveryEnv = (
     APP_GATEWAY__CONTRACTS__INPUT_VERIFICATION_ADDRESS: state.discovery.gateway.INPUT_VERIFICATION_ADDRESS,
   });
   updateContracts(envs["test-suite"], {
+    GATEWAY_CONFIG_ADDRESS: state.discovery.gateway.GATEWAY_CONFIG_ADDRESS,
     DECRYPTION_ADDRESS: state.discovery.gateway.DECRYPTION_ADDRESS,
     INPUT_VERIFICATION_ADDRESS: state.discovery.gateway.INPUT_VERIFICATION_ADDRESS,
     KMS_VERIFIER_CONTRACT_ADDRESS: primaryHost.KMS_VERIFIER_CONTRACT_ADDRESS,
@@ -213,6 +225,86 @@ const applyDiscoveryEnv = (
     PROTOCOL_CONFIG_CONTRACT_ADDRESS: primaryHost.PROTOCOL_CONFIG_CONTRACT_ADDRESS,
     KMS_GENERATION_CONTRACT_ADDRESS: primaryHost.KMS_GENERATION_CONTRACT_ADDRESS,
   });
+};
+
+export type KmsParty = { party: number; endpoint: string; privateKey: string; dbName: string };
+
+/**
+ * Threshold mode only: sets gateway-sc KMS counts/thresholds + per-party
+ * tx-sender wallets, and points the base (party-1) connector at kms-core.
+ * Returns the per-party connection info so connector instance envs for parties
+ * 2..N can be cloned AFTER discovery has rewritten the base connector env.
+ * Must run before applyHostScKmsEnv so host-sc inherits the counts/addresses.
+ */
+const applyKmsThresholdGatewayEnv = async (
+  envs: Record<string, Record<string, string>>,
+  plan: StackSpec,
+  deriveWallet: (mnemonic: string, index: number) => Promise<WalletMaterial>,
+): Promise<KmsParty[]> => {
+  if (plan.kms.mode !== "threshold") {
+    return [];
+  }
+  const { parties, threshold } = plan.kms;
+  if (parties > KMS_NODE_WALLET_INDICES.length) {
+    throw new Error(`KMS parties ${parties} exceeds supported ${KMS_NODE_WALLET_INDICES.length}`);
+  }
+  const gw = envs["gateway-sc"];
+  const mnemonic = gw.MNEMONIC;
+  if (!mnemonic) {
+    throw new Error("Missing gateway mnemonic for threshold-mode KMS setup");
+  }
+  gw.NUM_KMS_NODES = String(parties);
+  gw.MPC_THRESHOLD = String(threshold);
+  // host-sc deploy reads MPC_THRESHOLD too (ProtocolConfig). applyHostScKmsEnv
+  // mirrors the other KMS thresholds gateway->host but NOT MPC_THRESHOLD, and
+  // the host-sc template default (1) only happens to match t=1. Set it here so
+  // host and gateway agree for every topology (e.g. 7 parties / t=2). Scoped to
+  // threshold mode so the centralized template default is left untouched.
+  envs["host-sc"].MPC_THRESHOLD = String(threshold);
+  // Decryption/keygen consensus needs 2t+1 matching responses (reconstruction
+  // threshold; matches the KMS core-client `num_reconstruct`).
+  const reconstruct = String(reconstructionThreshold(threshold));
+  gw.PUBLIC_DECRYPTION_THRESHOLD = reconstruct;
+  gw.USER_DECRYPTION_THRESHOLD = reconstruct;
+  gw.KMS_GENERATION_THRESHOLD = reconstruct;
+
+  const result: KmsParty[] = [];
+  for (let party = 1; party <= parties; party += 1) {
+    const idx = party - 1;
+    const wallet = await deriveWallet(mnemonic, KMS_NODE_WALLET_INDICES[idx]);
+    gw[`KMS_TX_SENDER_ADDRESS_${idx}`] = wallet.address;
+    gw[`KMS_NODE_IP_ADDRESS_${idx}`] = kmsCoreName(party);
+    gw[`KMS_NODE_STORAGE_URL_${idx}`] = `${MINIO_INTERNAL_URL}/kms-public`;
+    // KMS_SIGNER_ADDRESS_{idx} comes from per-party signing-key discovery.
+    const endpoint = `http://${kmsCoreName(party)}:${kmsServicePort(party)}`;
+    const dbName = kmsConnectorDbName(party);
+    if (party === 1) {
+      envs["kms-connector"].KMS_CONNECTOR_KMS_CORE_ENDPOINTS = endpoint;
+      envs["kms-connector"].KMS_CONNECTOR_PRIVATE_KEY = wallet.privateKey;
+      envs["kms-connector"].KMS_CONNECTOR_DATABASE_URL = `postgresql://db:5432/${dbName}`;
+      envs["kms-connector"].DATABASE_URL = `postgresql://db:5432/${dbName}`;
+    }
+    result.push({ party, endpoint, privateKey: wallet.privateKey, dbName });
+  }
+  return result;
+};
+
+/** Clones the (discovery-rewritten) base connector env into per-party instance envs. */
+const buildKmsConnectorInstanceEnvs = (
+  envs: Record<string, Record<string, string>>,
+  kmsParties: KmsParty[],
+): Record<string, Record<string, string>> => {
+  const instanceEnvs: Record<string, Record<string, string>> = {};
+  for (const { party, endpoint, privateKey, dbName } of kmsParties) {
+    if (party === 1) continue; // party 1 uses the base kms-connector.env
+    const next = { ...envs["kms-connector"] };
+    next.KMS_CONNECTOR_KMS_CORE_ENDPOINTS = endpoint;
+    next.KMS_CONNECTOR_PRIVATE_KEY = privateKey;
+    next.KMS_CONNECTOR_DATABASE_URL = `postgresql://db:5432/${dbName}`;
+    next.DATABASE_URL = `postgresql://db:5432/${dbName}`;
+    instanceEnvs[kmsConnectorEnvName(party)] = next;
+  }
+  return instanceEnvs;
 };
 
 /** Builds per-instance coprocessor env maps and injects derived signer addresses. */
@@ -238,21 +330,18 @@ const buildInstanceEnvs = async (
   }
   for (let index = 0; index < plan.topology.count; index += 1) {
     const wallet = await deriveWallet(mnemonic, COPROCESSOR_WALLET_INDICES[index]);
-    const bucket = `coproc-${index}-ct128`;
     envs["gateway-sc"][`COPROCESSOR_TX_SENDER_ADDRESS_${index}`] = wallet.address;
     envs["gateway-sc"][`COPROCESSOR_SIGNER_ADDRESS_${index}`] = wallet.address;
-    envs["gateway-sc"][`COPROCESSOR_S3_BUCKET_URL_${index}`] = `${MINIO_INTERNAL_URL}/${bucket}`;
+    envs["gateway-sc"][`COPROCESSOR_S3_BUCKET_URL_${index}`] = `${MINIO_INTERNAL_URL}/ct128`;
     envs["host-sc"][`COPROCESSOR_SIGNER_ADDRESS_${index}`] = wallet.address;
     if (index === 0) {
       envs["coprocessor"].TX_SENDER_PRIVATE_KEY = wallet.privateKey;
-      envs["coprocessor"].BUCKET_NAME_CT128 = bucket;
       Object.assign(envs["coprocessor"], baseInstance?.env ?? {});
       continue;
     }
     const next = { ...envs["coprocessor"] };
     next.DATABASE_URL = `postgresql://${envs.database.POSTGRES_USER}:${envs.database.POSTGRES_PASSWORD}@${POSTGRES_HOST}/${driftDatabaseName(index)}`;
     next.TX_SENDER_PRIVATE_KEY = wallet.privateKey;
-    next.BUCKET_NAME_CT128 = bucket;
     const instance = plan.coprocessor.instances.find((item) => item.index === index);
     Object.assign(next, instance?.env ?? {});
     instanceEnvs[`coprocessor.${index}`] = next;
@@ -284,6 +373,7 @@ export const renderEnvMaps = async (
     throw new Error("Missing default host chain");
   }
   applyTopologyEnv(envs, plan);
+  const kmsParties = await applyKmsThresholdGatewayEnv(envs, plan, deriveWallet);
   applyHostScKmsEnv(envs);
   applyBaseRuntimeEnv(envs, state);
   applyCompatEnv(envs, plan);
@@ -294,13 +384,39 @@ export const renderEnvMaps = async (
   envs["host-sc"].RPC_URL = `http://${defaultChain.node}:${defaultChain.rpcPort}`;
   envs["host-sc"].HOST_ADDRESS_DIR = defaultChain.key;
   envs["host-sc"].HOST_SC_DEPLOY_KMS_GENERATION_ARGS = hostDeployKmsGenerationArgs(plan, true);
+  // Canonical host seeds ProtocolConfig fresh; non-canonical chains get this patched at deploy time
+  // by the up flow (see `canonicalProtocolConfigSeedingArgs`) once the canonical address exists.
+  envs["host-sc"].HOST_SC_DEPLOY_PROTOCOL_CONFIG_ARGS = "";
   envs["coprocessor"].RPC_HTTP_URL = `http://${defaultChain.node}:${defaultChain.rpcPort}`;
   envs["coprocessor"].RPC_WS_URL = `ws://${defaultChain.node}:${defaultChain.rpcPort}`;
   envs["kms-connector"].KMS_CONNECTOR_ETHEREUM_URL = `http://${defaultChain.node}:${defaultChain.rpcPort}`;
   envs["kms-connector"].KMS_CONNECTOR_ETHEREUM_CHAIN_ID = defaultChain.chainId;
   envs["test-suite"].RPC_URL = `http://${defaultChain.node}:${defaultChain.rpcPort}`;
   envs["test-suite"].CHAIN_ID_HOST = defaultChain.chainId;
+
+  // Multi-chain seeding for the coprocessor dbMigration container.
+  // HOST_CHAINS_COUNT + indexed HOST_CHAIN_<i>_{ID,NAME,ACL} drive
+  // `seed_host_chains` in `initialize_db.sh`. Same shape the helm chart
+  // renders from `.Values.chains` — keeps the e2e on the same code path
+  // as production rather than bypassing it via direct SQL. Applied BEFORE
+  // `buildInstanceEnvs` so multi-coprocessor topology instances inherit
+  // these env vars when they clone `envs["coprocessor"]`.
+  envs["coprocessor"].HOST_CHAINS_COUNT = String(chains.length);
+  for (const chain of chains) {
+    const chainIndex = chain.index;
+    const hostAddresses = state.discovery?.hosts[chain.key] ?? {};
+    envs["coprocessor"][`HOST_CHAIN_${chainIndex}_ID`] = chain.chainId;
+    envs["coprocessor"][`HOST_CHAIN_${chainIndex}_NAME`] = chain.key;
+    envs["coprocessor"][`HOST_CHAIN_${chainIndex}_ACL`] =
+      hostAddresses.ACL_CONTRACT_ADDRESS ?? "";
+  }
+
   const instanceEnvs = await buildInstanceEnvs(envs, plan, deriveWallet);
+  envs["test-suite"].GATEWAY_DEPLOYER_PRIVATE_KEY = envs["gateway-sc"].DEPLOYER_PRIVATE_KEY;
+  envs["test-suite"].GATEWAY_PAUSER_PRIVATE_KEY = envs["gateway-sc"].PAUSER_PRIVATE_KEY;
+  envs["test-suite"].PRIORITY_COPROCESSOR_TX_SENDER_ADDRESS =
+    envs["gateway-sc"].COPROCESSOR_TX_SENDER_ADDRESS_0;
+  Object.assign(instanceEnvs, buildKmsConnectorInstanceEnvs(envs, kmsParties));
 
   // Uniform per-chain gateway-sc indexed vars for ALL host chains.
   envs["gateway-sc"].NUM_HOST_CHAINS = String(chains.length);
@@ -374,9 +490,11 @@ export const renderEnvMaps = async (
   validateEnvMaps(envs, instanceEnvs);
   const compat = compatPolicyForState(plan);
 
-  return {
-    componentEnvs: envs,
-    instanceEnvs,
-    versionsEnv: { ...plan.versions.env, ...compat.composeEnv },
-  };
+  const versionsEnv: Record<string, string> = { ...plan.versions.env, ...compat.composeEnv };
+  // Threshold + Test params: keygen/crsgen triggers read ${KEYGEN_PARAMS_TYPE}
+  // from the compose env (versions.env) → ParamsType.Test (=1).
+  if (plan.kms.mode === "threshold" && plan.kms.fheParams === "Test") {
+    versionsEnv.KEYGEN_PARAMS_TYPE = "1";
+  }
+  return { componentEnvs: envs, instanceEnvs, versionsEnv };
 };

@@ -34,23 +34,20 @@ impl State {
 
 impl Healthcheck for State {
     async fn healthcheck(&self) -> actix_web::HttpResponse {
+        let (db_res, gw_res, eth_res) = tokio::join!(
+            database_healthcheck(&self.db_pool, self.healthcheck_timeout),
+            rpc_node_healthcheck(&self.gateway_provider, self.healthcheck_timeout, "Gateway"),
+            rpc_node_healthcheck(
+                &self.ethereum_provider,
+                self.healthcheck_timeout,
+                "Ethereum"
+            ),
+        );
+
         let mut errors = vec![];
-        let database_connected =
-            database_healthcheck(&self.db_pool, self.healthcheck_timeout, &mut errors).await;
-        let gateway_connected = rpc_node_healthcheck(
-            &self.gateway_provider,
-            self.healthcheck_timeout,
-            "Gateway",
-            &mut errors,
-        )
-        .await;
-        let ethereum_connected = rpc_node_healthcheck(
-            &self.ethereum_provider,
-            self.healthcheck_timeout,
-            "Ethereum",
-            &mut errors,
-        )
-        .await;
+        let database_connected = db_res.map_err(|e| errors.push(e)).is_ok();
+        let gateway_connected = gw_res.map_err(|e| errors.push(e)).is_ok();
+        let ethereum_connected = eth_res.map_err(|e| errors.push(e)).is_ok();
 
         let (status_code, healthy) = if errors.is_empty() {
             (StatusCode::OK, true)

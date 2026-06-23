@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use broker::{AckDecision, Handler, HandlerError, Message, Publisher};
 use tracing::{error, info, warn};
 
-use primitives::event::{FilterCommand, ReorgBacktrackEvent};
+use primitives::event::{CatchupPayload, FilterCommand, ReorgBacktrackEvent};
 use primitives::routing;
 use primitives::utils::checksum_optional_address;
 
@@ -399,5 +399,170 @@ impl Handler for UnwatchHandler {
             .await
             .map(|_| AckDecision::Ack)
             .map_err(classify_filter)
+    }
+}
+
+// ── CatchupHandler ──────────────────────────────────────────────────────
+
+/// Handler for the `catchup` consumer (the **orchestrator**).
+///
+/// Deserializes `msg.payload` into [`CatchupPayload`], validates it (trims
+/// `consumer_id`, enforces `block_start <= block_end`), asks the listener
+/// to compute bounded sub-payloads, then publishes each sub-payload to
+/// `routing::RANGE_CATCHUP` itself. The listener is the source of truth for
+/// the orchestrator logic (chain height fetch, skip-above-head, clamp,
+/// split); the broker boundary lives here in the handler.
+///
+/// Deserialization or validation failures are dead-lettered immediately —
+/// they are deterministic and will never succeed on retry. Orchestrator
+/// errors (RPC head fetch) route through the same [`classify`] path as the
+/// live cursor. Broker publish failures map to
+/// `HandlerError::transient(EvmListenerError::BrokerPublishError { … })` —
+/// the broker retries the orchestrator message; already-published sub-ranges
+/// will be re-published on retry, downstream dedupes by
+/// (block_number, block_hash).
+///
+/// No advisory lock by design.
+#[derive(Clone)]
+pub struct CatchupHandler {
+    listener: Arc<EvmListener>,
+    publisher: Publisher,
+}
+
+impl CatchupHandler {
+    pub fn new(listener: Arc<EvmListener>, publisher: Publisher) -> Self {
+        Self {
+            listener,
+            publisher,
+        }
+    }
+}
+
+#[async_trait]
+impl Handler for CatchupHandler {
+    async fn call(&self, msg: &Message) -> Result<AckDecision, HandlerError> {
+        let mut payload: CatchupPayload = match serde_json::from_slice(&msg.payload) {
+            Ok(p) => p,
+            Err(err) => {
+                error!(
+                    %err,
+                    msg_id = %msg.metadata.id,
+                    topic = %msg.metadata.topic,
+                    payload_len = msg.payload.len(),
+                    "Dead-lettering CatchupPayload: deserialization failed",
+                );
+                return Ok(AckDecision::Dead);
+            }
+        };
+
+        if let Err(err) = payload.validate() {
+            error!(
+                %err,
+                msg_id = %msg.metadata.id,
+                topic = %msg.metadata.topic,
+                "Dead-lettering CatchupPayload: validation failed",
+            );
+            return Ok(AckDecision::Dead);
+        }
+
+        // Compute the sub-ranges (chain height fetch + skip + clamp + split
+        // live in EvmListener::dispatch_catchup_range).
+        let subranges = self
+            .listener
+            .dispatch_catchup_range(payload)
+            .await
+            .map_err(|e| classify(e, self.listener.chain_id()))?;
+
+        // Publish each sub-range to range-catchup. Bubble any broker error
+        // out as transient so the broker retries the orchestrator message.
+        for sub in &subranges {
+            self.publisher
+                .publish(routing::RANGE_CATCHUP, sub)
+                .await
+                .map_err(|e| {
+                    error!(
+                        consumer_id = %sub.consumer_id,
+                        block_start = sub.block_start,
+                        block_end = sub.block_end,
+                        error = %e,
+                        "Failed to publish catchup sub-range",
+                    );
+                    HandlerError::transient(EvmListenerError::BrokerPublishError {
+                        message: format!(
+                            "Failed to publish catchup sub-range [{}, {}]: {}",
+                            sub.block_start, sub.block_end, e
+                        ),
+                    })
+                })?;
+        }
+
+        // Increment fan-out counter only after the full loop succeeded — same
+        // semantics as the previous `dispatch_catchup_range` had internally.
+        if !subranges.is_empty() {
+            metrics::counter!(
+                "listener_catchup_subranges_total",
+                "chain_id" => self.listener.chain_id().to_string()
+            )
+            .increment(subranges.len() as u64);
+        }
+
+        Ok(AckDecision::Ack)
+    }
+}
+
+// ── RangeCatchupHandler ─────────────────────────────────────────────────
+
+/// Handler for the `range-catchup` consumer (the **fetcher**).
+///
+/// Consumes bounded sub-payloads produced by [`CatchupHandler`] and runs
+/// [`EvmListener::run_range_catchup`] for each: parallel fetch +
+/// in-order publish on `{consumer_id}.catchup-event`.
+///
+/// Defensively re-validates the payload — sub-payloads cross the broker
+/// boundary, and the broker is the trust boundary. Errors classified through
+/// the same [`classify`] path as the live cursor.
+#[derive(Clone)]
+pub struct RangeCatchupHandler {
+    listener: Arc<EvmListener>,
+}
+
+impl RangeCatchupHandler {
+    pub fn new(listener: Arc<EvmListener>) -> Self {
+        Self { listener }
+    }
+}
+
+#[async_trait]
+impl Handler for RangeCatchupHandler {
+    async fn call(&self, msg: &Message) -> Result<AckDecision, HandlerError> {
+        let mut payload: CatchupPayload = match serde_json::from_slice(&msg.payload) {
+            Ok(p) => p,
+            Err(err) => {
+                error!(
+                    %err,
+                    msg_id = %msg.metadata.id,
+                    topic = %msg.metadata.topic,
+                    payload_len = msg.payload.len(),
+                    "Dead-lettering range-catchup CatchupPayload: deserialization failed",
+                );
+                return Ok(AckDecision::Dead);
+            }
+        };
+
+        if let Err(err) = payload.validate() {
+            error!(
+                %err,
+                msg_id = %msg.metadata.id,
+                topic = %msg.metadata.topic,
+                "Dead-lettering range-catchup CatchupPayload: validation failed",
+            );
+            return Ok(AckDecision::Dead);
+        }
+
+        self.listener
+            .run_range_catchup(payload)
+            .await
+            .map(|_| AckDecision::Ack)
+            .map_err(|e| classify(e, self.listener.chain_id()))
     }
 }

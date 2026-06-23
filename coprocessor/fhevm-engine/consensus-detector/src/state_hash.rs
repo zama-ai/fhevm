@@ -246,7 +246,8 @@ pub async fn run(
         .listen_all([EVENT_CIPHERTEXT_COMPUTED, crate::NEW_BLOCK_CHANNEL])
         .await?;
 
-    if let Err(e) = compute_and_upload_state_hashes(&pool, s3.as_deref(), &my_bucket, batch_limit).await
+    if let Err(e) =
+        compute_and_upload_state_hashes(&pool, s3.as_deref(), &my_bucket, batch_limit).await
     {
         warn!(error = %e, "initial state_hash pass failed");
     }
@@ -283,7 +284,9 @@ mod tests {
     #[test]
     fn empty_block_state_hash_is_well_formed() {
         assert_eq!(EMPTY_BLOCK_STATE_HASH.len(), 64);
-        assert!(EMPTY_BLOCK_STATE_HASH.chars().all(|c| c.is_ascii_hexdigit()));
+        assert!(EMPTY_BLOCK_STATE_HASH
+            .chars()
+            .all(|c| c.is_ascii_hexdigit()));
         assert_eq!(
             EMPTY_BLOCK_STATE_HASH,
             "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
