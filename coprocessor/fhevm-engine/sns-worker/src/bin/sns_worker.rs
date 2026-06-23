@@ -63,6 +63,7 @@ fn construct_config() -> Result<Config, fhevm_engine_common::database::DatabaseC
         pg_auto_explain_with_min_duration: args.pg_auto_explain_with_min_duration,
         s3_migration: args.s3_migration,
         s3_migration_sleep_duration: args.s3_migration_sleep_duration,
+        s3_migration_max_retries: args.s3_migration_max_retries,
         clean_old_s3_format_version: args.clean_old_s3_format_version,
     })
 }

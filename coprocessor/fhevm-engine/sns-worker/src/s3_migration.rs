@@ -20,6 +20,7 @@ use crate::{
     S3_FORMAT_VERSION_V1,
 };
 
+pub const DEFAULT_S3_MIGRATION_MAX_RETRIES: i32 = 100;
 const NO_SNS_CIPHERTEXT_DIGEST: [u8; 32] = [0; 32];
 
 #[derive(Debug, Clone, Copy)]
@@ -111,6 +112,7 @@ pub struct S3MigrationConfig {
     pub s3: S3Config,
     pub mode: S3MigrationMode,
     pub sleep_duration: Duration,
+    pub max_retries: i32,
 }
 
 pub(crate) async fn run_startup_migrations(
@@ -204,6 +206,10 @@ async fn migrate_s3_format_0_to_1(
 
         if new_handles.is_empty() && retry_handles.is_empty() {
             if config.mode != S3MigrationMode::Concurrent {
+                let remaining_failed = count_failed_old_format_handles(pool).await? as u64;
+                if remaining_failed > 0 {
+                    return Err(migration_failed_error(remaining_failed, config.max_retries));
+                }
                 break;
             }
             if worked_since_idle_log {
@@ -225,6 +231,12 @@ async fn migrate_s3_format_0_to_1(
     );
 
     Ok(())
+}
+
+fn migration_failed_error(total_failed: u64, max_retries: i32) -> ExecutionError {
+    ExecutionError::S3TransientError(format!(
+        "S3 migration failed for {total_failed} handle(s) after reaching max retry count {max_retries}"
+    ))
 }
 
 pub(crate) async fn count_pending_old_format_handles(pool: &PgPool) -> Result<i64, ExecutionError> {
@@ -276,20 +288,24 @@ async fn fetch_old_format_handles(
                ($2 = FALSE AND s3_migration_failure_count = 0)
                OR (
                    $2 = TRUE
+                   AND s3_migration_failure_count > 0
+                   AND s3_migration_failure_count < $3
                    AND s3_migration_failure_count = (
                        SELECT MIN(s3_migration_failure_count)
                         FROM ciphertext_digest
                         WHERE s3_format_version = $1
                           AND (ciphertext IS NOT NULL OR ciphertext128 IS NOT NULL)
                           AND s3_migration_failure_count > 0
+                          AND s3_migration_failure_count < $3
                    )
                )
            )
          ORDER BY s3_migration_failure_count, handle
-         LIMIT $3
+         LIMIT $4
         "#,
         CLEAN_OLD_S3_FORMAT_VERSION,
         focus_on_retry,
+        config.max_retries,
         config.batch_size as i64,
     )
     .fetch_all(pool)
