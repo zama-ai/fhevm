@@ -56,7 +56,7 @@ async fn test_kms_context_destroyed_invalidates_context_epochs() -> anyhow::Resu
     for (context_id, epoch_id) in [
         (destroyed_context_id, U256::from(1)),
         (destroyed_context_id, U256::from(2)),
-        (other_context_id, U256::from(2)),
+        (other_context_id, U256::from(3)),
     ] {
         publish_context_and_epoch(test_instance.db(), context_id, epoch_id).await?;
     }
@@ -75,6 +75,10 @@ async fn test_kms_context_destroyed_invalidates_context_epochs() -> anyhow::Resu
         fetch_valid_flags(test_instance.db(), other_context_id).await?,
         vec![true],
         "the untouched context should remain valid"
+    );
+    assert_eq!(
+        fetch_valid_flags(test_instance.db(), destroyed_context_id).await?,
+        vec![false, false]
     );
     info!("Context successfully invalidated! Stopping GatewayListener...");
 

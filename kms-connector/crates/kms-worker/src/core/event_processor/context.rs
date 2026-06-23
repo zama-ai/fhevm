@@ -37,6 +37,8 @@ impl<P: Provider> ContextManager for DbContextManager<P> {
     #[tracing::instrument(skip(self))]
     async fn validate_context(&self, extra_data: &ExtraData) -> Result<(), ProcessingError> {
         let Some(context_id) = extra_data.context_id else {
+            // Accepting request with no context for backwards compatibility with the relayer-sdk.
+            // TODO: Remove once https://github.com/zama-ai/fhevm-internal/issues/1506 is resolved.
             return Ok(());
         };
         let epoch_id = extra_data.epoch_id;
