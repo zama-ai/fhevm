@@ -10116,8 +10116,10 @@ library FHE {
      * @notice Bridges a single encrypted `ebool` handle plus an app-defined `payload` to
      *         `dstApp` on the chain at `dstEid`, via the host `ConfidentialBridge`.
      * @dev    Builds the one-element handle list and lets the bridge derive default LayerZero
-     *         options from `lzComposeGas`. The caller must already hold ACL allowance on the
-     *         handle (e.g. via {allowThis}); the payload must reference it at index 0.
+     *         options from `lzComposeGas`, which MUST be non-zero — with the default options a
+     *         value of 0 means the destination receive callback never runs. The caller must
+     *         already hold ACL allowance on the handle (e.g. via {allowThis}); the payload must
+     *         reference it at index 0.
      */
     function bridge(
         uint32 dstEid,
@@ -10143,7 +10145,8 @@ library FHE {
     /**
      * @notice Bridges a homogeneous list of encrypted `ebool` handles in a single message.
      * @dev    The payload must reference the handles by their position in `handles`. The
-     *         caller must already hold ACL allowance on every handle.
+     *         caller must already hold ACL allowance on every handle. `lzComposeGas` MUST be
+     *         non-zero, or the destination receive callback never runs.
      */
     function bridge(
         uint32 dstEid,
@@ -10218,8 +10221,10 @@ library FHE {
      * @notice Bridges a single encrypted `euint8` handle plus an app-defined `payload` to
      *         `dstApp` on the chain at `dstEid`, via the host `ConfidentialBridge`.
      * @dev    Builds the one-element handle list and lets the bridge derive default LayerZero
-     *         options from `lzComposeGas`. The caller must already hold ACL allowance on the
-     *         handle (e.g. via {allowThis}); the payload must reference it at index 0.
+     *         options from `lzComposeGas`, which MUST be non-zero — with the default options a
+     *         value of 0 means the destination receive callback never runs. The caller must
+     *         already hold ACL allowance on the handle (e.g. via {allowThis}); the payload must
+     *         reference it at index 0.
      */
     function bridge(
         uint32 dstEid,
@@ -10245,7 +10250,8 @@ library FHE {
     /**
      * @notice Bridges a homogeneous list of encrypted `euint8` handles in a single message.
      * @dev    The payload must reference the handles by their position in `handles`. The
-     *         caller must already hold ACL allowance on every handle.
+     *         caller must already hold ACL allowance on every handle. `lzComposeGas` MUST be
+     *         non-zero, or the destination receive callback never runs.
      */
     function bridge(
         uint32 dstEid,
@@ -10320,8 +10326,10 @@ library FHE {
      * @notice Bridges a single encrypted `euint16` handle plus an app-defined `payload` to
      *         `dstApp` on the chain at `dstEid`, via the host `ConfidentialBridge`.
      * @dev    Builds the one-element handle list and lets the bridge derive default LayerZero
-     *         options from `lzComposeGas`. The caller must already hold ACL allowance on the
-     *         handle (e.g. via {allowThis}); the payload must reference it at index 0.
+     *         options from `lzComposeGas`, which MUST be non-zero — with the default options a
+     *         value of 0 means the destination receive callback never runs. The caller must
+     *         already hold ACL allowance on the handle (e.g. via {allowThis}); the payload must
+     *         reference it at index 0.
      */
     function bridge(
         uint32 dstEid,
@@ -10347,7 +10355,8 @@ library FHE {
     /**
      * @notice Bridges a homogeneous list of encrypted `euint16` handles in a single message.
      * @dev    The payload must reference the handles by their position in `handles`. The
-     *         caller must already hold ACL allowance on every handle.
+     *         caller must already hold ACL allowance on every handle. `lzComposeGas` MUST be
+     *         non-zero, or the destination receive callback never runs.
      */
     function bridge(
         uint32 dstEid,
@@ -10422,8 +10431,10 @@ library FHE {
      * @notice Bridges a single encrypted `euint32` handle plus an app-defined `payload` to
      *         `dstApp` on the chain at `dstEid`, via the host `ConfidentialBridge`.
      * @dev    Builds the one-element handle list and lets the bridge derive default LayerZero
-     *         options from `lzComposeGas`. The caller must already hold ACL allowance on the
-     *         handle (e.g. via {allowThis}); the payload must reference it at index 0.
+     *         options from `lzComposeGas`, which MUST be non-zero — with the default options a
+     *         value of 0 means the destination receive callback never runs. The caller must
+     *         already hold ACL allowance on the handle (e.g. via {allowThis}); the payload must
+     *         reference it at index 0.
      */
     function bridge(
         uint32 dstEid,
@@ -10449,7 +10460,8 @@ library FHE {
     /**
      * @notice Bridges a homogeneous list of encrypted `euint32` handles in a single message.
      * @dev    The payload must reference the handles by their position in `handles`. The
-     *         caller must already hold ACL allowance on every handle.
+     *         caller must already hold ACL allowance on every handle. `lzComposeGas` MUST be
+     *         non-zero, or the destination receive callback never runs.
      */
     function bridge(
         uint32 dstEid,
@@ -10524,8 +10536,10 @@ library FHE {
      * @notice Bridges a single encrypted `euint64` handle plus an app-defined `payload` to
      *         `dstApp` on the chain at `dstEid`, via the host `ConfidentialBridge`.
      * @dev    Builds the one-element handle list and lets the bridge derive default LayerZero
-     *         options from `lzComposeGas`. The caller must already hold ACL allowance on the
-     *         handle (e.g. via {allowThis}); the payload must reference it at index 0.
+     *         options from `lzComposeGas`, which MUST be non-zero — with the default options a
+     *         value of 0 means the destination receive callback never runs. The caller must
+     *         already hold ACL allowance on the handle (e.g. via {allowThis}); the payload must
+     *         reference it at index 0.
      */
     function bridge(
         uint32 dstEid,
@@ -10551,7 +10565,8 @@ library FHE {
     /**
      * @notice Bridges a homogeneous list of encrypted `euint64` handles in a single message.
      * @dev    The payload must reference the handles by their position in `handles`. The
-     *         caller must already hold ACL allowance on every handle.
+     *         caller must already hold ACL allowance on every handle. `lzComposeGas` MUST be
+     *         non-zero, or the destination receive callback never runs.
      */
     function bridge(
         uint32 dstEid,
@@ -10626,8 +10641,10 @@ library FHE {
      * @notice Bridges a single encrypted `euint128` handle plus an app-defined `payload` to
      *         `dstApp` on the chain at `dstEid`, via the host `ConfidentialBridge`.
      * @dev    Builds the one-element handle list and lets the bridge derive default LayerZero
-     *         options from `lzComposeGas`. The caller must already hold ACL allowance on the
-     *         handle (e.g. via {allowThis}); the payload must reference it at index 0.
+     *         options from `lzComposeGas`, which MUST be non-zero — with the default options a
+     *         value of 0 means the destination receive callback never runs. The caller must
+     *         already hold ACL allowance on the handle (e.g. via {allowThis}); the payload must
+     *         reference it at index 0.
      */
     function bridge(
         uint32 dstEid,
@@ -10653,7 +10670,8 @@ library FHE {
     /**
      * @notice Bridges a homogeneous list of encrypted `euint128` handles in a single message.
      * @dev    The payload must reference the handles by their position in `handles`. The
-     *         caller must already hold ACL allowance on every handle.
+     *         caller must already hold ACL allowance on every handle. `lzComposeGas` MUST be
+     *         non-zero, or the destination receive callback never runs.
      */
     function bridge(
         uint32 dstEid,
@@ -10728,8 +10746,10 @@ library FHE {
      * @notice Bridges a single encrypted `eaddress` handle plus an app-defined `payload` to
      *         `dstApp` on the chain at `dstEid`, via the host `ConfidentialBridge`.
      * @dev    Builds the one-element handle list and lets the bridge derive default LayerZero
-     *         options from `lzComposeGas`. The caller must already hold ACL allowance on the
-     *         handle (e.g. via {allowThis}); the payload must reference it at index 0.
+     *         options from `lzComposeGas`, which MUST be non-zero — with the default options a
+     *         value of 0 means the destination receive callback never runs. The caller must
+     *         already hold ACL allowance on the handle (e.g. via {allowThis}); the payload must
+     *         reference it at index 0.
      */
     function bridge(
         uint32 dstEid,
@@ -10755,7 +10775,8 @@ library FHE {
     /**
      * @notice Bridges a homogeneous list of encrypted `eaddress` handles in a single message.
      * @dev    The payload must reference the handles by their position in `handles`. The
-     *         caller must already hold ACL allowance on every handle.
+     *         caller must already hold ACL allowance on every handle. `lzComposeGas` MUST be
+     *         non-zero, or the destination receive callback never runs.
      */
     function bridge(
         uint32 dstEid,
@@ -10830,8 +10851,10 @@ library FHE {
      * @notice Bridges a single encrypted `euint256` handle plus an app-defined `payload` to
      *         `dstApp` on the chain at `dstEid`, via the host `ConfidentialBridge`.
      * @dev    Builds the one-element handle list and lets the bridge derive default LayerZero
-     *         options from `lzComposeGas`. The caller must already hold ACL allowance on the
-     *         handle (e.g. via {allowThis}); the payload must reference it at index 0.
+     *         options from `lzComposeGas`, which MUST be non-zero — with the default options a
+     *         value of 0 means the destination receive callback never runs. The caller must
+     *         already hold ACL allowance on the handle (e.g. via {allowThis}); the payload must
+     *         reference it at index 0.
      */
     function bridge(
         uint32 dstEid,
@@ -10857,7 +10880,8 @@ library FHE {
     /**
      * @notice Bridges a homogeneous list of encrypted `euint256` handles in a single message.
      * @dev    The payload must reference the handles by their position in `handles`. The
-     *         caller must already hold ACL allowance on every handle.
+     *         caller must already hold ACL allowance on every handle. `lzComposeGas` MUST be
+     *         non-zero, or the destination receive callback never runs.
      */
     function bridge(
         uint32 dstEid,

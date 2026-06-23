@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import {FHE, euint64} from "../../lib/FHE.sol";
 import {CoprocessorConfig} from "../../lib/Impl.sol";
-import {MessagingReceipt} from "../../lib/bridge/IConfidentialBridge.sol";
+import {MessagingFee, MessagingReceipt} from "../../lib/bridge/IConfidentialBridge.sol";
 import {ConfidentialOAppSender} from "../../lib/bridge/ConfidentialOAppSender.sol";
 import {ConfidentialOAppReceiver} from "../../lib/bridge/ConfidentialOAppReceiver.sol";
 
@@ -48,6 +48,16 @@ contract OAppHarness is ConfidentialOAppSender, ConfidentialOAppReceiver {
         uint128 lzComposeGas
     ) external payable returns (MessagingReceipt memory) {
         return _bridge(dstEid, payload, euint64.wrap(handle), lzComposeGas, msg.value);
+    }
+
+    /// @dev Quote the fee for a single raw handle to the peer on `dstEid` via the sender helper.
+    function quoteToPeer(
+        uint32 dstEid,
+        bytes calldata payload,
+        bytes32 handle,
+        uint128 lzComposeGas
+    ) external view returns (MessagingFee memory) {
+        return _quoteBridge(dstEid, payload, euint64.wrap(handle), lzComposeGas);
     }
 
     function lastHandlesLength() external view returns (uint256) {
