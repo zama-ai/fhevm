@@ -20,6 +20,27 @@ export function generateIConfidentialBridgeLib() {
   return code;
 }
 
+export function generateConfidentialOAppCoreLib() {
+  const file = resolveTemplatePath('ConfidentialOAppCore.sol-template');
+  const template = readFileSync(file, 'utf8');
+  let code = removeTemplateComments(template);
+  return code;
+}
+
+export function generateConfidentialOAppSenderLib() {
+  const file = resolveTemplatePath('ConfidentialOAppSender.sol-template');
+  const template = readFileSync(file, 'utf8');
+  let code = removeTemplateComments(template);
+  return code;
+}
+
+export function generateConfidentialOAppReceiverLib() {
+  const file = resolveTemplatePath('ConfidentialOAppReceiver.sol-template');
+  const template = readFileSync(file, 'utf8');
+  let code = removeTemplateComments(template);
+  return code;
+}
+
 export function generateSolidityFHELib({
   operators,
   fheTypes,
