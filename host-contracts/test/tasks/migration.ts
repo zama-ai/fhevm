@@ -138,7 +138,7 @@ describe('Migration prepare tasks', function () {
       const protocolConfig = await ethers.getContractAt('ProtocolConfig', proxyAddress);
 
       expect(await readImplementationSlot(proxyAddress)).to.not.equal(implementationSlotBefore);
-      expect(await protocolConfig.getVersion()).to.equal('ProtocolConfig v0.1.0');
+      expect(await protocolConfig.getVersion()).to.equal('ProtocolConfig v0.2.0');
       expect(await protocolConfig.getCurrentKmsContextId()).to.equal(migratedContextId);
       expect(await protocolConfig.getPublicDecryptionThreshold()).to.equal(
         BigInt(getRequiredEnvVar('PUBLIC_DECRYPTION_THRESHOLD')),
