@@ -7,7 +7,7 @@ import {FHE, euint64, externalEuint64, ebool} from "../../lib/FHE.sol";
 import {ZamaConfig} from "../../config/ZamaConfig.sol";
 import {ConfidentialOAppSender} from "../../lib/bridge/ConfidentialOAppSender.sol";
 import {ConfidentialOAppReceiver} from "../../lib/bridge/ConfidentialOAppReceiver.sol";
-import {MessagingReceipt} from "../../lib/bridge/IConfidentialBridge.sol";
+import {MessagingFee, MessagingReceipt} from "../../lib/bridge/IConfidentialBridge.sol";
 
 /**
  * @title   ConfidentialOFTViaLib
@@ -29,6 +29,7 @@ contract ConfidentialOFTViaLib is Ownable2Step, ConfidentialOAppSender, Confiden
     event Received(uint32 indexed srcEid, address indexed recipient);
 
     error UnauthorizedUseOfEncryptedAmount(euint64 amount, address sender);
+    error SweepFailed();
 
     mapping(address holder => euint64 balance) private _balances;
 
@@ -46,8 +47,8 @@ contract ConfidentialOFTViaLib is Ownable2Step, ConfidentialOAppSender, Confiden
 
     /**
      * @notice Burn `amount` locally and bridge it to `recipient` on `dstEid`.
-     * @dev    Quote the LayerZero fee with {_quoteBridge} and forward it as `msg.value`; any
-     *         excess is refunded to this contract (see `receive()` above).
+     * @dev    Quote the LayerZero fee with {quoteSend} and forward it as `msg.value`; any excess
+     *         is refunded to this contract (see `receive()` / {sweep}).
      *         NOTE: FHE cannot revert on an encrypted comparison, so if `amount` exceeds the
      *         caller's balance the burn yields an encrypted 0 and a zero-value message is still
      *         bridged (the caller pays the fee for a no-op `_mint`). Callers should confirm a
@@ -74,6 +75,17 @@ contract ConfidentialOFTViaLib is Ownable2Step, ConfidentialOAppSender, Confiden
         return _bridge(dstEid, payload, actualAmount, mintComposeGas, msg.value);
     }
 
+    /// @notice Quote the native fee to {send} `amount` to `recipient` on `dstEid`; pass the
+    ///         returned `nativeFee` as `msg.value` to {send}.
+    function quoteSend(
+        uint32 dstEid,
+        euint64 amount,
+        address recipient,
+        uint128 mintComposeGas
+    ) external view returns (MessagingFee memory) {
+        return _quoteBridge(dstEid, abi.encode(recipient), amount, mintComposeGas);
+    }
+
     // ---------------------------- Receive side ----------------------------
 
     /// @inheritdoc ConfidentialOAppReceiver
@@ -84,6 +96,9 @@ contract ConfidentialOFTViaLib is Ownable2Step, ConfidentialOAppSender, Confiden
         bytes32[] calldata handles,
         bytes32 /* guid */
     ) internal override {
+        // The bridge delivers each message's compose exactly once (a retry only follows a revert),
+        // so this unconditional mint is safe. If your receive hook is NOT idempotent, track `guid`
+        // and dedupe to avoid a double-mint on retry.
         address recipient = abi.decode(payload, (address));
         _mint(recipient, euint64.wrap(handles[0]));
         emit Received(srcEid, recipient);
@@ -104,6 +119,13 @@ contract ConfidentialOFTViaLib is Ownable2Step, ConfidentialOAppSender, Confiden
 
     function balanceOf(address holder) external view returns (euint64) {
         return _balances[holder];
+    }
+
+    /// @notice Withdraw native balance accumulated from bridge fee refunds (see `receive()`),
+    ///         so overpaid fees aren't trapped in the contract.
+    function sweep(address to) external onlyOwner {
+        (bool ok, ) = to.call{value: address(this).balance}("");
+        if (!ok) revert SweepFailed();
     }
 
     // ------------------------------ Internals -----------------------------

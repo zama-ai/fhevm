@@ -177,7 +177,7 @@ describe('Confidential bridge helpers', function () {
     });
   });
 
-  describe('receive side — ConfidentialBridgeReceiver', function () {
+  describe('receive side — ConfidentialOAppReceiver', function () {
     const peer = h('0xabcd');
     const payload = ethers.toUtf8Bytes('mint');
     const GUID = h('0x77');
@@ -341,6 +341,16 @@ describe('Confidential bridge helpers', function () {
       const { oapp } = await deployOAppFixture();
       await oapp.setPeer(DST_EID, padded(randAddr()));
       await expect(oapp.bridgeToPeer(DST_EID, '0x', handleA, 0)).to.be.revertedWithCustomError(oapp, 'ZeroComposeGas');
+    });
+
+    it('quotes the fee for the resolved peer (NoPeer if unset)', async function () {
+      const { bridge, oapp } = await deployOAppFixture();
+      await expect(oapp.quoteToPeer(DST_EID, '0x', handleA, 50_000)).to.be.revertedWithCustomError(oapp, 'NoPeer');
+
+      await oapp.setPeer(DST_EID, padded(randAddr()));
+      await bridge.setQuotedNativeFee(555n);
+      const fee = await oapp.quoteToPeer(DST_EID, '0x', handleA, 50_000);
+      expect(fee.nativeFee).to.equal(555n);
     });
   });
 

@@ -54,7 +54,7 @@ interface IConfidentialBridge {
  * @title   IDstApp
  * @notice  Callback a destination app implements to receive a bridged payload.
  *          Mirrors `host-contracts/contracts/bridge/interfaces/IDstApp.sol`.
- * @dev     The {ConfidentialBridgeReceiver} base contract implements this and exposes a
+ * @dev     The {ConfidentialOAppReceiver} base contract implements this and exposes a
  *          typed `_onReceiveHandles` hook so apps don't deal with raw `bytes32` handles.
  */
 interface IDstApp {

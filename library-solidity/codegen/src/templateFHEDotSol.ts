@@ -98,8 +98,10 @@ function generateBridgeFunctions(fheTypes: AdjustedFheType[]): string {
      * @notice Bridges a single encrypted \`${t}\` handle plus an app-defined \`payload\` to
      *         \`dstApp\` on the chain at \`dstEid\`, via the host \`ConfidentialBridge\`.
      * @dev    Builds the one-element handle list and lets the bridge derive default LayerZero
-     *         options from \`lzComposeGas\`. The caller must already hold ACL allowance on the
-     *         handle (e.g. via {allowThis}); the payload must reference it at index 0.
+     *         options from \`lzComposeGas\`, which MUST be non-zero — with the default options a
+     *         value of 0 means the destination receive callback never runs. The caller must
+     *         already hold ACL allowance on the handle (e.g. via {allowThis}); the payload must
+     *         reference it at index 0.
      */
     function bridge(uint32 dstEid, address dstApp, bytes memory payload, ${t} handle, uint128 lzComposeGas, uint256 nativeFee) internal returns (MessagingReceipt memory receipt) {
         bytes32[] memory handleList = new bytes32[](1);
@@ -110,7 +112,8 @@ function generateBridgeFunctions(fheTypes: AdjustedFheType[]): string {
     /**
      * @notice Bridges a homogeneous list of encrypted \`${t}\` handles in a single message.
      * @dev    The payload must reference the handles by their position in \`handles\`. The
-     *         caller must already hold ACL allowance on every handle.
+     *         caller must already hold ACL allowance on every handle. \`lzComposeGas\` MUST be
+     *         non-zero, or the destination receive callback never runs.
      */
     function bridge(uint32 dstEid, address dstApp, bytes memory payload, ${t}[] memory handles, uint128 lzComposeGas, uint256 nativeFee) internal returns (MessagingReceipt memory receipt) {
         bytes32[] memory handleList = new bytes32[](handles.length);
