@@ -1,4 +1,7 @@
-use crate::core::{config::Config, event_processor::ProcessingError};
+use crate::core::{
+    config::Config,
+    event_processor::{RequestCheckError, RequestCheckKind},
+};
 use alloy::{primitives::U256, providers::Provider};
 use anyhow::anyhow;
 use connector_utils::types::extra_data::ExtraData;
@@ -11,7 +14,7 @@ pub trait ContextManager: Send + Sync {
     fn validate_context(
         &self,
         extra_data: &ExtraData,
-    ) -> impl Future<Output = Result<(), ProcessingError>> + Send;
+    ) -> impl Future<Output = Result<(), RequestCheckError>> + Send;
 }
 
 /// Outcome of the lookup in the local `kms_context` table.
@@ -35,7 +38,7 @@ pub struct DbContextManager<P> {
 
 impl<P: Provider> ContextManager for DbContextManager<P> {
     #[tracing::instrument(skip(self))]
-    async fn validate_context(&self, extra_data: &ExtraData) -> Result<(), ProcessingError> {
+    async fn validate_context(&self, extra_data: &ExtraData) -> Result<(), RequestCheckError> {
         let Some(context_id) = extra_data.context_id else {
             // Accepting request with no context for backwards compatibility with the relayer-sdk.
             // TODO: Remove once https://github.com/zama-ai/fhevm-internal/issues/1506 is resolved.
@@ -45,9 +48,10 @@ impl<P: Provider> ContextManager for DbContextManager<P> {
 
         match self.check_local_db(context_id, epoch_id).await? {
             LocalCheck::Valid => Ok(()),
-            LocalCheck::Destroyed => Err(ProcessingError::Irrecoverable(anyhow!(
-                "Context #{context_id} has been destroyed"
-            ))),
+            LocalCheck::Destroyed => Err(RequestCheckError::irrecoverable(
+                RequestCheckKind::KmsContext,
+                anyhow!("Context #{context_id} has been destroyed"),
+            )),
             LocalCheck::Unknown => self.validate_on_chain(context_id, epoch_id).await,
         }
     }
@@ -68,7 +72,7 @@ impl<P: Provider> DbContextManager<P> {
         &self,
         context_id: U256,
         epoch_id: Option<U256>,
-    ) -> Result<LocalCheck, ProcessingError> {
+    ) -> Result<LocalCheck, RequestCheckError> {
         let rows = sqlx::query!(
             "SELECT epoch_id, is_valid FROM kms_context WHERE id = $1",
             context_id.as_le_slice()
@@ -76,9 +80,7 @@ impl<P: Provider> DbContextManager<P> {
         .fetch_all(&self.db_pool)
         .await
         .map_err(|e| {
-            ProcessingError::Recoverable(anyhow!(
-                "Query to check context #{context_id} failed: {e}"
-            ))
+            RequestCheckError::network(anyhow!("Query to check context #{context_id} failed: {e}"))
         })?;
 
         // `is_valid = false` is only ever written by `KmsContextDestroyed`, which invalidates the
@@ -104,7 +106,7 @@ impl<P: Provider> DbContextManager<P> {
         &self,
         context_id: U256,
         epoch_id: Option<U256>,
-    ) -> Result<(), ProcessingError> {
+    ) -> Result<(), RequestCheckError> {
         info!("Context not found in DB, validating against ProtocolConfig...");
 
         let context_valid = self
@@ -113,14 +115,15 @@ impl<P: Provider> DbContextManager<P> {
             .call()
             .await
             .map_err(|e| {
-                ProcessingError::Recoverable(anyhow!(
+                RequestCheckError::network(anyhow!(
                     "isValidKmsContext(#{context_id}) call failed: {e}"
                 ))
             })?;
         if !context_valid {
-            return Err(ProcessingError::Recoverable(anyhow!(
-                "Context #{context_id} is not valid on-chain (yet?)"
-            )));
+            return Err(RequestCheckError::recoverable(
+                RequestCheckKind::KmsContext,
+                anyhow!("Context #{context_id} is not valid on-chain (yet?)"),
+            ));
         }
 
         let Some(epoch_id) = epoch_id else {
@@ -134,14 +137,15 @@ impl<P: Provider> DbContextManager<P> {
             .call()
             .await
             .map_err(|e| {
-                ProcessingError::Recoverable(anyhow!(
+                RequestCheckError::network(anyhow!(
                     "isValidEpochForContext(#{context_id}, #{epoch_id}) call failed: {e}"
                 ))
             })?;
         if !epoch_valid {
-            return Err(ProcessingError::Recoverable(anyhow!(
-                "Epoch #{epoch_id} of context #{context_id} is not active on-chain (yet?)"
-            )));
+            return Err(RequestCheckError::recoverable(
+                RequestCheckKind::KmsContext,
+                anyhow!("Epoch #{epoch_id} of context #{context_id} is not active on-chain (yet?)"),
+            ));
         }
 
         self.cache_valid_pair(context_id, epoch_id).await;

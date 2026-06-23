@@ -1,6 +1,6 @@
 use crate::core::{
     config::Config,
-    event_processor::{ContextManager, ProcessingError},
+    event_processor::{ContextManager, ProcessingError, RequestCheckError},
 };
 use alloy::primitives::U256;
 use connector_utils::types::{KmsGrpcRequest, extra_data::parse_extra_data, u256_to_request_id};
@@ -50,7 +50,8 @@ where
             .map_err(ProcessingError::Irrecoverable)?;
         self.context_manager
             .validate_context(&parsed_extra_data)
-            .await?;
+            .await
+            .map_err(RequestCheckError::record)?;
 
         Ok(KmsGrpcRequest::PrepKeygen(KeyGenPreprocRequest {
             request_id: Some(u256_to_request_id(prep_keygen_request.prepKeygenId)),
@@ -72,7 +73,8 @@ where
             parse_extra_data(&keygen_request.extraData).map_err(ProcessingError::Irrecoverable)?;
         self.context_manager
             .validate_context(&parsed_extra_data)
-            .await?;
+            .await
+            .map_err(RequestCheckError::record)?;
 
         Ok(KmsGrpcRequest::Keygen(KeyGenRequest {
             request_id: Some(u256_to_request_id(keygen_request.keyId)),
@@ -96,7 +98,8 @@ where
             parse_extra_data(&crsgen_request.extraData).map_err(ProcessingError::Irrecoverable)?;
         self.context_manager
             .validate_context(&parsed_extra_data)
-            .await?;
+            .await
+            .map_err(RequestCheckError::record)?;
 
         let max_num_bits = crsgen_request
             .maxBitLength

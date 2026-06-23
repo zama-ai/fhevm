@@ -25,7 +25,7 @@ use connector_utils::{
 };
 use kms_worker::core::{
     Config,
-    event_processor::{ContextManager, DbContextManager, ProcessingError},
+    event_processor::{ContextManager, DbContextManager, ProcessingError, RequestCheckError},
 };
 use mocktail::server::MockServer;
 use rstest::rstest;
@@ -319,6 +319,7 @@ async fn test_validate_context_pending_epoch_is_recoverable() -> anyhow::Result<
     let err = context_manager
         .validate_context(&extra_data)
         .await
+        .map_err(RequestCheckError::record)
         .unwrap_err();
     assert!(
         matches!(err, ProcessingError::Recoverable(_)),
@@ -355,6 +356,7 @@ async fn test_validate_context_destroyed_rejects_unknown_epoch() -> anyhow::Resu
     let err = context_manager
         .validate_context(&extra_data)
         .await
+        .map_err(RequestCheckError::record)
         .unwrap_err();
     assert!(
         matches!(err, ProcessingError::Irrecoverable(_)),

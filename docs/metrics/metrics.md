@@ -280,6 +280,19 @@ Metrics for zkproof-worker are to be added in future releases, if/when needed. C
  - **Alarm**: If the counter increases over a period of time.
    - **Recommendation**: more than 60 failures in 1 minute, i.e. `sum(increase(counter[1m])) > 60`.
 
+#### Metric Name: `kms_connector_worker_request_check_errors`
+ - **Type**: Counter
+ - **Labels**:
+   - `check_type`: the family of pre-flight check that rejected the request:
+     - `acl`: ACL authorization checks and errors that prevent the ACL check from running (malformed handles, missing contract config...).
+     - `signature`: RFC-012/016 signature & request-validity checks (EIP-712/ERC-1271 signature, validity window, signature invalidation).
+     - `copro_consensus`: RFC-023 off-chain ciphertext-attestation consensus check.
+     - `kms_context`: KMS context/epoch validity check.
+     - `network`: network error (on-chain call or DB query) encountered while running any of the above checks.
+ - **Description**: Counts request pre-flight check failures. Mostly decryption checks (ACL, signature, copro consensus), but the `kms_context` family also covers key-management requests.
+ - **Alarm**: If the counter increases over a period of time.
+   - **Recommendation**: more than 60 failures in 1 minute, i.e. `sum(increase(counter[1m])) > 60`.
+
 #### Metric Name: `kms_connector_worker_decryption_latency_seconds`
  - **Type**: Histogram
  - **Labels**:
