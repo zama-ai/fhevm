@@ -333,31 +333,34 @@ async fn test_garbage_collect() {
 
     let host_chain_id: i64 = 1;
     let key_id_gw: Vec<u8> = vec![0u8; 32];
+    let ct_version = fhevm_engine_common::tfhe_ops::current_ciphertext_version();
     for i in 0..HANDLES_COUNT {
         // insert into ciphertexts
         let mut handle = [0u8; 32];
         handle[..4].copy_from_slice(&i.to_le_bytes());
 
         let _ = sqlx::query!(
-            "INSERT INTO ciphertexts128(handle, ciphertext)
-                VALUES ($1, $2)
+            "INSERT INTO ciphertexts128(handle, ciphertext, ciphertext_version)
+                VALUES ($1, $2, $3)
             ON CONFLICT DO NOTHING;",
             &handle,
             &[i as u8; 32],
+            ct_version,
         )
         .execute(&pool)
         .await
         .expect("insert into ciphertexts");
 
         let _ = sqlx::query!(
-            "INSERT INTO ciphertext_digest(host_chain_id, key_id_gw, handle, ciphertext, ciphertext128 )
-                VALUES ($1, $2, $3, $4, $5)
+            "INSERT INTO ciphertext_digest(host_chain_id, key_id_gw, handle, ciphertext, ciphertext128, ciphertext_version)
+                VALUES ($1, $2, $3, $4, $5, $6)
             ON CONFLICT DO NOTHING;",
             host_chain_id,
             &key_id_gw,
             &handle,
             &[i as u8; 32],
             &[i as u8; 32],
+            ct_version,
         )
         .execute(&pool)
         .await
@@ -380,24 +383,26 @@ async fn test_garbage_collect() {
     let partial_ciphertext = vec![0xffu8; 32];
     let partial_digest = vec![0xffu8; 32];
     sqlx::query!(
-        "INSERT INTO ciphertexts128(handle, ciphertext)
-            VALUES ($1, $2)
+        "INSERT INTO ciphertexts128(handle, ciphertext, ciphertext_version)
+            VALUES ($1, $2, $3)
         ON CONFLICT DO NOTHING;",
         &partial_handle,
         &partial_ciphertext,
+        ct_version,
     )
     .execute(&pool)
     .await
     .expect("insert partial ciphertexts128");
 
     sqlx::query!(
-        "INSERT INTO ciphertext_digest(host_chain_id, key_id_gw, handle, ciphertext128)
-            VALUES ($1, $2, $3, $4)
+        "INSERT INTO ciphertext_digest(host_chain_id, key_id_gw, handle, ciphertext128, ciphertext_version)
+            VALUES ($1, $2, $3, $4, $5)
         ON CONFLICT DO NOTHING;",
         host_chain_id,
         &key_id_gw,
         &partial_handle,
         &partial_digest,
+        ct_version,
     )
     .execute(&pool)
     .await
