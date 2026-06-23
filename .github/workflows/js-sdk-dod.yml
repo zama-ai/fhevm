@@ -81,9 +81,15 @@ jobs:
           - localstack-v13
           - localstack-latest
     steps:
-      - run: echo "::notice title=${{ matrix.name }}::start $(date -u +%T) on ${RUNNER_NAME}"
+      # Pass matrix values through env (not direct ${{ }} expansion in the
+      # shell) to avoid template-injection — zizmor / GitHub code scanning.
+      - env:
+          MATRIX_NAME: ${{ matrix.name }}
+        run: echo "::notice title=${MATRIX_NAME}::start $(date -u +%T) on ${RUNNER_NAME}"
       - run: sleep 30
-      - run: echo "::notice title=${{ matrix.name }}::end $(date -u +%T)"
+      - env:
+          MATRIX_NAME: ${{ matrix.name }}
+        run: echo "::notice title=${MATRIX_NAME}::end $(date -u +%T)"
 
   # ===========================================================================
   # REAL JOBS — run on PRs, or on workflow_dispatch with mode=real.
@@ -99,7 +105,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
-      contents: 'read'
+      contents: 'read' # checkout the repository
     steps:
       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
@@ -121,7 +127,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
-      contents: 'read'
+      contents: 'read' # checkout the repository
     steps:
       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
@@ -142,7 +148,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
-      contents: 'read'
+      contents: 'read' # checkout the repository
     steps:
       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
@@ -165,7 +171,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     permissions:
-      contents: 'read'
+      contents: 'read' # checkout the repository
     strategy:
       fail-fast: false
       matrix:
@@ -195,9 +201,13 @@ jobs:
       - run: npm run build:prod
       - run: ./test/scripts/rebuild_sdk_and_pack.sh --build-profile=skip
       - name: Run cleartext suite (${{ matrix.profile }})
+        env:
+          CLEARTEXT_FLAGS: ${{ matrix.flags }}
         run: |
           ulimit -n 65536
-          ./test/scripts/localcleartext-run-tests.sh ${{ matrix.flags }}
+          # CLEARTEXT_FLAGS is a controlled literal that must word-split into args:
+          # shellcheck disable=SC2086
+          ./test/scripts/localcleartext-run-tests.sh ${CLEARTEXT_FLAGS}
 
   # --- Localstack (full FHE stack) suites: one job per protocol version ---
   localstack:
@@ -206,9 +216,9 @@ jobs:
     runs-on: large_ubuntu_32
     timeout-minutes: 60
     permissions:
-      contents: 'read'
-      packages: 'read'
-      id-token: 'write'
+      contents: 'read' # checkout the repository
+      packages: 'read' # pull stack images from ghcr.io
+      id-token: 'write' # OIDC for registry / stack auth
     env:
       GH_TOKEN: ${{ github.token }}
     strategy:
@@ -267,6 +277,8 @@ jobs:
           echo 'MNEMONIC="test test test test test test test test test test test junk"' > test/.env
           echo 'ZAMA_FHEVM_API_KEY="zmr_mainnet_blahblah"' >> test/.env
       - name: Run localstack suite (${{ matrix.name }})
+        env:
+          LOCALSTACK_SCRIPT: ${{ matrix.script }}
         run: |
           ulimit -n 65536
-          npm run ${{ matrix.script }}
+          npm run "${LOCALSTACK_SCRIPT}"
