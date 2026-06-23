@@ -3,6 +3,7 @@ use crate::{
     types::db::{OperationStatus, ParamsTypeDb, SnsCiphertextMaterialDbItem},
 };
 use alloy::{
+    hex,
     primitives::{Address, FixedBytes, U256},
     sol_types::SolValue,
 };
@@ -560,23 +561,43 @@ impl Display for ProtocolEventKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ProtocolEventKind::PublicDecryption(e) => {
-                write!(f, "PublicDecryptionRequest #{}", e.decryptionId)
+                let hex_id = u256_to_be_hex(e.decryptionId);
+                write!(f, "PublicDecryptionRequest #{hex_id}")
             }
             ProtocolEventKind::UserDecryption(e) => {
-                write!(f, "UserDecryptionRequest #{}", e.decryptionId)
+                let hex_id = u256_to_be_hex(e.decryptionId);
+                write!(f, "UserDecryptionRequest #{hex_id}")
             }
             ProtocolEventKind::UserDecryptionV2(e) => {
-                write!(f, "UserDecryptionRequest #{}", e.decryptionId)
+                let hex_id = u256_to_be_hex(e.decryptionId);
+                write!(f, "UserDecryptionRequest #{hex_id}")
             }
             ProtocolEventKind::PrepKeygen(e) => {
-                write!(f, "PrepKeygenRequest #{}", e.prepKeygenId)
+                let hex_id = u256_to_be_hex(e.prepKeygenId);
+                write!(f, "PrepKeygenRequest #{hex_id}")
             }
-            ProtocolEventKind::Keygen(e) => write!(f, "KeygenRequest #{}", e.keyId),
-            ProtocolEventKind::Crsgen(e) => write!(f, "CrsgenRequest #{}", e.crsId),
-            ProtocolEventKind::NewKmsContext(e) => write!(f, "NewKmsContext #{}", e.contextId),
-            ProtocolEventKind::NewKmsEpoch(e) => write!(f, "NewKmsEpoch #{}", e.epochId),
+            ProtocolEventKind::Keygen(e) => {
+                let hex_id = u256_to_be_hex(e.keyId);
+                write!(f, "KeygenRequest #{hex_id}")
+            }
+            ProtocolEventKind::Crsgen(e) => {
+                let hex_id = u256_to_be_hex(e.crsId);
+                write!(f, "CrsgenRequest #{hex_id}")
+            }
+            ProtocolEventKind::NewKmsContext(e) => {
+                let hex_id = u256_to_be_hex(e.contextId);
+                write!(f, "NewKmsContext #{hex_id}")
+            }
+            ProtocolEventKind::NewKmsEpoch(e) => {
+                let hex_id = u256_to_be_hex(e.epochId);
+                write!(f, "NewKmsEpoch #{hex_id}")
+            }
         }
     }
+}
+
+fn u256_to_be_hex(int: U256) -> String {
+    format!("0x{}", hex::encode(int.to_be_bytes::<32>()))
 }
 
 impl From<PublicDecryptionRequest> for ProtocolEventKind {
