@@ -27,9 +27,18 @@ export function defineClientEncryptDecryptSlowTests(parameters: {
   readonly createFhevmEncryptClient: CreateEthersEncryptClientFn;
   readonly createFhevmDecryptClient: CreateEthersDecryptClientFn;
   readonly moduleVersions?: FhevmModuleVersions | undefined;
+  /**
+   * When provided, encryption uses deterministic ("seeded") public encryption
+   * with this seed, and the test additionally asserts verify-by-reproduction
+   * (an independent verifier reproduces identical handles). When omitted, the
+   * normal (non-deterministic) path is exercised, unchanged.
+   */
+  readonly seed?: Uint8Array | undefined;
 }): void {
+  const seed = parameters.seed;
+
   describe.runIf(parameters.runIf)(
-    'Encrypt-Decrypt',
+    `Encrypt-Decrypt${seed !== undefined ? ' (seeded)' : ''}`,
     () => {
       let config: FheTestEthersConfig;
 
@@ -47,7 +56,7 @@ export function defineClientEncryptDecryptSlowTests(parameters: {
         });
       });
 
-      it('should encrypt, submit on-chain, and decrypt all types', async () => {
+      it('should encrypt, submit on-chain, and decrypt all types', async (ctx) => {
         // ┌─────────────────────────────────────────────────────────────────────┐
         // │  Phase 1: ENCRYPT                                                   │
         // │  Client-side encryption of all FHE types into external handles      │
@@ -59,15 +68,64 @@ export function defineClientEncryptDecryptSlowTests(parameters: {
         });
         await client.ready;
 
-        const result = await client.encryptValues({
-          contractAddress: config.fheTestAddress,
-          userAddress: config.wallet.address,
-          values: encryptTestCases,
-        });
+        // Seeded encryption is a TFHE 1.6.1 feature; on older chains (e.g.
+        // localstack v11/v12 → tfhe 1.5.3) `encryptSeeded` is a hard error, so
+        // skip the seeded variant there. The non-seeded variant always runs.
+        if (seed !== undefined && client.tfheVersion !== '1.6.1') {
+          ctx.skip();
+          return;
+        }
+
+        // Seeded mode uses the distinct `encryptSeeded` API; the default path
+        // (`encryptValues`) is unchanged and never sees a seed.
+        const result =
+          seed !== undefined
+            ? await client.encryptSeeded({
+                contractAddress: config.fheTestAddress,
+                userAddress: config.wallet.address,
+                values: encryptTestCases,
+                seed,
+              })
+            : await client.encryptValues({
+                contractAddress: config.fheTestAddress,
+                userAddress: config.wallet.address,
+                values: encryptTestCases,
+              });
 
         expect(result.encryptedValues).toHaveLength(encryptTestCases.length);
         expect(result.inputProof).toBeDefined();
         expect(result.inputProof.startsWith('0x')).toBe(true);
+
+        // ┌─────────────────────────────────────────────────────────────────────┐
+        // │  Phase 1b: VERIFY-BY-REPRODUCTION (seeded only)                     │
+        // │  An independent verifier re-runs the same seeded encryption and     │
+        // │  must reproduce byte-identical handles. A different seed must not.   │
+        // └─────────────────────────────────────────────────────────────────────┘
+        if (seed !== undefined) {
+          // encryptSeeded echoes back the seed it used.
+          expect('seed' in result && result.seed).toBeDefined();
+
+          const verification = await client.verifySeededEncryption({
+            seed,
+            values: encryptTestCases,
+            contractAddress: config.fheTestAddress,
+            userAddress: config.wallet.address,
+            expectedEncryptedValues: result.encryptedValues,
+          });
+          expect(verification.mismatches).toEqual([]);
+          expect(verification.verified).toBe(true);
+
+          // Negative control: a different seed must NOT reproduce the same handles.
+          const wrongSeed = new Uint8Array(seed.length).fill((seed[0]! + 1) & 0xff);
+          const bad = await client.verifySeededEncryption({
+            seed: wrongSeed,
+            values: encryptTestCases,
+            contractAddress: config.fheTestAddress,
+            userAddress: config.wallet.address,
+            expectedEncryptedValues: result.encryptedValues,
+          });
+          expect(bad.verified).toBe(false);
+        }
 
         for (let i = 0; i < encryptTestCases.length; i++) {
           const tc = encryptTestCases[i]!;

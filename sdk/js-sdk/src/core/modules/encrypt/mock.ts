@@ -1,7 +1,9 @@
 /* eslint-disable @typescript-eslint/require-await */
 import type { TfheVersion } from '../../../wasm/tfhe/TfheApi.js';
+import { keccak_256 } from '@noble/hashes/sha3.js';
 import { concatBytes, hexToBytes32 } from '../../base/bytes.js';
 import { remove0x } from '../../base/string.js';
+import { EncryptionError } from '../../errors/EncryptionError.js';
 import { typedValueToBytes32Hex } from '../../base/typedValue.js';
 import type { FhevmRuntime } from '../../types/coreFhevmRuntime.js';
 import type {
@@ -157,9 +159,31 @@ export async function buildWithProofPacked(
   const typedValuesBytes32HexNo0x = typedValues.map(typedValueToBytes32Hex).map(remove0x).join('');
   const cleartextExtraData = `0x${typedValuesBytes32HexNo0x}${remove0x(extraData)}` as BytesHex;
 
-  // Per typedValue: random nonce (8 bytes) || metaData || value bytes (32).
-  const perValueBlobs = typedValues.map((tv) => {
-    const nonce = crypto.getRandomValues(new Uint8Array(new ArrayBuffer(8)));
+  // Deterministic ("seeded") encryption — mirror the real api-p.ts gating/validation
+  // so unit tests exercising the seeded path stay consistent with production behavior.
+  const seed = parameters.seed;
+  if (seed !== undefined) {
+    if (parameters.tfheVersion !== '1.6.1') {
+      throw new EncryptionError({
+        message: `Seeded encryption requires TFHE version 1.6.1, got ${parameters.tfheVersion}.`,
+      });
+    }
+    if (seed.length < 16) {
+      throw new EncryptionError({
+        message: `Seeded encryption seed must be at least 16 bytes, got ${seed.length}.`,
+      });
+    }
+  }
+
+  // Per typedValue: nonce (8 bytes) || metaData || value bytes (32).
+  // Without a seed the nonce is random (non-deterministic). With a seed the nonce
+  // is derived deterministically from it, mirroring the determinism guarantee of
+  // real seeded encryption: same seed + inputs => identical bytes.
+  const perValueBlobs = typedValues.map((tv, i) => {
+    const nonce =
+      seed === undefined
+        ? crypto.getRandomValues(new Uint8Array(new ArrayBuffer(8)))
+        : keccak_256(concatBytes(seed, new Uint8Array([i]))).subarray(0, 8);
     const valueBytes = hexToBytes32(typedValueToBytes32Hex(tv));
     return concatBytes(nonce, metaData, valueBytes);
   });

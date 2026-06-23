@@ -145,10 +145,12 @@ class ZkProofBuilderImpl implements ZkProofBuilder {
       contractAddress,
       userAddress,
       extraData,
+      seed,
     }: {
       readonly contractAddress: string;
       readonly userAddress: string;
       readonly extraData: string;
+      readonly seed?: Uint8Array | undefined;
     },
   ): Promise<ZkProof> {
     // Fetch the FheEncryptionKey (in wasm format) from the global cache.
@@ -222,6 +224,7 @@ class ZkProofBuilderImpl implements ZkProofBuilder {
         metaData,
         extraData: asBytesHex(extraData),
         tfheVersion: context.tfheVersion,
+        seed,
       });
 
     return toZkProof(
@@ -282,9 +285,10 @@ export async function createZkProof(
     readonly contractAddress: ChecksummedAddress;
     readonly userAddress: ChecksummedAddress;
     readonly extraData: BytesHex;
+    readonly seed?: Uint8Array | undefined;
   },
 ): Promise<ZkProof> {
-  const { contractAddress, userAddress, values, extraData } = parameters;
+  const { contractAddress, userAddress, values, extraData, seed } = parameters;
 
   const builder = new ZkProofBuilderImpl(PRIVATE_TOKEN, {
     ciphertextCapacity: TFHE_ZKPROOF_CIPHERTEXT_CAPACITY,
@@ -299,6 +303,7 @@ export async function createZkProof(
     contractAddress,
     userAddress,
     extraData,
+    seed,
   });
 
   return zkProof;

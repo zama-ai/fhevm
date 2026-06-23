@@ -12,6 +12,16 @@ import {
   type EncryptValuesParameters,
   type EncryptValuesReturnType,
 } from '../../actions/encrypt/encryptValues.js';
+import {
+  encryptSeeded,
+  type EncryptSeededParameters,
+  type EncryptSeededReturnType,
+} from '../../actions/encrypt/encryptSeeded.js';
+import {
+  verifySeededEncryption,
+  type VerifySeededEncryptionParameters,
+  type VerifySeededEncryptionReturnType,
+} from '../../actions/encrypt/verifySeededEncryption.js';
 import { assertIsFhevmClientWith } from '../../runtime/CoreFhevm-p.js';
 import { _initEncrypt } from './encrypt-p.js';
 
@@ -20,6 +30,10 @@ import { _initEncrypt } from './encrypt-p.js';
 type EncryptActionMethods = {
   readonly encryptValue: (parameters: EncryptValueParameters) => Promise<EncryptValueReturnType>;
   readonly encryptValues: (parameters: EncryptValuesParameters) => Promise<EncryptValuesReturnType>;
+  readonly encryptSeeded: (parameters: EncryptSeededParameters) => Promise<EncryptSeededReturnType>;
+  readonly verifySeededEncryption: (
+    parameters: VerifySeededEncryptionParameters,
+  ) => Promise<VerifySeededEncryptionReturnType>;
 };
 
 export type EncryptActions = EncryptActionMethods & WithTfheVersion;
@@ -30,6 +44,8 @@ function _encryptActions(fhevm: Fhevm<FhevmChain, WithEncrypt>): EncryptActionMe
   return {
     encryptValue: (parameters) => encryptValue(fhevm, parameters),
     encryptValues: (parameters) => encryptValues(fhevm, parameters),
+    encryptSeeded: (parameters) => encryptSeeded(fhevm, parameters),
+    verifySeededEncryption: (parameters) => verifySeededEncryption(fhevm, parameters),
   };
 }
 

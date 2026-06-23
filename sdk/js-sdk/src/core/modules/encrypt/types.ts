@@ -139,6 +139,17 @@ export type BuildWithProofPackedParameters = {
   readonly metaData: Uint8Array;
   readonly extraData: BytesHex;
   readonly tfheVersion: TfheVersion;
+  /**
+   * Optional seed for deterministic ("seeded") public encryption.
+   *
+   * When provided, encryption noise is derived from this seed instead of the
+   * OS RNG, making the resulting ciphertext byte-for-byte reproducible. Used for
+   * client-side encryption verifiability: an independent verifier re-runs the
+   * same seeded encryption and compares bytes. Requires TFHE version `1.6.1`
+   * and a seed of at least 16 bytes. When omitted, the normal (non-deterministic)
+   * encryption path is used and behavior is unchanged.
+   */
+  readonly seed?: Uint8Array | undefined;
 };
 
 export type BuildWithProofPackedReturnType = {

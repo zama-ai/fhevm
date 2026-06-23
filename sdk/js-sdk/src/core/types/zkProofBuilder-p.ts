@@ -32,6 +32,7 @@ export interface ZkProofBuilder {
       readonly contractAddress: string;
       readonly userAddress: string;
       readonly extraData: string;
+      readonly seed?: Uint8Array | undefined;
     },
   ): Promise<ZkProof>;
 }

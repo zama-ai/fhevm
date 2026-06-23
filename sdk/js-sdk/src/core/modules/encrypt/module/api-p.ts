@@ -281,11 +281,33 @@ export async function buildWithProofPacked(
       }
     }
 
-    tfheProvenCompactCiphertextList = fheCompactCiphertextListBuilderWasm.build_with_proof_packed(
-      compactPkeCrsWasm,
-      metaData,
-      tfheLib.ZkComputeLoad.Verify,
-    );
+    if (parameters.seed !== undefined) {
+      // Deterministic ("seeded") public encryption — see BuildWithProofPackedParameters.seed.
+      // The seeded builder methods exist only in the v1.6.1 WASM (absent in v1.5.3),
+      // and TFHE-rs requires a seed of at least 16 bytes (the WASM does not validate this).
+      if (parameters.tfheVersion !== '1.6.1') {
+        throw new EncryptionError({
+          message: `Seeded encryption requires TFHE version 1.6.1, got ${parameters.tfheVersion}.`,
+        });
+      }
+      if (parameters.seed.length < 16) {
+        throw new EncryptionError({
+          message: `Seeded encryption seed must be at least 16 bytes, got ${parameters.seed.length}.`,
+        });
+      }
+      tfheProvenCompactCiphertextList = fheCompactCiphertextListBuilderWasm.build_with_proof_packed_seeded(
+        compactPkeCrsWasm,
+        metaData,
+        tfheLib.ZkComputeLoad.Verify,
+        parameters.seed,
+      );
+    } else {
+      tfheProvenCompactCiphertextList = fheCompactCiphertextListBuilderWasm.build_with_proof_packed(
+        compactPkeCrsWasm,
+        metaData,
+        tfheLib.ZkComputeLoad.Verify,
+      );
+    }
 
     ciphertextWithZKProofBytes = tfheProvenCompactCiphertextList.safe_serialize(SERIALIZED_SIZE_LIMIT_CIPHERTEXT);
 

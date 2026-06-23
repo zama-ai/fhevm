@@ -22,6 +22,12 @@ type Parameters = {
   readonly userAddress: ChecksummedAddress;
   readonly values: readonly TypedValue[];
   readonly options?: RelayerInputProofOptions | undefined;
+  /**
+   * Optional seed for deterministic ("seeded") public encryption. When provided,
+   * the ciphertext is byte-for-byte reproducible from the same seed + inputs.
+   * Requires TFHE version 1.6.1 and a seed of at least 16 bytes.
+   */
+  readonly seed?: Uint8Array | undefined;
 };
 
 type ReturnType = {
