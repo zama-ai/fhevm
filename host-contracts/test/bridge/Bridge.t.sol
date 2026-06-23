@@ -230,12 +230,38 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
         assertEq(srcBridge.getLzReceivePerPayloadByteGas(DST_EID), srcBridge.LZ_RECEIVE_PER_PAYLOAD_BYTE_DEFAULT());
     }
 
+    function test_LzComposeMinValue_DefaultsWhenUnset() public view {
+        assertEq(srcBridge.getLzComposeMinValue(DST_EID), srcBridge.LZ_COMPOSE_MIN_VALUE_DEFAULT());
+    }
+
+    function test_SetLzComposeMinValue_OnlyOwner() public {
+        vm.expectRevert();
+        srcBridge.setLzComposeMinValue(DST_EID, 123_000);
+    }
+
+    function test_SetLzComposeMinValue_OverridesEmitsAndClears() public {
+        vm.expectEmit(true, false, false, true, address(srcBridge));
+        emit LzComposeMinValueSet(DST_EID, 123_000);
+        vm.prank(owner);
+        srcBridge.setLzComposeMinValue(DST_EID, 123_000);
+        assertEq(srcBridge.getLzComposeMinValue(DST_EID), 123_000);
+
+        // Other eids are unaffected and still resolve to the default.
+        assertEq(srcBridge.getLzComposeMinValue(SRC_EID), srcBridge.LZ_COMPOSE_MIN_VALUE_DEFAULT());
+
+        // Setting back to 0 clears the override and restores the default.
+        vm.prank(owner);
+        srcBridge.setLzComposeMinValue(DST_EID, 0);
+        assertEq(srcBridge.getLzComposeMinValue(DST_EID), srcBridge.LZ_COMPOSE_MIN_VALUE_DEFAULT());
+    }
+
     function test_Send_RevertsOnUnknownDstEid() public {
         bytes32[] memory handleList = new bytes32[](1);
         handleList[0] = _makeHandle(0);
+        uint64 minGas = srcBridge.LZ_COMPOSE_MIN_VALUE_DEFAULT();
         vm.prank(srcApp);
         vm.expectRevert(abi.encodeWithSelector(HandlesSender.UnknownDstEid.selector, uint32(99)));
-        srcBridge.send{value: 0}(uint32(99), _addressToBytes32(address(dstApp)), "", handleList, uint64(0));
+        srcBridge.send{value: 0}(uint32(99), _addressToBytes32(address(dstApp)), "", handleList, minGas);
     }
 
     function test_Send_RevertsAboveMaxHandles() public {
@@ -254,13 +280,77 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
         srcBridge.send{value: 0}(DST_EID, _addressToBytes32(address(dstApp)), "", handleList, uint64(0));
     }
 
+    function test_Send_RevertsOnLzComposeGasBelowMin() public {
+        bytes32[] memory handleList = new bytes32[](1);
+        handleList[0] = _makeHandle(0);
+        uint64 minGas = srcBridge.LZ_COMPOSE_MIN_VALUE_DEFAULT();
+        uint64 tooLow = minGas - 1;
+        // The min check runs before the dstEid/ACL checks, so it fires regardless of those.
+        vm.prank(srcApp);
+        vm.expectRevert(abi.encodeWithSelector(HandlesSender.LzComposeGasBelowMin.selector, tooLow, minGas));
+        srcBridge.send{value: 0}(DST_EID, _addressToBytes32(address(dstApp)), "", handleList, tooLow);
+    }
+
     function test_Send_RevertsOnHandleNotAllowed() public {
         bytes32 h = _makeHandle(0);
         bytes32[] memory handleList = new bytes32[](1);
         handleList[0] = h;
+        uint64 minGas = srcBridge.LZ_COMPOSE_MIN_VALUE_DEFAULT();
         vm.prank(srcApp);
         vm.expectRevert(abi.encodeWithSelector(HandlesSender.HandleNotAllowed.selector, h, srcApp));
-        srcBridge.send{value: 0}(DST_EID, _addressToBytes32(address(dstApp)), "", handleList, uint64(0));
+        srcBridge.send{value: 0}(DST_EID, _addressToBytes32(address(dstApp)), "", handleList, minGas);
+    }
+
+    ////////////////////////////////////////////////////////////////////////////////
+    // quote: mirrors send's input validation, except the ACL allowance check
+    ////////////////////////////////////////////////////////////////////////////////
+
+    function test_Quote_RevertsOnEmptyHandleList() public {
+        bytes32[] memory handleList = new bytes32[](0);
+        vm.expectRevert(HandlesSender.EmptyHandleList.selector);
+        srcBridge.quote(DST_EID, srcApp, _addressToBytes32(address(dstApp)), "", handleList, uint64(0));
+    }
+
+    function test_Quote_RevertsAboveMaxHandles() public {
+        uint256 cap = srcBridge.MAX_HANDLES();
+        bytes32[] memory handleList = new bytes32[](cap + 1);
+        for (uint256 i = 0; i < handleList.length; i++) handleList[i] = _makeHandle(i);
+        vm.expectRevert(abi.encodeWithSelector(HandlesSender.TooManyHandles.selector, cap + 1, cap));
+        srcBridge.quote(DST_EID, srcApp, _addressToBytes32(address(dstApp)), "", handleList, uint64(0));
+    }
+
+    function test_Quote_RevertsOnLzComposeGasBelowMin() public {
+        bytes32[] memory handleList = new bytes32[](1);
+        handleList[0] = _makeHandle(0);
+        uint64 minGas = srcBridge.LZ_COMPOSE_MIN_VALUE_DEFAULT();
+        uint64 tooLow = minGas - 1;
+        vm.expectRevert(abi.encodeWithSelector(HandlesSender.LzComposeGasBelowMin.selector, tooLow, minGas));
+        srcBridge.quote(DST_EID, srcApp, _addressToBytes32(address(dstApp)), "", handleList, tooLow);
+    }
+
+    function test_Quote_RevertsOnUnknownDstEid() public {
+        bytes32[] memory handleList = new bytes32[](1);
+        handleList[0] = _makeHandle(0);
+        uint64 minGas = srcBridge.LZ_COMPOSE_MIN_VALUE_DEFAULT();
+        vm.expectRevert(abi.encodeWithSelector(HandlesSender.UnknownDstEid.selector, uint32(99)));
+        srcBridge.quote(uint32(99), srcApp, _addressToBytes32(address(dstApp)), "", handleList, minGas);
+    }
+
+    /// @dev The key difference from `send`: `quote` does NOT run the ACL allowance check,
+    ///      so it succeeds for handles the caller is not (yet) allowed to bridge — enabling
+    ///      msg.value estimation before the tx that grants ACL access.
+    function test_Quote_SucceedsForDisallowedHandles() public view {
+        bytes32[] memory handleList = new bytes32[](1);
+        handleList[0] = _makeHandle(42); // never ACL-allowed to anyone
+        MessagingFee memory fee = srcBridge.quote(
+            DST_EID,
+            srcApp,
+            _addressToBytes32(address(dstApp)),
+            "",
+            handleList,
+            srcBridge.LZ_COMPOSE_MIN_VALUE_DEFAULT()
+        );
+        assertGt(fee.nativeFee, 0, "quote should return a positive native fee");
     }
 
     ////////////////////////////////////////////////////////////////////////////////
