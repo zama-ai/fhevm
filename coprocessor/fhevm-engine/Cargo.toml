@@ -75,6 +75,7 @@ sqlx = { version = "0.8.6", default-features = false, features = [
     "macros",
     "migrate",
     "runtime-tokio",
+    "tls-rustls-aws-lc-rs",
     "time",
     "postgres",
     "uuid",
