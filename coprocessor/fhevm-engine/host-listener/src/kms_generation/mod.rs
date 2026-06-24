@@ -133,6 +133,16 @@ pub async fn insert_kms_generation_events_tx(
                 )
                 .await?;
             }
+            // TODO(fhevm-internal#1568, RFC-029): once KMSGeneration emits
+            // them, add match arms here for `KeyMaterialAdded` (publish v1
+            // material: write the keyset bytes + material_version=1 into the
+            // `keys` table, mirroring insert_key_activation_event but WITHOUT
+            // moving activeKeyId) and `KeyMaterialMigrationScheduled` (insert
+            // the per-chain H_C / gateway G rows into
+            // material_version_host_schedule / material_version_gateway_schedule).
+            // Blocked on the host-contracts event definitions (out of scope
+            // here); until then the cutover is seeded directly by the
+            // rfc029-material-migration rollout.
             _ => {
                 warn!(
                     ?log,

@@ -1,3 +1,4 @@
+use crate::material_version::MaterialVersion;
 use crate::utils::safe_deserialize_key;
 use bytesize::ByteSize;
 use sqlx::{
@@ -33,7 +34,13 @@ struct DbKeyRow {
 
 #[derive(Clone)]
 pub struct DbKeyCache {
-    cache: Arc<RwLock<lru::LruCache<DbKeyId, DbKey>>>,
+    /// Keyed by `(key_id, material_version)` so the legacy and migrated
+    /// material for the same `key_id` are cached as distinct entries
+    /// (RFC-029). Existing callers operate at
+    /// [`MaterialVersion::LEGACY`], which preserves today's behavior
+    /// exactly; version-aware callers go through
+    /// [`DbKeyCache::fetch_latest_for_version`].
+    cache: Arc<RwLock<lru::LruCache<(DbKeyId, MaterialVersion), DbKey>>>,
 }
 
 impl DbKeyCache {
@@ -53,7 +60,7 @@ impl DbKeyCache {
         loop {
             {
                 let mut w = self.cache.write().await;
-                if let Some(key) = w.get(db_key_id) {
+                if let Some(key) = w.get(&(db_key_id.clone(), MaterialVersion::LEGACY)) {
                     return Ok(key.clone());
                 }
             }
@@ -76,7 +83,7 @@ impl DbKeyCache {
         // Check if already in cache
         {
             let mut cache = self.cache.write().await;
-            if let Some(key) = cache.get(&key_id) {
+            if let Some(key) = cache.get(&(key_id.clone(), MaterialVersion::LEGACY)) {
                 if key.sequence_number == sequence_number {
                     return Ok(key.clone());
                 }
@@ -96,12 +103,15 @@ impl DbKeyCache {
         .fetch_optional(&mut *executor)
         .await?
         .ok_or_else(|| anyhow::anyhow!("Latest key disappeared from database"))?;
-        let result = Self::deserialize_db_key_row(row)?;
+        let result = Self::deserialize_db_key_row(row, MaterialVersion::LEGACY)?;
 
         // Insert into cache
         {
             let mut cache = self.cache.write().await;
-            cache.put(result.key_id.clone(), result.clone());
+            cache.put(
+                (result.key_id.clone(), result.material_version),
+                result.clone(),
+            );
         }
 
         info!(
@@ -127,10 +137,11 @@ impl DbKeyCache {
     {
         if !db_key_ids_to_query.is_empty() {
             let mut key_cache = self.cache.write().await;
-            if db_key_ids_to_query
-                .iter()
-                .all(|id| key_cache.get(id).is_some())
-            {
+            if db_key_ids_to_query.iter().all(|id| {
+                key_cache
+                    .get(&(id.clone(), MaterialVersion::LEGACY))
+                    .is_some()
+            }) {
                 return Ok(());
             }
 
@@ -148,7 +159,7 @@ impl DbKeyCache {
             }
 
             for key in keys {
-                key_cache.put(key.key_id.clone(), key);
+                key_cache.put((key.key_id.clone(), key.material_version), key);
             }
         }
 
@@ -192,13 +203,16 @@ impl DbKeyCache {
         let mut res = Vec::with_capacity(rows.len());
 
         for row in rows {
-            res.push(Self::deserialize_db_key_row(row)?);
+            res.push(Self::deserialize_db_key_row(row, MaterialVersion::LEGACY)?);
         }
 
         Ok(res)
     }
 
-    fn deserialize_db_key_row(row: DbKeyRow) -> anyhow::Result<DbKey> {
+    fn deserialize_db_key_row(
+        row: DbKeyRow,
+        material_version: MaterialVersion,
+    ) -> anyhow::Result<DbKey> {
         let DbKeyRow {
             key_id,
             sequence_number,
@@ -248,6 +262,7 @@ impl DbKeyCache {
             Ok(DbKey {
                 key_id,
                 sequence_number,
+                material_version,
                 sks,
                 pks,
                 cks,
@@ -310,12 +325,120 @@ impl DbKeyCache {
             Ok(DbKey {
                 key_id,
                 sequence_number,
+                material_version,
                 sks,
                 gpu_sks,
                 pks,
                 cks,
             })
         }
+    }
+
+    /// Fetches the latest key material for `version`, caching it under
+    /// `(key_id, version)`.
+    ///
+    /// `MaterialVersion::LEGACY` delegates to [`DbKeyCache::fetch_latest`]
+    /// -- byte-for-byte today's behavior. Higher versions are the RFC-029
+    /// cutover path: they require the explicitly-versioned material to be
+    /// present and never fall back to legacy (the caller turns a missing
+    /// version into halt-and-retry; see
+    /// [`crate::material_version::resolve_or_halt`]).
+    pub async fn fetch_latest_for_version(
+        &self,
+        version: MaterialVersion,
+        executor: &mut PgConnection,
+    ) -> anyhow::Result<DbKey> {
+        if version == MaterialVersion::LEGACY {
+            return self.fetch_latest(executor).await;
+        }
+        self.fetch_latest_migrated(version, executor).await
+    }
+
+    /// RFC-029 migrated-material path. Reads the newest row that carries a
+    /// `compressed_xof_keyset` and deserializes it as the XOF keyset.
+    ///
+    /// Uses a runtime `sqlx::query` (not the `query!` macro) so the
+    /// version-aware path doesn't require regenerating the offline query
+    /// cache.
+    ///
+    /// Storage model (DECIDED, fhevm-internal#1568): the migrated v1
+    /// keyset OVERWRITES the existing `compressed_xof_keyset` column (the
+    /// one RFC-028 added for the GPU/XOF keyset). So v1 == the
+    /// `compressed_xof_keyset` bytes and v0 == the legacy `sks_key` bytes.
+    ///
+    /// NOTE for whoever wires the workers (deliberately held for now):
+    /// once selection is live, the v0 path must read `sks_key` EXPLICITLY
+    /// rather than `COALESCE(compressed_xof_keyset, sks_key)` -- otherwise
+    /// a row that already carries the XOF bytes would resolve v0 to the
+    /// migrated material and diverge from pre-cutover ciphertexts. The
+    /// existing COALESCE paths are left untouched here precisely because
+    /// no schedule is published yet (inert == today's behavior). Only
+    /// `MIGRATED_V1` is recognized today.
+    async fn fetch_latest_migrated(
+        &self,
+        version: MaterialVersion,
+        executor: &mut PgConnection,
+    ) -> anyhow::Result<DbKey> {
+        if version != MaterialVersion::MIGRATED_V1 {
+            anyhow::bail!(
+                "material version {} is not supported by fetch yet (fhevm-internal#1568)",
+                version.as_i16()
+            );
+        }
+
+        let row = sqlx::query(
+            "SELECT key_id, sequence_number, pks_key, compressed_xof_keyset, cks_key \
+             FROM keys WHERE compressed_xof_keyset IS NOT NULL \
+             ORDER BY sequence_number DESC LIMIT 1",
+        )
+        .fetch_optional(&mut *executor)
+        .await?
+        .ok_or_else(|| {
+            // Not a hard error: the caller halts and retries rather than
+            // substituting legacy material.
+            anyhow::anyhow!(
+                "no migrated (XOF) key material available yet for version {}",
+                version.as_i16()
+            )
+        })?;
+
+        let key_id: DbKeyId = row.try_get("key_id")?;
+
+        {
+            let mut cache = self.cache.write().await;
+            if let Some(key) = cache.get(&(key_id.clone(), version)) {
+                if key.sequence_number == row.try_get::<i64, _>("sequence_number")? {
+                    return Ok(key.clone());
+                }
+            }
+        }
+
+        let db_row = DbKeyRow {
+            key_id,
+            sequence_number: row.try_get("sequence_number")?,
+            pks_key: row.try_get("pks_key")?,
+            server_key_blob: row
+                .try_get::<Option<Vec<u8>>, _>("compressed_xof_keyset")?
+                .ok_or_else(|| anyhow::anyhow!("compressed_xof_keyset unexpectedly NULL"))?,
+            is_xof: true,
+            cks_key: row.try_get("cks_key")?,
+        };
+        let result = Self::deserialize_db_key_row(db_row, version)?;
+
+        {
+            let mut cache = self.cache.write().await;
+            cache.put(
+                (result.key_id.clone(), result.material_version),
+                result.clone(),
+            );
+        }
+        info!(
+            "Migrated key cached: key_id={:?}, seq={}, material_version={}",
+            hex::encode(&result.key_id),
+            result.sequence_number,
+            result.material_version.as_i16()
+        );
+        Ok(result)
     }
 }
 
@@ -354,6 +477,11 @@ fn strip_ns_from_server_key(server_key: tfhe::ServerKey) -> tfhe::ServerKey {
 pub struct DbKey {
     pub key_id: DbKeyId,
     pub sequence_number: i64,
+
+    /// Which key-material version these bytes represent (RFC-029).
+    /// [`MaterialVersion::LEGACY`] for every key fetched through the
+    /// pre-existing paths.
+    pub material_version: MaterialVersion,
 
     pub sks: tfhe::ServerKey,
 
