@@ -82,24 +82,25 @@ impl RequestCheckKind {
 /// It is just a [`ProcessingError`] tagged with the check family that produced it. The metric
 /// increment is centralized in [`RequestCheckError::record`], called at each conversion boundary.
 #[derive(Debug, Error)]
-#[error("{cause}")]
+#[error("{source}")]
 pub struct RequestCheckError {
     kind: RequestCheckKind,
-    cause: ProcessingError,
+    #[source]
+    source: ProcessingError,
 }
 
 impl RequestCheckError {
-    pub fn recoverable(kind: RequestCheckKind, cause: anyhow::Error) -> Self {
+    pub fn recoverable(kind: RequestCheckKind, source: anyhow::Error) -> Self {
         Self {
             kind,
-            cause: ProcessingError::Recoverable(cause),
+            source: ProcessingError::Recoverable(source),
         }
     }
 
-    pub fn irrecoverable(kind: RequestCheckKind, cause: anyhow::Error) -> Self {
+    pub fn irrecoverable(kind: RequestCheckKind, source: anyhow::Error) -> Self {
         Self {
             kind,
-            cause: ProcessingError::Irrecoverable(cause),
+            source: ProcessingError::Irrecoverable(source),
         }
     }
 
@@ -107,14 +108,14 @@ impl RequestCheckError {
         // Network errors are always considered as recoverable
         Self {
             kind: RequestCheckKind::Network,
-            cause: ProcessingError::Recoverable(err.into()),
+            source: ProcessingError::Recoverable(err.into()),
         }
     }
 
     /// Records the error in [`REQUEST_CHECK_ERRORS`] and unwraps it into a [`ProcessingError`].
     pub fn record(self) -> ProcessingError {
         self.kind.inc_metric();
-        self.cause
+        self.source
     }
 }
 
@@ -122,11 +123,14 @@ impl From<Erc1271Error> for RequestCheckError {
     fn from(err: Erc1271Error) -> Self {
         let kind = match &err {
             Erc1271Error::Transport(_) => RequestCheckKind::Network,
-            _ => RequestCheckKind::Signature,
+            Erc1271Error::EmptySigOnEoa(_)
+            | Erc1271Error::EoaMismatchNoCode(_)
+            | Erc1271Error::Rejected(..)
+            | Erc1271Error::WrongMagic(..) => RequestCheckKind::Signature,
         };
         Self {
             kind,
-            cause: err.into(),
+            source: err.into(),
         }
     }
 }
