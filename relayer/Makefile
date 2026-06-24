@@ -463,13 +463,14 @@ clippy-fix: ## Fix code issues with clippy
 	@cargo clippy --all-targets --all-features --fix --allow-dirty --allow-staged
 	@cargo clippy --all-targets --all-features --fix --allow-dirty --allow-staged --manifest-path $(MOCK_RPC_MANIFEST)
 
+# Scope fmt to owned packages; generated path dependencies are excluded.
 fmt: ## Check code formatting
-	@cargo fmt --all -- --check
-	@cargo fmt --all --manifest-path $(MOCK_RPC_MANIFEST) -- --check
+	@cargo fmt --package fhevm-relayer -- --check
+	@cargo fmt --manifest-path $(MOCK_RPC_MANIFEST) -- --check
 
 fmt-fix: ## Fix code formatting
-	@cargo fmt --all
-	@cargo fmt --all --manifest-path $(MOCK_RPC_MANIFEST)
+	@cargo fmt
+	@cargo fmt --manifest-path $(MOCK_RPC_MANIFEST)
 
 openapi-view: ## Preview OpenAPI spec in browser (requires npx)
 	@command -v npx >/dev/null 2>&1 || { echo "$(RED)Error: npx not found. Install Node.js$(RESET)"; exit 1; }

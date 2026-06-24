@@ -97,13 +97,13 @@ task('task:deployAllHostContracts')
     'canonicalRpcUrl',
     'RPC URL of the canonical host chain. Required with --protocol-config-source canonical.',
     undefined,
-    types.string
+    types.string,
   )
   .addOptionalParam(
     'canonicalProtocolConfigAddress',
     "Address of the canonical chain's ProtocolConfig. Required with --protocol-config-source canonical.",
     undefined,
-    types.string
+    types.string,
   )
   .setAction(async function (
     {
@@ -129,12 +129,12 @@ task('task:deployAllHostContracts')
     if (protocolConfigSource === 'canonical') {
       if (withKmsGeneration) {
         throw new Error(
-          '--protocol-config-source canonical seeds a non-canonical replica; it cannot be combined with --with-kms-generation true.'
+          '--protocol-config-source canonical seeds a non-canonical replica; it cannot be combined with --with-kms-generation true.',
         );
       }
       if (!(canonicalRpcUrl && canonicalProtocolConfigAddress)) {
         throw new Error(
-          '--protocol-config-source canonical requires --canonical-rpc-url and --canonical-protocol-config-address.'
+          '--protocol-config-source canonical requires --canonical-rpc-url and --canonical-protocol-config-address.',
         );
       }
     }
@@ -636,25 +636,25 @@ task('task:deployProtocolConfig').setAction(async function (_taskArguments: Task
 // KMS context — from a reviewed export artifact (--snapshot) or a live block-pinned RPC read.
 task(
   'task:deployProtocolConfigFromCanonical',
-  "Upgrades the existing ProtocolConfig proxy from the canonical chain's state (reviewed snapshot artifact, or live read)."
+  "Upgrades the existing ProtocolConfig proxy from the canonical chain's state (reviewed snapshot artifact, or live read).",
 )
   .addOptionalParam(
     'snapshot',
     'Path to a reviewed task:exportCanonicalProtocolConfig artifact to apply. When set, canonical RPC access is not needed and exactly the reviewed state is deployed.',
     undefined,
-    types.string
+    types.string,
   )
   .addOptionalParam(
     'canonicalRpcUrl',
     'RPC URL of the canonical host chain to read the current ProtocolConfig state from. Required without --snapshot.',
     undefined,
-    types.string
+    types.string,
   )
   .addOptionalParam(
     'canonicalProtocolConfigAddress',
     'Address of the ProtocolConfig contract on the canonical host chain. Required without --snapshot.',
     undefined,
-    types.string
+    types.string,
   )
   .setAction(async function (
     {
@@ -662,11 +662,11 @@ task(
       canonicalRpcUrl,
       canonicalProtocolConfigAddress,
     }: { snapshot?: string; canonicalRpcUrl?: string; canonicalProtocolConfigAddress?: string },
-    hre
+    hre,
   ) {
     if (!snapshotPath && !(canonicalRpcUrl && canonicalProtocolConfigAddress)) {
       throw new Error(
-        'Pass either --snapshot <artifact.json> (reviewed export) or both --canonical-rpc-url and --canonical-protocol-config-address (live read).'
+        'Pass either --snapshot <artifact.json> (reviewed export) or both --canonical-rpc-url and --canonical-protocol-config-address (live read).',
       );
     }
 
@@ -696,7 +696,7 @@ task(
     // On interval-mining networks, upgradeProxy can return before the tx is mined.
     await waitForTaskReady(hre, 'task:assertProtocolConfigReady');
     console.log(
-      `ProtocolConfig code set successfully at ${secondaryProxyAddress}, mirroring canonical chain ${snapshot.canonicalChainId} context ${snapshot.currentKmsContextId} (block ${snapshot.blockNumber}) with ${snapshot.kmsNodes.length} KMS nodes.`
+      `ProtocolConfig code set successfully at ${secondaryProxyAddress}, mirroring canonical chain ${snapshot.canonicalChainId} context ${snapshot.currentKmsContextId} (block ${snapshot.blockNumber}) with ${snapshot.kmsNodes.length} KMS nodes.`,
     );
   });
 
@@ -705,25 +705,25 @@ task(
 // canonical before accepting secondary-host ownership.
 task(
   'task:exportCanonicalProtocolConfig',
-  'Exports the canonical ProtocolConfig KMS context to a JSON snapshot for DAO review.'
+  'Exports the canonical ProtocolConfig KMS context to a JSON snapshot for DAO review.',
 )
   .addParam(
     'canonicalRpcUrl',
     'RPC URL of the canonical host chain to read ProtocolConfig from.',
     undefined,
-    types.string
+    types.string,
   )
   .addParam(
     'canonicalProtocolConfigAddress',
     'Address of the ProtocolConfig contract on the canonical host chain.',
     undefined,
-    types.string
+    types.string,
   )
   .addOptionalParam(
     'blockNumber',
     "Canonical block height to pin the snapshot to. Defaults to the latest finalized block; pass the artifact's blockNumber to reproduce a prior export for DAO review.",
     undefined,
-    types.int
+    types.int,
   )
   .addOptionalParam('out', 'Path to write the snapshot JSON.', 'canonical-protocol-config-snapshot.json', types.string)
   .setAction(async function (
@@ -733,7 +733,7 @@ task(
       blockNumber,
       out,
     }: { canonicalRpcUrl: string; canonicalProtocolConfigAddress: string; blockNumber?: number; out: string },
-    hre
+    hre,
   ) {
     // readCanonicalSnapshot needs the ProtocolConfig artifact for its ABI; compile so the export
     // also works from a clean checkout.
@@ -748,7 +748,7 @@ task(
     const artifact = buildSnapshotArtifact(snapshot, canonicalProtocolConfigAddress);
     fs.writeFileSync(out, JSON.stringify(artifact, null, 2));
     console.log(
-      `Canonical ProtocolConfig snapshot written to ${out}: chain ${snapshot.canonicalChainId}, block ${snapshot.blockNumber}, context ${snapshot.currentKmsContextId}, ${snapshot.kmsNodes.length} KMS nodes.`
+      `Canonical ProtocolConfig snapshot written to ${out}: chain ${snapshot.canonicalChainId}, block ${snapshot.blockNumber}, context ${snapshot.currentKmsContextId}, ${snapshot.kmsNodes.length} KMS nodes.`,
     );
     return artifact;
   });
@@ -1048,7 +1048,8 @@ task('task:setLzReceiveBaseGas')
     const confidentialBridgeAddress = taskArguments.bridgeAddress;
     const confidentialBridge = await ethers.getContractAt('ConfidentialBridge', confidentialBridgeAddress, deployer);
     const oldBaseGas = await confidentialBridge.getLzReceiveBaseGas(taskArguments.remoteEid);
-    await confidentialBridge.setLzReceiveBaseGas(taskArguments.remoteEid, taskArguments.baseGas);
+    const receipt = await confidentialBridge.setLzReceiveBaseGas(taskArguments.remoteEid, taskArguments.baseGas);
+    await receipt.wait(1);
     const newBaseGas = await confidentialBridge.getLzReceiveBaseGas(taskArguments.remoteEid);
     console.log(
       `setLzReceiveBaseGas done on network "${network.name}" for bridge ${confidentialBridgeAddress} ` +
@@ -1066,10 +1067,36 @@ task('task:setLzReceivePerHandleGas')
     const confidentialBridgeAddress = taskArguments.bridgeAddress;
     const confidentialBridge = await ethers.getContractAt('ConfidentialBridge', confidentialBridgeAddress, deployer);
     const oldPerHandleGas = await confidentialBridge.getLzReceivePerHandleGas(taskArguments.remoteEid);
-    await confidentialBridge.setLzReceivePerHandleGas(taskArguments.remoteEid, taskArguments.perHandleGas);
+    const receipt = await confidentialBridge.setLzReceivePerHandleGas(
+      taskArguments.remoteEid,
+      taskArguments.perHandleGas,
+    );
+    await receipt.wait(1);
     const newPerHandleGas = await confidentialBridge.getLzReceivePerHandleGas(taskArguments.remoteEid);
     console.log(
       `setLzReceivePerHandleGas done on network "${network.name}" for bridge ${confidentialBridgeAddress} ` +
         `(remoteEid=${taskArguments.remoteEid}): effective per-handle gas ${oldPerHandleGas.toString()} -> ${newPerHandleGas.toString()}`,
+    );
+  });
+
+task('task:setLzReceivePerPayloadByteGas')
+  .addParam('bridgeAddress', 'The address of the contract')
+  .addParam('remoteEid', 'The remote EID')
+  .addParam('perPayloadByteGas', 'The custom per-payload-byte lzReceive gas (0 to clear and fall back to the default)')
+  .setAction(async function (taskArguments: TaskArguments, { ethers, network }) {
+    const deployerPrivateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
+    const deployer = new Wallet(deployerPrivateKey).connect(ethers.provider);
+    const confidentialBridgeAddress = taskArguments.bridgeAddress;
+    const confidentialBridge = await ethers.getContractAt('ConfidentialBridge', confidentialBridgeAddress, deployer);
+    const oldPerPayloadByteGas = await confidentialBridge.getLzReceivePerPayloadByteGas(taskArguments.remoteEid);
+    const receipt = await confidentialBridge.setLzReceivePerPayloadByteGas(
+      taskArguments.remoteEid,
+      taskArguments.perPayloadByteGas,
+    );
+    await receipt.wait(1);
+    const newPerPayloadByteGas = await confidentialBridge.getLzReceivePerPayloadByteGas(taskArguments.remoteEid);
+    console.log(
+      `setLzReceivePerPayloadByteGas done on network "${network.name}" for bridge ${confidentialBridgeAddress} ` +
+        `(remoteEid=${taskArguments.remoteEid}): effective per-payload-byte gas ${oldPerPayloadByteGas.toString()} -> ${newPerPayloadByteGas.toString()}`,
     );
   });

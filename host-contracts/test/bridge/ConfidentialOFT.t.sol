@@ -160,7 +160,9 @@ contract ConfidentialOFTTest is TestHelperOz5, HostContractsDeployerTestUtils {
         // Authentication should NOT revert with OnlyConfidentialBridge / UntrustedPeer.
         // If a revert happens, it must come from a later FHE.* call, not auth.
         vm.prank(address(dstBridge));
-        try oft.onConfidentialBridgeReceived(SRC_EID, SRC_PEER_BEEF, abi.encode(bob, dst), srcList, dstList, bytes32(0)) {
+        try
+            oft.onConfidentialBridgeReceived(SRC_EID, SRC_PEER_BEEF, abi.encode(bob, dst), srcList, dstList, bytes32(0))
+        {
             // Mint succeeded — pass.
         } catch (bytes memory reason) {
             // If we hit one of our auth errors, the test fails.
@@ -185,6 +187,6 @@ contract ConfidentialOFTTest is TestHelperOz5, HostContractsDeployerTestUtils {
 
         vm.prank(alice);
         vm.expectRevert();
-        oft.send{value: 1 ether}(DST_EID, euint64.wrap(_makeHandle(0)), bob, uint128(150_000));
+        oft.send{value: 1 ether}(DST_EID, euint64.wrap(_makeHandle(0)), bob, uint64(150_000));
     }
 }

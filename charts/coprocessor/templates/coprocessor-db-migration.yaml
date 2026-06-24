@@ -139,14 +139,8 @@ spec:
               {{- toYaml .valueFrom | nindent 14 }}
             {{- end }}
           {{- end }}
-          {{- with .Values.commonConfig.databaseSslRootCertPath }}
-          - name: DATABASE_SSL_ROOT_CERT_PATH
-            {{- if .value }}
-            value: {{ .value | quote }}
-            {{- else if .valueFrom }}
-            valueFrom:
-              {{- toYaml .valueFrom | nindent 14 }}
-            {{- end }}
+          {{- if eq (include "coprocessor.databaseSslRootCertEnvEnabled" .) "true" }}
+          {{- include "coprocessor.databaseSslRootCertEnv" . | nindent 10 }}
           {{- end }}
           {{- end }}
         {{- with .Values.commonConfig.env }}
@@ -162,4 +156,10 @@ spec:
           limits:
             cpu: {{ .Values.dbMigration.resources.limits.cpu | default "500m" }}
             memory: {{ .Values.dbMigration.resources.limits.memory | default "512Mi" }}
+        {{- if eq (include "coprocessor.databaseSslRootCertMountEnabled" .) "true" }}
+        {{- include "coprocessor.databaseSslRootCertVolumeMount" . | nindent 8 }}
+        {{- end }}
+      {{- if eq (include "coprocessor.databaseSslRootCertMountEnabled" .) "true" }}
+      {{- include "coprocessor.databaseSslRootCertVolume" . | nindent 6 }}
+      {{- end }}
 {{- end -}}

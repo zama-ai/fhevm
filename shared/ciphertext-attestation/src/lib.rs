@@ -25,6 +25,7 @@
 use alloy_primitives::{Address, B256, U256};
 use serde::{Deserialize, Serialize};
 
+pub mod consensus;
 pub mod sign;
 
 /// Domain separator for the canonical signed payload. Scopes the keccak hash to
@@ -74,7 +75,7 @@ impl From<Version> for u8 {
 ///
 /// The JSON representation is the snake_case variant name; unknown strings are rejected at
 /// deserialization. The canonical bytes encode the discriminant as `uint8`.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 #[repr(u8)]
 pub enum CiphertextFormat {

@@ -144,6 +144,17 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
         return bytes32(uint256(uint160(a)));
     }
 
+    /// @dev Decodes the `lzReceive` gas from a type-3 LayerZero options blob whose first
+    ///      executor option is an lzReceive option with no native value (as built by
+    ///      {HandlesSender._buildOptions}). Layout: TYPE_3(2) | WORKER_ID(1) |
+    ///      optionLength(2) | optionType(1) | gas(16). The gas field therefore starts at
+    ///      byte 6 and the value-less encoding makes it exactly 16 bytes wide.
+    function _firstLzReceiveGas(bytes memory options) internal pure returns (uint256 gas) {
+        for (uint256 i = 6; i < 22; i++) {
+            gas = (gas << 8) | uint8(options[i]);
+        }
+    }
+
     ////////////////////////////////////////////////////////////////////////////////
     // Source-side configuration & guards
     ////////////////////////////////////////////////////////////////////////////////
@@ -168,6 +179,7 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
     function test_LzReceiveGas_DefaultsWhenUnset() public view {
         assertEq(srcBridge.getLzReceiveBaseGas(DST_EID), srcBridge.LZ_RECEIVE_BASE_GAS_DEFAULT());
         assertEq(srcBridge.getLzReceivePerHandleGas(DST_EID), srcBridge.LZ_RECEIVE_PER_HANDLE_GAS_DEFAULT());
+        assertEq(srcBridge.getLzReceivePerPayloadByteGas(DST_EID), srcBridge.LZ_RECEIVE_PER_PAYLOAD_BYTE_DEFAULT());
     }
 
     function test_SetLzReceiveBaseGas_OnlyOwner() public {
@@ -178,6 +190,11 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
     function test_SetLzReceivePerHandleGas_OnlyOwner() public {
         vm.expectRevert();
         srcBridge.setLzReceivePerHandleGas(DST_EID, 7_000);
+    }
+
+    function test_SetLzReceivePerPayloadByteGas_OnlyOwner() public {
+        vm.expectRevert();
+        srcBridge.setLzReceivePerPayloadByteGas(DST_EID, 32);
     }
 
     function test_SetLzReceiveBaseGas_OverridesEmitsAndClears() public {
@@ -208,12 +225,75 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
         assertEq(srcBridge.getLzReceivePerHandleGas(DST_EID), srcBridge.LZ_RECEIVE_PER_HANDLE_GAS_DEFAULT());
     }
 
+    function test_SetLzReceivePerPayloadByteGas_OverridesEmitsAndClears() public {
+        vm.expectEmit(true, false, false, true, address(srcBridge));
+        emit LzReceivePerPayloadByteGasSet(DST_EID, 32);
+        vm.prank(owner);
+        srcBridge.setLzReceivePerPayloadByteGas(DST_EID, 32);
+        assertEq(srcBridge.getLzReceivePerPayloadByteGas(DST_EID), 32);
+
+        // Other eids are unaffected and still resolve to the default.
+        assertEq(srcBridge.getLzReceivePerPayloadByteGas(SRC_EID), srcBridge.LZ_RECEIVE_PER_PAYLOAD_BYTE_DEFAULT());
+
+        // Setting back to 0 clears the override and restores the default.
+        vm.prank(owner);
+        srcBridge.setLzReceivePerPayloadByteGas(DST_EID, 0);
+        assertEq(srcBridge.getLzReceivePerPayloadByteGas(DST_EID), srcBridge.LZ_RECEIVE_PER_PAYLOAD_BYTE_DEFAULT());
+
+        // Verify the per-payload-byte gas actually feeds into the built `lzReceive` gas:
+        // holding eid and handle count fixed, a longer payload must raise the encoded gas
+        // by exactly `perByte` per extra byte. `_buildOptions` is internal, so exercise it
+        // through a thin harness configured with the same override.
+        DeriveDstHandleHarness harness = new DeriveDstHandleHarness(endpoints[DST_EID]);
+        uint64 perByte = 32;
+        vm.prank(owner);
+        harness.setLzReceivePerPayloadByteGas(DST_EID, perByte);
+
+        uint64 composeGas = srcBridge.LZ_COMPOSE_MIN_VALUE_DEFAULT();
+        uint64 shortLen = 10;
+        uint64 longLen = 100;
+        uint256 gasShort = _firstLzReceiveGas(harness.buildOptions(DST_EID, 1, shortLen, composeGas));
+        uint256 gasLong = _firstLzReceiveGas(harness.buildOptions(DST_EID, 1, longLen, composeGas));
+        assertGt(gasLong, gasShort, "longer payload must raise lzReceive gas");
+        assertEq(
+            gasLong - gasShort,
+            uint256(perByte) * (longLen - shortLen),
+            "gas delta must equal perPayloadByte * extra payload bytes"
+        );
+    }
+
+    function test_LzComposeMinValue_DefaultsWhenUnset() public view {
+        assertEq(srcBridge.getLzComposeMinValue(DST_EID), srcBridge.LZ_COMPOSE_MIN_VALUE_DEFAULT());
+    }
+
+    function test_SetLzComposeMinValue_OnlyOwner() public {
+        vm.expectRevert();
+        srcBridge.setLzComposeMinValue(DST_EID, 123_000);
+    }
+
+    function test_SetLzComposeMinValue_OverridesEmitsAndClears() public {
+        vm.expectEmit(true, false, false, true, address(srcBridge));
+        emit LzComposeMinValueSet(DST_EID, 123_000);
+        vm.prank(owner);
+        srcBridge.setLzComposeMinValue(DST_EID, 123_000);
+        assertEq(srcBridge.getLzComposeMinValue(DST_EID), 123_000);
+
+        // Other eids are unaffected and still resolve to the default.
+        assertEq(srcBridge.getLzComposeMinValue(SRC_EID), srcBridge.LZ_COMPOSE_MIN_VALUE_DEFAULT());
+
+        // Setting back to 0 clears the override and restores the default.
+        vm.prank(owner);
+        srcBridge.setLzComposeMinValue(DST_EID, 0);
+        assertEq(srcBridge.getLzComposeMinValue(DST_EID), srcBridge.LZ_COMPOSE_MIN_VALUE_DEFAULT());
+    }
+
     function test_Send_RevertsOnUnknownDstEid() public {
         bytes32[] memory handleList = new bytes32[](1);
         handleList[0] = _makeHandle(0);
+        uint64 minGas = srcBridge.LZ_COMPOSE_MIN_VALUE_DEFAULT();
         vm.prank(srcApp);
         vm.expectRevert(abi.encodeWithSelector(HandlesSender.UnknownDstEid.selector, uint32(99)));
-        srcBridge.send{value: 0}(uint32(99), _addressToBytes32(address(dstApp)), "", handleList, uint128(0), "");
+        srcBridge.send{value: 0}(uint32(99), _addressToBytes32(address(dstApp)), "", handleList, minGas);
     }
 
     function test_Send_RevertsAboveMaxHandles() public {
@@ -222,35 +302,103 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
         for (uint256 i = 0; i < handleList.length; i++) handleList[i] = _makeHandle(i);
         vm.prank(srcApp);
         vm.expectRevert(abi.encodeWithSelector(HandlesSender.TooManyHandles.selector, cap + 1, cap));
-        srcBridge.send{value: 0}(DST_EID, _addressToBytes32(address(dstApp)), "", handleList, uint128(0), "");
+        srcBridge.send{value: 0}(DST_EID, _addressToBytes32(address(dstApp)), "", handleList, uint64(0));
+    }
+
+    function test_Send_RevertsOnEmptyHandleList() public {
+        bytes32[] memory handleList = new bytes32[](0);
+        vm.prank(srcApp);
+        vm.expectRevert(HandlesSender.EmptyHandleList.selector);
+        srcBridge.send{value: 0}(DST_EID, _addressToBytes32(address(dstApp)), "", handleList, uint64(0));
+    }
+
+    function test_Send_RevertsOnLzComposeGasBelowMin() public {
+        bytes32[] memory handleList = new bytes32[](1);
+        handleList[0] = _makeHandle(0);
+        uint64 minGas = srcBridge.LZ_COMPOSE_MIN_VALUE_DEFAULT();
+        uint64 tooLow = minGas - 1;
+        // The min check runs before the dstEid/ACL checks, so it fires regardless of those.
+        vm.prank(srcApp);
+        vm.expectRevert(abi.encodeWithSelector(HandlesSender.LzComposeGasBelowMin.selector, tooLow, minGas));
+        srcBridge.send{value: 0}(DST_EID, _addressToBytes32(address(dstApp)), "", handleList, tooLow);
+    }
+
+    function test_Send_RevertsOnLzComposeGasBelowCustomMin() public {
+        uint64 customMin = srcBridge.LZ_COMPOSE_MIN_VALUE_DEFAULT() * 2;
+        vm.prank(owner);
+        srcBridge.setLzComposeMinValue(DST_EID, customMin);
+
+        bytes32[] memory handleList = new bytes32[](1);
+        handleList[0] = _makeHandle(0);
+        // Below the custom override but above the default, so only the override can reject it.
+        uint64 tooLow = customMin - 1;
+        assertGt(tooLow, srcBridge.LZ_COMPOSE_MIN_VALUE_DEFAULT());
+        // The min check runs before the dstEid/ACL checks, so it fires regardless of those.
+        vm.prank(srcApp);
+        vm.expectRevert(abi.encodeWithSelector(HandlesSender.LzComposeGasBelowMin.selector, tooLow, customMin));
+        srcBridge.send{value: 0}(DST_EID, _addressToBytes32(address(dstApp)), "", handleList, tooLow);
     }
 
     function test_Send_RevertsOnHandleNotAllowed() public {
         bytes32 h = _makeHandle(0);
         bytes32[] memory handleList = new bytes32[](1);
         handleList[0] = h;
+        uint64 minGas = srcBridge.LZ_COMPOSE_MIN_VALUE_DEFAULT();
         vm.prank(srcApp);
         vm.expectRevert(abi.encodeWithSelector(HandlesSender.HandleNotAllowed.selector, h, srcApp));
-        srcBridge.send{value: 0}(DST_EID, _addressToBytes32(address(dstApp)), "", handleList, uint128(0), "");
+        srcBridge.send{value: 0}(DST_EID, _addressToBytes32(address(dstApp)), "", handleList, minGas);
     }
 
-    function test_Send_RevertsOnComposeGasWithRawOptions() public {
-        bytes32 h = _makeHandle(0);
-        _allow(h, srcApp);
+    ////////////////////////////////////////////////////////////////////////////////
+    // quote: mirrors send's input validation, except the ACL allowance check
+    ////////////////////////////////////////////////////////////////////////////////
+
+    function test_Quote_RevertsOnEmptyHandleList() public {
+        bytes32[] memory handleList = new bytes32[](0);
+        vm.expectRevert(HandlesSender.EmptyHandleList.selector);
+        srcBridge.quote(DST_EID, srcApp, _addressToBytes32(address(dstApp)), "", handleList, uint64(0));
+    }
+
+    function test_Quote_RevertsAboveMaxHandles() public {
+        uint256 cap = srcBridge.MAX_HANDLES();
+        bytes32[] memory handleList = new bytes32[](cap + 1);
+        for (uint256 i = 0; i < handleList.length; i++) handleList[i] = _makeHandle(i);
+        vm.expectRevert(abi.encodeWithSelector(HandlesSender.TooManyHandles.selector, cap + 1, cap));
+        srcBridge.quote(DST_EID, srcApp, _addressToBytes32(address(dstApp)), "", handleList, uint64(0));
+    }
+
+    function test_Quote_RevertsOnLzComposeGasBelowMin() public {
         bytes32[] memory handleList = new bytes32[](1);
-        handleList[0] = h;
-        // Non-empty options + nonzero composeGas -> revert
-        bytes memory rawOpts = hex"00030100110100000000000000000000000000000186a0"; // arbitrary non-empty
-        vm.prank(srcApp);
-        vm.expectRevert(HandlesSender.ComposeGasMustBeZeroWithRawOptions.selector);
-        srcBridge.send{value: 1 ether}(
+        handleList[0] = _makeHandle(0);
+        uint64 minGas = srcBridge.LZ_COMPOSE_MIN_VALUE_DEFAULT();
+        uint64 tooLow = minGas - 1;
+        vm.expectRevert(abi.encodeWithSelector(HandlesSender.LzComposeGasBelowMin.selector, tooLow, minGas));
+        srcBridge.quote(DST_EID, srcApp, _addressToBytes32(address(dstApp)), "", handleList, tooLow);
+    }
+
+    function test_Quote_RevertsOnUnknownDstEid() public {
+        bytes32[] memory handleList = new bytes32[](1);
+        handleList[0] = _makeHandle(0);
+        uint64 minGas = srcBridge.LZ_COMPOSE_MIN_VALUE_DEFAULT();
+        vm.expectRevert(abi.encodeWithSelector(HandlesSender.UnknownDstEid.selector, uint32(99)));
+        srcBridge.quote(uint32(99), srcApp, _addressToBytes32(address(dstApp)), "", handleList, minGas);
+    }
+
+    /// @dev The key difference from `send`: `quote` does NOT run the ACL allowance check,
+    ///      so it succeeds for handles the caller is not (yet) allowed to bridge — enabling
+    ///      msg.value estimation before the tx that grants ACL access.
+    function test_Quote_SucceedsForDisallowedHandles() public view {
+        bytes32[] memory handleList = new bytes32[](1);
+        handleList[0] = _makeHandle(42); // never ACL-allowed to anyone
+        MessagingFee memory fee = srcBridge.quote(
             DST_EID,
+            srcApp,
             _addressToBytes32(address(dstApp)),
             "",
             handleList,
-            uint128(50_000),
-            rawOpts
+            srcBridge.LZ_COMPOSE_MIN_VALUE_DEFAULT()
         );
+        assertGt(fee.nativeFee, 0, "quote should return a positive native fee");
     }
 
     ////////////////////////////////////////////////////////////////////////////////
@@ -275,8 +423,7 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
             _addressToBytes32(address(dstApp)),
             payload,
             handleList,
-            uint128(200_000),
-            ""
+            uint64(200_000)
         );
 
         vm.recordLogs();
@@ -286,8 +433,7 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
             _addressToBytes32(address(dstApp)),
             payload,
             handleList,
-            uint128(200_000),
-            ""
+            uint64(200_000)
         );
 
         // Inspect logs: BridgeHandle is emitted once per handle, with the receipt's GUID.
@@ -315,7 +461,6 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
         // After lzReceive, HandleBridged should have fired for each handle. Re-record
         // logs is harder mid-test; instead recompute the dst handles and check the
         // ComposeSent message body for them.
-
     }
 
     function test_LzReceive_DerivesAndEmitsHandleBridged() public {
@@ -400,8 +545,7 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
     ///      mirrored, with the same inputs, by the Rust `derive_dst_handle` test
     ///      `matches_solidity_golden_vector`. Regenerate both together if the
     ///      derivation formula changes.
-    bytes32 internal constant GOLDEN_DST_HANDLE =
-        0x89ee7803d65c29976056001f9db9ba5d8b38975ac4ff00000000000030390500;
+    bytes32 internal constant GOLDEN_DST_HANDLE = 0x89ee7803d65c29976056001f9db9ba5d8b38975ac4ff00000000000030390500;
 
     /// @dev Cross-implementation lock for the destination-handle derivation. Pins
     ///      the output of the *real* `_deriveDstHandle` (via a thin harness) for a
@@ -575,5 +719,16 @@ contract DeriveDstHandleHarness is ConfidentialBridge {
 
     function deriveDstHandle(bytes32 srcHandle, bytes32 prevBlockHash) external view returns (bytes32) {
         return _deriveDstHandle(srcHandle, prevBlockHash);
+    }
+
+    /// @dev Exposes the internal LayerZero option builder so tests can assert how the
+    ///      `lzReceive` gas is composed from the base/per-handle/per-payload-byte terms.
+    function buildOptions(
+        uint32 dstEid,
+        uint64 nHandles,
+        uint64 payloadLen,
+        uint64 lzComposeGas
+    ) external view returns (bytes memory) {
+        return _buildOptions(dstEid, nHandles, payloadLen, lzComposeGas);
     }
 }

@@ -202,7 +202,7 @@ contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
 
         assertEq(address(kgProxy), kmsGenerationAdd, "KMSGeneration proxy address mismatch");
         assertNotEq(kgImplementation, address(0), "Implementation not deployed");
-        assertEq(kgProxy.getVersion(), "KMSGeneration v0.1.0", "Version mismatch");
+        assertEq(kgProxy.getVersion(), "KMSGeneration v0.2.0", "Version mismatch");
         assertEq(_readImplementationSlot(kmsGenerationAdd), kgImplementation, "Implementation slot mismatch");
     }
 

@@ -1,6 +1,9 @@
 mod common;
 
-use crate::common::{create_mock_user_decryption_request_tx, init_kms_worker};
+use crate::common::{
+    create_mock_user_decryption_request_tx, init_kms_worker, mock_copro_registry_load,
+    testing_ct_attestation_config,
+};
 use alloy::{
     primitives::U256,
     providers::{ProviderBuilder, mock::Asserter},
@@ -43,7 +46,10 @@ async fn test_decryption_context_not_found(
     // Use a context_id that does not exist in the DB
     let unknown_context_id = U256::from(69);
 
+    // The registry mocks are only consumed by its initial load — this suite fails at the
+    // context-validation stage, before any ciphertext interaction.
     let asserter = Asserter::new();
+    mock_copro_registry_load(&asserter, "http://unused-bucket-url");
     let sns_ct = rand_sns_ct();
     let tx_hash = rand_digest();
     let insert_options = InsertRequestOptions::new()
@@ -97,6 +103,7 @@ async fn test_decryption_context_not_found(
         kms_core_endpoints: vec![kms_mock_server.base_url().unwrap().to_string()],
         max_decryption_attempts: MAX_DECRYPTION_ATTEMPTS,
         db_fast_event_polling: Duration::from_millis(500),
+        ct_attestation: testing_ct_attestation_config(false),
         ..Default::default()
     };
     let kms_worker = init_kms_worker(
@@ -150,7 +157,10 @@ async fn test_decryption_context_invalid(#[case] event_type: TestEventType) -> a
     .await?;
     info!("Context #{TESTING_KMS_CONTEXT} marked as invalid!");
 
+    // The registry mocks are only consumed by its initial load — this suite fails at the
+    // context-validation stage, before any ciphertext interaction.
     let asserter = Asserter::new();
+    mock_copro_registry_load(&asserter, "http://unused-bucket-url");
     let sns_ct = rand_sns_ct();
     let tx_hash = rand_digest();
     let insert_options = InsertRequestOptions::new()
@@ -200,6 +210,7 @@ async fn test_decryption_context_invalid(#[case] event_type: TestEventType) -> a
         kms_core_endpoints: vec![kms_mock_server.base_url().unwrap().to_string()],
         max_decryption_attempts: MAX_DECRYPTION_ATTEMPTS,
         db_fast_event_polling: Duration::from_millis(500),
+        ct_attestation: testing_ct_attestation_config(false),
         ..Default::default()
     };
     let kms_worker = init_kms_worker(
