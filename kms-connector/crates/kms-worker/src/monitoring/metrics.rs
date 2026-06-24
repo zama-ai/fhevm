@@ -12,7 +12,7 @@ pub static EVENT_RECEIVED_COUNTER: LazyLock<IntCounterVec> = LazyLock::new(|| {
         "Number of events received by the KmsWorker",
         &["event_type"]
     )
-    .unwrap()
+    .expect("Failed to register kms_connector_worker_event_received_counter metric")
 });
 
 pub static EVENT_RECEIVED_ERRORS: LazyLock<IntCounterVec> = LazyLock::new(|| {
@@ -21,7 +21,7 @@ pub static EVENT_RECEIVED_ERRORS: LazyLock<IntCounterVec> = LazyLock::new(|| {
         "Number of errors encountered by the KmsWorker while listening for events",
         &["event_type"]
     )
-    .unwrap()
+    .expect("Failed to register kms_connector_worker_event_received_errors metric")
 });
 
 pub static GRPC_REQUEST_SENT_COUNTER: LazyLock<IntCounterVec> = LazyLock::new(|| {
@@ -30,7 +30,7 @@ pub static GRPC_REQUEST_SENT_COUNTER: LazyLock<IntCounterVec> = LazyLock::new(||
         "Number of successful GRPC requests sent by the KmsWorker to the KMS Core",
         &["event_type"]
     )
-    .unwrap()
+    .expect("Failed to register kms_connector_worker_grpc_request_sent_counter metric")
 });
 
 pub static GRPC_REQUEST_SENT_ERRORS: LazyLock<IntCounterVec> = LazyLock::new(|| {
@@ -39,7 +39,7 @@ pub static GRPC_REQUEST_SENT_ERRORS: LazyLock<IntCounterVec> = LazyLock::new(|| 
         "Number of errors encountered by the KmsWorker while sending grpc requests to the KMS Core",
         &["event_type"]
     )
-    .unwrap()
+    .expect("Failed to register kms_connector_worker_grpc_request_sent_errors metric")
 });
 
 pub static GRPC_RESPONSE_POLLED_COUNTER: LazyLock<IntCounterVec> = LazyLock::new(|| {
@@ -48,7 +48,7 @@ pub static GRPC_RESPONSE_POLLED_COUNTER: LazyLock<IntCounterVec> = LazyLock::new
         "Number of responses successfully polled from the KMS Core via GRPC",
         &["event_type"]
     )
-    .unwrap()
+    .expect("Failed to register kms_connector_worker_grpc_response_polled_counter metric")
 });
 
 pub static GRPC_RESPONSE_POLLED_ERRORS: LazyLock<IntCounterVec> = LazyLock::new(|| {
@@ -57,7 +57,7 @@ pub static GRPC_RESPONSE_POLLED_ERRORS: LazyLock<IntCounterVec> = LazyLock::new(
         "Number of errors encountered by the KmsWorker while polling responses from the KMS Core",
         &["event_type"]
     )
-    .unwrap()
+    .expect("Failed to register kms_connector_worker_grpc_response_polled_errors metric")
 });
 
 pub static S3_CIPHERTEXT_RETRIEVAL_COUNTER: LazyLock<IntCounter> = LazyLock::new(|| {
@@ -65,7 +65,7 @@ pub static S3_CIPHERTEXT_RETRIEVAL_COUNTER: LazyLock<IntCounter> = LazyLock::new
         "kms_connector_worker_s3_ciphertext_retrieval_counter",
         "Number of ciphertexts retrieved from S3 by the KmsWorker"
     )
-    .unwrap()
+    .expect("Failed to register kms_connector_worker_s3_ciphertext_retrieval_counter metric")
 });
 
 pub static S3_CIPHERTEXT_RETRIEVAL_ERRORS: LazyLock<IntCounter> = LazyLock::new(|| {
@@ -73,7 +73,7 @@ pub static S3_CIPHERTEXT_RETRIEVAL_ERRORS: LazyLock<IntCounter> = LazyLock::new(
         "kms_connector_worker_s3_ciphertext_retrieval_errors",
         "Number of errors encountered by the KmsWorker while retrieving ciphertexts from S3"
     )
-    .unwrap()
+    .expect("Failed to register kms_connector_worker_s3_ciphertext_retrieval_errors metric")
 });
 
 pub static REQUEST_CHECK_ERRORS: LazyLock<IntCounterVec> = LazyLock::new(|| {
@@ -82,7 +82,7 @@ pub static REQUEST_CHECK_ERRORS: LazyLock<IntCounterVec> = LazyLock::new(|| {
         "Counts request pre-flight check failures, by check family",
         &["check_type"]
     )
-    .unwrap()
+    .expect("Failed to register kms_connector_worker_request_check_errors metric")
 });
 
 /// Histogram bucket boundaries (in seconds) for decryption latency measurements.
@@ -98,7 +98,7 @@ pub static DECRYPTION_LATENCY_HISTOGRAM: LazyLock<HistogramVec> = LazyLock::new(
         .buckets(DECRYPTION_LATENCY_BUCKETS.to_vec()),
         &["event_type"]
     )
-    .unwrap()
+    .expect("Failed to register kms_connector_worker_decryption_latency_seconds metric")
 });
 
 pub fn register_event_latency(event: &ProtocolEvent) {

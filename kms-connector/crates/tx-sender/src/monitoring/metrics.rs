@@ -20,7 +20,7 @@ pub static RESPONSE_RECEIVED_COUNTER: LazyLock<IntCounterVec> = LazyLock::new(||
         "Number of responses received by the TransactionSender",
         &["response_type"]
     )
-    .unwrap()
+    .expect("Failed to register kms_connector_tx_sender_response_received_counter metric")
 });
 
 pub static RESPONSE_RECEIVED_ERRORS: LazyLock<IntCounterVec> = LazyLock::new(|| {
@@ -29,7 +29,7 @@ pub static RESPONSE_RECEIVED_ERRORS: LazyLock<IntCounterVec> = LazyLock::new(|| 
         "Number of errors encountered by the TransactionSender while listening for responses",
         &["response_type"]
     )
-    .unwrap()
+    .expect("Failed to register kms_connector_tx_sender_response_received_errors metric")
 });
 
 pub static GATEWAY_TX_SENT_COUNTER: LazyLock<IntCounterVec> = LazyLock::new(|| {
@@ -38,7 +38,7 @@ pub static GATEWAY_TX_SENT_COUNTER: LazyLock<IntCounterVec> = LazyLock::new(|| {
         "Number of transactions sent by the TransactionSender to the Gateway",
         &["response_type"]
     )
-    .unwrap()
+    .expect("Failed to register kms_connector_tx_sender_gateway_tx_sent_counter metric")
 });
 
 pub static GATEWAY_TX_SENT_ERRORS: LazyLock<IntCounterVec> = LazyLock::new(|| {
@@ -47,7 +47,7 @@ pub static GATEWAY_TX_SENT_ERRORS: LazyLock<IntCounterVec> = LazyLock::new(|| {
         "Number of errors encountered by the TransactionSender while sending transactions to the Gateway",
         &["response_type"]
     )
-    .unwrap()
+    .expect("Failed to register kms_connector_tx_sender_gateway_tx_sent_errors metric")
 });
 
 const RESPONSE_FORWARDING_LATENCY_BUCKETS: &[f64] = &[0.1, 0.5, 1.0, 2.5, 5.0, 10.0, 15.0, 30.0];
@@ -59,7 +59,7 @@ pub static RESPONSE_FORWARDING_LATENCY_HISTOGRAM: LazyLock<HistogramVec> = LazyL
         &["response_type"],
         RESPONSE_FORWARDING_LATENCY_BUCKETS.to_vec()
     )
-    .unwrap()
+    .expect("Failed to register kms_connector_tx_sender_response_forwarding_latency_seconds metric")
 });
 
 pub fn register_response_forwarding_latency(response: &KmsResponse) {
@@ -79,7 +79,7 @@ static PENDING_EVENTS: LazyLock<IntGaugeVec> = LazyLock::new(|| {
         "Number of Gateway events not yet processed by any KmsWorker",
         &["event_type"]
     )
-    .unwrap()
+    .expect("Failed to register kms_connector_pending_events metric")
 });
 
 static PENDING_RESPONSES: LazyLock<IntGaugeVec> = LazyLock::new(|| {
@@ -88,7 +88,7 @@ static PENDING_RESPONSES: LazyLock<IntGaugeVec> = LazyLock::new(|| {
         "Number of KMS responses not yet processed by the TransactionSender",
         &["response_type"]
     )
-    .unwrap()
+    .expect("Failed to register kms_connector_pending_responses metric")
 });
 
 pub fn spawn_gauge_update_routine(
