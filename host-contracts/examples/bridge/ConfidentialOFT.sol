@@ -68,13 +68,8 @@ contract ConfidentialOFT is Ownable2Step, IDstApp {
      * @param recipient        Recipient on the destination chain.
      * @param mintComposeGas   Gas budget for destination-side lzCompose (the `onConfidentialBridgeReceived`).
      */
-    function send(
-        uint32 dstEid,
-        euint64 amount,
-        address recipient,
-        uint64 mintComposeGas
-    ) external payable {
-        if(!FHE.isSenderAllowed(amount)) revert UnauthorizedUseOfEncryptedAmount(amount, msg.sender);
+    function send(uint32 dstEid, euint64 amount, address recipient, uint64 mintComposeGas) external payable {
+        if (!FHE.isSenderAllowed(amount)) revert UnauthorizedUseOfEncryptedAmount(amount, msg.sender);
 
         bytes32 dstApp = _peers[dstEid];
         if (dstApp == bytes32(0)) revert PeerNotSet(dstEid);

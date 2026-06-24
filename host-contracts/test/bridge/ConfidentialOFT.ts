@@ -41,9 +41,7 @@ describe('ConfidentialOFT', function () {
 
     it('non-owner cannot setPeer', async function () {
       await expect(
-        this.oft
-          .connect(this.signers.bob)
-          .setPeer(SRC_EID, ethers.zeroPadValue(this.signers.bob.address, 32))
+        this.oft.connect(this.signers.bob).setPeer(SRC_EID, ethers.zeroPadValue(this.signers.bob.address, 32)),
       ).to.be.reverted;
     });
   });
@@ -59,12 +57,12 @@ describe('ConfidentialOFT', function () {
             ethers.zeroPadValue(this.signers.alice.address, 32),
             ethers.AbiCoder.defaultAbiCoder().encode(
               ['address', 'bytes32'],
-              [this.signers.alice.address, ethers.ZeroHash]
+              [this.signers.alice.address, ethers.ZeroHash],
             ),
             [],
             [],
-            ethers.ZeroHash
-          )
+            ethers.ZeroHash,
+          ),
       )
         .to.be.revertedWithCustomError(this.oft, 'OnlyConfidentialBridge')
         .withArgs(this.signers.bob.address);
@@ -85,12 +83,12 @@ describe('ConfidentialOFT', function () {
             untrustedPeer,
             ethers.AbiCoder.defaultAbiCoder().encode(
               ['address', 'bytes32'],
-              [this.signers.alice.address, ethers.ZeroHash]
+              [this.signers.alice.address, ethers.ZeroHash],
             ),
             [],
             [],
-            ethers.ZeroHash
-          )
+            ethers.ZeroHash,
+          ),
       )
         .to.be.revertedWithCustomError(this.oft, 'UntrustedPeer')
         .withArgs(SRC_EID, untrustedPeer);
@@ -105,13 +103,11 @@ describe('ConfidentialOFT', function () {
       const fakeAmount = makeFakeAmountHandle();
       // Configure the destination peer so `send` reaches the ACL check (rather than
       // reverting early with PeerNotSet).
-      await this.oft
-        .connect(this.fx.owner)
-        .setPeer(DST_EID, ethers.zeroPadValue(this.signers.alice.address, 32));
+      await this.oft.connect(this.fx.owner).setPeer(DST_EID, ethers.zeroPadValue(this.signers.alice.address, 32));
       await expect(
         this.oft
           .connect(this.signers.alice)
-          .send(DST_EID, fakeAmount, this.signers.bob.address, 200_000n, { value: ethers.parseEther('1') })
+          .send(DST_EID, fakeAmount, this.signers.bob.address, 200_000n, { value: ethers.parseEther('1') }),
       ).to.be.reverted;
     });
   });

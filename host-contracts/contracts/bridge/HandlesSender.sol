@@ -57,7 +57,7 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
     ///         (see {setLzReceivePerPayloadByteGas}).
     uint64 public constant LZ_RECEIVE_PER_PAYLOAD_BYTE_DEFAULT = 16;
 
-    /// @notice Default minimum `lzCompose` gas budget accepted by {send}. 
+    /// @notice Default minimum `lzCompose` gas budget accepted by {send}.
     /// Used when no governance override is set (see {setLzComposeMinValue}).
     uint64 public constant LZ_COMPOSE_MIN_VALUE_DEFAULT = 30_000;
 
@@ -214,7 +214,12 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
         bytes32[] calldata handleList,
         uint64 lzComposeGas
     ) internal virtual returns (MessagingReceipt memory receipt) {
-        bytes memory finalOptions = _buildOptions(dstEid, uint64(handleList.length), uint64(payload.length), lzComposeGas);
+        bytes memory finalOptions = _buildOptions(
+            dstEid,
+            uint64(handleList.length),
+            uint64(payload.length),
+            lzComposeGas
+        );
         bytes32 srcApp = bytes32(uint256(uint160(msg.sender)));
         bytes memory message = abi.encode(srcApp, dstApp, payload, handleList);
         MessagingFee memory fee = _quote(dstEid, message, finalOptions, false);
@@ -389,7 +394,11 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
         uint64 payloadLen,
         uint64 lzComposeGas
     ) internal view virtual returns (bytes memory) {
-        uint64 lzReceiveGas =_effectiveLzReceiveBaseGas(dstEid) + nHandles * _effectiveLzReceivePerHandleGas(dstEid) + payloadLen * _effectiveLzReceivePerPayloadByteGas(dstEid);
+        uint64 lzReceiveGas = _effectiveLzReceiveBaseGas(dstEid) +
+            nHandles *
+            _effectiveLzReceivePerHandleGas(dstEid) +
+            payloadLen *
+            _effectiveLzReceivePerPayloadByteGas(dstEid);
         bytes memory built = OptionsBuilder.newOptions().addExecutorLzReceiveOption(lzReceiveGas, 0);
         // Compose index 0 because HandlesReceiver dispatches a single compose msg.
         built = built.addExecutorLzComposeOption(0, lzComposeGas, 0);

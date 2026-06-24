@@ -166,7 +166,14 @@ contract HandlesListConfidentialOApp is Ownable2Step, IDstApp {
         // `handleList.length`. An array of null bytes32 handles of the right length,
         // quoted with the same payload, prices identically to the real call.
         bytes32[] memory placeholderHandleList = new bytes32[](countHandles);
-        fee = confidentialBridge.quote(dstEid, address(this), dstApp, customPayload, placeholderHandleList, lzComposeGas);
+        fee = confidentialBridge.quote(
+            dstEid,
+            address(this),
+            dstApp,
+            customPayload,
+            placeholderHandleList,
+            lzComposeGas
+        );
     }
 
     /**
@@ -251,9 +258,7 @@ contract HandlesListConfidentialOApp is Ownable2Step, IDstApp {
     ///      allowance on each to this contract (so the bridge's source-side
     ///      `isAllowed(handle, this)` check passes) and to the app `owner()`. Returns
     ///      their raw `bytes32` form for the bridge call.
-    function _generateHandles(
-        uint256 count
-    ) internal returns (bytes32[] memory handleList) {
+    function _generateHandles(uint256 count) internal returns (bytes32[] memory handleList) {
         handleList = new bytes32[](count);
         for (uint256 i = 0; i < count; i++) {
             euint32 value = FHE.randEuint32();

@@ -28,7 +28,7 @@ task('task:verifyACL')
     'useInternalProxyAddress',
     'If proxy address from the /addresses directory should be used',
     false,
-    types.boolean
+    types.boolean,
   )
   .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
     if (useInternalProxyAddress) {
@@ -45,7 +45,7 @@ task('task:verifyFHEVMExecutor')
     'useInternalProxyAddress',
     'If proxy address from the /addresses directory should be used',
     false,
-    types.boolean
+    types.boolean,
   )
   .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
     if (useInternalProxyAddress) {
@@ -62,7 +62,7 @@ task('task:verifyKMSVerifier')
     'useInternalProxyAddress',
     'If proxy address from the /addresses directory should be used',
     false,
-    types.boolean
+    types.boolean,
   )
   .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
     if (useInternalProxyAddress) {
@@ -79,7 +79,7 @@ task('task:verifyInputVerifier')
     'useInternalProxyAddress',
     'If proxy address from the /addresses directory should be used',
     false,
-    types.boolean
+    types.boolean,
   )
   .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
     if (useInternalProxyAddress) {
@@ -96,7 +96,7 @@ task('task:verifyHCULimit')
     'useInternalProxyAddress',
     'If proxy address from the /addresses directory should be used',
     false,
-    types.boolean
+    types.boolean,
   )
   .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
     if (useInternalProxyAddress) {
@@ -113,7 +113,7 @@ task('task:verifyPauserSet')
     'useInternalProxyAddress',
     'If proxy address from the /addresses directory should be used',
     false,
-    types.boolean
+    types.boolean,
   )
   .setAction(async function ({ useInternalProxyAddress }, { run }) {
     if (useInternalProxyAddress) {
@@ -128,7 +128,7 @@ task('task:verifyProtocolConfig')
     'useInternalProxyAddress',
     'If proxy address from the /addresses directory should be used',
     false,
-    types.boolean
+    types.boolean,
   )
   .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
     if (useInternalProxyAddress) {
@@ -145,7 +145,7 @@ task('task:verifyKMSGeneration')
     'useInternalProxyAddress',
     'If proxy address from the /addresses directory should be used',
     false,
-    types.boolean
+    types.boolean,
   )
   .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
     if (useInternalProxyAddress) {
@@ -162,7 +162,7 @@ task('task:verifyBridge')
     'useInternalProxyAddress',
     'If proxy address from the /addresses directory should be used',
     false,
-    types.boolean
+    types.boolean,
   )
   .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
     if (useInternalProxyAddress) {
@@ -190,7 +190,7 @@ task('task:verifyAllHostContracts')
     'useInternalProxyAddress',
     'If proxy address from the /addresses directory should be used',
     false,
-    types.boolean
+    types.boolean,
   )
   .setAction(async function ({ useInternalProxyAddress }, hre) {
     console.log('Verify ACL contract:');

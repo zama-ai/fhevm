@@ -461,7 +461,6 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
         // After lzReceive, HandleBridged should have fired for each handle. Re-record
         // logs is harder mid-test; instead recompute the dst handles and check the
         // ComposeSent message body for them.
-
     }
 
     function test_LzReceive_DerivesAndEmitsHandleBridged() public {
@@ -546,8 +545,7 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
     ///      mirrored, with the same inputs, by the Rust `derive_dst_handle` test
     ///      `matches_solidity_golden_vector`. Regenerate both together if the
     ///      derivation formula changes.
-    bytes32 internal constant GOLDEN_DST_HANDLE =
-        0x89ee7803d65c29976056001f9db9ba5d8b38975ac4ff00000000000030390500;
+    bytes32 internal constant GOLDEN_DST_HANDLE = 0x89ee7803d65c29976056001f9db9ba5d8b38975ac4ff00000000000030390500;
 
     /// @dev Cross-implementation lock for the destination-handle derivation. Pins
     ///      the output of the *real* `_deriveDstHandle` (via a thin harness) for a

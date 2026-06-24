@@ -1,44 +1,44 @@
-
 import { task, types } from 'hardhat/config';
 import type { TaskArguments } from 'hardhat/types';
+
+import { ensureAddressesDirectoryExists, readHostEnv, writeHostEnvLine } from '../taskDeploy';
 import { getRequiredEnvVar, loadHostAddresses } from '../utils/loadVariables';
-import { readHostEnv, ensureAddressesDirectoryExists, writeHostEnvLine } from '../taskDeploy';
 
 task('task:deployConfidentialOFT').setAction(async function (_, hre) {
-    const { ethers } = hre;
-    const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
-    const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
-  
-    const parsedEnv = readHostEnv();
-    const bridgeAddress = parsedEnv.CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS;
-    if (!bridgeAddress) {
-      throw new Error(
-        'CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS not found in addresses/.env.host. Run task:deployBridge first.',
-      );
+  const { ethers } = hre;
+  const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
+  const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
+
+  const parsedEnv = readHostEnv();
+  const bridgeAddress = parsedEnv.CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS;
+  if (!bridgeAddress) {
+    throw new Error(
+      'CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS not found in addresses/.env.host. Run task:deployBridge first.',
+    );
+  }
+
+  console.log(`Deploying ConfidentialOFT (bridge=${bridgeAddress}, owner=${deployer.address})...`);
+  const oftFactory = await ethers.getContractFactory('ConfidentialOFT', deployer);
+  const oft = await oftFactory.deploy(bridgeAddress, deployer.address);
+  await oft.waitForDeployment();
+  const oftAddress = await oft.getAddress();
+  console.log(`ConfidentialOFT deployed at ${oftAddress} (tx ${oft.deploymentTransaction()?.hash})`);
+
+  await hre.run('task:setConfidentialOFTAddress', { address: oftAddress });
+});
+
+task('task:setConfidentialOFTAddress')
+  .addParam('address', 'The address of the deployed ConfidentialOFT instance')
+  .setAction(async function (taskArguments: TaskArguments) {
+    ensureAddressesDirectoryExists();
+    const content = `CONFIDENTIAL_OFT_CONTRACT_ADDRESS=${taskArguments.address}\n`;
+    try {
+      writeHostEnvLine(content, 'a');
+      console.log(`ConfidentialOFT address ${taskArguments.address} written successfully!`);
+    } catch (err) {
+      throw new Error(`Failed to write ConfidentialOFT address: ${String(err)}`);
     }
-  
-    console.log(`Deploying ConfidentialOFT (bridge=${bridgeAddress}, owner=${deployer.address})...`);
-    const oftFactory = await ethers.getContractFactory('ConfidentialOFT', deployer);
-    const oft = await oftFactory.deploy(bridgeAddress, deployer.address);
-    await oft.waitForDeployment();
-    const oftAddress = await oft.getAddress();
-    console.log(`ConfidentialOFT deployed at ${oftAddress} (tx ${oft.deploymentTransaction()?.hash})`);
-  
-    await hre.run('task:setConfidentialOFTAddress', { address: oftAddress });
   });
-  
-  task('task:setConfidentialOFTAddress')
-    .addParam('address', 'The address of the deployed ConfidentialOFT instance')
-    .setAction(async function (taskArguments: TaskArguments) {
-      ensureAddressesDirectoryExists();
-      const content = `CONFIDENTIAL_OFT_CONTRACT_ADDRESS=${taskArguments.address}\n`;
-      try {
-        writeHostEnvLine(content, 'a');
-        console.log(`ConfidentialOFT address ${taskArguments.address} written successfully!`);
-      } catch (err) {
-        throw new Error(`Failed to write ConfidentialOFT address: ${String(err)}`);
-      }
-    });
 
 task('task:wireConfidentialOFT', 'Sets the canonical remote ConfidentialOFT peer (setPeer)')
   .addParam('remoteEid', 'LayerZero V2 endpoint id of the remote chain', undefined, types.int)
@@ -136,14 +136,9 @@ task('task:bridgeCOFT', 'Bridges a ConfidentialOFT balance (or a specific amount
   .addOptionalParam('recipient', 'Recipient on the destination chain (default: deployer)')
   .addOptionalParam(
     'amountHandle',
-    'Specific amount handle (bytes32) to bridge for partial sends. Default: deployer\'s current balance handle (i.e. bridge the full balance).',
+    "Specific amount handle (bytes32) to bridge for partial sends. Default: deployer's current balance handle (i.e. bridge the full balance).",
   )
-  .addOptionalParam(
-    'composeGas',
-    'Destination-side lzCompose gas budget for the OFT mint',
-    200_000,
-    types.int,
-  )
+  .addOptionalParam('composeGas', 'Destination-side lzCompose gas budget for the OFT mint', 200_000, types.int)
   .setAction(async function (taskArguments: TaskArguments, { ethers }) {
     const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
     const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
@@ -176,9 +171,7 @@ task('task:bridgeCOFT', 'Bridges a ConfidentialOFT balance (or a specific amount
 
     const oft = await ethers.getContractAt('ConfidentialOFT', oftAddress, deployer);
 
-
     const bridgeAddress: string = await oft.confidentialBridge();
-
 
     const configuredPeer: string = await oft.peers(dstEid);
     if (configuredPeer.toLowerCase() !== dstOftBytes32.toLowerCase()) {
@@ -224,7 +217,7 @@ task('task:bridgeCOFT', 'Bridges a ConfidentialOFT balance (or a specific amount
     );
   });
 
-  task('task:verifyConfidentialOFT')
+task('task:verifyConfidentialOFT')
   .addOptionalParam(
     'useInternalProxyAddress',
     'If addresses from the /addresses directory should be used',

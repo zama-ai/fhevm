@@ -188,7 +188,12 @@ contract HandlesListConfidentialOAppTest is TestHelperOz5, HostContractsDeployer
         uint256 count = 2;
         bytes memory customPayload = abi.encode(user, "greetings");
 
-        MessagingFee memory fee = appSrc.quoteGenerateAndSendHandlesList(DST_EID, count, customPayload, uint64(200_000));
+        MessagingFee memory fee = appSrc.quoteGenerateAndSendHandlesList(
+            DST_EID,
+            count,
+            customPayload,
+            uint64(200_000)
+        );
 
         vm.recordLogs();
         vm.prank(user);
@@ -248,7 +253,9 @@ contract HandlesListConfidentialOAppTest is TestHelperOz5, HostContractsDeployer
 
     function test_OnReceive_RevertsIfCallerNotBridge() public {
         bytes32[] memory empty = new bytes32[](0);
-        vm.expectRevert(abi.encodeWithSelector(HandlesListConfidentialOApp.OnlyConfidentialBridge.selector, address(this)));
+        vm.expectRevert(
+            abi.encodeWithSelector(HandlesListConfidentialOApp.OnlyConfidentialBridge.selector, address(this))
+        );
         appDst.onConfidentialBridgeReceived(SRC_EID, _addressToBytes32(address(appSrc)), "", empty, empty, bytes32(0));
     }
 
@@ -289,7 +296,14 @@ contract HandlesListConfidentialOAppTest is TestHelperOz5, HostContractsDeployer
             guid
         );
         vm.prank(address(dstBridge));
-        appDst.onConfidentialBridgeReceived(SRC_EID, _addressToBytes32(address(appSrc)), payload, srcList, dstList, guid);
+        appDst.onConfidentialBridgeReceived(
+            SRC_EID,
+            _addressToBytes32(address(appSrc)),
+            payload,
+            srcList,
+            dstList,
+            guid
+        );
 
         bytes32[] memory storedDst = appDst.lastReceivedDstHandleList();
         bytes32[] memory storedSrc = appDst.lastReceivedSrcHandleList();
