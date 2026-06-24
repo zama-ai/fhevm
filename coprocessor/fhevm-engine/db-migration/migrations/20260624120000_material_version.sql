@@ -7,11 +7,14 @@
 -- selection logic always resolves to version 0 -- i.e. byte-identical
 -- to today. See fhevm-internal#1568.
 
--- Which material version a stored artifact was produced under / holds.
--- 0 = legacy material (today's behavior), 1 = migrated CompressedXofKeySet.
-
-ALTER TABLE keys
-ADD COLUMN IF NOT EXISTS material_version SMALLINT NOT NULL DEFAULT 0;
+-- Which material version a stored artifact was produced under. 0 = legacy
+-- material (today's behavior), 1 = migrated CompressedXofKeySet.
+--
+-- NOTE: there is intentionally no material_version on `keys`. Under the
+-- chosen overwrite storage model, the version selects a *column* of the
+-- key row (legacy sks_key vs compressed_xof_keyset), not a *row*, so a
+-- per-key version flag would carry no invariant. Provenance lives on the
+-- artifacts a version actually produces (ciphertexts, SnS tasks).
 
 ALTER TABLE ciphertexts
 ADD COLUMN IF NOT EXISTS material_version SMALLINT NOT NULL DEFAULT 0;

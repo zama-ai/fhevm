@@ -18,17 +18,9 @@
 //!   long tail of a pre-cutover ciphertext keeps squashing under the
 //!   material it was created with.
 //!
-//! Two invariants the rest of the coprocessor relies on:
-//!
-//! 1. **Inert by default.** With no schedule rows published, every
-//!    selector returns [`MaterialVersion::LEGACY`] (0), which the fetch
-//!    layer maps to today's exact behavior. A node that has never seen a
-//!    schedule behaves byte-for-byte like today.
-//! 2. **Halt, never substitute.** If selection resolves to a version
-//!    whose material a node hasn't ingested yet, the node must halt and
-//!    retry that work item ([`SelectionOutcome::HaltRetry`]) -- it must
-//!    *never* silently fall back to another version, or it would produce
-//!    bytes no one else agrees with.
+//! **Inert by default.** With no schedule rows published, every selector
+//! returns [`MaterialVersion::LEGACY`] (0). A node that has never seen a
+//! schedule behaves byte-for-byte like today.
 
 use crate::chain_id::ChainId;
 use anyhow::Result;
@@ -46,46 +38,6 @@ impl MaterialVersion {
     pub const LEGACY: MaterialVersion = MaterialVersion(0);
     /// First migrated material: the RFC-029 `CompressedXofKeySet` cutover.
     pub const MIGRATED_V1: MaterialVersion = MaterialVersion(1);
-
-    #[inline]
-    pub fn as_i16(self) -> i16 {
-        self.0
-    }
-}
-
-impl From<i16> for MaterialVersion {
-    #[inline]
-    fn from(v: i16) -> Self {
-        MaterialVersion(v)
-    }
-}
-
-/// Outcome of pairing a *selected* version with the versions a node
-/// currently holds. The fetch layer turns `HaltRetry` into "leave the
-/// work item unclaimed and try again later" -- crucially *not* a fallback
-/// to a different version.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SelectionOutcome {
-    /// The selected version's material is available; proceed with it.
-    Ready(MaterialVersion),
-    /// The selected version's material is not (yet) available. Halt and
-    /// retry; do not substitute another version.
-    HaltRetry { selected: MaterialVersion },
-}
-
-/// Resolves a selected version against the versions a node holds.
-///
-/// This is where "halt, never substitute" lives: a missing version is a
-/// `HaltRetry`, never a downgrade.
-pub fn resolve_or_halt(
-    selected: MaterialVersion,
-    available: &[MaterialVersion],
-) -> SelectionOutcome {
-    if available.contains(&selected) {
-        SelectionOutcome::Ready(selected)
-    } else {
-        SelectionOutcome::HaltRetry { selected }
-    }
 }
 
 /// Pure selection over a single timeline's schedule.
@@ -180,11 +132,6 @@ impl MigrationScheduleCache {
     pub fn select_gateway(&self, gw_block_number: Option<i64>) -> MaterialVersion {
         select_from_schedule(&self.gateway, gw_block_number)
     }
-
-    /// True when no cutover has been published at all -- the inert state.
-    pub fn is_inert(&self) -> bool {
-        self.host.is_empty() && self.gateway.is_empty()
-    }
 }
 
 #[cfg(test)]
@@ -249,44 +196,11 @@ mod tests {
         }
     }
 
-    // --- resolve_or_halt: "halt, never substitute" -------------------
-
-    #[test]
-    fn ready_when_selected_version_is_available() {
-        assert_eq!(resolve_or_halt(V0, &[V0]), SelectionOutcome::Ready(V0));
-        assert_eq!(resolve_or_halt(V1, &[V0, V1]), SelectionOutcome::Ready(V1));
-        assert_eq!(resolve_or_halt(V0, &[V0, V1]), SelectionOutcome::Ready(V0));
-    }
-
-    #[test]
-    fn halt_retry_when_selected_version_is_missing() {
-        // The cutover says v1 but this node hasn't ingested v1 yet: halt,
-        // do NOT downgrade to v0.
-        assert_eq!(
-            resolve_or_halt(V1, &[V0]),
-            SelectionOutcome::HaltRetry { selected: V1 }
-        );
-        // And never the reverse downgrade either.
-        assert_eq!(
-            resolve_or_halt(V2, &[V0, V1]),
-            SelectionOutcome::HaltRetry { selected: V2 }
-        );
-    }
-
-    #[test]
-    fn halt_retry_when_node_holds_nothing() {
-        assert_eq!(
-            resolve_or_halt(V0, &[]),
-            SelectionOutcome::HaltRetry { selected: V0 }
-        );
-    }
-
     // --- cache selectors --------------------------------------------
 
     #[test]
-    fn empty_cache_is_inert_and_legacy() {
+    fn empty_cache_is_legacy() {
         let cache = MigrationScheduleCache::empty();
-        assert!(cache.is_inert());
         assert_eq!(cache.select_host(chain(1), Some(10_000)), V0);
         assert_eq!(cache.select_gateway(Some(10_000)), V0);
     }
@@ -300,7 +214,6 @@ mod tests {
             host,
             gateway: vec![],
         };
-        assert!(!cache.is_inert());
         // chain 1 crosses at block 100...
         assert_eq!(cache.select_host(chain(1), Some(99)), V0);
         assert_eq!(cache.select_host(chain(1), Some(100)), V1);
