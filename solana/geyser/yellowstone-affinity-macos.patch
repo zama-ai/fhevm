@@ -1,0 +1,59 @@
+diff --git a/yellowstone-grpc-geyser/Cargo.toml b/yellowstone-grpc-geyser/Cargo.toml
+index c9a28aa..b5a3bb8 100644
+--- a/yellowstone-grpc-geyser/Cargo.toml
++++ b/yellowstone-grpc-geyser/Cargo.toml
+@@ -17,7 +17,6 @@ crate-type = ["cdylib", "rlib"]
+ name = "config-check"
+ 
+ [dependencies]
+-affinity = { workspace = true }
+ agave-geyser-plugin-interface = { workspace = true }
+ anyhow = { workspace = true }
+ base64 = { workspace = true }
+@@ -49,6 +48,10 @@ tonic = { workspace = true, features = ["gzip", "zstd", "tls", "tls-roots"] }
+ tonic-health = { workspace = true }
+ yellowstone-grpc-proto = { workspace = true, features = ["convert", "plugin"] }
+ 
++# affinity (CPU pinning) is Linux-only; gate it off macOS so the plugin builds natively on Apple Silicon.
++[target.'cfg(target_os = "linux")'.dependencies]
++affinity = { workspace = true }
++
+ [build-dependencies]
+ anyhow = { workspace = true }
+ cargo-lock = { workspace = true }
+diff --git a/yellowstone-grpc-geyser/src/config.rs b/yellowstone-grpc-geyser/src/config.rs
+index b2ce1af..fe02c6f 100644
+--- a/yellowstone-grpc-geyser/src/config.rs
++++ b/yellowstone-grpc-geyser/src/config.rs
+@@ -116,6 +116,7 @@ fn parse_taskset(taskset: &str) -> Result<Vec<usize>, String> {
+     let mut vec = set.into_iter().collect::<Vec<usize>>();
+     vec.sort();
+ 
++    #[cfg(target_os = "linux")]
+     if let Some(set_max_index) = vec.last().copied() {
+         let max_index = affinity::get_thread_affinity()
+             .map_err(|_err| "failed to get affinity".to_owned())?
+diff --git a/yellowstone-grpc-geyser/src/grpc.rs b/yellowstone-grpc-geyser/src/grpc.rs
+index 25f3039..1b9477e 100644
+--- a/yellowstone-grpc-geyser/src/grpc.rs
++++ b/yellowstone-grpc-geyser/src/grpc.rs
+@@ -456,6 +456,7 @@ impl GrpcService {
+             if let Some(worker_threads) = config_tokio.worker_threads {
+                 builder.worker_threads(worker_threads);
+             }
++            #[cfg(target_os = "linux")]
+             if let Some(tokio_cpus) = config_tokio.affinity.clone() {
+                 builder.on_thread_start(move || {
+                     affinity::set_thread_affinity(&tokio_cpus).expect("failed to set affinity")
+diff --git a/yellowstone-grpc-geyser/src/plugin.rs b/yellowstone-grpc-geyser/src/plugin.rs
+index 696f292..637fec6 100644
+--- a/yellowstone-grpc-geyser/src/plugin.rs
++++ b/yellowstone-grpc-geyser/src/plugin.rs
+@@ -75,6 +75,7 @@ impl GeyserPlugin for Plugin {
+         if let Some(worker_threads) = config.tokio.worker_threads {
+             builder.worker_threads(worker_threads);
+         }
++        #[cfg(target_os = "linux")]
+         if let Some(tokio_cpus) = config.tokio.affinity.clone() {
+             builder.on_thread_start(move || {
+                 affinity::set_thread_affinity(&tokio_cpus).expect("failed to set affinity")

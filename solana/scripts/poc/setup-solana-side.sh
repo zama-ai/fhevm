@@ -32,14 +32,18 @@ SID_I64=-9223372036854763463
 # Reconstruct mode (adjacent CI run, see solana-e2e.yml). When 1, deploy an EMITLESS
 # zama-host (no `emit-events`) and feed the coprocessor purely via the gRPC Yellowstone
 # transport with off-chain event RECONSTRUCTION — no on-chain emit-decode. That needs the
-# geyser plugin on the validator, so the validator runs from the prebuilt geyser Docker
-# image (RPC 8899 + gRPC 10000) instead of a native solana-test-validator. The dockerized
-# KMS worker still reaches RPC over host.docker.internal:8899 (published to the host), so
-# the rest of the fhevm-cli stack is unaffected. Default 0 = unchanged native/emit path.
+# geyser plugin on the validator, so the host is a native solana-test-validator (agave 2.1.21,
+# multi-arch incl. Apple Silicon) loading the external Yellowstone plugin via
+# --geyser-plugin-config (RPC 8899 + gRPC 10000) — the same real validator as the default path,
+# just with the plugin. It binds 0.0.0.0 so the dockerized KMS worker reaches RPC over
+# host.docker.internal:8899 — the rest of the fhevm-cli stack is unaffected. (surfpool was
+# evaluated and rejected: its LiteSVM does not stream the SlotHashes/Clock sysvar accounts over
+# geyser, which reconstruction needs.) Default 0 = unchanged native/emit path.
 RECONSTRUCT="${RECONSTRUCT:-0}"
-GEYSER_IMAGE="${GEYSER_IMAGE:-poc-solana-validator-yellowstone:ci}"
 GRPC_URL="${GRPC_URL:-http://127.0.0.1:10000}"
-VAL_CONTAINER="${VAL_CONTAINER:-solana-e2e-validator}"
+# Yellowstone plugin cdylib for the validator's --geyser-plugin-config. Prebuilt/built on demand
+# by geyser/build-yellowstone-plugin.sh; CI may set PLUGIN_LIB to a prefetched artifact.
+PLUGIN_LIB="${PLUGIN_LIB:-}"
 
 echo "==> [1/5] gathering live gateway addresses + ProtocolConfig signer set"
 # shellcheck disable=SC1091
@@ -60,18 +64,30 @@ for p in zama_host confidential_token confidential_token_receiver; do
 done
 
 if [ "$RECONSTRUCT" = 1 ]; then
-  # Validator with the Yellowstone geyser plugin (gRPC :10000) from the prebuilt image
-  # (the workflow docker-builds solana/geyser/Dockerfile). Publish 8899+10000 to the host;
-  # the dockerized KMS worker reaches RPC the same way as the native validator — over
-  # host.docker.internal:8899. Local only — no mainnet exposure.
-  docker rm -f "$VAL_CONTAINER" >/dev/null 2>&1 || true
-  docker run -d --name "$VAL_CONTAINER" -p 8899:8899 -p 10000:10000 "$GEYSER_IMAGE" \
-    solana-test-validator --reset --rpc-port 8899 --bind-address 0.0.0.0 \
-    --geyser-plugin-config /plugins/yellowstone-config.json >/dev/null
+  # Host = native solana-test-validator (agave 2.1.21, pinned in solana-e2e.yml) with the
+  # Yellowstone geyser plugin (gRPC :10000) loaded via --geyser-plugin-config. Replaces the baked
+  # amd64 geyser image: the real validator runs on the host arch directly (multi-arch incl. Apple
+  # Silicon) and — unlike surfpool's LiteSVM — streams the SlotHashes/Clock sysvar accounts the
+  # reconstruction needs per slot. The matching plugin cdylib is resolved by
+  # geyser/build-yellowstone-plugin.sh (prebuilt x86 release in CI; built from source on arm64).
+  # Bind 0.0.0.0 so the dockerized KMS worker reaches RPC over host.docker.internal:8899. Local
+  # only — no mainnet exposure.
+  pkill -f solana-test-validator 2>/dev/null || true
+  sleep 2
+  [ -n "$PLUGIN_LIB" ] || PLUGIN_LIB="$("$SOLANA/geyser/build-yellowstone-plugin.sh")"
+  [ -f "$PLUGIN_LIB" ] || { echo "[setup] Yellowstone plugin not found (PLUGIN_LIB=$PLUGIN_LIB)" >&2; exit 1; }
+  GEYSER_CONFIG="$SOLANA/target/yellowstone-config.runtime.json"
+  mkdir -p "$SOLANA/target"
+  sed "s#@LIBPATH@#$PLUGIN_LIB#" "$SOLANA/geyser/yellowstone-config.json" > "$GEYSER_CONFIG"
+  echo "    geyser host: solana-test-validator + Yellowstone plugin $PLUGIN_LIB"
+  LEDGER="$ROOT/.solana-test-ledger"
+  rm -rf "$LEDGER"
+  solana-test-validator --reset --rpc-port 8899 --bind-address 0.0.0.0 --ledger "$LEDGER" \
+    --geyser-plugin-config "$GEYSER_CONFIG" >/tmp/solana-validator.log 2>&1 &
   until curl -s -m2 "$VALIDATOR_RPC" -X POST -H 'Content-Type: application/json' \
     -d '{"jsonrpc":"2.0","id":1,"method":"getHealth"}' 2>/dev/null | grep -q '"ok"'; do
-    [ -z "$(docker ps -q -f name="$VAL_CONTAINER" -f status=running)" ] \
-      && { echo "[setup] geyser validator container died:" >&2; docker logs "$VAL_CONTAINER" 2>&1 | tail -20 >&2; exit 1; }
+    pgrep -f solana-test-validator >/dev/null \
+      || { echo "[setup] geyser validator died:" >&2; tail -20 /tmp/solana-validator.log >&2; exit 1; }
     sleep 1
   done
   solana airdrop 500 >/dev/null 2>&1 || true

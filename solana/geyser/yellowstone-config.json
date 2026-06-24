@@ -1,5 +1,5 @@
 {
-  "libpath": "/plugins/libyellowstone_grpc_geyser.so",
+  "libpath": "@LIBPATH@",
   "log": { "level": "info" },
   "tokio": { "worker_threads": 4, "affinity": null },
   "grpc": {

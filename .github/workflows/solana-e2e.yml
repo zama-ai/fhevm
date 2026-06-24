@@ -5,6 +5,10 @@ name: solana-e2e
 # public-decrypt -> PURE-SDK user-decrypt (no kms checkout) -> input-flow -> consume. The user-decrypt
 # de-signcryption runs entirely in @fhevm/sdk/solana, so this job needs no kms-core source checkout.
 on:
+  # Auto-run on PRs targeting the Solana feature branch (the vertical never ran on
+  # workflow_dispatch-only). Also keep manual dispatch with a custom cleartext.
+  pull_request:
+    branches: [feature/solana]
   workflow_dispatch:
     inputs:
       te-value:
@@ -27,7 +31,7 @@ jobs:
       contents: "read" # checkout
       packages: "read" # pull repo-owned images from ghcr.io
     env:
-      TE_VALUE: ${{ inputs.te-value }}
+      TE_VALUE: ${{ inputs.te-value || '55' }}
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -47,7 +51,8 @@ jobs:
         run: |
           set -euo pipefail
           rustup target add wasm32-unknown-unknown
-          sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
+          # Pin to v2.1.21: the Yellowstone geyser plugin's ABI is patch-coupled to this Agave version.
+          sh -c "$(curl -sSfL https://release.anza.xyz/v2.1.21/install)"
           echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
           cargo install --git https://github.com/coral-xyz/anchor --tag v0.31.1 anchor-cli --locked
 
@@ -69,6 +74,10 @@ jobs:
 
       - name: Install SDK deps (TKMS WASM consumers; pure-SDK user-decrypt)
         run: cd sdk/js-sdk && npm ci
+
+      - name: Install fhevm-cli deps (clean-e2e.sh drives ./fhevm-cli)
+        working-directory: test-suite/fhevm
+        run: bun install --frozen-lockfile
 
       - name: Bring up fresh stack + Solana side (clean-e2e.sh)
         run: bash solana/scripts/poc/clean-e2e.sh
@@ -110,9 +119,8 @@ jobs:
       contents: "read" # checkout
       packages: "read" # pull repo-owned images from ghcr.io
     env:
-      TE_VALUE: ${{ inputs.te-value }}
+      TE_VALUE: ${{ inputs.te-value || '55' }}
       RECONSTRUCT: "1"
-      GEYSER_IMAGE: poc-solana-validator-yellowstone:ci
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -132,18 +140,10 @@ jobs:
         run: |
           set -euo pipefail
           rustup target add wasm32-unknown-unknown
-          sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
+          # Pin to v2.1.21: the Yellowstone geyser plugin's ABI is patch-coupled to this Agave version.
+          sh -c "$(curl -sSfL https://release.anza.xyz/v2.1.21/install)"
           echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
           cargo install --git https://github.com/coral-xyz/anchor --tag v0.31.1 anchor-cli --locked
-
-      - name: Build Yellowstone geyser validator image
-        # Bakes the pinned Yellowstone plugin (v5.0.1+solana.2.1.21, Dockerfile default) into the
-        # matching amd64 Agave 2.1.21 validator; the side-stack runs this image with gRPC :10000.
-        run: |
-          docker build \
-            --build-arg SOLANA_VALIDATOR_IMAGE=anzaxyz/agave:v2.1.21 \
-            -t "$GEYSER_IMAGE" \
-            solana/geyser
 
       - name: Login to ghcr.io
         uses: zama-ai/ci-templates/.github/actions/retry@542103e14b9ae6a9aea27787b8724b3b35bb3918 # v1.0.9
@@ -164,6 +164,10 @@ jobs:
       - name: Install SDK deps (TKMS WASM consumers; pure-SDK user-decrypt)
         run: cd sdk/js-sdk && npm ci
 
+      - name: Install fhevm-cli deps (clean-e2e.sh drives ./fhevm-cli)
+        working-directory: test-suite/fhevm
+        run: bun install --frozen-lockfile
+
       - name: Bring up fresh stack + Solana side (clean-e2e.sh)
         run: bash solana/scripts/poc/clean-e2e.sh
 
@@ -174,9 +178,9 @@ jobs:
         if: ${{ failure() }}
         run: |
           mkdir -p /tmp/solana-e2e-logs
+          # surfpool + listener + fetcher logs all land in /tmp/solana-*.log.
           cp /tmp/solana-*.log /tmp/solana-e2e-logs/ 2>/dev/null || true
           docker ps -a > /tmp/solana-e2e-logs/docker-ps.txt 2>&1 || true
-          docker logs solana-e2e-validator > /tmp/solana-e2e-logs/geyser-validator.log 2>&1 || true
 
       - name: Upload failure logs
         if: ${{ failure() }}
@@ -190,5 +194,5 @@ jobs:
         if: ${{ always() }}
         working-directory: test-suite/fhevm
         run: |
-          docker rm -f solana-e2e-validator || true
+          pkill -f solana-test-validator || true
           ./fhevm-cli clean || true
