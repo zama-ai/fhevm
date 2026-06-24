@@ -278,17 +278,11 @@ export default async function run(ctx: RolloutRunContext) {
 
   // ---- Polygon: addHostChain proposal effect (Phase 9 of the runbook) ----
   // LIMITATION: the rollout boots the 2nd host chain via the multi-chain scenario,
-  // so we exercise the addHostChain proposal-effect task against the gateway, but
-  // the runbook's fresh Polygon host-contract deploy (Phase 7) + ownership transfer
-  // need rollout multi-chain contract-deploy support that isn't wired yet -- that
-  // gap is itself a finding. We run addHostChainsToGatewayConfig to test the
-  // registration path; flagged in the gap report.
-  // FINDING / modeling limit: the rollout's multi-chain scenario boots chain-b as
-  // an already-registered host chain, so addHostChain reverts with
-  // HostChainAlreadyRegistered (selector 0x96a56828). The runbook's "add a new
-  // host chain" proposal-effect therefore can't be freshly exercised here (the
-  // desired end-state -- chain-b registered -- already holds). Tolerate that one
-  // revert; any other failure still fails the rollout.
+  // so the runbook's fresh Polygon host-contract deploy is exercised above, but
+  // the gateway proposal-effect cannot add a truly new chain here. The desired
+  // end-state already holds, and addHostChain reverts with
+  // HostChainAlreadyRegistered (selector 0x96a56828). Tolerate that one modeling
+  // limit; any other failure still fails the rollout.
   logPhase("05 polygon: addHostChainsToGatewayConfig (registration proposal effect)");
   const addHostChain = [
     "if out=$(npx hardhat task:addHostChainsToGatewayConfig 2>&1); then printf '%s\\n' \"$out\";",
