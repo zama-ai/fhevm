@@ -80,7 +80,10 @@ jobs:
             exit 1
           fi
 
-          git fetch --no-tags --depth=1 origin "$BASE_REF"
+          # Full fetch: a depth-1 fetch of a base tip newer than the checkout
+          # has no shared ancestry, and `base...HEAD` fails with "no merge base"
+          # (seen on re-runs after the base branch advanced).
+          git fetch --no-tags origin "$BASE_REF"
           git diff --name-only "origin/${BASE_REF}...HEAD" |
             awk -F/ '$1 == "test-suite" && $2 == "fhevm" && $3 == "rollouts" && $4 != "" && $5 != "" { print $1 "/" $2 "/" $3 "/" $4 "/run.ts" }' |
             sort -u > /tmp/rollout-runbooks.txt
@@ -163,6 +166,10 @@ jobs:
       - name: Show logs
         working-directory: test-suite/fhevm
         if: always()
+        env:
+          # Wider tail so a failing phase captures the full compute/commit window
+          # (the default 120 truncated the coprocessor's transfer-processing logs).
+          SHOW_LOGS_TAIL: 1000
         run: |
           snapshot_logs() {
             local group="$1"
@@ -175,7 +182,7 @@ jobs:
               echo "::endgroup::"
               return
             fi
-            if ! output="$(docker logs --tail 120 "${container}" 2>&1)"; then
+            if ! output="$(docker logs --tail "${SHOW_LOGS_TAIL:-120}" "${container}" 2>&1)"; then
               echo "[warn] docker logs failed for ${container}"
               [ -n "$output" ] && printf '%s\n' "$output"
             elif [ -n "$filter" ]; then

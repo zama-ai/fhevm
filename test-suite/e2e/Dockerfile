@@ -35,8 +35,19 @@ COPY sdk/js-sdk ./sdk/js-sdk
 # Install dependencies. Normal builds stay locked; rollout hotswap builds first
 # update the e2e workspace manifest in the image, then let npm resolve one
 # coherent dependency graph for that requested SDK version.
+#
+# The e2e workspace defaults to @zama-fhe/relayer-sdk ^0.5.0-alpha.2 and the
+# committed lockfile pins that exact nested version, so a plain `npm pkg set` +
+# install keeps 0.5.0-alpha as a nested dep that node resolves before any
+# hoisted pin. For the hotswap path, force the requested SDK with a root
+# `overrides` entry (safe: js-sdk has no relayer-sdk dependency) AND drop the
+# lockfile so npm re-resolves one coherent graph instead of restoring the
+# pinned nested version. A build-time assertion below fails loudly if the e2e
+# workspace still resolves a different SDK.
 RUN if [ -n "$RELAYER_SDK_VERSION" ]; then \
       npm pkg set -w test-suite/e2e "dependencies.@zama-fhe/relayer-sdk=${RELAYER_SDK_VERSION}" && \
+      npm pkg set "overrides.@zama-fhe/relayer-sdk=${RELAYER_SDK_VERSION}" && \
+      rm -f package-lock.json && \
       npm install && \
       npm prune; \
     else \
@@ -54,6 +65,14 @@ RUN npm run build
 WORKDIR /app/test-suite/e2e
 
 RUN npx hardhat compile
+
+# Guard against silently shipping the wrong SDK: when a version was requested,
+# fail the build loudly if the e2e workspace resolves a different one. This is
+# the check that would have caught the rollout running 0.5.0-alpha under a
+# RELAYER_SDK_VERSION=0.4.2 pin.
+RUN if [ -n "$RELAYER_SDK_VERSION" ]; then \
+      node -e "const p=require.resolve('@zama-fhe/relayer-sdk/package.json',{paths:['/app/test-suite/e2e']});const v=require(p).version;const want=process.env.RELAYER_SDK_VERSION;console.log('[build] e2e @zama-fhe/relayer-sdk resolved to '+v+' (requested '+want+')');if(v!==want){console.error('ERROR: e2e resolved @zama-fhe/relayer-sdk '+v+' but RELAYER_SDK_VERSION='+want);process.exit(1);}"; \
+    fi
 
 # --- Runtime Stage ---
 FROM node:${NODE_VERSION} AS prod

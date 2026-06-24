@@ -1519,6 +1519,13 @@ export const upgradeRuntimeGroup = async (groupValue: string | undefined, option
     ? (await applyRuntimeUpgradeLock(state, plan.group, plan.versionKeys, options.lockFile)).state
     : state;
   await assertSchemaCompatibility(nextState.versions, nextState.overrides, nextState.scenario, false);
+  // Boot-time compose generation omits the v0.13-only host-listener-consumer for
+  // older targets; the explicit upgrade service list must gate it the same way,
+  // or the upgrade starts it from the template image whose older build has no
+  // host_listener_consumer binary. Gate on the TARGET (post-lock) state.
+  const includeConsumer = supportsHostListenerConsumer(nextState);
+  const gateConsumer = (services: string[]) =>
+    includeConsumer ? services : services.filter((service) => service !== "coprocessor-host-listener-consumer");
   console.log(`[upgrade] ${plan.group}`);
   await saveState(nextState);
   await generateRuntime(nextState, stackSpecForState(nextState));
@@ -1538,9 +1545,9 @@ export const upgradeRuntimeGroup = async (groupValue: string | undefined, option
     }
   }
   for (const component of plan.components) {
-    await composeUp(component.component, component.runtimeServices, { noDeps: true });
+    await composeUp(component.component, gateConsumer(component.runtimeServices), { noDeps: true });
   }
-  await waitForUpgrade(nextState, plan.group, plan.runtimeServices);
+  await waitForUpgrade(nextState, plan.group, gateConsumer(plan.runtimeServices));
   for (const step of plan.steps) {
     await markStep(nextState, step);
   }
