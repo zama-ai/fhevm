@@ -106,6 +106,7 @@ const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[numb
   erc20: "Run ERC20 transfer coverage.",
   "negative-acl": "Run negative ACL scenarios.",
   "multi-chain-isolation": "Run multi-chain state isolation coverage.",
+  "confidential-bridge": "Run confidential bridge cross-chain decrypt coverage (multi-chain).",
   "ciphertext-drift": "Run ciphertext drift detection checks (requires 2+ coprocessors).",
   "ciphertext-drift-auto-recovery":
     "Run ciphertext drift auto-recovery checks — services self-recover (requires 2+ coprocessors).",
@@ -132,6 +133,7 @@ export const listTestProfiles = () => {
     const topologyTags = [
       name === "ciphertext-drift" ? "2+ coprocessors" : undefined,
       name === "multi-chain-isolation" ? "multi-chain" : undefined,
+      name === "confidential-bridge" ? "multi-chain" : undefined,
     ].filter(Boolean);
     const suiteTags = [
       LIGHT_TEST_PROFILES.includes(name as (typeof LIGHT_TEST_PROFILES)[number]) ? "light" : undefined,
@@ -1261,10 +1263,10 @@ export const test = async (testName: string | undefined, options: TestOptions) =
     const started = Date.now();
     await runLogged("standard", started, async () => {
       for (const profile of STANDARD_TEST_PROFILES) {
-        if (profile === "multi-chain-isolation") {
+        if (profile === "multi-chain-isolation" || profile === "confidential-bridge") {
           const skipReason = multiChainIsolationSkipReason();
           if (skipReason) {
-            console.log(`[test] skipping multi-chain-isolation: ${skipReason}`);
+            console.log(`[test] skipping ${profile}: ${skipReason}`);
             continue;
           }
         }
