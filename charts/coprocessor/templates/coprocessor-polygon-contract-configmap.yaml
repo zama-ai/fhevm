@@ -1,13 +1,13 @@
-{{- if .Values.hostContractConfigMap.enabled -}}
-{{- $cm := .Values.hostContractConfigMap -}}
+{{- if .Values.polygonContractConfigMap.enabled -}}
+{{- $cm := .Values.polygonContractConfigMap -}}
 {{- $allowed := list "" "devnet" "testnet" "mainnet" -}}
 {{- $network := default "" $cm.network -}}
 {{- if not (has $network $allowed) -}}
-{{- fail (printf "hostContractConfigMap.network must be one of: devnet, testnet, mainnet (or empty); got %q" $network) -}}
+{{- fail (printf "polygonContractConfigMap.network must be one of: devnet, testnet, mainnet (or empty); got %q" $network) -}}
 {{- end -}}
 {{- $preset := dict -}}
 {{- if $network -}}
-{{- $preset = .Files.Get (printf "configs/ethereum-%s.yaml" $network) | fromYaml -}}
+{{- $preset = .Files.Get (printf "configs/polygon-%s.yaml" $network) | fromYaml -}}
 {{- end -}}
 {{- $merged := mergeOverwrite (deepCopy $preset) ($cm.addresses | default dict) -}}
 apiVersion: v1
