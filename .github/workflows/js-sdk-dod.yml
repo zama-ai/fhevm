@@ -75,7 +75,6 @@ jobs:
           - browser
           - cleartext-v12
           - cleartext-v13
-          - cleartext-latest
           - localstack-v11
           - localstack-v12
           - localstack-v13
@@ -180,8 +179,6 @@ jobs:
             flags: '--use-pack --foundry-profile=v12'
           - profile: v13
             flags: '--use-pack --foundry-profile=v13'
-          - profile: latest
-            flags: '--use-pack'
     steps:
       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:

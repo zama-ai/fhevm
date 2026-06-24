@@ -66,8 +66,8 @@ export function isCleartext(chainName: FheTestChainName) {
 // ---------------------------------------------------------------------------
 
 const PROTOCOL_VERSION_BY_CHAIN: Readonly<Record<FheTestChainName, ProtocolVersion>> = {
-  sepolia: '0.12.0',
-  testnet: '0.12.0',
+  sepolia: '0.13.0',
+  testnet: '0.13.0',
   mainnet: '0.11.0',
   localcleartext: '0.13.0',
   localcleartext_v12: '0.12.0',

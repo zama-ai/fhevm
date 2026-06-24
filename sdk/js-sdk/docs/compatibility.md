@@ -46,7 +46,7 @@ KMS `0.12.7` generated the PubKey/CRS in December 2025
 | Chain                 | Protocol | PubKey/CRS      |
 | --------------------- | -------- | --------------- |
 | Mainnet               | `0.11.0` | `1.4.0-alpha.3` |
-| Testnet               | `0.12.0` | `1.4.0-alpha.3` |
+| Testnet               | `0.13.0` | `1.4.0-alpha.3` |
 | Devnet                | `0.13.0` | `1.4.0-alpha.3` |
 | Polygon-Amoy (Devnet) | `0.13.0` | `1.4.0-alpha.3` |
 
@@ -77,7 +77,7 @@ KMS `0.12.7` generated the PubKey/CRS in December 2025
 | Chain   | Protocol | PubKey/CRS (TFHE) | TFHE 1.5.3 | TFHE 1.6.1 |
 | ------- | -------- | ----------------- | ---------- | ---------- |
 | Mainnet | `0.11.0` | `1.4.0-alpha.3`   | ✅         | ❌         |
-| Testnet | `0.12.0` | `1.4.0-alpha.3`   | ✅         | ❌         |
+| Testnet | `0.13.0` | `1.4.0-alpha.3`   | ✅         | ✅         |
 | Devnet  | `0.13.0` | `1.4.0-alpha.3`   | ✅         | ✅         |
 
 ## Localstack
