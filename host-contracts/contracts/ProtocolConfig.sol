@@ -23,7 +23,7 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     uint256 private constant MINOR_VERSION = 2;
     uint256 private constant PATCH_VERSION = 0;
 
-    /// @dev Shared between `initializeFromEmptyProxy` and `initializeFromMigration`.
+    /// @dev Shared between `initializeFromEmptyProxy`, `initializeFromMigration` and `reinitializeV2`.
     uint64 private constant REINITIALIZER_VERSION = 3;
 
     /// @notice Upper bound on the KMS committee size and on every per-context threshold.
@@ -132,10 +132,7 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     }
 
     /**
-     * @notice Reinitializer for proxies previously initialized at version 2. Reserved for
-     *         the version-3 storage layout; no state changes are required because coprocessor
-     *         context state is no longer tracked on chain (proposals are off-chain-driven and
-     *         identified by caller-supplied `proposalId`s emitted in `CoprocessorUpgradeProposed`).
+     * @notice Re-initializes the contract from V1.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer

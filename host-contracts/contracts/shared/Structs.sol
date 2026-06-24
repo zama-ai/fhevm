@@ -26,4 +26,3 @@ struct ChainUpgradeWindow {
     /// @notice Last block GCS replays in dry-run, inclusive
     uint64 endBlock;
 }
-

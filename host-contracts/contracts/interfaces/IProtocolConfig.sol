@@ -42,15 +42,13 @@ interface IProtocolConfig {
     event KmsContextDestroyed(uint256 indexed kmsContextId);
 
     /**
-     * @notice Emitted when a coprocessor upgrade is proposed. The proposal is identified
-     *         by a caller-supplied `proposalId`; the contract does not track adoption state.
-     *         Off-chain machinery (host-listener, upgrade-controller, consensus-detector)
-     *         observes this event and drives the dry-run / consensus / cutover lifecycle.
+     * @notice Emitted when a coprocessor upgrade is proposed. This event drives the
+     *         coprocessor software upgrade.
      * @param proposalId Caller-supplied identifier for this upgrade attempt.
      * @param softwareVersion The coprocessor software version for the proposal.
      * @param chainUpgradeWindows The per-host-chain replay windows for the upgrade.
      * @param gwStartBlock The Gateway block at which GCS's gateway-listener resumes from.
-     * @param ciphertextVersion The ciphertext version the new software writes; promoted into the `versioning` singleton at cutover.
+     * @param ciphertextVersion The ciphertext version the new software writes.
      */
     event CoprocessorUpgradeProposed(
         uint256 indexed proposalId,
