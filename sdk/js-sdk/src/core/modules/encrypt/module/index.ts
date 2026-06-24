@@ -1,6 +1,8 @@
 import type { FhevmRuntime } from '../../../types/coreFhevmRuntime.js';
 import type {
   BuildWithProofPackedParameters,
+  BuildWithProofPackedSeededParameters,
+  CanBuildWithProofPackedSeededParameters,
   DeserializeFheEncryptionCrsParameters,
   DeserializeFheEncryptionPublicKeyParameters,
   EncryptModuleFactory,
@@ -13,6 +15,8 @@ import type {
 } from '../types.js';
 import {
   buildWithProofPacked,
+  buildWithProofPackedSeeded,
+  canBuildWithProofPackedSeeded,
   deserializeFheEncryptionCrs,
   deserializeFheEncryptionPublicKey,
   parseTFHEProvenCompactCiphertextList,
@@ -36,6 +40,10 @@ export const encryptModule: EncryptModuleFactory = (runtime: FhevmRuntime) => {
       parseTFHEProvenCompactCiphertextList: (args: ParseTFHEProvenCompactCiphertextListParameters) =>
         parseTFHEProvenCompactCiphertextList(runtime, args),
       buildWithProofPacked: (args: BuildWithProofPackedParameters) => buildWithProofPacked(runtime, args),
+      buildWithProofPackedSeeded: (args: BuildWithProofPackedSeededParameters) =>
+        buildWithProofPackedSeeded(runtime, args),
+      canBuildWithProofPackedSeeded: (args: CanBuildWithProofPackedSeededParameters) =>
+        canBuildWithProofPackedSeeded(runtime, args),
       serializeFheEncryptionKey: (args: SerializeFheEncryptionKeyParameters) =>
         serializeFheEncryptionKey(runtime, args),
       serializeFheEncryptionPublicKey: (args: SerializeFheEncryptionPublicKeyParameters) =>

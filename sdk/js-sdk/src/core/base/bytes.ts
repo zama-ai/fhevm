@@ -1661,9 +1661,9 @@ export function hexToBytes65(hexString: string): Bytes65 {
 export function hexToBytesFaster(
   hexString: string,
   options?: {
-    strict?: boolean;
-    byteLength?: ByteLength;
-    subject?: string;
+    strict?: boolean | undefined;
+    byteLength?: ByteLength | undefined;
+    subject?: string | undefined;
   } & ErrorMetadataParams,
 ): Uint8Array {
   const strict = options?.strict === true;
@@ -1905,13 +1905,13 @@ export function toBytes(
     copy?: boolean;
   } & ErrorMetadataParams,
 ): Bytes {
-  if (isBytes(value)) {
+  if (isBytes(value, options?.byteLength)) {
     if (options?.copy === true) {
       return new Uint8Array(value);
     }
     return value;
   } else if (typeof value === 'string') {
-    return hexToBytesFaster(value, { strict: true });
+    return hexToBytesFaster(value, { byteLength: options?.byteLength, strict: true, subject: options?.subject });
   } else {
     throw new InvalidTypeError(
       {

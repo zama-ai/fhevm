@@ -1,8 +1,4 @@
-/* eslint-disable @typescript-eslint/require-await */
 import type { TfheVersion } from '../../../wasm/tfhe/TfheApi.js';
-import { concatBytes, hexToBytes32 } from '../../base/bytes.js';
-import { remove0x } from '../../base/string.js';
-import { typedValueToBytes32Hex } from '../../base/typedValue.js';
 import type { FhevmRuntime } from '../../types/coreFhevmRuntime.js';
 import type {
   FheEncryptionCrs,
@@ -13,6 +9,7 @@ import type {
 } from '../../types/fheEncryptionKey.js';
 import type { Bytes, BytesHex, UintNumber } from '../../types/primitives.js';
 import type {
+  BuildWithProofPackedSeededParameters,
   BuildWithProofPackedParameters,
   BuildWithProofPackedReturnType,
   ParseTFHEProvenCompactCiphertextListParameters,
@@ -28,7 +25,13 @@ import type {
   DeserializeFheEncryptionPublicKeyReturnType as DeserializeFheEncryptionPublicKeyReturnType,
   DeserializeFheEncryptionCrsParameters,
   DeserializeFheEncryptionCrsReturnType,
+  CanBuildWithProofPackedSeededParameters,
+  CanBuildWithProofPackedSeededReturnType,
 } from './types.js';
+import { concatBytes, hexToBytes32 } from '../../base/bytes.js';
+import { remove0x } from '../../base/string.js';
+import { typedValueToBytes32Hex } from '../../base/typedValue.js';
+import { MAX_UINT16, numberToBytes2 } from '../../base/uint.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -129,10 +132,21 @@ class CleartextTfheCompactPkeCrsImpl implements FheEncryptionCrs {
 // parseTFHEProvenCompactCiphertextList
 ////////////////////////////////////////////////////////////////////////////////
 
+/* eslint-disable @typescript-eslint/require-await */
 export async function parseTFHEProvenCompactCiphertextList(
   _parameters: ParseTFHEProvenCompactCiphertextListParameters,
 ): Promise<ParseTFHEProvenCompactCiphertextListReturnType> {
   throw new Error('Not yet implemented');
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// canBuildWithProofPackedSeeded
+////////////////////////////////////////////////////////////////////////////////
+
+export async function canBuildWithProofPackedSeeded(
+  _parameters: CanBuildWithProofPackedSeededParameters,
+): Promise<CanBuildWithProofPackedSeededReturnType> {
+  return true;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -142,7 +156,35 @@ export async function parseTFHEProvenCompactCiphertextList(
 export async function buildWithProofPacked(
   parameters: BuildWithProofPackedParameters,
 ): Promise<BuildWithProofPackedReturnType> {
-  const { fheEncryptionKey: publicEncryptionParams, metaData, typedValues, extraData } = parameters;
+  return _buildWithProofPacked({ ...parameters, seed: crypto.getRandomValues(new Uint8Array(new ArrayBuffer(8))) });
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// buildWithProofPackedSeeded
+////////////////////////////////////////////////////////////////////////////////
+
+export async function buildWithProofPackedSeeded(
+  parameters: BuildWithProofPackedSeededParameters,
+): Promise<BuildWithProofPackedReturnType> {
+  return _buildWithProofPacked(parameters);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// _buildWithProofPacked
+////////////////////////////////////////////////////////////////////////////////
+
+async function _buildWithProofPacked(
+  parameters: BuildWithProofPackedSeededParameters,
+): Promise<BuildWithProofPackedReturnType> {
+  const { fheEncryptionKey: publicEncryptionParams, metaData, typedValues, extraData, seed } = parameters;
+
+  const MIN_SEED_BIT_LEN = 32;
+  const MAX_SEED_BIT_LEN = 64;
+
+  // seed must be at least 32-bits long and should not exceed 64-bits
+  if (seed.length * 8 < MIN_SEED_BIT_LEN || seed.length * 8 > MAX_SEED_BIT_LEN) {
+    throw new Error('Invalid seed length');
+  }
 
   const tfheCompactPublicKeyImpl = publicEncryptionParams.publicKey;
   const tfheCompactPkeCrsImpl = publicEncryptionParams.crs;
@@ -150,18 +192,24 @@ export async function buildWithProofPacked(
   if (!(tfheCompactPublicKeyImpl instanceof CleartextTfheCompactPublicKeyImpl)) {
     throw new Error('Invalid tfhePublicKey');
   }
+
   if (!(tfheCompactPkeCrsImpl instanceof CleartextTfheCompactPkeCrsImpl)) {
     throw new Error('Invalid tfheCrs');
+  }
+
+  // mock accepts large arrays even if theoretically, the max len should be 256
+  if (typedValues.length > MAX_UINT16 + 1) {
+    throw new Error('Invalid typedValues length');
   }
 
   const typedValuesBytes32HexNo0x = typedValues.map(typedValueToBytes32Hex).map(remove0x).join('');
   const cleartextExtraData = `0x${typedValuesBytes32HexNo0x}${remove0x(extraData)}` as BytesHex;
 
-  // Per typedValue: random nonce (8 bytes) || metaData || value bytes (32).
-  const perValueBlobs = typedValues.map((tv) => {
-    const nonce = crypto.getRandomValues(new Uint8Array(new ArrayBuffer(8)));
+  // Per typedValue: index (2) || seed || metaData || value bytes (32).
+  const perValueBlobs = typedValues.map((tv, index) => {
+    const indexBytes = numberToBytes2(index);
     const valueBytes = hexToBytes32(typedValueToBytes32Hex(tv));
-    return concatBytes(nonce, metaData, valueBytes);
+    return concatBytes(indexBytes, parameters.seed, metaData, valueBytes);
   });
 
   const ciphertextWithZKProofBytes = concatBytes(...perValueBlobs);
@@ -323,6 +371,8 @@ export const encryptModule: EncryptModuleFactory = (_runtime: FhevmRuntime) => {
       },
       parseTFHEProvenCompactCiphertextList,
       buildWithProofPacked,
+      buildWithProofPackedSeeded,
+      canBuildWithProofPackedSeeded,
       serializeFheEncryptionKey,
       serializeFheEncryptionPublicKey,
       serializeFheEncryptionCrs,

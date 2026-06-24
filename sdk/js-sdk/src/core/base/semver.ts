@@ -14,7 +14,7 @@ export type Semver = {
 
 export type SemverComparator = 'lt' | 'le' | 'gt' | 'ge' | 'eq';
 
-export type SemverRange = {
+export type SemverConstraint = {
   readonly version: string;
   readonly comparator: SemverComparator;
 };
@@ -65,10 +65,14 @@ export function isSemverStrictlyBefore(version: string, before: string): boolean
   return compareSemver(version, before) < 0;
 }
 
-export function isSemverInRange(version: string, range: SemverRange): boolean {
-  const comparison = compareSemver(version, range.version);
+export function isSemverAtLeast(version: string, minimum: string): boolean {
+  return compareSemver(version, minimum) >= 0;
+}
 
-  switch (range.comparator) {
+export function satisfiesSemverConstraint(version: string, constraint: SemverConstraint): boolean {
+  const comparison = compareSemver(version, constraint.version);
+
+  switch (constraint.comparator) {
     case 'lt':
       return comparison < 0;
     case 'le':
@@ -80,54 +84,54 @@ export function isSemverInRange(version: string, range: SemverRange): boolean {
     case 'eq':
       return comparison === 0;
     default: {
-      const exhaustiveCheck: never = range.comparator;
+      const exhaustiveCheck: never = constraint.comparator;
       throw new Error(`Unsupported SemVer comparator "${exhaustiveCheck}".`);
     }
   }
 }
 
 export function isSemverInInterval(version: string, interval: SemverInterval): boolean {
-  if (interval.lowerBound !== undefined && !isSemverInRange(version, interval.lowerBound)) {
+  if (interval.lowerBound !== undefined && !satisfiesSemverConstraint(version, interval.lowerBound)) {
     return false;
   }
-  if (interval.upperBound !== undefined && !isSemverInRange(version, interval.upperBound)) {
+  if (interval.upperBound !== undefined && !satisfiesSemverConstraint(version, interval.upperBound)) {
     return false;
   }
   return true;
 }
 
 /**
- * Returns whether a SemVer comparator constraint implies a SemVer range.
+ * Returns whether a SemVer comparator constraint implies another SemVer comparator constraint.
  *
  * Mathematically: for every SemVer `x`, if `x comparator version` is true,
- * then `x range.comparator range.version` is also true.
+ * then `x constraint.comparator constraint.version` is also true.
  */
-export function semverComparatorImpliesRange(
+export function semverComparatorImpliesConstraint(
   version: string,
   comparator: SemverComparator,
-  range: SemverRange,
+  constraint: SemverConstraint,
 ): boolean {
   if (comparator === 'eq') {
-    return isSemverInRange(version, range);
+    return satisfiesSemverConstraint(version, constraint);
   }
 
-  const comparison = compareSemver(version, range.version);
+  const comparison = compareSemver(version, constraint.version);
 
   switch (comparator) {
     case 'lt':
-      return range.comparator === 'lt' || range.comparator === 'le' ? comparison <= 0 : false;
+      return constraint.comparator === 'lt' || constraint.comparator === 'le' ? comparison <= 0 : false;
     case 'le':
-      if (range.comparator === 'lt') {
+      if (constraint.comparator === 'lt') {
         return comparison < 0;
       }
-      return range.comparator === 'le' ? comparison <= 0 : false;
+      return constraint.comparator === 'le' ? comparison <= 0 : false;
     case 'gt':
-      return range.comparator === 'gt' || range.comparator === 'ge' ? comparison >= 0 : false;
+      return constraint.comparator === 'gt' || constraint.comparator === 'ge' ? comparison >= 0 : false;
     case 'ge':
-      if (range.comparator === 'gt') {
+      if (constraint.comparator === 'gt') {
         return comparison > 0;
       }
-      return range.comparator === 'ge' ? comparison >= 0 : false;
+      return constraint.comparator === 'ge' ? comparison >= 0 : false;
     default: {
       const exhaustiveCheck: never = comparator;
       throw new Error(`Unsupported SemVer comparator "${exhaustiveCheck}".`);

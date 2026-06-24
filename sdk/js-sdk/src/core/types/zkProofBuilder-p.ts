@@ -34,4 +34,13 @@ export interface ZkProofBuilder {
       readonly extraData: string;
     },
   ): Promise<ZkProof>;
+  buildSeeded(
+    context: { readonly chain: FhevmChain; readonly runtime: WithEncrypt; readonly tfheVersion: TfheVersion },
+    parameters: {
+      readonly contractAddress: string;
+      readonly userAddress: string;
+      readonly extraData: string;
+      readonly seed: Uint8Array;
+    },
+  ): Promise<ZkProof>;
 }

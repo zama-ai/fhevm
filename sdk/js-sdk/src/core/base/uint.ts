@@ -1,4 +1,6 @@
 import type {
+  Bytes1,
+  Bytes2,
   Bytes32,
   Bytes8,
   BytesHex,
@@ -197,6 +199,28 @@ export function numberToBytes8(num: number): Bytes8 {
   const view = new DataView(buffer);
   view.setBigUint64(0, BigInt(num), false);
   return new Uint8Array(buffer) as Bytes8;
+}
+
+export function numberToBytes2(num: number): Bytes2 {
+  if (!isUintNumber(num, MAX_UINT16)) {
+    throw new InvalidTypeError({ expectedType: 'uint16Number' }, {});
+  }
+
+  const buffer = new ArrayBuffer(2);
+  const view = new DataView(buffer);
+  view.setUint16(0, num, false);
+  return new Uint8Array(buffer) as Bytes2;
+}
+
+export function numberToBytes1(num: number): Bytes1 {
+  if (!isUintNumber(num, MAX_UINT8)) {
+    throw new InvalidTypeError({ expectedType: 'uint8Number' }, {});
+  }
+
+  const buffer = new ArrayBuffer(1);
+  const view = new DataView(buffer);
+  view.setUint8(0, num);
+  return new Uint8Array(buffer) as Bytes1;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

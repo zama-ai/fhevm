@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isSemverInInterval, semverComparatorImpliesRange } from './semver.js';
+import { isSemverAtLeast, isSemverInInterval, semverComparatorImpliesConstraint } from './semver.js';
 
 describe('isSemverInInterval', () => {
   it('handles half-open intervals', () => {
@@ -23,24 +23,32 @@ describe('isSemverInInterval', () => {
   });
 });
 
-describe('semverComparatorImpliesRange', () => {
+describe('isSemverAtLeast', () => {
+  it('checks lower-bound SemVer compatibility', () => {
+    expect(isSemverAtLeast('1.5.3', '1.6.0')).toBe(false);
+    expect(isSemverAtLeast('1.6.0', '1.6.0')).toBe(true);
+    expect(isSemverAtLeast('1.6.1', '1.6.0')).toBe(true);
+  });
+});
+
+describe('semverComparatorImpliesConstraint', () => {
   it('handles exact constraints', () => {
-    expect(semverComparatorImpliesRange('0.13.0', 'eq', { version: '0.13.0', comparator: 'eq' })).toBe(true);
-    expect(semverComparatorImpliesRange('0.13.0', 'eq', { version: '0.12.0', comparator: 'gt' })).toBe(true);
-    expect(semverComparatorImpliesRange('0.13.0', 'eq', { version: '0.13.0', comparator: 'gt' })).toBe(false);
+    expect(semverComparatorImpliesConstraint('0.13.0', 'eq', { version: '0.13.0', comparator: 'eq' })).toBe(true);
+    expect(semverComparatorImpliesConstraint('0.13.0', 'eq', { version: '0.12.0', comparator: 'gt' })).toBe(true);
+    expect(semverComparatorImpliesConstraint('0.13.0', 'eq', { version: '0.13.0', comparator: 'gt' })).toBe(false);
   });
 
   it('handles lower-bound constraints', () => {
-    expect(semverComparatorImpliesRange('0.14.0', 'gt', { version: '0.13.0', comparator: 'ge' })).toBe(true);
-    expect(semverComparatorImpliesRange('0.13.0', 'gt', { version: '0.13.0', comparator: 'gt' })).toBe(true);
-    expect(semverComparatorImpliesRange('0.13.0', 'ge', { version: '0.13.0', comparator: 'gt' })).toBe(false);
-    expect(semverComparatorImpliesRange('0.12.0', 'gt', { version: '0.13.0', comparator: 'ge' })).toBe(false);
+    expect(semverComparatorImpliesConstraint('0.14.0', 'gt', { version: '0.13.0', comparator: 'ge' })).toBe(true);
+    expect(semverComparatorImpliesConstraint('0.13.0', 'gt', { version: '0.13.0', comparator: 'gt' })).toBe(true);
+    expect(semverComparatorImpliesConstraint('0.13.0', 'ge', { version: '0.13.0', comparator: 'gt' })).toBe(false);
+    expect(semverComparatorImpliesConstraint('0.12.0', 'gt', { version: '0.13.0', comparator: 'ge' })).toBe(false);
   });
 
   it('handles upper-bound constraints', () => {
-    expect(semverComparatorImpliesRange('0.11.0', 'lt', { version: '0.13.0', comparator: 'lt' })).toBe(true);
-    expect(semverComparatorImpliesRange('0.13.0', 'lt', { version: '0.13.0', comparator: 'lt' })).toBe(true);
-    expect(semverComparatorImpliesRange('0.13.0', 'le', { version: '0.13.0', comparator: 'lt' })).toBe(false);
-    expect(semverComparatorImpliesRange('0.14.0', 'lt', { version: '0.13.0', comparator: 'lt' })).toBe(false);
+    expect(semverComparatorImpliesConstraint('0.11.0', 'lt', { version: '0.13.0', comparator: 'lt' })).toBe(true);
+    expect(semverComparatorImpliesConstraint('0.13.0', 'lt', { version: '0.13.0', comparator: 'lt' })).toBe(true);
+    expect(semverComparatorImpliesConstraint('0.13.0', 'le', { version: '0.13.0', comparator: 'lt' })).toBe(false);
+    expect(semverComparatorImpliesConstraint('0.14.0', 'lt', { version: '0.13.0', comparator: 'lt' })).toBe(false);
   });
 });

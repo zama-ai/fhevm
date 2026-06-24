@@ -1,0 +1,56 @@
+import type { RelayerInputProofOptions } from '../../types/relayer.js';
+import type { Fhevm } from '../../types/coreFhevmClient.js';
+import type { WithEncrypt } from '../../types/coreFhevmRuntime.js';
+import type { FhevmChain } from '../../types/fhevmChain.js';
+import type { BytesHex } from '../../types/primitives.js';
+import type { EncryptedValue } from '../../types/encryptedTypes.js';
+import { addressToChecksummedAddress, assertIsAddress } from '../../base/address.js';
+import { createTypedValue } from '../../base/typedValue.js';
+import { encrypt as encrypt_ } from '../../coprocessor/encrypt.js';
+import { asFhevmWithTfheVersion } from '../../runtime/CoreFhevm-p.js';
+
+////////////////////////////////////////////////////////////////////////////////
+
+export type EncryptValuesWithSeedParameters = {
+  readonly values: ReadonlyArray<{ readonly type: string; readonly value: boolean | bigint | number | string }>;
+  readonly contractAddress: string;
+  readonly userAddress: string;
+  readonly seed: Uint8Array;
+  readonly options?: RelayerInputProofOptions | undefined;
+};
+
+export type EncryptValuesWithSeedReturnType = {
+  readonly encryptedValues: readonly EncryptedValue[];
+  readonly inputProof: BytesHex;
+};
+
+////////////////////////////////////////////////////////////////////////////////
+
+export async function encryptValuesWithSeed(
+  fhevm: Fhevm<FhevmChain, WithEncrypt>,
+  parameters: EncryptValuesWithSeedParameters,
+): Promise<EncryptValuesWithSeedReturnType> {
+  const { contractAddress, userAddress, seed, options } = parameters;
+  // Validates `values`
+  const values = parameters.values.map(createTypedValue);
+
+  assertIsAddress(contractAddress, {});
+  assertIsAddress(userAddress, {});
+
+  const f = asFhevmWithTfheVersion(fhevm);
+
+  const result = await encrypt_(f, {
+    contractAddress: addressToChecksummedAddress(contractAddress),
+    userAddress: addressToChecksummedAddress(userAddress),
+    values,
+    options,
+    seed,
+  });
+
+  return {
+    encryptedValues: result.inputHandles.map(
+      (encryptedValue) => encryptedValue.bytes32Hex as unknown as EncryptedValue,
+    ),
+    inputProof: result.inputProof,
+  };
+}

@@ -10,7 +10,7 @@ import type { FhevmChain } from '../types/fhevmChain.js';
 import type { HostContractVersion } from '../types/hostContract.js';
 import type { SemverInterval, SemverIntervalLowerBound, SemverIntervalUpperBound } from '../base/semver.js';
 import { asAddress, addressToChecksummedAddress } from '../base/address.js';
-import { compareSemver, isSemverInInterval, semverComparatorImpliesRange } from '../base/semver.js';
+import { compareSemver, isSemverInInterval, semverComparatorImpliesConstraint } from '../base/semver.js';
 import { mainnet } from '../chains/definitions/mainnet.js';
 import { sepolia } from '../chains/definitions/sepolia.js';
 import { assertIsHostContractVersionOf, getHostContractVersion } from '../host-contracts/HostContractVersion-p.js';
@@ -387,13 +387,13 @@ function _protocolVersionResolutionImpliesInterval(
 ): boolean {
   if (
     interval.lowerBound !== undefined &&
-    !semverComparatorImpliesRange(protocolVersion.version, protocolVersion.comparator, interval.lowerBound)
+    !semverComparatorImpliesConstraint(protocolVersion.version, protocolVersion.comparator, interval.lowerBound)
   ) {
     return false;
   }
   if (
     interval.upperBound !== undefined &&
-    !semverComparatorImpliesRange(protocolVersion.version, protocolVersion.comparator, interval.upperBound)
+    !semverComparatorImpliesConstraint(protocolVersion.version, protocolVersion.comparator, interval.upperBound)
   ) {
     return false;
   }

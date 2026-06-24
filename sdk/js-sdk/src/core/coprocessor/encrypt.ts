@@ -21,6 +21,7 @@ type Parameters = {
   readonly contractAddress: ChecksummedAddress;
   readonly userAddress: ChecksummedAddress;
   readonly values: readonly TypedValue[];
+  readonly seed?: Uint8Array | undefined;
   readonly options?: RelayerInputProofOptions | undefined;
 };
 

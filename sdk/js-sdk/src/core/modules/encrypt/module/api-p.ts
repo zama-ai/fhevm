@@ -1,18 +1,21 @@
 import type {
+  BuildWithProofPackedSeededParameters,
   BuildWithProofPackedParameters,
   BuildWithProofPackedReturnType,
   ParseTFHEProvenCompactCiphertextListParameters,
   ParseTFHEProvenCompactCiphertextListReturnType,
-  SerializeFheEncryptionCrsParameters as SerializeFheEncryptionCrsParameters,
-  SerializeFheEncryptionCrsReturnType as SerializeFheEncryptionCrsReturnType,
-  SerializeFheEncryptionKeyParameters as SerializeFheEncryptionKeyParameters,
-  SerializeFheEncryptionKeyReturnType as SerializeFheEncryptionKeyReturnType,
-  SerializeFheEncryptionPublicKeyParameters as SerializeFheEncryptionPublicKeyParameters,
-  SerializeFheEncryptionPublicKeyReturnType as SerializeFheEncryptionPublicKeyReturnType,
-  DeserializeFheEncryptionCrsParameters as DeserializeFheEncryptionCrsParameters,
-  DeserializeFheEncryptionCrsReturnType as DeserializeFheEncryptionCrsReturnType,
+  SerializeFheEncryptionCrsParameters,
+  SerializeFheEncryptionCrsReturnType,
+  SerializeFheEncryptionKeyParameters,
+  SerializeFheEncryptionKeyReturnType,
+  SerializeFheEncryptionPublicKeyParameters,
+  SerializeFheEncryptionPublicKeyReturnType,
+  DeserializeFheEncryptionCrsParameters,
+  DeserializeFheEncryptionCrsReturnType,
   DeserializeFheEncryptionPublicKeyParameters,
   DeserializeFheEncryptionPublicKeyReturnType,
+  CanBuildWithProofPackedSeededParameters,
+  CanBuildWithProofPackedSeededReturnType,
 } from '../types.js';
 import type {
   FheEncryptionCrs,
@@ -38,6 +41,7 @@ import { EncryptionError } from '../../../errors/EncryptionError.js';
 import { getErrorMessage } from '../../../base/errors/utils.js';
 import { initTfheModule } from './init-p.js';
 import { assertIsTypedValue } from '../../../base/typedValue.js';
+import { isSemverAtLeast } from '../../../base/semver.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -53,6 +57,11 @@ const PRIVATE_TFHE_LIB_TOKEN = Symbol('TFHELib.token');
 export const SERIALIZED_SIZE_LIMIT_CIPHERTEXT = BigInt(1024 * 1024 * 512);
 export const SERIALIZED_SIZE_LIMIT_PK = BigInt(1024 * 1024 * 512);
 export const SERIALIZED_SIZE_LIMIT_CRS = BigInt(1024 * 1024 * 512);
+
+const MIN_TFHE_VERSION_WITH_SEEDED_PROOF = '1.6.0';
+
+// Cache only the capability result by version; do not retain key-backed WASM objects here.
+const cacheCanBuildWithProofPackedSeededByTfheVersion = new Map<TfheVersion, boolean>();
 
 ////////////////////////////////////////////////////////////////////////////////
 // TfheCompactPublicKeyImpl
@@ -211,6 +220,32 @@ export async function parseTFHEProvenCompactCiphertextList(
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// canBuildWithProofPackedSeeded
+////////////////////////////////////////////////////////////////////////////////
+
+export async function canBuildWithProofPackedSeeded(
+  runtime: FhevmRuntime,
+  parameters: CanBuildWithProofPackedSeededParameters,
+): Promise<CanBuildWithProofPackedSeededReturnType> {
+  const cached = cacheCanBuildWithProofPackedSeededByTfheVersion.get(parameters.tfheVersion);
+  if (cached !== undefined) {
+    return cached;
+  }
+
+  if (!isSemverAtLeast(parameters.tfheVersion, MIN_TFHE_VERSION_WITH_SEEDED_PROOF)) {
+    cacheCanBuildWithProofPackedSeededByTfheVersion.set(parameters.tfheVersion, false);
+    return false;
+  }
+
+  const tfheLib = await initTfheModule(runtime, { tfheVersion: parameters.tfheVersion });
+  const canBuild = _tfheLibHasSeededBuilderMethod(tfheLib);
+
+  cacheCanBuildWithProofPackedSeededByTfheVersion.set(parameters.tfheVersion, canBuild);
+
+  return canBuild;
+}
+
+////////////////////////////////////////////////////////////////////////////////
 // buildWithProofPacked
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -218,9 +253,71 @@ export async function buildWithProofPacked(
   runtime: FhevmRuntime,
   parameters: BuildWithProofPackedParameters,
 ): Promise<BuildWithProofPackedReturnType> {
+  return _buildWithProofPacked(runtime, { ...parameters, seed: new Uint8Array() });
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// buildWithProofPackedSeeded
+////////////////////////////////////////////////////////////////////////////////
+
+export async function buildWithProofPackedSeeded(
+  runtime: FhevmRuntime,
+  parameters: BuildWithProofPackedSeededParameters,
+): Promise<BuildWithProofPackedReturnType> {
+  // TFHE >= 1.6.0 may support seeded proof generation; the WASM method check below remains authoritative.
+  if (!isSemverAtLeast(parameters.tfheVersion, MIN_TFHE_VERSION_WITH_SEEDED_PROOF)) {
+    throw new Error(
+      `TFHE ${parameters.tfheVersion} does not support seeded proof generation: expected >= ${MIN_TFHE_VERSION_WITH_SEEDED_PROOF}`,
+    );
+  }
+
+  if (parameters.seed.length < 4 || parameters.seed.length > 8) {
+    // Seed length must be 32 to 64 bits inclusive.
+    throw new Error('Invalid seed length: expected 4 to 8 bytes');
+  }
+
+  return _buildWithProofPacked(runtime, parameters);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// _buildWithProofPacked
+////////////////////////////////////////////////////////////////////////////////
+
+type SeededCompactCiphertextListBuilder = CompactCiphertextListBuilder & {
+  build_with_proof_packed_seeded: (
+    crs: Parameters<CompactCiphertextListBuilder['build_with_proof_packed']>[0],
+    metadata: Parameters<CompactCiphertextListBuilder['build_with_proof_packed']>[1],
+    computeLoad: Parameters<CompactCiphertextListBuilder['build_with_proof_packed']>[2],
+    seed: Uint8Array,
+  ) => ProvenCompactCiphertextList;
+};
+
+function _tfheLibHasSeededBuilderMethod(tfheLib: unknown): boolean {
+  const compactCiphertextListBuilderClass = (
+    tfheLib as {
+      readonly CompactCiphertextListBuilder?: {
+        readonly prototype?: {
+          readonly build_with_proof_packed_seeded?: unknown;
+        };
+      };
+    }
+  ).CompactCiphertextListBuilder;
+
+  return typeof compactCiphertextListBuilderClass?.prototype?.build_with_proof_packed_seeded === 'function';
+}
+
+// available in tfhe v1.6 and higher.
+function _hasSeededMethod(builder: CompactCiphertextListBuilder): builder is SeededCompactCiphertextListBuilder {
+  return typeof (builder as { build_with_proof_packed_seeded?: unknown }).build_with_proof_packed_seeded === 'function';
+}
+
+async function _buildWithProofPacked(
+  runtime: FhevmRuntime,
+  parameters: BuildWithProofPackedSeededParameters,
+): Promise<BuildWithProofPackedReturnType> {
   const tfheLib = await initTfheModule(runtime, { tfheVersion: parameters.tfheVersion });
 
-  const { fheEncryptionKey: publicEncryptionParams, metaData, typedValues, extraData } = parameters;
+  const { fheEncryptionKey: publicEncryptionParams, metaData, typedValues, extraData, seed } = parameters;
 
   const tfheCompactPublicKeyImpl = publicEncryptionParams.publicKey;
   const tfheCompactPkeCrsImpl = publicEncryptionParams.crs;
@@ -228,6 +325,7 @@ export async function buildWithProofPacked(
   if (!(tfheCompactPublicKeyImpl instanceof TfheCompactPublicKeyImpl)) {
     throw new Error('Invalid tfhePublicKey');
   }
+
   if (!(tfheCompactPkeCrsImpl instanceof TfheCompactPkeCrsImpl)) {
     throw new Error('Invalid tfheCrs');
   }
@@ -281,11 +379,24 @@ export async function buildWithProofPacked(
       }
     }
 
-    tfheProvenCompactCiphertextList = fheCompactCiphertextListBuilderWasm.build_with_proof_packed(
-      compactPkeCrsWasm,
-      metaData,
-      tfheLib.ZkComputeLoad.Verify,
-    );
+    if (seed.length > 0) {
+      if (!_hasSeededMethod(fheCompactCiphertextListBuilderWasm)) {
+        throw new Error(`TFHE ${parameters.tfheVersion} does not support seeded proof generation`);
+      }
+
+      tfheProvenCompactCiphertextList = fheCompactCiphertextListBuilderWasm.build_with_proof_packed_seeded(
+        compactPkeCrsWasm,
+        metaData,
+        tfheLib.ZkComputeLoad.Verify,
+        seed,
+      );
+    } else {
+      tfheProvenCompactCiphertextList = fheCompactCiphertextListBuilderWasm.build_with_proof_packed(
+        compactPkeCrsWasm,
+        metaData,
+        tfheLib.ZkComputeLoad.Verify,
+      );
+    }
 
     ciphertextWithZKProofBytes = tfheProvenCompactCiphertextList.safe_serialize(SERIALIZED_SIZE_LIMIT_CIPHERTEXT);
 

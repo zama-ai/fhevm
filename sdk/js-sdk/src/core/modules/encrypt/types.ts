@@ -130,7 +130,7 @@ export type ParseTFHEProvenCompactCiphertextListModuleFunction = {
 };
 
 ////////////////////////////////////////////////////////////////////////////////
-// 2. buildWithProofPacked
+// 2.1 buildWithProofPacked
 ////////////////////////////////////////////////////////////////////////////////
 
 export type BuildWithProofPackedParameters = {
@@ -149,6 +149,34 @@ export type BuildWithProofPackedReturnType = {
 
 export type BuildWithProofPackedModuleFunction = {
   buildWithProofPacked(parameters: BuildWithProofPackedParameters): Promise<BuildWithProofPackedReturnType>;
+};
+
+////////////////////////////////////////////////////////////////////////////////
+// 2.2 buildWithProofPackedSeeded
+////////////////////////////////////////////////////////////////////////////////
+
+export type BuildWithProofPackedSeededParameters = BuildWithProofPackedParameters & {
+  readonly seed: Uint8Array;
+};
+
+export type BuildWithProofPackedSeededModuleFunction = {
+  buildWithProofPackedSeeded(parameters: BuildWithProofPackedSeededParameters): Promise<BuildWithProofPackedReturnType>;
+};
+
+////////////////////////////////////////////////////////////////////////////////
+// 2.3 canBuildWithProofPackedSeeded
+////////////////////////////////////////////////////////////////////////////////
+
+export type CanBuildWithProofPackedSeededParameters = {
+  readonly tfheVersion: TfheVersion;
+};
+
+export type CanBuildWithProofPackedSeededReturnType = boolean;
+
+export type CanBuildWithProofPackedSeededModuleFunction = {
+  canBuildWithProofPackedSeeded(
+    parameters: CanBuildWithProofPackedSeededParameters,
+  ): Promise<CanBuildWithProofPackedSeededReturnType>;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -249,6 +277,8 @@ export type EncryptModule = Prettify<
     GetTfheModuleInfoFunction &
     ParseTFHEProvenCompactCiphertextListModuleFunction &
     BuildWithProofPackedModuleFunction &
+    BuildWithProofPackedSeededModuleFunction &
+    CanBuildWithProofPackedSeededModuleFunction &
     SerializeFheEncryptionKeyModuleFunction &
     SerializeFheEncryptionPublicKeyModuleFunction &
     SerializeFheEncryptionCrsModuleFunction &

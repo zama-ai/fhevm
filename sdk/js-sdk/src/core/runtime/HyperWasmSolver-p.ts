@@ -1,9 +1,9 @@
 import type { ModuleVersionCompatibilityCheck, TfheVersion, TkmsVersion } from '../types/moduleVersions.js';
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
 import type { FhevmProtocolContext, ResolvedFhevmOptions, VersionResolution } from '../types/coreFhevmClient.js';
-import type { SemverRange } from '../base/semver.js';
+import type { SemverConstraint } from '../base/semver.js';
 import type { Logger } from '../types/logger.js';
-import { semverComparatorImpliesRange } from '../base/semver.js';
+import { semverComparatorImpliesConstraint } from '../base/semver.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -22,8 +22,8 @@ type WasmModuleKey = keyof WasmModuleVersionByKey;
 type WasmModuleVersion<K extends WasmModuleKey> = WasmModuleVersionByKey[K];
 
 type WasmCompatibilityRule = {
-  readonly protocol: SemverRange;
-  readonly pubKeyCrs: SemverRange;
+  readonly protocol: SemverConstraint;
+  readonly pubKeyCrs: SemverConstraint;
   readonly tfhe: {
     readonly canonical: TfheVersion;
     readonly compatible: readonly [TfheVersion, ...TfheVersion[]];
@@ -295,13 +295,16 @@ function _resolveWasmCompatibilityRule(
 function _findWasmCompatibilityRules(protocolContext: FhevmProtocolContext): WasmCompatibilityRule[] {
   return WASM_COMPATIBILITY_RULES.filter(
     (entry) =>
-      _versionResolutionImpliesRange(protocolContext.protocolVersion, entry.protocol) &&
-      _versionResolutionImpliesRange(protocolContext.pubKeyCrsVersion, entry.pubKeyCrs),
+      _versionResolutionImpliesConstraint(protocolContext.protocolVersion, entry.protocol) &&
+      _versionResolutionImpliesConstraint(protocolContext.pubKeyCrsVersion, entry.pubKeyCrs),
   );
 }
 
-function _versionResolutionImpliesRange(versionResolution: VersionResolution<string>, range: SemverRange): boolean {
-  return semverComparatorImpliesRange(versionResolution.version, versionResolution.comparator, range);
+function _versionResolutionImpliesConstraint(
+  versionResolution: VersionResolution<string>,
+  constraint: SemverConstraint,
+): boolean {
+  return semverComparatorImpliesConstraint(versionResolution.version, versionResolution.comparator, constraint);
 }
 
 function _resolveModuleVersionCompatibilityCheck(
