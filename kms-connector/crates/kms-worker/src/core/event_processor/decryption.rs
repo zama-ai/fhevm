@@ -115,7 +115,7 @@ where
             {
                 return Err(RequestCheckError::recoverable(
                     RequestCheckKind::Acl,
-                    anyhow!("{} is not allowed for decrypt!", hex::encode(ct.ctHandle)),
+                    anyhow!("Decryption is not allowed for {}", ct.ctHandle),
                 ));
             }
         }
