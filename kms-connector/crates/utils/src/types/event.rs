@@ -20,8 +20,7 @@ use fhevm_host_bindings::{
         CrsgenRequest, KMSGenerationEvents, KeygenRequest, PrepKeygenRequest,
     },
     protocol_config::{
-        IProtocolConfig::{PreviousCrsInfo, PreviousKeyInfo},
-        IProtocolConfigCommon::KmsThresholds,
+        IProtocolConfig::KmsThresholds,
         ProtocolConfig::{
             KmsNodeParams, NewKmsContext, NewKmsEpoch, PcrValues, ProtocolConfigEvents,
         },
@@ -159,8 +158,7 @@ impl std::fmt::Debug for ProtocolEventKind {
                 .field("epochId", &e.epochId)
                 .field("previousContextId", &e.previousContextId)
                 .field("previousEpochId", &e.previousEpochId)
-                .field("keys", &format_args!("[len={}]", e.keys.len()))
-                .field("crsList", &format_args!("[len={}]", e.crsList.len()))
+                .field("materialBlockNumber", &e.materialBlockNumber)
                 .finish(),
         }
     }
@@ -186,8 +184,7 @@ impl PartialEq for ProtocolEventKind {
                     && a.epochId == b.epochId
                     && a.previousContextId == b.previousContextId
                     && a.previousEpochId == b.previousEpochId
-                    && SolValue::abi_encode(&a.keys) == SolValue::abi_encode(&b.keys)
-                    && SolValue::abi_encode(&a.crsList) == SolValue::abi_encode(&b.crsList)
+                    && a.materialBlockNumber == b.materialBlockNumber
             }
             _ => false,
         }
@@ -384,17 +381,14 @@ pub fn from_new_kms_context_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
 }
 
 pub fn from_new_kms_epoch_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
-    let keys: Vec<PreviousKeyInfo> = SolValue::abi_decode(&row.try_get::<Vec<u8>, _>("keys")?)?;
-    let crs_list: Vec<PreviousCrsInfo> =
-        SolValue::abi_decode(&row.try_get::<Vec<u8>, _>("crs_list")?)?;
-
     let kind = ProtocolEventKind::NewKmsEpoch(NewKmsEpoch {
         kmsContextId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("context_id")?),
         epochId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("epoch_id")?),
         previousContextId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("previous_context_id")?),
         previousEpochId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("previous_epoch_id")?),
-        keys,
-        crsList: crs_list,
+        materialBlockNumber: U256::from_le_bytes(
+            row.try_get::<[u8; 32], _>("material_block_number")?,
+        ),
     });
     Ok(ProtocolEvent {
         kind,

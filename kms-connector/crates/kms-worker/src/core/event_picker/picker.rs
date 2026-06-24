@@ -238,7 +238,7 @@ impl DbEventPicker {
                 ) AS req
                 WHERE new_kms_epoch.epoch_id = req.epoch_id
                 RETURNING context_id, previous_context_id, new_kms_epoch.epoch_id,
-                previous_epoch_id, keys, crs_list, tx_hash, already_sent, created_at, otlp_context
+                previous_epoch_id, material_block_number, tx_hash, already_sent, created_at, otlp_context
             ",
         )
         .fetch_all(&self.db_pool)

@@ -27,8 +27,7 @@ use fhevm_gateway_bindings::decryption::{
 use fhevm_host_bindings::{
     kms_generation::KMSGeneration::{CrsgenRequest, KeygenRequest, PrepKeygenRequest},
     protocol_config::{
-        IProtocolConfig::{PreviousCrsInfo, PreviousKeyInfo},
-        IProtocolConfigCommon::KmsThresholds,
+        IProtocolConfig::KmsThresholds,
         ProtocolConfig::{KmsNodeParams, NewKmsContext, NewKmsEpoch, PcrValues},
     },
 };
@@ -463,21 +462,19 @@ pub async fn insert_rand_new_kms_epoch(
     let previous_epoch_id = rand_u256();
     let status = options.status.unwrap_or(OperationStatus::Pending);
 
-    let keys: Vec<PreviousKeyInfo> = vec![];
-    let crs_list: Vec<PreviousCrsInfo> = vec![];
+    let material_block_number = rand_u256();
 
     sqlx::query!(
         "INSERT INTO new_kms_epoch(
-            context_id, previous_context_id, epoch_id, previous_epoch_id, keys, crs_list,
+            context_id, previous_context_id, epoch_id, previous_epoch_id, material_block_number,
             tx_hash, created_at, otlp_context, already_sent, status
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) ON CONFLICT DO NOTHING",
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) ON CONFLICT DO NOTHING",
         context_id.as_le_slice(),
         previous_context_id.as_le_slice(),
         epoch_id.as_le_slice(),
         previous_epoch_id.as_le_slice(),
-        keys.abi_encode(),
-        crs_list.abi_encode(),
+        material_block_number.as_le_slice(),
         options.tx_hash.map(|h| h.to_vec()),
         Utc::now(),
         bc2wrap::serialize(&PropagationContext::empty())?,
@@ -492,8 +489,7 @@ pub async fn insert_rand_new_kms_epoch(
         previousContextId: previous_context_id,
         epochId: epoch_id,
         previousEpochId: previous_epoch_id,
-        keys,
-        crsList: crs_list,
+        materialBlockNumber: material_block_number,
     })
 }
 

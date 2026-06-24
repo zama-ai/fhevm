@@ -11,11 +11,6 @@ contract ProtocolConfigMock {
     // across event types don't collide in the DB.
     uint256 contextCounter = (7 << 248) + 1;
     uint256 epochCounter = 8 << 248;
-    enum ParamsType {
-        Default,
-        Test
-    }
-
     enum KeyType {
         Server,
         Public
@@ -50,18 +45,6 @@ contract ProtocolConfigMock {
         bytes pcr2;
     }
 
-    struct PreviousKeyInfo {
-        uint256 prepKeygenId;
-        uint256 keyId;
-        ParamsType paramsType;
-        KeyDigest[] keyDigests;
-    }
-
-    struct PreviousCrsInfo {
-        uint256 crsId;
-        bytes crsDigest;
-    }
-
     struct EpochKeyResult {
         uint256 prepKeygenId;
         uint256 keyId;
@@ -90,8 +73,7 @@ contract ProtocolConfigMock {
         uint256 indexed epochId,
         uint256 previousContextId,
         uint256 previousEpochId,
-        PreviousKeyInfo[] keys,
-        PreviousCrsInfo[] crsList
+        uint256 materialBlockNumber
     );
 
     event KmsContextCreationConfirmation(
@@ -135,9 +117,7 @@ contract ProtocolConfigMock {
     function defineNewEpochForCurrentKmsContext() external {
         uint256 previousEpochId = epochCounter;
         epochCounter++;
-        PreviousKeyInfo[] memory keys = new PreviousKeyInfo[](0);
-        PreviousCrsInfo[] memory crsList = new PreviousCrsInfo[](0);
-        emit NewKmsEpoch(contextCounter, epochCounter, contextCounter, previousEpochId, keys, crsList);
+        emit NewKmsEpoch(contextCounter, epochCounter, contextCounter, previousEpochId, block.number);
     }
 
     function getCurrentKmsContextAndEpoch() external pure returns (uint256, uint256) {
