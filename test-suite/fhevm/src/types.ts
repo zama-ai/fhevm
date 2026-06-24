@@ -8,6 +8,7 @@ export const STEP_NAMES = [
   "gateway-deploy",
   "host-deploy",
   "discover",
+  "bridge-deploy",
   "regenerate",
   "validate",
   "coprocessor",

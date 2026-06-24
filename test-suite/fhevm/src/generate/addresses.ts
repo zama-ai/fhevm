@@ -68,6 +68,7 @@ const HOST_ADDRESS_KEYS = [
   "PROTOCOL_CONFIG_CONTRACT_ADDRESS",
   "KMS_GENERATION_CONTRACT_ADDRESS",
   "CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS",
+  "LZ_ENDPOINT_ADDRESS",
 ] as const;
 
 const renderHostChainAddressesEnv = (addresses?: Record<string, string>) =>
