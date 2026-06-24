@@ -83,12 +83,15 @@ struct KnownDrift {
     id: i64,
     is_finished: bool,
     catchup_to: i64,
+    promote_all_chains_to_fast_priority_done: bool,
 }
 
 const STARTING_DRIFT: KnownDrift = KnownDrift {
     id: -1,
     is_finished: true,
     catchup_to: 0,
+    // promotion if needed is done at start up
+    promote_all_chains_to_fast_priority_done: false,
 };
 
 const DRIFT_BLOCK_MARGIN_TO_RESTART: i64 = 5;
@@ -96,10 +99,10 @@ const DRIFT_BLOCK_MARGIN_TO_RESTART: i64 = 5;
 async fn check_if_drift_revert_is_over(
     db: &Database,
     host_chain_id: i64,
-    last_known_drift_locked: Arc<RwLock<KnownDrift>>,
+    last_known_drift_lock: Arc<RwLock<KnownDrift>>,
     current_block: u64,
 ) -> anyhow::Result<bool> {
-    let last_known_drift = *last_known_drift_locked.read().await;
+    let last_known_drift = *last_known_drift_lock.read().await;
     let pool = db.pool().await;
     if !last_known_drift.is_finished {
         let last_drift =
@@ -121,7 +124,7 @@ async fn check_if_drift_revert_is_over(
                     >= last_known_drift.catchup_to
                         + DRIFT_BLOCK_MARGIN_TO_RESTART;
                 if is_finished {
-                    last_known_drift_locked.write().await.is_finished = true;
+                    last_known_drift_lock.write().await.is_finished = true;
                     info!(
                         tip_block = tip_block,
                         catchup_to = last_known_drift.catchup_to,
@@ -167,18 +170,31 @@ async fn check_if_drift_revert_is_over(
         return Ok(true);
     }
     // we have a new drift let's save it and assumeit's not finished yet
-    *last_known_drift_locked.write().await = KnownDrift {
+    *last_known_drift_lock.write().await = KnownDrift {
         id: last_drift.id,
         catchup_to: current_block as i64,
         is_finished: false,
+        promote_all_chains_to_fast_priority_done: false,
     };
     Ok(false)
 }
 
-pub async fn promote_once_all_chains_to_fast(
+async fn promote_once_all_chains_to_fast(
     db: &Database,
     dependent_ops_max_per_chain: u32,
+    last_known_drift_lock: Arc<RwLock<KnownDrift>>,
 ) {
+    if last_known_drift_lock
+        .read()
+        .await
+        .promote_all_chains_to_fast_priority_done
+    {
+        return;
+    }
+    last_known_drift_lock
+        .write()
+        .await
+        .promote_all_chains_to_fast_priority_done = true;
     if dependent_ops_max_per_chain == 0 {
         let count = match db.promote_all_dep_chains_to_fast_priority().await {
             Ok(count) => count,
@@ -340,7 +356,7 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
             let drift_revert_is_over = check_if_drift_revert_is_over(
                 &db,
                 chain_id.as_u64() as i64,
-                last_known_drift,
+                last_known_drift.clone(),
                 payload.block_number,
             )
             .await;
@@ -359,6 +375,7 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
             promote_once_all_chains_to_fast(
                 &db,
                 ingest_options.dependent_ops_max_per_chain,
+                last_known_drift,
             )
             .await;
             let block_summary = BlockSummary {
@@ -490,5 +507,75 @@ async fn ingest_with_retry(
                 sleep(retry_interval).await;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serial_test::serial;
+    use test_harness::instance::ImportMode;
+
+    async fn insert_fake_dep_chain(
+        pool: &sqlx::PgPool,
+        dep_chain_id: &[u8],
+        schedule_priority: i16,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            r#"
+            INSERT INTO dependence_chain
+                (dependence_chain_id, status, last_updated_at, block_timestamp, block_height, schedule_priority)
+            VALUES ($1, 'updated', NOW(), NOW(), 1, $2)
+            "#,
+        )
+        .bind(dep_chain_id)
+        .bind(schedule_priority)
+        .execute(pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn dep_chain_priority(
+        pool: &sqlx::PgPool,
+        dep_chain_id: &[u8],
+    ) -> Result<i16, sqlx::Error> {
+        sqlx::query_scalar(
+            "SELECT schedule_priority FROM dependence_chain WHERE dependence_chain_id = $1",
+        )
+        .bind(dep_chain_id)
+        .fetch_one(pool)
+        .await
+    }
+
+    #[tokio::test]
+    #[serial(db)]
+    async fn promote_once_all_chains_to_fast_does_not_promote_twice(
+    ) -> anyhow::Result<()> {
+        let db_instance =
+            test_harness::instance::setup_test_db(ImportMode::None)
+                .await
+                .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+        let chain_id = ChainId::try_from(42_u64)?;
+        let db = Database::new(&db_instance.db_url, chain_id, 128).await?;
+        let pool = db.pool().await;
+        let last_known_drift = Arc::new(RwLock::new(STARTING_DRIFT));
+
+        let startup_chain = [0x11; 32];
+        insert_fake_dep_chain(&pool, &startup_chain, 1).await?;
+
+        promote_once_all_chains_to_fast(&db, 0, last_known_drift.clone()).await;
+        assert_eq!(dep_chain_priority(&pool, &startup_chain).await?, 0);
+
+        let later_chain = [0x22; 32];
+        insert_fake_dep_chain(&pool, &later_chain, 1).await?;
+
+        promote_once_all_chains_to_fast(&db, 0, last_known_drift).await;
+        assert_eq!(
+            dep_chain_priority(&pool, &later_chain).await?,
+            1,
+            "second call must not promote chains added after startup"
+        );
+
+        Ok(())
     }
 }
