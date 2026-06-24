@@ -82,7 +82,7 @@ interface IDecryption {
      * @notice The signed payload carried by the `UserDecryptionRequestSolana` event (RFC-021).
      * @dev The Solana analog of `UserDecryptionRequestPayload`: identities are 32-byte Solana
      * pubkeys rather than 20-byte EVM addresses, and the ed25519-specific authorization data
-     * (identity, anti-replay nonce, allowed ACL domain keys) is carried as TYPED fields instead
+     * (identity, request nonce, allowed ACL domain keys) is carried as TYPED fields instead
      * of being packed into `extraData`. `extraData` therefore carries only the KMS context
      * (version `0x01` ‖ contextId), exactly like the EVM path. Signature validation is performed
      * off-chain by the KMS Connector, which verifies the ed25519 signature against the canonical
@@ -98,7 +98,9 @@ interface IDecryption {
         bytes32[] allowedAclDomainKeys;
         /// @notice The validity window (startTimestamp + durationSeconds).
         RequestValiditySeconds requestValidity;
-        /// @notice Per-request anti-replay nonce bound into the ed25519 signing preimage.
+        /// @notice Per-request nonce bound into the ed25519 signing preimage. It binds the nonce to
+        /// the signed request but is NOT dedup-enforced on-chain or in the connector; replay is
+        /// bounded by `requestValidity` (the validity window), matching the EVM user-decrypt path.
         bytes32 nonce;
         /// @notice Generic bytes metadata for versioned payloads (KMS context). First byte is the version.
         bytes extraData;

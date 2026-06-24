@@ -9,11 +9,7 @@ export type { FhevmSolanaEncryptClient } from './clients/createFhevmEncryptClien
 export { solanaSignerFromSecretKey } from './signer.js';
 export type { SolanaUserDecryptSigner } from './signer.js';
 
-export type {
-  SolanaUserDecryptParameters,
-  SolanaUserDecryptResult,
-  SolanaUserDecryptShare,
-} from './actions/userDecrypt.js';
+export type { SolanaUserDecryptParameters, SolanaUserDecryptResult } from './actions/userDecrypt.js';
 export type { SolanaDecryptActions } from './clients/decorators/decrypt.js';
 
 export type {

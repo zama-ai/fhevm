@@ -5,10 +5,11 @@ import { loadState } from "./src/state/state";
 import { dockerArgs } from "./src/layout";
 import { resolvedComposeEnv } from "./src/generate/compose";
 import { runStreaming } from "./src/utils/process";
+import { solanaImages } from "./src/solana/images";
 
 const state = await loadState();
 if (!state) throw new Error("no fhevm state");
-const env = { ...process.env, ...resolvedComposeEnv(state), CORE_VERSION: "solana-ud-c57f52f" };
+const env = { ...process.env, ...resolvedComposeEnv(state), CORE_VERSION: solanaImages.CORE_VERSION };
 
 console.log("[solana] triggering network keygen (host-sc-trigger-keygen)...");
 await runStreaming(

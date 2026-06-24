@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
-import "../shared/Structs.sol";
+import '../shared/Structs.sol';
 
 contract DecryptionMock {
     struct ContractsInfo {
@@ -23,6 +23,16 @@ contract DecryptionMock {
         bytes publicKey;
         address[] allowedContracts;
         RequestValiditySeconds requestValidity;
+        bytes extraData;
+        bytes signature;
+    }
+
+    struct UserDecryptionRequestSolanaPayload {
+        bytes32 userIdentity;
+        bytes publicKey;
+        bytes32[] allowedAclDomainKeys;
+        RequestValiditySeconds requestValidity;
+        bytes32 nonce;
         bytes extraData;
         bytes signature;
     }
@@ -101,6 +111,13 @@ contract DecryptionMock {
         SnsCiphertextMaterial[] snsCtMaterials,
         HandleEntry[] handles,
         UserDecryptionRequestPayload payload
+    );
+
+    event UserDecryptionRequestSolana(
+        uint256 indexed decryptionId,
+        SnsCiphertextMaterial[] snsCtMaterials,
+        HandleEntry[] handles,
+        UserDecryptionRequestSolanaPayload payload
     );
 
     event UserDecryptionResponse(
