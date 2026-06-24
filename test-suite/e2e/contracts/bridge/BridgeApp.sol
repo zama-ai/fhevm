@@ -3,28 +3,30 @@ pragma solidity ^0.8.24;
 
 import "@fhevm/solidity/lib/FHE.sol";
 import {E2ECoprocessorConfig} from "../E2ECoprocessorConfigLocal.sol";
+import {ConfidentialOAppReceiver} from "@fhevm/solidity/lib/bridge/ConfidentialOAppReceiver.sol";
+import {MessagingReceipt} from "@fhevm/solidity/lib/bridge/IConfidentialBridge.sol";
 
-/// @notice Bridge destination callback (mirror of host-contracts' IDstApp; inlined since the
-///         bridge interfaces aren't part of the e2e contract project).
-interface IDstApp {
-    function onConfidentialBridgeReceived(
-        uint32 srcEid,
-        bytes32 srcApp,
-        bytes calldata payload,
-        bytes32[] calldata srcHandleList,
-        bytes32[] calldata dstHandleList,
-        bytes32 guid
-    ) external;
-}
-
-/// @notice Test dapp exercising the confidential bridge end-to-end (deployed on each chain).
-/// @dev Source: {makeHandle}/{makeComputedHandle} produce a handle ACL-allowed to the caller for
-///      `ConfidentialBridge.send`. Destination: {onConfidentialBridgeReceived} (called by the bridge's lzCompose, which
-///      has granted transient ACL allowance) makes each bridged handle decryptable so the test can
-///      assert it — publicly when `payload` is empty, or to a user when `payload` encodes an address.
-contract BridgeApp is E2ECoprocessorConfig, IDstApp {
+/// @notice Test dapp exercising the confidential bridge end-to-end THROUGH the `@fhevm/solidity`
+///         OApp wrappers (rather than calling the host `ConfidentialBridge` directly).
+/// @dev It sends via `FHE.bridge` with the destination resolved from the OApp peer registry, and
+///      receives via {ConfidentialOAppReceiver}, which authenticates `msg.sender == bridge` and
+///      `isPeer(srcEid, srcApp)` before dispatching to {_onReceiveHandles}. Peers are wired once
+///      with {setPeer} (one entry serves both directions). `setPeer` is intentionally unguarded
+///      (test-only).
+///
+///      Source: {makeHandle}/{makeComputedHandle} produce a handle ACL-allowed to the caller and
+///      this contract (so the bridge's `isAllowed(handle, this)` check passes on send).
+///      Destination: {_onReceiveHandles} (post-auth) makes each bridged handle decryptable so the
+///      test can assert it — publicly when `payload` is empty, or to a user when `payload` encodes
+///      an address.
+contract BridgeApp is E2ECoprocessorConfig, ConfidentialOAppReceiver {
     /// @notice Lets the test read the produced handle from the receipt.
     event HandleMinted(bytes32 handle);
+
+    /// @notice Trust the remote app as this app's peer on `eid` (serves send + receive).
+    function setPeer(uint32 eid, bytes32 peer) external {
+        _setPeer(eid, peer);
+    }
 
     /// @notice Verify an encrypted input and register it as a bridgeable handle.
     function makeHandle(externalEuint64 encryptedAmount, bytes calldata inputProof) external returns (bytes32) {
@@ -49,21 +51,32 @@ contract BridgeApp is E2ECoprocessorConfig, IDstApp {
         emit HandleMinted(handle);
     }
 
-    /// @notice Bridge callback: empty `payload` => make each handle publicly decryptable;
-    ///         `payload == abi.encode(address user)` => grant persistent ACL allowance to `user`
-    ///         (and this contract) so it can be user-decrypted.
-    /// @dev The transient ACL allowance granted before this call suffices within the lzCompose tx.
-    function onConfidentialBridgeReceived(
+    /// @notice Bridge `handles` to this app's peer on `dstEid`, through `FHE.bridge`.
+    /// @dev The destination is resolved from the OApp peer registry ({ConfidentialOAppCore}); the
+    ///      caller must already hold ACL allowance on every handle (see {makeHandle}).
+    function send(
+        uint32 dstEid,
+        bytes32[] calldata handles,
+        bytes calldata payload,
+        uint64 lzComposeGas
+    ) external payable returns (MessagingReceipt memory) {
+        return FHE.bridge(dstEid, _getPeerOrRevert(dstEid), payload, handles, lzComposeGas, msg.value);
+    }
+
+    /// @notice Receive hook (post-auth): empty `payload` => make each handle publicly decryptable;
+    ///         `payload == abi.encode(address user)` => grant persistent ACL allowance to `user`.
+    /// @dev Only reached after {ConfidentialOAppReceiver} has verified the caller is the bridge and
+    ///      `(srcEid, srcApp)` is a registered peer. Transient ACL allowance is already granted.
+    function _onReceiveHandles(
         uint32 /* srcEid */,
         bytes32 /* srcApp */,
         bytes calldata payload,
-        bytes32[] calldata /* srcHandleList */,
-        bytes32[] calldata dstHandleList,
+        bytes32[] calldata handles,
         bytes32 /* guid */
-    ) external override {
+    ) internal override {
         address user = payload.length == 32 ? abi.decode(payload, (address)) : address(0);
-        for (uint256 i = 0; i < dstHandleList.length; i++) {
-            euint64 handle = euint64.wrap(dstHandleList[i]);
+        for (uint256 i = 0; i < handles.length; i++) {
+            euint64 handle = euint64.wrap(handles[i]);
             if (user == address(0)) {
                 FHE.makePubliclyDecryptable(handle);
             } else {
