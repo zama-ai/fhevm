@@ -768,6 +768,13 @@ impl Database {
             return Ok(vec![]);
         }
 
+        // Finalizing one block orphans every observed sibling branch at the
+        // same height. Walk descendants from those direct orphan roots so the
+        // whole observed fork is marked immediately. The recursion follows
+        // child.parent_hash and is bounded by the blocks already recorded for
+        // that fork, not by chain history. Doing this in the finalization
+        // transaction keeps producer resolution and branch cleanup on one view
+        // of canonicality.
         let orphaned_branch_rows = sqlx::query!(
             r#"
             WITH RECURSIVE orphaned_branch AS (
@@ -813,12 +820,19 @@ impl Database {
             return Ok(());
         }
 
-        // Capture producer tuples whose ciphertext bytes were actually produced
-        // on an orphaned branch. ACL/PBS rows can now be orphaned by their event
-        // block while still referencing a canonical producer; those should not
-        // delete the canonical ciphertext bytes. Rows that reference an
-        // orphaned producer still drive byte cleanup, even when their own event
-        // block is not in the orphaned set.
+        // This cleanup is part of the same finalization transaction that marks
+        // blocks orphaned. Once host_chain_blocks_valid exposes an orphaned
+        // branch, branch-scoped rows for that branch should no longer be
+        // visible to readers. If the listener is down, finalization does not
+        // advance; catchup reruns this idempotent cleanup when it later marks
+        // the branch orphaned.
+        //
+        // Capture producer tuples whose ciphertext bytes were actually
+        // produced on an orphaned branch. ACL/PBS rows can now be orphaned by
+        // their event block while still referencing a canonical producer; those
+        // should not delete the canonical ciphertext bytes. Rows that reference
+        // an orphaned producer still drive byte cleanup, even when their own
+        // event block is not in the orphaned set.
         let orphaned_ciphertext_pairs = sqlx::query!(
             r#"
             SELECT handle AS "handle!", producer_block_hash AS "producer_block_hash!"
@@ -920,6 +934,10 @@ impl Database {
             .collect::<Vec<_>>();
 
         if !orphaned_ciphertext_pairs.is_empty() {
+            // This removes only DB branch state and materialized DB bytes. S3
+            // objects are not branch-addressed in the wave-1 path, so orphaned
+            // objects are left as harmless garbage and no longer selected once
+            // their branch rows are removed.
             sqlx::query!(
                 r#"
                 DELETE FROM ciphertexts_branch
@@ -1167,7 +1185,9 @@ impl Database {
         .execute(tx.deref_mut())
         .await?;
 
-        // 2. Update to finalized or orphan if needed
+        // 2. Finalize this block or orphan the competing observed branch, then
+        // clean branch-scoped computations/ACL/PBS/digest/bytes for that
+        // orphan branch in the same transaction.
         if finalized {
             let orphaned_hashes = self
                 .update_block_as_finalized(
