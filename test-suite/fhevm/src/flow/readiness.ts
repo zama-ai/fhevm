@@ -24,6 +24,8 @@ const KMS_CONNECTOR_DECRYPTION_READY =
 const KMS_CONNECTOR_KMS_GENERATION_READY =
   /Started KMSGeneration polling from block|Last block polled updated for \d+\/\d+ event types in \[PrepKeygenRequest, KeygenRequest, CrsgenRequest, PrssInit, KeyReshareSameSet\]/;
 
+const formatBootstrapId = (value: bigint) => (value === 0n ? "0" : value.toString(16).padStart(64, "0"));
+
 /** Number of KMS connector instances: one per party in threshold mode, else one. */
 // `kms.parties` is the canonical connector/party count: 1 for centralized, N for threshold.
 const kmsConnectorPartyCount = (state: State) => state.scenario.kms.parties;
@@ -365,41 +367,120 @@ export const resolveKmsGenerationTarget = (state: State) => {
   };
 };
 
+const ethCallBigInt = async (rpcUrl: string, to: string, data: string) => {
+  const response = await fetch(rpcUrl, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "eth_call",
+      params: [{ to, data }, "latest"],
+    }),
+  });
+  if (!response.ok) return 0n;
+  const payload = (await response.json()) as { result?: string };
+  if (!payload.result) {
+    return 0n;
+  }
+  try {
+    return BigInt(payload.result);
+  } catch {
+    throw new RpcError(rpcUrl, `eth_call returned malformed bigint result: ${payload.result}`);
+  }
+};
+
+const readKmsGenerationBootstrapIds = async (state: State) => {
+  const target = resolveKmsGenerationTarget(state);
+  const [actualKey, actualCrs] = await Promise.all([
+    ethCallBigInt(target.rpcUrl, target.kmsGenerationAddress, KEYGEN_ID_SELECTOR),
+    ethCallBigInt(target.rpcUrl, target.kmsGenerationAddress, CRSGEN_ID_SELECTOR),
+  ]);
+  return { ...target, actualKey, actualCrs };
+};
+
+const oneShotMaterialStatus = async (url: string) => {
+  try {
+    const response = await fetch(hostReachableMaterialUrl(url), { method: "HEAD" });
+    return `${response.status}${response.statusText ? ` ${response.statusText}` : ""}`;
+  } catch (error) {
+    return `error: ${error instanceof Error ? error.message : String(error)}`;
+  }
+};
+
+const bootstrapMaterialUrl = (state: State, kind: "PublicKey" | "CRS", id: string) =>
+  `${state.discovery!.endpoints.minioExternal}/kms-public/${state.discovery!.minioKeyPrefix ?? "PUB"}/${kind}/${id}`;
+
+const BOOTSTRAP_LOG_HINT = /(KMSGeneration|Keygen|Crsgen|error|warn|panic|critical|Started)/i;
+
+const bootstrapLogExcerpt = async (name: string) => {
+  const result = await run(["docker", "logs", "--tail", "80", name], { allowFailure: true });
+  const lines = (result.stdout + result.stderr)
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const interesting = lines.filter((line) => BOOTSTRAP_LOG_HINT.test(line)).slice(-8);
+  return (interesting.length ? interesting : lines.slice(-4)).map((line) => `    log: ${line}`);
+};
+
+const describeKmsConnectorContainers = async (state: State) => {
+  const lines: string[] = [];
+  for (const name of kmsConnectorHealthContainers(state)) {
+    try {
+      const [inspect] = await dockerInspect(name);
+      if (!inspect) {
+        lines.push(`${name}: missing`);
+        continue;
+      }
+      const health = inspect.State.Health?.Status ? ` health=${inspect.State.Health.Status}` : "";
+      lines.push(`${name}: status=${inspect.State.Status} exit=${inspect.State.ExitCode}${health}`);
+      lines.push(...(await bootstrapLogExcerpt(name)));
+    } catch (error) {
+      lines.push(`${name}: inspect failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  return lines;
+};
+
+const describeBootstrapTimeout = async (state: State) => {
+  const lines = ["Bootstrap probe details:"];
+  try {
+    const { where, rpcUrl, kmsGenerationAddress, configAddress, actualKey, actualCrs } =
+      await readKmsGenerationBootstrapIds(state);
+    const actualFheKeyId = formatBootstrapId(actualKey);
+    const actualCrsKeyId = formatBootstrapId(actualCrs);
+    lines.push(`KMSGeneration source: ${where} ${kmsGenerationAddress} via ${rpcUrl}`);
+    lines.push(`KMS config source: ${configAddress ?? "(none)"}`);
+    lines.push(`activeKeyId: ${actualFheKeyId} expected=${state.discovery?.fheKeyId ?? predictedKeyId()}`);
+    lines.push(`activeCrsId: ${actualCrsKeyId} expected=${state.discovery?.crsKeyId ?? predictedCrsId()}`);
+    if (actualKey === 0n || actualCrs === 0n) {
+      lines.push("material HEAD: skipped because key/CRS ids are not both active on-chain");
+    } else {
+      const keyUrl = bootstrapMaterialUrl(state, "PublicKey", actualFheKeyId);
+      const crsUrl = bootstrapMaterialUrl(state, "CRS", actualCrsKeyId);
+      const [keyStatus, crsStatus] = await Promise.all([oneShotMaterialStatus(keyUrl), oneShotMaterialStatus(crsUrl)]);
+      lines.push(`PublicKey material: ${keyUrl} -> ${keyStatus}`);
+      lines.push(`CRS material: ${crsUrl} -> ${crsStatus}`);
+    }
+  } catch (error) {
+    lines.push(`KMSGeneration probe failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  lines.push("KMS connector containers:");
+  lines.push(...(await describeKmsConnectorContainers(state)).map((line) => `  ${line}`));
+  return lines.join("\n");
+};
+
 /** Probes whether bootstrap produced stable key ids and published materials. */
 export const probeBootstrap = async (state: State) => {
   const discovery = state.discovery!;
   const keyPrefix = discovery.minioKeyPrefix ?? "PUB";
   try {
-    const { rpcUrl, kmsGenerationAddress } = resolveKmsGenerationTarget(state);
-    const ethCallRaw = async (data: string) => {
-      const response = await fetch(rpcUrl, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          jsonrpc: "2.0",
-          id: 1,
-          method: "eth_call",
-          params: [{ to: kmsGenerationAddress, data }, "latest"],
-        }),
-      });
-      if (!response.ok) return 0n;
-      const payload = (await response.json()) as { result?: string };
-      if (!payload.result) {
-        return 0n;
-      }
-      try {
-        return BigInt(payload.result);
-      } catch {
-        throw new RpcError(rpcUrl, `eth_call returned malformed bigint result: ${payload.result}`);
-      }
-    };
-    const actualKey = await ethCallRaw(KEYGEN_ID_SELECTOR);
-    const actualCrs = await ethCallRaw(CRSGEN_ID_SELECTOR);
+    const { actualKey, actualCrs } = await readKmsGenerationBootstrapIds(state);
     if (actualKey === 0n || actualCrs === 0n) {
       return null;
     }
-    const actualFheKeyId = actualKey.toString(16).padStart(64, "0");
-    const actualCrsKeyId = actualCrs.toString(16).padStart(64, "0");
+    const actualFheKeyId = formatBootstrapId(actualKey);
+    const actualCrsKeyId = formatBootstrapId(actualCrs);
     await Promise.all([
       ensureMaterial(`${discovery.endpoints.minioExternal}/kms-public/${keyPrefix}/PublicKey/${actualFheKeyId}`),
       ensureMaterial(`${discovery.endpoints.minioExternal}/kms-public/${keyPrefix}/CRS/${actualCrsKeyId}`),
@@ -435,7 +516,7 @@ export const waitForBootstrap = async (state: State, attempts = 120) => {
       await Bun.sleep(2_000);
     }
   }
-  throw new BootstrapTimeout(attempts * 2);
+  throw new BootstrapTimeout(attempts * 2, await describeBootstrapTimeout(state));
 };
 
 /** Waits for the kms-connector runtime services to become ready. */
