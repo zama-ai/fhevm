@@ -28,6 +28,7 @@ pub use utils::{
     serialize_vec_as_hex,
     to_camel_case,
     validate_0x_hex,
+    validate_0x_hex_allow_empty,
     validate_0x_hexs,
     // Validation functions (most commonly used)
     validate_blockchain_address,

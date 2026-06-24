@@ -44,7 +44,12 @@ pub struct DbEventProcessor<GP: Provider, HP: Provider, C> {
     db_pool: Pool<Postgres>,
 }
 
-impl<GP: Provider, HP: Provider, C: ContextManager> EventProcessor for DbEventProcessor<GP, HP, C> {
+impl<GP, HP, C> EventProcessor for DbEventProcessor<GP, HP, C>
+where
+    GP: Provider + Clone + 'static,
+    HP: Provider,
+    C: ContextManager,
+{
     type Event = ProtocolEvent;
 
     #[tracing::instrument(skip_all)]
@@ -113,7 +118,7 @@ impl From<Erc1271Error> for ProcessingError {
     }
 }
 
-impl<GP: Provider, HP: Provider, C: ContextManager> DbEventProcessor<GP, HP, C> {
+impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventProcessor<GP, HP, C> {
     pub fn new(
         kms_client: KmsClient,
         decryption_processor: DecryptionProcessor<GP, HP, C>,

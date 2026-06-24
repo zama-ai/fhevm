@@ -113,6 +113,12 @@ describe("Decryption", function () {
     return hre.ethers.solidityPacked(["uint8", "uint256"], [1, contextId]);
   }
 
+  // Build an extraData payload of version 2 carrying both contextId and epochId.
+  // Layout: 1 byte version (= 2) || 32 bytes uint256 contextId || 32 bytes uint256 epochId.
+  function extraDataV2(contextId: bigint, epochId: bigint): string {
+    return hre.ethers.solidityPacked(["uint8", "uint256", "uint256"], [2, contextId, epochId]);
+  }
+
   let kmsSigners: HardhatEthersSigner[];
 
   // Add ciphertext materials
@@ -577,6 +583,86 @@ describe("Decryption", function () {
       await expect(decryption.connect(tokenFundedTxSender).publicDecryptionRequest(ctHandles, extraDataV0))
         .to.emit(decryption, "PublicDecryptionRequest")
         .withArgs(decryptionId, toValues(snsCiphertextMaterials), extraDataV0);
+    });
+
+    it("Should revert when extraData v2 pins a null contextId", async function () {
+      const nullContextV2ExtraData = extraDataV2(0n, 1n);
+      await expect(
+        decryption.connect(tokenFundedTxSender).publicDecryptionRequest(ctHandles, nullContextV2ExtraData),
+      ).to.be.revertedWithCustomError(decryption, "InvalidNullContextId");
+    });
+
+    it("Should revert when extraData v2 pins an invalid (unregistered) contextId", async function () {
+      const invalidContextId = 999_999n;
+      const invalidContextV2ExtraData = extraDataV2(invalidContextId, 1n);
+      const tokenFundedTxSenderBalance = await mockedZamaOFT.balanceOf(tokenFundedTxSender.address);
+      const feesSenderToBurnerBalance = await mockedZamaOFT.balanceOf(mockedFeesSenderToBurnerAddress);
+
+      await expect(decryption.connect(tokenFundedTxSender).publicDecryptionRequest(ctHandles, invalidContextV2ExtraData))
+        .to.be.revertedWithCustomError(gatewayConfig, "InvalidKmsContext")
+        .withArgs(invalidContextId);
+
+      expect(await mockedZamaOFT.balanceOf(tokenFundedTxSender.address)).to.equal(tokenFundedTxSenderBalance);
+      expect(await mockedZamaOFT.balanceOf(mockedFeesSenderToBurnerAddress)).to.equal(feesSenderToBurnerBalance);
+    });
+
+    it("Should revert when a response uses extraData v2 with a contextId that differs from the one pinned at request time", async function () {
+      await decryption.connect(tokenFundedTxSender).publicDecryptionRequest(ctHandles, extraDataV0);
+
+      const fakeContextId = 999_999n;
+      const responseV2ExtraData = extraDataV2(fakeContextId, 1n);
+      const responseEip712 = createEIP712ResponsePublicDecrypt(
+        gatewayChainId,
+        decryptionAddress,
+        ctHandles,
+        decryptedResult,
+        responseV2ExtraData,
+      );
+      const [responseSig] = await getSignaturesPublicDecrypt(responseEip712, [kmsSigners[0]]);
+
+      await expect(
+        decryption
+          .connect(kmsTxSenders[0])
+          .publicDecryptionResponse(decryptionId, decryptedResult, responseSig, responseV2ExtraData),
+      ).to.be.revertedWithCustomError(decryption, "DecryptionContextMismatch");
+    });
+
+    it("Should public decrypt with extraData v2 (contextId + epochId)", async function () {
+      const currentContextId = await gatewayConfig.getCurrentKmsContextId();
+      const v2ExtraData = extraDataV2(currentContextId, 1n);
+
+      await expect(decryption.connect(tokenFundedTxSender).publicDecryptionRequest(ctHandles, v2ExtraData))
+        .to.emit(decryption, "PublicDecryptionRequest")
+        .withArgs(decryptionId, toValues(snsCiphertextMaterials), v2ExtraData);
+
+      const v2ResponseEip712 = createEIP712ResponsePublicDecrypt(
+        gatewayChainId,
+        decryptionAddress,
+        ctHandles,
+        decryptedResult,
+        v2ExtraData,
+      );
+      const v2KmsSignatures = await getSignaturesPublicDecrypt(v2ResponseEip712, kmsSigners);
+
+      await decryption
+        .connect(kmsTxSenders[0])
+        .publicDecryptionResponse(decryptionId, decryptedResult, v2KmsSignatures[0], v2ExtraData);
+      await decryption
+        .connect(kmsTxSenders[1])
+        .publicDecryptionResponse(decryptionId, decryptedResult, v2KmsSignatures[1], v2ExtraData);
+      const responseTx3 = await decryption
+        .connect(kmsTxSenders[2])
+        .publicDecryptionResponse(decryptionId, decryptedResult, v2KmsSignatures[2], v2ExtraData);
+
+      await expect(responseTx3)
+        .to.emit(decryption, "PublicDecryptionResponse")
+        .withArgs(
+          decryptionId,
+          decryptedResult,
+          [v2KmsSignatures[0], v2KmsSignatures[1], v2KmsSignatures[2]],
+          v2ExtraData,
+        );
+      expect(await decryption.isDecryptionDone(decryptionId)).to.be.true;
     });
 
     it("Should get all valid KMS transaction senders from public decryption consensus", async function () {
@@ -1534,6 +1620,102 @@ describe("Decryption", function () {
       )
         .to.emit(decryption, "UserDecryptionRequest(uint256,(bytes32,uint256,bytes32,address[])[],address,bytes,bytes)")
         .withArgs(decryptionId, toValues(snsCiphertextMaterials), user.address, publicKey, extraDataV0);
+    });
+
+    it("Should revert when extraData v2 pins a null contextId", async function () {
+      const nullContextV2ExtraData = extraDataV2(0n, 1n);
+      const nullContextRequestMessage = createEIP712RequestUserDecrypt(
+        decryptionAddress,
+        publicKey,
+        contractsInfo.addresses as string[],
+        contractsInfo.chainId as number,
+        requestValidity.startTimestamp.toString(),
+        requestValidity.durationDays.toString(),
+        nullContextV2ExtraData,
+      );
+      const [nullContextUserSignature] = await getSignaturesUserDecryptRequest(nullContextRequestMessage, [user]);
+
+      await expect(
+        decryption
+          .connect(tokenFundedTxSender)
+          [
+            "userDecryptionRequest((bytes32,address)[],(uint256,uint256),(uint256,address[]),address,bytes,bytes,bytes)"
+          ](
+            ctHandleContractPairs,
+            requestValidity,
+            contractsInfo,
+            user.address,
+            publicKey,
+            nullContextUserSignature,
+            nullContextV2ExtraData,
+          ),
+      ).to.be.revertedWithCustomError(decryption, "InvalidNullContextId");
+    });
+
+    it("Should revert when extraData v2 pins an invalid (unregistered) contextId", async function () {
+      const invalidContextId = 999_999n;
+      const invalidContextV2ExtraData = extraDataV2(invalidContextId, 1n);
+      const invalidContextRequestMessage = createEIP712RequestUserDecrypt(
+        decryptionAddress,
+        publicKey,
+        contractsInfo.addresses as string[],
+        contractsInfo.chainId as number,
+        requestValidity.startTimestamp.toString(),
+        requestValidity.durationDays.toString(),
+        invalidContextV2ExtraData,
+      );
+      const [invalidContextUserSignature] = await getSignaturesUserDecryptRequest(invalidContextRequestMessage, [user]);
+      const tokenFundedTxSenderBalance = await mockedZamaOFT.balanceOf(tokenFundedTxSender.address);
+      const feesSenderToBurnerBalance = await mockedZamaOFT.balanceOf(mockedFeesSenderToBurnerAddress);
+
+      await expect(
+        decryption
+          .connect(tokenFundedTxSender)
+          [
+            "userDecryptionRequest((bytes32,address)[],(uint256,uint256),(uint256,address[]),address,bytes,bytes,bytes)"
+          ](
+            ctHandleContractPairs,
+            requestValidity,
+            contractsInfo,
+            user.address,
+            publicKey,
+            invalidContextUserSignature,
+            invalidContextV2ExtraData,
+          ),
+      )
+        .to.be.revertedWithCustomError(gatewayConfig, "InvalidKmsContext")
+        .withArgs(invalidContextId);
+
+      expect(await mockedZamaOFT.balanceOf(tokenFundedTxSender.address)).to.equal(tokenFundedTxSenderBalance);
+      expect(await mockedZamaOFT.balanceOf(mockedFeesSenderToBurnerAddress)).to.equal(feesSenderToBurnerBalance);
+    });
+
+    it("Should revert when a response uses extraData v2 with a contextId that differs from the one pinned at request time", async function () {
+      await decryption
+        .connect(tokenFundedTxSender)
+        [
+          "userDecryptionRequest((bytes32,address)[],(uint256,uint256),(uint256,address[]),address,bytes,bytes,bytes)"
+        ](ctHandleContractPairs, requestValidity, contractsInfo, user.address, publicKey, userSignature, extraDataV0);
+
+      const fakeContextId = 999_999n;
+      const responseV2ExtraData = extraDataV2(fakeContextId, 1n);
+      const [responseEip712] = userDecryptedShares.slice(0, 1).map((share) =>
+        createEIP712ResponseUserDecrypt(
+          gatewayChainId,
+          decryptionAddress,
+          publicKey,
+          ctHandles,
+          share,
+          responseV2ExtraData,
+        ),
+      );
+      const [responseSig] = await getSignaturesUserDecryptResponse([responseEip712], [kmsSigners[0]]);
+
+      await expect(
+        decryption
+          .connect(kmsTxSenders[0])
+          .userDecryptionResponse(decryptionId, userDecryptedShares[0], responseSig, responseV2ExtraData),
+      ).to.be.revertedWithCustomError(decryption, "DecryptionContextMismatch");
     });
 
     it("Should get all KMS transaction senders from user decryption consensus", async function () {
@@ -2539,6 +2721,111 @@ describe("Decryption", function () {
         .withArgs(decryptionId, toValues(snsCiphertextMaterials), delegateAddress, publicKey, extraDataV0);
     });
 
+    it("Should revert when extraData v2 pins a null contextId", async function () {
+      const nullContextV2ExtraData = extraDataV2(0n, 1n);
+      const nullContextRequestMessage = createEIP712RequestDelegatedUserDecrypt(
+        await decryption.getAddress(),
+        publicKey,
+        contractsInfo.addresses as string[],
+        delegatorAddress,
+        contractsInfo.chainId as number,
+        startTimestamp.toString(),
+        durationDays.toString(),
+        nullContextV2ExtraData,
+      );
+      const [nullContextDelegateSignature] = await getSignaturesDelegatedUserDecryptRequest(
+        nullContextRequestMessage,
+        [delegateAccount],
+      );
+
+      await expect(
+        decryption
+          .connect(tokenFundedTxSender)
+          .delegatedUserDecryptionRequest(
+            ctHandleContractPairs,
+            requestValidity,
+            delegationAccounts,
+            contractsInfo,
+            publicKey,
+            nullContextDelegateSignature,
+            nullContextV2ExtraData,
+          ),
+      ).to.be.revertedWithCustomError(decryption, "InvalidNullContextId");
+    });
+
+    it("Should revert when extraData v2 pins an invalid (unregistered) contextId", async function () {
+      const invalidContextId = 999_999n;
+      const invalidContextV2ExtraData = extraDataV2(invalidContextId, 1n);
+      const invalidContextRequestMessage = createEIP712RequestDelegatedUserDecrypt(
+        await decryption.getAddress(),
+        publicKey,
+        contractsInfo.addresses as string[],
+        delegatorAddress,
+        contractsInfo.chainId as number,
+        startTimestamp.toString(),
+        durationDays.toString(),
+        invalidContextV2ExtraData,
+      );
+      const [invalidContextDelegateSignature] = await getSignaturesDelegatedUserDecryptRequest(
+        invalidContextRequestMessage,
+        [delegateAccount],
+      );
+      const tokenFundedTxSenderBalance = await mockedZamaOFT.balanceOf(tokenFundedTxSender.address);
+      const feesSenderToBurnerBalance = await mockedZamaOFT.balanceOf(mockedFeesSenderToBurnerAddress);
+
+      await expect(
+        decryption
+          .connect(tokenFundedTxSender)
+          .delegatedUserDecryptionRequest(
+            ctHandleContractPairs,
+            requestValidity,
+            delegationAccounts,
+            contractsInfo,
+            publicKey,
+            invalidContextDelegateSignature,
+            invalidContextV2ExtraData,
+          ),
+      )
+        .to.be.revertedWithCustomError(gatewayConfig, "InvalidKmsContext")
+        .withArgs(invalidContextId);
+
+      expect(await mockedZamaOFT.balanceOf(tokenFundedTxSender.address)).to.equal(tokenFundedTxSenderBalance);
+      expect(await mockedZamaOFT.balanceOf(mockedFeesSenderToBurnerAddress)).to.equal(feesSenderToBurnerBalance);
+    });
+
+    it("Should revert when a response uses extraData v2 with a contextId that differs from the one pinned at request time", async function () {
+      await decryption
+        .connect(tokenFundedTxSender)
+        .delegatedUserDecryptionRequest(
+          ctHandleContractPairs,
+          requestValidity,
+          delegationAccounts,
+          contractsInfo,
+          publicKey,
+          delegateSignature,
+          extraDataV0,
+        );
+
+      const decryptionAddress = await decryption.getAddress();
+      const fakeContextId = 999_999n;
+      const responseV2ExtraData = extraDataV2(fakeContextId, 1n);
+      const responseEip712 = createEIP712ResponseUserDecrypt(
+        gatewayChainId,
+        decryptionAddress,
+        publicKey,
+        ctHandleContractPairs.map((pair) => pair.ctHandle.toString()),
+        userDecryptedShares[0],
+        responseV2ExtraData,
+      );
+      const [responseSig] = await getSignaturesUserDecryptResponse([responseEip712], [kmsSigners[0]]);
+
+      await expect(
+        decryption
+          .connect(kmsTxSenders[0])
+          .userDecryptionResponse(decryptionId, userDecryptedShares[0], responseSig, responseV2ExtraData),
+      ).to.be.revertedWithCustomError(decryption, "DecryptionContextMismatch");
+    });
+
     it("Should revert because the contract is paused", async function () {
       // Pause the contract.
       await decryption.connect(pauser).pause();
@@ -2966,6 +3253,49 @@ describe("Decryption", function () {
             UNIFIED_REQUEST_SIG
           ](directHandles, user.address, publicKey, [contractAddress], requestValidity, opaqueSignature, nullContextExtraData),
       ).to.be.revertedWithCustomError(decryption, "InvalidNullContextId");
+    });
+
+    it("Should revert when extraData v2 pins a null contextId", async function () {
+      const nullContextV2ExtraData = extraDataV2(0n, 1n);
+
+      await expect(
+        decryption
+          .connect(tokenFundedTxSender)
+          [
+            UNIFIED_REQUEST_SIG
+          ](directHandles, user.address, publicKey, [contractAddress], requestValidity, opaqueSignature, nullContextV2ExtraData),
+      ).to.be.revertedWithCustomError(decryption, "InvalidNullContextId");
+    });
+
+    it("Should revert when a response uses extraData v2 with a contextId that differs from the one pinned at request time", async function () {
+      const { kmsSigners: unifiedKmsSigners, kmsTxSenders: unifiedKmsTxSenders } =
+        await loadFixture(prepareAddCiphertextFixture);
+      const decryptionAddress = await decryption.getAddress();
+
+      await decryption
+        .connect(tokenFundedTxSender)
+        [
+          UNIFIED_REQUEST_SIG
+        ](directHandles, user.address, publicKey, [contractAddress], requestValidity, opaqueSignature, extraDataV0);
+
+      const fakeContextId = 999_999n;
+      const responseV2ExtraData = extraDataV2(fakeContextId, 1n);
+      const userDecryptedShare = createBytes32s(1)[0];
+      const responseEip712 = createEIP712ResponseUserDecrypt(
+        gatewayChainId,
+        decryptionAddress,
+        publicKey,
+        ctHandles,
+        userDecryptedShare,
+        responseV2ExtraData,
+      );
+      const [responseSig] = await getSignaturesUserDecryptResponse([responseEip712], [unifiedKmsSigners[0]]);
+
+      await expect(
+        decryption
+          .connect(unifiedKmsTxSenders[0])
+          .userDecryptionResponse(decryptionId, userDecryptedShare, responseSig, responseV2ExtraData),
+      ).to.be.revertedWithCustomError(decryption, "DecryptionContextMismatch");
     });
   });
 
