@@ -1,11 +1,11 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT COUNT(*)::BIGINT FROM ciphertexts128",
+  "query": "\n        SELECT COUNT(*)::BIGINT AS \"count!\"\n        FROM ciphertexts128_branch\n        ",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "count",
+        "name": "count!",
         "type_info": "Int8"
       }
     ],
@@ -16,5 +16,5 @@
       null
     ]
   },
-  "hash": "654122b8438e9b7a17dff3c422cbea4d0d74be6d9bec1b43b8768b0dc66e1e29"
+  "hash": "a91f8e0e5a7fa0f7c6ca234feaf454842551fc999addf892ad3a486987bdb866"
 }

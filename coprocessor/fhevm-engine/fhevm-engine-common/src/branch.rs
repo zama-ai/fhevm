@@ -47,12 +47,14 @@ pub async fn read_settled_height(
     tx: &mut Transaction<'_, Postgres>,
     chain_id: i64,
 ) -> Result<i64, sqlx::Error> {
-    Ok(sqlx::query_scalar::<_, i64>(
-        "SELECT settled_height
+    Ok(sqlx::query_scalar!(
+        r#"
+        SELECT settled_height AS "settled_height!"
          FROM coprocessor_settlement
-         WHERE chain_id = $1",
+         WHERE chain_id = $1
+        "#,
+        chain_id,
     )
-    .bind(chain_id)
     .fetch_optional(tx.as_mut())
     .await?
     .unwrap_or(INITIAL_SETTLED_HEIGHT))
@@ -73,8 +75,9 @@ pub async fn advance_settled_height(
     let first_block_to_check = current.saturating_add(1).max(first_post_cutover_block);
     // `pbs_computations_branch` has no `is_error` terminal state; incomplete
     // PBS rows are the only PBS rows that can block settlement.
-    let rows = sqlx::query_scalar::<_, i64>(
-        "SELECT b.block_number
+    let rows = sqlx::query_scalar!(
+        r#"
+        SELECT b.block_number AS "block_number!"
          FROM host_chain_blocks_valid b
          WHERE b.chain_id = $1
            AND b.block_status = 'finalized'
@@ -105,19 +108,21 @@ pub async fn advance_settled_height(
                        AND pc.is_error = TRUE
                  )
            )
-         ORDER BY b.block_number ASC",
+         ORDER BY b.block_number ASC
+        "#,
+        chain_id,
+        first_block_to_check,
+        candidate_height,
     )
-    .bind(chain_id)
-    .bind(first_block_to_check)
-    .bind(candidate_height)
     .fetch_all(tx.as_mut())
     .await?;
 
     let settled_height = next_settled_height(current, candidate_height, branch_cutover_block, rows);
 
     if settled_height > current {
-        sqlx::query(
-            "INSERT INTO coprocessor_settlement(chain_id, settled_height, updated_at)
+        sqlx::query!(
+            r#"
+            INSERT INTO coprocessor_settlement(chain_id, settled_height, updated_at)
              VALUES($1, $2, CURRENT_TIMESTAMP)
              ON CONFLICT (chain_id) DO UPDATE
              SET settled_height = GREATEST(coprocessor_settlement.settled_height, EXCLUDED.settled_height),
@@ -125,10 +130,11 @@ pub async fn advance_settled_height(
                      WHEN EXCLUDED.settled_height > coprocessor_settlement.settled_height
                      THEN CURRENT_TIMESTAMP
                      ELSE coprocessor_settlement.updated_at
-                 END",
+                 END
+            "#,
+            chain_id,
+            settled_height,
         )
-        .bind(chain_id)
-        .bind(settled_height)
         .execute(tx.as_mut())
         .await?;
     }

@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE ciphertext_digest_branch\n            SET ciphertext = $1,\n                ciphertext128 = $2,\n                ciphertext128_format = $3,\n                s3_format_version = $4\n            WHERE host_chain_id = $5\n              AND handle = $6\n              AND producer_block_hash = $7\n              AND block_hash = $8\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Bytea",
+        "Int2",
+        "Int2",
+        "Int8",
+        "Bytea",
+        "Bytea",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c7b6c1b5bdc0c1cf484e1d12308d6ac1d13b625ef823f59cc4d441e6c46b0010"
+}

@@ -27,7 +27,7 @@ use futures::future::join_all;
 use opentelemetry::trace::{Status, TraceContextExt};
 use sha2::Sha256;
 use sha3::{Digest, Keccak256};
-use sqlx::{PgPool, Pool, Postgres, Row, Transaction};
+use sqlx::{PgPool, Pool, Postgres, Transaction};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::select;
@@ -47,8 +47,6 @@ pub const EVENT_CIPHERTEXTS_UPLOADED: &str = "event_ciphertexts_uploaded";
 const DEFAULT_BATCH_SIZE: usize = 10;
 pub(crate) const COPROCESSOR_CONTEXT_ID_1: U256 = U256::ONE;
 const NO_SNS_CIPHERTEXT_DIGEST: [u8; 32] = [0; 32];
-const UPLOAD_CIPHERTEXTS_TASK_SAVEPOINT: &str = "savepoint_upload_ciphertexts_task";
-
 #[derive(Clone, Debug)]
 struct UploadBytesCandidate {
     producer_block_hash: Vec<u8>,
@@ -149,10 +147,11 @@ async fn run_uploader_loop(
                     }
                     UploadJob::DatabaseLock(mut item) => {
                         create_upload_task_savepoint(&mut trx).await?;
-                        let sql = "
+                        let row = match sqlx::query!(
+                            r#"
                             SELECT d.ciphertext,
                                    d.ciphertext128,
-                                   d.ciphertext128_format,
+                                   d.ciphertext128_format AS "ciphertext128_format?",
                                    d.s3_format_version
                             FROM ciphertext_digest_branch d
                             WHERE d.host_chain_id = $1
@@ -172,12 +171,13 @@ async fn run_uploader_loop(
                                   )
                                 )
                               )
-                            FOR UPDATE SKIP LOCKED";
-                        let row = match sqlx::query(sql)
-                            .bind(item.host_chain_id.as_i64())
-                            .bind(&item.handle)
-                            .bind(&item.producer_block_hash)
-                            .bind(&item.block_hash)
+                            FOR UPDATE SKIP LOCKED
+                            "#,
+                            item.host_chain_id.as_i64(),
+                            &item.handle,
+                            &item.producer_block_hash,
+                            &item.block_hash,
+                        )
                             .fetch_one(trx.as_mut())
                             .await
                         {
@@ -192,11 +192,10 @@ async fn run_uploader_loop(
                                 continue;
                             }
                         };
-                        let uploaded_ct64: Option<Vec<u8>> = row.try_get("ciphertext")?;
-                        let uploaded_ct128: Option<Vec<u8>> = row.try_get("ciphertext128")?;
-                        let ciphertext128_format: Option<i16> =
-                            row.try_get("ciphertext128_format")?;
-                        item.s3_format_version = row.try_get("s3_format_version")?;
+                        let uploaded_ct64 = row.ciphertext;
+                        let uploaded_ct128 = row.ciphertext128;
+                        let ciphertext128_format = row.ciphertext128_format;
+                        item.s3_format_version = row.s3_format_version;
 
                         // A non-null digest means another worker already uploaded that
                         // ciphertext variant, so this recovery job must not retry it.
@@ -387,7 +386,7 @@ fn upload_task_error_into_execution_error(err: anyhow::Error) -> ExecutionError 
 async fn create_upload_task_savepoint(
     trx: &mut Transaction<'_, Postgres>,
 ) -> Result<(), ExecutionError> {
-    sqlx::query(&format!("SAVEPOINT {UPLOAD_CIPHERTEXTS_TASK_SAVEPOINT}"))
+    sqlx::query!("SAVEPOINT savepoint_upload_ciphertexts_task")
         .execute(trx.as_mut())
         .await?;
 
@@ -397,11 +396,9 @@ async fn create_upload_task_savepoint(
 async fn rollback_to_upload_task_savepoint(
     trx: &mut Transaction<'_, Postgres>,
 ) -> Result<(), ExecutionError> {
-    sqlx::query(&format!(
-        "ROLLBACK TO SAVEPOINT {UPLOAD_CIPHERTEXTS_TASK_SAVEPOINT}"
-    ))
-    .execute(trx.as_mut())
-    .await?;
+    sqlx::query!("ROLLBACK TO SAVEPOINT savepoint_upload_ciphertexts_task")
+        .execute(trx.as_mut())
+        .await?;
 
     Ok(())
 }
@@ -929,8 +926,7 @@ async fn upload_ciphertexts(
     )
     .await?;
 
-    sqlx::query("SELECT pg_notify($1, '')")
-        .bind(EVENT_CIPHERTEXTS_UPLOADED)
+    sqlx::query!("SELECT pg_notify($1, '')", EVENT_CIPHERTEXTS_UPLOADED)
         .execute(trx.as_mut())
         .await?;
 
@@ -955,14 +951,15 @@ async fn fetch_pending_uploads(
     db_pool: &Pool<Postgres>,
     limit: i64,
 ) -> Result<Vec<UploadJob>, ExecutionError> {
-    let sql = "
+    let rows = sqlx::query!(
+        r#"
         SELECT d.handle,
                d.producer_block_hash,
                d.block_hash,
                d.block_number,
                d.ciphertext,
                d.ciphertext128,
-               d.ciphertext128_format,
+               d.ciphertext128_format AS "ciphertext128_format?",
                d.s3_format_version,
                d.transaction_id,
                d.host_chain_id,
@@ -987,27 +984,31 @@ async fn fetch_pending_uploads(
              )
            )
         FOR UPDATE SKIP LOCKED
-        LIMIT $1";
-    let rows = sqlx::query(sql).bind(limit).fetch_all(db_pool).await?;
+        LIMIT $1
+        "#,
+        limit,
+    )
+    .fetch_all(db_pool)
+    .await?;
 
     let mut jobs = Vec::new();
 
     for row in rows {
         let mut ct64_compressed = Arc::new(Vec::new());
         let mut ct128 = Vec::new();
-        let ciphertext_digest: Option<Vec<u8>> = row.try_get("ciphertext")?;
-        let ciphertext128_digest: Option<Vec<u8>> = row.try_get("ciphertext128")?;
-        let s3_format_version: Option<i16> = row.try_get("s3_format_version")?;
+        let ciphertext_digest = row.ciphertext;
+        let ciphertext128_digest = row.ciphertext128;
+        let s3_format_version = row.s3_format_version;
         let should_verify_existing_s3 = s3_format_version != Some(CURRENT_S3_FORMAT_VERSION);
-        let handle: Vec<u8> = row.try_get("handle")?;
-        let producer_block_hash: Vec<u8> = row.try_get("producer_block_hash")?;
-        let block_hash: Vec<u8> = row.try_get("block_hash")?;
-        let block_number: Option<i64> = row.try_get("block_number")?;
-        let transaction_id: Option<Vec<u8>> = row.try_get("transaction_id")?;
-        let host_chain_id_raw: i64 = row.try_get("host_chain_id")?;
-        let key_id_gw: Vec<u8> = row.try_get("key_id_gw")?;
-        let ciphertext128_format: Option<i16> = row.try_get("ciphertext128_format")?;
-        let has_ct128_ciphertext: bool = row.try_get("has_ct128_ciphertext")?;
+        let handle = row.handle;
+        let producer_block_hash = row.producer_block_hash;
+        let block_hash = row.block_hash;
+        let block_number = row.block_number;
+        let transaction_id = row.transaction_id;
+        let host_chain_id_raw = row.host_chain_id;
+        let key_id_gw = row.key_id_gw;
+        let ciphertext128_format = row.ciphertext128_format;
+        let has_ct128_ciphertext = row.has_ct128_ciphertext.unwrap_or(false);
         let row_incomplete =
             ciphertext_digest.is_none() || (has_ct128_ciphertext && ciphertext128_digest.is_none());
 
@@ -1017,20 +1018,23 @@ async fn fetch_pending_uploads(
         // can validate/rewrite old S3 objects.
         if row_incomplete || should_verify_existing_s3 {
             let mut candidates = Vec::new();
-            let sql = "SELECT producer_block_hash, ciphertext
+            let rows = sqlx::query!(
+                r#"
+                SELECT producer_block_hash AS "producer_block_hash!", ciphertext AS "ciphertext!"
                  FROM ciphertexts_branch
                  WHERE handle = $1
                    AND ciphertext IS NOT NULL
-                   AND ciphertext_version = $2";
-            for candidate_row in sqlx::query(sql)
-                .bind(&handle)
-                .bind(current_ciphertext_version())
-                .fetch_all(db_pool)
-                .await?
-            {
+                   AND ciphertext_version = $2
+                "#,
+                &handle,
+                current_ciphertext_version(),
+            )
+            .fetch_all(db_pool)
+            .await?;
+            for candidate_row in rows {
                 candidates.push(UploadBytesCandidate {
-                    producer_block_hash: candidate_row.try_get("producer_block_hash")?,
-                    ciphertext: candidate_row.try_get("ciphertext")?,
+                    producer_block_hash: candidate_row.producer_block_hash,
+                    ciphertext: candidate_row.ciphertext,
                 });
             }
             if let Some(record) = select_producer_candidate(&candidates, &producer_block_hash) {
@@ -1046,15 +1050,22 @@ async fn fetch_pending_uploads(
         // by writing the zero ct128 digest after ct64 is verified/uploaded.
         if has_ct128_ciphertext && (row_incomplete || should_verify_existing_s3) {
             let mut candidates = Vec::new();
-            let sql = "SELECT producer_block_hash, ciphertext
+            let rows = sqlx::query!(
+                r#"
+                SELECT producer_block_hash AS "producer_block_hash!", ciphertext
                  FROM ciphertexts128_branch
-                 WHERE handle = $1";
-            for candidate_row in sqlx::query(sql).bind(&handle).fetch_all(db_pool).await? {
-                let ciphertext: Option<Vec<u8>> = candidate_row.try_get("ciphertext")?;
+                 WHERE handle = $1
+                "#,
+                &handle,
+            )
+            .fetch_all(db_pool)
+            .await?;
+            for candidate_row in rows {
+                let ciphertext = candidate_row.ciphertext;
                 if let Some(ciphertext) = ciphertext {
                     if !ciphertext.is_empty() {
                         candidates.push(UploadBytesCandidate {
-                            producer_block_hash: candidate_row.try_get("producer_block_hash")?,
+                            producer_block_hash: candidate_row.producer_block_hash,
                             ciphertext,
                         });
                     }
@@ -1467,6 +1478,7 @@ mod tests {
     use alloy::signers::local::PrivateKeySigner;
     use aws_config::BehaviorVersion;
     use serial_test::serial;
+    use sqlx::Row;
     use std::time::Duration;
     use test_harness::{
         instance::{setup_test_db, ImportMode},

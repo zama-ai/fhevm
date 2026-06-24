@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 
 use alloy::primitives::{Address, FixedBytes, B256};
 use fhevm_engine_common::utils::to_hex;
-use sqlx::{Pool, Postgres, Row};
+use sqlx::{Pool, Postgres};
 use tracing::{debug, error, warn};
 
 use crate::metrics::{
@@ -282,8 +282,9 @@ impl DriftDetector {
         // off-branch row that happens to match consensus must not mask drift on
         // the finalized branch. Fully branchless rows remain a compatibility
         // fallback only when no event-scoped row exists for this handle.
-        let rows = sqlx::query(
-            "WITH event_scoped AS (
+        let rows = sqlx::query!(
+            r#"
+            WITH event_scoped AS (
                 SELECT
                     d.ciphertext,
                     d.ciphertext128,
@@ -317,9 +318,10 @@ impl DriftDetector {
                 ciphertext,
                 ciphertext128,
                 ciphertext IS NOT NULL AND ciphertext128 IS NOT NULL AS is_complete
-             FROM selected",
+             FROM selected
+            "#,
+            handle.as_slice(),
         )
-        .bind(handle.as_slice())
         .fetch_all(db_pool)
         .await?;
 
@@ -328,9 +330,9 @@ impl DriftDetector {
         let mut local_pairs = Vec::new();
         let mut has_incomplete_row = false;
         for row in &rows {
-            let is_complete: bool = row.get("is_complete");
-            let ct: Option<Vec<u8>> = row.get("ciphertext");
-            let ct128: Option<Vec<u8>> = row.get("ciphertext128");
+            let is_complete = row.is_complete.unwrap_or(false);
+            let ct = row.ciphertext.clone();
+            let ct128 = row.ciphertext128.clone();
             if is_complete {
                 if let Some(pair) = ct.zip(ct128) {
                     local_pairs.push(pair);

@@ -211,7 +211,7 @@ async fn add_ciphertext_sends_only_finalized_branch_digest_row() -> anyhow::Resu
         ",
     )
     .bind(host_chain_id)
-    .bind(&key_id)
+    .bind(key_id)
     .bind(&handle[..])
     .bind(&producer_block_hash)
     .bind(&finalized_block_hash)

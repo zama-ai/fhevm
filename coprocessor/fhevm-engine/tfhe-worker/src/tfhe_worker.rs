@@ -17,7 +17,7 @@ use scheduler::dfg::{build_component_nodes, ComponentNode, DFComponentGraph, DFG
 use sha3::{Digest, Keccak256};
 use sqlx::types::Uuid;
 use sqlx::Postgres;
-use sqlx::{postgres::PgListener, query, Acquire, Row};
+use sqlx::{postgres::PgListener, query, Acquire};
 use std::collections::{HashMap, HashSet};
 use std::time::SystemTime;
 use time::PrimitiveDateTime;
@@ -170,6 +170,17 @@ struct WorkRow {
     schedule_order: PrimitiveDateTime,
 }
 
+type WorkerDynError = Box<dyn std::error::Error + Send + Sync>;
+type QueryForWorkOutput = (
+    Vec<ComponentNode>,
+    BatchExecutionContext,
+    HashMap<Handle, ExecutionTransactionContext>,
+    PrimitiveDateTime,
+    bool,
+    bool,
+);
+type MaterializedInputs = Vec<(Vec<u8>, DFGTxInput)>;
+
 #[derive(Clone, Debug)]
 struct CiphertextInsert {
     handle: Handle,
@@ -264,10 +275,13 @@ async fn ensure_cutover_safe(
     // completed row in the legacy computations table. Pending dual-write rows
     // and branchless input ciphertexts are excluded: they exist on fresh
     // wave-2 deployments too and are not a divergence signal on their own.
-    let legacy_executed: bool =
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM computations WHERE is_completed = TRUE)")
-            .fetch_one(&pool)
-            .await?;
+    let legacy_executed: bool = sqlx::query_scalar!(
+        r#"
+        SELECT EXISTS(SELECT 1 FROM computations WHERE is_completed = TRUE) AS "exists!"
+        "#
+    )
+    .fetch_one(&pool)
+    .await?;
     if legacy_executed {
         return Err(
             "Refusing to start: FHEVM_BRANCH_CUTOVER_BLOCK is 0/unset but this chain already \
@@ -525,16 +539,16 @@ async fn query_ciphertexts<'a>(
     let requested_handles = dependency_metadata.keys().cloned().collect::<Vec<_>>();
     let mut ciphertext_candidates: HashMap<Vec<u8>, Vec<CiphertextCandidate>> =
         HashMap::with_capacity(dependency_metadata.len());
-    let rows = sqlx::query(
-        "
+    let rows = sqlx::query!(
+        r#"
         SELECT handle, producer_block_hash, ciphertext, ciphertext_type
         FROM ciphertexts_branch
         WHERE handle = ANY($1::BYTEA[])
           AND ciphertext_version = $2
-        ",
+        "#,
+        &requested_handles as _,
+        current_ciphertext_version(),
     )
-    .bind(&requested_handles)
-    .bind(current_ciphertext_version())
     .fetch_all(trx.as_mut())
     .await
     .map_err(|err| {
@@ -542,14 +556,14 @@ async fn query_ciphertexts<'a>(
         err
     })?;
     for row in rows {
-        let handle: Vec<u8> = row.try_get("handle")?;
+        let handle = row.handle;
         ciphertext_candidates
             .entry(handle)
             .or_default()
             .push(CiphertextCandidate {
-                producer_block_hash: row.try_get("producer_block_hash")?,
-                ciphertext: row.try_get("ciphertext")?,
-                ciphertext_type: row.try_get("ciphertext_type")?,
+                producer_block_hash: row.producer_block_hash,
+                ciphertext: row.ciphertext,
+                ciphertext_type: row.ciphertext_type,
             });
     }
 
@@ -571,16 +585,16 @@ async fn query_ciphertexts<'a>(
         .map(|(handle, _)| handle.clone())
         .collect();
     if !legacy_fallback_handles.is_empty() {
-        let rows = sqlx::query(
-            "
+        let rows = sqlx::query!(
+            r#"
             SELECT handle, ciphertext, ciphertext_type
             FROM ciphertexts
             WHERE handle = ANY($1::BYTEA[])
               AND ciphertext_version = $2
-            ",
+            "#,
+            &legacy_fallback_handles as _,
+            current_ciphertext_version(),
         )
-        .bind(&legacy_fallback_handles)
-        .bind(current_ciphertext_version())
         .fetch_all(trx.as_mut())
         .await
         .map_err(|err| {
@@ -588,14 +602,14 @@ async fn query_ciphertexts<'a>(
             err
         })?;
         for row in rows {
-            let handle: Vec<u8> = row.try_get("handle")?;
+            let handle = row.handle;
             ciphertext_candidates
                 .entry(handle)
                 .or_default()
                 .push(CiphertextCandidate {
                     producer_block_hash: Vec::new(),
-                    ciphertext: row.try_get("ciphertext")?,
-                    ciphertext_type: row.try_get("ciphertext_type")?,
+                    ciphertext: row.ciphertext,
+                    ciphertext_type: row.ciphertext_type,
                 });
         }
     }
@@ -837,16 +851,16 @@ async fn query_dependency_metadata<'a>(
     }
 
     let mut computation_rows = Vec::new();
-    let rows = sqlx::query(
-        "
-        SELECT output_handle AS handle, producer_block_hash, block_number
+    let rows = sqlx::query!(
+        r#"
+        SELECT output_handle AS "handle!", producer_block_hash AS "producer_block_hash!", block_number
         FROM computations_branch
         WHERE host_chain_id = $2
         AND output_handle = ANY($1::BYTEA[])
-        ",
+        "#,
+        cts_to_query as _,
+        batch_context.host_chain_id,
     )
-    .bind(cts_to_query)
-    .bind(batch_context.host_chain_id)
     .fetch_all(trx.as_mut())
     .await
     .map_err(|err| {
@@ -855,23 +869,23 @@ async fn query_dependency_metadata<'a>(
     })?;
     for row in rows {
         computation_rows.push(DependencyRow {
-            handle: row.try_get("handle")?,
-            producer_block_hash: row.try_get("producer_block_hash")?,
-            block_number: row.try_get("block_number")?,
+            handle: row.handle,
+            producer_block_hash: row.producer_block_hash,
+            block_number: row.block_number,
         });
     }
 
     let mut allowed_handle_rows = Vec::new();
-    let rows = sqlx::query(
-        "
-        SELECT handle, producer_block_hash, block_number
+    let rows = sqlx::query!(
+        r#"
+        SELECT handle AS "handle!", producer_block_hash AS "producer_block_hash!", block_number
         FROM allowed_handles_branch
         WHERE (host_chain_id = $2 OR host_chain_id IS NULL)
         AND handle = ANY($1::BYTEA[])
-        ",
+        "#,
+        cts_to_query as _,
+        batch_context.host_chain_id,
     )
-    .bind(cts_to_query)
-    .bind(batch_context.host_chain_id)
     .fetch_all(trx.as_mut())
     .await
     .map_err(|err| {
@@ -880,9 +894,9 @@ async fn query_dependency_metadata<'a>(
     })?;
     for row in rows {
         allowed_handle_rows.push(DependencyRow {
-            handle: row.try_get("handle")?,
-            producer_block_hash: row.try_get("producer_block_hash")?,
-            block_number: row.try_get("block_number")?,
+            handle: row.handle,
+            producer_block_hash: row.producer_block_hash,
+            block_number: row.block_number,
         });
     }
 
@@ -983,9 +997,9 @@ async fn query_branchless_ciphertext_handles<'a>(
     trx: &mut sqlx::Transaction<'a, Postgres>,
 ) -> Result<HashSet<Handle>, Box<dyn std::error::Error + Send + Sync>> {
     let mut handles = HashSet::new();
-    let rows = sqlx::query(
-        "
-        SELECT handle
+    let rows = sqlx::query!(
+        r#"
+        SELECT handle AS "handle!"
         FROM ciphertexts_branch
         WHERE handle = ANY($1::BYTEA[])
           AND ciphertext_version = $2
@@ -995,10 +1009,10 @@ async fn query_branchless_ciphertext_handles<'a>(
         FROM ciphertexts
         WHERE handle = ANY($1::BYTEA[])
           AND ciphertext_version = $2
-        ",
+        "#,
+        cts_to_query as _,
+        ciphertext_version,
     )
-    .bind(cts_to_query)
-    .bind(ciphertext_version)
     .fetch_all(trx.as_mut())
     .await
     .map_err(|err| {
@@ -1006,7 +1020,7 @@ async fn query_branchless_ciphertext_handles<'a>(
         err
     })?;
     for row in rows {
-        handles.insert(row.try_get("handle")?);
+        handles.insert(row.handle);
     }
     Ok(handles)
 }
@@ -1196,125 +1210,125 @@ async fn query_work_rows_for_dcid<'a>(
     dependence_chain_id: Option<Vec<u8>>,
     branch_cutover_block: i64,
 ) -> Result<Vec<WorkRow>, sqlx::Error> {
-    let sql = "
--- DCIDs are ingestion-time same-block connected components. A repeated
--- transaction can appear on sibling forks with the same DCID, so select the
--- earliest eligible block context in the acquired lane. Lock the full DCID
--- row set first so expired-lock stealing cannot skip a locked sibling context
--- and process another fork concurrently.
-WITH expected_dcid_rows AS (
-    SELECT COUNT(*) AS count
-    FROM computations_branch c
-    WHERE c.dependence_chain_id = $1
-      AND c.is_error = FALSE
-),
-locked_dcid_rows AS MATERIALIZED (
-    SELECT
-      c.output_handle,
-      c.dependencies,
-      c.fhe_operation,
-      c.is_scalar,
-      c.is_allowed,
-      c.dependence_chain_id,
-      c.transaction_id,
-      c.producer_block_hash,
-      c.host_chain_id,
-      c.block_number,
-      c.schedule_order,
-      c.is_completed
-    FROM computations_branch c
-    WHERE c.dependence_chain_id = $1
-      AND c.is_error = FALSE
-    ORDER BY c.schedule_order ASC
-    FOR UPDATE OF c SKIP LOCKED
-),
-locked_dcid_count AS (
-    SELECT COUNT(*) AS count FROM locked_dcid_rows
-),
-selected_context AS MATERIALIZED (
-    SELECT
-      c.dependence_chain_id,
-      c.host_chain_id,
-      c.block_number,
-      c.producer_block_hash
-    FROM locked_dcid_rows c
-    WHERE c.is_completed = FALSE
-      AND c.is_allowed = TRUE
-      AND (c.block_number IS NULL OR c.block_number >= $2)
-      AND (SELECT count FROM locked_dcid_count) = (SELECT count FROM expected_dcid_rows)
-    ORDER BY c.schedule_order ASC
-    LIMIT 1
-),
-expected_rows AS (
-    SELECT COUNT(*) AS count
-    FROM locked_dcid_rows c
-    JOIN selected_context sc
-      ON c.dependence_chain_id = sc.dependence_chain_id
-     AND c.host_chain_id = sc.host_chain_id
-     AND c.block_number IS NOT DISTINCT FROM sc.block_number
-     AND c.producer_block_hash = sc.producer_block_hash
-),
-locked_rows AS MATERIALIZED (
-    SELECT
-      c.output_handle,
-      c.dependencies,
-      c.fhe_operation,
-      c.is_scalar,
-      c.is_allowed,
-      c.dependence_chain_id,
-      c.transaction_id,
-      c.producer_block_hash,
-      c.host_chain_id,
-      c.block_number,
-      c.schedule_order
-    FROM locked_dcid_rows c
-    JOIN selected_context sc
-      ON c.dependence_chain_id = sc.dependence_chain_id
-     AND c.host_chain_id = sc.host_chain_id
-     AND c.block_number IS NOT DISTINCT FROM sc.block_number
-     AND c.producer_block_hash = sc.producer_block_hash
-    ORDER BY c.schedule_order ASC
-),
-locked_count AS (
-    SELECT COUNT(*) AS count FROM locked_rows
-)
-SELECT
-  output_handle,
-  dependencies,
-  fhe_operation,
-  is_scalar,
-  is_allowed,
-  dependence_chain_id,
-  transaction_id,
-  producer_block_hash,
-  host_chain_id,
-  block_number,
-  schedule_order
-FROM locked_rows
-WHERE (SELECT count FROM locked_count) = (SELECT count FROM expected_rows)
-ORDER BY schedule_order ASC
-        ";
-    sqlx::query(sql)
-        .bind(dependence_chain_id)
-        .bind(branch_cutover_block)
-        .fetch_all(trx.as_mut())
-        .await?
+    let rows = sqlx::query!(
+        r#"
+        -- DCIDs are ingestion-time same-block connected components. A repeated
+        -- transaction can appear on sibling forks with the same DCID, so select the
+        -- earliest eligible block context in the acquired lane. Lock the full DCID
+        -- row set first so expired-lock stealing cannot skip a locked sibling context
+        -- and process another fork concurrently.
+        WITH expected_dcid_rows AS (
+            SELECT COUNT(*) AS count
+            FROM computations_branch c
+            WHERE c.dependence_chain_id = $1
+              AND c.is_error = FALSE
+        ),
+        locked_dcid_rows AS MATERIALIZED (
+            SELECT
+              c.output_handle,
+              c.dependencies,
+              c.fhe_operation,
+              c.is_scalar,
+              c.is_allowed,
+              c.dependence_chain_id,
+              c.transaction_id,
+              c.producer_block_hash,
+              c.host_chain_id,
+              c.block_number,
+              c.schedule_order,
+              c.is_completed
+            FROM computations_branch c
+            WHERE c.dependence_chain_id = $1
+              AND c.is_error = FALSE
+            ORDER BY c.schedule_order ASC
+            FOR UPDATE OF c SKIP LOCKED
+        ),
+        locked_dcid_count AS (
+            SELECT COUNT(*) AS count FROM locked_dcid_rows
+        ),
+        selected_context AS MATERIALIZED (
+            SELECT
+              c.dependence_chain_id,
+              c.host_chain_id,
+              c.block_number,
+              c.producer_block_hash
+            FROM locked_dcid_rows c
+            WHERE c.is_completed = FALSE
+              AND c.is_allowed = TRUE
+              AND (c.block_number IS NULL OR c.block_number >= $2)
+              AND (SELECT count FROM locked_dcid_count) = (SELECT count FROM expected_dcid_rows)
+            ORDER BY c.schedule_order ASC
+            LIMIT 1
+        ),
+        expected_rows AS (
+            SELECT COUNT(*) AS count
+            FROM locked_dcid_rows c
+            JOIN selected_context sc
+              ON c.dependence_chain_id = sc.dependence_chain_id
+             AND c.host_chain_id = sc.host_chain_id
+             AND c.block_number IS NOT DISTINCT FROM sc.block_number
+             AND c.producer_block_hash = sc.producer_block_hash
+        ),
+        locked_rows AS MATERIALIZED (
+            SELECT
+              c.output_handle,
+              c.dependencies,
+              c.fhe_operation,
+              c.is_scalar,
+              c.is_allowed,
+              c.dependence_chain_id,
+              c.transaction_id,
+              c.producer_block_hash,
+              c.host_chain_id,
+              c.block_number,
+              c.schedule_order
+            FROM locked_dcid_rows c
+            JOIN selected_context sc
+              ON c.dependence_chain_id = sc.dependence_chain_id
+             AND c.host_chain_id = sc.host_chain_id
+             AND c.block_number IS NOT DISTINCT FROM sc.block_number
+             AND c.producer_block_hash = sc.producer_block_hash
+            ORDER BY c.schedule_order ASC
+        ),
+        locked_count AS (
+            SELECT COUNT(*) AS count FROM locked_rows
+        )
+        SELECT
+          output_handle AS "output_handle!",
+          dependencies AS "dependencies!",
+          fhe_operation AS "fhe_operation!",
+          is_scalar AS "is_scalar!",
+          is_allowed AS "is_allowed!",
+          transaction_id AS "transaction_id!",
+          producer_block_hash AS "producer_block_hash!",
+          host_chain_id AS "host_chain_id!",
+          block_number,
+          schedule_order AS "schedule_order!"
+        FROM locked_rows
+        WHERE (SELECT count FROM locked_count) = (SELECT count FROM expected_rows)
+        ORDER BY schedule_order ASC
+        "#,
+        dependence_chain_id,
+        branch_cutover_block,
+    )
+    .fetch_all(trx.as_mut())
+    .await?;
+
+    Ok(rows
         .into_iter()
-        .map(|row| -> Result<WorkRow, sqlx::Error> {
-            Ok(WorkRow {
-                output_handle: row.try_get("output_handle")?,
-                dependencies: row.try_get("dependencies")?,
-                fhe_operation: row.try_get("fhe_operation")?,
-                is_scalar: row.try_get("is_scalar")?,
-                is_allowed: row.try_get("is_allowed")?,
-                transaction_id: row.try_get("transaction_id")?,
-                producer_block_hash: row.try_get("producer_block_hash")?,
-                host_chain_id: row.try_get("host_chain_id")?,
-                block_number: row.try_get("block_number")?,
-                schedule_order: row.try_get("schedule_order")?,
-            })
+        .map(|row| WorkRow {
+            output_handle: row.output_handle,
+            dependencies: row.dependencies,
+            fhe_operation: row.fhe_operation,
+            is_scalar: row.is_scalar,
+            is_allowed: row.is_allowed,
+            transaction_id: row.transaction_id,
+            producer_block_hash: row.producer_block_hash,
+            host_chain_id: row.host_chain_id,
+            block_number: row.block_number,
+            schedule_order: row.schedule_order,
         })
-        .collect::<Result<Vec<_>, _>>()
+        .collect())
 }
 
 #[tracing::instrument(skip_all)]
@@ -1324,17 +1338,7 @@ async fn query_for_work<'a>(
     trx: &mut sqlx::Transaction<'a, Postgres>,
     deps_chain_mngr: &mut dependence_chain::LockMngr,
     no_progress_cycles: &mut u32,
-) -> Result<
-    (
-        Vec<ComponentNode>,
-        BatchExecutionContext,
-        HashMap<Handle, ExecutionTransactionContext>,
-        PrimitiveDateTime,
-        bool,
-        bool,
-    ),
-    Box<dyn std::error::Error + Send + Sync>,
-> {
+) -> Result<QueryForWorkOutput, WorkerDynError> {
     let s_dcid = tracing::info_span!(
         "query_dependence_chain",
         dependence_chain_id = tracing::field::Empty
@@ -1635,14 +1639,13 @@ async fn build_transaction_graph_and_execute<'a>(
         let materialization_gpu_idx = next_gpu_index(keys.gpu_sks.len())?;
         #[cfg(not(feature = "gpu"))]
         let materialization_gpu_idx = 0;
-        let materialized: Vec<(Vec<u8>, DFGTxInput)> = tokio::task::spawn_blocking({
-            let ciphertext_map = ciphertext_map;
+        let materialized: MaterializedInputs = tokio::task::spawn_blocking({
             #[cfg(not(feature = "gpu"))]
             let sks_for_materialize = keys.sks.clone();
             #[cfg(feature = "gpu")]
             let sks_for_materialize = keys.gpu_sks[materialization_gpu_idx].clone();
             let gpu_idx_for_materialize = materialization_gpu_idx;
-            move || -> Result<Vec<(Vec<u8>, DFGTxInput)>, Box<dyn std::error::Error + Send + Sync>> {
+            move || -> Result<MaterializedInputs, WorkerDynError> {
                 tfhe::set_server_key(sks_for_materialize);
                 let mut results = Vec::with_capacity(ciphertext_map.len());
                 for (handle, input) in ciphertext_map {
@@ -1966,19 +1969,19 @@ async fn upload_transaction_graph_results<'a>(
                 .iter()
                 .map(|entry| entry.ciphertext_type)
                 .collect::<Vec<_>>();
-            let cts_inserted = sqlx::query(
-                "
+            let cts_inserted = sqlx::query!(
+                r#"
             INSERT INTO ciphertexts_branch(handle, producer_block_hash, block_number, ciphertext, ciphertext_version, ciphertext_type)
             SELECT * FROM UNNEST($1::BYTEA[], $2::BYTEA[], $3::BIGINT[], $4::BYTEA[], $5::SMALLINT[], $6::SMALLINT[])
             ON CONFLICT (handle, ciphertext_version, producer_block_hash) DO NOTHING
-            ",
+            "#,
+                &handles as _,
+                &producer_block_hashes as _,
+                &block_numbers as _,
+                &ciphertexts as _,
+                &ciphertext_versions as _,
+                &ciphertext_types as _,
             )
-            .bind(&handles)
-            .bind(&producer_block_hashes)
-            .bind(&block_numbers)
-            .bind(&ciphertexts)
-            .bind(&ciphertext_versions)
-            .bind(&ciphertext_types)
             .execute(trx.as_mut())
             .await
             .map_err(|err| {
@@ -2008,8 +2011,8 @@ async fn upload_transaction_graph_results<'a>(
                 Vec<_>,
                 (Vec<_>, Vec<_>),
             ) = handles_to_update.into_iter().unzip();
-            let comp_updated = sqlx::query(
-                "
+            let comp_updated = sqlx::query!(
+                r#"
             WITH requested_updates AS (
                 SELECT *
                 FROM unnest($1::BYTEA[], $2::BYTEA[], $3::BYTEA[])
@@ -2022,11 +2025,11 @@ async fn upload_transaction_graph_results<'a>(
               AND computations_branch.output_handle = r.output_handle
               AND computations_branch.transaction_id = r.transaction_id
               AND computations_branch.producer_block_hash = r.producer_block_hash
-            ",
+            "#,
+                &handles_vec as _,
+                &txn_ids_vec as _,
+                &producer_block_hashes_vec as _,
             )
-            .bind(&handles_vec)
-            .bind(&txn_ids_vec)
-            .bind(&producer_block_hashes_vec)
             .execute(trx.as_mut())
             .await
             .map_err(|err| {
@@ -2057,19 +2060,19 @@ async fn set_computation_error<'a>(
     error!(target: "tfhe_worker", error = %err_string, output_handle = %format!("0x{}", hex::encode(output_handle)), "error while processing work item");
     telemetry::set_current_span_error(&err_string);
 
-    let _ = sqlx::query(
-        "
+    let _ = sqlx::query!(
+        r#"
         UPDATE computations_branch
         SET is_error = true, error_message = $1
         WHERE output_handle = $2
           AND transaction_id = $3
           AND producer_block_hash = $4
-        ",
+        "#,
+        &err_string,
+        output_handle,
+        transaction_id,
+        producer_block_hash,
     )
-    .bind(&err_string)
-    .bind(output_handle)
-    .bind(transaction_id)
-    .bind(producer_block_hash)
     .execute(trx.as_mut())
     .await?;
 
@@ -2105,6 +2108,7 @@ mod tests {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn insert_work_row(
         pool: &sqlx::PgPool,
         dcid: &[u8],

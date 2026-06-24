@@ -29,7 +29,7 @@ use opentelemetry::trace::{Status, TraceContextExt};
 use rayon::prelude::*;
 use sqlx::postgres::PgListener;
 use sqlx::Pool;
-use sqlx::{PgPool, Postgres, Row, Transaction};
+use sqlx::{PgPool, Postgres, Transaction};
 use std::fmt;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
@@ -326,16 +326,15 @@ pub async fn garbage_collect(pool: &PgPool, limit: u32) -> Result<(), ExecutionE
         return Ok(());
     }
 
-    let count: Option<i64> = sqlx::query_scalar(
-        "
-        SELECT COUNT(*)::BIGINT
+    let count = sqlx::query_scalar!(
+        r#"
+        SELECT COUNT(*)::BIGINT AS "count!"
         FROM ciphertexts128_branch
-        ",
+        "#
     )
     .fetch_one(pool)
     .await?;
 
-    let count = count.unwrap_or(0);
     if count <= limit as i64 {
         // Avoid unnecessary cleanup when there are not too many rows
         return Ok(());
@@ -351,8 +350,8 @@ pub async fn garbage_collect(pool: &PgPool, limit: u32) -> Result<(), ExecutionE
     let cleanup_span = tracing::info_span!("cleanup_ct128", rows_affected = tracing::field::Empty);
     let rows_affected: u64 = async {
         Ok::<u64, sqlx::Error>(
-            sqlx::query(
-                "
+            sqlx::query!(
+                r#"
                 WITH uploaded_ct128 AS (
                     SELECT c.handle, c.producer_block_hash
                     FROM ciphertexts128_branch c
@@ -370,9 +369,9 @@ pub async fn garbage_collect(pool: &PgPool, limit: u32) -> Result<(), ExecutionE
                 USING uploaded_ct128 r
                 WHERE c.handle = r.handle
                 AND c.producer_block_hash = r.producer_block_hash
-                ",
+                "#,
+                limit as i32,
             )
-            .bind(limit as i32)
             .execute(pool)
             .await?
             .rows_affected(),
@@ -517,7 +516,7 @@ pub async fn query_sns_tasks(
             // (e.g., via gateway coordination) to keep ciphertext_digest consistent.
             key_id_gw: key_id_gw.clone(),
             host_chain_id,
-            handle: handle.clone(),
+            handle,
             producer_block_hash,
             block_hash,
             block_number,
@@ -530,50 +529,92 @@ pub async fn query_sns_tasks(
             transaction_id,
         })
     };
-    let sql = format!(
-        "SELECT
-            a.handle,
-            a.transaction_id,
-            a.host_chain_id,
-            a.producer_block_hash,
-            a.block_hash,
-            a.block_number
-        FROM pbs_computations_branch a
-        WHERE a.is_completed = FALSE
-          AND (
-            (a.producer_block_hash = ''::bytea AND a.block_hash = ''::bytea)
-            OR a.block_number >= $2
-          )
-          AND EXISTS (
-              SELECT 1 FROM ciphertexts_branch c
-               WHERE c.handle = a.handle
-                 AND c.producer_block_hash = a.producer_block_hash
-                 AND c.ciphertext IS NOT NULL
-                 AND c.ciphertext_version = $3
-          )
-        ORDER BY a.created_at {order}
-        FOR UPDATE OF a SKIP LOCKED
-        LIMIT $1"
-    );
-
-    let task_rows = sqlx::query(&sql)
-        .bind(limit as i64)
-        .bind(branch_cutover_block)
-        .bind(current_ciphertext_version())
+    let task_rows = match order {
+        Order::Asc => sqlx::query!(
+            r#"
+            SELECT
+                a.handle AS "handle!",
+                a.transaction_id,
+                a.host_chain_id AS "host_chain_id!",
+                a.producer_block_hash AS "producer_block_hash!",
+                a.block_hash AS "block_hash!",
+                a.block_number
+            FROM pbs_computations_branch a
+            WHERE a.is_completed = FALSE
+              AND (
+                (a.producer_block_hash = ''::bytea AND a.block_hash = ''::bytea)
+                OR a.block_number >= $2
+              )
+              AND EXISTS (
+                  SELECT 1 FROM ciphertexts_branch c
+                   WHERE c.handle = a.handle
+                     AND c.producer_block_hash = a.producer_block_hash
+                     AND c.ciphertext IS NOT NULL
+                     AND c.ciphertext_version = $3
+              )
+            ORDER BY a.created_at ASC
+            FOR UPDATE OF a SKIP LOCKED
+            LIMIT $1
+            "#,
+            limit as i64,
+            branch_cutover_block,
+            current_ciphertext_version(),
+        )
         .fetch_all(db_txn.as_mut())
         .await?
         .into_iter()
-        .map(|row| -> Result<SnsTaskRow, sqlx::Error> {
-            Ok(SnsTaskRow {
-                handle: row.try_get("handle")?,
-                transaction_id: row.try_get("transaction_id")?,
-                host_chain_id: row.try_get("host_chain_id")?,
-                producer_block_hash: row.try_get("producer_block_hash")?,
-                block_hash: row.try_get("block_hash")?,
-                block_number: row.try_get("block_number")?,
-            })
+        .map(|row| SnsTaskRow {
+            handle: row.handle,
+            transaction_id: row.transaction_id,
+            host_chain_id: row.host_chain_id,
+            producer_block_hash: row.producer_block_hash,
+            block_hash: row.block_hash,
+            block_number: row.block_number,
         })
-        .collect::<Result<Vec<_>, sqlx::Error>>()?;
+        .collect::<Vec<_>>(),
+        Order::Desc => sqlx::query!(
+            r#"
+            SELECT
+                a.handle AS "handle!",
+                a.transaction_id,
+                a.host_chain_id AS "host_chain_id!",
+                a.producer_block_hash AS "producer_block_hash!",
+                a.block_hash AS "block_hash!",
+                a.block_number
+            FROM pbs_computations_branch a
+            WHERE a.is_completed = FALSE
+              AND (
+                (a.producer_block_hash = ''::bytea AND a.block_hash = ''::bytea)
+                OR a.block_number >= $2
+              )
+              AND EXISTS (
+                  SELECT 1 FROM ciphertexts_branch c
+                   WHERE c.handle = a.handle
+                     AND c.producer_block_hash = a.producer_block_hash
+                     AND c.ciphertext IS NOT NULL
+                     AND c.ciphertext_version = $3
+              )
+            ORDER BY a.created_at DESC
+            FOR UPDATE OF a SKIP LOCKED
+            LIMIT $1
+            "#,
+            limit as i64,
+            branch_cutover_block,
+            current_ciphertext_version(),
+        )
+        .fetch_all(db_txn.as_mut())
+        .await?
+        .into_iter()
+        .map(|row| SnsTaskRow {
+            handle: row.handle,
+            transaction_id: row.transaction_id,
+            host_chain_id: row.host_chain_id,
+            producer_block_hash: row.producer_block_hash,
+            block_hash: row.block_hash,
+            block_number: row.block_number,
+        })
+        .collect::<Vec<_>>(),
+    };
 
     if task_rows.is_empty() {
         info!(target: "worker", { count = 0, order = order.to_string() }, "Fetched SnS tasks");
@@ -589,27 +630,27 @@ pub async fn query_sns_tasks(
         Vec<u8>,
         Vec<CiphertextBytesCandidate>,
     > = std::collections::HashMap::new();
-    let rows = sqlx::query(
-        "
+    let rows = sqlx::query!(
+        r#"
         SELECT handle, producer_block_hash, ciphertext
         FROM ciphertexts_branch
         WHERE handle = ANY($1::BYTEA[])
           AND ciphertext IS NOT NULL
           AND ciphertext_version = $2
-        ",
+        "#,
+        &handles as _,
+        current_ciphertext_version(),
     )
-    .bind(&handles)
-    .bind(current_ciphertext_version())
     .fetch_all(db_txn.as_mut())
     .await?;
     for row in rows {
-        let handle: Vec<u8> = row.try_get("handle")?;
+        let handle = row.handle;
         ciphertext_candidates
             .entry(handle)
             .or_default()
             .push(CiphertextBytesCandidate {
-                producer_block_hash: row.try_get("producer_block_hash")?,
-                ciphertext: row.try_get("ciphertext")?,
+                producer_block_hash: row.producer_block_hash,
+                ciphertext: row.ciphertext,
             });
     }
 
@@ -872,8 +913,8 @@ async fn update_ciphertext128(
 
             let ciphertext128 = task.ct128.bytes();
             let persist_span = tracing::info_span!("ciphertexts128_insert");
-            let res = sqlx::query(
-                "
+            let res = sqlx::query!(
+                r#"
                 INSERT INTO ciphertexts128_branch (
                     handle,
                     producer_block_hash,
@@ -884,12 +925,13 @@ async fn update_ciphertext128(
                 ON CONFLICT (handle, producer_block_hash)
                 DO UPDATE SET
                     ciphertext = EXCLUDED.ciphertext,
-                    block_number = COALESCE(ciphertexts128_branch.block_number, EXCLUDED.block_number)",
+                    block_number = COALESCE(ciphertexts128_branch.block_number, EXCLUDED.block_number)
+                "#,
+                &task.handle,
+                &task.producer_block_hash,
+                task.block_number,
+                &ciphertext128,
             )
-            .bind(&task.handle)
-            .bind(&task.producer_block_hash)
-            .bind(task.block_number)
-            .bind(&ciphertext128)
             .execute(db_txn.as_mut())
             .instrument(persist_span.clone())
             .await;
@@ -930,19 +972,20 @@ async fn update_computations_status(
 ) -> Result<(), ExecutionError> {
     for task in tasks {
         if !task.ct128.is_empty() {
-            sqlx::query(
-                "
+            sqlx::query!(
+                r#"
                 UPDATE pbs_computations_branch
                 SET is_completed = TRUE, completed_at = NOW()
                 WHERE host_chain_id = $1
                   AND handle = $2
                   AND producer_block_hash = $3
-                  AND block_hash = $4",
+                  AND block_hash = $4
+                "#,
+                task.host_chain_id.as_i64(),
+                &task.handle,
+                &task.producer_block_hash,
+                &task.block_hash,
             )
-            .bind(task.host_chain_id.as_i64())
-            .bind(&task.handle)
-            .bind(&task.producer_block_hash)
-            .bind(&task.block_hash)
             .execute(db_txn.as_mut())
             .await?;
         } else {
@@ -957,8 +1000,7 @@ async fn notify_ciphertext128_ready(
     db_txn: &mut Transaction<'_, Postgres>,
     db_channel: &str,
 ) -> Result<(), ExecutionError> {
-    sqlx::query("SELECT pg_notify($1, '')")
-        .bind(db_channel)
+    sqlx::query!("SELECT pg_notify($1, '')", db_channel)
         .execute(db_txn.as_mut())
         .await?;
     Ok(())

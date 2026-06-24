@@ -324,8 +324,9 @@ impl HandleItem {
             Some(self.ct128.format().into())
         };
 
-        sqlx::query(
-            "INSERT INTO ciphertext_digest_branch (
+        sqlx::query!(
+            r#"
+            INSERT INTO ciphertext_digest_branch (
                 host_chain_id,
                 key_id_gw,
                 handle,
@@ -344,16 +345,17 @@ impl HandleItem {
                   AND producer_block_hash = $4
                   AND block_hash = $5
             )
-            ON CONFLICT (handle, producer_block_hash, block_hash) DO NOTHING",
+            ON CONFLICT (handle, producer_block_hash, block_hash) DO NOTHING
+            "#,
+            self.host_chain_id.as_i64(),
+            &self.key_id_gw,
+            &self.handle,
+            &self.producer_block_hash,
+            &self.block_hash,
+            self.block_number,
+            self.transaction_id.clone(),
+            ct128_format,
         )
-        .bind(self.host_chain_id.as_i64())
-        .bind(&self.key_id_gw)
-        .bind(&self.handle)
-        .bind(&self.producer_block_hash)
-        .bind(&self.block_hash)
-        .bind(self.block_number)
-        .bind(self.transaction_id.clone())
-        .bind(ct128_format)
         .execute(db_txn.as_mut())
         .await?;
 
@@ -369,8 +371,9 @@ impl HandleItem {
     ) -> Result<(), ExecutionError> {
         let format: i16 = self.ct128.format().into();
 
-        let result = sqlx::query(
-            "UPDATE ciphertext_digest_branch
+        let result = sqlx::query!(
+            r#"
+            UPDATE ciphertext_digest_branch
             SET ciphertext = $1,
                 ciphertext128 = $2,
                 ciphertext128_format = $3,
@@ -378,16 +381,17 @@ impl HandleItem {
             WHERE host_chain_id = $5
               AND handle = $6
               AND producer_block_hash = $7
-              AND block_hash = $8",
+              AND block_hash = $8
+            "#,
+            &ct64_digest,
+            &ct128_digest,
+            format,
+            s3_format_version,
+            self.host_chain_id.as_i64(),
+            &self.handle,
+            &self.producer_block_hash,
+            &self.block_hash,
         )
-        .bind(&ct64_digest)
-        .bind(&ct128_digest)
-        .bind(format)
-        .bind(s3_format_version)
-        .bind(self.host_chain_id.as_i64())
-        .bind(&self.handle)
-        .bind(&self.producer_block_hash)
-        .bind(&self.block_hash)
         .execute(trx.as_mut())
         .await?;
 
