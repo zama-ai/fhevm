@@ -22,7 +22,7 @@ import {
 const USE_REAL_LZ = (process.env.BRIDGE_REAL_LZ || '').toLowerCase() === 'true';
 
 const BRIDGE_SEND_ABI = [
-  'function send(uint32 dstEid, bytes32 dstApp, bytes payload, bytes32[] handleList, uint128 lzComposeGas, bytes options) payable',
+  'function send(uint32 dstEid, bytes32 dstApp, bytes payload, bytes32[] handleList, uint64 lzComposeGas) payable',
 ];
 const LZ_COMPOSE_GAS = 1_000_000n;
 const DECRYPT_TIMEOUT_MS = 180_000;
@@ -62,7 +62,7 @@ async function pollDecrypt(fn: () => Promise<bigint | undefined>): Promise<bigin
 
 const publicDecrypt = (end: BridgeEnd, handle: string) =>
   pollDecrypt(async () => {
-    const value = (await end.instance.publicDecrypt([handle])).clearValues[handle];
+    const value = (await end.instance.publicDecrypt([handle])).clearValues[handle as `0x${string}`];
     return value === undefined ? undefined : BigInt(value as string | number | bigint);
   });
 
@@ -122,7 +122,7 @@ describe('Confidential Bridge', function () {
     const bridgeContract = new ethers.Contract(src.bridge, BRIDGE_SEND_ABI, src.alice);
     resyncNonce(src.alice);
     const sendReceipt = await (
-      await bridgeContract.send(dst.cfg.chainId, dstApp, payload, handles, LZ_COMPOSE_GAS, '0x', {
+      await bridgeContract.send(dst.cfg.chainId, dstApp, payload, handles, LZ_COMPOSE_GAS, {
         value: 0,
         gasLimit: 5_000_000,
       })
