@@ -140,8 +140,12 @@ describe("render-compose", () => {
   test("persists kms-core private vault across container recreates", async () => {
     const doc = await loadMergedComposeDoc("core");
     const volumes = doc.services["kms-core"]?.volumes as string[] | undefined;
+    const entrypoint = JSON.stringify(doc.services["kms-core"]?.entrypoint);
     expect(doc.services["kms-core"]?.user).toBe("root");
     expect(volumes).toContain("fhevm_kms_core_keys:/app/kms/core/service/keys");
+    expect(entrypoint).toContain("REUSING EXISTING SIGNING KEYS");
+    expect(entrypoint).toContain("find \\\"$$KMS_CORE__PRIVATE_VAULT__STORAGE__FILE__PATH\\\" -mindepth 1");
+    expect(entrypoint.indexOf("REUSING EXISTING SIGNING KEYS")).toBeLessThan(entrypoint.indexOf("kms-gen-keys"));
   });
 
   test("renders listener-core local override for the publisher only", async () => {

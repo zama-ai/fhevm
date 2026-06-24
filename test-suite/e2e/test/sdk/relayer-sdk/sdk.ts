@@ -35,6 +35,9 @@ export class RelayerSdk implements SdkInstance {
       chainId,
       auth,
     } = parameters;
+    const normalizedRelayerUrl = relayerUrl.replace(/\/+$/, "");
+    console.log(`[relayer-sdk] relayerUrl=${relayerUrl}`);
+    console.log(`[relayer-sdk] keyUrl=${normalizedRelayerUrl}/keyurl`);
     const instance = await createInstance({
       verifyingContractAddressDecryption,
       verifyingContractAddressInputVerification,
