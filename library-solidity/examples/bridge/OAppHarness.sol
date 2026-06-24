@@ -45,7 +45,7 @@ contract OAppHarness is ConfidentialOAppSender, ConfidentialOAppReceiver {
         uint32 dstEid,
         bytes calldata payload,
         bytes32 handle,
-        uint128 lzComposeGas
+        uint64 lzComposeGas
     ) external payable returns (MessagingReceipt memory) {
         return _bridge(dstEid, payload, euint64.wrap(handle), lzComposeGas, msg.value);
     }
@@ -55,7 +55,7 @@ contract OAppHarness is ConfidentialOAppSender, ConfidentialOAppReceiver {
         uint32 dstEid,
         bytes calldata payload,
         bytes32 handle,
-        uint128 lzComposeGas
+        uint64 lzComposeGas
     ) external view returns (MessagingFee memory) {
         return _quoteBridge(dstEid, payload, euint64.wrap(handle), lzComposeGas);
     }

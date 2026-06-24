@@ -499,18 +499,10 @@ library Impl {
         bytes32 dstApp,
         bytes memory payload,
         bytes32[] memory handleList,
-        uint128 lzComposeGas,
-        bytes memory options,
+        uint64 lzComposeGas,
         uint256 nativeFee
     ) internal returns (MessagingReceipt memory receipt) {
-        receipt = getConfidentialBridge().send{value: nativeFee}(
-            dstEid,
-            dstApp,
-            payload,
-            handleList,
-            lzComposeGas,
-            options
-        );
+        receipt = getConfidentialBridge().send{value: nativeFee}(dstEid, dstApp, payload, handleList, lzComposeGas);
     }
 
     /**
@@ -522,10 +514,9 @@ library Impl {
         bytes32 dstApp,
         bytes memory payload,
         bytes32[] memory handleList,
-        uint128 lzComposeGas,
-        bytes memory options
+        uint64 lzComposeGas
     ) internal view returns (MessagingFee memory fee) {
-        fee = getConfidentialBridge().quote(dstEid, srcApp, dstApp, payload, handleList, lzComposeGas, options);
+        fee = getConfidentialBridge().quote(dstEid, srcApp, dstApp, payload, handleList, lzComposeGas);
     }
 
     function add(bytes32 lhs, bytes32 rhs, bool scalar) internal returns (bytes32 result) {

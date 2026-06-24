@@ -35,8 +35,7 @@ interface IConfidentialBridge {
         bytes32 dstApp,
         bytes calldata payload,
         bytes32[] calldata handleList,
-        uint128 lzComposeGas,
-        bytes calldata options
+        uint64 lzComposeGas
     ) external payable returns (MessagingReceipt memory receipt);
 
     function quote(
@@ -45,8 +44,7 @@ interface IConfidentialBridge {
         bytes32 dstApp,
         bytes calldata payload,
         bytes32[] calldata handleList,
-        uint128 lzComposeGas,
-        bytes calldata options
+        uint64 lzComposeGas
     ) external view returns (MessagingFee memory fee);
 }
 
