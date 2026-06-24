@@ -29,16 +29,18 @@ import {IDstApp} from "../../contracts/bridge/interfaces/IDstApp.sol";
  *           allowance on every bridged handle (the bridge checks
  *           `isAllowed(handle, msg.sender)` and `msg.sender` is this contract). The
  *           handles are generated here and immediately `FHE.allowThis`'d, so the check
- *           always passes — no caller-side setup is required.
+ *           always passes — no caller-side setup is required. The owner is also granted ACL allowance on every handle,
+ *           so they can later `userDecrypt` the destination handles.
  *         - Inbound: `onConfidentialBridgeReceived` only accepts calls from the local {ConfidentialBridge}
  *           and only from a `(srcEid, srcApp)` pair the owner has registered as a peer.
+ *           The owner is also granted ACL allowance on every handle, so they can later `userDecrypt` the destination handles.
  */
 contract HandlesListConfidentialOApp is Ownable2Step, IDstApp {
     /// @notice Emitted on a successful outbound bridge, carrying the encrypted handles sent.
     event HandlesListConfidentialOAppSent(
         uint32 indexed dstEid,
         bytes32 indexed dstApp,
-        euint32[] handlesListSent,
+        bytes32[] handlesListSent,
         bytes32 guid
     );
 
@@ -98,18 +100,21 @@ contract HandlesListConfidentialOApp is Ownable2Step, IDstApp {
      * @notice Generate `countHandles` fresh encrypted values and bridge their handles to
      *         the peer registered for `dstEid`.
      * @dev    Each handle is produced by `FHE.randEuint32` and granted ACL allowance to
-     *         this contract via `FHE.allowThis`, so the {ConfidentialBridge}'s
-     *         `isAllowed(handle, this)` check passes without any caller-side setup. Pass
-     *         enough `msg.value` to cover the LayerZero native fee
-     *         (see {quoteGenerateAndSendHandlesList}).
+     *         this contract via `FHE.allowThis` (and to the app `owner()`), so the
+     *         {ConfidentialBridge}'s `isAllowed(handle, this)` check passes without any
+     *         caller-side setup. Pass enough `msg.value` to cover the LayerZero native
+     *         fee (see {quoteGenerateAndSendHandlesList}).
      *
-     *         The bridge payload is the abi-encoded `msg.sender`: the destination instance
-     *         decodes it in {onConfidentialBridgeReceived} and re-grants decryption rights
-     *         on the derived handles to that original caller, so the initiating user can
-     *         later `userDecrypt` the destination handles.
+     *         `customPayload` is opaque, app-defined data forwarded verbatim to the
+     *         peer's {onConfidentialBridgeReceived} on the destination chain; this
+     *         contract does not interpret it. Pass `""` when the destination app needs
+     *         no payload.
      * @param dstEid        LayerZero endpoint id of the destination chain.
      * @param countHandles  Number of random handles to generate and bridge. Capped by the
      *                      bridge's `MAX_HANDLES`.
+     * @param customPayload Opaque app-level payload delivered to the destination peer's
+     *                      {onConfidentialBridgeReceived}; not interpreted here. Its
+     *                      length contributes to the LayerZero message size and fee.
      * @param lzComposeGas  Gas budget for the destination-side `lzCompose`
      *                      (`onConfidentialBridgeReceived`).
      * @return receipt      LayerZero messaging receipt (includes the GUID used in events).
@@ -117,6 +122,7 @@ contract HandlesListConfidentialOApp is Ownable2Step, IDstApp {
     function generateAndSendHandlesList(
         uint32 dstEid,
         uint256 countHandles,
+        bytes memory customPayload,
         uint64 lzComposeGas
     ) external payable returns (MessagingReceipt memory receipt) {
         if (countHandles == 0) revert EmptyHandleList();
@@ -124,40 +130,43 @@ contract HandlesListConfidentialOApp is Ownable2Step, IDstApp {
         bytes32 dstApp = _peers[dstEid];
         if (dstApp == bytes32(0)) revert PeerNotSet(dstEid);
 
-        (euint32[] memory handles, bytes32[] memory handleList) = _generateHandles(countHandles);
-
-        // Carry the initiating user so the destination instance can re-grant them
-        // decryption rights on the derived handles (see onConfidentialBridgeReceived).
-        bytes memory payload = abi.encode(msg.sender);
+        bytes32[] memory handleList = _generateHandles(countHandles);
 
         // The bridge builds execution options internally from its lzReceiveGas formula
         // (sized by handle count) and `lzComposeGas`.
-        receipt = confidentialBridge.send{value: msg.value}(dstEid, dstApp, payload, handleList, lzComposeGas);
+        receipt = confidentialBridge.send{value: msg.value}(dstEid, dstApp, customPayload, handleList, lzComposeGas);
 
-        emit HandlesListConfidentialOAppSent(dstEid, dstApp, handles, receipt.guid);
+        emit HandlesListConfidentialOAppSent(dstEid, dstApp, handleList, receipt.guid);
     }
 
     /**
      * @notice Quote the LayerZero native fee for a {generateAndSendHandlesList} call,
      *         without sending.
-     * @dev    The fee depends only on the message size and options, both of which are a
-     *         function of `countHandles` (not the handle values), so this view can quote
-     *         without actually generating handles. Reverts with {PeerNotSet} when no peer
-     *         is configured for `dstEid`.
+     * @dev    The fee depends only on the message size and options — a function of
+     *         `countHandles` and the `customPayload` length (not the handle values) — so
+     *         this view can quote without actually generating handles. Reverts with
+     *         {PeerNotSet} when no peer is configured for `dstEid`.
+     * @param dstEid        LayerZero endpoint id of the destination chain.
+     * @param countHandles  Number of handles the matching {generateAndSendHandlesList}
+     *                      call would bridge.
+     * @param customPayload The same opaque payload that would be passed to
+     *                      {generateAndSendHandlesList}; its length determines the fee.
+     * @param lzComposeGas  Gas budget for the destination-side `lzCompose`.
+     * @return fee          The LayerZero messaging fee (native + lzToken components).
      */
     function quoteGenerateAndSendHandlesList(
         uint32 dstEid,
         uint256 countHandles,
+        bytes memory customPayload,
         uint64 lzComposeGas
     ) external view returns (MessagingFee memory fee) {
         bytes32 dstApp = _peers[dstEid];
         if (dstApp == bytes32(0)) revert PeerNotSet(dstEid);
-        // Mirror the real send: the payload is the abi-encoded caller (32 bytes) and the
-        // message is otherwise measured by `handleList.length`. An array of
-        // null bytes32 handles of the right length quotes identically to the real call.
-        bytes memory payload = abi.encode(msg.sender);
-        bytes32[] memory placeholder = new bytes32[](countHandles);
-        fee = confidentialBridge.quote(dstEid, address(this), dstApp, payload, placeholder, lzComposeGas);
+        // Mirror the real send: the message size is measured by `customPayload` and
+        // `handleList.length`. An array of null bytes32 handles of the right length,
+        // quoted with the same payload, prices identically to the real call.
+        bytes32[] memory placeholderHandleList = new bytes32[](countHandles);
+        fee = confidentialBridge.quote(dstEid, address(this), dstApp, customPayload, placeholderHandleList, lzComposeGas);
     }
 
     /**
@@ -167,11 +176,12 @@ contract HandlesListConfidentialOApp is Ownable2Step, IDstApp {
      *         has already granted this contract transient ACL allowance on every entry
      *         of `dstHandleList`.
      *
-     *         The `payload` is the abi-encoded address of the user who initiated the
-     *         transfer on the source chain (see {generateAndSendHandlesList}). For every
-     *         derived handle we grant *persistent* ACL allowance to both this contract
-     *         (`FHE.allowThis`) and that user (`FHE.allow`), so the user can later
-     *         `userDecrypt` the destination handles.
+     *         The `payload` is opaque, app-defined data forwarded by the source peer
+     *         (see {generateAndSendHandlesList}); it is stored verbatim in
+     *         {lastReceivedPayload} but not otherwise interpreted. For every derived
+     *         handle we grant *persistent* ACL allowance to both this contract
+     *         (`FHE.allowThis`) and the app `owner()` (`FHE.allow`), so the owner can
+     *         later `userDecrypt` the destination handles.
      */
     function onConfidentialBridgeReceived(
         uint32 srcEid,
@@ -184,8 +194,6 @@ contract HandlesListConfidentialOApp is Ownable2Step, IDstApp {
         if (msg.sender != address(confidentialBridge)) revert OnlyConfidentialBridge(msg.sender);
         bytes32 trustedPeer = _peers[srcEid];
         if (trustedPeer == bytes32(0) || trustedPeer != srcApp) revert UntrustedPeer(srcEid, srcApp);
-
-        address originalSender = abi.decode(payload, (address));
 
         _lastReceivedSrcHandleList = srcHandleList;
         _lastReceivedDstHandleList = dstHandleList;
@@ -200,7 +208,7 @@ contract HandlesListConfidentialOApp is Ownable2Step, IDstApp {
         for (uint256 i = 0; i < n; i++) {
             euint32 dstHandle = euint32.wrap(dstHandleList[i]);
             FHE.allowThis(dstHandle);
-            FHE.allow(dstHandle, originalSender);
+            FHE.allow(dstHandle, owner());
             handlesListReceived[i] = dstHandle;
         }
 
@@ -239,20 +247,18 @@ contract HandlesListConfidentialOApp is Ownable2Step, IDstApp {
         return _lastReceivedPayload;
     }
 
-    /// @dev Mint `count` random encrypted 32-bit values, granting this contract persistent
-    ///      ACL allowance on each so the bridge's source-side allowance check passes.
-    ///      Returns both the typed `euint32` handles (for the outbound event) and their
-    ///      raw `bytes32` form (for the bridge call).
+    /// @dev Mint `count` random encrypted 32-bit values, granting persistent ACL
+    ///      allowance on each to this contract (so the bridge's source-side
+    ///      `isAllowed(handle, this)` check passes) and to the app `owner()`. Returns
+    ///      their raw `bytes32` form for the bridge call.
     function _generateHandles(
         uint256 count
-    ) internal returns (euint32[] memory handles, bytes32[] memory handleList) {
-        handles = new euint32[](count);
+    ) internal returns (bytes32[] memory handleList) {
         handleList = new bytes32[](count);
         for (uint256 i = 0; i < count; i++) {
             euint32 value = FHE.randEuint32();
             FHE.allowThis(value);
-            FHE.allow(value, msg.sender);
-            handles[i] = value;
+            FHE.allow(value, owner());
             handleList[i] = euint32.unwrap(value);
         }
     }
