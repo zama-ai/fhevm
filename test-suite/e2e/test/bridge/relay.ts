@@ -29,10 +29,22 @@ const BRIDGE_EVENTS_ABI = [
 const endpointIface = new ethers.Interface(ENDPOINT_ABI);
 const bridgeIface = new ethers.Interface(BRIDGE_EVENTS_ABI);
 
-// Re-sync a shared NonceManager's cached nonce from chain before sending (safe: every tx is awaited+mined).
-export function resyncNonce(signer: ethers.Signer) {
-  const nonceManager = signer as Partial<ethers.NonceManager>;
-  if (typeof nonceManager.reset === 'function') nonceManager.reset();
+// Sends a tx and waits for the receipt, retrying on NONCE_EXPIRED
+export async function sendWithNonceRetry(
+  signer: ethers.Signer,
+  send: () => Promise<ethers.TransactionResponse>,
+): Promise<ethers.TransactionReceipt> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      (signer as Partial<ethers.NonceManager>).reset?.();
+      const receipt = await (await send()).wait();
+      if (!receipt) throw new Error('transaction was dropped or replaced');
+      return receipt;
+    } catch (error) {
+      if ((error as { code?: string })?.code !== 'NONCE_EXPIRED' || attempt >= 5) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 1_000));
+    }
+  }
 }
 
 function parseEvent(logs: readonly ethers.Log[], iface: ethers.Interface, name: string, address?: string) {
@@ -73,15 +85,13 @@ async function deliver(
   packet: { encodedPacket: string; origin: { srcEid: number; sender: string; nonce: bigint }; guid: string; message: string },
   skipCompose: boolean,
 ): Promise<{ dstHandles: string[]; compose: PendingCompose }> {
-  resyncNonce(ctx.dstSigner);
   const endpoint = new ethers.Contract(ctx.dstEndpoint, ENDPOINT_ABI, ctx.dstSigner);
   const lib = new ethers.Contract(await endpoint.defaultReceiveLibrary(packet.origin.srcEid), MSGLIB_ABI, ctx.dstSigner);
-  await (await lib.validatePacket(packet.encodedPacket)).wait();
+  await sendWithNonceRetry(ctx.dstSigner, () => lib.validatePacket(packet.encodedPacket));
 
-  const recvReceipt = await (
-    await endpoint.lzReceive(packet.origin, ctx.dstBridge, packet.guid, packet.message, '0x')
-  ).wait();
-  if (!recvReceipt) throw new Error('relay: lzReceive transaction was dropped');
+  const recvReceipt = await sendWithNonceRetry(ctx.dstSigner, () =>
+    endpoint.lzReceive(packet.origin, ctx.dstBridge, packet.guid, packet.message, '0x'),
+  );
   const dstHandles = parseEvent(recvReceipt.logs, bridgeIface, 'HandleBridged', ctx.dstBridge).map(
     (e) => e.args.dstHandle as string,
   );
@@ -118,11 +128,10 @@ export async function relayBridgeMessage(
 
 /** Delivers the compose leg captured by {@link relayBridgeMessage} (runs the dst app's onConfidentialBridgeReceived). */
 export async function relayCompose(ctx: RelayContext, compose: PendingCompose): Promise<void> {
-  resyncNonce(ctx.dstSigner);
   const endpoint = new ethers.Contract(ctx.dstEndpoint, ENDPOINT_ABI, ctx.dstSigner);
-  await (
-    await endpoint.lzCompose(compose.from, compose.to, compose.guid, compose.index, compose.message, '0x')
-  ).wait();
+  await sendWithNonceRetry(ctx.dstSigner, () =>
+    endpoint.lzCompose(compose.from, compose.to, compose.guid, compose.index, compose.message, '0x'),
+  );
 }
 
 /** Encodes a LayerZero V2 packet (inverse of {@link decodePacket}). */

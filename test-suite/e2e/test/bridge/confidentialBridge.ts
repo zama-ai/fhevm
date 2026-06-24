@@ -14,7 +14,7 @@ import {
   forgeDelivery,
   relayBridgeMessage,
   relayCompose,
-  resyncNonce,
+  sendWithNonceRetry,
   waitForBridgedHandles,
 } from './relay';
 
@@ -98,9 +98,9 @@ describe('Confidential Bridge', function () {
     });
     const fn = addend === undefined ? 'makeHandle' : 'makeComputedHandle';
     const args = addend === undefined ? [enc.handles[0], enc.inputProof] : [enc.handles[0], enc.inputProof, addend];
-    resyncNonce(end.alice);
-    const receipt = await (await end.app.connect(end.alice).getFunction(fn)(...args, { gasLimit: 5_000_000 })).wait();
-    if (!receipt) throw new Error('mint transaction was dropped');
+    const receipt = await sendWithNonceRetry(end.alice, () =>
+      end.app.connect(end.alice).getFunction(fn)(...args, { gasLimit: 5_000_000 }),
+    );
     const minted = receipt.logs
       .map((log: ethers.Log) => {
         try {
@@ -120,14 +120,12 @@ describe('Confidential Bridge', function () {
     const fromBlock = await getProvider(dst.cfg).getBlockNumber();
     const dstApp = ethers.zeroPadValue(dst.appAddr, 32);
     const bridgeContract = new ethers.Contract(src.bridge, BRIDGE_SEND_ABI, src.alice);
-    resyncNonce(src.alice);
-    const sendReceipt = await (
-      await bridgeContract.send(dst.cfg.chainId, dstApp, payload, handles, LZ_COMPOSE_GAS, {
+    const sendReceipt = await sendWithNonceRetry(src.alice, () =>
+      bridgeContract.send(dst.cfg.chainId, dstApp, payload, handles, LZ_COMPOSE_GAS, {
         value: 0,
         gasLimit: 5_000_000,
-      })
-    ).wait();
-    if (!sendReceipt) throw new Error('bridge send transaction was dropped');
+      }),
+    );
 
     if (USE_REAL_LZ) {
       const dstHandles = await waitForBridgedHandles(
