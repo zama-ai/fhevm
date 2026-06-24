@@ -1,5 +1,5 @@
 use crate::{
-    core::{Config, event_processor::processor::ProcessingError},
+    core::{Config, event_processor::ProcessingError},
     monitoring::metrics::{
         GRPC_REQUEST_SENT_COUNTER, GRPC_REQUEST_SENT_ERRORS, GRPC_RESPONSE_POLLED_COUNTER,
         GRPC_RESPONSE_POLLED_ERRORS,

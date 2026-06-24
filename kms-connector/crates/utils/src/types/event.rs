@@ -560,21 +560,29 @@ impl Display for ProtocolEventKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ProtocolEventKind::PublicDecryption(e) => {
-                write!(f, "PublicDecryptionRequest #{}", e.decryptionId)
+                write!(f, "PublicDecryptionRequest #{:#066x}", e.decryptionId)
             }
             ProtocolEventKind::UserDecryption(e) => {
-                write!(f, "UserDecryptionRequest #{}", e.decryptionId)
+                write!(f, "UserDecryptionRequest #{:#066x}", e.decryptionId)
             }
             ProtocolEventKind::UserDecryptionV2(e) => {
-                write!(f, "UserDecryptionRequest #{}", e.decryptionId)
+                write!(f, "UserDecryptionRequest #{:#066x}", e.decryptionId)
             }
             ProtocolEventKind::PrepKeygen(e) => {
-                write!(f, "PrepKeygenRequest #{}", e.prepKeygenId)
+                write!(f, "PrepKeygenRequest #{:#066x}", e.prepKeygenId)
             }
-            ProtocolEventKind::Keygen(e) => write!(f, "KeygenRequest #{}", e.keyId),
-            ProtocolEventKind::Crsgen(e) => write!(f, "CrsgenRequest #{}", e.crsId),
-            ProtocolEventKind::NewKmsContext(e) => write!(f, "NewKmsContext #{}", e.contextId),
-            ProtocolEventKind::NewKmsEpoch(e) => write!(f, "NewKmsEpoch #{}", e.epochId),
+            ProtocolEventKind::Keygen(e) => {
+                write!(f, "KeygenRequest #{:#066x}", e.keyId)
+            }
+            ProtocolEventKind::Crsgen(e) => {
+                write!(f, "CrsgenRequest #{:#066x}", e.crsId)
+            }
+            ProtocolEventKind::NewKmsContext(e) => {
+                write!(f, "NewKmsContext #{:#066x}", e.contextId)
+            }
+            ProtocolEventKind::NewKmsEpoch(e) => {
+                write!(f, "NewKmsEpoch #{:#066x}", e.epochId)
+            }
         }
     }
 }
