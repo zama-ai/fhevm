@@ -875,7 +875,13 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         uint256 proposalId = _defaultProposalId();
 
         vm.expectEmit(true, false, false, true, address(protocolConfig));
-        emit IProtocolConfig.CoprocessorUpgradeProposed(proposalId, version, windows, gwStart, _defaultCiphertextVersion());
+        emit IProtocolConfig.CoprocessorUpgradeProposed(
+            proposalId,
+            version,
+            windows,
+            gwStart,
+            _defaultCiphertextVersion()
+        );
         vm.prank(owner);
         protocolConfig.proposeCoprocessorUpgrade(proposalId, version, windows, gwStart, _defaultCiphertextVersion());
     }
@@ -888,7 +894,13 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         uint256 proposalId = _defaultProposalId();
 
         vm.expectEmit(true, false, false, true, address(protocolConfig));
-        emit IProtocolConfig.CoprocessorUpgradeProposed(proposalId, version, windows, gwStart, _defaultCiphertextVersion());
+        emit IProtocolConfig.CoprocessorUpgradeProposed(
+            proposalId,
+            version,
+            windows,
+            gwStart,
+            _defaultCiphertextVersion()
+        );
         vm.prank(owner);
         protocolConfig.proposeCoprocessorUpgrade(proposalId, version, windows, gwStart, _defaultCiphertextVersion());
     }
@@ -897,14 +909,26 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         _setupDefault();
         vm.prank(owner);
         vm.expectRevert(IProtocolConfig.InvalidProposalId.selector);
-        protocolConfig.proposeCoprocessorUpgrade(0, _defaultSoftwareVersion(), _makeChainUpgradeWindows(1), _defaultGwStartBlock(), _defaultCiphertextVersion());
+        protocolConfig.proposeCoprocessorUpgrade(
+            0,
+            _defaultSoftwareVersion(),
+            _makeChainUpgradeWindows(1),
+            _defaultGwStartBlock(),
+            _defaultCiphertextVersion()
+        );
     }
 
     function test_revertCoprocessor_EmptySoftwareVersion() public {
         _setupDefault();
         vm.prank(owner);
         vm.expectRevert(IProtocolConfig.EmptySoftwareVersion.selector);
-        protocolConfig.proposeCoprocessorUpgrade(_defaultProposalId(), "", _makeChainUpgradeWindows(1), _defaultGwStartBlock(), _defaultCiphertextVersion());
+        protocolConfig.proposeCoprocessorUpgrade(
+            _defaultProposalId(),
+            "",
+            _makeChainUpgradeWindows(1),
+            _defaultGwStartBlock(),
+            _defaultCiphertextVersion()
+        );
     }
 
     function test_revertCoprocessor_EmptyChainUpgradeWindows() public {
@@ -912,7 +936,13 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         ChainUpgradeWindow[] memory windows = new ChainUpgradeWindow[](0);
         vm.prank(owner);
         vm.expectRevert(IProtocolConfig.EmptyChainUpgradeWindows.selector);
-        protocolConfig.proposeCoprocessorUpgrade(_defaultProposalId(), _defaultSoftwareVersion(), windows, _defaultGwStartBlock(), _defaultCiphertextVersion());
+        protocolConfig.proposeCoprocessorUpgrade(
+            _defaultProposalId(),
+            _defaultSoftwareVersion(),
+            windows,
+            _defaultGwStartBlock(),
+            _defaultCiphertextVersion()
+        );
     }
 
     function test_revertCoprocessor_ZeroChainId() public {
@@ -921,7 +951,13 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         windows[0].chainId = 0;
         vm.prank(owner);
         vm.expectRevert(IProtocolConfig.ZeroChainId.selector);
-        protocolConfig.proposeCoprocessorUpgrade(_defaultProposalId(), _defaultSoftwareVersion(), windows, _defaultGwStartBlock(), _defaultCiphertextVersion());
+        protocolConfig.proposeCoprocessorUpgrade(
+            _defaultProposalId(),
+            _defaultSoftwareVersion(),
+            windows,
+            _defaultGwStartBlock(),
+            _defaultCiphertextVersion()
+        );
     }
 
     function test_revertCoprocessor_DuplicateChainId() public {
@@ -930,7 +966,13 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         windows[1].chainId = windows[0].chainId;
         vm.prank(owner);
         vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.DuplicateChainId.selector, windows[0].chainId));
-        protocolConfig.proposeCoprocessorUpgrade(_defaultProposalId(), _defaultSoftwareVersion(), windows, _defaultGwStartBlock(), _defaultCiphertextVersion());
+        protocolConfig.proposeCoprocessorUpgrade(
+            _defaultProposalId(),
+            _defaultSoftwareVersion(),
+            windows,
+            _defaultGwStartBlock(),
+            _defaultCiphertextVersion()
+        );
     }
 
     function test_revertCoprocessor_InvalidBlockWindow() public {
@@ -947,14 +989,26 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
                 uint64(100)
             )
         );
-        protocolConfig.proposeCoprocessorUpgrade(_defaultProposalId(), _defaultSoftwareVersion(), windows, _defaultGwStartBlock(), _defaultCiphertextVersion());
+        protocolConfig.proposeCoprocessorUpgrade(
+            _defaultProposalId(),
+            _defaultSoftwareVersion(),
+            windows,
+            _defaultGwStartBlock(),
+            _defaultCiphertextVersion()
+        );
     }
 
     function test_revertCoprocessor_ZeroGwStartBlock() public {
         _setupDefault();
         vm.prank(owner);
         vm.expectRevert(IProtocolConfig.ZeroGwStartBlock.selector);
-        protocolConfig.proposeCoprocessorUpgrade(_defaultProposalId(), _defaultSoftwareVersion(), _makeChainUpgradeWindows(1), 0, _defaultCiphertextVersion());
+        protocolConfig.proposeCoprocessorUpgrade(
+            _defaultProposalId(),
+            _defaultSoftwareVersion(),
+            _makeChainUpgradeWindows(1),
+            0,
+            _defaultCiphertextVersion()
+        );
     }
 
     function test_revertCoprocessor_CiphertextVersionTooLarge() public {
@@ -978,17 +1032,29 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
 
         vm.prank(owner);
         protocolConfig.proposeCoprocessorUpgrade(
-            proposalId, _defaultSoftwareVersion(), windows, _defaultGwStartBlock(), _defaultCiphertextVersion()
+            proposalId,
+            _defaultSoftwareVersion(),
+            windows,
+            _defaultGwStartBlock(),
+            _defaultCiphertextVersion()
         );
 
         // Uniqueness is the caller's responsibility — contract does not enforce.
         vm.expectEmit(true, false, false, true, address(protocolConfig));
         emit IProtocolConfig.CoprocessorUpgradeProposed(
-            proposalId, _defaultSoftwareVersion(), windows, _defaultGwStartBlock(), _defaultCiphertextVersion()
+            proposalId,
+            _defaultSoftwareVersion(),
+            windows,
+            _defaultGwStartBlock(),
+            _defaultCiphertextVersion()
         );
         vm.prank(owner);
         protocolConfig.proposeCoprocessorUpgrade(
-            proposalId, _defaultSoftwareVersion(), windows, _defaultGwStartBlock(), _defaultCiphertextVersion()
+            proposalId,
+            _defaultSoftwareVersion(),
+            windows,
+            _defaultGwStartBlock(),
+            _defaultCiphertextVersion()
         );
     }
 
@@ -998,11 +1064,19 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
 
         vm.expectEmit(true, false, false, true, address(protocolConfig));
         emit IProtocolConfig.CoprocessorUpgradeProposed(
-            proposalId, _defaultSoftwareVersion(), _makeChainUpgradeWindows(1), _defaultGwStartBlock(), _defaultCiphertextVersion()
+            proposalId,
+            _defaultSoftwareVersion(),
+            _makeChainUpgradeWindows(1),
+            _defaultGwStartBlock(),
+            _defaultCiphertextVersion()
         );
         vm.prank(owner);
         protocolConfig.proposeCoprocessorUpgrade(
-            proposalId, _defaultSoftwareVersion(), _makeChainUpgradeWindows(1), _defaultGwStartBlock(), _defaultCiphertextVersion()
+            proposalId,
+            _defaultSoftwareVersion(),
+            _makeChainUpgradeWindows(1),
+            _defaultGwStartBlock(),
+            _defaultCiphertextVersion()
         );
     }
 
@@ -1012,16 +1086,28 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
 
         vm.prank(owner);
         protocolConfig.proposeCoprocessorUpgrade(
-            1, _defaultSoftwareVersion(), windows, _defaultGwStartBlock(), _defaultCiphertextVersion()
+            1,
+            _defaultSoftwareVersion(),
+            windows,
+            _defaultGwStartBlock(),
+            _defaultCiphertextVersion()
         );
 
         vm.expectEmit(true, false, false, true, address(protocolConfig));
         emit IProtocolConfig.CoprocessorUpgradeProposed(
-            2, _defaultSoftwareVersion(), windows, _defaultGwStartBlock(), _defaultCiphertextVersion()
+            2,
+            _defaultSoftwareVersion(),
+            windows,
+            _defaultGwStartBlock(),
+            _defaultCiphertextVersion()
         );
         vm.prank(owner);
         protocolConfig.proposeCoprocessorUpgrade(
-            2, _defaultSoftwareVersion(), windows, _defaultGwStartBlock(), _defaultCiphertextVersion()
+            2,
+            _defaultSoftwareVersion(),
+            windows,
+            _defaultGwStartBlock(),
+            _defaultCiphertextVersion()
         );
     }
 
