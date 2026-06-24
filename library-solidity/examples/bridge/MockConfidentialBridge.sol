@@ -20,8 +20,7 @@ contract MockConfidentialBridge is IConfidentialBridge {
         bytes32 dstApp;
         bytes payload;
         bytes32[] handleList;
-        uint128 lzComposeGas;
-        bytes options;
+        uint64 lzComposeGas;
         uint256 value;
         address caller;
     }
@@ -43,8 +42,7 @@ contract MockConfidentialBridge is IConfidentialBridge {
         bytes32 dstApp,
         bytes calldata payload,
         bytes32[] calldata handleList,
-        uint128 lzComposeGas,
-        bytes calldata options
+        uint64 lzComposeGas
     ) external payable override returns (MessagingReceipt memory receipt) {
         _lastSend = SendCall({
             dstEid: dstEid,
@@ -52,7 +50,6 @@ contract MockConfidentialBridge is IConfidentialBridge {
             payload: payload,
             handleList: handleList,
             lzComposeGas: lzComposeGas,
-            options: options,
             value: msg.value,
             caller: msg.sender
         });
@@ -73,8 +70,7 @@ contract MockConfidentialBridge is IConfidentialBridge {
         bytes32,
         bytes calldata,
         bytes32[] calldata,
-        uint128,
-        bytes calldata
+        uint64
     ) external view override returns (MessagingFee memory fee) {
         fee = MessagingFee({nativeFee: quotedNativeFee, lzTokenFee: 0});
     }

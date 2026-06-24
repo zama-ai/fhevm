@@ -65,7 +65,6 @@ describe('Confidential bridge helpers', function () {
         expect(sent.payload).to.equal(ethers.hexlify(payload));
         expect(sent.handleList).to.deep.equal([handleA]);
         expect(sent.lzComposeGas).to.equal(gas);
-        expect(sent.options).to.equal('0x'); // single-handle overloads derive defaults from gas
         expect(sent.value).to.equal(fee);
         expect(sent.caller).to.equal(await harness.getAddress());
       });
@@ -79,7 +78,7 @@ describe('Confidential bridge helpers', function () {
   });
 
   describe('send side — typed array overloads (multi-handle)', function () {
-    it('euint64[]: sends one message carrying the whole list, empty options', async function () {
+    it('euint64[]: sends one message carrying the whole list', async function () {
       const { bridge, harness } = await deploySendFixture();
       const dstApp = randAddr();
       const fee = ethers.parseEther('0.03');
@@ -89,7 +88,6 @@ describe('Confidential bridge helpers', function () {
       const sent = await bridge.lastSend();
       expect(sent.dstApp).to.equal(padded(dstApp));
       expect(sent.handleList).to.deep.equal([handleA, handleB, handleC]);
-      expect(sent.options).to.equal('0x');
       expect(sent.value).to.equal(fee);
     });
 
@@ -113,18 +111,17 @@ describe('Confidential bridge helpers', function () {
   });
 
   describe('send side — low-level bytes32[] escape hatch', function () {
-    it('forwards an explicit handle list, raw bytes32 dstApp, and custom options verbatim', async function () {
+    it('forwards an explicit handle list and raw bytes32 dstApp verbatim', async function () {
       const { bridge, harness } = await deploySendFixture();
       const dstApp = padded(randAddr());
       const payload = ethers.toUtf8Bytes('multi');
-      const options = '0xdeadbeef';
 
-      await harness.bridgeList(DST_EID, dstApp, payload, [handleA, handleB], 0, options, { value: 0 });
+      await harness.bridgeList(DST_EID, dstApp, payload, [handleA, handleB], 50_000, { value: 0 });
 
       const sent = await bridge.lastSend();
       expect(sent.dstApp).to.equal(dstApp);
       expect(sent.handleList).to.deep.equal([handleA, handleB]);
-      expect(sent.options).to.equal(options);
+      expect(sent.lzComposeGas).to.equal(50_000n);
     });
   });
 
@@ -172,7 +169,7 @@ describe('Confidential bridge helpers', function () {
     it('quotes through the low-level overload', async function () {
       const { bridge, harness } = await deploySendFixture();
       await bridge.setQuotedNativeFee(99n);
-      const fee = await harness.quoteList(DST_EID, padded(randAddr()), '0x', [handleA], 0, '0xbeef');
+      const fee = await harness.quoteList(DST_EID, padded(randAddr()), '0x', [handleA], 50_000);
       expect(fee.nativeFee).to.equal(99n);
     });
   });

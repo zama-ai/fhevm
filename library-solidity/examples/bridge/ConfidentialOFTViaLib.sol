@@ -60,7 +60,7 @@ contract ConfidentialOFTViaLib is Ownable2Step, ConfidentialOAppSender, Confiden
         uint32 dstEid,
         euint64 amount,
         address recipient,
-        uint128 mintComposeGas
+        uint64 mintComposeGas
     ) external payable returns (MessagingReceipt memory) {
         if (!FHE.isSenderAllowed(amount)) revert UnauthorizedUseOfEncryptedAmount(amount, msg.sender);
 
@@ -81,7 +81,7 @@ contract ConfidentialOFTViaLib is Ownable2Step, ConfidentialOAppSender, Confiden
         uint32 dstEid,
         euint64 amount,
         address recipient,
-        uint128 mintComposeGas
+        uint64 mintComposeGas
     ) external view returns (MessagingFee memory) {
         return _quoteBridge(dstEid, abi.encode(recipient), amount, mintComposeGas);
     }

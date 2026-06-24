@@ -83,15 +83,15 @@ function generateImplBridge(): string {
      * @dev    Runs in the caller's context, so the bridge sees \`msg.sender == <app>\` and the
      *         source ACL check resolves against the app.
      */
-    function bridge(uint32 dstEid, bytes32 dstApp, bytes memory payload, bytes32[] memory handleList, uint128 lzComposeGas, bytes memory options, uint256 nativeFee) internal returns (MessagingReceipt memory receipt) {
-        receipt = getConfidentialBridge().send{value: nativeFee}(dstEid, dstApp, payload, handleList, lzComposeGas, options);
+    function bridge(uint32 dstEid, bytes32 dstApp, bytes memory payload, bytes32[] memory handleList, uint64 lzComposeGas, uint256 nativeFee) internal returns (MessagingReceipt memory receipt) {
+        receipt = getConfidentialBridge().send{value: nativeFee}(dstEid, dstApp, payload, handleList, lzComposeGas);
     }
 
     /**
      * @notice Quotes the native fee for a bridge send.
      */
-    function quoteBridge(uint32 dstEid, address srcApp, bytes32 dstApp, bytes memory payload, bytes32[] memory handleList, uint128 lzComposeGas, bytes memory options) internal view returns (MessagingFee memory fee) {
-        fee = getConfidentialBridge().quote(dstEid, srcApp, dstApp, payload, handleList, lzComposeGas, options);
+    function quoteBridge(uint32 dstEid, address srcApp, bytes32 dstApp, bytes memory payload, bytes32[] memory handleList, uint64 lzComposeGas) internal view returns (MessagingFee memory fee) {
+        fee = getConfidentialBridge().quote(dstEid, srcApp, dstApp, payload, handleList, lzComposeGas);
     }`;
 }
 

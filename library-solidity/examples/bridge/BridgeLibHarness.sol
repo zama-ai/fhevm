@@ -30,7 +30,7 @@ contract BridgeLibHarness {
         address a,
         bytes calldata p,
         bytes32 h,
-        uint128 g
+        uint64 g
     ) external payable returns (MessagingReceipt memory) {
         return FHE.bridge(e, a, p, ebool.wrap(h), g, msg.value);
     }
@@ -40,7 +40,7 @@ contract BridgeLibHarness {
         address a,
         bytes calldata p,
         bytes32 h,
-        uint128 g
+        uint64 g
     ) external payable returns (MessagingReceipt memory) {
         return FHE.bridge(e, a, p, euint8.wrap(h), g, msg.value);
     }
@@ -50,7 +50,7 @@ contract BridgeLibHarness {
         address a,
         bytes calldata p,
         bytes32 h,
-        uint128 g
+        uint64 g
     ) external payable returns (MessagingReceipt memory) {
         return FHE.bridge(e, a, p, euint16.wrap(h), g, msg.value);
     }
@@ -60,7 +60,7 @@ contract BridgeLibHarness {
         address a,
         bytes calldata p,
         bytes32 h,
-        uint128 g
+        uint64 g
     ) external payable returns (MessagingReceipt memory) {
         return FHE.bridge(e, a, p, euint32.wrap(h), g, msg.value);
     }
@@ -70,7 +70,7 @@ contract BridgeLibHarness {
         address a,
         bytes calldata p,
         bytes32 h,
-        uint128 g
+        uint64 g
     ) external payable returns (MessagingReceipt memory) {
         return FHE.bridge(e, a, p, euint64.wrap(h), g, msg.value);
     }
@@ -80,7 +80,7 @@ contract BridgeLibHarness {
         address a,
         bytes calldata p,
         bytes32 h,
-        uint128 g
+        uint64 g
     ) external payable returns (MessagingReceipt memory) {
         return FHE.bridge(e, a, p, euint128.wrap(h), g, msg.value);
     }
@@ -90,7 +90,7 @@ contract BridgeLibHarness {
         address a,
         bytes calldata p,
         bytes32 h,
-        uint128 g
+        uint64 g
     ) external payable returns (MessagingReceipt memory) {
         return FHE.bridge(e, a, p, euint256.wrap(h), g, msg.value);
     }
@@ -100,7 +100,7 @@ contract BridgeLibHarness {
         address a,
         bytes calldata p,
         bytes32 h,
-        uint128 g
+        uint64 g
     ) external payable returns (MessagingReceipt memory) {
         return FHE.bridge(e, a, p, eaddress.wrap(h), g, msg.value);
     }
@@ -112,7 +112,7 @@ contract BridgeLibHarness {
         address a,
         bytes calldata p,
         bytes32[] calldata hs,
-        uint128 g
+        uint64 g
     ) external payable returns (MessagingReceipt memory) {
         euint64[] memory typed = new euint64[](hs.length);
         for (uint256 i = 0; i < hs.length; i++) typed[i] = euint64.wrap(hs[i]);
@@ -124,7 +124,7 @@ contract BridgeLibHarness {
         address a,
         bytes calldata p,
         bytes32[] calldata hs,
-        uint128 g
+        uint64 g
     ) external payable returns (MessagingReceipt memory) {
         euint256[] memory typed = new euint256[](hs.length);
         for (uint256 i = 0; i < hs.length; i++) typed[i] = euint256.wrap(hs[i]);
@@ -138,10 +138,9 @@ contract BridgeLibHarness {
         bytes32 a,
         bytes calldata p,
         bytes32[] calldata hs,
-        uint128 g,
-        bytes calldata o
+        uint64 g
     ) external payable returns (MessagingReceipt memory) {
-        return FHE.bridge(e, a, p, hs, g, o, msg.value);
+        return FHE.bridge(e, a, p, hs, g, msg.value);
     }
 
     // ---------------- quotes ----------------
@@ -151,7 +150,7 @@ contract BridgeLibHarness {
         address a,
         bytes calldata p,
         bytes32 h,
-        uint128 g
+        uint64 g
     ) external view returns (MessagingFee memory) {
         return FHE.quoteBridge(e, address(this), a, p, euint64.wrap(h), g);
     }
@@ -161,7 +160,7 @@ contract BridgeLibHarness {
         address a,
         bytes calldata p,
         bytes32 h,
-        uint128 g
+        uint64 g
     ) external view returns (MessagingFee memory) {
         return FHE.quoteBridge(e, address(this), a, p, euint32.wrap(h), g);
     }
@@ -171,7 +170,7 @@ contract BridgeLibHarness {
         address a,
         bytes calldata p,
         bytes32[] calldata hs,
-        uint128 g
+        uint64 g
     ) external view returns (MessagingFee memory) {
         euint64[] memory typed = new euint64[](hs.length);
         for (uint256 i = 0; i < hs.length; i++) typed[i] = euint64.wrap(hs[i]);
@@ -183,9 +182,8 @@ contract BridgeLibHarness {
         bytes32 a,
         bytes calldata p,
         bytes32[] calldata hs,
-        uint128 g,
-        bytes calldata o
+        uint64 g
     ) external view returns (MessagingFee memory) {
-        return FHE.quoteBridge(e, address(this), a, p, hs, g, o);
+        return FHE.quoteBridge(e, address(this), a, p, hs, g);
     }
 }

@@ -9,14 +9,15 @@ import {ConfidentialOAppCore} from "./ConfidentialOAppCore.sol";
  * @title   ConfidentialOAppSender
  * @notice  Send side of a confidential omnichain app. Looks up the destination peer from the
  *          shared {ConfidentialOAppCore} registry and bridges encrypted handles to it through
- *          `FHE.bridge`, so subclasses never deal with the bridge contract, LayerZero options,
- *          or peer encoding directly.
+ *          `FHE.bridge`, so subclasses never deal with the bridge contract or peer encoding
+ *          directly.
  * @dev     The destination is taken from {peers} (a `bytes32`, so non-EVM peers work too).
  *          Quote the fee with {_quoteBridge} and forward it as `msg.value` to {_bridge}.
  */
 abstract contract ConfidentialOAppSender is ConfidentialOAppCore {
-    /// @notice `lzComposeGas` is 0; with the default (empty) options the destination receive
-    ///         callback would never run, so the bridged value would never be delivered.
+    /// @notice `lzComposeGas` is 0; the destination receive callback would never run, so the
+    ///         bridged value would never be delivered. (The bridge also enforces a per-`dstEid`
+    ///         minimum; this is a cheap pre-check for the clearly-invalid zero case.)
     error ZeroComposeGas();
 
     /**
@@ -25,21 +26,21 @@ abstract contract ConfidentialOAppSender is ConfidentialOAppCore {
      * @param payload       Opaque app payload (the receiver decodes it).
      * @param handle        The encrypted value to bridge; the caller must hold ACL allowance on it.
      * @param lzComposeGas  Gas budget for the destination receive callback (lzCompose leg); must
-     *                      be non-zero, since {_bridge} sends with default (empty) options.
+     *                      meet the bridge's per-`dstEid` minimum (and be non-zero).
      * @param nativeFee     LayerZero native fee to forward (query via {_quoteBridge}).
      */
     function _bridge(
         uint32 dstEid,
         bytes memory payload,
         euint64 handle,
-        uint128 lzComposeGas,
+        uint64 lzComposeGas,
         uint256 nativeFee
     ) internal returns (MessagingReceipt memory) {
         if (lzComposeGas == 0) revert ZeroComposeGas();
         bytes32 peer = _getPeerOrRevert(dstEid);
         bytes32[] memory handleList = new bytes32[](1);
         handleList[0] = euint64.unwrap(handle);
-        return FHE.bridge(dstEid, peer, payload, handleList, lzComposeGas, "", nativeFee);
+        return FHE.bridge(dstEid, peer, payload, handleList, lzComposeGas, nativeFee);
     }
 
     /// @notice Quotes the native fee for the matching {_bridge} call.
@@ -47,11 +48,11 @@ abstract contract ConfidentialOAppSender is ConfidentialOAppCore {
         uint32 dstEid,
         bytes memory payload,
         euint64 handle,
-        uint128 lzComposeGas
+        uint64 lzComposeGas
     ) internal view returns (MessagingFee memory) {
         bytes32 peer = _getPeerOrRevert(dstEid);
         bytes32[] memory handleList = new bytes32[](1);
         handleList[0] = euint64.unwrap(handle);
-        return FHE.quoteBridge(dstEid, address(this), peer, payload, handleList, lzComposeGas, "");
+        return FHE.quoteBridge(dstEid, address(this), peer, payload, handleList, lzComposeGas);
     }
 }
