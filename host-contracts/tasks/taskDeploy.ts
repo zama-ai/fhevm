@@ -1113,10 +1113,9 @@ task('task:deployLocalLzEndpoint')
   .setAction(async function (taskArguments: TaskArguments, { ethers }) {
     const deployer = new Wallet(getRequiredEnvVar('DEPLOYER_PRIVATE_KEY')).connect(ethers.provider);
 
-    const endpoint = await (await ethers.getContractFactory('EndpointV2Mock', deployer)).deploy(
-      taskArguments.eid,
-      deployer.address,
-    );
+    const endpoint = await (
+      await ethers.getContractFactory('EndpointV2Mock', deployer)
+    ).deploy(taskArguments.eid, deployer.address);
     await endpoint.waitForDeployment();
     const endpointAddress = await endpoint.getAddress();
 
