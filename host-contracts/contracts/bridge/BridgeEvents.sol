@@ -35,11 +35,25 @@ contract BridgeEvents {
     ///         gas for a `dstEid`. A value of 0 clears the override, restoring the default.
     /// @param dstEid              The LayerZero endpoint id.
     /// @param lzReceiveBaseGas    The custom base gas (0 means fall back to LZ_RECEIVE_BASE_GAS_DEFAULT).
-    event LzReceiveBaseGasSet(uint32 indexed dstEid, uint128 lzReceiveBaseGas);
+    event LzReceiveBaseGasSet(uint32 indexed dstEid, uint64 lzReceiveBaseGas);
 
     /// @notice Emitted by the HandlesSender when governance sets a custom per-handle
     ///         `lzReceive` gas for a `dstEid`. A value of 0 clears the override.
     /// @param dstEid                 The LayerZero endpoint id.
     /// @param lzReceivePerHandleGas  The custom per-handle gas (0 means fall back to LZ_RECEIVE_PER_HANDLE_GAS_DEFAULT).
-    event LzReceivePerHandleGasSet(uint32 indexed dstEid, uint128 lzReceivePerHandleGas);
+    event LzReceivePerHandleGasSet(uint32 indexed dstEid, uint64 lzReceivePerHandleGas);
+
+    /// @notice Emitted by the HandlesSender when governance sets a custom per-payload-byte
+    ///         `lzReceive` gas for a `dstEid`. A value of 0 clears the override.
+    /// @param dstEid                      The LayerZero endpoint id.
+    /// @param lzReceivePerPayloadByteGas  The custom per-payload-byte gas (0 means fall back to
+    ///                                    LZ_RECEIVE_PER_PAYLOAD_BYTE_DEFAULT).
+    event LzReceivePerPayloadByteGasSet(uint32 indexed dstEid, uint64 lzReceivePerPayloadByteGas);
+
+    /// @notice Emitted by the HandlesSender when governance sets a custom minimum `lzCompose`
+    ///         gas accepted by `send` for a `dstEid`. A value of 0 clears the override.
+    /// @param dstEid             The LayerZero endpoint id.
+    /// @param lzComposeMinValue  The custom minimum (0 means fall back to
+    ///                           LZ_COMPOSE_MIN_VALUE_DEFAULT).
+    event LzComposeMinValueSet(uint32 indexed dstEid, uint64 lzComposeMinValue);
 }

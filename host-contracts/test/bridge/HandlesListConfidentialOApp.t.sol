@@ -163,19 +163,19 @@ contract HandlesListConfidentialOAppTest is TestHelperOz5, HostContractsDeployer
     function test_SendHandles_RevertsWhenPeerNotSet() public {
         vm.prank(user);
         vm.expectRevert(abi.encodeWithSelector(HandlesListConfidentialOApp.PeerNotSet.selector, UNCONFIGURED_EID));
-        appSrc.generateAndSendHandlesList{value: 0}(UNCONFIGURED_EID, 1, uint128(0));
+        appSrc.generateAndSendHandlesList{value: 0}(UNCONFIGURED_EID, 1, "", uint64(0));
     }
 
     function test_QuoteSendHandles_RevertsWhenPeerNotSet() public {
         vm.expectRevert(abi.encodeWithSelector(HandlesListConfidentialOApp.PeerNotSet.selector, UNCONFIGURED_EID));
-        appSrc.quoteGenerateAndSendHandlesList(UNCONFIGURED_EID, 1, uint128(0));
+        appSrc.quoteGenerateAndSendHandlesList(UNCONFIGURED_EID, 1, "", uint64(0));
     }
 
     /// @dev A zero count has nothing to bridge and is rejected before any LZ work.
     function test_SendHandles_RevertsOnEmptyCount() public {
         vm.prank(user);
         vm.expectRevert(HandlesListConfidentialOApp.EmptyHandleList.selector);
-        appSrc.generateAndSendHandlesList{value: 0}(DST_EID, 0, uint128(0));
+        appSrc.generateAndSendHandlesList{value: 0}(DST_EID, 0, "", uint64(0));
     }
 
     ////////////////////////////////////////////////////////////////////////////////
@@ -186,15 +186,22 @@ contract HandlesListConfidentialOAppTest is TestHelperOz5, HostContractsDeployer
     ///      no caller-side ACL setup is required — `countHandles` is the only handle input.
     function test_SendHandles_EndToEnd_EmitsSentEventAndBridgeHandle() public {
         uint256 count = 2;
+        bytes memory customPayload = abi.encode(user, "greetings");
 
-        MessagingFee memory fee = appSrc.quoteGenerateAndSendHandlesList(DST_EID, count, uint128(200_000));
+        MessagingFee memory fee = appSrc.quoteGenerateAndSendHandlesList(
+            DST_EID,
+            count,
+            customPayload,
+            uint64(200_000)
+        );
 
         vm.recordLogs();
         vm.prank(user);
         MessagingReceipt memory receipt = appSrc.generateAndSendHandlesList{value: fee.nativeFee}(
             DST_EID,
             count,
-            uint128(200_000)
+            customPayload,
+            uint64(200_000)
         );
         assertTrue(receipt.guid != bytes32(0), "guid should be assigned");
 
@@ -227,12 +234,13 @@ contract HandlesListConfidentialOAppTest is TestHelperOz5, HostContractsDeployer
 
     /// @dev Demonstrates the reverse direction: the same contract type bridges dst→src.
     function test_SendHandles_ReverseDirection() public {
-        MessagingFee memory fee = appDst.quoteGenerateAndSendHandlesList(SRC_EID, 1, uint128(150_000));
+        MessagingFee memory fee = appDst.quoteGenerateAndSendHandlesList(SRC_EID, 1, "", uint64(150_000));
         vm.prank(user);
         MessagingReceipt memory receipt = appDst.generateAndSendHandlesList{value: fee.nativeFee}(
             SRC_EID,
             1,
-            uint128(150_000)
+            "",
+            uint64(150_000)
         );
         assertTrue(receipt.guid != bytes32(0));
 
@@ -245,7 +253,9 @@ contract HandlesListConfidentialOAppTest is TestHelperOz5, HostContractsDeployer
 
     function test_OnReceive_RevertsIfCallerNotBridge() public {
         bytes32[] memory empty = new bytes32[](0);
-        vm.expectRevert(abi.encodeWithSelector(HandlesListConfidentialOApp.OnlyConfidentialBridge.selector, address(this)));
+        vm.expectRevert(
+            abi.encodeWithSelector(HandlesListConfidentialOApp.OnlyConfidentialBridge.selector, address(this))
+        );
         appDst.onConfidentialBridgeReceived(SRC_EID, _addressToBytes32(address(appSrc)), "", empty, empty, bytes32(0));
     }
 
@@ -257,15 +267,16 @@ contract HandlesListConfidentialOAppTest is TestHelperOz5, HostContractsDeployer
         appDst.onConfidentialBridgeReceived(SRC_EID, badPeer, "", empty, empty, bytes32(0));
     }
 
-    function test_OnReceive_RecordsHandlesAndGrantsToUser() public {
+    function test_OnReceive_RecordsHandlesAndGrantsToOwner() public {
         bytes32[] memory srcList = new bytes32[](2);
         bytes32[] memory dstList = new bytes32[](2);
         srcList[0] = _makeHandle(0);
         srcList[1] = _makeHandle(1);
         dstList[0] = _makeHandle(100);
         dstList[1] = _makeHandle(101);
-        // The source instance encodes the initiating user as the payload.
-        bytes memory payload = abi.encode(user);
+        // The payload is opaque app-defined data; the app stores it verbatim and does not
+        // interpret it. Decryption rights are granted to the app owner, not the payload.
+        bytes memory payload = abi.encode("opaque-app-data");
         bytes32 guid = keccak256("received-guid");
 
         // Calling onConfidentialBridgeReceived directly bypasses the bridge's transient
@@ -285,7 +296,14 @@ contract HandlesListConfidentialOAppTest is TestHelperOz5, HostContractsDeployer
             guid
         );
         vm.prank(address(dstBridge));
-        appDst.onConfidentialBridgeReceived(SRC_EID, _addressToBytes32(address(appSrc)), payload, srcList, dstList, guid);
+        appDst.onConfidentialBridgeReceived(
+            SRC_EID,
+            _addressToBytes32(address(appSrc)),
+            payload,
+            srcList,
+            dstList,
+            guid
+        );
 
         bytes32[] memory storedDst = appDst.lastReceivedDstHandleList();
         bytes32[] memory storedSrc = appDst.lastReceivedSrcHandleList();
@@ -295,9 +313,9 @@ contract HandlesListConfidentialOAppTest is TestHelperOz5, HostContractsDeployer
         assertEq(storedSrc[0], srcList[0]);
         assertEq(keccak256(appDst.lastReceivedPayload()), keccak256(payload));
 
-        // The initiating user and the app both hold persistent decryption rights now.
-        assertTrue(acl.isAllowed(dstList[0], user));
-        assertTrue(acl.isAllowed(dstList[1], user));
+        // The app owner and the app itself both hold persistent decryption rights now.
+        assertTrue(acl.isAllowed(dstList[0], owner));
+        assertTrue(acl.isAllowed(dstList[1], owner));
         assertTrue(acl.isAllowed(dstList[0], address(appDst)));
     }
 
@@ -319,8 +337,8 @@ contract HandlesListConfidentialOAppTest is TestHelperOz5, HostContractsDeployer
         srcList[1] = _makeHandle(1);
         dstList[0] = dstH0;
         dstList[1] = dstH1;
-        // The bridge payload carries the initiating user (abi-encoded address).
-        bytes memory payload = abi.encode(user);
+        // The bridge payload is opaque app-defined data, forwarded verbatim to the app.
+        bytes memory payload = abi.encode("opaque-app-data");
 
         bytes memory composeMsg = abi.encode(
             SRC_EID,
@@ -344,8 +362,8 @@ contract HandlesListConfidentialOAppTest is TestHelperOz5, HostContractsDeployer
         assertEq(keccak256(appDst.lastReceivedPayload()), keccak256(payload));
 
         // The bridge granted the app transient allowance, which let it re-grant
-        // persistent decryption rights to the initiating user.
-        assertTrue(acl.isAllowed(dstH0, user));
-        assertTrue(acl.isAllowed(dstH1, user));
+        // persistent decryption rights to the app owner.
+        assertTrue(acl.isAllowed(dstH0, owner));
+        assertTrue(acl.isAllowed(dstH1, owner));
     }
 }
