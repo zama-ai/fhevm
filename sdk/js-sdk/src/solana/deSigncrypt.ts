@@ -16,6 +16,8 @@ import initSolanaTkms, {
   type PrivateEncKeyMlKem512,
 } from '../wasm/tkms/kms_lib.v0.14.0-solana.07be70ab.js';
 import { tkmsWasmBase64 } from '../wasm/tkms/kms_lib_bg.v0.14.0-solana.07be70ab.wasm.base64.js';
+import { bytesToHexNo0x } from '../core/base/bytes.js';
+import { remove0x } from '../core/base/string.js';
 
 let initialized: Promise<void> | undefined;
 async function ensureInit(): Promise<void> {
@@ -42,9 +44,6 @@ export async function generateSolanaTransportKeyPair(): Promise<SolanaTransportK
   return { secretKey, publicKey, publicKeyBytes: ml_kem_pke_pk_to_u8vec(publicKey) };
 }
 
-const strip0x = (h: string) => (h.startsWith('0x') ? h.slice(2) : h);
-const toHex = (b: Uint8Array) => Buffer.from(b).toString('hex');
-
 export type SolanaSigncryptedShare = {
   readonly signature: string;
   readonly payload: string;
@@ -65,18 +64,21 @@ export async function deSigncryptSolanaUserDecrypt(params: {
   readonly hostChainId: bigint;
 }): Promise<ReadonlyArray<{ bytes: Uint8Array; fheType: number }>> {
   await ensureInit();
+  // The de-signcryption only reads `enc_key` + `ciphertext_handles`; the other fields exist solely
+  // because the current WASM reuses the EVM-shaped request struct. They are dropped once the slimmed
+  // Solana wrapper blob lands (FI#1543 B / FI#1546).
   const request = {
     signature: undefined,
     client_address: '0x0000000000000000000000000000000000000000',
-    enc_key: toHex(params.keyPair.publicKeyBytes),
-    ciphertext_handles: params.handles.map(strip0x),
+    enc_key: bytesToHexNo0x(params.keyPair.publicKeyBytes),
+    ciphertext_handles: params.handles.map(remove0x),
     eip712_verifying_contract: '0x0000000000000000000000000000000000000000',
     extra_data: '00',
   };
   const aggResp = params.shares.map((s) => ({
-    signature: strip0x(s.signature),
-    payload: strip0x(s.payload),
-    extra_data: strip0x(s.extraData),
+    signature: remove0x(s.signature),
+    payload: remove0x(s.payload),
+    extra_data: remove0x(s.extraData),
   }));
   const plaintexts = process_user_decryption_resp_solana_from_js(
     request,

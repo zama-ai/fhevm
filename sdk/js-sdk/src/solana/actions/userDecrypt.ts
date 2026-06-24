@@ -3,8 +3,8 @@ import type { FhevmSolanaChain } from '../../core/types/fhevmSolanaChain.js';
 import type { WithDecrypt } from '../../core/types/coreFhevmRuntime.js';
 import type { FetchUserDecryptResult, RelayerUserDecryptOptions } from '../../core/types/relayer.js';
 import type { EncryptedValueLike } from '../../core/types/encryptedTypes.js';
-import type { Handle } from '../../core/types/encryptedTypes-p.js';
-import type { Bytes32Hex, BytesHex } from '../../core/types/primitives.js';
+import type { ClearValue, Handle } from '../../core/types/encryptedTypes-p.js';
+import type { Bytes32Hex } from '../../core/types/primitives.js';
 import {
   buildSolanaUserDecryptContextExtraData,
   solanaUserDecryptClientId,
@@ -12,9 +12,12 @@ import {
   SOLANA_USER_DECRYPT_ATTESTATION_TYPE,
 } from '../../core/coprocessor/SolanaUserDecrypt-p.js';
 import { toFhevmHandle } from '../../core/handle/FhevmHandle.js';
-import { bytesToHex, hexToBytes, hexToBytes32 } from '../../core/base/bytes.js';
+import { bytesToHex, hexToBytes32 } from '../../core/base/bytes.js';
 import { removeSuffix } from '../../core/base/string.js';
 import { RelayerAsyncRequest } from '../../core/modules/relayer/module/RelayerAsyncRequest.js';
+import { createClearValue } from '../../core/handle/ClearValue.js';
+import { bytesToClearValueType } from '../../core/handle/FheType.js';
+import { generateSolanaTransportKeyPair, deSigncryptSolanaUserDecrypt } from '../deSigncrypt.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -31,12 +34,6 @@ export type SolanaUserDecryptContext = {
 export type SolanaUserDecryptParameters = {
   /** The ciphertext handles to decrypt (each a 32-byte handle). */
   readonly handles: readonly EncryptedValueLike[];
-  /**
-   * The ML-KEM re-encryption public key (0x-hex) the KMS seals each share to; it is bound into the
-   * signed preimage. The caller owns the matching key pair and de-signcrypts the returned shares
-   * (the SDK does not de-signcrypt Solana responses yet — see {@link SolanaUserDecryptResult}).
-   */
-  readonly transportPublicKey: BytesHex;
   /** Override the chain's ACL domain keys for this request (each a bytes32 0x-hex). */
   readonly allowedAclDomainKeys?: readonly Bytes32Hex[] | undefined;
   /** 32-byte big-endian context id. Defaults to all-zero (no explicit context). */
@@ -58,7 +55,7 @@ export type SolanaUserDecryptParameters = {
 };
 
 /** One aggregated KMS signcrypted share, as returned by the relayer's v3 user-decrypt job. */
-export type SolanaUserDecryptShare = {
+type SolanaUserDecryptShare = {
   /** The KMS party's external signature over its share (0x-hex). */
   readonly signature: string;
   /** The bincode-serialized signcrypted payload (hex). */
@@ -68,23 +65,19 @@ export type SolanaUserDecryptShare = {
 };
 
 /**
- * The result of a Solana user-decrypt round-trip up to the aggregated shares.
- *
- * NOTE: this stops at the signcrypted shares. De-signcryption to cleartext binds against the opaque
- * keccak `compute_link_solana` digest (RFC-021), which the SDK's bundled TKMS WASM does not yet
- * expose — only kms-core (`process_user_decryption_resp_solana`) does. Completing the round-trip in
- * the SDK requires exposing that Solana link path in the TKMS WASM (a KMS/TKMS change, tracked
- * separately). Until then the caller de-signcrypts the returned {@link shares} with their own
- * transport key pair (whose public key was passed as `transportPublicKey`) via kms-core.
+ * The decrypted clear values, one per requested handle, in request order. Mirrors the EVM
+ * user-decrypt return: de-signcryption runs entirely in-SDK against the vendored Solana TKMS WASM
+ * (no kms-core), differing from EVM only in the link digest (`compute_link_solana`).
  */
-export type SolanaUserDecryptResult = {
-  readonly shares: readonly SolanaUserDecryptShare[];
-};
+export type SolanaUserDecryptResult = readonly ClearValue[];
 
 ////////////////////////////////////////////////////////////////////////////////
 
 const DEFAULT_DURATION_SECONDS = 86_400n;
 const ED25519_SIGNATURE_LEN = 64;
+
+// Per-flow provenance token for the clear values this action produces (see {@link createClearValue}).
+const SOLANA_USER_DECRYPT_TOKEN = Symbol('SolanaUserDecrypt.clearValue');
 
 function randomNonce(): Uint8Array {
   const nonce = new Uint8Array(32);
@@ -95,15 +88,15 @@ function randomNonce(): Uint8Array {
 ////////////////////////////////////////////////////////////////////////////////
 
 /**
- * Runs the Solana user-decrypt round-trip up to the aggregated signcrypted shares:
+ * Runs the full Solana user-decrypt round-trip and returns the decrypted clear values:
  *
  * 1. derive `identity` from the signer and assemble the ed25519 signing preimage,
  * 2. sign it via the {@link SolanaUserDecryptSigner} and build the v3 attested request,
- * 3. POST it to the relayer's `/v3/user-decrypt` Solana seam and poll for the signcrypted shares.
+ * 3. POST it to the relayer's `/v3/user-decrypt` Solana seam and poll for the signcrypted shares,
+ * 4. de-signcrypt the shares to cleartext in-SDK (vendored Solana TKMS WASM, no kms-core).
  *
- * It returns the {@link SolanaUserDecryptShare}s; de-signcryption to cleartext is intentionally out
- * of scope until the Solana keccak-link path is exposed in the TKMS WASM (see
- * {@link SolanaUserDecryptResult}).
+ * The action owns the ephemeral ML-KEM transport keypair end to end, so the caller never handles
+ * transport keys — matching the EVM user-decrypt flow, which differs only in the link digest.
  */
 export async function userDecrypt(
   context: SolanaUserDecryptContext,
@@ -120,7 +113,10 @@ export async function userDecrypt(
   const handles: readonly Handle[] = parameters.handles.map((h) => toFhevmHandle(h));
   const handleBytes: readonly Uint8Array[] = handles.map((h) => h.bytes32);
 
-  const publicKey = hexToBytes(parameters.transportPublicKey);
+  // The action owns the ephemeral ML-KEM transport keypair: its public key is bound into the signed
+  // request and its secret key de-signcrypts the response (step 4), so it never leaves this scope.
+  const keyPair = await generateSolanaTransportKeyPair();
+  const publicKey = keyPair.publicKeyBytes;
 
   const contextId = parameters.contextId ?? new Uint8Array(32);
   const nonce = parameters.nonce ?? randomNonce();
@@ -210,5 +206,27 @@ export async function userDecrypt(
     extraData: r.extraData,
   }));
 
-  return { shares };
+  // 4. De-signcrypt the aggregated shares to cleartext in-SDK, then reconstruct typed clear values
+  // with the same decoder as the EVM path (`bytesToClearValueType`), one per requested handle.
+  const plaintexts = await deSigncryptSolanaUserDecrypt({
+    keyPair,
+    shares,
+    handles: handlesHex,
+    solanaUserPubkey: identity,
+    hostChainId: BigInt(chain.id),
+  });
+
+  return plaintexts.map((plaintext, i) => {
+    const handle = handles[i];
+    if (plaintext.fheType !== handle.fheTypeId) {
+      throw new Error(
+        `unexpected FHE type at index ${i}: got ${plaintext.fheType}, expected ${handle.fheTypeId}`,
+      );
+    }
+    return createClearValue({
+      value: bytesToClearValueType(handle.fheType, plaintext.bytes),
+      handle,
+      originToken: SOLANA_USER_DECRYPT_TOKEN,
+    });
+  });
 }

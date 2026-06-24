@@ -13,7 +13,7 @@ import { userDecrypt } from '../../actions/userDecrypt.js';
 ////////////////////////////////////////////////////////////////////////////////
 
 export type SolanaDecryptActions = {
-  /** Runs the Solana ed25519 user-decrypt round-trip up to the aggregated signcrypted shares. */
+  /** Runs the full Solana ed25519 user-decrypt round-trip and returns the decrypted clear values. */
   readonly userDecrypt: (parameters: SolanaUserDecryptParameters) => Promise<SolanaUserDecryptResult>;
   /** Generates a fresh E2E transport (ML-KEM) key pair for decryption. */
   readonly generateTransportKeyPair: () => Promise<GenerateTransportKeyPairReturnType>;

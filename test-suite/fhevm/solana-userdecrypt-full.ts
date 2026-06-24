@@ -1,6 +1,6 @@
-// PURE-SDK Solana user-decrypt: the WHOLE round-trip in JS — ML-KEM keygen + the v3 ed25519 request
-// (shares) via @fhevm/sdk/solana, AND de-signcryption to cleartext via the SDK's in-SDK
-// deSigncryptSolanaUserDecrypt (vendored Solana TKMS WASM). No kms-core checkout.
+// PURE-SDK Solana user-decrypt: the WHOLE round-trip in JS via a single `client.userDecrypt` call —
+// ML-KEM keygen + the v3 ed25519 request AND in-SDK de-signcryption to cleartext (vendored Solana
+// TKMS WASM), all owned by the action. No kms-core checkout.
 //
 // Replaces the full-vertical's `cargo test -p kms` user-decrypt leg.
 //
@@ -10,10 +10,6 @@
 import { createFhevmDecryptClient, solanaSignerFromSecretKey, setFhevmRuntimeConfig } from '@fhevm/sdk/solana';
 import { defineFhevmSolanaChain } from '@fhevm/sdk/chains';
 import type { Bytes32Hex, BytesHex } from '@fhevm/sdk/types';
-import {
-  generateSolanaTransportKeyPair,
-  deSigncryptSolanaUserDecrypt,
-} from '../../sdk/js-sdk/src/solana/deSigncrypt.js';
 
 function reqEnv(name: string): string {
   const v = process.env[name];
@@ -23,9 +19,6 @@ function reqEnv(name: string): string {
 function hexToBytes(hex: string): Uint8Array {
   return Uint8Array.from(Buffer.from(hex.startsWith('0x') ? hex.slice(2) : hex, 'hex'));
 }
-
-const keyPair = await generateSolanaTransportKeyPair();
-const transportPublicKey = ('0x' + Buffer.from(keyPair.publicKeyBytes).toString('hex')) as BytesHex;
 
 const allowedAclDomainKeys = reqEnv('UD_ALLOWED_DOMAIN_KEYS')
   .split(',')
@@ -43,9 +36,8 @@ const signer = solanaSignerFromSecretKey(hexToBytes(reqEnv('UD_SECRET_KEY')));
 const handleHex = reqEnv('UD_HANDLE');
 
 const client = createFhevmDecryptClient({ signer, chain });
-const { shares } = await client.userDecrypt({
+const clearValues = await client.userDecrypt({
   handles: [handleHex as BytesHex],
-  transportPublicKey,
   allowedAclDomainKeys,
   contextId: hexToBytes(reqEnv('UD_CONTEXT_ID')),
   ...(process.env.UD_NONCE ? { nonce: hexToBytes(process.env.UD_NONCE) } : {}),
@@ -58,19 +50,9 @@ const { shares } = await client.userDecrypt({
       }
     : {}),
 });
+if (!clearValues.length) throw new Error('no clear values returned');
 
-const plaintexts = await deSigncryptSolanaUserDecrypt({
-  keyPair,
-  shares,
-  handles: [handleHex],
-  solanaUserPubkey: signer.publicKey,
-  hostChainId: chainId,
-});
-if (!plaintexts.length) throw new Error('no plaintexts returned');
-
-let value = 0n;
-for (const b of plaintexts[0].bytes) value = (value << 8n) | BigInt(b);
-
+const value = BigInt(clearValues[0].value as bigint | number | boolean);
 const expected = BigInt(reqEnv('UD_EXPECTED'));
 if (value !== expected) throw new Error(`user-decrypt cleartext ${value} != expected ${expected}`);
 process.stdout.write(`PURE-SDK user-decrypt OK: cleartext=${value}\n`);
