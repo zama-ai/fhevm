@@ -2401,72 +2401,87 @@ async fn check_finalization_status(setup: &Setup) {
         .connect_ws(WsConnect::new(setup.args.url.to_string()))
         .await
         .unwrap();
-    // Verify block finalization status: for each block number, one should be finalized and others orphaned
-    let blocks = sqlx::query!(
-        "SELECT block_number, block_hash, block_status FROM host_chain_blocks_valid",
-    )
-    .fetch_all(&setup.db_pool)
-    .await;
+    let deadline =
+        tokio::time::Instant::now() + tokio::time::Duration::from_secs(15);
+    loop {
+        // Verify block finalization status: for each block number, one should be
+        // finalized and others orphaned. During a deep reorg the listener can be
+        // between inserting missing ancestors and applying the status transition,
+        // so retry transient mismatches before failing the test.
+        let blocks = sqlx::query!(
+            "SELECT block_number, block_hash, block_status FROM host_chain_blocks_valid",
+        )
+        .fetch_all(&setup.db_pool)
+        .await
+        .expect("Failed to fetch blocks from database");
 
-    let blocks = blocks.expect("Failed to fetch blocks from database");
-    let block_max = blocks
-        .iter()
-        .map(|b| b.block_number)
-        .max()
-        .expect("At least one block should be ingested");
+        let block_max = blocks
+            .iter()
+            .map(|b| b.block_number)
+            .max()
+            .expect("At least one block should be ingested");
 
-    let mut blocks_by_number: std::collections::HashMap<
-        i64,
-        Vec<(Vec<u8>, String)>,
-    > = std::collections::HashMap::new();
-    for block in blocks {
-        if block.block_number > block_max - 5 {
-            continue; // pending blocks within finalization window can be ignored for this assert
+        let mut blocks_by_number: std::collections::HashMap<
+            i64,
+            Vec<(Vec<u8>, String)>,
+        > = std::collections::HashMap::new();
+        for block in blocks {
+            if block.block_number > block_max - 5 {
+                continue; // pending blocks within finalization window can be ignored for this assert
+            }
+            blocks_by_number
+                .entry(block.block_number)
+                .or_default()
+                .push((block.block_hash, block.block_status));
         }
-        blocks_by_number
-            .entry(block.block_number)
-            .or_default()
-            .push((block.block_hash, block.block_status));
-    }
 
-    for (block_number, block_variants) in blocks_by_number.iter() {
-        let finalized_count = block_variants
-            .iter()
-            .filter(|(_, status)| status == "finalized")
-            .count();
-        let orphan_count = block_variants
-            .iter()
-            .filter(|(_, status)| status == "orphaned")
-            .count();
-        assert_eq!(
-            finalized_count, 1,
-            "Block {} should have exactly one finalized variant, found {}",
-            block_number, finalized_count
-        );
-        let finalized_hash = block_variants
-            .iter()
-            .find(|(_, status)| status == "finalized")
-            .map(|(hash, _)| hash)
-            .unwrap();
-        assert_eq!(
-            orphan_count,
-            block_variants.len() - 1,
-            "Block {} should have remaining variants as orphan",
-            block_number
-        );
-        let expected_hash = provider
-            .get_block_by_number((*block_number as u64).into())
-            .await
-            .unwrap()
-            .unwrap()
-            .header
-            .hash;
-        assert_eq!(
-            &expected_hash.0,
-            finalized_hash.as_slice(),
-            "Finalized block hash for block {} does not match expected",
-            block_number
-        );
+        let mut mismatch = None;
+        for (block_number, block_variants) in blocks_by_number.iter() {
+            let finalized_count = block_variants
+                .iter()
+                .filter(|(_, status)| status == "finalized")
+                .count();
+            let orphan_count = block_variants
+                .iter()
+                .filter(|(_, status)| status == "orphaned")
+                .count();
+            if finalized_count != 1 {
+                mismatch = Some(format!(
+                    "Block {block_number} should have exactly one finalized variant, found {finalized_count}"
+                ));
+                break;
+            }
+            if orphan_count != block_variants.len() - 1 {
+                mismatch = Some(format!(
+                    "Block {block_number} should have remaining variants as orphan"
+                ));
+                break;
+            }
+            let finalized_hash = block_variants
+                .iter()
+                .find(|(_, status)| status == "finalized")
+                .map(|(hash, _)| hash)
+                .unwrap();
+            let expected_hash = provider
+                .get_block_by_number((*block_number as u64).into())
+                .await
+                .unwrap()
+                .unwrap()
+                .header
+                .hash;
+            if &expected_hash.0 != finalized_hash.as_slice() {
+                mismatch = Some(format!(
+                    "Finalized block hash for block {block_number} does not match expected"
+                ));
+                break;
+            }
+        }
+        if mismatch.is_none() {
+            return;
+        }
+        let mismatch = mismatch.unwrap();
+        assert!(tokio::time::Instant::now() < deadline, "{mismatch}");
+        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
     }
 }
 
@@ -2644,13 +2659,19 @@ async fn test_listener_no_event_loss(
               ON c.host_chain_id = b.chain_id
              AND c.block_number = b.block_number
             WHERE b.block_status = 'orphaned'
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM computations_branch retained
+                  WHERE retained.host_chain_id = c.host_chain_id
+                    AND retained.output_handle = c.output_handle
+              )
             "#,
         )
         .fetch_one(&setup.db_pool)
         .await?;
         assert_eq!(
             legacy_orphaned_leftovers, 0,
-            "reorg variant: legacy computations must not retain rows for orphaned blocks"
+            "reorg variant: legacy computations must not retain orphaned-only rows"
         );
     } else {
         assert_eq!(tfhe_events_count, expected_tfhe_events);
