@@ -50,6 +50,21 @@ WORKDIR /app/sdk/js-sdk
 RUN npm install
 RUN npm run build
 
+# The js-sdk workspace install above may reify the root workspace lock again.
+# Force the rollout-selected relayer SDK into the e2e-local node_modules path
+# that Node resolves first, then fail the image build if it did not stick.
+WORKDIR /app
+RUN if [ -n "$RELAYER_SDK_VERSION" ]; then \
+      npm pkg set -w test-suite/e2e "dependencies.@zama-fhe/relayer-sdk=${RELAYER_SDK_VERSION}" && \
+      npm install --workspace test-suite/e2e --save-exact "@zama-fhe/relayer-sdk@${RELAYER_SDK_VERSION}" && \
+      relayer_tgz="$(npm pack --silent "@zama-fhe/relayer-sdk@${RELAYER_SDK_VERSION}")" && \
+      rm -rf /app/test-suite/e2e/node_modules/@zama-fhe/relayer-sdk && \
+      mkdir -p /app/test-suite/e2e/node_modules/@zama-fhe/relayer-sdk && \
+      tar -xzf "$relayer_tgz" -C /app/test-suite/e2e/node_modules/@zama-fhe/relayer-sdk --strip-components=1 && \
+      rm -f "$relayer_tgz" && \
+      cd /app/test-suite/e2e && node -e 'const expected=process.env.RELAYER_SDK_VERSION; const actual=require("@zama-fhe/relayer-sdk/package.json").version; if (actual !== expected) { throw new Error("Expected @zama-fhe/relayer-sdk " + expected + ", got " + actual); } console.log("Using @zama-fhe/relayer-sdk@" + actual);'; \
+    fi
+
 # Compile test-suite
 WORKDIR /app/test-suite/e2e
 

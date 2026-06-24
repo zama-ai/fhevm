@@ -38,15 +38,22 @@ export const scenario = "two-of-three";
 const fromTag = process.env.OLD_SNS_IMAGE_TAG || "pre-s3-format";
 const targetTag = "fhevm-local";   // or a post-feature published tag / sha; per-service override will build current source anyway
 const releasedComponentTag = "v0.13.0-6";
+const releasedRelayerTag = releasedComponentTag;
+// Match the KMS tag used by the v0.13 connector dependencies and the
+// v0.12-to-v0.13 rollout. The unsuffixed v0.13.20 image publishes key material
+// that the current e2e SDK bundle cannot deserialize.
+const releasedKmsCoreTag = "v0.13.20-0";
 
+// Match the v0.13 rollout harness. The relayer-sdk path avoids the local
+// @fhevm/sdk TFHE deserializer mismatch with the released v0.13 KMS public key.
 const relayerSdkVersion = "0.4.2";
 
 export const from = {
-  RELAYER_VERSION: "v0.11.0",
-  RELAYER_MIGRATE_VERSION: "v0.11.0",
+  RELAYER_VERSION: releasedRelayerTag,
+  RELAYER_MIGRATE_VERSION: releasedRelayerTag,
   GATEWAY_VERSION: releasedComponentTag,
   HOST_VERSION: releasedComponentTag,
-  CORE_VERSION: "v0.13.10",
+  CORE_VERSION: releasedKmsCoreTag,
   CONNECTOR_DB_MIGRATION_VERSION: releasedComponentTag,
   CONNECTOR_GW_LISTENER_VERSION: releasedComponentTag,
   CONNECTOR_KMS_WORKER_VERSION: releasedComponentTag,
@@ -102,4 +109,6 @@ export const versionSources = [
   `rollout=sns-worker-s3-format-migration`,
   `target=${targetTag}`,
   `pre-s3-sns=${fromTag}`,
+  `relayer=${releasedRelayerTag}`,
+  `kms-core=${releasedKmsCoreTag}`,
 ];
