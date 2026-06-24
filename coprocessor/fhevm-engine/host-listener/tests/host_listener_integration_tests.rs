@@ -560,8 +560,12 @@ async fn wait_for_next_block(
     }
 }
 
-// Polls the database until both `computations` and `allowed_handles` counts
-// satisfy `predicate`, returning the final `(tfhe_count, acl_count)`.
+// Polls the database until both branch-context event counts satisfy `predicate`,
+// returning the final `(tfhe_count, acl_count)`.
+//
+// Wave-1 also keeps branchless mirror rows for legacy-only ACL writes. Listener
+// event assertions must ignore those setup/backcompat rows and count only rows
+// carrying block context from host-chain events.
 // Panics with `context` if `timeout` elapses before the condition is met.
 async fn wait_for_event_counts(
     db_pool: &sqlx::PgPool,
@@ -571,16 +575,21 @@ async fn wait_for_event_counts(
 ) -> Result<(i64, i64), anyhow::Error> {
     let deadline = tokio::time::Instant::now() + timeout;
     loop {
-        let tfhe = sqlx::query!("SELECT COUNT(*) FROM computations_branch")
-            .fetch_one(db_pool)
-            .await?
-            .count
-            .unwrap_or(0);
-        let acl = sqlx::query!("SELECT COUNT(*) FROM allowed_handles_branch")
-            .fetch_one(db_pool)
-            .await?
-            .count
-            .unwrap_or(0);
+        let tfhe = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM computations_branch WHERE producer_block_hash <> ''::BYTEA",
+        )
+        .fetch_one(db_pool)
+        .await?;
+        let acl = sqlx::query_scalar::<_, i64>(
+            r#"
+            SELECT COUNT(*)
+            FROM allowed_handles_branch
+            WHERE producer_block_hash <> ''::BYTEA
+               OR block_hash <> ''::BYTEA
+            "#,
+        )
+        .fetch_one(db_pool)
+        .await?;
         if predicate(tfhe, acl) {
             return Ok((tfhe, acl));
         }
@@ -1457,6 +1466,234 @@ async fn test_legacy_allowed_handle_writes_are_mirrored_branchless(
     .await?;
     assert_eq!(mirrored, 0);
 
+    let wave1_handle = FixedBytes::<32>::from([0xA2; 32]);
+    let wave1_transaction_id = FixedBytes::<32>::from([0xB3; 32]);
+    let producer_block_hash = FixedBytes::<32>::from([0xC4; 32]);
+    let acl_block_hash = FixedBytes::<32>::from([0xD5; 32]);
+
+    sqlx::query(
+        r#"
+        INSERT INTO allowed_handles_branch (
+            handle,
+            account_address,
+            event_type,
+            transaction_id,
+            host_chain_id,
+            block_number,
+            block_hash,
+            producer_block_hash
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        "#,
+    )
+    .bind(wave1_handle.to_vec())
+    .bind("0xwave1")
+    .bind(0_i16)
+    .bind(wave1_transaction_id.to_vec())
+    .bind(host_chain_id)
+    .bind(11_i64)
+    .bind(acl_block_hash.to_vec())
+    .bind(producer_block_hash.to_vec())
+    .execute(&db_pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO allowed_handles (
+            tenant_id,
+            handle,
+            account_address,
+            event_type,
+            transaction_id,
+            host_chain_id,
+            block_number
+        )
+        VALUES (0, $1, $2, $3, $4, $5, $6)
+        "#,
+    )
+    .bind(wave1_handle.to_vec())
+    .bind("0xwave1")
+    .bind(0_i16)
+    .bind(wave1_transaction_id.to_vec())
+    .bind(host_chain_id)
+    .bind(11_i64)
+    .execute(&db_pool)
+    .await?;
+
+    let branchless_duplicates = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT COUNT(*)
+        FROM allowed_handles_branch
+        WHERE handle = $1
+          AND account_address = $2
+          AND producer_block_hash = ''::BYTEA
+          AND block_hash = ''::BYTEA
+        "#,
+    )
+    .bind(wave1_handle.to_vec())
+    .bind("0xwave1")
+    .fetch_one(&db_pool)
+    .await?;
+    assert_eq!(branchless_duplicates, 0);
+
+    let branchful_rows = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT COUNT(*)
+        FROM allowed_handles_branch
+        WHERE handle = $1
+          AND account_address = $2
+          AND producer_block_hash = $3
+          AND block_hash = $4
+        "#,
+    )
+    .bind(wave1_handle.to_vec())
+    .bind("0xwave1")
+    .bind(producer_block_hash.to_vec())
+    .bind(acl_block_hash.to_vec())
+    .fetch_one(&db_pool)
+    .await?;
+    assert_eq!(branchful_rows, 1);
+
+    let wave1_txn_hash = FixedBytes::<32>::from([0xE6; 32]);
+    sqlx::query(
+        r#"
+        UPDATE allowed_handles
+        SET txn_is_sent = TRUE,
+            txn_limited_retries_count = 4,
+            txn_unlimited_retries_count = 7,
+            txn_hash = $3,
+            txn_block_number = 99,
+            txn_last_error = 'sent from legacy sender',
+            txn_last_error_at = NOW()
+        WHERE handle = $1
+          AND account_address = $2
+        "#,
+    )
+    .bind(wave1_handle.to_vec())
+    .bind("0xwave1")
+    .bind(wave1_txn_hash.to_vec())
+    .execute(&db_pool)
+    .await?;
+
+    let branchless_duplicates = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT COUNT(*)
+        FROM allowed_handles_branch
+        WHERE handle = $1
+          AND account_address = $2
+          AND producer_block_hash = ''::BYTEA
+          AND block_hash = ''::BYTEA
+        "#,
+    )
+    .bind(wave1_handle.to_vec())
+    .bind("0xwave1")
+    .fetch_one(&db_pool)
+    .await?;
+    assert_eq!(branchless_duplicates, 0);
+
+    let (
+        txn_is_sent,
+        txn_limited_retries_count,
+        txn_unlimited_retries_count,
+        txn_hash,
+        txn_block_number,
+        txn_last_error,
+    ) = sqlx::query_as::<
+        _,
+        (bool, i32, i32, Option<Vec<u8>>, Option<i64>, Option<String>),
+    >(
+        r#"
+        SELECT
+            txn_is_sent,
+            txn_limited_retries_count,
+            txn_unlimited_retries_count,
+            txn_hash,
+            txn_block_number,
+            txn_last_error
+        FROM allowed_handles_branch
+        WHERE handle = $1
+          AND account_address = $2
+          AND producer_block_hash = $3
+          AND block_hash = $4
+        "#,
+    )
+    .bind(wave1_handle.to_vec())
+    .bind("0xwave1")
+    .bind(producer_block_hash.to_vec())
+    .bind(acl_block_hash.to_vec())
+    .fetch_one(&db_pool)
+    .await?;
+    assert!(txn_is_sent);
+    assert_eq!(txn_limited_retries_count, 4);
+    assert_eq!(txn_unlimited_retries_count, 7);
+    assert_eq!(txn_hash, Some(wave1_txn_hash.to_vec()));
+    assert_eq!(txn_block_number, Some(99));
+    assert_eq!(txn_last_error.as_deref(), Some("sent from legacy sender"));
+
+    sqlx::query(
+        r#"
+        INSERT INTO allowed_handles_branch (
+            handle,
+            account_address,
+            event_type,
+            transaction_id,
+            host_chain_id,
+            block_number,
+            producer_block_hash,
+            block_hash
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, ''::BYTEA, ''::BYTEA)
+        "#,
+    )
+    .bind(wave1_handle.to_vec())
+    .bind("0xwave1")
+    .bind(0_i16)
+    .bind(wave1_transaction_id.to_vec())
+    .bind(host_chain_id)
+    .bind(11_i64)
+    .execute(&db_pool)
+    .await?;
+
+    sqlx::raw_sql(include_str!(
+        "../../db-migration/migrations/20260610145000_branch_digest_late_backfill.sql"
+    ))
+    .execute(&db_pool)
+    .await?;
+
+    let branchless_duplicates = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT COUNT(*)
+        FROM allowed_handles_branch
+        WHERE handle = $1
+          AND account_address = $2
+          AND producer_block_hash = ''::BYTEA
+          AND block_hash = ''::BYTEA
+        "#,
+    )
+    .bind(wave1_handle.to_vec())
+    .bind("0xwave1")
+    .fetch_one(&db_pool)
+    .await?;
+    assert_eq!(branchless_duplicates, 0);
+
+    let txn_is_sent = sqlx::query_scalar::<_, bool>(
+        r#"
+        SELECT txn_is_sent
+        FROM allowed_handles_branch
+        WHERE handle = $1
+          AND account_address = $2
+          AND producer_block_hash = $3
+          AND block_hash = $4
+        "#,
+    )
+    .bind(wave1_handle.to_vec())
+    .bind("0xwave1")
+    .bind(producer_block_hash.to_vec())
+    .bind(acl_block_hash.to_vec())
+    .fetch_one(&db_pool)
+    .await?;
+    assert!(txn_is_sent);
+
     Ok(())
 }
 
@@ -2303,18 +2540,21 @@ async fn test_listener_no_event_loss(
         let listener_handle = tokio::spawn(main(args.clone()));
         tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
         check_finalization_status(&setup).await;
-        let tfhe_new_count =
-            sqlx::query!("SELECT COUNT(*) FROM computations_branch")
-                .fetch_one(&setup.db_pool)
-                .await?
-                .count
-                .unwrap_or(0);
-        let acl_new_count =
-            sqlx::query!("SELECT COUNT(*) FROM allowed_handles_branch")
-                .fetch_one(&setup.db_pool)
-                .await?
-                .count
-                .unwrap_or(0);
+        let tfhe_new_count = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM computations_branch WHERE producer_block_hash <> ''::BYTEA",
+        )
+        .fetch_one(&setup.db_pool)
+        .await?;
+        let acl_new_count = sqlx::query_scalar::<_, i64>(
+            r#"
+            SELECT COUNT(*)
+            FROM allowed_handles_branch
+            WHERE producer_block_hash <> ''::BYTEA
+               OR block_hash <> ''::BYTEA
+            "#,
+        )
+        .fetch_one(&setup.db_pool)
+        .await?;
         let no_count_change = tfhe_events_count == tfhe_new_count
             && acl_events_count == acl_new_count;
         let reached_expected = tfhe_new_count >= expected_tfhe_events
@@ -2892,10 +3132,11 @@ async fn test_host_listener_recovers_after_revert() -> Result<(), anyhow::Error>
         .execute(&setup.db_pool)
         .await
         .expect("revert failed");
-    let after_revert: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM computations_branch")
-            .fetch_one(&setup.db_pool)
-            .await?;
+    let after_revert: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM computations_branch WHERE producer_block_hash <> ''::BYTEA",
+    )
+    .fetch_one(&setup.db_pool)
+    .await?;
     assert!(
         after_revert < expected,
         "revert should delete some computations: {after_revert} < {expected}"

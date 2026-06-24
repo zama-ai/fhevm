@@ -2,6 +2,78 @@
 -- installing the mirror triggers. These statements are intentionally guarded so
 -- re-running them does not churn every branchless row on an online database.
 
+UPDATE allowed_handles_branch b
+SET tenant_id = a.tenant_id,
+    event_type = a.event_type,
+    txn_is_sent = b.txn_is_sent OR a.txn_is_sent,
+    txn_limited_retries_count = GREATEST(
+        b.txn_limited_retries_count,
+        a.txn_limited_retries_count
+    ),
+    txn_unlimited_retries_count = GREATEST(
+        b.txn_unlimited_retries_count,
+        a.txn_unlimited_retries_count
+    ),
+    txn_hash = COALESCE(b.txn_hash, a.txn_hash),
+    txn_block_number = COALESCE(b.txn_block_number, a.txn_block_number),
+    allowed_at = LEAST(b.allowed_at, a.allowed_at),
+    transaction_id = COALESCE(b.transaction_id, a.transaction_id),
+    host_chain_id = a.host_chain_id,
+    block_number = COALESCE(b.block_number, a.block_number),
+    txn_last_error = COALESCE(a.txn_last_error, b.txn_last_error),
+    txn_last_error_at = NULLIF(
+        GREATEST(
+            COALESCE(b.txn_last_error_at, '-infinity'::TIMESTAMP),
+            COALESCE(a.txn_last_error_at, '-infinity'::TIMESTAMP)
+        ),
+        '-infinity'::TIMESTAMP
+    )
+FROM allowed_handles a
+WHERE b.handle = a.handle
+  AND b.account_address = a.account_address
+  AND b.host_chain_id = a.host_chain_id
+  AND b.block_number IS NOT DISTINCT FROM a.block_number
+  AND b.transaction_id IS NOT DISTINCT FROM a.transaction_id
+  AND (
+       b.producer_block_hash <> ''::BYTEA
+       OR b.block_hash <> ''::BYTEA
+  )
+  AND (
+       b.event_type IS DISTINCT FROM a.event_type
+       OR (NOT b.txn_is_sent AND a.txn_is_sent)
+       OR b.txn_limited_retries_count < a.txn_limited_retries_count
+       OR b.txn_unlimited_retries_count < a.txn_unlimited_retries_count
+       OR (b.txn_hash IS NULL AND a.txn_hash IS NOT NULL)
+       OR (b.txn_block_number IS NULL AND a.txn_block_number IS NOT NULL)
+       OR b.allowed_at > a.allowed_at
+       OR (b.transaction_id IS NULL AND a.transaction_id IS NOT NULL)
+       OR b.host_chain_id IS DISTINCT FROM a.host_chain_id
+       OR (b.block_number IS NULL AND a.block_number IS NOT NULL)
+       OR b.txn_last_error IS DISTINCT FROM COALESCE(a.txn_last_error, b.txn_last_error)
+       OR COALESCE(b.txn_last_error_at, '-infinity'::TIMESTAMP)
+            < COALESCE(a.txn_last_error_at, '-infinity'::TIMESTAMP)
+  );
+
+DELETE FROM allowed_handles_branch branchless
+USING allowed_handles a
+WHERE branchless.handle = a.handle
+  AND branchless.account_address = a.account_address
+  AND branchless.producer_block_hash = ''::BYTEA
+  AND branchless.block_hash = ''::BYTEA
+  AND EXISTS (
+        SELECT 1
+          FROM allowed_handles_branch branchful
+         WHERE branchful.handle = a.handle
+           AND branchful.account_address = a.account_address
+           AND branchful.host_chain_id = a.host_chain_id
+           AND branchful.block_number IS NOT DISTINCT FROM a.block_number
+           AND branchful.transaction_id IS NOT DISTINCT FROM a.transaction_id
+           AND (
+                branchful.producer_block_hash <> ''::BYTEA
+                OR branchful.block_hash <> ''::BYTEA
+           )
+  );
+
 INSERT INTO allowed_handles_branch (
     tenant_id,
     handle,
@@ -45,20 +117,35 @@ LEFT JOIN allowed_handles_branch b
  AND b.account_address = a.account_address
  AND b.producer_block_hash = ''::BYTEA
  AND b.block_hash = ''::BYTEA
-WHERE b.handle IS NULL
-   OR b.event_type IS DISTINCT FROM a.event_type
-   OR (NOT b.txn_is_sent AND a.txn_is_sent)
-   OR b.txn_limited_retries_count < a.txn_limited_retries_count
-   OR b.txn_unlimited_retries_count < a.txn_unlimited_retries_count
-   OR (b.txn_hash IS NULL AND a.txn_hash IS NOT NULL)
-   OR (b.txn_block_number IS NULL AND a.txn_block_number IS NOT NULL)
-   OR b.allowed_at > a.allowed_at
-   OR (b.transaction_id IS NULL AND a.transaction_id IS NOT NULL)
-   OR b.host_chain_id IS DISTINCT FROM a.host_chain_id
-   OR (b.block_number IS NULL AND a.block_number IS NOT NULL)
-   OR b.txn_last_error IS DISTINCT FROM COALESCE(a.txn_last_error, b.txn_last_error)
-   OR COALESCE(b.txn_last_error_at, '-infinity'::TIMESTAMP)
-        < COALESCE(a.txn_last_error_at, '-infinity'::TIMESTAMP)
+WHERE (
+        b.handle IS NULL
+        OR b.event_type IS DISTINCT FROM a.event_type
+        OR (NOT b.txn_is_sent AND a.txn_is_sent)
+        OR b.txn_limited_retries_count < a.txn_limited_retries_count
+        OR b.txn_unlimited_retries_count < a.txn_unlimited_retries_count
+        OR (b.txn_hash IS NULL AND a.txn_hash IS NOT NULL)
+        OR (b.txn_block_number IS NULL AND a.txn_block_number IS NOT NULL)
+        OR b.allowed_at > a.allowed_at
+        OR (b.transaction_id IS NULL AND a.transaction_id IS NOT NULL)
+        OR b.host_chain_id IS DISTINCT FROM a.host_chain_id
+        OR (b.block_number IS NULL AND a.block_number IS NOT NULL)
+        OR b.txn_last_error IS DISTINCT FROM COALESCE(a.txn_last_error, b.txn_last_error)
+        OR COALESCE(b.txn_last_error_at, '-infinity'::TIMESTAMP)
+             < COALESCE(a.txn_last_error_at, '-infinity'::TIMESTAMP)
+   )
+  AND NOT EXISTS (
+        SELECT 1
+          FROM allowed_handles_branch branchful
+         WHERE branchful.handle = a.handle
+           AND branchful.account_address = a.account_address
+           AND branchful.host_chain_id = a.host_chain_id
+           AND branchful.block_number IS NOT DISTINCT FROM a.block_number
+           AND branchful.transaction_id IS NOT DISTINCT FROM a.transaction_id
+           AND (
+                branchful.producer_block_hash <> ''::BYTEA
+                OR branchful.block_hash <> ''::BYTEA
+           )
+   )
 ON CONFLICT (handle, account_address, producer_block_hash, block_hash) DO UPDATE
 SET event_type = EXCLUDED.event_type,
     txn_is_sent = allowed_handles_branch.txn_is_sent OR EXCLUDED.txn_is_sent,
