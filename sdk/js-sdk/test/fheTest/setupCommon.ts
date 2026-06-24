@@ -338,6 +338,7 @@ function aliceHasAllFheTestHandles(fheTestAddress: string, aliceAddress: string,
 }
 
 function initAliceFheTestHandlesIfNeeded(
+  chainName: FheTestChainName,
   fheTestAddress: string,
   aliceAddress: string,
   mnemonic: string,
@@ -357,11 +358,14 @@ function initAliceFheTestHandlesIfNeeded(
     throw new Error(`FHETest initFheTest(false) completed but Alice handles are still missing for ${aliceAddress}.`);
   }
 
+  // Maybe wait is not needed in cleartext mode. We keep 1s defensively.
+  const waitTimeoutMs = isLocalCleartextChain(chainName) ? 1_000 : 30_000;
+
   // The coprocessor registers Alice's handles on the gateway CiphertextCommits contract
   // asynchronously. Tests that call the relayer for public/user decryption need
   // this registration to complete before the relayer's readiness check passes.
   // We block the setup thread briefly so the coprocessor can catch up.
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 30_000);
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, waitTimeoutMs);
 }
 
 /**
@@ -417,7 +421,7 @@ export function runPreliminaryFheTestSetup(
     throw new Error(`Alice ${alice.address} has zero balance on ${rpcUrl}.`);
   }
 
-  initAliceFheTestHandlesIfNeeded(fheTestAddress, alice.address, mnemonic, rpcUrl);
+  initAliceFheTestHandlesIfNeeded(chainName, fheTestAddress, alice.address, mnemonic, rpcUrl);
 }
 
 export function prepareSingleChain(): FheTestBaseEnv {
