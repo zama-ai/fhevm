@@ -18,7 +18,7 @@ use prometheus::{register_int_counter_vec, IntCounterVec};
 use sqlx::postgres::PgConnectOptions;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::Error as SqlxError;
-use sqlx::{PgPool, Postgres, Row};
+use sqlx::{PgPool, Postgres};
 use std::collections::HashSet;
 use std::ops::DerefMut;
 use std::sync::Arc;
@@ -112,7 +112,7 @@ async fn insert_computation_branch_row(
     tx: &mut Transaction<'_>,
     row: ComputationBranchRow<'_>,
 ) -> Result<bool, SqlxError> {
-    let rows_affected = sqlx::query(
+    let rows_affected = sqlx::query!(
         r#"
         INSERT INTO computations_branch (
             output_handle,
@@ -132,19 +132,19 @@ async fn insert_computation_branch_row(
         VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8::timestamp, $9, $10, $11, $12)
         ON CONFLICT (output_handle, transaction_id, producer_block_hash) DO NOTHING
         "#,
+        row.output_handle,
+        row.dependencies,
+        row.fhe_operation,
+        row.is_scalar,
+        row.dependence_chain_id,
+        row.transaction_id,
+        row.is_allowed,
+        row.schedule_order,
+        !row.is_allowed,
+        row.chain_id,
+        row.producer_block.number as i64,
+        row.producer_block.hash,
     )
-    .bind(row.output_handle)
-    .bind(row.dependencies)
-    .bind(row.fhe_operation)
-    .bind(row.is_scalar)
-    .bind(row.dependence_chain_id)
-    .bind(row.transaction_id)
-    .bind(row.is_allowed)
-    .bind(row.schedule_order)
-    .bind(!row.is_allowed)
-    .bind(row.chain_id)
-    .bind(row.producer_block.number as i64)
-    .bind(row.producer_block.hash)
     .execute(tx.deref_mut())
     .await?
     .rows_affected();
@@ -160,17 +160,17 @@ async fn insert_pbs_computation_branch_row(
     block_hash: &[u8],
     producer_block_hash: &[u8],
 ) -> Result<bool, SqlxError> {
-    let rows_affected = sqlx::query(
+    let rows_affected = sqlx::query!(
         "INSERT INTO pbs_computations_branch(handle, transaction_id, host_chain_id, block_number, block_hash, producer_block_hash)
          VALUES($1, $2, $3, $4, $5, $6)
          ON CONFLICT DO NOTHING;",
+        handle,
+        transaction_id,
+        chain_id,
+        block_number,
+        block_hash,
+        producer_block_hash,
     )
-    .bind(handle)
-    .bind(transaction_id)
-    .bind(chain_id)
-    .bind(block_number)
-    .bind(block_hash)
-    .bind(producer_block_hash)
     .execute(tx.deref_mut())
     .await?
     .rows_affected();
@@ -202,19 +202,19 @@ async fn insert_allowed_handle_branch_row(
     tx: &mut Transaction<'_>,
     row: AllowedHandleBranchRow<'_>,
 ) -> Result<bool, SqlxError> {
-    let rows_affected = sqlx::query(
+    let rows_affected = sqlx::query!(
         "INSERT INTO allowed_handles_branch(handle, account_address, event_type, transaction_id, host_chain_id, block_number, block_hash, producer_block_hash)
          VALUES($1, $2, $3, $4, $5, $6, $7, $8)
          ON CONFLICT DO NOTHING;",
+        row.handle,
+        row.account_address,
+        row.event_type,
+        row.transaction_id,
+        row.chain_id,
+        row.acl_block_number as i64,
+        row.acl_block_hash,
+        row.producer_block.hash,
     )
-    .bind(row.handle)
-    .bind(row.account_address)
-    .bind(row.event_type)
-    .bind(row.transaction_id)
-    .bind(row.chain_id)
-    .bind(row.acl_block_number as i64)
-    .bind(row.acl_block_hash)
-    .bind(&row.producer_block.hash)
     .execute(tx.deref_mut())
     .await?
     .rows_affected();
@@ -345,15 +345,14 @@ impl Database {
     ) -> Result<u64, SqlxError> {
         let lock_key = slow_lane_reset_advisory_lock_key(self.chain_id);
         let mut connection = self.pool().await.acquire().await?;
-        sqlx::query("SELECT pg_advisory_lock($1)")
-            .bind(lock_key)
+        sqlx::query!("SELECT pg_advisory_lock($1)", lock_key)
             .execute(connection.deref_mut())
             .await?;
 
         let rows = async {
             let mut total_promoted: u64 = 0;
             loop {
-                let updated = sqlx::query(
+                let updated = sqlx::query!(
                     r#"
                     WITH candidate AS (
                         SELECT dependence_chain_id
@@ -368,9 +367,9 @@ impl Database {
                     FROM candidate
                     WHERE dc.dependence_chain_id = candidate.dependence_chain_id
                     "#,
+                    i16::from(SchedulePriority::Fast),
+                    SLOW_LANE_RESET_BATCH_SIZE,
                 )
-                .bind(i16::from(SchedulePriority::Fast))
-                .bind(SLOW_LANE_RESET_BATCH_SIZE)
                 .execute(connection.deref_mut())
                 .await?
                 .rows_affected();
@@ -820,8 +819,9 @@ impl Database {
         // delete the canonical ciphertext bytes. Rows that reference an
         // orphaned producer still drive byte cleanup, even when their own event
         // block is not in the orphaned set.
-        let orphaned_ciphertext_pairs = sqlx::query(
-            "SELECT handle, producer_block_hash
+        let orphaned_ciphertext_pairs = sqlx::query!(
+            r#"
+            SELECT handle AS "handle!", producer_block_hash AS "producer_block_hash!"
              FROM (
                 SELECT output_handle AS handle, producer_block_hash
                 FROM computations_branch
@@ -837,105 +837,112 @@ impl Database {
                 FROM ciphertext_digest_branch
                 WHERE host_chain_id = $1
                   AND producer_block_hash = ANY($2::bytea[])
-             ) orphaned_pairs",
+             ) orphaned_pairs
+            "#,
+            self.chain_id.as_i64(),
+            orphaned_block_hashes as _,
         )
-        .bind(self.chain_id.as_i64())
-        .bind(orphaned_block_hashes)
         .fetch_all(tx.deref_mut())
         .await?;
 
         let orphaned_ciphertext_handles: Vec<Vec<u8>> =
             orphaned_ciphertext_pairs
                 .iter()
-                .map(|row| row.try_get::<Vec<u8>, _>("handle"))
-                .collect::<Result<Vec<_>, _>>()?;
+                .map(|row| row.handle.clone())
+                .collect();
         let orphaned_ciphertext_hashes: Vec<Vec<u8>> =
             orphaned_ciphertext_pairs
                 .iter()
-                .map(|row| row.try_get::<Vec<u8>, _>("producer_block_hash"))
-                .collect::<Result<Vec<_>, _>>()?;
+                .map(|row| row.producer_block_hash.clone())
+                .collect();
 
-        let orphaned_legacy_computation_handles = sqlx::query(
-            "SELECT DISTINCT output_handle AS handle
+        let orphaned_legacy_computation_handles = sqlx::query!(
+            r#"
+            SELECT DISTINCT output_handle AS "handle!"
              FROM computations_branch
              WHERE host_chain_id = $1
-               AND producer_block_hash = ANY($2::bytea[])",
+               AND producer_block_hash = ANY($2::bytea[])
+            "#,
+            self.chain_id.as_i64(),
+            orphaned_block_hashes as _,
         )
-        .bind(self.chain_id.as_i64())
-        .bind(orphaned_block_hashes)
         .fetch_all(tx.deref_mut())
         .await?
         .into_iter()
-        .map(|row| row.try_get::<Vec<u8>, _>("handle"))
-        .collect::<Result<Vec<_>, _>>()?;
+        .map(|row| row.handle)
+        .collect::<Vec<_>>();
 
-        let orphaned_legacy_pbs_handles = sqlx::query(
-            "SELECT DISTINCT handle
+        let orphaned_legacy_pbs_handles = sqlx::query!(
+            r#"
+            SELECT DISTINCT handle AS "handle!"
              FROM pbs_computations_branch
              WHERE host_chain_id = $1
                AND (
                     block_hash = ANY($2::bytea[])
                     OR producer_block_hash = ANY($2::bytea[])
-               )",
+               )
+            "#,
+            self.chain_id.as_i64(),
+            orphaned_block_hashes as _,
         )
-        .bind(self.chain_id.as_i64())
-        .bind(orphaned_block_hashes)
         .fetch_all(tx.deref_mut())
         .await?
         .into_iter()
-        .map(|row| row.try_get::<Vec<u8>, _>("handle"))
-        .collect::<Result<Vec<_>, _>>()?;
+        .map(|row| row.handle)
+        .collect::<Vec<_>>();
 
-        let orphaned_allowed_rows = sqlx::query(
-            "SELECT DISTINCT handle, account_address, event_type
+        let orphaned_allowed_rows = sqlx::query!(
+            r#"
+            SELECT DISTINCT handle AS "handle!", account_address AS "account_address!", event_type AS "event_type!"
              FROM allowed_handles_branch
              WHERE host_chain_id = $1
                AND (
                     block_hash = ANY($2::bytea[])
                     OR producer_block_hash = ANY($2::bytea[])
-               )",
+               )
+            "#,
+            self.chain_id.as_i64(),
+            orphaned_block_hashes as _,
         )
-        .bind(self.chain_id.as_i64())
-        .bind(orphaned_block_hashes)
         .fetch_all(tx.deref_mut())
         .await?;
         let orphaned_allowed_handles = orphaned_allowed_rows
             .iter()
-            .map(|row| row.try_get::<Vec<u8>, _>("handle"))
-            .collect::<Result<Vec<_>, _>>()?;
+            .map(|row| row.handle.clone())
+            .collect::<Vec<_>>();
         let orphaned_allowed_accounts = orphaned_allowed_rows
             .iter()
-            .map(|row| row.try_get::<String, _>("account_address"))
-            .collect::<Result<Vec<_>, _>>()?;
+            .map(|row| row.account_address.clone())
+            .collect::<Vec<_>>();
         let orphaned_allowed_event_types = orphaned_allowed_rows
             .iter()
-            .map(|row| row.try_get::<i16, _>("event_type"))
-            .collect::<Result<Vec<_>, _>>()?;
+            .map(|row| row.event_type)
+            .collect::<Vec<_>>();
 
         if !orphaned_ciphertext_pairs.is_empty() {
-            sqlx::query(
+            sqlx::query!(
                 r#"
                 DELETE FROM ciphertexts_branch
                 WHERE (handle, producer_block_hash) IN (
                     SELECT * FROM UNNEST($1::bytea[], $2::bytea[])
                 )
                 "#,
+                &orphaned_ciphertext_handles as _,
+                &orphaned_ciphertext_hashes as _,
             )
-            .bind(&orphaned_ciphertext_handles)
-            .bind(&orphaned_ciphertext_hashes)
             .execute(tx.deref_mut())
             .await?;
 
-            sqlx::query(
+            sqlx::query!(
                 r#"
                 DELETE FROM ciphertexts128_branch
                 WHERE (handle, producer_block_hash) IN (
                     SELECT * FROM UNNEST($1::bytea[], $2::bytea[])
                 )
                 "#,
+                &orphaned_ciphertext_handles as _,
+                &orphaned_ciphertext_hashes as _,
             )
-            .bind(&orphaned_ciphertext_handles)
-            .bind(&orphaned_ciphertext_hashes)
             .execute(tx.deref_mut())
             .await?;
         }
@@ -952,52 +959,60 @@ impl Database {
         .execute(tx.deref_mut())
         .await?;
 
-        sqlx::query(
-            "DELETE FROM ciphertext_digest_branch
+        sqlx::query!(
+            r#"
+            DELETE FROM ciphertext_digest_branch
              WHERE host_chain_id = $1
                AND (
                     block_hash = ANY($2::bytea[])
                     OR producer_block_hash = ANY($2::bytea[])
-               )",
+               )
+            "#,
+            self.chain_id.as_i64(),
+            orphaned_block_hashes as _,
         )
-        .bind(self.chain_id.as_i64())
-        .bind(orphaned_block_hashes)
         .execute(tx.deref_mut())
         .await?;
 
-        sqlx::query(
-            "DELETE FROM allowed_handles_branch
+        sqlx::query!(
+            r#"
+            DELETE FROM allowed_handles_branch
              WHERE host_chain_id = $1
                AND (
                     block_hash = ANY($2::bytea[])
                     OR producer_block_hash = ANY($2::bytea[])
-               )",
+               )
+            "#,
+            self.chain_id.as_i64(),
+            orphaned_block_hashes as _,
         )
-        .bind(self.chain_id.as_i64())
-        .bind(orphaned_block_hashes)
         .execute(tx.deref_mut())
         .await?;
 
-        sqlx::query(
-            "DELETE FROM pbs_computations_branch
+        sqlx::query!(
+            r#"
+            DELETE FROM pbs_computations_branch
              WHERE host_chain_id = $1
                AND (
                     block_hash = ANY($2::bytea[])
                     OR producer_block_hash = ANY($2::bytea[])
-               )",
+               )
+            "#,
+            self.chain_id.as_i64(),
+            orphaned_block_hashes as _,
         )
-        .bind(self.chain_id.as_i64())
-        .bind(orphaned_block_hashes)
         .execute(tx.deref_mut())
         .await?;
 
-        sqlx::query(
-            "DELETE FROM computations_branch
+        sqlx::query!(
+            r#"
+            DELETE FROM computations_branch
              WHERE host_chain_id = $1
-               AND producer_block_hash = ANY($2::bytea[])",
+               AND producer_block_hash = ANY($2::bytea[])
+            "#,
+            self.chain_id.as_i64(),
+            orphaned_block_hashes as _,
         )
-        .bind(self.chain_id.as_i64())
-        .bind(orphaned_block_hashes)
         .execute(tx.deref_mut())
         .await?;
 
@@ -1005,7 +1020,7 @@ impl Database {
         // computation/ACL/PBS/digest rows only when no retained branch context
         // remains for the same logical work.
         if !orphaned_legacy_computation_handles.is_empty() {
-            sqlx::query(
+            sqlx::query!(
                 r#"
                 DELETE FROM computations c
                 WHERE c.host_chain_id = $1
@@ -1017,15 +1032,15 @@ impl Database {
                         AND b.output_handle = c.output_handle
                   )
                 "#,
+                self.chain_id.as_i64(),
+                &orphaned_legacy_computation_handles as _,
             )
-            .bind(self.chain_id.as_i64())
-            .bind(&orphaned_legacy_computation_handles)
             .execute(tx.deref_mut())
             .await?;
         }
 
         if !orphaned_legacy_pbs_handles.is_empty() {
-            sqlx::query(
+            sqlx::query!(
                 r#"
                 DELETE FROM ciphertext_digest d
                 WHERE d.host_chain_id = $1
@@ -1037,13 +1052,13 @@ impl Database {
                         AND p.handle = d.handle
                   )
                 "#,
+                self.chain_id.as_i64(),
+                &orphaned_legacy_pbs_handles as _,
             )
-            .bind(self.chain_id.as_i64())
-            .bind(&orphaned_legacy_pbs_handles)
             .execute(tx.deref_mut())
             .await?;
 
-            sqlx::query(
+            sqlx::query!(
                 r#"
                 DELETE FROM pbs_computations p
                 WHERE p.host_chain_id = $1
@@ -1055,15 +1070,15 @@ impl Database {
                         AND b.handle = p.handle
                   )
                 "#,
+                self.chain_id.as_i64(),
+                &orphaned_legacy_pbs_handles as _,
             )
-            .bind(self.chain_id.as_i64())
-            .bind(&orphaned_legacy_pbs_handles)
             .execute(tx.deref_mut())
             .await?;
         }
 
         if !orphaned_allowed_rows.is_empty() {
-            sqlx::query(
+            sqlx::query!(
                 r#"
                 DELETE FROM allowed_handles a
                 USING (
@@ -1084,11 +1099,11 @@ impl Database {
                         AND b.event_type = a.event_type
                   )
                 "#,
+                self.chain_id.as_i64(),
+                &orphaned_allowed_handles as _,
+                &orphaned_allowed_accounts as _,
+                &orphaned_allowed_event_types as _,
             )
-            .bind(self.chain_id.as_i64())
-            .bind(&orphaned_allowed_handles)
-            .bind(&orphaned_allowed_accounts)
-            .bind(&orphaned_allowed_event_types)
             .execute(tx.deref_mut())
             .await?;
         }
@@ -1097,29 +1112,29 @@ impl Database {
         // rows inserted by in-flight workers that raced finalization while
         // producer-row deletes held locks.
         if !orphaned_ciphertext_pairs.is_empty() {
-            sqlx::query(
+            sqlx::query!(
                 r#"
                 DELETE FROM ciphertexts_branch
                 WHERE (handle, producer_block_hash) IN (
                     SELECT * FROM UNNEST($1::bytea[], $2::bytea[])
                 )
                 "#,
+                &orphaned_ciphertext_handles as _,
+                &orphaned_ciphertext_hashes as _,
             )
-            .bind(&orphaned_ciphertext_handles)
-            .bind(&orphaned_ciphertext_hashes)
             .execute(tx.deref_mut())
             .await?;
 
-            sqlx::query(
+            sqlx::query!(
                 r#"
                 DELETE FROM ciphertexts128_branch
                 WHERE (handle, producer_block_hash) IN (
                     SELECT * FROM UNNEST($1::bytea[], $2::bytea[])
                 )
                 "#,
+                &orphaned_ciphertext_handles as _,
+                &orphaned_ciphertext_hashes as _,
             )
-            .bind(&orphaned_ciphertext_handles)
-            .bind(&orphaned_ciphertext_hashes)
             .execute(tx.deref_mut())
             .await?;
         }
@@ -1136,19 +1151,19 @@ impl Database {
         let status = if finalized { "finalized" } else { "pending" };
         // Preserve existing state, but repair missing ancestry so branch
         // resolution remains available after restarts.
-        sqlx::query(
+        sqlx::query!(
             r#"
             INSERT INTO host_chain_blocks_valid (chain_id, block_hash, parent_hash, block_number, block_status)
             VALUES ($1, $2, $3, $4, $5)
             ON CONFLICT (chain_id, block_hash) DO UPDATE
             SET parent_hash = COALESCE(host_chain_blocks_valid.parent_hash, EXCLUDED.parent_hash);
             "#,
+            self.chain_id.as_i64(),
+            block_summary.hash.to_vec(),
+            block_summary.parent_hash.to_vec(),
+            block_summary.number as i64,
+            status,
         )
-        .bind(self.chain_id.as_i64())
-        .bind(block_summary.hash.to_vec())
-        .bind(block_summary.parent_hash.to_vec())
-        .bind(block_summary.number as i64)
-        .bind(status)
         .execute(tx.deref_mut())
         .await?;
 
@@ -1290,14 +1305,14 @@ impl Database {
         chain_id: ChainId,
     ) -> Result<Option<i64>, SqlxError> {
         let pool = self.pool.read().await.clone();
-        sqlx::query_scalar(
+        sqlx::query_scalar!(
             r#"
-            SELECT last_caught_up_block
+            SELECT last_caught_up_block AS "last_caught_up_block!"
             FROM host_listener_poller_state
             WHERE chain_id = $1
             "#,
+            chain_id.as_i64(),
         )
-        .bind(chain_id.as_i64())
         .fetch_optional(&pool)
         .await
     }
@@ -1308,7 +1323,7 @@ impl Database {
         block: i64,
     ) -> Result<(), SqlxError> {
         let pool = self.pool.read().await.clone();
-        sqlx::query(
+        sqlx::query!(
             r#"
             INSERT INTO host_listener_poller_state (chain_id, last_caught_up_block)
             VALUES ($1, $2)
@@ -1316,9 +1331,9 @@ impl Database {
             SET last_caught_up_block = EXCLUDED.last_caught_up_block,
                 updated_at = NOW()
             "#,
+            chain_id.as_i64(),
+            block,
         )
-        .bind(chain_id.as_i64())
-        .bind(block)
         .execute(&pool)
         .await?;
 
@@ -1347,7 +1362,7 @@ impl Database {
         current_parent_hash: &[u8],
         current_block_number: u64,
     ) -> Result<ProducerBlock, SqlxError> {
-        let producer_row = sqlx::query(
+        let producer_row = sqlx::query!(
             r#"
             WITH RECURSIVE ancestry(block_number, block_hash, parent_hash) AS (
                 SELECT $2::BIGINT, $3::BYTEA, $4::BYTEA
@@ -1371,35 +1386,35 @@ impl Database {
             ORDER BY c.block_number DESC
             LIMIT 1
             "#,
+            self.chain_id.as_i64(),
+            current_block_number as i64,
+            current_block_hash,
+            current_parent_hash,
+            handle,
         )
-        .bind(self.chain_id.as_i64())
-        .bind(current_block_number as i64)
-        .bind(current_block_hash)
-        .bind(current_parent_hash)
-        .bind(handle)
         .fetch_optional(tx.deref_mut())
         .await?;
 
         if let Some(row) = producer_row {
-            let hash: Vec<u8> = row.try_get("producer_block_hash")?;
-            let number: i64 = row.try_get("block_number")?;
             return Ok(ProducerBlock {
-                hash,
-                number: number.max(0) as u64,
+                hash: row.producer_block_hash,
+                number: row.block_number.unwrap_or(0).max(0) as u64,
             });
         }
 
-        let has_branchless_ciphertext = sqlx::query_scalar::<_, bool>(
-            "SELECT TRUE
-             FROM ciphertexts_branch
-             WHERE handle = $1
-               AND producer_block_hash = ''::BYTEA
-             LIMIT 1",
+        let has_branchless_ciphertext = sqlx::query_scalar!(
+            r#"
+            SELECT EXISTS(
+                SELECT 1
+                FROM ciphertexts_branch
+                WHERE handle = $1
+                  AND producer_block_hash = ''::BYTEA
+            ) AS "exists!"
+            "#,
+            handle,
         )
-        .bind(handle)
-        .fetch_optional(tx.deref_mut())
-        .await?
-        .unwrap_or(false);
+        .fetch_one(tx.deref_mut())
+        .await?;
         if has_branchless_ciphertext {
             return Ok(ProducerBlock {
                 hash: Vec::new(),
@@ -1407,16 +1422,18 @@ impl Database {
             });
         }
 
-        let has_legacy_ciphertext = sqlx::query_scalar::<_, bool>(
-            "SELECT TRUE
-             FROM ciphertexts
-             WHERE handle = $1
-             LIMIT 1",
+        let has_legacy_ciphertext = sqlx::query_scalar!(
+            r#"
+            SELECT EXISTS(
+                SELECT 1
+                FROM ciphertexts
+                WHERE handle = $1
+            ) AS "exists!"
+            "#,
+            handle,
         )
-        .bind(handle)
-        .fetch_optional(tx.deref_mut())
-        .await?
-        .unwrap_or(false);
+        .fetch_one(tx.deref_mut())
+        .await?;
         if has_legacy_ciphertext {
             return Ok(ProducerBlock {
                 hash: Vec::new(),

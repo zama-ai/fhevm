@@ -2469,7 +2469,7 @@ async fn check_finalization_status(setup: &Setup) {
                 .unwrap()
                 .header
                 .hash;
-            if &expected_hash.0 != finalized_hash.as_slice() {
+            if expected_hash.0 != finalized_hash.as_slice() {
                 mismatch = Some(format!(
                     "Finalized block hash for block {block_number} does not match expected"
                 ));
