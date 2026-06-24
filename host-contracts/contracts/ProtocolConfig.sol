@@ -186,6 +186,7 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         if (gwStartBlock == 0) {
             revert ZeroGwStartBlock();
         }
+        // Off-chain stores `ciphertext_version` as SMALLINT (int16); reject values that would overflow.
         if (ciphertextVersion > uint16(type(int16).max)) {
             revert CiphertextVersionTooLarge(ciphertextVersion);
         }
