@@ -13,7 +13,10 @@ use fhevm_gateway_bindings::{
     decryption::Decryption::{self, DecryptionInstance},
     gateway_config::GatewayConfig::{self, GatewayConfigInstance},
 };
-use fhevm_host_bindings::kms_generation::KMSGeneration::{self, KMSGenerationInstance};
+use fhevm_host_bindings::{
+    kms_generation::KMSGeneration::{self, KMSGenerationInstance},
+    protocol_config::ProtocolConfig::ProtocolConfigInstance,
+};
 use std::{
     path::{Path, PathBuf},
     process::Command,
@@ -38,18 +41,18 @@ pub const DEPLOYER_PRIVATE_KEY: &str =
 
 const ANVIL_PORT: u16 = 8545;
 
-pub struct GatewayInstance {
+pub struct BlockchainInstance {
     pub provider: WalletProvider,
     pub decryption_contract: DecryptionInstance<WalletProvider>,
     pub gateway_config_contract: GatewayConfigInstance<WalletProvider>,
     pub kms_generation_contract: KMSGenerationInstance<WalletProvider>,
-    pub kms_verifier_address: Address,
+    pub protocol_config_contract: ProtocolConfigInstance<WalletProvider>,
     pub anvil: ContainerAsync<GenericImage>,
     pub anvil_host_port: u16,
     pub block_time: u64,
 }
 
-impl GatewayInstance {
+impl BlockchainInstance {
     #[expect(clippy::too_many_arguments)]
     pub fn new(
         anvil: ContainerAsync<GenericImage>,
@@ -58,19 +61,21 @@ impl GatewayInstance {
         decryption_address: Address,
         gateway_config_address: Address,
         kms_generation_address: Address,
-        kms_verifier_address: Address,
+        protocol_config_address: Address,
         block_time: u64,
     ) -> Self {
         let decryption_contract = Decryption::new(decryption_address, provider.clone());
         let gateway_config_contract = GatewayConfig::new(gateway_config_address, provider.clone());
         let kms_generation_contract = KMSGeneration::new(kms_generation_address, provider.clone());
+        let protocol_config_contract =
+            ProtocolConfigInstance::new(protocol_config_address, provider.clone());
 
-        GatewayInstance {
+        BlockchainInstance {
             provider,
             decryption_contract,
             gateway_config_contract,
             kms_generation_contract,
-            kms_verifier_address,
+            protocol_config_contract,
             anvil,
             anvil_host_port,
             block_time,
@@ -113,7 +118,7 @@ impl GatewayInstance {
         let rpc_url = Self::anvil_http_endpoint_impl(anvil_host_port).to_string();
         let private_key = DEPLOYER_PRIVATE_KEY.to_string();
 
-        let (decryption_addr, gateway_config_addr, kms_generation_addr, kms_verifier_addr) =
+        let (decryption_addr, gateway_config_addr, kms_generation_addr, protocol_config_addr) =
             tokio::task::spawn_blocking(move || {
                 let decryption = deploy_contract(
                     "contracts/DecryptionMock.sol",
@@ -139,31 +144,36 @@ impl GatewayInstance {
                     &kms_connector_tests_path,
                 )?;
 
-                let kms_verifier = deploy_contract(
-                    "contracts/KMSVerifierMock.sol",
-                    "KMSVerifierMock",
+                let protocol_config = deploy_contract(
+                    "contracts/ProtocolConfigMock.sol",
+                    "ProtocolConfigMock",
                     &rpc_url,
                     &private_key,
                     &kms_connector_tests_path,
                 )?;
 
-                Ok::<_, anyhow::Error>((decryption, gateway_config, kms_generation, kms_verifier))
+                Ok::<_, anyhow::Error>((
+                    decryption,
+                    gateway_config,
+                    kms_generation,
+                    protocol_config,
+                ))
             })
             .await??;
 
         info!("DecryptionMock deployed at: {}", decryption_addr);
         info!("GatewayConfigMock deployed at: {}", gateway_config_addr);
         info!("KMSGenerationMock deployed at: {}", kms_generation_addr);
-        info!("KMSVerifierMock deployed at: {}", kms_verifier_addr);
+        info!("ProtocolConfigMock deployed at: {}", protocol_config_addr);
 
-        Ok(GatewayInstance::new(
+        Ok(BlockchainInstance::new(
             anvil,
             anvil_host_port,
             provider,
             decryption_addr,
             gateway_config_addr,
             kms_generation_addr,
-            kms_verifier_addr,
+            protocol_config_addr,
             block_time,
         ))
     }

@@ -37,9 +37,9 @@ ethereumChainId: {{ default (index $preset "ethereum.chain_id") .Values.commonCo
 polygonChainId: {{ default (index $preset "polygon.chain_id") .Values.commonConfig.polygonChainId | quote }}
 decryption: {{ default (index $preset "gateway.decryption.address") $gw.decryption | quote }}
 gatewayConfig: {{ default (index $preset "gateway.gateway_config.address") $gw.gatewayConfig | quote }}
-kmsGeneration: {{ default (index $preset "gateway.kms_generation.address") $gw.kmsGeneration | quote }}
+ethereumKmsGeneration: {{ default (index $preset "gateway.kms_generation.address") $eth.kmsGeneration | quote }}
 ethereumAcl: {{ default (index $preset "ethereum.acl.address") $eth.acl | quote }}
-ethereumKmsVerifier: {{ default (index $preset "ethereum.kms_verifier.address") $eth.kmsVerifier | quote }}
+ethereumProtocolConfig: {{ default (index $preset "ethereum.protocol_config.address") $eth.protocolConfig | quote }}
 polygonAcl: {{ default (index $preset "polygon.acl.address") $pol.acl | quote }}
 {{- end -}}
 

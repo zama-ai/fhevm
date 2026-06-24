@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO prep_keygen_responses(prep_keygen_id, signature, created_at, otlp_context, status)\n        VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Bytea",
+        "Timestamptz",
+        "Bytea",
+        {
+          "Custom": {
+            "name": "operation_status",
+            "kind": {
+              "Enum": [
+                "pending",
+                "under_process",
+                "completed",
+                "failed"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d69638b068899fd9a55aa958be9ee5b27292ec9e1da3cc830f5119f1d7f4deac"
+}

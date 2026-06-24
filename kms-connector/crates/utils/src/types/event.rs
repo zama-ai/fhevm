@@ -2,7 +2,10 @@ use crate::{
     monitoring::otlp::PropagationContext,
     types::db::{OperationStatus, ParamsTypeDb, SnsCiphertextMaterialDbItem},
 };
-use alloy::primitives::{Address, FixedBytes, U256};
+use alloy::{
+    primitives::{Address, FixedBytes, U256},
+    sol_types::SolValue,
+};
 use anyhow::anyhow;
 use fhevm_gateway_bindings::decryption::{
     Decryption::{
@@ -12,8 +15,17 @@ use fhevm_gateway_bindings::decryption::{
     },
     IDecryption::{RequestValiditySeconds, UserDecryptionRequestPayload},
 };
-use fhevm_host_bindings::kms_generation::KMSGeneration::{
-    CrsgenRequest, KMSGenerationEvents, KeygenRequest, PrepKeygenRequest,
+use fhevm_host_bindings::{
+    kms_generation::KMSGeneration::{
+        CrsgenRequest, KMSGenerationEvents, KeygenRequest, PrepKeygenRequest,
+    },
+    protocol_config::{
+        IProtocolConfig::{PreviousCrsInfo, PreviousKeyInfo},
+        IProtocolConfigCommon::KmsThresholds,
+        ProtocolConfig::{
+            KmsNodeParams, NewKmsContext, NewKmsEpoch, PcrValues, ProtocolConfigEvents,
+        },
+    },
 };
 use sqlx::{
     Pool, Postgres, Row,
@@ -94,6 +106,12 @@ impl ProtocolEvent {
             ProtocolEventKind::Crsgen(e) => {
                 update_crsgen_status(db, e.crsId, status, already_sent).await
             }
+            ProtocolEventKind::NewKmsContext(e) => {
+                update_new_kms_context_status(db, e.contextId, status, already_sent).await
+            }
+            ProtocolEventKind::NewKmsEpoch(e) => {
+                update_new_kms_epoch_status(db, e.epochId, status, already_sent).await
+            }
         }
     }
 }
@@ -115,6 +133,8 @@ pub enum ProtocolEventKind {
     PrepKeygen(PrepKeygenRequest),
     Keygen(KeygenRequest),
     Crsgen(CrsgenRequest),
+    NewKmsContext(NewKmsContext),
+    NewKmsEpoch(NewKmsEpoch),
 }
 
 impl std::fmt::Debug for ProtocolEventKind {
@@ -132,6 +152,16 @@ impl std::fmt::Debug for ProtocolEventKind {
             Self::PrepKeygen(e) => f.debug_tuple("PrepKeygen").field(e).finish(),
             Self::Keygen(e) => f.debug_tuple("Keygen").field(e).finish(),
             Self::Crsgen(e) => f.debug_tuple("Crsgen").field(e).finish(),
+            Self::NewKmsContext(e) => f.debug_tuple("NewKmsContext").field(e).finish(),
+            Self::NewKmsEpoch(e) => f
+                .debug_struct("NewKmsEpoch")
+                .field("kmsContextId", &e.kmsContextId)
+                .field("epochId", &e.epochId)
+                .field("previousContextId", &e.previousContextId)
+                .field("previousEpochId", &e.previousEpochId)
+                .field("keys", &format_args!("[len={}]", e.keys.len()))
+                .field("crsList", &format_args!("[len={}]", e.crsList.len()))
+                .finish(),
         }
     }
 }
@@ -150,6 +180,15 @@ impl PartialEq for ProtocolEventKind {
             (Self::PrepKeygen(a), Self::PrepKeygen(b)) => a == b,
             (Self::Keygen(a), Self::Keygen(b)) => a == b,
             (Self::Crsgen(a), Self::Crsgen(b)) => a == b,
+            (Self::NewKmsContext(a), Self::NewKmsContext(b)) => a == b,
+            (Self::NewKmsEpoch(a), Self::NewKmsEpoch(b)) => {
+                a.kmsContextId == b.kmsContextId
+                    && a.epochId == b.epochId
+                    && a.previousContextId == b.previousContextId
+                    && a.previousEpochId == b.previousEpochId
+                    && SolValue::abi_encode(&a.keys) == SolValue::abi_encode(&b.keys)
+                    && SolValue::abi_encode(&a.crsList) == SolValue::abi_encode(&b.crsList)
+            }
             _ => false,
         }
     }
@@ -283,12 +322,10 @@ pub fn from_prep_keygen_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
     });
     Ok(ProtocolEvent {
         kind,
-
         tx_hash: row
             .try_get::<Vec<u8>, _>("tx_hash")
             .ok()
             .and_then(|h| FixedBytes::try_from(h.as_slice()).ok()),
-
         already_sent: row.try_get::<bool, _>("already_sent")?,
         error_counter: 0,
         created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
@@ -304,12 +341,67 @@ pub fn from_keygen_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
     });
     Ok(ProtocolEvent {
         kind,
-
         tx_hash: row
             .try_get::<Vec<u8>, _>("tx_hash")
             .ok()
             .and_then(|h| FixedBytes::try_from(h.as_slice()).ok()),
+        already_sent: row.try_get::<bool, _>("already_sent")?,
+        error_counter: 0,
+        created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
+        otlp_context: bc2wrap::deserialize_safe(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+    })
+}
 
+pub fn from_new_kms_context_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
+    // Nested arrays are stored as ABI-encoded BYTEA by the gw-listener (see
+    // `publish_new_kms_context`); decoding here returns lossless `Vec<KmsNodeParams>` etc.
+    let kms_node_params: Vec<KmsNodeParams> =
+        SolValue::abi_decode(&row.try_get::<Vec<u8>, _>("kms_node_params")?)?;
+    let thresholds: KmsThresholds =
+        SolValue::abi_decode(&row.try_get::<Vec<u8>, _>("thresholds")?)?;
+    let pcr_values: Vec<PcrValues> =
+        SolValue::abi_decode(&row.try_get::<Vec<u8>, _>("pcr_values")?)?;
+
+    let kind = ProtocolEventKind::NewKmsContext(NewKmsContext {
+        contextId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("context_id")?),
+        previousContextId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("previous_context_id")?),
+        kmsNodeParams: kms_node_params,
+        thresholds,
+        softwareVersion: row.try_get::<String, _>("software_version")?,
+        pcrValues: pcr_values,
+    });
+    Ok(ProtocolEvent {
+        kind,
+        tx_hash: row
+            .try_get::<Vec<u8>, _>("tx_hash")
+            .ok()
+            .and_then(|h| FixedBytes::try_from(h.as_slice()).ok()),
+        already_sent: row.try_get::<bool, _>("already_sent")?,
+        error_counter: 0,
+        created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
+        otlp_context: bc2wrap::deserialize_safe(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+    })
+}
+
+pub fn from_new_kms_epoch_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
+    let keys: Vec<PreviousKeyInfo> = SolValue::abi_decode(&row.try_get::<Vec<u8>, _>("keys")?)?;
+    let crs_list: Vec<PreviousCrsInfo> =
+        SolValue::abi_decode(&row.try_get::<Vec<u8>, _>("crs_list")?)?;
+
+    let kind = ProtocolEventKind::NewKmsEpoch(NewKmsEpoch {
+        kmsContextId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("context_id")?),
+        epochId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("epoch_id")?),
+        previousContextId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("previous_context_id")?),
+        previousEpochId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("previous_epoch_id")?),
+        keys,
+        crsList: crs_list,
+    });
+    Ok(ProtocolEvent {
+        kind,
+        tx_hash: row
+            .try_get::<Vec<u8>, _>("tx_hash")
+            .ok()
+            .and_then(|h| FixedBytes::try_from(h.as_slice()).ok()),
         already_sent: row.try_get::<bool, _>("already_sent")?,
         error_counter: 0,
         created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
@@ -326,12 +418,10 @@ pub fn from_crsgen_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
     });
     Ok(ProtocolEvent {
         kind,
-
         tx_hash: row
             .try_get::<Vec<u8>, _>("tx_hash")
             .ok()
             .and_then(|h| FixedBytes::try_from(h.as_slice()).ok()),
-
         already_sent: row.try_get::<bool, _>("already_sent")?,
         error_counter: 0,
         created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
@@ -347,7 +437,7 @@ async fn update_public_decryption_status(
     error_counter: i16,
 ) {
     let query = sqlx::query!(
-        "UPDATE public_decryption_requests SET status = $1, already_sent = $2, error_counter = $3 \
+        "UPDATE public_decryption_requests SET status = $1, already_sent = $2, error_counter = $3
         WHERE decryption_id = $4",
         status as OperationStatus,
         already_sent,
@@ -365,7 +455,7 @@ async fn update_user_decryption_status(
     error_counter: i16,
 ) {
     let query = sqlx::query!(
-        "UPDATE user_decryption_requests SET status = $1, already_sent = $2, error_counter = $3 \
+        "UPDATE user_decryption_requests SET status = $1, already_sent = $2, error_counter = $3
         WHERE decryption_id = $4",
         status as OperationStatus,
         already_sent,
@@ -382,8 +472,7 @@ async fn update_prep_keygen_status(
     already_sent: bool,
 ) {
     let query = sqlx::query!(
-        "UPDATE prep_keygen_requests SET status = $1, already_sent = $2 \
-        WHERE prep_keygen_id = $3",
+        "UPDATE prep_keygen_requests SET status = $1, already_sent = $2 WHERE prep_keygen_id = $3",
         status as OperationStatus,
         already_sent,
         id.as_le_slice()
@@ -398,8 +487,7 @@ async fn update_keygen_status(
     already_sent: bool,
 ) {
     let query = sqlx::query!(
-        "UPDATE keygen_requests SET status = $1, already_sent = $2 \
-        WHERE key_id = $3",
+        "UPDATE keygen_requests SET status = $1, already_sent = $2 WHERE key_id = $3",
         status as OperationStatus,
         already_sent,
         id.as_le_slice()
@@ -414,11 +502,40 @@ async fn update_crsgen_status(
     already_sent: bool,
 ) {
     let query = sqlx::query!(
-        "UPDATE crsgen_requests SET status = $1, already_sent = $2 \
-        WHERE crs_id = $3",
+        "UPDATE crsgen_requests SET status = $1, already_sent = $2 WHERE crs_id = $3",
         status as OperationStatus,
         already_sent,
         id.as_le_slice()
+    );
+    execute_update_event_query(db, query).await;
+}
+
+async fn update_new_kms_context_status(
+    db: &Pool<Postgres>,
+    context_id: U256,
+    status: OperationStatus,
+    already_sent: bool,
+) {
+    let query = sqlx::query!(
+        "UPDATE new_kms_context SET status = $1, already_sent = $2 WHERE context_id = $3",
+        status as OperationStatus,
+        already_sent,
+        context_id.as_le_slice()
+    );
+    execute_update_event_query(db, query).await;
+}
+
+async fn update_new_kms_epoch_status(
+    db: &Pool<Postgres>,
+    epoch_id: U256,
+    status: OperationStatus,
+    already_sent: bool,
+) {
+    let query = sqlx::query!(
+        "UPDATE new_kms_epoch SET status = $1, already_sent = $2 WHERE epoch_id = $3",
+        status as OperationStatus,
+        already_sent,
+        epoch_id.as_le_slice()
     );
     execute_update_event_query(db, query).await;
 }
@@ -443,19 +560,29 @@ impl Display for ProtocolEventKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ProtocolEventKind::PublicDecryption(e) => {
-                write!(f, "PublicDecryptionRequest #{}", e.decryptionId)
+                write!(f, "PublicDecryptionRequest #{:#066x}", e.decryptionId)
             }
             ProtocolEventKind::UserDecryption(e) => {
-                write!(f, "UserDecryptionRequest #{}", e.decryptionId)
+                write!(f, "UserDecryptionRequest #{:#066x}", e.decryptionId)
             }
             ProtocolEventKind::UserDecryptionV2(e) => {
-                write!(f, "UserDecryptionRequest #{}", e.decryptionId)
+                write!(f, "UserDecryptionRequest #{:#066x}", e.decryptionId)
             }
             ProtocolEventKind::PrepKeygen(e) => {
-                write!(f, "PrepKeygenRequest #{}", e.prepKeygenId)
+                write!(f, "PrepKeygenRequest #{:#066x}", e.prepKeygenId)
             }
-            ProtocolEventKind::Keygen(e) => write!(f, "KeygenRequest #{}", e.keyId),
-            ProtocolEventKind::Crsgen(e) => write!(f, "CrsgenRequest #{}", e.crsId),
+            ProtocolEventKind::Keygen(e) => {
+                write!(f, "KeygenRequest #{:#066x}", e.keyId)
+            }
+            ProtocolEventKind::Crsgen(e) => {
+                write!(f, "CrsgenRequest #{:#066x}", e.crsId)
+            }
+            ProtocolEventKind::NewKmsContext(e) => {
+                write!(f, "NewKmsContext #{:#066x}", e.contextId)
+            }
+            ProtocolEventKind::NewKmsEpoch(e) => {
+                write!(f, "NewKmsEpoch #{:#066x}", e.epochId)
+            }
         }
     }
 }
@@ -496,6 +623,18 @@ impl From<CrsgenRequest> for ProtocolEventKind {
     }
 }
 
+impl From<NewKmsContext> for ProtocolEventKind {
+    fn from(value: NewKmsContext) -> Self {
+        Self::NewKmsContext(value)
+    }
+}
+
+impl From<NewKmsEpoch> for ProtocolEventKind {
+    fn from(value: NewKmsEpoch) -> Self {
+        Self::NewKmsEpoch(value)
+    }
+}
+
 impl TryFrom<DecryptionEvents> for ProtocolEventKind {
     type Error = anyhow::Error;
 
@@ -519,8 +658,19 @@ impl TryFrom<KMSGenerationEvents> for ProtocolEventKind {
             KMSGenerationEvents::PrepKeygenRequest(e) => Ok(e.into()),
             KMSGenerationEvents::KeygenRequest(e) => Ok(e.into()),
             KMSGenerationEvents::CrsgenRequest(e) => Ok(e.into()),
-            // `KMSGenerationEvents` does not currently implement `Debug` unfortunately
             _ => Err(anyhow!("Unexpected KMSGeneration event")),
+        }
+    }
+}
+
+impl TryFrom<ProtocolConfigEvents> for ProtocolEventKind {
+    type Error = anyhow::Error;
+
+    fn try_from(value: ProtocolConfigEvents) -> Result<Self, Self::Error> {
+        match value {
+            ProtocolConfigEvents::NewKmsContext(e) => Ok(e.into()),
+            ProtocolConfigEvents::NewKmsEpoch(e) => Ok(e.into()),
+            _ => Err(anyhow!("Unexpected ProtocolConfig event")),
         }
     }
 }

@@ -2,15 +2,20 @@ use crate::{
     monitoring::otlp::PropagationContext,
     types::{
         KmsGrpcResponse,
-        db::{KeyDigestDbItem, OperationStatus},
+        db::{KeyDigestDbItem, KeyType, OperationStatus},
+        request_id_to_u256,
     },
 };
-use alloy::{hex, primitives::U256};
+use alloy::{hex, primitives::U256, sol_types::SolValue};
 use anyhow::anyhow;
+use fhevm_host_bindings::protocol_config::{
+    IKMSGeneration::KeyDigest,
+    IProtocolConfig::{EpochCrsResult, EpochKeyResult},
+};
 use kms_grpc::{
     kms::v1::{
-        CrsGenResult, KeyGenPreprocResult, KeyGenResult,
-        PublicDecryptionResponse as GrpcPublicDecryptionResponse,
+        CrsGenResult, EpochResultResponse as GrpcEpochResultResponse, KeyGenPreprocResult,
+        KeyGenResult, PublicDecryptionResponse as GrpcPublicDecryptionResponse,
         UserDecryptionResponse as GrpcUserDecryptionResponse,
     },
     rpc_types::abi_encode_plaintexts,
@@ -37,6 +42,8 @@ pub enum KmsResponseKind {
     PrepKeygen(PrepKeygenResponse),
     Keygen(KeygenResponse),
     Crsgen(CrsgenResponse),
+    NewKmsContext(NewKmsContextResponse),
+    EpochResult(EpochResultResponse),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -73,6 +80,23 @@ pub struct CrsgenResponse {
     pub crs_id: U256,
     pub crs_digest: Vec<u8>,
     pub signature: Vec<u8>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct NewKmsContextResponse {
+    pub context_id: U256,
+}
+
+/// Result of an MPC epoch creation.
+///
+/// `keys` and `crs_list` are the ABI-encoded `EpochKeyResult[]` / `EpochCrsResult[]` arrays
+/// expected by `confirmEpochActivation`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct EpochResultResponse {
+    pub context_id: U256,
+    pub epoch_id: U256,
+    pub keys: Vec<u8>,
+    pub crs_list: Vec<u8>,
 }
 
 impl KmsResponse {
@@ -131,6 +155,16 @@ impl KmsResponse {
                 status as OperationStatus,
                 r.crs_id.as_le_slice()
             ),
+            KmsResponseKind::NewKmsContext(r) => sqlx::query!(
+                "UPDATE new_kms_context_responses SET status = $1 WHERE context_id = $2",
+                status as OperationStatus,
+                r.context_id.as_le_slice()
+            ),
+            KmsResponseKind::EpochResult(r) => sqlx::query!(
+                "UPDATE epoch_result_responses SET status = $1 WHERE epoch_id = $2",
+                status as OperationStatus,
+                r.epoch_id.as_le_slice()
+            ),
         };
 
         let query_result = match query.execute(db).await {
@@ -172,11 +206,68 @@ impl KmsResponseKind {
             KmsGrpcResponse::Crsgen(grpc_response) => {
                 CrsgenResponse::process(grpc_response).map(Self::Crsgen)
             }
+            KmsGrpcResponse::NewKmsContext { context_id } => {
+                Ok(Self::NewKmsContext(NewKmsContextResponse { context_id }))
+            }
+            KmsGrpcResponse::EpochResult {
+                context_id,
+                epoch_id,
+                grpc_response,
+            } => {
+                let (keys, crs_list) = encode_epoch_result(grpc_response)?;
+                Ok(Self::EpochResult(EpochResultResponse {
+                    context_id,
+                    epoch_id,
+                    keys,
+                    crs_list,
+                }))
+            }
             KmsGrpcResponse::NoResponseExpected => {
                 Err(anyhow!("No response expected from KMS. Nothing to process"))
             }
         }
     }
+}
+
+/// Converts the Core's `EpochResultResponse` into the ABI-encoded `(EpochKeyResult[],
+/// EpochCrsResult[])` payload expected by `confirmEpochActivation`.
+fn encode_epoch_result(response: GrpcEpochResultResponse) -> anyhow::Result<(Vec<u8>, Vec<u8>)> {
+    let (mut keys, mut crs_list) = (vec![], vec![]);
+    for key in response.reshare_responses {
+        let Some(key_id) = key.request_id.map(request_id_to_u256).transpose()? else {
+            return Err(anyhow!("KeyGenResult missing key_id"));
+        };
+        let Some(preproc_id) = key.preprocessing_id.map(request_id_to_u256).transpose()? else {
+            return Err(anyhow!("KeyGenResult missing preprocessing_id"));
+        };
+        let mut key_digests = vec![];
+        for kd in key.key_digests {
+            key_digests.push(KeyDigest {
+                keyType: kd.key_type.parse::<KeyType>()? as u8,
+                digest: kd.digest.into(),
+            });
+        }
+        keys.push(EpochKeyResult {
+            prepKeygenId: preproc_id,
+            keyId: key_id,
+            keyDigests: key_digests,
+            signature: key.external_signature.into(),
+        });
+    }
+
+    for crs in response.crs_responses {
+        let Some(crs_id) = crs.request_id.map(request_id_to_u256).transpose()? else {
+            return Err(anyhow!("CrsGenResult missing request_id"));
+        };
+        crs_list.push(EpochCrsResult {
+            crsId: crs_id,
+            maxBitLength: U256::from(crs.max_num_bits),
+            crsDigest: crs.crs_digest.into(),
+            signature: crs.external_signature.into(),
+        });
+    }
+
+    Ok((keys.abi_encode(), crs_list.abi_encode()))
 }
 
 pub fn from_public_decryption_row(row: &PgRow) -> anyhow::Result<KmsResponse> {
@@ -235,6 +326,29 @@ pub fn from_crsgen_row(row: &PgRow) -> anyhow::Result<KmsResponse> {
             crs_id: U256::from_le_bytes(row.try_get::<[u8; 32], _>("crs_id")?),
             crs_digest: row.try_get("crs_digest")?,
             signature: row.try_get("signature")?,
+        }),
+        created_at: row.try_get("created_at")?,
+    })
+}
+
+pub fn from_new_kms_context_response_row(row: &PgRow) -> anyhow::Result<KmsResponse> {
+    Ok(KmsResponse {
+        otlp_context: bc2wrap::deserialize_safe(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+        kind: KmsResponseKind::NewKmsContext(NewKmsContextResponse {
+            context_id: U256::from_le_bytes(row.try_get::<[u8; 32], _>("context_id")?),
+        }),
+        created_at: row.try_get("created_at")?,
+    })
+}
+
+pub fn from_epoch_result_row(row: &PgRow) -> anyhow::Result<KmsResponse> {
+    Ok(KmsResponse {
+        otlp_context: bc2wrap::deserialize_safe(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+        kind: KmsResponseKind::EpochResult(EpochResultResponse {
+            context_id: U256::from_le_bytes(row.try_get::<[u8; 32], _>("context_id")?),
+            epoch_id: U256::from_le_bytes(row.try_get::<[u8; 32], _>("epoch_id")?),
+            keys: row.try_get("keys")?,
+            crs_list: row.try_get("crs_list")?,
         }),
         created_at: row.try_get("created_at")?,
     })
@@ -387,6 +501,14 @@ impl Display for KmsResponseKind {
             KmsResponseKind::Crsgen(r) => {
                 write!(f, "CrsgenResponse #{}", r.crs_id)
             }
+            KmsResponseKind::NewKmsContext(r) => {
+                write!(f, "NewKmsContextResponse #{}", r.context_id)
+            }
+            KmsResponseKind::EpochResult(r) => write!(
+                f,
+                "EpochResultResponse context #{} epoch #{}",
+                r.context_id, r.epoch_id
+            ),
         }
     }
 }
@@ -400,6 +522,8 @@ impl KmsResponseKind {
             KmsResponseKind::PrepKeygen(_) => PREP_KEYGEN_RESPONSE_STR,
             KmsResponseKind::Keygen(_) => KEYGEN_RESPONSE_STR,
             KmsResponseKind::Crsgen(_) => CRSGEN_RESPONSE_STR,
+            KmsResponseKind::NewKmsContext(_) => NEW_KMS_CONTEXT_RESPONSE_STR,
+            KmsResponseKind::EpochResult(_) => EPOCH_RESULT_RESPONSE_STR,
         }
     }
 }
@@ -409,3 +533,5 @@ pub const USER_DECRYPTION_RESPONSE_STR: &str = "user_decryption_response";
 pub const PREP_KEYGEN_RESPONSE_STR: &str = "prep_keygen_response";
 pub const KEYGEN_RESPONSE_STR: &str = "keygen_response";
 pub const CRSGEN_RESPONSE_STR: &str = "crsgen_response";
+pub const NEW_KMS_CONTEXT_RESPONSE_STR: &str = "new_kms_context_response";
+pub const EPOCH_RESULT_RESPONSE_STR: &str = "epoch_result_response";

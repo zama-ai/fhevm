@@ -39,6 +39,8 @@ use tracing::{info, warn};
 #[case::prep_keygen_processing_not_removed_on_error(TestEventType::PrepKeygen)]
 #[case::keygen_processing_not_removed_on_error(TestEventType::Keygen)]
 #[case::crsgen_processing_not_removed_on_error(TestEventType::Crsgen)]
+#[case::new_kms_context_processing_not_removed_on_error(TestEventType::NewKmsContext)]
+#[case::new_kms_epoch_processing_not_removed_on_error(TestEventType::NewKmsEpoch)]
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
 async fn test_request_processing(#[case] event_type: TestEventType) -> anyhow::Result<()> {
@@ -52,7 +54,7 @@ async fn test_request_processing(#[case] event_type: TestEventType) -> anyhow::R
     const MAX_DECRYPTION_ATTEMPTS: u16 = 3;
     const GRPC_REQUEST_RETRIES: u8 = 2;
 
-    // Mocking Gateway
+    // Mocking Gateway/Ethereum
     let asserter = Asserter::new();
     let copro_tx_sender = mock_copro_registry_load(&asserter, test_instance.s3_url());
     let mut sns_ct = rand_sns_ct();
@@ -73,10 +75,10 @@ async fn test_request_processing(#[case] event_type: TestEventType) -> anyhow::R
         }
     }
 
-    let gateway_mock_provider = ProviderBuilder::new()
+    let mock_provider = ProviderBuilder::new()
         .disable_recommended_fillers()
         .connect_mocked_client(asserter.clone());
-    info!("Gateway mock started!");
+    info!("Gateway + Ethereum mock started!");
 
     // Mocking Host chain.
     // Per attempt: Public → 1 bool; Legacy user → 2 bools;
@@ -124,7 +126,7 @@ async fn test_request_processing(#[case] event_type: TestEventType) -> anyhow::R
     };
     let kms_worker = init_kms_worker(
         config,
-        gateway_mock_provider,
+        mock_provider,
         acl_contracts_mock,
         test_instance.db(),
     )
@@ -177,6 +179,16 @@ fn prepare_mocks(req: &ProtocolEventKind) -> MockSet {
         ProtocolEventKind::PrepKeygen(_) => ("KeyGenPreproc", "GetKeyGenPreprocResult"),
         ProtocolEventKind::Keygen(_) => ("KeyGen", "GetKeyGenResult"),
         ProtocolEventKind::Crsgen(_) => ("CrsGen", "GetCrsGenResult"),
+        ProtocolEventKind::NewKmsContext(_) => {
+            // Mock error at the request time for `NewKmsContext` as we don't poll any result from
+            // the KMS Core for this event.
+            kms_mocks.mock(|when, then| {
+                when.path("/kms_service.v1.CoreServiceEndpoint/NewMpcContext");
+                then.error(StatusCode::SERVICE_UNAVAILABLE, "unavailable");
+            });
+            return kms_mocks;
+        }
+        ProtocolEventKind::NewKmsEpoch(_) => ("NewMpcEpoch", "GetEpochResult"),
     };
 
     // Mock initial KMS response to initial GRPC request

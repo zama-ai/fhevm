@@ -1856,7 +1856,7 @@ checksum = "2af50177e190e07a26ab74f8b1efbfe2ef87da2116221318cb1c2e82baf7de06"
 [[package]]
 name = "bc2wrap"
 version = "2.0.1"
-source = "git+https://github.com/zama-ai/kms.git?tag=v0.13.20-0#92f85350dc2b11f3b5551a85168d4d1c9ca27f80"
+source = "git+https://github.com/zama-ai/kms.git?rev=1edf3a089f8cc10e7bc5052e8f26d9cbaac66a57#1edf3a089f8cc10e7bc5052e8f26d9cbaac66a57"
 dependencies = [
  "bincode 2.0.1",
  "serde",
@@ -2919,7 +2919,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -3014,6 +3014,7 @@ dependencies = [
 [[package]]
 name = "fhevm_host_bindings"
 version = "0.10.0"
+source = "git+https://github.com/zama-ai/fhevm.git?rev=692a165b9bd99a16d9b09b47e2184090bd16797e#692a165b9bd99a16d9b09b47e2184090bd16797e"
 dependencies = [
  "alloy",
  "serde",
@@ -4005,8 +4006,8 @@ dependencies = [
 
 [[package]]
 name = "kms-grpc"
-version = "0.13.20-0"
-source = "git+https://github.com/zama-ai/kms.git?tag=v0.13.20-0#92f85350dc2b11f3b5551a85168d4d1c9ca27f80"
+version = "0.14.0-0"
+source = "git+https://github.com/zama-ai/kms.git?rev=1edf3a089f8cc10e7bc5052e8f26d9cbaac66a57#1edf3a089f8cc10e7bc5052e8f26d9cbaac66a57"
 dependencies = [
  "alloy-dyn-abi",
  "alloy-primitives",
@@ -5058,9 +5059,9 @@ dependencies = [
 
 [[package]]
 name = "quinn-proto"
-version = "0.11.14"
+version = "0.11.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "434b42fec591c96ef50e21e886936e66d3cc3f737104fdb9b737c40ffb94c098"
+checksum = "4fcb935c5bec503c2f0e306bdd3e58bb9029dcb14fa8d9ac76e3a5256ac0763e"
 dependencies = [
  "bytes",
  "getrandom 0.3.4",
@@ -5088,7 +5089,7 @@ dependencies = [
  "once_cell",
  "socket2 0.5.10",
  "tracing",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -5523,7 +5524,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -6377,7 +6378,7 @@ dependencies = [
  "getrandom 0.4.2",
  "once_cell",
  "rustix",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -6594,8 +6595,8 @@ dependencies = [
 
 [[package]]
 name = "threshold-hashing"
-version = "0.13.20-0"
-source = "git+https://github.com/zama-ai/kms.git?tag=v0.13.20-0#92f85350dc2b11f3b5551a85168d4d1c9ca27f80"
+version = "0.14.0-0"
+source = "git+https://github.com/zama-ai/kms.git?rev=1edf3a089f8cc10e7bc5052e8f26d9cbaac66a57#1edf3a089f8cc10e7bc5052e8f26d9cbaac66a57"
 dependencies = [
  "anyhow",
  "bc2wrap",
@@ -6605,8 +6606,8 @@ dependencies = [
 
 [[package]]
 name = "threshold-types"
-version = "0.13.20-0"
-source = "git+https://github.com/zama-ai/kms.git?tag=v0.13.20-0#92f85350dc2b11f3b5551a85168d4d1c9ca27f80"
+version = "0.14.0-0"
+source = "git+https://github.com/zama-ai/kms.git?rev=1edf3a089f8cc10e7bc5052e8f26d9cbaac66a57#1edf3a089f8cc10e7bc5052e8f26d9cbaac66a57"
 dependencies = [
  "anyhow",
  "async-trait",
