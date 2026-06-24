@@ -144,6 +144,17 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
         return bytes32(uint256(uint160(a)));
     }
 
+    /// @dev Decodes the `lzReceive` gas from a type-3 LayerZero options blob whose first
+    ///      executor option is an lzReceive option with no native value (as built by
+    ///      {HandlesSender._buildOptions}). Layout: TYPE_3(2) | WORKER_ID(1) |
+    ///      optionLength(2) | optionType(1) | gas(16). The gas field therefore starts at
+    ///      byte 6 and the value-less encoding makes it exactly 16 bytes wide.
+    function _firstLzReceiveGas(bytes memory options) internal pure returns (uint256 gas) {
+        for (uint256 i = 6; i < 22; i++) {
+            gas = (gas << 8) | uint8(options[i]);
+        }
+    }
+
     ////////////////////////////////////////////////////////////////////////////////
     // Source-side configuration & guards
     ////////////////////////////////////////////////////////////////////////////////
@@ -228,6 +239,27 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
         vm.prank(owner);
         srcBridge.setLzReceivePerPayloadByteGas(DST_EID, 0);
         assertEq(srcBridge.getLzReceivePerPayloadByteGas(DST_EID), srcBridge.LZ_RECEIVE_PER_PAYLOAD_BYTE_DEFAULT());
+
+        // Verify the per-payload-byte gas actually feeds into the built `lzReceive` gas:
+        // holding eid and handle count fixed, a longer payload must raise the encoded gas
+        // by exactly `perByte` per extra byte. `_buildOptions` is internal, so exercise it
+        // through a thin harness configured with the same override.
+        DeriveDstHandleHarness harness = new DeriveDstHandleHarness(endpoints[DST_EID]);
+        uint64 perByte = 32;
+        vm.prank(owner);
+        harness.setLzReceivePerPayloadByteGas(DST_EID, perByte);
+
+        uint64 composeGas = srcBridge.LZ_COMPOSE_MIN_VALUE_DEFAULT();
+        uint64 shortLen = 10;
+        uint64 longLen = 100;
+        uint256 gasShort = _firstLzReceiveGas(harness.buildOptions(DST_EID, 1, shortLen, composeGas));
+        uint256 gasLong = _firstLzReceiveGas(harness.buildOptions(DST_EID, 1, longLen, composeGas));
+        assertGt(gasLong, gasShort, "longer payload must raise lzReceive gas");
+        assertEq(
+            gasLong - gasShort,
+            uint256(perByte) * (longLen - shortLen),
+            "gas delta must equal perPayloadByte * extra payload bytes"
+        );
     }
 
     function test_LzComposeMinValue_DefaultsWhenUnset() public view {
@@ -288,6 +320,22 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
         // The min check runs before the dstEid/ACL checks, so it fires regardless of those.
         vm.prank(srcApp);
         vm.expectRevert(abi.encodeWithSelector(HandlesSender.LzComposeGasBelowMin.selector, tooLow, minGas));
+        srcBridge.send{value: 0}(DST_EID, _addressToBytes32(address(dstApp)), "", handleList, tooLow);
+    }
+
+    function test_Send_RevertsOnLzComposeGasBelowCustomMin() public {
+        uint64 customMin = srcBridge.LZ_COMPOSE_MIN_VALUE_DEFAULT() * 2;
+        vm.prank(owner);
+        srcBridge.setLzComposeMinValue(DST_EID, customMin);
+
+        bytes32[] memory handleList = new bytes32[](1);
+        handleList[0] = _makeHandle(0);
+        // Below the custom override but above the default, so only the override can reject it.
+        uint64 tooLow = customMin - 1;
+        assertGt(tooLow, srcBridge.LZ_COMPOSE_MIN_VALUE_DEFAULT());
+        // The min check runs before the dstEid/ACL checks, so it fires regardless of those.
+        vm.prank(srcApp);
+        vm.expectRevert(abi.encodeWithSelector(HandlesSender.LzComposeGasBelowMin.selector, tooLow, customMin));
         srcBridge.send{value: 0}(DST_EID, _addressToBytes32(address(dstApp)), "", handleList, tooLow);
     }
 
@@ -673,5 +721,16 @@ contract DeriveDstHandleHarness is ConfidentialBridge {
 
     function deriveDstHandle(bytes32 srcHandle, bytes32 prevBlockHash) external view returns (bytes32) {
         return _deriveDstHandle(srcHandle, prevBlockHash);
+    }
+
+    /// @dev Exposes the internal LayerZero option builder so tests can assert how the
+    ///      `lzReceive` gas is composed from the base/per-handle/per-payload-byte terms.
+    function buildOptions(
+        uint32 dstEid,
+        uint64 nHandles,
+        uint64 payloadLen,
+        uint64 lzComposeGas
+    ) external view returns (bytes memory) {
+        return _buildOptions(dstEid, nHandles, payloadLen, lzComposeGas);
     }
 }
