@@ -64,6 +64,7 @@ export function generateSolidityFHELib({
   // $${FHEOperators}$$
   // $${ACLFunctions}$$
   // $${FHEtoBytes32}$$
+  // $${FHEBridge}$$
   const file = resolveTemplatePath('FHE.sol-template');
   const template = readFileSync(file, 'utf8');
 
