@@ -427,21 +427,17 @@ async fn publish_new_kms_epoch<'e>(
     created_at: DateTime<Utc>,
     otlp_ctx: PropagationContext,
 ) -> anyhow::Result<PgQueryResult> {
-    let keys = event.keys.abi_encode();
-    let crs_list = event.crsList.abi_encode();
-
     sqlx::query!(
         "INSERT INTO new_kms_epoch(
-            context_id, previous_context_id, epoch_id, previous_epoch_id, keys, crs_list,
+            context_id, previous_context_id, epoch_id, previous_epoch_id, material_block_number,
             tx_hash, created_at, otlp_context
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT DO NOTHING",
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT DO NOTHING",
         event.kmsContextId.as_le_slice(),
         event.previousContextId.as_le_slice(),
         event.epochId.as_le_slice(),
         event.previousEpochId.as_le_slice(),
-        keys,
-        crs_list,
+        event.materialBlockNumber.as_le_slice(),
         tx_hash.map(|h| h.to_vec()),
         created_at,
         bc2wrap::serialize(&otlp_ctx)?,

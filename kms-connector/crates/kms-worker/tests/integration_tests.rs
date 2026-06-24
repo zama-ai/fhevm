@@ -110,6 +110,14 @@ async fn test_processing_request(
             };
             asserter.push_success(&vec![rpc_log]);
         }
+        // The `NewKmsEpoch` flow fetches the previous epoch material from `KMSGeneration` via two
+        // `eth_call`s at `materialBlockNumber`: `getCompletedKeyIds()` then `getCompletedCrsIds()`.
+        // Returning empty id lists short-circuits the per-key/per-crs `getKeyInfo`/`getCrsMaterials`
+        // follow-ups, so these two responses are all the flow needs.
+        TestEventType::NewKmsEpoch => {
+            asserter.push_success(&Vec::<U256>::new().abi_encode());
+            asserter.push_success(&Vec::<U256>::new().abi_encode());
+        }
         _ => (),
     }
 

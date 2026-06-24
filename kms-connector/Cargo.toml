@@ -21,7 +21,7 @@ connector-utils.path = "crates/utils"
 fhevm_gateway_bindings = { path = "../gateway-contracts/rust_bindings", default-features = false }
 # TODO: use path bindings again ASAP
 # fhevm_host_bindings = { path = "../host-contracts/rust_bindings", default-features = false }
-fhevm_host_bindings = { git = "https://github.com/zama-ai/fhevm.git", rev = "692a165b9bd99a16d9b09b47e2184090bd16797e", default-features = true }
+fhevm_host_bindings = { git = "https://github.com/zama-ai/fhevm.git", rev = "92afb614fd74c3fe72b9da68c0ea5e02fcf6504e", default-features = true }
 kms-grpc = { git = "https://github.com/zama-ai/kms.git", rev = "1edf3a089f8cc10e7bc5052e8f26d9cbaac66a57", default-features = true }
 bc2wrap = { git = "https://github.com/zama-ai/kms.git", rev = "1edf3a089f8cc10e7bc5052e8f26d9cbaac66a57", default-features = true }
 tfhe = { version = "=1.6.1", default-features = false }

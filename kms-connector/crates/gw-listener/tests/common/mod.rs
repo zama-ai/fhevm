@@ -223,8 +223,9 @@ pub async fn mock_event_on_gw(
                 previousContextId: KMS_CONTEXT_COUNTER_BASE + U256::ONE,
                 epochId: KMS_EPOCH_ID_COUNTER + U256::ONE,
                 previousEpochId: KMS_EPOCH_ID_COUNTER,
-                keys: vec![],
-                crsList: vec![],
+                // The mock emits `block.number`; the value isn't asserted (the DB check matches on
+                // context_id + epoch_id only), so any placeholder works here.
+                materialBlockNumber: U256::ZERO,
             };
             let tx = test_instance
                 .protocol_config_contract()
