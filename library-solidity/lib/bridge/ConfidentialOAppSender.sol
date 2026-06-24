@@ -22,9 +22,14 @@ abstract contract ConfidentialOAppSender is ConfidentialOAppCore {
 
     /**
      * @notice Bridge a single encrypted `euint64` handle to the peer on `dstEid`.
+     * @dev    The bridge checks `isAllowed(handle, msg.sender)`, and since `_bridge` runs in
+     *         this contract's context `msg.sender` is THIS contract — so the contract must hold
+     *         ACL allowance on `handle` (e.g. via `FHE.allowThis`), not the external caller.
+     *         {_bridge} performs no caller authorization of its own; subclasses must gate their
+     *         public entrypoint (as `ConfidentialOFTViaLib.send` does with `FHE.isSenderAllowed`).
      * @param dstEid        Destination LayerZero endpoint id (must have a configured peer).
      * @param payload       Opaque app payload (the receiver decodes it).
-     * @param handle        The encrypted value to bridge; the caller must hold ACL allowance on it.
+     * @param handle        The encrypted value to bridge; this contract must hold ACL allowance on it.
      * @param lzComposeGas  Gas budget for the destination receive callback (lzCompose leg); must
      *                      meet the bridge's per-`dstEid` minimum (and be non-zero).
      * @param nativeFee     LayerZero native fee to forward (query via {_quoteBridge}).
