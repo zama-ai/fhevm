@@ -176,11 +176,17 @@ task('task:bridgeCOFT', 'Bridges a ConfidentialOFT balance (or a specific amount
 
     const oft = await ethers.getContractAt('ConfidentialOFT', oftAddress, deployer);
 
-    // Pull the bridge straight from the OFT's immutable so the user doesn't have to
-    // supply it (and so a mismatched CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS in .env
-    // can't produce a wrong fee quote).
+
     const bridgeAddress: string = await oft.confidentialBridge();
-    const bridge = await ethers.getContractAt('ConfidentialBridge', bridgeAddress, deployer);
+
+
+    const configuredPeer: string = await oft.peers(dstEid);
+    if (configuredPeer.toLowerCase() !== dstOftBytes32.toLowerCase()) {
+      throw new Error(
+        `--dst-oft ${dstOft} (bytes32=${dstOftBytes32}) does not match the OFT's configured peer for eid ${dstEid} ` +
+          `(${configuredPeer}). Run task:wireConfidentialOFT to set the peer, or pass the correct --dst-oft.`,
+      );
+    }
 
     // Resolve the amount handle. Default = current balance (bridge the full balance);
     // explicit --amount-handle enables partial sends (e.g. a 250-out-of-1000 transfer
@@ -201,24 +207,12 @@ task('task:bridgeCOFT', 'Bridges a ConfidentialOFT balance (or a specific amount
       }
     }
 
-    // Quote the LayerZero native fee. The payload here MUST match what
-    // ConfidentialOFT.send dispatches inside the bridge — `abi.encode(recipient,
-    // <amount handle>)`. Sizing must match exactly: LZ V2's `_payNative` requires
-    // `msg.value == nativeFee` (not >=), so an under-sized quote causes a revert
-    // with `NotEnoughNative(uint256)` (selector 0x9f704120).
-    const payload = ethers.AbiCoder.defaultAbiCoder().encode(
-      ['address', 'bytes32'],
-      [recipient, amountHandle],
-    );
-    const fee = await bridge.quote(dstEid, oftAddress, dstOftBytes32, payload, [amountHandle], composeGas);
+    const fee = await oft.quoteSend(dstEid, amountHandle, recipient, composeGas);
     console.log(
       `Bridging via ${oftAddress} → eid=${dstEid} oft=${dstOft} (recipient=${recipient}, handle=${amountHandle})`,
     );
     console.log(`  bridge=${bridgeAddress}, composeGas=${composeGas}, nativeFee=${fee.nativeFee.toString()} wei`);
 
-    // The destination peer is resolved internally by the OFT from its peer registry
-    // (set via task:wireConfidentialOFT); `--dst-oft` above is only used to build the
-    // off-chain fee quote and must match the configured peer.
     const tx = await oft.send(dstEid, amountHandle, recipient, composeGas, {
       value: fee.nativeFee,
     });

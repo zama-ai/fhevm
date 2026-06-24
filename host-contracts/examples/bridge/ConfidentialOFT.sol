@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/access/Ownable2Step.sol";
+import {MessagingFee} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
 
 import "../../lib/FHE.sol";
 import {CoprocessorSetup} from "../../lib/CoprocessorSetup.sol";
@@ -61,7 +62,7 @@ contract ConfidentialOFT is Ownable2Step, IDstApp {
      *         registry (`setPeer`); bridging to an eid with no configured peer reverts
      *         with `PeerNotSet`. Caller must currently have ACL allowance on `amount`.
      *         Pass enough `msg.value` to cover the LayerZero native fee — query
-     *         `ConfidentialBridge.quote(...)` from off-chain.
+     *         {quoteSend} (or `ConfidentialBridge.quote(...)`) from off-chain.
      * @param dstEid           LayerZero endpoint id of the destination chain.
      * @param amount           Encrypted amount handle to burn-and-send.
      * @param recipient        Recipient on the destination chain.
@@ -89,6 +90,42 @@ contract ConfidentialOFT is Ownable2Step, IDstApp {
         confidentialBridge.send{value: msg.value}(dstEid, dstApp, payload, handleList, mintComposeGas);
 
         emit Bridged(msg.sender, dstEid, recipient);
+    }
+
+    /**
+     * @notice Quote the LayerZero native fee for a {send} call, without sending.
+     * @dev    Mirrors {send}'s wire shape so the returned fee matches what {send} would
+     *         charge: the bridge payload is an abi-encoded `(address, bytes32)` pair and a
+     *         single handle is bridged. The fee is a function only of that message shape
+     *         and the execution options (derived from `mintComposeGas`), not of the
+     *         `amount`/`recipient` values — so this view neither burns nor checks ACL
+     *         allowance, and the caller's `amount` handle is reused purely as a
+     *         size-accurate placeholder. Reverts with {PeerNotSet} when no peer is
+     *         configured for `dstEid`.
+     * @param dstEid           LayerZero endpoint id of the destination chain.
+     * @param amount           Encrypted amount handle that would be bridged. Only the
+     *                         presence of one handle affects the fee, not its value.
+     * @param recipient        Recipient on the destination chain. Does not affect the fee.
+     * @param mintComposeGas   Gas budget for destination-side lzCompose (the `onConfidentialBridgeReceived`).
+     * @return fee             The LayerZero messaging fee (native + lzToken components).
+     */
+    function quoteSend(
+        uint32 dstEid,
+        euint64 amount,
+        address recipient,
+        uint64 mintComposeGas
+    ) external view returns (MessagingFee memory fee) {
+        bytes32 dstApp = _peers[dstEid];
+        if (dstApp == bytes32(0)) revert PeerNotSet(dstEid);
+
+        // Mirror send's message: payload = abi.encode(recipient, amountHandle) and a
+        // single bridged handle. Values don't affect the fee, so the caller's `amount`
+        // handle doubles as the placeholder with no ACL/burn side effects.
+        bytes memory payload = abi.encode(recipient, euint64.unwrap(amount));
+        bytes32[] memory handleList = new bytes32[](1);
+        handleList[0] = euint64.unwrap(amount);
+
+        fee = confidentialBridge.quote(dstEid, address(this), dstApp, payload, handleList, mintComposeGas);
     }
 
     /**
