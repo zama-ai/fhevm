@@ -53,6 +53,15 @@ RUN npm run build
 # Compile test-suite
 WORKDIR /app/test-suite/e2e
 
+# The js-sdk workspace install above may reify the root workspace lock again.
+# Re-apply the rollout-selected relayer SDK in the e2e workspace immediately
+# before compile/runtime export, and fail the image build if it did not stick.
+RUN if [ -n "$RELAYER_SDK_VERSION" ]; then \
+      npm install --workspace test-suite/e2e --save-exact "@zama-fhe/relayer-sdk@${RELAYER_SDK_VERSION}" && \
+      npm prune && \
+      node -e 'const expected=process.env.RELAYER_SDK_VERSION; const actual=require("@zama-fhe/relayer-sdk/package.json").version; if (actual !== expected) { throw new Error("Expected @zama-fhe/relayer-sdk " + expected + ", got " + actual); } console.log("Using @zama-fhe/relayer-sdk@" + actual);'; \
+    fi
+
 RUN npx hardhat compile
 
 # --- Runtime Stage ---
