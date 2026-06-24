@@ -16,11 +16,34 @@ contract InputVerificationMock {
         address userAddress;
     }
 
+    struct SolanaCiphertextVerification {
+        bytes32[] ctHandles;
+        bytes32 userAddress;
+        bytes32 contractAddress;
+        uint256 contractChainId;
+        bytes extraData;
+    }
+
+    struct SolanaZKProofInput {
+        uint256 contractChainId;
+        bytes32 contractAddress;
+        bytes32 userAddress;
+    }
+
     event VerifyProofRequest(
         uint256 indexed zkProofId,
         uint256 indexed contractChainId,
         address contractAddress,
         address userAddress,
+        bytes ciphertextWithZKProof,
+        bytes extraData
+    );
+
+    event VerifyProofRequestSolana(
+        uint256 indexed zkProofId,
+        uint256 indexed contractChainId,
+        bytes32 contractAddress,
+        bytes32 userAddress,
         bytes ciphertextWithZKProof,
         bytes extraData
     );
@@ -61,7 +84,41 @@ contract InputVerificationMock {
         );
     }
 
+    function verifyProofRequestSolana(
+        uint256 contractChainId,
+        bytes32 contractAddress,
+        bytes32 userAddress,
+        bytes calldata ciphertextWithZKProof,
+        bytes calldata extraData
+    ) external {
+        zkProofIdCounter++;
+        uint256 zkProofId = zkProofIdCounter;
+
+        emit VerifyProofRequestSolana(
+            zkProofId,
+            contractChainId,
+            contractAddress,
+            userAddress,
+            ciphertextWithZKProof,
+            extraData
+        );
+    }
+
     function verifyProofResponse(
+        uint256 zkProofId,
+        bytes32[] calldata ctHandles,
+        bytes calldata signature,
+        bytes calldata extraData
+    ) external {
+        address coprocessorTxSender;
+        bytes[] memory signatures = new bytes[](1);
+
+        emit VerifyProofResponseCall(zkProofId, ctHandles, signature, coprocessorTxSender, extraData);
+
+        emit VerifyProofResponse(zkProofId, ctHandles, signatures);
+    }
+
+    function verifyProofResponseSolana(
         uint256 zkProofId,
         bytes32[] calldata ctHandles,
         bytes calldata signature,
