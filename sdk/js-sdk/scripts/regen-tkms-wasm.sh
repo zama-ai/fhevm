@@ -25,9 +25,14 @@ ENV_FILE="$SCRIPT_DIR/.regen-tkms.env"
 # shellcheck source=/dev/null
 [ -f "$ENV_FILE" ] && source "$ENV_FILE"
 
-# Resolve the kms checkout: explicit arg, then $KMS_DIR, then a sibling default.
-KMS_DIR="${1:-${KMS_DIR:-$(cd "$ROOT/../../zama/kms" 2>/dev/null && pwd || echo /Users/work/code/zama/kms)}}"
+# Resolve the kms checkout: explicit arg, then $KMS_DIR, then a sibling default. No hardcoded paths.
+KMS_DIR="${1:-${KMS_DIR:-$(cd "$ROOT/../../zama/kms" 2>/dev/null && pwd)}}"
 KMS_BRANCH="${KMS_BRANCH:-feature/solana}"
+
+if [ -z "$KMS_DIR" ] || [ ! -d "$KMS_DIR" ]; then
+  echo "ERROR: kms checkout not found. Pass it as the first arg, set \$KMS_DIR, or place it at ../../zama/kms relative to the repo root." >&2
+  exit 1
+fi
 
 command -v wasm-pack >/dev/null 2>&1 || {
   echo "ERROR: wasm-pack not found. Install: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh" >&2
