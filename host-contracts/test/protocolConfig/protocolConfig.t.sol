@@ -117,7 +117,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         _setupDefault();
 
         // Version and current context.
-        assertEq(protocolConfig.getVersion(), "ProtocolConfig v0.1.0");
+        assertEq(protocolConfig.getVersion(), "ProtocolConfig v0.2.0");
         uint256 contextId = protocolConfig.getCurrentKmsContextId();
         assertEq(contextId, KMS_CONTEXT_COUNTER_BASE + 1);
         assertTrue(protocolConfig.isValidKmsContext(contextId));
@@ -385,7 +385,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         uint256 migratedContextId = KMS_CONTEXT_COUNTER_BASE + 3;
         _setupMigration(migratedContextId);
 
-        assertEq(protocolConfig.getVersion(), "ProtocolConfig v0.1.0");
+        assertEq(protocolConfig.getVersion(), "ProtocolConfig v0.2.0");
         assertEq(protocolConfig.getCurrentKmsContextId(), migratedContextId);
         assertTrue(protocolConfig.isValidKmsContext(migratedContextId));
         assertEq(protocolConfig.getKmsSignersForContext(migratedContextId).length, 2);
@@ -1038,9 +1038,9 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         );
     }
 
-    function test_revertReinitializeV3_afterFullInit() public {
+    function test_revertReinitializeV2_afterFullInit() public {
         _setupDefault();
         vm.expectRevert(Initializable.InvalidInitialization.selector);
-        protocolConfig.reinitializeV3();
+        protocolConfig.reinitializeV2();
     }
 }
