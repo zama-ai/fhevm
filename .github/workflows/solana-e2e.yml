@@ -93,4 +93,5 @@ jobs:
 
       - name: Tear down the stack
         if: ${{ always() }}
-        run: cd test-suite/fhevm && ./fhevm-cli clean || true
+        working-directory: test-suite/fhevm
+        run: ./fhevm-cli clean || true
