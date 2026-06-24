@@ -34,8 +34,6 @@ import {
 describe('task:deployAllHostContracts', function () {
   const canonicalSnapshotEnv = {
     CANONICAL_KMS_CONTEXT_ID: (KMS_CONTEXT_COUNTER_BASE + 1n).toString(),
-    CANONICAL_SOURCE_CHAIN_ID: '1',
-    CANONICAL_SOURCE_BLOCK_NUMBER: '12345678',
     CANONICAL_PROTOCOL_CONFIG_ADDRESS: '0x0000000000000000000000000000000000C0FFEE',
     KMS_PCR_VALUES: '[]',
     KMS_SOFTWARE_VERSION: 'kms-v1',
@@ -101,11 +99,11 @@ describe('task:deployAllHostContracts', function () {
     ).to.be.rejectedWith(/requires --canonical-rpc-url and --canonical-protocol-config-address/);
   });
 
-  it('rejects migration source for non-canonical multichain deployments', async function () {
+  it('rejects migration source for non-canonical mirror deployments', async function () {
     await expect(
       run('task:deployAllHostContracts', { withKmsGeneration: false, protocolConfigSource: 'migration' }),
     ).to.be.rejectedWith(
-      /--protocol-config-source migration is canonical-host only\. Use fresh multichain deployment with canonical snapshot env vars\./,
+      /--protocol-config-source migration is canonical-host only\. Use fresh mirror deployment with canonical snapshot env vars\./,
     );
   });
 
@@ -114,14 +112,12 @@ describe('task:deployAllHostContracts', function () {
     await run('task:deployAllHostContracts', { withKmsGeneration: false, protocolConfigSource: 'fresh' });
 
     const protocolConfig = await ethers.getContractAt(
-      'ProtocolConfigMultichain',
+      'ProtocolConfig',
       readHostAddress('PROTOCOL_CONFIG_CONTRACT_ADDRESS'),
     );
 
-    expect(await protocolConfig.getVersion()).to.equal('ProtocolConfigMultichain v0.2.0');
-    expect(await protocolConfig.getCurrentKmsContextId()).to.equal(
-      BigInt(canonicalSnapshotEnv.CANONICAL_KMS_CONTEXT_ID),
-    );
+    expect(await protocolConfig.getVersion()).to.equal('ProtocolConfig v0.2.0');
+    expect(await protocolConfig.getCurrentKmsContextId()).to.equal(KMS_CONTEXT_COUNTER_BASE + 1n);
   });
 });
 

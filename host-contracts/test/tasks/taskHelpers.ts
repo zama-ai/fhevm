@@ -124,9 +124,10 @@ export async function deployFreshProtocolConfigProxy(
   const newImplementation = await ethers.getContractFactory('ProtocolConfig', deployer);
   const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
   const upgraded = await upgrades.upgradeProxy(proxy, newImplementation, {
-    // The epoch lifecycle widened initializeFromEmptyProxy with a software version and PCR values;
-    // the canonical-mirror tests don't exercise attestation material, so both stay empty.
-    call: { fn: 'initializeFromEmptyProxy', args: [kmsNodes, thresholds, '', []] },
+    call: {
+      fn: 'initializeFromEmptyProxy',
+      args: [kmsNodes, thresholds, '', []],
+    },
   });
   await upgraded.waitForDeployment();
   return proxyAddress;

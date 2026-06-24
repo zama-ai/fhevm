@@ -2,7 +2,7 @@ import { Interface, Wallet } from 'ethers';
 import { task, types } from 'hardhat/config';
 import { HardhatRuntimeEnvironment, TaskArguments } from 'hardhat/types';
 
-import { buildProtocolConfigContextArgs, buildProtocolConfigMultichainReinitializeArgs } from './taskDeploy';
+import { buildProtocolConfigReinitializeArgs } from './taskDeploy';
 import { getRequiredEnvVar, loadHostAddresses } from './utils/loadVariables';
 
 const REINITIALIZE_FUNCTION_PREFIX = 'reinitializeV'; // Prefix for reinitialize functions
@@ -25,8 +25,11 @@ function getImplementationDirectory(input: string): string {
   return input;
 }
 
-function getReinitializeFunction(abi: AbiFunction[]) {
-  return abi.find((item) => item.type === 'function' && item.name?.includes(REINITIALIZE_FUNCTION_PREFIX));
+function getReinitializeFunction(abi: AbiFunction[], reinitializeArgs: unknown[]) {
+  const candidates = abi.filter(
+    (item) => item.type === 'function' && item.name?.includes(REINITIALIZE_FUNCTION_PREFIX),
+  );
+  return candidates.find((item) => (item.inputs ?? []).length === reinitializeArgs.length) ?? candidates[0];
 }
 
 function getFunctionSignature(fn: AbiFunction): string {
@@ -67,7 +70,7 @@ async function upgradeCurrentToNew(
 
   // Get reinitialize function from the new implementation artifact
   const newImplementationArtifact = await hre.artifacts.readArtifact(newImplementation);
-  const reinitializeFunction = getReinitializeFunction(newImplementationArtifact.abi);
+  const reinitializeFunction = getReinitializeFunction(newImplementationArtifact.abi, reinitializeArgs);
   if (!reinitializeFunction?.name) {
     throw new Error(`No reinitialize function found in ${newImplementation}`);
   }
@@ -117,7 +120,7 @@ async function deployImplementationForPreparedUpgrade(
   await hre.upgrades.forceImport(proxyAddress, currentImplementationFactory);
 
   const newImplementationArtifact = await hre.artifacts.readArtifact(newImplementation);
-  const reinitializeFunction = getReinitializeFunction(newImplementationArtifact.abi);
+  const reinitializeFunction = getReinitializeFunction(newImplementationArtifact.abi, reinitializeArgs);
   if (!reinitializeFunction?.name) {
     throw new Error(`No reinitialize function found in ${newImplementation}`);
   }
@@ -425,19 +428,9 @@ task('task:upgradeProtocolConfig')
     true,
     types.boolean,
   )
-  .addOptionalParam(
-    'withKmsGeneration',
-    'Whether this is a canonical-host upgrade. true expects ProtocolConfig reinitializeV2 args, false expects ProtocolConfigMultichain reinitializeV2 args.',
-    true,
-    types.boolean,
-  )
   .setAction(async function (taskArgs: TaskArguments, hre) {
-    const expectedArtifactNames = taskArgs.withKmsGeneration
-      ? 'ProtocolConfig'
-      : { current: ['ProtocolConfig', 'ProtocolConfigMultichain'], new: ['ProtocolConfigMultichain'] };
-    const reinitializeArgs = taskArgs.withKmsGeneration
-      ? buildProtocolConfigContextArgs()
-      : buildProtocolConfigMultichainReinitializeArgs();
+    const expectedArtifactNames = 'ProtocolConfig';
+    const reinitializeArgs = buildProtocolConfigReinitializeArgs();
     await upgradeContract(expectedArtifactNames, 'PROTOCOL_CONFIG_CONTRACT_ADDRESS', taskArgs, hre, reinitializeArgs);
   });
 
@@ -462,19 +455,9 @@ task('task:prepareUpgradeProtocolConfig')
     true,
     types.boolean,
   )
-  .addOptionalParam(
-    'withKmsGeneration',
-    'Whether this is a canonical-host prepared upgrade. true expects ProtocolConfig reinitializeV2 args, false expects ProtocolConfigMultichain reinitializeV2 args.',
-    true,
-    types.boolean,
-  )
   .setAction(async function (taskArgs: TaskArguments, hre) {
-    const expectedArtifactNames = taskArgs.withKmsGeneration
-      ? 'ProtocolConfig'
-      : { current: ['ProtocolConfig', 'ProtocolConfigMultichain'], new: ['ProtocolConfigMultichain'] };
-    const reinitializeArgs = taskArgs.withKmsGeneration
-      ? buildProtocolConfigContextArgs()
-      : buildProtocolConfigMultichainReinitializeArgs();
+    const expectedArtifactNames = 'ProtocolConfig';
+    const reinitializeArgs = buildProtocolConfigReinitializeArgs();
     await prepareUpgradeContract(
       expectedArtifactNames,
       'PROTOCOL_CONFIG_CONTRACT_ADDRESS',

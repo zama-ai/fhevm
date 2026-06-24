@@ -42,6 +42,7 @@ contract ProtocolConfigV010TestDouble is UUPSUpgradeableEmptyProxy, ACLOwnable {
     }
 
     function initializeFromEmptyProxy(
+        uint256,
         KmsNodeParams[] calldata initialKmsNodeParams,
         IProtocolConfigCommon.KmsThresholds calldata initialThresholds,
         string calldata,
@@ -49,7 +50,7 @@ contract ProtocolConfigV010TestDouble is UUPSUpgradeableEmptyProxy, ACLOwnable {
     ) external onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
         ProtocolConfigV010Storage storage $ = _getProtocolConfigStorage();
         $.currentKmsContextId = KMS_CONTEXT_COUNTER_BASE;
-        _storeKmsContext(initialKmsNodeParams, initialThresholds);
+        _storeInitialContext(initialKmsNodeParams, initialThresholds);
     }
 
     function getCurrentKmsContextId() external view returns (uint256) {
@@ -88,7 +89,7 @@ contract ProtocolConfigV010TestDouble is UUPSUpgradeableEmptyProxy, ACLOwnable {
         return "ProtocolConfig v0.1.0";
     }
 
-    function _storeKmsContext(
+    function _storeInitialContext(
         KmsNodeParams[] calldata kmsNodeParams,
         IProtocolConfigCommon.KmsThresholds calldata thresholds
     ) internal {

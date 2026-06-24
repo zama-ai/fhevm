@@ -1019,6 +1019,69 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         assertFalse(protocolConfig.isValidEpochForContext(KMS_CONTEXT_COUNTER_BASE + 1, EPOCH_COUNTER_BASE + 999));
     }
 
+    function test_mirrorKmsEpochActivatesCanonicalEpoch() public {
+        _setupEpochLifecycle();
+        uint256 contextId = KMS_CONTEXT_COUNTER_BASE + 1;
+        uint256 epochId = EPOCH_COUNTER_BASE + 7;
+
+        vm.expectEmit(true, true, false, true, address(protocolConfig));
+        emit IProtocolConfig.MirrorKmsEpoch(contextId, epochId);
+        vm.prank(owner);
+        protocolConfig.mirrorKmsEpoch(contextId, epochId);
+
+        (uint256 activeContextId, uint256 activeEpochId) = protocolConfig.getCurrentKmsContextAndEpoch();
+        assertEq(activeContextId, contextId);
+        assertEq(activeEpochId, epochId);
+        assertTrue(protocolConfig.isValidEpochForContext(contextId, epochId));
+    }
+
+    function test_revertMirrorKmsEpochNotOwner() public {
+        _setupEpochLifecycle();
+
+        vm.prank(address(0x999));
+        vm.expectRevert(abi.encodeWithSelector(ACLOwnable.NotHostOwner.selector, address(0x999)));
+        protocolConfig.mirrorKmsEpoch(KMS_CONTEXT_COUNTER_BASE + 1, EPOCH_COUNTER_BASE + 2);
+    }
+
+    function test_revertMirrorKmsEpochInvalidContext() public {
+        _setupEpochLifecycle();
+        uint256 invalidContextId = KMS_CONTEXT_COUNTER_BASE + 2;
+
+        vm.prank(owner);
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfigCommon.InvalidKmsContext.selector, invalidContextId));
+        protocolConfig.mirrorKmsEpoch(invalidContextId, EPOCH_COUNTER_BASE + 2);
+    }
+
+    function test_revertMirrorKmsEpochNonIncreasingEpoch() public {
+        _setupEpochLifecycle();
+        uint256 contextId = KMS_CONTEXT_COUNTER_BASE + 1;
+        uint256 currentEpochId = EPOCH_COUNTER_BASE + 1;
+
+        vm.prank(owner);
+        vm.expectRevert(
+            abi.encodeWithSelector(IProtocolConfig.NonIncreasingEpochId.selector, currentEpochId, currentEpochId)
+        );
+        protocolConfig.mirrorKmsEpoch(contextId, currentEpochId);
+    }
+
+    function test_revertMirrorKmsEpochBeforePendingEpochCounter() public {
+        _setupEpochLifecycle();
+        uint256 contextId = KMS_CONTEXT_COUNTER_BASE + 1;
+
+        vm.prank(owner);
+        protocolConfig.defineNewEpochForCurrentKmsContext();
+
+        vm.prank(owner);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IProtocolConfig.NonIncreasingEpochId.selector,
+                EPOCH_COUNTER_BASE + 2,
+                EPOCH_COUNTER_BASE + 2
+            )
+        );
+        protocolConfig.mirrorKmsEpoch(contextId, EPOCH_COUNTER_BASE + 2);
+    }
+
     function test_isValidEpochForContext_falseForPendingSameSetEpoch() public {
         _setupEpochLifecycle();
         uint256 contextId = KMS_CONTEXT_COUNTER_BASE + 1;
@@ -1364,7 +1427,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         assertEq(activeEpochId, newEpochId);
     }
 
-    function test_confirmKmsContextCreationEmitsPreviousMaterialsFromActiveEpoch() public {
+    function test_confirmKmsContextCreationEmitsMaterialBlockNumber() public {
         _setupEpochLifecycle();
 
         vm.prank(owner);
@@ -1390,24 +1453,18 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         assertEq(uint256(logs[createLogIndex].topics[1]), newContextId);
         assertEq(uint256(logs[createLogIndex].topics[2]), EPOCH_COUNTER_BASE + 2);
 
-        (
-            uint256 previousContextId,
-            uint256 previousEpochId,
-            IProtocolConfig.PreviousKeyInfo[] memory keys,
-            IProtocolConfig.PreviousCrsInfo[] memory crsList
-        ) = abi.decode(
-                logs[createLogIndex].data,
-                (uint256, uint256, IProtocolConfig.PreviousKeyInfo[], IProtocolConfig.PreviousCrsInfo[])
-            );
+        (uint256 previousContextId, uint256 previousEpochId, uint256 materialBlockNumber) = abi.decode(
+            logs[createLogIndex].data,
+            (uint256, uint256, uint256)
+        );
 
         // Context switch: previousContextId is the outgoing (still active) context.
         assertEq(previousContextId, KMS_CONTEXT_COUNTER_BASE + 1);
         assertEq(previousEpochId, EPOCH_COUNTER_BASE + 1);
-        assertEq(keys.length, 0);
-        assertEq(crsList.length, 0);
+        assertEq(materialBlockNumber, block.number - 1);
     }
 
-    function test_defineNewEpochForCurrentKmsContextEmitsPreviousMaterialsFromActiveEpoch() public {
+    function test_defineNewEpochForCurrentKmsContextEmitsMaterialBlockNumber() public {
         _setupEpochLifecycle();
         uint256 materialEpochId = EPOCH_COUNTER_BASE + 2;
         vm.prank(owner);
@@ -1445,39 +1502,21 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         assertEq(uint256(logs[0].topics[1]), KMS_CONTEXT_COUNTER_BASE + 1);
         assertEq(uint256(logs[0].topics[2]), EPOCH_COUNTER_BASE + 3);
 
-        (
-            uint256 previousContextId,
-            uint256 previousEpochId,
-            IProtocolConfig.PreviousKeyInfo[] memory keys,
-            IProtocolConfig.PreviousCrsInfo[] memory crsList
-        ) = abi.decode(
-                logs[0].data,
-                (uint256, uint256, IProtocolConfig.PreviousKeyInfo[], IProtocolConfig.PreviousCrsInfo[])
-            );
+        (uint256 previousContextId, uint256 previousEpochId, uint256 materialBlockNumber) = abi.decode(
+            logs[0].data,
+            (uint256, uint256, uint256)
+        );
 
         // Same-set resharing: previousContextId equals the current context.
         assertEq(previousContextId, KMS_CONTEXT_COUNTER_BASE + 1);
         assertEq(previousEpochId, materialEpochId);
-        assertEq(keys.length, 1);
-        assertEq(keys[0].prepKeygenId, PREP_KEYGEN_COUNTER_BASE + 1);
-        assertEq(keys[0].keyId, completedKeyId);
-        assertEq(uint256(keys[0].paramsType), uint256(IKMSGeneration.ParamsType.Default));
-        assertEq(keys[0].keyDigests.length, 1);
-        assertEq(uint256(keys[0].keyDigests[0].keyType), uint256(IKMSGeneration.KeyType.Server));
-        assertEq(keys[0].keyDigests[0].digest, hex"aabbccdd");
-        assertEq(crsList.length, 1);
-        assertEq(crsList[0].crsId, completedCrsId);
-        assertEq(crsList[0].crsDigest, hex"deadbeef");
+        assertEq(materialBlockNumber, block.number - 1);
     }
 
-    /// @dev Regression: keys/CRS generated under the genesis epoch (no prior epoch transition) must
-    ///      be carried into the first transition's NewKmsEpoch event. Materials are sourced from
-    ///      KMSGeneration.getCompletedKeyIds()/getCompletedCrsIds(), not a per-epoch index that is
-    ///      empty until the first confirmEpochActivation.
-    function test_newEpochCarriesMaterialGeneratedUnderGenesisEpoch() public {
+    /// @dev Regression: the first transition points Connectors at an already-observable material block.
+    function test_newEpochPointsToHistoricalMaterialBlock() public {
         _setupEpochLifecycle();
-        // Complete a key + CRS in KMSGeneration under the genesis epoch — no epoch transition yet.
-        (uint256 completedKeyId, uint256 completedCrsId) = _completeKmsGenerationMaterial();
+        _completeKmsGenerationMaterial();
 
         vm.recordLogs();
         vm.prank(owner);
@@ -1493,16 +1532,8 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         }
         assertTrue(logIndex != type(uint256).max);
 
-        (, , IProtocolConfig.PreviousKeyInfo[] memory keys, IProtocolConfig.PreviousCrsInfo[] memory crsList) = abi
-            .decode(
-                logs[logIndex].data,
-                (uint256, uint256, IProtocolConfig.PreviousKeyInfo[], IProtocolConfig.PreviousCrsInfo[])
-            );
-
-        assertEq(keys.length, 1);
-        assertEq(keys[0].keyId, completedKeyId);
-        assertEq(crsList.length, 1);
-        assertEq(crsList[0].crsId, completedCrsId);
+        (, , uint256 materialBlockNumber) = abi.decode(logs[logIndex].data, (uint256, uint256, uint256));
+        assertEq(materialBlockNumber, block.number - 1);
     }
 
     function test_revertConfirmKmsContextCreationUnauthorizedAndReplay() public {
@@ -1583,10 +1614,9 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         assertEq(activeEpochAfter, activeEpochBefore);
     }
 
-    /// @dev Trigger-event materials reflect KMSGeneration's completed set, not what a given
-    ///      confirmEpochActivation submitted. So a completed key survives an epoch activated with
-    ///      empty results and is still reported in the next NewKmsEpoch event.
-    function test_emptyEpochActivationStillReportsCompletedMaterial() public {
+    /// @dev Trigger events are independent from activation payloads; material is read by Connectors
+    ///      from KMSGeneration at the emitted historical block.
+    function test_emptyEpochActivationStillEmitsMaterialBlockNumber() public {
         _setupEpochLifecycle();
         uint256 materialEpochId = EPOCH_COUNTER_BASE + 2;
         vm.prank(owner);
@@ -1630,22 +1660,14 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         protocolConfig.defineNewEpochForCurrentKmsContext();
         Vm.Log[] memory logs = vm.getRecordedLogs();
 
-        (
-            uint256 previousContextId,
-            uint256 previousEpochId,
-            IProtocolConfig.PreviousKeyInfo[] memory previousKeys,
-            IProtocolConfig.PreviousCrsInfo[] memory previousCrsList
-        ) = abi.decode(
-                logs[0].data,
-                (uint256, uint256, IProtocolConfig.PreviousKeyInfo[], IProtocolConfig.PreviousCrsInfo[])
-            );
+        (uint256 previousContextId, uint256 previousEpochId, uint256 materialBlockNumber) = abi.decode(
+            logs[0].data,
+            (uint256, uint256, uint256)
+        );
 
         assertEq(previousContextId, KMS_CONTEXT_COUNTER_BASE + 1);
         assertEq(previousEpochId, emptyEpochId);
-        assertEq(previousKeys.length, 1);
-        assertEq(previousKeys[0].keyId, completedKeyId);
-        assertEq(previousCrsList.length, 1);
-        assertEq(previousCrsList[0].crsId, completedCrsId);
+        assertEq(materialBlockNumber, block.number - 1);
     }
 
     function test_revertConfirmEpochActivationUnauthorizedAndReplay() public {

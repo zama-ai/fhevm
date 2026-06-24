@@ -186,7 +186,7 @@ describe('Migration prepare tasks', function () {
       const { newImplementationAddress, innerFunctionSignature, innerCalldata, outerCalldata } = preparedUpgrade;
       expect(preparedUpgrade.proxyAddress).to.equal(proxyAddress);
       const iface = new ethers.Interface([`function ${innerFunctionSignature}`]);
-      const decoded = iface.decodeFunctionData('initializeFromMigration', innerCalldata);
+      const decoded = iface.decodeFunctionData('mirrorKmsContext', innerCalldata);
       expect(decoded[0]).to.equal(canonicalContextId);
       expect(decoded[1].map((node: string[]) => node[0])).to.deep.equal(
         buildProtocolConfigNodes().map((node) => node.txSenderAddress),
@@ -247,7 +247,7 @@ describe('Migration prepare tasks', function () {
       patchHostEnv('PROTOCOL_CONFIG_CONTRACT_ADDRESS', protocolConfigProxyAddress);
 
       await expect(run('task:assertProtocolConfigReady')).to.be.rejectedWith(
-        `Cannot deploy KMSVerifier: Contract at ${protocolConfigProxyAddress} does not expose getVersion(); expected one of: ProtocolConfig v…, ProtocolConfigMultichain v….`,
+        `Cannot deploy KMSVerifier: Contract at ${protocolConfigProxyAddress} does not expose getVersion(); expected one of: ProtocolConfig v….`,
       );
     });
 
@@ -271,31 +271,24 @@ describe('Migration prepare tasks', function () {
       const kmsVerifierImplBefore = await upgrades.erc1967.getImplementationAddress(kmsVerifierProxyAddress);
 
       await expect(run('task:deployKMSVerifier')).to.be.rejectedWith(
-        `Cannot deploy KMSVerifier: Contract at ${protocolConfigProxyAddress} does not expose getVersion(); expected one of: ProtocolConfig v…, ProtocolConfigMultichain v….`,
+        `Cannot deploy KMSVerifier: Contract at ${protocolConfigProxyAddress} does not expose getVersion(); expected one of: ProtocolConfig v….`,
       );
 
       expect(await upgrades.erc1967.getImplementationAddress(kmsVerifierProxyAddress)).to.equal(kmsVerifierImplBefore);
     });
 
-    it('passes the standalone readiness check when ProtocolConfigMultichain is initialized', async function () {
+    it('passes the standalone readiness check when ProtocolConfig is initialized without KMSGeneration', async function () {
       const protocolConfigProxyAddress = await deployEmptyUUPSProxy(deployer);
 
       patchHostEnv('PROTOCOL_CONFIG_CONTRACT_ADDRESS', protocolConfigProxyAddress);
 
       const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
-      const newImplementation = await ethers.getContractFactory('ProtocolConfigMultichain', deployer);
+      const newImplementation = await ethers.getContractFactory('ProtocolConfig', deployer);
       const proxy = await upgrades.forceImport(protocolConfigProxyAddress, currentImplementation);
       const protocolConfig = await upgrades.upgradeProxy(proxy, newImplementation, {
         call: {
           fn: 'initializeFromEmptyProxy',
-          args: [
-            KMS_CONTEXT_COUNTER_BASE + BigInt(7),
-            buildProtocolConfigNodes(),
-            buildProtocolConfigThresholds(),
-            '',
-            [],
-            [1, 12345, readHostAddress('PROTOCOL_CONFIG_CONTRACT_ADDRESS')],
-          ],
+          args: [buildProtocolConfigNodes(), buildProtocolConfigThresholds(), '', []],
         },
       });
       await protocolConfig.waitForDeployment();

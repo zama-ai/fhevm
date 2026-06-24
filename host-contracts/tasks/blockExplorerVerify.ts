@@ -24,7 +24,6 @@ export async function verifyContract(run: RunTaskFunction, address: string, cont
 }
 
 const PROTOCOL_CONFIG_CONTRACT = 'contracts/ProtocolConfig.sol:ProtocolConfig';
-const PROTOCOL_CONFIG_MULTICHAIN_CONTRACT = 'contracts/ProtocolConfigMultichain.sol:ProtocolConfigMultichain';
 
 task('task:verifyACL')
   .addOptionalParam(
@@ -135,7 +134,7 @@ task('task:verifyProtocolConfig')
   )
   .addOptionalParam(
     'contract',
-    'Fully qualified implementation contract to verify, eg contracts/ProtocolConfig.sol:ProtocolConfig or contracts/ProtocolConfigMultichain.sol:ProtocolConfigMultichain',
+    'Fully qualified ProtocolConfig implementation contract to verify, eg contracts/ProtocolConfig.sol:ProtocolConfig',
     PROTOCOL_CONFIG_CONTRACT,
     types.string,
   )
@@ -186,8 +185,7 @@ task('task:verifyAllHostContracts')
     types.string,
   )
   .setAction(async function ({ useInternalProxyAddress, withKmsGeneration, protocolConfigContract }, hre) {
-    const selectedProtocolConfigContract =
-      protocolConfigContract || (withKmsGeneration ? PROTOCOL_CONFIG_CONTRACT : PROTOCOL_CONFIG_MULTICHAIN_CONTRACT);
+    const selectedProtocolConfigContract = protocolConfigContract || PROTOCOL_CONFIG_CONTRACT;
 
     console.log('Verify ACL contract:');
     try {

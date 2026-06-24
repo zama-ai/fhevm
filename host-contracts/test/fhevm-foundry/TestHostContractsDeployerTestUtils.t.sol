@@ -12,7 +12,6 @@ import {InputVerifier} from "@fhevm-host-contracts/contracts/InputVerifier.sol";
 import {HCULimit} from "@fhevm-host-contracts/contracts/HCULimit.sol";
 import {PauserSet} from "@fhevm-host-contracts/contracts/immutable/PauserSet.sol";
 import {ProtocolConfig} from "@fhevm-host-contracts/contracts/ProtocolConfig.sol";
-import {ProtocolConfigMultichain} from "@fhevm-host-contracts/contracts/ProtocolConfigMultichain.sol";
 import {KMSGeneration} from "@fhevm-host-contracts/contracts/KMSGeneration.sol";
 import {IProtocolConfigCommon} from "@fhevm-host-contracts/contracts/interfaces/IProtocolConfigCommon.sol";
 import {KmsNodeParams} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
@@ -198,7 +197,7 @@ contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
         assertEq(_readImplementationSlot(protocolConfigAdd), pcImplementation, "Implementation slot mismatch");
     }
 
-    function test_DeployProtocolConfigMultichain_UsesProxyUpgradeFlow() public {
+    function test_DeployProtocolConfigMirror_UsesProxyUpgradeFlow() public {
         _deployACL(OWNER);
 
         KmsNodeParams[] memory nodeParams = _makeKmsNodeParams(2);
@@ -210,19 +209,16 @@ contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
             mpc: 1
         });
 
-        (ProtocolConfigMultichain pcProxy, address pcImplementation) = _deployProtocolConfigMultichain(
+        (ProtocolConfig pcProxy, address pcImplementation) = _deployProtocolConfigMirror(
             OWNER,
             canonicalContextId,
             nodeParams,
-            thresholds,
-            1,
-            12345,
-            address(0xC0FFEE)
+            thresholds
         );
 
-        assertEq(address(pcProxy), protocolConfigAdd, "ProtocolConfigMultichain proxy address mismatch");
+        assertEq(address(pcProxy), protocolConfigAdd, "ProtocolConfig proxy address mismatch");
         assertNotEq(pcImplementation, address(0), "Implementation not deployed");
-        assertEq(pcProxy.getVersion(), "ProtocolConfigMultichain v0.2.0", "Version mismatch");
+        assertEq(pcProxy.getVersion(), "ProtocolConfig v0.2.0", "Version mismatch");
         assertEq(pcProxy.getCurrentKmsContextId(), canonicalContextId, "Context ID mismatch");
         assertEq(pcProxy.getUserDecryptionThreshold(), 2, "User decryption threshold mismatch");
         assertEq(_readImplementationSlot(protocolConfigAdd), pcImplementation, "Implementation slot mismatch");

@@ -39,30 +39,6 @@ interface IProtocolConfig is IProtocolConfigCommon {
         bytes signature;
     }
 
-    /**
-     * @notice Completed key material from the previous epoch, emitted to seed resharing.
-     * @param prepKeygenId The preprocessing keygen ID the key derives from.
-     * @param keyId The key ID.
-     * @param paramsType The key parameters type.
-     * @param keyDigests The per-type digests of the key.
-     */
-    struct PreviousKeyInfo {
-        uint256 prepKeygenId;
-        uint256 keyId;
-        IKMSGeneration.ParamsType paramsType;
-        IKMSGeneration.KeyDigest[] keyDigests;
-    }
-
-    /**
-     * @notice Completed CRS material from the previous epoch, emitted to seed resharing.
-     * @param crsId The CRS ID.
-     * @param crsDigest The digest of the CRS.
-     */
-    struct PreviousCrsInfo {
-        uint256 crsId;
-        bytes crsDigest;
-    }
-
     // -----------------------------------------------------------------------------------------
     // Events
     // -----------------------------------------------------------------------------------------
@@ -94,16 +70,15 @@ interface IProtocolConfig is IProtocolConfigCommon {
      * @param epochId The pending epoch ID.
      * @param previousContextId The context that holds the previous epoch's shares.
      * @param previousEpochId The active epoch superseded by the pending epoch.
-     * @param keys Completed key material active when the event is emitted.
-     * @param crsList Completed CRS material active when the event is emitted.
+     * @param materialBlockNumber Block where Connectors should read previous key/CRS material
+     *        from the canonical KMSGeneration contract.
      */
     event NewKmsEpoch(
         uint256 indexed kmsContextId,
         uint256 indexed epochId,
         uint256 previousContextId,
         uint256 previousEpochId,
-        PreviousKeyInfo[] keys,
-        PreviousCrsInfo[] crsList
+        uint256 materialBlockNumber
     );
 
     /**
@@ -191,6 +166,29 @@ interface IProtocolConfig is IProtocolConfigCommon {
      */
     event MpcThresholdUpdated(uint256 indexed kmsContextId, uint256 threshold);
 
+    /**
+     * @notice Emitted when a canonical KMS context is mirrored and activated.
+     * @param contextId The mirrored canonical context ID.
+     * @param kmsNodeParams The KMS nodes mirrored from the canonical context, including MPC metadata.
+     * @param thresholds The thresholds mirrored from the canonical context.
+     * @param softwareVersion The KMS software version of the canonical context.
+     * @param pcrValues Accepted enclave PCR values of the canonical context.
+     */
+    event MirrorKmsContext(
+        uint256 indexed contextId,
+        KmsNodeParams[] kmsNodeParams,
+        KmsThresholds thresholds,
+        string softwareVersion,
+        PcrValues[] pcrValues
+    );
+
+    /**
+     * @notice Emitted when a canonical KMS epoch is mirrored and activated.
+     * @param contextId The active mirrored context ID.
+     * @param epochId The mirrored canonical epoch ID.
+     */
+    event MirrorKmsEpoch(uint256 indexed contextId, uint256 indexed epochId);
+
     // -----------------------------------------------------------------------------------------
     // Errors
     // -----------------------------------------------------------------------------------------
@@ -239,6 +237,16 @@ interface IProtocolConfig is IProtocolConfigCommon {
     /// @param signer The recovered signer.
     /// @param txSender The transaction sender.
     error EpochActivationSignerDoesNotMatchTxSender(address signer, address txSender);
+
+    /// @notice The mirrored context ID is not strictly greater than the current one.
+    /// @param contextId The rejected context ID.
+    /// @param currentKmsContextId The current mirrored context ID.
+    error NonIncreasingKmsContextId(uint256 contextId, uint256 currentKmsContextId);
+
+    /// @notice The mirrored epoch ID is not strictly greater than the latest known one.
+    /// @param epochId The rejected epoch ID.
+    /// @param currentEpochId The latest known epoch ID.
+    error NonIncreasingEpochId(uint256 epochId, uint256 currentEpochId);
 
     // -----------------------------------------------------------------------------------------
     // State-changing functions
@@ -328,6 +336,52 @@ interface IProtocolConfig is IProtocolConfigCommon {
      * @param threshold The new MPC threshold.
      */
     function updateMpcThresholdForContext(uint256 kmsContextId, uint256 threshold) external;
+
+    /**
+     * @notice Fresh deploy initializer.
+     */
+    function initializeFromEmptyProxy(
+        KmsNodeParams[] calldata initialKmsNodeParams,
+        KmsThresholds calldata initialThresholds,
+        string calldata softwareVersion,
+        PcrValues[] calldata pcrValues
+    ) external;
+
+    /**
+     * @notice In-place reinitializer.
+     */
+    function reinitializeV2(
+        KmsNodeParams[] calldata kmsNodeParams,
+        KmsThresholds calldata thresholds,
+        string calldata softwareVersion,
+        PcrValues[] calldata pcrValues
+    ) external;
+
+    // -----------------------------------------------------------------------------------------
+    // Mirror functions
+    // -----------------------------------------------------------------------------------------
+
+    /**
+     * @notice Mirror and immediately activate a canonical KMS context.
+     * @dev Non-canonical hosts use this to import signer/threshold state without replaying
+     *      context-creation confirmations. The `contextId` must be strictly greater than the
+     *      current active context ID. Gaps are allowed.
+     */
+    function mirrorKmsContext(
+        uint256 contextId,
+        KmsNodeParams[] calldata kmsNodeParams,
+        KmsThresholds calldata thresholds,
+        string calldata softwareVersion,
+        PcrValues[] calldata pcrValues
+    ) external;
+
+    /**
+     * @notice Mirror and immediately activate a canonical KMS epoch for the active context.
+     * @dev Non-canonical hosts use this to advance the active epoch without replaying
+     *      epoch-activation confirmations. The `epochId` must be strictly greater than the
+     *      latest known epoch ID. Gaps are allowed.
+     */
+    function mirrorKmsEpoch(uint256 contextId, uint256 epochId) external;
 
     /**
      * @notice Returns the active KMS context and epoch IDs.

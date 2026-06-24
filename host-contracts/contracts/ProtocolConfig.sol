@@ -6,7 +6,6 @@ import {IProtocolConfigCommon} from "./interfaces/IProtocolConfigCommon.sol";
 import {IKMSGeneration} from "./interfaces/IKMSGeneration.sol";
 import {KmsContextAnchor, KmsNode, KmsNodeParams, PcrValues} from "./shared/Structs.sol";
 import {EPOCH_COUNTER_BASE, EXTRA_DATA_V2, KMS_CONTEXT_COUNTER_BASE} from "./shared/Constants.sol";
-import {kmsGenerationAdd} from "../addresses/FHEVMHostAddresses.sol";
 import {UUPSUpgradeableEmptyProxy} from "./shared/UUPSUpgradeableEmptyProxy.sol";
 import {ACLOwnable} from "./shared/ACLOwnable.sol";
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
@@ -37,9 +36,6 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     ///      bound cannot ever satisfy verification, so the limit is enforced at registration time
     ///      to reject the misconfiguration loudly rather than silently bricking the context.
     uint256 private constant MAX_KMS_SIGNERS = type(uint8).max;
-
-    /// @notice KMSGeneration contract, source of completed key/CRS material.
-    IKMSGeneration private constant KMS_GENERATION = IKMSGeneration(kmsGenerationAdd);
 
     // -----------------------------------------------------------------------------------------
     // EIP-712 type hashes
@@ -207,9 +203,7 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
      *      to point Connectors at a historical `NewKmsContext` log, and there is none for the
      *      migrated context. `softwareVersion`/`pcrValues` are likewise not persisted and so are not
      *      taken here.
-     * @param existingContextId The current context ID. The counter is seeded to
-     *        `existingContextId - 1` so that `_storeAndActivateKmsContext` increments to the exact
-     *        old ID, preserving context continuity for downstream readers.
+     * @param existingContextId The current context ID to preserve for downstream readers.
      * @param existingKmsNodeParams The existing KMS node set to migrate, including MPC metadata.
      * @param existingThresholds The existing thresholds to migrate.
      */
@@ -225,7 +219,6 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         }
 
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        // Seed counter so _storeAndActivateKmsContext's ++counter lands on the original context ID
         $.currentKmsContextId = existingContextId - 1;
         $.epochCounter = EPOCH_COUNTER_BASE;
         _storeAndActivateKmsContext(existingKmsNodeParams, existingThresholds);
@@ -320,9 +313,8 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         $.epochState[epochId] = EpochState.Pending;
         $.contextForEpoch[epochId] = contextId;
 
-        // Get the previous materials and emit NewKmsEpoch event.
-        (PreviousKeyInfo[] memory keys, PreviousCrsInfo[] memory crsList) = _getPreviousMaterials();
-        emit NewKmsEpoch(contextId, epochId, contextId, $.activeEpochId, keys, crsList);
+        // Connectors must read previous key/CRS material from the last block before this epoch request.
+        emit NewKmsEpoch(contextId, epochId, contextId, $.activeEpochId, block.number - 1);
     }
 
     /// @inheritdoc IProtocolConfig
@@ -366,8 +358,8 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
             if ($.epochState[epochId] != EpochState.Pending || $.contextForEpoch[epochId] != kmsContextId) {
                 revert InvalidEpoch(epochId);
             }
-            (PreviousKeyInfo[] memory keys, PreviousCrsInfo[] memory crsList) = _getPreviousMaterials();
-            emit NewKmsEpoch(kmsContextId, epochId, previousContextId, $.activeEpochId, keys, crsList);
+            // Connectors must read previous key/CRS material from the last block before this epoch request.
+            emit NewKmsEpoch(kmsContextId, epochId, previousContextId, $.activeEpochId, block.number - 1);
         }
     }
 
@@ -540,6 +532,50 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         _checkThreshold("mpc", threshold, $.kmsNodesForContext[kmsContextId].length);
         $.mpcThresholdForContext[kmsContextId] = threshold;
         emit MpcThresholdUpdated(kmsContextId, threshold);
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // Mirror functions
+    // -----------------------------------------------------------------------------------------
+
+    /// @inheritdoc IProtocolConfig
+    /// @dev Mirror path for non-canonical hosts: imports the canonical context as already active
+    ///      without replaying context-creation confirmations.
+    function mirrorKmsContext(
+        uint256 contextId,
+        KmsNodeParams[] calldata kmsNodeParams,
+        KmsThresholds calldata thresholds,
+        string calldata softwareVersion,
+        PcrValues[] calldata pcrValues
+    ) external virtual onlyACLOwner {
+        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
+        uint256 currentKmsContextId = $.activeKmsContextId;
+        if (contextId <= currentKmsContextId) {
+            revert NonIncreasingKmsContextId(contextId, currentKmsContextId);
+        }
+        $.currentKmsContextId = contextId - 1;
+        _storeAndActivateKmsContext(kmsNodeParams, thresholds);
+        emit MirrorKmsContext(contextId, kmsNodeParams, thresholds, softwareVersion, pcrValues);
+    }
+
+    /// @inheritdoc IProtocolConfig
+    /// @dev Mirror path for non-canonical hosts: advances the active epoch for the already
+    ///      mirrored active context without replaying epoch-activation confirmations.
+    function mirrorKmsEpoch(uint256 contextId, uint256 epochId) external virtual onlyACLOwner {
+        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
+        if (contextId != $.activeKmsContextId || !_isLiveKmsContext(contextId)) {
+            revert InvalidKmsContext(contextId);
+        }
+        uint256 currentEpochId = $.epochCounter;
+        if (epochId <= currentEpochId) {
+            revert NonIncreasingEpochId(epochId, currentEpochId);
+        }
+
+        $.epochCounter = epochId;
+        $.epochState[epochId] = EpochState.Active;
+        $.contextForEpoch[epochId] = contextId;
+        $.activeEpochId = epochId;
+        emit MirrorKmsEpoch(contextId, epochId);
     }
 
     // -----------------------------------------------------------------------------------------
@@ -942,34 +978,6 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         delete $.contextCreationPreviousSignerThreshold[kmsContextId];
         delete $.contextCreationNewSignerConfirmationCount[kmsContextId];
         delete $.contextCreationPreviousSignerConfirmationCount[kmsContextId];
-    }
-
-    function _getPreviousMaterials()
-        internal
-        view
-        virtual
-        returns (PreviousKeyInfo[] memory keys, PreviousCrsInfo[] memory crsList)
-    {
-        // Source the full completed key/CRS set from KMSGeneration.
-        uint256[] memory keyIds = KMS_GENERATION.getCompletedKeyIds();
-        uint256[] memory crsIds = KMS_GENERATION.getCompletedCrsIds();
-
-        keys = new PreviousKeyInfo[](keyIds.length);
-        for (uint256 i = 0; i < keyIds.length; i++) {
-            (, IKMSGeneration.KeyDigest[] memory keyDigests) = KMS_GENERATION.getKeyMaterials(keyIds[i]);
-            keys[i] = PreviousKeyInfo({
-                prepKeygenId: KMS_GENERATION.getPrepKeygenId(keyIds[i]),
-                keyId: keyIds[i],
-                paramsType: KMS_GENERATION.getKeyParamsType(keyIds[i]),
-                keyDigests: keyDigests
-            });
-        }
-
-        crsList = new PreviousCrsInfo[](crsIds.length);
-        for (uint256 i = 0; i < crsIds.length; i++) {
-            (, bytes memory crsDigest) = KMS_GENERATION.getCrsMaterials(crsIds[i]);
-            crsList[i] = PreviousCrsInfo({crsId: crsIds[i], crsDigest: crsDigest});
-        }
     }
 
     /**

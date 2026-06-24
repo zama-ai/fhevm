@@ -12,11 +12,8 @@ import {PauserSet} from "@fhevm-host-contracts/contracts/immutable/PauserSet.sol
 import {EmptyUUPSProxy} from "@fhevm-host-contracts/contracts/emptyProxy/EmptyUUPSProxy.sol";
 import {EmptyUUPSProxyACL} from "@fhevm-host-contracts/contracts/emptyProxyACL/EmptyUUPSProxyACL.sol";
 import {ProtocolConfig} from "@fhevm-host-contracts/contracts/ProtocolConfig.sol";
-import {ProtocolConfigMultichain} from "@fhevm-host-contracts/contracts/ProtocolConfigMultichain.sol";
-import {IProtocolConfigMultichain} from "@fhevm-host-contracts/contracts/interfaces/IProtocolConfigMultichain.sol";
 import {KMSGeneration} from "@fhevm-host-contracts/contracts/KMSGeneration.sol";
 import {IProtocolConfigCommon} from "@fhevm-host-contracts/contracts/interfaces/IProtocolConfigCommon.sol";
-import {IProtocolConfig} from "@fhevm-host-contracts/contracts/interfaces/IProtocolConfig.sol";
 import {KmsNode, KmsNodeParams, PcrValues} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
 import {aclAdd, fhevmExecutorAdd, hcuLimitAdd, inputVerifierAdd, kmsVerifierAdd, pauserSetAdd, protocolConfigAdd, kmsGenerationAdd} from "@fhevm-host-contracts/addresses/FHEVMHostAddresses.sol";
 
@@ -218,7 +215,6 @@ abstract contract HostContractsDeployerTestUtils is Test {
         vm.label(protocolConfigImplementation, "ProtocolConfig Implementation");
 
         PcrValues[] memory pcrValues = new PcrValues[](0);
-
         vm.prank(owner);
         EmptyUUPSProxy(protocolConfigAdd).upgradeToAndCall(
             protocolConfigImplementation,
@@ -231,15 +227,12 @@ abstract contract HostContractsDeployerTestUtils is Test {
         protocolConfigProxy = ProtocolConfig(protocolConfigAdd);
     }
 
-    function _deployProtocolConfigMultichain(
+    function _deployProtocolConfigMirror(
         address owner,
         uint256 initialContextId,
         KmsNodeParams[] memory initialKmsNodeParams,
-        IProtocolConfigCommon.KmsThresholds memory initialThresholds,
-        uint256 sourceChainId,
-        uint256 sourceBlockNumber,
-        address sourceProtocolConfig
-    ) internal returns (ProtocolConfigMultichain protocolConfigProxy, address protocolConfigImplementation) {
+        IProtocolConfigCommon.KmsThresholds memory initialThresholds
+    ) internal returns (ProtocolConfig protocolConfigProxy, address protocolConfigImplementation) {
         address emptyProxyImplementation = address(new EmptyUUPSProxy());
 
         deployCodeTo(
@@ -247,34 +240,24 @@ abstract contract HostContractsDeployerTestUtils is Test {
             abi.encode(emptyProxyImplementation, abi.encodeCall(EmptyUUPSProxy.initialize, ())),
             protocolConfigAdd
         );
-        vm.label(protocolConfigAdd, "ProtocolConfigMultichain Proxy");
+        vm.label(protocolConfigAdd, "ProtocolConfig Mirror Proxy");
 
-        protocolConfigImplementation = address(new ProtocolConfigMultichain());
-        vm.label(protocolConfigImplementation, "ProtocolConfigMultichain Implementation");
+        protocolConfigImplementation = address(new ProtocolConfig());
+        vm.label(protocolConfigImplementation, "ProtocolConfig Mirror Implementation");
 
         PcrValues[] memory pcrValues = new PcrValues[](0);
-
         vm.prank(owner);
         EmptyUUPSProxy(protocolConfigAdd).upgradeToAndCall(
             protocolConfigImplementation,
             abi.encodeCall(
-                ProtocolConfigMultichain.initializeFromEmptyProxy,
-                (
-                    initialContextId,
-                    initialKmsNodeParams,
-                    initialThresholds,
-                    "",
-                    pcrValues,
-                    IProtocolConfigMultichain.MirroredContextSource({
-                        sourceChainId: sourceChainId,
-                        sourceBlockNumber: sourceBlockNumber,
-                        sourceProtocolConfig: sourceProtocolConfig
-                    })
-                )
+                ProtocolConfig.initializeFromEmptyProxy,
+                (initialKmsNodeParams, initialThresholds, "", pcrValues)
             )
         );
 
-        protocolConfigProxy = ProtocolConfigMultichain(protocolConfigAdd);
+        protocolConfigProxy = ProtocolConfig(protocolConfigAdd);
+        vm.prank(owner);
+        protocolConfigProxy.mirrorKmsContext(initialContextId, initialKmsNodeParams, initialThresholds, "", pcrValues);
     }
 
     function _deployKMSGeneration(

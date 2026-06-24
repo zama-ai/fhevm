@@ -5,10 +5,7 @@ import {KmsNode} from "../shared/Structs.sol";
 
 /**
  * @title Common ProtocolConfig interface.
- * @notice Shared verifier-facing read surface and shared errors implemented by canonical Ethereum
- *         and multichain variants. Errors live here when both variants revert with them under
- *         identical semantics (context validation, KMS node registration, threshold bounds);
- *         variant-specific errors stay in `IProtocolConfig` / `IProtocolConfigMultichain`.
+ * @notice Shared verifier-facing read surface and errors implemented by ProtocolConfig.
  */
 interface IProtocolConfigCommon {
     /**
