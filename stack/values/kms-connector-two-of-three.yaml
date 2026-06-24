@@ -1,0 +1,53 @@
+# =============================================================================
+# KMS-CONNECTOR VALUES — 3 KMS cores, 2-of-3 threshold, multi-chain
+# =============================================================================
+# Top-level keys from charts/kms-connector/values.yaml.
+# Applied as: helm template kms-connector charts/kms-connector -f kms-connector-two-of-three.yaml
+# =============================================================================
+
+kmsConnectorDbMigration:
+  image:
+    tag: v0.10.0
+
+kmsConnectorGwListener:
+  enabled: true
+  image:
+    tag: v0.10.0
+
+kmsConnectorKmsWorker:
+  enabled: true
+  image:
+    tag: v0.10.0
+  config:
+    # Comma-separated list of all three kms-core gRPC endpoints (2-of-3 topology)
+    kmsCoreEndpoints: "http://kms-core-0:50051,http://kms-core-1:50051,http://kms-core-2:50051"
+    hostChains:
+      - url: "http://anvil-node-eth:8545"
+        chainId: 31337
+        aclAddress:
+          valueFrom:
+            configMapKeyRef:
+              name: sc-addresses
+              key: acl.address
+      - url: "http://anvil-node-polygon:8545"
+        chainId: 80002
+        aclAddress: "0xTODO_POLYGON_ACL_ADDRESS"
+
+kmsConnectorTxSender:
+  enabled: true
+  image:
+    tag: v0.10.0
+
+# commonConfig for kms-connector (gateway + ethereum endpoints)
+commonConfig:
+  gatewayUrl: "http://gateway-node:8546"
+  gatewayChainId: "54321"
+  gatewayContractAddresses:
+    decryption: "0xTODO_DECRYPTION_ADDRESS"
+    gatewayConfig: "0xTODO_GATEWAY_CONFIG_ADDRESS"
+    kmsGeneration: "0xTODO_KMS_GENERATION_ADDRESS"
+  ethereumUrl: "http://anvil-node-eth:8545"
+  ethereumChainId: "31337"
+  ethereumContractAddresses:
+    kmsVerifier: "0xTODO_KMS_VERIFIER_ADDRESS"
+  databaseUrl: "postgresql://kms-connector:kms-connector@db:5432/kms-connector"

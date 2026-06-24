@@ -45,6 +45,16 @@ spec:
             - "{{ .Values.network.accounts }}"
             - "--mnemonic"
             - "$(MNEMONIC)"
+            # NO --state persistence. anvil dumps state.json non-atomically (in-place),
+            # so ANY interrupted write — a SIGKILL, an eviction, a graceful dump that
+            # exceeds the grace period — truncates the file, and on restart anvil
+            # refuses to boot ("EOF while parsing", proven live TWICE, even without
+            # --state-interval). The crashloop takes the whole host chain down and
+            # poisons the PVC. The recipe boots from genesis every time (clean()), so
+            # in-memory chain state is the correct model: if anvil restarts it comes up
+            # clean instead of crashlooping, and a mid-run restart means a reboot
+            # regardless. Cross-restart persistence would need atomic dumps, which anvil
+            # does not provide.
           ports:
             - containerPort: {{ .Values.port }}
           resources:

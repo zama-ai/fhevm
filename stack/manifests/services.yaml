@@ -1,0 +1,99 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: db
+  namespace: fhevm
+spec:
+  internalTrafficPolicy: Cluster
+  ipFamilies:
+  - IPv4
+  ipFamilyPolicy: SingleStack
+  ports:
+  - port: 5432
+    protocol: TCP
+    targetPort: 5432
+  selector:
+    app: db
+  sessionAffinity: None
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio
+  namespace: fhevm
+spec:
+  internalTrafficPolicy: Cluster
+  ipFamilies:
+  - IPv4
+  ipFamilyPolicy: SingleStack
+  ports:
+  - name: api
+    port: 9000
+    protocol: TCP
+    targetPort: 9000
+  - name: console
+    port: 9001
+    protocol: TCP
+    targetPort: 9001
+  selector:
+    app: minio
+  sessionAffinity: None
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kms-core
+  namespace: fhevm
+spec:
+  internalTrafficPolicy: Cluster
+  ipFamilies:
+  - IPv4
+  ipFamilyPolicy: SingleStack
+  ports:
+  - port: 50051
+    protocol: TCP
+    targetPort: 50051
+  selector:
+    app: kms-core
+  sessionAffinity: None
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: host-node
+  namespace: fhevm
+spec:
+  internalTrafficPolicy: Cluster
+  ipFamilies:
+  - IPv4
+  ipFamilyPolicy: SingleStack
+  ports:
+  - port: 8545
+    protocol: TCP
+    targetPort: 8545
+  selector:
+    app: host-anvil-node
+  sessionAffinity: None
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway-node
+  namespace: fhevm
+spec:
+  internalTrafficPolicy: Cluster
+  ipFamilies:
+  - IPv4
+  ipFamilyPolicy: SingleStack
+  ports:
+  - port: 8546
+    protocol: TCP
+    targetPort: 8546
+  selector:
+    app: gateway-anvil-node
+  sessionAffinity: None
+  type: ClusterIP

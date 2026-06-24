@@ -1,0 +1,61 @@
+# Gateway DEPLOY (mocked ZamaOFT + all gateway contracts). Faithful to the fhevm-cli
+# gateway-sc-deploy + gateway-deploy-mocked-zama-oft compose services.
+#
+# This is the first half of the gateway; the recipe DISCOVERS the actual addresses from this
+# Job's log (parseGatewayAddresses) and REGENERATES gateway-mocked-payment-env before the
+# wiring half (gateway-wire.yaml) runs — because the addresses are deploy-ORDER dependent
+# (the mocked-OFT shares the deployer nonce space and shifts every gateway proxy).
+#
+# All gateway-sc steps mount the gateway-addr volume at /app/addresses so the generated
+# GatewayAddresses.sol written here is visible to the wiring steps (which compile contracts
+# importing it).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: gateway-addr
+  namespace: fhevm
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: standard
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: gateway-deploy
+  namespace: fhevm
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels: { job-name: gateway-deploy }
+    spec:
+      restartPolicy: Never
+      imagePullSecrets:
+        - name: registry-credentials
+      containers:
+        - name: deploy
+          image: ghcr.io/zama-ai/fhevm/gateway-contracts:v0.13.0-6
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: gateway-sc-env
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              echo "==deploy-mocked-zama-oft=="
+              npx hardhat task:deployMockedZamaOFT
+              echo "==deploy-gateway-contracts=="
+              npx hardhat task:deployAllGatewayContracts
+              echo "==done=="
+          volumeMounts:
+            - name: gateway-addr
+              mountPath: /app/addresses
+      volumes:
+        - name: gateway-addr
+          persistentVolumeClaim:
+            claimName: gateway-addr

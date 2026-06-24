@@ -1,0 +1,54 @@
+# Gateway WIRING (mocked-payment approve + host-chain registration + pausers). Faithful to
+# the fhevm-cli gateway-set-relayer-mocked-payment + gateway-sc-add-network + gateway-sc-add-pausers
+# compose services. Runs AFTER gateway-deploy + the recipe's discover→regenerate, so the
+# DISCOVERED ProtocolPayment/ZamaOFT are in gateway-mocked-payment-env (the live bug was
+# approving the template's stale ProtocolPayment).
+#
+# Required for erc20: the gateway charges INPUT_VERIFICATION_PRICE, so the relayer's gateway
+# tx-sender must hold mocked $ZAMA and approve the real ProtocolPayment — else input-proof
+# verification reverts. add-host-chains registers the host chain (ACL/executor) so the gateway
+# can route input-proofs + decryptions; contracts deploy PAUSED, so add-pausers unpauses.
+# The gateway-mocked-payment-env ConfigMap lives in envs.yaml (applied early so the recipe's
+# regenerate can patch the DISCOVERED ProtocolPayment/ZamaOFT into it before this Job runs).
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: gateway-wire
+  namespace: fhevm
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels: { job-name: gateway-wire }
+    spec:
+      restartPolicy: Never
+      imagePullSecrets:
+        - name: registry-credentials
+      containers:
+        - name: wire
+          image: ghcr.io/zama-ai/fhevm/gateway-contracts:v0.13.0-6
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: gateway-sc-env
+            - configMapRef:
+                name: gateway-mocked-payment-env
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              echo "==set-tx-sender-mocked-payment=="
+              npx hardhat task:setTxSenderMockedPayment
+              echo "==add-host-chains=="
+              npx hardhat task:addHostChainsToGatewayConfig --use-internal-proxy-address true
+              echo "==add-gateway-pausers=="
+              npx hardhat task:addGatewayPausers --use-internal-proxy-address true
+              echo "==done=="
+          volumeMounts:
+            - name: gateway-addr
+              mountPath: /app/addresses
+      volumes:
+        - name: gateway-addr
+          persistentVolumeClaim:
+            claimName: gateway-addr

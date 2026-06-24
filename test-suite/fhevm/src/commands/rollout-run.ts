@@ -16,57 +16,20 @@ import {
 } from "../flow/up-flow";
 import { STATE_DIR } from "../layout";
 import { loadState } from "../state/state";
-import type { LocalOverride, State, UpOptions, VersionBundle, VersionTarget } from "../types";
+import type { UpOptions, VersionBundle } from "../types";
 import { ensureDir, writeJson } from "../utils/fs";
 import { type RolloutReceipt, createRolloutReceipt } from "./rollout-receipt";
 import { test as runTest } from "./test";
+import type { Stack } from "../stack";
 
-type RolloutUpOptions = {
-  lockFile: string;
-  overrides?: LocalOverride[];
-  scenario?: string;
-};
-
-type RolloutRuntimeUpgradeOptions = {
-  lockFile?: string;
-};
-type RolloutVersionLockOptions = {
-  allowedVersionKeys: string[];
-  lockFile: string;
-  overrides?: LocalOverride[];
-};
-
-type RolloutTestOptions = {
-  network?: string;
-  noHardhatCompile?: boolean;
-  parallel?: boolean;
-};
-type RolloutContractTaskOptions = {
-  env?: Record<string, string>;
-};
-type RolloutLockOptions = {
-  versions: Record<string, string>;
-  sources?: string[];
-  target?: VersionTarget;
-};
-
-export type RolloutRunContext = {
-  applyVersionLock(label: string, options: RolloutVersionLockOptions): Promise<void>;
-  readState(): Promise<State>;
-  refreshDiscovery(): Promise<void>;
-  runGatewayContractTask(command: string, options?: RolloutContractTaskOptions): Promise<void>;
-  runHostContractTask(command: string, options?: RolloutContractTaskOptions): Promise<void>;
-  snapshotContracts(surface: "host" | "gateway"): Promise<void>;
-  stateDir(): string;
-  test(profile?: string, options?: RolloutTestOptions): Promise<void>;
-  up(options: RolloutUpOptions): Promise<void>;
-  upgradeRuntimeGroup(group: string, options?: RolloutRuntimeUpgradeOptions): Promise<void>;
-  writeVersionLock(name: string, options: RolloutLockOptions): Promise<string>;
-};
+/** RolloutRunContext is the concrete Stack implementation used by rollout runbooks. */
+export type RolloutRunContext = Stack;
 
 export type RolloutRunbook = (ctx: RolloutRunContext) => Promise<void> | void;
 
-const upOptions = (options: RolloutUpOptions): UpOptions => ({
+type StackUpArg = Parameters<Stack["up"]>[0];
+
+const upOptions = (options: StackUpArg): UpOptions => ({
   target: "latest-main",
   overrides: options.overrides ?? [],
   scenarioPath: options.scenario,

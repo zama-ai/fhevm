@@ -1,0 +1,54 @@
+# =============================================================================
+# KMS-CONNECTOR VALUES — single KMS core, single host chain
+# =============================================================================
+# Top-level keys from charts/kms-connector/values.yaml.
+# Applied as: helm template kms-connector charts/kms-connector -f kms-connector-default.yaml
+#
+# Note: kms-connector has its own commonConfig key (gateway + ethereum endpoints)
+# that conflicts with the coprocessor chart's commonConfig key. These are kept in
+# a dedicated file so each helm template call receives only its chart's values.
+# =============================================================================
+
+kmsConnectorDbMigration:
+  image:
+    tag: v0.10.0
+
+kmsConnectorGwListener:
+  enabled: true
+  image:
+    tag: v0.10.0
+
+kmsConnectorKmsWorker:
+  enabled: true
+  image:
+    tag: v0.10.0
+  config:
+    # Single kms-core endpoint (1-of-1 topology)
+    kmsCoreEndpoints: "http://kms-core:50051"
+    hostChains:
+      - url: "http://anvil-node:8545"
+        chainId: 31337
+        aclAddress:
+          valueFrom:
+            configMapKeyRef:
+              name: sc-addresses
+              key: acl.address
+
+kmsConnectorTxSender:
+  enabled: true
+  image:
+    tag: v0.10.0
+
+# commonConfig for kms-connector (gateway + ethereum endpoints)
+commonConfig:
+  gatewayUrl: "http://gateway-node:8546"
+  gatewayChainId: "54321"
+  gatewayContractAddresses:
+    decryption: "0xTODO_DECRYPTION_ADDRESS"
+    gatewayConfig: "0xTODO_GATEWAY_CONFIG_ADDRESS"
+    kmsGeneration: "0xTODO_KMS_GENERATION_ADDRESS"
+  ethereumUrl: "http://anvil-node:8545"
+  ethereumChainId: "31337"
+  ethereumContractAddresses:
+    kmsVerifier: "0xTODO_KMS_VERIFIER_ADDRESS"
+  databaseUrl: "postgresql://kms-connector:kms-connector@db:5432/kms-connector"

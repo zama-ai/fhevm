@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# EXEMPLAR — thin launcher; exec's the CLI via bun so the process image is
+# replaced (no wrapper overhead, signals propagate directly).
+#
+# Place this file on PATH (or symlink it) and invoke as: fhevm <command> ...
+#
+# Requirements: bun >= 1.0 on PATH.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CLI_ENTRY="${SCRIPT_DIR}/cli/main.ts"
+
+exec bun run "${CLI_ENTRY}" "$@"

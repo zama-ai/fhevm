@@ -1,0 +1,208 @@
+# =============================================================================
+# EXEMPLAR VALUES — 3-coprocessor consensus topology, 2-of-3 threshold, multi-chain
+# =============================================================================
+# Purpose: reference manifest for the fhevm-cli declarative engine (kind + Helm).
+# All top-level keys match chart value schemas verbatim — no extra nesting.
+# Charts: contracts (scDeploy.env), coprocessor (shared base; N=3 releases).
+# Substitute placeholder addresses and tags before use.
+#
+# Topology:
+#   _topology.numCoprocessors: 3   — N helm releases of charts/coprocessor
+#   _topology.coprocessorThreshold: 2
+# The render script reads _topology and ignores it when passing to Helm
+# (Helm silently ignores unknown top-level keys).
+# =============================================================================
+
+# Topology metadata — read by normalize.sh / run-l0.sh; Helm ignores this key.
+_topology:
+  numCoprocessors: 3
+  coprocessorThreshold: 2
+
+# -----------------------------------------------------------------------------
+# charts/contracts — top-level keys from charts/contracts/values.yaml
+# Applied as: helm template <release> charts/contracts -f two-of-three.yaml
+# -----------------------------------------------------------------------------
+scDeploy:
+  image:
+    tag: v0.13.0
+
+  env:
+    - name: DEPLOYER_PRIVATE_KEY
+      value: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+
+    # ProtocolConfig: 3 KMS nodes, 2-of-3 threshold
+    - name: NUM_KMS_NODES
+      value: "3"
+
+    - name: KMS_TX_SENDER_ADDRESS_0
+      value: "0xTODO_KMS_TX_SENDER_0"
+    - name: KMS_SIGNER_ADDRESS_0
+      value: "0xTODO_KMS_SIGNER_0"
+    - name: KMS_NODE_IP_0
+      value: "kms-core-0.default.svc.cluster.local"
+    - name: KMS_NODE_STORAGE_URL_0
+      value: "http://kms-core-0.default.svc.cluster.local:9000"
+
+    - name: KMS_TX_SENDER_ADDRESS_1
+      value: "0xTODO_KMS_TX_SENDER_1"
+    - name: KMS_SIGNER_ADDRESS_1
+      value: "0xTODO_KMS_SIGNER_1"
+    - name: KMS_NODE_IP_1
+      value: "kms-core-1.default.svc.cluster.local"
+    - name: KMS_NODE_STORAGE_URL_1
+      value: "http://kms-core-1.default.svc.cluster.local:9000"
+
+    - name: KMS_TX_SENDER_ADDRESS_2
+      value: "0xTODO_KMS_TX_SENDER_2"
+    - name: KMS_SIGNER_ADDRESS_2
+      value: "0xTODO_KMS_SIGNER_2"
+    - name: KMS_NODE_IP_2
+      value: "kms-core-2.default.svc.cluster.local"
+    - name: KMS_NODE_STORAGE_URL_2
+      value: "http://kms-core-2.default.svc.cluster.local:9000"
+
+    # 2-of-3 thresholds
+    - name: PUBLIC_DECRYPTION_THRESHOLD
+      value: "2"
+    - name: USER_DECRYPTION_THRESHOLD
+      value: "2"
+    - name: KMS_GEN_THRESHOLD
+      value: "2"
+    - name: MPC_THRESHOLD
+      value: "2"
+
+    # InputVerifier: 3 coprocessors, 2-of-3 threshold
+    - name: NUM_COPROCESSORS
+      value: "3"
+    - name: COPROCESSOR_THRESHOLD
+      value: "2"
+    - name: COPROCESSOR_SIGNER_ADDRESS_0
+      value: "0xTODO_COPROCESSOR_SIGNER_0"
+    - name: COPROCESSOR_SIGNER_ADDRESS_1
+      value: "0xTODO_COPROCESSOR_SIGNER_1"
+    - name: COPROCESSOR_SIGNER_ADDRESS_2
+      value: "0xTODO_COPROCESSOR_SIGNER_2"
+
+    # Gateway cross-references
+    - name: CHAIN_ID_GATEWAY
+      value: "54321"
+    - name: DECRYPTION_ADDRESS
+      value: "0xTODO_DECRYPTION_ADDRESS"
+    - name: INPUT_VERIFICATION_ADDRESS
+      value: "0xTODO_INPUT_VERIFICATION_ADDRESS"
+
+    # Pausers: 3 KMS nodes + 3 coprocessors = 6 pausers
+    - name: NUM_PAUSERS
+      value: "6"
+    - name: PAUSER_ADDRESS_0
+      value: "0xTODO_KMS_TX_SENDER_0"
+    - name: PAUSER_ADDRESS_1
+      value: "0xTODO_KMS_TX_SENDER_1"
+    - name: PAUSER_ADDRESS_2
+      value: "0xTODO_KMS_TX_SENDER_2"
+    - name: PAUSER_ADDRESS_3
+      value: "0xTODO_COPROCESSOR_TX_SENDER_0"
+    - name: PAUSER_ADDRESS_4
+      value: "0xTODO_COPROCESSOR_TX_SENDER_1"
+    - name: PAUSER_ADDRESS_5
+      value: "0xTODO_COPROCESSOR_TX_SENDER_2"
+
+# -----------------------------------------------------------------------------
+# charts/coprocessor — top-level keys from charts/coprocessor/values.yaml
+# Applied per-release: helm template coprocessor-{0,1,2} charts/coprocessor -f two-of-three.yaml
+# N=3 releases (coprocessor-0, coprocessor-1, coprocessor-2)
+# Each operator's wallet private key distinguishes its signing identity.
+# -----------------------------------------------------------------------------
+dbMigration:
+  image:
+    tag: v0.11.0
+
+hostListenerShared:
+  image:
+    tag: v0.11.0
+
+hostListenerPollerShared:
+  image:
+    tag: v0.11.0
+
+gwListener:
+  enabled: true
+  image:
+    tag: v0.12.0
+
+tfheWorker:
+  enabled: true
+  image:
+    tag: v0.11.0
+
+txSender:
+  enabled: true
+  image:
+    tag: v0.11.0
+  wallet:
+    secret:
+      value: "0xTODO_COPROCESSOR_TX_SENDER_PRIVATE_KEY"
+
+commonConfig:
+  # Primary host chain (ethereum); secondary (polygon) added via chains[] below
+  hostChainWsUrl: "ws://anvil-node-eth:8546"
+  hostChainHttpUrl: "http://anvil-node-eth:8545"
+  aclContractAddress:
+    valueFrom:
+      configMapKeyRef:
+        name: sc-addresses
+        key: acl.address
+  fhevmExecutorContractAddress:
+    valueFrom:
+      configMapKeyRef:
+        name: sc-addresses
+        key: fhevm_executor.address
+  kmsGenerationContractAddress:
+    valueFrom:
+      configMapKeyRef:
+        name: sc-addresses
+        key: kms_generation.address
+  gatewayUrl:
+    value: "http://gateway-node:8546"
+  gatewayContractAddresses:
+    inputVerification:
+      value: "0xTODO_INPUT_VERIFICATION_ADDRESS"
+    ciphertextCommits:
+      value: "0xTODO_CIPHERTEXT_COMMITS_ADDRESS"
+    gatewayConfig:
+      value: "0xTODO_GATEWAY_CONFIG_ADDRESS"
+  databaseUrl: "postgresql://coprocessor:coprocessor@db:5432/coprocessor"
+
+# Multi-chain: ethereum (primary) + polygon (secondary)
+chains:
+  - name: ethereum
+    chainId: "31337"
+    wsUrl: "ws://anvil-node-eth:8546"
+    httpUrl: "http://anvil-node-eth:8545"
+    aclContractAddress:
+      valueFrom:
+        configMapKeyRef:
+          name: sc-addresses
+          key: acl.address
+    fhevmExecutorContractAddress:
+      valueFrom:
+        configMapKeyRef:
+          name: sc-addresses
+          key: fhevm_executor.address
+    hostListener:
+      enabled: true
+      useLegacyName: true
+    hostListenerPoller:
+      enabled: false
+
+  - name: polygon
+    chainId: "80002"
+    wsUrl: "ws://anvil-node-polygon:8546"
+    httpUrl: "http://anvil-node-polygon:8545"
+    aclContractAddress: "0xTODO_POLYGON_ACL_ADDRESS"
+    fhevmExecutorContractAddress: "0xTODO_POLYGON_FHEVM_EXECUTOR_ADDRESS"
+    hostListener:
+      enabled: true
+      useLegacyName: false
+    hostListenerPoller:
+      enabled: true

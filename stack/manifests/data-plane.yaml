@@ -1,0 +1,187 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-data
+  namespace: fhevm
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: standard
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: db
+  namespace: fhevm
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: db
+  # Recreate (not RollingUpdate): a single replica on a RWO PVC cannot have two pods
+  # mounting the volume at once — a surge pod would deadlock waiting for the claim.
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: db
+    spec:
+      containers:
+      - env:
+        - name: POSTGRES_HOST_AUTH_METHOD
+          value: trust
+        - name: POSTGRES_DB
+          value: coprocessor
+        # PGDATA must be a subdir of the mount: the PVC root may hold lost+found,
+        # which postgres refuses to initdb into.
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
+        image: postgres:16-alpine
+        imagePullPolicy: IfNotPresent
+        name: postgres
+        ports:
+        - containerPort: 5432
+          protocol: TCP
+        resources: {}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        # Schemas (coprocessor / kms-connector / relayer_db) MUST persist, else a db
+        # restart drops every database and the whole stack fails on missing relations
+        # (EXEMPLAR §0 persistence finding — same class as minio /data and anvil --state).
+        volumeMounts:
+        - name: postgres-data
+          mountPath: /var/lib/postgresql/data
+      volumes:
+      - name: postgres-data
+        persistentVolumeClaim:
+          claimName: postgres-data
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: minio-data
+  namespace: fhevm
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: standard
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minio
+  namespace: fhevm
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: minio
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: minio
+    spec:
+      containers:
+      - args:
+        - server
+        - /data
+        - --console-address
+        - :9001
+        env:
+        - name: MINIO_ROOT_USER
+          value: zamadmin
+        - name: MINIO_ROOT_PASSWORD
+          value: zamadmin
+        image: quay.io/minio/minio
+        imagePullPolicy: Always
+        name: minio
+        ports:
+        - containerPort: 9000
+          protocol: TCP
+        - containerPort: 9001
+          protocol: TCP
+        resources: {}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        # FHE keys live under /data — MUST persist, else a minio restart wipes them
+        # and breaks the whole stack (EXEMPLAR §0 finding 6).
+        volumeMounts:
+        - name: minio-data
+          mountPath: /data
+      volumes:
+      - name: minio-data
+        persistentVolumeClaim:
+          claimName: minio-data
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  labels:
+    job-name: minio-init
+  name: minio-init
+  namespace: fhevm
+spec:
+  backoffLimit: 2
+  completions: 1
+  parallelism: 1
+  # No selector / controller-uid: let the Job controller generate them, so this Job is
+  # re-runnable after `kubectl delete job` (the recorded UID would be rejected on re-create).
+  template:
+    metadata:
+      labels:
+        job-name: minio-init
+    spec:
+      containers:
+      - command:
+        - /bin/sh
+        - -c
+        - 'until mc alias set m http://minio:9000 zamadmin zamadmin 2>/dev/null; do
+          echo waiting-minio; sleep 3; done
+
+          mc admin user add m fhevm-access-key fhevm-access-secret-key
+
+          mc admin policy attach m readwrite --user fhevm-access-key
+
+          for b in kms-public ct64 ct128; do mc mb --with-lock --ignore-existing m/$b;
+          mc anonymous set public m/$b; done
+
+          mc ls m
+
+          '
+        image: quay.io/minio/mc
+        imagePullPolicy: Always
+        name: mc
+        resources: {}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+      dnsPolicy: ClusterFirst
+      restartPolicy: Never
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30

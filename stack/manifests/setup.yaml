@@ -1,0 +1,56 @@
+# stack/manifests setup objects — PVCs + db-init. Secrets (minio-secrets,
+# registry-credentials) are created OUT-OF-BAND (they hold a ghcr token + dev
+# minio creds) — never commit them. minio buckets are created by data-plane.yaml's
+# minio-init Job. See README.md.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: host-addr
+  namespace: fhevm
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 200Mi
+  storageClassName: standard
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: kms-keys
+  namespace: fhevm
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: standard
+---
+# Create the three application databases (idempotent) on the shared postgres `db`.
+# Names match the services' DATABASE_URLs exactly: coprocessor, kms-connector, relayer_db.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: db-init
+  namespace: fhevm
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: db-init
+          image: postgres:16-alpine
+          env:
+            - { name: PGPASSWORD, value: postgres }
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              for db in coprocessor kms-connector relayer_db; do
+                psql -h db -U postgres -tc "SELECT 1 FROM pg_database WHERE datname='$db'" \
+                  | grep -q 1 || psql -h db -U postgres -c "CREATE DATABASE \"$db\""
+              done

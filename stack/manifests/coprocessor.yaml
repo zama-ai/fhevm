@@ -1,0 +1,257 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: coprocessor-db-migration
+  namespace: fhevm
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: Never
+      imagePullSecrets:
+        - name: registry-credentials
+      containers:
+        - name: db-migration
+          image: ghcr.io/zama-ai/fhevm/coprocessor/db-migration:v0.13.0-6
+          envFrom:
+            - configMapRef:
+                name: coprocessor-env
+          command: ["/initialize_db.sh"]
+          volumeMounts:
+            - name: keys-cache
+              mountPath: /fhevm-keys
+      volumes:
+        - name: keys-cache
+          emptyDir: {}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: coprocessor-host-listener
+  namespace: fhevm
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: coprocessor-host-listener }
+  template:
+    metadata:
+      labels: { app: coprocessor-host-listener }
+    spec:
+      imagePullSecrets: [{ name: registry-credentials }]
+      initContainers:
+        # host-listener v0.13.0-6 hardcodes minio:9000 -> 172.17.0.1:9000 (docker-bridge
+        # assumption, aws_s3.rs split_url). On kind that IP isn't minio, so DNAT it back.
+        # Resolve minio's ClusterIP at runtime — it changes whenever the minio pod is
+        # recreated (e.g. a PVC change), so a hardcoded target IP silently breaks downloads.
+        - name: minio-dnat
+          image: nicolaka/netshoot:latest
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              MINIO_IP=$(getent hosts minio | awk '{print $1}' | head -1)
+              echo "DNAT 172.17.0.1:9000 -> ${MINIO_IP}:9000"
+              iptables -t nat -A OUTPUT -p tcp -d 172.17.0.1 --dport 9000 -j DNAT --to-destination "${MINIO_IP}:9000"
+          securityContext:
+            capabilities: { add: ["NET_ADMIN"] }
+      containers:
+        - name: host-listener
+          image: ghcr.io/zama-ai/fhevm/coprocessor/host-listener:v0.13.0-6
+          envFrom: [{ configMapRef: { name: coprocessor-env } }]
+          command:
+            - host_listener
+            - --database-url=postgresql://postgres:postgres@db:5432/coprocessor
+            - --acl-contract-address=$(ACL_CONTRACT_ADDRESS)
+            - --tfhe-contract-address=$(FHEVM_EXECUTOR_CONTRACT_ADDRESS)
+            - --kms-generation-address=$(KMS_GENERATION_ADDRESS)
+            - --url=ws://host-node:8545
+            - --initial-block-time=1
+            - --catchup-finalization-in-blocks=5
+            - --start-at-block=1
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: coprocessor-host-listener-poller
+  namespace: fhevm
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: coprocessor-host-listener-poller }
+  template:
+    metadata:
+      labels: { app: coprocessor-host-listener-poller }
+    spec:
+      imagePullSecrets: [{ name: registry-credentials }]
+      containers:
+        - name: host-listener-poller
+          image: ghcr.io/zama-ai/fhevm/coprocessor/host-listener:v0.13.0-6
+          envFrom: [{ configMapRef: { name: coprocessor-env } }]
+          command:
+            - host_listener_poller
+            - --database-url=postgresql://postgres:postgres@db:5432/coprocessor
+            - --acl-contract-address=$(ACL_CONTRACT_ADDRESS)
+            - --tfhe-contract-address=$(FHEVM_EXECUTOR_CONTRACT_ADDRESS)
+            - --kms-generation-address=$(KMS_GENERATION_ADDRESS)
+            - --url=http://host-node:8545
+            - --finality-lag=2
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: coprocessor-gw-listener
+  namespace: fhevm
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: coprocessor-gw-listener }
+  template:
+    metadata:
+      labels: { app: coprocessor-gw-listener }
+    spec:
+      imagePullSecrets: [{ name: registry-credentials }]
+      containers:
+        - name: gw-listener
+          image: ghcr.io/zama-ai/fhevm/coprocessor/gw-listener:v0.13.0-6
+          envFrom: [{ configMapRef: { name: coprocessor-env } }]
+          command:
+            - gw_listener
+            - --database-url=postgresql://postgres:postgres@db:5432/coprocessor
+            - --database-pool-size=16
+            - --verify-proof-req-database-channel=event_zkpok_new_work
+            - --gw-url=ws://gateway-node:8546
+            - --input-verification-address=$(INPUT_VERIFICATION_ADDRESS)
+            - --ciphertext-commits-address=$(CIPHERTEXT_COMMITS_ADDRESS)
+            - --gateway-config-address=$(GATEWAY_CONFIG_ADDRESS)
+            - --error-sleep-initial-secs=1
+            - --error-sleep-max-secs=10
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: coprocessor-tfhe-worker
+  namespace: fhevm
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: coprocessor-tfhe-worker }
+  template:
+    metadata:
+      labels: { app: coprocessor-tfhe-worker }
+    spec:
+      imagePullSecrets: [{ name: registry-credentials }]
+      containers:
+        - name: tfhe-worker
+          image: ghcr.io/zama-ai/fhevm/coprocessor/tfhe-worker:v0.13.0-6
+          envFrom: [{ configMapRef: { name: coprocessor-env } }]
+          command:
+            - tfhe_worker
+            - --run-bg-worker
+            - --database-url=postgresql://postgres:postgres@db:5432/coprocessor
+            - --pg-pool-max-connections=10
+            - --worker-polling-interval-ms=1000
+            - --work-items-batch-size=10
+            - --key-cache-size=32
+            - --coprocessor-fhe-threads=8
+            - --tokio-threads=4
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: coprocessor-zkproof-worker
+  namespace: fhevm
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: coprocessor-zkproof-worker }
+  template:
+    metadata:
+      labels: { app: coprocessor-zkproof-worker }
+    spec:
+      imagePullSecrets: [{ name: registry-credentials }]
+      containers:
+        - name: zkproof-worker
+          image: ghcr.io/zama-ai/fhevm/coprocessor/zkproof-worker:v0.13.0-6
+          envFrom: [{ configMapRef: { name: coprocessor-env } }]
+          command:
+            - zkproof_worker
+            - --database-url=postgresql://postgres:postgres@db:5432/coprocessor
+            - --pg-listen-channel=event_zkpok_new_work
+            - --pg-notify-channel=event_zkpok_computed
+            - --pg-polling-interval=5
+            - --pg-pool-connections=5
+            - --worker-thread-count=4
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: coprocessor-sns-worker
+  namespace: fhevm
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: coprocessor-sns-worker }
+  template:
+    metadata:
+      labels: { app: coprocessor-sns-worker }
+    spec:
+      imagePullSecrets: [{ name: registry-credentials }]
+      containers:
+        - name: sns-worker
+          image: ghcr.io/zama-ai/fhevm/coprocessor/sns-worker:v0.13.0-6
+          envFrom: [{ configMapRef: { name: coprocessor-env } }]
+          command:
+            - sns_worker
+            - --database-url=postgresql://postgres:postgres@db:5432/coprocessor
+            - --pg-listen-channels
+            - event_pbs_computations
+            - event_ciphertext_computed
+            - --pg-notify-channel
+            - event_ciphertext128_computed
+            - --work-items-batch-size=20
+            - --pg-polling-interval=30
+            - --pg-pool-connections=10
+            - --bucket-name-ct64=ct64
+            - --bucket-name-ct128=ct128
+            - --s3-max-concurrent-uploads=100
+            - --s3-max-retries-per-upload=100
+            - --s3-max-backoff=10s
+            - --s3-max-retries-timeout=120s
+            - --s3-recheck-duration=2s
+            - --s3-regular-recheck-duration=120s
+            - --enable-compression
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: coprocessor-transaction-sender
+  namespace: fhevm
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: coprocessor-transaction-sender }
+  template:
+    metadata:
+      labels: { app: coprocessor-transaction-sender }
+    spec:
+      imagePullSecrets: [{ name: registry-credentials }]
+      containers:
+        - name: transaction-sender
+          image: ghcr.io/zama-ai/fhevm/coprocessor/tx-sender:v0.13.0-6
+          envFrom: [{ configMapRef: { name: coprocessor-env } }]
+          command:
+            - transaction_sender
+            - --database-url=postgresql://postgres:postgres@db:5432/coprocessor
+            - --gateway-url=ws://gateway-node:8546
+            - --private-key=0x8f82b3f482c19a95ac29c82cf048c076ed0de2530c64a73f2d2d7d1e64b5cc6e
+            - --ciphertext-commits-address=$(CIPHERTEXT_COMMITS_ADDRESS)
+            - --input-verification-address=$(INPUT_VERIFICATION_ADDRESS)
+            - --database-pool-size=10
+            - --database-polling-interval-secs=20
+            - --verify-proof-resp-database-channel=event_zkpok_computed
+            - --add-ciphertexts-database-channel=event_ciphertexts_uploaded
+            - --verify-proof-resp-batch-limit=128
+            - --verify-proof-resp-max-retries=15
+            - --verify-proof-remove-after-max-retries
+            - --signer-type=private-key

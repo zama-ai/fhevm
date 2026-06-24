@@ -1,0 +1,172 @@
+# =============================================================================
+# EXEMPLAR VALUES — single coprocessor + centralized KMS, single host chain
+# =============================================================================
+# Purpose: reference manifest for the fhevm-cli declarative engine (kind + Helm).
+# All top-level keys match chart value schemas verbatim — no extra nesting.
+# Charts: contracts (scDeploy.env), coprocessor (all components), kms-connector.
+# Substitute placeholder addresses and tags before use.
+#
+# Topology:
+#   _topology.numCoprocessors: 1   — N helm releases of charts/coprocessor
+#   _topology.coprocessorThreshold: 1
+# The render script reads _topology and ignores it when passing to Helm
+# (Helm silently ignores unknown top-level keys).
+# =============================================================================
+
+# Topology metadata — read by normalize.sh / run-l0.sh; Helm ignores this key.
+_topology:
+  numCoprocessors: 1
+  coprocessorThreshold: 1
+
+# -----------------------------------------------------------------------------
+# charts/contracts  — top-level keys from charts/contracts/values.yaml
+# Applied as: helm template <release> charts/contracts -f default.yaml
+# -----------------------------------------------------------------------------
+scDeploy:
+  image:
+    tag: v0.13.0
+
+  env:
+    # Host chain deployer
+    - name: DEPLOYER_PRIVATE_KEY
+      value: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+
+    # ProtocolConfig: single-node centralized KMS (threshold = 1-of-1)
+    - name: NUM_KMS_NODES
+      value: "1"
+    - name: KMS_TX_SENDER_ADDRESS_0
+      value: "0xTODO_KMS_TX_SENDER_0"
+    - name: KMS_SIGNER_ADDRESS_0
+      value: "0xTODO_KMS_SIGNER_0"
+    - name: KMS_NODE_IP_0
+      value: "kms-core.default.svc.cluster.local"
+    - name: KMS_NODE_STORAGE_URL_0
+      value: "http://kms-core.default.svc.cluster.local:9000"
+
+    - name: PUBLIC_DECRYPTION_THRESHOLD
+      value: "1"
+    - name: USER_DECRYPTION_THRESHOLD
+      value: "1"
+    - name: KMS_GEN_THRESHOLD
+      value: "1"
+    - name: MPC_THRESHOLD
+      value: "1"
+
+    # InputVerifier: single coprocessor (1-of-1)
+    - name: NUM_COPROCESSORS
+      value: "1"
+    - name: COPROCESSOR_THRESHOLD
+      value: "1"
+    - name: COPROCESSOR_SIGNER_ADDRESS_0
+      value: "0xTODO_COPROCESSOR_SIGNER_0"
+
+    # Gateway cross-references
+    - name: CHAIN_ID_GATEWAY
+      value: "54321"
+    - name: DECRYPTION_ADDRESS
+      value: "0xTODO_DECRYPTION_ADDRESS"
+    - name: INPUT_VERIFICATION_ADDRESS
+      value: "0xTODO_INPUT_VERIFICATION_ADDRESS"
+
+    # Pausers: 1 KMS node + 1 coprocessor = 2 pausers
+    - name: NUM_PAUSERS
+      value: "2"
+    - name: PAUSER_ADDRESS_0
+      value: "0xTODO_KMS_TX_SENDER_0"
+    - name: PAUSER_ADDRESS_1
+      value: "0xTODO_COPROCESSOR_TX_SENDER_0"
+
+# -----------------------------------------------------------------------------
+# charts/coprocessor — top-level keys from charts/coprocessor/values.yaml
+# Applied per-release: helm template coprocessor-0 charts/coprocessor -f default.yaml
+# N=1 release (coprocessor-0)
+# -----------------------------------------------------------------------------
+dbMigration:
+  image:
+    tag: v0.11.0
+
+hostListenerShared:
+  image:
+    tag: v0.11.0
+
+hostListenerPollerShared:
+  image:
+    tag: v0.11.0
+
+gwListener:
+  enabled: true
+  image:
+    tag: v0.12.0
+
+tfheWorker:
+  enabled: true
+  image:
+    tag: v0.11.0
+
+txSender:
+  enabled: true
+  image:
+    tag: v0.11.0
+  wallet:
+    secret:
+      value: "0xTODO_COPROCESSOR_TX_SENDER_PRIVATE_KEY"
+
+commonConfig:
+  hostChainWsUrl: "ws://anvil-node:8546"
+  hostChainHttpUrl: "http://anvil-node:8545"
+  aclContractAddress:
+    valueFrom:
+      configMapKeyRef:
+        name: sc-addresses
+        key: acl.address
+  fhevmExecutorContractAddress:
+    valueFrom:
+      configMapKeyRef:
+        name: sc-addresses
+        key: fhevm_executor.address
+  kmsGenerationContractAddress:
+    valueFrom:
+      configMapKeyRef:
+        name: sc-addresses
+        key: kms_generation.address
+  gatewayUrl:
+    value: "http://gateway-node:8546"
+  gatewayContractAddresses:
+    inputVerification:
+      value: "0xTODO_INPUT_VERIFICATION_ADDRESS"
+    ciphertextCommits:
+      value: "0xTODO_CIPHERTEXT_COMMITS_ADDRESS"
+    gatewayConfig:
+      value: "0xTODO_GATEWAY_CONFIG_ADDRESS"
+  databaseUrl: "postgresql://coprocessor:coprocessor@db:5432/coprocessor"
+
+chains:
+  - name: ethereum
+    chainId: "31337"
+    wsUrl: "ws://anvil-node:8546"
+    httpUrl: "http://anvil-node:8545"
+    aclContractAddress:
+      valueFrom:
+        configMapKeyRef:
+          name: sc-addresses
+          key: acl.address
+    fhevmExecutorContractAddress:
+      valueFrom:
+        configMapKeyRef:
+          name: sc-addresses
+          key: fhevm_executor.address
+    hostListener:
+      enabled: true
+      useLegacyName: true
+    hostListenerPoller:
+      enabled: false
+
+# -----------------------------------------------------------------------------
+# charts/kms-connector — top-level keys from charts/kms-connector/values.yaml
+# Note: kms-connector has its own commonConfig (gateway/ethereum endpoints).
+# This commonConfig block is for the kms-connector chart only. The coprocessor
+# chart's commonConfig block (above) uses different keys.
+# Because both charts use a top-level commonConfig key, kms-connector values
+# are split into a separate per-chart file: values/kms-connector-default.yaml
+# (see stack/.migration/normalize.sh for how each chart file is selected).
+# -----------------------------------------------------------------------------
