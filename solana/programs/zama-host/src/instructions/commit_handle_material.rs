@@ -113,6 +113,7 @@ pub fn commit_handle_material(
     acl_record.material_commitment_hash = commitment_hash;
     acl_record.material_key_id = key_id;
 
+    #[cfg(feature = "emit-events")]
     emit_cpi!(HandleMaterialCommittedEvent {
         version: EVENT_VERSION,
         material_commitment: material_commitment_key,
@@ -125,6 +126,7 @@ pub fn commit_handle_material(
         material_commitment_hash: commitment_hash,
         created_slot,
     });
+    #[cfg(feature = "emit-events")]
     emit_cpi!(HandleMaterialSealedEvent {
         version: EVENT_VERSION,
         material_commitment: material_commitment_key,

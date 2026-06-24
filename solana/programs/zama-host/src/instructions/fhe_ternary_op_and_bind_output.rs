@@ -218,6 +218,7 @@ pub fn fhe_ternary_op_and_bind_output(
         result == expected_result,
         ZamaHostError::ComputedHandleMismatch
     );
+    #[cfg(feature = "emit-events")]
     emit_cpi!(FheTernaryOpEvent {
         version: EVENT_VERSION,
         op,
@@ -247,6 +248,7 @@ pub fn fhe_ternary_op_and_bind_output(
         &ctx.accounts.output_acl_record,
     );
     for output_subject in output_subjects {
+        #[cfg(feature = "emit-events")]
         emit_cpi!(AclAllowedEvent {
             version: EVENT_VERSION,
             handle: result,

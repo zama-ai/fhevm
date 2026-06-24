@@ -57,6 +57,7 @@ pub fn set_deny_subject(ctx: Context<SetDenySubject>, subject: Pubkey, denied: b
             bump,
         },
     )?;
+    #[cfg(feature = "emit-events")]
     emit!(DenySubjectUpdatedEvent {
         version: EVENT_VERSION,
         deny_subject_record: ctx.accounts.deny_subject_record.key(),

@@ -3,9 +3,13 @@
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::{program::invoke_signed, system_instruction, system_program};
 
+// AclRecordBoundEvent / AclSubjectAllowedEvent are only used by the emit funnels,
+// which are no-ops when `emit-events` is off.
+#[cfg(feature = "emit-events")]
+use crate::events::{AclRecordBoundEvent, AclSubjectAllowedEvent};
 use crate::{
     errors::ZamaHostError,
-    events::{AclRecordBoundEvent, AclSubjectAllowedEvent, HostConfigUpdatedEvent},
+    events::HostConfigUpdatedEvent,
     state::{
         acl_nonce_key, acl_permission_address, acl_record_address,
         acl_record_subject_slots_are_canonical, assert_handle_for_chain, deny_subject_address,
@@ -78,6 +82,7 @@ pub(super) fn assert_test_shim_authority(
 }
 
 pub(super) fn emit_config_updated(config: &HostConfig, admin: Pubkey) {
+    #[cfg(feature = "emit-events")]
     emit!(HostConfigUpdatedEvent {
         version: EVENT_VERSION,
         config: crate::state::host_config_address().0,
@@ -731,6 +736,12 @@ pub(super) fn write_account<T: AccountSerialize>(info: &AccountInfo, account: &T
     Ok(())
 }
 
+/// With `emit-events` disabled, off-chain reconstruction is the sole event source,
+/// so the ACL-record-bound emit is a no-op.
+#[cfg(not(feature = "emit-events"))]
+pub(super) fn emit_record_bound(_record_key: Pubkey, _record: &AclRecord) {}
+
+#[cfg(feature = "emit-events")]
 pub(super) fn emit_record_bound(record_key: Pubkey, record: &AclRecord) {
     emit!(AclRecordBoundEvent {
         version: EVENT_VERSION,
@@ -747,6 +758,18 @@ pub(super) fn emit_record_bound(record_key: Pubkey, record: &AclRecord) {
     });
 }
 
+/// With `emit-events` disabled, off-chain reconstruction is the sole event source,
+/// so the ACL-subject-allowed emit is a no-op.
+#[cfg(not(feature = "emit-events"))]
+pub(super) fn emit_subject_event(
+    _record_key: Pubkey,
+    _handle: [u8; 32],
+    _subject: AclSubjectEntry,
+    _overflow_permission_record: Pubkey,
+) {
+}
+
+#[cfg(feature = "emit-events")]
 pub(super) fn emit_subject_event(
     record_key: Pubkey,
     handle: [u8; 32],

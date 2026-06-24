@@ -6,7 +6,7 @@ use std::str::FromStr;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_commitment_config::CommitmentConfig;
 use solana_sdk::pubkey::Pubkey;
@@ -53,6 +53,34 @@ struct Args {
 
     #[arg(long, default_value = "solana-host-listener")]
     service_name: String,
+
+    /// Event transport: `rpc` (poll getSignaturesForAddress) or `grpc`
+    /// (subscribe to a Yellowstone gRPC endpoint). `grpc` requires building
+    /// with `--features solana-grpc`.
+    #[arg(long, value_enum, default_value_t = Transport::Rpc)]
+    transport: Transport,
+
+    /// Yellowstone gRPC endpoint (used when --transport=grpc).
+    #[arg(long, default_value = "http://127.0.0.1:10000")]
+    grpc_url: String,
+
+    /// Optional `x-token` auth metadata for the gRPC endpoint.
+    #[arg(long)]
+    grpc_x_token: Option<String>,
+
+    /// Ingest events REBUILT off-chain from instructions instead of emit-decoded
+    /// events (the reconstruction swap). Handle-derivation params (chain_id and
+    /// the zero-birth-entropy rule) are auto-detected from the on-chain HostConfig.
+    /// Without it, ingestion stays purely emit-based (the Phase 1 transport).
+    /// Requires `--features solana-grpc,solana-reconstruct`.
+    #[arg(long, default_value_t = false)]
+    reconstruct: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, ValueEnum)]
+enum Transport {
+    Rpc,
+    Grpc,
 }
 
 #[tokio::main]
@@ -77,16 +105,6 @@ async fn main() -> Result<()> {
             .await
             .context("connect coprocessor database")?;
 
-    let commitment = CommitmentConfig::confirmed();
-    let rpc = RpcClient::new_with_commitment(args.url.clone(), commitment);
-
-    let config = SolanaListenerConfig {
-        rpc_url: args.url,
-        program_id,
-        poll_interval: Duration::from_millis(args.poll_interval_ms),
-        commitment,
-    };
-
     let cancel = CancellationToken::new();
     let signal_cancel = cancel.clone();
     tokio::spawn(async move {
@@ -96,5 +114,90 @@ async fn main() -> Result<()> {
         }
     });
 
-    run(&db, &rpc, &config, cancel).await
+    match args.transport {
+        Transport::Rpc => {
+            let commitment = CommitmentConfig::confirmed();
+            let rpc =
+                RpcClient::new_with_commitment(args.url.clone(), commitment);
+            let config = SolanaListenerConfig {
+                rpc_url: args.url,
+                program_id,
+                poll_interval: Duration::from_millis(args.poll_interval_ms),
+                commitment,
+            };
+            run(&db, &rpc, &config, cancel).await
+        }
+        Transport::Grpc => run_grpc(&db, &args, program_id, cancel).await,
+    }
+}
+
+#[cfg(feature = "solana-grpc")]
+async fn run_grpc(
+    db: &Database,
+    args: &Args,
+    program_id: Pubkey,
+    cancel: CancellationToken,
+) -> Result<()> {
+    use host_listener::solana_grpc_listener::{
+        run as grpc_run, SolanaGrpcListenerConfig,
+    };
+    use yellowstone_grpc_proto::prelude::CommitmentLevel;
+
+    #[allow(unused_mut)]
+    let mut config = SolanaGrpcListenerConfig {
+        grpc_url: args.grpc_url.clone(),
+        x_token: args.grpc_x_token.clone(),
+        rpc_fallback_url: args.url.clone(),
+        program_id: program_id.to_string(),
+        commitment: CommitmentLevel::Confirmed,
+        // Auto-detected from the on-chain HostConfig below (reconstruct mode only).
+        chain_id: 0,
+        zero_birth_entropy: false,
+        reconstruct: args.reconstruct,
+    };
+
+    // In reconstruct mode, source the handle-derivation params (chain_id and the
+    // zero-birth-entropy rule) from the on-chain HostConfig instead of CLI flags.
+    #[cfg(feature = "solana-reconstruct")]
+    if args.reconstruct {
+        use host_listener::solana_reconstruct::{
+            parse_host_config, HOST_CONFIG_SEED,
+        };
+        // Confirmed (not the RpcClient default of finalized) so a freshly created
+        // HostConfig is visible without waiting for finalization; matches the
+        // gRPC subscription's commitment.
+        let rpc = RpcClient::new_with_commitment(
+            args.url.clone(),
+            CommitmentConfig::confirmed(),
+        );
+        let (host_config_pda, _) =
+            Pubkey::find_program_address(&[HOST_CONFIG_SEED], &program_id);
+        let account = rpc
+            .get_account(&host_config_pda)
+            .await
+            .with_context(|| format!("fetch HostConfig {host_config_pda}"))?;
+        let (chain_id, zero_birth_entropy) = parse_host_config(&account.data)?;
+        info!(
+            %host_config_pda,
+            chain_id,
+            zero_birth_entropy,
+            "auto-detected handle-derivation params from HostConfig"
+        );
+        config.chain_id = chain_id;
+        config.zero_birth_entropy = zero_birth_entropy;
+    }
+
+    grpc_run(db, &config, cancel).await
+}
+
+#[cfg(not(feature = "solana-grpc"))]
+async fn run_grpc(
+    _db: &Database,
+    _args: &Args,
+    _program_id: Pubkey,
+    _cancel: CancellationToken,
+) -> Result<()> {
+    anyhow::bail!(
+        "--transport=grpc requires building host-listener with --features solana-grpc"
+    )
 }

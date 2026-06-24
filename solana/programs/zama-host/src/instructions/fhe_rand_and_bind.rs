@@ -90,6 +90,7 @@ pub fn fhe_rand_and_bind(
         ctx.bumps.output_acl_record,
     );
 
+    #[cfg(feature = "emit-events")]
     emit_cpi!(FheRandEvent {
         version: EVENT_VERSION,
         subject: subject.to_bytes(),
@@ -102,6 +103,7 @@ pub fn fhe_rand_and_bind(
         &ctx.accounts.output_acl_record,
     );
     for output_subject in output_subjects {
+        #[cfg(feature = "emit-events")]
         emit_cpi!(AclAllowedEvent {
             version: EVENT_VERSION,
             handle: result,

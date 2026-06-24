@@ -75,6 +75,7 @@ pub fn define_kms_context(
     kms_context.bump = ctx.bumps.kms_context;
     ctx.accounts.host_config.current_kms_context_id = context_id;
 
+    #[cfg(feature = "emit-events")]
     emit!(NewKmsContextEvent {
         version: EVENT_VERSION,
         kms_context_id: context_id,

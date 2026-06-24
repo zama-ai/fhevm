@@ -570,7 +570,7 @@ fn account_fetches_from_solana_events(
         .collect()
 }
 
-fn acl_record_fetch(
+pub(crate) fn acl_record_fetch(
     acl_record: [u8; 32],
     handle: [u8; 32],
     reason: &'static str,
@@ -601,7 +601,7 @@ fn acl_permission_fetch(
     }
 }
 
-fn material_fetch(
+pub(crate) fn material_fetch(
     material_commitment: [u8; 32],
     acl_record: [u8; 32],
     handle: [u8; 32],

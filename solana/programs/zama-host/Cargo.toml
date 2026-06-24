@@ -11,13 +11,17 @@ crate-type = ["cdylib", "lib"]
 name = "zama_host"
 
 [features]
-default = []
+default = ["emit-events"]
 cpi = ["no-entrypoint"]
 no-entrypoint = []
 no-idl = []
 no-log-ix-name = []
 idl-build = ["anchor-lang/idl-build"]
 poc = []
+# Emit on-chain events (`emit_cpi!`/`emit!`). Default-on so all existing builds
+# behave identically; disable with `--no-default-features` to let off-chain
+# reconstruction be the sole event source (Yellowstone gRPC path).
+emit-events = []
 
 [dependencies]
 anchor-lang = { version = "1.0.2", features = ["event-cpi"] }

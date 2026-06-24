@@ -75,11 +75,13 @@ pub fn allow_acl_subjects<'info>(
     )?;
     let updated_slot = Clock::get()?.slot;
     for update in allowed_subjects {
+        #[cfg(feature = "emit-events")]
         emit_cpi!(AclAllowedEvent {
             version: EVENT_VERSION,
             handle,
             subject: update.subject.pubkey.to_bytes(),
         });
+        #[cfg(feature = "emit-events")]
         emit!(AclSubjectAllowedEvent {
             version: EVENT_VERSION,
             acl_record: record_key,

@@ -143,6 +143,7 @@ pub fn verify_coprocessor_input(
     // (user, contract)", which we surface as the receipt below. No ACL is created here — durable
     // permission on an input-derived handle is a separate, explicit app grant (EVM parity).
     // `acl_domain_key` carries the attested contract identity, the natural ACL domain for the input.
+    #[cfg(feature = "emit-events")]
     emit_cpi!(InputVerifiedEvent {
         version: EVENT_VERSION,
         input_handle,

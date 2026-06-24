@@ -16,6 +16,10 @@ pub mod solana_abi_schema_hashes {
     include!(concat!(env!("OUT_DIR"), "/solana_abi_schema_hashes.rs"));
 }
 
+pub mod zama_host_instructions {
+    include!(concat!(env!("OUT_DIR"), "/zama_host_instructions.rs"));
+}
+
 pub use confidential_token_events::{
     decode_anchor_cpi_event as decode_confidential_token_anchor_cpi_event,
     decode_anchor_event as decode_confidential_token_anchor_event,
@@ -29,4 +33,7 @@ pub use zama_host_events::{
     AclAllowedEvent, FheBinaryOpCode, FheBinaryOpEvent, FheRandBoundedEvent,
     FheRandEvent, FheTernaryOpCode, FheTernaryOpEvent, InputVerifiedEvent,
     TrivialEncryptEvent, ZamaHostEvent, ANCHOR_EVENT_IX_TAG_LE, EVENT_VERSION,
+};
+pub use zama_host_instructions::{
+    decode_zama_host_instruction, ZamaHostInstruction,
 };
