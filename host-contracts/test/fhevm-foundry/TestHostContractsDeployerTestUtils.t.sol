@@ -203,6 +203,7 @@ contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
 
         KmsNodeParams[] memory nodeParams = _makeKmsNodeParams(2);
         uint256 canonicalContextId = KMS_CONTEXT_COUNTER_BASE + 7;
+        uint256 canonicalEpochId = EPOCH_COUNTER_BASE + 7;
         IProtocolConfig.KmsThresholds memory thresholds = IProtocolConfig.KmsThresholds({
             publicDecryption: 1,
             userDecryption: 2,
@@ -213,6 +214,7 @@ contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
         (ProtocolConfig pcProxy, address pcImplementation) = _deployProtocolConfigMirror(
             OWNER,
             canonicalContextId,
+            canonicalEpochId,
             nodeParams,
             thresholds
         );
@@ -222,11 +224,9 @@ contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
         assertEq(pcProxy.getVersion(), "ProtocolConfig v0.2.0", "Version mismatch");
         assertEq(pcProxy.getCurrentKmsContextId(), canonicalContextId, "Context ID mismatch");
         assertEq(pcProxy.getUserDecryptionThreshold(), 2, "User decryption threshold mismatch");
-        // The mirror bootstrap opens the genesis epoch (EPOCH_COUNTER_BASE+1) then advances it on the
-        // mirror (EPOCH_COUNTER_BASE+2) — the literal subject of the epoch-lifecycle commit.
         (uint256 activeContextId, uint256 activeEpochId) = pcProxy.getCurrentKmsContextAndEpoch();
         assertEq(activeContextId, canonicalContextId, "Active context mismatch");
-        assertEq(activeEpochId, EPOCH_COUNTER_BASE + 2, "Active epoch mismatch");
+        assertEq(activeEpochId, canonicalEpochId, "Active epoch mismatch");
         assertEq(_readImplementationSlot(protocolConfigAdd), pcImplementation, "Implementation slot mismatch");
     }
 
