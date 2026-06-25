@@ -87,7 +87,7 @@ impl MigrationScheduleCache {
     pub async fn load(pool: &PgPool) -> Result<Self> {
         let mut host: HashMap<ChainId, Vec<(MaterialVersion, i64)>> = HashMap::new();
         let host_rows = sqlx::query(
-            "SELECT host_chain_id, material_version, target_block_number \
+            "SELECT host_chain_id, material_version, migration_block \
              FROM material_version_host_schedule",
         )
         .fetch_all(pool)
@@ -95,23 +95,23 @@ impl MigrationScheduleCache {
         for row in host_rows {
             let chain_id_raw: i64 = row.try_get("host_chain_id")?;
             let version: i16 = row.try_get("material_version")?;
-            let target_block: i64 = row.try_get("target_block_number")?;
+            let migration_block: i64 = row.try_get("migration_block")?;
             host.entry(ChainId::try_from(chain_id_raw)?)
                 .or_default()
-                .push((MaterialVersion(version), target_block));
+                .push((MaterialVersion(version), migration_block));
         }
 
         let mut gateway: Vec<(MaterialVersion, i64)> = Vec::new();
         let gateway_rows = sqlx::query(
-            "SELECT material_version, target_block_number \
+            "SELECT material_version, migration_block \
              FROM material_version_gateway_schedule",
         )
         .fetch_all(pool)
         .await?;
         for row in gateway_rows {
             let version: i16 = row.try_get("material_version")?;
-            let target_block: i64 = row.try_get("target_block_number")?;
-            gateway.push((MaterialVersion(version), target_block));
+            let migration_block: i64 = row.try_get("migration_block")?;
+            gateway.push((MaterialVersion(version), migration_block));
         }
 
         Ok(Self { host, gateway })
