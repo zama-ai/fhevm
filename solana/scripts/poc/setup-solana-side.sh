@@ -98,9 +98,9 @@ if [ "$RECONSTRUCT" = 1 ]; then
   # the workflow. The other programs keep their defaults, matching the emit-decode run.
   echo "    building EMITLESS zama_host (--no-default-features) + default-feature deps"
   ( cd "$SOLANA" \
-      && anchor build --ignore-keys --no-idl -p zama_host -- --no-default-features \
-      && anchor build --ignore-keys --no-idl -p confidential_token \
-      && anchor build --ignore-keys --no-idl -p confidential_token_receiver ) \
+      && anchor build --no-idl -p zama_host -- --no-default-features \
+      && anchor build --no-idl -p confidential_token \
+      && anchor build --no-idl -p confidential_token_receiver ) \
     || { echo "[setup] emitless anchor build failed" >&2; exit 1; }
   # --use-rpc: deploy over RPC (8899) since the container doesn't publish the TPU ports.
   for p in zama_host confidential_token confidential_token_receiver; do
