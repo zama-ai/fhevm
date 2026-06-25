@@ -17,5 +17,5 @@ CREATE TABLE IF NOT EXISTS versioning (
 -- ciphertext_version must match what `fhevm_engine_common::tfhe_ops::current_ciphertext_version()`
 -- returns at build time.
 INSERT INTO versioning (singleton, stack_version, ciphertext_version)
-VALUES (TRUE, 'v0.14', 2)
+VALUES (TRUE, 'v0.14', 0)
 ON CONFLICT (singleton) DO NOTHING;

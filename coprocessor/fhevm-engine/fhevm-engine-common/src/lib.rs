@@ -48,4 +48,4 @@ pub(crate) use stack_version;
 /// parser in `versioning::parse_version` tolerates its absence.
 pub const STACK_VERSION: &str = stack_version!();
 
-pub const CIPHERTEXT_VERSION: i16 = 2;
+pub const CIPHERTEXT_VERSION: i16 = 0;
