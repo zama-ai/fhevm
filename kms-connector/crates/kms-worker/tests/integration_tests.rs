@@ -71,7 +71,7 @@ async fn test_processing_request(
 ) -> anyhow::Result<()> {
     // Setup real DB and S3 instance
     let test_instance = TestInstanceBuilder::default()
-        .with_db(DbInstance::setup().await?)
+        .with_db(DbInstance::setup_external().await?)
         .with_s3(S3Instance::setup().await?)
         .build();
 

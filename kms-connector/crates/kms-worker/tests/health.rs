@@ -7,7 +7,10 @@ use connector_utils::{
         health::{Healthcheck, query_healthcheck_endpoint},
         server::{GIT_COMMIT_HASH, LivenessResponse, VersionResponse, start_monitoring_server},
     },
-    tests::setup::{TestInstanceBuilder, pick_free_port},
+    tests::setup::{
+        BlockchainInstance, DbInstance, KmsInstance, S3Instance, TestInstanceBuilder,
+        pick_free_port,
+    },
 };
 use kms_worker::monitoring::health::{HealthStatus, KmsHealthClient, State};
 use rstest::rstest;
@@ -18,7 +21,15 @@ use tokio_util::sync::CancellationToken;
 #[timeout(Duration::from_secs(300))]
 #[tokio::test]
 async fn test_healthcheck_endpoints() -> anyhow::Result<()> {
-    let mut test_instance = TestInstanceBuilder::full().await?;
+    let s3_instance = S3Instance::setup().await?;
+    let kms_instance = KmsInstance::setup(&s3_instance.url).await?;
+    let mut test_instance = TestInstanceBuilder::default()
+        .with_db(DbInstance::setup_container().await?)
+        .with_blockchain(BlockchainInstance::setup().await?)
+        .with_s3(s3_instance)
+        .with_kms(kms_instance)
+        .build();
+
     let kms_health_client =
         KmsHealthClient::connect(&[test_instance.kms_url().to_string()]).await?;
     let state = State::new(
