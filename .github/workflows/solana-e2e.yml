@@ -77,8 +77,11 @@ jobs:
           username: ${{ secrets.CGR_USERNAME }} # zizmor: ignore[secrets-outside-env] registry creds, same pattern as test-suite-e2e workflows
           password: ${{ secrets.CGR_PASSWORD }} # zizmor: ignore[secrets-outside-env] registry creds, same pattern as test-suite-e2e workflows
 
-      - name: Install SDK deps (TKMS WASM consumers; pure-SDK user-decrypt)
-        run: cd sdk/js-sdk && npm ci
+      - name: Install + build SDK (full-vertical runs the @fhevm/sdk ESM build under node)
+        # build:esm emits src/_esm (gitignored build artifact) + copies the TKMS WASM into it.
+        # solana-input.ts and the pure-SDK user-decrypt import @fhevm/sdk/* which resolves there,
+        # so a fresh checkout that only ran `npm ci` would crash on the missing _esm.
+        run: cd sdk/js-sdk && npm ci && npm run build:esm
 
       - name: Install fhevm-cli deps (clean-e2e.sh drives ./fhevm-cli)
         working-directory: test-suite/fhevm
@@ -171,8 +174,11 @@ jobs:
           username: ${{ secrets.CGR_USERNAME }} # zizmor: ignore[secrets-outside-env] registry creds, same pattern as test-suite-e2e workflows
           password: ${{ secrets.CGR_PASSWORD }} # zizmor: ignore[secrets-outside-env] registry creds, same pattern as test-suite-e2e workflows
 
-      - name: Install SDK deps (TKMS WASM consumers; pure-SDK user-decrypt)
-        run: cd sdk/js-sdk && npm ci
+      - name: Install + build SDK (full-vertical runs the @fhevm/sdk ESM build under node)
+        # build:esm emits src/_esm (gitignored build artifact) + copies the TKMS WASM into it.
+        # solana-input.ts and the pure-SDK user-decrypt import @fhevm/sdk/* which resolves there,
+        # so a fresh checkout that only ran `npm ci` would crash on the missing _esm.
+        run: cd sdk/js-sdk && npm ci && npm run build:esm
 
       - name: Install fhevm-cli deps (clean-e2e.sh drives ./fhevm-cli)
         working-directory: test-suite/fhevm
