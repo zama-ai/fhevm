@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT zk_proof_id, input, chain_id, contract_address, user_address, transaction_id\n            FROM verify_proofs\n            WHERE verified IS NULL\n              AND chain_id = ANY($1::bigint[])\n            ORDER BY zk_proof_id ASC\n            LIMIT 1 FOR UPDATE SKIP LOCKED",
+  "query": "SELECT zk_proof_id, input, chain_id, contract_address, user_address, transaction_id, gw_block_number\n            FROM verify_proofs\n            WHERE verified IS NULL\n              AND chain_id = ANY($1::bigint[])\n            ORDER BY zk_proof_id ASC\n            LIMIT 1 FOR UPDATE SKIP LOCKED",
   "describe": {
     "columns": [
       {
@@ -32,6 +32,11 @@
         "ordinal": 5,
         "name": "transaction_id",
         "type_info": "Bytea"
+      },
+      {
+        "ordinal": 6,
+        "name": "gw_block_number",
+        "type_info": "Int8"
       }
     ],
     "parameters": {
@@ -45,8 +50,9 @@
       false,
       false,
       false,
+      true,
       true
     ]
   },
-  "hash": "b7510de4735f7dce4b05471ebc50b55b8f209a755b5cf6b88a8cb864d9ebd1dd"
+  "hash": "37d29298bc7bdec2c78d67cb2ff7e6c420a2cfccc053765a15090b6090b473dc"
 }

@@ -4,6 +4,9 @@ use fhevm_engine_common::crs::{Crs, CrsCache};
 use fhevm_engine_common::db_keys::DbKey;
 use fhevm_engine_common::db_keys::DbKeyCache;
 use fhevm_engine_common::host_chains::HostChainsCache;
+use fhevm_engine_common::material_version::{
+    MaterialVersion, MigrationScheduleCache, MIGRATION_SCHEDULE_CHANNEL,
+};
 use fhevm_engine_common::pg_pool::{PostgresPoolManager, ServiceError};
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::tfhe_ops::{current_ciphertext_version, extract_ct_list};
@@ -211,6 +214,7 @@ async fn execute_worker(
 
     let mut listener = PgListener::connect_with(&pool).await?;
     listener.listen(&conf.listen_database_channel).await?;
+    listener.listen(MIGRATION_SCHEDULE_CHANNEL).await?;
 
     let mut idle_event = interval(Duration::from_secs(conf.pg_polling_interval as u64));
 
@@ -220,6 +224,15 @@ async fn execute_worker(
             .await
             .map_err(|_| ExecutionError::DbError(sqlx::Error::RowNotFound))?,
     );
+
+    // RFC-029: the cutover schedule (loaded once, refreshed only on the publish
+    // NOTIFY or a reconnect -- no happy-path polling) and the lazily-fetched v1
+    // key, reused for the worker's life (one cutover, immutable). v0 selection
+    // keeps using `latest_key` exactly as today.
+    let mut schedule = MigrationScheduleCache::load(&pool)
+        .await
+        .map_err(|e| ExecutionError::Other(e.into()))?;
+    let mut migrated_key: Option<Arc<DbKey>> = None;
 
     let latest_crs = Arc::new(
         CrsCache::load(&pool)
@@ -246,6 +259,9 @@ async fn execute_worker(
         execute_verify_proof_routine(
             &pool,
             latest_key.clone(),
+            &db_key_cache,
+            &mut migrated_key,
+            &schedule,
             latest_crs.clone(),
             host_chain_cache.as_ref(),
             &known_chain_ids,
@@ -262,9 +278,19 @@ async fn execute_worker(
             res = listener.try_recv() => {
                 let res = res?;
                 match res {
+                    Some(n) if n.channel() == MIGRATION_SCHEDULE_CHANNEL => {
+                        // One-shot cutover schedule published/changed: reload once.
+                        schedule = MigrationScheduleCache::load(&pool)
+                            .await
+                            .map_err(|e| ExecutionError::Other(e.into()))?;
+                        info!("Reloaded material-version cutover schedule");
+                    }
                     Some(notification) => info!( src = %notification.process_id(), "Received notification"),
                     None => {
-                        // sqlx already reconnected the LISTEN connection; keep going.
+                        // Reconnect may have missed a schedule NOTIFY; refresh, then keep going.
+                        schedule = MigrationScheduleCache::load(&pool)
+                            .await
+                            .map_err(|e| ExecutionError::Other(e.into()))?;
                         warn!("postgres LISTEN connection reset; reconnected");
                         continue;
                     },
@@ -282,9 +308,13 @@ async fn execute_worker(
 }
 
 /// Fetch, verify a single proof and then compute signature
+#[allow(clippy::too_many_arguments)]
 async fn execute_verify_proof_routine(
     pool: &PgPool,
     db_key: Arc<DbKey>,
+    db_key_cache: &DbKeyCache,
+    migrated_key: &mut Option<Arc<DbKey>>,
+    schedule: &MigrationScheduleCache,
     crs: Arc<Crs>,
     host_chain_cache: &HostChainsCache,
     known_chain_ids: &[i64],
@@ -306,7 +336,7 @@ async fn execute_verify_proof_routine(
     // rows.
     let mut txn: sqlx::Transaction<'_, sqlx::Postgres> = pool.begin().await?;
     if let Ok(row) = sqlx::query!(
-        "SELECT zk_proof_id, input, chain_id, contract_address, user_address, transaction_id
+        "SELECT zk_proof_id, input, chain_id, contract_address, user_address, transaction_id, gw_block_number
             FROM verify_proofs
             WHERE verified IS NULL
               AND chain_id = ANY($1::bigint[])
@@ -351,6 +381,33 @@ async fn execute_verify_proof_routine(
         let user_address = row.user_address;
         let transaction_id: Option<Vec<u8>> = row.transaction_id;
 
+        // RFC-029: select the input-verification material version from the
+        // gateway block, and the key for it. v0 reuses `db_key` (an Arc clone,
+        // no key copy); v1 uses the migrated key, fetched once and reused. If
+        // v1 isn't published yet, defer this proof (txn rolls back, retried) --
+        // never fall back to v0.
+        let material_version = schedule.select_gateway(row.gw_block_number);
+        let key = if material_version == MaterialVersion::LEGACY {
+            db_key.clone()
+        } else {
+            if migrated_key.is_none() {
+                match db_key_cache
+                    .fetch_latest_for_version(material_version, &mut txn)
+                    .await
+                {
+                    Ok(k) => *migrated_key = Some(Arc::new(k)),
+                    Err(e) => {
+                        warn!(request_id, error = %e, "migrated key unavailable; deferring proof");
+                        return Ok(());
+                    }
+                }
+            }
+            migrated_key
+                .as_ref()
+                .expect("migrated key fetched above")
+                .clone()
+        };
+
         info!(
             message = "Process zk-verify request",
             request_id,
@@ -378,7 +435,7 @@ async fn execute_verify_proof_routine(
                 acl_contract_address,
             };
 
-            verify_proof(request_id, &db_key, &crs, &aux_data, &input)
+            verify_proof(request_id, &key, &crs, &aux_data, &input)
         })
         .await?;
 
@@ -412,7 +469,7 @@ async fn execute_verify_proof_routine(
                     });
                     verified = true;
                     let count = cts.len();
-                    insert_ciphertexts(&mut txn, cts, blob_hash).await?;
+                    insert_ciphertexts(&mut txn, cts, blob_hash, material_version).await?;
                     tracing::Span::current().record("count", count);
 
                     info!(message = "Ciphertexts inserted", request_id, count);
@@ -745,14 +802,15 @@ pub(crate) async fn insert_ciphertexts(
     db_txn: &mut Transaction<'_, Postgres>,
     cts: &[Ciphertext],
     blob_hash: &Vec<u8>,
+    material_version: MaterialVersion,
 ) -> Result<(), ExecutionError> {
     for (i, ct) in cts.iter().enumerate() {
         sqlx::query!(
             r#"
             INSERT INTO ciphertexts (
-                handle, ciphertext, ciphertext_version, ciphertext_type, 
-                input_blob_hash, input_blob_index, created_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, NOW())
+                handle, ciphertext, ciphertext_version, ciphertext_type,
+                input_blob_hash, input_blob_index, material_version, created_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
             ON CONFLICT (handle, ciphertext_version) DO NOTHING;
             "#,
             &ct.handle,
@@ -761,6 +819,7 @@ pub(crate) async fn insert_ciphertexts(
             ct.ct_type,
             &blob_hash,
             i as i32,
+            material_version.0,
         )
         .execute(db_txn.as_mut())
         .await?;
