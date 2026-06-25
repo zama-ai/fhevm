@@ -25,6 +25,10 @@ SOLANA="$ROOT/solana"
 FHEVM="$ROOT/test-suite/fhevm"
 GW_RPC="${GW_RPC:-http://127.0.0.1:8546}"
 VALIDATOR_RPC="http://127.0.0.1:8899"
+# Deployer/fee-payer wallet. airdrop + program deploy + the live-client (which reads this exact
+# path, main.rs) all sign with it. Passed explicitly via -u/-k below so this script never depends
+# on or mutates the developer's global `solana config` (URL or keypair).
+DEPLOYER_KEYPAIR="$HOME/.config/solana/id.json"
 # RFC-021 Solana host chain id: chain-type high bit | 12345.
 SID_U64=9223372036854788153
 SID_I64=-9223372036854763463
@@ -62,6 +66,10 @@ mkdir -p "$SOLANA/target/deploy"
 for p in zama_host confidential_token confidential_token_receiver; do
   cp -n "$SOLANA/scripts/poc/test-keypairs/$p-keypair.json" "$SOLANA/target/deploy/$p-keypair.json" 2>/dev/null || true
 done
+# Ensure the deployer wallet exists. Created only if absent so a developer's existing wallet is
+# untouched; fresh CI runners have none (otherwise deploy fails with "No default signer found").
+mkdir -p "$(dirname "$DEPLOYER_KEYPAIR")"
+[ -f "$DEPLOYER_KEYPAIR" ] || solana-keygen new --no-bip39-passphrase --silent -o "$DEPLOYER_KEYPAIR"
 
 if [ "$RECONSTRUCT" = 1 ]; then
   # Host = native solana-test-validator (agave 2.1.21, pinned in solana-e2e.yml) with the
@@ -90,7 +98,7 @@ if [ "$RECONSTRUCT" = 1 ]; then
       || { echo "[setup] geyser validator died:" >&2; tail -20 /tmp/solana-validator.log >&2; exit 1; }
     sleep 1
   done
-  solana airdrop 500 >/dev/null 2>&1 || true
+  solana airdrop 500 -u "$VALIDATOR_RPC" -k "$DEPLOYER_KEYPAIR" >/dev/null 2>&1 || true
   # EMITLESS build: drop the default `emit-events` feature on zama-host so the deployed
   # program emits NOTHING — off-chain reconstruction from instructions is the sole event
   # source. anchor build gives per-crate feature control (cargo build-sbf builds the whole
@@ -104,7 +112,7 @@ if [ "$RECONSTRUCT" = 1 ]; then
     || { echo "[setup] emitless anchor build failed" >&2; exit 1; }
   # --use-rpc: deploy over RPC (8899) since the container doesn't publish the TPU ports.
   for p in zama_host confidential_token confidential_token_receiver; do
-    solana program deploy -u "$VALIDATOR_RPC" --use-rpc \
+    solana program deploy -u "$VALIDATOR_RPC" -k "$DEPLOYER_KEYPAIR" --use-rpc \
       --program-id "$SOLANA/target/deploy/$p-keypair.json" "$SOLANA/target/deploy/$p.so" >/dev/null
   done
 else
@@ -118,7 +126,7 @@ else
   solana-test-validator --reset --rpc-port 8899 --bind-address 0.0.0.0 --ledger "$LEDGER" >/tmp/solana-validator.log 2>&1 &
   until curl -s -m2 "$VALIDATOR_RPC" -X POST -H 'Content-Type: application/json' \
     -d '{"jsonrpc":"2.0","id":1,"method":"getHealth"}' 2>/dev/null | grep -q '"ok"'; do sleep 1; done
-  solana airdrop 500 >/dev/null 2>&1 || true
+  solana airdrop 500 -u "$VALIDATOR_RPC" -k "$DEPLOYER_KEYPAIR" >/dev/null 2>&1 || true
   # SKIP_BUILD reuses the already-built program .so (SBF bytecode is portable across
   # validator versions); useful when the active build toolchain differs from the
   # validator (e.g. building under one Agave release, running the validator on another).
@@ -126,7 +134,8 @@ else
     ( cd "$SOLANA" && cargo build-sbf --tools-version v1.52 )
   fi
   for p in zama_host confidential_token confidential_token_receiver; do
-    solana program deploy --program-id "$SOLANA/target/deploy/$p-keypair.json" "$SOLANA/target/deploy/$p.so" >/dev/null
+    solana program deploy -u "$VALIDATOR_RPC" -k "$DEPLOYER_KEYPAIR" \
+      --program-id "$SOLANA/target/deploy/$p-keypair.json" "$SOLANA/target/deploy/$p.so" >/dev/null
   done
 fi
 ZAMA_HOST_ID="$(solana address -k "$SOLANA/target/deploy/zama_host-keypair.json")"
