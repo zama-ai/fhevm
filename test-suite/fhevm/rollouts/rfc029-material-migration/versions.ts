@@ -23,7 +23,13 @@ export const scenario = "rfc029-cutover";
 // images are built locally from this branch (via the scenario's local
 // coprocessor instances + ctx.up overrides in run.ts).
 const target = "v0.13.0";
-const relayerSdkVersion = "0.4.2";
+// Empty = use the default `@fhevm/sdk` (current SDK, tfhe 1.6.x), matching the
+// branch coprocessor (tfhe 1.6.2) + kms-core (1.6.1). A non-empty value pins the
+// LEGACY `@zama-fhe/relayer-sdk@x`, whose newest published build is still tfhe
+// 1.4 -- deserializing a tfhe-1.6 public key with it fails with
+// "expected variant index 0 <= i < 1". (The v0.13 rollouts pin 0.4.2 because they
+// test OLD tfhe-1.4 coprocessor images; this rollout runs the branch.)
+const relayerSdkVersion = "";
 
 // kms-core image anchor. MUST be the same kms commit the connector compiles its
 // gRPC proto against (kms-connector/Cargo.toml pins kms-grpc rev 1edf3a0), so
