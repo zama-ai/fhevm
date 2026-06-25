@@ -41,13 +41,13 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
     ///         of the handle count. Covers payload decoding, event emission overhead, and
     ///         the `sendCompose` call. Used for any `dstEid` without a custom override
     ///         (see {setLzReceiveBaseGas}).
-    uint64 public constant LZ_RECEIVE_BASE_GAS_DEFAULT = 80_000;
+    uint64 public constant LZ_RECEIVE_BASE_GAS_DEFAULT = 52_955;
 
     /// @notice Default per-handle gas reserved for `lzReceive` on the destination. Covers
     ///         deriving the destination handle, emitting one `HandleBridged` event, and
     ///         appending to the in-memory `DstHandleList`. Used for any `dstEid` without a
     ///         custom override (see {setLzReceivePerHandleGas}).
-    uint64 public constant LZ_RECEIVE_PER_HANDLE_GAS_DEFAULT = 60_000;
+    uint64 public constant LZ_RECEIVE_PER_HANDLE_GAS_DEFAULT = 4_596;
 
     /// @notice Default per-payload-byte gas reserved for `lzReceive` on the destination.
     ///         Covers the payload-proportional work that is independent of handle count:
@@ -55,7 +55,7 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
     ///         queue, and the `ComposeSent` event emitted by `sendCompose`.
     ///         Used for any `dstEid` without a custom override
     ///         (see {setLzReceivePerPayloadByteGas}).
-    uint64 public constant LZ_RECEIVE_PER_PAYLOAD_BYTE_DEFAULT = 16;
+    uint64 public constant LZ_RECEIVE_PER_PAYLOAD_BYTE_DEFAULT = 19;
 
     /// @notice Default minimum `lzCompose` gas budget accepted by {send}.
     /// Used when no governance override is set (see {setLzComposeMinValue}).
