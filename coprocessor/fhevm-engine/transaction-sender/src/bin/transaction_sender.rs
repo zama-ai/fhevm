@@ -329,16 +329,18 @@ async fn main() -> anyhow::Result<()> {
         };
     config.gcs_mode = gcs_mode;
 
-    // In GCS mode the pool is pinned to `search_path = gcs,public` so
-    // unqualified writes (`verify_proofs`, `ciphertext_digest`,
-    // `ciphertexts128`) land in the `gcs` schema; shared/control-plane
-    // reads (drift_revert_signal, upgrade_state, …) still resolve from
-    // `public` via fallback.
+    // The transaction sender always uses the default `public` search_path,
+    // even when `gcs_mode` is true. Unlike the GCS compute workers, it never
+    // reads or writes during the dry-run window — it stays parked until the
+    // cutover finalizes (see `TransactionSender::run`). By the time it submits
+    // anything, `execute_cutover` has already merged `gcs.*` into `public` and
+    // dropped the `gcs` schema, so all its writes target `public`. `gcs_mode`
+    // is kept purely as the gate flag passed through to the sender.
     let (db_pool, _pool_refresh_handle) = connect_pool_with_options_and_connect_options(
         &database_url,
         sqlx::postgres::PgPoolOptions::new().max_connections(conf.database_pool_size),
         Some(&cancel_token),
-        apply_gcs_mode_search_path(config.gcs_mode),
+        apply_gcs_mode_search_path(false),
     )
     .await?;
 

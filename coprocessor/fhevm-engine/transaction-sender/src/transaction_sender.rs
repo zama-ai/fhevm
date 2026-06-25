@@ -1,25 +1,16 @@
 use alloy::{network::Ethereum, primitives::Address, providers::Provider};
+use fhevm_engine_common::versioning::{run_stack_version_listener, StackMode};
 use futures_util::FutureExt;
 use sqlx::{postgres::PgListener, Pool, Postgres};
-use std::sync::atomic::{AtomicI64, Ordering};
 use std::{sync::Arc, time::Duration};
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 
 use crate::{
     is_backend_gone, nonce_managed_provider::NonceManagedProvider, ops, AbstractSigner,
     ConfigSettings, HealthStatus,
 };
-
-/// Wake-up channel for GCS activation. Must stay in sync with
-/// `upgrade_controller::UPGRADE_ACTIVATED_CHANNEL`.
-const EVENT_UPGRADE_ACTIVATED: &str = "event_upgrade_activated";
-
-/// Sentinel for the activation atomic: the GCS row in `upgrade_state` has
-/// not been observed yet (the sender is paused). Any non-sentinel value is
-/// the real start_block.
-const GCS_NOT_ACTIVATED: i64 = -1;
 
 #[derive(Clone)]
 pub struct TransactionSender<P>
@@ -88,31 +79,39 @@ where
             "Starting Transaction Sender"
         );
 
-        // GCS gating: spawn a long-lived watcher that mirrors
-        // `upgrade_state.start_block` (stack_role='GCS') into a shared atomic,
-        // then block here until the watcher has observed activation. Once
-        // activated, the sender proceeds normally; its writes resolve to
-        // `gcs.*` via the connection's `search_path = gcs,public`. In BCS
-        // mode this branch is a no-op.
-        if self.conf.gcs_mode {
-            let start_block_state = Arc::new(AtomicI64::new(GCS_NOT_ACTIVATED));
-            let watcher_pool = self.db_pool.clone();
-            let watcher_state = start_block_state.clone();
+        // Stack-version mode shared between this work loop and the cutover
+        // listener. Seeded from the startup-resolved `gcs_mode`: a green (GCS)
+        // binary starts parked and only goes live once a cutover bumps the
+        // live stack version up to its own; a blue (live) binary starts active
+        // and is paused into no-op mode when a later cutover retires it.
+        let mode = StackMode::new(self.conf.gcs_mode);
+        {
+            let pool = self.db_pool.clone();
+            let mode = mode.clone();
+            let cancel = self.cancel_token.clone();
             tokio::spawn(async move {
-                loop {
-                    if let Err(err) = watch_gcs_activation(&watcher_pool, &watcher_state).await {
-                        error!(error = %err, "GCS activation watcher errored; restarting in 5s");
-                        tokio::time::sleep(Duration::from_secs(5)).await;
-                    }
+                if let Err(err) = run_stack_version_listener(pool, mode, cancel).await {
+                    error!(error = %err, "stack-version listener exited with error");
                 }
             });
+        }
 
-            info!("Transaction sender in --gcs-mode (paused, not yet activated). Waiting for event_upgrade_activated.");
+        // Green stack: stay fully idle until the cutover commits. Unlike the
+        // GCS compute workers (which fill the isolated `gcs.*` schema during the
+        // dry-run window), the transaction sender submits on-chain — acting
+        // before cutover would double-submit against the still-live blue stack.
+        // `execute_cutover` fires `event_stack_version_upgraded` atomically with
+        // the version bump, which flips `gcs_mode` off via the listener above.
+        if self.conf.gcs_mode {
+            info!(
+                "gcs-mode: transaction sender parked until cutover finalization \
+                 (event_stack_version_upgraded)"
+            );
             loop {
                 if self.cancel_token.is_cancelled() {
                     return Ok(());
                 }
-                if start_block_state.load(Ordering::SeqCst) != GCS_NOT_ACTIVATED {
+                if !mode.gcs_mode() {
                     break;
                 }
                 tokio::select! {
@@ -120,7 +119,7 @@ where
                     _ = tokio::time::sleep(Duration::from_secs(5)) => {}
                 }
             }
-            info!("Transaction sender observed GCS activation; resuming.");
+            info!("cutover finalized; transaction sender resuming as the live stack");
         }
 
         let mut join_set = JoinSet::new();
@@ -131,6 +130,7 @@ where
             let db_polling_interval_secs = self.conf.db_polling_interval_secs;
             join_set.spawn({
                 let sender = self.clone();
+                let mode = mode.clone();
                 info!(channel = op_channel, "Spawning operation loop");
                 async move {
                     let mut sleep_duration = sender.conf.error_sleep_initial_secs as u64;
@@ -140,6 +140,21 @@ where
                         if token.is_cancelled() {
                             info!(channel = op_channel, "Operation stopping");
                             break;
+                        }
+
+                        // Retired (paused) stack: a cutover bumped the live
+                        // stack version past this binary. Stop submitting and
+                        // idle until shutdown rather than pushing transactions
+                        // that the version guard would reject anyway.
+                        if mode.is_paused() {
+                            tokio::select! {
+                                _ = token.cancelled() => {
+                                    info!(channel = op_channel, "Operation stopping (paused)");
+                                    break;
+                                }
+                                _ = tokio::time::sleep(Duration::from_secs(5)) => {}
+                            }
+                            continue;
                         }
 
                         match op.execute().await {
@@ -308,48 +323,6 @@ where
                 blockchain_connected,
                 error_details.join("; "),
             )
-        }
-    }
-}
-
-/// LISTENs on `event_upgrade_activated` and mirrors
-/// `upgrade_state.start_block` (for `stack_role='GCS'`) into `state`. Polls
-/// once on entry so a sender started AFTER the activation notify fired still
-/// picks the value up. A 30s fallback sleep catches any missed NOTIFY.
-async fn watch_gcs_activation(pool: &Pool<Postgres>, state: &AtomicI64) -> Result<(), sqlx::Error> {
-    let mut listener = PgListener::connect_with(pool).await?;
-    listener.listen(EVENT_UPGRADE_ACTIVATED).await?;
-    info!(
-        channel = EVENT_UPGRADE_ACTIVATED,
-        "GCS activation watcher listening"
-    );
-
-    loop {
-        let row: Option<(Option<i64>,)> =
-            sqlx::query_as("SELECT start_block FROM upgrade_state WHERE stack_role = 'GCS'")
-                .fetch_optional(pool)
-                .await?;
-
-        if let Some((Some(start_block),)) = row {
-            let prev = state.swap(start_block, Ordering::SeqCst);
-            if prev != start_block {
-                info!(
-                    start_block,
-                    prev, "GCS start_block updated from upgrade_state"
-                );
-            }
-        } else {
-            debug!("GCS row in upgrade_state has no start_block yet");
-        }
-
-        tokio::select! {
-            recv = listener.recv() => {
-                if let Err(err) = recv {
-                    warn!(error = %err, "GCS activation listener recv error");
-                    tokio::time::sleep(Duration::from_secs(1)).await;
-                }
-            }
-            _ = tokio::time::sleep(Duration::from_secs(30)) => {}
         }
     }
 }

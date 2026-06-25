@@ -32,13 +32,18 @@ pub struct ConfigSettings {
 
     pub graceful_shutdown_timeout: Duration,
 
-    /// Used during blue/green (GCS) upgrade migrations.
-    /// When true, the txn-sender starts paused and waits for
-    /// `event_upgrade_activated` to populate `upgrade_state.start_block` (for
-    /// `stack_role='GCS'`). Once activated, writes (`verify_proofs`,
-    /// `ciphertext_digest`, `ciphertexts128`) are routed to the `gcs` schema
-    /// via the connection's `search_path = gcs,public`. When false (default),
-    /// writes go to the `public` schema (BCS).
+    /// Used during blue/green (GCS) upgrade migrations. True when this binary
+    /// is the incoming green stack (its `STACK_VERSION` is newer than the live
+    /// `versioning.stack_version`; auto-detected via `resolve_gcs_mode`).
+    ///
+    /// When true, the txn-sender starts fully parked and does nothing until the
+    /// cutover finalizes — `execute_cutover` fires `event_stack_version_upgraded`
+    /// atomically with the version bump, which flips this binary out of GCS mode
+    /// and lets it begin submitting. It never participates in the dry-run window,
+    /// since submitting on-chain there would double-submit against the still-live
+    /// blue stack. Writes always target `public` (by cutover time the `gcs`
+    /// schema has been merged into `public` and dropped). When false (default),
+    /// the binary is the live (blue) stack and runs normally.
     pub gcs_mode: bool,
 }
 
