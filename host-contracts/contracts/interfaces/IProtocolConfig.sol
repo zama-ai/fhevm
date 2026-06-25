@@ -264,6 +264,12 @@ interface IProtocolConfig {
     /// @param epochId The epoch ID.
     error InvalidEpoch(uint256 epochId);
 
+    /// @notice The pending epoch belongs to a non-active context (a context-switch epoch);
+    ///         abort its context via abortPendingContext instead.
+    /// @param epochId The epoch ID.
+    /// @param contextId The context that owns the epoch.
+    error EpochNotUnderActiveContext(uint256 epochId, uint256 contextId);
+
     /// @notice The KMS context is not pending.
     /// @param kmsContextId The context ID.
     error KmsContextNotPending(uint256 kmsContextId);

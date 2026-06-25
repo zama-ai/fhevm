@@ -552,6 +552,7 @@ interface IProtocolConfig {
     error EpochActivationAlreadyConfirmed(address signer, uint256 epochId);
     error EpochActivationSignerDoesNotMatchTxSender(address signer, address txSender);
     error EpochActivationUnauthorized(address caller, uint256 epochId);
+    error EpochNotUnderActiveContext(uint256 epochId, uint256 contextId);
     error InvalidEpoch(uint256 epochId);
     error InvalidHighThreshold(string thresholdName, uint256 threshold, uint256 nodeCount);
     error InvalidKmsContext(uint256 kmsContextId);
@@ -2138,6 +2139,22 @@ interface IProtocolConfig {
       },
       {
         "name": "epochId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "EpochNotUnderActiveContext",
+    "inputs": [
+      {
+        "name": "epochId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "contextId",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -4481,6 +4498,102 @@ error EpochActivationUnauthorized(address caller, uint256 epochId);
                     <alloy::sol_types::sol_data::Uint<
                         256,
                     > as alloy_sol_types::SolType>::tokenize(&self.epochId),
+                )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `EpochNotUnderActiveContext(uint256,uint256)` and selector `0xa69d7d5b`.
+```solidity
+error EpochNotUnderActiveContext(uint256 epochId, uint256 contextId);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct EpochNotUnderActiveContext {
+        #[allow(missing_docs)]
+        pub epochId: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub contextId: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = (
+            alloy::sol_types::sol_data::Uint<256>,
+            alloy::sol_types::sol_data::Uint<256>,
+        );
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (
+            alloy::sol_types::private::primitives::aliases::U256,
+            alloy::sol_types::private::primitives::aliases::U256,
+        );
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<EpochNotUnderActiveContext>
+        for UnderlyingRustTuple<'_> {
+            fn from(value: EpochNotUnderActiveContext) -> Self {
+                (value.epochId, value.contextId)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>>
+        for EpochNotUnderActiveContext {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self {
+                    epochId: tuple.0,
+                    contextId: tuple.1,
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for EpochNotUnderActiveContext {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "EpochNotUnderActiveContext(uint256,uint256)";
+            const SELECTOR: [u8; 4] = [166u8, 157u8, 125u8, 91u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.epochId),
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.contextId),
                 )
             }
             #[inline]
@@ -14614,6 +14727,8 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
         #[allow(missing_docs)]
         EpochActivationUnauthorized(EpochActivationUnauthorized),
         #[allow(missing_docs)]
+        EpochNotUnderActiveContext(EpochNotUnderActiveContext),
+        #[allow(missing_docs)]
         InvalidEpoch(InvalidEpoch),
         #[allow(missing_docs)]
         InvalidHighThreshold(InvalidHighThreshold),
@@ -14669,6 +14784,7 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
             [132u8, 102u8, 128u8, 74u8],
             [162u8, 37u8, 101u8, 109u8],
             [163u8, 244u8, 175u8, 235u8],
+            [166u8, 157u8, 125u8, 91u8],
             [184u8, 29u8, 248u8, 232u8],
             [202u8, 168u8, 20u8, 163u8],
             [209u8, 140u8, 79u8, 240u8],
@@ -14682,7 +14798,7 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
     impl alloy_sol_types::SolInterface for IProtocolConfigErrors {
         const NAME: &'static str = "IProtocolConfigErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 21usize;
+        const COUNT: usize = 22usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -14700,6 +14816,9 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                 }
                 Self::EpochActivationUnauthorized(_) => {
                     <EpochActivationUnauthorized as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::EpochNotUnderActiveContext(_) => {
+                    <EpochNotUnderActiveContext as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::InvalidEpoch(_) => {
                     <InvalidEpoch as alloy_sol_types::SolError>::SELECTOR
@@ -14925,6 +15044,17 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                             .map(IProtocolConfigErrors::EpochActivationUnauthorized)
                     }
                     EpochActivationUnauthorized
+                },
+                {
+                    fn EpochNotUnderActiveContext(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
+                        <EpochNotUnderActiveContext as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IProtocolConfigErrors::EpochNotUnderActiveContext)
+                    }
+                    EpochNotUnderActiveContext
                 },
                 {
                     fn KmsContextCreationUnauthorized(
@@ -15186,6 +15316,17 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                     EpochActivationUnauthorized
                 },
                 {
+                    fn EpochNotUnderActiveContext(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
+                        <EpochNotUnderActiveContext as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IProtocolConfigErrors::EpochNotUnderActiveContext)
+                    }
+                    EpochNotUnderActiveContext
+                },
+                {
                     fn KmsContextCreationUnauthorized(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
@@ -15301,6 +15442,11 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                         inner,
                     )
                 }
+                Self::EpochNotUnderActiveContext(inner) => {
+                    <EpochNotUnderActiveContext as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
                 Self::InvalidEpoch(inner) => {
                     <InvalidEpoch as alloy_sol_types::SolError>::abi_encoded_size(inner)
                 }
@@ -15410,6 +15556,12 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                 }
                 Self::EpochActivationUnauthorized(inner) => {
                     <EpochActivationUnauthorized as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::EpochNotUnderActiveContext(inner) => {
+                    <EpochNotUnderActiveContext as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )

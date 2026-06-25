@@ -491,7 +491,7 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
 
         uint256 contextId = $.contextForEpoch[epochId];
         if (contextId != $.latestActiveKmsContextId) {
-            revert InvalidEpoch(epochId);
+            revert EpochNotUnderActiveContext(epochId, contextId);
         }
 
         _clearEpoch(epochId);
