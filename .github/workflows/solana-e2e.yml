@@ -62,7 +62,7 @@ jobs:
           GHCR_USERNAME: ${{ github.actor }}
           GHCR_PASSWORD: ${{ secrets.GHCR_READ_TOKEN }} # zizmor: ignore[secrets-outside-env] registry read token, same pattern as test-suite-e2e workflows
         with:
-          run: |
+          command: |
             echo "$GHCR_PASSWORD" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
 
       - name: Login to cgr.dev
@@ -151,7 +151,7 @@ jobs:
           GHCR_USERNAME: ${{ github.actor }}
           GHCR_PASSWORD: ${{ secrets.GHCR_READ_TOKEN }} # zizmor: ignore[secrets-outside-env] registry read token, same pattern as test-suite-e2e workflows
         with:
-          run: |
+          command: |
             echo "$GHCR_PASSWORD" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
 
       - name: Login to cgr.dev
