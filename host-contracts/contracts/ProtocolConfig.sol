@@ -90,8 +90,8 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
 
     /// @custom:storage-location erc7201:fhevm.storage.ProtocolConfig
     struct ProtocolConfigStorage {
-        /// @notice Monotonic allocation counter for KMS context IDs: the latest issued ID, not the
-        ///         active one. Always `>= activeKmsContextId`. Differs while a context is Pending/Created.
+        /// @notice Monotonic allocation counter for KMS context IDs: the latest issued ID.
+        ///         Always `>= latestActiveKmsContextId`. Differs while a context is Pending/Created.
         uint256 currentKmsContextId;
         /// @notice KMS nodes per context.
         mapping(uint256 contextId => KmsNode[]) kmsNodesForContext;
@@ -114,13 +114,16 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         mapping(uint256 contextId => uint256) mpcThresholdForContext;
         /// @notice Whether a context has been destroyed.
         mapping(uint256 contextId => bool) destroyedContexts;
-        /// @notice The live (Active) KMS context ID that reads resolve against. Updated only on
-        ///         activation, unlike the `currentKmsContextId` allocation counter.
-        uint256 activeKmsContextId;
+        /// @notice The most recently activated KMS context ID, the one reads resolve against.
+        ///         Several contexts may remain in the `Active` state at once (prior contexts are not
+        ///         demoted on rotation, so in-flight requests stay valid). This points at the newest.
+        ///         Updated only on activation, unlike the `currentKmsContextId` allocation counter.
+        uint256 latestActiveKmsContextId;
         /// @notice Epoch ID counter.
         uint256 epochCounter;
-        /// @notice Current active epoch ID.
-        uint256 activeEpochId;
+        /// @notice The most recently activated epoch ID. Multiple epochs may remain `Active`. This
+        ///         points at the newest, which new reads resolve against.
+        uint256 latestActiveEpochId;
         /// @notice Lifecycle state per context.
         mapping(uint256 contextId => ContextState) contextState;
         /// @notice Lifecycle state per epoch.
@@ -233,7 +236,7 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         uint256 contextId = _storeKmsContext(canonicalKmsNodeParams, canonicalThresholds);
 
         $.contextState[contextId] = ContextState.Active;
-        $.activeKmsContextId = contextId;
+        $.latestActiveKmsContextId = contextId;
         $.epochCounter = canonicalEpochId;
         _activateEpoch(canonicalEpochId, contextId);
     }
@@ -259,7 +262,7 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         // Bring the existing context into the epoch-lifecycle shape: active context + first epoch.
         $.epochCounter = EPOCH_COUNTER_BASE;
         uint256 contextId = $.currentKmsContextId;
-        $.activeKmsContextId = contextId;
+        $.latestActiveKmsContextId = contextId;
         $.contextState[contextId] = ContextState.Active;
         uint256 epochId = ++$.epochCounter;
         _activateEpoch(epochId, contextId);
@@ -293,7 +296,7 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
 
         // Store the new signer set and open its first epoch as Pending.
-        uint256 previousContextId = $.activeKmsContextId;
+        uint256 previousContextId = $.latestActiveKmsContextId;
         uint256 contextId = _storeKmsContext(kmsNodeParams, thresholds);
         $.contextState[contextId] = ContextState.Pending;
         _createPendingEpoch(contextId);
@@ -320,12 +323,13 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     ///      (abortPendingContext / abortPendingEpoch).
     function defineNewEpochForCurrentKmsContext() external virtual onlyACLOwner {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        uint256 kmsContextId = $.activeKmsContextId;
-        uint256 epochId = _createPendingEpoch(kmsContextId);
+        uint256 latestActiveKmsContextId = $.latestActiveKmsContextId;
+        uint256 epochId = _createPendingEpoch(latestActiveKmsContextId);
 
-        // Connectors must read previous key/CRS material from the last block before this epoch request.
-        // kmsContextId and previousEpochId are the same because this is same-set resharing.
-        emit NewKmsEpoch(kmsContextId, epochId, kmsContextId, $.activeEpochId, block.number - 1);
+        // NewKmsEpoch: `previousContextId` equals `kmsContextId` because same-set resharing keeps the
+        // context. `materialBlockNumber` is the last block before this request, where connectors read
+        // the previous key/CRS material.
+        emit NewKmsEpoch(latestActiveKmsContextId, epochId, latestActiveKmsContextId, $.latestActiveEpochId, block.number - 1);
     }
 
     /// @inheritdoc IProtocolConfig
@@ -338,7 +342,7 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
 
         // Caller must belong to the outgoing or incoming signer set and confirm only once.
         address signer = msg.sender;
-        uint256 previousContextId = $.activeKmsContextId;
+        uint256 previousContextId = $.latestActiveKmsContextId;
         bool isPreviousSigner = $.isKmsSignerForContext[previousContextId][signer];
         bool isNewSigner = $.isKmsSignerForContext[kmsContextId][signer];
         if (!isPreviousSigner && !isNewSigner) {
@@ -366,7 +370,7 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
             // settles each switch before opening another, so the latest-issued epoch is this context's Pending epoch.
             uint256 epochId = $.epochCounter;
             // Connectors must read previous key/CRS material from the last block before this epoch request.
-            emit NewKmsEpoch(kmsContextId, epochId, previousContextId, $.activeEpochId, block.number - 1);
+            emit NewKmsEpoch(kmsContextId, epochId, previousContextId, $.latestActiveEpochId, block.number - 1);
         }
     }
 
@@ -443,7 +447,7 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         // All signers agreed, promote context and epoch to Active.
         if (digestCount == $.kmsSignerAddressesForContext[contextId].length) {
             $.contextState[contextId] = ContextState.Active;
-            $.activeKmsContextId = contextId;
+            $.latestActiveKmsContextId = contextId;
             _activateEpoch(epochId, contextId);
 
             KmsNode[] storage nodes = $.kmsNodesForContext[contextId];
@@ -459,7 +463,7 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     function destroyKmsContext(uint256 kmsContextId) external virtual onlyACLOwner {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
 
-        if (kmsContextId == $.activeKmsContextId) {
+        if (kmsContextId == $.latestActiveKmsContextId) {
             revert CurrentKmsContextCannotBeDestroyed(kmsContextId);
         }
         if (!_isLiveKmsContext(kmsContextId)) {
@@ -478,7 +482,7 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         }
 
         uint256 contextId = $.contextForEpoch[epochId];
-        if (contextId != $.activeKmsContextId) {
+        if (contextId != $.latestActiveKmsContextId) {
             revert InvalidEpoch(epochId);
         }
 
@@ -558,9 +562,9 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         PcrValues[] calldata pcrValues
     ) external virtual onlyACLOwner {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        uint256 currentKmsContextId = $.activeKmsContextId;
-        if (contextId <= currentKmsContextId) {
-            revert NonIncreasingKmsContextId(contextId, currentKmsContextId);
+        uint256 latestActiveKmsContextId = $.latestActiveKmsContextId;
+        if (contextId <= latestActiveKmsContextId) {
+            revert NonIncreasingKmsContextId(contextId, latestActiveKmsContextId);
         }
 
         // Seed counter so _storeAndActivateKmsContext's ++counter lands on the existing context ID
@@ -574,7 +578,7 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     ///      mirrored active context without replaying epoch-activation confirmations.
     function mirrorKmsEpoch(uint256 contextId, uint256 epochId) external virtual onlyACLOwner {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        if (contextId != $.activeKmsContextId || !_isLiveKmsContext(contextId)) {
+        if (contextId != $.latestActiveKmsContextId || !_isLiveKmsContext(contextId)) {
             revert InvalidKmsContext(contextId);
         }
         uint256 currentEpochId = $.epochCounter;
@@ -594,14 +598,14 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     /// @inheritdoc IProtocolConfig
     function getCurrentKmsContextId() external view virtual returns (uint256) {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        return $.activeKmsContextId;
+        return $.latestActiveKmsContextId;
     }
 
     /// @inheritdoc IProtocolConfig
     function getCurrentKmsContextAndEpoch() external view virtual returns (uint256 contextId, uint256 epochId) {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        contextId = $.activeKmsContextId;
-        epochId = $.activeEpochId;
+        contextId = $.latestActiveKmsContextId;
+        epochId = $.latestActiveEpochId;
     }
 
     /// @inheritdoc IProtocolConfig
@@ -629,7 +633,7 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     /// @inheritdoc IProtocolConfig
     function getKmsSigners() external view virtual returns (address[] memory) {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        return $.kmsSignerAddressesForContext[$.activeKmsContextId];
+        return $.kmsSignerAddressesForContext[$.latestActiveKmsContextId];
     }
 
     /// @inheritdoc IProtocolConfig
@@ -641,7 +645,7 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     /// @inheritdoc IProtocolConfig
     function isKmsSigner(address signer) external view virtual returns (bool) {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        return $.isKmsSignerForContext[$.activeKmsContextId][signer];
+        return $.isKmsSignerForContext[$.latestActiveKmsContextId][signer];
     }
 
     /// @inheritdoc IProtocolConfig
@@ -680,7 +684,7 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     /// @inheritdoc IProtocolConfig
     function getPublicDecryptionThreshold() external view virtual returns (uint256) {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        return $.publicDecryptionThresholdForContext[$.activeKmsContextId];
+        return $.publicDecryptionThresholdForContext[$.latestActiveKmsContextId];
     }
 
     /// @inheritdoc IProtocolConfig
@@ -692,7 +696,7 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     /// @inheritdoc IProtocolConfig
     function getUserDecryptionThreshold() external view virtual returns (uint256) {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        return $.userDecryptionThresholdForContext[$.activeKmsContextId];
+        return $.userDecryptionThresholdForContext[$.latestActiveKmsContextId];
     }
 
     /// @inheritdoc IProtocolConfig
@@ -704,7 +708,7 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     /// @inheritdoc IProtocolConfig
     function getKmsGenThreshold() external view virtual returns (uint256) {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        return $.kmsGenThresholdForContext[$.activeKmsContextId];
+        return $.kmsGenThresholdForContext[$.latestActiveKmsContextId];
     }
 
     /// @inheritdoc IProtocolConfig
@@ -718,7 +722,7 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     /// @inheritdoc IProtocolConfig
     function getMpcThreshold() external view virtual returns (uint256) {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        return $.mpcThresholdForContext[$.activeKmsContextId];
+        return $.mpcThresholdForContext[$.latestActiveKmsContextId];
     }
 
     /// @inheritdoc IProtocolConfig
@@ -761,7 +765,7 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
 
         // Set the context to Active and update the active context and epoch IDs.
         $.contextState[newContextId] = ContextState.Active;
-        $.activeKmsContextId = newContextId;
+        $.latestActiveKmsContextId = newContextId;
         uint256 epochId = ++$.epochCounter;
         _activateEpoch(epochId, newContextId);
     }
@@ -988,7 +992,7 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
         $.epochState[epochId] = EpochState.Active;
         $.contextForEpoch[epochId] = contextId;
-        $.activeEpochId = epochId;
+        $.latestActiveEpochId = epochId;
     }
 
     /**
