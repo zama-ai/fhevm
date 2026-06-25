@@ -574,7 +574,7 @@ interface IProtocolConfig {
     event KmsContextCreationConfirmation(uint256 indexed kmsContextId, address indexed signer, bool isPreviousSigner, bool isNewSigner);
     event KmsContextDestroyed(uint256 indexed kmsContextId);
     event KmsGenThresholdUpdated(uint256 indexed kmsContextId, uint256 threshold);
-    event MirrorKmsContext(uint256 indexed contextId, KmsNodeParams[] kmsNodeParams, KmsThresholds thresholds, string softwareVersion, PcrValues[] pcrValues);
+    event MirrorKmsContextAndEpoch(uint256 indexed contextId, uint256 indexed epochId, KmsNodeParams[] kmsNodeParams, KmsThresholds thresholds, string softwareVersion, PcrValues[] pcrValues);
     event MirrorKmsEpoch(uint256 indexed contextId, uint256 indexed epochId);
     event MpcThresholdUpdated(uint256 indexed kmsContextId, uint256 threshold);
     event NewKmsContext(uint256 indexed contextId, uint256 indexed previousContextId, KmsNodeParams[] kmsNodeParams, KmsThresholds thresholds, string softwareVersion, PcrValues[] pcrValues);
@@ -612,7 +612,7 @@ interface IProtocolConfig {
     function isKmsTxSenderForContext(uint256 kmsContextId, address txSender) external view returns (bool);
     function isValidEpochForContext(uint256 kmsContextId, uint256 epochId) external view returns (bool);
     function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
-    function mirrorKmsContext(uint256 contextId, KmsNodeParams[] memory kmsNodeParams, KmsThresholds memory thresholds, string memory softwareVersion, PcrValues[] memory pcrValues) external;
+    function mirrorKmsContextAndEpoch(uint256 contextId, uint256 epochId, KmsNodeParams[] memory kmsNodeParams, KmsThresholds memory thresholds, string memory softwareVersion, PcrValues[] memory pcrValues) external;
     function mirrorKmsEpoch(uint256 contextId, uint256 epochId) external;
     function updateKmsGenThresholdForContext(uint256 kmsContextId, uint256 threshold) external;
     function updateMpcThresholdForContext(uint256 kmsContextId, uint256 threshold) external;
@@ -1298,10 +1298,15 @@ interface IProtocolConfig {
   },
   {
     "type": "function",
-    "name": "mirrorKmsContext",
+    "name": "mirrorKmsContextAndEpoch",
     "inputs": [
       {
         "name": "contextId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "epochId",
         "type": "uint256",
         "internalType": "uint256"
       },
@@ -1683,10 +1688,16 @@ interface IProtocolConfig {
   },
   {
     "type": "event",
-    "name": "MirrorKmsContext",
+    "name": "MirrorKmsContextAndEpoch",
     "inputs": [
       {
         "name": "contextId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "epochId",
         "type": "uint256",
         "indexed": true,
         "internalType": "uint256"
@@ -6523,9 +6534,9 @@ event KmsGenThresholdUpdated(uint256 indexed kmsContextId, uint256 threshold);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Event with signature `MirrorKmsContext(uint256,(address,address,string,string,int32,string,bytes,string)[],(uint256,uint256,uint256,uint256),string,(bytes,bytes,bytes)[])` and selector `0xfdad67d8a7218f6f85c5b957d712eccfd6125f115da36a78118cc8ea8f2789c0`.
+    /**Event with signature `MirrorKmsContextAndEpoch(uint256,uint256,(address,address,string,string,int32,string,bytes,string)[],(uint256,uint256,uint256,uint256),string,(bytes,bytes,bytes)[])` and selector `0x2ac68f78f4ccde76b64906026d01ff3c42403eb7eef86fe788474a23267d64cf`.
 ```solidity
-event MirrorKmsContext(uint256 indexed contextId, KmsNodeParams[] kmsNodeParams, KmsThresholds thresholds, string softwareVersion, PcrValues[] pcrValues);
+event MirrorKmsContextAndEpoch(uint256 indexed contextId, uint256 indexed epochId, KmsNodeParams[] kmsNodeParams, KmsThresholds thresholds, string softwareVersion, PcrValues[] pcrValues);
 ```*/
     #[allow(
         non_camel_case_types,
@@ -6534,9 +6545,11 @@ event MirrorKmsContext(uint256 indexed contextId, KmsNodeParams[] kmsNodeParams,
         clippy::style
     )]
     #[derive(Clone)]
-    pub struct MirrorKmsContext {
+    pub struct MirrorKmsContextAndEpoch {
         #[allow(missing_docs)]
         pub contextId: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub epochId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
         pub kmsNodeParams: alloy::sol_types::private::Vec<
             <KmsNodeParams as alloy::sol_types::SolType>::RustType,
@@ -6559,7 +6572,7 @@ event MirrorKmsContext(uint256 indexed contextId, KmsNodeParams[] kmsNodeParams,
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[automatically_derived]
-        impl alloy_sol_types::SolEvent for MirrorKmsContext {
+        impl alloy_sol_types::SolEvent for MirrorKmsContextAndEpoch {
             type DataTuple<'a> = (
                 alloy::sol_types::sol_data::Array<KmsNodeParams>,
                 KmsThresholds,
@@ -6572,12 +6585,13 @@ event MirrorKmsContext(uint256 indexed contextId, KmsNodeParams[] kmsNodeParams,
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Uint<256>,
+                alloy::sol_types::sol_data::Uint<256>,
             );
-            const SIGNATURE: &'static str = "MirrorKmsContext(uint256,(address,address,string,string,int32,string,bytes,string)[],(uint256,uint256,uint256,uint256),string,(bytes,bytes,bytes)[])";
+            const SIGNATURE: &'static str = "MirrorKmsContextAndEpoch(uint256,uint256,(address,address,string,string,int32,string,bytes,string)[],(uint256,uint256,uint256,uint256),string,(bytes,bytes,bytes)[])";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                253u8, 173u8, 103u8, 216u8, 167u8, 33u8, 143u8, 111u8, 133u8, 197u8,
-                185u8, 87u8, 215u8, 18u8, 236u8, 207u8, 214u8, 18u8, 95u8, 17u8, 93u8,
-                163u8, 106u8, 120u8, 17u8, 140u8, 200u8, 234u8, 143u8, 39u8, 137u8, 192u8,
+                42u8, 198u8, 143u8, 120u8, 244u8, 204u8, 222u8, 118u8, 182u8, 73u8, 6u8,
+                2u8, 109u8, 1u8, 255u8, 60u8, 66u8, 64u8, 62u8, 183u8, 238u8, 248u8,
+                111u8, 231u8, 136u8, 71u8, 74u8, 35u8, 38u8, 125u8, 100u8, 207u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -6588,6 +6602,7 @@ event MirrorKmsContext(uint256 indexed contextId, KmsNodeParams[] kmsNodeParams,
             ) -> Self {
                 Self {
                     contextId: topics.1,
+                    epochId: topics.2,
                     kmsNodeParams: data.0,
                     thresholds: data.1,
                     softwareVersion: data.2,
@@ -6628,7 +6643,11 @@ event MirrorKmsContext(uint256 indexed contextId, KmsNodeParams[] kmsNodeParams,
             }
             #[inline]
             fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
-                (Self::SIGNATURE_HASH.into(), self.contextId.clone())
+                (
+                    Self::SIGNATURE_HASH.into(),
+                    self.contextId.clone(),
+                    self.epochId.clone(),
+                )
             }
             #[inline]
             fn encode_topics_raw(
@@ -6644,11 +6663,14 @@ event MirrorKmsContext(uint256 indexed contextId, KmsNodeParams[] kmsNodeParams,
                 out[1usize] = <alloy::sol_types::sol_data::Uint<
                     256,
                 > as alloy_sol_types::EventTopic>::encode_topic(&self.contextId);
+                out[2usize] = <alloy::sol_types::sol_data::Uint<
+                    256,
+                > as alloy_sol_types::EventTopic>::encode_topic(&self.epochId);
                 Ok(())
             }
         }
         #[automatically_derived]
-        impl alloy_sol_types::private::IntoLogData for MirrorKmsContext {
+        impl alloy_sol_types::private::IntoLogData for MirrorKmsContextAndEpoch {
             fn to_log_data(&self) -> alloy_sol_types::private::LogData {
                 From::from(self)
             }
@@ -6657,9 +6679,11 @@ event MirrorKmsContext(uint256 indexed contextId, KmsNodeParams[] kmsNodeParams,
             }
         }
         #[automatically_derived]
-        impl From<&MirrorKmsContext> for alloy_sol_types::private::LogData {
+        impl From<&MirrorKmsContextAndEpoch> for alloy_sol_types::private::LogData {
             #[inline]
-            fn from(this: &MirrorKmsContext) -> alloy_sol_types::private::LogData {
+            fn from(
+                this: &MirrorKmsContextAndEpoch,
+            ) -> alloy_sol_types::private::LogData {
                 alloy_sol_types::SolEvent::encode_log_data(this)
             }
         }
@@ -12103,15 +12127,17 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `mirrorKmsContext(uint256,(address,address,string,string,int32,string,bytes,string)[],(uint256,uint256,uint256,uint256),string,(bytes,bytes,bytes)[])` and selector `0xf850aae2`.
+    /**Function with signature `mirrorKmsContextAndEpoch(uint256,uint256,(address,address,string,string,int32,string,bytes,string)[],(uint256,uint256,uint256,uint256),string,(bytes,bytes,bytes)[])` and selector `0xbc4d07c2`.
 ```solidity
-function mirrorKmsContext(uint256 contextId, KmsNodeParams[] memory kmsNodeParams, KmsThresholds memory thresholds, string memory softwareVersion, PcrValues[] memory pcrValues) external;
+function mirrorKmsContextAndEpoch(uint256 contextId, uint256 epochId, KmsNodeParams[] memory kmsNodeParams, KmsThresholds memory thresholds, string memory softwareVersion, PcrValues[] memory pcrValues) external;
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct mirrorKmsContextCall {
+    pub struct mirrorKmsContextAndEpochCall {
         #[allow(missing_docs)]
         pub contextId: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub epochId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
         pub kmsNodeParams: alloy::sol_types::private::Vec<
             <KmsNodeParams as alloy::sol_types::SolType>::RustType,
@@ -12125,10 +12151,10 @@ function mirrorKmsContext(uint256 contextId, KmsNodeParams[] memory kmsNodeParam
             <PcrValues as alloy::sol_types::SolType>::RustType,
         >,
     }
-    ///Container type for the return parameters of the [`mirrorKmsContext(uint256,(address,address,string,string,int32,string,bytes,string)[],(uint256,uint256,uint256,uint256),string,(bytes,bytes,bytes)[])`](mirrorKmsContextCall) function.
+    ///Container type for the return parameters of the [`mirrorKmsContextAndEpoch(uint256,uint256,(address,address,string,string,int32,string,bytes,string)[],(uint256,uint256,uint256,uint256),string,(bytes,bytes,bytes)[])`](mirrorKmsContextAndEpochCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct mirrorKmsContextReturn {}
+    pub struct mirrorKmsContextAndEpochReturn {}
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -12141,6 +12167,7 @@ function mirrorKmsContext(uint256 contextId, KmsNodeParams[] memory kmsNodeParam
             #[doc(hidden)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Uint<256>,
+                alloy::sol_types::sol_data::Uint<256>,
                 alloy::sol_types::sol_data::Array<KmsNodeParams>,
                 KmsThresholds,
                 alloy::sol_types::sol_data::String,
@@ -12148,6 +12175,7 @@ function mirrorKmsContext(uint256 contextId, KmsNodeParams[] memory kmsNodeParam
             );
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::primitives::aliases::U256,
                 alloy::sol_types::private::primitives::aliases::U256,
                 alloy::sol_types::private::Vec<
                     <KmsNodeParams as alloy::sol_types::SolType>::RustType,
@@ -12171,11 +12199,12 @@ function mirrorKmsContext(uint256 contextId, KmsNodeParams[] memory kmsNodeParam
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<mirrorKmsContextCall>
+            impl ::core::convert::From<mirrorKmsContextAndEpochCall>
             for UnderlyingRustTuple<'_> {
-                fn from(value: mirrorKmsContextCall) -> Self {
+                fn from(value: mirrorKmsContextAndEpochCall) -> Self {
                     (
                         value.contextId,
+                        value.epochId,
                         value.kmsNodeParams,
                         value.thresholds,
                         value.softwareVersion,
@@ -12186,14 +12215,15 @@ function mirrorKmsContext(uint256 contextId, KmsNodeParams[] memory kmsNodeParam
             #[automatically_derived]
             #[doc(hidden)]
             impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for mirrorKmsContextCall {
+            for mirrorKmsContextAndEpochCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         contextId: tuple.0,
-                        kmsNodeParams: tuple.1,
-                        thresholds: tuple.2,
-                        softwareVersion: tuple.3,
-                        pcrValues: tuple.4,
+                        epochId: tuple.1,
+                        kmsNodeParams: tuple.2,
+                        thresholds: tuple.3,
+                        softwareVersion: tuple.4,
+                        pcrValues: tuple.5,
                     }
                 }
             }
@@ -12216,31 +12246,34 @@ function mirrorKmsContext(uint256 contextId, KmsNodeParams[] memory kmsNodeParam
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<mirrorKmsContextReturn>
+            impl ::core::convert::From<mirrorKmsContextAndEpochReturn>
             for UnderlyingRustTuple<'_> {
-                fn from(value: mirrorKmsContextReturn) -> Self {
+                fn from(value: mirrorKmsContextAndEpochReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
             impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for mirrorKmsContextReturn {
+            for mirrorKmsContextAndEpochReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
             }
         }
-        impl mirrorKmsContextReturn {
+        impl mirrorKmsContextAndEpochReturn {
             fn _tokenize(
                 &self,
-            ) -> <mirrorKmsContextCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
+            ) -> <mirrorKmsContextAndEpochCall as alloy_sol_types::SolCall>::ReturnToken<
+                '_,
+            > {
                 ()
             }
         }
         #[automatically_derived]
-        impl alloy_sol_types::SolCall for mirrorKmsContextCall {
+        impl alloy_sol_types::SolCall for mirrorKmsContextAndEpochCall {
             type Parameters<'a> = (
+                alloy::sol_types::sol_data::Uint<256>,
                 alloy::sol_types::sol_data::Uint<256>,
                 alloy::sol_types::sol_data::Array<KmsNodeParams>,
                 KmsThresholds,
@@ -12250,13 +12283,13 @@ function mirrorKmsContext(uint256 contextId, KmsNodeParams[] memory kmsNodeParam
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = mirrorKmsContextReturn;
+            type Return = mirrorKmsContextAndEpochReturn;
             type ReturnTuple<'a> = ();
             type ReturnToken<'a> = <Self::ReturnTuple<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "mirrorKmsContext(uint256,(address,address,string,string,int32,string,bytes,string)[],(uint256,uint256,uint256,uint256),string,(bytes,bytes,bytes)[])";
-            const SELECTOR: [u8; 4] = [248u8, 80u8, 170u8, 226u8];
+            const SIGNATURE: &'static str = "mirrorKmsContextAndEpoch(uint256,uint256,(address,address,string,string,int32,string,bytes,string)[],(uint256,uint256,uint256,uint256),string,(bytes,bytes,bytes)[])";
+            const SELECTOR: [u8; 4] = [188u8, 77u8, 7u8, 194u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -12269,6 +12302,9 @@ function mirrorKmsContext(uint256 contextId, KmsNodeParams[] memory kmsNodeParam
                     <alloy::sol_types::sol_data::Uint<
                         256,
                     > as alloy_sol_types::SolType>::tokenize(&self.contextId),
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.epochId),
                     <alloy::sol_types::sol_data::Array<
                         KmsNodeParams,
                     > as alloy_sol_types::SolType>::tokenize(&self.kmsNodeParams),
@@ -12285,7 +12321,7 @@ function mirrorKmsContext(uint256 contextId, KmsNodeParams[] memory kmsNodeParam
             }
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                mirrorKmsContextReturn::_tokenize(ret)
+                mirrorKmsContextAndEpochReturn::_tokenize(ret)
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
@@ -13189,7 +13225,7 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
         #[allow(missing_docs)]
         isValidKmsContext(isValidKmsContextCall),
         #[allow(missing_docs)]
-        mirrorKmsContext(mirrorKmsContextCall),
+        mirrorKmsContextAndEpoch(mirrorKmsContextAndEpochCall),
         #[allow(missing_docs)]
         mirrorKmsEpoch(mirrorKmsEpochCall),
         #[allow(missing_docs)]
@@ -13239,6 +13275,7 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
             [176u8, 180u8, 97u8, 196u8],
             [177u8, 129u8, 205u8, 167u8],
             [180u8, 114u8, 43u8, 196u8],
+            [188u8, 77u8, 7u8, 194u8],
             [191u8, 155u8, 22u8, 200u8],
             [192u8, 174u8, 100u8, 247u8],
             [194u8, 180u8, 41u8, 134u8],
@@ -13246,7 +13283,6 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
             [201u8, 153u8, 168u8, 180u8],
             [204u8, 234u8, 192u8, 25u8],
             [217u8, 190u8, 45u8, 228u8],
-            [248u8, 80u8, 170u8, 226u8],
             [249u8, 198u8, 112u8, 195u8],
         ];
     }
@@ -13342,8 +13378,8 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                 Self::isValidKmsContext(_) => {
                     <isValidKmsContextCall as alloy_sol_types::SolCall>::SELECTOR
                 }
-                Self::mirrorKmsContext(_) => {
-                    <mirrorKmsContextCall as alloy_sol_types::SolCall>::SELECTOR
+                Self::mirrorKmsContextAndEpoch(_) => {
+                    <mirrorKmsContextAndEpochCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::mirrorKmsEpoch(_) => {
                     <mirrorKmsEpochCall as alloy_sol_types::SolCall>::SELECTOR
@@ -13663,6 +13699,17 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                     getKmsGenThreshold
                 },
                 {
+                    fn mirrorKmsContextAndEpoch(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigCalls> {
+                        <mirrorKmsContextAndEpochCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IProtocolConfigCalls::mirrorKmsContextAndEpoch)
+                    }
+                    mirrorKmsContextAndEpoch
+                },
+                {
                     fn isValidKmsContext(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IProtocolConfigCalls> {
@@ -13740,17 +13787,6 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                             .map(IProtocolConfigCalls::confirmKmsContextCreation)
                     }
                     confirmKmsContextCreation
-                },
-                {
-                    fn mirrorKmsContext(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IProtocolConfigCalls> {
-                        <mirrorKmsContextCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(IProtocolConfigCalls::mirrorKmsContext)
-                    }
-                    mirrorKmsContext
                 },
                 {
                     fn getKmsNodesForContext(
@@ -14067,6 +14103,17 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                     getKmsGenThreshold
                 },
                 {
+                    fn mirrorKmsContextAndEpoch(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigCalls> {
+                        <mirrorKmsContextAndEpochCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IProtocolConfigCalls::mirrorKmsContextAndEpoch)
+                    }
+                    mirrorKmsContextAndEpoch
+                },
+                {
                     fn isValidKmsContext(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IProtocolConfigCalls> {
@@ -14144,17 +14191,6 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                             .map(IProtocolConfigCalls::confirmKmsContextCreation)
                     }
                     confirmKmsContextCreation
-                },
-                {
-                    fn mirrorKmsContext(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IProtocolConfigCalls> {
-                        <mirrorKmsContextCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IProtocolConfigCalls::mirrorKmsContext)
-                    }
-                    mirrorKmsContext
                 },
                 {
                     fn getKmsNodesForContext(
@@ -14319,8 +14355,8 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                         inner,
                     )
                 }
-                Self::mirrorKmsContext(inner) => {
-                    <mirrorKmsContextCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                Self::mirrorKmsContextAndEpoch(inner) => {
+                    <mirrorKmsContextAndEpochCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -14522,8 +14558,8 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                         out,
                     )
                 }
-                Self::mirrorKmsContext(inner) => {
-                    <mirrorKmsContextCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                Self::mirrorKmsContextAndEpoch(inner) => {
+                    <mirrorKmsContextAndEpochCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -15492,7 +15528,7 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
         #[allow(missing_docs)]
         KmsGenThresholdUpdated(KmsGenThresholdUpdated),
         #[allow(missing_docs)]
-        MirrorKmsContext(MirrorKmsContext),
+        MirrorKmsContextAndEpoch(MirrorKmsContextAndEpoch),
         #[allow(missing_docs)]
         MirrorKmsEpoch(MirrorKmsEpoch),
         #[allow(missing_docs)]
@@ -15545,6 +15581,11 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                 112u8, 152u8, 222u8, 151u8, 46u8, 189u8, 211u8, 76u8, 107u8, 233u8,
             ],
             [
+                42u8, 198u8, 143u8, 120u8, 244u8, 204u8, 222u8, 118u8, 182u8, 73u8, 6u8,
+                2u8, 109u8, 1u8, 255u8, 60u8, 66u8, 64u8, 62u8, 183u8, 238u8, 248u8,
+                111u8, 231u8, 136u8, 71u8, 74u8, 35u8, 38u8, 125u8, 100u8, 207u8,
+            ],
+            [
                 100u8, 64u8, 170u8, 234u8, 123u8, 36u8, 128u8, 184u8, 36u8, 73u8, 195u8,
                 23u8, 170u8, 90u8, 145u8, 104u8, 223u8, 119u8, 235u8, 105u8, 48u8, 143u8,
                 248u8, 247u8, 195u8, 152u8, 10u8, 26u8, 216u8, 72u8, 183u8, 223u8,
@@ -15583,11 +15624,6 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                 242u8, 28u8, 179u8, 123u8, 231u8, 9u8, 20u8, 138u8, 171u8, 235u8, 210u8,
                 120u8, 84u8, 62u8, 98u8, 209u8, 177u8, 230u8, 164u8, 71u8, 127u8, 177u8,
                 204u8, 67u8, 224u8, 105u8, 211u8, 238u8, 184u8, 200u8, 127u8, 144u8,
-            ],
-            [
-                253u8, 173u8, 103u8, 216u8, 167u8, 33u8, 143u8, 111u8, 133u8, 197u8,
-                185u8, 87u8, 215u8, 18u8, 236u8, 207u8, 214u8, 18u8, 95u8, 17u8, 93u8,
-                163u8, 106u8, 120u8, 17u8, 140u8, 200u8, 234u8, 143u8, 39u8, 137u8, 192u8,
             ],
         ];
     }
@@ -15643,12 +15679,14 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                         )
                         .map(Self::KmsGenThresholdUpdated)
                 }
-                Some(<MirrorKmsContext as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
-                    <MirrorKmsContext as alloy_sol_types::SolEvent>::decode_raw_log(
+                Some(
+                    <MirrorKmsContextAndEpoch as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
+                ) => {
+                    <MirrorKmsContextAndEpoch as alloy_sol_types::SolEvent>::decode_raw_log(
                             topics,
                             data,
                         )
-                        .map(Self::MirrorKmsContext)
+                        .map(Self::MirrorKmsContextAndEpoch)
                 }
                 Some(<MirrorKmsEpoch as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
                     <MirrorKmsEpoch as alloy_sol_types::SolEvent>::decode_raw_log(
@@ -15749,7 +15787,7 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                 Self::KmsGenThresholdUpdated(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
-                Self::MirrorKmsContext(inner) => {
+                Self::MirrorKmsContextAndEpoch(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
                 Self::MirrorKmsEpoch(inner) => {
@@ -15795,7 +15833,7 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                 Self::KmsGenThresholdUpdated(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
-                Self::MirrorKmsContext(inner) => {
+                Self::MirrorKmsContextAndEpoch(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
                 Self::MirrorKmsEpoch(inner) => {
@@ -16277,10 +16315,11 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
                 },
             )
         }
-        ///Creates a new call builder for the [`mirrorKmsContext`] function.
-        pub fn mirrorKmsContext(
+        ///Creates a new call builder for the [`mirrorKmsContextAndEpoch`] function.
+        pub fn mirrorKmsContextAndEpoch(
             &self,
             contextId: alloy::sol_types::private::primitives::aliases::U256,
+            epochId: alloy::sol_types::private::primitives::aliases::U256,
             kmsNodeParams: alloy::sol_types::private::Vec<
                 <KmsNodeParams as alloy::sol_types::SolType>::RustType,
             >,
@@ -16289,10 +16328,11 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             pcrValues: alloy::sol_types::private::Vec<
                 <PcrValues as alloy::sol_types::SolType>::RustType,
             >,
-        ) -> alloy_contract::SolCallBuilder<&P, mirrorKmsContextCall, N> {
+        ) -> alloy_contract::SolCallBuilder<&P, mirrorKmsContextAndEpochCall, N> {
             self.call_builder(
-                &mirrorKmsContextCall {
+                &mirrorKmsContextAndEpochCall {
                     contextId,
+                    epochId,
                     kmsNodeParams,
                     thresholds,
                     softwareVersion,
@@ -16419,11 +16459,11 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ) -> alloy_contract::Event<&P, KmsGenThresholdUpdated, N> {
             self.event_filter::<KmsGenThresholdUpdated>()
         }
-        ///Creates a new event filter for the [`MirrorKmsContext`] event.
-        pub fn MirrorKmsContext_filter(
+        ///Creates a new event filter for the [`MirrorKmsContextAndEpoch`] event.
+        pub fn MirrorKmsContextAndEpoch_filter(
             &self,
-        ) -> alloy_contract::Event<&P, MirrorKmsContext, N> {
-            self.event_filter::<MirrorKmsContext>()
+        ) -> alloy_contract::Event<&P, MirrorKmsContextAndEpoch, N> {
+            self.event_filter::<MirrorKmsContextAndEpoch>()
         }
         ///Creates a new event filter for the [`MirrorKmsEpoch`] event.
         pub fn MirrorKmsEpoch_filter(

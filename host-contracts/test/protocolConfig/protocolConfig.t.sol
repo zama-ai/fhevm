@@ -913,12 +913,13 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         _setupEpochLifecycle();
         uint256 contextId = KMS_CONTEXT_COUNTER_BASE + 1;
         uint256 currentEpochId = EPOCH_COUNTER_BASE + 1;
+        uint256 staleEpochId = currentEpochId - 1;
 
         vm.prank(owner);
         vm.expectRevert(
-            abi.encodeWithSelector(IProtocolConfig.NonIncreasingEpochId.selector, currentEpochId, currentEpochId)
+            abi.encodeWithSelector(IProtocolConfig.NonIncreasingEpochId.selector, staleEpochId, currentEpochId)
         );
-        protocolConfig.mirrorKmsEpoch(contextId, currentEpochId);
+        protocolConfig.mirrorKmsEpoch(contextId, staleEpochId);
     }
 
     function test_revertMirrorKmsEpochBeforePendingEpochCounter() public {
@@ -1048,7 +1049,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         vm.prank(owner);
         _defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), _defaultThresholds());
 
-        vm.expectEmit(true, false, false, true, address(protocolConfig));
+        vm.expectEmit(true, true, false, true, address(protocolConfig));
         emit IProtocolConfig.PendingContextAborted(pendingContextId);
         vm.prank(owner);
         protocolConfig.abortPendingContext(pendingContextId);
@@ -1962,7 +1963,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         _setupDefault();
         uint256 contextId = protocolConfig.getCurrentKmsContextId();
 
-        vm.expectEmit(true, false, false, true, address(protocolConfig));
+        vm.expectEmit(true, true, false, true, address(protocolConfig));
         emit IProtocolConfig.PublicDecryptionThresholdUpdated(contextId, 2);
         vm.prank(owner);
         protocolConfig.updatePublicDecryptionThresholdForContext(contextId, 2);
@@ -2278,24 +2279,28 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
     }
 
     // -----------------------------------------------------------------------
-    // mirrorKmsContext
+    // mirrorKmsContextAndEpoch
     // -----------------------------------------------------------------------
 
-    function test_mirrorKmsContextActivatesAndEmits() public {
+    function test_mirrorKmsContextAndEpochActivatesAndEmits() public {
         _setupEpochLifecycle();
         uint256 contextId = KMS_CONTEXT_COUNTER_BASE + 5;
+        uint256 epochId = EPOCH_COUNTER_BASE + 5;
         KmsNodeParams[] memory nodes = _makeKmsNodeParams(2);
         IProtocolConfig.KmsThresholds memory thresholds = _defaultThresholds();
         PcrValues[] memory pcrValues = new PcrValues[](0);
 
-        vm.expectEmit(true, false, false, true, address(protocolConfig));
-        emit IProtocolConfig.MirrorKmsContext(contextId, nodes, thresholds, "kms-v9", pcrValues);
+        vm.expectEmit(true, true, false, true, address(protocolConfig));
+        emit IProtocolConfig.MirrorKmsContextAndEpoch(contextId, epochId, nodes, thresholds, "kms-v9", pcrValues);
         vm.prank(owner);
-        protocolConfig.mirrorKmsContext(contextId, nodes, thresholds, "kms-v9", pcrValues);
+        protocolConfig.mirrorKmsContextAndEpoch(contextId, epochId, nodes, thresholds, "kms-v9", pcrValues);
 
-        // Mirrored context is immediately active (no quorum replay).
-        assertEq(protocolConfig.getCurrentKmsContextId(), contextId);
+        // Mirrored context and epoch are immediately active (no quorum replay).
+        (uint256 activeContextId, uint256 activeEpochId) = protocolConfig.getCurrentKmsContextAndEpoch();
+        assertEq(activeContextId, contextId);
+        assertEq(activeEpochId, epochId);
         assertTrue(protocolConfig.isValidKmsContext(contextId));
+        assertTrue(protocolConfig.isValidEpochForContext(contextId, epochId));
         assertEq(protocolConfig.getKmsSignersForContext(contextId).length, 2);
 
         // Unlike defineNewKmsContextAndEpoch, mirror does NOT record an anchor: it stays zeroed.
@@ -2304,7 +2309,25 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         assertEq(contextInfoHash, bytes32(0));
     }
 
-    function test_mirrorKmsContextBaseBoundary() public {
+    function test_mirrorKmsContextAndEpochActivatesExactNextEpoch() public {
+        _setupEpochLifecycle();
+        uint256 contextId = KMS_CONTEXT_COUNTER_BASE + 2;
+        uint256 epochId = EPOCH_COUNTER_BASE + 2;
+        KmsNodeParams[] memory nodes = _makeKmsNodeParams(2);
+        IProtocolConfig.KmsThresholds memory thresholds = _defaultThresholds();
+
+        vm.expectEmit(true, true, false, true, address(protocolConfig));
+        emit IProtocolConfig.MirrorKmsContextAndEpoch(contextId, epochId, nodes, thresholds, "", new PcrValues[](0));
+        vm.prank(owner);
+        protocolConfig.mirrorKmsContextAndEpoch(contextId, epochId, nodes, thresholds, "", new PcrValues[](0));
+
+        (uint256 activeContextId, uint256 activeEpochId) = protocolConfig.getCurrentKmsContextAndEpoch();
+        assertEq(activeContextId, contextId);
+        assertEq(activeEpochId, epochId);
+        assertTrue(protocolConfig.isValidEpochForContext(contextId, epochId));
+    }
+
+    function test_mirrorKmsContextAndEpochBaseBoundary() public {
         _setupEmptyProxy();
 
         // Bootstrap a mirror replica whose first active context is exactly BASE + 1.
@@ -2323,22 +2346,38 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
 
         // Active context after fresh deploy is BASE + 1, so the next mirror must be BASE + 2 minimum.
         uint256 boundaryContextId = KMS_CONTEXT_COUNTER_BASE + 2;
+        uint256 boundaryEpochId = EPOCH_COUNTER_BASE + 2;
         KmsNodeParams[] memory nodes = _makeKmsNodeParams(2);
         vm.prank(owner);
-        protocolConfig.mirrorKmsContext(boundaryContextId, nodes, thresholds, "", new PcrValues[](0));
+        protocolConfig.mirrorKmsContextAndEpoch(
+            boundaryContextId,
+            boundaryEpochId,
+            nodes,
+            thresholds,
+            "",
+            new PcrValues[](0)
+        );
         assertEq(protocolConfig.getCurrentKmsContextId(), boundaryContextId);
         assertTrue(protocolConfig.isValidKmsContext(boundaryContextId));
     }
 
-    function test_mirrorKmsContextAllowsGap() public {
+    function test_mirrorKmsContextAndEpochAllowsGap() public {
         _setupEpochLifecycle();
         // Active context is BASE + 1; mirror a non-contiguous (gapped) context ID.
         uint256 gappedContextId = KMS_CONTEXT_COUNTER_BASE + 10;
+        uint256 gappedEpochId = EPOCH_COUNTER_BASE + 10;
         KmsNodeParams[] memory nodes = _makeKmsNodeParams(2);
         IProtocolConfig.KmsThresholds memory thresholds = _defaultThresholds();
 
         vm.prank(owner);
-        protocolConfig.mirrorKmsContext(gappedContextId, nodes, thresholds, "", new PcrValues[](0));
+        protocolConfig.mirrorKmsContextAndEpoch(
+            gappedContextId,
+            gappedEpochId,
+            nodes,
+            thresholds,
+            "",
+            new PcrValues[](0)
+        );
 
         assertEq(protocolConfig.getCurrentKmsContextId(), gappedContextId);
         assertTrue(protocolConfig.isValidKmsContext(gappedContextId));
@@ -2346,7 +2385,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         assertFalse(protocolConfig.isValidKmsContext(KMS_CONTEXT_COUNTER_BASE + 5));
     }
 
-    function test_revertMirrorKmsContextNonIncreasing() public {
+    function test_revertMirrorKmsContextAndEpochNonIncreasing() public {
         _setupEpochLifecycle();
         uint256 activeContextId = protocolConfig.getCurrentKmsContextId();
         KmsNodeParams[] memory nodes = _makeKmsNodeParams(2);
@@ -2357,17 +2396,45 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         vm.expectRevert(
             abi.encodeWithSelector(IProtocolConfig.NonIncreasingKmsContextId.selector, activeContextId, activeContextId)
         );
-        protocolConfig.mirrorKmsContext(activeContextId, nodes, thresholds, "", new PcrValues[](0));
+        protocolConfig.mirrorKmsContextAndEpoch(
+            activeContextId,
+            EPOCH_COUNTER_BASE + 2,
+            nodes,
+            thresholds,
+            "",
+            new PcrValues[](0)
+        );
     }
 
-    function test_revertMirrorKmsContextNotOwner() public {
+    function test_revertMirrorKmsContextAndEpochNonIncreasingEpoch() public {
+        _setupEpochLifecycle();
+        uint256 contextId = KMS_CONTEXT_COUNTER_BASE + 2;
+        uint256 activeEpochId = EPOCH_COUNTER_BASE + 1;
+        KmsNodeParams[] memory nodes = _makeKmsNodeParams(2);
+        IProtocolConfig.KmsThresholds memory thresholds = _defaultThresholds();
+
+        vm.prank(owner);
+        vm.expectRevert(
+            abi.encodeWithSelector(IProtocolConfig.NonIncreasingEpochId.selector, activeEpochId, activeEpochId)
+        );
+        protocolConfig.mirrorKmsContextAndEpoch(contextId, activeEpochId, nodes, thresholds, "", new PcrValues[](0));
+    }
+
+    function test_revertMirrorKmsContextAndEpochNotOwner() public {
         _setupEpochLifecycle();
         KmsNodeParams[] memory nodes = _makeKmsNodeParams(2);
         IProtocolConfig.KmsThresholds memory thresholds = _defaultThresholds();
 
         vm.prank(address(0x999));
         vm.expectRevert(abi.encodeWithSelector(ACLOwnable.NotHostOwner.selector, address(0x999)));
-        protocolConfig.mirrorKmsContext(KMS_CONTEXT_COUNTER_BASE + 5, nodes, thresholds, "", new PcrValues[](0));
+        protocolConfig.mirrorKmsContextAndEpoch(
+            KMS_CONTEXT_COUNTER_BASE + 5,
+            EPOCH_COUNTER_BASE + 5,
+            nodes,
+            thresholds,
+            "",
+            new PcrValues[](0)
+        );
     }
 
     // -----------------------------------------------------------------------

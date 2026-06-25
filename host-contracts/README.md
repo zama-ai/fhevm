@@ -125,12 +125,12 @@ Ethereum. They have no `KMSGeneration`, and their only write path is the mirror 
 
 ### Mirror methods (non-canonical write path)
 
-`mirrorKmsContext` and `mirrorKmsEpoch` are how a replica tracks Ethereum. They are `onlyACLOwner`
+`mirrorKmsContextAndEpoch` and `mirrorKmsEpoch` are how a replica tracks Ethereum. They are `onlyACLOwner`
 and bypass the confirmation quorum — a replica can't re-run the MPC attestations, so it trusts the
 operator to import state Ethereum has already finalized, landing it as immediately `Active`:
 
-- `mirrorKmsContext(contextId, kmsNodeParams, thresholds, softwareVersion, pcrValues)` — imports a
-  context as the new active context; emits `MirrorKmsContext`.
+- `mirrorKmsContextAndEpoch(contextId, epochId, kmsNodeParams, thresholds, softwareVersion, pcrValues)` —
+  imports a context and its epoch as active; emits `MirrorKmsContextAndEpoch`.
 - `mirrorKmsEpoch(contextId, epochId)` — advances the active epoch of the mirrored context; emits
   `MirrorKmsEpoch`.
 
@@ -195,5 +195,5 @@ When deploying a full non-canonical host stack, `task:deployAllHostContracts
 runs the mirror in sequence with the other host contracts (this is what the fhevm-cli multi-chain
 stack uses, so e2e seeds non-canonical chains exactly like production).
 
-Later canonical rotations are mirrored manually with `mirrorKmsContext` / `mirrorKmsEpoch`, as
+Later canonical rotations are mirrored manually with `mirrorKmsContextAndEpoch` / `mirrorKmsEpoch`, as
 described in [Mirror methods](#mirror-methods-non-canonical-write-path).
