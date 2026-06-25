@@ -15,7 +15,11 @@ import "forge-std/console.sol";
 import {GUID} from "@layerzerolabs/lz-evm-protocol-v2/contracts/libs/GUID.sol";
 import {ILayerZeroReceiver, Origin} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroReceiver.sol";
 
-import {GasProfilerScript, TestParams, GasMetrics} from "./GasProfiler.s.sol";
+import {
+    GasProfilerScript,
+    TestParams,
+    GasMetrics
+} from "@layerzerolabs/script-devtools-evm-foundry/scripts/GasProfiling/GasProfiler.s.sol";
 
 /// @notice Per-target inputs for an `lzReceive` calibration run.
 struct CalibParams {
