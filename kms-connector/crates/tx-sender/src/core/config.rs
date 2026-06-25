@@ -89,24 +89,28 @@ pub struct Config {
     #[serde(default = "default_task_limit")]
     pub task_limit: usize,
 
-    /// The interval between garbage collection runs.
-    #[serde(with = "humantime_serde", default = "default_gc_run_interval")]
-    pub gc_run_interval: Duration,
-    /// The expiration time for completed/failed decryptions, after which they will be deleted.
+    /// The interval between operation recovery runs.
+    #[serde(
+        with = "humantime_serde",
+        default = "default_operation_recovery_run_interval"
+    )]
+    pub operation_recovery_run_interval: Duration,
+    /// The expiration time for decryptions, after which `pending`/`under_process` decryptions are
+    /// marked as `failed`.
     #[serde(
         deserialize_with = "deserialize_pg_interval",
         serialize_with = "serialize_pg_interval",
-        default = "default_gc_decryption_expiry"
+        default = "default_decryption_expiry"
     )]
-    pub gc_decryption_expiry: PgInterval,
-    /// The time limit for decryption to be under process, after which they will be considered as
-    /// pending again.
+    pub decryption_expiry: PgInterval,
+    /// The timeout for operations to remain under process in the database, after which they are
+    /// considered as pending again.
     #[serde(
         deserialize_with = "deserialize_pg_interval",
         serialize_with = "serialize_pg_interval",
-        default = "default_gc_decryption_under_process_limit"
+        default = "default_operation_under_process_timeout"
     )]
-    pub gc_decryption_under_process_limit: PgInterval,
+    pub operation_under_process_timeout: PgInterval,
 
     /// The monitoring server endpoint of the `TransactionSender`.
     #[serde(default = "default_monitoring_endpoint")]
@@ -182,15 +186,15 @@ fn default_gauge_update_interval() -> Duration {
     Duration::from_secs(10)
 }
 
-fn default_gc_run_interval() -> Duration {
+fn default_operation_recovery_run_interval() -> Duration {
     Duration::from_mins(5)
 }
 
-fn default_gc_decryption_expiry() -> PgInterval {
+fn default_decryption_expiry() -> PgInterval {
     PgInterval::try_from(Duration::from_hours(24)).unwrap()
 }
 
-fn default_gc_decryption_under_process_limit() -> PgInterval {
+fn default_operation_under_process_timeout() -> PgInterval {
     PgInterval::try_from(Duration::from_mins(6)).unwrap()
 }
 
@@ -236,9 +240,9 @@ impl Default for Config {
             responses_batch_size: default_responses_batch_size(),
             gas_multiplier_percent: default_gas_multiplier_percent(),
             task_limit: default_task_limit(),
-            gc_run_interval: default_gc_run_interval(),
-            gc_decryption_expiry: default_gc_decryption_expiry(),
-            gc_decryption_under_process_limit: default_gc_decryption_under_process_limit(),
+            operation_recovery_run_interval: default_operation_recovery_run_interval(),
+            decryption_expiry: default_decryption_expiry(),
+            operation_under_process_timeout: default_operation_under_process_timeout(),
             monitoring_endpoint: default_monitoring_endpoint(),
             gauge_update_interval: default_gauge_update_interval(),
             healthcheck_timeout: default_healthcheck_timeout(),
@@ -273,9 +277,9 @@ mod tests {
             env::remove_var("KMS_CONNECTOR_TRACE_REVERTED_TX");
             env::remove_var("KMS_CONNECTOR_GAS_MULTIPLIER_PERCENT");
             env::remove_var("KMS_CONNECTOR_GAUGE_UPDATE_INTERVAL");
-            env::remove_var("KMS_CONNECTOR_GC_RUN_INTERVAL");
-            env::remove_var("KMS_CONNECTOR_GC_DECRYPTION_EXPIRY");
-            env::remove_var("KMS_CONNECTOR_GC_DECRYPTION_UNDER_PROCESS_LIMIT");
+            env::remove_var("KMS_CONNECTOR_OPERATION_RECOVERY_RUN_INTERVAL");
+            env::remove_var("KMS_CONNECTOR_DECRYPTION_EXPIRY");
+            env::remove_var("KMS_CONNECTOR_OPERATION_UNDER_PROCESS_TIMEOUT");
         }
     }
 
@@ -328,9 +332,9 @@ mod tests {
             env::set_var("KMS_CONNECTOR_TRACE_REVERTED_TX", "false");
             env::set_var("KMS_CONNECTOR_GAS_MULTIPLIER_PERCENT", "180");
             env::set_var("KMS_CONNECTOR_GAUGE_UPDATE_INTERVAL", "20s");
-            env::set_var("KMS_CONNECTOR_GC_RUN_INTERVAL", "2m");
-            env::set_var("KMS_CONNECTOR_GC_DECRYPTION_EXPIRY", "50m");
-            env::set_var("KMS_CONNECTOR_GC_DECRYPTION_UNDER_PROCESS_LIMIT", "1m");
+            env::set_var("KMS_CONNECTOR_OPERATION_RECOVERY_RUN_INTERVAL", "2m");
+            env::set_var("KMS_CONNECTOR_DECRYPTION_EXPIRY", "50m");
+            env::set_var("KMS_CONNECTOR_OPERATION_UNDER_PROCESS_TIMEOUT", "1m");
         }
 
         // Load config from environment
@@ -371,13 +375,16 @@ mod tests {
         assert!(!config.trace_reverted_tx);
         assert_eq!(config.gas_multiplier_percent, 180);
         assert_eq!(config.gauge_update_interval, Duration::from_secs(20));
-        assert_eq!(config.gc_run_interval, Duration::from_mins(2));
         assert_eq!(
-            config.gc_decryption_expiry,
+            config.operation_recovery_run_interval,
+            Duration::from_mins(2)
+        );
+        assert_eq!(
+            config.decryption_expiry,
             PgInterval::try_from(Duration::from_mins(50)).unwrap()
         );
         assert_eq!(
-            config.gc_decryption_under_process_limit,
+            config.operation_under_process_timeout,
             PgInterval::try_from(Duration::from_mins(1)).unwrap()
         );
 
