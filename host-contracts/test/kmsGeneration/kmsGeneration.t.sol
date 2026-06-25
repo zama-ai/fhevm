@@ -143,22 +143,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         IKMSGeneration.KeyDigest[] memory keyDigests,
         bytes memory extraData
     ) internal view returns (bytes32) {
-        bytes32[] memory digestHashes = new bytes32[](keyDigests.length);
-        for (uint256 i = 0; i < keyDigests.length; i++) {
-            digestHashes[i] = keccak256(
-                abi.encode(EIP712_KEY_DIGEST_TYPE_HASH, keyDigests[i].keyType, keccak256(keyDigests[i].digest))
-            );
-        }
-        bytes32 structHash = keccak256(
-            abi.encode(
-                EIP712_KEYGEN_TYPE_HASH,
-                prepKeygenId,
-                keyId,
-                keccak256(abi.encodePacked(digestHashes)),
-                keccak256(extraData)
-            )
-        );
-        return MessageHashUtils.toTypedDataHash(_computeDomainSeparator(verifier), structHash);
+        return _hashKeygenWithDomain(_computeDomainSeparator(verifier), prepKeygenId, keyId, keyDigests, extraData);
     }
 
     function _hashCrsgen(
@@ -177,16 +162,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         bytes memory crsDigest,
         bytes memory extraData
     ) internal view returns (bytes32) {
-        bytes32 structHash = keccak256(
-            abi.encode(
-                EIP712_CRSGEN_TYPE_HASH,
-                crsId,
-                maxBitLength,
-                keccak256(abi.encodePacked(crsDigest)),
-                keccak256(extraData)
-            )
-        );
-        return MessageHashUtils.toTypedDataHash(_computeDomainSeparator(verifier), structHash);
+        return _hashCrsgenWithDomain(_computeDomainSeparator(verifier), crsId, maxBitLength, crsDigest, extraData);
     }
 
     function _activatePendingTwoNodeContext(uint256 contextId, uint256 epochId, uint256 pk0, uint256 pk1) internal {
