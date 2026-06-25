@@ -9,24 +9,39 @@ type Env = Record<string, string>;
 // ACTIONS (publish v1 material, publish the schedule, cross the cutover
 // blocks), not image-tag bumps.
 //
-// Topology mirrors testnet: one coprocessor, threshold 1, two host chains
-// (L1 + a Polygon stand-in, chain-b). The two-host-chain shape is the whole
-// point -- it exercises a per-chain cutover block (H_C) on each chain plus
-// the single gateway cutover block (G).
-export const scenario = "multi-chain";
+// Topology: 5 coprocessors, threshold 3, a real 4-party threshold-mode KMS,
+// and two host chains (L1 + a Polygon stand-in, chain-b). The 5-coprocessor
+// shape makes the zero-divergence assertion meaningful (any per-operation
+// material-version split across the fleet breaks consensus); the two-host-chain
+// shape exercises a per-chain cutover block (H_C) on each chain plus the single
+// gateway cutover block (G). Defined in scenarios/rfc029-cutover.yaml.
+export const scenario = "rfc029-cutover";
 
-// Single coherent target. The feature under test lives on the current build
-// (`target: "latest-main"` in the rollout up-options); these tags pin the
-// surrounding stack to the v0.13.0 floor so the lock file is concrete.
+// Single coherent target: the RFC-029 cutover is a coprocessor-INTERNAL material
+// switch shipped in one build, not a version upgrade -- so the surrounding stack
+// is pinned to the v0.13.0 floor while the coprocessor/connector/host-contracts
+// images are built locally from this branch (via the scenario's local
+// coprocessor instances + ctx.up overrides in run.ts).
 const target = "v0.13.0";
 const relayerSdkVersion = "0.4.2";
+
+// kms-core image anchor. MUST be the same kms commit the connector compiles its
+// gRPC proto against (kms-connector/Cargo.toml pins kms-grpc rev 1edf3a0), so
+// the RFC-029 migration keygen RPC (KeyGenRequest + KeySetAddedInfo /
+// copy_compressed_key_to_original, UseExisting + CompressedAll) is proto-compatible
+// end to end. `ghcr.io/zama-ai/kms/core-service:1edf3a0` is published and
+// pullable, and 1edf3a0 ("explicit num_parties #619", 2026-05-29) carries the
+// RFC-028 keygen-from-existing implementation. (NOTE: an earlier note referenced
+// "43fb606" -- that is not a kms commit and has no image; 1edf3a0 is the correct,
+// connector-matched anchor.)
+const kmsCoreImage = "1edf3a0";
 
 export const versions = {
   RELAYER_VERSION: target,
   RELAYER_MIGRATE_VERSION: target,
   GATEWAY_VERSION: target,
   HOST_VERSION: target,
-  CORE_VERSION: "v0.13.20",
+  CORE_VERSION: kmsCoreImage,
   CONNECTOR_DB_MIGRATION_VERSION: target,
   CONNECTOR_GW_LISTENER_VERSION: target,
   CONNECTOR_KMS_WORKER_VERSION: target,
@@ -52,6 +67,7 @@ export const phaseVersions = {
 export const versionSources = [
   "rollout=rfc029-material-migration",
   `target=${target}`,
-  "feature=latest-main (RFC-029 coprocessor material-version cutover)",
+  `kms-core=${kmsCoreImage} (matches connector kms-grpc pin 1edf3a0)`,
+  "feature=branch-local (RFC-029 coprocessor material-version cutover)",
   "tracks=fhevm-internal#1568",
 ];
