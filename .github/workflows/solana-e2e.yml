@@ -85,7 +85,13 @@ jobs:
 
       - name: Install fhevm-cli deps (clean-e2e.sh drives ./fhevm-cli)
         working-directory: test-suite/fhevm
-        run: bun install --frozen-lockfile
+        # test-suite/fhevm is not a workspace member and declares no @fhevm/sdk dep, so bun install
+        # won't link it — but full-vertical.sh's node clients (solana-input.ts,
+        # solana-userdecrypt-full.ts) import @fhevm/sdk. Link it to the built SDK source.
+        run: |
+          bun install --frozen-lockfile
+          mkdir -p node_modules/@fhevm
+          ln -sfn "$GITHUB_WORKSPACE/sdk/js-sdk/src" node_modules/@fhevm/sdk
 
       - name: Bring up fresh stack + Solana side (clean-e2e.sh)
         run: bash solana/scripts/poc/clean-e2e.sh
@@ -182,7 +188,13 @@ jobs:
 
       - name: Install fhevm-cli deps (clean-e2e.sh drives ./fhevm-cli)
         working-directory: test-suite/fhevm
-        run: bun install --frozen-lockfile
+        # test-suite/fhevm is not a workspace member and declares no @fhevm/sdk dep, so bun install
+        # won't link it — but full-vertical.sh's node clients (solana-input.ts,
+        # solana-userdecrypt-full.ts) import @fhevm/sdk. Link it to the built SDK source.
+        run: |
+          bun install --frozen-lockfile
+          mkdir -p node_modules/@fhevm
+          ln -sfn "$GITHUB_WORKSPACE/sdk/js-sdk/src" node_modules/@fhevm/sdk
 
       - name: Bring up fresh stack + Solana side (clean-e2e.sh)
         run: bash solana/scripts/poc/clean-e2e.sh
