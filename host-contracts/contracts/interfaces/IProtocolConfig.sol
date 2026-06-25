@@ -186,13 +186,15 @@ interface IProtocolConfig {
     /**
      * @notice Emitted when a canonical KMS context is mirrored and activated.
      * @param contextId The mirrored canonical context ID.
+     * @param epochId The mirrored canonical epoch ID activated for the context.
      * @param kmsNodeParams The KMS nodes mirrored from the canonical context, including MPC metadata.
      * @param thresholds The thresholds mirrored from the canonical context.
      * @param softwareVersion The KMS software version of the canonical context.
      * @param pcrValues Accepted enclave PCR values of the canonical context.
      */
-    event MirrorKmsContext(
+    event MirrorKmsContextAndEpoch(
         uint256 indexed contextId,
+        uint256 indexed epochId,
         KmsNodeParams[] kmsNodeParams,
         KmsThresholds thresholds,
         string softwareVersion,
@@ -406,17 +408,19 @@ interface IProtocolConfig {
     /**
      * @notice Mirror and immediately activate a canonical KMS context.
      * @dev Non-canonical hosts use this to import signer/threshold state without replaying
-     *      context-creation confirmations. The `contextId` must be strictly greater than the
-     *      current active context ID. Gaps are allowed (canonical contexts that were aborted or
-     *      never activated are simply never mirrored).
+     *      context-creation confirmations. The `contextId` and `epochId` must be strictly greater
+     *      than the latest active context and latest known epoch IDs. Gaps are allowed (canonical
+     *      contexts/epochs that were aborted or never activated are simply never mirrored).
      * @param contextId The canonical context ID to mirror; must exceed the current active context ID.
+     * @param epochId The canonical epoch ID to activate for the mirrored context.
      * @param kmsNodeParams The KMS nodes from the canonical context, including MPC metadata.
      * @param thresholds The thresholds from the canonical context.
      * @param softwareVersion The KMS software version of the canonical context.
      * @param pcrValues Accepted enclave PCR values of the canonical context.
      */
-    function mirrorKmsContext(
+    function mirrorKmsContextAndEpoch(
         uint256 contextId,
+        uint256 epochId,
         KmsNodeParams[] calldata kmsNodeParams,
         KmsThresholds calldata thresholds,
         string calldata softwareVersion,
@@ -427,8 +431,8 @@ interface IProtocolConfig {
      * @notice Mirror and immediately activate a canonical KMS epoch for the active context.
      * @dev Non-canonical hosts use this to advance the active epoch without replaying
      *      epoch-activation confirmations. The `epochId` must be strictly greater than the
-     *      latest known epoch ID. The context must already be the active
-     *      mirrored context (mirror the context first with `mirrorKmsContext`).
+     *      latest known epoch ID. The context must already be the active mirrored context
+     *      (mirror the context first with `mirrorKmsContextAndEpoch`).
      * @param contextId The active mirrored context the epoch belongs to.
      * @param epochId The canonical epoch ID to mirror; must exceed the latest known epoch ID.
      */

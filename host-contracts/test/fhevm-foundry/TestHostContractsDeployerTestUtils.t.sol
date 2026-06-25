@@ -231,10 +231,10 @@ contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
     }
 
     /// @dev the four MPC-metadata fields added to KmsNodeParams (partyId/mpcIdentity/caCert/
-    ///      storagePrefix) are not stored on KmsNode and only survive through the MirrorKmsContext
+    ///      storagePrefix) are not stored on KmsNode and only survive through the MirrorKmsContextAndEpoch
     ///      event. The four stored fields survive into KmsNode storage. A transposition of any field
     ///      would fail this round-trip assertion.
-    function test_MirrorKmsContext_PreservesAllNodeParamFields() public {
+    function test_MirrorKmsContextAndEpoch_PreservesAllNodeParamFields() public {
         _deployACL(OWNER);
         KmsNodeParams[] memory bootstrap = _makeKmsNodeParams(1);
         _deployProtocolConfig(OWNER, bootstrap, _defaultThresholds());
@@ -243,26 +243,35 @@ contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
         KmsNodeParams[] memory nodes = _makeKmsNodeParams(2);
         IProtocolConfig.KmsThresholds memory thresholds = _defaultThresholds();
         uint256 mirroredContextId = KMS_CONTEXT_COUNTER_BASE + 4;
+        uint256 mirroredEpochId = EPOCH_COUNTER_BASE + 4;
 
         vm.recordLogs();
         vm.prank(OWNER);
-        pcProxy.mirrorKmsContext(mirroredContextId, nodes, thresholds, "kms-v3", new PcrValues[](0));
+        pcProxy.mirrorKmsContextAndEpoch(
+            mirroredContextId,
+            mirroredEpochId,
+            nodes,
+            thresholds,
+            "kms-v3",
+            new PcrValues[](0)
+        );
         Vm.Log[] memory logs = vm.getRecordedLogs();
 
-        // Decode MirrorKmsContext to recover the full (8-field) KmsNodeParams array.
+        // Decode MirrorKmsContextAndEpoch to recover the full (8-field) KmsNodeParams array.
         KmsNodeParams[] memory emitted;
         bool found;
         for (uint256 i = 0; i < logs.length; i++) {
-            if (logs[i].topics[0] == IProtocolConfig.MirrorKmsContext.selector) {
+            if (logs[i].topics[0] == IProtocolConfig.MirrorKmsContextAndEpoch.selector) {
                 (emitted, , , ) = abi.decode(
                     logs[i].data,
                     (KmsNodeParams[], IProtocolConfig.KmsThresholds, string, PcrValues[])
                 );
+                assertEq(uint256(logs[i].topics[2]), mirroredEpochId, "epoch id topic mismatch");
                 found = true;
                 break;
             }
         }
-        assertTrue(found, "MirrorKmsContext not emitted");
+        assertTrue(found, "MirrorKmsContextAndEpoch not emitted");
         assertEq(emitted.length, nodes.length, "node count mismatch");
         for (uint256 i = 0; i < nodes.length; i++) {
             assertEq(emitted[i].txSenderAddress, nodes[i].txSenderAddress, "txSender mismatch");
