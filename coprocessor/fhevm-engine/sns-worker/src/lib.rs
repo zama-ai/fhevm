@@ -27,6 +27,7 @@ use aws_sdk_s3::{config::Builder, Client};
 use fhevm_engine_common::{
     chain_id::ChainId,
     db_keys::DbKeyId,
+    material_version::MaterialVersion,
     drift_revert,
     healthz_server::{self},
     metrics_server,
@@ -245,6 +246,9 @@ impl std::fmt::Display for Ciphertext128Format {
 pub struct HandleItem {
     pub host_chain_id: ChainId,
     pub key_id_gw: DbKeyId,
+    /// RFC-029 material version of the SOURCE ciphertext. SnS squashes under
+    /// this version's keyset (pinned, never recomputed from a block).
+    pub material_version: MaterialVersion,
     pub handle: Vec<u8>,
 
     /// Compressed 64-bit ciphertext

@@ -1,5 +1,5 @@
 use crate::aws_upload::check_is_ready;
-use crate::keyset::fetch_latest_keyset;
+use crate::keyset::{fetch_latest_keyset, fetch_migrated_keyset};
 use crate::metrics::SNS_LATENCY_OP_HISTOGRAM;
 use crate::metrics::TASK_EXECUTE_FAILURE_COUNTER;
 use crate::metrics::TASK_EXECUTE_SUCCESS_COUNTER;
@@ -15,6 +15,7 @@ use crate::{Config, ExecutionError};
 use aws_sdk_s3::Client;
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::db_keys::DbKeyId;
+use fhevm_engine_common::material_version::MaterialVersion;
 use fhevm_engine_common::healthz_server::{HealthCheckService, HealthStatus, Version};
 use fhevm_engine_common::pg_pool::PostgresPoolManager;
 use fhevm_engine_common::pg_pool::ServiceError;
@@ -204,6 +205,9 @@ pub(crate) async fn run_loop(
         .await?;
 
     let mut keys: Option<(DbKeyId, KeySet)> = None;
+    // RFC-029 migrated (v1) keyset, fetched lazily once and reused. One cutover,
+    // immutable thereafter; key rotation is out of scope (fhevm-internal#1568).
+    let mut migrated_keys: Option<KeySet> = None;
     let mut gc_ticker = interval(conf.db.cleanup_interval);
     let mut gc_timestamp = SystemTime::now();
     let mut polling_ticker = interval(Duration::from_secs(conf.db.polling_interval.into()));
@@ -239,7 +243,7 @@ pub(crate) async fn run_loop(
         let (_, keys) = keys.as_ref().expect("keyset should be available");
 
         let (maybe_remaining, _tasks_processed) =
-            fetch_and_execute_sns_tasks(&pool, &tx, keys, &conf, &token)
+            fetch_and_execute_sns_tasks(&pool, &tx, keys, &mut migrated_keys, &conf, &token)
                 .await
                 .inspect(|(_, tasks_processed)| {
                     TASK_EXECUTE_SUCCESS_COUNTER.inc_by(*tasks_processed as u64);
@@ -366,6 +370,7 @@ async fn fetch_and_execute_sns_tasks(
     pool: &PgPool,
     tx: &Sender<UploadJob>,
     keys: &KeySet,
+    migrated_keys: &mut Option<KeySet>,
     conf: &Config,
     token: &CancellationToken,
 ) -> Result<(bool, usize), ExecutionError> {
@@ -393,17 +398,52 @@ async fn fetch_and_execute_sns_tasks(
         maybe_remaining = conf.db.batch_limit as usize == tasks.len();
         tasks_processed = tasks.len();
 
+        // RFC-029: SnS pins each task to its SOURCE ciphertext's material
+        // version. Group same-version tasks contiguously and run each group
+        // under that version's keyset. Happy path = all v0 = one group using
+        // the v0 `keys`, unchanged. v1 uses the migrated keyset (fetched once,
+        // lazily); if it isn't published yet, defer the whole batch and retry
+        // rather than substitute a different version.
+        tasks.sort_by_key(|t| t.material_version.0);
+        let needs_migrated = tasks
+            .iter()
+            .any(|t| t.material_version != MaterialVersion::LEGACY);
+        if needs_migrated && migrated_keys.is_none() {
+            *migrated_keys = fetch_migrated_keyset(pool).await?;
+        }
+        if needs_migrated && migrated_keys.is_none() {
+            warn!("migrated keyset not published yet; deferring SnS batch");
+            return Ok((false, 0));
+        }
+
         let batch_exec_span = tracing::info_span!("batch_execution", count = tasks.len());
 
-        batch_exec_span.in_scope(|| {
-            process_tasks(
-                &mut tasks,
-                keys,
-                tx,
-                conf.enable_compression,
-                conf.schedule_policy,
-                token.clone(),
-            )
+        batch_exec_span.in_scope(|| -> Result<(), ExecutionError> {
+            let mut i = 0;
+            while i < tasks.len() {
+                let version = tasks[i].material_version;
+                let mut j = i + 1;
+                while j < tasks.len() && tasks[j].material_version == version {
+                    j += 1;
+                }
+                let keyset = if version == MaterialVersion::LEGACY {
+                    keys
+                } else {
+                    migrated_keys
+                        .as_ref()
+                        .expect("migrated keyset fetched above when a v1 task is present")
+                };
+                process_tasks(
+                    &mut tasks[i..j],
+                    keyset,
+                    tx,
+                    conf.enable_compression,
+                    conf.schedule_policy,
+                    token.clone(),
+                )?;
+                i = j;
+            }
+            Ok(())
         })?;
 
         update_computations_status(trx, &tasks)
@@ -457,9 +497,9 @@ pub async fn query_sns_tasks(
 ) -> Result<Option<Vec<HandleItem>>, ExecutionError> {
     let query = format!(
         "
-        SELECT a.*, c.ciphertext
+        SELECT a.*, c.ciphertext, c.material_version AS source_material_version
         FROM pbs_computations a
-        JOIN ciphertexts c 
+        JOIN ciphertexts c
         ON a.handle = c.handle
         WHERE c.ciphertext IS NOT NULL
         AND a.is_completed = FALSE
@@ -491,6 +531,8 @@ pub async fn query_sns_tasks(
                 .map_err(|e| ExecutionError::ConversionError(e.into()))?;
             let handle: Vec<u8> = record.try_get("handle")?;
             let ciphertext: Vec<u8> = record.try_get("ciphertext")?;
+            let material_version =
+                MaterialVersion(record.try_get::<i16, _>("source_material_version")?);
             let transaction_id: Option<Vec<u8>> = record.try_get("transaction_id")?;
             let task_span = tracing::info_span!(
                 "task",
@@ -505,6 +547,7 @@ pub async fn query_sns_tasks(
                 // (e.g., via gateway coordination) to keep ciphertext_digest consistent.
                 key_id_gw: key_id_gw.clone(),
                 host_chain_id,
+                material_version,
                 handle,
                 ct64_compressed: Arc::new(ciphertext),
                 ct128: Arc::new(BigCiphertext::default()), // to be computed
