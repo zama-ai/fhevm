@@ -44,6 +44,10 @@ pub struct HostConfigUpdatedEvent {
     pub test_shims_enabled: bool,
     /// Current grant deny-list gate.
     pub grant_deny_list_enabled: bool,
+    /// Current max total HCU per `fhe_eval` plan (`0` = unlimited).
+    pub max_hcu_per_tx: u64,
+    /// Current max critical-path HCU per `fhe_eval` plan (`0` = unlimited).
+    pub max_hcu_depth_per_tx: u64,
     /// Slot in which this update was applied.
     pub updated_slot: u64,
 }
