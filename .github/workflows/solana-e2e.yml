@@ -56,6 +56,11 @@ jobs:
           echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
           cargo install --git https://github.com/coral-xyz/anchor --tag v1.0.2 anchor-cli --locked
 
+      - name: Setup protoc (host-listener builds fhevm-engine-common via prost-build)
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+        with:
+          version: "26.x"
+
       - name: Login to ghcr.io
         uses: zama-ai/ci-templates/.github/actions/retry@542103e14b9ae6a9aea27787b8724b3b35bb3918 # v1.0.9
         env:
@@ -144,6 +149,11 @@ jobs:
           sh -c "$(curl -sSfL https://release.anza.xyz/v2.1.21/install)"
           echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
           cargo install --git https://github.com/coral-xyz/anchor --tag v1.0.2 anchor-cli --locked
+
+      - name: Setup protoc (host-listener builds fhevm-engine-common via prost-build)
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+        with:
+          version: "26.x"
 
       - name: Login to ghcr.io
         uses: zama-ai/ci-templates/.github/actions/retry@542103e14b9ae6a9aea27787b8724b3b35bb3918 # v1.0.9
