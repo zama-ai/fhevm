@@ -197,10 +197,10 @@ export default async function run(ctx: RolloutRunContext) {
   logPhase("01 publish: trigger migration keygen-from-existing, then publish v1 material");
   const state = await ctx.readState();
   const keyBeforeMigration = await activeKeyId(ctx);
-  await ctx.runHostContractTask(`task:triggerMigrationKeygen --params-type ${PARAMS_TYPE_TEST}`);
+  await ctx.runHostContractTask(`npx hardhat task:triggerMigrationKeygen --params-type ${PARAMS_TYPE_TEST}`);
   const migratedKeyId = await waitForActiveKeyAdvance(ctx, keyBeforeMigration);
   console.log(`[rollout] migration keygen finalized: activeKeyId ${keyBeforeMigration} -> ${migratedKeyId}`);
-  await ctx.runHostContractTask(`task:publishMigratedKeyMaterials --material-version ${MATERIAL_VERSION_MIGRATED_V1}`);
+  await ctx.runHostContractTask(`npx hardhat task:publishMigratedKeyMaterials --material-version ${MATERIAL_VERSION_MIGRATED_V1}`);
   // Let the host-listener download the migrated keyset + publish it onto
   // keys.migrated_xof_keyset across the fleet before anyone crosses a cutover block.
   console.log(`[rollout] waiting ${PUBLISH_GRACE_MS / 1000}s for v1 material to publish fleet-wide`);
@@ -232,7 +232,7 @@ export default async function run(ctx: RolloutRunContext) {
   );
 
   await ctx.runHostContractTask(
-    `task:scheduleKeyMaterialMigration ` +
+    `npx hardhat task:scheduleKeyMaterialMigration ` +
       `--host-chain-ids ${hostChainIds.join(",")} ` +
       `--host-migration-blocks ${hostMigrationBlocks.join(",")} ` +
       `--gateway-migration-block ${gatewayMigrationBlock} ` +
