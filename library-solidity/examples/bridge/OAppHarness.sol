@@ -60,6 +60,16 @@ contract OAppHarness is ConfidentialOAppSender, ConfidentialOAppReceiver {
         return _quoteBridge(dstEid, payload, euint64.wrap(handle), lzComposeGas);
     }
 
+    /// @dev Send a list of raw handles to the peer on `dstEid` via the multi-handle sender helper.
+    function bridgeManyToPeer(
+        uint32 dstEid,
+        bytes calldata payload,
+        bytes32[] calldata handles,
+        uint64 lzComposeGas
+    ) external payable returns (MessagingReceipt memory) {
+        return _bridge(dstEid, payload, handles, lzComposeGas, msg.value);
+    }
+
     function lastHandlesLength() external view returns (uint256) {
         return lastHandles.length;
     }

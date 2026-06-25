@@ -10,7 +10,8 @@ import {ConfidentialOAppCore} from "./ConfidentialOAppCore.sol";
  * @notice  Send side of a confidential omnichain app. Looks up the destination peer from the
  *          shared {ConfidentialOAppCore} registry and bridges encrypted handles to it through
  *          `FHE.bridge`, so subclasses never deal with the bridge contract or peer encoding
- *          directly.
+ *          directly. A single-handle convenience and a type-agnostic multi-handle overload are
+ *          provided (a message may carry up to the bridge's `MAX_HANDLES`).
  * @dev     The destination is taken from {peers} (a `bytes32`, so non-EVM peers work too).
  *          Quote the fee with {_quoteBridge} and forward it as `msg.value` to {_bridge}.
  */
@@ -22,17 +23,8 @@ abstract contract ConfidentialOAppSender is ConfidentialOAppCore {
 
     /**
      * @notice Bridge a single encrypted `euint64` handle to the peer on `dstEid`.
-     * @dev    The bridge checks `isAllowed(handle, msg.sender)`, and since `_bridge` runs in
-     *         this contract's context `msg.sender` is THIS contract — so the contract must hold
-     *         ACL allowance on `handle` (e.g. via `FHE.allowThis`), not the external caller.
-     *         {_bridge} performs no caller authorization of its own; subclasses must gate their
-     *         public entrypoint (as `ConfidentialOFTViaLib.send` does with `FHE.isSenderAllowed`).
-     * @param dstEid        Destination LayerZero endpoint id (must have a configured peer).
-     * @param payload       Opaque app payload (the receiver decodes it).
-     * @param handle        The encrypted value to bridge; this contract must hold ACL allowance on it.
-     * @param lzComposeGas  Gas budget for the destination receive callback (lzCompose leg); must
-     *                      meet the bridge's per-`dstEid` minimum (and be non-zero).
-     * @param nativeFee     LayerZero native fee to forward (query via {_quoteBridge}).
+     * @dev    Convenience wrapper over the multi-handle {_bridge}; the payload must reference the
+     *         handle at index 0. See the list overload for the allowance/gas rules.
      */
     function _bridge(
         uint32 dstEid,
@@ -41,23 +33,61 @@ abstract contract ConfidentialOAppSender is ConfidentialOAppCore {
         uint64 lzComposeGas,
         uint256 nativeFee
     ) internal returns (MessagingReceipt memory) {
-        if (lzComposeGas == 0) revert ZeroComposeGas();
-        bytes32 peer = _getPeerOrRevert(dstEid);
-        bytes32[] memory handleList = new bytes32[](1);
-        handleList[0] = euint64.unwrap(handle);
-        return FHE.bridge(dstEid, peer, payload, handleList, lzComposeGas, nativeFee);
+        bytes32[] memory handles = new bytes32[](1);
+        handles[0] = euint64.unwrap(handle);
+        return _bridge(dstEid, payload, handles, lzComposeGas, nativeFee);
     }
 
-    /// @notice Quotes the native fee for the matching {_bridge} call.
+    /**
+     * @notice Bridge a list of encrypted handles to the peer on `dstEid` in a single message.
+     * @dev    Type-agnostic: pass raw `bytes32` handles (e.g. `euint64.unwrap(h)`); mixing
+     *         encrypted types within one list is fine. The destination receiver gets the derived
+     *         handles aligned one-to-one by index.
+     *
+     *         The bridge checks `isAllowed(handle, msg.sender)` for every handle, and since
+     *         `_bridge` runs in this contract's context `msg.sender` is THIS contract — so the
+     *         contract must hold ACL allowance on each handle (e.g. via `FHE.allowThis`), not the
+     *         external caller. {_bridge} performs no caller authorization of its own; subclasses
+     *         must gate their public entrypoint (as `ConfidentialOFTViaLib.send` does with
+     *         `FHE.isSenderAllowed`).
+     * @param dstEid        Destination LayerZero endpoint id (must have a configured peer).
+     * @param payload       Opaque app payload (the receiver decodes it); reference handles by index.
+     * @param handles       Raw `bytes32` handles to bridge; this contract must hold ACL allowance
+     *                      on each. Up to the bridge's `MAX_HANDLES`.
+     * @param lzComposeGas  Gas budget for the destination receive callback (lzCompose leg); must
+     *                      meet the bridge's per-`dstEid` minimum (and be non-zero).
+     * @param nativeFee     LayerZero native fee to forward (query via {_quoteBridge}).
+     */
+    function _bridge(
+        uint32 dstEid,
+        bytes memory payload,
+        bytes32[] memory handles,
+        uint64 lzComposeGas,
+        uint256 nativeFee
+    ) internal returns (MessagingReceipt memory) {
+        if (lzComposeGas == 0) revert ZeroComposeGas();
+        return FHE.bridge(dstEid, _getPeerOrRevert(dstEid), payload, handles, lzComposeGas, nativeFee);
+    }
+
+    /// @notice Quotes the native fee for the single-handle {_bridge} call.
     function _quoteBridge(
         uint32 dstEid,
         bytes memory payload,
         euint64 handle,
         uint64 lzComposeGas
     ) internal view returns (MessagingFee memory) {
-        bytes32 peer = _getPeerOrRevert(dstEid);
-        bytes32[] memory handleList = new bytes32[](1);
-        handleList[0] = euint64.unwrap(handle);
-        return FHE.quoteBridge(dstEid, address(this), peer, payload, handleList, lzComposeGas);
+        bytes32[] memory handles = new bytes32[](1);
+        handles[0] = euint64.unwrap(handle);
+        return _quoteBridge(dstEid, payload, handles, lzComposeGas);
+    }
+
+    /// @notice Quotes the native fee for the multi-handle {_bridge} call.
+    function _quoteBridge(
+        uint32 dstEid,
+        bytes memory payload,
+        bytes32[] memory handles,
+        uint64 lzComposeGas
+    ) internal view returns (MessagingFee memory) {
+        return FHE.quoteBridge(dstEid, address(this), _getPeerOrRevert(dstEid), payload, handles, lzComposeGas);
     }
 }

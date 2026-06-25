@@ -329,6 +329,19 @@ describe('Confidential bridge helpers', function () {
       expect(sent.value).to.equal(fee);
     });
 
+    it('bridges a multi-handle list to the resolved peer in one message', async function () {
+      const { bridge, oapp } = await deployOAppFixture();
+      const peer = padded(randAddr());
+      await oapp.setPeer(DST_EID, peer);
+
+      await oapp.bridgeManyToPeer(DST_EID, '0x', [handleA, handleB, handleC], 200_000, { value: 0 });
+
+      const sent = await bridge.lastSend();
+      expect(sent.dstApp).to.equal(peer);
+      expect(sent.handleList).to.deep.equal([handleA, handleB, handleC]);
+      expect(sent.lzComposeGas).to.equal(200_000n);
+    });
+
     it('reverts NoPeer when no peer is configured for the destination eid', async function () {
       const { oapp } = await deployOAppFixture();
       await expect(oapp.bridgeToPeer(DST_EID, '0x', handleA, 50_000)).to.be.revertedWithCustomError(oapp, 'NoPeer');
