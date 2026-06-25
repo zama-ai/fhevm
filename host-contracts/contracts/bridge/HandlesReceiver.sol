@@ -80,13 +80,13 @@ abstract contract HandlesReceiver is OAppReceiverUpgradeable, ILayerZeroComposer
     }
 
     /**
-     * @notice Authorizes the coprocessor to associate `ciphertextHash`'s ciphertext with
-     *         `dstHandle` as a fallback, when the normal pair of bridge events did not
+     * @notice Authorizes the coprocessor to associate the trivial encryption of `plaintext`
+     *         with `dstHandle` as a fallback, when the normal pair of bridge events did not
      *         settle (missed/invalid event, or missing source ciphertext).
      *
      * @dev    This grants a permission, not an assertion: if a node already has a real
      *         association for `dstHandle` (from a matched pair of bridge events), it
-     *         keeps that. Otherwise, it may use the ciphertext matching `ciphertextHash`.
+     *         keeps that. Otherwise, it may use the trivial encryption of `plaintext`.
      *         Coprocessor nodes then run consensus on `dstHandle` and settle on the
      *         majority ciphertext. Only affects this destination chain.
      * @dev    Assumes the ACL owner would never call this method twice with the same
