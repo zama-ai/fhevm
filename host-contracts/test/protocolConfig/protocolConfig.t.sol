@@ -1035,9 +1035,12 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         vm.prank(owner);
         _defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), _defaultThresholds());
         uint256 epochId = EPOCH_COUNTER_BASE + 2;
+        uint256 contextId = KMS_CONTEXT_COUNTER_BASE + 2;
 
         vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidEpoch.selector, epochId));
+        vm.expectRevert(
+            abi.encodeWithSelector(IProtocolConfig.EpochNotUnderActiveContext.selector, epochId, contextId)
+        );
         protocolConfig.abortPendingEpoch(epochId);
     }
 
