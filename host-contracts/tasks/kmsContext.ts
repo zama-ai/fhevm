@@ -336,7 +336,7 @@ async function fillContextSwitch(
   status.stuckBelowPreviousThreshold =
     !status.contextCreationQuorumReached && previousConfirmed.size < status.previousSignerThreshold;
 
-  // `Created` is signalled by the NewKmsEpoch emitted once the creation quorum is reached; it also
+  // `Created` is signaled by the NewKmsEpoch emitted once the creation quorum is reached; it also
   // reveals the pending epoch id, which has no view getter.
   const pendingEpochEvent = newEpochEvents.find((event) => event.args.kmsContextId === pendingContextId);
   status.contextState = pendingEpochEvent ? 'CREATED' : 'PENDING';
