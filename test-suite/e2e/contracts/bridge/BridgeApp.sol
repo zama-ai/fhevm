@@ -3,12 +3,13 @@ pragma solidity ^0.8.24;
 
 import "@fhevm/solidity/lib/FHE.sol";
 import {E2ECoprocessorConfig} from "../E2ECoprocessorConfigLocal.sol";
+import {ConfidentialOAppSender} from "@fhevm/solidity/lib/bridge/ConfidentialOAppSender.sol";
 import {ConfidentialOAppReceiver} from "@fhevm/solidity/lib/bridge/ConfidentialOAppReceiver.sol";
 import {MessagingReceipt} from "@fhevm/solidity/lib/bridge/IConfidentialBridge.sol";
 
 /// @notice Test dapp exercising the confidential bridge end-to-end THROUGH the `@fhevm/solidity`
 ///         OApp wrappers (rather than calling the host `ConfidentialBridge` directly).
-/// @dev It sends via `FHE.bridge` with the destination resolved from the OApp peer registry, and
+/// @dev It sends via {ConfidentialOAppSender-_bridge} (peer resolved from the OApp registry) and
 ///      receives via {ConfidentialOAppReceiver}, which authenticates `msg.sender == bridge` and
 ///      `isPeer(srcEid, srcApp)` before dispatching to {_onReceiveHandles}. Peers are wired once
 ///      with {setPeer} (one entry serves both directions). `setPeer` is intentionally unguarded
@@ -19,7 +20,7 @@ import {MessagingReceipt} from "@fhevm/solidity/lib/bridge/IConfidentialBridge.s
 ///      Destination: {_onReceiveHandles} (post-auth) makes each bridged handle decryptable so the
 ///      test can assert it — publicly when `payload` is empty, or to a user when `payload` encodes
 ///      an address.
-contract BridgeApp is E2ECoprocessorConfig, ConfidentialOAppReceiver {
+contract BridgeApp is E2ECoprocessorConfig, ConfidentialOAppSender, ConfidentialOAppReceiver {
     /// @notice Lets the test read the produced handle from the receipt.
     event HandleMinted(bytes32 handle);
 
@@ -51,16 +52,17 @@ contract BridgeApp is E2ECoprocessorConfig, ConfidentialOAppReceiver {
         emit HandleMinted(handle);
     }
 
-    /// @notice Bridge `handles` to this app's peer on `dstEid`, through `FHE.bridge`.
-    /// @dev The destination is resolved from the OApp peer registry ({ConfidentialOAppCore}); the
-    ///      caller must already hold ACL allowance on every handle (see {makeHandle}).
+    /// @notice Bridge `handles` to this app's peer on `dstEid`, via the OApp sender wrapper.
+    /// @dev Uses the multi-handle {ConfidentialOAppSender-_bridge}, which resolves the peer from
+    ///      the registry; this contract must already hold ACL allowance on every handle (see
+    ///      {makeHandle}).
     function send(
         uint32 dstEid,
         bytes32[] calldata handles,
         bytes calldata payload,
         uint64 lzComposeGas
     ) external payable returns (MessagingReceipt memory) {
-        return FHE.bridge(dstEid, _getPeerOrRevert(dstEid), payload, handles, lzComposeGas, msg.value);
+        return _bridge(dstEid, payload, handles, lzComposeGas, msg.value);
     }
 
     /// @notice Receive hook (post-auth): empty `payload` => make each handle publicly decryptable;
