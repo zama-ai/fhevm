@@ -329,7 +329,13 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         // NewKmsEpoch: `previousContextId` equals `kmsContextId` because same-set resharing keeps the
         // context. `materialBlockNumber` is the last block before this request, where connectors read
         // the previous key/CRS material.
-        emit NewKmsEpoch(latestActiveKmsContextId, epochId, latestActiveKmsContextId, $.latestActiveEpochId, block.number - 1);
+        emit NewKmsEpoch(
+            latestActiveKmsContextId,
+            epochId,
+            latestActiveKmsContextId,
+            $.latestActiveEpochId,
+            block.number - 1
+        );
     }
 
     /// @inheritdoc IProtocolConfig

@@ -458,12 +458,12 @@ export function buildKmsNodeParams(): {
   for (let idx = 0; idx < numNodes; idx++) {
     const txSenderAddress = getRequiredEnvVar(`KMS_TX_SENDER_ADDRESS_${idx}`);
     const signerAddress = getRequiredEnvVar(`KMS_SIGNER_ADDRESS_${idx}`);
-    const ipAddress = process.env[`KMS_NODE_IP_${idx}`] || '';
+    const ipAddress = getRequiredEnvVar(`KMS_NODE_IP_${idx}`);
     const storageUrl = getRequiredEnvVar(`KMS_NODE_STORAGE_URL_${idx}`);
     const partyId = process.env[`KMS_NODE_PARTY_ID_${idx}`] ? +getRequiredEnvVar(`KMS_NODE_PARTY_ID_${idx}`) : idx;
-    const mpcIdentity = process.env[`KMS_NODE_MPC_IDENTITY_${idx}`] || ipAddress;
-    const caCert = process.env[`KMS_NODE_CA_CERT_${idx}`] || '0x';
-    const storagePrefix = process.env[`KMS_NODE_STORAGE_PREFIX_${idx}`] || '';
+    const mpcIdentity = getRequiredEnvVar(`KMS_NODE_MPC_IDENTITY_${idx}`);
+    const caCert = getRequiredEnvVar(`KMS_NODE_CA_CERT_${idx}`);
+    const storagePrefix = getRequiredEnvVar(`KMS_NODE_STORAGE_PREFIX_${idx}`);
     nodes.push({
       txSenderAddress,
       signerAddress,
