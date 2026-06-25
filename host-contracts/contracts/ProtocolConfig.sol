@@ -300,6 +300,7 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         _createPendingEpoch(contextId);
 
         // Cache the previous-context signer quorum needed by confirmKmsContextCreation.
+        // `n - t + 1` (n = previous signers, t = previous MPC fault threshold) so no t-subset ratifies alone.
         $.contextCreationPreviousSignerThreshold[contextId] =
             $.kmsSignerAddressesForContext[previousContextId].length -
             $.mpcThresholdForContext[previousContextId] +
@@ -441,6 +442,8 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
 
         // Confirm epoch activation: add this signer's vote under that hash, activate the epoch once all signers agree.
         // Record one confirmation per signer, counted by data hash so quorum requires all signers on the same result.
+        // Unanimity is required by design: a single divergent dataHash splits the vote so no hash reaches quorum,
+        // leaving the epoch Pending until governance calls abortPendingEpoch / abortPendingContext.
         if ($.epochActivationConfirmedBySigner[epochId][signer]) {
             revert EpochActivationAlreadyConfirmed(signer, epochId);
         }
