@@ -86,9 +86,10 @@ export function generateSolidityFHELib({
 }
 
 /**
- * Generates per-type `bridge` / `quoteBridge` overloads: a single-handle and a
- * homogeneous-list variant for every encrypted type. The type-agnostic low-level
- * `bytes32[]` + `options` overloads live as literal text in the template.
+ * Generates per-type `bridge` / `quoteBridge` overloads: a single-handle variant for every
+ * encrypted type. Multi-handle bridging (which is realistically heterogeneous) goes through the
+ * type-agnostic low-level `bytes32[]` overloads appended below, since the encrypted type never
+ * crosses the wire (the receiver re-wraps raw `bytes32` handles).
  */
 function generateBridgeFunctions(fheTypes: AdjustedFheType[]): string {
   const res: string[] = [];
@@ -110,33 +111,10 @@ function generateBridgeFunctions(fheTypes: AdjustedFheType[]): string {
         receipt = Impl.bridge(dstEid, bytes32(uint256(uint160(dstApp))), payload, handleList, lzComposeGas, nativeFee);
     }
 
-    /**
-     * @notice Bridges a homogeneous list of encrypted \`${t}\` handles in a single message.
-     * @dev    The payload must reference the handles by their position in \`handles\`. The
-     *         caller must already hold ACL allowance on every handle; \`lzComposeGas\` must meet
-     *         the bridge's per-\`dstEid\` minimum.
-     */
-    function bridge(uint32 dstEid, address dstApp, bytes memory payload, ${t}[] memory handles, uint64 lzComposeGas, uint256 nativeFee) internal returns (MessagingReceipt memory receipt) {
-        bytes32[] memory handleList = new bytes32[](handles.length);
-        for (uint256 i = 0; i < handles.length; i++) {
-            handleList[i] = ${t}.unwrap(handles[i]);
-        }
-        receipt = Impl.bridge(dstEid, bytes32(uint256(uint160(dstApp))), payload, handleList, lzComposeGas, nativeFee);
-    }
-
     /// @notice Quotes the native fee for a single-\`${t}\` {bridge} call.
     function quoteBridge(uint32 dstEid, address srcApp, address dstApp, bytes memory payload, ${t} handle, uint64 lzComposeGas) internal view returns (MessagingFee memory fee) {
         bytes32[] memory handleList = new bytes32[](1);
         handleList[0] = ${t}.unwrap(handle);
-        fee = Impl.quoteBridge(dstEid, srcApp, bytes32(uint256(uint160(dstApp))), payload, handleList, lzComposeGas);
-    }
-
-    /// @notice Quotes the native fee for bridging a list of \`${t}\` handles.
-    function quoteBridge(uint32 dstEid, address srcApp, address dstApp, bytes memory payload, ${t}[] memory handles, uint64 lzComposeGas) internal view returns (MessagingFee memory fee) {
-        bytes32[] memory handleList = new bytes32[](handles.length);
-        for (uint256 i = 0; i < handles.length; i++) {
-            handleList[i] = ${t}.unwrap(handles[i]);
-        }
         fee = Impl.quoteBridge(dstEid, srcApp, bytes32(uint256(uint160(dstApp))), payload, handleList, lzComposeGas);
     }
 `);

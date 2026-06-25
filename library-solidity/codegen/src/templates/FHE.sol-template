@@ -773,9 +773,9 @@ library FHE {
     //$$ -
     //$$ -             🌉 FHE Bridge Template Placeholder
     //$$ -
-    //$$ -   Per-type single-handle and homogeneous-list `bridge` / `quoteBridge`
-    //$$ -   overloads. The low-level `bytes32[]` + `options` escape hatch below is
-    //$$ -   type-agnostic and handles mixed-type or advanced payloads.
+    //$$ -   Per-type single-handle `bridge` / `quoteBridge` overloads. The low-level
+    //$$ -   `bytes32[]` escape hatch is type-agnostic and handles multi-handle
+    //$$ -   (realistically mixed-type) or non-EVM destination payloads.
     //$$ -----------------------------------------------------------------------
     $${FHEBridge}$$
     //$$ -----------------------------------------------------------------------
