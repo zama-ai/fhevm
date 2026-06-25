@@ -43,7 +43,7 @@ task('task:triggerMigrationKeygen')
   .addOptionalParam('useInternalProxyAddress', 'Use proxy address from /addresses.', false, types.boolean)
   .setAction(async function ({ paramsType, copyToOriginal, useInternalProxyAddress }, hre) {
     await hre.run('compile:specific', { contract: 'contracts' });
-    if (useInternalProxyAddress) loadHostAddresses();
+    loadHostAddresses(); // KMS_GENERATION_CONTRACT_ADDRESS + PROTOCOL_CONFIG_CONTRACT_ADDRESS live in the host addresses file
 
     const { kmsGeneration } = await getKmsGeneration(hre);
     // The existing key whose private shares are re-used (keygen-from-existing).
@@ -69,7 +69,7 @@ task('task:publishMigratedKeyMaterials')
   .addOptionalParam('useInternalProxyAddress', 'Use proxy address from /addresses.', false, types.boolean)
   .setAction(async function ({ materialVersion, keyId, useInternalProxyAddress }, hre) {
     await hre.run('compile:specific', { contract: 'contracts' });
-    if (useInternalProxyAddress) loadHostAddresses();
+    loadHostAddresses(); // KMS_GENERATION_CONTRACT_ADDRESS + PROTOCOL_CONFIG_CONTRACT_ADDRESS live in the host addresses file
 
     const { kmsGeneration } = await getKmsGeneration(hre);
     const targetKeyId: bigint = keyId ? BigInt(keyId) : await kmsGeneration.getActiveKeyId();
@@ -101,7 +101,7 @@ task('task:scheduleKeyMaterialMigration')
     hre,
   ) {
     await hre.run('compile:specific', { contract: 'contracts' });
-    if (useInternalProxyAddress) loadHostAddresses();
+    loadHostAddresses(); // KMS_GENERATION_CONTRACT_ADDRESS + PROTOCOL_CONFIG_CONTRACT_ADDRESS live in the host addresses file
 
     const { kmsGeneration } = await getKmsGeneration(hre);
     const targetKeyId: bigint = keyId ? BigInt(keyId) : await kmsGeneration.getActiveKeyId();
