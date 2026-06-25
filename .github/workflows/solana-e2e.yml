@@ -97,6 +97,15 @@ jobs:
           npm ci
           npm run build:esm
           ( cd src && npm install --no-save --no-package-lock --install-strategy=shallow --workspaces=false )
+          # Verify the SDK runtime deps resolve exactly as the e2e node clients import them (from
+          # src/_esm via the realpath). Fail fast here with a layout dump instead of 40 min later in
+          # full-vertical (ERR_MODULE_NOT_FOUND @noble/*).
+          node -e "const {createRequire}=require('module');const r=createRequire(process.cwd()+'/src/_esm/core/base/address.js');console.log('hashes',r.resolve('@noble/hashes'));console.log('curves',r.resolve('@noble/curves'))" || {
+            echo '--- @noble dirs under workspace ---'; find "$GITHUB_WORKSPACE" -maxdepth 7 -type d -name '@noble' 2>/dev/null;
+            echo '--- ls src/node_modules ---'; ls src/node_modules 2>&1 | head -30;
+            echo '--- ls node_modules/@noble ---'; ls node_modules/@noble 2>&1;
+            echo '--- ls $GITHUB_WORKSPACE/node_modules/@noble ---'; ls "$GITHUB_WORKSPACE/node_modules/@noble" 2>&1;
+            exit 1; }
 
       - name: Install fhevm-cli deps (clean-e2e.sh drives ./fhevm-cli)
         working-directory: test-suite/fhevm
@@ -215,6 +224,15 @@ jobs:
           npm ci
           npm run build:esm
           ( cd src && npm install --no-save --no-package-lock --install-strategy=shallow --workspaces=false )
+          # Verify the SDK runtime deps resolve exactly as the e2e node clients import them (from
+          # src/_esm via the realpath). Fail fast here with a layout dump instead of 40 min later in
+          # full-vertical (ERR_MODULE_NOT_FOUND @noble/*).
+          node -e "const {createRequire}=require('module');const r=createRequire(process.cwd()+'/src/_esm/core/base/address.js');console.log('hashes',r.resolve('@noble/hashes'));console.log('curves',r.resolve('@noble/curves'))" || {
+            echo '--- @noble dirs under workspace ---'; find "$GITHUB_WORKSPACE" -maxdepth 7 -type d -name '@noble' 2>/dev/null;
+            echo '--- ls src/node_modules ---'; ls src/node_modules 2>&1 | head -30;
+            echo '--- ls node_modules/@noble ---'; ls node_modules/@noble 2>&1;
+            echo '--- ls $GITHUB_WORKSPACE/node_modules/@noble ---'; ls "$GITHUB_WORKSPACE/node_modules/@noble" 2>&1;
+            exit 1; }
 
       - name: Install fhevm-cli deps (clean-e2e.sh drives ./fhevm-cli)
         working-directory: test-suite/fhevm
