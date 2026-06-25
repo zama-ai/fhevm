@@ -27,6 +27,12 @@ use anyhow::Result;
 use sqlx::{PgPool, Row};
 use std::collections::HashMap;
 
+/// Postgres `LISTEN`/`NOTIFY` channel signalling that the (one-shot,
+/// immutable) cutover schedule has been published/changed. Workers load the
+/// schedule once and refresh only on this notify, so the happy path never
+/// polls. The host-listener (on ingest) and the rollout (on seed) emit it.
+pub const MIGRATION_SCHEDULE_CHANNEL: &str = "migration_schedule_changed";
+
 /// Which key material an operation uses. `0` is the legacy material
 /// (today's behavior); `1` is the migrated `CompressedXofKeySet`. Kept as
 /// a thin `i16` newtype so it round-trips through Postgres `SMALLINT`.

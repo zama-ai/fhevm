@@ -3,7 +3,9 @@ use crate::types::CoprocessorError;
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::database::{connect_pool_with_options, resolve_database_url_from_option};
 use fhevm_engine_common::db_keys::DbKeyCache;
-use fhevm_engine_common::material_version::{MaterialVersion, MigrationScheduleCache};
+use fhevm_engine_common::material_version::{
+    MaterialVersion, MigrationScheduleCache, MIGRATION_SCHEDULE_CHANNEL,
+};
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::tfhe_ops::check_fhe_operand_types;
 use fhevm_engine_common::types::{FhevmError, Handle, SupportedFheCiphertexts};
@@ -105,6 +107,14 @@ async fn tfhe_worker_cycle(
         DbKeyCache::new(args.key_cache_size).map_err(|e| CoprocessorError::Other(e.into()))?;
     let mut listener = PgListener::connect_with(&pool).await?;
     listener.listen("work_available").await?;
+    listener.listen(MIGRATION_SCHEDULE_CHANNEL).await?;
+
+    // The cutover schedule is published exactly once and is immutable
+    // thereafter, so load it once and refresh only when the listener signals a
+    // change (or a reconnect may have missed it). The happy path never polls.
+    let mut schedule = MigrationScheduleCache::load(&pool)
+        .await
+        .map_err(|e| CoprocessorError::Other(e.into()))?;
 
     let mut dcid_mngr = dependence_chain::LockMngr::new_with_conf(
         worker_id,
@@ -135,12 +145,23 @@ async fn tfhe_worker_cycle(
             tokio::select! {
                 notification = listener.try_recv() => {
                     match notification? {
+                        Some(n) if n.channel() == MIGRATION_SCHEDULE_CHANNEL => {
+                            // One-shot cutover schedule published/changed: reload once.
+                            schedule = MigrationScheduleCache::load(&pool)
+                                .await
+                                .map_err(|e| CoprocessorError::Other(e.into()))?;
+                            info!(target: "tfhe_worker", "Reloaded material-version cutover schedule");
+                        }
                         Some(_) => {
                             WORK_ITEMS_NOTIFICATIONS_COUNTER.inc();
                             info!(target: "tfhe_worker", "Received work_available notification from postgres");
                         }
                         None => {
-                            // sqlx already reconnected the LISTEN connection; poll for work.
+                            // sqlx already reconnected the LISTEN connection; it may have
+                            // missed a schedule NOTIFY, so refresh, then poll for work.
+                            schedule = MigrationScheduleCache::load(&pool)
+                                .await
+                                .map_err(|e| CoprocessorError::Other(e.into()))?;
                             warn!(target: "tfhe_worker", "postgres LISTEN connection reset; reconnected");
                         }
                     }
@@ -162,13 +183,6 @@ async fn tfhe_worker_cycle(
         let mut conn = pool.acquire().instrument(acq_span).await?;
         let txn_span = tracing::info_span!(parent: &loop_span, "begin_transaction");
         let mut trx = conn.begin().instrument(txn_span).await?;
-
-        // Reload the cutover schedule every cycle (the tables are tiny) so a
-        // coprocessor that booted before the schedule was published still
-        // picks it up promptly. A stale schedule would diverge from the fleet.
-        let schedule = MigrationScheduleCache::load(&pool)
-            .await
-            .map_err(|e| CoprocessorError::Other(e.into()))?;
 
         // Query for transactions to execute, grouped by material version.
         let (groups, earliest_computation, has_more_work) = query_for_work(
