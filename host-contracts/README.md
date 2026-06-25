@@ -158,8 +158,8 @@ npx hardhat task:exportCanonicalProtocolConfig \
 ```
 
 The artifact records the canonical chainId, the block number the read was pinned to, the
-contract address, the current KMS context id, the KMS node set, and all four thresholds
-(bigints serialized as strings).
+contract address, the active KMS context id, the active epoch id, the KMS node set, and all
+four thresholds (bigints serialized as strings).
 
 **2. Review.** All reads happen at one block, so reviewers (e.g. DAO signers) reproduce the
 artifact byte-for-byte — even after a later `defineNewKmsContextAndEpoch` rotation — by re-running the
@@ -167,10 +167,10 @@ export with `--block-number <N>` from the artifact and diffing the output.
 
 **3. Apply** the reviewed artifact to the local `ProtocolConfig` proxy. Both environments run the
 same prepare step — deploy the implementation and build the
-`upgradeToAndCall(mirrorKmsContext(…))` payload, landing the replica on canonical's
-`currentKmsContextId` instead of a fresh counter. They differ only in who executes that payload:
-the devnet task sends it immediately with the deployer key, so **what runs on devnet is
-byte-identical to what the DAO signs**.
+`upgradeToAndCall(initializeFromCanonical(contextId, epochId, …))` payload, landing the
+replica on canonical's active context and epoch instead of fresh local counters. They differ only in
+who executes that payload: the devnet task sends it immediately with the deployer key, so **what runs
+on devnet is byte-identical to what the DAO signs**.
 
 | Environment       | Task                                                                       | Signer                                              |
 | ----------------- | -------------------------------------------------------------------------- | --------------------------------------------------- |
