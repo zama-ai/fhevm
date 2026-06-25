@@ -191,6 +191,13 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         mapping(uint256 requestId => ParamsType paramsType) requestParamsType;
         /// @notice The extra data associated with each request (0x01 || contextId)
         mapping(uint256 requestId => bytes extraData) requestExtraData;
+        // ----------------------------------------------------------------------------------------------
+        // RFC-029 material-migration state variables (append-only):
+        // ----------------------------------------------------------------------------------------------
+        /// @notice Migrated (v1) key material digests published under an existing keyId.
+        mapping(uint256 keyId => KeyDigest[] keyDigests) migratedKeyDigests;
+        /// @notice The published material version for a keyId (0 = none/legacy).
+        mapping(uint256 keyId => uint256 materialVersion) keyMaterialVersion;
     }
 
     /**
@@ -249,6 +256,19 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
      * @notice See {IKMSGeneration-keygen}.
      */
     function keygen(ParamsType paramsType) external virtual onlyACLOwner {
+        uint256 contextId = PROTOCOL_CONFIG.getCurrentKmsContextId();
+        _keygen(paramsType, _encodeRequestExtraData(contextId));
+    }
+
+    /**
+     * @notice RFC-029: see {IKMSGeneration-keygen(ParamsType,bytes)}. Carries caller-supplied
+     * opaque extraData (e.g. a migration config the connector decodes) through to the events.
+     */
+    function keygen(ParamsType paramsType, bytes calldata extraData) external virtual onlyACLOwner {
+        _keygen(paramsType, extraData);
+    }
+
+    function _keygen(ParamsType paramsType, bytes memory extraData) internal {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
 
         // Check that the previous keygen request has reached consensus
@@ -283,8 +303,6 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         // has been generated
         $.requestParamsType[prepKeygenId] = paramsType;
 
-        uint256 contextId = PROTOCOL_CONFIG.getCurrentKmsContextId();
-        bytes memory extraData = _encodeRequestExtraData(contextId);
         $.requestExtraData[prepKeygenId] = extraData;
         $.requestExtraData[keyId] = extraData;
 
@@ -409,6 +427,68 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
 
             emit ActivateKey(keyId, consensusUrls, keyDigests);
         }
+    }
+
+    /**
+     * @notice See {IKMSGeneration-addKeyMaterials}.
+     * @dev SPIKE: governance-published (see interface note). Publish-not-activate.
+     */
+    function addKeyMaterials(
+        uint256 keyId,
+        KeyDigest[] calldata keyDigests,
+        string[] calldata kmsNodeStorageUrls,
+        uint256 materialVersion
+    ) external virtual onlyACLOwner {
+        KMSGenerationStorage storage $ = _getKMSGenerationStorage();
+
+        // The key must already exist and be finalized; migrated material is published UNDER it.
+        if (keyId > $.keyCounter || keyId <= KEY_COUNTER_BASE) {
+            revert KeygenNotRequested(keyId);
+        }
+        if (!$.isRequestDone[keyId]) {
+            revert KeyManagementRequestPending();
+        }
+        if (keyDigests.length == 0) {
+            revert EmptyKeyDigests(keyId);
+        }
+
+        // Record the migrated digests + version and emit, but NEVER touch activeKeyId. The cutover
+        // is governed separately by scheduleKeyMaterialMigration.
+        delete $.migratedKeyDigests[keyId];
+        for (uint256 i = 0; i < keyDigests.length; i++) {
+            $.migratedKeyDigests[keyId].push(keyDigests[i]);
+        }
+        $.keyMaterialVersion[keyId] = materialVersion;
+
+        emit KeyMaterialAdded(keyId, kmsNodeStorageUrls, keyDigests, materialVersion);
+    }
+
+    /**
+     * @notice See {IKMSGeneration-scheduleKeyMaterialMigration}.
+     */
+    function scheduleKeyMaterialMigration(
+        uint256 keyId,
+        uint256[] calldata hostChainIds,
+        uint256[] calldata hostMigrationBlocks,
+        uint256 gatewayMigrationBlock,
+        uint256 materialVersion
+    ) external virtual onlyACLOwner {
+        KMSGenerationStorage storage $ = _getKMSGenerationStorage();
+
+        if (keyId > $.keyCounter || keyId <= KEY_COUNTER_BASE) {
+            revert KeygenNotRequested(keyId);
+        }
+        if (hostChainIds.length != hostMigrationBlocks.length) {
+            revert MismatchedMigrationArrays();
+        }
+
+        emit KeyMaterialMigrationScheduled(
+            keyId,
+            hostChainIds,
+            hostMigrationBlocks,
+            gatewayMigrationBlock,
+            materialVersion
+        );
     }
 
     /**
