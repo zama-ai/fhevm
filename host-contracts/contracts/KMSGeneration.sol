@@ -130,6 +130,10 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
      * @dev Extra data versions
      */
     uint8 private constant EXTRA_DATA_V1 = 0x01;
+    /// @dev RFC-029 migration extraData: [version][contextId(32)][existingKeysetId(32)][copyToOriginal(1)].
+    /// The contextId sits at the same offset as v1; the trailing migration config is consumed by the
+    /// connector only, so on-chain context extraction treats v3 exactly like v1.
+    uint8 private constant EXTRA_DATA_V3 = 0x03;
 
     /**
      * @dev Constant used for making sure the version number used in the `reinitializer` modifier
@@ -956,13 +960,16 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         }
 
         uint8 version = uint8(extraData[0]);
-        if (version != EXTRA_DATA_V1) {
+        // v1 (RFC 003) and v3 (RFC 029 migration) both carry contextId at bytes [1..33].
+        // v3's trailing migration config (existingKeysetId, copyToOriginal) is decoded by the
+        // connector only and is ignored here, so context extraction is identical for both.
+        if (version != EXTRA_DATA_V1 && version != EXTRA_DATA_V3) {
             revert UnsupportedExtraDataVersion(version);
         }
         if (extraData.length < 33) {
             revert DeserializingExtraDataFail();
         }
-        // v1 extraData layout: [version(1)] [contextId(32)]
+        // v1/v3 extraData layout: [version(1)] [contextId(32)] [...]
         // mload at offset 33 reads 32 bytes starting after the 1-byte version prefix.
         assembly {
             contextId := mload(add(extraData, 33))
