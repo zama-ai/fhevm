@@ -57,10 +57,6 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
     ///         (see {setLzReceivePerPayloadByteGas}).
     uint64 public constant LZ_RECEIVE_PER_PAYLOAD_BYTE_DEFAULT = 19;
 
-    /// @notice Default minimum `lzCompose` gas budget accepted by {send}.
-    /// Used when no governance override is set (see {setLzComposeMinValue}).
-    uint64 public constant LZ_COMPOSE_MIN_VALUE_DEFAULT = 30_000;
-
     /// @notice Returned when the handle list exceeds the per-call cap.
     error TooManyHandles(uint256 length, uint256 maxAllowed);
 
@@ -72,10 +68,6 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
 
     /// @notice Returned when the caller is not allowed to use a handle.
     error HandleNotAllowed(bytes32 handle, address srcApp);
-
-    /// @notice Returned when `send` is called with an `lzComposeGas` below the effective
-    ///         minimum (the governance override if set, else {LZ_COMPOSE_MIN_VALUE_DEFAULT}).
-    error LzComposeGasBelowMin(uint64 provided, uint64 minRequired);
 
     /// @notice ACL contract on this (source) chain.
     ACL private constant ACL_CONTRACT = ACL(aclAdd);
@@ -103,10 +95,6 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
         ///      {setLzReceivePerPayloadByteGas}; unset fields fall back to the `_DEFAULT`
         ///      constants.
         mapping(uint32 dstEid => CustomLzReceiveGas) customLzReceiveGas;
-        /// @dev Optional per-dstEid override for the minimum `lzCompose` gas accepted by
-        ///      {send}. Set via {setLzComposeMinValue}; a value of 0 means unset, in which
-        ///      case {LZ_COMPOSE_MIN_VALUE_DEFAULT} is used.
-        mapping(uint32 dstEid => uint64 lzComposeMinValue) lzComposeMinValue;
     }
 
     /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.HandlesSender")) - 1)) & ~bytes32(uint256(0xff))
@@ -140,7 +128,13 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
      *                       preserved on the destination, so apps can index into
      *                       `dstHandleList` by position.
      * @param lzComposeGas   Gas budget for the destination-side `lzCompose` (which runs
-     *                       the destination app's `onConfidentialBridgeReceived`).
+     *                       the destination app's `onConfidentialBridgeReceived`). This is
+     *                       entirely app-specific, so the bridge does not enforce a floor.
+     *                       Pass 0 to omit the executor compose option entirely: the compose
+     *                       message is still queued on the destination (by `_lzReceive`), but
+     *                       the executor will NOT auto-run `lzCompose` — it must be triggered
+     *                       manually (permissionlessly) via the endpoint. Apps that require
+     *                       the callback should enforce their own minimum.
      *
      * @return receipt LayerZero messaging receipt (includes the GUID used in events).
      *
@@ -152,8 +146,6 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
      *         constant.
      * @dev    Reverts with {EmptyHandleList} if `handleList` is empty and
      *         with {TooManyHandles} if it exceeds {MAX_HANDLES}.
-     * @dev    Reverts with {LzComposeGasBelowMin} if `lzComposeGas` is below the effective
-     *         minimum (the governance override if set, else {LZ_COMPOSE_MIN_VALUE_DEFAULT}).
      * @dev    Reverts if any handle is not ACL-allowed for `msg.sender` on this chain.
      *         Native fee is paid via `msg.value`; refund returns to `msg.sender`.
      */
@@ -167,9 +159,6 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
         uint256 nHandles = handleList.length;
         if (nHandles == 0) revert EmptyHandleList();
         if (nHandles > MAX_HANDLES) revert TooManyHandles(nHandles, MAX_HANDLES);
-
-        uint64 minComposeGas = _effectiveLzComposeMinValue(dstEid);
-        if (lzComposeGas < minComposeGas) revert LzComposeGasBelowMin(lzComposeGas, minComposeGas);
 
         uint64 dstChainId = _getHandlesSenderStorage().dstChainIdForEid[dstEid];
         if (dstChainId == 0) revert UnknownDstEid(dstEid);
@@ -239,8 +228,8 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
      * @notice Quote the native fee for a `send` call without sending.
      * @dev    Useful for callers wishing to compute msg.value before invoking `send`.
      * @dev    Applies the same input validation as {send} — reverts with {EmptyHandleList},
-     *         {TooManyHandles}, {LzComposeGasBelowMin}, or {UnknownDstEid} under the same
-     *         conditions — so a successful quote guarantees those `send` guards will pass.
+     *         {TooManyHandles}, or {UnknownDstEid} under the same conditions — so a
+     *         successful quote guarantees those `send` guards will pass.
      *         The ACL allowance check is intentionally NOT applied: this lets callers
      *         estimate `msg.value` before the transaction that grants ACL access to the
      *         handles being bridged.
@@ -261,9 +250,6 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
         uint256 nHandles = handleList.length;
         if (nHandles == 0) revert EmptyHandleList();
         if (nHandles > MAX_HANDLES) revert TooManyHandles(nHandles, MAX_HANDLES);
-
-        uint64 minComposeGas = _effectiveLzComposeMinValue(dstEid);
-        if (lzComposeGas < minComposeGas) revert LzComposeGasBelowMin(lzComposeGas, minComposeGas);
 
         if (_getHandlesSenderStorage().dstChainIdForEid[dstEid] == 0) revert UnknownDstEid(dstEid);
 
@@ -325,22 +311,6 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
         emit LzReceivePerPayloadByteGasSet(dstEid, lzReceivePerPayloadByteGas);
     }
 
-    /**
-     * @notice Set a custom minimum `lzCompose` gas accepted by {send} for `dstEid`,
-     *         overriding {LZ_COMPOSE_MIN_VALUE_DEFAULT}.
-     * @dev    Pass 0 to clear the override and fall back to the default constant.
-     */
-    function setLzComposeMinValue(uint32 dstEid, uint64 lzComposeMinValue) external virtual onlyACLOwner {
-        _getHandlesSenderStorage().lzComposeMinValue[dstEid] = lzComposeMinValue;
-        emit LzComposeMinValueSet(dstEid, lzComposeMinValue);
-    }
-
-    /// @notice Returns the effective minimum `lzCompose` gas for `dstEid`: the custom
-    ///         override if one is set, otherwise {LZ_COMPOSE_MIN_VALUE_DEFAULT}.
-    function getLzComposeMinValue(uint32 dstEid) external view virtual returns (uint64) {
-        return _effectiveLzComposeMinValue(dstEid);
-    }
-
     /// @notice Returns the effective base `lzReceive` gas for `dstEid`: the custom override
     ///         if one is set, otherwise {LZ_RECEIVE_BASE_GAS_DEFAULT}.
     function getLzReceiveBaseGas(uint32 dstEid) external view virtual returns (uint64) {
@@ -377,17 +347,12 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
         return custom == 0 ? LZ_RECEIVE_PER_PAYLOAD_BYTE_DEFAULT : custom;
     }
 
-    /// @dev Minimum `lzCompose` gas accepted by `send` for `dstEid`: custom override when
-    ///      non-zero, else {LZ_COMPOSE_MIN_VALUE_DEFAULT}.
-    function _effectiveLzComposeMinValue(uint32 dstEid) internal view virtual returns (uint64) {
-        uint64 custom = _getHandlesSenderStorage().lzComposeMinValue[dstEid];
-        return custom == 0 ? LZ_COMPOSE_MIN_VALUE_DEFAULT : custom;
-    }
-
     /// @dev Builds the LayerZero execution options for a send. The `lzReceive` gas is the
     ///      bridge formula (`baseGas + nHandles * perHandleGas + payloadLen * perPayloadByteGas`,
     ///      with per-`dstEid` governance overrides); the `lzCompose` gas is the
-    ///      caller-supplied budget.
+    ///      caller-supplied budget. A zero `lzComposeGas` omits the compose option entirely,
+    ///      so the executor will not auto-run `lzCompose` (the compose stays queued for
+    ///      manual execution — see {send}).
     function _buildOptions(
         uint32 dstEid,
         uint64 nHandles,
@@ -400,8 +365,11 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
             payloadLen *
             _effectiveLzReceivePerPayloadByteGas(dstEid);
         bytes memory built = OptionsBuilder.newOptions().addExecutorLzReceiveOption(lzReceiveGas, 0);
-        // Compose index 0 because HandlesReceiver dispatches a single compose msg.
-        built = built.addExecutorLzComposeOption(0, lzComposeGas, 0);
+        // Compose index 0 because HandlesReceiver dispatches a single compose msg. Omitted
+        // when the caller passes 0 (compose gas is app-specific; see {send}).
+        if (lzComposeGas > 0) {
+            built = built.addExecutorLzComposeOption(0, lzComposeGas, 0);
+        }
         return built;
     }
 }

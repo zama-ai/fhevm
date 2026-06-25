@@ -249,7 +249,7 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
         vm.prank(owner);
         harness.setLzReceivePerPayloadByteGas(DST_EID, perByte);
 
-        uint64 composeGas = srcBridge.LZ_COMPOSE_MIN_VALUE_DEFAULT();
+        uint64 composeGas = 30_000;
         uint64 shortLen = 10;
         uint64 longLen = 100;
         uint256 gasShort = _firstLzReceiveGas(harness.buildOptions(DST_EID, 1, shortLen, composeGas));
@@ -262,38 +262,50 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
         );
     }
 
-    function test_LzComposeMinValue_DefaultsWhenUnset() public view {
-        assertEq(srcBridge.getLzComposeMinValue(DST_EID), srcBridge.LZ_COMPOSE_MIN_VALUE_DEFAULT());
+    /// @dev A non-zero `lzComposeGas` appends a compose option after the lzReceive option,
+    ///      while a zero `lzComposeGas` omits it entirely (compose gas is app-specific, so
+    ///      the bridge does not force one). Both keep the lzReceive option identical.
+    function test_BuildOptions_OmitsComposeOptionWhenComposeGasZero() public {
+        DeriveDstHandleHarness harness = new DeriveDstHandleHarness(endpoints[DST_EID]);
+
+        bytes memory withCompose = harness.buildOptions(DST_EID, 1, 0, 30_000);
+        bytes memory withoutCompose = harness.buildOptions(DST_EID, 1, 0, 0);
+
+        // The lzReceive option (and thus its decoded gas) is unaffected by the compose toggle.
+        assertEq(
+            _firstLzReceiveGas(withCompose),
+            _firstLzReceiveGas(withoutCompose),
+            "lzReceive gas must not depend on the compose option"
+        );
+        // Dropping the compose option makes the options blob strictly shorter.
+        assertGt(withCompose.length, withoutCompose.length, "compose option must add bytes");
     }
 
-    function test_SetLzComposeMinValue_OnlyOwner() public {
-        vm.expectRevert();
-        srcBridge.setLzComposeMinValue(DST_EID, 123_000);
-    }
+    function test_Send_SucceedsWithZeroLzComposeGas() public {
+        bytes32 h = _makeHandle(0);
+        bytes32[] memory handleList = new bytes32[](1);
+        handleList[0] = h;
+        // Allow the handle so the ACL guard passes and we reach the actual send.
+        _allow(h, srcApp);
 
-    function test_SetLzComposeMinValue_OverridesEmitsAndClears() public {
-        vm.expectEmit(true, false, false, true, address(srcBridge));
-        emit LzComposeMinValueSet(DST_EID, 123_000);
-        vm.prank(owner);
-        srcBridge.setLzComposeMinValue(DST_EID, 123_000);
-        assertEq(srcBridge.getLzComposeMinValue(DST_EID), 123_000);
-
-        // Other eids are unaffected and still resolve to the default.
-        assertEq(srcBridge.getLzComposeMinValue(SRC_EID), srcBridge.LZ_COMPOSE_MIN_VALUE_DEFAULT());
-
-        // Setting back to 0 clears the override and restores the default.
-        vm.prank(owner);
-        srcBridge.setLzComposeMinValue(DST_EID, 0);
-        assertEq(srcBridge.getLzComposeMinValue(DST_EID), srcBridge.LZ_COMPOSE_MIN_VALUE_DEFAULT());
+        MessagingFee memory fee = srcBridge.quote(
+            DST_EID,
+            srcApp,
+            _addressToBytes32(address(dstApp)),
+            "",
+            handleList,
+            uint64(0)
+        );
+        vm.prank(srcApp);
+        srcBridge.send{value: fee.nativeFee}(DST_EID, _addressToBytes32(address(dstApp)), "", handleList, uint64(0));
     }
 
     function test_Send_RevertsOnUnknownDstEid() public {
         bytes32[] memory handleList = new bytes32[](1);
         handleList[0] = _makeHandle(0);
-        uint64 minGas = srcBridge.LZ_COMPOSE_MIN_VALUE_DEFAULT();
         vm.prank(srcApp);
         vm.expectRevert(abi.encodeWithSelector(HandlesSender.UnknownDstEid.selector, uint32(99)));
-        srcBridge.send{value: 0}(uint32(99), _addressToBytes32(address(dstApp)), "", handleList, minGas);
+        srcBridge.send{value: 0}(uint32(99), _addressToBytes32(address(dstApp)), "", handleList, uint64(30_000));
     }
 
     function test_Send_RevertsAboveMaxHandles() public {
@@ -312,41 +324,13 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
         srcBridge.send{value: 0}(DST_EID, _addressToBytes32(address(dstApp)), "", handleList, uint64(0));
     }
 
-    function test_Send_RevertsOnLzComposeGasBelowMin() public {
-        bytes32[] memory handleList = new bytes32[](1);
-        handleList[0] = _makeHandle(0);
-        uint64 minGas = srcBridge.LZ_COMPOSE_MIN_VALUE_DEFAULT();
-        uint64 tooLow = minGas - 1;
-        // The min check runs before the dstEid/ACL checks, so it fires regardless of those.
-        vm.prank(srcApp);
-        vm.expectRevert(abi.encodeWithSelector(HandlesSender.LzComposeGasBelowMin.selector, tooLow, minGas));
-        srcBridge.send{value: 0}(DST_EID, _addressToBytes32(address(dstApp)), "", handleList, tooLow);
-    }
-
-    function test_Send_RevertsOnLzComposeGasBelowCustomMin() public {
-        uint64 customMin = srcBridge.LZ_COMPOSE_MIN_VALUE_DEFAULT() * 2;
-        vm.prank(owner);
-        srcBridge.setLzComposeMinValue(DST_EID, customMin);
-
-        bytes32[] memory handleList = new bytes32[](1);
-        handleList[0] = _makeHandle(0);
-        // Below the custom override but above the default, so only the override can reject it.
-        uint64 tooLow = customMin - 1;
-        assertGt(tooLow, srcBridge.LZ_COMPOSE_MIN_VALUE_DEFAULT());
-        // The min check runs before the dstEid/ACL checks, so it fires regardless of those.
-        vm.prank(srcApp);
-        vm.expectRevert(abi.encodeWithSelector(HandlesSender.LzComposeGasBelowMin.selector, tooLow, customMin));
-        srcBridge.send{value: 0}(DST_EID, _addressToBytes32(address(dstApp)), "", handleList, tooLow);
-    }
-
     function test_Send_RevertsOnHandleNotAllowed() public {
         bytes32 h = _makeHandle(0);
         bytes32[] memory handleList = new bytes32[](1);
         handleList[0] = h;
-        uint64 minGas = srcBridge.LZ_COMPOSE_MIN_VALUE_DEFAULT();
         vm.prank(srcApp);
         vm.expectRevert(abi.encodeWithSelector(HandlesSender.HandleNotAllowed.selector, h, srcApp));
-        srcBridge.send{value: 0}(DST_EID, _addressToBytes32(address(dstApp)), "", handleList, minGas);
+        srcBridge.send{value: 0}(DST_EID, _addressToBytes32(address(dstApp)), "", handleList, uint64(30_000));
     }
 
     ////////////////////////////////////////////////////////////////////////////////
@@ -367,21 +351,11 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
         srcBridge.quote(DST_EID, srcApp, _addressToBytes32(address(dstApp)), "", handleList, uint64(0));
     }
 
-    function test_Quote_RevertsOnLzComposeGasBelowMin() public {
-        bytes32[] memory handleList = new bytes32[](1);
-        handleList[0] = _makeHandle(0);
-        uint64 minGas = srcBridge.LZ_COMPOSE_MIN_VALUE_DEFAULT();
-        uint64 tooLow = minGas - 1;
-        vm.expectRevert(abi.encodeWithSelector(HandlesSender.LzComposeGasBelowMin.selector, tooLow, minGas));
-        srcBridge.quote(DST_EID, srcApp, _addressToBytes32(address(dstApp)), "", handleList, tooLow);
-    }
-
     function test_Quote_RevertsOnUnknownDstEid() public {
         bytes32[] memory handleList = new bytes32[](1);
         handleList[0] = _makeHandle(0);
-        uint64 minGas = srcBridge.LZ_COMPOSE_MIN_VALUE_DEFAULT();
         vm.expectRevert(abi.encodeWithSelector(HandlesSender.UnknownDstEid.selector, uint32(99)));
-        srcBridge.quote(uint32(99), srcApp, _addressToBytes32(address(dstApp)), "", handleList, minGas);
+        srcBridge.quote(uint32(99), srcApp, _addressToBytes32(address(dstApp)), "", handleList, uint64(30_000));
     }
 
     /// @dev The key difference from `send`: `quote` does NOT run the ACL allowance check,
@@ -396,7 +370,7 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
             _addressToBytes32(address(dstApp)),
             "",
             handleList,
-            srcBridge.LZ_COMPOSE_MIN_VALUE_DEFAULT()
+            uint64(30_000)
         );
         assertGt(fee.nativeFee, 0, "quote should return a positive native fee");
     }
