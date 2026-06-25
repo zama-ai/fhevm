@@ -187,9 +187,11 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
 
         $.currentKmsContextId = KMS_CONTEXT_COUNTER_BASE;
-        $.epochCounter = EPOCH_COUNTER_BASE;
-        uint256 epochId = EPOCH_COUNTER_BASE + 1;
-        uint256 newContextId = _storeAndActivateKmsContext(initialKmsNodeParams, initialThresholds, epochId);
+        uint256 newContextId = _storeAndActivateKmsContext(
+            initialKmsNodeParams,
+            initialThresholds,
+            EPOCH_COUNTER_BASE + 1
+        );
 
         $.contextAnchors[newContextId] = KmsContextAnchor({
             emissionBlockNumber: block.number,
@@ -396,6 +398,14 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
             revert EpochActivationUnauthorized(msg.sender, epochId);
         }
 
+        if ($.contextState[contextId] == ContextState.Pending) {
+            revert KmsContextNotCreated(contextId);
+        }
+
+        if (!_isLiveKmsContext(contextId)) {
+            revert InvalidKmsContext(contextId);
+        }
+
         address signer = $.kmsNodeByTxSenderForContext[contextId][msg.sender].signerAddress;
         bytes32 dataHash;
         {
@@ -430,13 +440,6 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         }
 
         // Confirm epoch activation: add this signer's vote under that hash, activate the epoch once all signers agree.
-        if ($.contextState[contextId] == ContextState.Pending) {
-            revert KmsContextNotCreated(contextId);
-        }
-        if (!_isLiveKmsContext(contextId)) {
-            revert InvalidKmsContext(contextId);
-        }
-
         // Record one confirmation per signer, counted by data hash so quorum requires all signers on the same result.
         if ($.epochActivationConfirmedBySigner[epochId][signer]) {
             revert EpochActivationAlreadyConfirmed(signer, epochId);
