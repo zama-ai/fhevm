@@ -21,6 +21,13 @@
     "test:unit": "npx vitest run --config src/vitest.config.ts --coverage",
     "test:browser": "npx playwright test --config test/browser/playwright.config.ts",
     "test:browser:manual": "npx vite --config test/browser/vite.config.ts",
+    "bstack:browser:desktop": "BROWSERSTACK_CONFIG_FILE=browserstack-desktop.yml browserstack-node-sdk playwright test --config test/browser/playwright.config.ts",
+    "bstack:browser:mobile": "BROWSERSTACK_CONFIG_FILE=browserstack-mobile.yml browserstack-node-sdk playwright test --config test/browser/playwright.config.ts",
+    "bstack:smoke-wasm": "browserstack-node-sdk playwright test --config test/browser/playwright.config.ts test/browser/specs/smoke-wasm.spec.ts",
+    "bstack:encrypt": "browserstack-node-sdk playwright test --config test/browser/playwright.config.ts test/browserstack/specs/encrypt.spec.ts",
+    "bstack:public-decrypt": "browserstack-node-sdk playwright test --config test/browser/playwright.config.ts test/browserstack/specs/public-decrypt.spec.ts",
+    "bstack:user-decrypt": "browserstack-node-sdk playwright test --config test/browser/playwright.config.ts test/browserstack/specs/user-decrypt.spec.ts",
+    "bstack:verify-input": "browserstack-node-sdk playwright test --config test/browser/playwright.config.ts test/browserstack/specs/verify-input.spec.ts",
     "test:fast:testnet": "CHAIN=sepolia npx vitest run --config test/fheTest/vitest.config.ts --exclude '**/**.slow.test.ts' test/fheTest/ethers test/fheTest/viem",
     "test:fast:devnet": "CHAIN=devnet npx vitest run --config test/fheTest/vitest.config.ts --exclude '**/**.slow.test.ts' test/fheTest/ethers test/fheTest/viem",
     "test:full:testnet": "CHAIN=sepolia npx vitest run --config test/fheTest/vitest.config.ts test/fheTest/ethers test/fheTest/viem",
@@ -56,6 +63,7 @@
     "viem": "^2.46.3",
     "vite": "^7.3.1",
     "vitest": "^4.0.18",
+    "browserstack-node-sdk": "^1.53.4",
     "wasm-feature-detect": "^1.8.0"
   },
   "imports": {

@@ -1,0 +1,304 @@
+name: js-sdk-browserstack-tests
+
+on:
+    push:
+        branches:
+            - main
+        paths:
+            - "sdk/js-sdk/src/**"
+            - "sdk/js-sdk/test/browser/**"
+            - "sdk/js-sdk/test/browserstack/**"
+    pull_request:
+        branches:
+            - main
+        paths:
+            - "sdk/js-sdk/src/**"
+            - "sdk/js-sdk/test/browser/**"
+            - "sdk/js-sdk/test/browserstack/**"
+    release:
+        types:
+            - published
+    workflow_dispatch:
+        inputs:
+            network:
+                description: "Network to target (devnet, testnet, both)"
+                required: true
+                default: "both"
+                type: choice
+                options:
+                    - both
+                    - devnet
+                    - testnet
+            oses:
+                description: "Comma-separated OS list: windows-11, windows-10, macos-tahoe, macos-sequoia, android-15-s25-ultra, or all"
+                required: false
+                default: "windows-11"
+                type: string
+            browsers:
+                description: "Comma-separated browsers: chrome, edge, or all"
+                required: false
+                default: "chrome"
+                type: string
+            tests:
+                description: "Comma-separated tests: bstack:smoke-wasm, bstack:encrypt, bstack:verify-input, bstack:public-decrypt, bstack:user-decrypt, or all"
+                required: false
+                default: "bstack:smoke-wasm"
+                type: string
+
+permissions:
+    contents: read
+
+jobs:
+    prepare:
+        name: Prepare BrowserStack matrix
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+        outputs:
+            date_full: ${{ steps.set_vars.outputs.date_full }}
+            package_version: ${{ steps.set_vars.outputs.package_version }}
+            build_name: ${{ steps.set_vars.outputs.build_name }}
+            project_name: ${{ steps.set_vars.outputs.project_name }}
+            local_identifier: ${{ steps.set_vars.outputs.local_identifier }}
+            platforms: ${{ steps.plan.outputs.platforms }}
+            tests: ${{ steps.plan.outputs.tests }}
+            network: ${{ steps.plan.outputs.network }}
+            sdk_logs_dir: ${{ steps.plan.outputs.logsDir }}
+            obs_test_details_dir: ${{ steps.plan.outputs.obsTestDetailsDir }}
+        steps:
+            - name: Checkout
+              uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+
+            - name: Set variables
+              id: set_vars
+              shell: bash
+              run: |
+                  DATE_FULL=$(date +%y%m%d.%H%M%S)
+                  PACKAGE_VERSION=$(node -p "require('./sdk/js-sdk/package.json').version")
+
+                  {
+                    echo "date_full=$DATE_FULL"
+                    echo "package_version=$PACKAGE_VERSION"
+                    echo "build_name=Tests executed at $DATE_FULL"
+                    echo "project_name=FHEVM SDK v$PACKAGE_VERSION"
+                    echo "local_identifier=my-zama-tunnel-${GITHUB_RUN_ID}"
+                  } >> "$GITHUB_OUTPUT"
+
+            - name: Build test matrix
+              id: plan
+              shell: bash
+              env:
+                  INPUT_NETWORK: ${{ github.event.inputs.network }}
+                  INPUT_OSES: ${{ github.event.inputs.oses }}
+                  INPUT_BROWSERS: ${{ github.event.inputs.browsers }}
+                  INPUT_TESTS: ${{ github.event.inputs.tests }}
+              run: |
+                  node .github/scripts/js-sdk-browserstack-matrix.cjs
+
+            - name: Persist matrix outputs
+              shell: bash
+              run: |
+                  cat > "$RUNNER_TEMP/matrix.json" <<EOF
+                  {
+                    "platforms": ${{ steps.plan.outputs.platforms }},
+                    "tests": ${{ steps.plan.outputs.tests }},
+                    "network": "${{ steps.plan.outputs.network }}",
+                    "logsDir": "${{ steps.plan.outputs.logsDir }}",
+                    "obsTestDetailsDir": "${{ steps.plan.outputs.obsTestDetailsDir }}"
+                  }
+                  EOF
+
+            - name: Upload matrix outputs
+              uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+              with:
+                  name: browserstack-matrix-${{ steps.set_vars.outputs.date_full }}
+                  path: ${{ runner.temp }}/matrix.json
+                  retention-days: 7
+
+    browserstack:
+        name: BrowserStack ${{ matrix.test }} (${{ matrix.platform.label }})
+        needs: [prepare]
+        if: ${{ needs.prepare.outputs.platforms != '[]' && needs.prepare.outputs.tests != '[]' }}
+        runs-on: ubuntu-latest
+        timeout-minutes: 60
+        defaults:
+            run:
+                working-directory: ./sdk/js-sdk
+        strategy:
+            fail-fast: false
+            max-parallel: 1
+            matrix:
+                platform: ${{ fromJSON(needs.prepare.outputs.platforms) }}
+                test: ${{ fromJSON(needs.prepare.outputs.tests) }}
+        env:
+            BROWSERSTACK_USERNAME: ${{ secrets.BROWSERSTACK_USERNAME }}
+            BROWSERSTACK_ACCESS_KEY: ${{ secrets.BROWSERSTACK_ACCESS_KEY }}
+            VITE_ZAMA_API_KEY: ${{ secrets.VITE_ZAMA_API_KEY }}
+            VITE_MNEMONIC: ${{ secrets.VITE_MNEMONIC }}
+            NETWORK_FILTER: ${{ needs.prepare.outputs.network }}
+            PROJECT_NAME: ${{ needs.prepare.outputs.project_name }}
+            BUILD_NAME: ${{ needs.prepare.outputs.build_name }}
+            MATRIX_OS: ${{ matrix.platform.os }}
+            MATRIX_OS_VERSION: ${{ matrix.platform.osVersion }}
+            MATRIX_DEVICE_NAME: ${{ matrix.platform.deviceName }}
+            MATRIX_BROWSER: ${{ matrix.platform.browser }}
+            MATRIX_BROWSER_VERSION: ${{ matrix.platform.browserVersion }}
+            CONFIG_TEMPLATE: ${{ matrix.platform.configTemplate }}
+            PLATFORM_LABEL: ${{ matrix.platform.label }}
+            LOCAL_IDENTIFIER_BASE: ${{ needs.prepare.outputs.local_identifier }}
+        steps:
+            - name: Checkout
+              uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+
+            - name: Set local identifier
+              shell: bash
+              run: |
+                  LOCAL_IDENTIFIER="${LOCAL_IDENTIFIER_BASE}-${{ matrix.platform.id }}-${{ matrix.test }}"
+                  echo "LOCAL_IDENTIFIER=$LOCAL_IDENTIFIER" >> "$GITHUB_ENV"
+
+            - name: Sanitize report name
+              shell: bash
+              run: |
+                  REPORT_ID="$(echo "${{ matrix.test }}" | tr ':' '-')-${{ matrix.platform.id }}"
+                  echo "REPORT_ID=$REPORT_ID" >> "$GITHUB_ENV"
+
+            - name: Set BrowserStack paths
+              shell: bash
+              run: |
+                  {
+                    echo "BROWSERSTACK_HOME=$HOME/.browserstack"
+                    echo "BROWSERSTACK_SDK_LOGS_DIR=$GITHUB_WORKSPACE/${{ needs.prepare.outputs.sdk_logs_dir }}"
+                    echo "OBS_TEST_DETAILS_DIR=$GITHUB_WORKSPACE/${{ needs.prepare.outputs.obs_test_details_dir }}"
+                  } >> "$GITHUB_ENV"
+
+            - name: Prepare BrowserStack SDK directories
+              shell: bash
+              run: |
+                  mkdir -p "$BROWSERSTACK_HOME" "$BROWSERSTACK_SDK_LOGS_DIR" "$OBS_TEST_DETAILS_DIR"
+                  chmod -R 755 "$BROWSERSTACK_HOME"
+                  chmod -R 755 "$BROWSERSTACK_SDK_LOGS_DIR" "$OBS_TEST_DETAILS_DIR"
+
+            - name: Common setup
+              uses: ./.github/actions/js-sdk-browserstack-setup
+              with:
+                  build-name: ${{ env.BUILD_NAME }}
+                  project-name: ${{ env.PROJECT_NAME }}
+                  local-identifier: ${{ env.LOCAL_IDENTIFIER }}
+
+            - name: Prepare BrowserStack config
+              shell: bash
+              env:
+                  TEMPLATE_PATH: ${{ env.CONFIG_TEMPLATE }}
+              run: |
+                  ruby -ryaml -e '
+                      template = ENV["TEMPLATE_PATH"]
+                      config = YAML.load_file(template)
+                      config["projectName"] = ENV["PROJECT_NAME"] if ENV["PROJECT_NAME"]
+                      config["buildName"] = ENV["BUILD_NAME"] if ENV["BUILD_NAME"]
+                      platform = {
+                        "browserName" => ENV["MATRIX_BROWSER"],
+                        "browserVersion" => ENV["MATRIX_BROWSER_VERSION"].to_s.empty? ? "latest" : ENV["MATRIX_BROWSER_VERSION"],
+                        "osVersion" => ENV["MATRIX_OS_VERSION"]
+                      }
+
+                      if ENV["MATRIX_DEVICE_NAME"] && !ENV["MATRIX_DEVICE_NAME"].empty?
+                        platform["deviceName"] = ENV["MATRIX_DEVICE_NAME"]
+                      else
+                        platform["os"] = ENV["MATRIX_OS"]
+                      end
+
+                      config["platforms"] = [
+                        platform.delete_if { |_, v| v.nil? || v == "" }
+                      ]
+                      path = File.join(ENV["RUNNER_TEMP"], "browserstack-generated.yml")
+                      File.write(path, config.to_yaml)
+                    '
+                  echo "BROWSERSTACK_CONFIG_FILE=$RUNNER_TEMP/browserstack-generated.yml" >> "$GITHUB_ENV"
+
+            - name: Select network filter
+              id: test_args
+              shell: bash
+              run: |
+                  case "$NETWORK_FILTER" in
+                      devnet)
+                          echo "extra=--grep devnet" >> "$GITHUB_OUTPUT"
+                          ;;
+                      testnet)
+                          echo "extra=--grep testnet" >> "$GITHUB_OUTPUT"
+                          ;;
+                      *)
+                          echo "extra=" >> "$GITHUB_OUTPUT"
+                          ;;
+                  esac
+
+            - name: Run ${{ matrix.test }} on ${{ env.PLATFORM_LABEL }}
+              shell: bash
+              run: |
+                  npm run ${{ matrix.test }} -- ${{ steps.test_args.outputs.extra }}
+
+            - name: Upload generated BrowserStack config
+              if: ${{ always() && env.BROWSERSTACK_CONFIG_FILE != '' }}
+              uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+              with:
+                  path: ${{ env.BROWSERSTACK_CONFIG_FILE }}
+                  name: browserstack-config-${{ env.REPORT_ID }}-${{ needs.prepare.outputs.date_full }}
+                  retention-days: 7
+                  if-no-files-found: warn
+
+            - name: BrowserStack Local Stop
+              if: ${{ always() }}
+              uses: browserstack/github-actions/setup-local@93aebce225b754566349151c0676b26b005e591b # v1.0.4
+              with:
+                  local-testing: stop
+                  local-identifier: ${{ env.LOCAL_IDENTIFIER }}
+
+            - name: Upload Playwright blob report
+              if: ${{ always() }}
+              uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+              with:
+                  path: sdk/js-sdk/blob-report
+                  name: blob-report-${{ env.REPORT_ID }}-${{ needs.prepare.outputs.date_full }}
+                  retention-days: 7
+                  if-no-files-found: warn
+
+    merge-reports:
+        name: Merge Playwright reports
+        needs: [prepare, browserstack]
+        if: ${{ always() && needs.prepare.outputs.platforms != '[]' && needs.prepare.outputs.tests != '[]' }}
+        runs-on: ubuntu-latest
+        timeout-minutes: 20
+        defaults:
+            run:
+                working-directory: ./sdk/js-sdk
+        steps:
+            - name: Checkout
+              uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+
+            - name: Setup NodeJS
+              uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+              with:
+                  node-version: 22.x
+
+            - name: Install dependencies
+              shell: bash
+              run: npm ci
+
+            - name: Download Playwright blob reports
+              uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+              with:
+                  pattern: blob-report-*
+                  path: all-blob-reports
+                  merge-multiple: true
+
+            - name: Merge blob reports
+              shell: bash
+              run: |
+                  npx playwright merge-reports --reporter html "$GITHUB_WORKSPACE/all-blob-reports"
+
+            - name: Upload merged HTML report
+              if: ${{ always() }}
+              uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+              with:
+                  name: playwright-merged-${{ needs.prepare.outputs.date_full }}
+                  path: sdk/js-sdk/playwright-report
+                  retention-days: 30
+                  if-no-files-found: warn

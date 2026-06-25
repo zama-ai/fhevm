@@ -1,0 +1,30 @@
+userName: ${BROWSERSTACK_USERNAME}
+accessKey: ${BROWSERSTACK_ACCESS_KEY}
+
+projectName: FHEVM SDK (Desktop)
+buildName: bstack-fhevm-sdk-desktop
+buildIdentifier: "#${BUILD_NUMBER}"
+
+idleTimeout: 300
+
+platforms:
+    - os: Windows
+      osVersion: 11
+      browserName: chrome
+      browserVersion: latest
+    - os: OS X
+      osVersion: Tahoe
+      browserName: chrome
+      browserVersion: latest
+
+parallelsPerPlatform: 1
+
+browserstackLocal: true
+forceLocal: true
+
+debug: false
+networkLogs: true
+consoleLogs: info
+video: true
+
+testReporting: true
