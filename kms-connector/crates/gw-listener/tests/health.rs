@@ -7,7 +7,7 @@ use connector_utils::{
         health::{Healthcheck, query_healthcheck_endpoint},
         server::{GIT_COMMIT_HASH, LivenessResponse, VersionResponse, start_monitoring_server},
     },
-    tests::setup::{TestInstanceBuilder, pick_free_port},
+    tests::setup::{BlockchainInstance, DbInstance, TestInstanceBuilder, pick_free_port},
 };
 use gw_listener::monitoring::health::{HealthStatus, State};
 use rstest::rstest;
@@ -18,7 +18,10 @@ use tokio_util::sync::CancellationToken;
 #[timeout(Duration::from_secs(300))]
 #[tokio::test]
 async fn test_healthcheck_endpoints() -> anyhow::Result<()> {
-    let mut test_instance = TestInstanceBuilder::db_bc_setup().await?;
+    let mut test_instance = TestInstanceBuilder::default()
+        .with_db(DbInstance::setup_container().await?)
+        .with_blockchain(BlockchainInstance::setup().await?)
+        .build();
     let state = State::new(
         test_instance.db().clone(),
         test_instance.provider().clone(),
