@@ -70,6 +70,10 @@ done
 # untouched; fresh CI runners have none (otherwise deploy fails with "No default signer found").
 mkdir -p "$(dirname "$DEPLOYER_KEYPAIR")"
 [ -f "$DEPLOYER_KEYPAIR" ] || solana-keygen new --no-bip39-passphrase --silent -o "$DEPLOYER_KEYPAIR"
+# cargo-build-sbf (agave 2.1.21, used by both `anchor build` and `cargo build-sbf` below) panics
+# with a NotFound error instead of creating its platform-tools cache on a fresh machine; pre-create
+# it so the SBF toolchain can self-provision. Harmless where it already exists (dev machines).
+mkdir -p "$HOME/.cache/solana"
 
 if [ "$RECONSTRUCT" = 1 ]; then
   # Host = native solana-test-validator (agave 2.1.21, pinned in solana-e2e.yml) with the
