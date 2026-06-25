@@ -210,7 +210,7 @@ Terms specific to SDK components.
 
 **TFHE worker**
 A Web Worker (in browsers) or `worker_thread` (in Node.js) that runs the TFHE WASM module for multi-threaded encryption operations. The SDK spawns a pool of TFHE workers controlled by the `numberOfThreads` runtime config parameter. Workers share memory via `SharedArrayBuffer` (in browsers, this requires COOP/COEP headers).
-_Source: `startWorkers.v1.5.3.js`, SDK runtime config_
+_Source: `startWorkers.v1.6.0.js`, SDK runtime config_
 
 **SNS worker**
 _To be defined_

@@ -53,8 +53,8 @@ When using `locateFile`, you need to copy these files to your `/wasm/` directory
 
 | File                     | Size | Purpose                                   |
 | ------------------------ | ---- | ----------------------------------------- |
-| `tfhe_bg.v1.5.3.wasm`    | ~5MB | TFHE encryption WASM binary               |
-| `tfhe-worker.v1.5.3.mjs` | ~2KB | Web Worker script for multi-threaded TFHE |
+| `tfhe_bg.v1.6.0.wasm`    | ~5MB | TFHE encryption WASM binary               |
+| `tfhe-worker.v1.6.0.mjs` | ~800KB | Web Worker script for multi-threaded TFHE |
 
 **HTTP headers for multi-threading:** The TFHE WASM module uses `SharedArrayBuffer` for multi-threading, which browsers only enable when your server sends these headers:
 

@@ -21,7 +21,7 @@ import type {
   FheEncryptionPublicKey,
   FheEncryptionPublicKeyBrand,
 } from '../../../types/fheEncryptionKey.js';
-import type { CompactCiphertextListBuilder } from '../../../../wasm/tfhe/tfhe.v1.5.3.js';
+import type { CompactCiphertextListBuilder } from '../../../../wasm/tfhe/tfhe.v1.6.0.js';
 import type { Bytes, UintNumber } from '../../../types/primitives.js';
 import type { FheTypeId } from '../../../types/fheType.js';
 import type { FhevmRuntime } from '../../../types/coreFhevmRuntime.js';
@@ -31,7 +31,7 @@ import {
   ProvenCompactCiphertextList,
   CompactCiphertextList,
   ZkComputeLoad,
-} from '../../../../wasm/tfhe/tfhe.v1.5.3.js';
+} from '../../../../wasm/tfhe/tfhe.v1.6.0.js';
 import { isNonEmptyString } from '../../../base/string.js';
 import { hexToBytesFaster } from '../../../base/bytes.js';
 import { encryptionBitsFromFheTypeId, isFheTypeId } from '../../../handle/FheType.js';
