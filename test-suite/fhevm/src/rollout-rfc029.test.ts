@@ -15,11 +15,19 @@ import { phaseVersions, scenario } from "../rollouts/rfc029-material-migration/v
 
 const CLI_DIR = path.resolve(import.meta.dir, "..");
 
-test("models the cutover on the testnet topology: one coprocessor, two host chains", async () => {
-  expect(scenario).toBe("multi-chain");
+test("models the cutover on a 3-of-5 + 4-party-KMS multi-chain topology", async () => {
+  expect(scenario).toBe("rfc029-cutover");
   const resolved = await loadCoprocessorScenario(scenario);
-  expect(resolved.topology.count).toBe(1);
+  // 5 coprocessors make a per-operation version split observable (it breaks
+  // 3-of-5 consensus); two host chains exercise per-chain cutover blocks.
+  expect(resolved.topology.count).toBe(5);
+  expect(resolved.topology.threshold).toBe(3);
   expect(resolved.hostChains?.length).toBe(2);
+  // A real 4-party threshold KMS so the migration keygen-from-existing runs.
+  expect(resolved.kms?.mode).toBe("threshold");
+  expect(resolved.kms?.parties).toBe(4);
+  // All coprocessors are branch-built so the RFC-029 selection code is exercised.
+  expect((resolved.instances ?? []).every((i) => i.source?.mode === "local")).toBe(true);
 });
 
 test("pins one coherent target across the whole stack (cutover is internal, not an upgrade)", () => {
@@ -30,6 +38,12 @@ test("pins one coherent target across the whole stack (cutover is internal, not 
   expect(Object.keys(phaseVersions)).toEqual(["baseline"]);
   expect(phaseVersions.baseline.HOST_VERSION).toBe(phaseVersions.baseline.GATEWAY_VERSION);
   expect(tags.size).toBeGreaterThan(0);
+});
+
+test("pins kms-core to the connector-matched commit so the migration keygen RPC is proto-compatible", () => {
+  // The connector compiles its kms-grpc proto from rev 1edf3a0; the running
+  // kms-core image MUST be that same commit (published as core-service:1edf3a0).
+  expect(phaseVersions.baseline.CORE_VERSION).toBe("1edf3a0");
 });
 
 test("loads the checked-in rfc029-material-migration runbook", async () => {

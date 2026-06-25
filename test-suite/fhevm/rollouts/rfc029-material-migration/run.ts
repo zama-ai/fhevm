@@ -1,4 +1,5 @@
 import type { RolloutRunContext } from "../../src/commands/rollout-run";
+import { castCall, resolveKmsGenerationTarget } from "../../src/flow/readiness";
 import { phaseVersions, scenario, versionSources } from "./versions";
 
 const logPhase = (label: string) => {
@@ -9,6 +10,25 @@ const logPhase = (label: string) => {
 // fhevm-engine-common::material_version::MaterialVersion).
 export const MATERIAL_VERSION_LEGACY = 0;
 export const MATERIAL_VERSION_MIGRATED_V1 = 1;
+
+// FHE params type the scenario generates (Test = 1) — must match the
+// migration keygen's paramsType so kms-core re-derives under the same params.
+const PARAMS_TYPE_TEST = 1;
+
+// How far ahead of "now" the cutover blocks are scheduled. Large enough that
+// the migrated material is published fleet-wide before any chain crosses its
+// migration block (else halt-never-substitute would stall the suite), small
+// enough that the standard suite's workload actually crosses it.
+const HOST_MIGRATION_OFFSET = 30;
+const GATEWAY_MIGRATION_OFFSET = 30;
+
+// Migration keygen-from-existing on a 4-party cluster is ~360s (measured); poll
+// generously before giving up.
+const KEYGEN_ACTIVATION_TIMEOUT_MS = 12 * 60 * 1000;
+const KEYGEN_POLL_INTERVAL_MS = 10_000;
+// Grace for the host-listener to download + publish v1 onto keys.migrated_xof_keyset
+// across the whole fleet before the cutover blocks are crossed.
+const PUBLISH_GRACE_MS = 90_000;
 
 // A per-coprocessor view of a single operation's result digest, tagged with
 // the material version the coprocessor used to produce it. The cutover phase
@@ -74,31 +94,110 @@ export const assertMaterialCutoverConsistent = (digests: CoprocessorDigest[]): v
   }
 };
 
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Reads the latest block number off an EVM JSON-RPC endpoint (dependency-free). */
+const blockNumber = async (rpcUrl: string): Promise<number> => {
+  const response = await fetch(rpcUrl, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_blockNumber", params: [] }),
+  });
+  const payload = (await response.json()) as { result?: string };
+  return payload.result ? Number(BigInt(payload.result)) : 0;
+};
+
+/** Reads getActiveKeyId() off the KMSGeneration contract via `cast call`. */
+const activeKeyId = async (ctx: RolloutRunContext): Promise<bigint> => {
+  const { rpcUrl, kmsGenerationAddress } = resolveKmsGenerationTarget(await ctx.readState());
+  const raw = await castCall(rpcUrl, kmsGenerationAddress, "getActiveKeyId()(uint256)");
+  return BigInt(raw.split(/\s+/)[0] ?? "0");
+};
+
+/** Polls until the active key id advances past `previous` (a fresh keygen finalized). */
+const waitForActiveKeyAdvance = async (ctx: RolloutRunContext, previous: bigint): Promise<bigint> => {
+  const deadline = Date.now() + KEYGEN_ACTIVATION_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    const current = await activeKeyId(ctx);
+    if (current > previous) {
+      return current;
+    }
+    await sleep(KEYGEN_POLL_INTERVAL_MS);
+  }
+  throw new Error(
+    `migration keygen did not finalize within ${KEYGEN_ACTIVATION_TIMEOUT_MS / 1000}s (activeKeyId still ${previous})`,
+  );
+};
+
 export default async function run(ctx: RolloutRunContext) {
   const baselineLock = await ctx.writeVersionLock("00-baseline", {
     versions: phaseVersions.baseline,
     sources: versionSources,
   });
 
-  // Inert smoke: boot the multi-chain stack on the RFC-029 build and run the
-  // standard suite. With no schedule published, the coprocessor's material
-  // selection is inert (always v0), so a green run here is the integration-level
-  // proof that the foundation changes (migration + selection module) don't alter
-  // today's behavior.
-  logPhase("00 baseline: boot the multi-chain stack (L1 + Polygon stand-in) and run the standard suite");
+  // 00 baseline -- boot the 5-coprocessor + 4-party-KMS multi-chain stack on the
+  // RFC-029 branch build and run the standard suite. With no schedule published,
+  // material selection is inert (always v0), so a green run here is the
+  // integration-level proof that the foundation changes don't alter today's
+  // behavior (DONE-WHEN: no-schedule behavior identical to today).
+  logPhase("00 baseline: boot 5-coprocessor + 4-party-KMS multi-chain stack, run the standard suite (no schedule = inert v0)");
   await ctx.up({ lockFile: baselineLock, scenario, overrides: [{ group: "test-suite" }] });
   await ctx.test("rollout-standard", { parallel: false });
 
-  // The cutover phase below is intentionally NOT wired here (fhevm-internal#1568):
-  //   1. publish v1 (addKeyMaterials stand-in) -> assertAllCoprocessorsHoldMaterial(MIGRATED_V1)
-  //   2. publish the schedule ([{L1,H_C},{chain-b,H_C}], G)
-  //   3. drive workload past every H_C and G, collect per-(coprocessor,op)
-  //      digests -> assertMaterialCutoverConsistent
-  // It depends on (a) the version-partitioned-batch worker wiring, (b) a
-  // RolloutRunContext helper to seed material + schedule into the coprocessor DB
-  // (or the real addKeyMaterials/schedule tasks once they land), (c) real v1
-  // CompressedXofKeySet bytes, and (d) a >=2-coprocessor topology for the
-  // divergence assertion to be meaningful. The assertions it will use
-  // (assertAllCoprocessorsHoldMaterial / assertMaterialCutoverConsistent) are
-  // implemented and unit-tested above so they're ready for that wiring PR.
+  // 01 publish -- drive a real migration keygen-from-existing and publish its
+  // result as v1 under the (now-active) migrated key. "Governance publishes"
+  // variant: the migration keygen advances activeKeyId; we then re-publish the
+  // KMS-consensus digests/urls as material version 1 via addKeyMaterials.
+  logPhase("01 publish: trigger migration keygen-from-existing, then publish v1 material");
+  const state = await ctx.readState();
+  const keyBeforeMigration = await activeKeyId(ctx);
+  await ctx.runHostContractTask(`task:triggerMigrationKeygen --params-type ${PARAMS_TYPE_TEST}`);
+  const migratedKeyId = await waitForActiveKeyAdvance(ctx, keyBeforeMigration);
+  console.log(`[rollout] migration keygen finalized: activeKeyId ${keyBeforeMigration} -> ${migratedKeyId}`);
+  await ctx.runHostContractTask(`task:publishMigratedKeyMaterials --material-version ${MATERIAL_VERSION_MIGRATED_V1}`);
+  // Let the host-listener download the migrated keyset + publish it onto
+  // keys.migrated_xof_keyset across the fleet before anyone crosses a cutover block.
+  console.log(`[rollout] waiting ${PUBLISH_GRACE_MS / 1000}s for v1 material to publish fleet-wide`);
+  await sleep(PUBLISH_GRACE_MS);
+
+  // 02 schedule -- publish the per-chain (H_C) + gateway (G) cutover blocks, set
+  // a small distance ahead of each chain's current height so the standard suite
+  // crosses them mid-run.
+  logPhase("02 schedule: publish the per-chain + gateway material-version cutover blocks");
+  const hostChains = state.scenario.hostChains;
+  const hostChainIds: string[] = [];
+  const hostMigrationBlocks: string[] = [];
+  for (const chain of hostChains) {
+    const httpUrl = state.discovery?.endpoints.hosts[chain.key]?.http;
+    if (!httpUrl) {
+      throw new Error(`no RPC endpoint discovered for host chain "${chain.key}"`);
+    }
+    const current = await blockNumber(httpUrl);
+    hostChainIds.push(String(chain.chainId));
+    hostMigrationBlocks.push(String(current + HOST_MIGRATION_OFFSET));
+  }
+  const gatewayHttp = state.discovery?.endpoints.gateway.http;
+  if (!gatewayHttp) {
+    throw new Error("no gateway RPC endpoint discovered");
+  }
+  const gatewayMigrationBlock = (await blockNumber(gatewayHttp)) + GATEWAY_MIGRATION_OFFSET;
+
+  await ctx.runHostContractTask(
+    `task:scheduleKeyMaterialMigration ` +
+      `--host-chain-ids ${hostChainIds.join(",")} ` +
+      `--host-migration-blocks ${hostMigrationBlocks.join(",")} ` +
+      `--gateway-migration-block ${gatewayMigrationBlock} ` +
+      `--material-version ${MATERIAL_VERSION_MIGRATED_V1}`,
+  );
+  console.log(
+    `[rollout] cutover scheduled: chains=${hostChainIds.join(",")} H_C=${hostMigrationBlocks.join(",")} G=${gatewayMigrationBlock}`,
+  );
+
+  // 03 cross -- run the standard suite again. Its workload advances every chain
+  // past its migration block and the gateway past G, so each coprocessor switches
+  // v0 -> v1 deterministically (block < H_C ? v0 : v1). On a 3-of-5 fleet, any
+  // per-operation material-version split breaks consensus and turns this red --
+  // so a green run IS the zero-divergence proof through the cutover blocks.
+  logPhase("03 cross: run the standard suite across the cutover (3-of-5 consensus = zero-divergence detector)");
+  await ctx.test("rollout-standard", { parallel: false });
 }
