@@ -94,6 +94,43 @@ export const assertMaterialCutoverConsistent = (digests: CoprocessorDigest[]): v
   }
 };
 
+export type MigrationScheduleArgs = {
+  hostChainIds: string[];
+  hostMigrationBlocks: string[];
+  gatewayMigrationBlock: number;
+};
+
+/**
+ * Builds the scheduleKeyMaterialMigration arguments from each host chain's
+ * current block height. Pure (heights are passed in) so the per-chain H_C and
+ * gateway G computation is unit-testable without a running stack. EVERY host
+ * chain in the topology gets its own H_C (parallel arrays), so the cutover is
+ * scheduled on the canonical chain AND every non-canonical chain -- the
+ * two-host-chain migration is genuinely covered, not just the canonical one.
+ */
+export const buildMigrationScheduleArgs = (
+  hostChains: { key: string; chainId: string | number }[],
+  currentBlockByChainKey: Record<string, number>,
+  gatewayBlock: number,
+  hostOffset: number,
+  gatewayOffset: number,
+): MigrationScheduleArgs => {
+  if (hostChains.length === 0) {
+    throw new Error("buildMigrationScheduleArgs: topology has no host chains");
+  }
+  const hostChainIds: string[] = [];
+  const hostMigrationBlocks: string[] = [];
+  for (const chain of hostChains) {
+    const current = currentBlockByChainKey[chain.key];
+    if (current === undefined) {
+      throw new Error(`buildMigrationScheduleArgs: no current block for host chain "${chain.key}"`);
+    }
+    hostChainIds.push(String(chain.chainId));
+    hostMigrationBlocks.push(String(current + hostOffset));
+  }
+  return { hostChainIds, hostMigrationBlocks, gatewayMigrationBlock: gatewayBlock + gatewayOffset };
+};
+
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** Reads the latest block number off an EVM JSON-RPC endpoint (dependency-free). */
@@ -174,22 +211,25 @@ export default async function run(ctx: RolloutRunContext) {
   // crosses them mid-run.
   logPhase("02 schedule: publish the per-chain + gateway material-version cutover blocks");
   const hostChains = state.scenario.hostChains;
-  const hostChainIds: string[] = [];
-  const hostMigrationBlocks: string[] = [];
+  const currentBlockByChainKey: Record<string, number> = {};
   for (const chain of hostChains) {
     const httpUrl = state.discovery?.endpoints.hosts[chain.key]?.http;
     if (!httpUrl) {
       throw new Error(`no RPC endpoint discovered for host chain "${chain.key}"`);
     }
-    const current = await blockNumber(httpUrl);
-    hostChainIds.push(String(chain.chainId));
-    hostMigrationBlocks.push(String(current + HOST_MIGRATION_OFFSET));
+    currentBlockByChainKey[chain.key] = await blockNumber(httpUrl);
   }
   const gatewayHttp = state.discovery?.endpoints.gateway.http;
   if (!gatewayHttp) {
     throw new Error("no gateway RPC endpoint discovered");
   }
-  const gatewayMigrationBlock = (await blockNumber(gatewayHttp)) + GATEWAY_MIGRATION_OFFSET;
+  const { hostChainIds, hostMigrationBlocks, gatewayMigrationBlock } = buildMigrationScheduleArgs(
+    hostChains,
+    currentBlockByChainKey,
+    await blockNumber(gatewayHttp),
+    HOST_MIGRATION_OFFSET,
+    GATEWAY_MIGRATION_OFFSET,
+  );
 
   await ctx.runHostContractTask(
     `task:scheduleKeyMaterialMigration ` +
@@ -202,11 +242,14 @@ export default async function run(ctx: RolloutRunContext) {
     `[rollout] cutover scheduled: chains=${hostChainIds.join(",")} H_C=${hostMigrationBlocks.join(",")} G=${gatewayMigrationBlock}`,
   );
 
-  // 03 cross -- run the standard suite again. Its workload advances every chain
-  // past its migration block and the gateway past G, so each coprocessor switches
-  // v0 -> v1 deterministically (block < H_C ? v0 : v1). On a 3-of-5 fleet, any
-  // per-operation material-version split breaks consensus and turns this red --
-  // so a green run IS the zero-divergence proof through the cutover blocks.
-  logPhase("03 cross: run the standard suite across the cutover (3-of-5 consensus = zero-divergence detector)");
+  // 03 cross -- run workload across the cutover on BOTH host chains. rollout-standard
+  // exercises the canonical chain (its H_C) and the gateway (G); multi-chain-isolation
+  // additionally transacts on the non-canonical chain-b, so its H_C is genuinely
+  // crossed too. Each coprocessor switches v0 -> v1 deterministically per chain
+  // (block < H_C ? v0 : v1). On a 3-of-5 fleet, any per-operation material-version
+  // split breaks consensus and turns this red -- so green is the zero-divergence
+  // proof through EVERY host_migration_block and the gateway_migration_block.
+  logPhase("03 cross: run workload across the cutover on both host chains (3-of-5 consensus = zero-divergence detector)");
   await ctx.test("rollout-standard", { parallel: false });
+  await ctx.test("multi-chain-isolation", { parallel: false });
 }

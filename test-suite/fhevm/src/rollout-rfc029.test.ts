@@ -10,6 +10,7 @@ import {
   MATERIAL_VERSION_MIGRATED_V1,
   assertAllCoprocessorsHoldMaterial,
   assertMaterialCutoverConsistent,
+  buildMigrationScheduleArgs,
 } from "../rollouts/rfc029-material-migration/run";
 import { phaseVersions, scenario } from "../rollouts/rfc029-material-migration/versions";
 
@@ -50,6 +51,34 @@ test("loads the checked-in rfc029-material-migration runbook", async () => {
   await expect(
     loadRolloutRunbook(path.join(CLI_DIR, "rollouts/rfc029-material-migration/run.ts")),
   ).resolves.toBeFunction();
+});
+
+// --- schedule-arg prep: every host chain (canonical + non-canonical) gets an H_C ---
+
+test("buildMigrationScheduleArgs gives every host chain its own H_C from its current block", () => {
+  const args = buildMigrationScheduleArgs(
+    [
+      { key: "host", chainId: "12345" }, // canonical
+      { key: "chain-b", chainId: "67890" }, // non-canonical
+    ],
+    { host: 100, "chain-b": 200 },
+    500, // gateway block
+    30, // host offset
+    25, // gateway offset
+  );
+  expect(args.hostChainIds).toEqual(["12345", "67890"]);
+  expect(args.hostMigrationBlocks).toEqual(["130", "230"]); // per-chain current + offset
+  expect(args.gatewayMigrationBlock).toBe(525);
+});
+
+test("buildMigrationScheduleArgs throws if a host chain has no observed block", () => {
+  expect(() =>
+    buildMigrationScheduleArgs([{ key: "chain-b", chainId: "67890" }], {}, 1, 30, 30),
+  ).toThrow(/no current block for host chain "chain-b"/);
+});
+
+test("buildMigrationScheduleArgs throws on an empty topology", () => {
+  expect(() => buildMigrationScheduleArgs([], {}, 1, 30, 30)).toThrow(/no host chains/);
 });
 
 // --- the consensus gate: fleet must hold the target version before scheduling ---
