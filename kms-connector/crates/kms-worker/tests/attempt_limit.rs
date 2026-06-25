@@ -46,7 +46,7 @@ use tracing::{info, warn};
 async fn test_request_processing(#[case] event_type: TestEventType) -> anyhow::Result<()> {
     // Setup real DB and S3 instance
     let test_instance = TestInstanceBuilder::default()
-        .with_db(DbInstance::setup().await?)
+        .with_db(DbInstance::setup_external().await?)
         .with_s3(S3Instance::setup().await?)
         .build();
 
