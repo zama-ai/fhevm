@@ -134,7 +134,9 @@ else
   # SKIP_BUILD reuses the already-built program .so (SBF bytecode is portable across
   # validator versions); useful when the active build toolchain differs from the
   # validator (e.g. building under one Agave release, running the validator on another).
-  if [ "${SKIP_BUILD:-0}" != "1" ]; then
+  # But a fresh machine (CI) has no prebuilt .so, so build anyway when it is absent —
+  # SKIP_BUILD is an optimization, not a reason to deploy a nonexistent program.
+  if [ "${SKIP_BUILD:-0}" != "1" ] || [ ! -f "$SOLANA/target/deploy/zama_host.so" ]; then
     ( cd "$SOLANA" && cargo build-sbf --tools-version v1.52 )
   fi
   for p in zama_host confidential_token confidential_token_receiver; do
