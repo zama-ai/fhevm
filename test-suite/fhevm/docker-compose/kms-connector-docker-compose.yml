@@ -35,6 +35,11 @@ services:
     image: ghcr.io/zama-ai/fhevm/kms-connector/kms-worker:${CONNECTOR_KMS_WORKER_VERSION}
     env_file:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/kms-connector.env
+    # The Solana public-decrypt ACL check queries the native host validator at
+    # http://host.docker.internal:8899. Docker Desktop provides that name; on Linux (CI) it must be
+    # mapped to the host gateway explicitly, else the RPC fails ("solana RPC request failed").
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       kms-connector-db-migration:
         condition: service_completed_successfully
