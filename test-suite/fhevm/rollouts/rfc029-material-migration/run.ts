@@ -22,10 +22,12 @@ const PARAMS_TYPE_TEST = 1;
 const HOST_MIGRATION_OFFSET = 30;
 const GATEWAY_MIGRATION_OFFSET = 30;
 
-// Migration keygen-from-existing on a 4-party cluster is ~360s (measured); poll
-// generously before giving up.
-const KEYGEN_ACTIVATION_TIMEOUT_MS = 12 * 60 * 1000;
-const KEYGEN_POLL_INTERVAL_MS = 10_000;
+// A fresh migration keygen runs a FULL threshold preprocessing + keygen MPC cycle
+// (PrepKeygenRequest -> prepKeygenResponse -> KeygenRequest -> keygenResponse) on the
+// 4-party cluster, which is materially slower than the keygen-only step measured at
+// boot. Poll generously before giving up.
+const KEYGEN_ACTIVATION_TIMEOUT_MS = 25 * 60 * 1000;
+const KEYGEN_POLL_INTERVAL_MS = 15_000;
 // Grace for the host-listener to download + publish v1 onto keys.migrated_xof_keyset
 // across the whole fleet before the cutover blocks are crossed.
 const PUBLISH_GRACE_MS = 90_000;
@@ -151,14 +153,19 @@ const activeKeyId = async (ctx: RolloutRunContext): Promise<bigint> => {
   return BigInt(raw.split(/\s+/)[0] ?? "0");
 };
 
-/** Polls until the active key id advances past `previous` (a fresh keygen finalized). */
+/** Polls until the active key id advances past `previous` (a fresh keygen finalized),
+ * logging progress each tick so a slow MPC cycle is observable in the rollout log. */
 const waitForActiveKeyAdvance = async (ctx: RolloutRunContext, previous: bigint): Promise<bigint> => {
-  const deadline = Date.now() + KEYGEN_ACTIVATION_TIMEOUT_MS;
+  const started = Date.now();
+  const deadline = started + KEYGEN_ACTIVATION_TIMEOUT_MS;
   while (Date.now() < deadline) {
     const current = await activeKeyId(ctx);
+    const elapsed = Math.round((Date.now() - started) / 1000);
     if (current > previous) {
+      console.log(`[rollout] migration keygen finalized after ${elapsed}s (activeKeyId ${previous} -> ${current})`);
       return current;
     }
+    console.log(`[rollout] waiting for migration keygen... ${elapsed}s elapsed, activeKeyId still ${previous}`);
     await sleep(KEYGEN_POLL_INTERVAL_MS);
   }
   throw new Error(

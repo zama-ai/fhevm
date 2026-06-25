@@ -175,7 +175,7 @@ jobs:
               echo "::endgroup::"
               return
             fi
-            if ! output="$(docker logs --tail 120 "${container}" 2>&1)"; then
+            if ! output="$(docker logs --tail 300 "${container}" 2>&1)"; then
               echo "[warn] docker logs failed for ${container}"
               [ -n "$output" ] && printf '%s\n' "$output"
             elif [ -n "$filter" ]; then
@@ -194,6 +194,15 @@ jobs:
           snapshot_logs "Host KMS Keygen Trigger" host-sc-trigger-keygen
           snapshot_logs "Host KMS CRS Trigger" host-sc-trigger-crsgen
           snapshot_logs "KMS Core" kms-core
+          # Threshold KMS (rfc029-cutover scenario): capture every kms-core party and
+          # every per-party connector tier, since the static names above only cover the
+          # centralized/party-1 layout and miss kms-core-2/3/4 + per-party connectors.
+          for container in $(docker ps -a --format '{{.Names}}' | grep -E '^kms-core' | grep -vxF 'kms-core' | sort); do
+            snapshot_logs "KMS Core: ${container}" "${container}"
+          done
+          for container in $(docker ps -a --format '{{.Names}}' | grep -E '^kms-connector' | grep -E 'kms-worker|gw-listener|tx-sender' | grep -vE 'kms-connector-(kms-worker|gw-listener|tx-sender)$' | sort); do
+            snapshot_logs "Connector: ${container}" "${container}"
+          done
           snapshot_logs "Host SC Deploy" host-sc-deploy
           for container in $(docker ps --format '{{.Names}}' | grep -E '^coprocessor[0-9]*-gw-listener$' | sort); do
             prefix="${container%-gw-listener}"
