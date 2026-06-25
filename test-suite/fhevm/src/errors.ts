@@ -40,8 +40,11 @@ export class ProbeTimeout extends CliError {
 }
 
 export class BootstrapTimeout extends CliError {
-  constructor(readonly elapsed: number) {
-    super("BootstrapTimeout", `Bootstrap timed out after ${elapsed}s`);
+  constructor(
+    readonly elapsed: number,
+    readonly details?: string,
+  ) {
+    super("BootstrapTimeout", `Bootstrap timed out after ${elapsed}s${details ? `\n${details}` : ""}`);
   }
 }
 

@@ -2,7 +2,8 @@ use crate::{
     executor::{garbage_collect, query_sns_tasks, Order},
     keyset::fetch_client_key,
     squash_noise::safe_deserialize,
-    Config, DBConfig, S3Config, S3RetryPolicy, SchedulePolicy,
+    Config, DBConfig, S3Config, S3MigrationMode, S3RetryPolicy, SchedulePolicy,
+    DEFAULT_S3_MIGRATION_MAX_RETRIES, S3_FORMAT_VERSION_V0,
 };
 use alloy::signers::local::PrivateKeySigner;
 use alloy_primitives::{B256, U256};
@@ -41,6 +42,8 @@ use tracing::{info, Level};
 
 const LISTEN_CHANNEL: &str = "sns_worker_chan";
 static TRACING_INIT: OnceLock<()> = OnceLock::new();
+
+mod s3_migration_dry_run;
 
 pub fn init_tracing() {
     TRACING_INIT.get_or_init(|| {
@@ -308,6 +311,95 @@ async fn test_lifo_mode() {
     } else {
         panic!("No tasks found in Asc order");
     }
+}
+
+#[tokio::test]
+#[serial(db)]
+#[cfg(not(feature = "gpu"))]
+async fn test_before_and_quit_returns_s3_migration_error() {
+    init_tracing();
+
+    let db_instance = setup_test_db(ImportMode::WithAllKeys)
+        .await
+        .expect("valid db instance");
+    let mut conf = build_test_config(db_instance.db_url.clone(), true);
+    conf.s3_migration = S3MigrationMode::BeforeAndQuit;
+    conf.health_checks.port = test_harness::localstack::pick_free_port();
+    conf.s3_migration_max_retries = 2;
+    conf.s3.retry_policy.max_retries_per_upload = 1;
+    conf.s3.retry_policy.max_backoff = Duration::from_millis(10);
+    conf.s3.retry_policy.max_retries_timeout = Duration::from_secs(2);
+
+    let (_s3_instance, _s3_client) = setup_localstack(&conf).await.expect("valid localstack");
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(conf.db.max_connections)
+        .acquire_timeout(conf.db.timeout)
+        .connect(conf.db.url.as_str())
+        .await
+        .expect("connect test db");
+
+    let signer = PrivateKeySigner::random();
+    conf.private_key = Some(hex::encode(signer.to_bytes()));
+
+    let handle = vec![0x42; 32];
+    let ct64_digest = vec![0x24; 32];
+    let key_id_gw = fetch_latest_key_id_gw(&pool).await;
+    let host_chain_id = fetch_host_chain_id(&pool).await;
+    sqlx::query!(
+        r#"
+        INSERT INTO ciphertext_digest(
+            host_chain_id,
+            key_id_gw,
+            handle,
+            ciphertext,
+            s3_format_version
+        )
+        VALUES ($1, $2, $3, $4, $5)
+        "#,
+        host_chain_id,
+        &key_id_gw,
+        &handle,
+        &ct64_digest,
+        S3_FORMAT_VERSION_V0,
+    )
+    .execute(&pool)
+    .await
+    .expect("insert legacy ciphertext_digest row");
+
+    let run_result = timeout(
+        Duration::from_secs(15),
+        crate::run_all(conf, db_instance.parent_token.child_token(), None),
+    )
+    .await
+    .expect("before-and-quit should finish");
+
+    let err = run_result.expect_err("before-and-quit should return the S3 migration error");
+    assert!(
+        err.to_string().contains("after reaching max retry count 2"),
+        "unexpected before-and-quit error: {err}"
+    );
+
+    let failure = sqlx::query!(
+        r#"
+        SELECT s3_migration_failure_count,
+               s3_migration_last_error
+         FROM ciphertext_digest
+         WHERE handle = $1
+        "#,
+        &handle,
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("fetch recorded migration failure");
+    assert_eq!(failure.s3_migration_failure_count, 2);
+    assert!(
+        failure
+            .s3_migration_last_error
+            .as_deref()
+            .is_some_and(|err| err.contains("missing ct64 object")),
+        "unexpected recorded migration error: {:?}",
+        failure.s3_migration_last_error,
+    );
 }
 
 #[tokio::test]
@@ -1064,5 +1156,9 @@ fn build_test_config(url: DatabaseURL, enable_compression: bool) -> Config {
         metrics: Default::default(),
         private_key: None,
         signer_type: fhevm_engine_common::types::SignerType::PrivateKey,
+        s3_migration: S3MigrationMode::No,
+        s3_migration_sleep_duration: Duration::from_mins(5),
+        s3_migration_max_retries: DEFAULT_S3_MIGRATION_MAX_RETRIES,
+        clean_old_s3_format_version: false,
     }
 }

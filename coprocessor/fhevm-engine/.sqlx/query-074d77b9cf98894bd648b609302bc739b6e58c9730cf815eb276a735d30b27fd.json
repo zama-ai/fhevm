@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE ciphertext_digest\n         SET s3_format_version = $1,\n             s3_migration_failure_count = 0,\n             s3_migration_last_error = NULL,\n             s3_migration_last_error_at = NULL\n         WHERE handle = $2\n           AND s3_format_version = $3\n           AND ciphertext IS NOT DISTINCT FROM $4::bytea\n           AND ciphertext128 IS NOT DISTINCT FROM $5::bytea\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int2",
+        "Bytea",
+        "Int2",
+        "Bytea",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "074d77b9cf98894bd648b609302bc739b6e58c9730cf815eb276a735d30b27fd"
+}
