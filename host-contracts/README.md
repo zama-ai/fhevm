@@ -142,9 +142,7 @@ Ethereum rotation to every replica, in order, is the operator's responsibility.
 ### Initializing a non-canonical ProtocolConfig from the canonical chain
 
 The Ethereum `ProtocolConfig` is the source of truth for protocol state, so **new** host chains
-seed their replica from it. (The Gateway-based export `task:exportKmsMigrationState` remains the
-mechanism for the one-time Gateway → Ethereum migration of existing deployments; it is just no
-longer the state source for seeding non-canonical chains.)
+seed their replica from it.
 
 The flow is artifact-centric — the same three steps in every environment, only the signer of
 step 3 changes:

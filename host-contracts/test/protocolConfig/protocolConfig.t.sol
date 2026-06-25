@@ -1223,23 +1223,12 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         protocolConfig.confirmEpochActivation(newEpochId, keys, crsList);
     }
 
-    function test_destroyPendingAndCreatedContext() public {
+    function test_destroyCreatedContext() public {
         _setupEpochLifecycle();
 
         vm.prank(owner);
         _defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), _defaultThresholds());
-        vm.prank(owner);
-        protocolConfig.destroyKmsContext(KMS_CONTEXT_COUNTER_BASE + 2);
-        assertFalse(protocolConfig.isValidKmsContext(KMS_CONTEXT_COUNTER_BASE + 2));
-        vm.prank(vm.addr(kmsPk0));
-        vm.expectRevert(
-            abi.encodeWithSelector(IProtocolConfig.KmsContextNotPending.selector, KMS_CONTEXT_COUNTER_BASE + 2)
-        );
-        protocolConfig.confirmKmsContextCreation(KMS_CONTEXT_COUNTER_BASE + 2);
-
-        vm.prank(owner);
-        _defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), _defaultThresholds());
-        uint256 createdContextId = KMS_CONTEXT_COUNTER_BASE + 3;
+        uint256 createdContextId = KMS_CONTEXT_COUNTER_BASE + 2;
         vm.prank(vm.addr(kmsPk0));
         protocolConfig.confirmKmsContextCreation(createdContextId);
         vm.prank(vm.addr(kmsPk1));

@@ -246,6 +246,7 @@ abstract contract HostContractsDeployerTestUtils is Test {
     function _deployProtocolConfigMirror(
         address owner,
         uint256 initialContextId,
+        uint256 initialEpochId,
         KmsNodeParams[] memory initialKmsNodeParams,
         IProtocolConfig.KmsThresholds memory initialThresholds
     ) internal returns (ProtocolConfig protocolConfigProxy, address protocolConfigImplementation) {
@@ -261,19 +262,16 @@ abstract contract HostContractsDeployerTestUtils is Test {
         protocolConfigImplementation = address(new ProtocolConfig());
         vm.label(protocolConfigImplementation, "ProtocolConfig Mirror Implementation");
 
-        PcrValues[] memory pcrValues = new PcrValues[](0);
         vm.prank(owner);
         EmptyUUPSProxy(protocolConfigAdd).upgradeToAndCall(
             protocolConfigImplementation,
             abi.encodeCall(
-                ProtocolConfig.initializeFromEmptyProxy,
-                (initialKmsNodeParams, initialThresholds, "", pcrValues)
+                ProtocolConfig.initializeFromCanonical,
+                (initialContextId, initialEpochId, initialKmsNodeParams, initialThresholds)
             )
         );
 
         protocolConfigProxy = ProtocolConfig(protocolConfigAdd);
-        vm.prank(owner);
-        protocolConfigProxy.mirrorKmsContext(initialContextId, initialKmsNodeParams, initialThresholds, "", pcrValues);
     }
 
     function _deployKMSGeneration(
