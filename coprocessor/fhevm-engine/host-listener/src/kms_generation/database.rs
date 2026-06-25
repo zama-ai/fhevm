@@ -140,6 +140,160 @@ pub(crate) async fn insert_key_material_migration_scheduled(
     Ok(())
 }
 
+/// RFC-029: a `KeyMaterialAdded` event staged for the v1 PUBLISH path. The
+/// migrated CompressedXofKeySet must be downloaded from S3 (kms-core wrote it
+/// under the original keyId via copy_compressed_key_to_original) and written
+/// to `keys.migrated_xof_keyset` -- never to a v0 column, never moving
+/// activeKeyId.
+#[derive(Debug, Clone)]
+pub(crate) struct PendingKeyMaterial {
+    pub chain_id: i64,
+    pub block_hash: Vec<u8>,
+    pub key_id: Vec<u8>,
+    pub material_version: i16,
+    pub key_digest: Option<Vec<u8>>,
+    pub storage_urls: Vec<String>,
+}
+
+/// Stage a `KeyMaterialAdded` event for the background download/publish loop.
+/// Idempotent on re-observation (same chain/block/key/version).
+pub(crate) async fn insert_key_material_added(
+    tx: &mut Transaction<'_, Postgres>,
+    added: KMSGeneration::KeyMaterialAdded,
+    log: Log,
+    chain_id: ChainId,
+    block_hash: &[u8],
+    block_number: u64,
+) -> Result<(), sqlx::Error> {
+    let transaction_hash = log.transaction_hash.map(|txh| txh.to_vec());
+    // The migrated server-key (XOF keyset) digest is the keyType==0 entry.
+    let key_digest = added
+        .keyDigests
+        .iter()
+        .find(|d| d.keyType == 0)
+        .map(|d| d.digest.to_vec());
+    let material_version = added.materialVersion.to::<u64>() as i16;
+    let urls = added.kmsNodeStorageUrls.clone();
+    sqlx::query(
+        "INSERT INTO kms_key_material_events (\
+            chain_id, block_hash, block_number, transaction_hash, \
+            key_id, material_version, key_digest, storage_urls) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) \
+         ON CONFLICT (chain_id, block_hash, key_id, material_version) DO NOTHING",
+    )
+    .bind(chain_id.as_i64())
+    .bind(block_hash)
+    .bind(block_number as i64)
+    .bind(transaction_hash)
+    .bind(key_id_to_database_bytes(added.keyId).to_vec())
+    .bind(material_version)
+    .bind(key_digest)
+    .bind(&urls)
+    .execute(tx.deref_mut())
+    .await?;
+    Ok(())
+}
+
+/// Pending v1 key-material rows awaiting an S3 download.
+pub(crate) async fn all_pending_key_material_to_download(
+    tx: &mut Transaction<'_, Postgres>,
+) -> Result<Vec<PendingKeyMaterial>, sqlx::Error> {
+    let rows = sqlx::query(
+        "SELECT chain_id, block_hash, key_id, material_version, key_digest, storage_urls \
+         FROM kms_key_material_events \
+         WHERE status = 'pending' \
+         FOR UPDATE SKIP LOCKED",
+    )
+    .fetch_all(tx.deref_mut())
+    .await?;
+    use sqlx::Row;
+    Ok(rows
+        .into_iter()
+        .map(|r| PendingKeyMaterial {
+            chain_id: r.get("chain_id"),
+            block_hash: r.get("block_hash"),
+            key_id: r.get("key_id"),
+            material_version: r.get("material_version"),
+            key_digest: r.get("key_digest"),
+            storage_urls: r.get("storage_urls"),
+        })
+        .collect())
+}
+
+/// Store the downloaded migrated keyset bytes and mark the row ready to publish.
+pub(crate) async fn set_ready_key_material(
+    tx: &mut Transaction<'_, Postgres>,
+    pending: &PendingKeyMaterial,
+    bytes: &[u8],
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE kms_key_material_events \
+         SET key_content_migrated_xof = $4, status = 'ready', last_updated_at = NOW() \
+         WHERE chain_id = $1 AND block_hash = $2 AND key_id = $3 \
+           AND material_version = $5",
+    )
+    .bind(pending.chain_id)
+    .bind(&pending.block_hash)
+    .bind(&pending.key_id)
+    .bind(bytes)
+    .bind(pending.material_version)
+    .execute(tx.deref_mut())
+    .await?;
+    Ok(())
+}
+
+pub(crate) async fn mark_key_material_error(
+    tx: &mut Transaction<'_, Postgres>,
+    error: &str,
+    pending: PendingKeyMaterial,
+) {
+    let _ = sqlx::query(
+        "UPDATE kms_key_material_events \
+         SET status = 'error', last_error = $4, retry_count = retry_count + 1, \
+             last_updated_at = NOW() \
+         WHERE chain_id = $1 AND block_hash = $2 AND key_id = $3 \
+           AND material_version = $5",
+    )
+    .bind(pending.chain_id)
+    .bind(&pending.block_hash)
+    .bind(&pending.key_id)
+    .bind(error)
+    .bind(pending.material_version)
+    .execute(tx.deref_mut())
+    .await;
+}
+
+/// Publish ready v1 material: on a finalized block, write the downloaded
+/// migrated keyset into `keys.migrated_xof_keyset` for the matching key row.
+/// Touches only the v1 column -- no activeKeyId move, no v0 columns.
+pub(crate) async fn publish_ready_key_material(
+    tx: &mut Transaction<'_, Postgres>,
+) -> Result<u64, sqlx::Error> {
+    let published = sqlx::query(
+        "WITH ready AS (\
+            SELECT e.chain_id, e.block_hash, e.key_id, e.material_version, \
+                   e.key_content_migrated_xof \
+            FROM kms_key_material_events AS e \
+            INNER JOIN host_chain_blocks_valid AS b \
+                ON e.chain_id = b.chain_id AND e.block_hash = b.block_hash \
+            WHERE e.status = 'ready' \
+              AND b.block_status = 'finalized' \
+              AND e.key_content_migrated_xof IS NOT NULL \
+            FOR UPDATE OF e SKIP LOCKED\
+        ), upd AS (\
+            UPDATE keys SET migrated_xof_keyset = ready.key_content_migrated_xof \
+            FROM ready WHERE keys.key_id = ready.key_id \
+        ) \
+        UPDATE kms_key_material_events AS e SET status = 'published', last_updated_at = NOW() \
+        FROM ready \
+        WHERE e.chain_id = ready.chain_id AND e.block_hash = ready.block_hash \
+          AND e.key_id = ready.key_id AND e.material_version = ready.material_version",
+    )
+    .execute(tx.deref_mut())
+    .await?;
+    Ok(published.rows_affected())
+}
+
 pub(crate) async fn insert_crs_activation_event(
     tx: &mut Transaction<'_, Postgres>,
     activation: KMSGeneration::ActivateCrs,

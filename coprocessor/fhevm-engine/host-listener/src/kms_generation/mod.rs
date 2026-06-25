@@ -10,13 +10,16 @@ use crate::kms_generation::aws_s3::{download_key_from_s3, AwsS3Interface};
 use crate::kms_generation::database::{
     activate_ready_crs_activations, activate_ready_key_activations,
     all_pending_crs_activations_to_download,
-    all_pending_key_activations_to_download, cancel_orphaned_crs_activations,
+    all_pending_key_activations_to_download,
+    all_pending_key_material_to_download, cancel_orphaned_crs_activations,
     cancel_orphaned_key_activations, count_crs_activation_remaining_pending,
     count_key_activation_remaining_pending, insert_crs_activation_event,
-    insert_key_activation_event, insert_key_material_migration_scheduled,
-    mark_crs_activation_error, mark_key_activation_error,
-    set_ready_crs_activation, set_ready_key_activation, PendingCrsActivation,
-    PendingKeyActivation,
+    insert_key_activation_event, insert_key_material_added,
+    insert_key_material_migration_scheduled, mark_crs_activation_error,
+    mark_key_activation_error, mark_key_material_error,
+    publish_ready_key_material, set_ready_crs_activation,
+    set_ready_key_activation, set_ready_key_material, PendingCrsActivation,
+    PendingKeyActivation, PendingKeyMaterial,
 };
 use crate::kms_generation::digest::{digest_crs, digest_key};
 use crate::kms_generation::metrics::{
@@ -134,18 +137,28 @@ pub async fn insert_kms_generation_events_tx(
                 )
                 .await?;
             }
-            // RFC-029 publish-not-activate: the migrated keyset bytes are
-            // downloaded from `kmsNodeStorageUrls` into
-            // `keys.migrated_xof_keyset` (mirrors the ActivateKey S3 path) and
-            // never move activeKeyId. SPIKE: the rollout seeds the v1 bytes, so
-            // here we only record the event for traceability.
+            // RFC-029 publish-not-activate: stage the migrated keyset for the
+            // v1 publish path. The background loop downloads it from
+            // `kmsNodeStorageUrls` (kms-core wrote it under the original keyId
+            // via copy_compressed_key_to_original) into
+            // `keys.migrated_xof_keyset` -- never a v0 column, never moving
+            // activeKeyId.
             KMSGeneration::KMSGenerationEvents::KeyMaterialAdded(added) => {
                 info!(
                     key_id = ?added.keyId,
                     material_version = ?added.materialVersion,
                     urls = added.kmsNodeStorageUrls.len(),
-                    "RFC-029 KeyMaterialAdded observed (publish-not-activate)"
+                    "RFC-029 KeyMaterialAdded observed (staging v1 publish)"
                 );
+                insert_key_material_added(
+                    tx,
+                    added,
+                    log,
+                    chain_id,
+                    block_hash,
+                    block_number,
+                )
+                .await?;
             }
             KMSGeneration::KMSGenerationEvents::KeyMaterialMigrationScheduled(
                 scheduled,
@@ -176,6 +189,27 @@ pub async fn process_kms_generation_activations<
     cancel_orphaned_crs_activations(&mut tx).await?;
     activate_ready_key_activations(&mut tx).await?;
     activate_ready_crs_activations(&mut tx).await?;
+    // RFC-029: publish any ready v1 material onto its key row (additive; never
+    // touches the v0 columns or activeKeyId).
+    let published = publish_ready_key_material(&mut tx).await?;
+    if published > 0 {
+        info!(published, "RFC-029: published v1 key material rows");
+    }
+    tx.commit().await?;
+
+    // RFC-029: download staged migrated keysets. Independent of the v0
+    // activation queues so it runs even when those are idle.
+    let mut tx = db_pool.begin().await?;
+    let pending_material =
+        all_pending_key_material_to_download(&mut tx).await?;
+    if !pending_material.is_empty() {
+        info!(
+            count = pending_material.len(),
+            "RFC-029: pending v1 key material to download"
+        );
+        download_and_store_key_material(&mut tx, &s3_client, pending_material)
+            .await?;
+    }
     tx.commit().await?;
 
     // second we download and check keys and preprocess in background in advance so it's ready when block is finalized
@@ -254,6 +288,57 @@ async fn download_and_store_crs_activations<
         }
     }
     Ok(())
+}
+
+/// RFC-029: download each staged migrated keyset from S3 and mark it ready to
+/// publish. kms-core's copy_compressed_key_to_original writes the migrated
+/// CompressedXofKeySet under the ORIGINAL keyId, so it is fetched from the same
+/// `/CompressedXofKeySet/{key_id}` prefix as a v0 XOF key -- the bytes there are
+/// now the migrated keyset.
+async fn download_and_store_key_material<
+    A: AwsS3Interface + Clone + 'static,
+>(
+    tx: &mut Transaction<'_, Postgres>,
+    s3_client: &A,
+    pending: Vec<PendingKeyMaterial>,
+) -> anyhow::Result<()> {
+    for material in pending {
+        match download_migrated_key_material(&material, s3_client).await {
+            Ok(bytes) => {
+                set_ready_key_material(tx, &material, &bytes).await?;
+                info!(
+                    key_id = ?material.key_id,
+                    version = material.material_version,
+                    "RFC-029: downloaded migrated keyset, ready to publish"
+                );
+            }
+            Err(err) => {
+                error!(
+                    error = %err,
+                    key_id = ?material.key_id,
+                    "RFC-029: failed to download migrated key material"
+                );
+                mark_key_material_error(tx, &err.to_string(), material).await;
+            }
+        }
+    }
+    Ok(())
+}
+
+async fn download_migrated_key_material<A: AwsS3Interface + Clone + 'static>(
+    material: &PendingKeyMaterial,
+    s3_client: &A,
+) -> anyhow::Result<Vec<u8>> {
+    let key_id = key_id_from_database_bytes(&material.key_id)?;
+    let path =
+        format!("{}/{}", XOF_KEY_SET_S3_PREFIX, key_id_to_aws_key(key_id));
+    let bytes =
+        download_key_from_s3(s3_client, &material.storage_urls, path, 0)
+            .await?;
+    if let Some(expected) = &material.key_digest {
+        verify_server_key_digest(&bytes, expected, &key_id)?;
+    }
+    Ok(bytes.to_vec())
 }
 
 /// Server-key payload pulled from S3, tagged with the format kms-core
