@@ -186,11 +186,11 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     ) public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
 
-        $.currentKmsContextId = KMS_CONTEXT_COUNTER_BASE;
-        uint256 newContextId = _storeAndActivateKmsContext(
+        uint256 newContextId = _storeAndActivateKmsContextAndEpoch(
+            KMS_CONTEXT_COUNTER_BASE + 1,
+            EPOCH_COUNTER_BASE + 1,
             initialKmsNodeParams,
-            initialThresholds,
-            EPOCH_COUNTER_BASE + 1
+            initialThresholds
         );
 
         $.contextAnchors[newContextId] = KmsContextAnchor({
@@ -232,11 +232,12 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
             revert InvalidEpoch(canonicalEpochId);
         }
 
-        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-
-        // Seed counter so _storeKmsContext's ++counter lands on the canonical context ID.
-        $.currentKmsContextId = canonicalContextId - 1;
-        _storeAndActivateKmsContext(canonicalKmsNodeParams, canonicalThresholds, canonicalEpochId);
+        _storeAndActivateKmsContextAndEpoch(
+            canonicalContextId,
+            canonicalEpochId,
+            canonicalKmsNodeParams,
+            canonicalThresholds
+        );
     }
 
     /**
@@ -295,7 +296,7 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
 
         // Store the new signer set and open its first epoch as Pending.
         uint256 previousContextId = $.latestActiveKmsContextId;
-        uint256 contextId = _storeKmsContext(kmsNodeParams, thresholds);
+        uint256 contextId = _storeNextKmsContext(kmsNodeParams, thresholds);
         $.contextState[contextId] = ContextState.Pending;
         _createPendingEpoch(contextId);
 
@@ -580,9 +581,7 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
             revert NonIncreasingEpochId(epochId, currentEpochId);
         }
 
-        // Seed counter so _storeKmsContext's ++counter lands on the existing context ID.
-        $.currentKmsContextId = contextId - 1;
-        _storeAndActivateKmsContext(kmsNodeParams, thresholds, epochId);
+        _storeAndActivateKmsContextAndEpoch(contextId, epochId, kmsNodeParams, thresholds);
         emit MirrorKmsContextAndEpoch(contextId, epochId, kmsNodeParams, thresholds, softwareVersion, pcrValues);
     }
 
@@ -765,17 +764,20 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     // -----------------------------------------------------------------------------------------
 
     /**
-     * @dev Creates a new KMS context, validates nodes and thresholds, and activates it under
-     *      `epochId`. Returns the new context ID. Callers are responsible for emitting context
-     *      lifecycle events and recording the matching `KmsContextAnchor` when appropriate.
+     * @dev Stores a KMS context under the caller-provided `contextId`, validates nodes and
+     *      thresholds, and activates it under `epochId`. Use this on the bootstrap/mirror paths
+     *      where the context ID is externally determined; for fresh canonical allocation use
+     *      `_storeNextKmsContext`. Returns the context ID. Callers are responsible for emitting
+     *      context lifecycle events and recording the matching `KmsContextAnchor` when appropriate.
      */
-    function _storeAndActivateKmsContext(
+    function _storeAndActivateKmsContextAndEpoch(
+        uint256 contextId,
+        uint256 epochId,
         KmsNodeParams[] memory kmsNodeParams,
-        KmsThresholds calldata thresholds,
-        uint256 epochId
+        KmsThresholds calldata thresholds
     ) internal virtual returns (uint256 newContextId) {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        newContextId = _storeKmsContext(kmsNodeParams, thresholds);
+        newContextId = _storeKmsContext(contextId, kmsNodeParams, thresholds);
 
         // Set the context to Active and update the active context and epoch IDs.
         $.contextState[newContextId] = ContextState.Active;
@@ -784,7 +786,17 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         _activateEpoch(epochId, newContextId);
     }
 
+    /// @dev Allocates the next sequential KMS context ID and stores the context under it.
+    function _storeNextKmsContext(
+        KmsNodeParams[] memory kmsNodeParams,
+        KmsThresholds calldata thresholds
+    ) internal virtual returns (uint256 newContextId) {
+        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
+        newContextId = _storeKmsContext($.currentKmsContextId + 1, kmsNodeParams, thresholds);
+    }
+
     function _storeKmsContext(
+        uint256 contextId,
         KmsNodeParams[] memory kmsNodeParams,
         KmsThresholds calldata thresholds
     ) internal virtual returns (uint256 newContextId) {
@@ -802,7 +814,12 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         _checkThreshold("mpc", thresholds.mpc, kmsNodeParams.length);
 
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        newContextId = ++$.currentKmsContextId;
+        // Single monotonic-uniqueness gate for every context-creation path.
+        if (contextId <= $.currentKmsContextId) {
+            revert NonIncreasingKmsContextId(contextId, $.currentKmsContextId);
+        }
+        $.currentKmsContextId = contextId;
+        newContextId = contextId;
 
         for (uint256 i = 0; i < kmsNodeParams.length; i++) {
             KmsNodeParams memory params = kmsNodeParams[i];
