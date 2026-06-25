@@ -14,7 +14,7 @@ import {
   forgeDelivery,
   relayBridgeMessage,
   relayCompose,
-  resyncNonce,
+  sendWithNonceRetry,
   waitForBridgedHandles,
 } from './relay';
 
@@ -95,9 +95,9 @@ describe('Confidential Bridge', function () {
     });
     const fn = addend === undefined ? 'makeHandle' : 'makeComputedHandle';
     const args = addend === undefined ? [enc.handles[0], enc.inputProof] : [enc.handles[0], enc.inputProof, addend];
-    resyncNonce(end.alice);
-    const receipt = await (await end.app.connect(end.alice).getFunction(fn)(...args, { gasLimit: 5_000_000 })).wait();
-    if (!receipt) throw new Error('mint transaction was dropped');
+    const receipt = await sendWithNonceRetry(end.alice, () =>
+      end.app.connect(end.alice).getFunction(fn)(...args, { gasLimit: 5_000_000 }),
+    );
     const minted = receipt.logs
       .map((log: ethers.Log) => {
         try {
@@ -115,15 +115,13 @@ describe('Confidential Bridge', function () {
   async function bridge(src: BridgeEnd, dst: BridgeEnd, handles: string[], payload = '0x', skipCompose = false) {
     const ctx = { srcEndpoint: src.endpoint, dstEndpoint: dst.endpoint, dstBridge: dst.bridge, dstSigner: dst.alice };
     const fromBlock = await getProvider(dst.cfg).getBlockNumber();
-    resyncNonce(src.alice);
     // Send through the OApp wrapper: the app resolves the dst peer and calls FHE.bridge.
-    const sendReceipt = await (
-      await src.app.connect(src.alice).getFunction('send')(dst.cfg.chainId, handles, payload, LZ_COMPOSE_GAS, {
+    const sendReceipt = await sendWithNonceRetry(src.alice, () =>
+      src.app.connect(src.alice).getFunction('send')(dst.cfg.chainId, handles, payload, LZ_COMPOSE_GAS, {
         value: 0,
         gasLimit: 5_000_000,
-      })
-    ).wait();
-    if (!sendReceipt) throw new Error('bridge send transaction was dropped');
+      }),
+    );
 
     if (USE_REAL_LZ) {
       const dstHandles = await waitForBridgedHandles(
@@ -168,14 +166,12 @@ describe('Confidential Bridge', function () {
     chainB = await build(1);
 
     // Wire OApp peers: each app trusts the other (one entry serves both send and receive).
-    resyncNonce(host.alice);
-    await (
-      await host.app.connect(host.alice).getFunction('setPeer')(chainB.cfg.chainId, ethers.zeroPadValue(chainB.appAddr, 32))
-    ).wait();
-    resyncNonce(chainB.alice);
-    await (
-      await chainB.app.connect(chainB.alice).getFunction('setPeer')(host.cfg.chainId, ethers.zeroPadValue(host.appAddr, 32))
-    ).wait();
+    await sendWithNonceRetry(host.alice, () =>
+      host.app.connect(host.alice).getFunction('setPeer')(chainB.cfg.chainId, ethers.zeroPadValue(chainB.appAddr, 32)),
+    );
+    await sendWithNonceRetry(chainB.alice, () =>
+      chainB.app.connect(chainB.alice).getFunction('setPeer')(host.cfg.chainId, ethers.zeroPadValue(host.appAddr, 32)),
+    );
   });
 
   it('bridges a handle host->chain-b and publicly decrypts it on the destination', async function () {
@@ -258,10 +254,9 @@ describe('Confidential Bridge', function () {
     await (await bridgeOwner.setPeer(FAKE_EID, ethers.zeroPadValue(fakeSrcBridge, 32))).wait();
     // The forged delivery now also passes the OApp receiver's peer check: its `srcApp` is the
     // forged sender (the source bridge), so register that as the app peer for FAKE_EID too.
-    resyncNonce(chainB.alice);
-    await (
-      await chainB.app.connect(chainB.alice).getFunction('setPeer')(FAKE_EID, ethers.zeroPadValue(fakeSrcBridge, 32))
-    ).wait();
+    await sendWithNonceRetry(chainB.alice, () =>
+      chainB.app.connect(chainB.alice).getFunction('setPeer')(FAKE_EID, ethers.zeroPadValue(fakeSrcBridge, 32)),
+    );
 
     // Mint a real euint64 handle on host but DO NOT bridge.send it, so there is no source BridgeHandle.
     // Forging the delivery leaves the handle unassociated (no ciphertext) while onConfidentialBridgeReceived still grants

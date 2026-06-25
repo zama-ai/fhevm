@@ -130,11 +130,14 @@ pub(crate) async fn drain_associations(
 }
 
 async fn count_unassociated_handles(pool: &PgPool) -> Result<i64, sqlx::Error> {
+    // Skip handles whose ciphertext already exists (e.g. via grantFallbackPlaintext): they are
+    // recovered but never get is_associated set, so counting them would inflate the gauge forever.
     sqlx::query_scalar!(
         r#"
         SELECT count(*) AS "count!"
         FROM handle_bridged_events
         WHERE NOT is_associated
+          AND NOT EXISTS (SELECT 1 FROM ciphertexts WHERE handle = handle_bridged_events.dst_handle)
           AND created_at <= now() - make_interval(secs => $1::int)
         "#,
         IN_FLIGHT_GRACE_SECS,
