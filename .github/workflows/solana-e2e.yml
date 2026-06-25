@@ -54,7 +54,13 @@ jobs:
           # Pin to v2.1.21: the Yellowstone geyser plugin's ABI is patch-coupled to this Agave version.
           sh -c "$(curl -sSfL https://release.anza.xyz/v2.1.21/install)"
           echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
-          cargo install --git https://github.com/coral-xyz/anchor --tag v0.31.1 anchor-cli --locked
+          cargo install --git https://github.com/coral-xyz/anchor --tag v1.0.2 anchor-cli --locked
+          # CI has no default Solana signer/config; the e2e scripts deploy + airdrop with the
+          # default keypair against the local validator. $GITHUB_PATH only affects later steps,
+          # so export PATH here to reach the just-installed solana binaries in this step.
+          export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+          solana-keygen new --no-bip39-passphrase --force --silent -o "$HOME/.config/solana/id.json"
+          solana config set --url http://127.0.0.1:8899
 
       - name: Login to ghcr.io
         uses: zama-ai/ci-templates/.github/actions/retry@542103e14b9ae6a9aea27787b8724b3b35bb3918 # v1.0.9
@@ -143,7 +149,13 @@ jobs:
           # Pin to v2.1.21: the Yellowstone geyser plugin's ABI is patch-coupled to this Agave version.
           sh -c "$(curl -sSfL https://release.anza.xyz/v2.1.21/install)"
           echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
-          cargo install --git https://github.com/coral-xyz/anchor --tag v0.31.1 anchor-cli --locked
+          cargo install --git https://github.com/coral-xyz/anchor --tag v1.0.2 anchor-cli --locked
+          # CI has no default Solana signer/config; the e2e scripts deploy + airdrop with the
+          # default keypair against the local validator. $GITHUB_PATH only affects later steps,
+          # so export PATH here to reach the just-installed solana binaries in this step.
+          export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+          solana-keygen new --no-bip39-passphrase --force --silent -o "$HOME/.config/solana/id.json"
+          solana config set --url http://127.0.0.1:8899
 
       - name: Login to ghcr.io
         uses: zama-ai/ci-templates/.github/actions/retry@542103e14b9ae6a9aea27787b8724b3b35bb3918 # v1.0.9
