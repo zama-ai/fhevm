@@ -6,6 +6,7 @@ use tracing::{error, info};
 
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::db_keys::write_large_object_in_chunks_tx;
+use fhevm_engine_common::material_version::MIGRATION_SCHEDULE_CHANNEL;
 
 use crate::contracts::KMSGeneration;
 use crate::kms_generation::key_id_to_database_bytes;
@@ -83,6 +84,59 @@ pub(crate) async fn insert_key_activation_event(
     )
     .execute(tx.deref_mut())
     .await?;
+    Ok(())
+}
+
+/// RFC-029: ingest a `KeyMaterialMigrationScheduled` event into the per-chain
+/// and gateway cutover schedule tables, then NOTIFY the workers so they reload
+/// the (one-shot, immutable) schedule promptly. Runtime queries (no offline
+/// cache entry needed). Idempotent on re-observation of the same event.
+pub(crate) async fn insert_key_material_migration_scheduled(
+    tx: &mut Transaction<'_, Postgres>,
+    scheduled: KMSGeneration::KeyMaterialMigrationScheduled,
+) -> Result<(), sqlx::Error> {
+    let material_version = scheduled.materialVersion.to::<u64>() as i16;
+    let gateway_block = scheduled.gatewayMigrationBlock.to::<u64>() as i64;
+
+    for (chain_id, migration_block) in scheduled
+        .hostChainIds
+        .iter()
+        .zip(scheduled.hostMigrationBlocks.iter())
+    {
+        sqlx::query(
+            "INSERT INTO material_version_host_schedule (host_chain_id, material_version, migration_block) \
+             VALUES ($1, $2, $3) \
+             ON CONFLICT (host_chain_id, material_version) DO UPDATE SET migration_block = EXCLUDED.migration_block",
+        )
+        .bind(chain_id.to::<u64>() as i64)
+        .bind(material_version)
+        .bind(migration_block.to::<u64>() as i64)
+        .execute(tx.deref_mut())
+        .await?;
+    }
+
+    sqlx::query(
+        "INSERT INTO material_version_gateway_schedule (material_version, migration_block) \
+         VALUES ($1, $2) \
+         ON CONFLICT (material_version) DO UPDATE SET migration_block = EXCLUDED.migration_block",
+    )
+    .bind(material_version)
+    .bind(gateway_block)
+    .execute(tx.deref_mut())
+    .await?;
+
+    // Wake the workers' notify-driven schedule reload.
+    sqlx::query("SELECT pg_notify($1, '')")
+        .bind(MIGRATION_SCHEDULE_CHANNEL)
+        .execute(tx.deref_mut())
+        .await?;
+
+    info!(
+        material_version,
+        gateway_block,
+        chains = scheduled.hostChainIds.len(),
+        "RFC-029 migration schedule ingested + workers notified"
+    );
     Ok(())
 }
 

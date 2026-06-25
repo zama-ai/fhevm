@@ -13,9 +13,10 @@ use crate::kms_generation::database::{
     all_pending_key_activations_to_download, cancel_orphaned_crs_activations,
     cancel_orphaned_key_activations, count_crs_activation_remaining_pending,
     count_key_activation_remaining_pending, insert_crs_activation_event,
-    insert_key_activation_event, mark_crs_activation_error,
-    mark_key_activation_error, set_ready_crs_activation,
-    set_ready_key_activation, PendingCrsActivation, PendingKeyActivation,
+    insert_key_activation_event, insert_key_material_migration_scheduled,
+    mark_crs_activation_error, mark_key_activation_error,
+    set_ready_crs_activation, set_ready_key_activation, PendingCrsActivation,
+    PendingKeyActivation,
 };
 use crate::kms_generation::digest::{digest_crs, digest_key};
 use crate::kms_generation::metrics::{
@@ -133,16 +134,24 @@ pub async fn insert_kms_generation_events_tx(
                 )
                 .await?;
             }
-            // TODO(fhevm-internal#1568, RFC-029): once KMSGeneration emits
-            // them, add match arms here for `KeyMaterialAdded` (publish v1
-            // material: write the keyset bytes + material_version=1 into the
-            // `keys` table, mirroring insert_key_activation_event but WITHOUT
-            // moving activeKeyId) and `KeyMaterialMigrationScheduled` (insert
-            // the per-chain H_C / gateway G rows into
-            // material_version_host_schedule / material_version_gateway_schedule).
-            // Blocked on the host-contracts event definitions (out of scope
-            // here); until then the cutover is seeded directly by the
-            // rfc029-material-migration rollout.
+            // RFC-029 publish-not-activate: the migrated keyset bytes are
+            // downloaded from `kmsNodeStorageUrls` into
+            // `keys.migrated_xof_keyset` (mirrors the ActivateKey S3 path) and
+            // never move activeKeyId. SPIKE: the rollout seeds the v1 bytes, so
+            // here we only record the event for traceability.
+            KMSGeneration::KMSGenerationEvents::KeyMaterialAdded(added) => {
+                info!(
+                    key_id = ?added.keyId,
+                    material_version = ?added.materialVersion,
+                    urls = added.kmsNodeStorageUrls.len(),
+                    "RFC-029 KeyMaterialAdded observed (publish-not-activate)"
+                );
+            }
+            KMSGeneration::KMSGenerationEvents::KeyMaterialMigrationScheduled(
+                scheduled,
+            ) => {
+                insert_key_material_migration_scheduled(tx, scheduled).await?;
+            }
             _ => {
                 warn!(
                     ?log,
