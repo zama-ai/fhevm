@@ -309,7 +309,7 @@ describe("Mock contracts", function () {
     it("Should emit AddHostChain event on add host chain call", async function () {
       await expect(gatewayConfigMock.addHostChain(DefaultHostChain))
         .to.emit(gatewayConfigMock, "AddHostChain")
-        .withArgs(toValues(DefaultHostChain));
+        .withArgs(DefaultUint256, toValues(DefaultHostChain));
     });
   });
 

@@ -1,6 +1,6 @@
 import { task, types } from "hardhat/config";
 
-import { getRequiredEnvVar, loadGatewayAddresses } from "./utils";
+import { getRequiredCountEnvVar, getRequiredEnvVar, loadGatewayAddresses } from "./utils";
 
 // Add host chains metadata to the GatewayConfig contract
 // Note: Internal GatewayConfig address is defined in the `addresses/` directory. It should be used
@@ -17,7 +17,7 @@ task("task:addHostChainsToGatewayConfig")
     console.log("Register host chains to GatewayConfig contract");
 
     const deployerPrivateKey = getRequiredEnvVar("DEPLOYER_PRIVATE_KEY");
-    const numHostChains = parseInt(getRequiredEnvVar("NUM_HOST_CHAINS"));
+    const numHostChains = getRequiredCountEnvVar("NUM_HOST_CHAINS");
     const deployer = new hre.ethers.Wallet(deployerPrivateKey).connect(hre.ethers.provider);
 
     // Parse the host chain(s)

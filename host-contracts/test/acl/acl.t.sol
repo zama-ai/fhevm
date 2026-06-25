@@ -72,9 +72,9 @@ contract ACLTest is HostContractsDeployerTestUtils {
         vm.assume(sender != contractAddress);
         vm.assume(sender != delegate);
         vm.assume(delegate != contractAddress);
-        vm.assume(sender != acl.WILDCARD_DELEGATION_ADDRESS());
-        vm.assume(contractAddress != acl.WILDCARD_DELEGATION_ADDRESS());
-        vm.assume(delegate != acl.WILDCARD_DELEGATION_ADDRESS());
+        vm.assume(sender != acl.WILDCARD_CONTRACT_ADDRESS());
+        vm.assume(contractAddress != acl.WILDCARD_CONTRACT_ADDRESS());
+        vm.assume(delegate != acl.WILDCARD_CONTRACT_ADDRESS());
         vm.assume(block.timestamp < type(uint64).max - 8 hours);
     }
 
@@ -293,7 +293,7 @@ contract ACLTest is HostContractsDeployerTestUtils {
         vm.assume(sender != contractAddress);
         vm.assume(sender != delegate);
         vm.assume(delegate != contractAddress);
-        vm.assume(delegate != acl.WILDCARD_DELEGATION_ADDRESS());
+        vm.assume(delegate != acl.WILDCARD_CONTRACT_ADDRESS());
 
         ACL.UserDecryptionDelegation memory userDecryptionDelegation;
         uint64 expirationDate = uint64(block.timestamp) + 7 hours;
@@ -332,7 +332,7 @@ contract ACLTest is HostContractsDeployerTestUtils {
     }
 
     /**
-     * @dev Wildcard delegation: `delegateForUserDecryption(delegate, WILDCARD_DELEGATION_ADDRESS, ...)` authorizes the pair for
+     * @dev Wildcard delegation: `delegateForUserDecryption(delegate, WILDCARD_CONTRACT_ADDRESS, ...)` authorizes the pair for
      *      any app contract once delegator and that contract are both allowed on the handle (no per-app delegation row).
      */
     function test_WildcardDelegationSatisfiesIsHandleDelegatedWithoutPerContractRow(
@@ -344,7 +344,7 @@ contract ACLTest is HostContractsDeployerTestUtils {
         _assumeWildcardTestPreconditions(sender, delegate, contractAddress);
 
         uint64 expirationDate = uint64(block.timestamp + 7 hours);
-        address wildcardDelegation = acl.WILDCARD_DELEGATION_ADDRESS();
+        address wildcardDelegation = acl.WILDCARD_CONTRACT_ADDRESS();
 
         vm.prank(sender);
         acl.delegateForUserDecryption(delegate, wildcardDelegation, expirationDate);
@@ -368,7 +368,7 @@ contract ACLTest is HostContractsDeployerTestUtils {
         _assumeWildcardTestPreconditions(sender, delegate, contractAddress);
 
         uint64 expirationDate = uint64(block.timestamp + 7 hours);
-        address wildcardDelegation = acl.WILDCARD_DELEGATION_ADDRESS();
+        address wildcardDelegation = acl.WILDCARD_CONTRACT_ADDRESS();
 
         vm.prank(sender);
         acl.delegateForUserDecryption(delegate, wildcardDelegation, expirationDate);
@@ -378,7 +378,7 @@ contract ACLTest is HostContractsDeployerTestUtils {
         vm.assertTrue(acl.isHandleDelegatedForUserDecryption(sender, delegate, contractAddress, handle));
 
         vm.roll(block.number + 1);
-        address wildcardForRevoke = acl.WILDCARD_DELEGATION_ADDRESS();
+        address wildcardForRevoke = acl.WILDCARD_CONTRACT_ADDRESS();
         vm.prank(sender);
         acl.revokeDelegationForUserDecryption(delegate, wildcardForRevoke);
 
@@ -397,7 +397,7 @@ contract ACLTest is HostContractsDeployerTestUtils {
         _assumeWildcardTestPreconditions(sender, delegate, contractAddress);
 
         uint64 expirationDate = uint64(block.timestamp + 7 hours);
-        address wildcardDelegation = acl.WILDCARD_DELEGATION_ADDRESS();
+        address wildcardDelegation = acl.WILDCARD_CONTRACT_ADDRESS();
 
         vm.prank(sender);
         acl.delegateForUserDecryption(delegate, wildcardDelegation, expirationDate);
@@ -429,7 +429,7 @@ contract ACLTest is HostContractsDeployerTestUtils {
         _assumeWildcardTestPreconditions(sender, delegate, contractAddress);
 
         uint64 expirationDate = uint64(block.timestamp + 7 hours);
-        address wildcardDelegation = acl.WILDCARD_DELEGATION_ADDRESS();
+        address wildcardDelegation = acl.WILDCARD_CONTRACT_ADDRESS();
         vm.prank(sender);
         acl.delegateForUserDecryption(delegate, wildcardDelegation, expirationDate);
 
@@ -449,7 +449,7 @@ contract ACLTest is HostContractsDeployerTestUtils {
         _assumeWildcardTestPreconditions(sender, delegate, contractAddress);
 
         uint64 expirationDate = uint64(block.timestamp + 7 hours);
-        address wildcardDelegation = acl.WILDCARD_DELEGATION_ADDRESS();
+        address wildcardDelegation = acl.WILDCARD_CONTRACT_ADDRESS();
 
         vm.prank(sender);
         acl.delegateForUserDecryption(delegate, wildcardDelegation, expirationDate);
@@ -479,7 +479,7 @@ contract ACLTest is HostContractsDeployerTestUtils {
         vm.assume(sender != contractAddress);
         vm.assume(sender != delegate);
         vm.assume(delegate != contractAddress);
-        vm.assume(delegate != acl.WILDCARD_DELEGATION_ADDRESS());
+        vm.assume(delegate != acl.WILDCARD_CONTRACT_ADDRESS());
 
         uint64 expirationDate = uint64(block.timestamp) + 7 hours;
         vm.prank(sender);
@@ -510,7 +510,7 @@ contract ACLTest is HostContractsDeployerTestUtils {
         address delegate
     ) public {
         vm.assume(sender != delegate);
-        vm.assume(delegate != acl.WILDCARD_DELEGATION_ADDRESS());
+        vm.assume(delegate != acl.WILDCARD_CONTRACT_ADDRESS());
 
         uint64 expirationDate = uint64(block.timestamp) + 7 hours;
 
@@ -530,7 +530,7 @@ contract ACLTest is HostContractsDeployerTestUtils {
         vm.assume(sender != contractAddress);
         vm.assume(sender != delegate);
         vm.assume(delegate != contractAddress);
-        vm.assume(delegate != acl.WILDCARD_DELEGATION_ADDRESS());
+        vm.assume(delegate != acl.WILDCARD_CONTRACT_ADDRESS());
 
         /// @dev Delegate user decryption for the first time.
         uint64 expirationDate = uint64(block.timestamp) + 7 hours;
@@ -565,7 +565,7 @@ contract ACLTest is HostContractsDeployerTestUtils {
         vm.assume(sender != contractAddress);
         vm.assume(sender != delegate);
         vm.assume(delegate != contractAddress);
-        vm.assume(delegate != acl.WILDCARD_DELEGATION_ADDRESS());
+        vm.assume(delegate != acl.WILDCARD_CONTRACT_ADDRESS());
 
         uint64 expirationDate = uint64(block.timestamp);
 
@@ -602,13 +602,13 @@ contract ACLTest is HostContractsDeployerTestUtils {
      */
     function test_CannotDelegateIfDelegateIsWildcard(address sender, address contractAddress) public {
         vm.assume(sender != contractAddress);
-        address wildcardDelegate = acl.WILDCARD_DELEGATION_ADDRESS();
+        address wildcardDelegate = acl.WILDCARD_CONTRACT_ADDRESS();
         vm.assume(sender != wildcardDelegate);
         vm.assume(contractAddress != wildcardDelegate);
         uint64 expirationDate = uint64(block.timestamp) + 7 hours;
 
         vm.prank(sender);
-        vm.expectRevert(abi.encodeWithSelector(ACL.DelegateCannotBeWildcard.selector, wildcardDelegate));
+        vm.expectRevert(abi.encodeWithSelector(ACL.DelegateCannotBeWildcardContract.selector, wildcardDelegate));
         acl.delegateForUserDecryption(wildcardDelegate, contractAddress, expirationDate);
     }
 
@@ -623,7 +623,7 @@ contract ACLTest is HostContractsDeployerTestUtils {
         vm.assume(sender != contractAddress);
         vm.assume(sender != delegate);
         vm.assume(delegate != contractAddress);
-        vm.assume(delegate != acl.WILDCARD_DELEGATION_ADDRESS());
+        vm.assume(delegate != acl.WILDCARD_CONTRACT_ADDRESS());
 
         uint64 expirationDate = uint64(block.timestamp) + 7 hours;
         uint64 oldExpirationDate = expirationDate;
@@ -670,7 +670,7 @@ contract ACLTest is HostContractsDeployerTestUtils {
         vm.assume(sender != contractAddress);
         vm.assume(sender != delegate);
         vm.assume(delegate != contractAddress);
-        vm.assume(delegate != acl.WILDCARD_DELEGATION_ADDRESS());
+        vm.assume(delegate != acl.WILDCARD_CONTRACT_ADDRESS());
         uint64 userDecryptionDelegationCounter = 0;
 
         /// @dev Delegate user decryption for the first time.
@@ -907,7 +907,7 @@ contract ACLTest is HostContractsDeployerTestUtils {
         vm.assume(sender != contractAddress);
         vm.assume(sender != delegate);
         vm.assume(delegate != contractAddress);
-        vm.assume(delegate != acl.WILDCARD_DELEGATION_ADDRESS());
+        vm.assume(delegate != acl.WILDCARD_CONTRACT_ADDRESS());
 
         uint64 expirationDate = uint64(block.timestamp) + 7 hours;
 
@@ -933,7 +933,7 @@ contract ACLTest is HostContractsDeployerTestUtils {
         vm.assume(sender != contractAddress);
         vm.assume(sender != delegate);
         vm.assume(delegate != contractAddress);
-        vm.assume(delegate != acl.WILDCARD_DELEGATION_ADDRESS());
+        vm.assume(delegate != acl.WILDCARD_CONTRACT_ADDRESS());
 
         uint64 expirationDate = uint64(block.timestamp) + 7 hours;
 
