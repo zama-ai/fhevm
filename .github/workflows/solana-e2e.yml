@@ -87,9 +87,16 @@ jobs:
 
       - name: Install + build SDK (full-vertical runs the @fhevm/sdk ESM build under node)
         # build:esm emits src/_esm (gitignored build artifact) + copies the TKMS WASM into it.
-        # solana-input.ts and the pure-SDK user-decrypt import @fhevm/sdk/* which resolves there,
-        # so a fresh checkout that only ran `npm ci` would crash on the missing _esm.
-        run: cd sdk/js-sdk && npm ci && npm run build:esm
+        # solana-input.ts and the pure-SDK user-decrypt import @fhevm/sdk/* which resolves there.
+        # The clients reach the SDK via a symlink to sdk/js-sdk/src, and node resolves the SDK's
+        # runtime deps (@noble/*, wasm-feature-detect) by walking up from src/_esm. Install those
+        # into src/node_modules — the first node_modules on that walk-up — so they resolve no
+        # matter how the workspace/shallow install lays out the parent node_modules.
+        run: |
+          cd sdk/js-sdk
+          npm ci
+          npm run build:esm
+          ( cd src && npm install --no-save --no-package-lock --install-strategy=shallow --workspaces=false )
 
       - name: Install fhevm-cli deps (clean-e2e.sh drives ./fhevm-cli)
         working-directory: test-suite/fhevm
@@ -198,9 +205,16 @@ jobs:
 
       - name: Install + build SDK (full-vertical runs the @fhevm/sdk ESM build under node)
         # build:esm emits src/_esm (gitignored build artifact) + copies the TKMS WASM into it.
-        # solana-input.ts and the pure-SDK user-decrypt import @fhevm/sdk/* which resolves there,
-        # so a fresh checkout that only ran `npm ci` would crash on the missing _esm.
-        run: cd sdk/js-sdk && npm ci && npm run build:esm
+        # solana-input.ts and the pure-SDK user-decrypt import @fhevm/sdk/* which resolves there.
+        # The clients reach the SDK via a symlink to sdk/js-sdk/src, and node resolves the SDK's
+        # runtime deps (@noble/*, wasm-feature-detect) by walking up from src/_esm. Install those
+        # into src/node_modules — the first node_modules on that walk-up — so they resolve no
+        # matter how the workspace/shallow install lays out the parent node_modules.
+        run: |
+          cd sdk/js-sdk
+          npm ci
+          npm run build:esm
+          ( cd src && npm install --no-save --no-package-lock --install-strategy=shallow --workspaces=false )
 
       - name: Install fhevm-cli deps (clean-e2e.sh drives ./fhevm-cli)
         working-directory: test-suite/fhevm
