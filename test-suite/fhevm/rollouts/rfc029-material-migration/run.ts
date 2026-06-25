@@ -141,7 +141,16 @@ export default async function run(ctx: RolloutRunContext) {
   // integration-level proof that the foundation changes don't alter today's
   // behavior (DONE-WHEN: no-schedule behavior identical to today).
   logPhase("00 baseline: boot 5-coprocessor + 4-party-KMS multi-chain stack, run the standard suite (no schedule = inert v0)");
-  await ctx.up({ lockFile: baselineLock, scenario, overrides: [{ group: "test-suite" }] });
+  // The coprocessor is branch-built via the scenario's local instances. The
+  // connector (v3 extraData -> keygen-from-existing) and host-contracts (the
+  // keygen(bytes) / addKeyMaterials / scheduleKeyMaterialMigration surface) must
+  // ALSO be branch-built -- registry images lack the RFC-029 surface. (Do NOT
+  // add { group: "coprocessor" }: the scenario already owns coprocessor source.)
+  await ctx.up({
+    lockFile: baselineLock,
+    scenario,
+    overrides: [{ group: "test-suite" }, { group: "kms-connector" }, { group: "host-contracts" }],
+  });
   await ctx.test("rollout-standard", { parallel: false });
 
   // 01 publish -- drive a real migration keygen-from-existing and publish its
