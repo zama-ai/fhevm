@@ -127,6 +127,12 @@ jobs:
           mkdir -p /tmp/solana-e2e-logs
           cp /tmp/solana-*.log /tmp/solana-e2e-logs/ 2>/dev/null || true
           docker ps -a > /tmp/solana-e2e-logs/docker-ps.txt 2>&1 || true
+          # Dump every container's logs so a downstream failure (e.g. public-decrypt: relayer ->
+          # gateway -> kms-connector -> kms-core) is diagnosable from the artifact.
+          for c in $(docker ps -aq); do
+            n="$(docker inspect -f '{{.Name}}' "$c" 2>/dev/null | sed 's#^/##')"
+            docker logs "$c" > "/tmp/solana-e2e-logs/container-${n:-$c}.log" 2>&1 || true
+          done
 
       - name: Upload failure logs
         if: ${{ failure() }}
@@ -253,6 +259,12 @@ jobs:
           # surfpool + listener + fetcher logs all land in /tmp/solana-*.log.
           cp /tmp/solana-*.log /tmp/solana-e2e-logs/ 2>/dev/null || true
           docker ps -a > /tmp/solana-e2e-logs/docker-ps.txt 2>&1 || true
+          # Dump every container's logs so a downstream failure (e.g. public-decrypt: relayer ->
+          # gateway -> kms-connector -> kms-core) is diagnosable from the artifact.
+          for c in $(docker ps -aq); do
+            n="$(docker inspect -f '{{.Name}}' "$c" 2>/dev/null | sed 's#^/##')"
+            docker logs "$c" > "/tmp/solana-e2e-logs/container-${n:-$c}.log" 2>&1 || true
+          done
 
       - name: Upload failure logs
         if: ${{ failure() }}
