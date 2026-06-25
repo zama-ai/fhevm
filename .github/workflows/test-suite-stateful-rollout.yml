@@ -175,7 +175,7 @@ jobs:
               echo "::endgroup::"
               return
             fi
-            if ! output="$(docker logs --tail 300 "${container}" 2>&1)"; then
+            if ! output="$(docker logs --tail 600 "${container}" 2>&1)"; then
               echo "[warn] docker logs failed for ${container}"
               [ -n "$output" ] && printf '%s\n' "$output"
             elif [ -n "$filter" ]; then

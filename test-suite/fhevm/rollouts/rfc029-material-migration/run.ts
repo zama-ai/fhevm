@@ -24,9 +24,11 @@ const GATEWAY_MIGRATION_OFFSET = 30;
 
 // A fresh migration keygen runs a FULL threshold preprocessing + keygen MPC cycle
 // (PrepKeygenRequest -> prepKeygenResponse -> KeygenRequest -> keygenResponse) on the
-// 4-party cluster, which is materially slower than the keygen-only step measured at
-// boot. Poll generously before giving up.
-const KEYGEN_ACTIVATION_TIMEOUT_MS = 25 * 60 * 1000;
+// 4-party cluster, and EACH on-chain response waits 64 confirmations across multiple
+// parties -- so it is much slower than the keygen-only step at boot. Iteration 7
+// confirmed the prep phase completes (~3.5min) but the full activation did not finish
+// within 25min; budget 45min.
+const KEYGEN_ACTIVATION_TIMEOUT_MS = 45 * 60 * 1000;
 const KEYGEN_POLL_INTERVAL_MS = 15_000;
 // Grace for the host-listener to download + publish v1 onto keys.migrated_xof_keyset
 // across the whole fleet before the cutover blocks are crossed.
