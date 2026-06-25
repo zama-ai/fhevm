@@ -210,4 +210,16 @@ pub enum ZamaHostError {
     /// The coprocessor-attested user is not among the output ACL subjects.
     #[msg("attested user address is not an output ACL subject")]
     InputBindUserNotSubject,
+    /// An `fhe_eval` frame's summed HCU exceeds `max_hcu_per_tx` (or the running sum overflowed).
+    #[msg("FHE op total HCU exceeds the per-transaction limit")]
+    HcuTransactionLimitExceeded,
+    /// An `fhe_eval` value's critical-path HCU exceeds `max_hcu_depth_per_tx` (or the depth sum overflowed).
+    #[msg("FHE op depth HCU exceeds the per-transaction depth limit")]
+    HcuTransactionDepthLimitExceeded,
+    /// The HCU cost table has no row for this op / FHE type / scalar combination (fail-closed).
+    #[msg("no HCU cost is defined for this op / type / scalar combination")]
+    HcuUnknownCost,
+    /// A limit setter would violate the ordering invariant `max_hcu_per_tx >= max_hcu_depth_per_tx`.
+    #[msg("HCU limits violate max_hcu_per_tx >= max_hcu_depth_per_tx")]
+    HcuLimitOrderingInvalid,
 }

@@ -3241,9 +3241,15 @@ struct EvalFixture {
 
 impl EvalFixture {
     fn new() -> Self {
+        Self::with_hcu_limits(0, 0)
+    }
+
+    fn with_hcu_limits(max_hcu_per_tx: u64, max_hcu_depth_per_tx: u64) -> Self {
         let program_id = host::id();
         let authority = Pubkey::new_unique();
-        let host_config = host_config_account(authority).0;
+        let host_config_pair =
+            host_config_account_with_hcu_limits(authority, max_hcu_per_tx, max_hcu_depth_per_tx);
+        let host_config = host_config_pair.0;
         let acl_domain_key = Pubkey::new_unique();
         let app_account = authority;
         let balance_label = label("balance-v2-fixture");
@@ -3274,7 +3280,7 @@ impl EvalFixture {
         let context = mollusk_eval_context(
             authority,
             vec![
-                host_config_account(authority),
+                host_config_pair,
                 (balance_acl_record, balance_acl_account),
                 (amount_acl_record, amount_acl_account),
                 (output_acl_record, system_account(0)),
@@ -3918,6 +3924,228 @@ fn serialized_account<T: AccountSerialize>(account: T) -> Vec<u8> {
     data
 }
 
+// ---------------------------------------------------------------------------
+// HCU limit setters + fhe_eval enforcement
+// (INV-2/4/5/6/7/10/12/14/15/17/18 — see solana/artifacts/05-tests-hcu-limit.md).
+// ---------------------------------------------------------------------------
+
+#[test]
+fn mollusk_set_max_hcu_limits_persist_and_advance_slot() {
+    // INV-17 + happy path: enable both limits from the disabled (0) default; each write persists
+    // and stamps updated_slot.
+    let program_id = host::id();
+    let admin = Pubkey::new_unique();
+    let (host_config, account) = host_config_account(admin);
+    let context = mollusk_eval_context(admin, vec![(host_config, account)]);
+
+    // Depth first (total still 0 = unlimited, so ordering trivially holds).
+    let depth = context.process_instruction(&set_max_hcu_depth_per_tx_ix(
+        program_id,
+        admin,
+        host_config,
+        5_000_000,
+    ));
+    assert!(depth.raw_result.is_ok());
+    let config = read_host_config(&context, host_config).expect("config");
+    assert_eq!(config.max_hcu_depth_per_tx, 5_000_000);
+    assert_eq!(config.max_hcu_per_tx, 0);
+    assert_eq!(config.updated_slot, context.mollusk.sysvars.clock.slot);
+
+    // Then total (>= depth).
+    let total = context.process_instruction(&set_max_hcu_per_tx_ix(
+        program_id,
+        admin,
+        host_config,
+        20_000_000,
+    ));
+    assert!(total.raw_result.is_ok());
+    let config = read_host_config(&context, host_config).expect("config");
+    assert_eq!(config.max_hcu_per_tx, 20_000_000);
+    assert_eq!(config.max_hcu_depth_per_tx, 5_000_000);
+}
+
+#[test]
+fn mollusk_set_max_hcu_per_tx_rejects_wrong_admin() {
+    // INV-2 / INV-4: a valid signer that is not the stored admin is rejected; no mutation.
+    let program_id = host::id();
+    let admin = Pubkey::new_unique();
+    let wrong_admin = Pubkey::new_unique();
+    let (host_config, account) = host_config_account(admin);
+    let context = mollusk_eval_context(admin, vec![(host_config, account)]);
+
+    let result = context.process_instruction(&set_max_hcu_per_tx_ix(
+        program_id,
+        wrong_admin,
+        host_config,
+        1_000_000,
+    ));
+    assert_instruction_custom_error(
+        &result,
+        host::errors::ZamaHostError::HostConfigAdminMismatch,
+    );
+    let config = read_host_config(&context, host_config).expect("config");
+    assert_eq!(config.max_hcu_per_tx, 0);
+    assert_eq!(config.updated_slot, 0);
+}
+
+#[test]
+fn mollusk_set_max_hcu_per_tx_rejects_remaining_accounts() {
+    // INV-5: a trailing account meta is rejected; no mutation.
+    let program_id = host::id();
+    let admin = Pubkey::new_unique();
+    let (host_config, account) = host_config_account(admin);
+    let context = mollusk_eval_context(admin, vec![(host_config, account)]);
+
+    let mut ix = set_max_hcu_per_tx_ix(program_id, admin, host_config, 1_000_000);
+    ix.accounts
+        .push(AccountMeta::new_readonly(Pubkey::new_unique(), false));
+    let result = context.process_instruction(&ix);
+    assert_instruction_custom_error(
+        &result,
+        host::errors::ZamaHostError::UnexpectedRemainingAccounts,
+    );
+    assert_eq!(
+        read_host_config(&context, host_config)
+            .expect("config")
+            .max_hcu_per_tx,
+        0
+    );
+}
+
+#[test]
+fn mollusk_set_max_hcu_per_tx_rejects_below_depth() {
+    // INV-6 / INV-15: with depth=5M set, a total of 4M would make the depth cap dead -> rejected.
+    let program_id = host::id();
+    let admin = Pubkey::new_unique();
+    let (host_config, account) = host_config_account_with_hcu_limits(admin, 0, 5_000_000);
+    let context = mollusk_eval_context(admin, vec![(host_config, account)]);
+
+    let result = context.process_instruction(&set_max_hcu_per_tx_ix(
+        program_id,
+        admin,
+        host_config,
+        4_000_000,
+    ));
+    assert_instruction_custom_error(
+        &result,
+        host::errors::ZamaHostError::HcuLimitOrderingInvalid,
+    );
+    let config = read_host_config(&context, host_config).expect("config");
+    assert_eq!(config.max_hcu_per_tx, 0);
+    assert_eq!(config.max_hcu_depth_per_tx, 5_000_000);
+}
+
+#[test]
+fn mollusk_set_max_hcu_depth_per_tx_rejects_above_total() {
+    // INV-7 / INV-15: with total=20M set, a depth of 21M would exceed it -> rejected.
+    let program_id = host::id();
+    let admin = Pubkey::new_unique();
+    let (host_config, account) = host_config_account_with_hcu_limits(admin, 20_000_000, 0);
+    let context = mollusk_eval_context(admin, vec![(host_config, account)]);
+
+    let result = context.process_instruction(&set_max_hcu_depth_per_tx_ix(
+        program_id,
+        admin,
+        host_config,
+        21_000_000,
+    ));
+    assert_instruction_custom_error(
+        &result,
+        host::errors::ZamaHostError::HcuLimitOrderingInvalid,
+    );
+    let config = read_host_config(&context, host_config).expect("config");
+    assert_eq!(config.max_hcu_depth_per_tx, 0);
+    assert_eq!(config.max_hcu_per_tx, 20_000_000);
+}
+
+#[test]
+fn mollusk_initialize_host_config_defaults_hcu_limits_to_zero() {
+    // INV-14: a freshly initialized config ships with both limits disabled.
+    let program_id = host::id();
+    let payer = Pubkey::new_unique();
+    let admin = Pubkey::new_unique();
+    let (host_config, _) = host::host_config_address();
+    let args = host::InitializeHostConfigArgs {
+        chain_id: host::SOLANA_POC_CHAIN_ID,
+        input_verifier_authority: Pubkey::new_unique(),
+        gateway_chain_id: 0,
+        input_verification_contract: [0u8; 20],
+        coprocessor_signer: [0u8; 20],
+        decryption_contract: [0u8; 20],
+        material_authority: Pubkey::new_unique(),
+        test_authority: Pubkey::new_unique(),
+        mock_input_enabled: false,
+        test_shims_enabled: false,
+        grant_deny_list_enabled: false,
+    };
+    let context = mollusk_eval_context(payer, vec![(host_config, system_account(0))]);
+
+    let result = context.process_instruction(&initialize_host_config_ix(
+        program_id,
+        payer,
+        admin,
+        host_config,
+        args,
+    ));
+    assert!(result.raw_result.is_ok());
+    let config = read_host_config(&context, host_config).expect("config");
+    assert_eq!(config.max_hcu_per_tx, 0);
+    assert_eq!(config.max_hcu_depth_per_tx, 0);
+}
+
+#[test]
+fn mollusk_fhe_eval_within_enabled_limits_succeeds() {
+    // INV-10 / INV-12 happy + INV-24: limits enabled but generous -> the plan still succeeds and
+    // binds its durable output.
+    let fixture = EvalFixture::with_hcu_limits(1_000_000, 1_000_000);
+    let context_id = label("hcu-within");
+    let ix = fixture.standard_instruction(
+        context_id,
+        fixture.success_steps(context_id, fixture.app_account, false),
+    );
+    let result = fixture.context.process_instruction(&ix);
+    assert!(
+        result.raw_result.is_ok(),
+        "expected success: {:?}",
+        result.raw_result
+    );
+    assert!(read_acl_record(&fixture.context, fixture.output_acl_record).is_some());
+}
+
+#[test]
+fn mollusk_fhe_eval_total_limit_exceeded_reverts_without_output() {
+    // INV-10 + INV-18: a tiny total cap trips in admission; no durable output ACL record is created.
+    let fixture = EvalFixture::with_hcu_limits(1, 0);
+    let context_id = label("hcu-total-trip");
+    let ix = fixture.standard_instruction(
+        context_id,
+        fixture.success_steps(context_id, fixture.app_account, false),
+    );
+    let result = fixture.context.process_instruction(&ix);
+    assert_instruction_custom_error(
+        &result,
+        host::errors::ZamaHostError::HcuTransactionLimitExceeded,
+    );
+    fixture.assert_no_output();
+}
+
+#[test]
+fn mollusk_fhe_eval_depth_limit_exceeded_reverts_without_output() {
+    // INV-12 + INV-18: total unlimited (0), a tiny depth cap trips independently; no output created.
+    let fixture = EvalFixture::with_hcu_limits(0, 1);
+    let context_id = label("hcu-depth-trip");
+    let ix = fixture.standard_instruction(
+        context_id,
+        fixture.success_steps(context_id, fixture.app_account, false),
+    );
+    let result = fixture.context.process_instruction(&ix);
+    assert_instruction_custom_error(
+        &result,
+        host::errors::ZamaHostError::HcuTransactionDepthLimitExceeded,
+    );
+    fixture.assert_no_output();
+}
+
 fn mollusk() -> Mollusk {
     let deploy_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../target/deploy");
     unsafe {
@@ -4068,6 +4296,24 @@ fn host_config_account_with_grant_deny_list(
     host_config_account_with_options(admin, admin, true, true, grant_deny_list_enabled)
 }
 
+/// Like [`host_config_account`] but with the two HCU limits pre-set (the only way to seed an
+/// already-enabled config for the setter/eval enforcement tests).
+fn host_config_account_with_hcu_limits(
+    admin: Pubkey,
+    max_hcu_per_tx: u64,
+    max_hcu_depth_per_tx: u64,
+) -> (Pubkey, Account) {
+    let (key, mut account) = host_config_account(admin);
+    let mut config = {
+        let mut data = account.data.as_slice();
+        HostConfig::try_deserialize(&mut data).expect("valid host config")
+    };
+    config.max_hcu_per_tx = max_hcu_per_tx;
+    config.max_hcu_depth_per_tx = max_hcu_depth_per_tx;
+    account.data = serialized_account(config);
+    (key, account)
+}
+
 fn host_config_account_with_options(
     admin: Pubkey,
     input_verifier_authority: Pubkey,
@@ -4095,6 +4341,8 @@ fn host_config_account_with_options(
                 mock_input_enabled,
                 test_shims_enabled,
                 grant_deny_list_enabled,
+                max_hcu_per_tx: 0,
+                max_hcu_depth_per_tx: 0,
                 updated_slot: 0,
                 bump,
             }),
@@ -4337,6 +4585,32 @@ fn set_grant_deny_list_enabled_ix(
         program_id,
         host::accounts::HostAdmin { admin, host_config },
         host::instruction::SetGrantDenyListEnabled { enabled },
+    )
+}
+
+fn set_max_hcu_per_tx_ix(
+    program_id: Pubkey,
+    admin: Pubkey,
+    host_config: Pubkey,
+    value: u64,
+) -> Instruction {
+    anchor_ix(
+        program_id,
+        host::accounts::HostAdmin { admin, host_config },
+        host::instruction::SetMaxHcuPerTx { value },
+    )
+}
+
+fn set_max_hcu_depth_per_tx_ix(
+    program_id: Pubkey,
+    admin: Pubkey,
+    host_config: Pubkey,
+    value: u64,
+) -> Instruction {
+    anchor_ix(
+        program_id,
+        host::accounts::HostAdmin { admin, host_config },
+        host::instruction::SetMaxHcuDepthPerTx { value },
     )
 }
 
@@ -4975,6 +5249,8 @@ fn host_config_account_with_verifier(
                 // because mock_input_enabled stays false.
                 test_shims_enabled: true,
                 grant_deny_list_enabled: false,
+                max_hcu_per_tx: 0,
+                max_hcu_depth_per_tx: 0,
                 updated_slot: 0,
                 bump,
             }),
