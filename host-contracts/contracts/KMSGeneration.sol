@@ -179,7 +179,7 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
 
     /**
      * @notice Loads a request's pinned context and authorizes the response sender against it.
-     * @dev Uses the request-time context, not the live context, so rotations do not invalidate
+     * @dev Uses the request-time context, not the latest active context, so rotations do not invalidate
      * in-flight responses from the original KMS committee.
      */
     function _loadExtraDataAndAuthorizeResponse(

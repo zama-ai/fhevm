@@ -295,10 +295,10 @@ interface IProtocolConfig {
     /// @param txSender The transaction sender.
     error EpochActivationSignerDoesNotMatchTxSender(address signer, address txSender);
 
-    /// @notice The mirrored context ID is not strictly greater than the current one.
+    /// @notice The mirrored context ID is not strictly greater than the latest activated one.
     /// @param contextId The rejected context ID.
-    /// @param currentKmsContextId The current mirrored context ID.
-    error NonIncreasingKmsContextId(uint256 contextId, uint256 currentKmsContextId);
+    /// @param latestActiveKmsContextId The most recently activated mirrored context ID.
+    error NonIncreasingKmsContextId(uint256 contextId, uint256 latestActiveKmsContextId);
 
     /// @notice The mirrored epoch ID is not strictly greater than the latest known one.
     /// @param epochId The rejected epoch ID.
