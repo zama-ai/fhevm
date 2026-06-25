@@ -105,33 +105,7 @@ contract BridgeLibHarness {
         return FHE.bridge(e, a, p, eaddress.wrap(h), g, msg.value);
     }
 
-    // ---------------- multi-handle, typed arrays (multi-handle coverage) ----------------
-
-    function bridgeArray64(
-        uint32 e,
-        address a,
-        bytes calldata p,
-        bytes32[] calldata hs,
-        uint64 g
-    ) external payable returns (MessagingReceipt memory) {
-        euint64[] memory typed = new euint64[](hs.length);
-        for (uint256 i = 0; i < hs.length; i++) typed[i] = euint64.wrap(hs[i]);
-        return FHE.bridge(e, a, p, typed, g, msg.value);
-    }
-
-    function bridgeArray256(
-        uint32 e,
-        address a,
-        bytes calldata p,
-        bytes32[] calldata hs,
-        uint64 g
-    ) external payable returns (MessagingReceipt memory) {
-        euint256[] memory typed = new euint256[](hs.length);
-        for (uint256 i = 0; i < hs.length; i++) typed[i] = euint256.wrap(hs[i]);
-        return FHE.bridge(e, a, p, typed, g, msg.value);
-    }
-
-    // ---------------- low-level escape hatches ----------------
+    // ---------------- multi-handle escape hatch (realistically heterogeneous) ----------------
 
     function bridgeList(
         uint32 e,
@@ -163,18 +137,6 @@ contract BridgeLibHarness {
         uint64 g
     ) external view returns (MessagingFee memory) {
         return FHE.quoteBridge(e, address(this), a, p, euint32.wrap(h), g);
-    }
-
-    function quoteArray64(
-        uint32 e,
-        address a,
-        bytes calldata p,
-        bytes32[] calldata hs,
-        uint64 g
-    ) external view returns (MessagingFee memory) {
-        euint64[] memory typed = new euint64[](hs.length);
-        for (uint256 i = 0; i < hs.length; i++) typed[i] = euint64.wrap(hs[i]);
-        return FHE.quoteBridge(e, address(this), a, p, typed, g);
     }
 
     function quoteList(

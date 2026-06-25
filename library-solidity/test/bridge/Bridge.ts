@@ -77,39 +77,6 @@ describe('Confidential bridge helpers', function () {
     });
   });
 
-  describe('send side — typed array overloads (multi-handle)', function () {
-    it('euint64[]: sends one message carrying the whole list', async function () {
-      const { bridge, harness } = await deploySendFixture();
-      const dstApp = randAddr();
-      const fee = ethers.parseEther('0.03');
-
-      await harness.bridgeArray64(DST_EID, dstApp, '0x', [handleA, handleB, handleC], 50_000, { value: fee });
-
-      const sent = await bridge.lastSend();
-      expect(sent.dstApp).to.equal(padded(dstApp));
-      expect(sent.handleList).to.deep.equal([handleA, handleB, handleC]);
-      expect(sent.value).to.equal(fee);
-    });
-
-    it('euint256[]: array generation is uniform across types', async function () {
-      const { bridge, harness } = await deploySendFixture();
-      await harness.bridgeArray256(DST_EID, randAddr(), '0x', [handleA, handleB], 1, { value: 0 });
-      expect((await bridge.lastSend()).handleList).to.deep.equal([handleA, handleB]);
-    });
-
-    it('a single-element typed array behaves like the single-handle overload', async function () {
-      const { bridge, harness } = await deploySendFixture();
-      await harness.bridgeArray64(DST_EID, randAddr(), '0x', [handleA], 1, { value: 0 });
-      expect((await bridge.lastSend()).handleList).to.deep.equal([handleA]);
-    });
-
-    it('an empty typed array forwards an empty handle list', async function () {
-      const { bridge, harness } = await deploySendFixture();
-      await harness.bridgeArray64(DST_EID, randAddr(), '0x', [], 1, { value: 0 });
-      expect((await bridge.lastSend()).handleList).to.deep.equal([]);
-    });
-  });
-
   describe('send side — low-level bytes32[] escape hatch', function () {
     it('forwards an explicit handle list and raw bytes32 dstApp verbatim', async function () {
       const { bridge, harness } = await deploySendFixture();
@@ -159,11 +126,10 @@ describe('Confidential bridge helpers', function () {
       expect(fee.lzTokenFee).to.equal(0n);
     });
 
-    it('quotes a multi-type (euint32) and a typed-array (euint64[]) send', async function () {
+    it('quotes a multi-type (euint32) send', async function () {
       const { bridge, harness } = await deploySendFixture();
       await bridge.setQuotedNativeFee(42n);
       expect((await harness.quote32(DST_EID, randAddr(), '0x', handleA, 0)).nativeFee).to.equal(42n);
-      expect((await harness.quoteArray64(DST_EID, randAddr(), '0x', [handleA, handleB], 0)).nativeFee).to.equal(42n);
     });
 
     it('quotes through the low-level overload', async function () {
