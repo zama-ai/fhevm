@@ -1,5 +1,6 @@
 {
   "name": "cli-fhevm-sdk",
+  "version": "0.1.0",
   "type": "module",
   "private": true,
   "bin": {
