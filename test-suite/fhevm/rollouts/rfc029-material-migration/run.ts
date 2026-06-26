@@ -15,10 +15,16 @@ export const MATERIAL_VERSION_MIGRATED_V1 = 1;
 // migration keygen's paramsType so kms-core re-derives under the same params.
 const PARAMS_TYPE_TEST = 1;
 
-// How far ahead of "now" the cutover blocks are scheduled. Large enough that
-// the migrated material is published fleet-wide before any chain crosses its
-// migration block (else halt-never-substitute would stall the suite), small
-// enough that the standard suite's workload actually crosses it.
+// How far ahead of "now" the cutover blocks are scheduled, as a BLOCK offset per
+// timeline. Selection is a deterministic function of the per-operation anchoring
+// block (host-chain block for compute, gateway block for input verification), NOT
+// of wall-clock time -- so each timeline cuts over independently at its own block
+// and the cutovers need NOT coincide in time across chains. With unequal block
+// times (e.g. a 2s chain vs a 12s chain) "+30 blocks" is simply a different
+// wall-clock lead on each, which is fine: the only ordering constraint is that the
+// migrated material is published fleet-wide before any chain reaches its block
+// (else halt-never-substitute stalls). The offset is large enough for that, small
+// enough that the standard suite's workload still crosses it.
 const HOST_MIGRATION_OFFSET = 30;
 const GATEWAY_MIGRATION_OFFSET = 30;
 

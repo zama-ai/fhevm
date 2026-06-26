@@ -2,6 +2,13 @@ import { task, types } from 'hardhat/config';
 
 import { getRequiredEnvVar, loadHostAddresses } from './utils/loadVariables';
 
+// ⚠️ TEST/SPIKE GOVERNANCE IMPERSONATION ⚠️
+// These tasks call KMSGeneration's `onlyACLOwner` entry points (keygen,
+// scheduleKeyMaterialMigration) directly with the deployer key. In production
+// those entry points are DAO-governed (testnet + mainnet are ruled by the DAO),
+// so the real cutover is driven by governance proposals, NOT by these tasks.
+// They exist only to drive the cutover deterministically in the rollout/spike.
+//
 // RFC-029 (fhevm-internal#1568) governance tasks driving the key-material
 // version cutover. The flow (publish-not-activate, "governance publishes"
 // variant): trigger a migration keygen-from-existing -> publish the re-derived
