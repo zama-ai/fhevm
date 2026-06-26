@@ -175,7 +175,7 @@ export function parseDurationToSeconds(input: string): number {
 export function parseIsoTimestampToEpochSeconds(input: string): number {
   const ms = Date.parse(input);
   if (Number.isNaN(ms)) {
-    throw new Error(`Unparseable timestamp "${input}". Use ISO 8601 (e.g. 2026-07-01T12:00:00Z).`);
+    throw new Error(`Unparsable timestamp "${input}". Use ISO 8601 (e.g. 2026-07-01T12:00:00Z).`);
   }
   return Math.floor(ms / 1000);
 }
