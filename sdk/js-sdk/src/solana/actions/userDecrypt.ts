@@ -218,6 +218,9 @@ export async function userDecrypt(
 
   return plaintexts.map((plaintext, i) => {
     const handle = handles[i];
+    if (!handle) {
+      throw new Error(`missing handle at index ${i}`);
+    }
     if (plaintext.fheType !== handle.fheTypeId) {
       throw new Error(
         `unexpected FHE type at index ${i}: got ${plaintext.fheType}, expected ${handle.fheTypeId}`,

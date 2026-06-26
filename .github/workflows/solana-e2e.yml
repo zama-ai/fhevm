@@ -1,10 +1,22 @@
 name: solana-e2e
 
-# Dispatch-only: brings up a fresh fhevm-cli stack with the Solana host (clean-e2e.sh) and drives the
-# Solana decrypt vertical (full-vertical.sh): input(ZK + on-chain secp256k1 bind) -> compute ->
-# public-decrypt -> PURE-SDK user-decrypt (no kms checkout) -> input-flow -> consume. The user-decrypt
-# de-signcryption runs entirely in @fhevm/sdk/solana, so this job needs no kms-core source checkout.
+# Brings up a fresh fhevm-cli stack with the Solana host (clean-e2e.sh) and drives the Solana
+# decrypt vertical (full-vertical.sh): input (ZK + on-chain secp256k1 bind) -> compute ->
+# public-decrypt -> PURE-SDK user-decrypt (no kms checkout) -> input-flow -> consume. The
+# user-decrypt de-signcryption runs entirely in @fhevm/sdk/solana, so no kms-core checkout.
+#
+# The matrix runs the SAME vertical twice, in parallel:
+#   reconstruct=false : on-chain emit-decode (zama-host emits events).
+#   reconstruct=true  : zama-host compiled EMITLESS, coprocessor fed purely by gRPC off-chain
+#                       RECONSTRUCTION (Yellowstone geyser plugin on the validator) — proving the
+#                       vertical stands alone on reconstruction once the program stops emitting.
+# The only per-leg differences are the RECONSTRUCT env (setup-solana-side.sh keys off it) and the
+# failure-log artifact name; everything else is shared.
 on:
+  # Auto-run on PRs targeting the Solana feature branch (the vertical never ran on
+  # workflow_dispatch-only). Also keep manual dispatch with a custom cleartext.
+  pull_request:
+    branches: [feature/solana]
   workflow_dispatch:
     inputs:
       te-value:
@@ -20,19 +32,33 @@ concurrency:
 
 jobs:
   solana-e2e:
-    name: solana-e2e/full-vertical
+    name: solana-e2e/full-vertical${{ matrix.reconstruct && '-reconstruct' || '' }}
     runs-on: large_ubuntu_32
     timeout-minutes: 120
+    strategy:
+      # Both legs always run to completion: a failure in one must not cancel the other.
+      fail-fast: false
+      matrix:
+        reconstruct: [false, true]
     permissions:
       contents: "read" # checkout
       packages: "read" # pull repo-owned images from ghcr.io
     env:
-      TE_VALUE: ${{ inputs.te-value }}
+      TE_VALUE: ${{ inputs.te-value || '55' }}
+      RECONSTRUCT: ${{ matrix.reconstruct && '1' || '0' }}
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: "false"
+
+      - name: Setup Node
+        # full-vertical.sh runs the @fhevm/sdk clients under `node`. node 24 realpath-resolves the
+        # @fhevm/sdk symlink, so the SDK's runtime deps (@noble/*) resolve from sdk/js-sdk's
+        # node_modules; the runner-default node 22 fails with ERR_MODULE_NOT_FOUND @noble/curves.
+        uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        with:
+          node-version: 24
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@ecf28ddc73e819eb6fa29df6b34ef8921c743461 # v2.1.3
@@ -47,9 +73,24 @@ jobs:
         run: |
           set -euo pipefail
           rustup target add wasm32-unknown-unknown
-          sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
+          # Retry the network fetches below: a CI run failed on a transient crates.io download.
+          retry() { local n; for n in 1 2 3; do "$@" && return 0; echo "attempt $n failed; retrying in 5s" >&2; sleep 5; done; return 1; }
+          # Pin agave v2.1.21 (the Yellowstone geyser plugin's ABI is patch-coupled to it).
+          retry curl -sSfL https://release.anza.xyz/v2.1.21/install -o /tmp/anza-install.sh
+          sh /tmp/anza-install.sh
           echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
-          cargo install --git https://github.com/coral-xyz/anchor --tag v0.31.1 anchor-cli --locked
+          # anchor-cli from the prebuilt release binary, NOT `cargo install --git`: the latter builds
+          # avm+anchor from source and fetches dozens of crates from crates.io, which flaked (a
+          # `chrono` download failed). One retried binary download, no compilation, no crates.io.
+          mkdir -p "$HOME/.cargo/bin"
+          retry curl -sSfL https://github.com/coral-xyz/anchor/releases/download/v1.0.2/anchor-1.0.2-x86_64-unknown-linux-gnu -o "$HOME/.cargo/bin/anchor"
+          chmod +x "$HOME/.cargo/bin/anchor"
+          anchor --version
+
+      - name: Setup protoc (host-listener builds fhevm-engine-common via prost-build)
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+        with:
+          version: "26.x"
 
       - name: Login to ghcr.io
         uses: zama-ai/ci-templates/.github/actions/retry@542103e14b9ae6a9aea27787b8724b3b35bb3918 # v1.0.9
@@ -57,7 +98,7 @@ jobs:
           GHCR_USERNAME: ${{ github.actor }}
           GHCR_PASSWORD: ${{ secrets.GHCR_READ_TOKEN }} # zizmor: ignore[secrets-outside-env] registry read token, same pattern as test-suite-e2e workflows
         with:
-          run: |
+          command: |
             echo "$GHCR_PASSWORD" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
 
       - name: Login to cgr.dev
@@ -67,11 +108,38 @@ jobs:
           username: ${{ secrets.CGR_USERNAME }} # zizmor: ignore[secrets-outside-env] registry creds, same pattern as test-suite-e2e workflows
           password: ${{ secrets.CGR_PASSWORD }} # zizmor: ignore[secrets-outside-env] registry creds, same pattern as test-suite-e2e workflows
 
-      - name: Install SDK deps (TKMS WASM consumers; pure-SDK user-decrypt)
-        run: cd sdk/js-sdk && npm ci
+      - name: Install + build SDK (full-vertical runs the @fhevm/sdk ESM build under node)
+        # build:esm emits src/_esm (gitignored build artifact) + copies the TKMS WASM into it.
+        # solana-input.ts and the pure-SDK user-decrypt import @fhevm/sdk/* which resolves there.
+        # The clients reach the SDK via a symlink to sdk/js-sdk/src, and node resolves the SDK's
+        # runtime deps (@noble/*, wasm-feature-detect) by walking up from src/_esm. Install those
+        # into src/node_modules — the first node_modules on that walk-up — so they resolve no
+        # matter how the workspace/shallow install lays out the parent node_modules.
+        run: cd sdk/js-sdk && npm ci && npm run build:esm
+
+      - name: Install fhevm-cli deps (clean-e2e.sh drives ./fhevm-cli)
+        working-directory: test-suite/fhevm
+        # test-suite/fhevm is not a workspace member and declares no @fhevm/sdk dep, so bun install
+        # won't link it — but full-vertical.sh's node clients (solana-input.ts,
+        # solana-userdecrypt-full.ts) import @fhevm/sdk. Link it to the built SDK source.
+        run: |
+          bun install --frozen-lockfile
+          mkdir -p node_modules/@fhevm
+          ln -sfn "$GITHUB_WORKSPACE/sdk/js-sdk/src" node_modules/@fhevm/sdk
 
       - name: Bring up fresh stack + Solana side (clean-e2e.sh)
         run: bash solana/scripts/poc/clean-e2e.sh
+
+      - name: Ensure @fhevm/sdk runtime deps for full-vertical
+        # The clean-e2e bring-up can disturb the SDK's src/node_modules, so (re)install the
+        # published package's runtime deps (@noble/*, wasm-feature-detect) right before
+        # full-vertical — nothing runs between this and the node clients. Then assert the exact
+        # ESM import the clients use actually loads, so a resolution failure surfaces here (seconds)
+        # instead of mid-vertical (40+ min in).
+        run: |
+          ( cd "$GITHUB_WORKSPACE/sdk/js-sdk/src" && npm install --no-save --no-package-lock --install-strategy=shallow --workspaces=false )
+          cd "$GITHUB_WORKSPACE/test-suite/fhevm"
+          node --input-type=module -e "await import('@fhevm/sdk/solana'); console.log('@fhevm/sdk/solana imports OK')"
 
       - name: Drive the Solana decrypt vertical (full-vertical.sh)
         run: bash solana/scripts/poc/full-vertical.sh
@@ -80,109 +148,22 @@ jobs:
         if: ${{ failure() }}
         run: |
           mkdir -p /tmp/solana-e2e-logs
+          # validator + listener + fetcher logs all land in /tmp/solana-*.log.
           cp /tmp/solana-*.log /tmp/solana-e2e-logs/ 2>/dev/null || true
           docker ps -a > /tmp/solana-e2e-logs/docker-ps.txt 2>&1 || true
+          # Dump every container's logs so a downstream failure (e.g. public-decrypt: relayer ->
+          # gateway -> kms-connector -> kms-core) is diagnosable from the artifact.
+          for c in $(docker ps -aq); do
+            n="$(docker inspect -f '{{.Name}}' "$c" 2>/dev/null | sed 's#^/##')"
+            docker logs "$c" > "/tmp/solana-e2e-logs/container-${n:-$c}.log" 2>&1 || true
+          done
 
       - name: Upload failure logs
         if: ${{ failure() }}
         uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
         with:
-          name: solana-e2e-logs
-          path: /tmp/solana-e2e-logs
-          retention-days: 7
-
-      - name: Tear down the stack
-        if: ${{ always() }}
-        working-directory: test-suite/fhevm
-        run: ./fhevm-cli clean || true
-
-  # Adjacent run: the SAME full vertical, but with zama-host compiled EMITLESS (no
-  # `emit-events`) and the coprocessor fed purely by gRPC off-chain RECONSTRUCTION
-  # (Yellowstone geyser plugin on the validator) instead of on-chain emit-decode. Proves
-  # the decrypt vertical stands alone on reconstruction once the program stops emitting.
-  # Same trigger/scenario; the deltas are the geyser-image build step + RECONSTRUCT=1, which
-  # the Solana side-stack (setup-solana-side.sh) keys off of.
-  solana-e2e-reconstruct:
-    name: solana-e2e/full-vertical-reconstruct
-    runs-on: large_ubuntu_32
-    timeout-minutes: 120
-    permissions:
-      contents: "read" # checkout
-      packages: "read" # pull repo-owned images from ghcr.io
-    env:
-      TE_VALUE: ${{ inputs.te-value }}
-      RECONSTRUCT: "1"
-      GEYSER_IMAGE: poc-solana-validator-yellowstone:ci
-    steps:
-      - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          persist-credentials: "false"
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@ecf28ddc73e819eb6fa29df6b34ef8921c743461 # v2.1.3
-
-      - name: Setup Foundry
-        uses: foundry-rs/foundry-toolchain@82dee4ba654bd2146511f85f0d013af94670c4de # v1.4.0
-
-      - name: Setup Docker Buildx
-        uses: docker/setup-buildx-action@d70bba72b1f3fd22344832f00baa16ece964efeb # v3.3.0
-
-      - name: Setup Solana + Anchor toolchain
-        run: |
-          set -euo pipefail
-          rustup target add wasm32-unknown-unknown
-          sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
-          echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
-          cargo install --git https://github.com/coral-xyz/anchor --tag v0.31.1 anchor-cli --locked
-
-      - name: Build Yellowstone geyser validator image
-        # Bakes the pinned Yellowstone plugin (v5.0.1+solana.2.1.21, Dockerfile default) into the
-        # matching amd64 Agave 2.1.21 validator; the side-stack runs this image with gRPC :10000.
-        run: |
-          docker build \
-            --build-arg SOLANA_VALIDATOR_IMAGE=anzaxyz/agave:v2.1.21 \
-            -t "$GEYSER_IMAGE" \
-            solana/geyser
-
-      - name: Login to ghcr.io
-        uses: zama-ai/ci-templates/.github/actions/retry@542103e14b9ae6a9aea27787b8724b3b35bb3918 # v1.0.9
-        env:
-          GHCR_USERNAME: ${{ github.actor }}
-          GHCR_PASSWORD: ${{ secrets.GHCR_READ_TOKEN }} # zizmor: ignore[secrets-outside-env] registry read token, same pattern as test-suite-e2e workflows
-        with:
-          run: |
-            echo "$GHCR_PASSWORD" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
-
-      - name: Login to cgr.dev
-        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
-        with:
-          registry: cgr.dev
-          username: ${{ secrets.CGR_USERNAME }} # zizmor: ignore[secrets-outside-env] registry creds, same pattern as test-suite-e2e workflows
-          password: ${{ secrets.CGR_PASSWORD }} # zizmor: ignore[secrets-outside-env] registry creds, same pattern as test-suite-e2e workflows
-
-      - name: Install SDK deps (TKMS WASM consumers; pure-SDK user-decrypt)
-        run: cd sdk/js-sdk && npm ci
-
-      - name: Bring up fresh stack + Solana side (clean-e2e.sh)
-        run: bash solana/scripts/poc/clean-e2e.sh
-
-      - name: Drive the Solana decrypt vertical (full-vertical.sh)
-        run: bash solana/scripts/poc/full-vertical.sh
-
-      - name: Collect stack logs on failure
-        if: ${{ failure() }}
-        run: |
-          mkdir -p /tmp/solana-e2e-logs
-          cp /tmp/solana-*.log /tmp/solana-e2e-logs/ 2>/dev/null || true
-          docker ps -a > /tmp/solana-e2e-logs/docker-ps.txt 2>&1 || true
-          docker logs solana-e2e-validator > /tmp/solana-e2e-logs/geyser-validator.log 2>&1 || true
-
-      - name: Upload failure logs
-        if: ${{ failure() }}
-        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
-        with:
-          name: solana-e2e-reconstruct-logs
+          # Distinct per matrix leg: upload-artifact v4 requires unique names within a run.
+          name: solana-e2e${{ matrix.reconstruct && '-reconstruct' || '' }}-logs
           path: /tmp/solana-e2e-logs
           retention-days: 7
 
@@ -190,5 +171,8 @@ jobs:
         if: ${{ always() }}
         working-directory: test-suite/fhevm
         run: |
-          docker rm -f solana-e2e-validator || true
+          # The native solana-test-validator is started by setup-solana-side.sh and isn't part of
+          # the fhevm-cli compose, so kill it explicitly — otherwise it survives `fhevm-cli clean`
+          # and holds port 8899 on non-disposable runners.
+          pkill -f solana-test-validator || true
           ./fhevm-cli clean || true
