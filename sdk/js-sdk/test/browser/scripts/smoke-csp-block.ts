@@ -27,8 +27,8 @@ document.addEventListener('securitypolicyviolation', (e) => {
 const WASM_URLS: Record<string, URL> = {
   'tfhe_bg.v1.5.3.wasm': new URL('/__raw_wasm/src/wasm/tfhe/v1.5.3/tfhe_bg.wasm', location.origin),
   'tfhe-worker.v1.5.3.mjs': new URL('/__raw_wasm/src/wasm/tfhe/v1.5.3/tfhe-worker.mjs', location.origin),
-  'tfhe_bg.v1.6.1.wasm': new URL('/__raw_wasm/src/wasm/tfhe/v1.6.1/tfhe_bg.wasm', location.origin),
-  'tfhe-worker.v1.6.1.mjs': new URL('/__raw_wasm/src/wasm/tfhe/v1.6.1/tfhe-worker.mjs', location.origin),
+  'tfhe_bg.v1.6.2.wasm': new URL('/__raw_wasm/src/wasm/tfhe/v1.6.2/tfhe_bg.wasm', location.origin),
+  'tfhe-worker.v1.6.2.mjs': new URL('/__raw_wasm/src/wasm/tfhe/v1.6.2/tfhe-worker.mjs', location.origin),
   'kms_lib_bg.v0.13.10.wasm': new URL('/__raw_wasm/src/wasm/tkms/v0.13.10/kms_lib_bg.wasm', location.origin),
   'kms_lib_bg.v0.13.20-0.wasm': new URL('/__raw_wasm/src/wasm/tkms/v0.13.20-0/kms_lib_bg.wasm', location.origin),
 };

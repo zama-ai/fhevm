@@ -87,8 +87,8 @@ const HYPER_WASM_SOLVER_CONFIG = {
       // pubKeyCrs.version <= 1.5.x (ex: mainnet 1.4.0-alpha.3)
       pubKeyCrs: { version: '1.6.0', comparator: 'lt' },
       tfhe: {
-        canonical: '1.6.1',
-        compatible: ['1.5.3', '1.6.1'],
+        canonical: '1.6.2',
+        compatible: ['1.5.3', '1.6.2'],
       },
       kms: {
         canonical: '0.13.20-0',
@@ -101,8 +101,8 @@ const HYPER_WASM_SOLVER_CONFIG = {
       // pubKeyCrs.version >= 1.6.0 (ex: localstack_v13)
       pubKeyCrs: { version: '1.6.0', comparator: 'ge' },
       tfhe: {
-        canonical: '1.6.1',
-        compatible: ['1.6.1'],
+        canonical: '1.6.2',
+        compatible: ['1.6.2'],
       },
       kms: {
         canonical: '0.13.20-0',

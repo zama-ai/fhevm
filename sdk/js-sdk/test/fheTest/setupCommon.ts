@@ -89,7 +89,7 @@ export function getExpectedProtocolVersion(chainName: FheTestChainName): Protoco
 // TFHE wasm version per chain
 // ---------------------------------------------------------------------------
 
-export type TfheVersion = '1.5.3' | '1.6.1';
+export type TfheVersion = '1.5.3' | '1.6.2';
 
 const TFHE_VERSION_BY_CHAIN: Readonly<Record<FheTestChainName, TfheVersion | undefined>> = {
   sepolia: '1.5.3',
@@ -100,11 +100,11 @@ const TFHE_VERSION_BY_CHAIN: Readonly<Record<FheTestChainName, TfheVersion | und
   localcleartext_v13: undefined,
   localstack_v11: '1.5.3',
   localstack_v12: '1.5.3',
-  devnet: '1.6.1',
-  polygon_devnet: '1.6.1',
-  localstack: '1.6.1',
-  localstack_v13: '1.6.1',
-  localstack_v14: '1.6.1',
+  devnet: '1.6.2',
+  polygon_devnet: '1.6.2',
+  localstack: '1.6.2',
+  localstack_v13: '1.6.2',
+  localstack_v14: '1.6.2',
 };
 
 /** Returns the TFHE wasm version for a given test chain, or `undefined` for cleartext chains. */
