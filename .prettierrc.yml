@@ -1,23 +1,23 @@
 bracketSpacing: true
 plugins:
-  - '@trivago/prettier-plugin-sort-imports'
-  - 'prettier-plugin-solidity'
+  - "@trivago/prettier-plugin-sort-imports"
+  - "prettier-plugin-solidity"
 printWidth: 120
-proseWrap: 'always'
+proseWrap: "always"
 singleQuote: true
 tabWidth: 2
-trailingComma: 'all'
+trailingComma: "all"
 
 overrides:
-  - files: '*.sol'
+  - files: "*.sol"
     options:
-      compiler: '0.8.24'
-      parser: 'solidity-parse'
+      compiler: "0.8.24"
+      parser: "solidity-parse"
       tabWidth: 4
-  - files: '.github/workflows/js-sdk-*.yml'
+  - files: ".github/workflows/js-sdk-*.yml"
     options:
       printWidth: 160
-  - files: '*.md'
+  - files: "*.md"
     options:
       proseWrap: preserve
   - files: "*.{yml,yaml}"
@@ -25,8 +25,8 @@ overrides:
       singleQuote: false
   - files: "*.ts"
     options:
-      importOrder: ['<THIRD_PARTY_MODULES>', '^[./]']
-      importOrderParserPlugins: ['typescript']
+      importOrder: ["<THIRD_PARTY_MODULES>", "^[./]"]
+      importOrderParserPlugins: ["typescript"]
       importOrderSeparation: true
       importOrderSortSpecifiers: true
-      parser: 'typescript'
+      parser: "typescript"

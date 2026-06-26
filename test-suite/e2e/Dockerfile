@@ -48,7 +48,7 @@ RUN if [ -n "$RELAYER_SDK_VERSION" ]; then \
 WORKDIR /app/sdk/js-sdk
 
 RUN npm install
-RUN npm run build:test-suite-e2e
+RUN npm run build
 
 # Compile test-suite
 WORKDIR /app/test-suite/e2e

@@ -4,7 +4,6 @@
   "type": "module",
   "scripts": {
     "build": "npm run build:prod",
-    "build:test-suite-e2e": "npm run build:prod",
     "build:dev": "BUILD_PROFILE=dev npm run build:profile",
     "build:prod": "BUILD_PROFILE=prod npm run build:profile",
     "build:profile": "npm run clean && npm run codegen:loaders && npm run prettier:check && npm run prettier:ext && npm run lint && npm run build:cjs && npm run build:esm && npm run build:types && npm run build:tests",

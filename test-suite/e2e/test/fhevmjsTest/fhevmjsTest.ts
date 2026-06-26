@@ -33,7 +33,7 @@ describe('Testing fhevmjs/fhevmjsMocked', function () {
     this.instances = await createInstances(this.signers);
   });
 
-  it('BBB should be able to pack up to 255 ebools', async function () {
+  it('should be able to pack up to 255 ebools', async function () {
     await this.instances.alice.encryptTypedValues({
       values: Array.from({ length: 255 }, () => ({ type: 'bool' as const, value: false })),
       contractAddress: this.contractAddress,
