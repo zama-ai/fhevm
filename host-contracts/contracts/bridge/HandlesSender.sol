@@ -69,6 +69,12 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
     /// @notice Returned when the caller is not allowed to use a handle.
     error HandleNotAllowed(bytes32 handle, address srcApp);
 
+    /// @notice Returned when `lzComposeGas` is 0. LayerZero rejects a compose option with
+    ///         zero gas (`Executor_ZeroLzComposeGasProvided`), and the bridge requires the
+    ///         destination `lzCompose` to be executor-driven, so a non-zero budget is
+    ///         mandatory.
+    error ZeroLzComposeGas();
+
     /// @notice ACL contract on this (source) chain.
     ACL private constant ACL_CONTRACT = ACL(aclAdd);
 
@@ -128,13 +134,10 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
      *                       preserved on the destination, so apps can index into
      *                       `dstHandleList` by position.
      * @param lzComposeGas   Gas budget for the destination-side `lzCompose` (which runs
-     *                       the destination app's `onConfidentialBridgeReceived`). This is
-     *                       entirely app-specific, so the bridge does not enforce a floor.
-     *                       Pass 0 to omit the executor compose option entirely: the compose
-     *                       message is still queued on the destination (by `_lzReceive`), but
-     *                       the executor will NOT auto-run `lzCompose` — it must be triggered
-     *                       manually (permissionlessly) via the endpoint. Apps that require
-     *                       the callback should enforce their own minimum.
+     *                       the destination app's `onConfidentialBridgeReceived`). Must be
+     *                       non-zero: a 0 budget reverts with {ZeroLzComposeGas}. The amount needed is
+     *                       app-specific, so the bridge enforces only this non-zero floor;
+     *                       apps should size it for their `onConfidentialBridgeReceived` work.
      *
      * @return receipt LayerZero messaging receipt (includes the GUID used in events).
      *
@@ -148,6 +151,7 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
      *         with {TooManyHandles} if it exceeds {MAX_HANDLES}.
      * @dev    Reverts with {UnknownDstEid} if no destination chain id has been registered
      *         for `dstEid` (via {setDstChainId}); a chain id of 0 is treated as unset.
+     * @dev    Reverts with {ZeroLzComposeGas} if `lzComposeGas` is 0.
      * @dev    Reverts if any handle is not ACL-allowed for `msg.sender` on this chain.
      *         Native fee is paid via `msg.value`; refund returns to `msg.sender`.
      */
@@ -230,8 +234,8 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
      * @notice Quote the native fee for a `send` call without sending.
      * @dev    Useful for callers wishing to compute msg.value before invoking `send`.
      * @dev    Applies the same input validation as {send} — reverts with {EmptyHandleList},
-     *         {TooManyHandles}, or {UnknownDstEid} under the same conditions — so a
-     *         successful quote guarantees those `send` guards will pass.
+     *         {TooManyHandles}, {UnknownDstEid}, or {ZeroLzComposeGas} under the same
+     *         conditions — so a successful quote guarantees those `send` guards will pass.
      *         The ACL allowance check is intentionally NOT applied: this lets callers
      *         estimate `msg.value` before the transaction that grants ACL access to the
      *         handles being bridged.
@@ -352,26 +356,22 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
     /// @dev Builds the LayerZero execution options for a send. The `lzReceive` gas is the
     ///      bridge formula (`baseGas + nHandles * perHandleGas + payloadLen * perPayloadByteGas`,
     ///      with per-`dstEid` governance overrides); the `lzCompose` gas is the
-    ///      caller-supplied budget. A zero `lzComposeGas` omits the compose option entirely,
-    ///      so the executor will not auto-run `lzCompose` (the compose stays queued for
-    ///      manual execution — see {send}).
+    ///      caller-supplied budget. `lzComposeGas` must be non-zero.
     function _buildOptions(
         uint32 dstEid,
         uint64 nHandles,
         uint64 payloadLen,
         uint64 lzComposeGas
     ) internal view virtual returns (bytes memory) {
+        if (lzComposeGas == 0) revert ZeroLzComposeGas();
         uint64 lzReceiveGas = _effectiveLzReceiveBaseGas(dstEid) +
             nHandles *
             _effectiveLzReceivePerHandleGas(dstEid) +
             payloadLen *
             _effectiveLzReceivePerPayloadByteGas(dstEid);
         bytes memory built = OptionsBuilder.newOptions().addExecutorLzReceiveOption(lzReceiveGas, 0);
-        // Compose index 0 because HandlesReceiver dispatches a single compose msg. Omitted
-        // when the caller passes 0 (compose gas is app-specific; see {send}).
-        if (lzComposeGas > 0) {
-            built = built.addExecutorLzComposeOption(0, lzComposeGas, 0);
-        }
+        // Compose index 0 because HandlesReceiver dispatches a single compose msg.
+        built = built.addExecutorLzComposeOption(0, lzComposeGas, 0);
         return built;
     }
 }

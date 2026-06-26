@@ -262,42 +262,26 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
         );
     }
 
-    /// @dev A non-zero `lzComposeGas` appends a compose option after the lzReceive option,
-    ///      while a zero `lzComposeGas` omits it entirely (compose gas is app-specific, so
-    ///      the bridge does not force one). Both keep the lzReceive option identical.
-    function test_BuildOptions_OmitsComposeOptionWhenComposeGasZero() public {
+    /// @dev A zero `lzComposeGas` is rejected by `_buildOptions`: LayerZero forbids a
+    ///      zero-gas compose option, and the bridge requires the destination `lzCompose`
+    ///      to be executor-driven, so a non-zero budget is mandatory.
+    function test_BuildOptions_RevertsWhenComposeGasZero() public {
         DeriveDstHandleHarness harness = new DeriveDstHandleHarness(endpoints[DST_EID]);
-
-        bytes memory withCompose = harness.buildOptions(DST_EID, 1, 0, 30_000);
-        bytes memory withoutCompose = harness.buildOptions(DST_EID, 1, 0, 0);
-
-        // The lzReceive option (and thus its decoded gas) is unaffected by the compose toggle.
-        assertEq(
-            _firstLzReceiveGas(withCompose),
-            _firstLzReceiveGas(withoutCompose),
-            "lzReceive gas must not depend on the compose option"
-        );
-        // Dropping the compose option makes the options blob strictly shorter.
-        assertGt(withCompose.length, withoutCompose.length, "compose option must add bytes");
+        vm.expectRevert(HandlesSender.ZeroLzComposeGas.selector);
+        harness.buildOptions(DST_EID, 1, 0, 0);
     }
 
-    function test_Send_SucceedsWithZeroLzComposeGas() public {
+    function test_Send_RevertsOnZeroLzComposeGas() public {
         bytes32 h = _makeHandle(0);
         bytes32[] memory handleList = new bytes32[](1);
         handleList[0] = h;
-        // Allow the handle so the ACL guard passes and we reach the actual send.
+        // Allow the handle so the ACL guard passes and the zero-compose-gas guard in
+        // `_buildOptions` (reached via `_dispatch`) is what reverts.
         _allow(h, srcApp);
 
-        MessagingFee memory fee = srcBridge.quote(
-            DST_EID,
-            srcApp,
-            _addressToBytes32(address(dstApp)),
-            "",
-            handleList,
-            uint64(0)
-        );
         vm.prank(srcApp);
-        srcBridge.send{value: fee.nativeFee}(DST_EID, _addressToBytes32(address(dstApp)), "", handleList, uint64(0));
+        vm.expectRevert(HandlesSender.ZeroLzComposeGas.selector);
+        srcBridge.send{value: 0}(DST_EID, _addressToBytes32(address(dstApp)), "", handleList, uint64(0));
     }
 
     function test_Send_RevertsOnUnknownDstEid() public {
@@ -356,6 +340,13 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
         handleList[0] = _makeHandle(0);
         vm.expectRevert(abi.encodeWithSelector(HandlesSender.UnknownDstEid.selector, uint32(99)));
         srcBridge.quote(uint32(99), srcApp, _addressToBytes32(address(dstApp)), "", handleList, uint64(30_000));
+    }
+
+    function test_Quote_RevertsOnZeroLzComposeGas() public {
+        bytes32[] memory handleList = new bytes32[](1);
+        handleList[0] = _makeHandle(0);
+        vm.expectRevert(HandlesSender.ZeroLzComposeGas.selector);
+        srcBridge.quote(DST_EID, srcApp, _addressToBytes32(address(dstApp)), "", handleList, uint64(0));
     }
 
     /// @dev The key difference from `send`: `quote` does NOT run the ACL allowance check,

@@ -31,6 +31,7 @@ interface HandlesSender {
     error SafeERC20FailedOperation(address token);
     error TooManyHandles(uint256 length, uint256 maxAllowed);
     error UnknownDstEid(uint32 dstEid);
+    error ZeroLzComposeGas();
 
     event BridgeHandle(address indexed senderDapp, bytes32 srcHandle, uint64 dstChainId, bytes32 guid);
     event DstChainIdSet(uint32 indexed dstEid, uint64 dstChainId);
@@ -898,6 +899,11 @@ interface HandlesSender {
         "internalType": "uint32"
       }
     ]
+  },
+  {
+    "type": "error",
+    "name": "ZeroLzComposeGas",
+    "inputs": []
   }
 ]
 ```*/
@@ -2854,6 +2860,79 @@ error UnknownDstEid(uint32 dstEid);
                         32,
                     > as alloy_sol_types::SolType>::tokenize(&self.dstEid),
                 )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `ZeroLzComposeGas()` and selector `0x28fc736f`.
+```solidity
+error ZeroLzComposeGas();
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct ZeroLzComposeGas;
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = ();
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = ();
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<ZeroLzComposeGas> for UnderlyingRustTuple<'_> {
+            fn from(value: ZeroLzComposeGas) -> Self {
+                ()
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for ZeroLzComposeGas {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for ZeroLzComposeGas {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "ZeroLzComposeGas()";
+            const SELECTOR: [u8; 4] = [40u8, 252u8, 115u8, 111u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                ()
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
@@ -8428,6 +8507,8 @@ function transferOwnership(address newOwner) external;
         TooManyHandles(TooManyHandles),
         #[allow(missing_docs)]
         UnknownDstEid(UnknownDstEid),
+        #[allow(missing_docs)]
+        ZeroLzComposeGas(ZeroLzComposeGas),
     }
     #[automatically_derived]
     impl HandlesSenderErrors {
@@ -8443,6 +8524,7 @@ function transferOwnership(address newOwner) external;
             [30u8, 22u8, 200u8, 46u8],
             [30u8, 79u8, 189u8, 247u8],
             [33u8, 191u8, 218u8, 16u8],
+            [40u8, 252u8, 115u8, 111u8],
             [58u8, 81u8, 116u8, 13u8],
             [60u8, 108u8, 168u8, 128u8],
             [82u8, 116u8, 175u8, 231u8],
@@ -8462,7 +8544,7 @@ function transferOwnership(address newOwner) external;
     impl alloy_sol_types::SolInterface for HandlesSenderErrors {
         const NAME: &'static str = "HandlesSenderErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 18usize;
+        const COUNT: usize = 19usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -8515,6 +8597,9 @@ function transferOwnership(address newOwner) external;
                 }
                 Self::UnknownDstEid(_) => {
                     <UnknownDstEid as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::ZeroLzComposeGas(_) => {
+                    <ZeroLzComposeGas as alloy_sol_types::SolError>::SELECTOR
                 }
             }
         }
@@ -8587,6 +8672,17 @@ function transferOwnership(address newOwner) external;
                             .map(HandlesSenderErrors::NotHostOwner)
                     }
                     NotHostOwner
+                },
+                {
+                    fn ZeroLzComposeGas(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<HandlesSenderErrors> {
+                        <ZeroLzComposeGas as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
+                            .map(HandlesSenderErrors::ZeroLzComposeGas)
+                    }
+                    ZeroLzComposeGas
                 },
                 {
                     fn InvalidOptionType(
@@ -8801,6 +8897,17 @@ function transferOwnership(address newOwner) external;
                             .map(HandlesSenderErrors::NotHostOwner)
                     }
                     NotHostOwner
+                },
+                {
+                    fn ZeroLzComposeGas(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<HandlesSenderErrors> {
+                        <ZeroLzComposeGas as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(HandlesSenderErrors::ZeroLzComposeGas)
+                    }
+                    ZeroLzComposeGas
                 },
                 {
                     fn InvalidOptionType(
@@ -9041,6 +9148,11 @@ function transferOwnership(address newOwner) external;
                 Self::UnknownDstEid(inner) => {
                     <UnknownDstEid as alloy_sol_types::SolError>::abi_encoded_size(inner)
                 }
+                Self::ZeroLzComposeGas(inner) => {
+                    <ZeroLzComposeGas as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
             }
         }
         #[inline]
@@ -9144,6 +9256,12 @@ function transferOwnership(address newOwner) external;
                 }
                 Self::UnknownDstEid(inner) => {
                     <UnknownDstEid as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::ZeroLzComposeGas(inner) => {
+                    <ZeroLzComposeGas as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )
