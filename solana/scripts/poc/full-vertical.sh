@@ -28,9 +28,13 @@ LC="$ROOT/solana/scripts/poc/live-client/target/debug/poc-live-client"
 # program ids + deployer pubkey, as bytes32). SID = RFC-021 Solana host chain id.
 SID=9223372036854788153
 CONTRACT=0x0c26992cb06b8c2de7305099da15554866e2373d80cb0b597156b689d293249b
-USER=0x1f6f8fbf847ad9e4ebad6dcabd9529035a622d6ba245ef25fbd6e17e850f6e36
+# Deployer pubkey — the acl_domain_key the compute leg binds under and the user-decrypt authorizes.
+# Derived from the actual deployer keypair (id.json [32:64]) so it matches whichever key is present:
+# the dev's local wallet or the one CI generates. Hardcoding it to the dev's wallet broke CI (the
+# user-decrypt signs with CI's generated key -> "ACL record domain outside the signed auth scope").
+USER="0x$(python3 -c "import json,os;print(bytes(json.load(open(os.path.expanduser('~/.config/solana/id.json')))[32:64]).hex())")"
 ACL=0x4cd3022dff504a675caf2d9b4f4014d0b3dc3ea17ffb97ba355cec5a933a30ee  # zama-host program (bytes32) = Solana ACL identity
-USER_B58=37iJeLFz4Gfm3qRKQrY5ULnkuo67vXUEhYjXC9mC1CE9                    # deployer pubkey (base58, relayer-facing)
+USER_B58="$(solana address -k "$HOME/.config/solana/id.json")"          # deployer pubkey (base58, relayer-facing)
 RPC=http://127.0.0.1:8899
 GW_RPC="${GW_RPC:-http://127.0.0.1:8546}"
 # Live coprocessor signer set (ProtocolConfig-mirrored) for the consume material commitment.
