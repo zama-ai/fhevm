@@ -42,18 +42,14 @@ function writeHostAddressesSol(content: string, mode: 'w' | 'a') {
   fs.writeFileSync(HOST_ADDRESSES_FILE, content, { encoding: 'utf8', flag: mode });
 }
 
-export function readExistingHostEnv(): Record<string, string> {
+export function readExistingHostEnv(): Record {
   if (!fs.existsSync(HOST_ENV_FILE)) {
     return {};
   }
   return readHostEnv();
 }
 
-export async function waitForTaskReady(
-  hre: HardhatRuntimeEnvironment,
-  taskName: string,
-  timeoutMs = 60_000,
-): Promise<void> {
+export async function waitForTaskReady(hre: HardhatRuntimeEnvironment, taskName: string, timeoutMs = 60_000): Promise {
   const deadline = Date.now() + timeoutMs;
 
   while (true) {
@@ -121,7 +117,9 @@ task('task:deployAllHostContracts')
   ) {
     if (!PROTOCOL_CONFIG_SOURCES.includes(protocolConfigSource as ProtocolConfigSource)) {
       throw new Error(
-        `Invalid --protocol-config-source "${protocolConfigSource}". Allowed values: ${PROTOCOL_CONFIG_SOURCES.join(', ')}.`,
+        `Invalid --protocol-config-source "${protocolConfigSource}". Allowed values: ${PROTOCOL_CONFIG_SOURCES.join(
+          ', ',
+        )}.`,
       );
     }
     if (protocolConfigSource === 'canonical') {
@@ -460,7 +458,7 @@ export function buildKmsNodeParams(): {
     const signerAddress = getRequiredEnvVar(`KMS_SIGNER_ADDRESS_${idx}`);
     const ipAddress = getRequiredEnvVar(`KMS_NODE_IP_${idx}`);
     const storageUrl = getRequiredEnvVar(`KMS_NODE_STORAGE_URL_${idx}`);
-    const partyId = process.env[`KMS_NODE_PARTY_ID_${idx}`] ? +getRequiredEnvVar(`KMS_NODE_PARTY_ID_${idx}`) : idx;
+    const partyId = +getRequiredEnvVar(`KMS_NODE_PARTY_ID_${idx}`);
     const mpcIdentity = getRequiredEnvVar(`KMS_NODE_MPC_IDENTITY_${idx}`);
     const caCert = getRequiredEnvVar(`KMS_NODE_CA_CERT_${idx}`);
     const storagePrefix = getRequiredEnvVar(`KMS_NODE_STORAGE_PREFIX_${idx}`);
@@ -491,12 +489,7 @@ export function buildPcrValues(): { pcr0: string; pcr1: string; pcr2: string }[]
   return JSON.parse(getRequiredEnvVar('KMS_PCR_VALUES'));
 }
 
-export function buildProtocolConfigContextArgs(): [
-  ReturnType<typeof buildKmsNodeParams>,
-  ReturnType<typeof buildKmsThresholds>,
-  string,
-  ReturnType<typeof buildPcrValues>,
-] {
+export function buildProtocolConfigContextArgs(): [ReturnType, ReturnType, string, ReturnType] {
   return [buildKmsNodeParams(), buildKmsThresholds(), getRequiredEnvVar('KMS_SOFTWARE_VERSION'), buildPcrValues()];
 }
 
@@ -528,7 +521,9 @@ task('task:assertProtocolConfigReady').setAction(async function (_, hre) {
     currentKmsContextId = await protocolConfig.getCurrentKmsContextId();
   } catch (err) {
     throw new Error(
-      `Cannot deploy KMSVerifier: ProtocolConfig at ${protocolConfigAddress} is not initialized (reading active context reverted: ${formatError(err)}).`,
+      `Cannot deploy KMSVerifier: ProtocolConfig at ${protocolConfigAddress} is not initialized (reading active context reverted: ${formatError(
+        err,
+      )}).`,
     );
   }
 
@@ -551,7 +546,9 @@ task('task:assertProtocolConfigReady').setAction(async function (_, hre) {
     }
   } catch (err) {
     throw new Error(
-      `Cannot deploy KMSVerifier: ProtocolConfig at ${protocolConfigAddress} has unreadable active context ${currentKmsContextId.toString()}: ${formatError(err)}.`,
+      `Cannot deploy KMSVerifier: ProtocolConfig at ${protocolConfigAddress} has unreadable active context ${currentKmsContextId.toString()}: ${formatError(
+        err,
+      )}.`,
     );
   }
 });
@@ -581,12 +578,14 @@ task('task:assertNoPendingKeyManagementRequest')
     await assertContractMatchesVersionPrefix(hre, kmsGenAddress, 'KMSGeneration');
 
     const kmsGen = await hre.ethers.getContractAt('KMSGeneration', kmsGenAddress);
-    const readKmsStatusView = async <T>(viewLabel: string, read: () => Promise<T>): Promise<T> => {
+    const readKmsStatusView = async <T>(viewLabel: string, read: () => Promise): Promise => {
       try {
         return await read();
       } catch (err) {
         const wrapped = new Error(
-          `Failed reading ${viewLabel} from KMSGeneration at ${kmsGenAddress}. Re-check the configured address and confirm this KMSGeneration version exposes ${viewLabel}. (${formatError(err)})`,
+          `Failed reading ${viewLabel} from KMSGeneration at ${kmsGenAddress}. Re-check the configured address and confirm this KMSGeneration version exposes ${viewLabel}. (${formatError(
+            err,
+          )})`,
         ) as Error & { cause?: unknown };
         wrapped.cause = err;
         throw wrapped;

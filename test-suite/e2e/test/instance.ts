@@ -69,6 +69,8 @@ const verifyingContractAddressInputVerification =
   process.env.INPUT_VERIFICATION_ADDRESS || defaults?.verifyingContractAddressInputVerification;
 if (!verifyingContractAddressInputVerification) throw new Error('INPUT_VERIFICATION_ADDRESS is required');
 
+const protocolConfigAddress = requireEnv(process.env.PROTOCOL_CONFIG_CONTRACT_ADDRESS, 'PROTOCOL_CONFIG_CONTRACT_ADDRESS');
+
 const relayerUrl = process.env.RELAYER_URL || defaults?.relayerUrl;
 if (!relayerUrl) throw new Error('RELAYER_URL is required');
 
@@ -94,6 +96,7 @@ export const createInstance = async () => {
     kmsContractAddress: kmsVerifierAddress,
     inputVerifierContractAddress: inputAdd,
     aclContractAddress: aclAddress,
+    protocolConfigAddress,
     rpcUrl: (network.config as { url: string }).url,
     relayerUrl,
     gatewayChainId: gatewayChainID,
