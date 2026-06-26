@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {IProtocolConfig} from "./interfaces/IProtocolConfig.sol";
-import {KmsNode} from "./shared/Structs.sol";
+import {KmsNode, ChainUpgradeWindow} from "./shared/Structs.sol";
 import {KMS_CONTEXT_COUNTER_BASE} from "./shared/Constants.sol";
 import {UUPSUpgradeableEmptyProxy} from "./shared/UUPSUpgradeableEmptyProxy.sol";
 import {ACLOwnable} from "./shared/ACLOwnable.sol";
@@ -20,11 +20,11 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
 
     string private constant CONTRACT_NAME = "ProtocolConfig";
     uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 1;
+    uint256 private constant MINOR_VERSION = 2;
     uint256 private constant PATCH_VERSION = 0;
 
-    /// @dev Shared between `initializeFromEmptyProxy` and `initializeFromMigration`.
-    uint64 private constant REINITIALIZER_VERSION = 2;
+    /// @dev Shared between `initializeFromEmptyProxy`, `initializeFromMigration` and `reinitializeV2`.
+    uint64 private constant REINITIALIZER_VERSION = 3;
 
     /// @notice Upper bound on the KMS committee size and on every per-context threshold.
     /// @dev Driven by the proof format consumed in
@@ -131,6 +131,13 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         _defineKmsContext(existingKmsNodes, existingThresholds);
     }
 
+    /**
+     * @notice Re-initializes the contract from V1.
+     */
+    /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
+    /// @custom:oz-upgrades-validate-as-initializer
+    function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {}
+
     // -----------------------------------------------------------------------------------------
     // State-changing functions
     // -----------------------------------------------------------------------------------------
@@ -157,6 +164,55 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
 
         $.destroyedContexts[kmsContextId] = true;
         emit KmsContextDestroyed(kmsContextId);
+    }
+
+    /// @inheritdoc IProtocolConfig
+    function proposeCoprocessorUpgrade(
+        uint256 proposalId,
+        string calldata softwareVersion,
+        ChainUpgradeWindow[] calldata chainUpgradeWindows,
+        uint64 gwStartBlock,
+        uint16 ciphertextVersion
+    ) external virtual onlyACLOwner {
+        if (proposalId == 0) {
+            revert InvalidProposalId();
+        }
+        if (bytes(softwareVersion).length == 0) {
+            revert EmptySoftwareVersion();
+        }
+        if (chainUpgradeWindows.length == 0) {
+            revert EmptyChainUpgradeWindows();
+        }
+        if (gwStartBlock == 0) {
+            revert ZeroGwStartBlock();
+        }
+        // Off-chain stores `ciphertext_version` as SMALLINT (int16); reject values that would overflow.
+        if (ciphertextVersion > uint16(type(int16).max)) {
+            revert CiphertextVersionTooLarge(ciphertextVersion);
+        }
+
+        for (uint256 i = 0; i < chainUpgradeWindows.length; i++) {
+            ChainUpgradeWindow calldata cw = chainUpgradeWindows[i];
+            if (cw.chainId == 0) {
+                revert ZeroChainId();
+            }
+            if (cw.startBlock > cw.endBlock) {
+                revert InvalidBlockWindow(cw.chainId, cw.startBlock, cw.endBlock);
+            }
+            for (uint256 j = 0; j < i; j++) {
+                if (chainUpgradeWindows[j].chainId == cw.chainId) {
+                    revert DuplicateChainId(cw.chainId);
+                }
+            }
+        }
+
+        emit CoprocessorUpgradeProposed(
+            proposalId,
+            softwareVersion,
+            chainUpgradeWindows,
+            gwStartBlock,
+            ciphertextVersion
+        );
     }
 
     /// @inheritdoc IProtocolConfig

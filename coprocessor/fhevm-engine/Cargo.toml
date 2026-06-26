@@ -10,6 +10,8 @@ members = [
     "zkproof-worker",
     "test-harness",
     "stress-test-generator",
+    "upgrade-controller",
+    "consensus-detector",
 ]
 
 [workspace.package]
@@ -45,6 +47,7 @@ aws-sigv4 = "1.3.5"
 bigdecimal = "0.4.8"
 clap = { version = "4.5.38", features = ["derive", "env"] }
 daggy = "0.8.1"
+dashmap = { version = "=6.1.0", default-features = false }
 foundry-compilers = { version = "0.19.1", features = ["svm-solc"] }
 futures-util = "0.3.31"
 hex = "0.4.3"

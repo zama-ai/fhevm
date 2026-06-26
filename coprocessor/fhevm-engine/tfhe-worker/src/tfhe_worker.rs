@@ -1,7 +1,11 @@
 use crate::dependence_chain::{self};
 use crate::types::CoprocessorError;
-use fhevm_engine_common::database::{connect_pool_with_options, resolve_database_url_from_option};
+use fhevm_engine_common::database::{
+    apply_gcs_mode_search_path, connect_pool_with_options,
+    connect_pool_with_options_and_connect_options, resolve_database_url_from_option,
+};
 use fhevm_engine_common::db_keys::DbKeyCache;
+use fhevm_engine_common::gcs_activation::{run_gcs_activation_watcher, GCS_NOT_ACTIVATED};
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::tfhe_ops::check_fhe_operand_types;
 use fhevm_engine_common::types::{FhevmError, Handle, SupportedFheCiphertexts};
@@ -13,14 +17,21 @@ use scheduler::dfg::types::{CompressedCiphertext, DFGTxInput, SchedulerError};
 use scheduler::dfg::{build_component_nodes, ComponentNode, DFComponentGraph, DFGOp};
 use scheduler::dfg::{scheduler::Scheduler, types::DFGTaskInput};
 use sqlx::types::Uuid;
-use sqlx::Postgres;
-use sqlx::{postgres::PgListener, query, Acquire};
+use sqlx::{postgres::PgListener, query, Postgres};
 use std::collections::HashMap;
-use std::time::SystemTime;
+use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::Arc;
+use std::time::{Duration, SystemTime};
 use time::PrimitiveDateTime;
 use tracing::{debug, error, info, warn, Instrument};
 
 const EVENT_CIPHERTEXT_COMPUTED: &str = "event_ciphertext_computed";
+
+/// PostgreSQL advisory-lock key used to serialize cutover against in-flight
+/// BCS writes. Must match `upgrade_controller::CUTOVER_LOCK_ID`. The BCS
+/// write tx takes the shared form at the top of each cycle; the cutover tx
+/// takes the exclusive form.
+const CUTOVER_LOCK_ID: i64 = 0x4648_4556_4355_5456;
 
 lazy_static! {
     pub static ref TIMING: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -69,10 +80,56 @@ pub async fn run_tfhe_worker(
     // Determine worker ID to use for the lifetime of this process
     // In case of a failure in tfhe_worker_cycle, the same id must be reused to quickly unlock any held locks
     let worker_id = args.worker_id.unwrap_or(Uuid::new_v4());
-    info!(target: "tfhe_worker", worker_id = %worker_id, "Starting tfhe-worker service");
+
+    // GCS mode is auto-detected at startup by comparing this binary's
+    // compiled-in `STACK_VERSION` against the live `versioning.stack_version`
+    // row.
+    let db_url = resolve_database_url_from_option(args.database_url.clone())?;
+    let gcs_mode = fhevm_engine_common::versioning::resolve_gcs_mode(db_url.as_str())
+        .await
+        .map_err(|err| {
+            error!(target: "tfhe_worker", error = %err, "Failed to resolve gcs_mode from versioning table");
+            err
+        })?;
+
+    info!(target: "tfhe_worker", worker_id = %worker_id, gcs_mode = gcs_mode, "Starting tfhe-worker service");
+
+    // Shared GCS activation state. `GCS_NOT_ACTIVATED` means the worker is
+    // paused (BCS mode keeps this value for the lifetime of the process).
+    let start_block_state = Arc::new(AtomicI64::new(GCS_NOT_ACTIVATED));
+
+    if gcs_mode {
+        // Long-lived task that mirrors `upgrade_state.start_block` (stack_role
+        // = 'GCS') into the atomic, woken by `event_upgrade_activated`. Lives
+        // outside the cycle loop so it survives `tfhe_worker_cycle` restarts.
+        let (watcher_pool, _refresh) = connect_pool_with_options(
+            &db_url,
+            sqlx::postgres::PgPoolOptions::new().max_connections(2),
+            None,
+        )
+        .await?;
+        let watcher_state = start_block_state.clone();
+        tokio::spawn(async move {
+            loop {
+                if let Err(err) = run_gcs_activation_watcher(&watcher_pool, &watcher_state).await {
+                    error!(target: "tfhe_worker", error = %err, "GCS activation watcher errored; restarting in 5s");
+                    tokio::time::sleep(Duration::from_secs(5)).await;
+                }
+            }
+        });
+    }
+
     loop {
         // here we log the errors and make sure we retry
-        if let Err(cycle_error) = tfhe_worker_cycle(&args, worker_id, health_check.clone()).await {
+        if let Err(cycle_error) = tfhe_worker_cycle(
+            &args,
+            worker_id,
+            gcs_mode,
+            start_block_state.clone(),
+            health_check.clone(),
+        )
+        .await
+        {
             WORKER_ERRORS_COUNTER.inc();
             if cycle_error.is_fatal_connection() {
                 error!(target: "tfhe_worker", error = %cycle_error, "Fatal DB connection error; exiting for k8s restart");
@@ -88,14 +145,21 @@ pub async fn run_tfhe_worker(
 async fn tfhe_worker_cycle(
     args: &crate::daemon_cli::Args,
     worker_id: Uuid,
+    gcs_mode: bool,
+    start_block_state: Arc<AtomicI64>,
     health_check: crate::health_check::HealthCheck,
 ) -> Result<(), CoprocessorError> {
     let db_url = resolve_database_url_from_option(args.database_url.clone())
         .map_err(|e| CoprocessorError::Other(e.into()))?;
-    let (pool, _pool_refresh_handle) = connect_pool_with_options(
+    // In --gcs-mode, every connection in the data-plane pool is pinned to
+    // `search_path = gcs,public` so unqualified writes land in `gcs.*` and
+    // shared read-only tables (keys, crs, host_chains, upgrade_state, …)
+    // still resolve from `public` via fallback.
+    let (pool, _pool_refresh_handle) = connect_pool_with_options_and_connect_options(
         &db_url,
         sqlx::postgres::PgPoolOptions::new().max_connections(args.pg_pool_max_connections),
         None,
+        apply_gcs_mode_search_path(gcs_mode),
     )
     .await?;
 
@@ -128,6 +192,22 @@ async fn tfhe_worker_cycle(
     let mut immediately_poll_more_work = false;
     let mut no_progress_cycles = 0;
     loop {
+        // GCS gating: skip the iteration entirely until the activation
+        // watcher has populated `start_block` in `upgrade_state` for
+        // `stack_role='GCS'`. Once that's observed, the schema-isolated
+        // `search_path = gcs,public` on this pool's connections routes all
+        // writes to `gcs.*` automatically — we no longer need the actual
+        // start_block value inside the cycle. In BCS mode this branch is a
+        // no-op.
+        if gcs_mode && start_block_state.load(Ordering::SeqCst) == GCS_NOT_ACTIVATED {
+            debug!(target: "tfhe_worker", "GCS not yet activated; sleeping before re-check");
+            tokio::time::sleep(tokio::time::Duration::from_millis(
+                args.worker_polling_interval_ms,
+            ))
+            .await;
+            continue;
+        }
+
         // only if previous iteration had no work done do the wait
         if !immediately_poll_more_work {
             tokio::select! {
@@ -159,7 +239,33 @@ async fn tfhe_worker_cycle(
         );
         let mut conn = pool.acquire().instrument(acq_span).await?;
         let txn_span = tracing::info_span!(parent: &loop_span, "begin_transaction");
-        let mut trx = conn.begin().instrument(txn_span).await?;
+        let mut trx = fhevm_engine_common::versioning::begin_guarded_conn(&mut conn)
+            .instrument(txn_span)
+            .await?;
+
+        // Cutover safety (BCS only): take the shared cutover advisory lock
+        // and re-read the FSM state. The shared lock blocks if execute_cutover
+        // holds the exclusive form; once unblocked, the FSM read returns
+        // post-cutover state and the worker exits the cycle cleanly. GCS
+        // workers write to staging tables, which are not the cutover target,
+        // so this gate does not apply to them.
+        if !gcs_mode {
+            sqlx::query("SELECT pg_advisory_xact_lock_shared($1)")
+                .bind(CUTOVER_LOCK_ID)
+                .execute(&mut *trx)
+                .await?;
+            let bcs_state: Option<(String,)> =
+                sqlx::query_as("SELECT state FROM upgrade_state WHERE stack_role = 'BCS'")
+                    .fetch_optional(&mut *trx)
+                    .await?;
+            if let Some((state,)) = bcs_state {
+                if matches!(state.as_str(), "UpgradeAuthorized" | "PAUSED") {
+                    info!(target: "tfhe_worker", bcs_state = %state, "Cutover authorized or completed — BCS worker exiting cycle");
+                    trx.rollback().await?;
+                    return Ok(());
+                }
+            }
+        }
 
         // Query for transactions to execute
         let (mut transactions, earliest_computation, has_more_work) = query_for_work(
@@ -225,6 +331,7 @@ async fn tfhe_worker_cycle(
             &health_check,
             &mut trx,
             &dcid_mngr,
+            gcs_mode,
         )
         .instrument(loop_span.clone())
         .await?;
@@ -265,28 +372,64 @@ async fn tfhe_worker_cycle(
 async fn query_ciphertexts<'a>(
     cts_to_query: &[Vec<u8>],
     trx: &mut sqlx::Transaction<'a, Postgres>,
+    gcs_mode: bool,
 ) -> Result<HashMap<Vec<u8>, (i16, Vec<u8>)>, CoprocessorError> {
-    // TODO: select all the ciphertexts where they're contained in the tuples
-    let ciphertexts_rows = query!(
-        "
-                SELECT handle, ciphertext, ciphertext_type
-                FROM ciphertexts
-                WHERE handle = ANY($1::BYTEA[])
-            ",
-        &cts_to_query
+    // BCS: the connection's `search_path = public`, so the unqualified
+    // `ciphertexts` resolves to `public.ciphertexts` directly. Done in one
+    // query.
+    //
+    // GCS: the connection's `search_path = gcs,public`, so unqualified
+    // `ciphertexts` resolves to `gcs.ciphertexts` — the GCS-owned table
+    // populated post-activation. Pre-snapshot ciphertexts (produced by BCS
+    // before activation) still live in `public.ciphertexts` and must be
+    // fetched explicitly. We do this as a two-step query: try GCS first,
+    // then fetch the missing handles from `public.ciphertexts`.
+    let mut ciphertext_map: HashMap<Vec<u8>, (i16, Vec<u8>)> =
+        HashMap::with_capacity(cts_to_query.len());
+
+    let rows: Vec<(Vec<u8>, Vec<u8>, i16)> = sqlx::query_as(
+        "SELECT handle, ciphertext, ciphertext_type
+         FROM ciphertexts
+         WHERE handle = ANY($1::BYTEA[])",
     )
+    .bind(cts_to_query)
     .fetch_all(trx.as_mut())
     .await
     .map_err(|err| {
         error!(target: "tfhe_worker", { error = %err }, "error while querying ciphertexts");
         err
     })?;
-    // index ciphertexts in hashmap
-    let mut ciphertext_map: HashMap<Vec<u8>, (i16, Vec<u8>)> =
-        HashMap::with_capacity(ciphertexts_rows.len());
-    for row in ciphertexts_rows {
-        let _ = ciphertext_map.insert(row.handle, (row.ciphertext_type, row.ciphertext));
+    for (handle, ciphertext, ciphertext_type) in rows {
+        let _ = ciphertext_map.insert(handle, (ciphertext_type, ciphertext));
     }
+
+    if gcs_mode {
+        let missing: Vec<Vec<u8>> = cts_to_query
+            .iter()
+            .filter(|h| !ciphertext_map.contains_key(*h))
+            .cloned()
+            .collect();
+        if !missing.is_empty() {
+            // Fully qualified — bypass search_path so this read is unambiguous
+            // even if the connection's search_path changes.
+            let rows: Vec<(Vec<u8>, Vec<u8>, i16)> = sqlx::query_as(
+                "SELECT handle, ciphertext, ciphertext_type
+                 FROM public.ciphertexts
+                 WHERE handle = ANY($1::BYTEA[])",
+            )
+            .bind(&missing)
+            .fetch_all(trx.as_mut())
+            .await
+            .map_err(|err| {
+                error!(target: "tfhe_worker", { error = %err }, "error while querying public.ciphertexts for pre-snapshot handles");
+                err
+            })?;
+            for (handle, ciphertext, ciphertext_type) in rows {
+                let _ = ciphertext_map.insert(handle, (ciphertext_type, ciphertext));
+            }
+        }
+    }
+
     Ok(ciphertext_map)
 }
 
@@ -341,15 +484,18 @@ async fn query_for_work<'a>(
     let s_work = tracing::info_span!("query_work_items", count = tracing::field::Empty);
     let transaction_batch_size = args.work_items_batch_size;
     let started_at = SystemTime::now();
+    // Schema isolation: BCS connects with `search_path = public`, GCS with
+    // `search_path = gcs,public`. Unqualified `computations` therefore
+    // resolves to the stack's own schema. No table-name swaps needed in code.
     let the_work = query!(
         "
 -- Acquire all computations from a transaction set
 SELECT
-  c.output_handle, 
-  c.dependencies, 
-  c.fhe_operation, 
+  c.output_handle,
+  c.dependencies,
+  c.fhe_operation,
   c.is_scalar,
-  c.is_allowed, 
+  c.is_allowed,
   c.dependence_chain_id,
   c.transaction_id,
   c.schedule_order
@@ -359,7 +505,7 @@ WHERE c.transaction_id IN (
       c_schedule_order.transaction_id
     FROM (
       SELECT transaction_id
-      FROM computations 
+      FROM computations
       WHERE is_completed = FALSE
         AND is_error = FALSE
         AND is_allowed = TRUE
@@ -469,6 +615,7 @@ async fn build_transaction_graph_and_execute<'a>(
     health_check: &crate::health_check::HealthCheck,
     trx: &mut sqlx::Transaction<'a, Postgres>,
     dcid_mngr: &dependence_chain::LockMngr,
+    gcs_mode: bool,
 ) -> Result<DFComponentGraph, CoprocessorError> {
     let mut tx_graph = DFComponentGraph::default();
     if let Err(e) = tx_graph.build(txs) {
@@ -479,7 +626,7 @@ async fn build_transaction_graph_and_execute<'a>(
         return Ok(tx_graph);
     }
     let cts_to_query = tx_graph.needed_map.keys().cloned().collect::<Vec<_>>();
-    let ciphertext_map = query_ciphertexts(&cts_to_query, trx).await?;
+    let ciphertext_map = query_ciphertexts(&cts_to_query, trx, gcs_mode).await?;
     let fetched_handles: std::collections::HashSet<_> = ciphertext_map.keys().cloned().collect();
     if cts_to_query.len() != fetched_handles.len() {
         if let Some(dcid_lock) = dcid_mngr.get_current_lock() {
@@ -558,6 +705,11 @@ async fn upload_transaction_graph_results<'a>(
     trx: &mut sqlx::Transaction<'a, Postgres>,
     deps_mngr: &mut dependence_chain::LockMngr,
 ) -> Result<bool, CoprocessorError> {
+    // Schema isolation: the connection's `search_path` already routes
+    // unqualified writes to the stack's own schema (`public` for BCS,
+    // `gcs` for GCS post-activation). The two-step ciphertext read in
+    // `query_ciphertexts` is the only place where the cross-schema fallback
+    // is explicit.
     // Get computation results
     let graph_results = tx_graph.get_results();
     let mut handles_to_update = vec![];
@@ -636,19 +788,20 @@ async fn upload_transaction_graph_results<'a>(
                 Vec<_>,
                 (Vec<_>, (Vec<_>, Vec<_>)),
             ) = cts_to_insert.into_iter().unzip();
-            let cts_inserted = query!(
-                "
-            INSERT INTO ciphertexts(handle, ciphertext, ciphertext_version, ciphertext_type)
-            SELECT * FROM UNNEST($1::BYTEA[], $2::BYTEA[], $3::SMALLINT[], $4::SMALLINT[])
-            ON CONFLICT (handle, ciphertext_version) DO NOTHING
-            ",
-                &handles, &ciphertexts, &ciphertext_versions, &ciphertext_types
+            let cts_inserted = sqlx::query!(
+                "INSERT INTO ciphertexts(handle, ciphertext, ciphertext_version, ciphertext_type)
+                 SELECT * FROM UNNEST($1::BYTEA[], $2::BYTEA[], $3::SMALLINT[], $4::SMALLINT[])
+                 ON CONFLICT (handle, ciphertext_version) DO NOTHING",
+                &handles,
+                &ciphertexts,
+                &ciphertext_versions,
+                &ciphertext_types,
             )
-                .execute(trx.as_mut())
-                .await.map_err(|err| {
-                    error!(target: "tfhe_worker", { error = %err }, "error while inserting new ciphertexts");
-                    err
-                })?.rows_affected();
+            .execute(trx.as_mut())
+            .await.map_err(|err| {
+                error!(target: "tfhe_worker", { error = %err }, "error while inserting new ciphertexts");
+                err
+            })?.rows_affected();
             // Notify all workers that new ciphertext is inserted
             // For now, it's only the SnS workers that are listening for these events
             let _ = sqlx::query!("SELECT pg_notify($1, '')", EVENT_CIPHERTEXT_COMPUTED)

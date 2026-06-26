@@ -66,6 +66,8 @@ const REPO_PACKAGES = {
   COPROCESSOR_TFHE_WORKER_VERSION: "fhevm%2Fcoprocessor%2Ftfhe-worker",
   COPROCESSOR_ZKPROOF_WORKER_VERSION: "fhevm%2Fcoprocessor%2Fzkproof-worker",
   COPROCESSOR_SNS_WORKER_VERSION: "fhevm%2Fcoprocessor%2Fsns-worker",
+  COPROCESSOR_CONSENSUS_DETECTOR_VERSION: "fhevm%2Fcoprocessor%2Fconsensus-detector",
+  COPROCESSOR_UPGRADE_CONTROLLER_VERSION: "fhevm%2Fcoprocessor%2Fupgrade-controller",
   LISTENER_CORE_VERSION: "fhevm%2Flistener%2Flistener-core",
   CONNECTOR_DB_MIGRATION_VERSION: "fhevm%2Fkms-connector%2Fdb-migration",
   CONNECTOR_GW_LISTENER_VERSION: "fhevm%2Fkms-connector%2Fgw-listener",
@@ -88,6 +90,8 @@ export const PACKAGE_TO_REPOSITORY = {
   COPROCESSOR_TFHE_WORKER_VERSION: "ghcr.io/zama-ai/fhevm/coprocessor/tfhe-worker",
   COPROCESSOR_ZKPROOF_WORKER_VERSION: "ghcr.io/zama-ai/fhevm/coprocessor/zkproof-worker",
   COPROCESSOR_SNS_WORKER_VERSION: "ghcr.io/zama-ai/fhevm/coprocessor/sns-worker",
+  COPROCESSOR_CONSENSUS_DETECTOR_VERSION: "ghcr.io/zama-ai/fhevm/coprocessor/consensus-detector",
+  COPROCESSOR_UPGRADE_CONTROLLER_VERSION: "ghcr.io/zama-ai/fhevm/coprocessor/upgrade-controller",
   LISTENER_CORE_VERSION: "ghcr.io/zama-ai/fhevm/listener/listener-core",
   CONNECTOR_DB_MIGRATION_VERSION: "ghcr.io/zama-ai/fhevm/kms-connector/db-migration",
   CONNECTOR_GW_LISTENER_VERSION: "ghcr.io/zama-ai/fhevm/kms-connector/gw-listener",
@@ -261,6 +265,10 @@ const bundleFromFiles = async (
         COPROCESSOR_TFHE_WORKER_VERSION: findImageTag(parsed, "coprocessorWorkers", "COPROCESSOR_TFHE_WORKER_VERSION"),
         COPROCESSOR_ZKPROOF_WORKER_VERSION: findImageTag(parsed, "coprocessorWorkers", "COPROCESSOR_ZKPROOF_WORKER_VERSION"),
         COPROCESSOR_SNS_WORKER_VERSION: findImageTag(parsed, "coprocessorWorkers", "COPROCESSOR_SNS_WORKER_VERSION"),
+        // GitOps YAMLs don't carry consensus-detector / upgrade-controller image refs yet; pin
+        // them to the host-listener tag (same release cadence).
+        COPROCESSOR_CONSENSUS_DETECTOR_VERSION: coprocessorHostListenerVersion,
+        COPROCESSOR_UPGRADE_CONTROLLER_VERSION: coprocessorHostListenerVersion,
         LISTENER_CORE_VERSION: coprocessorHostListenerVersion,
         CONNECTOR_DB_MIGRATION_VERSION: findImageTag(parsed, "connector", "CONNECTOR_DB_MIGRATION_VERSION"),
         CONNECTOR_GW_LISTENER_VERSION: findImageTag(parsed, "connector", "CONNECTOR_GW_LISTENER_VERSION"),
@@ -332,7 +340,13 @@ export const resolveTarget = async (
   const short = commits
     .slice(0, Math.min(floor, compatFloor) + 1)
     .map((sha) => sha.slice(0, 7))
-    .find((sha) => Object.values(packageTagsMap).every((set) => set.has(sha) && REPO_TAG.test(sha)));
+    // Packages with an empty tag set (not published yet — typically new images
+    // introduced on a branch before CI lands) are treated as "don't gate on this".
+    // bundleFromFiles falls back to the host-listener tag for them.
+    .find((sha) =>
+      REPO_TAG.test(sha) &&
+      Object.values(packageTagsMap).every((set) => set.size === 0 || set.has(sha)),
+    );
   if (!short) {
     throw new GitHubApiError("Could not find a supported modern latest-main image set");
   }

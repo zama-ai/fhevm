@@ -1,4 +1,5 @@
 use alloy::{network::Ethereum, primitives::Address, providers::Provider};
+use fhevm_engine_common::versioning::{run_stack_version_listener, StackMode};
 use futures_util::FutureExt;
 use sqlx::{postgres::PgListener, Pool, Postgres};
 use std::{sync::Arc, time::Duration};
@@ -78,6 +79,49 @@ where
             "Starting Transaction Sender"
         );
 
+        // Stack-version mode shared between this work loop and the cutover
+        // listener. Seeded from the startup-resolved `gcs_mode`: a green (GCS)
+        // binary starts parked and only goes live once a cutover bumps the
+        // live stack version up to its own; a blue (live) binary starts active
+        // and is paused into no-op mode when a later cutover retires it.
+        let mode = StackMode::new(self.conf.gcs_mode);
+        {
+            let pool = self.db_pool.clone();
+            let mode = mode.clone();
+            let cancel = self.cancel_token.clone();
+            tokio::spawn(async move {
+                if let Err(err) = run_stack_version_listener(pool, mode, cancel).await {
+                    error!(error = %err, "stack-version listener exited with error");
+                }
+            });
+        }
+
+        // Green stack: stay fully idle until the cutover commits. Unlike the
+        // GCS compute workers (which fill the isolated `gcs.*` schema during the
+        // dry-run window), the transaction sender submits on-chain — acting
+        // before cutover would double-submit against the still-live blue stack.
+        // `execute_cutover` fires `event_stack_version_upgraded` atomically with
+        // the version bump, which flips `gcs_mode` off via the listener above.
+        if self.conf.gcs_mode {
+            info!(
+                "gcs-mode: transaction sender parked until cutover finalization \
+                 (event_stack_version_upgraded)"
+            );
+            loop {
+                if self.cancel_token.is_cancelled() {
+                    return Ok(());
+                }
+                if !mode.gcs_mode() {
+                    break;
+                }
+                tokio::select! {
+                    _ = self.cancel_token.cancelled() => return Ok(()),
+                    _ = tokio::time::sleep(Duration::from_secs(5)) => {}
+                }
+            }
+            info!("cutover finalized; transaction sender resuming as the live stack");
+        }
+
         let mut join_set = JoinSet::new();
 
         for op in self.operations.clone() {
@@ -86,6 +130,7 @@ where
             let db_polling_interval_secs = self.conf.db_polling_interval_secs;
             join_set.spawn({
                 let sender = self.clone();
+                let mode = mode.clone();
                 info!(channel = op_channel, "Spawning operation loop");
                 async move {
                     let mut sleep_duration = sender.conf.error_sleep_initial_secs as u64;
@@ -95,6 +140,21 @@ where
                         if token.is_cancelled() {
                             info!(channel = op_channel, "Operation stopping");
                             break;
+                        }
+
+                        // Retired (paused) stack: a cutover bumped the live
+                        // stack version past this binary. Stop submitting and
+                        // idle until shutdown rather than pushing transactions
+                        // that the version guard would reject anyway.
+                        if mode.is_paused() {
+                            tokio::select! {
+                                _ = token.cancelled() => {
+                                    info!(channel = op_channel, "Operation stopping (paused)");
+                                    break;
+                                }
+                                _ = tokio::time::sleep(Duration::from_secs(5)) => {}
+                            }
+                            continue;
                         }
 
                         match op.execute().await {

@@ -23,6 +23,7 @@ use fhevm_engine_common::drift_revert;
 use fhevm_engine_common::healthz_server::HttpServer as HealthHttpServer;
 use fhevm_engine_common::types::BlockchainProvider;
 use fhevm_engine_common::utils::{DatabaseURL, HeartBeat};
+use fhevm_engine_common::versioning::{run_stack_version_listener, StackMode};
 use sqlx::postgres::PgPoolOptions;
 
 use crate::database::ingest::{
@@ -64,6 +65,9 @@ pub struct Args {
 
     #[arg(long, default_value = "")]
     pub kms_generation_address: String,
+
+    #[command(flatten)]
+    pub protocol_config: crate::protocol_config::ProtocolConfigArgs,
 
     #[arg(
         long,
@@ -251,6 +255,11 @@ impl InfiniteLogIter {
         if !args.kms_generation_address.is_empty() {
             contract_addresses
                 .push(Address::from_str(&args.kms_generation_address).unwrap());
+        };
+        if !args.protocol_config.address.is_empty() {
+            contract_addresses.push(
+                Address::from_str(&args.protocol_config.address).unwrap(),
+            );
         };
         Self {
             url: args.url.clone(),
@@ -938,6 +947,7 @@ impl InfiniteLogIter {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn db_insert_block(
     chain_id: ChainId,
     db: &mut Database,
@@ -945,7 +955,9 @@ async fn db_insert_block(
     acl_contract_address: &Option<Address>,
     tfhe_contract_address: &Option<Address>,
     kms_generation_address: &Option<Address>,
+    protocol_config_address: &Option<Address>,
     args: &Args,
+    is_protocol_config_listener: bool,
 ) -> anyhow::Result<()> {
     info!(
         block = ?block_logs.summary,
@@ -962,10 +974,12 @@ async fn db_insert_block(
             acl_contract_address,
             tfhe_contract_address,
             kms_generation_address,
+            protocol_config_address,
             IngestOptions {
                 dependence_by_connexity: args.dependence_by_connexity,
                 dependence_cross_block: args.dependence_cross_block,
                 dependent_ops_max_per_chain: args.dependent_ops_max_per_chain,
+                is_protocol_config_listener,
             },
         )
         .await;
@@ -1053,19 +1067,49 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
             },
         )?)
     };
+    let protocol_config_address = args.protocol_config.parsed_address()?;
     let aws_s3_client = AwsS3Client {};
 
     let mut log_iter = InfiniteLogIter::new(&args);
     let chain_id = log_iter.get_chain_id().await?;
 
     info!(chain_id = %chain_id, "Chain ID");
+    let is_protocol_config_listener =
+        crate::protocol_config::resolve_protocol_config_listener(
+            args.protocol_config.chain_id,
+            chain_id.as_u64(),
+        )?;
+    if is_protocol_config_listener && protocol_config_address.is_none() {
+        warn!(
+            chain_id = %chain_id,
+            "ProtocolConfig listener has no --protocol-config-address; \
+             ProtocolConfig.CoprocessorUpgradeProposed events will not be decoded"
+        );
+    }
     if args.database_url.as_str().is_empty() {
         error!("Database URL is required");
         panic!("Database URL is required");
     };
-    let mut db =
-        Database::new(&args.database_url, chain_id, args.dependence_cache_size)
-            .await?;
+
+    let gcs_mode = match fhevm_engine_common::versioning::resolve_gcs_mode(
+        args.database_url.as_str(),
+    )
+    .await
+    {
+        Ok(gcs_mode) => gcs_mode,
+        Err(err) => {
+            error!(error = %err, "Failed to resolve gcs_mode from versioning table");
+            return Err(err);
+        }
+    };
+
+    let mut db = Database::new_with_gcs_mode(
+        &args.database_url,
+        chain_id,
+        args.dependence_cache_size,
+        gcs_mode,
+    )
+    .await?;
 
     let health_check = HealthCheck {
         blockchain_timeout_tick: log_iter.tick_timeout.clone(),
@@ -1076,6 +1120,23 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
     };
 
     let cancel_token = CancellationToken::new();
+
+    // Runtime stack mode + `event_stack_version_upgraded` listener: at cutover
+    // this (blue) stack is retired and `stack_mode` flips to paused, turning
+    // the ingest loop below into a no-op (no DB writes).
+    let stack_mode = StackMode::new(gcs_mode);
+    {
+        let pool = db.pool().await;
+        let stack_mode = stack_mode.clone();
+        let cancel = cancel_token.clone();
+        tokio::spawn(async move {
+            if let Err(err) =
+                run_stack_version_listener(pool, stack_mode, cancel).await
+            {
+                error!(error = %err, "stack-version listener exited with error");
+            }
+        });
+    }
 
     // Start health check before drift-revert init so the service stays
     // healthy while waiting for a revert to complete.
@@ -1132,6 +1193,11 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
         log_iter.stream = None; // force new connection each iteration
 
         while let Some(block_logs) = log_iter.next().await {
+            // Paused (retired blue stack after cutover): no-op — drop the block
+            // without writing anything to the DB.
+            if stack_mode.is_paused() {
+                continue;
+            }
             if args.only_catchup_loop && !block_logs.catchup {
                 break;
             }
@@ -1142,7 +1208,9 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
                 &acl_contract_address,
                 &tfhe_contract_address,
                 &kms_generation_address,
+                &protocol_config_address,
                 &args,
+                is_protocol_config_listener,
             )
             .await;
             if status.is_err() {

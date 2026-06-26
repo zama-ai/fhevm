@@ -72,7 +72,7 @@ describe('task:assertNoPendingKeyManagementRequest', function () {
     await expect(
       run('task:assertNoPendingKeyManagementRequest', { address: protocolConfigAddress }),
     ).to.be.rejectedWith(
-      `Contract at ${protocolConfigAddress} reports version "ProtocolConfig v0.1.0"; expected "KMSGeneration v…".`,
+      `Contract at ${protocolConfigAddress} reports version "ProtocolConfig v0.2.0"; expected "KMSGeneration v…".`,
     );
   });
 

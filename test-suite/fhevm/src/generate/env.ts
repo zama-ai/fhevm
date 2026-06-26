@@ -169,6 +169,9 @@ const applyDiscoveryEnv = (
   const connectorKmsGenerationAddress = kmsConnectorUsesHostKmsGeneration(plan)
     ? hostKmsGenerationAddress
     : gatewayKmsGenerationAddress;
+  const protocolConfigAddress = requiresModernHostAddressArtifacts(plan)
+    ? primaryHost.PROTOCOL_CONFIG_CONTRACT_ADDRESS
+    : "";
 
   updateContracts(envs["gateway-sc"], state.discovery.gateway);
   updateContracts(envs["gateway-mocked-payment"], {
@@ -189,6 +192,7 @@ const applyDiscoveryEnv = (
     CIPHERTEXT_COMMITS_ADDRESS: state.discovery.gateway.CIPHERTEXT_COMMITS_ADDRESS,
     ...(requiresMultichainAclAddress(plan) ? { MULTICHAIN_ACL_ADDRESS: state.discovery.gateway.MULTICHAIN_ACL_ADDRESS } : {}),
     KMS_GENERATION_ADDRESS: coprocessorKmsGenerationAddress ?? "",
+    PROTOCOL_CONFIG_ADDRESS: protocolConfigAddress,
   });
 
   const kmsHostChains = chains.map((chain) => {

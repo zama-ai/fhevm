@@ -7,17 +7,20 @@ use alloy::sol_types::SolEventInterface;
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::types::Handle;
 use sqlx::types::time::{OffsetDateTime, PrimitiveDateTime};
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use crate::cmd::block_history::{BlockHash, BlockSummary};
 use crate::cmd::InfiniteLogIter;
-use crate::contracts::{AclContract, KMSGeneration, TfheContract};
+use crate::contracts::{
+    AclContract, KMSGeneration, ProtocolConfig, TfheContract,
+};
 use crate::database::dependence_chains::dependence_chains;
 use crate::database::tfhe_event_propagate::{
     acl_result_handles, tfhe_result_handle, Chain, ChainHash, Database, LogTfhe,
 };
 use crate::kms_generation::insert_kms_generation_events_tx;
 use crate::kms_generation::metrics::KMS_EVENT_DECODE_FAIL_COUNTER;
+use crate::protocol_config::metrics::PROTOCOL_CONFIG_EVENT_DECODE_FAIL_COUNTER;
 
 pub struct BlockLogs<T> {
     pub logs: Vec<T>,
@@ -26,11 +29,15 @@ pub struct BlockLogs<T> {
     pub finalized: bool,
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub struct IngestOptions {
     pub dependence_by_connexity: bool,
     pub dependence_cross_block: bool,
     pub dependent_ops_max_per_chain: u32,
+    /// Resolved once at startup from the listener's own `chain_id` and the
+    /// configured `--ethereum-chain-id`. When false, the listener silently
+    /// skips `ProtocolConfig.CoprocessorUpgradeProposed` events.
+    pub is_protocol_config_listener: bool,
 }
 
 /// Converts a block timestamp to a UTC `PrimitiveDateTime`.
@@ -142,6 +149,13 @@ fn classify_slow_by_split_dependency_closure(
     slow_dep_chain_ids
 }
 
+/// pg_notify channel announcing a fully-ingested block.
+///
+/// Must stay in sync with `consensus_detector::NEW_BLOCK_CHANNEL`. Snake_case
+/// per the channel-name convention.
+const NEW_BLOCK_CHANNEL: &str = "event_new_block";
+
+#[allow(clippy::too_many_arguments)]
 pub async fn ingest_block_logs(
     chain_id: ChainId,
     db: &mut Database,
@@ -149,9 +163,37 @@ pub async fn ingest_block_logs(
     acl_contract_address: &Option<Address>,
     tfhe_contract_address: &Option<Address>,
     kms_generation_contract_address: &Option<Address>,
+    protocol_config_contract_address: &Option<Address>,
     options: IngestOptions,
 ) -> Result<(), sqlx::Error> {
     let mut tx = db.new_transaction().await?;
+
+    // Queue `pg_notify('event_new_block', ...)` at the top of the transaction so
+    // postgres defers delivery until `tx.commit()` below succeeds. Same
+    // "after all events committed" guarantee as emitting post-commit, but
+    // atomic with the data — if the tx rolls back, the notification is
+    // discarded too. JSON shape must match consensus_detector::NewBlockPayload.
+    let new_block_payload = serde_json::json!({
+        "chain_id": chain_id.as_u64() as i64,
+        "block_height": block_logs.summary.number as i64,
+        "block_hash": format!("{:#x}", block_logs.summary.hash),
+    })
+    .to_string();
+    info!(
+        channel = NEW_BLOCK_CHANNEL,
+        payload = %new_block_payload,
+        "Queuing new_block pg_notify in ingest transaction"
+    );
+    sqlx::query("SELECT pg_notify($1, $2)")
+        .bind(NEW_BLOCK_CHANNEL)
+        .bind(&new_block_payload)
+        .execute(&mut *tx)
+        .await?;
+
+    // Only the listener watching the configured Ethereum host chain decodes
+    // `CoprocessorUpgradeProposed`; every other listener skips the channel.
+    let is_protocol_config_listener = options.is_protocol_config_listener;
+
     let mut is_allowed = HashSet::<Handle>::new();
     let mut tfhe_event_log = vec![];
     let mut kms_gen_events = vec![];
@@ -160,6 +202,10 @@ pub async fn ingest_block_logs(
     let mut catchup_insertion = 0;
     let block_timestamp = block_date_time_utc(block_logs.summary.timestamp);
     let mut at_least_one_insertion = false;
+    // Per-block tallies persisted in host_chain_blocks_valid. Counted at decode
+    // time, so an event that fails to insert (e.g. ON CONFLICT) still counts.
+    let mut allow_event_count: i32 = 0;
+    let mut fhe_event_count: i32 = 0;
 
     for log in &block_logs.logs {
         let current_address = Some(log.inner.address);
@@ -169,6 +215,7 @@ pub async fn ingest_block_logs(
             if let Ok(event) =
                 AclContract::AclContractEvents::decode_log(&log.inner)
             {
+                allow_event_count = allow_event_count.saturating_add(1);
                 let handles = acl_result_handles(&event);
                 for handle in handles {
                     is_allowed.insert(handle.to_vec());
@@ -209,6 +256,7 @@ pub async fn ingest_block_logs(
             if let Ok(event) =
                 TfheContract::TfheContractEvents::decode_log(&log.inner)
             {
+                fhe_event_count = fhe_event_count.saturating_add(1);
                 let log = LogTfhe {
                     event,
                     transaction_hash: log.transaction_hash,
@@ -238,7 +286,20 @@ pub async fn ingest_block_logs(
             }
         }
 
-        if is_acl_address || is_tfhe_address || is_kms_gen_address {
+        let is_protocol_config_address = is_protocol_config_listener
+            && protocol_config_contract_address
+                .as_ref()
+                .is_some_and(|addr| &log.inner.address == addr);
+        if is_protocol_config_address {
+            handle_protocol_config_log(&mut tx, chain_id, log).await?;
+            continue;
+        }
+
+        if is_acl_address
+            || is_tfhe_address
+            || is_kms_gen_address
+            || is_protocol_config_address
+        {
             error!(
                 event_address = ?log.inner.address,
                 acl_contract_address = ?acl_contract_address,
@@ -338,8 +399,14 @@ pub async fn ingest_block_logs(
         block_number,
     )
     .await?;
-    db.mark_block_as_valid(&mut tx, &block_logs.summary, block_logs.finalized)
-        .await?;
+    db.mark_block_as_valid(
+        &mut tx,
+        &block_logs.summary,
+        block_logs.finalized,
+        fhe_event_count,
+        allow_event_count,
+    )
+    .await?;
     if at_least_one_insertion {
         db.update_dependence_chain(
             &mut tx,
@@ -351,6 +418,102 @@ pub async fn ingest_block_logs(
         .await?;
     }
     tx.commit().await
+}
+
+/// Channel name the upgrade-controller LISTENs on for `CoprocessorUpgradeProposed` events.
+const UPGRADE_ACTIVATED_CHANNEL: &str = "event_upgrade_activated";
+
+/// Decodes a log known to come from the configured ProtocolConfig contract on
+/// the authority chain and dispatches it. Caller must pre-gate on
+/// `is_protocol_config_listener && log.address == protocol_config_contract_address`.
+async fn handle_protocol_config_log(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    chain_id: ChainId,
+    log: &Log,
+) -> Result<(), sqlx::Error> {
+    match ProtocolConfig::ProtocolConfigEvents::decode_log(&log.inner) {
+        Ok(event) => match &event.data {
+            ProtocolConfig::ProtocolConfigEvents::CoprocessorUpgradeProposed(proposed) => {
+                notify_coprocessor_upgrade_proposed(tx, chain_id, proposed).await?;
+            }
+            other => {
+                warn!(
+                    ?other,
+                    block_number = ?log.block_number,
+                    tx_hash = ?log.transaction_hash,
+                    log_index = ?log.log_index,
+                    "ProtocolConfig event decoded but no handler matched — likely a new variant added without updating host-listener",
+                );
+                PROTOCOL_CONFIG_EVENT_DECODE_FAIL_COUNTER.inc();
+            }
+        },
+        Err(_) => {
+            PROTOCOL_CONFIG_EVENT_DECODE_FAIL_COUNTER.inc();
+        }
+    }
+    Ok(())
+}
+
+async fn notify_coprocessor_upgrade_proposed(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    chain_id: ChainId,
+    event: &ProtocolConfig::CoprocessorUpgradeProposed,
+) -> Result<(), sqlx::Error> {
+    let listener_chain_id = chain_id.as_u64();
+
+    if event.proposalId.is_zero() {
+        warn!(
+            chain_id = listener_chain_id,
+            "Rejecting CoprocessorUpgradeProposed with proposalId == 0 — production contract guards against this; defense in depth against test mocks or future callers"
+        );
+        return Ok(());
+    }
+
+    let proposal_id_bytes = event.proposalId.to_be_bytes::<32>();
+    let proposal_id_hex =
+        format!("0x{}", alloy_primitives::hex::encode(proposal_id_bytes));
+
+    let Some(window) = event
+        .chainUpgradeWindows
+        .iter()
+        .find(|w| w.chainId == listener_chain_id)
+    else {
+        warn!(
+            listener_chain_id,
+            proposal_id = %proposal_id_hex,
+            nb_windows = event.chainUpgradeWindows.len(),
+            "CoprocessorUpgradeProposed does not include this chain — authority listener will not emit event_upgrade_activated"
+        );
+        return Ok(());
+    };
+
+    info!(
+        proposal_id = %proposal_id_hex,
+        software_version = %event.softwareVersion,
+        chain_id = listener_chain_id,
+        start_block = window.startBlock,
+        end_block = window.endBlock,
+        gw_start_block = event.gwStartBlock,
+        ciphertext_version = event.ciphertextVersion,
+        "Decoded CoprocessorUpgradeProposed, emitting pg_notify('event_upgrade_activated')"
+    );
+
+    let payload = serde_json::json!({
+        "proposal_id":        &proposal_id_hex,
+        "chain_id":           listener_chain_id as i64,
+        "start_block":        window.startBlock as i64,
+        "end_block":          window.endBlock as i64,
+        "gw_start_block":     event.gwStartBlock as i64,
+        "ciphertext_version": event.ciphertextVersion as i16,
+        "version":            &event.softwareVersion,
+    });
+
+    sqlx::query("SELECT pg_notify($1, $2)")
+        .bind(UPGRADE_ACTIVATED_CHANNEL)
+        .bind(payload.to_string())
+        .execute(&mut **tx)
+        .await
+        .map(|_| ())
 }
 
 pub async fn update_finalized_blocks(
@@ -597,5 +760,13 @@ mod tests {
             slow.contains(&chains[3].hash),
             "D should be slow (depends on B and C)"
         );
+    }
+
+    #[test]
+    fn proposal_id_max_uint256_round_trips_to_hex() {
+        let proposal_id = alloy::primitives::U256::MAX;
+        let bytes = proposal_id.to_be_bytes::<32>();
+        let hex = format!("0x{}", alloy_primitives::hex::encode(bytes));
+        assert_eq!(hex, format!("0x{}", "ff".repeat(32)));
     }
 }

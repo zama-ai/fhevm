@@ -85,7 +85,24 @@ const STATEMENT_CANCELLED: DbErrorCode = DbErrorCode::Borrowed("57014"); // SQLS
 
 fn apply_connection_options(options: PgConnectOptions) -> PgConnectOptions {
     options.options([
-        ("statement_timeout", "10000"), // 10 seconds
+        // 120s: large-object (lowrite) writes of the KMS server key can take
+        // 25s+ under DB contention; 10s was too tight and rolled back the
+        // key-activation download every cycle.
+        ("statement_timeout", "120000"), // 120 seconds
+    ])
+}
+
+/// Same as [`apply_connection_options`] but additionally pins
+/// `search_path = gcs,public` so every connection routes unqualified writes
+/// to the `gcs` schema (with fallback to `public` for shared read-only
+/// tables). Used by the host-listener in `--gcs-mode`.
+fn apply_connection_options_gcs(options: PgConnectOptions) -> PgConnectOptions {
+    options.options([
+        ("statement_timeout", "120000"), // 120 seconds; see apply_connection_options
+        (
+            "search_path",
+            fhevm_engine_common::database::GCS_SEARCH_PATH,
+        ),
     ])
 }
 
@@ -125,6 +142,9 @@ pub struct Database {
     pub chain_id: ChainId,
     pub dependence_chain: ChainCache,
     pub tick: HeartBeat,
+    /// When true, every connection in this pool sets
+    /// `search_path = gcs,public` so writes resolve to the GCS schema.
+    gcs_mode: bool,
 }
 
 #[derive(Debug)]
@@ -155,7 +175,17 @@ impl Database {
         chain_id: ChainId,
         dependence_cache_size: u16,
     ) -> Result<Self> {
-        let (pool, pool_refresh_handle) = Self::new_pool(url).await;
+        Self::new_with_gcs_mode(url, chain_id, dependence_cache_size, false)
+            .await
+    }
+
+    pub async fn new_with_gcs_mode(
+        url: &DatabaseURL,
+        chain_id: ChainId,
+        dependence_cache_size: u16,
+        gcs_mode: bool,
+    ) -> Result<Self> {
+        let (pool, pool_refresh_handle) = Self::new_pool(url, gcs_mode).await;
         let bucket_cache =
             Arc::new(tokio::sync::RwLock::new(lru::LruCache::new(
                 std::num::NonZeroU16::new(
@@ -171,6 +201,7 @@ impl Database {
             pool_refresh_handle: Arc::new(RwLock::new(pool_refresh_handle)),
             dependence_chain: bucket_cache,
             tick: HeartBeat::default(),
+            gcs_mode,
         })
     }
 
@@ -274,7 +305,15 @@ impl Database {
         Ok(slow_dep_chain_ids)
     }
 
-    async fn new_pool(url: &DatabaseURL) -> (PgPool, PoolRefreshHandle) {
+    async fn new_pool(
+        url: &DatabaseURL,
+        gcs_mode: bool,
+    ) -> (PgPool, PoolRefreshHandle) {
+        let transform: fn(PgConnectOptions) -> PgConnectOptions = if gcs_mode {
+            apply_connection_options_gcs
+        } else {
+            apply_connection_options
+        };
         let connect = || {
             connect_pool_with_options_and_connect_options(
                 url,
@@ -284,7 +323,7 @@ impl Database {
                     .max_connections(8)
                     .acquire_timeout(Duration::from_secs(5)),
                 None,
-                apply_connection_options,
+                transform,
             )
         };
         let mut pool = connect().await;
@@ -311,7 +350,7 @@ impl Database {
         tokio::time::sleep(RECONNECTION_DELAY).await;
         let (old_pool, old_refresh_handle) = {
             let (new_pool, new_refresh_handle) =
-                Self::new_pool(&self.url).await;
+                Self::new_pool(&self.url, self.gcs_mode).await;
             let mut pool = self.pool.write().await;
             let mut pool_refresh_handle =
                 self.pool_refresh_handle.write().await;
@@ -390,6 +429,9 @@ impl Database {
     ) -> Result<bool, SqlxError> {
         let is_scalar = !scalar_byte.is_zero();
         let output_handle = result.to_vec();
+        // Schema isolation handles BCS/GCS routing at the connection layer
+        // (`search_path = gcs,public` for GCS, default `public` for BCS), so
+        // this INSERT references `computations` unqualified.
         let query = sqlx::query!(
             r#"
             INSERT INTO computations (
@@ -572,19 +614,27 @@ impl Database {
         tx: &mut Transaction<'_>,
         block_summary: &BlockSummary,
         finalized: bool,
+        fhe_event_count: i32,
+        allow_event_count: i32,
     ) -> Result<(), SqlxError> {
         let status = if finalized { "finalized" } else { "pending" };
-        // 1. Insert if not exists (never overwrites existing row)
+        // 1. Insert if not exists (never overwrites existing row).
+        //    Event counts are written at first insert and not touched on
+        //    later finalization transitions.
         sqlx::query!(
             r#"
-            INSERT INTO host_chain_blocks_valid (chain_id, block_hash, block_number, block_status)
-            VALUES ($1, $2, $3, $4)
+            INSERT INTO host_chain_blocks_valid
+                (chain_id, block_hash, block_number, block_status,
+                 fhe_event_count, allow_event_count)
+            VALUES ($1, $2, $3, $4, $5, $6)
             ON CONFLICT (chain_id, block_hash) DO NOTHING;
             "#,
             self.chain_id.as_i64(),
             block_summary.hash.to_vec(),
             block_summary.number as i64,
             status,
+            fhe_event_count,
+            allow_event_count,
         )
         .execute(tx.deref_mut())
         .await?;

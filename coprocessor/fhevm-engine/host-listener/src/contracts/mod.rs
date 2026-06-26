@@ -22,3 +22,10 @@ sol!(
     KMSGeneration,
     "./../../../host-contracts/artifacts/contracts/KMSGeneration.sol/KMSGeneration.json"
 );
+
+sol!(
+    #[sol(rpc)]
+    #[derive(Debug, serde::Serialize, serde::Deserialize)]
+    ProtocolConfig,
+    "./../../../host-contracts/artifacts/contracts/ProtocolConfig.sol/ProtocolConfig.json"
+);

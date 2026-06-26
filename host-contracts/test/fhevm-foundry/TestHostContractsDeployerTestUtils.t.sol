@@ -183,7 +183,7 @@ contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
 
         assertEq(address(pcProxy), protocolConfigAdd, "ProtocolConfig proxy address mismatch");
         assertNotEq(pcImplementation, address(0), "Implementation not deployed");
-        assertEq(pcProxy.getVersion(), "ProtocolConfig v0.1.0", "Version mismatch");
+        assertEq(pcProxy.getVersion(), "ProtocolConfig v0.2.0", "Version mismatch");
         assertEq(pcProxy.getPublicDecryptionThreshold(), 1, "Public decryption threshold mismatch");
         assertEq(pcProxy.getUserDecryptionThreshold(), 1, "User decryption threshold mismatch");
         assertEq(pcProxy.getKmsGenThreshold(), 1, "KmsGen threshold mismatch");

@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT ciphertext FROM ciphertexts128 WHERE handle = $1 AND ciphertext_version = $2;",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "ciphertext",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Int2"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "f8f2edcfa058298bea050642b9094c651c23f9cbc0e68eb907a3df59e569d379"
+}
