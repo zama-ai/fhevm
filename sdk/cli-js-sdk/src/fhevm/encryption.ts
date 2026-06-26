@@ -32,6 +32,11 @@ export const encryptValues = async (
     options.progressLabel ??
       `Encrypting ${options.values.length.toString()} value(s)`,
   );
+  // Await client readiness so the auth-carrying encrypt init prefetches the FHE
+  // encryption key first. The SDK's createZkProof key fetch omits auth, and the
+  // global key cache is first-write-wins; without this, the unauthenticated
+  // fetch wins and `v2/keyurl` 403s on relayers that require an API key.
+  await fhevm.ready;
   const encrypted = await fhevm.encryptValues({
     contractAddress: options.contractAddress,
     userAddress: options.userAddress,
