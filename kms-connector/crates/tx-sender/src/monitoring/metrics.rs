@@ -123,7 +123,8 @@ async fn count_unprocessed(db_pool: &Pool<Postgres>, table: &str) -> Option<(i64
         "SELECT
             COUNT(*) FILTER (WHERE status = 'pending') AS pending,
             COUNT(*) FILTER (WHERE status = 'under_process') AS under_process
-        FROM {table}"
+        FROM {table}
+        WHERE status IN ('pending', 'under_process')"
     );
     match sqlx::query(&query).fetch_one(db_pool).await {
         Ok(row) => Some((

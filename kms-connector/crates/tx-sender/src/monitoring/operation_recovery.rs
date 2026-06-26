@@ -56,7 +56,7 @@ async fn fail_expired_decryptions(db_pool: &Pool<Postgres>, expiry: &PgInterval)
     for table in DECRYPTION_TABLES {
         let query = format!(
             "UPDATE {table} SET status = 'failed' \
-             WHERE status IN ('pending', 'under_process') AND NOW() - created_at > $1"
+             WHERE status IN ('pending', 'under_process') AND created_at < NOW() - $1"
         );
         match sqlx::query(&query).bind(*expiry).execute(db_pool).await {
             Ok(result) => info!(
@@ -77,7 +77,7 @@ async fn unlock_stuck_operations(
     for table in OPERATION_TABLES {
         let query = format!(
             "UPDATE {table} SET status = 'pending' \
-             WHERE status = 'under_process' AND NOW() - updated_at > $1"
+             WHERE status = 'under_process' AND updated_at < NOW() - $1"
         );
         match sqlx::query(&query)
             .bind(*operation_under_process_timeout)
