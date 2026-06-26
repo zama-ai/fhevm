@@ -29,20 +29,25 @@ const nodeDefaultLocateFile = (file: string): URL => {
   return new URL(`./tkms/${file}`, wasmBaseUrl);
 };
 
+type KmsAssetResolution = 'user' | 'node' | 'none';
 type ResolvedKmsAsset = KmsAssetMetadata & {
   readonly url: URL | undefined;
+  readonly resolution: KmsAssetResolution;
 };
 
 function _resolveKmsAsset(asset: KmsAssetMetadata, locateFile: FhevmRuntimeConfig['locateFile']): ResolvedKmsAsset {
   let url: URL | undefined;
+  let resolution: KmsAssetResolution = 'none';
 
   if (locateFile !== undefined) {
     url = locateFile(asset.filename);
+    resolution = 'user';
   } else if (!isBrowserLike()) {
     url = nodeDefaultLocateFile(asset.localRelativePath);
+    resolution = 'node';
   }
 
-  return Object.freeze({ ...asset, url });
+  return Object.freeze({ ...asset, url, resolution });
 }
 
 type ResolvedTkmsModuleConfig = {

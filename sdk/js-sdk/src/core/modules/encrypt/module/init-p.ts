@@ -6,7 +6,7 @@ import type {
   TfheModuleInfo,
 } from '../types.js';
 import type { TfheLibApi } from '../../../../wasm/tfhe/TfheApi.js';
-import type { TfheAssetMetadata, TfheVersion } from '../../../../wasm/tfhe/loadTfheLib.js';
+import type { TfheAssetMetadata, TfheAssets, TfheVersion } from '../../../../wasm/tfhe/loadTfheLib.js';
 import { isomorphicCompileVerifiedWasm, isomorphicCompileWasmFromBase64 } from '../../../base/wasm.js';
 import { isBlobWorkerSupported, isBrowserLike } from '../../../base/isomorphicWorker.js';
 import { threads } from 'wasm-feature-detect';
@@ -15,6 +15,8 @@ import { assertIsFhevmRuntime } from '../../../runtime/CoreFhevmRuntime-p.js';
 // for resolving WASM paths. Uses import.meta.url in ESM, __filename in CJS.
 import { wasmBaseUrl } from '../../../../wasm/wasmBaseUrl.js';
 import { loadTfheLib, loadTfheWasmBase64, tfheAssetsWithVersion } from '../../../../wasm/tfhe/loadTfheLib.js';
+import { isomorphicFileUrlExists } from '../../../base/isomorphicFs.js';
+import type { WasmAssetLoadMode } from '../../../types/wasmAssets.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -34,20 +36,91 @@ type TfheLibInitAsyncParameters = {
   readonly num_threads?: number;
 };
 
+type TfheAssetResolution = 'user' | 'node' | 'none';
 type ResolvedTfheAsset = TfheAssetMetadata & {
   readonly url: URL | undefined;
+  readonly resolution: TfheAssetResolution;
 };
 
 function _resolveTfheAsset(asset: TfheAssetMetadata, locateFile: FhevmRuntimeConfig['locateFile']): ResolvedTfheAsset {
   let url: URL | undefined;
+  let resolution: TfheAssetResolution = 'none';
 
   if (locateFile !== undefined) {
     url = locateFile(asset.filename);
+    resolution = 'user';
   } else if (!isBrowserLike()) {
     url = nodeDefaultLocateFile(asset.localRelativePath);
+    resolution = 'node';
   }
 
-  return Object.freeze({ ...asset, url });
+  return Object.freeze({ ...asset, url, resolution });
+}
+
+/**
+ * Resolves all TFHE assets (wasm + worker) as a single set.
+ *
+ * The resolution mode is identical across assets (they share `locateFile` and
+ * the same runtime), so it is decided once. For `'node'` resolution (auto-derived
+ * `file://` URLs), every URL is validated on disk: if any one is missing — e.g. a
+ * bundler such as Turbopack relocated the package and the derived `file://ROOT/...`
+ * path no longer exists — then ALL URLs are cleared so the whole set falls back to
+ * embedded base64 consistently. Mixing disk + base64 across assets is never allowed.
+ *
+ * `'user'` URLs are returned untouched (they fail loud later if wrong); `'none'`
+ * has no URL to validate.
+ */
+async function _resolveTfheAssets(
+  assets: TfheAssets,
+  locateFile: FhevmRuntimeConfig['locateFile'],
+): Promise<{ readonly wasm: ResolvedTfheAsset; readonly worker: ResolvedTfheAsset }> {
+  let wasm = _resolveTfheAsset(assets.wasm, locateFile);
+  let worker = _resolveTfheAsset(assets.worker, locateFile);
+
+  // Only auto-derived ('node') file:// URLs need on-disk validation; the mode is
+  // shared across all assets, so checking one is enough to know the set's mode.
+  if (wasm.resolution === 'node') {
+    const allExist = (
+      await Promise.all([isomorphicFileUrlExists(wasm.url), isomorphicFileUrlExists(worker.url)])
+    ).every(Boolean);
+    if (!allExist) {
+      wasm = Object.freeze({ ...wasm, url: undefined });
+      worker = Object.freeze({ ...worker, url: undefined });
+    }
+  }
+
+  return { wasm, worker };
+}
+
+/**
+ * Emits debug traces describing how the TFHE assets were resolved (user-provided
+ * `locateFile`, auto-derived on-disk path, embedded base64, or bundler-relocated
+ * fallback). Pure logging — no control flow.
+ */
+function _logResolvedTfheAssets(
+  wasm: ResolvedTfheAsset,
+  worker: ResolvedTfheAsset,
+  logger: FhevmRuntimeConfig['logger'],
+): void {
+  if (wasm.resolution === 'user') {
+    logger?.debug(`resolve tfhe wasm filename using 'locateFile' function: ${wasm.filename} -> url: ${wasm.url}`);
+    logger?.debug(`resolve tfhe worker filename using 'locateFile' function: ${worker.filename} -> url: ${worker.url}`);
+  } else if (wasm.resolution === 'node') {
+    if (wasm.url === undefined) {
+      // Auto-derived assets were missing on disk (e.g. a bundler such as Turbopack
+      // relocated the package) and were cleared by _resolveTfheAssets -> base64.
+      logger?.debug(
+        `tfhe auto-derived assets not found on disk (bundler relocation?); using embedded base64 ` +
+          `(wasm: ${wasm.localRelativePath}, worker: ${worker.localRelativePath})`,
+      );
+    } else {
+      logger?.debug(`resolve tfhe wasm local path: ${wasm.localRelativePath} -> url: ${wasm.url}`);
+      logger?.debug(`resolve tfhe worker local path: ${worker.localRelativePath} -> url: ${worker.url}`);
+    }
+  } else {
+    // 'none': browser zero-config (no 'locateFile', not Node) -> embedded base64.
+    logger?.debug(`resolve tfhe assets using embedded base64 (browser, no 'locateFile')`);
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -102,50 +175,91 @@ async function _getOrResolveTfheModuleConfig(
 }
 
 /**
- * @internal
- * Resolves user-provided {@link FhevmRuntimeConfig} into a fully resolved config
- * (thread count, worker URL, WASM URL). Must be called before WASM initialization.
+ * Fails fast on impossible / contradictory TFHE configurations, before any
+ * wasm or worker work begins.
+ *
+ * Only genuinely unsatisfiable configs throw here. Recoverable situations — no
+ * worker source, missing SAB/thread support, `!canUseBlob` — are NOT errors:
+ * they degrade to single-threaded later (single-threaded TFHE needs no worker,
+ * and the wasm always loads via embedded base64). Do not add degradable cases
+ * to this function.
  */
-async function _resolveTfheModuleConfig(
+function _assertSatisfiableTfheConfig(
+  wasm: ResolvedTfheAsset,
+  worker: ResolvedTfheAsset,
   parameters: FhevmRuntimeConfig,
-  version: TfheVersion,
-): Promise<ResolvedTfheModuleConfig> {
-  const {
-    locateFile,
-    wasmAssetLoadMode,
-    singleThread: singleThreadConfig,
-    numberOfThreads: numberOfThreadsConfig,
-  } = parameters;
+): void {
+  const { wasmAssetLoadMode, numberOfThreads } = parameters;
 
-  let singleThread = false;
-  if (singleThreadConfig !== undefined) {
-    singleThread = singleThreadConfig;
+  // (1) wasm and worker must share the same transport: both resolve to a URL, or
+  //     neither does. A selective `locateFile` that returns a URL for one asset
+  //     but not the other would split the transport, breaking the same-transport
+  //     invariant. ('node'/'none' are already consistent — cleared as a set.)
+  if ((wasm.url === undefined) !== (worker.url === undefined)) {
+    throw new Error(
+      `Inconsistent TFHE asset URLs: 'locateFile' must resolve both the wasm and worker assets, or neither ` +
+        `(wasm: ${wasm.url ? 'url' : 'none'}, worker: ${worker.url ? 'url' : 'none'}).`,
+    );
   }
 
-  const canUseBlob = await isBlobWorkerSupported();
-
-  const assets = tfheAssetsWithVersion(version);
-  const wasm = _resolveTfheAsset(assets.wasm, locateFile);
-  const worker = _resolveTfheAsset(assets.worker, locateFile);
-
-  if (locateFile !== undefined) {
-    parameters.logger?.debug(`resolve tfhe wasm filename: ${wasm.filename} -> url: ${wasm.url}`);
-    parameters.logger?.debug(`resolve tfhe worker filename: ${worker.filename} -> url: ${worker.url}`);
-  } else {
-    /*
-      if run in Node only, use defaultLocateFile!
-    */
-    if (isBrowserLike()) {
-      if (!canUseBlob) {
-        throw new Error('Missing locate file function');
-      }
-    } else {
-      parameters.logger?.debug(`resolve tfhe wasm local path: ${wasm.localRelativePath} -> url: ${wasm.url}`);
-      parameters.logger?.debug(`resolve tfhe worker local path: ${worker.localRelativePath} -> url: ${worker.url}`);
-    }
+  // (2) A URL-requiring worker mode (verified-blob / precheck-direct-url /
+  //     trusted-direct-url) was selected, but no asset URL is available (no
+  //     'locateFile', and any auto-derived on-disk assets are missing/cleared).
+  //     We refuse to silently downgrade an explicit URL/verification choice to base64.
+  if (worker.url === undefined && _requiresAssetUrl(wasmAssetLoadMode)) {
+    throw new Error(
+      `wasmAssetLoadMode '${wasmAssetLoadMode}' requires a resolvable asset URL, but none is available ` +
+        `(no 'locateFile', and on-disk assets are missing — e.g. relocated by a bundler). ` +
+        `Use 'auto' or 'embedded-base64', or provide 'locateFile'.`,
+    );
   }
 
-  let numberOfThreads: number | undefined;
+  // (3) Invalid thread count: must be a non-negative integer when provided.
+  //     (Negative / NaN would otherwise be silently coerced to single-threaded,
+  //     hiding the caller's mistake.)
+  if (numberOfThreads !== undefined && (!Number.isInteger(numberOfThreads) || numberOfThreads < 0)) {
+    throw new Error(`numberOfThreads must be a non-negative integer, received: ${String(numberOfThreads)}`);
+  }
+}
+
+type ResolvedThreadConfig = {
+  readonly singleThread: boolean;
+  readonly numberOfThreads: number;
+  readonly supportsThreads: boolean | undefined;
+};
+
+/**
+ * True when the worker for this load mode is spawned from code — a blob worker in
+ * the browser, an eval worker in Node — and therefore needs blob/eval worker
+ * support (`canUseBlob`). The direct-url modes use `new Worker(url)` and do not.
+ *
+ * `undefined` defaults to `'auto'`, which is a code-worker mode.
+ */
+function _needsBlobWorker(wasmAssetLoadMode: FhevmRuntimeConfig['wasmAssetLoadMode']): boolean {
+  return wasmAssetLoadMode !== 'precheck-direct-url' && wasmAssetLoadMode !== 'trusted-direct-url';
+}
+
+function _requiresAssetUrl(wasmAssetLoadMode: FhevmRuntimeConfig['wasmAssetLoadMode']): boolean {
+  return wasmAssetLoadMode !== undefined && wasmAssetLoadMode !== 'auto' && wasmAssetLoadMode !== 'embedded-base64';
+}
+
+/**
+ * Resolves the effective threading config. Degrades to single-threaded when
+ * multi-threading is requested but cannot run — no SharedArrayBuffer/COOP-COEP
+ * support, or no way to spawn a worker. Never throws: single-threaded always works
+ * (it needs no worker, and the wasm still loads via URL or embedded base64).
+ */
+async function _resolveThreadConfig(args: {
+  readonly preferredSingleThread: boolean;
+  readonly numberOfThreadsConfig: number | undefined;
+  readonly wasmAssetLoadMode: FhevmRuntimeConfig['wasmAssetLoadMode'];
+  readonly canUseBlob: boolean;
+  readonly logger: FhevmRuntimeConfig['logger'];
+}): Promise<ResolvedThreadConfig> {
+  const { preferredSingleThread, numberOfThreadsConfig, wasmAssetLoadMode, canUseBlob, logger } = args;
+
+  let singleThread = preferredSingleThread;
+  let numberOfThreads = 0;
   let supportsThreads: boolean | undefined;
 
   if (!singleThread) {
@@ -163,16 +277,99 @@ async function _resolveTfheModuleConfig(
         );
         singleThread = true;
         numberOfThreads = 0;
+      } else if (!canUseBlob && _needsBlobWorker(wasmAssetLoadMode)) {
+        // Threads are supported, but the selected mode spawns its worker from code
+        // (embedded-base64 / verified-blob / auto — blob in browser, eval in Node),
+        // and blob/eval workers are unavailable here. The direct-url modes use
+        // `new Worker(url)` and don't need blob support, so they're exempt.
+        // Degrade to single-threaded (single-threaded TFHE needs no worker).
+        logger?.warn?.(
+          `Cannot spawn a '${wasmAssetLoadMode ?? 'auto'}' worker (blob/eval workers unavailable); running single-threaded.`,
+        );
+        singleThread = true;
+        numberOfThreads = 0;
       }
     } else {
       singleThread = true;
       numberOfThreads = 0;
     }
-  } else {
-    numberOfThreads = 0;
   }
 
+  return { singleThread, numberOfThreads, supportsThreads };
+}
+
+/**
+ * @internal
+ * Resolves user-provided {@link FhevmRuntimeConfig} into a fully resolved config
+ * (thread count, worker URL, WASM URL). Must be called before WASM initialization.
+ */
+async function _resolveTfheModuleConfig(
+  parameters: FhevmRuntimeConfig,
+  version: TfheVersion,
+): Promise<ResolvedTfheModuleConfig> {
+  const {
+    locateFile,
+    wasmAssetLoadMode,
+    singleThread: preferredSingleThread,
+    numberOfThreads: numberOfThreadsConfig,
+  } = parameters;
+
+  const canUseBlob = await isBlobWorkerSupported();
+
+  const assets = tfheAssetsWithVersion(version);
+
+  const { wasm, worker } = await _resolveTfheAssets(assets, locateFile);
+
+  // ── TFHE asset resolution & degradation rules ───────────────────────────────
+  //
+  // INVARIANT: wasm and worker always use the SAME transport — either both load
+  // from a URL, or both from embedded base64. Never mixed: a URL-loaded (and
+  // SHA-verified) wasm paired with an unverified base64 worker (or vice versa)
+  // would split the integrity story across the two assets.
+  //
+  // Asset URL — wasm + worker are resolved as a SET (all-or-nothing):
+  //
+  //   locateFile  runtime / on-disk      resolution  asset url       -> loaded from
+  //   ----------  ---------------------  ----------  --------------  --------------------
+  //   provided    any                    'user'      locateFile(f)   URL (loud on failure)
+  //   none        Node, files present    'node'      file://…        URL
+  //   none        Node, files missing *  'node'      undefined       embedded base64
+  //   none        browser                'none'      undefined       embedded base64
+  //   * e.g. a bundler (Turbopack) relocated the package; URLs cleared by _resolveTfheAssets.
+  //
+  // Worker load mode (wasmAssetLoadMode) requirements:
+  //
+  //   mode                 needs URL?  needs blob/eval worker (canUseBlob)?
+  //   -------------------  ----------  ------------------------------------
+  //   embedded-base64      no          yes
+  //   verified-blob        yes         yes
+  //   auto                 no          yes   (verified-blob if URL, else embedded)
+  //   precheck-direct-url  yes         no    (new Worker(url))
+  //   trusted-direct-url   yes         no    (new Worker(url))
+  //
+  // Failure / degradation (in order):
+  //   1. mode needs a URL but none is available          -> throw (unsatisfiable explicit mode)
+  //   2. threads requested but unsupported (no SAB)      -> degrade to single-threaded
+  //   3. threads requested but worker unspawnable        -> degrade to single-threaded
+  //        (mode needs a blob/eval worker && !canUseBlob)
+  //   Single-threaded never needs a worker; wasm still loads (URL or embedded base64).
+
+  // Early validation: throw on impossible/contradictory configs. Recoverable
+  // cases (no worker source, no thread support) degrade later — they are NOT here.
+  _assertSatisfiableTfheConfig(wasm, worker, parameters);
+
+  _logResolvedTfheAssets(wasm, worker, parameters.logger);
+
+  const { singleThread, numberOfThreads, supportsThreads } = await _resolveThreadConfig({
+    preferredSingleThread: preferredSingleThread ?? false,
+    numberOfThreadsConfig,
+    wasmAssetLoadMode,
+    canUseBlob,
+    logger: parameters.logger,
+  });
+
   const tfheLib = await loadTfheLib(version);
+
   tfheLib.setWorkerUrlConfig({
     workerUrl: worker.url,
     wasmAssetLoadMode,
@@ -270,11 +467,9 @@ export async function initTfheModule(runtime: FhevmRuntime, parameters: InitTfhe
   return cachedTfheModulePromise;
 }
 
-async function _initTfheModule(cfg: ResolvedTfheModuleConfig): Promise<TfheLibApi> {
-  const tfheLib = await loadTfheLib(cfg.version);
-
-  // Compile WASM module (see matrix in types.ts)
+async function compileWasmModule(cfg: ResolvedTfheModuleConfig): Promise<WebAssembly.Module> {
   let wasmModule;
+
   if (cfg.wasm.url !== undefined) {
     cfg.logger?.debug(`compile verified wasm at: ${cfg.wasm.url}`);
     wasmModule = await isomorphicCompileVerifiedWasm(cfg.wasm.url, cfg.wasm.sha256);
@@ -283,6 +478,15 @@ async function _initTfheModule(cfg: ResolvedTfheModuleConfig): Promise<TfheLibAp
     cfg.logger?.debug(`compile wasm from embedded base64 (compression:${tfheWasmBase64CompressionFormat ?? 'none'})`);
     wasmModule = await isomorphicCompileWasmFromBase64(tfheWasmBase64, tfheWasmBase64CompressionFormat);
   }
+
+  return wasmModule;
+}
+
+async function _initTfheModule(cfg: ResolvedTfheModuleConfig): Promise<TfheLibApi> {
+  const tfheLib = await loadTfheLib(cfg.version);
+
+  // Compile WASM module (see matrix in types.ts)
+  const wasmModule = await compileWasmModule(cfg);
 
   const input: TfheLibInitAsyncParameters = { module_or_path: wasmModule };
 

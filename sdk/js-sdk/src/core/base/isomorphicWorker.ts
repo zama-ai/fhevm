@@ -1,3 +1,8 @@
+interface MessageData {
+  type: string;
+  [key: string]: unknown;
+}
+
 interface NodeMessagePort {
   on(event: 'error', listener: (error: Error) => void): void;
   on(event: 'exit', listener: (code: number) => void): void;
@@ -7,66 +12,117 @@ interface NodeMessagePort {
   terminate(): Promise<number>;
 }
 
-interface BrowserMessagePort {
-  addEventListener(event: string, listener: (event: MessageEvent<MessageData>) => void): void;
-  removeEventListener(event: string, listener: (event: MessageEvent<MessageData>) => void): void;
-  postMessage(value: unknown): void;
-  terminate(): void;
-}
-
-export type IsomorphicMessagePort = NodeMessagePort | BrowserMessagePort;
-
-interface MessageData {
-  type: string;
-  [key: string]: unknown;
-}
-
 type NodeWorkerConstructor = new (code: string | URL, options?: Record<string, unknown>) => NodeMessagePort;
 
-function isNodePort(target: IsomorphicMessagePort): target is NodeMessagePort {
-  return typeof (target as NodeMessagePort).on === 'function';
+let _supportsNodeWorkerApi: Promise<boolean> | undefined;
+
+export async function supportsNodeWorkerApi(): Promise<boolean> {
+  _supportsNodeWorkerApi ??= (async () => {
+    try {
+      // Build the id indirectly + @vite-ignore so bundlers don't statically
+      // resolve/polyfill it (a polyfilled worker_threads would falsely resolve
+      // in a browser bundle). This mirrors the existing dynamic import.
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-template-expression
+      const id = `node:${'worker_threads'}`;
+      const mod = (await import(/* @vite-ignore */ id)) as { Worker?: unknown };
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      return typeof mod?.Worker === 'function';
+    } catch {
+      return false; // browser, sandboxed Electron renderer, edge runtimes
+    }
+  })();
+  return _supportsNodeWorkerApi;
+}
+
+export function supportsWebWorkerApi(): boolean {
+  return (
+    typeof Worker === 'function' &&
+    typeof Blob === 'function' &&
+    typeof URL !== 'undefined' &&
+    typeof URL.createObjectURL === 'function'
+  );
+}
+
+export type WorkerApi = 'web' | 'node';
+
+let _resolvedWorkerApi: Promise<WorkerApi> | undefined;
+
+/**
+ * Resolves which worker backend the SDK will use, preferring the Web Worker
+ * API whenever it is available. Memoized — the answer can't change within a
+ * process lifetime.
+ *
+ * - Web is preferred because it works in every browser context, including the
+ *   sandboxed Electron renderer (where `node:worker_threads` is unavailable
+ *   even though `process.versions.node` is set).
+ * - Node is the fallback for runtimes with no Web Worker global (Node, jsdom).
+ *
+ * Runtime support matrix:
+ *
+ * | Runtime                       | Web API | Node API | Selected |
+ * | ----------------------------- | :-----: | :------: | :------: |
+ * | Browser (window / web worker) |   yes   |    no    |   web    |
+ * | Sandboxed Electron renderer   |   yes   |    no    |   web    |
+ * | Node.js                       |   no    |   yes    |   node   |
+ * | jsdom (Vitest)                |   no    |   yes    |   node   |
+ * | Deno                          |   yes   |   yes    |   web    |
+ * | Bun                           |   yes   |   yes    |  node *  |
+ *
+ * * Bun supports both backends, but is forced to `node`: it has first-class
+ *   `worker_threads` support and we keep it on the Node path for parity with
+ *   plain Node.
+ *
+ * Note: this reports the *intended* API based on API availability, not a
+ * guarantee of success — Web Worker creation can still fail at the call site
+ * (e.g. CSP blocking `worker-src blob:`). The creation site must surface that.
+ */
+export function resolveWorkerApi(): Promise<WorkerApi> {
+  _resolvedWorkerApi ??= (async () => {
+    // @ts-expect-error - Bun is a runtime global only under Bun
+    const isBun = typeof Bun !== 'undefined';
+    if (isBun) {
+      return 'node';
+    }
+    if (supportsWebWorkerApi()) {
+      return 'web'; // sync win — no node probe needed
+    }
+    if (await supportsNodeWorkerApi()) {
+      return 'node';
+    }
+    throw new Error('No worker backend available (neither Web Worker nor node:worker_threads).');
+  })();
+  return _resolvedWorkerApi;
+}
+
+export function isNodeLike(): boolean {
+  return (
+    // eslint-disable-next-line no-restricted-globals
+    typeof process !== 'undefined' &&
+    // eslint-disable-next-line no-restricted-globals, @typescript-eslint/no-unnecessary-condition
+    typeof process.versions?.node === 'string'
+  );
 }
 
 export function isBrowserLike(): boolean {
   return (
     // @ts-expect-error - Bun is a runtime global only under Bun
     typeof Bun === 'undefined' &&
-    // eslint-disable-next-line no-restricted-globals
-    typeof process === 'undefined' &&
+    !isNodeLike() &&
+    typeof location !== 'undefined' &&
+    typeof location.href === 'string' &&
     typeof addEventListener === 'function' &&
     typeof removeEventListener === 'function'
   );
 }
 
-/**
- * This function is called from inside a worker to get the messaging target
- * It's the communication channel between a worker thread and its parent (main) thread.
- */
-export async function getIsomorphicTarget(): Promise<IsomorphicMessagePort> {
-  if (isBrowserLike()) return self as unknown as BrowserMessagePort;
-  const nodeWorkerModuleName = 'worker_threads';
-  const nodeWorkerModuleId = `node:${nodeWorkerModuleName}`;
-  const { parentPort: nodeParentPort } = (await import(/* @vite-ignore */ nodeWorkerModuleId)) as {
-    parentPort: NodeMessagePort | null;
-  };
-  if (!nodeParentPort) {
-    throw new Error('Not running inside a worker thread');
-  }
-  return nodeParentPort;
-}
-
-export async function createIsomorphicWorker(url: string): Promise<Worker | NodeMessagePort> {
-  if (isBrowserLike()) {
-    return createBrowserLikeWorker(url);
-  }
-  return createNodeLikeWorker(url);
-}
-
 /*
   TODO: add support for TrustedScriptURL if needed
 */
-export async function createIsomorphicWorkerFromCode(jsCode: string): Promise<Worker | NodeMessagePort> {
-  if (isBrowserLike()) {
+async function createIsomorphicWorkerFromCode(jsCode: string): Promise<Worker | NodeMessagePort> {
+  const workerApi = await resolveWorkerApi();
+
+  //if (isBrowserLike()) {
+  if (workerApi === 'web') {
     const blob = new Blob([jsCode], { type: 'application/javascript' });
     const blobUrl = URL.createObjectURL(blob);
     try {
@@ -76,6 +132,8 @@ export async function createIsomorphicWorkerFromCode(jsCode: string): Promise<Wo
       URL.revokeObjectURL(blobUrl);
     }
   }
+
+  // workerApi === 'node'
   const nodeWorkerModuleName = 'worker_threads';
   const nodeWorkerModuleId = `node:${nodeWorkerModuleName}`;
   const { Worker: NodeWorker } = (await import(/* @vite-ignore */ nodeWorkerModuleId)) as {
@@ -102,11 +160,9 @@ export async function createIsomorphicWorkerFromCode(jsCode: string): Promise<Wo
  * @param input - Value sent to the worker via postMessage (must be structured-cloneable).
  * @param timeoutMs - Max execution time before the worker is killed. Default: 30s.
  */
-export async function runCodeInIsomorphicWorker<T>(
-  code: string,
-  input: unknown,
-  timeoutMs: number = 30_000,
-): Promise<T> {
+async function runCodeInIsomorphicWorker<T>(code: string, input: unknown, timeoutMs: number = 30_000): Promise<T> {
+  const workerApi = await resolveWorkerApi();
+
   const browserCode = `
     self.onmessage = async ({ data }) => {
       try {
@@ -130,7 +186,8 @@ export async function runCodeInIsomorphicWorker<T>(
     });
   `;
 
-  const workerCode = isBrowserLike() ? browserCode : nodeCode;
+  //const workerCode = isBrowserLike() ? browserCode : nodeCode;
+  const workerCode = workerApi === 'web' ? browserCode : nodeCode;
   const worker = await createIsomorphicWorkerFromCode(workerCode);
 
   return new Promise<T>((resolve, reject) => {
@@ -225,7 +282,9 @@ export async function runCodeInIsomorphicWorker<T>(
  * - Experimental permission model restricts worker creation.
  *   @see https://nodejs.org/api/permissions.html
  *
- * When this returns `false`, fall back to URL-based workers via `createIsomorphicWorker()`.
+ * When this returns `false`, blob/eval-based workers are unavailable in this
+ * environment (e.g. blocked by CSP `worker-src`/`script-src`, or Node's
+ * code-generation restrictions), and code cannot be run in an isomorphic worker.
  */
 let _blobWorkerSupportedPromise: Promise<boolean> | undefined;
 export function isBlobWorkerSupported(): Promise<boolean> {
@@ -235,59 +294,4 @@ export function isBlobWorkerSupported(): Promise<boolean> {
     () => false,
   );
   return _blobWorkerSupportedPromise;
-}
-
-function createBrowserLikeWorker(url: string): Worker {
-  return new Worker(url, {
-    type: 'module',
-    name: 'wasm_bindgen_worker',
-  });
-}
-
-async function createNodeLikeWorker(url: string): Promise<NodeMessagePort> {
-  const nodeWorkerModuleName = 'worker_threads';
-  const nodeWorkerModuleId = `node:${nodeWorkerModuleName}`;
-  const { Worker: NodeWorker } = (await import(/* @vite-ignore */ nodeWorkerModuleId)) as {
-    Worker: NodeWorkerConstructor;
-  };
-  // Node's Worker doesn't support data: or blob: URLs.
-  // For data: URLs, extract the code and use eval mode.
-  if (url.startsWith('data:')) {
-    const base64 = url.split(',')[1];
-    if (base64 === undefined) {
-      throw new Error('Invalid data url');
-    }
-
-    const nodeBufferModuleName = 'buffer';
-    const nodeBufferModuleId = `node:${nodeBufferModuleName}`;
-    const { Buffer: NodeBuffer } = (await import(/* @vite-ignore */ nodeBufferModuleId)) as {
-      Buffer: {
-        from(str: string, encoding: string): { toString(enc: string): string };
-      };
-    };
-    //const res = await fetch("data:application/octet-stream;base64," + data);
-    const code = NodeBuffer.from(base64, 'base64').toString('utf-8');
-    return new NodeWorker(code, { eval: true });
-  }
-  return new NodeWorker(url);
-}
-
-export function waitForMsgType(target: IsomorphicMessagePort, type: string): Promise<MessageData> {
-  return new Promise((resolve) => {
-    if (isNodePort(target)) {
-      // Node: EventEmitter, data passed directly
-      target.on('message', function onMsg(data: MessageData) {
-        if (data.type !== type) return;
-        target.off('message', onMsg);
-        resolve(data);
-      });
-    } else {
-      // Browser: DOM events, data wrapped in MessageEvent
-      target.addEventListener('message', function onMsg({ data }: MessageEvent<MessageData>) {
-        if (data.type !== type) return;
-        target.removeEventListener('message', onMsg);
-        resolve(data);
-      });
-    }
-  });
 }
