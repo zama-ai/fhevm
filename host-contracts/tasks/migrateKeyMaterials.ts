@@ -4,10 +4,11 @@ import { getRequiredEnvVar, loadHostAddresses } from './utils/loadVariables';
 
 // RFC-029 (fhevm-internal#1568) governance tasks driving the key-material
 // version cutover. The flow (publish-not-activate, "governance publishes"
-// variant): trigger a migration keygen-from-existing -> publish the migrated
-// material under the resulting key as version 1 -> schedule the per-chain /
-// gateway cutover blocks. The coprocessor host-listener ingests the emitted
-// KeyMaterialAdded / KeyMaterialMigrationScheduled events.
+// variant): trigger a migration keygen-from-existing -> publish the re-derived
+// material under the EXISTING (active) key as version 1, without moving
+// activeKeyId -> schedule the per-chain / gateway cutover blocks. The
+// coprocessor host-listener ingests the emitted KeyMaterialAdded /
+// KeyMaterialMigrationScheduled events.
 
 // v3 extra_data the connector decodes into a migration KeyGenRequest
 // (UseExisting + CompressedAll + copy_compressed_key_to_original).

@@ -19,9 +19,10 @@ use anyhow::Result;
 use sqlx::{PgPool, Row};
 use std::collections::HashMap;
 
-/// Postgres `LISTEN`/`NOTIFY` channel signalling that the (one-shot, immutable)
-/// cutover schedule has been published. Workers load the schedule once and
-/// refresh only on this notify, so the happy path never polls.
+/// Postgres `LISTEN`/`NOTIFY` channel signalling that the cutover schedule has
+/// been published or updated. Workers load the schedule once and refresh only
+/// on this notify, so the happy path never polls (a re-published schedule
+/// overwrites the prior cutover block and re-notifies).
 pub const MIGRATION_SCHEDULE_CHANNEL: &str = "migration_schedule_changed";
 
 /// Which key material an operation uses. `0` is the legacy material (today's
