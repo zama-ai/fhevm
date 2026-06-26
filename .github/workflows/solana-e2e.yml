@@ -145,7 +145,12 @@ jobs:
       - name: Tear down the stack
         if: ${{ always() }}
         working-directory: test-suite/fhevm
-        run: ./fhevm-cli clean || true
+        run: |
+          # Symmetric with the reconstruct job: the native solana-test-validator is started by
+          # setup-solana-side.sh and isn't part of the fhevm-cli compose, so kill it explicitly —
+          # otherwise it survives `fhevm-cli clean` and holds port 8899 on non-disposable runners.
+          pkill -f solana-test-validator || true
+          ./fhevm-cli clean || true
 
   # Adjacent run: the SAME full vertical, but with zama-host compiled EMITLESS (no
   # `emit-events`) and the coprocessor fed purely by gRPC off-chain RECONSTRUCTION
