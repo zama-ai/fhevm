@@ -1,19 +1,11 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-/*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:´.*/
-/*              HANDLES-RECEIVER lzReceive PROFILER             */
-/*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•°.*/
-/*  Forks a real network and measures the *actual* execution    */
-/*  gas of the ConfidentialBridge `lzReceive` leg, then fits     */
-/*  the HandlesSender formula (base / perHandle / perByte).      */
-/*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:°.´:•˚°.*°.˚:*.´+°.•°.*/
-
 import "forge-std/Script.sol";
 import "forge-std/console.sol";
 
 import {GUID} from "@layerzerolabs/lz-evm-protocol-v2/contracts/libs/GUID.sol";
-import {ILayerZeroReceiver, Origin} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroReceiver.sol";
+import {Origin} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroReceiver.sol";
 
 import {
     GasProfilerScript,
@@ -48,12 +40,21 @@ struct CalibParams {
 
 /// @title HandlesReceiverGasProfiler
 /// @notice Calibration engine: reuses {GasProfilerScript}'s fork + measurement primitive
-///         (`_profileSinglePayload`, which pranks the endpoint and reads
-///         `vm.lastCallGas()`), sweeps a (nHandles, payloadLen) grid in the bridge's
-///         wire format, and fits `base + perHandle*n + perByte*len`.
+///         (`_profileSinglePayload`, which reads `vm.lastCallGas()` across runs), sweeps a
+///         (nHandles, payloadLen) grid in the bridge's wire format, and fits
+///         `base + perHandle*n + perByte*len`.
+///
+/// @dev    Each cell is measured THROUGH the real `EndpointV2.lzReceive` method.
+///         The endpoint's inbound state is primed to mimic a packet that has been
+///         verified by DVNs in prior transactions; the measured call then pays the full
+///         production envelope: 
+///         the endpoint's `_clearPayload` bookkeeping PLUS the bridge's `lzReceive`.
 contract HandlesReceiverGasProfiler is GasProfilerScript {
     /// @dev Measured gas grid, _grid[handleIdx][payloadIdx] = max gas across runs.
     uint256[][] private _grid;
+
+    uint256 private constant LAZY_INBOUND_NONCE_SLOT = 1;
+    uint256 private constant INBOUND_PAYLOAD_HASH_SLOT = 2;
 
     function run_calibrateLzReceive(CalibParams memory p) external {
         require(p.handleCounts.length >= 2, "need >=2 handle counts");
@@ -84,8 +85,8 @@ contract HandlesReceiverGasProfiler is GasProfilerScript {
         uint64 nonce = endpoint.inboundNonce(p.receiver, p.srcEid, p.sender) + 1;
 
         // Snapshot the pristine, fully-cold fork state. We revert to it before every cell so
-        // each lzReceive pays EIP-2929 cold access (production runs each delivery as its own
-        // transaction). vm.revertToState restores the warm/cold access list AND all contract
+        // each lzReceive pays EIP-2929 cold access. 
+        // vm.revertToState restores the warm/cold access list AND all contract
         // storage -- including this profiler's own `_grid`. So results MUST be accumulated in
         // memory (which snapshots do not revert) and only written to storage after the last
         // revert; writing `_grid` inside the loop would be wiped by the next revert.
@@ -98,7 +99,6 @@ contract HandlesReceiverGasProfiler is GasProfilerScript {
             grid[i] = new uint256[](nL);
             for (uint256 j = 0; j < nL; j++) {
                 grid[i][j] = _measureCell(p, tp, p.handleCounts[i], p.payloadLens[j], nonce, coldSlotsSnapshotId);
-                nonce++;
             }
         }
 
@@ -111,8 +111,11 @@ contract HandlesReceiverGasProfiler is GasProfilerScript {
         }
     }
 
-    /// @dev Reverts to the cold-slot baseline, then measures one (nHandles, payloadLen) cell.
-    ///      Extracted to keep `_measureLzReceiveGrid` under the stack-slot limit.
+    /// @dev Reverts to the cold-slot baseline, primes the endpoint so the synthetic packet is
+    ///      "verified", then measures one (nHandles, payloadLen) cell THROUGH the real
+    ///      `EndpointV2.lzReceive` method. The measured gas therefore includes the endpoint's
+    ///      `_clearPayload` overhead (lazy-nonce SSTORE + verified-hash clear) on top of the
+    ///      bridge's own `lzReceive`.
     function _measureCell(
         CalibParams memory p,
         TestParams memory tp,
@@ -122,23 +125,70 @@ contract HandlesReceiverGasProfiler is GasProfilerScript {
         uint256 coldSlotsSnapshotId
     ) private returns (uint256) {
         vm.revertToState(coldSlotsSnapshotId);
+
+        bytes memory message = _encodeReceiveMessage(p.sender, nHandles, payloadLen);
+        bytes32 guid = GUID.generate(
+            nonce,
+            p.srcEid,
+            address(uint160(uint256(p.sender))),
+            p.dstEid,
+            bytes32(uint256(uint160(p.receiver)))
+        );
+
+        // Mimic a packet a DVN/ULN verified in a prior tx: lazy inbound nonce one below
+        // `nonce` (so this is the next in-order delivery) and the verified payload hash
+        // committed. The cheatcode writes do NOT warm the slots, so the measured call pays
+        // production first-touch (cold) SLOAD/SSTORE costs inside `_clearPayload`.
+        _primeInboundPayload(p.receiver, p.srcEid, p.sender, nonce, keccak256(abi.encodePacked(guid, message)));
+
+        // Drive the real endpoint wrapper: EndpointV2.lzReceive(origin, receiver, guid, message, extraData).
         bytes memory callParams = abi.encodeWithSelector(
-            ILayerZeroReceiver.lzReceive.selector,
+            endpoint.lzReceive.selector,
             Origin(p.srcEid, p.sender, nonce),
-            GUID.generate(
-                nonce,
-                p.srcEid,
-                address(uint160(uint256(p.sender))),
-                p.dstEid,
-                bytes32(uint256(uint160(p.receiver)))
-            ),
-            _encodeReceiveMessage(p.sender, nHandles, payloadLen),
-            address(this),
+            p.receiver,
+            guid,
+            message,
             bytes("")
         );
-        GasMetrics memory m = _profileSinglePayload(tp, p.receiver, callParams);
-        require(m.successfulRuns > 0, "lzReceive reverted on fork (check receiver/sender/peer wiring & eids)");
+        GasMetrics memory m = _profileSinglePayload(tp, address(endpoint), callParams);
+        require(
+            m.successfulRuns > 0,
+            "endpoint.lzReceive reverted on fork (check receiver/sender/peer wiring, eids, or endpoint storage layout)"
+        );
         return m.maxGas;
+    }
+
+    /// @dev Primes `EndpointV2`'s inbound state for a synthetic packet so that
+    ///      `EndpointV2.lzReceive` -> `_clearPayload` passes its in-order nonce check and
+    ///      verified-hash check: sets `lazyInboundNonce = nonce - 1` and
+    ///      `inboundPayloadHash[nonce] = payloadHash`.
+    function _primeInboundPayload(
+        address receiver,
+        uint32 srcEid,
+        bytes32 sender,
+        uint64 nonce,
+        bytes32 payloadHash
+    ) private {
+        bytes32 lazySlot = _mappingSlot3(LAZY_INBOUND_NONCE_SLOT, receiver, srcEid, sender);
+        vm.store(address(endpoint), lazySlot, bytes32(uint256(nonce - 1)));
+
+        bytes32 hashSlot = keccak256(
+            abi.encode(uint256(nonce), _mappingSlot3(INBOUND_PAYLOAD_HASH_SLOT, receiver, srcEid, sender))
+        );
+        vm.store(address(endpoint), hashSlot, payloadHash);
+    }
+
+    /// @dev Storage slot of a `mapping(address => mapping(uint32 => mapping(bytes32 => T)))`
+    ///      leaf, given the mapping's base slot.
+    function _mappingSlot3(
+        uint256 baseSlot,
+        address receiver,
+        uint32 srcEid,
+        bytes32 sender
+    ) private pure returns (bytes32 s) {
+        s = keccak256(abi.encode(receiver, baseSlot));
+        s = keccak256(abi.encode(uint256(srcEid), s));
+        s = keccak256(abi.encode(sender, s));
     }
 
     /// @dev Bridge wire format: abi.encode(srcApp, dstApp, payload, srcHandleList).
@@ -196,7 +246,7 @@ contract HandlesReceiverGasProfiler is GasProfilerScript {
     }
 
     function _logGrid(uint256[] memory handleCounts, uint256[] memory payloadLens) private view {
-        console.log("--- lzReceive gas grid (max across runs) ---");
+        console.log("--- endpoint.lzReceive gas grid (max across runs) ---");
         for (uint256 i = 0; i < handleCounts.length; i++) {
             string memory row = string.concat("n=", vm.toString(handleCounts[i]), ":");
             for (uint256 j = 0; j < payloadLens.length; j++) {
