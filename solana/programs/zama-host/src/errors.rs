@@ -210,4 +210,28 @@ pub enum ZamaHostError {
     /// The coprocessor-attested user is not among the output ACL subjects.
     #[msg("attested user address is not an output ACL subject")]
     InputBindUserNotSubject,
+    /// MMR internal bookkeeping (peak count vs leaf count) is inconsistent.
+    #[msg("MMR state is inconsistent")]
+    MmrStateInconsistent,
+    /// An encrypted-value ACL account is not the canonical PDA or has invalid shape.
+    #[msg("encrypted-value ACL account does not match the canonical PDA")]
+    EncryptedValueAclPdaMismatch,
+    /// The encrypted-value ACL account fields do not match the expected value lineage.
+    #[msg("encrypted-value ACL account fields do not match the value lineage")]
+    EncryptedValueAclMismatch,
+    /// The requested handle is not the current handle in the live encrypted-value ACL.
+    #[msg("handle is not the current encrypted value")]
+    EncryptedValueHandleMismatch,
+    /// The subject is not a durable member of the encrypted-value ACL.
+    #[msg("subject is not a durable member of the encrypted-value ACL")]
+    EncryptedValueSubjectMissing,
+    /// A historical-access MMR proof failed verification against the live peaks.
+    #[msg("historical access MMR proof is invalid")]
+    HistoricalAccessProofInvalid,
+    /// A public-decrypt MMR proof failed verification against the live peaks.
+    #[msg("public decrypt MMR proof is invalid")]
+    PublicDecryptProofInvalid,
+    /// The encrypted-value ACL subject set is at capacity.
+    #[msg("encrypted-value ACL subject capacity exceeded")]
+    EncryptedValueSubjectCapacityExceeded,
 }

@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT event_type, old_handle, subjects_snapshot, handle\n               FROM lineage_events WHERE pda = $1 ORDER BY event_index ASC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "event_type",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 1,
+        "name": "old_handle",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 2,
+        "name": "subjects_snapshot",
+        "type_info": "ByteaArray"
+      },
+      {
+        "ordinal": 3,
+        "name": "handle",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "67662d3b2a00d605a8f1489285ac98539f5720d2b5f6c2d298253b737a5884c7"
+}

@@ -13997,6 +13997,16 @@ dependencies = [
  "solana-secp256k1-recover",
  "solana-sha256-hasher",
  "solana-sysvar",
+ "zama-solana-acl",
+]
+
+[[package]]
+name = "zama-solana-acl"
+version = "0.1.0"
+dependencies = [
+ "borsh",
+ "sha2 0.10.9",
+ "sha3",
 ]
 
 [[package]]

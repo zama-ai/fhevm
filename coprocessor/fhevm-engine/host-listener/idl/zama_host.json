@@ -119,6 +119,49 @@
       ]
     },
     {
+      "name": "allow_encrypted_value_subjects",
+      "docs": [
+        "Extends current durable membership on a lineage."
+      ],
+      "discriminator": [
+        177,
+        184,
+        49,
+        199,
+        142,
+        199,
+        142,
+        238
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "app_account_authority",
+          "signer": true
+        },
+        {
+          "name": "encrypted_value_acl",
+          "writable": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "subjects",
+          "type": {
+            "vec": "pubkey"
+          }
+        }
+      ]
+    },
+    {
       "name": "allow_for_decryption",
       "discriminator": [
         130,
@@ -1721,6 +1764,86 @@
       ]
     },
     {
+      "name": "initialize_encrypted_value_acl",
+      "docs": [
+        "Creates an encrypted-value ACL lineage at its first handle."
+      ],
+      "discriminator": [
+        164,
+        86,
+        4,
+        52,
+        199,
+        75,
+        55,
+        213
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "docs": [
+            "Rent payer for the lineage account."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "app_account_authority",
+          "docs": [
+            "App account that owns this lineage (keys the PDA)."
+          ],
+          "signer": true
+        },
+        {
+          "name": "encrypted_value_acl",
+          "writable": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "value_key",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "acl_domain_key",
+          "type": "pubkey"
+        },
+        {
+          "name": "encrypted_value_label",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "handle",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "subjects",
+          "type": {
+            "vec": "pubkey"
+          }
+        }
+      ]
+    },
+    {
       "name": "initialize_host_config",
       "discriminator": [
         37,
@@ -1795,6 +1918,42 @@
       ]
     },
     {
+      "name": "mark_encrypted_value_public",
+      "docs": [
+        "Records an exact public-decrypt leaf for the lineage's current handle."
+      ],
+      "discriminator": [
+        10,
+        93,
+        118,
+        108,
+        158,
+        99,
+        18,
+        102
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "app_account_authority",
+          "signer": true
+        },
+        {
+          "name": "encrypted_value_acl",
+          "writable": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "revoke_delegation_for_user_decryption",
       "discriminator": [
         147,
@@ -1849,6 +2008,58 @@
         }
       ],
       "args": []
+    },
+    {
+      "name": "rotate_encrypted_value",
+      "docs": [
+        "Rotates a lineage to a new handle/subject set, recording old-handle history."
+      ],
+      "discriminator": [
+        43,
+        245,
+        176,
+        89,
+        185,
+        32,
+        50,
+        229
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "app_account_authority",
+          "signer": true
+        },
+        {
+          "name": "encrypted_value_acl",
+          "writable": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "new_handle",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "new_subjects",
+          "type": {
+            "vec": "pubkey"
+          }
+        }
+      ]
     },
     {
       "name": "set_deny_subject",
@@ -2955,6 +3166,46 @@
       "code": 6066,
       "name": "InputBindUserNotSubject",
       "msg": "attested user address is not an output ACL subject"
+    },
+    {
+      "code": 6067,
+      "name": "MmrStateInconsistent",
+      "msg": "MMR state is inconsistent"
+    },
+    {
+      "code": 6068,
+      "name": "EncryptedValueAclPdaMismatch",
+      "msg": "encrypted-value ACL account does not match the canonical PDA"
+    },
+    {
+      "code": 6069,
+      "name": "EncryptedValueAclMismatch",
+      "msg": "encrypted-value ACL account fields do not match the value lineage"
+    },
+    {
+      "code": 6070,
+      "name": "EncryptedValueHandleMismatch",
+      "msg": "handle is not the current encrypted value"
+    },
+    {
+      "code": 6071,
+      "name": "EncryptedValueSubjectMissing",
+      "msg": "subject is not a durable member of the encrypted-value ACL"
+    },
+    {
+      "code": 6072,
+      "name": "HistoricalAccessProofInvalid",
+      "msg": "historical access MMR proof is invalid"
+    },
+    {
+      "code": 6073,
+      "name": "PublicDecryptProofInvalid",
+      "msg": "public decrypt MMR proof is invalid"
+    },
+    {
+      "code": 6074,
+      "name": "EncryptedValueSubjectCapacityExceeded",
+      "msg": "encrypted-value ACL subject capacity exceeded"
     }
   ],
   "types": [

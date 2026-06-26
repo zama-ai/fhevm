@@ -240,25 +240,13 @@
           }
         },
         {
-          "name": "current_compute_acl",
-          "docs": [
-            "Current balance ACL record used as the left-hand operand."
-          ]
-        },
-        {
-          "name": "current_total_supply_acl",
-          "docs": [
-            "Current total-supply ACL record used as the left-hand operand."
-          ]
-        },
-        {
           "name": "amount_compute_acl",
           "docs": [
             "Encrypted burn amount ACL record."
           ]
         },
         {
-          "name": "output_acl",
+          "name": "balance_value_acl",
           "writable": true
         },
         {
@@ -266,7 +254,7 @@
           "writable": true
         },
         {
-          "name": "total_supply_output_acl",
+          "name": "total_supply_value_acl",
           "writable": true
         },
         {
@@ -540,12 +528,6 @@
           }
         },
         {
-          "name": "from_current_compute_acl",
-          "docs": [
-            "Original sender current balance ACL record."
-          ]
-        },
-        {
           "name": "sent_amount_acl",
           "docs": [
             "ACL record for the prior transfer's all-or-zero sent amount."
@@ -565,7 +547,7 @@
           ]
         },
         {
-          "name": "from_output_acl",
+          "name": "from_balance_value_acl",
           "writable": true
         },
         {
@@ -684,12 +666,6 @@
           }
         },
         {
-          "name": "to_current_compute_acl",
-          "docs": [
-            "Original recipient current balance ACL record."
-          ]
-        },
-        {
           "name": "sent_amount_acl",
           "docs": [
             "ACL record for the prior transfer's all-or-zero sent amount."
@@ -779,7 +755,7 @@
           }
         },
         {
-          "name": "to_output_acl",
+          "name": "to_balance_value_acl",
           "writable": true
         },
         {
@@ -913,25 +889,13 @@
           }
         },
         {
-          "name": "from_current_compute_acl",
-          "docs": [
-            "Sender current balance ACL record."
-          ]
-        },
-        {
-          "name": "to_current_compute_acl",
-          "docs": [
-            "Recipient current balance ACL record."
-          ]
-        },
-        {
           "name": "amount_compute_acl",
           "docs": [
             "Encrypted amount ACL record."
           ]
         },
         {
-          "name": "from_output_acl",
+          "name": "from_balance_value_acl",
           "writable": true
         },
         {
@@ -939,7 +903,7 @@
           "writable": true
         },
         {
-          "name": "to_output_acl",
+          "name": "to_balance_value_acl",
           "writable": true
         },
         {
@@ -1363,152 +1327,84 @@
       ]
     },
     {
-      "name": "disclose_balance_secp",
+      "name": "disclose_balance_public",
       "docs": [
-        "Gateway-compatible balance disclosure: verifies the KMS `PublicDecryptVerification`",
-        "EIP-712 certificate on-chain via secp256k1_recover against the HostConfig KMS signer."
+        "Marks the caller's confidential balance publicly decryptable: records an exact",
+        "public-decrypt MMR leaf on the owner's balance lineage via the zama-host CPI. The",
+        "on-chain trigger for the KMS public-decrypt path (encrypted-value ACL + MMR PoC)."
       ],
       "discriminator": [
-        218,
-        219,
-        112,
-        210,
-        88,
-        169,
-        228,
-        105
+        14,
+        171,
+        156,
+        153,
+        217,
+        103,
+        120,
+        208
       ],
       "accounts": [
         {
-          "name": "mint",
+          "name": "owner",
           "docs": [
-            "Confidential mint the disclosed balance belongs to."
-          ]
+            "Token owner authorizing disclosure of their own balance, and CPI payer for",
+            "any lineage-account growth the appended leaf requires."
+          ],
+          "writable": true,
+          "signer": true
         },
         {
           "name": "token_account",
           "docs": [
-            "Confidential token account whose current balance is disclosed."
-          ]
-        },
-        {
-          "name": "balance_acl_record",
-          "docs": [
-            "Current balance ACL record for the disclosed handle."
-          ]
-        },
-        {
-          "name": "balance_material_commitment",
-          "docs": [
-            "Material commitment witness for the disclosed handle."
-          ]
-        },
-        {
-          "name": "disclosure_request",
-          "docs": [
-            "Account-backed disclosure request witness consumed by this instruction."
+            "The owner's confidential token account; its balance lineage is disclosed."
           ],
-          "writable": true
-        },
-        {
-          "name": "host_config",
-          "docs": [
-            "Host config carrying the gateway KMS verifier params."
-          ],
+          "writable": true,
           "pda": {
             "seeds": [
               {
                 "kind": "const",
                 "value": [
-                  104,
-                  111,
-                  115,
                   116,
+                  111,
+                  107,
+                  101,
+                  110,
                   45,
+                  97,
+                  99,
                   99,
                   111,
+                  117,
                   110,
-                  102,
-                  105,
-                  103
+                  116
                 ]
+              },
+              {
+                "kind": "account",
+                "path": "token_account.mint",
+                "account": "ConfidentialTokenAccount"
+              },
+              {
+                "kind": "account",
+                "path": "owner"
               }
-            ],
-            "program": {
-              "kind": "const",
-              "value": [
-                76,
-                211,
-                2,
-                45,
-                255,
-                80,
-                74,
-                103,
-                92,
-                175,
-                45,
-                155,
-                79,
-                64,
-                20,
-                208,
-                179,
-                220,
-                62,
-                161,
-                127,
-                251,
-                151,
-                186,
-                53,
-                92,
-                236,
-                90,
-                147,
-                58,
-                48,
-                238
-              ]
-            }
+            ]
           }
         },
         {
-          "name": "kms_context",
-          "docs": [
-            "KMS context the request was pinned to. Verified in-handler against the witness's",
-            "`kms_context_id` (not the current context), so a cert minted under one context cannot be",
-            "presented against a request pinned to another after rotation."
-          ]
+          "name": "balance_value_acl",
+          "writable": true
         },
         {
-          "name": "event_authority"
+          "name": "zama_program",
+          "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
         },
         {
-          "name": "program"
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
         }
       ],
-      "args": [
-        {
-          "name": "cleartext_amount",
-          "type": "u64"
-        },
-        {
-          "name": "signatures",
-          "type": {
-            "vec": {
-              "array": [
-                "u8",
-                65
-              ]
-            }
-          }
-        },
-        {
-          "name": "extra_data",
-          "type": "bytes"
-        }
-      ]
+      "args": []
     },
     {
       "name": "initialize_mint",
@@ -1604,7 +1500,7 @@
           }
         },
         {
-          "name": "total_supply_acl_record",
+          "name": "total_supply_value_acl",
           "writable": true
         },
         {
@@ -1731,7 +1627,7 @@
           }
         },
         {
-          "name": "acl_record",
+          "name": "balance_value_acl",
           "writable": true
         },
         {
@@ -2376,160 +2272,6 @@
       ]
     },
     {
-      "name": "request_disclose_balance",
-      "docs": [
-        "Requests public disclosure for the current confidential balance handle."
-      ],
-      "discriminator": [
-        185,
-        54,
-        155,
-        207,
-        27,
-        89,
-        166,
-        230
-      ],
-      "accounts": [
-        {
-          "name": "owner",
-          "docs": [
-            "Token account owner and disclosure authority."
-          ],
-          "writable": true,
-          "signer": true
-        },
-        {
-          "name": "mint",
-          "docs": [
-            "Confidential mint."
-          ]
-        },
-        {
-          "name": "token_account",
-          "docs": [
-            "Confidential token account whose current balance is disclosed."
-          ]
-        },
-        {
-          "name": "balance_acl_record",
-          "docs": [
-            "Current balance ACL record. Updated by ZamaHost CPI."
-          ],
-          "writable": true
-        },
-        {
-          "name": "balance_material_commitment",
-          "docs": [
-            "Material commitment witness for the disclosed handle."
-          ]
-        },
-        {
-          "name": "disclosure_request",
-          "docs": [
-            "Account-backed request witness consumed by the KMS response path."
-          ],
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  100,
-                  105,
-                  115,
-                  99,
-                  108,
-                  111,
-                  115,
-                  117,
-                  114,
-                  101,
-                  45,
-                  114,
-                  101,
-                  113,
-                  117,
-                  101,
-                  115,
-                  116
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "mint"
-              },
-              {
-                "kind": "account",
-                "path": "owner"
-              },
-              {
-                "kind": "account",
-                "path": "token_account.balance_handle",
-                "account": "ConfidentialTokenAccount"
-              },
-              {
-                "kind": "arg",
-                "path": "request_nonce"
-              }
-            ]
-          }
-        },
-        {
-          "name": "authority_permission_record",
-          "optional": true
-        },
-        {
-          "name": "deny_subject_record",
-          "optional": true
-        },
-        {
-          "name": "zama_event_authority"
-        },
-        {
-          "name": "zama_program",
-          "docs": [
-            "ZamaHost program used to update the ACL record."
-          ],
-          "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
-        },
-        {
-          "name": "host_config",
-          "docs": [
-            "ZamaHost config used for pause and deny-list checks."
-          ]
-        },
-        {
-          "name": "system_program",
-          "docs": [
-            "System program used for request witness creation."
-          ],
-          "address": "11111111111111111111111111111111"
-        },
-        {
-          "name": "event_authority"
-        },
-        {
-          "name": "program"
-        }
-      ],
-      "args": [
-        {
-          "name": "request_nonce",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        },
-        {
-          "name": "expires_slot",
-          "type": "u64"
-        }
-      ]
-    },
-    {
       "name": "wrap_usdc",
       "docs": [
         "Escrows public USDC and rotates the confidential balance by `amount`."
@@ -2674,23 +2416,11 @@
           }
         },
         {
-          "name": "current_compute_acl",
-          "docs": [
-            "Current balance ACL record used as the left-hand operand."
-          ]
-        },
-        {
-          "name": "current_total_supply_acl",
-          "docs": [
-            "Current total-supply ACL record used as the left-hand operand."
-          ]
-        },
-        {
-          "name": "output_acl",
+          "name": "total_supply_value_acl",
           "writable": true
         },
         {
-          "name": "total_supply_output_acl",
+          "name": "balance_value_acl",
           "writable": true
         },
         {
@@ -2856,32 +2586,6 @@
         195,
         251,
         68
-      ]
-    },
-    {
-      "name": "BalanceDisclosedEvent",
-      "discriminator": [
-        67,
-        181,
-        92,
-        233,
-        239,
-        7,
-        86,
-        84
-      ]
-    },
-    {
-      "name": "BalanceDisclosureRequestedEvent",
-      "discriminator": [
-        94,
-        196,
-        252,
-        154,
-        178,
-        26,
-        177,
-        169
       ]
     },
     {
@@ -3156,6 +2860,11 @@
       "code": 6035,
       "name": "MissingFheOutputAuthority",
       "msg": "FHE eval plan is missing a required output authority"
+    },
+    {
+      "code": 6036,
+      "name": "EncryptedValueAclMismatch",
+      "msg": "encrypted-value ACL account does not match the balance lineage PDA"
     }
   ],
   "types": [
@@ -3470,174 +3179,6 @@
       }
     },
     {
-      "name": "BalanceDisclosedEvent",
-      "docs": [
-        "Emitted when a KMS certificate discloses the current balance cleartext."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "version",
-            "docs": [
-              "Event schema version."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "mint",
-            "docs": [
-              "Confidential mint."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "owner",
-            "docs": [
-              "Token account owner."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "token_account",
-            "docs": [
-              "Confidential token account."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "handle",
-            "docs": [
-              "Disclosed balance handle."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "request",
-            "docs": [
-              "Consumed request witness."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "request_hash",
-            "docs": [
-              "Canonical request hash stored in the witness."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "cleartext_amount",
-            "docs": [
-              "KMS-certified cleartext amount."
-            ],
-            "type": "u64"
-          }
-        ]
-      }
-    },
-    {
-      "name": "BalanceDisclosureRequestedEvent",
-      "docs": [
-        "Emitted when the owner requests public disclosure of the current balance."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "version",
-            "docs": [
-              "Event schema version."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "mint",
-            "docs": [
-              "Confidential mint."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "owner",
-            "docs": [
-              "Token account owner."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "token_account",
-            "docs": [
-              "Confidential token account."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "handle",
-            "docs": [
-              "Publicly decryptable balance handle."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "acl_record",
-            "docs": [
-              "ZamaHost ACL record updated by the request."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "request",
-            "docs": [
-              "Account-backed request witness."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "request_hash",
-            "docs": [
-              "Canonical request hash stored in the witness."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "kms_context_id",
-            "docs": [
-              "KMS context id the response cert must verify against."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "expires_slot",
-            "docs": [
-              "Last slot in which this request can be consumed."
-            ],
-            "type": "u64"
-          }
-        ]
-      }
-    },
-    {
       "name": "BalanceHandleUpdateReason",
       "docs": [
         "Reason code for [`BalanceHandleUpdatedEvent`]."
@@ -3721,13 +3262,6 @@
             }
           },
           {
-            "name": "old_acl_record",
-            "docs": [
-              "Previous ZamaHost ACL record."
-            ],
-            "type": "pubkey"
-          },
-          {
             "name": "new_handle",
             "docs": [
               "New balance handle."
@@ -3738,13 +3272,6 @@
                 32
               ]
             }
-          },
-          {
-            "name": "new_acl_record",
-            "docs": [
-              "New ZamaHost ACL record."
-            ],
-            "type": "pubkey"
           },
           {
             "name": "reason",
@@ -4312,7 +3839,9 @@
           {
             "name": "total_supply_handle",
             "docs": [
-              "Current encrypted total-supply handle."
+              "Current encrypted total-supply handle. Its durable ACL is the",
+              "total-supply encrypted-value ACL lineage derived from `(mint,",
+              "total_supply_authority)` — not stored here."
             ],
             "type": {
               "array": [
@@ -4320,20 +3849,6 @@
                 32
               ]
             }
-          },
-          {
-            "name": "total_supply_acl_record",
-            "docs": [
-              "Current ZamaHost ACL record for `total_supply_handle`."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "next_total_supply_nonce_sequence",
-            "docs": [
-              "Next nonce sequence to use for a total-supply ACL record."
-            ],
-            "type": "u64"
           }
         ]
       }
@@ -4363,7 +3878,9 @@
           {
             "name": "balance_handle",
             "docs": [
-              "Current confidential balance handle."
+              "Current confidential balance handle. Its durable ACL is the balance",
+              "encrypted-value ACL lineage derived from `(mint, token_account)` — not",
+              "stored here."
             ],
             "type": {
               "array": [
@@ -4373,23 +3890,10 @@
             }
           },
           {
-            "name": "balance_acl_record",
-            "docs": [
-              "Current ZamaHost ACL record for `balance_handle`."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "next_balance_nonce_sequence",
-            "docs": [
-              "Next nonce sequence to use for a balance ACL record."
-            ],
-            "type": "u64"
-          },
-          {
             "name": "next_amount_nonce_sequence",
             "docs": [
-              "Next nonce sequence to use for owner-scoped random amount ACL records."
+              "Next nonce sequence to use for one-shot amount ACL records (transfer,",
+              "random, burn/refund witnesses)."
             ],
             "type": "u64"
           },
@@ -5130,13 +4634,6 @@
             }
           },
           {
-            "name": "old_acl_record",
-            "docs": [
-              "Previous ZamaHost ACL record."
-            ],
-            "type": "pubkey"
-          },
-          {
             "name": "new_handle",
             "docs": [
               "New total-supply handle."
@@ -5147,13 +4644,6 @@
                 32
               ]
             }
-          },
-          {
-            "name": "new_acl_record",
-            "docs": [
-              "New ZamaHost ACL record."
-            ],
-            "type": "pubkey"
           },
           {
             "name": "reason",

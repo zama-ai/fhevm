@@ -53,6 +53,17 @@ impl<'a, 'info> AdmissionState<'a, 'info> {
         permission_index: Option<u16>,
     ) -> Result<ResolvedOperand> {
         let record_info = account_at(self.remaining_accounts, acl_record_index)?;
+        // Lineage-backed input: authorize against the live EncryptedValueAcl exactly
+        // as the execution pass does (shared helper). One-shot AclRecord inputs return
+        // None and fall through to the keyed-nonce path below.
+        if let Some(public_decrypt_allowed) = try_authorize_lineage_operand(
+            record_info,
+            handle,
+            self.subject,
+            permission_index.is_some(),
+        )? {
+            return Ok(ResolvedOperand::encrypted(handle, public_decrypt_allowed));
+        }
         let permission_info = permission_index
             .map(|index| account_at(self.remaining_accounts, index))
             .transpose()?;

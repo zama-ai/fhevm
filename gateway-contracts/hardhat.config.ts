@@ -188,7 +188,9 @@ const config: HardhatUserConfig = {
       // https://hardhat.org/hardhat-network/#solidity-optimizer-support
       optimizer: {
         enabled: true,
-        runs: 800,
+        // Lowered from 800 to keep Decryption.sol runtime bytecode under the EIP-170
+        // 24576-byte limit after the Solana MMR-proof payload fields were added.
+        runs: 200,
       },
       evmVersion: "cancun",
       viaIR: false,

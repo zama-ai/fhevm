@@ -24,7 +24,7 @@ pub const ACL_ROLE_KNOWN: u8 =
     ACL_ROLE_USE | ACL_ROLE_GRANT | ACL_ROLE_PUBLIC_DECRYPT | ACL_ROLE_COMPUTE;
 pub const HANDLE_MATERIAL_STATE_COMMITTED: u8 = 1;
 pub const WILDCARD_APP_CONTEXT: SolanaPubkeyBytes = [0xff; 32];
-const ANCHOR_DISCRIMINATOR_LEN: usize = 8;
+pub(crate) const ANCHOR_DISCRIMINATOR_LEN: usize = 8;
 const MAX_ACL_SUBJECTS: usize = 8;
 const ACL_RECORD_SPACE: usize = 32
     + 32
@@ -184,6 +184,20 @@ pub enum SolanaAclVerificationError {
     AccountDiscriminatorMismatch,
     #[error("account data contains invalid field values")]
     InvalidAccountData,
+    #[error("encrypted-value ACL account is not the canonical PDA for its value key")]
+    NonCanonicalEncryptedValueAcl,
+    #[error("encrypted-value ACL bump does not match the canonical PDA bump")]
+    EncryptedValueAclBumpMismatch,
+    #[error("requested handle is not the current encrypted value")]
+    EncryptedValueHandleMismatch,
+    #[error("subject is not a durable member of the encrypted-value ACL")]
+    EncryptedValueSubjectMissing,
+    #[error("encrypted-value ACL MMR state (peak count vs leaf count) is inconsistent")]
+    MmrStateInconsistent,
+    #[error("historical access MMR proof is invalid")]
+    HistoricalAccessProofInvalid,
+    #[error("public decrypt MMR proof is invalid")]
+    PublicDecryptProofInvalid,
 }
 
 impl SolanaAclVerifier {
@@ -754,7 +768,7 @@ pub fn anchor_account_discriminator(account_name: &str) -> [u8; ANCHOR_DISCRIMIN
     discriminator
 }
 
-fn require_anchor_account_data(
+pub(crate) fn require_anchor_account_data(
     data: &[u8],
     account_name: &str,
     body_len: usize,
@@ -768,42 +782,42 @@ fn require_anchor_account_data(
     Ok(())
 }
 
-struct AccountDataCursor<'a> {
+pub(crate) struct AccountDataCursor<'a> {
     data: &'a [u8],
     offset: usize,
 }
 
 impl<'a> AccountDataCursor<'a> {
-    fn new(data: &'a [u8]) -> Self {
+    pub(crate) fn new(data: &'a [u8]) -> Self {
         Self { data, offset: 0 }
     }
 
-    fn read_bytes_32(&mut self) -> Result<[u8; 32], SolanaAclVerificationError> {
+    pub(crate) fn read_bytes_32(&mut self) -> Result<[u8; 32], SolanaAclVerificationError> {
         let bytes = self.read_exact(32)?;
         let mut output = [0; 32];
         output.copy_from_slice(bytes);
         Ok(output)
     }
 
-    fn read_u64(&mut self) -> Result<u64, SolanaAclVerificationError> {
+    pub(crate) fn read_u64(&mut self) -> Result<u64, SolanaAclVerificationError> {
         let bytes = self.read_exact(8)?;
         let mut value = [0; 8];
         value.copy_from_slice(bytes);
         Ok(u64::from_le_bytes(value))
     }
 
-    fn read_u32(&mut self) -> Result<u32, SolanaAclVerificationError> {
+    pub(crate) fn read_u32(&mut self) -> Result<u32, SolanaAclVerificationError> {
         let bytes = self.read_exact(4)?;
         let mut value = [0; 4];
         value.copy_from_slice(bytes);
         Ok(u32::from_le_bytes(value))
     }
 
-    fn read_u8(&mut self) -> Result<u8, SolanaAclVerificationError> {
+    pub(crate) fn read_u8(&mut self) -> Result<u8, SolanaAclVerificationError> {
         Ok(self.read_exact(1)?[0])
     }
 
-    fn read_bool(&mut self) -> Result<bool, SolanaAclVerificationError> {
+    pub(crate) fn read_bool(&mut self) -> Result<bool, SolanaAclVerificationError> {
         match self.read_u8()? {
             0 => Ok(false),
             1 => Ok(true),
@@ -811,7 +825,10 @@ impl<'a> AccountDataCursor<'a> {
         }
     }
 
-    fn read_exact(&mut self, len: usize) -> Result<&'a [u8], SolanaAclVerificationError> {
+    pub(crate) fn read_exact(
+        &mut self,
+        len: usize,
+    ) -> Result<&'a [u8], SolanaAclVerificationError> {
         let end = self
             .offset
             .checked_add(len)

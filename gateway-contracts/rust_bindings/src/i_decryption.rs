@@ -50,6 +50,9 @@ interface IDecryption {
         bytes32 nonce;
         bytes extraData;
         bytes signature;
+        bytes32 aclValueKey;
+        bytes mmrProof;
+        uint64 proofSlot;
     }
 
     error ContractAddressesMaxLengthExceeded(uint256 maxLength, uint256 actualLength);
@@ -702,6 +705,21 @@ interface IDecryption {
             "name": "signature",
             "type": "bytes",
             "internalType": "bytes"
+          },
+          {
+            "name": "aclValueKey",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "mmrProof",
+            "type": "bytes",
+            "internalType": "bytes"
+          },
+          {
+            "name": "proofSlot",
+            "type": "uint64",
+            "internalType": "uint64"
           }
         ]
       }
@@ -1138,6 +1156,21 @@ interface IDecryption {
             "name": "signature",
             "type": "bytes",
             "internalType": "bytes"
+          },
+          {
+            "name": "aclValueKey",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "mmrProof",
+            "type": "bytes",
+            "internalType": "bytes"
+          },
+          {
+            "name": "proofSlot",
+            "type": "uint64",
+            "internalType": "uint64"
           }
         ]
       }
@@ -3598,7 +3631,7 @@ struct UserDecryptionRequestPayload { address userAddress; bytes publicKey; addr
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**```solidity
-struct UserDecryptionRequestSolanaPayload { bytes32 userIdentity; bytes publicKey; bytes32[] allowedAclDomainKeys; RequestValiditySeconds requestValidity; bytes32 nonce; bytes extraData; bytes signature; }
+struct UserDecryptionRequestSolanaPayload { bytes32 userIdentity; bytes publicKey; bytes32[] allowedAclDomainKeys; RequestValiditySeconds requestValidity; bytes32 nonce; bytes extraData; bytes signature; bytes32 aclValueKey; bytes mmrProof; uint64 proofSlot; }
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -3619,6 +3652,12 @@ struct UserDecryptionRequestSolanaPayload { bytes32 userIdentity; bytes publicKe
         pub extraData: alloy::sol_types::private::Bytes,
         #[allow(missing_docs)]
         pub signature: alloy::sol_types::private::Bytes,
+        #[allow(missing_docs)]
+        pub aclValueKey: alloy::sol_types::private::FixedBytes<32>,
+        #[allow(missing_docs)]
+        pub mmrProof: alloy::sol_types::private::Bytes,
+        #[allow(missing_docs)]
+        pub proofSlot: u64,
     }
     #[allow(
         non_camel_case_types,
@@ -3639,6 +3678,9 @@ struct UserDecryptionRequestSolanaPayload { bytes32 userIdentity; bytes publicKe
             alloy::sol_types::sol_data::FixedBytes<32>,
             alloy::sol_types::sol_data::Bytes,
             alloy::sol_types::sol_data::Bytes,
+            alloy::sol_types::sol_data::FixedBytes<32>,
+            alloy::sol_types::sol_data::Bytes,
+            alloy::sol_types::sol_data::Uint<64>,
         );
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (
@@ -3649,6 +3691,9 @@ struct UserDecryptionRequestSolanaPayload { bytes32 userIdentity; bytes publicKe
             alloy::sol_types::private::FixedBytes<32>,
             alloy::sol_types::private::Bytes,
             alloy::sol_types::private::Bytes,
+            alloy::sol_types::private::FixedBytes<32>,
+            alloy::sol_types::private::Bytes,
+            u64,
         );
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
@@ -3674,6 +3719,9 @@ struct UserDecryptionRequestSolanaPayload { bytes32 userIdentity; bytes publicKe
                     value.nonce,
                     value.extraData,
                     value.signature,
+                    value.aclValueKey,
+                    value.mmrProof,
+                    value.proofSlot,
                 )
             }
         }
@@ -3690,6 +3738,9 @@ struct UserDecryptionRequestSolanaPayload { bytes32 userIdentity; bytes publicKe
                     nonce: tuple.4,
                     extraData: tuple.5,
                     signature: tuple.6,
+                    aclValueKey: tuple.7,
+                    mmrProof: tuple.8,
+                    proofSlot: tuple.9,
                 }
             }
         }
@@ -3724,6 +3775,15 @@ struct UserDecryptionRequestSolanaPayload { bytes32 userIdentity; bytes publicKe
                     <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
                         &self.signature,
                     ),
+                    <alloy::sol_types::sol_data::FixedBytes<
+                        32,
+                    > as alloy_sol_types::SolType>::tokenize(&self.aclValueKey),
+                    <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
+                        &self.mmrProof,
+                    ),
+                    <alloy::sol_types::sol_data::Uint<
+                        64,
+                    > as alloy_sol_types::SolType>::tokenize(&self.proofSlot),
                 )
             }
             #[inline]
@@ -3798,7 +3858,7 @@ struct UserDecryptionRequestSolanaPayload { bytes32 userIdentity; bytes publicKe
             #[inline]
             fn eip712_root_type() -> alloy_sol_types::private::Cow<'static, str> {
                 alloy_sol_types::private::Cow::Borrowed(
-                    "UserDecryptionRequestSolanaPayload(bytes32 userIdentity,bytes publicKey,bytes32[] allowedAclDomainKeys,RequestValiditySeconds requestValidity,bytes32 nonce,bytes extraData,bytes signature)",
+                    "UserDecryptionRequestSolanaPayload(bytes32 userIdentity,bytes publicKey,bytes32[] allowedAclDomainKeys,RequestValiditySeconds requestValidity,bytes32 nonce,bytes extraData,bytes signature,bytes32 aclValueKey,bytes mmrProof,uint64 proofSlot)",
                 )
             }
             #[inline]
@@ -3849,6 +3909,18 @@ struct UserDecryptionRequestSolanaPayload { bytes32 userIdentity; bytes publicKe
                             &self.signature,
                         )
                         .0,
+                    <alloy::sol_types::sol_data::FixedBytes<
+                        32,
+                    > as alloy_sol_types::SolType>::eip712_data_word(&self.aclValueKey)
+                        .0,
+                    <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::eip712_data_word(
+                            &self.mmrProof,
+                        )
+                        .0,
+                    <alloy::sol_types::sol_data::Uint<
+                        64,
+                    > as alloy_sol_types::SolType>::eip712_data_word(&self.proofSlot)
+                        .0,
                 ]
                     .concat()
             }
@@ -3882,6 +3954,19 @@ struct UserDecryptionRequestSolanaPayload { bytes32 userIdentity; bytes publicKe
                     )
                     + <alloy::sol_types::sol_data::Bytes as alloy_sol_types::EventTopic>::topic_preimage_length(
                         &rust.signature,
+                    )
+                    + <alloy::sol_types::sol_data::FixedBytes<
+                        32,
+                    > as alloy_sol_types::EventTopic>::topic_preimage_length(
+                        &rust.aclValueKey,
+                    )
+                    + <alloy::sol_types::sol_data::Bytes as alloy_sol_types::EventTopic>::topic_preimage_length(
+                        &rust.mmrProof,
+                    )
+                    + <alloy::sol_types::sol_data::Uint<
+                        64,
+                    > as alloy_sol_types::EventTopic>::topic_preimage_length(
+                        &rust.proofSlot,
                     )
             }
             #[inline]
@@ -3924,6 +4009,22 @@ struct UserDecryptionRequestSolanaPayload { bytes32 userIdentity; bytes publicKe
                 );
                 <alloy::sol_types::sol_data::Bytes as alloy_sol_types::EventTopic>::encode_topic_preimage(
                     &rust.signature,
+                    out,
+                );
+                <alloy::sol_types::sol_data::FixedBytes<
+                    32,
+                > as alloy_sol_types::EventTopic>::encode_topic_preimage(
+                    &rust.aclValueKey,
+                    out,
+                );
+                <alloy::sol_types::sol_data::Bytes as alloy_sol_types::EventTopic>::encode_topic_preimage(
+                    &rust.mmrProof,
+                    out,
+                );
+                <alloy::sol_types::sol_data::Uint<
+                    64,
+                > as alloy_sol_types::EventTopic>::encode_topic_preimage(
+                    &rust.proofSlot,
                     out,
                 );
             }
@@ -6839,7 +6940,7 @@ event UserDecryptionRequest(uint256 indexed decryptionId, SnsCiphertextMaterial[
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Event with signature `UserDecryptionRequestSolana(uint256,(bytes32,uint256,bytes32,address[])[],(bytes32,address,address)[],(bytes32,bytes,bytes32[],(uint256,uint256),bytes32,bytes,bytes))` and selector `0x77ac3a54f84a1fa0e82810e2d1c8496131b52f09b5a7ad3e6609e8241b1360c9`.
+    /**Event with signature `UserDecryptionRequestSolana(uint256,(bytes32,uint256,bytes32,address[])[],(bytes32,address,address)[],(bytes32,bytes,bytes32[],(uint256,uint256),bytes32,bytes,bytes,bytes32,bytes,uint64))` and selector `0x6ce06354a88583ccaa1b79f91a2c936c2ffa4fc3ad0921c91b6660a17b08f70a`.
 ```solidity
 event UserDecryptionRequestSolana(uint256 indexed decryptionId, SnsCiphertextMaterial[] snsCtMaterials, HandleEntry[] handles, UserDecryptionRequestSolanaPayload payload);
 ```*/
@@ -6886,11 +6987,11 @@ event UserDecryptionRequestSolana(uint256 indexed decryptionId, SnsCiphertextMat
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Uint<256>,
             );
-            const SIGNATURE: &'static str = "UserDecryptionRequestSolana(uint256,(bytes32,uint256,bytes32,address[])[],(bytes32,address,address)[],(bytes32,bytes,bytes32[],(uint256,uint256),bytes32,bytes,bytes))";
+            const SIGNATURE: &'static str = "UserDecryptionRequestSolana(uint256,(bytes32,uint256,bytes32,address[])[],(bytes32,address,address)[],(bytes32,bytes,bytes32[],(uint256,uint256),bytes32,bytes,bytes,bytes32,bytes,uint64))";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                119u8, 172u8, 58u8, 84u8, 248u8, 74u8, 31u8, 160u8, 232u8, 40u8, 16u8,
-                226u8, 209u8, 200u8, 73u8, 97u8, 49u8, 181u8, 47u8, 9u8, 181u8, 167u8,
-                173u8, 62u8, 102u8, 9u8, 232u8, 36u8, 27u8, 19u8, 96u8, 201u8,
+                108u8, 224u8, 99u8, 84u8, 168u8, 133u8, 131u8, 204u8, 170u8, 27u8, 121u8,
+                249u8, 26u8, 44u8, 147u8, 108u8, 47u8, 250u8, 79u8, 195u8, 173u8, 9u8,
+                33u8, 201u8, 27u8, 102u8, 96u8, 161u8, 123u8, 8u8, 247u8, 10u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -9617,7 +9718,7 @@ function userDecryptionRequest(CtHandleContractPair[] memory ctHandleContractPai
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `userDecryptionRequestSolana((bytes32,address,address)[],(bytes32,bytes,bytes32[],(uint256,uint256),bytes32,bytes,bytes))` and selector `0x73e33615`.
+    /**Function with signature `userDecryptionRequestSolana((bytes32,address,address)[],(bytes32,bytes,bytes32[],(uint256,uint256),bytes32,bytes,bytes,bytes32,bytes,uint64))` and selector `0x2faabee8`.
 ```solidity
 function userDecryptionRequestSolana(HandleEntry[] memory handles, UserDecryptionRequestSolanaPayload memory payload) external;
 ```*/
@@ -9631,7 +9732,7 @@ function userDecryptionRequestSolana(HandleEntry[] memory handles, UserDecryptio
         #[allow(missing_docs)]
         pub payload: <UserDecryptionRequestSolanaPayload as alloy::sol_types::SolType>::RustType,
     }
-    ///Container type for the return parameters of the [`userDecryptionRequestSolana((bytes32,address,address)[],(bytes32,bytes,bytes32[],(uint256,uint256),bytes32,bytes,bytes))`](userDecryptionRequestSolanaCall) function.
+    ///Container type for the return parameters of the [`userDecryptionRequestSolana((bytes32,address,address)[],(bytes32,bytes,bytes32[],(uint256,uint256),bytes32,bytes,bytes,bytes32,bytes,uint64))`](userDecryptionRequestSolanaCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct userDecryptionRequestSolanaReturn {}
@@ -9743,8 +9844,8 @@ function userDecryptionRequestSolana(HandleEntry[] memory handles, UserDecryptio
             type ReturnToken<'a> = <Self::ReturnTuple<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "userDecryptionRequestSolana((bytes32,address,address)[],(bytes32,bytes,bytes32[],(uint256,uint256),bytes32,bytes,bytes))";
-            const SELECTOR: [u8; 4] = [115u8, 227u8, 54u8, 21u8];
+            const SIGNATURE: &'static str = "userDecryptionRequestSolana((bytes32,address,address)[],(bytes32,bytes,bytes32[],(uint256,uint256),bytes32,bytes,bytes,bytes32,bytes,uint64))";
+            const SELECTOR: [u8; 4] = [47u8, 170u8, 190u8, 232u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -10019,11 +10120,11 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
             [4u8, 111u8, 158u8, 179u8],
             [9u8, 0u8, 204u8, 105u8],
             [13u8, 142u8, 110u8, 44u8],
+            [47u8, 170u8, 190u8, 232u8],
             [64u8, 20u8, 196u8, 205u8],
             [65u8, 11u8, 240u8, 186u8],
             [88u8, 245u8, 184u8, 171u8],
             [111u8, 137u8, 19u8, 188u8],
-            [115u8, 227u8, 54u8, 21u8],
             [118u8, 34u8, 126u8, 237u8],
             [159u8, 173u8, 90u8, 47u8],
             [180u8, 222u8, 44u8, 55u8],
@@ -10139,6 +10240,17 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                     getVersion
                 },
                 {
+                    fn userDecryptionRequestSolana(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IDecryptionCalls> {
+                        <userDecryptionRequestSolanaCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IDecryptionCalls::userDecryptionRequestSolana)
+                    }
+                    userDecryptionRequestSolana
+                },
+                {
                     fn isPublicDecryptionReady(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IDecryptionCalls> {
@@ -10181,17 +10293,6 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                             .map(IDecryptionCalls::publicDecryptionResponse)
                     }
                     publicDecryptionResponse
-                },
-                {
-                    fn userDecryptionRequestSolana(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IDecryptionCalls> {
-                        <userDecryptionRequestSolanaCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(IDecryptionCalls::userDecryptionRequestSolana)
-                    }
-                    userDecryptionRequestSolana
                 },
                 {
                     fn isDelegatedUserDecryptionReady(
@@ -10324,6 +10425,17 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                     getVersion
                 },
                 {
+                    fn userDecryptionRequestSolana(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IDecryptionCalls> {
+                        <userDecryptionRequestSolanaCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IDecryptionCalls::userDecryptionRequestSolana)
+                    }
+                    userDecryptionRequestSolana
+                },
+                {
                     fn isPublicDecryptionReady(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IDecryptionCalls> {
@@ -10366,17 +10478,6 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                             .map(IDecryptionCalls::publicDecryptionResponse)
                     }
                     publicDecryptionResponse
-                },
-                {
-                    fn userDecryptionRequestSolana(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IDecryptionCalls> {
-                        <userDecryptionRequestSolanaCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IDecryptionCalls::userDecryptionRequestSolana)
-                    }
-                    userDecryptionRequestSolana
                 },
                 {
                     fn isDelegatedUserDecryptionReady(
@@ -11748,9 +11849,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 148u8, 216u8, 183u8, 135u8, 99u8, 44u8, 78u8, 89u8, 240u8, 229u8,
             ],
             [
-                119u8, 172u8, 58u8, 84u8, 248u8, 74u8, 31u8, 160u8, 232u8, 40u8, 16u8,
-                226u8, 209u8, 200u8, 73u8, 97u8, 49u8, 181u8, 47u8, 9u8, 181u8, 167u8,
-                173u8, 62u8, 102u8, 9u8, 232u8, 36u8, 27u8, 19u8, 96u8, 201u8,
+                108u8, 224u8, 99u8, 84u8, 168u8, 133u8, 131u8, 204u8, 170u8, 27u8, 121u8,
+                249u8, 26u8, 44u8, 147u8, 108u8, 47u8, 250u8, 79u8, 195u8, 173u8, 9u8,
+                33u8, 201u8, 27u8, 102u8, 96u8, 161u8, 123u8, 8u8, 247u8, 10u8,
             ],
             [
                 127u8, 205u8, 251u8, 83u8, 129u8, 145u8, 127u8, 85u8, 74u8, 113u8, 125u8,

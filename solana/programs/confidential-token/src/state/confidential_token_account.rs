@@ -10,13 +10,12 @@ pub struct ConfidentialTokenAccount {
     pub owner: Pubkey,
     /// Confidential mint this account belongs to.
     pub mint: Pubkey,
-    /// Current confidential balance handle.
+    /// Current confidential balance handle. Its durable ACL is the balance
+    /// encrypted-value ACL lineage derived from `(mint, token_account)` — not
+    /// stored here.
     pub balance_handle: [u8; 32],
-    /// Current ZamaHost ACL record for `balance_handle`.
-    pub balance_acl_record: Pubkey,
-    /// Next nonce sequence to use for a balance ACL record.
-    pub next_balance_nonce_sequence: u64,
-    /// Next nonce sequence to use for owner-scoped random amount ACL records.
+    /// Next nonce sequence to use for one-shot amount ACL records (transfer,
+    /// random, burn/refund witnesses).
     pub next_amount_nonce_sequence: u64,
     /// PDA bump for the token account.
     pub bump: u8,
@@ -24,5 +23,5 @@ pub struct ConfidentialTokenAccount {
 
 impl ConfidentialTokenAccount {
     /// Serialized size of the account body, excluding Anchor discriminator.
-    pub const SPACE: usize = 32 + 32 + 32 + 32 + 8 + 8 + 1;
+    pub const SPACE: usize = 32 + 32 + 32 + 8 + 1;
 }

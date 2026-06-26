@@ -113,4 +113,7 @@ pub enum ConfidentialTokenError {
     /// The FHE eval plan requires an output authority that was not provided.
     #[msg("FHE eval plan is missing a required output authority")]
     MissingFheOutputAuthority,
+    /// The supplied encrypted-value ACL account is not the canonical lineage PDA.
+    #[msg("encrypted-value ACL account does not match the balance lineage PDA")]
+    EncryptedValueAclMismatch,
 }

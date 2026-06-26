@@ -253,4 +253,22 @@ disout="$(lc CONSUME_DISCLOSE=1 TS_ACL="$BURNED_ACL" TS_HANDLE="$BURNED_HANDLE" 
 echo "$disout" | grep -q 'OK disclose_amount_secp' || fail "disclose_amount_secp: $(echo "$disout" | tail -3)"
 echo "    disclose_amount_secp OK -- witness-bound secp256k1 KMS-cert verify emitted cleartext $CLEARTEXT"
 
-echo "==> FULL VERTICAL GREEN: input(ZK+secp bind) -> compute -> public-decrypt($VALUE) + user-decrypt($VALUE) -> input-flow(VerifiedInput $IV+$ADD -> public-decrypt $EXPECT) -> consume redeem($CLEARTEXT)+disclose($CLEARTEXT) [secp256k1 KMS cert]"
+# The rotation-leaf indexer crawls the validator for the EV-ACL CPIs the confidential
+# token flow emits: wrap_usdc + confidential_burn create and rotate the balance /
+# total-supply lineages. Assert it is up, healthy, and ingested those lineages — the
+# off-chain source the KMS verifies historical/public balance-decrypt proofs against.
+echo "==> [indexer] rotation-leaf indexer healthy + ingested the wrap/burn lineages"
+IDX_URL="$(grep -m1 '^SOLANA_INDEXER_URL=' "$ROOT/.fhevm/runtime/env/solana-indexer.env" 2>/dev/null | cut -d= -f2-)"
+IDX_URL="${IDX_URL:-http://127.0.0.1:8080}"
+curl -sf "$IDX_URL/healthz" >/dev/null || fail "indexer /healthz not OK ($IDX_URL)"
+curl -sf "$IDX_URL/version" | grep -q version || fail "indexer /version not OK ($IDX_URL)"
+idx_n=0
+for _ in $(seq 1 30); do
+  idx_n="$(docker exec coprocessor-and-kms-db psql -U postgres -d indexer -tAc 'SELECT count(*) FROM lineage_state' 2>/dev/null | tr -d '[:space:]')"
+  if [ "${idx_n:-0}" -ge 1 ] 2>/dev/null; then break; fi
+  sleep 1
+done
+[ "${idx_n:-0}" -ge 1 ] 2>/dev/null || fail "indexer ingested no lineage_state from the wrap/burn flow"
+echo "    indexer healthy at $IDX_URL; ingested $idx_n balance/total-supply lineage(s)"
+
+echo "==> FULL VERTICAL GREEN: input(ZK+secp bind) -> compute -> public-decrypt($VALUE) + user-decrypt($VALUE) -> input-flow(VerifiedInput $IV+$ADD -> public-decrypt $EXPECT) -> consume redeem($CLEARTEXT)+disclose($CLEARTEXT) [secp256k1 KMS cert] -> indexer($idx_n lineages)"

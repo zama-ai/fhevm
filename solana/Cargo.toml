@@ -4,6 +4,7 @@ members = [
     "crates/confidential-token-receiver-sdk",
     "crates/solana-ed25519-instruction",
     "crates/zama-fhe",
+    "crates/zama-solana-acl",
     "programs/confidential-token",
     "programs/confidential-token-receiver",
     "programs/zama-host",

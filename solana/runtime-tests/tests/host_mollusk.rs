@@ -5917,3 +5917,449 @@ fn mollusk_fhe_eval_verified_input_rejects_consumption_by_non_attested_app() {
         host::errors::ZamaHostError::InputBindContractMismatch,
     );
 }
+
+// ===========================================================================
+// Encrypted-value ACL + MMR history e2e (fhevm-internal#1569 / RFC-024).
+//
+// Drives the real on-chain program through the full lineage lifecycle and
+// every decrypt-authorization gate. These instructions take handles as args
+// (the app derives them via fhe_eval), so they never touch `previous_bank_hash`.
+// ===========================================================================
+
+const EV_LABEL: [u8; 32] = *b"balance_________________________";
+
+fn ev_handle(tag: u8) -> [u8; 32] {
+    [tag; 32]
+}
+
+fn read_encrypted_value_acl(
+    context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
+    address: Pubkey,
+) -> Option<host::EncryptedValueAcl> {
+    let store = context.account_store.borrow();
+    let account = store.get(&address)?;
+    if account.owner != host::id() {
+        return None;
+    }
+    host::decode_account(&account.data).ok()
+}
+
+/// Seeds a context for an encrypted-value lineage: funded payer, the lineage
+/// PDA as an empty system account ready for `init`, and the program account.
+fn ev_context(
+    payer: Pubkey,
+    app_account: Pubkey,
+    acl_pda: Pubkey,
+) -> mollusk_svm::MolluskContext<HashMap<Pubkey, Account>> {
+    mollusk_eval_context(
+        payer,
+        vec![
+            (app_account, system_account(0)),
+            (acl_pda, system_account(0)),
+            (host::id(), executable_program_account()),
+        ],
+    )
+}
+
+fn ev_init_ix(
+    payer: Pubkey,
+    app_account: Pubkey,
+    acl_pda: Pubkey,
+    value_key: [u8; 32],
+    domain: Pubkey,
+    handle: [u8; 32],
+    subjects: Vec<Pubkey>,
+) -> Instruction {
+    anchor_ix(
+        host::id(),
+        host::accounts::InitializeEncryptedValueAcl {
+            payer,
+            app_account_authority: app_account,
+            encrypted_value_acl: acl_pda,
+            system_program: system_program::ID,
+        },
+        host::instruction::InitializeEncryptedValueAcl {
+            value_key,
+            acl_domain_key: domain,
+            encrypted_value_label: EV_LABEL,
+            handle,
+            subjects,
+        },
+    )
+}
+
+fn ev_rotate_ix(
+    payer: Pubkey,
+    app_account: Pubkey,
+    acl_pda: Pubkey,
+    new_handle: [u8; 32],
+    new_subjects: Vec<Pubkey>,
+) -> Instruction {
+    anchor_ix(
+        host::id(),
+        host::accounts::UpdateEncryptedValueAcl {
+            payer,
+            app_account_authority: app_account,
+            encrypted_value_acl: acl_pda,
+            system_program: system_program::ID,
+        },
+        host::instruction::RotateEncryptedValue {
+            new_handle,
+            new_subjects,
+        },
+    )
+}
+
+fn ev_mark_public_ix(payer: Pubkey, app_account: Pubkey, acl_pda: Pubkey) -> Instruction {
+    anchor_ix(
+        host::id(),
+        host::accounts::UpdateEncryptedValueAcl {
+            payer,
+            app_account_authority: app_account,
+            encrypted_value_acl: acl_pda,
+            system_program: system_program::ID,
+        },
+        host::instruction::MarkEncryptedValuePublic {},
+    )
+}
+
+// Decrypt authorization is now an off-chain (KMS) check over the shared
+// `zama_solana_acl` pure functions, not an on-chain instruction. These helpers
+// decode the live lineage account and run the same pure gates the KMS would.
+fn ev_authorize_current(
+    context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
+    acl_pda: Pubkey,
+    handle: [u8; 32],
+    subject: Pubkey,
+) -> Result<(), host::AclError> {
+    let acl = read_encrypted_value_acl(context, acl_pda).expect("lineage exists");
+    host::authorize_current(&acl, handle, subject.to_bytes())
+}
+
+fn ev_authorize_historical(
+    context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
+    acl_pda: Pubkey,
+    encrypted_value: [u8; 32],
+    subject: Pubkey,
+    proof: &host::mmr::MmrProof,
+) -> Result<(), host::AclError> {
+    let acl = read_encrypted_value_acl(context, acl_pda).expect("lineage exists");
+    host::authorize_historical(
+        acl_pda.to_bytes(),
+        &acl,
+        encrypted_value,
+        subject.to_bytes(),
+        proof,
+    )
+}
+
+fn ev_authorize_public(
+    context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
+    acl_pda: Pubkey,
+    encrypted_value: [u8; 32],
+    proof: &host::mmr::MmrProof,
+) -> Result<(), host::AclError> {
+    let acl = read_encrypted_value_acl(context, acl_pda).expect("lineage exists");
+    host::authorize_public(acl_pda.to_bytes(), &acl, encrypted_value, proof)
+}
+
+fn ev_lineage_keys() -> (Pubkey, Pubkey, [u8; 32], Pubkey) {
+    let app_account = Pubkey::new_unique();
+    let domain = Pubkey::new_unique();
+    let value_key = host::acl_nonce_key(domain, app_account, EV_LABEL);
+    let (acl_pda, _) = host::encrypted_value_acl_address(value_key);
+    (app_account, domain, value_key, acl_pda)
+}
+
+fn ev_assert_ok(result: &InstructionResult) {
+    assert!(
+        result.raw_result.is_ok(),
+        "expected ok, got {:?}",
+        result.raw_result
+    );
+}
+
+#[test]
+fn mollusk_encrypted_value_current_and_rotation_history() {
+    let (app_account, domain, value_key, acl_pda) = ev_lineage_keys();
+    let owner = Pubkey::new_unique();
+    let stranger = Pubkey::new_unique();
+    let payer = Pubkey::new_unique();
+    let context = ev_context(payer, app_account, acl_pda);
+
+    ev_assert_ok(&context.process_instruction(&ev_init_ix(
+        payer,
+        app_account,
+        acl_pda,
+        value_key,
+        domain,
+        ev_handle(1),
+        vec![owner],
+    )));
+    let acl = read_encrypted_value_acl(&context, acl_pda).expect("lineage created");
+    assert_eq!(acl.current_handle, ev_handle(1));
+    assert_eq!(acl.leaf_count, 0);
+
+    // Current decrypt: subject ok, non-subject rejected, wrong handle rejected.
+    assert_eq!(
+        ev_authorize_current(&context, acl_pda, ev_handle(1), owner),
+        Ok(())
+    );
+    assert_eq!(
+        ev_authorize_current(&context, acl_pda, ev_handle(1), stranger),
+        Err(host::AclError::SubjectMissing)
+    );
+    assert_eq!(
+        ev_authorize_current(&context, acl_pda, ev_handle(9), owner),
+        Err(host::AclError::HandleMismatch)
+    );
+
+    // Rotate to handle(2): appends a historical-access leaf for (handle(1), owner) at index 0.
+    ev_assert_ok(&context.process_instruction(&ev_rotate_ix(
+        payer,
+        app_account,
+        acl_pda,
+        ev_handle(2),
+        vec![owner],
+    )));
+    let leaves: Vec<[u8; 32]> = vec![host::historical_access_leaf_commitment(
+        acl_pda.to_bytes(),
+        0,
+        ev_handle(1),
+        owner.to_bytes(),
+    )];
+
+    // Post-rotation: old value rejected through live state; new value accepted.
+    assert_eq!(
+        ev_authorize_current(&context, acl_pda, ev_handle(1), owner),
+        Err(host::AclError::HandleMismatch)
+    );
+    assert_eq!(
+        ev_authorize_current(&context, acl_pda, ev_handle(2), owner),
+        Ok(())
+    );
+
+    // Historical decrypt: only a valid historical-access proof authorizes the old value.
+    let proof = host::mmr::mmr_build_proof(&leaves, 0).unwrap();
+    assert_eq!(
+        ev_authorize_historical(&context, acl_pda, ev_handle(1), owner, &proof),
+        Ok(())
+    );
+    assert_eq!(
+        ev_authorize_historical(&context, acl_pda, ev_handle(1), stranger, &proof),
+        Err(host::AclError::HistoricalProofInvalid)
+    );
+    assert_eq!(
+        ev_authorize_historical(&context, acl_pda, ev_handle(9), owner, &proof),
+        Err(host::AclError::HistoricalProofInvalid)
+    );
+    let mut bad = proof;
+    bad.siblings.push([0xab; 32]);
+    assert_eq!(
+        ev_authorize_historical(&context, acl_pda, ev_handle(1), owner, &bad),
+        Err(host::AclError::HistoricalProofInvalid)
+    );
+}
+
+#[test]
+fn mollusk_encrypted_value_exact_public_decrypt_no_roll_forward() {
+    let (app_account, domain, value_key, acl_pda) = ev_lineage_keys();
+    let owner = Pubkey::new_unique();
+    let payer = Pubkey::new_unique();
+    let context = ev_context(payer, app_account, acl_pda);
+
+    ev_assert_ok(&context.process_instruction(&ev_init_ix(
+        payer,
+        app_account,
+        acl_pda,
+        value_key,
+        domain,
+        ev_handle(1),
+        vec![owner],
+    )));
+    // Mark current handle(1) publicly decryptable: public leaf at index 0.
+    ev_assert_ok(&context.process_instruction(&ev_mark_public_ix(payer, app_account, acl_pda)));
+    // Rotate to handle(2): access leaf for (handle(1), owner) at index 1. handle(2) is NOT public.
+    ev_assert_ok(&context.process_instruction(&ev_rotate_ix(
+        payer,
+        app_account,
+        acl_pda,
+        ev_handle(2),
+        vec![owner],
+    )));
+    let leaves: Vec<[u8; 32]> = vec![
+        host::public_decrypt_leaf_commitment(acl_pda.to_bytes(), 0, ev_handle(1)),
+        host::historical_access_leaf_commitment(
+            acl_pda.to_bytes(),
+            1,
+            ev_handle(1),
+            owner.to_bytes(),
+        ),
+    ];
+
+    let proof0 = host::mmr::mmr_build_proof(&leaves, 0).unwrap();
+    assert_eq!(
+        ev_authorize_public(&context, acl_pda, ev_handle(1), &proof0),
+        Ok(())
+    );
+    assert_eq!(
+        ev_authorize_public(&context, acl_pda, ev_handle(2), &proof0),
+        Err(host::AclError::PublicDecryptProofInvalid)
+    );
+}
+
+#[test]
+fn mollusk_encrypted_value_history_absent_current_only() {
+    let (app_account, domain, value_key, acl_pda) = ev_lineage_keys();
+    let owner = Pubkey::new_unique();
+    let payer = Pubkey::new_unique();
+    let context = ev_context(payer, app_account, acl_pda);
+
+    ev_assert_ok(&context.process_instruction(&ev_init_ix(
+        payer,
+        app_account,
+        acl_pda,
+        value_key,
+        domain,
+        ev_handle(1),
+        vec![owner],
+    )));
+    // A never-rotated lineage has no history: leaf_count == 0.
+    let acl = read_encrypted_value_acl(&context, acl_pda).unwrap();
+    assert_eq!(acl.leaf_count, 0);
+
+    assert_eq!(
+        ev_authorize_current(&context, acl_pda, ev_handle(1), owner),
+        Ok(())
+    );
+
+    // With no leaves, every MMR proof fails — historical/public are unauthorized.
+    let empty = host::mmr::MmrProof {
+        leaf_index: 0,
+        siblings: vec![],
+    };
+    assert_eq!(
+        ev_authorize_historical(&context, acl_pda, ev_handle(1), owner, &empty),
+        Err(host::AclError::HistoricalProofInvalid)
+    );
+    assert_eq!(
+        ev_authorize_public(&context, acl_pda, ev_handle(1), &empty),
+        Err(host::AclError::PublicDecryptProofInvalid)
+    );
+
+    // Rotation still works; old value rejected by live state.
+    ev_assert_ok(&context.process_instruction(&ev_rotate_ix(
+        payer,
+        app_account,
+        acl_pda,
+        ev_handle(2),
+        vec![owner],
+    )));
+    assert_eq!(
+        ev_authorize_current(&context, acl_pda, ev_handle(2), owner),
+        Ok(())
+    );
+    assert_eq!(
+        ev_authorize_current(&context, acl_pda, ev_handle(1), owner),
+        Err(host::AclError::HandleMismatch)
+    );
+}
+
+#[test]
+fn mollusk_encrypted_value_init_rejects_wrong_value_key() {
+    let (app_account, domain, _value_key, _acl_pda) = ev_lineage_keys();
+    let owner = Pubkey::new_unique();
+    let payer = Pubkey::new_unique();
+    let wrong_value_key = [0x55u8; 32];
+    let (wrong_pda, _) = host::encrypted_value_acl_address(wrong_value_key);
+    let context = ev_context(payer, app_account, wrong_pda);
+    assert_instruction_custom_error(
+        &context.process_instruction(&ev_init_ix(
+            payer,
+            app_account,
+            wrong_pda,
+            wrong_value_key,
+            domain,
+            ev_handle(1),
+            vec![owner],
+        )),
+        host::errors::ZamaHostError::EncryptedValueAclMismatch,
+    );
+}
+
+#[test]
+fn mollusk_encrypted_value_rotate_rejects_rogue_authority() {
+    let (app_account, domain, value_key, acl_pda) = ev_lineage_keys();
+    let owner = Pubkey::new_unique();
+    let payer = Pubkey::new_unique();
+    let rogue = Pubkey::new_unique();
+    let context = ev_context(payer, app_account, acl_pda);
+    context
+        .account_store
+        .borrow_mut()
+        .insert(rogue, system_account(0));
+
+    ev_assert_ok(&context.process_instruction(&ev_init_ix(
+        payer,
+        app_account,
+        acl_pda,
+        value_key,
+        domain,
+        ev_handle(1),
+        vec![owner],
+    )));
+
+    // A rotation signed by an authority that is not the lineage's app_account is
+    // rejected — only the owning app PDA may rotate its value.
+    assert_instruction_custom_error(
+        &context.process_instruction(&ev_rotate_ix(
+            payer,
+            rogue,
+            acl_pda,
+            ev_handle(2),
+            vec![owner],
+        )),
+        host::errors::ZamaHostError::EncryptedValueAclMismatch,
+    );
+    // The lineage is untouched by the rejected rotation.
+    let acl = read_encrypted_value_acl(&context, acl_pda).expect("lineage");
+    assert_eq!(acl.current_handle, ev_handle(1));
+    assert_eq!(acl.leaf_count, 0);
+}
+
+#[test]
+fn mollusk_encrypted_value_allow_subjects_rejects_oversized_list() {
+    let (app_account, domain, value_key, acl_pda) = ev_lineage_keys();
+    let owner = Pubkey::new_unique();
+    let payer = Pubkey::new_unique();
+    let context = ev_context(payer, app_account, acl_pda);
+
+    ev_assert_ok(&context.process_instruction(&ev_init_ix(
+        payer,
+        app_account,
+        acl_pda,
+        value_key,
+        domain,
+        ev_handle(1),
+        vec![owner],
+    )));
+
+    // More than MAX_ENCRYPTED_VALUE_SUBJECTS in one call is rejected up front.
+    let oversized: Vec<Pubkey> = (0..9).map(|_| Pubkey::new_unique()).collect();
+    let allow_ix = anchor_ix(
+        host::id(),
+        host::accounts::UpdateEncryptedValueAcl {
+            payer,
+            app_account_authority: app_account,
+            encrypted_value_acl: acl_pda,
+            system_program: system_program::ID,
+        },
+        host::instruction::AllowEncryptedValueSubjects {
+            subjects: oversized,
+        },
+    );
+    assert_instruction_custom_error(
+        &context.process_instruction(&allow_ix),
+        host::errors::ZamaHostError::EncryptedValueSubjectCapacityExceeded,
+    );
+}

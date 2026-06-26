@@ -24,8 +24,10 @@ import { bytesToHex, concatBytes } from '../base/bytes.js';
 /** Context-only `extraData` version byte (RFC-003 v0x01): version ‖ contextId(32). */
 export const SOLANA_CONTEXT_EXTRA_DATA_VERSION = 0x01;
 
-/** Domain-separation tag for the signing preimage (`SOLANA_USER_DECRYPT_DOMAIN_TAG` in Rust). */
-export const SOLANA_USER_DECRYPT_DOMAIN_TAG = 'zama-solana-user-decrypt-v1';
+/** Domain-separation tag for the signing preimage (`SOLANA_USER_DECRYPT_DOMAIN_TAG` in Rust). v2
+ * commits the encrypted-value-ACL MMR-proof tail (aclValueKey ‖ proofSlot ‖ mmrProof); a v1
+ * signature cannot verify against it (the tag is the leading bytes of the non-malleable preimage). */
+export const SOLANA_USER_DECRYPT_DOMAIN_TAG = 'zama-solana-user-decrypt-v2';
 
 /** V2 user-decrypt attestation discriminator the relayer/gateway route on. */
 export const SOLANA_USER_DECRYPT_ATTESTATION_TYPE = 'solana-ed25519-user-decrypt-v1';
@@ -74,6 +76,18 @@ export interface SolanaUserDecryptInput {
   readonly startTimestamp: bigint;
   /** Validity window duration (seconds). */
   readonly durationSeconds: bigint;
+  /**
+   * Encrypted-value-ACL lineage identity (`acl_nonce_key`, 32 bytes) for a HISTORICAL or PUBLIC
+   * confidential-balance decrypt; all-zero for a current-ACL decrypt.
+   */
+  readonly aclValueKey: Uint8Array;
+  /** Lineage `leaf_count` the MMR proof was built against (staleness marker); 0 for current-ACL. */
+  readonly proofSlot: bigint;
+  /**
+   * MMR proof transport blob: a 1-byte mode prefix (`0x01` historical / `0x02` public) ‖ Borsh
+   * `MmrProof`; empty for a current-ACL decrypt. Committed verbatim (the KMS decodes it).
+   */
+  readonly mmrProof: Uint8Array;
 }
 
 function assertLengths(name: string, items: readonly Uint8Array[], len: number): void {
@@ -87,6 +101,7 @@ function assertCommonInput(input: SolanaUserDecryptInput): void {
   assertLen('identity', input.identity, SOLANA_PUBKEY_LEN);
   assertLen('contextId', input.contextId, 32);
   assertLen('nonce', input.nonce, SOLANA_PUBKEY_LEN);
+  assertLen('aclValueKey', input.aclValueKey, SOLANA_PUBKEY_LEN);
   assertLengths('handles', input.handles, HANDLE_LEN);
   assertLengths('allowedAclDomainKeys', input.allowedAclDomainKeys, SOLANA_PUBKEY_LEN);
 }
@@ -107,7 +122,11 @@ export function buildSolanaUserDecryptContextExtraData(contextId: Uint8Array): U
  *
  * `TAG ‖ contracts_chain_id(8 BE) ‖ publicKey_len(4 BE) ‖ publicKey ‖ handle_count(4 BE) ‖
  * handles(32 each) ‖ identity(32) ‖ context_id(32 BE) ‖ nonce(32) ‖ domain_key_count(4 BE) ‖
- * domain_keys(32 each) ‖ start_timestamp(8 BE) ‖ duration_seconds(8 BE)`
+ * domain_keys(32 each) ‖ start_timestamp(8 BE) ‖ duration_seconds(8 BE) ‖
+ * acl_value_key(32) ‖ proof_slot(8 BE) ‖ mmr_proof_len(4 BE) ‖ mmr_proof`
+ *
+ * The trailing MMR-proof fields are all-zero / empty for a current-ACL decrypt (an unambiguous
+ * `mmr_proof_len = 0x00000000`), and carry the lineage proof for a historical/public decrypt.
  */
 export function solanaUserDecryptSigningPreimage(input: SolanaUserDecryptInput): Uint8Array {
   assertCommonInput(input);
@@ -126,6 +145,10 @@ export function solanaUserDecryptSigningPreimage(input: SolanaUserDecryptInput):
     ...input.allowedAclDomainKeys,
     u64BE(input.startTimestamp),
     u64BE(input.durationSeconds),
+    input.aclValueKey,
+    u64BE(input.proofSlot),
+    u32BE(input.mmrProof.length),
+    input.mmrProof,
   );
 }
 

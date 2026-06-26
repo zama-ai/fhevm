@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO lineage_events\n                         (pda, event_index, event_type, handle, signature, slot)\n                       VALUES ($1, $2, $3, $4, $5, $6)\n                       ON CONFLICT (pda, event_index) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Int8",
+        "Int2",
+        "Bytea",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "50e5b994345989e31fe5bba1391374959b8c8dc326602eab3d16141be939f7b5"
+}

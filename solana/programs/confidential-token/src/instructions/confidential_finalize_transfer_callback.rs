@@ -19,8 +19,6 @@ pub struct ConfidentialFinalizeTransferCallback<'info> {
     /// CHECK: Program-controlled compute signer PDA.
     #[account(seeds = [b"fhe-compute", mint.key().as_ref()], bump)]
     pub compute_signer: UncheckedAccount<'info>,
-    /// Original sender current balance ACL record.
-    pub from_current_compute_acl: Box<Account<'info, zama_host::AclRecord>>,
     /// ACL record for the prior transfer's all-or-zero sent amount.
     pub sent_amount_acl: Box<Account<'info, zama_host::AclRecord>>,
     /// Prepared callback settlement.
@@ -28,9 +26,9 @@ pub struct ConfidentialFinalizeTransferCallback<'info> {
     pub settlement_record: Account<'info, TransferCallbackSettlement>,
     /// ACL record for the prepared refund amount.
     pub refund_amount_acl: Box<Account<'info, zama_host::AclRecord>>,
-    /// CHECK: initialized and validated by the Zama host program CPI.
+    /// CHECK: sender balance encrypted-value ACL lineage; rotated via the Zama host CPI.
     #[account(mut)]
-    pub from_output_acl: UncheckedAccount<'info>,
+    pub from_balance_value_acl: UncheckedAccount<'info>,
     /// CHECK: initialized and validated by the Zama host program CPI.
     #[account(mut)]
     pub transferred_amount_acl: UncheckedAccount<'info>,
@@ -54,11 +52,10 @@ impl<'info> ConfidentialFinalizeTransferCallback<'info> {
             from_account: &mut self.from_account,
             to_account: self.to_account.as_ref(),
             compute_signer: &self.compute_signer,
-            from_current_compute_acl: self.from_current_compute_acl.as_ref(),
             sent_amount_acl: &self.sent_amount_acl,
             settlement_record: &mut self.settlement_record,
             refund_amount_acl: &self.refund_amount_acl,
-            from_output_acl: self.from_output_acl.to_account_info(),
+            from_balance_value_acl: self.from_balance_value_acl.to_account_info(),
             transferred_amount_acl: self.transferred_amount_acl.to_account_info(),
             zama_event_authority: &self.zama_event_authority,
             zama_program: &self.zama_program,
@@ -93,9 +90,7 @@ pub fn confidential_finalize_transfer_callback(
         owner: outcome.from_owner,
         token_account: outcome.from_token_account,
         old_handle: outcome.old_from_handle,
-        old_acl_record: outcome.old_from_acl_record,
         new_handle: outcome.new_from_handle,
-        new_acl_record: outcome.new_from_acl_record,
         reason: BalanceHandleUpdateReason::TransferCallbackRefundCredit,
     });
     Ok(())

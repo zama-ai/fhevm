@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO user_decryption_requests(decryption_id, sns_ct_materials, user_address, public_key, extra_data, tx_hash,created_at, otlp_context, handle_owner_addresses, handle_contract_addresses,allowed_contracts, start_timestamp, duration_seconds, signature,solana_identity, solana_nonce, solana_allowed_acl_domain_keys) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) ON CONFLICT DO NOTHING",
+  "query": "INSERT INTO user_decryption_requests(decryption_id, sns_ct_materials, user_address, public_key, extra_data, tx_hash,created_at, otlp_context, handle_owner_addresses, handle_contract_addresses,allowed_contracts, start_timestamp, duration_seconds, signature,solana_identity, solana_nonce, solana_allowed_acl_domain_keys,solana_acl_value_key, solana_mmr_proof, solana_proof_slot) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20) ON CONFLICT DO NOTHING",
   "describe": {
     "columns": [],
     "parameters": {
@@ -52,10 +52,13 @@
         "Bytea",
         "Bytea",
         "Bytea",
-        "ByteaArray"
+        "ByteaArray",
+        "Bytea",
+        "Bytea",
+        "Int8"
       ]
     },
     "nullable": []
   },
-  "hash": "7cbbceb4c1e48ed74c286cd14ae0a18d96f87cafca202d5c4e954545eb7cb3b6"
+  "hash": "ecda9aff9513643381a2b49651b4df3436d3f6a32fccae61221f3da78ba8e4e5"
 }

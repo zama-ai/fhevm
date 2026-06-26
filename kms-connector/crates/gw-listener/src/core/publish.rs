@@ -279,14 +279,35 @@ async fn publish_user_decryption_solana<'e>(
     let zero_user_address = [0u8; 20];
     let allowed_contracts: Vec<Vec<u8>> = Vec::new();
 
+    // MMR-proof fields (RFC-021 P2): stored verbatim for the worker to commit under the request
+    // signature and dispatch to the historical/public lineage verifier. All three are NULL on a
+    // current-ACL request (all-zero value key + empty proof + zero slot); NULL is the "no lineage"
+    // sentinel so `WHERE solana_acl_value_key IS NULL` cleanly selects current-ACL rows. The read
+    // side reconstructs an all-zero key from NULL, so an MMR request never produces a NULL key.
+    let solana_acl_value_key: Option<Vec<u8>> =
+        (payload.aclValueKey != FixedBytes::ZERO).then(|| payload.aclValueKey.0.to_vec());
+    let solana_mmr_proof: Option<Vec<u8>> =
+        (!payload.mmrProof.is_empty()).then(|| payload.mmrProof.as_ref().to_vec());
+    // Postgres has no u64; fail loudly rather than wrap a proofSlot that does not fit i64.
+    let solana_proof_slot: Option<i64> = if payload.proofSlot == 0 && solana_mmr_proof.is_none() {
+        None
+    } else {
+        Some(
+            i64::try_from(payload.proofSlot)
+                .map_err(|_| anyhow!("Solana proofSlot does not fit in i64"))?,
+        )
+    };
+
     sqlx::query!(
         "INSERT INTO user_decryption_requests(\
             decryption_id, sns_ct_materials, user_address, public_key, extra_data, tx_hash,\
             created_at, otlp_context, handle_owner_addresses, handle_contract_addresses,\
             allowed_contracts, start_timestamp, duration_seconds, signature,\
-            solana_identity, solana_nonce, solana_allowed_acl_domain_keys\
+            solana_identity, solana_nonce, solana_allowed_acl_domain_keys,\
+            solana_acl_value_key, solana_mmr_proof, solana_proof_slot\
         ) \
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) \
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, \
+            $18, $19, $20) \
         ON CONFLICT DO NOTHING",
         request.decryptionId.as_le_slice(),
         sns_ciphertexts_db as Vec<SnsCiphertextMaterialDbItem>,
@@ -305,6 +326,9 @@ async fn publish_user_decryption_solana<'e>(
         solana_identity.as_slice(),
         solana_nonce.as_slice(),
         &solana_allowed_acl_domain_keys,
+        solana_acl_value_key.as_deref(),
+        solana_mmr_proof.as_deref(),
+        solana_proof_slot,
     )
     .execute(executor)
     .await

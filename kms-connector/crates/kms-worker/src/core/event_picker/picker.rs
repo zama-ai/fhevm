@@ -144,6 +144,7 @@ impl DbEventPicker {
                 signature, handle_owner_addresses, handle_contract_addresses, allowed_contracts,
                 start_timestamp, duration_seconds,
                 solana_identity, solana_nonce, solana_allowed_acl_domain_keys,
+                solana_acl_value_key, solana_mmr_proof, solana_proof_slot,
                 tx_hash, already_sent, error_counter, created_at, otlp_context
             ",
         )
