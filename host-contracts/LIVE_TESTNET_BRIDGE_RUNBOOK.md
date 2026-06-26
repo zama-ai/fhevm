@@ -362,7 +362,7 @@ the mock coprocessor propagated the cleartext end-to-end.
 
 ### 6. Optional : run gas profiler for `lzReceive` parameters
 
-In order to get the recommended `lzReceive`-specifc gas parameters from `HandlesSender` (i.e `LZ_RECEIVE_BASE_GAS_DEFAULT`, `LZ_RECEIVE_PER_HANDLE_GAS_DEFAULT` and `LZ_RECEIVE_PER_PAYLOAD_BYTE_DEFAULT`) you can run the following script:
+In order to get the recommended `lzReceive`-specific gas parameters from `HandlesSender` (i.e `LZ_RECEIVE_BASE_GAS_DEFAULT`, `LZ_RECEIVE_PER_HANDLE_GAS_DEFAULT` and `LZ_RECEIVE_PER_PAYLOAD_BYTE_DEFAULT`) you can run the following script:
 
 On Ethereum Sepolia:
 

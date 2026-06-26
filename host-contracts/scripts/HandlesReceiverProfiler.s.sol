@@ -89,7 +89,7 @@ contract HandlesReceiverGasProfiler is GasProfilerScript {
         // vm.revertToState restores the warm/cold access list AND all contract
         // storage -- including this profiler's own `_grid`. So results MUST be accumulated in
         // memory (which snapshots do not revert) and only written to storage after the last
-        // revert; writing `_grid` inside the loop would be wiped by the next revert.
+        // revertToState; writing `_grid` inside the loop would be wiped by the next revertToState.
         uint256 coldSlotsSnapshotId = vm.snapshotState();
 
         uint256 nH = p.handleCounts.length;
@@ -102,7 +102,7 @@ contract HandlesReceiverGasProfiler is GasProfilerScript {
             }
         }
 
-        // All reverts are done; persist the memory grid to storage for the fit/report step.
+        // All revertToStates are done; persist the memory grid to storage for the fit/report step.
         for (uint256 i = 0; i < nH; i++) {
             _grid.push();
             for (uint256 j = 0; j < nL; j++) {

@@ -146,6 +146,8 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
      *         constant.
      * @dev    Reverts with {EmptyHandleList} if `handleList` is empty and
      *         with {TooManyHandles} if it exceeds {MAX_HANDLES}.
+     * @dev    Reverts with {UnknownDstEid} if no destination chain id has been registered
+     *         for `dstEid` (via {setDstChainId}); a chain id of 0 is treated as unset.
      * @dev    Reverts if any handle is not ACL-allowed for `msg.sender` on this chain.
      *         Native fee is paid via `msg.value`; refund returns to `msg.sender`.
      */
