@@ -63,30 +63,11 @@ task('task:triggerMigrationKeygen')
     console.log('Migration keygen triggered.');
   });
 
-task('task:publishMigratedKeyMaterials')
-  .addOptionalParam('materialVersion', 'Material version to publish (RFC-029 cutover = 1).', 1, types.int)
-  .addOptionalParam('keyId', 'Key id to publish under; defaults to the active key id.', '', types.string)
-  .setAction(async function ({ materialVersion, keyId }, hre) {
-    await hre.run('compile:specific', { contract: 'contracts' });
-    loadHostAddresses(); // KMS_GENERATION_CONTRACT_ADDRESS + PROTOCOL_CONFIG_CONTRACT_ADDRESS live in the host addresses file
-
-    const { kmsGeneration } = await getKmsGeneration(hre);
-    const targetKeyId: bigint = keyId ? BigInt(keyId) : await kmsGeneration.getActiveKeyId();
-
-    // The KMS-consensus storage urls + digests recorded for the key are the
-    // authoritative migrated material; re-publish them as the given version.
-    const [urls, digests] = await kmsGeneration.getKeyMaterials(targetKeyId);
-    if (digests.length === 0) {
-      throw new Error(`No key materials recorded for key ${targetKeyId}; is the keygen consensus done?`);
-    }
-
-    console.log(
-      `RFC-029 publish: keyId=${targetKeyId} version=${materialVersion} digests=${digests.length} urls=${urls.length}`,
-    );
-    const tx = await kmsGeneration.addKeyMaterials(targetKeyId, digests, urls, materialVersion);
-    await tx.wait();
-    console.log('Migrated key materials published (KeyMaterialAdded emitted).');
-  });
+// NOTE: there is intentionally no governance "publish" task. The migration keygen's
+// keygenResponse (v3 extraData) publishes the re-derived material under the existing key directly
+// (publish-not-activate). A governance addKeyMaterials path would have to source the *migrated*
+// digests, which are not retrievable on-chain (getKeyMaterials returns the original keygen digests),
+// so it is omitted rather than shipped wrong.
 
 task('task:scheduleKeyMaterialMigration')
   .addParam('hostChainIds', 'Comma-separated host chain ids, parallel to hostMigrationBlocks.')

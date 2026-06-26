@@ -1,6 +1,5 @@
 use crate::dependence_chain::{self};
 use crate::types::CoprocessorError;
-use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::database::{connect_pool_with_options, resolve_database_url_from_option};
 use fhevm_engine_common::db_keys::DbKeyCache;
 use fhevm_engine_common::material_version::{
@@ -451,14 +450,11 @@ WHERE c.transaction_id IN (
         let mut by_version: HashMap<MaterialVersion, Vec<ComponentNode>> = HashMap::new();
         for (transaction_id, txwork) in work_by_transaction.iter() {
             let transaction_id: &Vec<u8> = transaction_id;
+            // A transaction is one (host_chain_id, block_number), so every computation in it
+            // resolves to the same version; an unparsable chain or NULL block falls back to LEGACY.
             let version = txwork
                 .first()
-                .and_then(|w| {
-                    ChainId::try_from(w.host_chain_id)
-                        .ok()
-                        .map(|chain| (chain, w.block_number))
-                })
-                .map(|(chain, block)| schedule.select_host(chain, block))
+                .map(|w| schedule.select_host_raw(w.host_chain_id, w.block_number))
                 .unwrap_or(MaterialVersion::LEGACY);
             let mut ops = vec![];
             for w in txwork {

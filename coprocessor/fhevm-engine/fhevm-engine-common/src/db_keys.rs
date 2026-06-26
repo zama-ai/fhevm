@@ -157,6 +157,14 @@ impl DbKeyCache {
                 version.0
             )
         })?;
+        // A present-but-empty blob means a partial/in-flight publish; treat it as not-yet-available
+        // (halt-and-retry) rather than feeding an empty blob into deserialization.
+        if row.server_key_blob.is_empty() {
+            anyhow::bail!(
+                "key material for version {} is present but empty (not published yet, halt and retry)",
+                version.0
+            );
+        }
         let result = Self::deserialize_db_key_row(row, version)?;
 
         {

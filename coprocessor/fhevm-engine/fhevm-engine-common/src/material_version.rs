@@ -104,6 +104,20 @@ impl MigrationScheduleCache {
     pub fn select_gateway(&self, gw_block_number: Option<i64>) -> MaterialVersion {
         version_at(self.gateway, gw_block_number)
     }
+
+    /// [`select_host`] keyed by a RAW `host_chain_id` as stored by sqlx (`i64`).
+    /// An unparsable chain id resolves to [`MaterialVersion::LEGACY`] (the safe
+    /// default), so a malformed row can never silently select migrated material.
+    pub fn select_host_raw(
+        &self,
+        host_chain_id: i64,
+        block_number: Option<i64>,
+    ) -> MaterialVersion {
+        match ChainId::try_from(host_chain_id) {
+            Ok(chain_id) => self.select_host(chain_id, block_number),
+            Err(_) => MaterialVersion::LEGACY,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -166,6 +180,22 @@ mod tests {
         // chain 2 stays on legacy at the same block; unknown chain → legacy.
         assert_eq!(cache.select_host(chain(2), Some(100)), V0);
         assert_eq!(cache.select_host(chain(999), Some(10_000)), V0);
+    }
+
+    #[test]
+    fn select_host_raw_resolves_like_select_host_and_falls_back_to_legacy() {
+        let mut host = HashMap::new();
+        host.insert(chain(1), 100);
+        let cache = MigrationScheduleCache {
+            host,
+            gateway: None,
+        };
+        // Valid chain id resolves exactly like select_host.
+        assert_eq!(cache.select_host_raw(1, Some(99)), V0);
+        assert_eq!(cache.select_host_raw(1, Some(100)), V1);
+        // A chain not in the schedule (or an out-of-range id) is LEGACY, never migrated.
+        assert_eq!(cache.select_host_raw(2, Some(10_000)), V0);
+        assert_eq!(cache.select_host_raw(i64::MIN, Some(10_000)), V0);
     }
 
     #[test]
