@@ -4,7 +4,7 @@ index c9a28aa..b5a3bb8 100644
 +++ b/yellowstone-grpc-geyser/Cargo.toml
 @@ -17,7 +17,6 @@ crate-type = ["cdylib", "rlib"]
  name = "config-check"
- 
+
  [dependencies]
 -affinity = { workspace = true }
  agave-geyser-plugin-interface = { workspace = true }
@@ -13,7 +13,7 @@ index c9a28aa..b5a3bb8 100644
 @@ -49,6 +48,10 @@ tonic = { workspace = true, features = ["gzip", "zstd", "tls", "tls-roots"] }
  tonic-health = { workspace = true }
  yellowstone-grpc-proto = { workspace = true, features = ["convert", "plugin"] }
- 
+
 +# affinity (CPU pinning) is Linux-only; gate it off macOS so the plugin builds natively on Apple Silicon.
 +[target.'cfg(target_os = "linux")'.dependencies]
 +affinity = { workspace = true }
@@ -28,7 +28,7 @@ index b2ce1af..fe02c6f 100644
 @@ -116,6 +116,7 @@ fn parse_taskset(taskset: &str) -> Result<Vec<usize>, String> {
      let mut vec = set.into_iter().collect::<Vec<usize>>();
      vec.sort();
- 
+
 +    #[cfg(target_os = "linux")]
      if let Some(set_max_index) = vec.last().copied() {
          let max_index = affinity::get_thread_affinity()
