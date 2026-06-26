@@ -39,6 +39,8 @@
     "@fhevm/host-contracts": "*",
     "@nomicfoundation/hardhat-chai-matchers": "^2.0.0",
     "@nomicfoundation/hardhat-ethers": "^3.0.4",
+    "@nomicfoundation/hardhat-ignition": "^0.15.15",
+    "@nomicfoundation/hardhat-ignition-ethers": "^0.15.16",
     "@nomicfoundation/hardhat-network-helpers": "^1.0.6",
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
     "@nomicfoundation/hardhat-verify": "^2.0.10",
@@ -77,7 +79,6 @@
     "solidity-coverage": "0.8.15",
     "sqlite3": "^5.1.7",
     "ts-generator": "^0.1.1",
-    "ts-node": "^10.9.2",
     "typechain": "^8.2.0",
     "typescript": "^5.1.6",
     "web3-validator": "^2.0.6"
