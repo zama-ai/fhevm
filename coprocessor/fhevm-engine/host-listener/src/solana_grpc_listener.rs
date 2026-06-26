@@ -482,6 +482,9 @@ async fn ingest_transaction(
             zama_host_ixs = zh_discs.len(),
             discriminators = ?zh_discs,
             reconstructed = events.len(),
+            // Full reconstructed payloads (handles/results as byte arrays) so a wrong/missing
+            // handle in the consume/burn txs is visible and comparable to the emit-decode path.
+            events = ?events,
             "DIAG: reconstruct tx scanned"
         );
     }

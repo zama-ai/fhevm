@@ -55,12 +55,13 @@ PY
     --lock-file "$LOCK" \
     --override gateway-contracts \
     --override coprocessor \
+    --override relayer \
+    --override kms-connector \
     --allow-schema-mismatch )
-# Only coprocessor (host-listener) carries this branch's changes, so only it must build from
-# source. relayer/ and kms-connector/ are byte-identical to the pinned solana-images.env images
-# (RELAYER_VERSION / CONNECTOR_*_VERSION = 4f42734), so we drop their --override and pull the
-# prebuilt images instead of rebuilding (~10-14 min/run). The kms-worker host.docker.internal
-# mapping is a compose-level extra_hosts, so it still applies to the prebuilt image.
+# NOTE: relayer + kms-connector must be built from source, NOT pulled from the pinned 4f42734
+# images: the prebuilt kms-connector at that tag rejects the generated Solana host_chains config
+# ("missing field acl_address") — its config schema predates the optional-acl_address change the
+# config generator (src/generate/solana.ts) assumes. Dropping these --overrides breaks clean-e2e.
 
 # 3. Bring the Solana side-stack online against the freshly-deployed live backend.
 #    Reads gateway addresses + KMS/coprocessor signer set live, so it tracks the new signer.
