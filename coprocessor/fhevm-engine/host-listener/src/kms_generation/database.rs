@@ -637,7 +637,6 @@ pub async fn mark_crs_activation_error(
 mod tests {
     use super::*;
     use fhevm_engine_common::chain_id::ChainId;
-    use sqlx::Row;
     use test_harness::instance::{setup_test_db, ImportMode};
 
     #[tokio::test]
@@ -655,8 +654,9 @@ mod tests {
         let public_key = b"public-key".to_vec();
         let storage_urls: Vec<String> = Vec::new();
 
-        sqlx::query(
-            "INSERT INTO kms_key_activation_events (
+        sqlx::query!(
+            r#"
+            INSERT INTO kms_key_activation_events (
                 chain_id,
                 block_hash,
                 block_number,
@@ -667,16 +667,17 @@ mod tests {
                 key_digest_public,
                 storage_urls
             )
-            VALUES ($1, $2, 1, $3, $4, $5, $6, $7, $8)",
+            VALUES ($1, $2, 1, $3, $4, $5, $6, $7, $8)
+            "#,
+            chain_id.as_i64(),
+            &block_hash,
+            vec![3_u8; 32],
+            &key_id,
+            &existing_sks,
+            vec![4_u8; 32],
+            vec![5_u8; 32],
+            &storage_urls as _,
         )
-        .bind(chain_id.as_i64())
-        .bind(&block_hash)
-        .bind(vec![3_u8; 32])
-        .bind(&key_id)
-        .bind(&existing_sks)
-        .bind(vec![4_u8; 32])
-        .bind(vec![5_u8; 32])
-        .bind(&storage_urls)
         .execute(&pool)
         .await?;
 
@@ -701,24 +702,25 @@ mod tests {
         .await?;
         tx.commit().await?;
 
-        let row = sqlx::query(
-            "SELECT status, key_content_sks_key, key_content_public
+        let row = sqlx::query!(
+            r#"
+            SELECT
+                status AS "status!",
+                key_content_sks_key AS "key_content_sks_key!",
+                key_content_public AS "key_content_public!"
              FROM kms_key_activation_events
-             WHERE chain_id = $1 AND block_hash = $2 AND key_id = $3",
+             WHERE chain_id = $1 AND block_hash = $2 AND key_id = $3
+            "#,
+            chain_id.as_i64(),
+            &block_hash,
+            &key_id,
         )
-        .bind(chain_id.as_i64())
-        .bind(&block_hash)
-        .bind(&key_id)
         .fetch_one(&pool)
         .await?;
 
-        let status: String = row.try_get("status")?;
-        let sks_key: Vec<u8> = row.try_get("key_content_sks_key")?;
-        let stored_public_key: Vec<u8> = row.try_get("key_content_public")?;
-
-        assert_eq!(status, "ready");
-        assert_eq!(sks_key, existing_sks);
-        assert_eq!(stored_public_key, public_key);
+        assert_eq!(row.status, "ready");
+        assert_eq!(row.key_content_sks_key, existing_sks);
+        assert_eq!(row.key_content_public, public_key);
 
         Ok(())
     }
