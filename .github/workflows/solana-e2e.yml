@@ -55,22 +55,23 @@ jobs:
       - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@d70bba72b1f3fd22344832f00baa16ece964efeb # v3.3.0
 
-      - name: Cache anchor-cli (skip the ~3-min cargo install --git on warm same-branch runs)
-        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
-        with:
-          path: ~/.cargo/bin/anchor
-          key: anchor-cli-v1.0.2-${{ runner.os }}
-
       - name: Setup Solana + Anchor toolchain
         run: |
           set -euo pipefail
           rustup target add wasm32-unknown-unknown
-          # Pin to v2.1.21: the Yellowstone geyser plugin's ABI is patch-coupled to this Agave version.
-          sh -c "$(curl -sSfL https://release.anza.xyz/v2.1.21/install)"
+          # Retry the network fetches below: a CI run failed on a transient crates.io download.
+          retry() { local n; for n in 1 2 3; do "$@" && return 0; echo "attempt $n failed; retrying in 5s" >&2; sleep 5; done; return 1; }
+          # Pin agave v2.1.21 (the Yellowstone geyser plugin's ABI is patch-coupled to it).
+          retry curl -sSfL https://release.anza.xyz/v2.1.21/install -o /tmp/anza-install.sh
+          sh /tmp/anza-install.sh
           echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
-          # Skip the ~3-min build if the cached anchor-cli (restored above) is already the pin.
-          anchor --version 2>/dev/null | grep -q "anchor-cli 1.0.2" \
-            || cargo install --git https://github.com/coral-xyz/anchor --tag v1.0.2 anchor-cli --locked
+          # anchor-cli from the prebuilt release binary, NOT `cargo install --git`: the latter builds
+          # avm+anchor from source and fetches dozens of crates from crates.io, which flaked (a
+          # `chrono` download failed). One retried binary download, no compilation, no crates.io.
+          mkdir -p "$HOME/.cargo/bin"
+          retry curl -sSfL https://github.com/coral-xyz/anchor/releases/download/v1.0.2/anchor-1.0.2-x86_64-unknown-linux-gnu -o "$HOME/.cargo/bin/anchor"
+          chmod +x "$HOME/.cargo/bin/anchor"
+          anchor --version
 
       - name: Setup protoc (host-listener builds fhevm-engine-common via prost-build)
         uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
@@ -199,22 +200,23 @@ jobs:
       - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@d70bba72b1f3fd22344832f00baa16ece964efeb # v3.3.0
 
-      - name: Cache anchor-cli (skip the ~3-min cargo install --git on warm same-branch runs)
-        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
-        with:
-          path: ~/.cargo/bin/anchor
-          key: anchor-cli-v1.0.2-${{ runner.os }}
-
       - name: Setup Solana + Anchor toolchain
         run: |
           set -euo pipefail
           rustup target add wasm32-unknown-unknown
-          # Pin to v2.1.21: the Yellowstone geyser plugin's ABI is patch-coupled to this Agave version.
-          sh -c "$(curl -sSfL https://release.anza.xyz/v2.1.21/install)"
+          # Retry the network fetches below: a CI run failed on a transient crates.io download.
+          retry() { local n; for n in 1 2 3; do "$@" && return 0; echo "attempt $n failed; retrying in 5s" >&2; sleep 5; done; return 1; }
+          # Pin agave v2.1.21 (the Yellowstone geyser plugin's ABI is patch-coupled to it).
+          retry curl -sSfL https://release.anza.xyz/v2.1.21/install -o /tmp/anza-install.sh
+          sh /tmp/anza-install.sh
           echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
-          # Skip the ~3-min build if the cached anchor-cli (restored above) is already the pin.
-          anchor --version 2>/dev/null | grep -q "anchor-cli 1.0.2" \
-            || cargo install --git https://github.com/coral-xyz/anchor --tag v1.0.2 anchor-cli --locked
+          # anchor-cli from the prebuilt release binary, NOT `cargo install --git`: the latter builds
+          # avm+anchor from source and fetches dozens of crates from crates.io, which flaked (a
+          # `chrono` download failed). One retried binary download, no compilation, no crates.io.
+          mkdir -p "$HOME/.cargo/bin"
+          retry curl -sSfL https://github.com/coral-xyz/anchor/releases/download/v1.0.2/anchor-1.0.2-x86_64-unknown-linux-gnu -o "$HOME/.cargo/bin/anchor"
+          chmod +x "$HOME/.cargo/bin/anchor"
+          anchor --version
 
       - name: Setup protoc (host-listener builds fhevm-engine-common via prost-build)
         uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
