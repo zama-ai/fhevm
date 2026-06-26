@@ -7,6 +7,7 @@
     "@trivago/prettier-plugin-sort-imports": "^5.2.2",
     "prettier": "^3.8.3",
     "prettier-plugin-solidity": "^2.0.0",
+    "ts-node": "^10.9.2",
     "typescript": "^6.0.0"
   },
   "scripts": {
