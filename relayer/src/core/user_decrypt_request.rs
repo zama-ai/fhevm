@@ -142,6 +142,7 @@ impl ContentHasher for UserDecryptRequest {
                 signature: _,
                 public_key,
                 extra_data,
+                mmr,
             } => {
                 // Distinct variant tag so Solana hashes never collide with EVM unified hashes.
                 hasher.update(b"variant:solana_unified_v1:");
@@ -169,6 +170,21 @@ impl ContentHasher for UserDecryptRequest {
 
                 hasher.update(b"nonce:");
                 hasher.update(nonce.as_slice());
+
+                // Include the lineage-decrypt info: a rebuilt (fresh) proof for the same handle must
+                // hash DISTINCTLY from the stale one it replaces, so a rebuild-on-stale resubmit is
+                // treated as a new request and re-processed rather than dedup-collapsed onto the
+                // dead proof. Amount handles (`None`) contribute nothing, so they are unaffected.
+                if let Some(mmr) = mmr {
+                    hasher.update(b"acl_value_key:");
+                    hasher.update(mmr.value_key.as_slice());
+
+                    hasher.update(b"mmr_proof:");
+                    hasher.update(&mmr.proof);
+
+                    hasher.update(b"proof_slot:");
+                    hasher.update(mmr.proof_slot.to_be_bytes());
+                }
             }
         }
 

@@ -217,4 +217,35 @@ sleep 1
     --database-url "$DBURL" --url "$VALIDATOR_RPC" --program-id "$ZAMA_HOST_ID" \
     --host-chain-id="$SID_I64" >/tmp/solana-finalized-account-fetcher.log 2>&1 & )
 
-echo "==> Solana side-stack ready. zama_host=$ZAMA_HOST_ID host_chain_id=$SID_U64 (i64 $SID_I64)"
+# The rotation-leaf indexer is the encrypted-value-ACL + MMR proof service: it
+# crawls the validator for the four EV-ACL instructions (initialize/allow/rotate/
+# mark_public), reconstructs each lineage's MMR off-chain, and serves inclusion
+# proofs the KMS verifies for historical/public balance decrypts. Standalone
+# workspace; reuse the coprocessor Postgres with a dedicated `indexer` database.
+echo "==> [5c/5] run Solana rotation-leaf indexer (encrypted-value ACL + MMR proof API)"
+pkill -f 'solana-indexer/target/debug/indexer' 2>/dev/null || true
+sleep 1
+docker exec coprocessor-and-kms-db psql -U postgres -c 'CREATE DATABASE indexer' >/dev/null 2>&1 || true
+INDEXER_DBURL="$(printf '%s' "$DBURL" | sed 's#/[^/]*$#/indexer#')"
+INDEXER_PORT="${SOLANA_INDEXER_PORT:-8080}"
+( cd "$ROOT/solana-indexer" && cargo build --quiet --bins >/tmp/solana-indexer-build.log 2>&1 ) \
+  || { echo "[setup] indexer build failed; see /tmp/solana-indexer-build.log" >&2; tail -20 /tmp/solana-indexer-build.log >&2; exit 1; }
+DATABASE_URL="$INDEXER_DBURL" "$ROOT/solana-indexer/target/debug/indexer-migrate" >/tmp/solana-indexer.log 2>&1 \
+  || { echo "[setup] indexer migrate failed; see /tmp/solana-indexer.log" >&2; tail -20 /tmp/solana-indexer.log >&2; exit 1; }
+(
+  APP_CONFIG_DIR="$ROOT/solana-indexer/config" \
+  APP_SOLANA__RPC_URL="$VALIDATOR_RPC" \
+  APP_SOLANA__PROGRAM_ID="$ZAMA_HOST_ID" \
+  APP_SOLANA__COMMITMENT="finalized" \
+  APP_DATABASE__URL="$INDEXER_DBURL" \
+  APP_HTTP__ENDPOINT="0.0.0.0:$INDEXER_PORT" \
+  APP_METRICS__ENDPOINT="127.0.0.1:9464" \
+    "$ROOT/solana-indexer/target/debug/indexer" >>/tmp/solana-indexer.log 2>&1 &
+)
+SOLANA_INDEXER_URL="http://127.0.0.1:$INDEXER_PORT"
+for _ in $(seq 1 30); do curl -sf "$SOLANA_INDEXER_URL/liveness" >/dev/null 2>&1 && break; sleep 1; done
+export SOLANA_INDEXER_URL
+mkdir -p "$ROOT/.fhevm/runtime/env" 2>/dev/null || true
+printf 'SOLANA_INDEXER_URL=%s\n' "$SOLANA_INDEXER_URL" > "$ROOT/.fhevm/runtime/env/solana-indexer.env"
+
+echo "==> Solana side-stack ready. zama_host=$ZAMA_HOST_ID host_chain_id=$SID_U64 (i64 $SID_I64) indexer=$SOLANA_INDEXER_URL"

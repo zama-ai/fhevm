@@ -511,13 +511,6 @@ fn decode_confidential_token_account_fetches(
                 "amount_disclosure_requested",
             )]
         }
-        ConfidentialTokenEvent::BalanceDisclosureRequested(event) => {
-            vec![request_witness_fetch(
-                event.request,
-                SolanaFinalizedAccountFetchKind::DisclosureRequest,
-                "balance_disclosure_requested",
-            )]
-        }
         ConfidentialTokenEvent::BurnRedemptionRequested(event) => {
             vec![request_witness_fetch(
                 event.request,
@@ -526,7 +519,6 @@ fn decode_confidential_token_account_fetches(
             )]
         }
         ConfidentialTokenEvent::AmountDisclosed(_)
-        | ConfidentialTokenEvent::BalanceDisclosed(_)
         | ConfidentialTokenEvent::BalanceHandleUpdated(_)
         | ConfidentialTokenEvent::BurnRedeemed(_)
         | ConfidentialTokenEvent::ConfidentialBurn(_)
@@ -540,10 +532,6 @@ fn confidential_token_event_version(event: &ConfidentialTokenEvent) -> u8 {
     match event {
         ConfidentialTokenEvent::AmountDisclosed(event) => event.version,
         ConfidentialTokenEvent::AmountDisclosureRequested(event) => {
-            event.version
-        }
-        ConfidentialTokenEvent::BalanceDisclosed(event) => event.version,
-        ConfidentialTokenEvent::BalanceDisclosureRequested(event) => {
             event.version
         }
         ConfidentialTokenEvent::BalanceHandleUpdated(event) => event.version,
@@ -1846,10 +1834,6 @@ mod tests {
             "AmountDisclosureRequestedEvent",
             amount_disclosure_requested_payload(5),
         );
-        let balance_event = anchor_event_cpi(
-            "BalanceDisclosureRequestedEvent",
-            balance_disclosure_requested_payload(15),
-        );
         let redemption_event = anchor_event_cpi(
             "BurnRedemptionRequestedEvent",
             burn_redemption_requested_payload(25),
@@ -1858,13 +1842,12 @@ mod tests {
         let fetches = decode_confidential_token_anchor_cpi_account_fetches(
             [
                 (token_program, amount_event.as_slice()),
-                (token_program, balance_event.as_slice()),
                 (token_program, redemption_event.as_slice()),
             ],
             token_program,
         );
 
-        assert_eq!(fetches.len(), 3);
+        assert_eq!(fetches.len(), 2);
         assert_request_fetch(
             &fetches[0],
             5,
@@ -1873,12 +1856,6 @@ mod tests {
         );
         assert_request_fetch(
             &fetches[1],
-            15,
-            SolanaFinalizedAccountFetchKind::DisclosureRequest,
-            "balance_disclosure_requested",
-        );
-        assert_request_fetch(
-            &fetches[2],
             25,
             SolanaFinalizedAccountFetchKind::BurnRedemptionRequest,
             "burn_redemption_requested",
@@ -1891,8 +1868,8 @@ mod tests {
         let logs = vec![
             format!("Program {token_program} invoke [1]"),
             program_data_log(
-                "BalanceDisclosureRequestedEvent",
-                balance_disclosure_requested_payload(19),
+                "AmountDisclosureRequestedEvent",
+                amount_disclosure_requested_payload(19),
             ),
             format!("Program {token_program} success"),
         ];
@@ -1910,7 +1887,7 @@ mod tests {
             &fetches[0],
             19,
             SolanaFinalizedAccountFetchKind::DisclosureRequest,
-            "balance_disclosure_requested",
+            "amount_disclosure_requested",
         );
     }
 
@@ -1922,17 +1899,12 @@ mod tests {
             "AmountDisclosedEvent",
             amount_disclosed_payload(31),
         );
-        let balance_event = anchor_event_cpi(
-            "BalanceDisclosedEvent",
-            balance_disclosed_payload(32),
-        );
         let redeemed_event =
             anchor_event_cpi("BurnRedeemedEvent", burn_redeemed_payload(33));
 
         let fetches = decode_confidential_token_anchor_cpi_account_fetches(
             [
                 (token_program, amount_event.as_slice()),
-                (token_program, balance_event.as_slice()),
                 (token_program, redeemed_event.as_slice()),
             ],
             token_program,
@@ -2541,20 +2513,6 @@ mod tests {
         payload
     }
 
-    fn balance_disclosure_requested_payload(request_byte: u8) -> Vec<u8> {
-        let mut payload = token_payload();
-        payload.extend_from_slice(&[10; 32]);
-        payload.extend_from_slice(&[11; 32]);
-        payload.extend_from_slice(&[12; 32]);
-        payload.extend_from_slice(&[13; 32]);
-        payload.extend_from_slice(&[14; 32]);
-        payload.extend_from_slice(&[request_byte; 32]);
-        payload.extend_from_slice(&[16; 32]);
-        payload.extend_from_slice(&18_u64.to_le_bytes());
-        payload.extend_from_slice(&19_u64.to_le_bytes());
-        payload
-    }
-
     fn burn_redemption_requested_payload(request_byte: u8) -> Vec<u8> {
         let mut payload = token_payload();
         payload.extend_from_slice(&[20; 32]);
@@ -2578,18 +2536,6 @@ mod tests {
         payload.extend_from_slice(&[request_byte; 32]);
         payload.extend_from_slice(&[43; 32]);
         payload.extend_from_slice(&44_u64.to_le_bytes());
-        payload
-    }
-
-    fn balance_disclosed_payload(request_byte: u8) -> Vec<u8> {
-        let mut payload = token_payload();
-        payload.extend_from_slice(&[50; 32]);
-        payload.extend_from_slice(&[51; 32]);
-        payload.extend_from_slice(&[52; 32]);
-        payload.extend_from_slice(&[53; 32]);
-        payload.extend_from_slice(&[request_byte; 32]);
-        payload.extend_from_slice(&[55; 32]);
-        payload.extend_from_slice(&56_u64.to_le_bytes());
         payload
     }
 

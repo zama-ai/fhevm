@@ -20,12 +20,8 @@ pub struct BalanceHandleUpdatedEvent {
     pub token_account: Pubkey,
     /// Previous balance handle.
     pub old_handle: [u8; 32],
-    /// Previous ZamaHost ACL record.
-    pub old_acl_record: Pubkey,
     /// New balance handle.
     pub new_handle: [u8; 32],
-    /// New ZamaHost ACL record.
-    pub new_acl_record: Pubkey,
     /// Reason this balance pointer changed.
     pub reason: BalanceHandleUpdateReason,
 }
@@ -62,12 +58,8 @@ pub struct TotalSupplyHandleUpdatedEvent {
     pub mint: Pubkey,
     /// Previous total-supply handle.
     pub old_handle: [u8; 32],
-    /// Previous ZamaHost ACL record.
-    pub old_acl_record: Pubkey,
     /// New total-supply handle.
     pub new_handle: [u8; 32],
-    /// New ZamaHost ACL record.
-    pub new_acl_record: Pubkey,
     /// Reason this total-supply pointer changed.
     pub reason: TotalSupplyUpdateReason,
 }
@@ -126,31 +118,6 @@ pub struct RandomAmountCreatedEvent {
     pub nonce_sequence: u64,
 }
 
-/// Emitted when the owner requests public disclosure of the current balance.
-#[event]
-pub struct BalanceDisclosureRequestedEvent {
-    /// Event schema version.
-    pub version: u8,
-    /// Confidential mint.
-    pub mint: Pubkey,
-    /// Token account owner.
-    pub owner: Pubkey,
-    /// Confidential token account.
-    pub token_account: Pubkey,
-    /// Publicly decryptable balance handle.
-    pub handle: [u8; 32],
-    /// ZamaHost ACL record updated by the request.
-    pub acl_record: Pubkey,
-    /// Account-backed request witness.
-    pub request: Pubkey,
-    /// Canonical request hash stored in the witness.
-    pub request_hash: [u8; 32],
-    /// KMS context id the response cert must verify against.
-    pub kms_context_id: u64,
-    /// Last slot in which this request can be consumed.
-    pub expires_slot: u64,
-}
-
 /// Emitted when a requester asks to publicly disclose a token-scoped amount.
 #[event]
 pub struct AmountDisclosureRequestedEvent {
@@ -172,27 +139,6 @@ pub struct AmountDisclosureRequestedEvent {
     pub kms_context_id: u64,
     /// Last slot in which this request can be consumed.
     pub expires_slot: u64,
-}
-
-/// Emitted when a KMS certificate discloses the current balance cleartext.
-#[event]
-pub struct BalanceDisclosedEvent {
-    /// Event schema version.
-    pub version: u8,
-    /// Confidential mint.
-    pub mint: Pubkey,
-    /// Token account owner.
-    pub owner: Pubkey,
-    /// Confidential token account.
-    pub token_account: Pubkey,
-    /// Disclosed balance handle.
-    pub handle: [u8; 32],
-    /// Consumed request witness.
-    pub request: Pubkey,
-    /// Canonical request hash stored in the witness.
-    pub request_hash: [u8; 32],
-    /// KMS-certified cleartext amount.
-    pub cleartext_amount: u64,
 }
 
 /// Emitted when a KMS certificate discloses a token-scoped amount cleartext.

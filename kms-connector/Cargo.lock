@@ -4084,6 +4084,7 @@ dependencies = [
  "anyhow",
  "base64",
  "bc2wrap",
+ "borsh",
  "connector-utils",
  "dashmap",
  "fhevm_gateway_bindings",
@@ -4117,6 +4118,7 @@ dependencies = [
  "tracing-test",
  "url",
  "user-decryption-signature",
+ "zama-solana-acl",
 ]
 
 [[package]]
@@ -8091,6 +8093,15 @@ dependencies = [
  "quote",
  "syn 2.0.117",
  "synstructure",
+]
+
+[[package]]
+name = "zama-solana-acl"
+version = "0.1.0"
+dependencies = [
+ "borsh",
+ "sha2",
+ "sha3",
 ]
 
 [[package]]

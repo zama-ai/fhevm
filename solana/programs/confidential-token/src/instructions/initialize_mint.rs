@@ -20,9 +20,9 @@ pub struct InitializeMint<'info> {
     /// CHECK: Mint-scoped app authority for total-supply handles.
     #[account(seeds = [b"total-supply", mint.key().as_ref()], bump)]
     pub total_supply_authority: UncheckedAccount<'info>,
-    /// CHECK: initialized and validated by the Zama host program CPI.
+    /// CHECK: total-supply encrypted-value ACL lineage; created via the Zama host CPI.
     #[account(mut)]
-    pub total_supply_acl_record: UncheckedAccount<'info>,
+    pub total_supply_value_acl: UncheckedAccount<'info>,
     /// CHECK: Anchor event CPI authority for the Zama host program.
     pub zama_event_authority: UncheckedAccount<'info>,
     /// ZamaHost program used to create the initial total-supply handle.
@@ -49,12 +49,10 @@ pub fn initialize_mint(ctx: Context<InitializeMint>) -> Result<()> {
         total_supply_authority_address(mint_key).0,
         ConfidentialTokenError::TotalSupplyAuthorityMismatch
     );
-    let total_supply_acl_record = ctx.accounts.total_supply_acl_record.key();
-    let total_supply_output = fhe::DurableOutput::new(
-        ctx.accounts.total_supply_acl_record.to_account_info(),
-        durable_slot(mint_key, total_supply_authority, total_supply_label(), 0),
-        zama_fhe::AccessPolicy::for_compute(compute_signer).map_err(invalid_eval_plan)?,
-    )?;
+    let total_supply_authority_bump = total_supply_authority_address(mint_key).1;
+    // Total supply is a transient eval output (no per-rotation ACL record); its
+    // computed handle returns via fhe_eval and is bound into the total-supply
+    // encrypted-value ACL lineage below.
     let context_id = transfer_eval_context(
         b"initialize-total-supply",
         mint_key,
@@ -68,27 +66,20 @@ pub fn initialize_mint(ctx: Context<InitializeMint>) -> Result<()> {
         context_id,
         zama_fhe::EvalAppAuthority::new(total_supply_authority),
     );
-    builder
-        .trivial_encrypt_u64(0, total_supply_output.output())
+    let total_supply = builder
+        .trivial_encrypt_u64(0, zama_fhe::Output::transient())
         .map_err(invalid_eval_plan)?;
+    let total_supply_index = total_supply
+        .producer_index()
+        .ok_or(error!(ConfidentialTokenError::InvalidFheEvalPlan))?;
     let plan = builder.finish().map_err(invalid_eval_plan)?;
     let compute_authority = fhe::ComputeAuthority::for_mint(
         &ctx.accounts.compute_signer,
         mint_key,
         ctx.bumps.compute_signer,
     )?;
-    let total_supply_authority_bump = total_supply_authority_address(mint_key).1;
-    let eval_accounts = fhe::EvalAccountSet::for_plan(
-        &plan,
-        [total_supply_output.account_info()],
-        [fhe::OutputAuthority::total_supply(
-            &ctx.accounts.total_supply_authority,
-            mint_key,
-            total_supply_authority_bump,
-        )?],
-    )?;
-    fhe::eval(fhe::Eval {
-        context: fhe::EvalContext {
+    fhe::eval_transient(
+        fhe::EvalContext {
             payer: &ctx.accounts.authority,
             event_authority: &ctx.accounts.zama_event_authority,
             zama_program: &ctx.accounts.zama_program,
@@ -96,10 +87,31 @@ pub fn initialize_mint(ctx: Context<InitializeMint>) -> Result<()> {
             compute_authority,
             system_program: &ctx.accounts.system_program,
         },
-        accounts: &eval_accounts,
+        fhe::OutputAuthority::total_supply(
+            &ctx.accounts.total_supply_authority,
+            mint_key,
+            total_supply_authority_bump,
+        )?,
+        [],
         plan,
-    })?;
-    let total_supply_handle = total_supply_output.handle()?;
+    )?;
+    let total_supply_handle = fhe::read_eval_output_handle(total_supply_index)?;
+    upsert_value_acl(
+        &LineageCpi {
+            zama_program: ctx.accounts.zama_program.to_account_info(),
+            encrypted_value_acl: ctx.accounts.total_supply_value_acl.to_account_info(),
+            payer: ctx.accounts.authority.to_account_info(),
+            system_program: ctx.accounts.system_program.to_account_info(),
+        },
+        LineageAuthority::total_supply(
+            &ctx.accounts.total_supply_authority,
+            mint_key,
+            total_supply_authority_bump,
+        ),
+        mint_key,
+        total_supply_handle,
+        vec![compute_signer],
+    )?;
     let mint = &mut ctx.accounts.mint;
     mint.authority = ctx.accounts.authority.key();
     mint.acl_domain_key = mint_key;
@@ -107,15 +119,11 @@ pub fn initialize_mint(ctx: Context<InitializeMint>) -> Result<()> {
     mint.underlying_mint = ctx.accounts.underlying_mint.key();
     mint.decimals = ctx.accounts.underlying_mint.decimals;
     mint.total_supply_handle = total_supply_handle;
-    mint.total_supply_acl_record = total_supply_acl_record;
-    mint.next_total_supply_nonce_sequence = 1;
     emit_cpi!(TotalSupplyHandleUpdatedEvent {
         version: APP_EVENT_VERSION,
         mint: mint_key,
         old_handle: [0; 32],
-        old_acl_record: Pubkey::default(),
         new_handle: total_supply_handle,
-        new_acl_record: total_supply_acl_record,
         reason: TotalSupplyUpdateReason::Initialize,
     });
     Ok(())

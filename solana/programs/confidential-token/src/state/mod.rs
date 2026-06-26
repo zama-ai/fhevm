@@ -90,6 +90,22 @@ pub fn total_supply_nonce_key(acl_domain_key: Pubkey, app_account: Pubkey) -> [u
     nonce_key(acl_domain_key, app_account, total_supply_label())
 }
 
+/// Returns the encrypted-value ACL lineage address for a token balance.
+///
+/// One lineage account per `(mint, token_account)` balance, reused across every
+/// balance-handle rotation (encrypted-value ACL + MMR PoC, fhevm-internal#1569).
+pub fn balance_value_acl_address(acl_domain_key: Pubkey, app_account: Pubkey) -> (Pubkey, u8) {
+    zama_host::encrypted_value_acl_address(balance_nonce_key(acl_domain_key, app_account))
+}
+
+/// Returns the encrypted-value ACL lineage address for the encrypted total supply.
+///
+/// One lineage account per `(mint, total_supply_authority)`, reused across every
+/// total-supply rotation (encrypted-value ACL + MMR PoC, fhevm-internal#1569).
+pub fn total_supply_value_acl_address(acl_domain_key: Pubkey, app_account: Pubkey) -> (Pubkey, u8) {
+    zama_host::encrypted_value_acl_address(total_supply_nonce_key(acl_domain_key, app_account))
+}
+
 /// Fixed encrypted value label for confidential balances.
 pub fn balance_label() -> [u8; 32] {
     *b"balance_________________________"

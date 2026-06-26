@@ -124,4 +124,24 @@ pub struct Eip712UnifiedUserDecryptPayloadJson {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(example = json!(["0x3333333333333333333333333333333333333333333333333333333333333333"]))]
     pub solana_allowed_acl_domain_keys: Option<Vec<String>>,
+
+    /// Encrypted-value-ACL lineage identity (`acl_nonce_key`, `0x` + 64 hex) for a HISTORICAL or
+    /// PUBLIC confidential-balance decrypt. Absent for a current-ACL decrypt. Pure pass-through to
+    /// the gateway; bound into the ed25519 signing preimage and verified by the KMS Connector.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(example = "0x4444444444444444444444444444444444444444444444444444444444444444")]
+    pub solana_acl_value_key: Option<String>,
+
+    /// MMR inclusion proof for the decrypt: a mode-prefixed (`0x01` historical / `0x02` public)
+    /// Borsh blob, `0x`-hex. Absent for a current-ACL decrypt. The SDK rebuilds and resubmits this
+    /// (with a fresh `solana_proof_slot`) if the KMS reports the proof stale.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(example = "0x01...")]
+    pub solana_mmr_proof: Option<String>,
+
+    /// The lineage `leaf_count` the proof was built against — the staleness marker. Absent (0) for
+    /// a current-ACL decrypt.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(example = 42)]
+    pub solana_proof_slot: Option<u64>,
 }

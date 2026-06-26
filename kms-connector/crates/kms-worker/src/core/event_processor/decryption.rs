@@ -6,10 +6,11 @@ use crate::core::{
         s3::S3Service,
         solana_user_decrypt::{
             SolanaHost, check_solana_handles_acl, check_solana_handles_public_decrypt,
-            verify_solana_user_decrypt_signature,
+            dispatch_solana_current, dispatch_solana_mmr_proof, fetch_encrypted_value_acl,
+            require_single_handle, verify_solana_user_decrypt_signature,
         },
     },
-    solana_acl::HandleBytes,
+    solana_acl::{HandleBytes, SolanaAclVerifier},
     solana_v2_fetcher::SolanaV2Fetcher,
 };
 use alloy::{
@@ -483,19 +484,60 @@ where
             ))
         })?;
 
-        // ed25519 binding — the check that closes the substitution bug. Pure, no I/O.
+        // ed25519 binding — the check that closes the substitution bug. Pure, no I/O. The auth now
+        // also carries the MMR-proof fields (value_key, proof blob, slot) committed under the
+        // signature, so the dispatch below trusts them as signed inputs.
         let auth = verify_solana_user_decrypt_signature(request, chain_id)?;
-
-        // ACL phase: read each handle's record at finalized commitment and run the domain-scoped
-        // verifier with the identity as subject.
         let handles: Vec<HandleBytes> = request.handles.iter().map(|e| e.handle.0).collect();
-        check_solana_handles_acl(host, &handles, auth.identity, &auth.allowed_acl_domain_keys)
-            .await?;
 
-        info!(
-            "Solana user-decryption ACL check passed for {} handles!",
-            request.handles.len()
-        );
+        // Empty MMR proof = no-proof path. A non-zero `aclValueKey` here means a CURRENT lineage
+        // decrypt: a live balance / total_supply handle authorized against its lineage's
+        // `current_handle` + membership (read at freshest finalized, so a rotation / subject
+        // revocation is caught). These values no longer carry a V1 `AclRecord`, so this — not the
+        // AclRecord scan below — is the path that authorizes their live handle. One `aclValueKey`
+        // covers exactly one lineage, hence one handle (same single-handle guard as the MMR path).
+        if auth.mmr_proof_bytes.is_empty() && auth.acl_value_key != [0u8; 32] {
+            let handle: HandleBytes = require_single_handle(&handles)?;
+            let (account_key, owner, acl) =
+                fetch_encrypted_value_acl(host, auth.acl_value_key).await?;
+            let verifier = SolanaAclVerifier::new(host.program_id);
+            dispatch_solana_current(&verifier, account_key, owner, &acl, handle, &auth)?;
+            info!("Solana current lineage user-decryption check passed!");
+            return Ok(());
+        }
+
+        // Empty MMR proof + zero `aclValueKey` = one-shot AclRecord path (unchanged): per-handle
+        // record read + domain-scoped verifier with the identity as subject. Covers amount handles
+        // (transfer / burn / refund / random) which keep their per-operation `AclRecord`.
+        if auth.mmr_proof_bytes.is_empty() {
+            check_solana_handles_acl(host, &handles, auth.identity, &auth.allowed_acl_domain_keys)
+                .await?;
+            info!(
+                "Solana user-decryption ACL check passed for {} handles!",
+                request.handles.len()
+            );
+            return Ok(());
+        }
+
+        // MMR-proof path (historical / public confidential-balance decrypt). One
+        // proofSlot/aclValueKey/mmrProof covers exactly one lineage, so a non-empty proof request
+        // is scoped to a single handle (enforced by the pure, unit-tested guard below).
+        let handle: HandleBytes = require_single_handle(&handles)?;
+
+        // Locate the lineage by its value_key PDA (NOT a handle scan: a historical handle is a
+        // rotated/past value the scan would miss) at freshest finalized commitment.
+        let (account_key, owner, acl) = fetch_encrypted_value_acl(host, auth.acl_value_key).await?;
+
+        // Mode dispatch + verify-first authorization. The proof is verified against the LIVE peaks;
+        // `proofSlot` (build-time leaf_count) is NOT an acceptance gate — it only classifies a verify
+        // failure as stale (lineage advanced -> RETRYABLE rebuild) vs genuinely invalid (leaf_count
+        // unchanged -> Irrecoverable). The stale arm is budget-safe: the attempt-budget arm in
+        // processor.rs matches only PublicDecryption | UserDecryption | UserDecryptionV2, never
+        // UserDecryptionSolana, so a stale-proof retry never decrements the attempt counter.
+        let verifier = SolanaAclVerifier::new(host.program_id);
+        dispatch_solana_mmr_proof(&verifier, account_key, owner, &acl, handle, &auth)?;
+
+        info!("Solana MMR-proof user-decryption check passed!");
         Ok(())
     }
 

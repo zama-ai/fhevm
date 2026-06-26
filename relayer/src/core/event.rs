@@ -515,7 +515,9 @@ pub enum UserDecryptRequest {
     /// The ed25519 auth fields (`user_identity`, `nonce`, `allowed_acl_domain_keys`) are 32-byte
     /// Solana pubkeys carried as typed fields rather than packed into `extra_data`; `extra_data`
     /// carries only the KMS context. `signature` is the ed25519 signature, verified off-chain by
-    /// the KMS Connector. `allowed_acl_domain_keys` may be empty (permissive mode).
+    /// the KMS Connector. `allowed_acl_domain_keys` may be empty (permissive mode). The relayer is a
+    /// pure pass-through for the optional `mmr` lineage-decrypt info — it forwards it verbatim into
+    /// the gateway calldata; the KMS Connector verifies it off-chain.
     SolanaUnifiedV1 {
         handles: Vec<HandleEntry>,
         user_identity: B256,
@@ -525,7 +527,28 @@ pub enum UserDecryptRequest {
         signature: Bytes,
         public_key: Bytes,
         extra_data: Bytes,
+        /// Encrypted-value-ACL lineage decrypt info (`Some` iff the request targets a lineage value
+        /// — a confidential balance / total supply), or `None` for a one-shot amount handle. This
+        /// replaces the former all-zero / empty sentinel triplet.
+        mmr: Option<SolanaMmrProof>,
     },
+}
+
+/// Encrypted-value-ACL lineage-decrypt info for a Solana `user_decrypt` request.
+///
+/// Present (`Some`) iff the request targets a lineage value — a confidential balance or total
+/// supply — rather than a one-shot amount handle. The relayer is a pure pass-through: these are
+/// forwarded verbatim into the gateway calldata and verified off-chain by the KMS Connector.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Hash, PartialEq, Eq)]
+pub struct SolanaMmrProof {
+    /// The lineage identity (`encrypted-value-acl` PDA value key) being decrypted.
+    pub value_key: B256,
+    /// Mode-prefixed Borsh MMR proof blob for a historical/public decrypt, or empty for a
+    /// current-value decrypt (which needs no proof).
+    pub proof: Bytes,
+    /// The `leaf_count` the proof was built against — the staleness marker classifying a verify
+    /// failure as recoverable (rebuild) vs. irrecoverable. Zero for a current-value decrypt.
+    pub proof_slot: u64,
 }
 
 impl UserDecryptRequest {
@@ -854,6 +877,30 @@ impl TryFrom<AttestedUserDecryptRequestJson> for UserDecryptRequest {
                     anyhow::anyhow!("Failed to parse solanaAllowedAclDomainKeys: {}", e)
                 })?;
 
+            // The encrypted-value-ACL value key is present iff the request targets a lineage value
+            // (confidential balance / total supply); its presence — not a zero/empty sentinel —
+            // distinguishes a lineage decrypt from a one-shot amount handle. An empty `mmr_proof`
+            // within `Some` means a current-value decrypt (no MMR proof). Forwarded verbatim to the
+            // gateway; the KMS Connector verifies the proof off-chain.
+            let mmr = match payload_inner.solana_acl_value_key.as_deref() {
+                Some(k) => {
+                    let value_key = B256::from_str(k)
+                        .map_err(|e| anyhow::anyhow!("Failed to parse solanaAclValueKey: {}", e))?;
+                    let proof = match payload_inner.solana_mmr_proof.as_deref() {
+                        Some(p) => Bytes::from_str(p).map_err(|e| {
+                            anyhow::anyhow!("Failed to parse solanaMmrProof: {}", e)
+                        })?,
+                        None => Bytes::new(),
+                    };
+                    Some(SolanaMmrProof {
+                        value_key,
+                        proof,
+                        proof_slot: payload_inner.solana_proof_slot.unwrap_or(0),
+                    })
+                }
+                None => None,
+            };
+
             return Ok(UserDecryptRequest::SolanaUnifiedV1 {
                 handles,
                 user_identity,
@@ -863,6 +910,7 @@ impl TryFrom<AttestedUserDecryptRequestJson> for UserDecryptRequest {
                 signature,
                 public_key,
                 extra_data,
+                mmr,
             });
         }
 
@@ -1298,6 +1346,10 @@ mod tests {
                 solana_user_identity: Some(identity_hex.clone()),
                 solana_nonce: Some(nonce_hex.clone()),
                 solana_allowed_acl_domain_keys: Some(vec![domain_key_hex.clone()]),
+                // Current-ACL request: no MMR-proof tail.
+                solana_acl_value_key: None,
+                solana_mmr_proof: None,
+                solana_proof_slot: None,
             },
             signature: signature_hex.clone(),
         };

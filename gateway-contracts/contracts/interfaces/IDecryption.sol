@@ -106,6 +106,24 @@ interface IDecryption {
         bytes extraData;
         /// @notice The raw ed25519 signature; opaque to the gateway.
         bytes signature;
+        /// @notice The lineage identity key = acl_nonce_key(acl_domain_key, app_account, encrypted_value_label).
+        /// Lets the KMS derive the encrypted-value lineage PDA deterministically for a historical or
+        /// public decrypt (the request handle is a past/rotated value, so a handle scan would miss it).
+        /// Not a new trust input: the KMS re-derives this key from the decoded on-chain ACL and rejects a
+        /// mismatch. All-zero for a current-ACL request.
+        bytes32 aclValueKey;
+        /// @notice MMR inclusion proof for a historical/public confidential-balance decrypt. A 1-byte mode
+        /// prefix (0x01 = historical, 0x02 = public) followed by the Borsh-encoded MmrProof
+        /// {leaf_index:u64, siblings:bytes32[]}. Opaque to the gateway; the KMS decodes and verifies it.
+        /// Empty for a current-ACL request.
+        bytes mmrProof;
+        /// @notice The lineage leaf_count the proof was built against (staleness marker). The KMS reads the
+        /// lineage at freshest-finalized and, if the live leaf_count differs, returns a retryable error so
+        /// the client rebuilds the proof. 0 for a current-ACL request.
+        /// @dev The KMS Connector persists this in a signed 64-bit column and rejects values above
+        /// i64::MAX (~9.2e18) at publish time. A lineage would need 2^63 appends to reach that ceiling
+        /// (practically unreachable); documented here so the constraint is not a surprise.
+        uint64 proofSlot;
     }
 
     /**

@@ -26,8 +26,6 @@ pub struct ConfidentialPrepareTransferCallback<'info> {
     /// CHECK: Program-controlled compute signer PDA.
     #[account(seeds = [b"fhe-compute", mint.key().as_ref()], bump)]
     pub compute_signer: UncheckedAccount<'info>,
-    /// Original recipient current balance ACL record.
-    pub to_current_compute_acl: Box<Account<'info, zama_host::AclRecord>>,
     /// ACL record for the prior transfer's all-or-zero sent amount.
     pub sent_amount_acl: Box<Account<'info, zama_host::AclRecord>>,
     /// ACL record for the encrypted callback success bit.
@@ -47,9 +45,9 @@ pub struct ConfidentialPrepareTransferCallback<'info> {
         bump
     )]
     pub settlement_record: Account<'info, TransferCallbackSettlement>,
-    /// CHECK: initialized and validated by the Zama host program CPI.
+    /// CHECK: recipient balance encrypted-value ACL lineage; rotated via the Zama host CPI.
     #[account(mut)]
-    pub to_output_acl: UncheckedAccount<'info>,
+    pub to_balance_value_acl: UncheckedAccount<'info>,
     /// CHECK: initialized and validated by the Zama host program CPI.
     #[account(mut)]
     pub refund_amount_acl: UncheckedAccount<'info>,
@@ -74,12 +72,11 @@ impl<'info> ConfidentialPrepareTransferCallback<'info> {
             from_account: self.from_account.as_ref(),
             to_account: &mut self.to_account,
             compute_signer: &self.compute_signer,
-            to_current_compute_acl: self.to_current_compute_acl.as_ref(),
             sent_amount_acl: &self.sent_amount_acl,
             callback_success_acl: &self.callback_success_acl,
             hook_record: &self.hook_record,
             settlement_record: &mut self.settlement_record,
-            to_output_acl: self.to_output_acl.to_account_info(),
+            to_balance_value_acl: self.to_balance_value_acl.to_account_info(),
             refund_amount_acl: self.refund_amount_acl.to_account_info(),
             zama_event_authority: &self.zama_event_authority,
             zama_program: &self.zama_program,
@@ -109,9 +106,7 @@ pub fn confidential_prepare_transfer_callback(
         owner: outcome.to_owner,
         token_account: outcome.to_token_account,
         old_handle: outcome.old_to_handle,
-        old_acl_record: outcome.old_to_acl_record,
         new_handle: outcome.new_to_handle,
-        new_acl_record: outcome.new_to_acl_record,
         reason: BalanceHandleUpdateReason::TransferCallbackRefundDebit,
     });
     Ok(())

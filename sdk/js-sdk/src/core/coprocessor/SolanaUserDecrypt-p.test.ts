@@ -28,6 +28,8 @@ const CONTEXT_ID = (() => {
 const DOMAIN_KEYS = [new Uint8Array(32).fill(0x01), new Uint8Array(32).fill(0x02)];
 const PUBLIC_KEY = new TextEncoder().encode('public-key-bytes');
 const HANDLES = [new Uint8Array(32).fill(0x03), new Uint8Array(32).fill(0xaa)];
+const ACL_VALUE_KEY = new Uint8Array(32).fill(0x05);
+const MMR_PROOF = new Uint8Array([0x01, 0xde, 0xad, 0xbe, 0xef]);
 
 const VECTOR: SolanaUserDecryptInput = {
   contractsChainId: 0xcafen,
@@ -39,10 +41,13 @@ const VECTOR: SolanaUserDecryptInput = {
   allowedAclDomainKeys: DOMAIN_KEYS,
   startTimestamp: 1000n,
   durationSeconds: 3600n,
+  aclValueKey: ACL_VALUE_KEY,
+  proofSlot: 42n,
+  mmrProof: MMR_PROOF,
 };
 
 const RUST_PREIMAGE =
-  '0x7a616d612d736f6c616e612d757365722d646563727970742d7631' + // "zama-solana-user-decrypt-v1"
+  '0x7a616d612d736f6c616e612d757365722d646563727970742d7632' + // "zama-solana-user-decrypt-v2"
   '000000000000cafe' + // contracts_chain_id u64 BE
   '00000010' +
   '7075626c69632d6b65792d6279746573' + // "public-key-bytes"
@@ -56,7 +61,11 @@ const RUST_PREIMAGE =
   '0101010101010101010101010101010101010101010101010101010101010101' +
   '0202020202020202020202020202020202020202020202020202020202020202' +
   '00000000000003e8' + // start_timestamp 1000
-  '0000000000000e10'; // duration_seconds 3600
+  '0000000000000e10' + // duration_seconds 3600
+  '0505050505050505050505050505050505050505050505050505050505050505' + // acl_value_key
+  '000000000000002a' + // proof_slot 42
+  '00000005' + // mmr_proof_len
+  '01deadbeef'; // mmr_proof (0x01 mode-prefix ‖ blob)
 
 describe('SolanaUserDecrypt byte-parity with Rust source of truth', () => {
   it('builds the signing preimage byte-identically to solana_user_decrypt_signing_preimage', () => {

@@ -22,9 +22,9 @@ pub struct InitializeTokenAccount<'info> {
         bump
     )]
     pub token_account: Account<'info, ConfidentialTokenAccount>,
-    /// CHECK: initialized and validated by the Zama host program CPI.
+    /// CHECK: balance encrypted-value ACL lineage; created via the Zama host CPI.
     #[account(mut)]
-    pub acl_record: UncheckedAccount<'info>,
+    pub balance_value_acl: UncheckedAccount<'info>,
     /// CHECK: Anchor event CPI authority for the Zama host program.
     pub zama_event_authority: UncheckedAccount<'info>,
     /// ZamaHost program used to create the initial balance handle.
@@ -51,8 +51,6 @@ pub fn initialize_token_account(
         token_account.owner = ctx.accounts.owner.key();
         token_account.mint = ctx.accounts.mint.key();
         token_account.balance_handle = [0; 32];
-        token_account.balance_acl_record = Pubkey::default();
-        token_account.next_balance_nonce_sequence = 1;
         token_account.next_amount_nonce_sequence = 0;
         token_account.bump = ctx.bumps.token_account;
     }
@@ -70,13 +68,6 @@ pub fn initialize_token_account(
     let owner = ctx.accounts.owner.key();
     let compute_signer = ctx.accounts.compute_signer.key();
     let token_account_key = ctx.accounts.token_account.key();
-    let acl_record = ctx.accounts.acl_record.key();
-    let balance_output = fhe::DurableOutput::new(
-        ctx.accounts.acl_record.to_account_info(),
-        durable_slot(mint_key, token_account_key, balance_label(), 0),
-        zama_fhe::AccessPolicy::for_owner_and_compute(owner, compute_signer)
-            .map_err(invalid_eval_plan)?,
-    )?;
     let context_id = transfer_eval_context(
         b"initialize-balance",
         mint_key,
@@ -86,28 +77,27 @@ pub fn initialize_token_account(
         0,
         0,
     )?;
+    // The balance is a transient eval output (no per-rotation ACL record); its
+    // computed handle returns via fhe_eval set_return_data and is bound into the
+    // balance encrypted-value ACL lineage below.
     let mut builder = zama_fhe::EvalBuilder::new(
         context_id,
         zama_fhe::EvalAppAuthority::new(token_account_key),
     );
-    builder
-        .trivial_encrypt_u64(initial_balance, balance_output.output())
+    let balance = builder
+        .trivial_encrypt_u64(initial_balance, zama_fhe::Output::transient())
         .map_err(invalid_eval_plan)?;
+    let balance_index = balance
+        .producer_index()
+        .ok_or(error!(ConfidentialTokenError::InvalidFheEvalPlan))?;
     let plan = builder.finish().map_err(invalid_eval_plan)?;
     let compute_authority = fhe::ComputeAuthority::for_mint(
         &ctx.accounts.compute_signer,
         mint_key,
         ctx.bumps.compute_signer,
     )?;
-    let eval_accounts = fhe::EvalAccountSet::for_plan(
-        &plan,
-        [balance_output.account_info()],
-        [fhe::OutputAuthority::token_account(
-            &ctx.accounts.token_account,
-        )?],
-    )?;
-    fhe::eval(fhe::Eval {
-        context: fhe::EvalContext {
+    fhe::eval_transient(
+        fhe::EvalContext {
             payer: &ctx.accounts.owner,
             event_authority: &ctx.accounts.zama_event_authority,
             zama_program: &ctx.accounts.zama_program,
@@ -115,22 +105,32 @@ pub fn initialize_token_account(
             compute_authority,
             system_program: &ctx.accounts.system_program,
         },
-        accounts: &eval_accounts,
+        fhe::OutputAuthority::token_account(&ctx.accounts.token_account)?,
+        [],
         plan,
-    })?;
-    let balance_handle = balance_output.handle()?;
+    )?;
+    let balance_handle = fhe::read_eval_output_handle(balance_index)?;
+    upsert_value_acl(
+        &LineageCpi {
+            zama_program: ctx.accounts.zama_program.to_account_info(),
+            encrypted_value_acl: ctx.accounts.balance_value_acl.to_account_info(),
+            payer: ctx.accounts.owner.to_account_info(),
+            system_program: ctx.accounts.system_program.to_account_info(),
+        },
+        LineageAuthority::balance(&ctx.accounts.token_account),
+        mint_key,
+        balance_handle,
+        vec![owner, compute_signer],
+    )?;
     let token_account = &mut ctx.accounts.token_account;
     token_account.balance_handle = balance_handle;
-    token_account.balance_acl_record = acl_record;
     emit_cpi!(BalanceHandleUpdatedEvent {
         version: APP_EVENT_VERSION,
         mint: ctx.accounts.mint.key(),
         owner: ctx.accounts.owner.key(),
         token_account: token_account.key(),
         old_handle: [0; 32],
-        old_acl_record: Pubkey::default(),
         new_handle: balance_handle,
-        new_acl_record: acl_record,
         reason: BalanceHandleUpdateReason::Initialize,
     });
     Ok(())

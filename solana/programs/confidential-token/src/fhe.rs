@@ -441,6 +441,75 @@ pub(crate) fn eval<'info>(request: Eval<'_, 'info>) -> Result<()> {
     Ok(())
 }
 
+/// Reads the computed handle for eval step `producer_index` from `fhe_eval`'s
+/// return data — a flat array of 32-byte per-step handles. This is how a flow
+/// that produces a transient output (no ACL record) recovers the on-chain-derived
+/// handle to bind it into an encrypted-value ACL lineage.
+pub(crate) fn read_eval_output_handle(producer_index: u16) -> Result<[u8; 32]> {
+    let (program, data) = anchor_lang::solana_program::program::get_return_data()
+        .ok_or(error!(ConfidentialTokenError::InvalidFheEvalPlan))?;
+    require_keys_eq!(
+        program,
+        zama_host::ID,
+        ConfidentialTokenError::InvalidFheEvalPlan
+    );
+    let start = producer_index as usize * 32;
+    let end = start
+        .checked_add(32)
+        .ok_or(error!(ConfidentialTokenError::InvalidFheEvalPlan))?;
+    require!(
+        data.len() % 32 == 0 && data.len() >= end,
+        ConfidentialTokenError::InvalidFheEvalPlan
+    );
+    let mut handle = [0u8; 32];
+    handle.copy_from_slice(&data[start..end]);
+    Ok(handle)
+}
+
+/// Evaluates an all-transient FHE plan: no durable ACL records are minted, and
+/// the computed handles return via `fhe_eval` set_return_data. `app_authority`
+/// (a token-owned PDA) signs as the eval's `app_account_authority`. The encrypted-
+/// value-ACL flows use this, then bind the returned handle into their lineage.
+pub(crate) fn eval_transient<'info>(
+    context: EvalContext<'_, 'info>,
+    app_authority: OutputAuthority<'info>,
+    available_accounts: impl IntoIterator<Item = AccountInfo<'info>>,
+    plan: zama_fhe::EvalPlan,
+) -> Result<()> {
+    require_keys_eq!(
+        app_authority.key(),
+        plan.app_authority().pubkey(),
+        ConfidentialTokenError::MissingFheOutputAuthority
+    );
+    // The plan always requires its app authority as an output authority (it is the
+    // CPI `app_account_authority`); a transient frame has no other outputs.
+    let accounts = EvalAccountSet::for_plan(&plan, available_accounts, [app_authority.clone()])?;
+    let compute_bump = [context.compute_authority.bump];
+    let compute_signer_seeds = context.compute_authority.signer_seeds(&compute_bump);
+    let app_authority_seed_bytes = app_authority.signer.seed_bytes();
+    let app_authority_seeds: Vec<&[u8]> =
+        app_authority_seed_bytes.iter().map(Vec::as_slice).collect();
+    let mut signer_seed_vec: Vec<&[&[u8]]> = vec![compute_signer_seeds.as_slice()];
+    if !app_authority_seeds.is_empty() {
+        signer_seed_vec.push(app_authority_seeds.as_slice());
+    }
+    zama_fhe::invoke_eval_signed_resolved(
+        &plan,
+        zama_fhe::EvalCpiAccounts {
+            payer: context.payer.to_account_info(),
+            compute_subject: context.compute_authority.account_info(),
+            app_account_authority: app_authority.account.clone(),
+            host_config: context.host_config.to_account_info(),
+            system_program: context.system_program.to_account_info(),
+            event_authority: context.event_authority.to_account_info(),
+            program: context.zama_program.to_account_info(),
+        },
+        accounts.resolved_accounts(),
+        &signer_seed_vec,
+    )?;
+    Ok(())
+}
+
 /// Inputs required for bounded random `euint64` amount creation plus ACL record birth.
 pub struct BoundedRandU64<'a, 'info> {
     /// Transaction payer and rent payer for the output ACL record.

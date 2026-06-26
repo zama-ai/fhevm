@@ -1,0 +1,46 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT pda, value_key, current_handle, current_subjects, leaf_count\n               FROM lineage_state WHERE pda = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "pda",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "value_key",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 2,
+        "name": "current_handle",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 3,
+        "name": "current_subjects",
+        "type_info": "ByteaArray"
+      },
+      {
+        "ordinal": 4,
+        "name": "leaf_count",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "031da2e82f857612b028ecafe3181ff36f3d4b9e97609f4865a082646df45674"
+}

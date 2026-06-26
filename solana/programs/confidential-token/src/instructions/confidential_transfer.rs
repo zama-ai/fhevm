@@ -23,21 +23,17 @@ pub struct ConfidentialTransfer<'info> {
     /// CHECK: Program-controlled compute signer PDA.
     #[account(seeds = [b"fhe-compute", mint.key().as_ref()], bump)]
     pub compute_signer: UncheckedAccount<'info>,
-    /// Sender current balance ACL record.
-    pub from_current_compute_acl: Box<Account<'info, zama_host::AclRecord>>,
-    /// Recipient current balance ACL record.
-    pub to_current_compute_acl: Box<Account<'info, zama_host::AclRecord>>,
     /// Encrypted amount ACL record.
     pub amount_compute_acl: Box<Account<'info, zama_host::AclRecord>>,
-    /// CHECK: initialized and validated by the Zama host program CPI.
+    /// CHECK: sender balance encrypted-value ACL lineage; rotated via the Zama host CPI.
     #[account(mut)]
-    pub from_output_acl: UncheckedAccount<'info>,
+    pub from_balance_value_acl: UncheckedAccount<'info>,
     /// CHECK: initialized and validated by the Zama host program CPI.
     #[account(mut)]
     pub transferred_amount_acl: UncheckedAccount<'info>,
-    /// CHECK: initialized and validated by the Zama host program CPI.
+    /// CHECK: recipient balance encrypted-value ACL lineage; rotated via the Zama host CPI.
     #[account(mut)]
-    pub to_output_acl: UncheckedAccount<'info>,
+    pub to_balance_value_acl: UncheckedAccount<'info>,
     /// CHECK: Anchor event CPI authority for the Zama host program.
     pub zama_event_authority: UncheckedAccount<'info>,
     /// ZamaHost program used for FHE operations.
@@ -53,7 +49,7 @@ impl<'info> ConfidentialTransfer<'info> {
     pub(crate) const MINT_ACCOUNT_INDEX: usize = 2;
     pub(crate) const FROM_ACCOUNT_INDEX: usize = 3;
     pub(crate) const TO_ACCOUNT_INDEX: usize = 4;
-    pub(crate) const TRANSFERRED_AMOUNT_ACL_INDEX: usize = 10;
+    pub(crate) const TRANSFERRED_AMOUNT_ACL_INDEX: usize = 8;
 
     pub(crate) fn as_transfer_accounts(&mut self) -> TransferAccounts<'_, 'info> {
         TransferAccounts {
@@ -63,12 +59,10 @@ impl<'info> ConfidentialTransfer<'info> {
             from_account: &mut self.from_account,
             to_account: &mut self.to_account,
             compute_signer: &self.compute_signer,
-            from_current_compute_acl: self.from_current_compute_acl.as_ref(),
-            to_current_compute_acl: self.to_current_compute_acl.as_ref(),
             amount_compute_acl: &self.amount_compute_acl,
-            from_output_acl: self.from_output_acl.to_account_info(),
+            from_balance_value_acl: self.from_balance_value_acl.to_account_info(),
             transferred_amount_acl: self.transferred_amount_acl.to_account_info(),
-            to_output_acl: self.to_output_acl.to_account_info(),
+            to_balance_value_acl: self.to_balance_value_acl.to_account_info(),
             zama_event_authority: &self.zama_event_authority,
             zama_program: &self.zama_program,
             host_config: &self.host_config,
@@ -110,9 +104,7 @@ pub fn confidential_transfer(
             owner: outcome.from_owner,
             token_account: outcome.from_token_account,
             old_handle: outcome.old_from_handle,
-            old_acl_record: outcome.old_from_acl_record,
             new_handle: outcome.new_from_handle,
-            new_acl_record: outcome.new_from_acl_record,
             reason: BalanceHandleUpdateReason::TransferDebit,
         });
         emit_cpi!(BalanceHandleUpdatedEvent {
@@ -121,9 +113,7 @@ pub fn confidential_transfer(
             owner: outcome.to_owner,
             token_account: outcome.to_token_account,
             old_handle: outcome.old_to_handle,
-            old_acl_record: outcome.old_to_acl_record,
             new_handle: outcome.new_to_handle,
-            new_acl_record: outcome.new_to_acl_record,
             reason: BalanceHandleUpdateReason::TransferCredit,
         });
     }
