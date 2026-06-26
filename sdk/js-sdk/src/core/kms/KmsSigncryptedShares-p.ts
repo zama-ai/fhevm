@@ -4,6 +4,7 @@ import type { BytesHex, BytesHexNo0x, ChecksummedAddress } from '../types/primit
 import type { KmsSignersContext } from '../types/kmsSignersContext.js';
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
 import type { FhevmChain } from '../types/fhevmChain.js';
+import type { TkmsVersion } from '../../wasm/tkms/KmsLibApi.js';
 import { assertIsKmsSignersContext } from '../host-contracts/KmsSignersContext-p.js';
 import { ensure0x } from '../base/string.js';
 import { assertIsKmsExtraData } from './kmsExtraData.js';
@@ -40,6 +41,7 @@ class KmsSigncryptedSharesImpl implements KmsSigncryptedShares {
       eip712Signature: metadata.eip712Signature,
       eip712SignerAddress: metadata.eip712SignerAddress,
       handles: [...metadata.handles],
+      tkmsVersion: metadata.tkmsVersion,
     };
     Object.freeze(this.#metadata);
     Object.freeze(this.#metadata.handles);
@@ -47,6 +49,13 @@ class KmsSigncryptedSharesImpl implements KmsSigncryptedShares {
     this.#shares = [...shares];
     Object.freeze(this.#shares);
     this.#shares.forEach((share) => Object.freeze(share));
+    if (this.#shares.length === 0) {
+      throw new Error('Expected at least one signcrypted share.');
+    }
+  }
+
+  public get tkmsVersion(): TkmsVersion {
+    return this.#metadata.tkmsVersion;
   }
 
   public [GET_SHARES_FUNC](token: symbol): readonly KmsSigncryptedShare[] {
@@ -136,7 +145,8 @@ export async function createKmsSigncryptedShares(
 
   // Reconcile KMS signer context using 'loose' mode.
   const reconciledKmsSignersContext: KmsSignersContext = await reconcileKmsSignersContext(context, {
-    address: context.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
+    kmsVerifierAddress: context.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
+    protocolConfigAddress: context.chain.fhevm.contracts.protocolConfig?.address as ChecksummedAddress | undefined,
     relayerExtraData,
     requestedKmsSignersContext: metadata.kmsSignersContext,
     mode: 'loose',

@@ -10,7 +10,10 @@ import { asFhevmRuntimeWith } from '../runtime/CoreFhevmRuntime-p.js';
 ////////////////////////////////////////////////////////////////////////////////
 
 export async function fetchFheEncryptionKeyBytes(
-  context: { readonly chain: FhevmChain; readonly runtime: FhevmRuntime },
+  context: {
+    readonly chain: FhevmChain;
+    readonly runtime: FhevmRuntime;
+  },
   parameters?: {
     readonly options?: RelayerKeyUrlOptions | undefined;
     readonly ignoreCache?: boolean | undefined;
@@ -51,7 +54,6 @@ export async function fetchFheEncryptionKeyBytes(
  * or `undefined` if the encrypt module is not available on the runtime.
  */
 function _getSerializeFn(context: {
-  readonly chain: FhevmChain;
   readonly runtime: FhevmRuntime;
 }): ((args: FheEncryptionKeyWasm) => Promise<FheEncryptionKeyBytes>) | undefined {
   // Try to get a serialize fn if the encrypt module is available

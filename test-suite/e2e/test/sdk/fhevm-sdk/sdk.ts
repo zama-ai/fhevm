@@ -1,6 +1,6 @@
 import { defineFhevmChain } from '@fhevm/sdk/chains';
 import { createFhevmClient, hasFhevmRuntimeConfig, setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
-import type { Auth } from '@fhevm/sdk/types';
+import { createFhevmCleartextClient } from '@fhevm/sdk/ethers/cleartext';
 import type { Signer } from 'ethers';
 import { JsonRpcProvider, getBytes, hexlify } from 'ethers';
 
@@ -16,6 +16,9 @@ import type {
 type FhevmClient = ReturnType<typeof createFhevmClient>;
 type CreateFhevmClientParameters = Parameters<typeof createFhevmClient>[0];
 type FhevmClientProvider = CreateFhevmClientParameters['provider'];
+type Auth = any;
+
+const CLEARTEXT = false;
 
 export class FhevmSdk implements SdkInstance {
   #fullClient: FhevmClient;
@@ -73,7 +76,7 @@ export class FhevmSdk implements SdkInstance {
     readonly rpcUrl: string;
     readonly gatewayChainId: number;
     readonly chainId: number;
-    readonly auth?: RelayerSdkAuth;
+    readonly auth?: Auth;
   }): Promise<SdkInstance> {
     const {
       verifyingContractAddressDecryption,
@@ -100,7 +103,7 @@ export class FhevmSdk implements SdkInstance {
         },
       });
     }
-    const fullClient = createFhevmClient({
+    const args = {
       provider: new JsonRpcProvider(rpcUrl) as unknown as FhevmClientProvider,
       chain: defineFhevmChain({
         id: chainId,
@@ -124,9 +127,11 @@ export class FhevmSdk implements SdkInstance {
           },
         },
       }),
-    });
+    };
+
+    const fullClient = CLEARTEXT ? createFhevmCleartextClient(args) : createFhevmClient(args);
     await fullClient.ready;
-    return new FhevmSdk(fullClient, toSdkAuth(auth));
+    return new FhevmSdk(fullClient, auth);
   }
 
   get supportsWildcard(): boolean {
@@ -163,7 +168,6 @@ export class FhevmSdk implements SdkInstance {
       transportKeyPair,
       signedPermit,
       encryptedValue: handle,
-      options: this.#auth ? { auth: this.#auth } : undefined,
     });
 
     if (typeof res.value === 'number') {
@@ -204,7 +208,6 @@ export class FhevmSdk implements SdkInstance {
       transportKeyPair,
       signedPermit,
       encryptedValue: handle,
-      options: this.#auth ? { auth: this.#auth } : undefined,
     });
 
     if (typeof res.value === 'number') {
@@ -216,9 +219,9 @@ export class FhevmSdk implements SdkInstance {
   async publicDecrypt(
     handles: readonly string[],
   ): Promise<{ clearValues: ClearValues; abiEncodedClearValues: `0x${string}`; decryptionProof: `0x${string}` }> {
-    const res = await this.#fullClient.readPublicValuesWithSignatures({
+    const res = await this.#fullClient.decryptPublicValuesWithSignatures({
       encryptedValues: handles,
-      options: this.#auth ? { auth: this.#auth } : undefined,
+      options: this.#auth ? { auth: toSdkAuth(this.#auth) } : undefined,
     });
 
     const clearValues: Record<`0x${string}`, bigint | boolean | `0x${string}`> = {};
@@ -245,7 +248,7 @@ export class FhevmSdk implements SdkInstance {
       values: parameters.values,
       contractAddress: parameters.contractAddress,
       userAddress: parameters.userAddress,
-      options: this.#auth ? { auth: this.#auth } : undefined,
+      options: this.#auth ? { auth: toSdkAuth(this.#auth) } : undefined,
     });
     return {
       handles: res.encryptedValues.map((ev) => getBytes(ev)),
@@ -262,7 +265,6 @@ export class FhevmSdk implements SdkInstance {
       contractAddress: parameters.contractAddress,
       userAddress: parameters.userAddress,
       value: { type: 'uint64', value: parameters.value },
-      options: this.#auth ? { auth: this.#auth } : undefined,
     });
     return {
       handles: [getBytes(res.encryptedValue)],
