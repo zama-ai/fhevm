@@ -82,7 +82,7 @@ async fn test_healthcheck_endpoints() -> anyhow::Result<()> {
     query_healthcheck_endpoint::<HealthStatus>(monitoring_url.clone()).await?;
 
     // Pause Gateway and verify healthcheck failure
-    test_instance.anvil_container().pause().await?;
+    test_instance.pause_anvil()?;
     query_healthcheck_endpoint::<HealthStatus>(monitoring_url)
         .await
         .unwrap_err();

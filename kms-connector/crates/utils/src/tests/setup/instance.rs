@@ -91,8 +91,14 @@ impl TestInstance {
         &self.blockchain().provider
     }
 
-    pub fn anvil_container(&self) -> &ContainerAsync<GenericImage> {
-        &self.blockchain().anvil
+    /// Freezes the Anvil process.
+    pub fn pause_anvil(&self) -> anyhow::Result<()> {
+        self.blockchain().pause_anvil()
+    }
+
+    /// Resumes a previously paused Anvil process.
+    pub fn unpause_anvil(&self) -> anyhow::Result<()> {
+        self.blockchain().unpause_anvil()
     }
 
     pub fn decryption_contract(&self) -> &DecryptionInstance<WalletProvider> {
