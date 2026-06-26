@@ -22,7 +22,7 @@ const POST_BOOT_HEALTH_GATE_DELAY_MS = 5_000;
 const KMS_CONNECTOR_DECRYPTION_READY =
   /Started Decryption polling from block|Last block polled updated for \d+\/\d+ event types in \[PublicDecryptionRequest, UserDecryptionRequest\]/;
 const KMS_CONNECTOR_KMS_GENERATION_READY =
-  /Started KMSGeneration polling from block|Last block polled updated for \d+\/\d+ event types in \[[^\]]*PrepKeygenRequest[^\]]*\]/;
+  /Started KMSGeneration polling from block|Started Ethereum polling from block|Last block polled updated for chain ethereum|Last block polled updated for \d+\/\d+ event types in \[[^\]]*PrepKeygenRequest[^\]]*\]/;
 
 /** Number of KMS connector instances: one per party in threshold mode, else one. */
 // `kms.parties` is the canonical connector/party count: 1 for centralized, N for threshold.
