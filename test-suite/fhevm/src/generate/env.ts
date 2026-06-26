@@ -19,7 +19,7 @@ import {
   POSTGRES_HOST,
   hostChainRuntimes,
 } from "../layout";
-import { kmsConnectorDbName, kmsConnectorEnvName, kmsCoreName, kmsServicePort, reconstructionThreshold } from "../kms-party";
+import { kmsConnectorDbName, kmsConnectorEnvName, kmsCoreName, kmsPublicPrefix, kmsServicePort, reconstructionThreshold } from "../kms-party";
 import type { State } from "../types";
 import { predictedCrsId, predictedKeyId } from "../utils/fs";
 
@@ -151,6 +151,11 @@ const applyDiscoveryEnv = (
     envs["gateway-sc"][`KMS_SIGNER_ADDRESS_${index}`] = address;
     envs["host-sc"][`KMS_SIGNER_ADDRESS_${index}`] = address;
   });
+  // Each node's serialized CA certificate (hex), discovered from its public vault
+  // alongside the VerfAddress. The host ProtocolConfig deploy reads it as KMS_NODE_CA_CERT_i.
+  (state.discovery?.kmsCaCerts ?? []).forEach((caCert, index) => {
+    envs["host-sc"][`KMS_NODE_CA_CERT_${index}`] = caCert;
+  });
   if (!state.discovery) {
     return;
   }
@@ -245,6 +250,7 @@ const applyKmsThresholdGatewayEnv = async (
     throw new Error(`KMS parties ${parties} exceeds supported ${KMS_NODE_WALLET_INDICES.length}`);
   }
   const gw = envs["gateway-sc"];
+  const hostSc = envs["host-sc"];
   const mnemonic = gw.MNEMONIC;
   if (!mnemonic) {
     throw new Error("Missing gateway mnemonic for threshold-mode KMS setup");
@@ -264,6 +270,14 @@ const applyKmsThresholdGatewayEnv = async (
   gw.USER_DECRYPTION_THRESHOLD = reconstruct;
   gw.KMS_GENERATION_THRESHOLD = reconstruct;
 
+  // ProtocolConfig context params (read by the host deploy alongside the per-node
+  // KmsNodeParams). This local cluster runs the non-enclave core with mock_enclave = true, so
+  // PCR attestation is skipped — zero PCRs satisfy the required var; the software version tracks
+  // the KMS core image for traceability. Set on host-sc only (centralized is out of scope here).
+  const zeroPcr = `0x${"00".repeat(48)}`;
+  hostSc.KMS_SOFTWARE_VERSION = plan.versions.env.CORE_VERSION || "dev";
+  hostSc.KMS_PCR_VALUES = JSON.stringify([{ pcr0: zeroPcr, pcr1: zeroPcr, pcr2: zeroPcr }]);
+
   const result: KmsParty[] = [];
   for (let party = 1; party <= parties; party += 1) {
     const idx = party - 1;
@@ -271,6 +285,13 @@ const applyKmsThresholdGatewayEnv = async (
     gw[`KMS_TX_SENDER_ADDRESS_${idx}`] = wallet.address;
     gw[`KMS_NODE_IP_ADDRESS_${idx}`] = kmsCoreName(party);
     gw[`KMS_NODE_STORAGE_URL_${idx}`] = `${MINIO_INTERNAL_URL}/kms-public`;
+    // Per-node KmsNodeParams the host ProtocolConfig deploy reads. partyId is 1-based
+    // (the env index is 0-based), mpcIdentity must match the node's TLS cert CN (gen-keys sets
+    // --tls-subject to the core name), and storagePrefix is the node's public vault prefix. The
+    // signer address and CA cert are discovered post-boot (applyDiscoveryEnv).
+    hostSc[`KMS_NODE_PARTY_ID_${idx}`] = String(party);
+    hostSc[`KMS_NODE_MPC_IDENTITY_${idx}`] = kmsCoreName(party);
+    hostSc[`KMS_NODE_STORAGE_PREFIX_${idx}`] = kmsPublicPrefix(party);
     // KMS_SIGNER_ADDRESS_{idx} comes from per-party signing-key discovery.
     const endpoint = `http://${kmsCoreName(party)}:${kmsServicePort(party)}`;
     const dbName = kmsConnectorDbName(party);

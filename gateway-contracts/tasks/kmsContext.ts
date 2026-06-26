@@ -89,7 +89,7 @@ async function assertContextIdAdvances(
   const currentContextId: bigint = await gatewayConfig.getCurrentKmsContextId();
   if (newContextId <= currentContextId) {
     throw new Error(
-      `KMS_NEW_CONTEXT_ID ${newContextId} must be strictly greater than the GatewayConfig current context id ` +
+      `New KMS context ID ${newContextId} must be strictly greater than the GatewayConfig current context id ` +
         `${currentContextId} at ${target}.`,
     );
   }

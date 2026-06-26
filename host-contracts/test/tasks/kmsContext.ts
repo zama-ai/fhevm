@@ -7,6 +7,7 @@ import {
   encodeDefineNewKmsContextAndEpoch,
   getProtocolConfigInterface,
   inspectKmsContextSwitch,
+  predictNewKmsContextId,
 } from '../../tasks/kmsContext';
 import { getRequiredEnvVar } from '../../tasks/utils/loadVariables';
 import type { ProtocolConfig } from '../../types';
@@ -41,7 +42,7 @@ function makeNode(txSenderAddress: string, signerAddress: string, idx: number): 
     partyId: idx,
     mpcIdentity: `node-${idx}`,
     caCert: '0x',
-    storagePrefix: '',
+    storagePrefix: `kms-node-${idx}`,
   };
 }
 
@@ -62,7 +63,6 @@ function setKmsEnv(
   opts: {
     softwareVersion?: string;
     pcrValues?: { pcr0: string; pcr1: string; pcr2: string }[];
-    newContextId?: string;
   } = {},
 ): void {
   process.env.NUM_KMS_NODES = String(nodes.length);
@@ -82,9 +82,6 @@ function setKmsEnv(
   process.env.MPC_THRESHOLD = String(thresholds.mpc);
   process.env.KMS_SOFTWARE_VERSION = opts.softwareVersion ?? 'v0.14.0';
   process.env.KMS_PCR_VALUES = JSON.stringify(opts.pcrValues ?? [{ pcr0: '0xaa', pcr1: '0xbb', pcr2: '0xcc' }]);
-  if (opts.newContextId !== undefined) {
-    process.env.KMS_NEW_CONTEXT_ID = opts.newContextId;
-  }
 }
 
 describe('KMS context tasks', function () {
@@ -137,19 +134,12 @@ describe('KMS context tasks', function () {
       expect(decoded[3][0][0]).to.equal('0xaa');
     });
 
-    it('verifies KMS_NEW_CONTEXT_ID against a live ProtocolConfig and rejects a mismatch', async function () {
+    it('derives the new context id as current + 1 from a live ProtocolConfig', async function () {
       const proxyAddress = await deployFreshProtocolConfigProxy(deployer, defaultNodes(), DEFAULT_THRESHOLDS);
       const protocolConfig = (await ethers.getContractAt('ProtocolConfig', proxyAddress)) as unknown as ProtocolConfig;
       const currentContextId = await protocolConfig.getCurrentKmsContextId();
 
-      setKmsEnv(defaultNodes(), DEFAULT_THRESHOLDS, { newContextId: (currentContextId + 1n).toString() });
-      process.env[PROTOCOL_CONFIG_ENV_VAR] = proxyAddress;
-      await expect(run('task:buildDefineNewKmsContextAndEpochCalldata', {})).to.not.be.rejected;
-
-      process.env.KMS_NEW_CONTEXT_ID = (currentContextId + 2n).toString();
-      await expect(run('task:buildDefineNewKmsContextAndEpochCalldata', {})).to.be.rejectedWith(
-        /does not match the id ProtocolConfig/,
-      );
+      expect(await predictNewKmsContextId(hre, proxyAddress)).to.equal(currentContextId + 1n);
     });
 
     it('broadcasts the switch with the deployer key (no-DAO path) leaving a PENDING context', async function () {

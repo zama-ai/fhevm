@@ -42,6 +42,20 @@ function requireProtocolConfigAddress(useInternalProxyAddress: boolean): string 
   return address;
 }
 
+// Reads the canonical ProtocolConfig and returns the context id the next switch will create
+// (current + 1) — the value the operator sets as the Gateway proposal's KMS_CONTEXT_ID so the host
+// and Gateway proposals stay aligned.
+export async function predictNewKmsContextId(
+  hre: HardhatRuntimeEnvironment,
+  protocolConfigAddress: string,
+): Promise<bigint> {
+  const protocolConfig = (await hre.ethers.getContractAt(
+    'ProtocolConfig',
+    protocolConfigAddress,
+  )) as unknown as ProtocolConfig;
+  return (await protocolConfig.getCurrentKmsContextId()) + 1n;
+}
+
 interface EncodedCall {
   functionSignature: string;
   calldata: string;
@@ -86,27 +100,14 @@ task(
     const encoded = encodeDefineNewKmsContextAndEpoch(iface);
     const target = resolveProtocolConfigAddress(useInternalProxyAddress);
 
-    // Cross-chain consistency: the host derives the new id on-chain as current+1. When the operator
-    // pins KMS_NEW_CONTEXT_ID (the id the Gateway proposal also carries), verify the prediction
-    // matches so the two proposals cannot drift.
-    const rawExpected = process.env.KMS_NEW_CONTEXT_ID?.trim();
-    const expected = rawExpected ? BigInt(rawExpected) : undefined;
-    let expectedNewContextId: string | undefined = expected?.toString();
-    if (target) {
-      const protocolConfig = (await hre.ethers.getContractAt('ProtocolConfig', target)) as unknown as ProtocolConfig;
-      const predicted = (await protocolConfig.getCurrentKmsContextId()) + 1n;
-      expectedNewContextId = predicted.toString();
-      if (expected !== undefined && expected !== predicted) {
-        throw new Error(
-          `KMS_NEW_CONTEXT_ID ${expected} does not match the id ProtocolConfig at ${target} will derive ` +
-            `(current + 1 = ${predicted}). Align the env and the Gateway proposal before submitting.`,
-        );
-      }
-    }
+    // The host derives the new context id on-chain as current + 1. When a ProtocolConfig address is
+    // resolvable, surface that id so the operator can set it as the Gateway proposal's
+    // KMS_CONTEXT_ID, keeping the two proposals aligned without a dedicated env var.
+    const newContextId = target ? (await predictNewKmsContextId(hre, target)).toString() : undefined;
 
     console.log('ProtocolConfig.defineNewKmsContextAndEpoch');
-    if (expectedNewContextId) {
-      console.log('  newContextId (must match the Gateway proposal):', expectedNewContextId);
+    if (newContextId) {
+      console.log("  newContextId (set as the Gateway proposal's KMS_CONTEXT_ID):", newContextId);
     }
     console.log(
       '  target:',
