@@ -7,7 +7,6 @@ interface BridgeEvents {
     event DstChainIdSet(uint32 indexed dstEid, uint64 dstChainId);
     event FallbackGrantedPlaintext(bytes32 indexed dstHandle, uint256 plaintext);
     event HandleBridged(address indexed receiverDapp, bytes32 srcHandle, bytes32 dstHandle, bytes32 guid);
-    event LzComposeMinValueSet(uint32 indexed dstEid, uint64 lzComposeMinValue);
     event LzReceiveBaseGasSet(uint32 indexed dstEid, uint64 lzReceiveBaseGas);
     event LzReceivePerHandleGasSet(uint32 indexed dstEid, uint64 lzReceivePerHandleGas);
     event LzReceivePerPayloadByteGasSet(uint32 indexed dstEid, uint64 lzReceivePerPayloadByteGas);
@@ -113,25 +112,6 @@ interface BridgeEvents {
         "type": "bytes32",
         "indexed": false,
         "internalType": "bytes32"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "LzComposeMinValueSet",
-    "inputs": [
-      {
-        "name": "dstEid",
-        "type": "uint32",
-        "indexed": true,
-        "internalType": "uint32"
-      },
-      {
-        "name": "lzComposeMinValue",
-        "type": "uint64",
-        "indexed": false,
-        "internalType": "uint64"
       }
     ],
     "anonymous": false
@@ -725,122 +705,6 @@ event HandleBridged(address indexed receiverDapp, bytes32 srcHandle, bytes32 dst
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Event with signature `LzComposeMinValueSet(uint32,uint64)` and selector `0x7e3346ab17fb2a3d9596dab5cdca0dbc7117e1ba00b222b56d6ae8927937aff1`.
-```solidity
-event LzComposeMinValueSet(uint32 indexed dstEid, uint64 lzComposeMinValue);
-```*/
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    #[derive(Clone)]
-    pub struct LzComposeMinValueSet {
-        #[allow(missing_docs)]
-        pub dstEid: u32,
-        #[allow(missing_docs)]
-        pub lzComposeMinValue: u64,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[automatically_derived]
-        impl alloy_sol_types::SolEvent for LzComposeMinValueSet {
-            type DataTuple<'a> = (alloy::sol_types::sol_data::Uint<64>,);
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type TopicList = (
-                alloy_sol_types::sol_data::FixedBytes<32>,
-                alloy::sol_types::sol_data::Uint<32>,
-            );
-            const SIGNATURE: &'static str = "LzComposeMinValueSet(uint32,uint64)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                126u8, 51u8, 70u8, 171u8, 23u8, 251u8, 42u8, 61u8, 149u8, 150u8, 218u8,
-                181u8, 205u8, 202u8, 13u8, 188u8, 113u8, 23u8, 225u8, 186u8, 0u8, 178u8,
-                34u8, 181u8, 109u8, 106u8, 232u8, 146u8, 121u8, 55u8, 175u8, 241u8,
-            ]);
-            const ANONYMOUS: bool = false;
-            #[allow(unused_variables)]
-            #[inline]
-            fn new(
-                topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
-                data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                Self {
-                    dstEid: topics.1,
-                    lzComposeMinValue: data.0,
-                }
-            }
-            #[inline]
-            fn check_signature(
-                topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
-            ) -> alloy_sol_types::Result<()> {
-                if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
-                }
-                Ok(())
-            }
-            #[inline]
-            fn tokenize_body(&self) -> Self::DataToken<'_> {
-                (
-                    <alloy::sol_types::sol_data::Uint<
-                        64,
-                    > as alloy_sol_types::SolType>::tokenize(&self.lzComposeMinValue),
-                )
-            }
-            #[inline]
-            fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
-                (Self::SIGNATURE_HASH.into(), self.dstEid.clone())
-            }
-            #[inline]
-            fn encode_topics_raw(
-                &self,
-                out: &mut [alloy_sol_types::abi::token::WordToken],
-            ) -> alloy_sol_types::Result<()> {
-                if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
-                    return Err(alloy_sol_types::Error::Overrun);
-                }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
-                out[1usize] = <alloy::sol_types::sol_data::Uint<
-                    32,
-                > as alloy_sol_types::EventTopic>::encode_topic(&self.dstEid);
-                Ok(())
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::private::IntoLogData for LzComposeMinValueSet {
-            fn to_log_data(&self) -> alloy_sol_types::private::LogData {
-                From::from(self)
-            }
-            fn into_log_data(self) -> alloy_sol_types::private::LogData {
-                From::from(&self)
-            }
-        }
-        #[automatically_derived]
-        impl From<&LzComposeMinValueSet> for alloy_sol_types::private::LogData {
-            #[inline]
-            fn from(this: &LzComposeMinValueSet) -> alloy_sol_types::private::LogData {
-                alloy_sol_types::SolEvent::encode_log_data(this)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `LzReceiveBaseGasSet(uint32,uint64)` and selector `0x3ef48f367039970bf87a27a88d8bd1b03fc1c2d110a7fea199c679ce3d9b3777`.
 ```solidity
 event LzReceiveBaseGasSet(uint32 indexed dstEid, uint64 lzReceiveBaseGas);
@@ -1208,8 +1072,6 @@ event LzReceivePerPayloadByteGasSet(uint32 indexed dstEid, uint64 lzReceivePerPa
         #[allow(missing_docs)]
         HandleBridged(HandleBridged),
         #[allow(missing_docs)]
-        LzComposeMinValueSet(LzComposeMinValueSet),
-        #[allow(missing_docs)]
         LzReceiveBaseGasSet(LzReceiveBaseGasSet),
         #[allow(missing_docs)]
         LzReceivePerHandleGasSet(LzReceivePerHandleGasSet),
@@ -1241,11 +1103,6 @@ event LzReceivePerPayloadByteGasSet(uint32 indexed dstEid, uint64 lzReceivePerPa
                 167u8, 254u8, 161u8, 153u8, 198u8, 121u8, 206u8, 61u8, 155u8, 55u8, 119u8,
             ],
             [
-                126u8, 51u8, 70u8, 171u8, 23u8, 251u8, 42u8, 61u8, 149u8, 150u8, 218u8,
-                181u8, 205u8, 202u8, 13u8, 188u8, 113u8, 23u8, 225u8, 186u8, 0u8, 178u8,
-                34u8, 181u8, 109u8, 106u8, 232u8, 146u8, 121u8, 55u8, 175u8, 241u8,
-            ],
-            [
                 142u8, 99u8, 15u8, 175u8, 60u8, 71u8, 152u8, 2u8, 112u8, 176u8, 142u8,
                 34u8, 248u8, 69u8, 209u8, 7u8, 78u8, 93u8, 239u8, 104u8, 220u8, 241u8,
                 158u8, 253u8, 19u8, 69u8, 208u8, 112u8, 54u8, 10u8, 74u8, 165u8,
@@ -1270,7 +1127,7 @@ event LzReceivePerPayloadByteGasSet(uint32 indexed dstEid, uint64 lzReceivePerPa
     #[automatically_derived]
     impl alloy_sol_types::SolEventInterface for BridgeEventsEvents {
         const NAME: &'static str = "BridgeEventsEvents";
-        const COUNT: usize = 8usize;
+        const COUNT: usize = 7usize;
         fn decode_raw_log(
             topics: &[alloy_sol_types::Word],
             data: &[u8],
@@ -1305,15 +1162,6 @@ event LzReceivePerPayloadByteGasSet(uint32 indexed dstEid, uint64 lzReceivePerPa
                             data,
                         )
                         .map(Self::HandleBridged)
-                }
-                Some(
-                    <LzComposeMinValueSet as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
-                ) => {
-                    <LzComposeMinValueSet as alloy_sol_types::SolEvent>::decode_raw_log(
-                            topics,
-                            data,
-                        )
-                        .map(Self::LzComposeMinValueSet)
                 }
                 Some(
                     <LzReceiveBaseGasSet as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
@@ -1372,9 +1220,6 @@ event LzReceivePerPayloadByteGasSet(uint32 indexed dstEid, uint64 lzReceivePerPa
                 Self::HandleBridged(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
-                Self::LzComposeMinValueSet(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
                 Self::LzReceiveBaseGasSet(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
@@ -1398,9 +1243,6 @@ event LzReceivePerPayloadByteGasSet(uint32 indexed dstEid, uint64 lzReceivePerPa
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
                 Self::HandleBridged(inner) => {
-                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
-                }
-                Self::LzComposeMinValueSet(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
                 Self::LzReceiveBaseGasSet(inner) => {
@@ -1611,12 +1453,6 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             &self,
         ) -> alloy_contract::Event<&P, HandleBridged, N> {
             self.event_filter::<HandleBridged>()
-        }
-        ///Creates a new event filter for the [`LzComposeMinValueSet`] event.
-        pub fn LzComposeMinValueSet_filter(
-            &self,
-        ) -> alloy_contract::Event<&P, LzComposeMinValueSet, N> {
-            self.event_filter::<LzComposeMinValueSet>()
         }
         ///Creates a new event filter for the [`LzReceiveBaseGasSet`] event.
         pub fn LzReceiveBaseGasSet_filter(

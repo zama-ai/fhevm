@@ -7,11 +7,7 @@ import "forge-std/console.sol";
 import {GUID} from "@layerzerolabs/lz-evm-protocol-v2/contracts/libs/GUID.sol";
 import {Origin} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroReceiver.sol";
 
-import {
-    GasProfilerScript,
-    TestParams,
-    GasMetrics
-} from "@layerzerolabs/script-devtools-evm-foundry/scripts/GasProfiling/GasProfiler.s.sol";
+import {GasProfilerScript, TestParams, GasMetrics} from "@layerzerolabs/script-devtools-evm-foundry/scripts/GasProfiling/GasProfiler.s.sol";
 
 /// @notice Per-target inputs for an `lzReceive` calibration run.
 struct CalibParams {
@@ -47,7 +43,7 @@ struct CalibParams {
 /// @dev    Each cell is measured THROUGH the real `EndpointV2.lzReceive` method.
 ///         The endpoint's inbound state is primed to mimic a packet that has been
 ///         verified by DVNs in prior transactions; the measured call then pays the full
-///         production envelope: 
+///         production envelope:
 ///         the endpoint's `_clearPayload` bookkeeping PLUS the bridge's `lzReceive`.
 contract HandlesReceiverGasProfiler is GasProfilerScript {
     /// @dev Measured gas grid, _grid[handleIdx][payloadIdx] = max gas across runs.
@@ -85,7 +81,7 @@ contract HandlesReceiverGasProfiler is GasProfilerScript {
         uint64 nonce = endpoint.inboundNonce(p.receiver, p.srcEid, p.sender) + 1;
 
         // Snapshot the pristine, fully-cold fork state. We revert to it before every cell so
-        // each lzReceive pays EIP-2929 cold access. 
+        // each lzReceive pays EIP-2929 cold access.
         // vm.revertToState restores the warm/cold access list AND all contract
         // storage -- including this profiler's own `_grid`. So results MUST be accumulated in
         // memory (which snapshots do not revert) and only written to storage after the last
