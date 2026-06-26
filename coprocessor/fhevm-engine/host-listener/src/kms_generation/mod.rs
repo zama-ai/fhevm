@@ -11,8 +11,10 @@ use crate::kms_generation::database::{
     activate_ready_crs_activations, activate_ready_key_activations,
     all_pending_crs_activations_to_download,
     all_pending_key_activations_to_download,
-    all_pending_key_material_to_download, cancel_orphaned_crs_activations,
-    cancel_orphaned_key_activations, count_crs_activation_remaining_pending,
+    all_pending_key_material_to_download, apply_finalized_migration_schedules,
+    cancel_orphaned_crs_activations, cancel_orphaned_key_activations,
+    cancel_orphaned_migration_schedules,
+    count_crs_activation_remaining_pending,
     count_key_activation_remaining_pending, insert_crs_activation_event,
     insert_key_activation_event, insert_key_material_added,
     insert_key_material_migration_scheduled, mark_crs_activation_error,
@@ -163,7 +165,14 @@ pub async fn insert_kms_generation_events_tx(
             KMSGeneration::KMSGenerationEvents::KeyMaterialMigrationScheduled(
                 scheduled,
             ) => {
-                insert_key_material_migration_scheduled(tx, scheduled).await?;
+                insert_key_material_migration_scheduled(
+                    tx,
+                    scheduled,
+                    chain_id,
+                    block_hash,
+                    block_number,
+                )
+                .await?;
             }
             _ => {
                 warn!(
@@ -187,8 +196,13 @@ pub async fn process_kms_generation_activations<
     let mut tx = db_pool.begin().await?;
     cancel_orphaned_key_activations(&mut tx).await?;
     cancel_orphaned_crs_activations(&mut tx).await?;
+    cancel_orphaned_migration_schedules(&mut tx).await?;
     activate_ready_key_activations(&mut tx).await?;
     activate_ready_crs_activations(&mut tx).await?;
+    // RFC-029: apply any staged cutover schedule whose block is now finalized
+    // (writes the live schedule tables + NOTIFY), so an orphaned governance tx
+    // can't flip workers to v1.
+    apply_finalized_migration_schedules(&mut tx).await?;
     // RFC-029: publish any ready v1 material onto its key row (additive; never
     // touches the v0 columns or activeKeyId).
     let published = publish_ready_key_material(&mut tx).await?;

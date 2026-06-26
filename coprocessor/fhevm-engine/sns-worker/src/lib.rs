@@ -27,9 +27,9 @@ use aws_sdk_s3::{config::Builder, Client};
 use fhevm_engine_common::{
     chain_id::ChainId,
     db_keys::DbKeyId,
-    material_version::MaterialVersion,
     drift_revert,
     healthz_server::{self},
+    material_version::MaterialVersion,
     metrics_server,
     pg_pool::{PostgresPoolManager, ServiceError},
     types::{CoproSigner, FhevmError, SignerType},

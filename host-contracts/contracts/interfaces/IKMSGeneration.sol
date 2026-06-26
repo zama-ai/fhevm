@@ -312,7 +312,7 @@ interface IKMSGeneration {
     /**
      * @notice RFC-029: publish migrated key material under an EXISTING keyId without activating it
      * -- emits {KeyMaterialAdded} and never moves activeKeyId.
-     * @dev SPIKE: governance/ACL-owner published (the rollout supplies the migrated digests + URLs
+     * @dev Governance/ACL-owner published (the rollout supplies the migrated digests + URLs
      * produced by the KMS keygen-from-existing). The production form mirrors keygenResponse's
      * per-node EIP-712 KMS consensus; deferred (fhevm-internal#1568).
      * @param keyId The existing key to publish migrated material under.

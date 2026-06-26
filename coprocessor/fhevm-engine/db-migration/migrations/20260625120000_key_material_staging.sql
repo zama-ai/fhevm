@@ -36,3 +36,26 @@ CREATE TABLE IF NOT EXISTS kms_key_material_events (
     last_updated_at TIMESTAMPTZ,
     UNIQUE (chain_id, block_hash, key_id, material_version)
 );
+
+-- RFC-029: staging for the cutover SCHEDULE (`KeyMaterialMigrationScheduled`).
+-- Like the activation/material staging above, the schedule is written into the
+-- live cutover tables (material_version_*_schedule) only once its scheduling
+-- block is FINALIZED, so an orphaned governance tx can't flip workers to v1.
+-- Lifecycle: pending -> (finalized block: write schedule tables + NOTIFY) ->
+-- applied; orphaned block -> cancelled.
+CREATE TABLE IF NOT EXISTS kms_key_material_schedule_events (
+    chain_id BIGINT NOT NULL CHECK (chain_id >= 0),
+    block_hash BYTEA NOT NULL,
+    block_number BIGINT NOT NULL,
+    transaction_hash BYTEA,
+    host_chain_ids BIGINT[] NOT NULL,
+    host_target_blocks BIGINT[] NOT NULL,
+    gateway_target_block BIGINT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending', 'applied', 'cancelled')),
+    retry_count INT NOT NULL DEFAULT 0,
+    last_error TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_updated_at TIMESTAMPTZ,
+    PRIMARY KEY (chain_id, block_hash)
+);

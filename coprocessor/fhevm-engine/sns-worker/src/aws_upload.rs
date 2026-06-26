@@ -1,5 +1,4 @@
 use crate::metrics::{AWS_UPLOAD_FAILURE_COUNTER, AWS_UPLOAD_SUCCESS_COUNTER};
-use fhevm_engine_common::material_version::MaterialVersion;
 use crate::{
     BigCiphertext, Ciphertext128Format, Config, ExecutionError, HandleItem, S3Config, UploadJob,
     CURRENT_S3_FORMAT_VERSION, S3_FORMAT_VERSION_LEGACY,
@@ -18,6 +17,7 @@ use ciphertext_attestation::{
     S3_METADATA_ATTESTATION_KEY,
 };
 use fhevm_engine_common::chain_id::ChainId;
+use fhevm_engine_common::material_version::MaterialVersion;
 use fhevm_engine_common::pg_pool::{is_fatal_connection_error, PostgresPoolManager, ServiceError};
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::types::CoproSigner;

@@ -1,12 +1,14 @@
 use std::ops::DerefMut;
 
 use alloy::rpc::types::Log;
-use sqlx::{Postgres, Transaction};
-use tracing::{error, info};
+use sqlx::{Postgres, Row, Transaction};
+use tracing::{error, info, warn};
 
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::db_keys::write_large_object_in_chunks_tx;
-use fhevm_engine_common::material_version::MIGRATION_SCHEDULE_CHANNEL;
+use fhevm_engine_common::material_version::{
+    MaterialVersion, MIGRATION_SCHEDULE_CHANNEL,
+};
 
 use crate::contracts::KMSGeneration;
 use crate::kms_generation::key_id_to_database_bytes;
@@ -87,57 +89,158 @@ pub(crate) async fn insert_key_activation_event(
     Ok(())
 }
 
-/// RFC-029: ingest a `KeyMaterialMigrationScheduled` event into the per-chain
-/// and gateway cutover schedule tables, then NOTIFY the workers so they reload
-/// the (one-shot, immutable) schedule promptly. Runtime queries (no offline
-/// cache entry needed). Idempotent on re-observation of the same event.
+/// RFC-029: STAGE a `KeyMaterialMigrationScheduled` event. The schedule is
+/// written into the live cutover tables only once its scheduling block is
+/// finalized (see [`apply_finalized_migration_schedules`]), mirroring the
+/// activation/publish paths -- so an orphaned governance tx can't flip workers
+/// to v1. Idempotent on re-observation of the same event.
 pub(crate) async fn insert_key_material_migration_scheduled(
     tx: &mut Transaction<'_, Postgres>,
     scheduled: KMSGeneration::KeyMaterialMigrationScheduled,
+    chain_id: ChainId,
+    block_hash: &[u8],
+    block_number: u64,
 ) -> Result<(), sqlx::Error> {
+    // RFC-029 is a one-time cutover to v1 (the contract guards this too); ignore
+    // any other target rather than staging a schedule the selectors can't honor.
     let material_version = scheduled.materialVersion.to::<u64>() as i16;
-    let gateway_block = scheduled.gatewayMigrationBlock.to::<u64>() as i64;
-
-    for (chain_id, migration_block) in scheduled
-        .hostChainIds
-        .iter()
-        .zip(scheduled.hostMigrationBlocks.iter())
-    {
-        sqlx::query(
-            "INSERT INTO material_version_host_schedule (host_chain_id, material_version, migration_block) \
-             VALUES ($1, $2, $3) \
-             ON CONFLICT (host_chain_id, material_version) DO UPDATE SET migration_block = EXCLUDED.migration_block",
-        )
-        .bind(chain_id.to::<u64>() as i64)
-        .bind(material_version)
-        .bind(migration_block.to::<u64>() as i64)
-        .execute(tx.deref_mut())
-        .await?;
+    if material_version != MaterialVersion::MIGRATED_V1.0 {
+        warn!(
+            material_version,
+            "ignoring KeyMaterialMigrationScheduled with non-v1 target"
+        );
+        return Ok(());
     }
 
+    let host_chain_ids: Vec<i64> = scheduled
+        .hostChainIds
+        .iter()
+        .map(|c| c.to::<u64>() as i64)
+        .collect();
+    let host_target_blocks: Vec<i64> = scheduled
+        .hostMigrationBlocks
+        .iter()
+        .map(|b| b.to::<u64>() as i64)
+        .collect();
+    let gateway_block = scheduled.gatewayMigrationBlock.to::<u64>() as i64;
+
     sqlx::query(
-        "INSERT INTO material_version_gateway_schedule (material_version, migration_block) \
-         VALUES ($1, $2) \
-         ON CONFLICT (material_version) DO UPDATE SET migration_block = EXCLUDED.migration_block",
+        "INSERT INTO kms_key_material_schedule_events \
+            (chain_id, block_hash, block_number, host_chain_ids, host_target_blocks, gateway_target_block) \
+         VALUES ($1, $2, $3, $4, $5, $6) \
+         ON CONFLICT (chain_id, block_hash) DO NOTHING",
     )
-    .bind(material_version)
+    .bind(chain_id.as_i64())
+    .bind(block_hash)
+    .bind(block_number as i64)
+    .bind(&host_chain_ids)
+    .bind(&host_target_blocks)
     .bind(gateway_block)
     .execute(tx.deref_mut())
     .await?;
 
-    // Wake the workers' notify-driven schedule reload.
-    sqlx::query("SELECT pg_notify($1, '')")
-        .bind(MIGRATION_SCHEDULE_CHANNEL)
+    info!(
+        gateway_block,
+        chains = host_chain_ids.len(),
+        block_number,
+        "RFC-029 migration schedule staged (applies on finalization)"
+    );
+    Ok(())
+}
+
+/// RFC-029: apply staged cutover schedules whose scheduling block is finalized
+/// into the live `material_version_*_schedule` tables, then NOTIFY the workers
+/// to reload. Returns the number of schedule events applied.
+pub(crate) async fn apply_finalized_migration_schedules(
+    tx: &mut Transaction<'_, Postgres>,
+) -> Result<u64, sqlx::Error> {
+    let ready = sqlx::query(
+        "SELECT e.chain_id, e.block_hash, e.host_chain_ids, e.host_target_blocks, \
+                e.gateway_target_block \
+         FROM kms_key_material_schedule_events AS e \
+         INNER JOIN host_chain_blocks_valid AS b \
+            ON e.chain_id = b.chain_id AND e.block_hash = b.block_hash \
+         WHERE e.status = 'pending' AND b.block_status = 'finalized' \
+         FOR UPDATE OF e SKIP LOCKED",
+    )
+    .fetch_all(tx.deref_mut())
+    .await?;
+
+    let mut applied = 0u64;
+    for row in ready {
+        let event_chain_id: i64 = row.try_get("chain_id")?;
+        let event_block_hash: Vec<u8> = row.try_get("block_hash")?;
+        let host_chain_ids: Vec<i64> = row.try_get("host_chain_ids")?;
+        let host_target_blocks: Vec<i64> = row.try_get("host_target_blocks")?;
+        let gateway_block: i64 = row.try_get("gateway_target_block")?;
+
+        sqlx::query(
+            "INSERT INTO material_version_host_schedule (host_chain_id, target_block) \
+             SELECT * FROM unnest($1::bigint[], $2::bigint[]) \
+             ON CONFLICT (host_chain_id) DO UPDATE SET target_block = EXCLUDED.target_block",
+        )
+        .bind(&host_chain_ids)
+        .bind(&host_target_blocks)
         .execute(tx.deref_mut())
         .await?;
 
-    info!(
-        material_version,
-        gateway_block,
-        chains = scheduled.hostChainIds.len(),
-        "RFC-029 migration schedule ingested + workers notified"
-    );
-    Ok(())
+        sqlx::query(
+            "INSERT INTO material_version_gateway_schedule (singleton, target_block) \
+             VALUES (TRUE, $1) \
+             ON CONFLICT (singleton) DO UPDATE SET target_block = EXCLUDED.target_block",
+        )
+        .bind(gateway_block)
+        .execute(tx.deref_mut())
+        .await?;
+
+        sqlx::query(
+            "UPDATE kms_key_material_schedule_events \
+             SET status = 'applied', last_updated_at = NOW() \
+             WHERE chain_id = $1 AND block_hash = $2",
+        )
+        .bind(event_chain_id)
+        .bind(&event_block_hash)
+        .execute(tx.deref_mut())
+        .await?;
+        applied += 1;
+    }
+
+    if applied > 0 {
+        // Wake the workers' notify-driven schedule reload.
+        sqlx::query("SELECT pg_notify($1, '')")
+            .bind(MIGRATION_SCHEDULE_CHANNEL)
+            .execute(tx.deref_mut())
+            .await?;
+        info!(
+            applied,
+            "RFC-029 migration schedule(s) applied + workers notified"
+        );
+    }
+    Ok(applied)
+}
+
+/// RFC-029: cancel staged cutover schedules whose scheduling block was orphaned,
+/// mirroring [`cancel_orphaned_key_activations`].
+pub(crate) async fn cancel_orphaned_migration_schedules(
+    tx: &mut Transaction<'_, Postgres>,
+) -> Result<u64, sqlx::Error> {
+    let query = sqlx::query(
+        "UPDATE kms_key_material_schedule_events AS e \
+         SET status = 'cancelled', last_updated_at = NOW() \
+         FROM host_chain_blocks_valid AS b \
+         WHERE e.status = 'pending' \
+           AND e.chain_id = b.chain_id AND e.block_hash = b.block_hash \
+           AND b.block_status = 'orphaned'",
+    )
+    .execute(tx.deref_mut())
+    .await?;
+    if query.rows_affected() > 0 {
+        info!(
+            cancelled = query.rows_affected(),
+            "RFC-029 cancelled staged migration schedule(s) on orphaned blocks"
+        );
+    }
+    Ok(query.rows_affected())
 }
 
 /// RFC-029: a `KeyMaterialAdded` event staged for the v1 PUBLISH path. The
@@ -206,7 +309,6 @@ pub(crate) async fn all_pending_key_material_to_download(
     )
     .fetch_all(tx.deref_mut())
     .await?;
-    use sqlx::Row;
     Ok(rows
         .into_iter()
         .map(|r| PendingKeyMaterial {
@@ -247,10 +349,16 @@ pub(crate) async fn mark_key_material_error(
     error: &str,
     pending: PendingKeyMaterial,
 ) {
+    // Mirror mark_key_activation_error: leave status = 'pending' so the download
+    // loop retries next cycle. A transient S3 failure must not strand the v1
+    // material -- that would halt every post-cutover worker indefinitely.
+    warn!(
+        error,
+        "RFC-029 v1 key-material download failed; staying pending for retry"
+    );
     let _ = sqlx::query(
         "UPDATE kms_key_material_events \
-         SET status = 'error', last_error = $4, retry_count = retry_count + 1, \
-             last_updated_at = NOW() \
+         SET last_error = $4, retry_count = retry_count + 1, last_updated_at = NOW() \
          WHERE chain_id = $1 AND block_hash = $2 AND key_id = $3 \
            AND material_version = $5",
     )
@@ -283,11 +391,12 @@ pub(crate) async fn publish_ready_key_material(
         ), upd AS (\
             UPDATE keys SET migrated_xof_keyset = ready.key_content_migrated_xof \
             FROM ready WHERE keys.key_id = ready.key_id \
+            RETURNING ready.chain_id, ready.block_hash, ready.key_id, ready.material_version \
         ) \
         UPDATE kms_key_material_events AS e SET status = 'published', last_updated_at = NOW() \
-        FROM ready \
-        WHERE e.chain_id = ready.chain_id AND e.block_hash = ready.block_hash \
-          AND e.key_id = ready.key_id AND e.material_version = ready.material_version",
+        FROM upd \
+        WHERE e.chain_id = upd.chain_id AND e.block_hash = upd.block_hash \
+          AND e.key_id = upd.key_id AND e.material_version = upd.material_version",
     )
     .execute(tx.deref_mut())
     .await?;
@@ -845,7 +954,6 @@ pub async fn mark_crs_activation_error(
 mod tests {
     use super::*;
     use fhevm_engine_common::chain_id::ChainId;
-    use sqlx::Row;
     use test_harness::instance::{setup_test_db, ImportMode};
 
     #[tokio::test]

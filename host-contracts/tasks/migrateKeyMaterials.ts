@@ -40,8 +40,7 @@ task('task:triggerMigrationKeygen')
     true,
     types.boolean,
   )
-  .addOptionalParam('useInternalProxyAddress', 'Use proxy address from /addresses.', false, types.boolean)
-  .setAction(async function ({ paramsType, copyToOriginal, useInternalProxyAddress }, hre) {
+  .setAction(async function ({ paramsType, copyToOriginal }, hre) {
     await hre.run('compile:specific', { contract: 'contracts' });
     loadHostAddresses(); // KMS_GENERATION_CONTRACT_ADDRESS + PROTOCOL_CONFIG_CONTRACT_ADDRESS live in the host addresses file
 
@@ -66,8 +65,7 @@ task('task:triggerMigrationKeygen')
 task('task:publishMigratedKeyMaterials')
   .addOptionalParam('materialVersion', 'Material version to publish (RFC-029 cutover = 1).', 1, types.int)
   .addOptionalParam('keyId', 'Key id to publish under; defaults to the active key id.', '', types.string)
-  .addOptionalParam('useInternalProxyAddress', 'Use proxy address from /addresses.', false, types.boolean)
-  .setAction(async function ({ materialVersion, keyId, useInternalProxyAddress }, hre) {
+  .setAction(async function ({ materialVersion, keyId }, hre) {
     await hre.run('compile:specific', { contract: 'contracts' });
     loadHostAddresses(); // KMS_GENERATION_CONTRACT_ADDRESS + PROTOCOL_CONFIG_CONTRACT_ADDRESS live in the host addresses file
 
@@ -95,9 +93,8 @@ task('task:scheduleKeyMaterialMigration')
   .addParam('gatewayMigrationBlock', 'Gateway migration block (G).')
   .addOptionalParam('materialVersion', 'Target material version (RFC-029 cutover = 1).', 1, types.int)
   .addOptionalParam('keyId', 'Key id being migrated; defaults to the active key id.', '', types.string)
-  .addOptionalParam('useInternalProxyAddress', 'Use proxy address from /addresses.', false, types.boolean)
   .setAction(async function (
-    { hostChainIds, hostMigrationBlocks, gatewayMigrationBlock, materialVersion, keyId, useInternalProxyAddress },
+    { hostChainIds, hostMigrationBlocks, gatewayMigrationBlock, materialVersion, keyId },
     hre,
   ) {
     await hre.run('compile:specific', { contract: 'contracts' });

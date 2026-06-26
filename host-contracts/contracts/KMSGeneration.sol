@@ -455,7 +455,7 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
 
     /**
      * @notice See {IKMSGeneration-addKeyMaterials}.
-     * @dev SPIKE: governance-published (see interface note). Publish-not-activate.
+     * @dev Governance-published (see interface note). Publish-not-activate.
      */
     function addKeyMaterials(
         uint256 keyId,
