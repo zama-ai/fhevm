@@ -6,17 +6,8 @@ import os from 'os';
 import path from 'path';
 
 import { buildSnapshotArtifact, readCanonicalSnapshot } from '../../tasks/protocolConfigMirror';
-import { buildKmsNodes, buildKmsThresholds } from '../../tasks/taskDeploy';
 import { makeEnvHelpers } from '../../tasks/utils/envSnapshot';
-import { KMS_CONTEXT_COUNTER_BASE } from '../../tasks/utils/kmsGenerationConstants';
 import { getRequiredEnvVar } from '../../tasks/utils/loadVariables';
-import {
-  type ProtocolConfigMigrationEnv,
-  type ProtocolConfigMigrationEnvSnapshot,
-  applyProtocolConfigMigrationEnv,
-  restoreProtocolConfigMigrationEnv,
-  snapshotProtocolConfigMigrationEnv,
-} from '../../tasks/utils/protocolConfigMigrationEnv';
 import { UPGRADE_TO_AND_CALL_INTERFACE } from '../../tasks/utils/upgradeProposal';
 import { deployEmptyProxy } from '../utils/deploymentHelpers';
 import {
@@ -24,6 +15,8 @@ import {
   buildProtocolConfigNodes,
   buildProtocolConfigThresholds,
   deployFreshProtocolConfigProxy,
+  deployFreshUninitializedProtocolConfigProxy,
+  initializeProtocolConfigProxy,
   readHostAddress,
 } from './taskHelpers';
 
@@ -50,20 +43,15 @@ const HOST_ADDRESS_ENV_KEYS = [
 const { snapshot: snapshotHostAddressEnv, restore: restoreHostAddressEnv } = makeEnvHelpers(HOST_ADDRESS_ENV_KEYS);
 type HostAddressEnvSnapshot = ReturnType<typeof snapshotHostAddressEnv>;
 
-function getKmsTxSenderAddresses(count: number): string[] {
-  return Array.from({ length: count }, (_, idx) => getRequiredEnvVar(`KMS_TX_SENDER_ADDRESS_${idx}`));
-}
-
 async function readImplementationSlot(proxyAddress: string): Promise<string> {
   return upgrades.erc1967.getImplementationAddress(proxyAddress);
 }
 
-describe('Migration prepare tasks', function () {
+describe('Canonical prepare tasks', function () {
   const deployerPrivateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
   const deployer = new ethers.Wallet(deployerPrivateKey).connect(ethers.provider);
   let originalEnvHost: string;
   let originalHostAddressEnv: HostAddressEnvSnapshot;
-  let originalProtocolConfigMigrationEnv: ProtocolConfigMigrationEnvSnapshot;
 
   before(function () {
     originalEnvHost = fs.readFileSync(HOST_ENV_FILE, 'utf-8');
@@ -71,84 +59,12 @@ describe('Migration prepare tasks', function () {
 
   beforeEach(function () {
     originalHostAddressEnv = snapshotHostAddressEnv();
-    originalProtocolConfigMigrationEnv = snapshotProtocolConfigMigrationEnv();
   });
 
   afterEach(async function () {
     // Restore .env.host so other tests are unaffected.
     fs.writeFileSync(HOST_ENV_FILE, originalEnvHost);
     restoreHostAddressEnv(originalHostAddressEnv);
-    restoreProtocolConfigMigrationEnv(originalProtocolConfigMigrationEnv);
-  });
-
-  // ---------------------------------------------------------------------------
-  // ProtocolConfig
-  // ---------------------------------------------------------------------------
-
-  describe('ProtocolConfig migration', function () {
-    it('prepares DAO calldata without mutating the empty proxy implementation', async function () {
-      const proxyAddress = await deployEmptyUUPSProxy(deployer);
-      patchHostEnv('PROTOCOL_CONFIG_CONTRACT_ADDRESS', proxyAddress);
-
-      const migratedContextId = KMS_CONTEXT_COUNTER_BASE + BigInt(3);
-      const protocolConfigMigrationEnv: ProtocolConfigMigrationEnv = {
-        MIGRATION_CONTEXT_ID: migratedContextId.toString(),
-        MIGRATION_KMS_NODES: JSON.stringify(buildKmsNodes()),
-        MIGRATION_KMS_THRESHOLDS: JSON.stringify(buildKmsThresholds()),
-      };
-      applyProtocolConfigMigrationEnv(protocolConfigMigrationEnv);
-
-      const implementationSlotBefore = await readImplementationSlot(proxyAddress);
-      const preparedUpgrade = await run('task:prepareDeployProtocolConfigFromMigration', {
-        verifyContract: false,
-      });
-      const implementationSlotAfter = await readImplementationSlot(proxyAddress);
-
-      expect(implementationSlotAfter).to.equal(implementationSlotBefore);
-
-      const { newImplementationAddress, innerFunctionSignature, innerCalldata, outerCalldata } = preparedUpgrade;
-      expect(preparedUpgrade.proxyAddress).to.equal(proxyAddress);
-      const iface = new ethers.Interface([`function ${innerFunctionSignature}`]);
-      const decoded = iface.decodeFunctionData('initializeFromMigration', innerCalldata);
-
-      expect(decoded[0]).to.equal(migratedContextId);
-      expect(decoded[1].map((node: string[]) => node[0])).to.deep.equal(
-        getKmsTxSenderAddresses(+getRequiredEnvVar('NUM_KMS_NODES')),
-      );
-      expect(decoded[2][0]).to.equal(BigInt(getRequiredEnvVar('PUBLIC_DECRYPTION_THRESHOLD')));
-      expect(outerCalldata).to.equal(
-        UPGRADE_TO_AND_CALL_INTERFACE.encodeFunctionData('upgradeToAndCall', [newImplementationAddress, innerCalldata]),
-      );
-    });
-
-    it('executes the devnet direct upgrade and initializes ProtocolConfig from migration state', async function () {
-      const proxyAddress = await deployEmptyUUPSProxy(deployer);
-      patchHostEnv('PROTOCOL_CONFIG_CONTRACT_ADDRESS', proxyAddress);
-
-      const migratedContextId = KMS_CONTEXT_COUNTER_BASE + BigInt(4);
-      const protocolConfigMigrationEnv: ProtocolConfigMigrationEnv = {
-        MIGRATION_CONTEXT_ID: migratedContextId.toString(),
-        MIGRATION_KMS_NODES: JSON.stringify(buildKmsNodes()),
-        MIGRATION_KMS_THRESHOLDS: JSON.stringify(buildKmsThresholds()),
-      };
-      applyProtocolConfigMigrationEnv(protocolConfigMigrationEnv);
-
-      const implementationSlotBefore = await readImplementationSlot(proxyAddress);
-      await run('task:deployProtocolConfigFromMigration');
-      const protocolConfig = await ethers.getContractAt('ProtocolConfig', proxyAddress);
-
-      expect(await readImplementationSlot(proxyAddress)).to.not.equal(implementationSlotBefore);
-      expect(await protocolConfig.getVersion()).to.equal('ProtocolConfig v0.1.0');
-      expect(await protocolConfig.getCurrentKmsContextId()).to.equal(migratedContextId);
-      expect(await protocolConfig.getPublicDecryptionThreshold()).to.equal(
-        BigInt(getRequiredEnvVar('PUBLIC_DECRYPTION_THRESHOLD')),
-      );
-
-      const kmsNodes = await protocolConfig.getKmsNodesForContext(migratedContextId);
-      expect(kmsNodes.map((node) => node.txSenderAddress)).to.deep.equal(
-        getKmsTxSenderAddresses(+getRequiredEnvVar('NUM_KMS_NODES')),
-      );
-    });
   });
 
   describe('ProtocolConfig from canonical artifact', function () {
@@ -173,7 +89,7 @@ describe('Migration prepare tasks', function () {
       patchHostEnv('PROTOCOL_CONFIG_CONTRACT_ADDRESS', proxyAddress);
       const { file, canonicalAddress } = await writeCanonicalArtifact();
       const canonical = await ethers.getContractAt('ProtocolConfig', canonicalAddress, deployer);
-      const canonicalContextId = await canonical.getCurrentKmsContextId();
+      const [canonicalContextId, canonicalEpochId] = await canonical.getCurrentKmsContextAndEpoch();
 
       const implementationSlotBefore = await readImplementationSlot(proxyAddress);
       const preparedUpgrade = await run('task:prepareDeployProtocolConfigFromCanonical', {
@@ -185,12 +101,28 @@ describe('Migration prepare tasks', function () {
       const { newImplementationAddress, innerFunctionSignature, innerCalldata, outerCalldata } = preparedUpgrade;
       expect(preparedUpgrade.proxyAddress).to.equal(proxyAddress);
       const iface = new ethers.Interface([`function ${innerFunctionSignature}`]);
-      const decoded = iface.decodeFunctionData('initializeFromMigration', innerCalldata);
+      const decoded = iface.decodeFunctionData('initializeFromCanonical', innerCalldata);
       expect(decoded[0]).to.equal(canonicalContextId);
-      expect(decoded[1].map((node: string[]) => node[0])).to.deep.equal(
-        buildProtocolConfigNodes().map((node) => node.txSenderAddress),
-      );
-      expect(decoded[2][0]).to.equal(BigInt(buildProtocolConfigThresholds().publicDecryption));
+      expect(decoded[1]).to.equal(canonicalEpochId);
+      // Round-trip every KmsNodeParams field (4 stored + 4 MPC-metadata) so a dropped or transposed
+      // field is caught instead of silently passing on txSenderAddress alone. The canonical mirror
+      // path preserves the four stored fields and fills the MPC metadata with deterministic
+      // placeholders (partyId = index, mpcIdentity = '', caCert = '0x', storagePrefix = '').
+      const expectedNodes = buildProtocolConfigNodes();
+      expect(decoded[2].length).to.equal(expectedNodes.length);
+      decoded[2].forEach((node: unknown[], index: number) => {
+        const [txSenderAddress, signerAddress, ipAddress, storageUrl, partyId, mpcIdentity, caCert, storagePrefix] =
+          node;
+        expect(txSenderAddress).to.equal(expectedNodes[index].txSenderAddress);
+        expect(signerAddress).to.equal(expectedNodes[index].signerAddress);
+        expect(ipAddress).to.equal(expectedNodes[index].ipAddress);
+        expect(storageUrl).to.equal(expectedNodes[index].storageUrl);
+        expect(partyId).to.equal(BigInt(index));
+        expect(mpcIdentity).to.equal('');
+        expect(caCert).to.equal('0x');
+        expect(storagePrefix).to.equal('');
+      });
+      expect(decoded[3][0]).to.equal(BigInt(buildProtocolConfigThresholds().publicDecryption));
       expect(outerCalldata).to.equal(
         UPGRADE_TO_AND_CALL_INTERFACE.encodeFunctionData('upgradeToAndCall', [newImplementationAddress, innerCalldata]),
       );
@@ -201,12 +133,15 @@ describe('Migration prepare tasks', function () {
       patchHostEnv('PROTOCOL_CONFIG_CONTRACT_ADDRESS', proxyAddress);
       const { file, canonicalAddress } = await writeCanonicalArtifact();
       const canonical = await ethers.getContractAt('ProtocolConfig', canonicalAddress, deployer);
-      const canonicalContextId = await canonical.getCurrentKmsContextId();
+      const [canonicalContextId, canonicalEpochId] = await canonical.getCurrentKmsContextAndEpoch();
 
       await run('task:deployProtocolConfigFromCanonical', { snapshot: file });
 
       const secondary = await ethers.getContractAt('ProtocolConfig', proxyAddress, deployer);
       expect(await secondary.getCurrentKmsContextId()).to.equal(canonicalContextId);
+      const secondaryState = await secondary.getCurrentKmsContextAndEpoch();
+      expect(secondaryState[0]).to.equal(canonicalContextId);
+      expect(secondaryState[1]).to.equal(canonicalEpochId);
       expect((await secondary.getKmsNodesForContext(canonicalContextId)).length).to.equal(
         buildProtocolConfigNodes().length,
       );
@@ -226,13 +161,12 @@ describe('Migration prepare tasks', function () {
 
       patchHostEnv('PROTOCOL_CONFIG_CONTRACT_ADDRESS', protocolConfigProxyAddress);
 
-      const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
-      const newImplementation = await ethers.getContractFactory('ProtocolConfig', deployer);
-      const proxy = await upgrades.forceImport(protocolConfigProxyAddress, currentImplementation);
-      const protocolConfig = await upgrades.upgradeProxy(proxy, newImplementation, {
-        call: { fn: 'initializeFromEmptyProxy', args: [buildProtocolConfigNodes(), buildProtocolConfigThresholds()] },
-      });
-      await protocolConfig.waitForDeployment();
+      await initializeProtocolConfigProxy(
+        protocolConfigProxyAddress,
+        deployer,
+        buildProtocolConfigNodes(),
+        buildProtocolConfigThresholds(),
+      );
 
       await run('task:assertProtocolConfigReady');
     });
@@ -244,6 +178,18 @@ describe('Migration prepare tasks', function () {
 
       await expect(run('task:assertProtocolConfigReady')).to.be.rejectedWith(
         `Cannot deploy KMSVerifier: Contract at ${protocolConfigProxyAddress} does not expose getVersion(); it is not a ProtocolConfig proxy.`,
+      );
+    });
+
+    it('rejects the standalone readiness check when ProtocolConfig has no active KMS context', async function () {
+      // getVersion() passes the identity check, but currentKmsContextId is still 0 (never initialized),
+      // so the readiness task must reject before KMSVerifier deployment.
+      const protocolConfigProxyAddress = await deployFreshUninitializedProtocolConfigProxy(deployer);
+
+      patchHostEnv('PROTOCOL_CONFIG_CONTRACT_ADDRESS', protocolConfigProxyAddress);
+
+      await expect(run('task:assertProtocolConfigReady')).to.be.rejectedWith(
+        `Cannot deploy KMSVerifier: ProtocolConfig at ${protocolConfigProxyAddress} has no active KMS context (currentKmsContextId=0).`,
       );
     });
 
