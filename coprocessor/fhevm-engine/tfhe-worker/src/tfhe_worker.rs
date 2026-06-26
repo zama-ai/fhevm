@@ -446,7 +446,7 @@ WHERE c.transaction_id IN (
         // Group whole transactions by their RFC-029 material version. A
         // transaction is one (host_chain_id, block_number), so every
         // computation in it resolves to the same version -- we never split a
-        // transaction across versions. An unparseable chain or NULL block
+        // transaction across versions. An unparsable chain or NULL block
         // falls back to LEGACY (inert/safe).
         let mut by_version: HashMap<MaterialVersion, Vec<ComponentNode>> = HashMap::new();
         for (transaction_id, txwork) in work_by_transaction.iter() {

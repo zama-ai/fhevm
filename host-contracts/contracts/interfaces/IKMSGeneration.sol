@@ -110,12 +110,7 @@ interface IKMSGeneration {
      * @param keyDigests The digests of the migrated key material.
      * @param materialVersion The published material version (1 for the RFC-029 cutover).
      */
-    event KeyMaterialAdded(
-        uint256 keyId,
-        string[] kmsNodeStorageUrls,
-        KeyDigest[] keyDigests,
-        uint256 materialVersion
-    );
+    event KeyMaterialAdded(uint256 keyId, string[] kmsNodeStorageUrls, KeyDigest[] keyDigests, uint256 materialVersion);
 
     /**
      * @notice RFC-029: emitted to schedule the material-version cutover. Per-host-chain migration

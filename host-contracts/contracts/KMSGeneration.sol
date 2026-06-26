@@ -1016,7 +1016,9 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
      * @param extraData v3 migration extraData: [0x03][contextId(32)][existingKeysetId(32)][copyToOriginal(1)].
      * @return existingKeyId The key the migrated material is published under (activeKeyId is unchanged).
      */
-    function _extractMigrationExistingKeyId(bytes memory extraData) internal pure virtual returns (uint256 existingKeyId) {
+    function _extractMigrationExistingKeyId(
+        bytes memory extraData
+    ) internal pure virtual returns (uint256 existingKeyId) {
         // existingKeysetId occupies bytes [33..65); mload at offset 65 reads it.
         if (extraData.length < 65) {
             revert DeserializingExtraDataFail();

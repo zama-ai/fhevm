@@ -114,9 +114,10 @@ pub fn parse_extra_data(extra_data: &[u8]) -> anyhow::Result<ExtraData> {
             let context_id_bytes: [u8; 32] = extra_data[1..33]
                 .try_into()
                 .map_err(|e| anyhow!("Failed to extract context_id from extra_data: {e}"))?;
-            let existing_keyset_id_bytes: [u8; 32] = extra_data[33..65]
-                .try_into()
-                .map_err(|e| anyhow!("Failed to extract existing_keyset_id from extra_data: {e}"))?;
+            let existing_keyset_id_bytes: [u8; 32] =
+                extra_data[33..65].try_into().map_err(|e| {
+                    anyhow!("Failed to extract existing_keyset_id from extra_data: {e}")
+                })?;
 
             Ok(ExtraData {
                 context_id: Some(U256::from_be_bytes(context_id_bytes)),

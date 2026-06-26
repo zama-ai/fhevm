@@ -19,7 +19,7 @@ use anyhow::Result;
 use sqlx::{PgPool, Row};
 use std::collections::HashMap;
 
-/// Postgres `LISTEN`/`NOTIFY` channel signalling that the cutover schedule has
+/// Postgres `LISTEN`/`NOTIFY` channel signaling that the cutover schedule has
 /// been published or updated. Workers load the schedule once and refresh only
 /// on this notify, so the happy path never polls (a re-published schedule
 /// overwrites the prior cutover block and re-notifies).
