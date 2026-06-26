@@ -212,7 +212,7 @@ pub fn from_public_decryption_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> 
         already_sent: row.try_get::<bool, _>("already_sent")?,
         error_counter: row.try_get::<i16, _>("error_counter")?,
         created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
-        otlp_context: bc2wrap::deserialize_safe(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+        otlp_context: bc2wrap::deserialize_slice(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
     })
 }
 
@@ -307,7 +307,7 @@ pub fn from_user_decryption_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
         already_sent: row.try_get::<bool, _>("already_sent")?,
         error_counter: row.try_get::<i16, _>("error_counter")?,
         created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
-        otlp_context: bc2wrap::deserialize_safe(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+        otlp_context: bc2wrap::deserialize_slice(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
     })
 }
 
@@ -326,7 +326,7 @@ pub fn from_prep_keygen_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
         already_sent: row.try_get::<bool, _>("already_sent")?,
         error_counter: 0,
         created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
-        otlp_context: bc2wrap::deserialize_safe(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+        otlp_context: bc2wrap::deserialize_slice(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
     })
 }
 
@@ -345,7 +345,7 @@ pub fn from_keygen_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
         already_sent: row.try_get::<bool, _>("already_sent")?,
         error_counter: 0,
         created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
-        otlp_context: bc2wrap::deserialize_safe(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+        otlp_context: bc2wrap::deserialize_slice(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
     })
 }
 
@@ -376,7 +376,7 @@ pub fn from_new_kms_context_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
         already_sent: row.try_get::<bool, _>("already_sent")?,
         error_counter: 0,
         created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
-        otlp_context: bc2wrap::deserialize_safe(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+        otlp_context: bc2wrap::deserialize_slice(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
     })
 }
 
@@ -399,7 +399,7 @@ pub fn from_new_kms_epoch_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
         already_sent: row.try_get::<bool, _>("already_sent")?,
         error_counter: 0,
         created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
-        otlp_context: bc2wrap::deserialize_safe(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+        otlp_context: bc2wrap::deserialize_slice(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
     })
 }
 
@@ -419,7 +419,7 @@ pub fn from_crsgen_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
         already_sent: row.try_get::<bool, _>("already_sent")?,
         error_counter: 0,
         created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
-        otlp_context: bc2wrap::deserialize_safe(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+        otlp_context: bc2wrap::deserialize_slice(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
     })
 }
 
