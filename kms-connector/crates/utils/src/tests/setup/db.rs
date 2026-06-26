@@ -102,7 +102,7 @@ impl DbInstance {
         let db_url = replace_db_in_url(&admin_db_url, &db_name);
         info!("KMS Connector per-test DB url: {db_url}");
         let pool = sqlx::postgres::PgPoolOptions::new()
-            .max_connections(10)
+            .max_connections(3)
             .connect(&db_url)
             .await?;
 
