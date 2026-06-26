@@ -459,6 +459,33 @@ async fn ingest_transaction(
     #[cfg(not(feature = "solana-reconstruct"))]
     let events = emit_events;
 
+    // DIAG (temporary): surface every zama-host tx the reconstruct path scans — slot, signature,
+    // the zama-host instruction discriminators present, and the reconstructed event count — so a tx
+    // that reconstructs to zero events (otherwise invisible past the gate below) is logged. Used to
+    // find why the consume/burn compute event is not reconstructed.
+    #[cfg(feature = "solana-reconstruct")]
+    if config.reconstruct {
+        let zh_discs: Vec<String> = all_instructions
+            .iter()
+            .filter(|ix| ix.program == config.program_id)
+            .map(|ix| {
+                ix.data
+                    .iter()
+                    .take(8)
+                    .map(|b| format!("{b:02x}"))
+                    .collect::<String>()
+            })
+            .collect();
+        info!(
+            slot,
+            signature = %bs58::encode(&info.signature).into_string(),
+            zama_host_ixs = zh_discs.len(),
+            discriminators = ?zh_discs,
+            reconstructed = events.len(),
+            "DIAG: reconstruct tx scanned"
+        );
+    }
+
     if events.is_empty() {
         return Ok(());
     }
