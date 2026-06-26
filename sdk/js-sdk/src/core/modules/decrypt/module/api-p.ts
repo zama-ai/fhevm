@@ -4,7 +4,9 @@ import type {
   ServerIdAddr,
   Client,
   TypedPlaintext,
-} from '../../../../wasm/tkms/kms_lib.v0.13.10.js';
+  KmsLibApi,
+  TkmsVersion,
+} from '../../../../wasm/tkms/KmsLibApi.js';
 import type { FhevmRuntime } from '../../../types/coreFhevmRuntime.js';
 import type { ClearValue } from '../../../types/encryptedTypes-p.js';
 import type { TkmsPrivateKey, TkmsPrivateKeyBrand } from '../../../types/tkms-p.js';
@@ -14,6 +16,7 @@ import type {
   DecryptAndReconstructReturnType,
   DeserializeTkmsPrivateKeyParameters,
   DeserializeTkmsPrivateKeyReturnType,
+  GenerateTkmsPrivateKeyParameters,
   GenerateTkmsPrivateKeyReturnType,
   GetTkmsPublicKeyHexParameters,
   GetTkmsPublicKeyHexReturnType,
@@ -29,16 +32,6 @@ import { createClearValue } from '../../../handle/ClearValue.js';
 import { bytesToClearValueType } from '../../../handle/FheType.js';
 import { ensure0x, remove0x } from '../../../base/string.js';
 import { assertIsKmsExtraData } from '../../../kms/kmsExtraData.js';
-import {
-  ml_kem_pke_keygen,
-  ml_kem_pke_get_pk,
-  ml_kem_pke_pk_to_u8vec,
-  new_server_id_addr,
-  new_client,
-  process_user_decryption_resp_from_js,
-  ml_kem_pke_sk_to_u8vec,
-  u8vec_to_ml_kem_pke_sk,
-} from '../../../../wasm/tkms/kms_lib.v0.13.10.js';
 import { bytesToHexLarge } from '../../../base/bytes.js';
 import { initTkmsModule } from './init-p.js';
 import { getMetadata, getShares } from '../../../kms/KmsSigncryptedShares-p.js';
@@ -104,29 +97,49 @@ function verifyToken(token: symbol): void {
 class TkmsPublicEncKeyMlKem512Impl {
   readonly #publicEncKeyMlKem512Wasm: PublicEncKeyMlKem512WasmType;
   #bytesHex: BytesHex | undefined;
+  readonly #tkmsVersion: TkmsVersion;
 
-  constructor(token: symbol, publicEncKeyMlKem512Wasm: PublicEncKeyMlKem512WasmType) {
+  constructor(token: symbol, tkmsVersion: TkmsVersion, publicEncKeyMlKem512Wasm: PublicEncKeyMlKem512WasmType) {
     verifyToken(token);
     this.#publicEncKeyMlKem512Wasm = publicEncKeyMlKem512Wasm;
+    this.#tkmsVersion = tkmsVersion;
   }
 
-  public static [GET_NATIVE_FUNC](key: unknown, token: symbol): PublicEncKeyMlKem512WasmType {
+  public get tkmsVersion(): TkmsVersion {
+    return this.#tkmsVersion;
+  }
+
+  public static [GET_NATIVE_FUNC](key: unknown, token: symbol, tkmsVersion: TkmsVersion): PublicEncKeyMlKem512WasmType {
     verifyToken(token);
     if (!(key instanceof TkmsPublicEncKeyMlKem512Impl)) {
       throw new Error('Unauthorized');
+    }
+    if (key.#tkmsVersion !== tkmsVersion) {
+      throw new Error(`TkmsVersion mismatch`);
     }
     return key.#publicEncKeyMlKem512Wasm;
   }
 
-  public static [GET_BYTES_HEX_FUNC](key: unknown, token: symbol): BytesHex {
+  public static [GET_BYTES_HEX_FUNC](
+    key: unknown,
+    token: symbol,
+    tkmsVersion: TkmsVersion,
+    kmsLibApi: KmsLibApi,
+  ): BytesHex {
     verifyToken(token);
     if (!(key instanceof TkmsPublicEncKeyMlKem512Impl)) {
       throw new Error('Unauthorized');
     }
+
+    if (key.#tkmsVersion !== tkmsVersion || kmsLibApi.getWasmInfo().version !== tkmsVersion) {
+      throw new Error(`TkmsVersion mismatch`);
+    }
+
     if (key.#bytesHex === undefined) {
-      const bytes: Bytes = ml_kem_pke_pk_to_u8vec(key.#publicEncKeyMlKem512Wasm);
+      const bytes: Bytes = kmsLibApi.ml_kem_pke_pk_to_u8vec(key.#publicEncKeyMlKem512Wasm);
       key.#bytesHex = bytesToHexLarge(bytes, false /* no 0x */);
     }
+
     return key.#bytesHex;
   }
 }
@@ -140,31 +153,55 @@ class TkmsPrivateEncKeyMlKem512Impl implements TkmsPrivateKey {
 
   readonly #privateEncKeyMlKem512Wasm: PrivateEncKeyMlKem512WasmType;
   #publicKey: TkmsPublicEncKeyMlKem512Impl | undefined;
+  readonly #tkmsVersion: TkmsVersion;
 
-  constructor(token: symbol, privateEncKeyMlKem512Wasm: PrivateEncKeyMlKem512WasmType) {
+  constructor(token: symbol, tkmsVersion: TkmsVersion, privateEncKeyMlKem512Wasm: PrivateEncKeyMlKem512WasmType) {
     verifyToken(token);
     this.#privateEncKeyMlKem512Wasm = privateEncKeyMlKem512Wasm;
+    this.#tkmsVersion = tkmsVersion;
   }
 
-  public static [GET_NATIVE_FUNC](key: unknown, token: symbol): PrivateEncKeyMlKem512WasmType {
+  public get tkmsVersion(): TkmsVersion {
+    return this.#tkmsVersion;
+  }
+
+  public static [GET_NATIVE_FUNC](
+    key: unknown,
+    token: symbol,
+    tkmsVersion: TkmsVersion,
+  ): PrivateEncKeyMlKem512WasmType {
     verifyToken(token);
     if (!(key instanceof TkmsPrivateEncKeyMlKem512Impl)) {
       throw new Error('Unauthorized');
+    }
+    if (key.#tkmsVersion !== tkmsVersion) {
+      throw new Error(`TkmsVersion mismatch`);
     }
     return key.#privateEncKeyMlKem512Wasm;
   }
 
-  public static [GET_PUBLIC_KEY_FUNC](key: unknown, token: symbol): TkmsPublicEncKeyMlKem512Impl {
+  public static [GET_PUBLIC_KEY_FUNC](
+    key: unknown,
+    token: symbol,
+    tkmsVersion: TkmsVersion,
+    kmsLibApi: KmsLibApi,
+  ): TkmsPublicEncKeyMlKem512Impl {
     verifyToken(token);
     if (!(key instanceof TkmsPrivateEncKeyMlKem512Impl)) {
       throw new Error('Unauthorized');
     }
+
+    if (key.#tkmsVersion !== tkmsVersion || kmsLibApi.getWasmInfo().version !== tkmsVersion) {
+      throw new Error(`TkmsVersion mismatch`);
+    }
+
     if (key.#publicKey === undefined) {
-      const publicEncKeyMlKem512Wasm = ml_kem_pke_get_pk(
+      const publicEncKeyMlKem512Wasm = kmsLibApi.ml_kem_pke_get_pk(
         key.#privateEncKeyMlKem512Wasm,
       ) as PublicEncKeyMlKem512WasmType;
-      key.#publicKey = new TkmsPublicEncKeyMlKem512Impl(token, publicEncKeyMlKem512Wasm);
+      key.#publicKey = new TkmsPublicEncKeyMlKem512Impl(token, key.#tkmsVersion, publicEncKeyMlKem512Wasm);
     }
+
     return key.#publicKey;
   }
 }
@@ -173,11 +210,16 @@ class TkmsPrivateEncKeyMlKem512Impl implements TkmsPrivateKey {
 // generateTkmsPrivateKey
 //////////////////////////////////////////////////////////////////////////////
 
-export async function generateTkmsPrivateKey(runtime: FhevmRuntime): Promise<GenerateTkmsPrivateKeyReturnType> {
-  await initTkmsModule(runtime);
-  const privateEncKeyMlKem512Wasm: PrivateEncKeyMlKem512WasmType = ml_kem_pke_keygen() as PrivateEncKeyMlKem512WasmType;
+export async function generateTkmsPrivateKey(
+  runtime: FhevmRuntime,
+  parameters: GenerateTkmsPrivateKeyParameters,
+): Promise<GenerateTkmsPrivateKeyReturnType> {
+  const kmsLib = await initTkmsModule(runtime, { tkmsVersion: parameters.tkmsVersion });
 
-  return new TkmsPrivateEncKeyMlKem512Impl(PRIVATE_TKMS_LIB_TOKEN, privateEncKeyMlKem512Wasm);
+  const privateEncKeyMlKem512Wasm: PrivateEncKeyMlKem512WasmType =
+    kmsLib.ml_kem_pke_keygen() as PrivateEncKeyMlKem512WasmType;
+
+  return new TkmsPrivateEncKeyMlKem512Impl(PRIVATE_TKMS_LIB_TOKEN, parameters.tkmsVersion, privateEncKeyMlKem512Wasm);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -188,7 +230,7 @@ export async function decryptAndReconstruct(
   runtime: FhevmRuntime,
   parameters: DecryptAndReconstructParameters,
 ): Promise<DecryptAndReconstructReturnType> {
-  await initTkmsModule(runtime);
+  const kmsLib = await initTkmsModule(runtime, { tkmsVersion: parameters.tkmsVersion });
 
   const { tkmsPrivateKey, shares } = parameters;
   if (!(tkmsPrivateKey instanceof TkmsPrivateEncKeyMlKem512Impl)) {
@@ -198,9 +240,15 @@ export async function decryptAndReconstruct(
   const tkmsPublicKey: TkmsPublicEncKeyMlKem512Impl = TkmsPrivateEncKeyMlKem512Impl[GET_PUBLIC_KEY_FUNC](
     tkmsPrivateKey,
     PRIVATE_TKMS_LIB_TOKEN,
+    parameters.tkmsVersion,
+    kmsLib,
   );
 
   const metadata: KmsSigncryptedSharesMetadata = getMetadata(shares);
+  if (metadata.tkmsVersion !== parameters.tkmsVersion) {
+    throw new Error('TkmsVersion mismatch');
+  }
+
   const sharesArray: readonly KmsSigncryptedShare[] = getShares(shares);
 
   const firstShare = sharesArray[0];
@@ -233,16 +281,20 @@ export async function decryptAndReconstruct(
   const privateEncKeyMlKem512Wasm: PrivateEncKeyMlKem512WasmType = TkmsPrivateEncKeyMlKem512Impl[GET_NATIVE_FUNC](
     tkmsPrivateKey,
     PRIVATE_TKMS_LIB_TOKEN,
+    parameters.tkmsVersion,
   );
 
   const publicEncKeyMlKem512Wasm: PublicEncKeyMlKem512WasmType = TkmsPublicEncKeyMlKem512Impl[GET_NATIVE_FUNC](
     tkmsPublicKey,
     PRIVATE_TKMS_LIB_TOKEN,
+    parameters.tkmsVersion,
   );
 
   const publicEncKeyMlKem512WasmBytesHex: BytesHex = TkmsPublicEncKeyMlKem512Impl[GET_BYTES_HEX_FUNC](
     tkmsPublicKey,
     PRIVATE_TKMS_LIB_TOKEN,
+    parameters.tkmsVersion,
+    kmsLib,
   );
 
   // KmsEIP712Domain
@@ -265,11 +317,15 @@ export async function decryptAndReconstruct(
   const indexedServerAddressesWasm: ServerIdAddrWasmType[] = metadata.kmsSignersContext.signers.map(
     (kmsSigner, index) => {
       const kmsSignerPartyId = index + 1;
-      return new_server_id_addr(kmsSignerPartyId, kmsSigner) as ServerIdAddrWasmType;
+      return kmsLib.new_server_id_addr(kmsSignerPartyId, kmsSigner) as ServerIdAddrWasmType;
     },
   );
 
-  const clientWasm: ClientWasmType = new_client(indexedServerAddressesWasm, clientAddress, 'default') as ClientWasmType;
+  const clientWasm: ClientWasmType = kmsLib.new_client(
+    indexedServerAddressesWasm,
+    clientAddress,
+    'default',
+  ) as ClientWasmType;
 
   const requestWasmArg = {
     signature: remove0x(metadata.eip712Signature),
@@ -280,14 +336,33 @@ export async function decryptAndReconstruct(
     extra_data: remove0x(extraData),
   };
 
+  //
+  // About the process_user_decryption_resp_from_js's `threshold` argument:
+  // ======================================================================
+  // It is optional.
+  // If left `undefined` it will be automatically computed (for 13 signers -> result is 4)
+  // To get the expected value for the selected KMS context, call:
+  //
+  //     ProtocolConfig.getMpcThreshold() returns (uint256)
+  //     ProtocolConfig.getMpcThresholdForContext(uint256 kmsContextId) returns (uint256)
+  //
+  // `threshold` - Optional expected threshold/degree used during response validation.
+  // Validation requires at least `threshold + 1` matching responses, and the selected pivot
+  // response must have `degree == threshold`. If not provided, it is computed from the number
+  // of server addresses as `(n - 1) / 3`.
+  //
+  // Warning! this `threshold` differs from KMSVerifier.getThreshold()
+  //
+
   // 1. Call kms module to decrypt & reconstruct clear values
-  const typedPlaintextArray: TypedPlaintextWasmType[] = process_user_decryption_resp_from_js(
+  const typedPlaintextArray: TypedPlaintextWasmType[] = kmsLib.process_user_decryption_resp_from_js(
     clientWasm, // client argument
     requestWasmArg, // request argument
     eip712DomainWasmArg, // eip712_domain argument
     aggRespWasmArg, // agg_resp argument
     publicEncKeyMlKem512Wasm, // enc_pk argument
     privateEncKeyMlKem512Wasm, // enc_sk argument
+    undefined, // should be ProtocolConfig.getMpcThreshold() (!= KMSVerifier.getThreshold())
     true, // verify argument
   ) as TypedPlaintextWasmType[];
 
@@ -321,7 +396,7 @@ export async function getTkmsPublicKeyHex(
   runtime: FhevmRuntime,
   parameters: GetTkmsPublicKeyHexParameters,
 ): Promise<GetTkmsPublicKeyHexReturnType> {
-  await initTkmsModule(runtime);
+  const kmsLib = await initTkmsModule(runtime, { tkmsVersion: parameters.tkmsVersion });
 
   const { tkmsPrivateKey } = parameters;
 
@@ -329,9 +404,19 @@ export async function getTkmsPublicKeyHex(
     throw new Error('Invalid tkmsPrivateKey');
   }
 
-  const publicKey = TkmsPrivateEncKeyMlKem512Impl[GET_PUBLIC_KEY_FUNC](tkmsPrivateKey, PRIVATE_TKMS_LIB_TOKEN);
+  const publicKey = TkmsPrivateEncKeyMlKem512Impl[GET_PUBLIC_KEY_FUNC](
+    tkmsPrivateKey,
+    PRIVATE_TKMS_LIB_TOKEN,
+    parameters.tkmsVersion,
+    kmsLib,
+  );
 
-  return TkmsPublicEncKeyMlKem512Impl[GET_BYTES_HEX_FUNC](publicKey, PRIVATE_TKMS_LIB_TOKEN);
+  return TkmsPublicEncKeyMlKem512Impl[GET_BYTES_HEX_FUNC](
+    publicKey,
+    PRIVATE_TKMS_LIB_TOKEN,
+    parameters.tkmsVersion,
+    kmsLib,
+  );
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -342,7 +427,7 @@ export async function serializeTkmsPrivateKey(
   runtime: FhevmRuntime,
   parameters: SerializeTkmsPrivateKeyParameters,
 ): Promise<SerializeTkmsPrivateKeyReturnType> {
-  await initTkmsModule(runtime);
+  const kmsLib = await initTkmsModule(runtime, { tkmsVersion: parameters.tkmsVersion });
 
   const { tkmsPrivateKey } = parameters;
 
@@ -353,9 +438,10 @@ export async function serializeTkmsPrivateKey(
   const privateEncKeyMlKem512Wasm: PrivateEncKeyMlKem512WasmType = TkmsPrivateEncKeyMlKem512Impl[GET_NATIVE_FUNC](
     tkmsPrivateKey,
     PRIVATE_TKMS_LIB_TOKEN,
+    parameters.tkmsVersion,
   );
 
-  return ml_kem_pke_sk_to_u8vec(privateEncKeyMlKem512Wasm);
+  return kmsLib.ml_kem_pke_sk_to_u8vec(privateEncKeyMlKem512Wasm);
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -366,15 +452,15 @@ export async function deserializeTkmsPrivateKey(
   runtime: FhevmRuntime,
   parameters: DeserializeTkmsPrivateKeyParameters,
 ): Promise<DeserializeTkmsPrivateKeyReturnType> {
-  await initTkmsModule(runtime);
+  const kmsLib = await initTkmsModule(runtime, { tkmsVersion: parameters.tkmsVersion });
 
   const { tkmsPrivateKeyBytes } = parameters;
 
-  const privateEncKeyMlKem512Wasm: PrivateEncKeyMlKem512WasmType = u8vec_to_ml_kem_pke_sk(
+  const privateEncKeyMlKem512Wasm: PrivateEncKeyMlKem512WasmType = kmsLib.u8vec_to_ml_kem_pke_sk(
     tkmsPrivateKeyBytes,
   ) as PrivateEncKeyMlKem512WasmType;
 
-  return new TkmsPrivateEncKeyMlKem512Impl(PRIVATE_TKMS_LIB_TOKEN, privateEncKeyMlKem512Wasm);
+  return new TkmsPrivateEncKeyMlKem512Impl(PRIVATE_TKMS_LIB_TOKEN, parameters.tkmsVersion, privateEncKeyMlKem512Wasm);
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -384,5 +470,8 @@ export async function deserializeTkmsPrivateKey(
 export function verifyTkmsPrivateKey(_runtime: FhevmRuntime, parameters: VerifyTkmsPrivateKeyParameters): void {
   if (!(parameters.tkmsPrivateKey instanceof TkmsPrivateEncKeyMlKem512Impl)) {
     throw new Error('Invalid TkmsPrivateKey');
+  }
+  if (parameters.tkmsVersion !== parameters.tkmsPrivateKey.tkmsVersion) {
+    throw new Error(`TkmsVersion mismatch`);
   }
 }

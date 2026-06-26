@@ -8,6 +8,7 @@ import { addressToChecksummedAddress, assertIsAddress } from '../../base/address
 import { toArray } from '../../base/object.js';
 import { createTypedValue } from '../../base/typedValue.js';
 import { encrypt as encrypt_ } from '../../coprocessor/encrypt.js';
+import { asFhevmWithTfheVersion } from '../../runtime/CoreFhevm-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -37,7 +38,9 @@ export async function encryptValue(
   assertIsAddress(contractAddress, {});
   assertIsAddress(userAddress, {});
 
-  const result = await encrypt_(fhevm, {
+  const f = asFhevmWithTfheVersion(fhevm);
+
+  const result = await encrypt_(f, {
     contractAddress: addressToChecksummedAddress(contractAddress),
     userAddress: addressToChecksummedAddress(userAddress),
     values,

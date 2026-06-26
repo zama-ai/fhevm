@@ -7,7 +7,13 @@ import { InvalidTypeError } from '../base/errors/InvalidTypeError.js';
 import { addressToChecksummedAddress } from '../base/address.js';
 import { DuplicateSignerError, ThresholdSignerError, UnknownSignerError } from '../errors/SignersError.js';
 import { assertOwnedBy } from '../runtime/CoreFhevmRuntime-p.js';
-import { assertIsKmsExtraData, toKmsExtraData } from '../kms/kmsExtraData.js';
+import {
+  assertIsKmsExtraData,
+  EXTRA_DATA_V0,
+  EXTRA_DATA_V1,
+  EXTRA_DATA_V2,
+  toKmsExtraData,
+} from '../kms/kmsExtraData.js';
 import { assertIsNonEmptyString, ensure0x } from '../base/string.js';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -25,6 +31,7 @@ class KmsSignersContextImpl implements KmsSignersContext {
   readonly #owner: WeakRef<FhevmRuntime>;
   readonly #address: ChecksummedAddress;
   readonly #kmsContextId: Uint256BigInt;
+  readonly #kmsEpochId: Uint256BigInt;
   readonly #kmsSigners: ChecksummedAddress[];
   readonly #kmsSignersSet: Set<string>;
   readonly #kmsSignerThreshold: Uint8Number;
@@ -35,6 +42,7 @@ class KmsSignersContextImpl implements KmsSignersContext {
     parameters: {
       readonly address: ChecksummedAddress;
       readonly kmsContextId: Uint256BigInt;
+      readonly kmsEpochId: Uint256BigInt;
       readonly kmsSigners: ChecksummedAddress[];
       readonly kmsSignerThreshold: Uint8Number;
     },
@@ -45,6 +53,7 @@ class KmsSignersContextImpl implements KmsSignersContext {
     this.#owner = owner;
     this.#address = parameters.address;
     this.#kmsContextId = parameters.kmsContextId;
+    this.#kmsEpochId = parameters.kmsEpochId;
     this.#kmsSigners = [...parameters.kmsSigners];
     this.#kmsSignerThreshold = parameters.kmsSignerThreshold;
     this.#kmsSignersSet = new Set(this.#kmsSigners.map((addr) => addr.toLowerCase()));
@@ -59,6 +68,10 @@ class KmsSignersContextImpl implements KmsSignersContext {
 
   public get id(): Uint256BigInt {
     return this.#kmsContextId;
+  }
+
+  public get epochId(): Uint256BigInt {
+    return this.#kmsEpochId;
   }
 
   public get signers(): ChecksummedAddress[] {
@@ -102,16 +115,19 @@ Object.freeze(KmsSignersContextImpl);
 export function createKmsSignersContext(
   owner: WeakRef<FhevmRuntime>,
   parameters: {
-    readonly address: ChecksummedAddress;
+    readonly kmsVerifierAddress: ChecksummedAddress;
     readonly kmsContextId: Uint256BigInt;
+    readonly kmsEpochId: Uint256BigInt;
     readonly kmsSigners: readonly ChecksummedAddress[];
     readonly kmsSignerThreshold: Uint8Number;
   },
 ): KmsSignersContext {
-  const { address, kmsContextId, kmsSigners, kmsSignerThreshold } = parameters;
+  const { kmsVerifierAddress: address, kmsContextId, kmsEpochId, kmsSigners, kmsSignerThreshold } = parameters;
+
   return new KmsSignersContextImpl(PRIVATE_TOKEN, owner, {
     address: addressToChecksummedAddress(address),
     kmsContextId,
+    kmsEpochId,
     kmsSignerThreshold: Number(kmsSignerThreshold) as Uint8Number,
     kmsSigners: kmsSigners.map(addressToChecksummedAddress),
   });
@@ -121,12 +137,27 @@ export function createKmsSignersContext(
 
 export function kmsSignersContextToExtraData(kmsSignersContext: KmsSignersContext): BytesHex {
   assertIsKmsSignersContext(kmsSignersContext, {});
+
   if (kmsSignersContext.id === 0n) {
-    return '0x00' as BytesHex;
+    return toKmsExtraData({
+      version: EXTRA_DATA_V0,
+      kmsContextId: 0n as Uint256BigInt,
+      kmsEpochId: 0n as Uint256BigInt,
+    });
   }
+
+  if (kmsSignersContext.epochId === 0n) {
+    return toKmsExtraData({
+      version: EXTRA_DATA_V1,
+      kmsContextId: kmsSignersContext.id,
+      kmsEpochId: 0n as Uint256BigInt,
+    });
+  }
+
   return toKmsExtraData({
-    version: 1 as Uint8Number,
+    version: EXTRA_DATA_V2,
     kmsContextId: kmsSignersContext.id,
+    kmsEpochId: kmsSignersContext.epochId,
   });
 }
 

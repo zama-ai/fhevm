@@ -1,6 +1,7 @@
 import type { TkmsPrivateKey } from '../../types/tkms-p.js';
 import type { FhevmRuntime, WithDecrypt } from '../../types/coreFhevmRuntime.js';
 import type { BytesHex } from '../../types/primitives.js';
+import type { TkmsVersion } from '../../../wasm/tkms/KmsLibApi.js';
 
 /**
  * Verifies that a TKMS public key matches the given private key
@@ -9,7 +10,7 @@ import type { BytesHex } from '../../types/primitives.js';
  * @throws If the derived public key does not match `tkmsPublicKeyBytesHex`.
  */
 export async function verifyTkmsPublicKey(
-  context: { readonly runtime: FhevmRuntime<WithDecrypt> },
+  context: { readonly runtime: FhevmRuntime<WithDecrypt>; readonly tkmsVersion: TkmsVersion },
   parameters: {
     readonly tkmsPrivateKey: TkmsPrivateKey;
     readonly tkmsPublicKeyBytesHex: BytesHex;
@@ -19,6 +20,7 @@ export async function verifyTkmsPublicKey(
 
   const expectedTkmsPublicKeyBytesHex = await context.runtime.decrypt.getTkmsPublicKeyHex({
     tkmsPrivateKey,
+    tkmsVersion: context.tkmsVersion,
   });
 
   if (expectedTkmsPublicKeyBytesHex !== tkmsPublicKeyBytesHex) {
