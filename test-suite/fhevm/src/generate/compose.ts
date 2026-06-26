@@ -150,6 +150,8 @@ const COMPONENT_BUILD_SPECS: Record<string, Record<string, Record<string, unknow
     "host-sc-add-pausers": buildSpec("../../..", "host-contracts/Dockerfile"),
     "host-sc-trigger-keygen": buildSpec("../../..", "host-contracts/Dockerfile"),
     "host-sc-trigger-crsgen": buildSpec("../../..", "host-contracts/Dockerfile"),
+    "host-sc-deploy-bridge": buildSpec("../../..", "host-contracts/Dockerfile"),
+    "host-sc-wire-bridge": buildSpec("../../..", "host-contracts/Dockerfile"),
   },
   "test-suite": {
     "test-suite-e2e-debug": buildSpec("../../..", "test-suite/e2e/Dockerfile", {
