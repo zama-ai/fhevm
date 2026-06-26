@@ -3,7 +3,7 @@
 /* eslint-disable no-console */
 //
 // Computes calldata for `proposeCoprocessorUpgrade(...)`. Run with `--help`
-// for the full flag reference; see scripts/README.md for the workflow path.
+// for the full flag reference; see scripts/RUNBOOK.md for the workflow path.
 // To add a new chain or environment, edit scripts/utils/environments.ts.
 import { JsonRpcProvider, ethers } from 'ethers';
 import { parseArgs } from 'node:util';
@@ -131,7 +131,7 @@ Exit codes:
   2  DAO buffer violated on one or more chains. Calldata is still printed for
      inspection but should NOT be submitted.
 
-See scripts/README.md for the full reference.`);
+See scripts/RUNBOOK.md for the full reference.`);
 }
 
 function parseInputs(): ScriptInputs {
