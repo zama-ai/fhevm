@@ -1,6 +1,7 @@
 //! Evaluates ordered instruction-local FHE plans.
 
 use anchor_lang::prelude::*;
+use anchor_lang::solana_program::program::set_return_data;
 
 use super::common::*;
 use super::verify_coprocessor_input::{verify_input_attestation, InputVerifierParams};
@@ -78,8 +79,16 @@ pub fn fhe_eval<'info>(ctx: Context<'info, FheEval<'info>>, args: FheEvalArgs) -
         context_id: &args.context_id,
     };
     admit_eval_frame(&ctx, &args, subject, &handle_context)?;
-    let events = execute_eval_frame(&ctx, &args, subject, current_slot, &handle_context)?;
+    let (events, output_handles) =
+        execute_eval_frame(&ctx, &args, subject, current_slot, &handle_context)?;
+    // Emit events first: `emit_eval_events` does an Anchor event self-CPI, which
+    // overwrites the transaction return data. `set_return_data` must therefore be
+    // the LAST thing the instruction does, so the per-step computed handles
+    // survive back to the caller (which binds a transient output — e.g. a token
+    // balance — into its encrypted-value ACL lineage without an on-chain ACL
+    // record carrying the handle back).
     emit_eval_events(&ctx, events)?;
+    set_return_data(&output_handles.concat());
     Ok(())
 }
 
@@ -90,7 +99,7 @@ fn execute_eval_frame<'info>(
     subject: Pubkey,
     current_slot: u64,
     handle_context: &EvalHandleContext<'_>,
-) -> Result<Vec<EvalEvent>> {
+) -> Result<(Vec<EvalEvent>, Vec<[u8; 32]>)> {
     let mut execution = EvalExecutionState::new(
         ctx.remaining_accounts,
         args.steps.len(),
@@ -149,12 +158,13 @@ impl<'a, 'info> EvalExecutionState<'a, 'info> {
         Ok(account)
     }
 
-    fn finish(self) -> Result<Vec<EvalEvent>> {
+    fn finish(self) -> Result<(Vec<EvalEvent>, Vec<[u8; 32]>)> {
         require!(
             self.remaining_accounts_used.iter().all(|used| *used),
             ZamaHostError::InvalidFheEvalAccount
         );
-        Ok(self.events)
+        let output_handles = self.produced.iter().map(|value| value.handle).collect();
+        Ok((self.events, output_handles))
     }
 }
 
@@ -175,6 +185,17 @@ impl EvalStepVisitor for EvalExecutionState<'_, '_> {
         permission_index: Option<u16>,
     ) -> Result<ResolvedOperand> {
         let record_info = self.remaining_account(acl_record_index)?;
+        // Lineage-backed input (rotating values: balance/total_supply): authorize the
+        // compute subject against the live EncryptedValueAcl rather than a keyed-nonce
+        // ACL record. One-shot amount inputs return None and fall through below.
+        if let Some(public_decrypt_allowed) = try_authorize_lineage_operand(
+            record_info,
+            handle,
+            self.subject,
+            permission_index.is_some(),
+        )? {
+            return Ok(ResolvedOperand::encrypted(handle, public_decrypt_allowed));
+        }
         let permission_info = permission_index
             .map(|index| self.remaining_account(index))
             .transpose()?;

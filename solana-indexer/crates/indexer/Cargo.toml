@@ -1,0 +1,67 @@
+[package]
+name = "indexer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "indexer"
+path = "src/lib.rs"
+
+[[bin]]
+name = "indexer"
+path = "src/main.rs"
+
+[dependencies]
+carbon-core.workspace = true
+carbon-rpc-transaction-crawler-datasource.workspace = true
+solana-client.workspace = true
+solana-commitment-config.workspace = true
+solana-pubkey.workspace = true
+solana-signature.workspace = true
+solana-instruction.workspace = true
+zama-solana-acl.workspace = true
+axum.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+sqlx.workspace = true
+config.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+async-trait.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+prometheus.workspace = true
+utoipa.workspace = true
+borsh.workspace = true
+hex.workspace = true
+sha2.workspace = true
+chrono.workspace = true
+humantime.workspace = true
+
+[build-dependencies]
+built = { version = "0.8", features = ["git2", "chrono", "semver"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
+# `tests/live_verify.rs` (ignored by default): drives EV-ACL instructions against a
+# real solana-test-validator, ingests via the pipeline, and cross-checks proofs.
+solana-client.workspace = true
+solana-pubkey.workspace = true
+solana-commitment-config.workspace = true
+solana-instruction.workspace = true
+zama-solana-acl.workspace = true
+sqlx.workspace = true
+borsh.workspace = true
+hex.workspace = true
+anyhow.workspace = true
+tokio-util.workspace = true
+solana-keypair = "3"
+solana-signer = "3"
+solana-transaction = "3"
+solana-message = "3"

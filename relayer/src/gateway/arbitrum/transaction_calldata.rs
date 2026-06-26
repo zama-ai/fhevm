@@ -5,7 +5,7 @@ use crate::core::{
 use crate::gateway::arbitrum::bindings::{Decryption, IDecryption, InputVerification};
 use alloy::{
     hex,
-    primitives::{Address, Bytes, FixedBytes, U256},
+    primitives::{Address, Bytes, FixedBytes, B256, U256},
     sol_types::SolCall,
 };
 use tracing::info;
@@ -148,6 +148,7 @@ impl ComputeCalldata {
                 signature,
                 public_key,
                 extra_data,
+                mmr,
             } => {
                 let handle_entries: Vec<Decryption::HandleEntry> = handles
                     .iter()
@@ -161,6 +162,14 @@ impl ComputeCalldata {
                     startTimestamp: request_validity.start_timestamp,
                     durationSeconds: request_validity.duration_seconds,
                 };
+                // Encrypted-value-ACL lineage-decrypt info for a confidential-balance / total-supply
+                // decrypt. An amount handle (`None`) flattens to the all-zero / empty / zero ABI
+                // sentinel the gateway expects. Forwarded verbatim; the KMS Connector verifies the
+                // proof against the live on-chain lineage peaks.
+                let (acl_value_key, mmr_proof, proof_slot) = match mmr {
+                    Some(mmr) => (mmr.value_key, mmr.proof, mmr.proof_slot),
+                    None => (B256::ZERO, Bytes::new(), 0),
+                };
                 // The ed25519 auth fields travel as typed payload fields; `extraData` is
                 // context-only. The KMS Connector verifies the ed25519 signature off-chain.
                 let payload = IDecryption::UserDecryptionRequestSolanaPayload {
@@ -171,6 +180,9 @@ impl ComputeCalldata {
                     nonce,
                     extraData: extra_data,
                     signature,
+                    aclValueKey: acl_value_key,
+                    mmrProof: mmr_proof,
+                    proofSlot: proof_slot,
                 };
                 let call =
                     Decryption::userDecryptionRequestSolanaCall::new((handle_entries, payload));

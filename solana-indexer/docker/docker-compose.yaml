@@ -1,0 +1,55 @@
+# Standalone dev stack for the Solana rotation-leaf indexer, mirroring the
+# relayer's compose layout: Postgres + a one-shot migrate sidecar + the indexer
+# (HTTP API + metrics). Build context is the monorepo root so the Dockerfile can
+# copy both solana-indexer/ and the sibling solana/crates/zama-solana-acl path dep.
+#
+#   docker compose -f solana-indexer/docker/docker-compose.yaml up --build
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: indexer
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 2s
+      timeout: 5s
+      retries: 20
+
+  indexer-migrate:
+    build:
+      context: ../..
+      dockerfile: solana-indexer/docker/indexer/Dockerfile
+    command: ["/bin/indexer-migrate"]
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/indexer
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  indexer:
+    build:
+      context: ../..
+      dockerfile: solana-indexer/docker/indexer/Dockerfile
+    command: ["/bin/indexer"]
+    environment:
+      APP_DATABASE__URL: postgresql://postgres:postgres@postgres:5432/indexer
+      APP_SOLANA__RPC_URL: ${APP_SOLANA__RPC_URL:-http://host.docker.internal:8899}
+      APP_SOLANA__PROGRAM_ID: ${APP_SOLANA__PROGRAM_ID:-6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu}
+      APP_SOLANA__COMMITMENT: finalized
+      APP_HTTP__ENDPOINT: 0.0.0.0:8080
+      APP_METRICS__ENDPOINT: 0.0.0.0:9090
+    ports:
+      - "8080:8080" # HTTP API (/build_proof, /lineage/.../leaf, /liveness, /healthz, /version)
+      - "9090:9090" # Prometheus /metrics
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/liveness"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    depends_on:
+      indexer-migrate:
+        condition: service_completed_successfully

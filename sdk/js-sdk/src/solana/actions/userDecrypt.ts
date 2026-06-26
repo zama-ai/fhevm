@@ -51,6 +51,37 @@ export type SolanaUserDecryptParameters = {
         readonly durationSeconds: bigint;
       }
     | undefined;
+  /**
+   * Decrypt an encrypted-value-ACL lineage value (a confidential balance / total supply), as opposed
+   * to a one-shot amount handle (transfer / burn / refund), which omits this entirely.
+   *
+   * - **Current** value: provide only `aclValueKey` (the lineage identity). No proof, no handle
+   *   binding — the KMS authorizes the requester as a current subject and decrypts the live handle
+   *   (`authorize_current`). This is the field the KMS uses to locate the lineage, so it MUST be set
+   *   even though there is no proof.
+   * - **Historical / public** value: additionally provide `proof` (built with
+   *   {@link fetchSolanaDecryptProof}); the KMS verifies it against the live on-chain peaks
+   *   (`authorize_historical` / `authorize_public`).
+   *
+   * If the KMS reports the proof stale (the lineage advanced and the proof's mountain merged),
+   * re-fetch a fresh proof (a higher `proofSlot`) and resubmit — the request hash includes the
+   * proof, so a rebuilt proof is a new, re-processed request rather than a dedup hit.
+   */
+  readonly encryptedValue?:
+    | {
+        /** 32-byte lineage identity (`acl_nonce_key`). Required for any lineage decrypt. */
+        readonly aclValueKey: Uint8Array;
+        /** Present only for a historical/public decrypt; omit for a current-value decrypt. */
+        readonly proof?:
+          | {
+              /** Lineage `leaf_count` the proof was built against (staleness marker). */
+              readonly proofSlot: bigint;
+              /** Mode-prefixed (`0x01` historical / `0x02` public) Borsh proof blob. */
+              readonly mmrProof: Uint8Array;
+            }
+          | undefined;
+      }
+    | undefined;
   readonly options?: RelayerUserDecryptOptions | undefined;
 };
 
@@ -127,6 +158,14 @@ export async function userDecrypt(
   const startTimestamp = parameters.validity?.startTimestamp ?? BigInt(Math.floor(Date.now() / 1000));
   const durationSeconds = parameters.validity?.durationSeconds ?? DEFAULT_DURATION_SECONDS;
 
+  // Encrypted-value (lineage) decrypt: `aclValueKey` identifies the lineage and is sent whenever a
+  // lineage value is decrypted — for a CURRENT value with no proof (the KMS routes a non-zero
+  // aclValueKey + empty mmrProof to `authorize_current`) and for a historical/public value with a
+  // proof. All-zero / empty here means a one-shot amount handle (the V1 AclRecord path).
+  const aclValueKey = parameters.encryptedValue?.aclValueKey ?? new Uint8Array(32);
+  const proofSlot = parameters.encryptedValue?.proof?.proofSlot ?? 0n;
+  const mmrProof = parameters.encryptedValue?.proof?.mmrProof ?? new Uint8Array(0);
+
   // 1. + 2. Build the canonical ed25519 preimage (the same bytes the KMS connector re-derives),
   // sign it via the abstract signer, then assemble the request. `buildSolanaUserDecryptRequest`
   // signs from a raw seed; an abstract signer is opaque, so we route through the same exported
@@ -141,6 +180,9 @@ export async function userDecrypt(
     allowedAclDomainKeys,
     startTimestamp,
     durationSeconds,
+    aclValueKey,
+    proofSlot,
+    mmrProof,
   };
 
   const preimage = solanaUserDecryptSigningPreimage(input);
@@ -187,6 +229,17 @@ export async function userDecrypt(
       solanaUserIdentity: bytesToHex(identity),
       solanaNonce: bytesToHex(nonce),
       solanaAllowedAclDomainKeys: allowedAclDomainKeys.map((k) => bytesToHex(k)),
+      // Lineage fields travel whenever an encrypted-value (balance/total-supply) is decrypted:
+      // `solanaAclValueKey` for a current value (empty proof), plus mmrProof/proofSlot for a
+      // historical/public value. Omitted entirely for a one-shot amount handle, keeping that
+      // payload byte-identical to the pre-lineage shape.
+      ...(parameters.encryptedValue
+        ? {
+            solanaAclValueKey: bytesToHex(aclValueKey),
+            solanaMmrProof: bytesToHex(mmrProof),
+            solanaProofSlot: Number(proofSlot),
+          }
+        : {}),
     },
     signature: signatureHex,
   };
@@ -213,15 +266,13 @@ export async function userDecrypt(
     shares,
     handles: handlesHex,
     solanaUserPubkey: identity,
-    hostChainId: BigInt(chain.id),
+    hostChainId: chain.id,
   });
 
   return plaintexts.map((plaintext, i) => {
     const handle = handles[i];
     if (plaintext.fheType !== handle.fheTypeId) {
-      throw new Error(
-        `unexpected FHE type at index ${i}: got ${plaintext.fheType}, expected ${handle.fheTypeId}`,
-      );
+      throw new Error(`unexpected FHE type at index ${i}: got ${plaintext.fheType}, expected ${handle.fheTypeId}`);
     }
     return createClearValue({
       value: bytesToClearValueType(handle.fheType, plaintext.bytes),

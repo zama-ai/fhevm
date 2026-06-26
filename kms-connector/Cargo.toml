@@ -24,10 +24,12 @@ kms-grpc = { git = "https://github.com/zama-ai/kms.git", tag = "v0.13.20-0", def
 bc2wrap = { git = "https://github.com/zama-ai/kms.git", tag = "v0.13.20-0", default-features = true }
 tfhe = "=1.6.1"
 user-decryption-signature = { path = "../shared/user-decryption-signature", default-features = false }
+zama-solana-acl = { path = "../solana/crates/zama-solana-acl" }
 
 #####################################################################
 #                       External dependencies                       #
 #####################################################################
+borsh = { version = "1", features = ["derive"] }
 actix-web = "=4.11.0"
 alloy = { version = "=1.0.38", default-features = false, features = [
     "essentials",

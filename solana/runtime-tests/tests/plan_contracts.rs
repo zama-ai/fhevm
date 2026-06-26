@@ -195,7 +195,10 @@ fn transient_wrap_and_requested_refund_do_not_leave_durable_acl_contracts() {
     assert!(
         TOKEN_WRAP_USDC.contains("Output::transient()")
             || TOKEN_WRAP_USDC.contains("transient_output")
-            || TOKEN_WRAP_USDC.contains("TrivialAmount::transient"),
+            || TOKEN_WRAP_USDC.contains("TrivialAmount::transient")
+            // wrap_usdc credits both legs via the shared `credit_lineage_by_amount`
+            // helper, which trivial-encrypts the public amount as a transient value.
+            || TOKEN_COMMON.contains("Output::transient()"),
         "wrap_usdc should trivial-encrypt the public amount as an instruction-local transient value"
     );
     assert!(

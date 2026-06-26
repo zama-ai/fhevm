@@ -13,10 +13,10 @@ use crate::{
     state::{
         acl_nonce_key, acl_permission_address, acl_record_address,
         acl_record_subject_slots_are_canonical, assert_handle_for_chain, deny_subject_address,
-        host_config_address, role_flags_are_known, subject_has_role, AclPermission, AclRecord,
-        AclSubjectEntry, DenySubjectRecord, HostConfig, ACL_PERMISSION_SEED,
-        ACL_ROLE_PUBLIC_DECRYPT, ACL_ROLE_USE, EVENT_VERSION, MAX_ACL_SUBJECTS,
-        MAX_ACL_SUBJECT_GRANTS_PER_CALL,
+        encrypted_value_acl_address, host_config_address, role_flags_are_known, subject_has_role,
+        AclPermission, AclRecord, AclSubjectEntry, DenySubjectRecord, HostConfig,
+        ACL_PERMISSION_SEED, ACL_ROLE_PUBLIC_DECRYPT, ACL_ROLE_USE, EVENT_VERSION,
+        MAX_ACL_SUBJECTS, MAX_ACL_SUBJECT_GRANTS_PER_CALL,
     },
 };
 
@@ -445,6 +445,61 @@ pub(super) fn unchecked_acl_record_subject_has_role(
         ZamaHostError::AclPermissionMismatch
     );
     Ok(subject_has_role(permission.role_flags, role))
+}
+
+/// If `record_info` is an encrypted-value ACL lineage, authorize `subject` to USE
+/// `handle` against the live lineage and return `Some(public_decrypt_allowed)`.
+/// Public decrypt is always `false` for a lineage input — lineage public decrypt
+/// is proven off-chain via the MMR public-decrypt leaf, not an inline subject role.
+///
+/// Returns `None` when the account is not a lineage, so the caller falls through to
+/// the one-shot `AclRecord` path. Shared by the admission and execution passes so a
+/// durable lineage input (a rotating balance/total_supply) is authorized identically
+/// in both — the admission pass would otherwise read it as an `AclRecord` and fail.
+pub(super) fn try_authorize_lineage_operand(
+    record_info: &AccountInfo,
+    handle: [u8; 32],
+    subject: Pubkey,
+    has_permission: bool,
+) -> Result<Option<bool>> {
+    // Owner first: only this program can own a lineage, so a non-owned account is
+    // never a lineage — return None so the caller falls through to the AclRecord
+    // path rather than deserializing attacker-supplied foreign-program data.
+    if *record_info.owner != crate::ID {
+        return Ok(None);
+    }
+    let acl = {
+        let data = record_info.try_borrow_data()?;
+        match zama_solana_acl::decode_account(&data) {
+            Ok(acl) => acl,
+            Err(_) => return Ok(None),
+        }
+    };
+    require!(!has_permission, ZamaHostError::AclPermissionMismatch);
+    require!(
+        acl.current_handle == handle,
+        ZamaHostError::EncryptedValueHandleMismatch
+    );
+    require!(
+        acl.is_subject(subject.to_bytes()),
+        ZamaHostError::EncryptedValueSubjectMissing
+    );
+    let value_key = zama_solana_acl::acl_nonce_key(
+        acl.acl_domain_key,
+        acl.app_account,
+        acl.encrypted_value_label,
+    );
+    let (expected, expected_bump) = encrypted_value_acl_address(value_key);
+    require_keys_eq!(
+        record_info.key(),
+        expected,
+        ZamaHostError::EncryptedValueAclPdaMismatch
+    );
+    require!(
+        acl.bump == expected_bump,
+        ZamaHostError::EncryptedValueAclPdaMismatch
+    );
+    Ok(Some(false))
 }
 
 pub(super) fn read_acl_record(record_info: &AccountInfo) -> Result<AclRecord> {

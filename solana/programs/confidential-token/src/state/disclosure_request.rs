@@ -3,8 +3,6 @@
 use super::*;
 use solana_sha256_hasher::hashv;
 
-/// Balance disclosure request mode.
-pub const DISCLOSURE_REQUEST_MODE_BALANCE: u8 = 1;
 /// Token amount disclosure request mode.
 pub const DISCLOSURE_REQUEST_MODE_AMOUNT: u8 = 2;
 

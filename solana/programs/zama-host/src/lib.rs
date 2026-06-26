@@ -24,6 +24,8 @@ pub mod errors;
 pub mod events;
 /// Instruction account contexts and handlers.
 pub mod instructions;
+/// Re-export the shared MMR module so `zama_host::mmr` keeps resolving.
+pub use zama_solana_acl::mmr;
 /// Account layouts, PDA helpers, roles, and handle derivation helpers.
 pub mod state;
 
@@ -151,6 +153,49 @@ pub mod zama_host {
 
     pub fn allow_for_decryption(ctx: Context<AllowForDecryption>, handle: [u8; 32]) -> Result<()> {
         instructions::allow_for_decryption(ctx, handle)
+    }
+
+    // --- Encrypted-value ACL + MMR history PoC (fhevm-internal#1569) ---
+
+    /// Creates an encrypted-value ACL lineage at its first handle.
+    pub fn initialize_encrypted_value_acl(
+        ctx: Context<InitializeEncryptedValueAcl>,
+        value_key: [u8; 32],
+        acl_domain_key: Pubkey,
+        encrypted_value_label: [u8; 32],
+        handle: [u8; 32],
+        subjects: Vec<Pubkey>,
+    ) -> Result<()> {
+        instructions::initialize_encrypted_value_acl(
+            ctx,
+            value_key,
+            acl_domain_key,
+            encrypted_value_label,
+            handle,
+            subjects,
+        )
+    }
+
+    /// Rotates a lineage to a new handle/subject set, recording old-handle history.
+    pub fn rotate_encrypted_value(
+        ctx: Context<UpdateEncryptedValueAcl>,
+        new_handle: [u8; 32],
+        new_subjects: Vec<Pubkey>,
+    ) -> Result<()> {
+        instructions::rotate_encrypted_value(ctx, new_handle, new_subjects)
+    }
+
+    /// Extends current durable membership on a lineage.
+    pub fn allow_encrypted_value_subjects(
+        ctx: Context<UpdateEncryptedValueAcl>,
+        subjects: Vec<Pubkey>,
+    ) -> Result<()> {
+        instructions::allow_encrypted_value_subjects(ctx, subjects)
+    }
+
+    /// Records an exact public-decrypt leaf for the lineage's current handle.
+    pub fn mark_encrypted_value_public(ctx: Context<UpdateEncryptedValueAcl>) -> Result<()> {
+        instructions::mark_encrypted_value_public(ctx)
     }
 
     pub fn commit_handle_material(

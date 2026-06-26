@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT last_signature, last_slot FROM indexer_cursor WHERE id = 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "last_signature",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "last_slot",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "fb366f83e460b200246ac914299f8414b649383f47ab93a617eefc6b9ca6c5f2"
+}
