@@ -221,11 +221,11 @@ fn build_new_kms_context_grpc_from_event(
             ca_cert: Some(n.caCert.to_vec()),
             public_storage_url: n.storageUrl.clone(),
             // Public key used to verify the signature of this KMS node
-            verification_key: Some(n.signerAddress.to_vec()),
+            signer_address: Some(n.signerAddress.to_vec()),
             public_storage_prefix: Some(n.storagePrefix.clone()),
             // Public keys allowed to sign transactions on behalf of this KMS node, i.e. the
             // connector transaction sender's address of this node
-            extra_verification_keys: vec![n.txSenderAddress.to_vec()],
+            extra_signer_addresses: vec![n.txSenderAddress.to_vec()],
         })
         .collect();
 
