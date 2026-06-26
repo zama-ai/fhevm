@@ -20,8 +20,8 @@ function done(status: 'pass' | 'fail') {
 }
 
 const WASM_URLS: Record<string, string> = {
-  'tfhe_bg.v1.5.3.wasm': '/src/wasm/tfhe/tfhe_bg.v1.5.3.wasm',
-  'tfhe-worker.v1.5.3.mjs': '/src/wasm/tfhe/tfhe-worker.v1.5.3.mjs',
+  'tfhe_bg.v1.6.0.wasm': '/src/wasm/tfhe/tfhe_bg.v1.6.0.wasm',
+  'tfhe-worker.v1.6.0.mjs': '/src/wasm/tfhe/tfhe-worker.v1.6.0.mjs',
   'kms_lib_bg.v0.13.10.wasm': '/src/wasm/tkms/kms_lib_bg.v0.13.10.wasm',
 };
 

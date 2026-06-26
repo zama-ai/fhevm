@@ -89,6 +89,35 @@ pub(crate) async fn fetch_latest_keyset(
     Ok(keyset.map(|keys| (key_id_gw, keys)))
 }
 
+/// Fetches the migrated (RFC-029 v1) keyset for the latest key: the
+/// `migrated_xof_keyset` column. Returns `None` while the migration hasn't
+/// been published yet (the column is NULL) so the caller can defer rather
+/// than substitute v0. The migrated keyset is always an XOF keyset.
+pub(crate) async fn fetch_migrated_keyset(pool: &PgPool) -> Result<Option<KeySet>, ExecutionError> {
+    use sqlx::Row;
+    let Some((key_id_gw, sequence_number)) = fetch_latest_key_id_gw(pool).await? else {
+        return Ok(None);
+    };
+    let row = sqlx::query("SELECT migrated_xof_keyset FROM keys WHERE sequence_number = $1")
+        .bind(sequence_number)
+        .fetch_one(pool)
+        .await?;
+    let Some(blob) = row.try_get::<Option<Vec<u8>>, _>("migrated_xof_keyset")? else {
+        return Ok(None);
+    };
+    if blob.is_empty() {
+        return Ok(None);
+    }
+    let server_key = decode_server_key(&blob, CompressedXofKeysetEncoding::CompressedXof)?;
+    let client_key = fetch_client_key_by_sequence_number(pool, sequence_number).await?;
+    Ok(Some(KeySet {
+        key_id_gw,
+        sequence_number,
+        client_key,
+        server_key,
+    }))
+}
+
 async fn fetch_keyset_by_id(
     cache: &Arc<RwLock<lru::LruCache<DbKeyId, KeySet>>>,
     pool: &PgPool,

@@ -1,0 +1,213 @@
+//! RFC-029 key-material version selection (coprocessor side).
+//!
+//! RFC-029 is a one-time cutover from legacy material (v0) to the migrated
+//! `CompressedXofKeySet` (v1). Selection must be deterministic and identical
+//! across the fleet -- given the same operation, every coprocessor must pick
+//! the same version, or they diverge on ciphertext bytes and break consensus.
+//!
+//! Each timeline (a host chain, or the gateway) has at most one cutover block:
+//! the operation is v1 once its anchoring block reaches that block, else v0.
+//! Host compute anchors to the requesting host-chain block; input verification
+//! anchors to the gateway block; SnS does not anchor to a block at all -- it is
+//! pinned to its source ciphertext's stored version (handled by the caller).
+//!
+//! With no schedule published every selector returns [`MaterialVersion::LEGACY`],
+//! so a node that has never seen a schedule behaves byte-for-byte like today.
+
+use crate::chain_id::ChainId;
+use anyhow::Result;
+use sqlx::{PgPool, Row};
+use std::collections::HashMap;
+
+/// Postgres `LISTEN`/`NOTIFY` channel signaling that the cutover schedule has
+/// been published or updated. Workers load the schedule once and refresh only
+/// on this notify, so the happy path never polls (a re-published schedule
+/// overwrites the prior cutover block and re-notifies).
+pub const MIGRATION_SCHEDULE_CHANNEL: &str = "migration_schedule_changed";
+
+/// Which key material an operation uses. `0` is the legacy material (today's
+/// behavior); `1` is the migrated `CompressedXofKeySet`. A thin `i16` newtype
+/// so it round-trips through Postgres `SMALLINT`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct MaterialVersion(pub i16);
+
+impl MaterialVersion {
+    /// Legacy material: the pre-cutover behavior, and the inert default.
+    pub const LEGACY: MaterialVersion = MaterialVersion(0);
+    /// Migrated material: the RFC-029 `CompressedXofKeySet` cutover.
+    pub const MIGRATED_V1: MaterialVersion = MaterialVersion(1);
+}
+
+/// The cutover rule for a single timeline: v1 once `observed` reaches the
+/// `cutover` block, else v0. An absent cutover (no schedule) or an unknown
+/// `observed` block (e.g. a pre-migration row) resolves to legacy.
+fn version_at(cutover: Option<i64>, observed: Option<i64>) -> MaterialVersion {
+    match (cutover, observed) {
+        (Some(cutover_block), Some(block)) if block >= cutover_block => {
+            MaterialVersion::MIGRATED_V1
+        }
+        _ => MaterialVersion::LEGACY,
+    }
+}
+
+/// In-memory snapshot of the published cutover schedule.
+///
+/// Loaded once at startup like [`crate::host_chains::HostChainsCache`] and
+/// refreshed on [`MIGRATION_SCHEDULE_CHANNEL`]. Uses runtime `sqlx::query`
+/// rather than the `query!` macro so a fresh schedule table doesn't require
+/// regenerating the offline query cache.
+#[derive(Clone, Default)]
+pub struct MigrationScheduleCache {
+    /// Per host chain: its cutover block (H_C).
+    host: HashMap<ChainId, i64>,
+    /// The gateway cutover block (G), if scheduled.
+    gateway: Option<i64>,
+}
+
+impl MigrationScheduleCache {
+    /// An empty schedule. Every selector resolves to [`MaterialVersion::LEGACY`].
+    pub fn empty() -> Self {
+        Self::default()
+    }
+
+    pub async fn load(pool: &PgPool) -> Result<Self> {
+        let mut host: HashMap<ChainId, i64> = HashMap::new();
+        let host_rows =
+            sqlx::query("SELECT host_chain_id, target_block FROM material_version_host_schedule")
+                .fetch_all(pool)
+                .await?;
+        for row in host_rows {
+            let chain_id_raw: i64 = row.try_get("host_chain_id")?;
+            let target_block: i64 = row.try_get("target_block")?;
+            host.insert(ChainId::try_from(chain_id_raw)?, target_block);
+        }
+
+        let gateway: Option<i64> =
+            sqlx::query("SELECT target_block FROM material_version_gateway_schedule")
+                .fetch_optional(pool)
+                .await?
+                .map(|row| row.try_get("target_block"))
+                .transpose()?;
+
+        Ok(Self { host, gateway })
+    }
+
+    /// Material version for a host-compute operation requested at
+    /// `block_number` on `chain_id`. Unknown chain or `None` block →
+    /// [`MaterialVersion::LEGACY`].
+    pub fn select_host(&self, chain_id: ChainId, block_number: Option<i64>) -> MaterialVersion {
+        version_at(self.host.get(&chain_id).copied(), block_number)
+    }
+
+    /// Material version for an input-verification (zkpok) operation anchored at
+    /// gateway block `gw_block_number`.
+    pub fn select_gateway(&self, gw_block_number: Option<i64>) -> MaterialVersion {
+        version_at(self.gateway, gw_block_number)
+    }
+
+    /// [`select_host`] keyed by a RAW `host_chain_id` as stored by sqlx (`i64`).
+    /// An unparsable chain id resolves to [`MaterialVersion::LEGACY`] (the safe
+    /// default), so a malformed row can never silently select migrated material.
+    pub fn select_host_raw(
+        &self,
+        host_chain_id: i64,
+        block_number: Option<i64>,
+    ) -> MaterialVersion {
+        match ChainId::try_from(host_chain_id) {
+            Ok(chain_id) => self.select_host(chain_id, block_number),
+            Err(_) => MaterialVersion::LEGACY,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn chain(id: i64) -> ChainId {
+        ChainId::try_from(id).unwrap()
+    }
+
+    const V0: MaterialVersion = MaterialVersion::LEGACY;
+    const V1: MaterialVersion = MaterialVersion::MIGRATED_V1;
+
+    // --- version_at: the core cutover rule ---------------------------
+
+    #[test]
+    fn no_cutover_is_always_legacy() {
+        assert_eq!(version_at(None, Some(0)), V0);
+        assert_eq!(version_at(None, Some(1_000_000)), V0);
+        assert_eq!(version_at(None, None), V0);
+    }
+
+    #[test]
+    fn null_block_is_legacy_even_with_a_cutover() {
+        // Pre-migration rows carry NULL block and must resolve to legacy.
+        assert_eq!(version_at(Some(100), None), V0);
+    }
+
+    #[test]
+    fn cutover_boundary_is_inclusive() {
+        assert_eq!(version_at(Some(100), Some(99)), V0); // before H_C
+        assert_eq!(version_at(Some(100), Some(100)), V1); // exactly H_C
+        assert_eq!(version_at(Some(100), Some(101)), V1); // after H_C
+        assert_eq!(version_at(Some(100), Some(10_000)), V1);
+    }
+
+    // --- cache selectors --------------------------------------------
+
+    #[test]
+    fn empty_cache_is_legacy() {
+        let cache = MigrationScheduleCache::empty();
+        assert_eq!(cache.select_host(chain(1), Some(10_000)), V0);
+        assert_eq!(cache.select_gateway(Some(10_000)), V0);
+    }
+
+    #[test]
+    fn cache_host_schedule_is_per_chain() {
+        // Each host chain carries its own cutover block on its own height; a
+        // block is only ever compared against the same chain's cutover, so
+        // different block times / heights across chains cannot cross-contaminate.
+        let mut host = HashMap::new();
+        host.insert(chain(1), 100);
+        // chain 2 has no cutover scheduled.
+        let cache = MigrationScheduleCache {
+            host,
+            gateway: None,
+        };
+        assert_eq!(cache.select_host(chain(1), Some(99)), V0);
+        assert_eq!(cache.select_host(chain(1), Some(100)), V1);
+        // chain 2 stays on legacy at the same block; unknown chain → legacy.
+        assert_eq!(cache.select_host(chain(2), Some(100)), V0);
+        assert_eq!(cache.select_host(chain(999), Some(10_000)), V0);
+    }
+
+    #[test]
+    fn select_host_raw_resolves_like_select_host_and_falls_back_to_legacy() {
+        let mut host = HashMap::new();
+        host.insert(chain(1), 100);
+        let cache = MigrationScheduleCache {
+            host,
+            gateway: None,
+        };
+        // Valid chain id resolves exactly like select_host.
+        assert_eq!(cache.select_host_raw(1, Some(99)), V0);
+        assert_eq!(cache.select_host_raw(1, Some(100)), V1);
+        // A chain not in the schedule (or an out-of-range id) is LEGACY, never migrated.
+        assert_eq!(cache.select_host_raw(2, Some(10_000)), V0);
+        assert_eq!(cache.select_host_raw(i64::MIN, Some(10_000)), V0);
+    }
+
+    #[test]
+    fn cache_gateway_schedule_is_independent_of_host() {
+        let cache = MigrationScheduleCache {
+            host: HashMap::new(),
+            gateway: Some(500),
+        };
+        assert_eq!(cache.select_gateway(Some(499)), V0);
+        assert_eq!(cache.select_gateway(Some(500)), V1);
+        assert_eq!(cache.select_gateway(None), V0);
+        // gateway schedule must not leak into host selection.
+        assert_eq!(cache.select_host(chain(1), Some(10_000)), V0);
+    }
+}

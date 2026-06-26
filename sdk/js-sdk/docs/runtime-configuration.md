@@ -75,8 +75,8 @@ The SDK resolves these files:
 
 | File                     | Size   | Module            | Purpose                                         |
 | ------------------------ | ------ | ----------------- | ----------------------------------------------- |
-| `tfhe_bg.v1.5.3.wasm`    | ~5MB   | Encryption (TFHE) | FHE encryption WASM binary                      |
-| `tfhe-worker.v1.5.3.mjs` | ~2KB   | Encryption (TFHE) | Web Worker script for multi-threaded encryption |
+| `tfhe_bg.v1.6.0.wasm`    | ~5MB   | Encryption (TFHE) | FHE encryption WASM binary                      |
+| `tfhe-worker.v1.6.0.mjs` | ~800KB | Encryption (TFHE) | Web Worker script for multi-threaded encryption |
 | `kms_lib_bg.wasm`        | ~600KB | Decryption (TKMS) | KMS decryption WASM binary                      |
 
 **When you don't provide `locateFile`:**

@@ -16,6 +16,8 @@ extend-exclude = [
     "rust_bindings/",
     "typechain-types/",
     "codegen/",
+    # Vendored TFHE WASM (generated wasm-bindgen output; bumped for the SDK 1.6 alignment)
+    "sdk/js-sdk/src/wasm/",
 
     # External libraries
     "lib/forge-std/",

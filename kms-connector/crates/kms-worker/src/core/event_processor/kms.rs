@@ -9,7 +9,8 @@ use fhevm_host_bindings::kms_generation::KMSGeneration::{
 };
 use kms_grpc::kms::v1::{
     CompressedKeyConfig, ComputeKeyType, CrsGenRequest, Eip712DomainMsg, KeyGenPreprocRequest,
-    KeyGenRequest, KeyGenSecretKeyConfig, KeySetConfig, KeySetType, StandardKeySetConfig,
+    KeyGenRequest, KeyGenSecretKeyConfig, KeySetAddedInfo, KeySetConfig, KeySetType,
+    StandardKeySetConfig,
 };
 use tracing::error;
 
@@ -76,6 +77,29 @@ where
         }
         // TODO: validation of epoch_id during RFC-005 implementation
 
+        // RFC-029: a v3 migration extraData drives a keygen-from-existing-shares —
+        // re-derive the public keyset from the existing private shares, compressed,
+        // and (optionally) copy the result to the original key id.
+        let (keyset_config, keyset_added_info) = match &parsed_extra_data.migration {
+            Some(migration) => (
+                Some(KeySetConfig {
+                    keyset_type: KeySetType::Standard as i32,
+                    standard_keyset_config: Some(StandardKeySetConfig {
+                        compute_key_type: ComputeKeyType::Cpu as i32,
+                        secret_key_config: KeyGenSecretKeyConfig::UseExisting as i32,
+                        compressed_key_config: CompressedKeyConfig::CompressedAll as i32,
+                    }),
+                }),
+                Some(KeySetAddedInfo {
+                    existing_keyset_id: Some(u256_to_request_id(migration.existing_keyset_id)),
+                    copy_compressed_key_to_original: migration.copy_to_original,
+                    ..Default::default()
+                }),
+            ),
+            // Used to generate other types of key, but not planned to be supported by the Gateway
+            None => (Some(UNCOMPRESSED_KEY_SET_CONFIG), None),
+        };
+
         Ok(KmsGrpcRequest::Keygen(KeyGenRequest {
             request_id: Some(u256_to_request_id(keygen_request.keyId)),
             preproc_id: Some(u256_to_request_id(keygen_request.prepKeygenId)),
@@ -84,9 +108,8 @@ where
             epoch_id: parsed_extra_data.epoch_id.map(u256_to_request_id),
             context_id: parsed_extra_data.context_id.map(u256_to_request_id),
             extra_data: keygen_request.extraData.to_vec(),
-            // Used to generate other types of key, but not planned to be supported by the Gateway
-            keyset_config: Some(UNCOMPRESSED_KEY_SET_CONFIG),
-            keyset_added_info: None,
+            keyset_config,
+            keyset_added_info,
         }))
     }
 

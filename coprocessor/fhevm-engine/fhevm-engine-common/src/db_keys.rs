@@ -1,3 +1,4 @@
+use crate::material_version::MaterialVersion;
 use crate::utils::safe_deserialize_key;
 use bytesize::ByteSize;
 use sqlx::{
@@ -33,7 +34,12 @@ struct DbKeyRow {
 
 #[derive(Clone)]
 pub struct DbKeyCache {
-    cache: Arc<RwLock<lru::LruCache<DbKeyId, DbKey>>>,
+    /// Keyed by `(key_id, material_version)` (RFC-029): the legacy and
+    /// migrated material for the same key are cached as distinct entries.
+    /// Pre-existing callers go through [`DbKeyCache::fetch_latest`], which
+    /// operates at [`MaterialVersion::LEGACY`] and preserves today's
+    /// behavior exactly.
+    cache: Arc<RwLock<lru::LruCache<(DbKeyId, MaterialVersion), DbKey>>>,
 }
 
 impl DbKeyCache {
@@ -53,7 +59,7 @@ impl DbKeyCache {
         loop {
             {
                 let mut w = self.cache.write().await;
-                if let Some(key) = w.get(db_key_id) {
+                if let Some(key) = w.get(&(db_key_id.clone(), MaterialVersion::LEGACY)) {
                     return Ok(key.clone());
                 }
             }
@@ -61,53 +67,116 @@ impl DbKeyCache {
         }
     }
 
-    /// Fetches the latest key by sequence_number.
+    /// Fetches the latest legacy (v0) key by sequence_number.
+    ///
+    /// Delegates to [`DbKeyCache::fetch_latest_for_version`] at
+    /// [`MaterialVersion::LEGACY`] -- byte-identical to the pre-RFC-029
+    /// behavior (`COALESCE(compressed_xof_keyset, sks_key)`).
     pub async fn fetch_latest(&self, executor: &mut PgConnection) -> anyhow::Result<DbKey> {
+        self.fetch_latest_for_version(MaterialVersion::LEGACY, executor)
+            .await
+    }
+
+    /// Fetches the latest key material for `version` (RFC-029), caching it
+    /// under `(key_id, version)`.
+    ///
+    /// Both versions resolve against the same latest key row; the version
+    /// only selects which key bytes to read:
+    /// * `LEGACY` (v0) -- `COALESCE(compressed_xof_keyset, sks_key)`, exactly
+    ///   today's behavior and GPU-safe.
+    /// * `MIGRATED_V1` (v1) -- the dedicated `migrated_xof_keyset` column,
+    ///   left NULL until the migration is published. v0 is never overwritten,
+    ///   so both versions stay resolvable across the cutover.
+    ///
+    /// A requested version whose material is absent is a hard error so the
+    /// caller halts and retries the work item -- it must never substitute a
+    /// different version (that would diverge from the rest of the fleet).
+    pub async fn fetch_latest_for_version(
+        &self,
+        version: MaterialVersion,
+        executor: &mut PgConnection,
+    ) -> anyhow::Result<DbKey> {
+        // Light query first: identify the latest key row without pulling the
+        // heavy key blobs, so a cache hit costs nothing.
         let row = sqlx::query!(
             "SELECT key_id, sequence_number FROM keys ORDER BY sequence_number DESC LIMIT 1",
         )
         .fetch_optional(&mut *executor)
         .await?
         .ok_or_else(|| anyhow::anyhow!("No keys found in database"))?;
-
         let key_id: DbKeyId = row.key_id;
         let sequence_number = row.sequence_number;
 
-        // Check if already in cache
         {
             let mut cache = self.cache.write().await;
-            if let Some(key) = cache.get(&key_id) {
+            if let Some(key) = cache.get(&(key_id.clone(), version)) {
                 if key.sequence_number == sequence_number {
                     return Ok(key.clone());
                 }
             }
         }
 
-        // Only fetch the heavy key blobs when the latest key is not already cached.
-        let row = sqlx::query_as!(
-            DbKeyRow,
-            "SELECT key_id, sequence_number, pks_key, \
-             COALESCE(compressed_xof_keyset, sks_key) AS \"server_key_blob!\", \
-             (compressed_xof_keyset IS NOT NULL) AS \"is_xof!\", \
-             cks_key \
-             FROM keys WHERE sequence_number = $1",
-            sequence_number
-        )
-        .fetch_optional(&mut *executor)
-        .await?
-        .ok_or_else(|| anyhow::anyhow!("Latest key disappeared from database"))?;
-        let result = Self::deserialize_db_key_row(row)?;
+        // Heavy fetch, version-selected column. Only one branch's query runs.
+        let row = if version == MaterialVersion::LEGACY {
+            sqlx::query_as!(
+                DbKeyRow,
+                "SELECT key_id, sequence_number, pks_key, \
+                 COALESCE(compressed_xof_keyset, sks_key) AS \"server_key_blob!\", \
+                 (compressed_xof_keyset IS NOT NULL) AS \"is_xof!\", \
+                 cks_key \
+                 FROM keys WHERE sequence_number = $1",
+                sequence_number
+            )
+            .fetch_optional(&mut *executor)
+            .await?
+        } else if version == MaterialVersion::MIGRATED_V1 {
+            // v1: the migrated keyset is an XOF keyset in its own column.
+            // NULL => not published yet => halt-and-retry.
+            sqlx::query_as!(
+                DbKeyRow,
+                "SELECT key_id, sequence_number, pks_key, \
+                 migrated_xof_keyset AS \"server_key_blob!\", \
+                 TRUE AS \"is_xof!\", \
+                 cks_key \
+                 FROM keys WHERE sequence_number = $1 AND migrated_xof_keyset IS NOT NULL",
+                sequence_number
+            )
+            .fetch_optional(&mut *executor)
+            .await?
+        } else {
+            // RFC-029 is a one-time cutover with exactly two material versions; any other
+            // version is a scheduling/programming error, not a halt-and-retry condition.
+            anyhow::bail!(
+                "unsupported material version {}: only LEGACY (0) and MIGRATED_V1 (1) are defined",
+                version.0
+            );
+        };
+        let row = row.ok_or_else(|| {
+            anyhow::anyhow!(
+                "key material for version {} is not available yet (halt and retry)",
+                version.0
+            )
+        })?;
+        // A present-but-empty blob means a partial/in-flight publish; treat it as not-yet-available
+        // (halt-and-retry) rather than feeding an empty blob into deserialization.
+        if row.server_key_blob.is_empty() {
+            anyhow::bail!(
+                "key material for version {} is present but empty (not published yet, halt and retry)",
+                version.0
+            );
+        }
+        let result = Self::deserialize_db_key_row(row, version)?;
 
-        // Insert into cache
         {
             let mut cache = self.cache.write().await;
-            cache.put(result.key_id.clone(), result.clone());
+            cache.put((result.key_id.clone(), version), result.clone());
         }
 
         info!(
-            "Latest key cached: key_id={:?}, seq={}",
+            "Key cached: key_id={:?}, seq={}, material_version={}",
             hex::encode(&result.key_id),
-            result.sequence_number
+            result.sequence_number,
+            version.0
         );
         Ok(result)
     }
@@ -127,10 +196,11 @@ impl DbKeyCache {
     {
         if !db_key_ids_to_query.is_empty() {
             let mut key_cache = self.cache.write().await;
-            if db_key_ids_to_query
-                .iter()
-                .all(|id| key_cache.get(id).is_some())
-            {
+            if db_key_ids_to_query.iter().all(|id| {
+                key_cache
+                    .get(&(id.clone(), MaterialVersion::LEGACY))
+                    .is_some()
+            }) {
                 return Ok(());
             }
 
@@ -148,7 +218,7 @@ impl DbKeyCache {
             }
 
             for key in keys {
-                key_cache.put(key.key_id.clone(), key);
+                key_cache.put((key.key_id.clone(), key.material_version), key);
             }
         }
 
@@ -192,13 +262,16 @@ impl DbKeyCache {
         let mut res = Vec::with_capacity(rows.len());
 
         for row in rows {
-            res.push(Self::deserialize_db_key_row(row)?);
+            res.push(Self::deserialize_db_key_row(row, MaterialVersion::LEGACY)?);
         }
 
         Ok(res)
     }
 
-    fn deserialize_db_key_row(row: DbKeyRow) -> anyhow::Result<DbKey> {
+    fn deserialize_db_key_row(
+        row: DbKeyRow,
+        material_version: MaterialVersion,
+    ) -> anyhow::Result<DbKey> {
         let DbKeyRow {
             key_id,
             sequence_number,
@@ -248,6 +321,7 @@ impl DbKeyCache {
             Ok(DbKey {
                 key_id,
                 sequence_number,
+                material_version,
                 sks,
                 pks,
                 cks,
@@ -310,6 +384,7 @@ impl DbKeyCache {
             Ok(DbKey {
                 key_id,
                 sequence_number,
+                material_version,
                 sks,
                 gpu_sks,
                 pks,
@@ -354,6 +429,11 @@ fn strip_ns_from_server_key(server_key: tfhe::ServerKey) -> tfhe::ServerKey {
 pub struct DbKey {
     pub key_id: DbKeyId,
     pub sequence_number: i64,
+
+    /// Which key-material version these bytes are (RFC-029).
+    /// [`MaterialVersion::LEGACY`] for every key fetched via the
+    /// pre-existing paths.
+    pub material_version: MaterialVersion,
 
     pub sks: tfhe::ServerKey,
 

@@ -328,8 +328,24 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         vm.assume(extraData.length != 0);
         vm.assume(uint8(extraData[0]) != 0x00);
         vm.assume(uint8(extraData[0]) != 0x01);
+        // RFC-029: 0x03 (v3 migration) is now a supported version, so it must not be fuzzed here.
+        vm.assume(uint8(extraData[0]) != 0x03);
         uint8 version = uint8(extraData[0]);
         vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.UnsupportedExtraDataVersion.selector, version));
+        kmsGenerationHarness.extractContextIdFromExtraData(extraData);
+    }
+
+    function test_extractContextIdAcceptsV3MigrationExtraData() public view {
+        // RFC-029 v3 layout: [0x03][contextId(32)][existingKeysetId(32)][copyToOriginal(1)] = 66 bytes.
+        uint256 contextId = 42;
+        bytes memory extraData = abi.encodePacked(uint8(0x03), contextId, uint256(7), uint8(1));
+        assertEq(kmsGenerationHarness.extractContextIdFromExtraData(extraData), contextId);
+    }
+
+    function test_revertExtractContextIdTruncatedV3() public {
+        // A v3 blob shorter than its 66-byte canonical length must fail fast here.
+        bytes memory extraData = abi.encodePacked(uint8(0x03), uint256(42)); // 33 bytes, missing the v3 tail
+        vm.expectRevert(IKMSGeneration.DeserializingExtraDataFail.selector);
         kmsGenerationHarness.extractContextIdFromExtraData(extraData);
     }
 
