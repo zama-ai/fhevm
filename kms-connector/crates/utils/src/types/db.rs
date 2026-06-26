@@ -106,7 +106,10 @@ impl FromStr for KeyType {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "ServerKey" => Ok(Self::Server),
+            // RFC-029: the migration keygen returns the re-derived server key in its
+            // migrated CompressedXofKeySet form. It is still the server key (on-chain
+            // keyType 0 / the digest the host-listener stores as migrated_xof_keyset).
+            "ServerKey" | "CompressedXofKeySet" => Ok(Self::Server),
             "PublicKey" => Ok(Self::Public),
             _ => Err(anyhow!("Invalid KeyType value: {s}")),
         }
