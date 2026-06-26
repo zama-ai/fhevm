@@ -3,6 +3,7 @@ services:
     container_name: kms-connector-db
     image: postgres:17.5
     restart: always
+    command: ["postgres", "-c", "max_connections=500"]
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
