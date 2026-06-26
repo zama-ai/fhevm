@@ -23,6 +23,8 @@ pub mod revoke_delegation_for_user_decryption;
 pub mod set_deny_subject;
 pub mod set_grant_deny_list_enabled;
 pub mod set_host_pause;
+pub mod set_max_hcu_depth_per_tx;
+pub mod set_max_hcu_per_tx;
 #[cfg(feature = "poc")]
 pub mod set_mock_input_enabled;
 #[cfg(feature = "poc")]
@@ -56,6 +58,8 @@ pub use revoke_delegation_for_user_decryption::*;
 pub use set_deny_subject::*;
 pub use set_grant_deny_list_enabled::*;
 pub use set_host_pause::*;
+pub use set_max_hcu_depth_per_tx::*;
+pub use set_max_hcu_per_tx::*;
 #[cfg(feature = "poc")]
 pub use set_mock_input_enabled::*;
 #[cfg(feature = "poc")]

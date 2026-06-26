@@ -87,6 +87,14 @@ pub mod zama_host {
         instructions::set_grant_deny_list_enabled(ctx, enabled)
     }
 
+    pub fn set_max_hcu_per_tx(ctx: Context<HostAdmin>, value: u64) -> Result<()> {
+        instructions::set_max_hcu_per_tx(ctx, value)
+    }
+
+    pub fn set_max_hcu_depth_per_tx(ctx: Context<HostAdmin>, value: u64) -> Result<()> {
+        instructions::set_max_hcu_depth_per_tx(ctx, value)
+    }
+
     pub fn set_deny_subject(
         ctx: Context<SetDenySubject>,
         subject: Pubkey,

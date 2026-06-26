@@ -50,6 +50,9 @@ pub fn initialize_host_config(
     config.mock_input_enabled = args.mock_input_enabled;
     config.test_shims_enabled = args.test_shims_enabled;
     config.grant_deny_list_enabled = args.grant_deny_list_enabled;
+    // INV-14: ship HCU enforcement disabled (0 = unlimited); an admin enables it post-calibration.
+    config.max_hcu_per_tx = 0;
+    config.max_hcu_depth_per_tx = 0;
     config.updated_slot = updated_slot;
     config.bump = ctx.bumps.host_config;
     #[cfg(feature = "emit-events")]
