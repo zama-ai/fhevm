@@ -601,10 +601,12 @@ async fn reconstruct_events_for_insert(
     use solana_sdk::pubkey::Pubkey;
 
     // fhe_eval named accounts: payer, compute_subject, app_account_authority,
-    // host_config, system_program, instructions_sysvar, then event_cpi's
-    // event_authority + program = 8; remaining_accounts (ACL records) follow.
+    // host_config, system_program, then event_cpi's event_authority + program = 7;
+    // remaining_accounts (durable input/output ACL records) follow. The program
+    // resolves a durable output's `output_acl_record_index` against this base
+    // (FheEval struct + #[event_cpi], see fhe_eval.rs).
     const COMPUTE_SUBJECT_INDEX: usize = 1;
-    const FHE_EVAL_REMAINING_BASE: usize = 8;
+    const FHE_EVAL_REMAINING_BASE: usize = 7;
     // commit_handle_material's acl_record (account 3): its emitted handle comes from
     // that record's account state, so it must be read on-chain.
     const COMMIT_ACL_RECORD_INDEX: usize = 3;
@@ -667,16 +669,27 @@ async fn reconstruct_events_for_insert(
                 if let (Some(index), Some(handle)) =
                     (step.durable_acl_record_index, handle)
                 {
-                    if let Some(acl_record) = ix
-                        .accounts
-                        .get(FHE_EVAL_REMAINING_BASE + index as usize)
-                    {
+                    let acl_index = FHE_EVAL_REMAINING_BASE + index as usize;
+                    if let Some(acl_record) = ix.accounts.get(acl_index) {
                         events.push(SolanaHostEvent::FinalizedAccountFetch(
                             reconstruct_acl_record_bound_fetch(
                                 *acl_record,
                                 handle,
                             ),
                         ));
+                    } else {
+                        // The durable bind marks the output handle allowed; dropping
+                        // it silently leaves the handle unmaterialized and starves
+                        // every later consumer. A miss here means the account-layout
+                        // base above drifted from the program — surface it loudly.
+                        warn!(
+                            slot,
+                            acl_index,
+                            accounts = ix.accounts.len(),
+                            handle = %bs58::encode(handle).into_string(),
+                            "reconstruct: fhe_eval durable bind acl_record out of range; \
+                             output handle will not be allowed/materialized"
+                        );
                     }
                 }
             }
