@@ -181,7 +181,13 @@ async fn subscribe_loop(
         tokio::select! {
             _ = cancel.cancelled() => return Ok(()),
             msg = stream.message() => {
-                let Some(update) = msg.context("grpc stream")? else { return Ok(()); };
+                let Some(update) = msg.context("grpc stream")? else {
+                    // Server closed the stream (e.g. the geyser plugin dropping a client that
+                    // lagged during an event burst). This is NOT a cancellation — return an
+                    // error so the outer loop reconnects (resuming from `from_slot`) instead of
+                    // exiting silently and missing every later slot.
+                    return Err(anyhow!("grpc stream closed by server"));
+                };
                 match update.update_oneof {
                     Some(UpdateOneof::BlockMeta(bm)) => {
                         if let Some(ts) = bm.block_time.and_then(|t| unix_to_pdt(t.timestamp)) {
