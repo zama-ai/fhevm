@@ -3,7 +3,7 @@ use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::crs::{Crs, CrsCache};
 use fhevm_engine_common::db_keys::DbKey;
 use fhevm_engine_common::db_keys::DbKeyCache;
-use fhevm_engine_common::gcs_activation::{run_gcs_activation_watcher, GCS_NOT_ACTIVATED};
+use fhevm_engine_common::gcs_activation::{run_gcs_gw_activation_watcher, GCS_NOT_ACTIVATED};
 use fhevm_engine_common::host_chains::HostChainsCache;
 use fhevm_engine_common::pg_pool::{PostgresPoolManager, ServiceError};
 use fhevm_engine_common::telemetry;
@@ -59,12 +59,16 @@ pub struct ZkProofService {
     // Timestamp of the last moment the service was active
     last_active_at: Arc<RwLock<SystemTime>>,
 
-    // GCS activation state, mirrored from `upgrade_state.start_block`
-    // (stack_role='GCS') by the activation watcher. Holds `GCS_NOT_ACTIVATED`
-    // until the watcher observes a populated start_block. In BCS mode (when
+    // GCS activation state, mirrored from `upgrade_state.gw_start_block`
+    // (stack_role='GCS') by the gateway activation watcher. Holds
+    // `GCS_NOT_ACTIVATED` until the watcher observes `gw_dry_run_started` — i.e.
+    // the GCS gw-listener has reached `gw_start_block` and pre-start proofs have
+    // been pruned. The zkproof-worker switches its re-randomization strategy at
+    // the Gateway block, so unlike the tfhe-/sns-workers it gates on
+    // `gw_start_block`, not the host-chain `start_block`. In BCS mode (when
     // `conf.gcs_mode = false`) the watcher is never spawned and this value
     // stays at the sentinel for the lifetime of the process.
-    start_block_state: Arc<AtomicI64>,
+    gw_start_block_state: Arc<AtomicI64>,
 }
 impl HealthCheckService for ZkProofService {
     async fn health_check(&self) -> HealthStatus {
@@ -121,19 +125,19 @@ impl ZkProofService {
             return None;
         };
 
-        let start_block_state = Arc::new(AtomicI64::new(GCS_NOT_ACTIVATED));
+        let gw_start_block_state = Arc::new(AtomicI64::new(GCS_NOT_ACTIVATED));
 
         if conf.gcs_mode {
-            // Long-lived task that mirrors `upgrade_state.start_block`
-            // (stack_role='GCS') into the atomic, woken by
-            // `event_upgrade_activated`. Lives for the lifetime of the
-            // service so it survives transient DB hiccups inside workers.
+            // Long-lived task that mirrors `upgrade_state.gw_start_block`
+            // (stack_role='GCS') into the atomic once `gw_dry_run_started` is
+            // set, woken by `event_gw_dry_run_started`. Lives for the lifetime
+            // of the service so it survives transient DB hiccups inside workers.
             let watcher_pool = pool_mngr.pool();
-            let watcher_state = start_block_state.clone();
+            let watcher_state = gw_start_block_state.clone();
             tokio::spawn(async move {
                 loop {
                     if let Err(err) =
-                        run_gcs_activation_watcher(&watcher_pool, &watcher_state).await
+                        run_gcs_gw_activation_watcher(&watcher_pool, &watcher_state).await
                     {
                         error!(
                             target: "zkproof_worker",
@@ -150,7 +154,7 @@ impl ZkProofService {
             pool_mngr,
             conf,
             last_active_at: Arc::new(RwLock::new(SystemTime::UNIX_EPOCH)),
-            start_block_state,
+            gw_start_block_state,
         })
     }
 
@@ -163,7 +167,7 @@ impl ZkProofService {
             self.pool_mngr.clone(),
             self.conf.clone(),
             self.last_active_at.clone(),
-            self.start_block_state.clone(),
+            self.gw_start_block_state.clone(),
         )
         .await
     }
@@ -175,7 +179,7 @@ pub async fn execute_verify_proofs_loop(
     pool_mngr: PostgresPoolManager,
     conf: Config,
     last_active_at: Arc<RwLock<SystemTime>>,
-    start_block_state: Arc<AtomicI64>,
+    gw_start_block_state: Arc<AtomicI64>,
 ) -> Result<(), ExecutionError> {
     let gpu_enabled = fhevm_engine_common::utils::log_backend();
     info!(gpu_enabled, conf = %conf, "Starting with config");
@@ -197,7 +201,7 @@ pub async fn execute_verify_proofs_loop(
         let db_key_cache = db_key_cache.clone();
         let last_active_at = last_active_at.clone();
         let host_chain_cache = host_chain_cache.clone();
-        let start_block_state = start_block_state.clone();
+        let gw_start_block_state = gw_start_block_state.clone();
         // Spawn a ZK-proof worker
         // All workers compete for zk-proof tasks queued in the 'verify_proof' table.
         let op = move |pool: PgPool, ct: CancellationToken| {
@@ -205,7 +209,7 @@ pub async fn execute_verify_proofs_loop(
             let host_chain_cache = host_chain_cache.clone();
             let last_active_at = last_active_at.clone();
             let conf = conf.clone();
-            let start_block_state = start_block_state.clone();
+            let gw_start_block_state = gw_start_block_state.clone();
             async move {
                 execute_worker(
                     conf,
@@ -214,7 +218,7 @@ pub async fn execute_verify_proofs_loop(
                     db_key_cache,
                     host_chain_cache,
                     last_active_at,
-                    start_block_state,
+                    gw_start_block_state,
                 )
                 .await
                 .map_err(ServiceError::from)
@@ -253,7 +257,7 @@ async fn execute_worker(
     db_key_cache: DbKeyCache,
     host_chain_cache: Arc<HostChainsCache>,
     last_active_at: Arc<RwLock<SystemTime>>,
-    start_block_state: Arc<AtomicI64>,
+    gw_start_block_state: Arc<AtomicI64>,
 ) -> Result<(), ExecutionError> {
     update_last_active(last_active_at.clone()).await;
 
@@ -291,12 +295,13 @@ async fn execute_worker(
     loop {
         update_last_active(last_active_at.clone()).await;
 
-        // GCS gating: skip the iteration entirely until the activation
-        // watcher has populated `start_block` in `upgrade_state`. The `gcs`
-        // schema doesn't exist before activation, so writes that fell back
-        // through `search_path = gcs,public` would hit `public.*` — exactly
-        // what we must avoid.
-        if conf.gcs_mode && start_block_state.load(Ordering::SeqCst) == GCS_NOT_ACTIVATED {
+        // GCS gating: skip the iteration entirely until the gateway activation
+        // watcher has released the worker (GCS gw-listener reached
+        // `gw_start_block`, pre-start proofs pruned). Before release, processing
+        // proofs would either re-randomize pre-switchover Gateway blocks or
+        // diverge across operators — exactly what the gw_start_block alignment
+        // prevents.
+        if conf.gcs_mode && gw_start_block_state.load(Ordering::SeqCst) == GCS_NOT_ACTIVATED {
             debug!("GCS not yet activated; sleeping before re-check");
             tokio::time::sleep(Duration::from_secs(conf.pg_polling_interval as u64)).await;
             continue;

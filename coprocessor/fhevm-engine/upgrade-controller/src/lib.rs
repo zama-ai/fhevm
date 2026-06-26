@@ -30,6 +30,17 @@ pub const EVENT_CIPHERTEXT_COMPUTED_CHANNEL: &str = "event_ciphertext_computed";
 pub const DRY_RUN_STARTED_CHANNEL: &str =
     fhevm_engine_common::gcs_activation::EVENT_DRY_RUN_STARTED;
 
+/// Emitted by `gw-listener` on each ingested Gateway block; wakes the
+/// Gateway-side readiness loop. Single-sourced from the common crate.
+pub const GW_NEW_BLOCK_CHANNEL: &str = fhevm_engine_common::gcs_activation::EVENT_GW_NEW_BLOCK;
+
+/// Emitted by `transition_to_gw_dry_run_started` once the GCS gw-listener has
+/// reached `gw_start_block` and pre-start rows have been pruned from
+/// `gcs.verify_proofs`, releasing the GCS `zkproof-worker`. Single-sourced from
+/// the common crate, which the worker's activation watcher also uses.
+pub const GW_DRY_RUN_STARTED_CHANNEL: &str =
+    fhevm_engine_common::gcs_activation::EVENT_GW_DRY_RUN_STARTED;
+
 /// Channel emitted by `execute_cutover`, atomically with the `versioning`
 /// bump, telling every service to re-evaluate its mode. Re-exported from the
 /// common crate so services and the controller agree on the name.
@@ -239,6 +250,45 @@ pub async fn handle_upgrade_activated(
         let chain_id = payload.chain_id;
         let start_block = payload.start_block;
 
+        // Gateway-side gate for the zkproof-worker, run concurrently with the
+        // host-chain readiness loop below. The zkproof-worker switches its
+        // re-randomization strategy at `gw_start_block` (a Gateway block), which
+        // is a different clock from the host-chain `start_block` that releases
+        // the tfhe-/sns-workers — so it gets its own readiness task and its own
+        // release notify. Spawned (not awaited) so it makes progress while the
+        // host-chain loop blocks this handler.
+        {
+            let pool = pool.clone();
+            let cancel = cancel.child_token();
+            let gw_start_block = payload.gw_start_block;
+            tokio::spawn(async move {
+                match wait_until_gw_dry_run_ready(pool.clone(), cancel, gw_start_block).await {
+                    Ok(true) => {
+                        // Prune pre-start proofs so the dry-run snapshot starts
+                        // cleanly at gw_start_block, then release the worker.
+                        match prune_gcs_verify_proofs_before_start(&pool, gw_start_block).await {
+                            Ok(deleted) => info!(
+                                gw_start_block,
+                                deleted, "pruned pre-gw_start_block rows from gcs.verify_proofs"
+                            ),
+                            Err(e) => {
+                                error!(error = %e, "failed to prune gcs.verify_proofs; skipping gw release");
+                                return;
+                            }
+                        }
+                        if let Err(e) = transition_to_gw_dry_run_started(&pool).await {
+                            error!(error = %e, "failed to transition GCS gw_dry_run_started");
+                        }
+                    }
+                    Ok(false) => info!(
+                        gw_start_block,
+                        "gw readiness loop exited without satisfying readiness — skipping prune and release"
+                    ),
+                    Err(e) => error!(error = %e, "GCS gateway dry-run readiness loop failed"),
+                }
+            });
+        }
+
         // 1. Wait until BCS has fully settled every computation up to start_block.
         match wait_until_dry_run_ready(pool.clone(), cancel.child_token(), chain_id, start_block)
             .await
@@ -356,6 +406,14 @@ async fn prune_gcs_computations_before_start(
         .bind(start_block)
         .execute(pool)
         .await?;
+
+    info!(
+        chain_id,
+        start_block,
+        deleted = result.rows_affected(),
+        "pruned pre-start_block rows from gcs.computations"
+    );
+
     Ok(result.rows_affected())
 }
 
@@ -542,6 +600,193 @@ async fn transition_to_dry_run_started(pool: &Pool<Postgres>) -> Result<(), Erro
         .execute(pool)
         .await?;
     info!("transition_to_dry_run_started: GCS now in DryRunStarted; unpause notify sent");
+
+    Ok(())
+}
+
+/// True once the GCS gw-listener has reached `gw_start_block` — i.e.
+/// `gcs."gw_listener_last_block".last_block_num >= gw_start_block`. Reads the
+/// GCS schema's watermark explicitly (not `public`), since the green
+/// gw-listener tails the Gateway into the GCS schema from startup. A missing
+/// watermark row reads as `-1`, so the predicate is not vacuously true before
+/// the GCS gw-listener has written any progress.
+async fn check_gw_dry_run_ready(
+    pool: &Pool<Postgres>,
+    gw_start_block: i64,
+) -> Result<bool, sqlx::Error> {
+    let sql = format!(
+        "SELECT COALESCE(
+                  (SELECT last_block_num FROM {GCS_SCHEMA_QUOTED}.gw_listener_last_block
+                   WHERE dummy_id = true),
+                  -1
+                ) >= $1"
+    );
+    let (ready,): (bool,) = sqlx::query_as(&sql)
+        .bind(gw_start_block)
+        .fetch_one(pool)
+        .await?;
+    Ok(ready)
+}
+
+/// GCS-only loop, the Gateway analogue of [`wait_until_dry_run_ready`]. Polls
+/// [`check_gw_dry_run_ready`], re-triggered by every [`GW_NEW_BLOCK_CHANNEL`]
+/// notification.
+///
+/// Returns `Ok(true)` once the GCS gw-listener has reached `gw_start_block` —
+/// the caller then prunes pre-start proofs and releases the zkproof-worker.
+/// Returns `Ok(false)` on cancellation, if the GCS row left the gw-gateable
+/// states, or if `gw_dry_run_started` is already set (another firing won the
+/// race); the caller then skips the prune and release.
+async fn wait_until_gw_dry_run_ready(
+    pool: Pool<Postgres>,
+    cancel: CancellationToken,
+    gw_start_block: i64,
+) -> Result<bool, Error> {
+    info!(
+        gw_start_block,
+        "Starting GCS gateway dry-run readiness loop"
+    );
+
+    // Dedicated listener so this loop is decoupled from the main run() listener
+    // and the host-chain readiness loop.
+    let mut listener = PgListener::connect_with(&pool).await?;
+    listener.listen(GW_NEW_BLOCK_CHANNEL).await?;
+
+    loop {
+        if cancel.is_cancelled() {
+            info!("gw readiness loop cancelled");
+            return Ok(false);
+        }
+
+        // Idempotency: bail if the GCS row already had gw_dry_run_started set,
+        // or has moved past the states where the gw gate is meaningful.
+        let row: Option<(String, bool)> = sqlx::query_as(
+            "SELECT state, gw_dry_run_started FROM upgrade_state WHERE stack_role = 'GCS'",
+        )
+        .fetch_optional(&pool)
+        .await?;
+        match row {
+            Some((_, true)) => {
+                info!("GCS gw_dry_run_started already set — gw readiness loop exiting");
+                return Ok(false);
+            }
+            Some((state, false))
+                if state == "UpgradeActivated" || state == "DryRunStarted" => {}
+            Some((state, false)) => {
+                info!(
+                    state,
+                    "GCS state is past the gw-gateable window — gw readiness loop exiting"
+                );
+                return Ok(false);
+            }
+            None => {
+                warn!("No GCS row in upgrade_state — gw readiness loop exiting");
+                return Ok(false);
+            }
+        }
+
+        match check_gw_dry_run_ready(&pool, gw_start_block).await {
+            Ok(true) => {
+                info!(gw_start_block, "Gateway dry-run readiness satisfied");
+                return Ok(true);
+            }
+            Ok(false) => {
+                debug!(
+                    gw_start_block,
+                    "Gateway dry-run readiness not yet satisfied; waiting for next gw block"
+                );
+            }
+            Err(e) => {
+                error!(error = %e, "gw readiness check query failed; will retry on next notification");
+            }
+        }
+
+        select! {
+            _ = cancel.cancelled() => {
+                info!("gw readiness loop cancelled");
+                return Ok(false);
+            }
+            recv = listener.recv() => {
+                match recv {
+                    Ok(notification) => {
+                        debug!(
+                            channel = notification.channel(),
+                            payload = notification.payload(),
+                            gw_start_block,
+                            "gw readiness loop trigger"
+                        );
+                    }
+                    Err(e) => {
+                        warn!(error = %e, "gw readiness listener recv error; sleeping before retry");
+                        tokio::time::sleep(Duration::from_secs(1)).await;
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Delete from `gcs.verify_proofs` every proof whose Gateway `block_number` is
+/// below `gw_start_block`. The GCS gw-listener accumulates proof requests from
+/// startup, so the GCS schema may hold proofs for Gateway blocks that precede
+/// the re-randomization switchover; clearing them makes the zkproof-worker's
+/// dry-run snapshot start cleanly at `gw_start_block`. Rows with a NULL
+/// `block_number` are left untouched (mirrors the computations prune). Returns
+/// the number of rows removed. Idempotent.
+async fn prune_gcs_verify_proofs_before_start(
+    pool: &Pool<Postgres>,
+    gw_start_block: i64,
+) -> Result<u64, Error> {
+    let sql = format!(
+        "DELETE FROM {GCS_SCHEMA_QUOTED}.verify_proofs \
+         WHERE block_number IS NOT NULL \
+           AND block_number < $1"
+    );
+    let result = sqlx::query(&sql).bind(gw_start_block).execute(pool).await?;
+
+    info!(
+        gw_start_block,
+        deleted = result.rows_affected(),
+        "pruned pre-gw_start_block rows from gcs.verify_proofs"
+    );
+
+    Ok(result.rows_affected())
+}
+
+/// Conditional UPDATE: marks the GCS row's `gw_dry_run_started` and notifies the
+/// zkproof-worker. Only flips a GCS row still in the gw-gateable window with the
+/// flag unset, so a duplicate firing is a no-op.
+async fn transition_to_gw_dry_run_started(pool: &Pool<Postgres>) -> Result<(), Error> {
+    let result = sqlx::query(
+        r#"
+        UPDATE upgrade_state
+        SET gw_dry_run_started = TRUE, updated_at = NOW()
+        WHERE stack_role = 'GCS'
+          AND gw_dry_run_started = FALSE
+          AND state IN ('UpgradeActivated', 'DryRunStarted')
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    if result.rows_affected() == 0 {
+        warn!(
+            "transition_to_gw_dry_run_started: GCS row not eligible (already set or past window) — skipping notify"
+        );
+        return Ok(());
+    }
+
+    // Release the GCS zkproof-worker, which stays parked until it observes
+    // `gw_dry_run_started`. Payload unused — the worker's gw activation watcher
+    // re-reads upgrade_state on wake.
+    sqlx::query("SELECT pg_notify($1, $2)")
+        .bind(GW_DRY_RUN_STARTED_CHANNEL)
+        .bind("")
+        .execute(pool)
+        .await?;
+    info!(
+        "transition_to_gw_dry_run_started: GCS gw_dry_run_started=true; zkproof-worker release notify sent"
+    );
 
     Ok(())
 }

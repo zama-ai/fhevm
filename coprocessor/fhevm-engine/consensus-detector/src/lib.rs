@@ -373,7 +373,7 @@ where
     );
 
     let Some((start_block, end_block)) = active_upgrade_window(pool).await? else {
-        info!(
+        debug!(
             chain_id = payload.chain_id,
             block_height = payload.block_height,
             "no active UpgradeActivated row — ignoring new_block"

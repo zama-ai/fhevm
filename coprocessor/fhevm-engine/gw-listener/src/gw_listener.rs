@@ -7,6 +7,7 @@ use alloy::sol_types::SolEventInterface;
 use alloy::{network::Ethereum, primitives::Address, providers::Provider, rpc::types::Log};
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::database::connect_options_for_database_url;
+use fhevm_engine_common::gcs_activation::EVENT_GW_NEW_BLOCK;
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::utils::to_hex;
 use fhevm_engine_common::versioning::{run_stack_version_listener, StackMode};
@@ -563,6 +564,20 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
         .bind(earliest_open_ct_commits_block)
         .execute(db_pool)
         .await?;
+
+        // Wake the upgrade-controller's Gateway-side readiness task so it can
+        // re-check whether the GCS gw-listener has reached `gw_start_block`.
+        // The payload carries the new tip purely for observability; the
+        // controller re-reads the `gw_listener_last_block` watermark itself. In
+        // GCS mode this notify (and the progress row above) target the `gcs`
+        // schema's watermark via the connection's `search_path`.
+        if let Some(last_block_num) = last_block_num {
+            sqlx::query("SELECT pg_notify($1, $2)")
+                .bind(EVENT_GW_NEW_BLOCK)
+                .bind(last_block_num.to_string())
+                .execute(db_pool)
+                .await?;
+        }
 
         *number_of_last_processed_updates += 1;
         if (*number_of_last_processed_updates)
