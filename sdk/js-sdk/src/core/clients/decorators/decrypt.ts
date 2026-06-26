@@ -1,10 +1,10 @@
-import type { Fhevm, FhevmBase, FhevmExtension, OptionalNativeClient } from '../../types/coreFhevmClient.js';
-import type { FhevmRuntime, WithDecrypt } from '../../types/coreFhevmRuntime.js';
+import type { Fhevm, FhevmBase, FhevmExtension, WithTkmsVersion } from '../../types/coreFhevmClient.js';
+import type { WithDecrypt } from '../../types/coreFhevmRuntime.js';
 import type { FhevmChain } from '../../types/fhevmChain.js';
 import type { GenerateTransportKeyPairReturnType } from '../../actions/decrypt/generateTransportKeyPair.js';
 import type { DecryptModuleFactory } from '../../modules/decrypt/types.js';
-import { asFhevmClientWith, assertIsFhevmClientWith } from '../../runtime/CoreFhevm-p.js';
-import { generateTransportKeyPair } from '../../kms/TransportKeyPair-p.js';
+import { assertIsFhevmClientWith } from '../../runtime/CoreFhevm-p.js';
+import { generateTransportKeyPair } from '../../actions/decrypt/generateTransportKeyPair.js';
 import {
   decryptValue,
   type DecryptValueParameters,
@@ -20,22 +20,24 @@ import {
   type DecryptValuesFromPairsParameters,
   type DecryptValuesFromPairsReturnType,
 } from '../../actions/decrypt/decryptValuesFromPairs.js';
+import { _initDecrypt } from './decrypt-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export type DecryptActions = {
+type DecryptActionMethods = {
   readonly decryptValue: (parameters: DecryptValueParameters) => Promise<DecryptValueReturnType>;
   readonly decryptValues: (parameters: DecryptValuesParameters) => Promise<DecryptValuesReturnType>;
-
   readonly decryptValuesFromPairs: (
     parameters: DecryptValuesFromPairsParameters,
   ) => Promise<DecryptValuesFromPairsReturnType>;
   readonly generateTransportKeyPair: () => Promise<GenerateTransportKeyPairReturnType>;
 };
 
+export type DecryptActions = DecryptActionMethods & WithTkmsVersion;
+
 ////////////////////////////////////////////////////////////////////////////////
 
-function _decryptActions(fhevm: Fhevm<FhevmChain, WithDecrypt>): DecryptActions {
+function _decryptActions(fhevm: Fhevm<FhevmChain, WithDecrypt>): DecryptActionMethods {
   // Preserve the original action overloads on the decorated client API.
   // Runtime behavior is unchanged: this is a direct pass-through wrapper.
   return {
@@ -48,13 +50,6 @@ function _decryptActions(fhevm: Fhevm<FhevmChain, WithDecrypt>): DecryptActions 
 
 ////////////////////////////////////////////////////////////////////////////////
 
-function _initDecrypt(fhevm: FhevmBase<FhevmChain | undefined, FhevmRuntime, OptionalNativeClient>): Promise<void> {
-  const f = asFhevmClientWith(fhevm, 'decrypt');
-  return f.runtime.decrypt.initTkmsModule();
-}
-
-////////////////////////////////////////////////////////////////////////////////
-
 export function decryptActionsWithModule(
   fhevm: FhevmBase<FhevmChain>,
   factory: DecryptModuleFactory,
@@ -62,7 +57,7 @@ export function decryptActionsWithModule(
   const runtime = fhevm.runtime.extend(factory);
   assertIsFhevmClientWith(fhevm, 'decrypt');
   return {
-    actions: _decryptActions(fhevm),
+    actions: _decryptActions(fhevm) as DecryptActions,
     runtime,
     init: _initDecrypt,
   };

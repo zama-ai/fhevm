@@ -15,6 +15,7 @@ import { assertRecordStringProperty, ensure0x } from '../base/string.js';
 import { assertIsUint64, assertIsUintNumber } from '../base/uint.js';
 import { assertIsKmsExtraData } from './kmsExtraData.js';
 import { kmsUserDecryptEip712Types } from './kmsUserDecryptEip712Types.js';
+import { isDeepEqual } from '../base/object.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -120,6 +121,9 @@ export function _assertIsKmsUserDecryptEip712Base(
   assertIsKmsEip712Domain((value as Record<string, unknown>).domain, `${name}.domain`, options);
 
   assertRecordNonNullableProperty(value, 'types', name, options);
+  if (!isDeepEqual(value.types, kmsUserDecryptEip712Types)) {
+    throw new Error('Unexpected KmsUserDecryptEip712Types');
+  }
 
   assertRecordStringProperty(value, 'primaryType', name, {
     expectedValue: primaryType,

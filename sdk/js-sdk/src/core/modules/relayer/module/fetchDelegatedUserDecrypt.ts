@@ -6,8 +6,9 @@ import type {
   RelayerClientWithRuntime,
 } from '../types.js';
 import type { KmsSigncryptedShare } from '../../../types/kms-p.js';
-import { remove0x, removeSuffix } from '../../../base/string.js';
+import { remove0x } from '../../../base/string.js';
 import { RelayerAsyncRequest } from './RelayerAsyncRequest.js';
+import { buildRelayerUrlString, validateRelayerBaseUrl } from './relayerUrl.js';
 
 //////////////////////////////////////////////////////////////////////////////
 // fetchDelegatedUserDecrypt
@@ -45,9 +46,13 @@ export async function fetchDelegatedUserDecrypt(
     publicKey: remove0x(payload.kmsDecryptEip712Message.publicKey),
   };
 
+  const hasAuth: boolean = options?.auth !== undefined;
+  const relayerBaseUrl: URL = validateRelayerBaseUrl(relayerClient.chain.fhevm.relayerUrl, hasAuth);
+  const url = buildRelayerUrlString(relayerBaseUrl, 'v2/delegated-user-decrypt');
+
   const request = new RelayerAsyncRequest({
     relayerOperation: 'DELEGATED_USER_DECRYPT',
-    url: `${removeSuffix(relayerClient.chain.fhevm.relayerUrl, '/')}/v2/delegated-user-decrypt`,
+    url,
     payload: relayerPayload,
     options,
   });

@@ -1,5 +1,5 @@
 import type { FetchFheEncryptionKeyBytesReturnType as FheEncryptionKeyBytes } from '@fhevm/sdk/actions/chain';
-import type { FheTestChainName } from './ethers/setup.js';
+import type { FheTestChainName } from './setupCommon.js';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -7,31 +7,51 @@ import { resolve } from 'node:path';
 
 const KEYS_DIR = resolve(__dirname, '.keys');
 
+export type CachedFheEncryptionKeyBytes = FheEncryptionKeyBytes & {
+  readonly chain: FheTestChainName;
+  readonly tfheVersion: string;
+};
+
+type ReadKeyFromCacheOptions = {
+  readonly metadata?: FheEncryptionKeyBytes['metadata'] | undefined;
+  readonly tfheVersion?: string | undefined;
+};
+
 function keyPath(chain: FheTestChainName): string {
   return resolve(KEYS_DIR, chain, 'key.json');
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export function hasKeyInCache(chain: FheTestChainName): boolean {
-  return existsSync(keyPath(chain));
+export function hasKeyInCache(chain: FheTestChainName, options?: string | ReadKeyFromCacheOptions): boolean {
+  return readKeyFromCache(chain, normalizeReadOptions(options)) !== undefined;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export function readKeyFromCache(chain: FheTestChainName): FheEncryptionKeyBytes | undefined {
+export function readKeyFromCache(
+  chain: FheTestChainName,
+  options?: ReadKeyFromCacheOptions,
+): CachedFheEncryptionKeyBytes | undefined {
   const path = keyPath(chain);
   if (!existsSync(path)) {
     return undefined;
   }
 
   const json = JSON.parse(readFileSync(path, 'utf-8')) as {
+    chain?: unknown;
     metadata: { relayerUrl: string; chainId: number };
     publicKeyBytes: { id: string; bytes: string };
     crsBytes: { id: string; capacity: number; bytes: string };
+    tfheVersion?: unknown;
   };
 
-  return {
+  if (json.chain !== chain || typeof json.tfheVersion !== 'string') {
+    return undefined;
+  }
+
+  const cached = {
+    chain,
     metadata: json.metadata,
     publicKeyBytes: {
       id: json.publicKeyBytes.id,
@@ -42,12 +62,26 @@ export function readKeyFromCache(chain: FheTestChainName): FheEncryptionKeyBytes
       capacity: json.crsBytes.capacity,
       bytes: Uint8Array.from(Buffer.from(json.crsBytes.bytes, 'base64')),
     },
-  } as FheEncryptionKeyBytes;
+    tfheVersion: json.tfheVersion,
+  } as CachedFheEncryptionKeyBytes;
+
+  if (options?.tfheVersion !== undefined && cached.tfheVersion !== options.tfheVersion) {
+    return undefined;
+  }
+
+  if (
+    options?.metadata !== undefined &&
+    (cached.metadata.chainId !== options.metadata.chainId || cached.metadata.relayerUrl !== options.metadata.relayerUrl)
+  ) {
+    return undefined;
+  }
+
+  return cached;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export function writeKeyToCache(chain: FheTestChainName, bytes: FheEncryptionKeyBytes): void {
+export function writeKeyToCache(chain: FheTestChainName, bytes: FheEncryptionKeyBytes, tfheVersion: string): void {
   const path = keyPath(chain);
   const dir = resolve(KEYS_DIR, chain);
 
@@ -56,6 +90,7 @@ export function writeKeyToCache(chain: FheTestChainName, bytes: FheEncryptionKey
   }
 
   const json = {
+    chain,
     metadata: bytes.metadata,
     publicKeyBytes: {
       id: bytes.publicKeyBytes.id,
@@ -66,9 +101,16 @@ export function writeKeyToCache(chain: FheTestChainName, bytes: FheEncryptionKey
       capacity: bytes.crsBytes.capacity,
       bytes: Buffer.from(bytes.crsBytes.bytes).toString('base64'),
     },
+    tfheVersion,
   };
 
   writeFileSync(path, JSON.stringify(json, null, 2), 'utf-8');
+}
+
+function normalizeReadOptions(
+  options: string | ReadKeyFromCacheOptions | undefined,
+): ReadKeyFromCacheOptions | undefined {
+  return typeof options === 'string' ? { tfheVersion: options } : options;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -9,6 +9,7 @@ import type { EncryptedValueLike } from '../../types/encryptedTypes.js';
 import { decryptValuesFromPairs as decryptValuesFromPairs_ } from '../../kms/decryptValuesFromPairs.js';
 import { addressToChecksummedAddress, assertIsAddress } from '../../base/address.js';
 import { toFhevmHandle } from '../../handle/FhevmHandle.js';
+import { asFhevmWithTkmsVersion } from '../../runtime/CoreFhevm-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -40,7 +41,9 @@ export async function decryptValuesFromPairs(
     };
   });
 
-  return decryptValuesFromPairs_(fhevm, {
+  const f = asFhevmWithTkmsVersion(fhevm);
+
+  return decryptValuesFromPairs_(f, {
     ...rest,
     pairs: sanitizedPairs,
   } as Parameters<typeof decryptValuesFromPairs_>[1]);
