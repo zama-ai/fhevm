@@ -296,7 +296,7 @@ fn execute_partition(
         for (h, i) in tx_inputs.iter_mut() {
             if i.is_none() {
                 let Some(Ok(ct)) = res.get(h) else {
-                    warn!(target: "scheduler", {transaction_id = ?hex::encode(tid) },
+                    warn!(target: "scheduler", {transaction_id = ?hex::encode(tid), missing_input = ?hex::encode(h) },
 		       "Missing input to compute transaction - skipping");
                     for nidx in dfg.graph.node_identifiers() {
                         let Some(node) = dfg.graph.node_weight_mut(nidx) else {
