@@ -113,8 +113,8 @@ describe('KMS context tasks', function () {
     it('uses the newContextId that the Ethereum proposal must also carry (KMS_CONTEXT_ID anchor)', async function () {
       setKmsEnv([makeNode(0), makeNode(1)], DEFAULT_THRESHOLDS, NEXT_KMS_CONTEXT_ID);
       const encoded = await encodeUpdateKmsContext(hre);
-      // The host derives this same id on-chain (current + 1) and verifies it against its
-      // KMS_NEW_CONTEXT_ID, so the two proposals stay aligned.
+      // The host derives this same id on-chain (current + 1) and prints it as the value to set
+      // here, so the two proposals stay aligned.
       expect(encoded.newContextId).to.equal(NEXT_KMS_CONTEXT_ID);
     });
 
