@@ -129,9 +129,9 @@ impl DbKeyCache {
             )
             .fetch_optional(&mut *executor)
             .await?
-        } else {
-            // v1+: the migrated keyset is always an XOF keyset in its own
-            // column. NULL => not published yet => halt-and-retry.
+        } else if version == MaterialVersion::MIGRATED_V1 {
+            // v1: the migrated keyset is an XOF keyset in its own column.
+            // NULL => not published yet => halt-and-retry.
             sqlx::query_as!(
                 DbKeyRow,
                 "SELECT key_id, sequence_number, pks_key, \
@@ -143,6 +143,13 @@ impl DbKeyCache {
             )
             .fetch_optional(&mut *executor)
             .await?
+        } else {
+            // RFC-029 is a one-time cutover with exactly two material versions; any other
+            // version is a scheduling/programming error, not a halt-and-retry condition.
+            anyhow::bail!(
+                "unsupported material version {}: only LEGACY (0) and MIGRATED_V1 (1) are defined",
+                version.0
+            );
         };
         let row = row.ok_or_else(|| {
             anyhow::anyhow!(

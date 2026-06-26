@@ -288,6 +288,12 @@ interface IKMSGeneration {
     error MismatchedMigrationArrays();
 
     /**
+     * @notice RFC-029: a publish/schedule used a material version other than the only supported
+     * one-time cutover version (1).
+     */
+    error UnsupportedMaterialVersion(uint256 version);
+
+    /**
      * @notice Trigger an FHE key generation.
      * @param paramsType The type of FHE parameters to use.
      */
@@ -399,6 +405,13 @@ interface IKMSGeneration {
      * @return The current ID of the active key.
      */
     function getActiveKeyId() external view returns (uint256);
+
+    /**
+     * @notice RFC-029: the published material version for a key (0 = none/legacy, 1 = migrated).
+     * @param keyId The key to query.
+     * @return The material version published under `keyId`.
+     */
+    function getKeyMaterialVersion(uint256 keyId) external view returns (uint256);
 
     /**
      * @notice Get the ID of the current active CRS.

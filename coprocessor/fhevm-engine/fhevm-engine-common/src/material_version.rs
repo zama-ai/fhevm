@@ -150,7 +150,6 @@ mod tests {
 
     const V0: MaterialVersion = MaterialVersion::LEGACY;
     const V1: MaterialVersion = MaterialVersion::MIGRATED_V1;
-    const V2: MaterialVersion = MaterialVersion(2);
 
     // --- select_from_schedule: the core cutover rule -----------------
 
@@ -178,28 +177,13 @@ mod tests {
     }
 
     #[test]
-    fn multiple_cutovers_pick_highest_applicable() {
-        let schedule = [(V1, 100), (V2, 200)];
+    fn single_cutover_v0_then_v1_at_the_block() {
+        // RFC-029 is a one-time cutover: legacy below H_C, migrated at/after it.
+        let schedule = [(V1, 100)];
         assert_eq!(select_from_schedule(&schedule, Some(50)), V0);
+        assert_eq!(select_from_schedule(&schedule, Some(99)), V0);
         assert_eq!(select_from_schedule(&schedule, Some(100)), V1);
-        assert_eq!(select_from_schedule(&schedule, Some(150)), V1);
-        assert_eq!(select_from_schedule(&schedule, Some(200)), V2);
-        assert_eq!(select_from_schedule(&schedule, Some(10_000)), V2);
-    }
-
-    #[test]
-    fn selection_is_order_independent() {
-        // Same schedule, rows in reverse: selection must not depend on
-        // row order coming back from the DB.
-        let forward = [(V1, 100), (V2, 200)];
-        let reversed = [(V2, 200), (V1, 100)];
-        for b in [50, 100, 150, 200, 250] {
-            assert_eq!(
-                select_from_schedule(&forward, Some(b)),
-                select_from_schedule(&reversed, Some(b)),
-                "mismatch at block {b}"
-            );
-        }
+        assert_eq!(select_from_schedule(&schedule, Some(10_000)), V1);
     }
 
     // --- cache selectors --------------------------------------------

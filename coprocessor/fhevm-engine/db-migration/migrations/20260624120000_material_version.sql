@@ -49,8 +49,9 @@ CREATE TABLE IF NOT EXISTS material_version_host_schedule (
     migration_block  BIGINT   NOT NULL,
     created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (host_chain_id, material_version),
-    CONSTRAINT material_version_host_schedule_version_positive
-        CHECK (material_version >= 0),
+    -- RFC-029 is a one-time cutover: the only schedulable target is version 1.
+    CONSTRAINT material_version_host_schedule_version_is_one
+        CHECK (material_version = 1),
     CONSTRAINT material_version_host_schedule_block_positive
         CHECK (migration_block >= 0)
 );
@@ -63,8 +64,9 @@ CREATE TABLE IF NOT EXISTS material_version_gateway_schedule (
     migration_block  BIGINT   NOT NULL,
     created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (material_version),
-    CONSTRAINT material_version_gateway_schedule_version_positive
-        CHECK (material_version >= 0),
+    -- RFC-029 is a one-time cutover: the only schedulable target is version 1.
+    CONSTRAINT material_version_gateway_schedule_version_is_one
+        CHECK (material_version = 1),
     CONSTRAINT material_version_gateway_schedule_block_positive
         CHECK (migration_block >= 0)
 );

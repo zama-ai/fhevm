@@ -135,6 +135,10 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
     /// connector only, so on-chain context extraction treats v3 exactly like v1.
     uint8 private constant EXTRA_DATA_V3 = 0x03;
 
+    /// @dev RFC-029 is a one-time legacy -> migrated cutover, so the only valid migrated material
+    /// version is 1. Reject anything else until later versions have real storage + fetch semantics.
+    uint256 private constant MIGRATED_MATERIAL_VERSION = 1;
+
     /**
      * @dev Constant used for making sure the version number used in the `reinitializer` modifier
      * is identical between `initializeFromEmptyProxy` and `reinitializeV2`.
@@ -425,11 +429,27 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
             // Store the digest on which consensus was reached for the keygen request
             $.consensusDigest[keyId] = digest;
 
-            // Set the active keyId
-            $.activeKeyId = keyId;
             string[] memory consensusUrls = _buildConsensusStorageUrls(contextId, consensusTxSenders);
 
-            emit ActivateKey(keyId, consensusUrls, keyDigests);
+            if (extraData.length > 0 && uint8(extraData[0]) == EXTRA_DATA_V3) {
+                // RFC-029 publish-not-activate: the migration keygen re-derived the key material
+                // from the EXISTING active key's shares. Publish it as migrated material UNDER that
+                // existing key, WITHOUT moving activeKeyId and WITHOUT emitting ActivateKey, so v0
+                // (legacy) stays resolvable and the material-version cutover is governed solely by
+                // scheduleKeyMaterialMigration. (kms-core copy_compressed_key_to_original places the
+                // migrated keyset under the existing key's storage id for the coprocessor to fetch.)
+                uint256 migratedKeyId = _extractMigrationExistingKeyId(extraData);
+                delete $.migratedKeyDigests[migratedKeyId];
+                for (uint256 i = 0; i < keyDigests.length; i++) {
+                    $.migratedKeyDigests[migratedKeyId].push(keyDigests[i]);
+                }
+                $.keyMaterialVersion[migratedKeyId] = MIGRATED_MATERIAL_VERSION;
+                emit KeyMaterialAdded(migratedKeyId, consensusUrls, keyDigests, MIGRATED_MATERIAL_VERSION);
+            } else {
+                // Normal keygen: activate the new key.
+                $.activeKeyId = keyId;
+                emit ActivateKey(keyId, consensusUrls, keyDigests);
+            }
         }
     }
 
@@ -454,6 +474,10 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         }
         if (keyDigests.length == 0) {
             revert EmptyKeyDigests(keyId);
+        }
+        // RFC-029 is a one-time cutover: only material version 1 is valid.
+        if (materialVersion != MIGRATED_MATERIAL_VERSION) {
+            revert UnsupportedMaterialVersion(materialVersion);
         }
 
         // Record the migrated digests + version and emit, but NEVER touch activeKeyId. The cutover
@@ -484,6 +508,10 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         }
         if (hostChainIds.length != hostMigrationBlocks.length) {
             revert MismatchedMigrationArrays();
+        }
+        // RFC-029 is a one-time cutover: only material version 1 is valid.
+        if (materialVersion != MIGRATED_MATERIAL_VERSION) {
+            revert UnsupportedMaterialVersion(materialVersion);
         }
 
         emit KeyMaterialMigrationScheduled(
@@ -667,6 +695,13 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
     function getActiveKeyId() external view virtual returns (uint256) {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
         return $.activeKeyId;
+    }
+
+    /**
+     * @notice See {IKMSGeneration-getKeyMaterialVersion}.
+     */
+    function getKeyMaterialVersion(uint256 keyId) external view virtual returns (uint256) {
+        return _getKMSGenerationStorage().keyMaterialVersion[keyId];
     }
 
     /**
@@ -973,6 +1008,21 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         // mload at offset 33 reads 32 bytes starting after the 1-byte version prefix.
         assembly {
             contextId := mload(add(extraData, 33))
+        }
+    }
+
+    /**
+     * @notice RFC-029: extracts the existing keyset id a migration keygen re-derives from.
+     * @param extraData v3 migration extraData: [0x03][contextId(32)][existingKeysetId(32)][copyToOriginal(1)].
+     * @return existingKeyId The key the migrated material is published under (activeKeyId is unchanged).
+     */
+    function _extractMigrationExistingKeyId(bytes memory extraData) internal pure virtual returns (uint256 existingKeyId) {
+        // existingKeysetId occupies bytes [33..65); mload at offset 65 reads it.
+        if (extraData.length < 65) {
+            revert DeserializingExtraDataFail();
+        }
+        assembly {
+            existingKeyId := mload(add(extraData, 65))
         }
     }
 
