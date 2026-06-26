@@ -6,6 +6,7 @@ export type HostContractNameMap = {
   readonly HCULimit: 'HCULimit';
   readonly InputVerifier: 'InputVerifier';
   readonly KMSVerifier: 'KMSVerifier';
+  readonly ProtocolConfig: 'ProtocolConfig';
 };
 
 // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents

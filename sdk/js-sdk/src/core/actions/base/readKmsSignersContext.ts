@@ -12,7 +12,8 @@ export type ReadKmsSignersContextReturnType = KmsSignersContext;
 
 export async function readKmsSignersContext(fhevm: Fhevm<FhevmChain>): Promise<ReadKmsSignersContextReturnType> {
   return readKmsSignersContext_(fhevm, {
-    address: fhevm.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
+    kmsVerifierAddress: fhevm.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
+    protocolConfigAddress: fhevm.chain.fhevm.contracts.protocolConfig?.address as ChecksummedAddress | undefined,
   });
 }
 

@@ -1,32 +1,36 @@
 export { type ReadKmsSignersContextReturnType, readKmsSignersContext } from './readKmsSignersContext.js';
 
-export { type ReadPublicValueParameters, type ReadPublicValueReturnType, readPublicValue } from './readPublicValue.js';
+export {
+  type DecryptPublicValueParameters,
+  type DecryptPublicValueReturnType,
+  decryptPublicValue,
+} from './decryptPublicValue.js';
 
 export type { RelayerPublicDecryptOptions, RelayerPublicDecryptProgressArgs } from '../../types/relayer.js';
 
 export {
-  type ReadPublicValuesParameters,
-  type ReadPublicValuesReturnType,
-  readPublicValues,
-} from './readPublicValues.js';
+  type DecryptPublicValuesParameters,
+  type DecryptPublicValuesReturnType,
+  decryptPublicValues,
+} from './decryptPublicValues.js';
 
 export {
-  type ReadPublicValuesWithSignaturesParameters,
-  type ReadPublicValuesWithSignaturesReturnType,
-  readPublicValuesWithSignatures,
-} from './readPublicValuesWithSignatures.js';
+  type DecryptPublicValuesWithSignaturesParameters,
+  type DecryptPublicValuesWithSignaturesReturnType,
+  decryptPublicValuesWithSignatures,
+} from './decryptPublicValuesWithSignatures.js';
 
 export {
-  type CanReadPublicValueParameters,
-  type CanReadPublicValueReturnType,
-  canReadPublicValue,
-} from './canReadPublicValue.js';
+  type CanDecryptPublicValueParameters,
+  type CanDecryptPublicValueReturnType,
+  canDecryptPublicValue,
+} from './canDecryptPublicValue.js';
 
 export {
-  type CanReadPublicValuesParameters,
-  type CanReadPublicValuesReturnType,
-  canReadPublicValues,
-} from './canReadPublicValues.js';
+  type CanDecryptPublicValuesParameters,
+  type CanDecryptPublicValuesReturnType,
+  canDecryptPublicValues,
+} from './canDecryptPublicValues.js';
 
 export {
   type CreateVerifiedInputProofFromRawBytesParameters,

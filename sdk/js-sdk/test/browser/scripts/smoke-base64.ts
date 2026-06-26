@@ -55,7 +55,9 @@ async function run() {
     //
     // 3. Display TFHE module infos
     //
-    const tfheInfo = client.runtime.encrypt.getTfheModuleInfo();
+    const tfheVersion = client.tfheVersion;
+    log(`TfheVersion=${tfheVersion}`);
+    const tfheInfo = await client.runtime.encrypt.getTfheModuleInfo({ tfheVersion });
     if (!tfheInfo) {
       throw new Error('TFHE module not initialized after client.init()');
     }
@@ -66,7 +68,9 @@ async function run() {
     //
     // 4. Display TKMS module infos
     //
-    const tkmsInfo = client.runtime.decrypt.getTkmsModuleInfo();
+    const tkmsVersion = client.tkmsVersion;
+    log(`TkmsVersion=${tkmsVersion}`);
+    const tkmsInfo = await client.runtime.decrypt.getTkmsModuleInfo({ tkmsVersion });
     if (!tkmsInfo) {
       throw new Error('TKMS module not initialized after client.init()');
     }
