@@ -55,6 +55,12 @@ jobs:
       - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@d70bba72b1f3fd22344832f00baa16ece964efeb # v3.3.0
 
+      - name: Cache anchor-cli (skip the ~3-min cargo install --git on warm same-branch runs)
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
+        with:
+          path: ~/.cargo/bin/anchor
+          key: anchor-cli-v1.0.2-${{ runner.os }}
+
       - name: Setup Solana + Anchor toolchain
         run: |
           set -euo pipefail
@@ -62,7 +68,9 @@ jobs:
           # Pin to v2.1.21: the Yellowstone geyser plugin's ABI is patch-coupled to this Agave version.
           sh -c "$(curl -sSfL https://release.anza.xyz/v2.1.21/install)"
           echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
-          cargo install --git https://github.com/coral-xyz/anchor --tag v1.0.2 anchor-cli --locked
+          # Skip the ~3-min build if the cached anchor-cli (restored above) is already the pin.
+          anchor --version 2>/dev/null | grep -q "anchor-cli 1.0.2" \
+            || cargo install --git https://github.com/coral-xyz/anchor --tag v1.0.2 anchor-cli --locked
 
       - name: Setup protoc (host-listener builds fhevm-engine-common via prost-build)
         uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
@@ -191,6 +199,12 @@ jobs:
       - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@d70bba72b1f3fd22344832f00baa16ece964efeb # v3.3.0
 
+      - name: Cache anchor-cli (skip the ~3-min cargo install --git on warm same-branch runs)
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
+        with:
+          path: ~/.cargo/bin/anchor
+          key: anchor-cli-v1.0.2-${{ runner.os }}
+
       - name: Setup Solana + Anchor toolchain
         run: |
           set -euo pipefail
@@ -198,7 +212,9 @@ jobs:
           # Pin to v2.1.21: the Yellowstone geyser plugin's ABI is patch-coupled to this Agave version.
           sh -c "$(curl -sSfL https://release.anza.xyz/v2.1.21/install)"
           echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
-          cargo install --git https://github.com/coral-xyz/anchor --tag v1.0.2 anchor-cli --locked
+          # Skip the ~3-min build if the cached anchor-cli (restored above) is already the pin.
+          anchor --version 2>/dev/null | grep -q "anchor-cli 1.0.2" \
+            || cargo install --git https://github.com/coral-xyz/anchor --tag v1.0.2 anchor-cli --locked
 
       - name: Setup protoc (host-listener builds fhevm-engine-common via prost-build)
         uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
