@@ -21,9 +21,6 @@ import {
 // Mock endpoint has no executor, so the test relays itself; with a real endpoint (BRIDGE_REAL_LZ), LZ delivers and the test only waits for the HandleBridged event.
 const USE_REAL_LZ = (process.env.BRIDGE_REAL_LZ || '').toLowerCase() === 'true';
 
-const BRIDGE_SEND_ABI = [
-  'function send(uint32 dstEid, bytes32 dstApp, bytes payload, bytes32[] handleList, uint64 lzComposeGas) payable',
-];
 const LZ_COMPOSE_GAS = 1_000_000n;
 const DECRYPT_TIMEOUT_MS = 180_000;
 
@@ -118,10 +115,9 @@ describe('Confidential Bridge', function () {
   async function bridge(src: BridgeEnd, dst: BridgeEnd, handles: string[], payload = '0x', skipCompose = false) {
     const ctx = { srcEndpoint: src.endpoint, dstEndpoint: dst.endpoint, dstBridge: dst.bridge, dstSigner: dst.alice };
     const fromBlock = await getProvider(dst.cfg).getBlockNumber();
-    const dstApp = ethers.zeroPadValue(dst.appAddr, 32);
-    const bridgeContract = new ethers.Contract(src.bridge, BRIDGE_SEND_ABI, src.alice);
+    // Send through the OApp wrapper: the app resolves the dst peer and calls FHE.bridge.
     const sendReceipt = await sendWithNonceRetry(src.alice, () =>
-      bridgeContract.send(dst.cfg.chainId, dstApp, payload, handles, LZ_COMPOSE_GAS, {
+      src.app.connect(src.alice).getFunction('send')(dst.cfg.chainId, handles, payload, LZ_COMPOSE_GAS, {
         value: 0,
         gasLimit: 5_000_000,
       }),
@@ -168,6 +164,14 @@ describe('Confidential Bridge', function () {
     };
     host = await build(0);
     chainB = await build(1);
+
+    // Wire OApp peers: each app trusts the other (one entry serves both send and receive).
+    await sendWithNonceRetry(host.alice, () =>
+      host.app.connect(host.alice).getFunction('setPeer')(chainB.cfg.chainId, ethers.zeroPadValue(chainB.appAddr, 32)),
+    );
+    await sendWithNonceRetry(chainB.alice, () =>
+      chainB.app.connect(chainB.alice).getFunction('setPeer')(host.cfg.chainId, ethers.zeroPadValue(host.appAddr, 32)),
+    );
   });
 
   it('bridges a handle host->chain-b and publicly decrypts it on the destination', async function () {
@@ -248,6 +252,11 @@ describe('Confidential Bridge', function () {
     const fakeSrcBridge = host.bridge; // arbitrary; just must match the registered peer
     const bridgeOwner = new ethers.Contract(chainB.bridge, ['function setPeer(uint32,bytes32)'], owner);
     await (await bridgeOwner.setPeer(FAKE_EID, ethers.zeroPadValue(fakeSrcBridge, 32))).wait();
+    // The forged delivery now also passes the OApp receiver's peer check: its `srcApp` is the
+    // forged sender (the source bridge), so register that as the app peer for FAKE_EID too.
+    await sendWithNonceRetry(chainB.alice, () =>
+      chainB.app.connect(chainB.alice).getFunction('setPeer')(FAKE_EID, ethers.zeroPadValue(fakeSrcBridge, 32)),
+    );
 
     // Mint a real euint64 handle on host but DO NOT bridge.send it, so there is no source BridgeHandle.
     // Forging the delivery leaves the handle unassociated (no ciphertext) while onConfidentialBridgeReceived still grants
