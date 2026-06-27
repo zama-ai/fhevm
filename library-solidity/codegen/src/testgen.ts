@@ -10,7 +10,13 @@ export function generateSolidityOverloadTestFiles(operators: Operator[], fheType
   const signatures: OverloadSignature[] = [];
 
   // Exclude types that do not support any operators.
-  const adjustedFheTypes = fheTypes.filter((fheType: FheTypeInfo) => fheType.supportedOperators.length > 0);
+  // E2E_MAX_BITS (env-gated, default off): cap the generated operation tests at a bit width —
+  // used to skip the heavy >64-bit ops (euint128/256, ebytes 512+, eaddress 160) on a CPU/kind
+  // stack where they're slow and add little coverage. Default behavior unchanged when unset.
+  const maxBits = process.env.E2E_MAX_BITS ? Number(process.env.E2E_MAX_BITS) : Infinity;
+  const adjustedFheTypes = fheTypes.filter(
+    (fheType: FheTypeInfo) => fheType.supportedOperators.length > 0 && fheType.bitLength <= maxBits,
+  );
 
   // Generate overloads for encrypted operators with two encrypted types.
   adjustedFheTypes.forEach((lhsFheType: FheTypeInfo) => {

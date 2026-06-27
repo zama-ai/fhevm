@@ -177,6 +177,10 @@ const config: HardhatUserConfig = {
   mocha: {
     timeout: 300000,
     rootHooks: require('./test/consensusWatchdog').mochaHooks,
+    // Env-gated title filter (mocha grep+invert). Default behavior unchanged when MOCHA_GREP unset.
+    // Used to skip >64-bit fhevmOperations (euint128/256, ebytes, eaddress) on the kind/CPU stack:
+    //   MOCHA_GREP='uint128|uint256|ebytes|eaddress' MOCHA_INVERT=1
+    ...(process.env.MOCHA_GREP ? { grep: process.env.MOCHA_GREP, invert: process.env.MOCHA_INVERT === '1' } : {}),
   },
   gasReporter: {
     currency: 'USD',

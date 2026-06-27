@@ -1,0 +1,31 @@
+# Full e2e suite — the comprehensive behavioral oracle (supersedes the erc20-only smoke).
+# Runs the ENTIRE test-suite/e2e (encryptedERC20 + the fhevmOperations matrix +
+# delegatedUserDecryption + consensusWatchdog + fhevmjsTest) against the booted stack.
+#
+# MOCHA_GREP/MOCHA_INVERT (consumed by hardhat.config mocha block) skip every >64-bit
+# fhevmOperations test (euint128/256, ebytes, eaddress) — those are heavy on a CPU/kind
+# stack and add little coverage. Keeps the run to ~1h. Addresses come from erc20-env
+# (envFrom), populated by render.threadDiscovery — nothing hardcoded.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: e2e
+  namespace: fhevm
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels: { app: e2e }
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: e2e
+          image: fhevm-e2e:js-sdk
+          imagePullPolicy: Never
+          args:
+            - "npx hardhat test --network staging 2>&1"
+          env:
+            - { name: MOCHA_GREP, value: "uint128|uint256|ebytes|eaddress" }
+            - { name: MOCHA_INVERT, value: "1" }
+          envFrom:
+            - configMapRef: { name: erc20-env }
