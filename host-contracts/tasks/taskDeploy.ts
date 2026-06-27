@@ -17,7 +17,7 @@ import { assertContractMatchesVersionPrefix } from './utils/contractVersion';
 import { formatError } from './utils/formatError';
 import { CRS_COUNTER_BASE, KEY_COUNTER_BASE } from './utils/kmsGenerationConstants';
 import { getRequiredEnvVar } from './utils/loadVariables';
-import { executeUpgradeProposal } from './utils/upgradeProposal';
+import { executeUpgradeProposal, printUpgradeProposal, verifyProposalImplementation } from './utils/upgradeProposal';
 
 const ADDRESSES_DIR = path.join(__dirname, '../addresses');
 const HOST_ENV_FILE = path.join(ADDRESSES_DIR, '.env.host');
@@ -69,15 +69,15 @@ export async function waitForTaskReady(
   }
 }
 
-// Re-exported for existing call sites (taskMigrate). Lives in utils/contractVersion to avoid a
-// cyclic import: protocolConfigMirror needs it too, and taskDeploy already imports from there.
+// Re-exported for existing call sites. Lives in utils/contractVersion to avoid a cyclic import:
+// protocolConfigMirror needs it too, and taskDeploy already imports from there.
 export { assertContractMatchesVersionPrefix };
 
 ////////////////////////////////////////////////////////////////////////////////
 // All Host Contracts
 ////////////////////////////////////////////////////////////////////////////////
 
-const PROTOCOL_CONFIG_SOURCES = ['fresh', 'migration', 'canonical'] as const;
+const PROTOCOL_CONFIG_SOURCES = ['fresh', 'canonical'] as const;
 type ProtocolConfigSource = (typeof PROTOCOL_CONFIG_SOURCES)[number];
 
 task('task:deployAllHostContracts')
@@ -89,7 +89,7 @@ task('task:deployAllHostContracts')
   )
   .addOptionalParam(
     'protocolConfigSource',
-    "How to initialize ProtocolConfig: 'fresh' (default) calls initializeFromEmptyProxy with env-driven KMS nodes/thresholds; 'migration' calls initializeFromMigration consuming MIGRATION_CONTEXT_ID / MIGRATION_KMS_NODES / MIGRATION_KMS_THRESHOLDS; 'canonical' mirrors the canonical chain's ProtocolConfig via task:deployProtocolConfigFromCanonical (non-canonical hosts only).",
+    "How to initialize ProtocolConfig: 'fresh' (default) calls initializeFromEmptyProxy with env-driven KMS nodes/thresholds; 'canonical' mirrors the canonical chain's ProtocolConfig via task:deployProtocolConfigFromCanonical (non-canonical hosts only).",
     'fresh',
     types.string,
   )
@@ -152,9 +152,7 @@ task('task:deployAllHostContracts')
 
     await hre.run('task:deployACL');
     await hre.run('task:deployFHEVMExecutor');
-    if (protocolConfigSource === 'migration') {
-      await hre.run('task:deployProtocolConfigFromMigration');
-    } else if (protocolConfigSource === 'canonical') {
+    if (protocolConfigSource === 'canonical') {
       await hre.run('task:deployProtocolConfigFromCanonical', { canonicalRpcUrl, canonicalProtocolConfigAddress });
     } else {
       await hre.run('task:deployProtocolConfig');
@@ -254,6 +252,37 @@ task('task:deployEmptyUUPSProxies')
       await run('task:setKMSGenerationAddress', { address: kmsGenerationAddress });
     }
   });
+
+task('task:deployEmptyProxiesProtocolConfigKMSGeneration').setAction(async function (_, { ethers, upgrades, run }) {
+  ensureAddressesDirectoryExists();
+
+  const existingEnv = readExistingHostEnv();
+
+  const targets = [
+    { envKey: 'PROTOCOL_CONFIG_CONTRACT_ADDRESS', setterTask: 'task:setProtocolConfigAddress' },
+    { envKey: 'KMS_GENERATION_CONTRACT_ADDRESS', setterTask: 'task:setKMSGenerationAddress' },
+  ] as const;
+
+  const missingTargets = targets.filter(({ envKey }) => !existingEnv[envKey]);
+
+  if (missingTargets.length === 0) {
+    console.warn(
+      'Empty-proxy bootstrap is a no-op; addresses/.env.host already contains ProtocolConfig and KMSGeneration.',
+    );
+    return;
+  }
+
+  const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
+  const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
+
+  await run('compile:specific', { contract: 'contracts/emptyProxy' });
+
+  for (const { envKey, setterTask } of missingTargets) {
+    const proxyAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
+    await run(setterTask, { address: proxyAddress });
+    process.env[envKey] = proxyAddress;
+  }
+});
 
 ////////////////////////////////////////////////////////////////////////////////
 // ACL
@@ -405,20 +434,46 @@ task('task:deployPauserSet').setAction(async function (_, hre) {
 // ProtocolConfig helpers
 ////////////////////////////////////////////////////////////////////////////////
 
-export function buildKmsNodes(): {
+export function buildKmsNodeParams(): {
   txSenderAddress: string;
   signerAddress: string;
   ipAddress: string;
   storageUrl: string;
+  partyId: number;
+  mpcIdentity: string;
+  caCert: string;
+  storagePrefix: string;
 }[] {
   const numNodes = +getRequiredEnvVar('NUM_KMS_NODES');
-  const nodes: { txSenderAddress: string; signerAddress: string; ipAddress: string; storageUrl: string }[] = [];
+  const nodes: {
+    txSenderAddress: string;
+    signerAddress: string;
+    ipAddress: string;
+    storageUrl: string;
+    partyId: number;
+    mpcIdentity: string;
+    caCert: string;
+    storagePrefix: string;
+  }[] = [];
   for (let idx = 0; idx < numNodes; idx++) {
     const txSenderAddress = getRequiredEnvVar(`KMS_TX_SENDER_ADDRESS_${idx}`);
     const signerAddress = getRequiredEnvVar(`KMS_SIGNER_ADDRESS_${idx}`);
-    const ipAddress = process.env[`KMS_NODE_IP_${idx}`] || '';
+    const ipAddress = getRequiredEnvVar(`KMS_NODE_IP_${idx}`);
     const storageUrl = getRequiredEnvVar(`KMS_NODE_STORAGE_URL_${idx}`);
-    nodes.push({ txSenderAddress, signerAddress, ipAddress, storageUrl });
+    const partyId = process.env[`KMS_NODE_PARTY_ID_${idx}`] ? +getRequiredEnvVar(`KMS_NODE_PARTY_ID_${idx}`) : idx;
+    const mpcIdentity = getRequiredEnvVar(`KMS_NODE_MPC_IDENTITY_${idx}`);
+    const caCert = getRequiredEnvVar(`KMS_NODE_CA_CERT_${idx}`);
+    const storagePrefix = getRequiredEnvVar(`KMS_NODE_STORAGE_PREFIX_${idx}`);
+    nodes.push({
+      txSenderAddress,
+      signerAddress,
+      ipAddress,
+      storageUrl,
+      partyId,
+      mpcIdentity,
+      caCert,
+      storagePrefix,
+    });
   }
   return nodes;
 }
@@ -432,6 +487,22 @@ export function buildKmsThresholds() {
   };
 }
 
+export function buildPcrValues(): { pcr0: string; pcr1: string; pcr2: string }[] {
+  return JSON.parse(getRequiredEnvVar('KMS_PCR_VALUES'));
+}
+
+export function buildProtocolConfigContextArgs(): [
+  ReturnType<typeof buildKmsNodeParams>,
+  ReturnType<typeof buildKmsThresholds>,
+  string,
+  ReturnType<typeof buildPcrValues>,
+] {
+  return [buildKmsNodeParams(), buildKmsThresholds(), getRequiredEnvVar('KMS_SOFTWARE_VERSION'), buildPcrValues()];
+}
+
+// Reinitialize takes the same argument tuple as context construction; alias to avoid drift.
+export const buildProtocolConfigReinitializeArgs = buildProtocolConfigContextArgs;
+
 task('task:assertProtocolConfigReady').setAction(async function (_, hre) {
   const parsedEnv = readHostEnv();
   const protocolConfigAddress = parsedEnv.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
@@ -444,7 +515,11 @@ task('task:assertProtocolConfigReady').setAction(async function (_, hre) {
 
   const protocolConfig = new hre.ethers.Contract(
     protocolConfigAddress,
-    ['function getCurrentKmsContextId() view returns (uint256)'],
+    [
+      'function getCurrentKmsContextId() view returns (uint256)',
+      'function getKmsSignersForContext(uint256) view returns (address[])',
+      'function getPublicDecryptionThresholdForContext(uint256) view returns (uint256)',
+    ],
     hre.ethers.provider,
   );
 
@@ -453,13 +528,30 @@ task('task:assertProtocolConfigReady').setAction(async function (_, hre) {
     currentKmsContextId = await protocolConfig.getCurrentKmsContextId();
   } catch (err) {
     throw new Error(
-      `Cannot deploy KMSVerifier: ProtocolConfig at ${protocolConfigAddress} is not initialized (reading current context reverted: ${formatError(err)}).`,
+      `Cannot deploy KMSVerifier: ProtocolConfig at ${protocolConfigAddress} is not initialized (reading active context reverted: ${formatError(err)}).`,
     );
   }
 
   if (currentKmsContextId === 0n) {
     throw new Error(
       `Cannot deploy KMSVerifier: ProtocolConfig at ${protocolConfigAddress} has no active KMS context (currentKmsContextId=0).`,
+    );
+  }
+
+  try {
+    const [signers, threshold] = await Promise.all([
+      protocolConfig.getKmsSignersForContext(currentKmsContextId),
+      protocolConfig.getPublicDecryptionThresholdForContext(currentKmsContextId),
+    ]);
+    if (signers.length === 0) {
+      throw new Error('current context has no KMS signers');
+    }
+    if (threshold === 0n) {
+      throw new Error('current context public decryption threshold is zero');
+    }
+  } catch (err) {
+    throw new Error(
+      `Cannot deploy KMSVerifier: ProtocolConfig at ${protocolConfigAddress} has unreadable active context ${currentKmsContextId.toString()}: ${formatError(err)}.`,
     );
   }
 });
@@ -534,28 +626,62 @@ task('task:assertNoPendingKeyManagementRequest')
 // ProtocolConfig
 ////////////////////////////////////////////////////////////////////////////////
 
-task('task:deployProtocolConfig').setAction(async function (_taskArguments: TaskArguments, hre) {
+task('task:deployProtocolConfig').setAction(async function (_, hre) {
   const { ethers, upgrades } = hre;
   const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
   const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
   const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
+  const initArgs = buildProtocolConfigContextArgs();
   const newImplem = await ethers.getContractFactory('ProtocolConfig', deployer);
   const parsedEnv = readHostEnv();
   const proxyAddress = parsedEnv.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
   const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
-  const initialKmsNodes = buildKmsNodes();
-  const thresholds = buildKmsThresholds();
 
   await upgrades.upgradeProxy(proxy, newImplem, {
     call: {
       fn: 'initializeFromEmptyProxy',
-      args: [initialKmsNodes, thresholds],
+      args: initArgs,
     },
   });
   // On interval-mining networks, upgradeProxy can return before the tx is mined.
   await waitForTaskReady(hre, 'task:assertProtocolConfigReady');
   console.log('ProtocolConfig code set successfully at address:', proxyAddress);
 });
+
+// DAO path for initializing a non-canonical ProtocolConfig replica from the canonical chain
+// (Ethereum). Consumes a reviewed task:exportCanonicalProtocolConfig artifact — not a live RPC
+// read — so the DAO executes exactly the state its signers reproduced and diffed. Devnet
+// equivalent: task:deployProtocolConfigFromCanonical.
+task(
+  'task:prepareDeployProtocolConfigFromCanonical',
+  'Deploys a ProtocolConfig implementation and prints DAO upgrade calldata from a reviewed canonical snapshot artifact',
+)
+  .addParam(
+    'snapshot',
+    'Path to the reviewed task:exportCanonicalProtocolConfig artifact to encode into the DAO payload.',
+    undefined,
+    types.string,
+  )
+  .addOptionalParam(
+    'verifyContract',
+    'Verify new implementation on Etherscan (for eg if deploying on Sepolia or Mainnet)',
+    true,
+    types.boolean,
+  )
+  .setAction(async function ({ snapshot: snapshotPath, verifyContract }, hre) {
+    const parsedEnv = readHostEnv();
+    const proxyAddress = parsedEnv.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
+    // The bootstrap task may have updated addresses/FHEVMHostAddresses.sol, so rebuild.
+    await hre.run('compile:specific', { contract: 'contracts' });
+    const snapshot = parseSnapshotArtifact(fs.readFileSync(snapshotPath, 'utf-8'));
+    const preparedUpgrade = await buildCanonicalUpgradeProposal(hre, { snapshot, proxyAddress });
+
+    printUpgradeProposal(preparedUpgrade);
+    if (verifyContract) {
+      await verifyProposalImplementation(hre, preparedUpgrade, 'contracts/ProtocolConfig.sol:ProtocolConfig');
+    }
+    return preparedUpgrade;
+  });
 
 // Initializes the local (non-canonical) ProtocolConfig replica from the canonical chain's current
 // KMS context — from a reviewed export artifact (--snapshot) or a live block-pinned RPC read.
@@ -621,7 +747,7 @@ task(
     // On interval-mining networks, upgradeProxy can return before the tx is mined.
     await waitForTaskReady(hre, 'task:assertProtocolConfigReady');
     console.log(
-      `ProtocolConfig code set successfully at ${secondaryProxyAddress}, mirroring canonical chain ${snapshot.canonicalChainId} context ${snapshot.currentKmsContextId} (block ${snapshot.blockNumber}) with ${snapshot.kmsNodes.length} KMS nodes.`,
+      `ProtocolConfig code set successfully at ${secondaryProxyAddress}, mirroring canonical chain ${snapshot.canonicalChainId} context ${snapshot.currentKmsContextId} epoch ${snapshot.currentEpochId} (block ${snapshot.blockNumber}) with ${snapshot.kmsNodes.length} KMS nodes.`,
     );
   });
 
@@ -673,7 +799,7 @@ task(
     const artifact = buildSnapshotArtifact(snapshot, canonicalProtocolConfigAddress);
     fs.writeFileSync(out, JSON.stringify(artifact, null, 2));
     console.log(
-      `Canonical ProtocolConfig snapshot written to ${out}: chain ${snapshot.canonicalChainId}, block ${snapshot.blockNumber}, context ${snapshot.currentKmsContextId}, ${snapshot.kmsNodes.length} KMS nodes.`,
+      `Canonical ProtocolConfig snapshot written to ${out}: chain ${snapshot.canonicalChainId}, block ${snapshot.blockNumber}, context ${snapshot.currentKmsContextId}, epoch ${snapshot.currentEpochId}, ${snapshot.kmsNodes.length} KMS nodes.`,
     );
     return artifact;
   });
