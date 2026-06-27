@@ -1,6 +1,8 @@
 use crate::metrics::{
-    AWS_UPLOAD_FAILURE_COUNTER, AWS_UPLOAD_SUCCESS_COUNTER, S3_CANONICAL_REPAIR_ENQUEUED_COUNTER,
-    STALE_S3_UPLOAD_AFTER_CLEANUP_COUNTER,
+    AWS_UPLOAD_FAILURE_COUNTER, AWS_UPLOAD_SUCCESS_COUNTER,
+    S3_CANONICAL_RECONCILER_MISMATCH_COUNTER, S3_CANONICAL_REPAIR_COMPLETED_COUNTER,
+    S3_CANONICAL_REPAIR_ENQUEUED_COUNTER, S3_CANONICAL_REPAIR_FAILED_COUNTER,
+    S3_PUBLICATION_BLOCKS_SETTLEMENT_COUNTER, STALE_S3_UPLOAD_AFTER_CLEANUP_COUNTER,
 };
 use crate::{
     BigCiphertext, Ciphertext128Format, Config, ExecutionError, HandleItem, S3Config, UploadJob,
@@ -68,15 +70,17 @@ pub(crate) async fn spawn_resubmit_task(
     jobs_tx: mpsc::Sender<UploadJob>,
     client: Arc<aws_sdk_s3::Client>,
     is_ready: Arc<AtomicBool>,
+    signer: CoproSigner,
 ) -> Result<JoinHandle<Result<(), ServiceError>>, ExecutionError> {
     let op = move |pool, token| {
         let client = client.clone();
         let is_ready = is_ready.clone();
         let conf = conf.clone();
         let jobs_tx = jobs_tx.clone();
+        let signer = signer.clone();
 
         async move {
-            do_resubmits_loop(client, pool, conf, jobs_tx, token, is_ready)
+            do_resubmits_loop(client, pool, conf, jobs_tx, token, is_ready, signer)
                 .await
                 .map_err(ServiceError::from)
         }
@@ -653,6 +657,96 @@ fn completed_s3_format_version(task: &HandleItem, preserve_legacy_s3_format: boo
     }
 }
 
+async fn check_s3_publication(
+    client: &Client,
+    conf: &S3Config,
+    task: &HandleItem,
+    expected_attestation: &CiphertextAttestationPayload,
+    expected_signer: Address,
+    upload_material: &UploadMaterial,
+    preserve_legacy_s3_format: bool,
+) -> Result<bool, ExecutionError> {
+    let key = s3_ciphertext_key(&task.handle, COPROCESSOR_CONTEXT_ID_1);
+    let ct64_checksum_sha256 = conf
+        .verify_sha256_checksum
+        .then(|| match task.ct64_compressed.is_empty() {
+            true => None,
+            false => Some(sha256_checksum_header(task.ct64_compressed.as_ref())),
+        })
+        .flatten();
+
+    let ct64_verified = check_attested_object_exists(
+        client,
+        &conf.bucket_ct64,
+        &key,
+        expected_attestation,
+        expected_signer,
+        ct64_checksum_sha256.as_deref(),
+    )
+    .await?;
+    if !ct64_verified {
+        return Ok(false);
+    }
+
+    if upload_material.ct128_digest.as_slice() != NO_SNS_CIPHERTEXT_DIGEST.as_slice()
+        && !preserve_legacy_s3_format
+    {
+        let digest_key = hex::encode(&upload_material.ct128_digest);
+        let ct128_checksum_sha256 = conf
+            .verify_sha256_checksum
+            .then(|| match task.ct128.is_empty() {
+                true => None,
+                false => Some(sha256_checksum_header(task.ct128.bytes())),
+            })
+            .flatten();
+
+        let ct128_verified = check_ct128_objects_exist(
+            client,
+            &conf.bucket_ct128,
+            &key,
+            &digest_key,
+            expected_attestation,
+            expected_signer,
+            ct128_checksum_sha256.as_deref(),
+        )
+        .await?;
+        if !ct128_verified {
+            return Ok(false);
+        }
+    }
+
+    Ok(true)
+}
+
+async fn verify_s3_publication(
+    client: &Client,
+    conf: &S3Config,
+    task: &HandleItem,
+    expected_attestation: &CiphertextAttestationPayload,
+    expected_signer: Address,
+    upload_material: &UploadMaterial,
+    preserve_legacy_s3_format: bool,
+) -> Result<(), ExecutionError> {
+    if !check_s3_publication(
+        client,
+        conf,
+        task,
+        expected_attestation,
+        expected_signer,
+        upload_material,
+        preserve_legacy_s3_format,
+    )
+    .await?
+    {
+        return Err(ExecutionError::S3TransientError(format!(
+            "S3 publication for handle {} was not verified after upload",
+            to_hex(&task.handle)
+        )));
+    }
+
+    Ok(())
+}
+
 async fn build_attestation(
     payload: &CiphertextAttestationPayload,
     signer: &CoproSigner,
@@ -703,7 +797,7 @@ async fn upload_ciphertexts(
         );
         return Ok(());
     }
-    task.note_repair_attempt(trx).await?;
+    let repair_attempt = task.is_canonical_repair_task(trx).await?;
 
     let mut jobs = vec![];
 
@@ -939,6 +1033,23 @@ async fn upload_ciphertexts(
 
     transient_error?;
 
+    if let Err(err) = verify_s3_publication(
+        client,
+        conf,
+        &task,
+        &expected_attestation,
+        expected_signer,
+        &upload_material,
+        preserve_legacy_s3_format,
+    )
+    .await
+    {
+        if repair_attempt {
+            S3_CANONICAL_REPAIR_FAILED_COUNTER.inc();
+        }
+        return Err(err.into());
+    }
+
     let marked_uploaded = task
         .mark_ciphertexts_uploaded(
             trx,
@@ -956,6 +1067,9 @@ async fn upload_ciphertexts(
         }
         STALE_S3_UPLOAD_AFTER_CLEANUP_COUNTER.inc();
         return Ok(());
+    }
+    if repair_attempt {
+        S3_CANONICAL_REPAIR_COMPLETED_COUNTER.inc();
     }
 
     sqlx::query!("SELECT pg_notify($1, '')", EVENT_CIPHERTEXTS_UPLOADED)
@@ -1211,6 +1325,47 @@ async fn fetch_pending_canonical_repairs(
 
     let rows = sqlx::query(
         r#"
+        WITH selected AS (
+            SELECT q.host_chain_id,
+                   q.handle
+              FROM s3_canonical_repair_queue q
+              JOIN ciphertext_digest_branch d
+                ON d.host_chain_id = q.host_chain_id
+               AND d.handle = q.handle
+               AND d.producer_block_hash = q.target_producer_block_hash
+               AND d.block_hash = q.target_block_hash
+             WHERE (
+                    q.locked_at IS NULL
+                    OR q.locked_at < NOW() - INTERVAL '5 minutes'
+                   )
+               AND d.ciphertext IS NOT NULL
+               AND (
+                    d.ciphertext128 IS NOT NULL
+                    OR NOT EXISTS (
+                        SELECT 1
+                          FROM ciphertexts128_branch c
+                         WHERE c.handle = d.handle
+                           AND c.producer_block_hash = d.producer_block_hash
+                           AND c.ciphertext IS NOT NULL
+                    )
+               )
+             ORDER BY q.updated_at ASC
+             FOR UPDATE SKIP LOCKED
+             LIMIT $1
+        ),
+        locked AS (
+            UPDATE s3_canonical_repair_queue q
+               SET locked_at = NOW(),
+                   attempts = attempts + 1,
+                   updated_at = NOW()
+              FROM selected s
+             WHERE q.host_chain_id = s.host_chain_id
+               AND q.handle = s.handle
+             RETURNING q.host_chain_id,
+                       q.handle,
+                       q.target_producer_block_hash,
+                       q.target_block_hash
+        )
         SELECT d.handle,
                d.producer_block_hash,
                d.block_hash,
@@ -1225,29 +1380,17 @@ async fn fetch_pending_canonical_repairs(
                EXISTS (
                  SELECT 1
                    FROM ciphertexts128_branch c
-                  WHERE c.handle = d.handle
+                 WHERE c.handle = d.handle
                     AND c.producer_block_hash = d.producer_block_hash
                     AND c.ciphertext IS NOT NULL
                ) AS has_ct128_ciphertext
-          FROM s3_canonical_repair_queue q
+          FROM locked q
           JOIN ciphertext_digest_branch d
             ON d.host_chain_id = q.host_chain_id
            AND d.handle = q.handle
            AND d.producer_block_hash = q.target_producer_block_hash
            AND d.block_hash = q.target_block_hash
-         WHERE d.ciphertext IS NOT NULL
-           AND (
-                d.ciphertext128 IS NOT NULL
-                OR NOT EXISTS (
-                    SELECT 1
-                      FROM ciphertexts128_branch c
-                     WHERE c.handle = d.handle
-                       AND c.producer_block_hash = d.producer_block_hash
-                       AND c.ciphertext IS NOT NULL
-                )
-           )
-         ORDER BY q.updated_at ASC
-         LIMIT $1
+        LIMIT $1
         "#,
     )
     .bind(limit)
@@ -1371,6 +1514,337 @@ async fn fetch_pending_canonical_repairs(
     Ok(jobs)
 }
 
+async fn reconcile_s3_canonical_publications(
+    client: &Client,
+    db_pool: &Pool<Postgres>,
+    conf: &S3Config,
+    signer: CoproSigner,
+    limit: usize,
+) -> Result<(), ExecutionError> {
+    let enqueued = enqueue_unverified_settled_publications(db_pool, limit as i64).await?;
+    if enqueued > 0 {
+        S3_CANONICAL_REPAIR_ENQUEUED_COUNTER.inc_by(enqueued);
+        S3_PUBLICATION_BLOCKS_SETTLEMENT_COUNTER.inc_by(enqueued);
+    }
+
+    reconcile_verified_settled_publications(client, db_pool, conf, signer, limit as i64).await
+}
+
+pub(crate) async fn enqueue_unverified_settled_publications(
+    db_pool: &Pool<Postgres>,
+    limit: i64,
+) -> Result<u64, ExecutionError> {
+    if limit <= 0 {
+        return Ok(0);
+    }
+
+    let enqueued = sqlx::query_scalar::<_, i64>(
+        r#"
+        WITH candidates AS (
+            SELECT d.host_chain_id,
+                   d.handle,
+                   d.producer_block_hash,
+                   d.block_hash,
+                   d.block_number
+              FROM ciphertext_digest_branch d
+              JOIN coprocessor_settlement s
+                ON s.chain_id = d.host_chain_id
+              LEFT JOIN host_chain_blocks_valid producer
+                ON producer.chain_id = d.host_chain_id
+               AND producer.block_hash = d.producer_block_hash
+               AND d.producer_block_hash <> ''::BYTEA
+              LEFT JOIN host_chain_blocks_valid event_block
+                ON event_block.chain_id = d.host_chain_id
+               AND event_block.block_hash = d.block_hash
+               AND d.block_hash <> ''::BYTEA
+             WHERE d.block_number IS NOT NULL
+               AND d.block_number <= s.settled_height
+               AND (
+                    d.producer_block_hash = ''::BYTEA
+                    OR COALESCE(producer.block_status, 'pending') <> 'orphaned'
+               )
+               AND (
+                    d.block_hash = ''::BYTEA
+                    OR COALESCE(event_block.block_status, 'pending') <> 'orphaned'
+               )
+               AND d.ciphertext IS NOT NULL
+               AND (
+                    d.ciphertext128 IS NOT NULL
+                    OR NOT EXISTS (
+                        SELECT 1
+                          FROM ciphertexts128_branch c
+                         WHERE c.handle = d.handle
+                           AND c.producer_block_hash = d.producer_block_hash
+                           AND c.ciphertext IS NOT NULL
+                    )
+               )
+               AND (
+                    d.s3_publication_verified_at IS NULL
+                    OR d.s3_publication_verified_digest IS DISTINCT FROM d.ciphertext
+                    OR d.s3_publication_verified_producer_block_hash IS DISTINCT FROM d.producer_block_hash
+               )
+             ORDER BY d.block_number ASC, d.created_at ASC
+             LIMIT $1
+        ),
+        upserted AS (
+            INSERT INTO s3_canonical_repair_queue (
+                host_chain_id,
+                handle,
+                target_producer_block_hash,
+                target_block_hash,
+                target_block_number,
+                reason
+            )
+            SELECT host_chain_id,
+                   handle,
+                   producer_block_hash,
+                   block_hash,
+                   block_number,
+                   'settlement_unverified_publication'
+              FROM candidates
+            ON CONFLICT (host_chain_id, handle) DO UPDATE
+            SET target_producer_block_hash = EXCLUDED.target_producer_block_hash,
+                target_block_hash = EXCLUDED.target_block_hash,
+                target_block_number = EXCLUDED.target_block_number,
+                reason = EXCLUDED.reason,
+                attempts = CASE
+                    WHEN s3_canonical_repair_queue.target_producer_block_hash IS DISTINCT FROM EXCLUDED.target_producer_block_hash
+                      OR s3_canonical_repair_queue.target_block_hash IS DISTINCT FROM EXCLUDED.target_block_hash
+                    THEN 0
+                    ELSE s3_canonical_repair_queue.attempts
+                END,
+                locked_at = NULL,
+                updated_at = NOW()
+            RETURNING handle
+        )
+        SELECT COUNT(*)::BIGINT FROM upserted
+        "#,
+    )
+    .bind(limit)
+    .fetch_one(db_pool)
+    .await?;
+
+    Ok(enqueued.max(0) as u64)
+}
+
+async fn reconcile_verified_settled_publications(
+    client: &Client,
+    db_pool: &Pool<Postgres>,
+    conf: &S3Config,
+    signer: CoproSigner,
+    limit: i64,
+) -> Result<(), ExecutionError> {
+    if limit <= 0 {
+        return Ok(());
+    }
+
+    let rows = sqlx::query(
+        r#"
+        SELECT d.host_chain_id,
+               d.key_id_gw,
+               d.handle,
+               d.producer_block_hash,
+               d.block_hash,
+               d.block_number,
+               d.ciphertext,
+               d.ciphertext128,
+               d.ciphertext128_format,
+               d.s3_format_version,
+               d.transaction_id
+          FROM ciphertext_digest_branch d
+          JOIN coprocessor_settlement s
+            ON s.chain_id = d.host_chain_id
+          LEFT JOIN host_chain_blocks_valid producer
+            ON producer.chain_id = d.host_chain_id
+           AND producer.block_hash = d.producer_block_hash
+           AND d.producer_block_hash <> ''::BYTEA
+          LEFT JOIN host_chain_blocks_valid event_block
+            ON event_block.chain_id = d.host_chain_id
+           AND event_block.block_hash = d.block_hash
+           AND d.block_hash <> ''::BYTEA
+         WHERE d.block_number IS NOT NULL
+           AND d.block_number <= s.settled_height
+           AND (
+                d.producer_block_hash = ''::BYTEA
+                OR COALESCE(producer.block_status, 'pending') <> 'orphaned'
+           )
+           AND (
+                d.block_hash = ''::BYTEA
+                OR COALESCE(event_block.block_status, 'pending') <> 'orphaned'
+           )
+           AND d.ciphertext IS NOT NULL
+           AND (
+                d.ciphertext128 IS NOT NULL
+                OR NOT EXISTS (
+                    SELECT 1
+                      FROM ciphertexts128_branch c
+                     WHERE c.handle = d.handle
+                       AND c.producer_block_hash = d.producer_block_hash
+                       AND c.ciphertext IS NOT NULL
+                )
+           )
+           AND d.s3_publication_verified_at IS NOT NULL
+           AND d.s3_publication_verified_digest IS NOT DISTINCT FROM d.ciphertext
+           AND d.s3_publication_verified_producer_block_hash IS NOT DISTINCT FROM d.producer_block_hash
+         ORDER BY d.s3_publication_verified_at ASC
+         LIMIT $1
+        "#,
+    )
+    .bind(limit)
+    .fetch_all(db_pool)
+    .await?;
+
+    for row in rows {
+        let host_chain_id_raw: i64 = row.try_get("host_chain_id")?;
+        let key_id_gw: Vec<u8> = row.try_get("key_id_gw")?;
+        let handle: Vec<u8> = row.try_get("handle")?;
+        let producer_block_hash: Vec<u8> = row.try_get("producer_block_hash")?;
+        let block_hash: Vec<u8> = row.try_get("block_hash")?;
+        let block_number: Option<i64> = row.try_get("block_number")?;
+        let ct64_digest: Vec<u8> = row.try_get("ciphertext")?;
+        let ct128_digest: Option<Vec<u8>> = row.try_get("ciphertext128")?;
+        let ciphertext128_format: Option<i16> = row.try_get("ciphertext128_format")?;
+        let s3_format_version: Option<i16> = row.try_get("s3_format_version")?;
+        let transaction_id: Option<Vec<u8>> = row.try_get("transaction_id")?;
+
+        let ct128_digest = ct128_digest.unwrap_or_else(|| NO_SNS_CIPHERTEXT_DIGEST.to_vec());
+        let ct128_format = if ct128_digest.as_slice() == NO_SNS_CIPHERTEXT_DIGEST.as_slice() {
+            Ciphertext128Format::Unknown
+        } else {
+            match ciphertext128_format.and_then(Ciphertext128Format::from_i16) {
+                Some(format) => format,
+                None => {
+                    warn!(
+                        handle = to_hex(&handle),
+                        "Skipping S3 reconciliation for row with invalid ct128 format"
+                    );
+                    continue;
+                }
+            }
+        };
+
+        let task = HandleItem {
+            host_chain_id: ChainId::try_from(host_chain_id_raw)
+                .map_err(|e| ExecutionError::ConversionError(e.into()))?,
+            key_id_gw,
+            handle: handle.clone(),
+            producer_block_hash: producer_block_hash.clone(),
+            block_hash: block_hash.clone(),
+            block_number,
+            ct64_compressed: Arc::new(Vec::new()),
+            ct128: Arc::new(BigCiphertext::new(Vec::new(), ct128_format)),
+            ct64_digest: Some(ct64_digest),
+            ct128_digest: Some(ct128_digest),
+            s3_format_version,
+            span: Span::none(),
+            transaction_id,
+        };
+        let upload_material =
+            upload_material(&task).map_err(|err| ExecutionError::InternalError(err.to_string()))?;
+        let attestation_format =
+            if upload_material.ct128_digest.as_slice() == NO_SNS_CIPHERTEXT_DIGEST.as_slice() {
+                CiphertextFormat::UncompressedOnCpu
+            } else {
+                attestation_format(task.ct128.format())
+                    .map_err(|err| ExecutionError::InternalError(err.to_string()))?
+            };
+        let expected_attestation = build_attestation_payload(
+            &task,
+            COPROCESSOR_CONTEXT_ID_1,
+            &upload_material.ct64_digest,
+            &upload_material.ct128_digest,
+            attestation_format,
+        )
+        .map_err(|err| ExecutionError::InternalError(err.to_string()))?;
+        let preserve_legacy_s3_format =
+            should_preserve_legacy_s3_format(&task, &upload_material.ct128_digest);
+
+        let is_current = check_s3_publication(
+            client,
+            conf,
+            &task,
+            &expected_attestation,
+            signer.address(),
+            &upload_material,
+            preserve_legacy_s3_format,
+        )
+        .await?;
+
+        if is_current {
+            mark_s3_publication_reverified(db_pool, &task).await?;
+            continue;
+        }
+
+        enqueue_exact_s3_canonical_repair(db_pool, &task, "reconciler_attestation_mismatch")
+            .await?;
+        S3_CANONICAL_REPAIR_ENQUEUED_COUNTER.inc();
+        S3_CANONICAL_RECONCILER_MISMATCH_COUNTER.inc();
+    }
+
+    Ok(())
+}
+
+async fn mark_s3_publication_reverified(
+    db_pool: &Pool<Postgres>,
+    task: &HandleItem,
+) -> Result<(), ExecutionError> {
+    sqlx::query(
+        r#"
+        UPDATE ciphertext_digest_branch
+           SET s3_publication_verified_at = NOW()
+         WHERE host_chain_id = $1
+           AND handle = $2
+           AND producer_block_hash = $3
+           AND block_hash = $4
+        "#,
+    )
+    .bind(task.host_chain_id.as_i64())
+    .bind(&task.handle)
+    .bind(&task.producer_block_hash)
+    .bind(&task.block_hash)
+    .execute(db_pool)
+    .await?;
+
+    Ok(())
+}
+
+async fn enqueue_exact_s3_canonical_repair(
+    db_pool: &Pool<Postgres>,
+    task: &HandleItem,
+    reason: &str,
+) -> Result<(), ExecutionError> {
+    sqlx::query(
+        r#"
+        INSERT INTO s3_canonical_repair_queue (
+            host_chain_id,
+            handle,
+            target_producer_block_hash,
+            target_block_hash,
+            target_block_number,
+            reason
+        )
+        VALUES ($1, $2, $3, $4, $5, $6)
+        ON CONFLICT (host_chain_id, handle) DO UPDATE
+        SET target_producer_block_hash = EXCLUDED.target_producer_block_hash,
+            target_block_hash = EXCLUDED.target_block_hash,
+            target_block_number = EXCLUDED.target_block_number,
+            reason = EXCLUDED.reason,
+            locked_at = NULL,
+            updated_at = NOW()
+        "#,
+    )
+    .bind(task.host_chain_id.as_i64())
+    .bind(&task.handle)
+    .bind(&task.producer_block_hash)
+    .bind(&task.block_hash)
+    .bind(task.block_number)
+    .bind(reason)
+    .execute(db_pool)
+    .await?;
+
+    Ok(())
+}
+
 /// Resubmit for uploading ciphertexts.
 /// If a handle has a missing digest in ciphertext_digest table then
 /// retry uploading the actual ciphertext.
@@ -1381,8 +1855,22 @@ async fn do_resubmits_loop(
     tasks: mpsc::Sender<UploadJob>,
     token: CancellationToken,
     is_ready: Arc<AtomicBool>,
+    signer: CoproSigner,
 ) -> Result<(), ExecutionError> {
     // Retry to resubmit all upload tasks at the start-up
+    if is_ready.load(Ordering::Acquire) {
+        reconcile_s3_canonical_publications(
+            &client,
+            &pool,
+            &conf.s3,
+            signer.clone(),
+            DEFAULT_BATCH_SIZE,
+        )
+        .await
+        .unwrap_or_else(|err| {
+            error!(error = %err, "Failed to reconcile S3 canonical publications");
+        });
+    }
     try_resubmit(
         &pool,
         is_ready.clone(),
@@ -1413,6 +1901,10 @@ async fn do_resubmits_loop(
                     if is_ready_res {
                         info!("Reconnected to S3, buckets exist");
                         is_ready.store(true, Ordering::Release);
+                        reconcile_s3_canonical_publications(&client, &pool, &conf.s3, signer.clone(), DEFAULT_BATCH_SIZE).await
+                            .unwrap_or_else(|err| {
+                                error!(error = %err, "Failed to reconcile S3 canonical publications");
+                            });
                         try_resubmit(&pool, is_ready.clone(), tasks.clone(), token.clone(), DEFAULT_BATCH_SIZE).await
                             .unwrap_or_else(|err| {
                                 error!(error = %err, "Failed to resubmit tasks");
@@ -1423,6 +1915,12 @@ async fn do_resubmits_loop(
             // A regular resubmit to ensure there no remaining tasks
             _ = resubmit_ticker.tick() => {
                 info!("Retry resubmit ...");
+                if is_ready.load(Ordering::Acquire) {
+                    reconcile_s3_canonical_publications(&client, &pool, &conf.s3, signer.clone(), DEFAULT_BATCH_SIZE).await
+                        .unwrap_or_else(|err| {
+                            error!(error = %err, "Failed to reconcile S3 canonical publications");
+                        });
+                }
                 try_resubmit(&pool, is_ready.clone(), tasks.clone(), token.clone(), DEFAULT_BATCH_SIZE).await
                     .unwrap_or_else(|err| {
                         error!(error = %err, "Failed to resubmit tasks");

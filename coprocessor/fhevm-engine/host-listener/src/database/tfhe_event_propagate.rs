@@ -1200,6 +1200,9 @@ impl Database {
             .iter()
             .cloned()
             .chain(orphaned_digest_handles)
+            .chain(orphaned_legacy_computation_handles.iter().cloned())
+            .chain(orphaned_legacy_pbs_handles.iter().cloned())
+            .chain(orphaned_allowed_handles.iter().cloned())
             .collect::<Vec<_>>();
         let enqueued_repairs = enqueue_s3_canonical_repairs(
             tx,

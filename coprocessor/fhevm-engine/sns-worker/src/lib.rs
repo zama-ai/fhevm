@@ -25,7 +25,9 @@ use anyhow::Context;
 use aws_config::{retry::RetryConfig, timeout::TimeoutConfig, BehaviorVersion};
 use aws_sdk_s3::{config::Builder, Client};
 use fhevm_engine_common::{
-    branch::enqueue_s3_canonical_repair,
+    branch::{
+        enqueue_s3_canonical_repair, read_settled_height, resolve_s3_canonical_publication_target,
+    },
     chain_id::ChainId,
     db_keys::DbKeyId,
     drift_revert,
@@ -374,11 +376,41 @@ impl HandleItem {
 
         let result = sqlx::query(
             r#"
+            WITH canonical_target AS (
+                SELECT d2.producer_block_hash,
+                       d2.block_hash
+                  FROM ciphertext_digest_branch d2
+                  LEFT JOIN host_chain_blocks_valid producer
+                    ON producer.chain_id = d2.host_chain_id
+                   AND producer.block_hash = d2.producer_block_hash
+                   AND d2.producer_block_hash <> ''::BYTEA
+                  LEFT JOIN host_chain_blocks_valid event_block
+                    ON event_block.chain_id = d2.host_chain_id
+                   AND event_block.block_hash = d2.block_hash
+                   AND d2.block_hash <> ''::BYTEA
+                 WHERE d2.host_chain_id = $5
+                   AND d2.handle = $6
+                   AND (
+                        d2.producer_block_hash = ''::BYTEA
+                        OR COALESCE(producer.block_status, 'pending') <> 'orphaned'
+                   )
+                   AND (
+                        d2.block_hash = ''::BYTEA
+                        OR COALESCE(event_block.block_status, 'pending') <> 'orphaned'
+                   )
+                 ORDER BY COALESCE(d2.block_number, -1) DESC,
+                          CASE WHEN d2.producer_block_hash = ''::BYTEA THEN 1 ELSE 0 END ASC,
+                          d2.created_at DESC
+                 LIMIT 1
+            )
             UPDATE ciphertext_digest_branch d
             SET ciphertext = $1,
                 ciphertext128 = $2,
                 ciphertext128_format = $3,
-                s3_format_version = $4
+                s3_format_version = $4,
+                s3_publication_verified_at = NOW(),
+                s3_publication_verified_digest = $1,
+                s3_publication_verified_producer_block_hash = d.producer_block_hash
             WHERE d.host_chain_id = $5
               AND d.handle = $6
               AND d.producer_block_hash = $7
@@ -401,6 +433,23 @@ impl HandleItem {
                         WHERE b.chain_id = d.host_chain_id
                           AND b.block_hash = d.block_hash
                           AND b.block_status = 'orphaned'
+                    )
+              )
+              AND (
+                    d.block_number IS NULL
+                    OR d.block_number > COALESCE(
+                        (
+                            SELECT settled_height
+                            FROM coprocessor_settlement s
+                            WHERE s.chain_id = d.host_chain_id
+                        ),
+                        -1
+                    )
+                    OR EXISTS (
+                        SELECT 1
+                        FROM canonical_target t
+                        WHERE t.producer_block_hash = d.producer_block_hash
+                          AND t.block_hash = d.block_hash
                     )
               )
             "#,
@@ -506,6 +555,28 @@ impl HandleItem {
         .fetch_one(trx.as_mut())
         .await?;
 
+        if !publishable {
+            return Ok(false);
+        }
+
+        if let Some(block_number) = self.block_number {
+            let settled_height = read_settled_height(trx, self.host_chain_id.as_i64()).await?;
+            if block_number <= settled_height {
+                let Some(target) = resolve_s3_canonical_publication_target(
+                    trx,
+                    self.host_chain_id.as_i64(),
+                    &self.handle,
+                )
+                .await?
+                else {
+                    return Ok(false);
+                };
+
+                return Ok(target.producer_block_hash == self.producer_block_hash
+                    && target.block_hash == self.block_hash);
+            }
+        }
+
         Ok(publishable)
     }
 
@@ -520,30 +591,30 @@ impl HandleItem {
         )
     }
 
-    pub(crate) async fn note_repair_attempt(
+    pub(crate) async fn is_canonical_repair_task(
         &self,
         trx: &mut Transaction<'_, Postgres>,
-    ) -> Result<(), ExecutionError> {
-        sqlx::query(
+    ) -> Result<bool, ExecutionError> {
+        let is_repair = sqlx::query_scalar::<_, bool>(
             r#"
-            UPDATE s3_canonical_repair_queue
-               SET attempts = attempts + 1,
-                   locked_at = NOW(),
-                   updated_at = NOW()
-             WHERE host_chain_id = $1
-               AND handle = $2
-               AND target_producer_block_hash = $3
-               AND target_block_hash = $4
+            SELECT EXISTS(
+                SELECT 1
+                FROM s3_canonical_repair_queue
+                WHERE host_chain_id = $1
+                  AND handle = $2
+                  AND target_producer_block_hash = $3
+                  AND target_block_hash = $4
+            )
             "#,
         )
         .bind(self.host_chain_id.as_i64())
         .bind(&self.handle)
         .bind(&self.producer_block_hash)
         .bind(&self.block_hash)
-        .execute(trx.as_mut())
+        .fetch_one(trx.as_mut())
         .await?;
 
-        Ok(())
+        Ok(is_repair)
     }
 }
 
@@ -648,6 +719,7 @@ pub async fn run_uploader_loop(
         tx.clone(),
         client.clone(),
         is_ready.clone(),
+        signer.clone(),
     )
     .await?;
 

@@ -123,6 +123,29 @@ pub async fn advance_settled_height(
                WHERE q.host_chain_id = b.chain_id
                  AND q.target_block_number = b.block_number
            )
+           AND NOT EXISTS (
+               SELECT 1
+               FROM ciphertext_digest_branch d
+               WHERE d.host_chain_id = b.chain_id
+                 AND d.block_number = b.block_number
+                 AND d.block_hash = b.block_hash
+                 AND (
+                      d.ciphertext IS NULL
+                      OR (
+                          d.ciphertext128 IS NULL
+                          AND EXISTS (
+                              SELECT 1
+                              FROM ciphertexts128_branch c
+                              WHERE c.handle = d.handle
+                                AND c.producer_block_hash = d.producer_block_hash
+                                AND c.ciphertext IS NOT NULL
+                          )
+                      )
+                      OR d.s3_publication_verified_at IS NULL
+                      OR d.s3_publication_verified_digest IS DISTINCT FROM d.ciphertext
+                      OR d.s3_publication_verified_producer_block_hash IS DISTINCT FROM d.producer_block_hash
+                 )
+           )
          ORDER BY b.block_number ASC
         "#,
     )

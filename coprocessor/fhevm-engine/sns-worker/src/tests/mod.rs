@@ -1,5 +1,5 @@
 use crate::{
-    aws_upload::fetch_pending_uploads,
+    aws_upload::{enqueue_unverified_settled_publications, fetch_pending_uploads},
     executor::{garbage_collect, query_sns_tasks, Order},
     keyset::fetch_client_key,
     squash_noise::safe_deserialize,
@@ -13,9 +13,9 @@ use aws_config::BehaviorVersion;
 use ciphertext_attestation::{
     CiphertextAttestation, CiphertextFormat, S3_METADATA_ATTESTATION_KEY,
 };
-use fhevm_engine_common::db_keys::DbKeyId;
 use fhevm_engine_common::tfhe_ops::current_ciphertext_version;
 use fhevm_engine_common::utils::{to_hex, DatabaseURL};
+use fhevm_engine_common::{branch::advance_settled_height, db_keys::DbKeyId};
 use serde::{Deserialize, Serialize};
 use serial_test::serial;
 use sqlx::Row;
@@ -828,6 +828,164 @@ async fn canonical_repair_queue_is_returned_as_upload_work() {
         }
         crate::UploadJob::DatabaseLock(_) => panic!("repair work should use normal upload path"),
     }
+
+    let (locked, attempts): (bool, i32) = sqlx::query_as(
+        "SELECT locked_at IS NOT NULL, attempts
+         FROM s3_canonical_repair_queue
+         WHERE host_chain_id = $1 AND handle = $2",
+    )
+    .bind(host_chain_id)
+    .bind(&handle)
+    .fetch_one(pool)
+    .await
+    .expect("repair lock timestamp");
+    assert!(locked);
+    assert_eq!(attempts, 1);
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn unverified_settled_publication_is_enqueued_for_repair() {
+    let test_instance = setup_test_db(ImportMode::None)
+        .await
+        .expect("valid db instance");
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(3)
+        .connect(test_instance.db_url())
+        .await
+        .expect("connect test db");
+    let pool = &pool;
+    clean_up(pool).await.expect("clean db");
+
+    let host_chain_id = 1_i64;
+    let key_id_gw = vec![0x03_u8; 32];
+    let handle = vec![0xD0_u8; 32];
+    let producer = vec![0xD1_u8; 32];
+    let event = vec![0xD2_u8; 32];
+    let ct64_digest = vec![0xD3_u8; 32];
+
+    sqlx::query(
+        "INSERT INTO coprocessor_settlement(chain_id, settled_height)
+         VALUES ($1, 40)",
+    )
+    .bind(host_chain_id)
+    .execute(pool)
+    .await
+    .expect("insert settlement");
+
+    sqlx::query(
+        "INSERT INTO ciphertext_digest_branch(
+            host_chain_id, key_id_gw, handle, producer_block_hash, block_hash, block_number,
+            ciphertext, ciphertext128, s3_format_version
+         )
+         VALUES ($1, $2, $3, $4, $5, 40, $6, $7, $8)",
+    )
+    .bind(host_chain_id)
+    .bind(&key_id_gw)
+    .bind(&handle)
+    .bind(&producer)
+    .bind(&event)
+    .bind(&ct64_digest)
+    .bind(vec![0_u8; 32])
+    .bind(CURRENT_S3_FORMAT_VERSION)
+    .execute(pool)
+    .await
+    .expect("insert complete digest row");
+
+    let enqueued = enqueue_unverified_settled_publications(pool, 10)
+        .await
+        .expect("enqueue unverified settled publication");
+    assert_eq!(enqueued, 1);
+
+    let target: (Vec<u8>, Vec<u8>) = sqlx::query_as(
+        "SELECT target_producer_block_hash, target_block_hash
+         FROM s3_canonical_repair_queue
+         WHERE host_chain_id = $1 AND handle = $2",
+    )
+    .bind(host_chain_id)
+    .bind(&handle)
+    .fetch_one(pool)
+    .await
+    .expect("repair queue target");
+    assert_eq!(target, (producer, event));
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn settlement_waits_for_verified_s3_publication_marker() {
+    let test_instance = setup_test_db(ImportMode::None)
+        .await
+        .expect("valid db instance");
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(3)
+        .connect(test_instance.db_url())
+        .await
+        .expect("connect test db");
+    let pool = &pool;
+    clean_up(pool).await.expect("clean db");
+
+    let host_chain_id = 1_i64;
+    let key_id_gw = vec![0x04_u8; 32];
+    let handle = vec![0xE0_u8; 32];
+    let producer = vec![0xE1_u8; 32];
+    let event = vec![0xE2_u8; 32];
+    let ct64_digest = vec![0xE3_u8; 32];
+
+    sqlx::query(
+        "INSERT INTO host_chain_blocks_valid(chain_id, block_hash, block_number, block_status)
+         VALUES ($1, $2, 10, 'finalized')",
+    )
+    .bind(host_chain_id)
+    .bind(&event)
+    .execute(pool)
+    .await
+    .expect("insert finalized block");
+
+    sqlx::query(
+        "INSERT INTO ciphertext_digest_branch(
+            host_chain_id, key_id_gw, handle, producer_block_hash, block_hash, block_number,
+            ciphertext, ciphertext128, s3_format_version
+         )
+         VALUES ($1, $2, $3, $4, $5, 10, $6, $7, $8)",
+    )
+    .bind(host_chain_id)
+    .bind(&key_id_gw)
+    .bind(&handle)
+    .bind(&producer)
+    .bind(&event)
+    .bind(&ct64_digest)
+    .bind(vec![0_u8; 32])
+    .bind(CURRENT_S3_FORMAT_VERSION)
+    .execute(pool)
+    .await
+    .expect("insert complete digest row");
+
+    let mut tx = pool.begin().await.expect("begin settlement tx");
+    let settled = advance_settled_height(&mut tx, host_chain_id, 10, 10)
+        .await
+        .expect("advance unsettled");
+    tx.commit().await.expect("commit settlement");
+    assert_eq!(settled, 9);
+
+    sqlx::query(
+        "UPDATE ciphertext_digest_branch
+         SET s3_publication_verified_at = NOW(),
+             s3_publication_verified_digest = ciphertext,
+             s3_publication_verified_producer_block_hash = producer_block_hash
+         WHERE host_chain_id = $1 AND handle = $2",
+    )
+    .bind(host_chain_id)
+    .bind(&handle)
+    .execute(pool)
+    .await
+    .expect("mark publication verified");
+
+    let mut tx = pool.begin().await.expect("begin settlement tx");
+    let settled = advance_settled_height(&mut tx, host_chain_id, 10, 10)
+        .await
+        .expect("advance verified");
+    tx.commit().await.expect("commit settlement");
+    assert_eq!(settled, 10);
 }
 
 #[tokio::test]
