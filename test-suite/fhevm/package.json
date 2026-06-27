@@ -9,6 +9,7 @@
     "start": "bun run src/cli.ts"
   },
   "dependencies": {
+    "@fhevm/sdk": "file:../../sdk/js-sdk/src",
     "citty": "^0.1.6",
     "yaml": "^2.8.1"
   },

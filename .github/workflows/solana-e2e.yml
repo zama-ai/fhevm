@@ -108,38 +108,24 @@ jobs:
           username: ${{ secrets.CGR_USERNAME }} # zizmor: ignore[secrets-outside-env] registry creds, same pattern as test-suite-e2e workflows
           password: ${{ secrets.CGR_PASSWORD }} # zizmor: ignore[secrets-outside-env] registry creds, same pattern as test-suite-e2e workflows
 
-      - name: Install + build SDK (full-vertical runs the @fhevm/sdk ESM build under node)
-        # build:esm emits src/_esm (gitignored build artifact) + copies the TKMS WASM into it.
-        # solana-input.ts and the pure-SDK user-decrypt import @fhevm/sdk/* which resolves there.
-        # The clients reach the SDK via a symlink to sdk/js-sdk/src, and node resolves the SDK's
-        # runtime deps (@noble/*, wasm-feature-detect) by walking up from src/_esm. Install those
-        # into src/node_modules — the first node_modules on that walk-up — so they resolve no
-        # matter how the workspace/shallow install lays out the parent node_modules.
+      - name: Build the @fhevm/sdk ESM (full-vertical's node clients import it)
+        # build:esm emits src/_esm (gitignored) + copies the TKMS WASM into it; the @fhevm/sdk
+        # `./solana` export resolves there. npm ci also populates the SDK's own node_modules.
         run: cd sdk/js-sdk && npm ci && npm run build:esm
 
       - name: Install fhevm-cli deps (clean-e2e.sh drives ./fhevm-cli)
         working-directory: test-suite/fhevm
-        # test-suite/fhevm is not a workspace member and declares no @fhevm/sdk dep, so bun install
-        # won't link it — but full-vertical.sh's node clients (solana-input.ts,
-        # solana-userdecrypt-full.ts) import @fhevm/sdk. Link it to the built SDK source.
+        # test-suite/fhevm depends on `@fhevm/sdk` via a `file:` path (package.json), so bun copies
+        # the built SDK into node_modules and installs its runtime deps (@noble/*,
+        # wasm-feature-detect) right beside it — full-vertical.sh's node clients resolve
+        # @fhevm/sdk/* with no hand-rolled symlink. Assert the exact import loads now, so a
+        # resolution failure surfaces here (seconds) instead of mid-vertical (40+ min in).
         run: |
           bun install --frozen-lockfile
-          mkdir -p node_modules/@fhevm
-          ln -sfn "$GITHUB_WORKSPACE/sdk/js-sdk/src" node_modules/@fhevm/sdk
+          node --input-type=module -e "await import('@fhevm/sdk/solana'); console.log('@fhevm/sdk/solana imports OK')"
 
       - name: Bring up fresh stack + Solana side (clean-e2e.sh)
         run: bash solana/scripts/poc/clean-e2e.sh
-
-      - name: Ensure @fhevm/sdk runtime deps for full-vertical
-        # The clean-e2e bring-up can disturb the SDK's src/node_modules, so (re)install the
-        # published package's runtime deps (@noble/*, wasm-feature-detect) right before
-        # full-vertical — nothing runs between this and the node clients. Then assert the exact
-        # ESM import the clients use actually loads, so a resolution failure surfaces here (seconds)
-        # instead of mid-vertical (40+ min in).
-        run: |
-          ( cd "$GITHUB_WORKSPACE/sdk/js-sdk/src" && npm install --no-save --no-package-lock --install-strategy=shallow --workspaces=false )
-          cd "$GITHUB_WORKSPACE/test-suite/fhevm"
-          node --input-type=module -e "await import('@fhevm/sdk/solana'); console.log('@fhevm/sdk/solana imports OK')"
 
       - name: Drive the Solana decrypt vertical (full-vertical.sh)
         run: bash solana/scripts/poc/full-vertical.sh
