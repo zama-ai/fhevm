@@ -8,8 +8,10 @@
 //! exist exactly once.
 
 use super::handles::{
-    expected_binary_eval_result, expected_rand_eval_seed, expected_ternary_eval_result,
-    expected_trivial_eval_result, EvalHandleContext,
+    expected_binary_eval_result, expected_is_in_eval_result, expected_mul_div_eval_result,
+    expected_rand_bounded_eval_seed, expected_rand_eval_seed, expected_sum_eval_result,
+    expected_ternary_eval_result, expected_trivial_eval_result, expected_unary_eval_result,
+    EvalHandleContext,
 };
 use super::*;
 
@@ -241,6 +243,166 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor>(
                     result,
                 }));
                 visitor.accept_output(ctx, result, output, false, false, None)?;
+            }
+            FheEvalStep::Unary {
+                op,
+                operand,
+                output_fhe_type,
+                output,
+            } => {
+                let operand = visitor.resolve_encrypted_operand(operand)?;
+                let verified_input = combine_verified_input_binding(&[&operand])?;
+                assert_unary_operand_type(*op, operand.handle, *output_fhe_type)?;
+                let result = expected_unary_eval_result(
+                    *op,
+                    operand.handle,
+                    *output_fhe_type,
+                    handle_context,
+                    op_index,
+                    output,
+                );
+                visitor.record_op_event(EvalEvent::Unary(FheUnaryOpEvent {
+                    version: EVENT_VERSION,
+                    op: *op,
+                    subject: subject.to_bytes(),
+                    operand: operand.handle,
+                    result,
+                }));
+                visitor.accept_output(
+                    ctx,
+                    result,
+                    output,
+                    operand.public_decrypt_allowed,
+                    true,
+                    verified_input,
+                )?;
+            }
+            FheEvalStep::RandBounded {
+                upper_bound,
+                fhe_type,
+                output,
+            } => {
+                assert_supported_bounded_rand_type(*fhe_type)?;
+                assert_valid_bounded_rand_upper_bound(*upper_bound, *fhe_type)?;
+                let seed =
+                    expected_rand_bounded_eval_seed(*upper_bound, handle_context, op_index, output);
+                let result =
+                    computed_rand_bounded_handle(*upper_bound, seed, *fhe_type, handle_context.chain_id);
+                visitor.record_op_event(EvalEvent::RandBounded(FheRandBoundedEvent {
+                    version: EVENT_VERSION,
+                    subject: subject.to_bytes(),
+                    upper_bound: *upper_bound,
+                    seed,
+                    fhe_type: *fhe_type,
+                    result,
+                }));
+                visitor.accept_output(ctx, result, output, false, false, None)?;
+            }
+            FheEvalStep::Sum {
+                operands,
+                fhe_type,
+                output,
+            } => {
+                let mut resolved: Vec<ResolvedOperand> = Vec::with_capacity(operands.len());
+                for operand in operands {
+                    resolved.push(visitor.resolve_encrypted_operand(operand)?);
+                }
+                assert_sum_operand_types(operands, *fhe_type)?;
+                let resolved_refs: Vec<&ResolvedOperand> = resolved.iter().collect();
+                let verified_input = combine_verified_input_binding(resolved_refs.as_slice())?;
+                let operand_handles: Vec<[u8; 32]> = resolved.iter().map(|r| r.handle).collect();
+                let public_decrypt = resolved.iter().all(|r| r.public_decrypt_allowed);
+                let result = expected_sum_eval_result(
+                    &operand_handles,
+                    *fhe_type,
+                    handle_context,
+                    op_index,
+                    output,
+                );
+                visitor.record_op_event(EvalEvent::Sum(FheSumEvent {
+                    version: EVENT_VERSION,
+                    subject: subject.to_bytes(),
+                    operands: operand_handles,
+                    fhe_type: *fhe_type,
+                    result,
+                }));
+                visitor.accept_output(ctx, result, output, public_decrypt, true, verified_input)?;
+            }
+            FheEvalStep::IsIn {
+                value,
+                set,
+                fhe_type,
+                output,
+            } => {
+                let value_resolved = visitor.resolve_encrypted_operand(value)?;
+                let mut set_resolved: Vec<ResolvedOperand> = Vec::with_capacity(set.len());
+                for operand in set {
+                    set_resolved.push(visitor.resolve_encrypted_operand(operand)?);
+                }
+                assert_is_in_operand_types(set, *fhe_type)?;
+                let mut all_refs: Vec<&ResolvedOperand> = Vec::with_capacity(1 + set_resolved.len());
+                all_refs.push(&value_resolved);
+                all_refs.extend(set_resolved.iter());
+                let verified_input = combine_verified_input_binding(all_refs.as_slice())?;
+                let set_handles: Vec<[u8; 32]> = set_resolved.iter().map(|r| r.handle).collect();
+                let public_decrypt = value_resolved.public_decrypt_allowed
+                    && set_resolved.iter().all(|r| r.public_decrypt_allowed);
+                let result = expected_is_in_eval_result(
+                    value_resolved.handle,
+                    &set_handles,
+                    *fhe_type,
+                    handle_context,
+                    op_index,
+                    output,
+                );
+                visitor.record_op_event(EvalEvent::IsIn(FheIsInEvent {
+                    version: EVENT_VERSION,
+                    subject: subject.to_bytes(),
+                    value: value_resolved.handle,
+                    set: set_handles,
+                    fhe_type: *fhe_type,
+                    result,
+                }));
+                visitor.accept_output(ctx, result, output, public_decrypt, true, verified_input)?;
+            }
+            FheEvalStep::MulDiv {
+                factor1,
+                factor2,
+                divisor,
+                output_fhe_type,
+                output,
+            } => {
+                let factor1 = visitor.resolve_lhs_operand(factor1)?;
+                let factor2 = visitor.resolve_rhs_operand(factor2)?;
+                let verified_input = combine_verified_input_binding(&[&factor1, &factor2])?;
+                assert_mul_div_operand_types(*output_fhe_type)?;
+                let result = expected_mul_div_eval_result(
+                    factor1.handle,
+                    factor2.handle,
+                    factor2.scalar,
+                    *divisor,
+                    *output_fhe_type,
+                    handle_context,
+                    op_index,
+                    output,
+                );
+                visitor.record_op_event(EvalEvent::MulDiv(FheMulDivEvent {
+                    version: EVENT_VERSION,
+                    subject: subject.to_bytes(),
+                    factor1: factor1.handle,
+                    factor2: factor2.handle,
+                    divisor: *divisor,
+                    scalar: factor2.scalar,
+                    result,
+                }));
+                visitor.accept_output(
+                    ctx,
+                    result,
+                    output,
+                    inputs_allow_public_decrypt(&factor1, &factor2),
+                    true,
+                    verified_input,
+                )?;
             }
         }
     }

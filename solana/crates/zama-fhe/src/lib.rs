@@ -33,7 +33,7 @@ use anchor_lang::{
 use zama_host::{
     acl_nonce_key, acl_record_address, role_flags_are_known, subject_has_role, AclSubjectEntry,
     FheBinaryOpCode, FheEvalArgs, FheEvalOperand, FheEvalOutput, FheEvalStep, FheTernaryOpCode,
-    ACL_ROLE_USE, MAX_ACL_SUBJECTS, MAX_FHE_EVAL_OPS,
+    FheUnaryOpCode, ACL_ROLE_USE, MAX_ACL_SUBJECTS, MAX_FHE_EVAL_OPS,
 };
 
 /// Result type used by the builder helpers.
@@ -79,6 +79,10 @@ pub enum EvalBuildError {
     InvalidPermissionRecord,
     /// A lowered host account index does not match the eval plan account list.
     InvalidRemainingAccountReference,
+    /// `sum` was called with fewer than 2 operands; the host rejects it.
+    SumTooFewOperands,
+    /// `is_in` was called with an empty set; the host rejects it.
+    IsInEmptySet,
 }
 
 /// Typed FHE handle tag used by the host ABI.
@@ -130,6 +134,7 @@ mod sealed {
     pub trait FheTypedSeal {}
     pub trait FheUintSeal {}
     pub trait FheRandomSeal {}
+    pub trait FheNotSeal {}
 
     impl FheTypedSeal for Bool {}
     impl FheTypedSeal for Uint<8> {}
@@ -153,6 +158,13 @@ mod sealed {
     impl FheRandomSeal for Uint<64> {}
     impl FheRandomSeal for Uint<128> {}
     impl FheRandomSeal for Bytes256 {}
+
+    impl FheNotSeal for Bool {}
+    impl FheNotSeal for Uint<8> {}
+    impl FheNotSeal for Uint<16> {}
+    impl FheNotSeal for Uint<32> {}
+    impl FheNotSeal for Uint<64> {}
+    impl FheNotSeal for Uint<128> {}
 }
 
 /// Compile-time FHE type tag for typed encrypted handles.
@@ -211,6 +223,16 @@ impl FheRandom for Uint<32> {}
 impl FheRandom for Uint<64> {}
 impl FheRandom for Uint<128> {}
 impl FheRandom for Bytes256 {}
+
+/// Marker trait for FHE values accepted by bitwise NOT (ebool and euint).
+pub trait FheNot: FheTyped + sealed::FheNotSeal {}
+
+impl FheNot for Bool {}
+impl FheNot for Uint<8> {}
+impl FheNot for Uint<16> {}
+impl FheNot for Uint<32> {}
+impl FheNot for Uint<64> {}
+impl FheNot for Uint<128> {}
 
 /// Typed encrypted eval value.
 ///
@@ -1427,6 +1449,544 @@ impl EvalBuilder {
         self.rand::<Uint<64>>(output)
     }
 
+    pub fn rand_bounded_u64(
+        &mut self,
+        upper_bound: BoundedU64UpperBound,
+        output: Output,
+    ) -> Result<Encrypted<Uint<64>>> {
+        self.rand_bounded_raw(upper_bound.bytes(), FheType::UINT64, output)
+            .map(Encrypted::from_operand)
+    }
+
+    fn rand_bounded_raw(
+        &mut self,
+        upper_bound: [u8; 32],
+        fhe_type: FheType,
+        output: Output,
+    ) -> Result<Operand> {
+        let fhe_type = fhe_type.byte();
+        if self.steps.len() >= MAX_FHE_EVAL_OPS {
+            return Err(EvalBuildError::TooManyOps);
+        }
+        validate_supported_rand_type(fhe_type)?;
+        let step_index =
+            u16::try_from(self.steps.len()).map_err(|_| EvalBuildError::TooManyOps)?;
+        let mut remaining_accounts = self.remaining_accounts.clone();
+        let output = lower_output(&mut remaining_accounts, self.app_authority, output)?;
+        self.remaining_accounts = remaining_accounts;
+        self.steps
+            .push(FheEvalStep::RandBounded { upper_bound, fhe_type, output });
+        self.produced_types.push(fhe_type);
+        Ok(Operand::transient(step_index, self.context_id, self.scope))
+    }
+
+    // --- Binary ops not yet exposed as named methods ---
+
+    pub fn mul<T: FheUint>(
+        &mut self,
+        lhs: Encrypted<T>,
+        rhs: impl Into<BinaryRhs<T>>,
+        output: Output,
+    ) -> Result<Encrypted<T>> {
+        self.binary_op(
+            FheBinaryOpCode::Mul,
+            lhs.operand(),
+            binary_rhs_operand(rhs),
+            T::FHE_TYPE,
+            output,
+        )
+        .map(Encrypted::from_operand)
+    }
+
+    pub fn div<T: FheUint>(
+        &mut self,
+        lhs: Encrypted<T>,
+        rhs: impl Into<BinaryRhs<T>>,
+        output: Output,
+    ) -> Result<Encrypted<T>> {
+        self.binary_op(
+            FheBinaryOpCode::Div,
+            lhs.operand(),
+            binary_rhs_operand(rhs),
+            T::FHE_TYPE,
+            output,
+        )
+        .map(Encrypted::from_operand)
+    }
+
+    pub fn rem<T: FheUint>(
+        &mut self,
+        lhs: Encrypted<T>,
+        rhs: impl Into<BinaryRhs<T>>,
+        output: Output,
+    ) -> Result<Encrypted<T>> {
+        self.binary_op(
+            FheBinaryOpCode::Rem,
+            lhs.operand(),
+            binary_rhs_operand(rhs),
+            T::FHE_TYPE,
+            output,
+        )
+        .map(Encrypted::from_operand)
+    }
+
+    pub fn and<T: FheUint>(
+        &mut self,
+        lhs: Encrypted<T>,
+        rhs: impl Into<BinaryRhs<T>>,
+        output: Output,
+    ) -> Result<Encrypted<T>> {
+        self.binary_op(
+            FheBinaryOpCode::And,
+            lhs.operand(),
+            binary_rhs_operand(rhs),
+            T::FHE_TYPE,
+            output,
+        )
+        .map(Encrypted::from_operand)
+    }
+
+    pub fn or<T: FheUint>(
+        &mut self,
+        lhs: Encrypted<T>,
+        rhs: impl Into<BinaryRhs<T>>,
+        output: Output,
+    ) -> Result<Encrypted<T>> {
+        self.binary_op(
+            FheBinaryOpCode::Or,
+            lhs.operand(),
+            binary_rhs_operand(rhs),
+            T::FHE_TYPE,
+            output,
+        )
+        .map(Encrypted::from_operand)
+    }
+
+    pub fn xor<T: FheUint>(
+        &mut self,
+        lhs: Encrypted<T>,
+        rhs: impl Into<BinaryRhs<T>>,
+        output: Output,
+    ) -> Result<Encrypted<T>> {
+        self.binary_op(
+            FheBinaryOpCode::Xor,
+            lhs.operand(),
+            binary_rhs_operand(rhs),
+            T::FHE_TYPE,
+            output,
+        )
+        .map(Encrypted::from_operand)
+    }
+
+    pub fn shl<T: FheUint>(
+        &mut self,
+        lhs: Encrypted<T>,
+        rhs: impl Into<BinaryRhs<T>>,
+        output: Output,
+    ) -> Result<Encrypted<T>> {
+        self.binary_op(
+            FheBinaryOpCode::Shl,
+            lhs.operand(),
+            binary_rhs_operand(rhs),
+            T::FHE_TYPE,
+            output,
+        )
+        .map(Encrypted::from_operand)
+    }
+
+    pub fn shr<T: FheUint>(
+        &mut self,
+        lhs: Encrypted<T>,
+        rhs: impl Into<BinaryRhs<T>>,
+        output: Output,
+    ) -> Result<Encrypted<T>> {
+        self.binary_op(
+            FheBinaryOpCode::Shr,
+            lhs.operand(),
+            binary_rhs_operand(rhs),
+            T::FHE_TYPE,
+            output,
+        )
+        .map(Encrypted::from_operand)
+    }
+
+    pub fn rotl<T: FheUint>(
+        &mut self,
+        lhs: Encrypted<T>,
+        rhs: impl Into<BinaryRhs<T>>,
+        output: Output,
+    ) -> Result<Encrypted<T>> {
+        self.binary_op(
+            FheBinaryOpCode::Rotl,
+            lhs.operand(),
+            binary_rhs_operand(rhs),
+            T::FHE_TYPE,
+            output,
+        )
+        .map(Encrypted::from_operand)
+    }
+
+    pub fn rotr<T: FheUint>(
+        &mut self,
+        lhs: Encrypted<T>,
+        rhs: impl Into<BinaryRhs<T>>,
+        output: Output,
+    ) -> Result<Encrypted<T>> {
+        self.binary_op(
+            FheBinaryOpCode::Rotr,
+            lhs.operand(),
+            binary_rhs_operand(rhs),
+            T::FHE_TYPE,
+            output,
+        )
+        .map(Encrypted::from_operand)
+    }
+
+    pub fn eq<T: FheUint>(
+        &mut self,
+        lhs: Encrypted<T>,
+        rhs: impl Into<BinaryRhs<T>>,
+        output: Output,
+    ) -> Result<Encrypted<Bool>> {
+        self.binary_op(
+            FheBinaryOpCode::Eq,
+            lhs.operand(),
+            binary_rhs_operand(rhs),
+            FheType::BOOL,
+            output,
+        )
+        .map(Encrypted::from_operand)
+    }
+
+    pub fn ne<T: FheUint>(
+        &mut self,
+        lhs: Encrypted<T>,
+        rhs: impl Into<BinaryRhs<T>>,
+        output: Output,
+    ) -> Result<Encrypted<Bool>> {
+        self.binary_op(
+            FheBinaryOpCode::Ne,
+            lhs.operand(),
+            binary_rhs_operand(rhs),
+            FheType::BOOL,
+            output,
+        )
+        .map(Encrypted::from_operand)
+    }
+
+    pub fn gt<T: FheUint>(
+        &mut self,
+        lhs: Encrypted<T>,
+        rhs: impl Into<BinaryRhs<T>>,
+        output: Output,
+    ) -> Result<Encrypted<Bool>> {
+        self.binary_op(
+            FheBinaryOpCode::Gt,
+            lhs.operand(),
+            binary_rhs_operand(rhs),
+            FheType::BOOL,
+            output,
+        )
+        .map(Encrypted::from_operand)
+    }
+
+    pub fn le<T: FheUint>(
+        &mut self,
+        lhs: Encrypted<T>,
+        rhs: impl Into<BinaryRhs<T>>,
+        output: Output,
+    ) -> Result<Encrypted<Bool>> {
+        self.binary_op(
+            FheBinaryOpCode::Le,
+            lhs.operand(),
+            binary_rhs_operand(rhs),
+            FheType::BOOL,
+            output,
+        )
+        .map(Encrypted::from_operand)
+    }
+
+    pub fn lt<T: FheUint>(
+        &mut self,
+        lhs: Encrypted<T>,
+        rhs: impl Into<BinaryRhs<T>>,
+        output: Output,
+    ) -> Result<Encrypted<Bool>> {
+        self.binary_op(
+            FheBinaryOpCode::Lt,
+            lhs.operand(),
+            binary_rhs_operand(rhs),
+            FheType::BOOL,
+            output,
+        )
+        .map(Encrypted::from_operand)
+    }
+
+    pub fn min<T: FheUint>(
+        &mut self,
+        lhs: Encrypted<T>,
+        rhs: impl Into<BinaryRhs<T>>,
+        output: Output,
+    ) -> Result<Encrypted<T>> {
+        self.binary_op(
+            FheBinaryOpCode::Min,
+            lhs.operand(),
+            binary_rhs_operand(rhs),
+            T::FHE_TYPE,
+            output,
+        )
+        .map(Encrypted::from_operand)
+    }
+
+    pub fn max<T: FheUint>(
+        &mut self,
+        lhs: Encrypted<T>,
+        rhs: impl Into<BinaryRhs<T>>,
+        output: Output,
+    ) -> Result<Encrypted<T>> {
+        self.binary_op(
+            FheBinaryOpCode::Max,
+            lhs.operand(),
+            binary_rhs_operand(rhs),
+            T::FHE_TYPE,
+            output,
+        )
+        .map(Encrypted::from_operand)
+    }
+
+    // --- Unary ops ---
+
+    pub fn neg<T: FheUint>(
+        &mut self,
+        operand: Encrypted<T>,
+        output: Output,
+    ) -> Result<Encrypted<T>> {
+        self.unary_op(FheUnaryOpCode::Neg, operand.operand(), T::FHE_TYPE, output)
+            .map(Encrypted::from_operand)
+    }
+
+    pub fn not<T: FheNot>(
+        &mut self,
+        operand: Encrypted<T>,
+        output: Output,
+    ) -> Result<Encrypted<T>> {
+        self.unary_op(FheUnaryOpCode::Not, operand.operand(), T::FHE_TYPE, output)
+            .map(Encrypted::from_operand)
+    }
+
+    pub fn cast<FROM: FheTyped, TO: FheTyped>(
+        &mut self,
+        operand: Encrypted<FROM>,
+        output: Output,
+    ) -> Result<Encrypted<TO>> {
+        self.unary_op(FheUnaryOpCode::Cast, operand.operand(), TO::FHE_TYPE, output)
+            .map(Encrypted::from_operand)
+    }
+
+    pub fn sum<T: FheUint>(
+        &mut self,
+        operands: impl IntoIterator<Item = Encrypted<T>>,
+        output: Output,
+    ) -> Result<Encrypted<T>> {
+        let operand_ops: Vec<Operand> = operands.into_iter().map(|e| e.operand()).collect();
+        if operand_ops.len() < 2 {
+            return Err(EvalBuildError::SumTooFewOperands);
+        }
+        for op in &operand_ops {
+            if matches!(op.0, OperandKind::Scalar(_)) {
+                return Err(EvalBuildError::ScalarEncryptedOperand);
+            }
+        }
+        if self.steps.len() >= MAX_FHE_EVAL_OPS {
+            return Err(EvalBuildError::TooManyOps);
+        }
+        let fhe_type = T::FHE_TYPE.byte();
+        validate_uint_fhe_type(fhe_type)?;
+        let step_index =
+            u16::try_from(self.steps.len()).map_err(|_| EvalBuildError::TooManyOps)?;
+        let mut remaining_accounts = self.remaining_accounts.clone();
+        let mut lowered: Vec<FheEvalOperand> = Vec::with_capacity(operand_ops.len());
+        for op in operand_ops {
+            lowered.push(lower_operand(
+                &mut remaining_accounts,
+                self.steps.len(),
+                self.context_id,
+                self.scope,
+                op,
+            )?);
+        }
+        let output = lower_output(&mut remaining_accounts, self.app_authority, output)?;
+        self.remaining_accounts = remaining_accounts;
+        self.steps.push(FheEvalStep::Sum {
+            operands: lowered,
+            fhe_type,
+            output,
+        });
+        self.produced_types.push(fhe_type);
+        Ok(Encrypted::from_operand(Operand::transient(
+            step_index,
+            self.context_id,
+            self.scope,
+        )))
+    }
+
+    pub fn is_in<T: FheUint>(
+        &mut self,
+        value: Encrypted<T>,
+        set: impl IntoIterator<Item = Encrypted<T>>,
+        output: Output,
+    ) -> Result<Encrypted<Bool>> {
+        let set_ops: Vec<Operand> = set.into_iter().map(|e| e.operand()).collect();
+        if set_ops.is_empty() {
+            return Err(EvalBuildError::IsInEmptySet);
+        }
+        let value_op = value.operand();
+        if matches!(value_op.0, OperandKind::Scalar(_)) {
+            return Err(EvalBuildError::ScalarEncryptedOperand);
+        }
+        for op in &set_ops {
+            if matches!(op.0, OperandKind::Scalar(_)) {
+                return Err(EvalBuildError::ScalarEncryptedOperand);
+            }
+        }
+        if self.steps.len() >= MAX_FHE_EVAL_OPS {
+            return Err(EvalBuildError::TooManyOps);
+        }
+        let fhe_type = T::FHE_TYPE.byte();
+        validate_supported_fhe_type(fhe_type)?;
+        let step_index =
+            u16::try_from(self.steps.len()).map_err(|_| EvalBuildError::TooManyOps)?;
+        let mut remaining_accounts = self.remaining_accounts.clone();
+        let value_lowered = lower_operand(
+            &mut remaining_accounts,
+            self.steps.len(),
+            self.context_id,
+            self.scope,
+            value_op,
+        )?;
+        let mut set_lowered: Vec<FheEvalOperand> = Vec::with_capacity(set_ops.len());
+        for op in set_ops {
+            set_lowered.push(lower_operand(
+                &mut remaining_accounts,
+                self.steps.len(),
+                self.context_id,
+                self.scope,
+                op,
+            )?);
+        }
+        let output = lower_output(&mut remaining_accounts, self.app_authority, output)?;
+        self.remaining_accounts = remaining_accounts;
+        let bool_type = FheType::BOOL.byte();
+        self.steps.push(FheEvalStep::IsIn {
+            value: value_lowered,
+            set: set_lowered,
+            fhe_type,
+            output,
+        });
+        self.produced_types.push(bool_type);
+        Ok(Encrypted::from_operand(Operand::transient(
+            step_index,
+            self.context_id,
+            self.scope,
+        )))
+    }
+
+    pub fn mul_div<T: FheUint>(
+        &mut self,
+        factor1: Encrypted<T>,
+        factor2: impl Into<BinaryRhs<T>>,
+        divisor: Scalar<T>,
+        output: Output,
+    ) -> Result<Encrypted<T>> {
+        let lhs = factor1.operand();
+        let rhs = binary_rhs_operand(factor2);
+        if matches!(lhs.0, OperandKind::Scalar(_)) {
+            return Err(EvalBuildError::ScalarLhsOperand);
+        }
+        if self.steps.len() >= MAX_FHE_EVAL_OPS {
+            return Err(EvalBuildError::TooManyOps);
+        }
+        let fhe_type = T::FHE_TYPE.byte();
+        validate_uint_fhe_type(fhe_type)?;
+        let step_index =
+            u16::try_from(self.steps.len()).map_err(|_| EvalBuildError::TooManyOps)?;
+        let mut remaining_accounts = self.remaining_accounts.clone();
+        let factor1 = lower_operand(
+            &mut remaining_accounts,
+            self.steps.len(),
+            self.context_id,
+            self.scope,
+            lhs,
+        )?;
+        let factor2 = lower_operand(
+            &mut remaining_accounts,
+            self.steps.len(),
+            self.context_id,
+            self.scope,
+            rhs,
+        )?;
+        let output = lower_output(&mut remaining_accounts, self.app_authority, output)?;
+        self.remaining_accounts = remaining_accounts;
+        self.steps.push(FheEvalStep::MulDiv {
+            factor1,
+            factor2,
+            divisor: divisor.bytes(),
+            output_fhe_type: fhe_type,
+            output,
+        });
+        self.produced_types.push(fhe_type);
+        Ok(Encrypted::from_operand(Operand::transient(
+            step_index,
+            self.context_id,
+            self.scope,
+        )))
+    }
+
+    fn unary_op(
+        &mut self,
+        op: FheUnaryOpCode,
+        operand: Operand,
+        output_fhe_type: FheType,
+        output: Output,
+    ) -> Result<Operand> {
+        let output_fhe_type = output_fhe_type.byte();
+        if matches!(operand.0, OperandKind::Scalar(_)) {
+            return Err(EvalBuildError::ScalarEncryptedOperand);
+        }
+        if self.steps.len() >= MAX_FHE_EVAL_OPS {
+            return Err(EvalBuildError::TooManyOps);
+        }
+        validate_unary_step(
+            op,
+            &operand,
+            output_fhe_type,
+            self.steps.len(),
+            self.context_id,
+            self.scope,
+            |index| self.produced_types.get(index as usize).copied(),
+        )?;
+        let step_index =
+            u16::try_from(self.steps.len()).map_err(|_| EvalBuildError::TooManyOps)?;
+        let mut remaining_accounts = self.remaining_accounts.clone();
+        let operand = lower_operand(
+            &mut remaining_accounts,
+            self.steps.len(),
+            self.context_id,
+            self.scope,
+            operand,
+        )?;
+        let output = lower_output(&mut remaining_accounts, self.app_authority, output)?;
+        self.remaining_accounts = remaining_accounts;
+        self.steps.push(FheEvalStep::Unary {
+            op,
+            operand,
+            output_fhe_type,
+            output,
+        });
+        self.produced_types.push(output_fhe_type);
+        Ok(Operand::transient(step_index, self.context_id, self.scope))
+    }
+
     fn encrypted_operand_type(
         &self,
         operand: &Operand,
@@ -1528,6 +2088,31 @@ fn validate_lowered_step(
         FheEvalStep::TrivialEncrypt { output, .. } | FheEvalStep::Rand { output, .. } => {
             validate_lowered_output(output, used_accounts)?;
         }
+        FheEvalStep::Unary { operand, output, .. } => {
+            validate_lowered_encrypted_operand(operand, step_index, used_accounts)?;
+            validate_lowered_output(output, used_accounts)?;
+        }
+        FheEvalStep::RandBounded { output, .. } => {
+            validate_lowered_output(output, used_accounts)?;
+        }
+        FheEvalStep::Sum { operands, output, .. } => {
+            for operand in operands {
+                validate_lowered_encrypted_operand(operand, step_index, used_accounts)?;
+            }
+            validate_lowered_output(output, used_accounts)?;
+        }
+        FheEvalStep::IsIn { value, set, output, .. } => {
+            validate_lowered_encrypted_operand(value, step_index, used_accounts)?;
+            for operand in set {
+                validate_lowered_encrypted_operand(operand, step_index, used_accounts)?;
+            }
+            validate_lowered_output(output, used_accounts)?;
+        }
+        FheEvalStep::MulDiv { factor1, factor2, output, .. } => {
+            validate_lowered_encrypted_operand(factor1, step_index, used_accounts)?;
+            validate_lowered_rhs_operand(factor2, step_index, used_accounts)?;
+            validate_lowered_output(output, used_accounts)?;
+        }
     }
     Ok(())
 }
@@ -1624,7 +2209,16 @@ where
     if !matches!(lhs_type, 2..=6) {
         return Err(EvalBuildError::UnsupportedFheType);
     }
-    if matches!(op, FheBinaryOpCode::Add | FheBinaryOpCode::Sub) && lhs_type != output_fhe_type {
+    let is_comparison = matches!(
+        op,
+        FheBinaryOpCode::Eq
+            | FheBinaryOpCode::Ne
+            | FheBinaryOpCode::Ge
+            | FheBinaryOpCode::Gt
+            | FheBinaryOpCode::Le
+            | FheBinaryOpCode::Lt
+    );
+    if !is_comparison && lhs_type != output_fhe_type {
         return Err(EvalBuildError::BinaryOperandTypeMismatch);
     }
     if let Some(rhs_type) = operand_fhe_type(
@@ -1637,6 +2231,58 @@ where
         if rhs_type != lhs_type {
             return Err(EvalBuildError::BinaryOperandTypeMismatch);
         }
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn validate_unary_step<F>(
+    op: FheUnaryOpCode,
+    operand: &Operand,
+    output_fhe_type: u8,
+    produced_count: usize,
+    context_id: EvalContextId,
+    builder_scope: EvalBuilderScope,
+    produced_type: F,
+) -> Result<()>
+where
+    F: Fn(u16) -> Option<u8>,
+{
+    validate_supported_fhe_type(output_fhe_type)?;
+    let valid_output = match op {
+        FheUnaryOpCode::Neg => matches!(output_fhe_type, 2..=6),
+        FheUnaryOpCode::Not => matches!(output_fhe_type, 0 | 2..=6),
+        FheUnaryOpCode::Cast => true,
+    };
+    if !valid_output {
+        return Err(EvalBuildError::UnsupportedFheType);
+    }
+    let operand_type = operand_fhe_type(
+        operand,
+        produced_count,
+        context_id,
+        builder_scope,
+        &produced_type,
+    )?
+    .ok_or(EvalBuildError::ScalarEncryptedOperand)?;
+    match op {
+        FheUnaryOpCode::Neg => {
+            if !matches!(operand_type, 2..=6) {
+                return Err(EvalBuildError::UnsupportedFheType);
+            }
+            if operand_type != output_fhe_type {
+                return Err(EvalBuildError::BinaryOperandTypeMismatch);
+            }
+        }
+        FheUnaryOpCode::Not => {
+            if !matches!(operand_type, 0 | 2..=6) {
+                return Err(EvalBuildError::UnsupportedFheType);
+            }
+            if operand_type != output_fhe_type {
+                return Err(EvalBuildError::BinaryOperandTypeMismatch);
+            }
+        }
+        FheUnaryOpCode::Cast => {}
     }
     Ok(())
 }
@@ -1722,8 +2368,26 @@ where
 fn validate_supported_binary_output_type(op: FheBinaryOpCode, output_fhe_type: u8) -> Result<()> {
     validate_supported_fhe_type(output_fhe_type)?;
     let valid = match op {
-        FheBinaryOpCode::Add | FheBinaryOpCode::Sub => matches!(output_fhe_type, 2..=6),
-        FheBinaryOpCode::Ge => output_fhe_type == 0,
+        FheBinaryOpCode::Add
+        | FheBinaryOpCode::Sub
+        | FheBinaryOpCode::Mul
+        | FheBinaryOpCode::Div
+        | FheBinaryOpCode::Rem
+        | FheBinaryOpCode::Min
+        | FheBinaryOpCode::Max
+        | FheBinaryOpCode::And
+        | FheBinaryOpCode::Or
+        | FheBinaryOpCode::Xor
+        | FheBinaryOpCode::Shl
+        | FheBinaryOpCode::Shr
+        | FheBinaryOpCode::Rotl
+        | FheBinaryOpCode::Rotr => matches!(output_fhe_type, 2..=6),
+        FheBinaryOpCode::Eq
+        | FheBinaryOpCode::Ne
+        | FheBinaryOpCode::Ge
+        | FheBinaryOpCode::Gt
+        | FheBinaryOpCode::Le
+        | FheBinaryOpCode::Lt => output_fhe_type == 0,
     };
     if !valid {
         return Err(EvalBuildError::UnsupportedBinaryOutputType);
@@ -1733,6 +2397,14 @@ fn validate_supported_binary_output_type(op: FheBinaryOpCode, output_fhe_type: u
 
 fn validate_supported_fhe_type(fhe_type: u8) -> Result<()> {
     if matches!(fhe_type, 0 | 2 | 3 | 4 | 5 | 6 | 7 | 8) {
+        Ok(())
+    } else {
+        Err(EvalBuildError::UnsupportedFheType)
+    }
+}
+
+fn validate_uint_fhe_type(fhe_type: u8) -> Result<()> {
+    if matches!(fhe_type, 2..=6) {
         Ok(())
     } else {
         Err(EvalBuildError::UnsupportedFheType)

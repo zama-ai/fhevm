@@ -6,7 +6,7 @@
 
 use anchor_lang::prelude::*;
 
-use crate::state::{FheBinaryOpCode, FheTernaryOpCode};
+use crate::state::{FheBinaryOpCode, FheTernaryOpCode, FheUnaryOpCode};
 
 /// Emitted when the singleton host config is initialized.
 #[event]
@@ -308,6 +308,21 @@ pub struct FheRandBoundedEvent {
     pub result: [u8; 32],
 }
 
+/// Emitted for a unary FHE operation accepted by the host.
+#[event]
+pub struct FheUnaryOpEvent {
+    /// Event schema version.
+    pub version: u8,
+    /// Unary operator.
+    pub op: FheUnaryOpCode,
+    /// Compute subject that passed ACL checks.
+    pub subject: [u8; 32],
+    /// Operand handle.
+    pub operand: [u8; 32],
+    /// Output handle verified by the host formula.
+    pub result: [u8; 32],
+}
+
 /// Legacy allowance event consumed by the current host listener.
 ///
 /// New consumers should prefer [`AclSubjectAllowedEvent`] for richer context and
@@ -335,4 +350,55 @@ pub struct InputVerifiedEvent {
     pub user: [u8; 32],
     /// ACL domain key bytes associated with the input.
     pub acl_domain_key: [u8; 32],
+}
+
+/// Emitted for an FHE sum operation accepted by the host.
+#[event]
+pub struct FheSumEvent {
+    /// Event schema version.
+    pub version: u8,
+    /// Compute subject that passed ACL checks.
+    pub subject: [u8; 32],
+    /// Input operand handles.
+    pub operands: Vec<[u8; 32]>,
+    /// FHE type of all operands and the output.
+    pub fhe_type: u8,
+    /// Output handle verified by the host formula.
+    pub result: [u8; 32],
+}
+
+/// Emitted for an FHE is-in test accepted by the host.
+#[event]
+pub struct FheIsInEvent {
+    /// Event schema version.
+    pub version: u8,
+    /// Compute subject that passed ACL checks.
+    pub subject: [u8; 32],
+    /// Value handle being tested.
+    pub value: [u8; 32],
+    /// Set of handles to test against.
+    pub set: Vec<[u8; 32]>,
+    /// FHE type of value and set elements.
+    pub fhe_type: u8,
+    /// Output handle (always ebool) verified by the host formula.
+    pub result: [u8; 32],
+}
+
+/// Emitted for an FHE multiply-divide operation accepted by the host.
+#[event]
+pub struct FheMulDivEvent {
+    /// Event schema version.
+    pub version: u8,
+    /// Compute subject that passed ACL checks.
+    pub subject: [u8; 32],
+    /// First factor handle.
+    pub factor1: [u8; 32],
+    /// Second factor handle or scalar bytes.
+    pub factor2: [u8; 32],
+    /// Divisor plaintext scalar bytes.
+    pub divisor: [u8; 32],
+    /// Whether `factor2` is plaintext scalar bytes.
+    pub scalar: bool,
+    /// Output handle verified by the host formula.
+    pub result: [u8; 32],
 }

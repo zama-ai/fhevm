@@ -104,8 +104,42 @@ pub enum FheBinaryOpCode {
     Add,
     /// Subtraction.
     Sub,
+    /// Multiplication.
+    Mul,
+    /// Division.
+    Div,
+    /// Remainder.
+    Rem,
+    /// Bitwise AND.
+    And,
+    /// Bitwise OR.
+    Or,
+    /// Bitwise XOR.
+    Xor,
+    /// Shift left.
+    Shl,
+    /// Shift right.
+    Shr,
+    /// Rotate left.
+    Rotl,
+    /// Rotate right.
+    Rotr,
+    /// Equality comparison.
+    Eq,
+    /// Inequality comparison.
+    Ne,
     /// Greater-than-or-equal comparison.
     Ge,
+    /// Greater-than comparison.
+    Gt,
+    /// Less-than-or-equal comparison.
+    Le,
+    /// Less-than comparison.
+    Lt,
+    /// Minimum.
+    Min,
+    /// Maximum.
+    Max,
 }
 
 /// Ternary FHE operators currently modeled by the PoC.
@@ -113,6 +147,28 @@ pub enum FheBinaryOpCode {
 pub enum FheTernaryOpCode {
     /// Selects `if_true` when `control` is true, otherwise `if_false`.
     IfThenElse,
+}
+
+/// Unary FHE operators.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FheUnaryOpCode {
+    /// Arithmetic negation.
+    Neg,
+    /// Bitwise NOT.
+    Not,
+    /// Type cast.
+    Cast,
+}
+
+impl FheUnaryOpCode {
+    /// Stable byte encoding used in handle derivation and events.
+    pub fn as_u8(self) -> u8 {
+        match self {
+            Self::Neg => 20,
+            Self::Not => 21,
+            Self::Cast => 22,
+        }
+    }
 }
 
 /// Arguments for composed instruction-local FHE evaluation.
@@ -171,6 +227,59 @@ pub enum FheEvalStep {
     Rand {
         /// FHE type byte embedded in the output handle.
         fhe_type: u8,
+        /// Whether this output remains instruction-local or is bound into durable ACL state.
+        output: FheEvalOutput,
+    },
+    /// Unary operator step.
+    Unary {
+        /// Unary operator.
+        op: FheUnaryOpCode,
+        /// Encrypted operand.
+        operand: FheEvalOperand,
+        /// FHE type byte embedded in the output handle.
+        output_fhe_type: u8,
+        /// Whether this output remains instruction-local or is bound into durable ACL state.
+        output: FheEvalOutput,
+    },
+    /// Bounded random ciphertext step.
+    RandBounded {
+        /// Exclusive upper bound encoded as a 256-bit big-endian integer.
+        upper_bound: [u8; 32],
+        /// FHE type byte embedded in the output handle.
+        fhe_type: u8,
+        /// Whether this output remains instruction-local or is bound into durable ACL state.
+        output: FheEvalOutput,
+    },
+    /// Sum step.
+    Sum {
+        /// Encrypted operands.
+        operands: Vec<FheEvalOperand>,
+        /// FHE type byte embedded in the output handle.
+        fhe_type: u8,
+        /// Whether this output remains instruction-local or is bound into durable ACL state.
+        output: FheEvalOutput,
+    },
+    /// Is-in membership test step.
+    IsIn {
+        /// Encrypted value to test.
+        value: FheEvalOperand,
+        /// Encrypted set operands.
+        set: Vec<FheEvalOperand>,
+        /// FHE type byte of the value and set elements.
+        fhe_type: u8,
+        /// Whether this output remains instruction-local or is bound into durable ACL state.
+        output: FheEvalOutput,
+    },
+    /// Multiply-then-divide step.
+    MulDiv {
+        /// Left-hand encrypted factor.
+        factor1: FheEvalOperand,
+        /// Right-hand factor, encrypted or scalar bytes.
+        factor2: FheEvalOperand,
+        /// Divisor encoded as a 256-bit big-endian integer.
+        divisor: [u8; 32],
+        /// FHE type byte embedded in the output handle.
+        output_fhe_type: u8,
         /// Whether this output remains instruction-local or is bound into durable ACL state.
         output: FheEvalOutput,
     },
@@ -265,7 +374,24 @@ impl FheBinaryOpCode {
         match self {
             Self::Add => 0,
             Self::Sub => 1,
+            Self::Mul => 2,
+            Self::Div => 3,
+            Self::Rem => 4,
+            Self::And => 5,
+            Self::Or => 6,
+            Self::Xor => 7,
+            Self::Shl => 8,
+            Self::Shr => 9,
+            Self::Rotl => 10,
+            Self::Rotr => 11,
+            Self::Eq => 12,
+            Self::Ne => 13,
             Self::Ge => 14,
+            Self::Gt => 15,
+            Self::Le => 16,
+            Self::Lt => 17,
+            Self::Min => 18,
+            Self::Max => 19,
         }
     }
 }
@@ -385,8 +511,26 @@ pub fn assert_supported_fhe_type(fhe_type: u8) -> Result<()> {
 pub fn assert_supported_binary_output_type(op: FheBinaryOpCode, fhe_type: u8) -> Result<()> {
     assert_supported_fhe_type(fhe_type)?;
     let valid = match op {
-        FheBinaryOpCode::Add | FheBinaryOpCode::Sub => matches!(fhe_type, 2..=6),
-        FheBinaryOpCode::Ge => fhe_type == 0,
+        FheBinaryOpCode::Add
+        | FheBinaryOpCode::Sub
+        | FheBinaryOpCode::Mul
+        | FheBinaryOpCode::Div
+        | FheBinaryOpCode::Rem
+        | FheBinaryOpCode::Min
+        | FheBinaryOpCode::Max => matches!(fhe_type, 2..=6),
+        FheBinaryOpCode::And | FheBinaryOpCode::Or | FheBinaryOpCode::Xor => {
+            matches!(fhe_type, 2..=6)
+        }
+        FheBinaryOpCode::Shl
+        | FheBinaryOpCode::Shr
+        | FheBinaryOpCode::Rotl
+        | FheBinaryOpCode::Rotr => matches!(fhe_type, 2..=6),
+        FheBinaryOpCode::Eq
+        | FheBinaryOpCode::Ne
+        | FheBinaryOpCode::Ge
+        | FheBinaryOpCode::Gt
+        | FheBinaryOpCode::Le
+        | FheBinaryOpCode::Lt => fhe_type == 0,
     };
     require!(valid, ZamaHostError::UnsupportedFheType);
     Ok(())
@@ -403,7 +547,16 @@ pub fn assert_binary_operand_types(
     assert_supported_binary_output_type(op, output_fhe_type)?;
     let lhs_type = handle_fhe_type(lhs);
     require!(matches!(lhs_type, 2..=6), ZamaHostError::UnsupportedFheType);
-    if matches!(op, FheBinaryOpCode::Add | FheBinaryOpCode::Sub) {
+    let is_comparison = matches!(
+        op,
+        FheBinaryOpCode::Eq
+            | FheBinaryOpCode::Ne
+            | FheBinaryOpCode::Ge
+            | FheBinaryOpCode::Gt
+            | FheBinaryOpCode::Le
+            | FheBinaryOpCode::Lt
+    );
+    if !is_comparison {
         require!(
             lhs_type == output_fhe_type,
             ZamaHostError::BinaryOperandTypeMismatch
@@ -447,7 +600,59 @@ pub fn assert_valid_bounded_rand_upper_bound(upper_bound: [u8; 32], fhe_type: u8
     Ok(())
 }
 
-fn is_supported_fhe_type(fhe_type: u8) -> bool {
+pub fn assert_supported_unary_output_type(op: FheUnaryOpCode, fhe_type: u8) -> Result<()> {
+    assert_supported_fhe_type(fhe_type)?;
+    let valid = match op {
+        FheUnaryOpCode::Neg => matches!(fhe_type, 2..=6),
+        FheUnaryOpCode::Not => matches!(fhe_type, 0 | 2..=6),
+        FheUnaryOpCode::Cast => is_supported_fhe_type(fhe_type),
+    };
+    require!(valid, ZamaHostError::UnsupportedFheType);
+    Ok(())
+}
+
+pub fn assert_unary_operand_type(
+    op: FheUnaryOpCode,
+    operand: [u8; 32],
+    output_fhe_type: u8,
+) -> Result<()> {
+    assert_supported_unary_output_type(op, output_fhe_type)?;
+    let operand_type = handle_fhe_type(operand);
+    require!(is_supported_fhe_type(operand_type), ZamaHostError::UnsupportedFheType);
+    match op {
+        FheUnaryOpCode::Neg => {
+            require!(matches!(operand_type, 2..=6), ZamaHostError::UnsupportedFheType);
+            require!(operand_type == output_fhe_type, ZamaHostError::BinaryOperandTypeMismatch);
+        }
+        FheUnaryOpCode::Not => {
+            require!(matches!(operand_type, 0 | 2..=6), ZamaHostError::UnsupportedFheType);
+            require!(operand_type == output_fhe_type, ZamaHostError::BinaryOperandTypeMismatch);
+        }
+        FheUnaryOpCode::Cast => {
+            // cast: any valid type in, any valid type out; they may differ
+        }
+    }
+    Ok(())
+}
+
+pub fn assert_sum_operand_types(operands: &[FheEvalOperand], fhe_type: u8) -> Result<()> {
+    require!(operands.len() >= 2, ZamaHostError::InvalidFheEvalAccount);
+    require!(matches!(fhe_type, 2..=6), ZamaHostError::UnsupportedFheType);
+    Ok(())
+}
+
+pub fn assert_is_in_operand_types(set: &[FheEvalOperand], fhe_type: u8) -> Result<()> {
+    require!(!set.is_empty(), ZamaHostError::InvalidFheEvalAccount);
+    require!(is_supported_fhe_type(fhe_type), ZamaHostError::UnsupportedFheType);
+    Ok(())
+}
+
+pub fn assert_mul_div_operand_types(output_fhe_type: u8) -> Result<()> {
+    require!(matches!(output_fhe_type, 2..=6), ZamaHostError::UnsupportedFheType);
+    Ok(())
+}
+
+pub(crate) fn is_supported_fhe_type(fhe_type: u8) -> bool {
     matches!(fhe_type, 0 | 2 | 3 | 4 | 5 | 6 | 7 | 8)
 }
 
@@ -1306,6 +1511,192 @@ pub fn computed_bound_eval_ternary_handle(
     result
 }
 
+/// Derives an instruction-local eval sum handle from explicit slot entropy.
+#[allow(clippy::too_many_arguments)]
+pub fn computed_eval_sum_handle(
+    operand_handles: &[[u8; 32]],
+    fhe_type: u8,
+    chain_id: u64,
+    previous_bank_hash: [u8; 32],
+    unix_timestamp: i64,
+    context_id: [u8; 32],
+    op_index: u16,
+) -> [u8; 32] {
+    let chain_id_bytes = chain_id.to_be_bytes();
+    let op_index_bytes = op_index.to_be_bytes();
+    let timestamp_bytes = unix_timestamp.to_be_bytes();
+    let fhe_type_bytes = [fhe_type];
+    let mut preimage: Vec<&[u8]> = vec![
+        b"FHE_eval_sum",
+        &context_id,
+        &op_index_bytes,
+        &fhe_type_bytes,
+    ];
+    for h in operand_handles {
+        preimage.push(h.as_ref());
+    }
+    preimage.push(crate::ID.as_ref());
+    preimage.push(&chain_id_bytes);
+    preimage.push(&previous_bank_hash);
+    preimage.push(&timestamp_bytes);
+    let mut result = hashv(preimage.as_slice()).to_bytes();
+    finish_computed_handle(&mut result, &chain_id_bytes, fhe_type);
+    result
+}
+
+/// Derives a nonce-bound durable sum eval handle from explicit slot entropy.
+#[allow(clippy::too_many_arguments)]
+pub fn computed_bound_eval_sum_handle(
+    operand_handles: &[[u8; 32]],
+    fhe_type: u8,
+    chain_id: u64,
+    previous_bank_hash: [u8; 32],
+    unix_timestamp: i64,
+    context_id: [u8; 32],
+    op_index: u16,
+    output_nonce_key: [u8; 32],
+    output_nonce_sequence: u64,
+) -> [u8; 32] {
+    let sequence_bytes = output_nonce_sequence.to_be_bytes();
+    let base_result = computed_eval_sum_handle(
+        operand_handles, fhe_type, chain_id, previous_bank_hash,
+        unix_timestamp, context_id, op_index,
+    );
+    let mut result = base_result;
+    result[..21].copy_from_slice(
+        &hashv(&[b"FHE_bound_eval_sum_output", &base_result, &output_nonce_key, &sequence_bytes])
+            .to_bytes()[..21],
+    );
+    result
+}
+
+/// Derives an instruction-local eval is-in handle from explicit slot entropy.
+#[allow(clippy::too_many_arguments)]
+pub fn computed_eval_is_in_handle(
+    value_handle: [u8; 32],
+    set_handles: &[[u8; 32]],
+    fhe_type: u8,
+    chain_id: u64,
+    previous_bank_hash: [u8; 32],
+    unix_timestamp: i64,
+    context_id: [u8; 32],
+    op_index: u16,
+) -> [u8; 32] {
+    let chain_id_bytes = chain_id.to_be_bytes();
+    let op_index_bytes = op_index.to_be_bytes();
+    let timestamp_bytes = unix_timestamp.to_be_bytes();
+    let fhe_type_bytes = [fhe_type];
+    let mut preimage: Vec<&[u8]> = vec![
+        b"FHE_eval_is_in",
+        &context_id,
+        &op_index_bytes,
+        &fhe_type_bytes,
+        &value_handle,
+    ];
+    for h in set_handles {
+        preimage.push(h.as_ref());
+    }
+    preimage.push(crate::ID.as_ref());
+    preimage.push(&chain_id_bytes);
+    preimage.push(&previous_bank_hash);
+    preimage.push(&timestamp_bytes);
+    let mut result = hashv(preimage.as_slice()).to_bytes();
+    finish_computed_handle(&mut result, &chain_id_bytes, 0 /* ebool */);
+    result
+}
+
+/// Derives a nonce-bound durable is-in eval handle from explicit slot entropy.
+#[allow(clippy::too_many_arguments)]
+pub fn computed_bound_eval_is_in_handle(
+    value_handle: [u8; 32],
+    set_handles: &[[u8; 32]],
+    fhe_type: u8,
+    chain_id: u64,
+    previous_bank_hash: [u8; 32],
+    unix_timestamp: i64,
+    context_id: [u8; 32],
+    op_index: u16,
+    output_nonce_key: [u8; 32],
+    output_nonce_sequence: u64,
+) -> [u8; 32] {
+    let sequence_bytes = output_nonce_sequence.to_be_bytes();
+    let base_result = computed_eval_is_in_handle(
+        value_handle, set_handles, fhe_type, chain_id, previous_bank_hash,
+        unix_timestamp, context_id, op_index,
+    );
+    let mut result = base_result;
+    result[..21].copy_from_slice(
+        &hashv(&[b"FHE_bound_eval_is_in_output", &base_result, &output_nonce_key, &sequence_bytes])
+            .to_bytes()[..21],
+    );
+    result
+}
+
+/// Derives an instruction-local eval mul-div handle from explicit slot entropy.
+#[allow(clippy::too_many_arguments)]
+pub fn computed_eval_mul_div_handle(
+    factor1: [u8; 32],
+    factor2: [u8; 32],
+    divisor: [u8; 32],
+    scalar: bool,
+    output_fhe_type: u8,
+    chain_id: u64,
+    previous_bank_hash: [u8; 32],
+    unix_timestamp: i64,
+    context_id: [u8; 32],
+    op_index: u16,
+) -> [u8; 32] {
+    let chain_id_bytes = chain_id.to_be_bytes();
+    let op_index_bytes = op_index.to_be_bytes();
+    let timestamp_bytes = unix_timestamp.to_be_bytes();
+    let scalar_byte = [u8::from(scalar)];
+    let mut result = hashv(&[
+        b"FHE_eval_mul_div",
+        &context_id,
+        &op_index_bytes,
+        &factor1,
+        &factor2,
+        &divisor,
+        &scalar_byte,
+        crate::ID.as_ref(),
+        &chain_id_bytes,
+        &previous_bank_hash,
+        &timestamp_bytes,
+    ])
+    .to_bytes();
+    finish_computed_handle(&mut result, &chain_id_bytes, output_fhe_type);
+    result
+}
+
+/// Derives a nonce-bound durable mul-div eval handle from explicit slot entropy.
+#[allow(clippy::too_many_arguments)]
+pub fn computed_bound_eval_mul_div_handle(
+    factor1: [u8; 32],
+    factor2: [u8; 32],
+    divisor: [u8; 32],
+    scalar: bool,
+    output_fhe_type: u8,
+    chain_id: u64,
+    previous_bank_hash: [u8; 32],
+    unix_timestamp: i64,
+    context_id: [u8; 32],
+    op_index: u16,
+    output_nonce_key: [u8; 32],
+    output_nonce_sequence: u64,
+) -> [u8; 32] {
+    let sequence_bytes = output_nonce_sequence.to_be_bytes();
+    let base_result = computed_eval_mul_div_handle(
+        factor1, factor2, divisor, scalar, output_fhe_type, chain_id,
+        previous_bank_hash, unix_timestamp, context_id, op_index,
+    );
+    let mut result = base_result;
+    result[..21].copy_from_slice(
+        &hashv(&[b"FHE_bound_eval_mul_div_output", &base_result, &output_nonce_key, &sequence_bytes])
+            .to_bytes()[..21],
+    );
+    result
+}
+
 /// Derives a nonce-bound durable trivial-encrypt eval handle from explicit slot entropy.
 pub fn computed_bound_eval_trivial_handle(
     plaintext: [u8; 32],
@@ -1478,6 +1869,185 @@ pub fn computed_rand_bounded_handle(
     result[30] = fhe_type;
     result[31] = HANDLE_VERSION;
     result
+}
+
+/// Derives an unbound unary-op handle from explicit slot entropy.
+pub fn computed_unary_handle(
+    op: FheUnaryOpCode,
+    operand: [u8; 32],
+    fhe_type: u8,
+    chain_id: u64,
+    previous_bank_hash: [u8; 32],
+    unix_timestamp: i64,
+) -> [u8; 32] {
+    let op_byte = [op.as_u8()];
+    let chain_id_bytes = chain_id.to_be_bytes();
+    let timestamp_bytes = unix_timestamp.to_be_bytes();
+    let mut result = keccak_hashv(&[
+        COMPUTATION_DOMAIN_SEPARATOR,
+        &op_byte,
+        &operand,
+        crate::ID.as_ref(),
+        &chain_id_bytes,
+        &previous_bank_hash,
+        &timestamp_bytes,
+    ])
+    .to_bytes();
+    finish_computed_handle(&mut result, &chain_id_bytes, fhe_type);
+    result
+}
+
+/// Derives a nonce-bound unary-op output handle from explicit slot entropy.
+pub fn computed_bound_unary_handle(
+    op: FheUnaryOpCode,
+    operand: [u8; 32],
+    fhe_type: u8,
+    chain_id: u64,
+    previous_bank_hash: [u8; 32],
+    unix_timestamp: i64,
+    output_nonce_key: [u8; 32],
+    output_nonce_sequence: u64,
+) -> [u8; 32] {
+    let sequence_bytes = output_nonce_sequence.to_be_bytes();
+    let base_result = computed_unary_handle(
+        op, operand, fhe_type, chain_id, previous_bank_hash, unix_timestamp,
+    );
+    let mut result = base_result;
+    result[..21].copy_from_slice(
+        &keccak_hashv(&[
+            b"FHE_bound_unary_output",
+            &base_result,
+            &output_nonce_key,
+            &sequence_bytes,
+        ])
+        .to_bytes()[..21],
+    );
+    result
+}
+
+/// Derives an instruction-local eval unary handle from explicit slot entropy.
+pub fn computed_eval_unary_handle(
+    op: FheUnaryOpCode,
+    operand: [u8; 32],
+    fhe_type: u8,
+    chain_id: u64,
+    previous_bank_hash: [u8; 32],
+    unix_timestamp: i64,
+    context_id: [u8; 32],
+    op_index: u16,
+) -> [u8; 32] {
+    let op_byte = [op.as_u8()];
+    let chain_id_bytes = chain_id.to_be_bytes();
+    let op_index_bytes = op_index.to_be_bytes();
+    let timestamp_bytes = unix_timestamp.to_be_bytes();
+    let mut result = hashv(&[
+        b"FHE_eval_unary",
+        &context_id,
+        &op_index_bytes,
+        &op_byte,
+        &operand,
+        crate::ID.as_ref(),
+        &chain_id_bytes,
+        &previous_bank_hash,
+        &timestamp_bytes,
+    ])
+    .to_bytes();
+    finish_computed_handle(&mut result, &chain_id_bytes, fhe_type);
+    result
+}
+
+/// Derives a nonce-bound durable unary eval handle from explicit slot entropy.
+#[allow(clippy::too_many_arguments)]
+pub fn computed_bound_eval_unary_handle(
+    op: FheUnaryOpCode,
+    operand: [u8; 32],
+    fhe_type: u8,
+    chain_id: u64,
+    previous_bank_hash: [u8; 32],
+    unix_timestamp: i64,
+    context_id: [u8; 32],
+    op_index: u16,
+    output_nonce_key: [u8; 32],
+    output_nonce_sequence: u64,
+) -> [u8; 32] {
+    let sequence_bytes = output_nonce_sequence.to_be_bytes();
+    let base_result = computed_eval_unary_handle(
+        op, operand, fhe_type, chain_id,
+        previous_bank_hash, unix_timestamp, context_id, op_index,
+    );
+    let mut result = base_result;
+    result[..21].copy_from_slice(
+        &hashv(&[
+            b"FHE_bound_eval_unary_output",
+            &base_result,
+            &output_nonce_key,
+            &sequence_bytes,
+        ])
+        .to_bytes()[..21],
+    );
+    result
+}
+
+/// Derives the seed emitted for an instruction-local eval bounded-random handle.
+pub fn computed_eval_rand_bounded_seed(
+    upper_bound: [u8; 32],
+    chain_id: u64,
+    previous_bank_hash: [u8; 32],
+    unix_timestamp: i64,
+    context_id: [u8; 32],
+    op_index: u16,
+) -> [u8; 16] {
+    let chain_id_bytes = chain_id.to_be_bytes();
+    let op_index_bytes = op_index.to_be_bytes();
+    let timestamp_bytes = unix_timestamp.to_be_bytes();
+    let hash = hashv(&[
+        b"FHE_eval_bounded_seed",
+        &context_id,
+        &op_index_bytes,
+        &upper_bound,
+        crate::ID.as_ref(),
+        &chain_id_bytes,
+        &previous_bank_hash,
+        &timestamp_bytes,
+    ])
+    .to_bytes();
+    let mut seed = [0; 16];
+    seed.copy_from_slice(&hash[..16]);
+    seed
+}
+
+/// Derives the seed emitted for a nonce-bound durable eval bounded-random handle from explicit slot entropy.
+#[allow(clippy::too_many_arguments)]
+pub fn computed_bound_eval_rand_bounded_seed(
+    upper_bound: [u8; 32],
+    chain_id: u64,
+    previous_bank_hash: [u8; 32],
+    unix_timestamp: i64,
+    context_id: [u8; 32],
+    op_index: u16,
+    output_nonce_key: [u8; 32],
+    output_nonce_sequence: u64,
+) -> [u8; 16] {
+    let chain_id_bytes = chain_id.to_be_bytes();
+    let op_index_bytes = op_index.to_be_bytes();
+    let sequence_bytes = output_nonce_sequence.to_be_bytes();
+    let timestamp_bytes = unix_timestamp.to_be_bytes();
+    let hash = hashv(&[
+        b"FHE_bound_eval_bounded_seed",
+        &context_id,
+        &op_index_bytes,
+        &upper_bound,
+        crate::ID.as_ref(),
+        &chain_id_bytes,
+        &previous_bank_hash,
+        &timestamp_bytes,
+        &output_nonce_key,
+        &sequence_bytes,
+    ])
+    .to_bytes();
+    let mut seed = [0; 16];
+    seed.copy_from_slice(&hash[..16]);
+    seed
 }
 
 /// Returns the latest prior bank hash.

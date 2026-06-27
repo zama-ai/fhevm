@@ -400,4 +400,44 @@ pub mod zama_host {
             acl_domain_key,
         )
     }
+    pub fn fhe_unary_op(
+        ctx: Context<FheUnaryOp>,
+        op: FheUnaryOpCode,
+        operand: [u8; 32],
+        output_fhe_type: u8,
+        result: [u8; 32],
+    ) -> Result<()> {
+        instructions::fhe_unary_op(ctx, op, operand, output_fhe_type, result)
+    }
+
+    pub fn fhe_unary_op_and_bind_output(
+        ctx: Context<FheUnaryOpAndBindOutput>,
+        op: FheUnaryOpCode,
+        operand: [u8; 32],
+        output_fhe_type: u8,
+        result: [u8; 32],
+        output_nonce_key: [u8; 32],
+        output_nonce_sequence: u64,
+        output_acl_domain_key: Pubkey,
+        output_app_account: Pubkey,
+        output_encrypted_value_label: [u8; 32],
+        output_subjects: Vec<AclSubjectEntry>,
+        output_public_decrypt: bool,
+    ) -> Result<()> {
+        instructions::fhe_unary_op_and_bind_output(
+            ctx,
+            op,
+            operand,
+            output_fhe_type,
+            result,
+            output_nonce_key,
+            output_nonce_sequence,
+            output_acl_domain_key,
+            output_app_account,
+            output_encrypted_value_label,
+            output_subjects,
+            output_public_decrypt,
+        )
+    }
+
 }

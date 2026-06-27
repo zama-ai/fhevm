@@ -8,7 +8,8 @@ use crate::{
     errors::ZamaHostError,
     events::{
         AclAllowedEvent, AclRecordBoundEvent, AclSubjectAllowedEvent, FheBinaryOpEvent,
-        FheRandEvent, FheTernaryOpEvent, TrivialEncryptEvent,
+        FheIsInEvent, FheMulDivEvent, FheRandBoundedEvent, FheRandEvent, FheSumEvent,
+        FheTernaryOpEvent, FheUnaryOpEvent, TrivialEncryptEvent,
     },
     state::*,
 };
