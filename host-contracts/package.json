@@ -35,6 +35,7 @@
     "@layerzerolabs/oapp-evm": "^0.4.1",
     "@layerzerolabs/oapp-evm-upgradeable": "^0.1.3",
     "@layerzerolabs/oft-evm": "^4.0.1",
+    "@layerzerolabs/script-devtools-evm-foundry": "^2.0.0",
     "@layerzerolabs/test-devtools-evm-foundry": "^8.0.1",
     "@nomicfoundation/hardhat-chai-matchers": "^2.1.2",
     "@nomicfoundation/hardhat-ethers": "^3.1.3",

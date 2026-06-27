@@ -49,11 +49,4 @@ contract BridgeEvents {
     /// @param lzReceivePerPayloadByteGas  The custom per-payload-byte gas (0 means fall back to
     ///                                    LZ_RECEIVE_PER_PAYLOAD_BYTE_DEFAULT).
     event LzReceivePerPayloadByteGasSet(uint32 indexed dstEid, uint64 lzReceivePerPayloadByteGas);
-
-    /// @notice Emitted by the HandlesSender when governance sets a custom minimum `lzCompose`
-    ///         gas accepted by `send` for a `dstEid`. A value of 0 clears the override.
-    /// @param dstEid             The LayerZero endpoint id.
-    /// @param lzComposeMinValue  The custom minimum (0 means fall back to
-    ///                           LZ_COMPOSE_MIN_VALUE_DEFAULT).
-    event LzComposeMinValueSet(uint32 indexed dstEid, uint64 lzComposeMinValue);
 }

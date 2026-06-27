@@ -359,3 +359,29 @@ pnpm mock:query <balance handle on Amoy>
 A printed `1000` on Amoy confirms: the OFT burned on Sepolia, the bridge
 delivered the handle association via LayerZero, the OFT minted on Amoy, and
 the mock coprocessor propagated the cleartext end-to-end.
+
+### 6. Optional : run gas profiler for `lzReceive` parameters
+
+In order to get the recommended `lzReceive`-specific gas parameters from `HandlesSender` (i.e `LZ_RECEIVE_BASE_GAS_DEFAULT`, `LZ_RECEIVE_PER_HANDLE_GAS_DEFAULT` and `LZ_RECEIVE_PER_PAYLOAD_BYTE_DEFAULT`) you can run the following script:
+
+On Ethereum Sepolia:
+
+```
+PROFILE_RPC_URL="$SEPOLIA_RPC_URL" \
+PROFILE_RECEIVER="$SEPOLIA_BRIDGE_ADDRESS" \
+PROFILE_SENDER="$POLYGON_AMOY_BRIDGE_ADDRESS" \
+PROFILE_SRC_EID=40267 \
+PROFILE_DST_EID=40161 \
+forge script scripts/HandlesReceiverProfiler.s.sol:HandlesReceiverProfilerExample -vv
+```
+
+On Polygon Amoy:
+
+```
+PROFILE_RPC_URL="$POLYGON_AMOY_RPC_URL" \
+PROFILE_RECEIVER="$POLYGON_AMOY_BRIDGE_ADDRESS" \
+PROFILE_SENDER="$SEPOLIA_BRIDGE_ADDRESS" \
+PROFILE_SRC_EID=40161 \
+PROFILE_DST_EID=40267 \
+forge script scripts/HandlesReceiverProfiler.s.sol:HandlesReceiverProfilerExample -vv
+```

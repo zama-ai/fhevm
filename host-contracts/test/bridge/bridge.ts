@@ -58,8 +58,8 @@ describe('Bridge', function () {
     it('reverts UnknownDstEid for an unregistered endpoint id', async function () {
       const handleList = [makeHandle(0)];
       const unknownEid = 99;
-      const minComposeGas = await this.srcBridge.LZ_COMPOSE_MIN_VALUE_DEFAULT();
-      await expect(this.srcBridge.send(unknownEid, ethers.ZeroHash, '0x', handleList, minComposeGas))
+      const composeGas = 30_000;
+      await expect(this.srcBridge.send(unknownEid, ethers.ZeroHash, '0x', handleList, composeGas))
         .to.be.revertedWithCustomError(this.srcBridge, 'UnknownDstEid')
         .withArgs(unknownEid);
     });
@@ -76,9 +76,9 @@ describe('Bridge', function () {
       const handleList = [makeHandle(0)];
       // signers.bob has no ACL allowance on this fresh handle.
       const bob = this.signers.bob;
-      const minComposeGas = await this.srcBridge.LZ_COMPOSE_MIN_VALUE_DEFAULT();
+      const composeGas = 30_000;
       await expect(
-        this.srcBridge.connect(bob).send(DST_EID, ethers.ZeroHash, '0x', handleList, minComposeGas),
+        this.srcBridge.connect(bob).send(DST_EID, ethers.ZeroHash, '0x', handleList, composeGas),
       ).to.be.revertedWithCustomError(this.srcBridge, 'HandleNotAllowed');
     });
   });
