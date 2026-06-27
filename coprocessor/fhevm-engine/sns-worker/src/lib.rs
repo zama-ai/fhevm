@@ -25,6 +25,7 @@ use anyhow::Context;
 use aws_config::{retry::RetryConfig, timeout::TimeoutConfig, BehaviorVersion};
 use aws_sdk_s3::{config::Builder, Client};
 use fhevm_engine_common::{
+    branch::enqueue_s3_canonical_repair,
     chain_id::ChainId,
     db_keys::DbKeyId,
     drift_revert,
@@ -368,42 +369,87 @@ impl HandleItem {
         ct64_digest: Vec<u8>,
         ct128_digest: Vec<u8>,
         s3_format_version: i16,
-    ) -> Result<(), ExecutionError> {
+    ) -> Result<bool, ExecutionError> {
         let format: i16 = self.ct128.format().into();
 
-        let result = sqlx::query!(
+        let result = sqlx::query(
             r#"
-            UPDATE ciphertext_digest_branch
+            UPDATE ciphertext_digest_branch d
             SET ciphertext = $1,
                 ciphertext128 = $2,
                 ciphertext128_format = $3,
                 s3_format_version = $4
-            WHERE host_chain_id = $5
-              AND handle = $6
-              AND producer_block_hash = $7
-              AND block_hash = $8
+            WHERE d.host_chain_id = $5
+              AND d.handle = $6
+              AND d.producer_block_hash = $7
+              AND d.block_hash = $8
+              AND (
+                    d.producer_block_hash = ''::BYTEA
+                    OR NOT EXISTS (
+                        SELECT 1
+                        FROM host_chain_blocks_valid b
+                        WHERE b.chain_id = d.host_chain_id
+                          AND b.block_hash = d.producer_block_hash
+                          AND b.block_status = 'orphaned'
+                    )
+              )
+              AND (
+                    d.block_hash = ''::BYTEA
+                    OR NOT EXISTS (
+                        SELECT 1
+                        FROM host_chain_blocks_valid b
+                        WHERE b.chain_id = d.host_chain_id
+                          AND b.block_hash = d.block_hash
+                          AND b.block_status = 'orphaned'
+                    )
+              )
             "#,
-            &ct64_digest,
-            &ct128_digest,
-            format,
-            s3_format_version,
-            self.host_chain_id.as_i64(),
-            &self.handle,
-            &self.producer_block_hash,
-            &self.block_hash,
         )
+        .bind(&ct64_digest)
+        .bind(&ct128_digest)
+        .bind(format)
+        .bind(s3_format_version)
+        .bind(self.host_chain_id.as_i64())
+        .bind(&self.handle)
+        .bind(&self.producer_block_hash)
+        .bind(&self.block_hash)
         .execute(trx.as_mut())
         .await?;
 
+        if result.rows_affected() == 0 {
+            info!(
+                handle = %to_hex(&self.handle),
+                producer_block_hash = %to_hex(&self.producer_block_hash),
+                block_hash = %to_hex(&self.block_hash),
+                "S3 upload completed but branch digest row is no longer publishable"
+            );
+            return Ok(false);
+        }
         if result.rows_affected() != 1 {
             return Err(ExecutionError::InternalError(format!(
-                "expected to mark exactly one ciphertext_digest_branch row as uploaded for handle {} producer {} block {}, updated {}",
+                "expected to mark at most one ciphertext_digest_branch row as uploaded for handle {} producer {} block {}, updated {}",
                 to_hex(&self.handle),
                 to_hex(&self.producer_block_hash),
                 to_hex(&self.block_hash),
                 result.rows_affected(),
             )));
         }
+
+        sqlx::query(
+            r#"
+            DELETE FROM s3_canonical_repair_queue
+             WHERE host_chain_id = $1
+               AND handle = $2
+               AND target_producer_block_hash = $3
+               AND target_block_hash = $4
+            "#,
+        )
+        .bind(self.host_chain_id.as_i64())
+        .bind(&self.handle)
+        .bind(&self.producer_block_hash)
+        .bind(&self.block_hash)
+        .execute(trx.as_mut())
+        .await?;
 
         info!(
             "Mark ciphertexts as uploaded, handle: {}, ct64_digest: {}, ct128_digest: {}, format: {:?}, s3_format_version: {}",
@@ -413,6 +459,89 @@ impl HandleItem {
             self.ct128.format(),
             s3_format_version,
         );
+
+        Ok(true)
+    }
+
+    pub(crate) async fn is_upload_publishable(
+        &self,
+        trx: &mut Transaction<'_, Postgres>,
+    ) -> Result<bool, ExecutionError> {
+        let publishable = sqlx::query_scalar::<_, bool>(
+            r#"
+            SELECT EXISTS(
+                SELECT 1
+                FROM ciphertext_digest_branch d
+                WHERE d.host_chain_id = $1
+                  AND d.handle = $2
+                  AND d.producer_block_hash = $3
+                  AND d.block_hash = $4
+                  AND (
+                        d.producer_block_hash = ''::BYTEA
+                        OR NOT EXISTS (
+                            SELECT 1
+                            FROM host_chain_blocks_valid b
+                            WHERE b.chain_id = d.host_chain_id
+                              AND b.block_hash = d.producer_block_hash
+                              AND b.block_status = 'orphaned'
+                        )
+                  )
+                  AND (
+                        d.block_hash = ''::BYTEA
+                        OR NOT EXISTS (
+                            SELECT 1
+                            FROM host_chain_blocks_valid b
+                            WHERE b.chain_id = d.host_chain_id
+                              AND b.block_hash = d.block_hash
+                              AND b.block_status = 'orphaned'
+                        )
+                  )
+            )
+            "#,
+        )
+        .bind(self.host_chain_id.as_i64())
+        .bind(&self.handle)
+        .bind(&self.producer_block_hash)
+        .bind(&self.block_hash)
+        .fetch_one(trx.as_mut())
+        .await?;
+
+        Ok(publishable)
+    }
+
+    pub(crate) async fn enqueue_canonical_repair(
+        &self,
+        trx: &mut Transaction<'_, Postgres>,
+        reason: &str,
+    ) -> Result<bool, ExecutionError> {
+        Ok(
+            enqueue_s3_canonical_repair(trx, self.host_chain_id.as_i64(), &self.handle, reason)
+                .await?,
+        )
+    }
+
+    pub(crate) async fn note_repair_attempt(
+        &self,
+        trx: &mut Transaction<'_, Postgres>,
+    ) -> Result<(), ExecutionError> {
+        sqlx::query(
+            r#"
+            UPDATE s3_canonical_repair_queue
+               SET attempts = attempts + 1,
+                   locked_at = NOW(),
+                   updated_at = NOW()
+             WHERE host_chain_id = $1
+               AND handle = $2
+               AND target_producer_block_hash = $3
+               AND target_block_hash = $4
+            "#,
+        )
+        .bind(self.host_chain_id.as_i64())
+        .bind(&self.handle)
+        .bind(&self.producer_block_hash)
+        .bind(&self.block_hash)
+        .execute(trx.as_mut())
+        .await?;
 
         Ok(())
     }

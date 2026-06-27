@@ -4,6 +4,7 @@ use alloy_primitives::Log;
 use alloy_primitives::Uint;
 use anyhow::Result;
 use bigdecimal::BigDecimal;
+use fhevm_engine_common::branch::enqueue_s3_canonical_repairs;
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::database::{
     connect_pool_with_options_and_connect_options, PoolRefreshHandle,
@@ -955,6 +956,22 @@ impl Database {
             .map(|row| row.event_type)
             .collect::<Vec<_>>();
 
+        let orphaned_digest_handles = sqlx::query_scalar::<_, Vec<u8>>(
+            r#"
+            SELECT DISTINCT handle
+             FROM ciphertext_digest_branch
+             WHERE host_chain_id = $1
+               AND (
+                    block_hash = ANY($2::bytea[])
+                    OR producer_block_hash = ANY($2::bytea[])
+               )
+            "#,
+        )
+        .bind(self.chain_id.as_i64())
+        .bind(orphaned_block_hashes)
+        .fetch_all(tx.deref_mut())
+        .await?;
+
         if !orphaned_ciphertext_pairs.is_empty() {
             // This removes only DB branch state and materialized DB bytes. S3
             // objects are not branch-addressed in the wave-1 path, so orphaned
@@ -1177,6 +1194,25 @@ impl Database {
             )
             .execute(tx.deref_mut())
             .await?;
+        }
+
+        let repair_handles = orphaned_ciphertext_handles
+            .iter()
+            .cloned()
+            .chain(orphaned_digest_handles)
+            .collect::<Vec<_>>();
+        let enqueued_repairs = enqueue_s3_canonical_repairs(
+            tx,
+            self.chain_id.as_i64(),
+            repair_handles,
+            "orphan_cleanup",
+        )
+        .await?;
+        if enqueued_repairs > 0 {
+            info!(
+                enqueued_repairs,
+                "Enqueued S3 canonical repairs after orphan branch cleanup"
+            );
         }
 
         Ok(())

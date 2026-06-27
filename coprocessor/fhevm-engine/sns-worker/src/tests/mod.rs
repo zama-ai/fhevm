@@ -1,4 +1,5 @@
 use crate::{
+    aws_upload::fetch_pending_uploads,
     executor::{garbage_collect, query_sns_tasks, Order},
     keyset::fetch_client_key,
     squash_noise::safe_deserialize,
@@ -597,7 +598,7 @@ async fn test_query_sns_tasks_reads_branch_rows() {
 
     let ct64_digest = vec![0x77_u8; 32];
     let ct128_digest = vec![0x88_u8; 32];
-    upload_task
+    let marked = upload_task
         .mark_ciphertexts_uploaded(
             &mut trx,
             ct64_digest.clone(),
@@ -606,6 +607,7 @@ async fn test_query_sns_tasks_reads_branch_rows() {
         )
         .await
         .expect("mark exact digest row uploaded");
+    assert!(marked);
 
     let rows = sqlx::query(
         "SELECT block_hash, ciphertext, ciphertext128
@@ -631,6 +633,200 @@ async fn test_query_sns_tasks_reads_branch_rows() {
             assert!(ciphertext.is_none());
             assert!(ciphertext128.is_none());
         }
+    }
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn stale_upload_mark_enqueues_canonical_repair_target() {
+    let test_instance = setup_test_db(ImportMode::None)
+        .await
+        .expect("valid db instance");
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(3)
+        .connect(test_instance.db_url())
+        .await
+        .expect("connect test db");
+    let pool = &pool;
+    clean_up(pool).await.expect("clean db");
+
+    let host_chain_id = 1_i64;
+    let key_id_gw = vec![0x01_u8; 32];
+    let handle = vec![0xA0_u8; 32];
+    let stale_producer = vec![0xA1_u8; 32];
+    let stale_event = vec![0xA2_u8; 32];
+    let canonical_producer = vec![0xB1_u8; 32];
+    let canonical_event = vec![0xB2_u8; 32];
+
+    sqlx::query(
+        "INSERT INTO host_chain_blocks_valid(chain_id, block_hash, block_number, block_status)
+         VALUES ($1, $2, 20, 'orphaned'), ($1, $3, 20, 'orphaned'), ($1, $4, 20, 'finalized'), ($1, $5, 20, 'finalized')",
+    )
+    .bind(host_chain_id)
+    .bind(&stale_producer)
+    .bind(&stale_event)
+    .bind(&canonical_producer)
+    .bind(&canonical_event)
+    .execute(pool)
+    .await
+    .expect("insert block statuses");
+
+    for (producer, event) in [
+        (&stale_producer, &stale_event),
+        (&canonical_producer, &canonical_event),
+    ] {
+        sqlx::query(
+            "INSERT INTO ciphertext_digest_branch(
+                host_chain_id, key_id_gw, handle, producer_block_hash, block_hash, block_number
+             )
+             VALUES ($1, $2, $3, $4, $5, 20)",
+        )
+        .bind(host_chain_id)
+        .bind(&key_id_gw)
+        .bind(&handle)
+        .bind(producer)
+        .bind(event)
+        .execute(pool)
+        .await
+        .expect("insert digest row");
+    }
+
+    let stale_task = crate::HandleItem {
+        host_chain_id: fhevm_engine_common::chain_id::ChainId::try_from(host_chain_id).unwrap(),
+        key_id_gw: key_id_gw.clone(),
+        handle: handle.clone(),
+        producer_block_hash: stale_producer.clone(),
+        block_hash: stale_event.clone(),
+        block_number: Some(20),
+        ct64_compressed: Arc::new(vec![0x11_u8; 32]),
+        ct128: Arc::new(BigCiphertext::new(Vec::new(), Ciphertext128Format::Unknown)),
+        ct64_digest: None,
+        ct128_digest: None,
+        s3_format_version: None,
+        span: tracing::Span::none(),
+        transaction_id: None,
+    };
+
+    let mut trx = pool.begin().await.expect("begin tx");
+    assert!(!stale_task
+        .is_upload_publishable(&mut trx)
+        .await
+        .expect("publishability check"));
+    let marked = stale_task
+        .mark_ciphertexts_uploaded(
+            &mut trx,
+            vec![0x55_u8; 32],
+            vec![0_u8; 32],
+            CURRENT_S3_FORMAT_VERSION,
+        )
+        .await
+        .expect("stale mark should not error");
+    assert!(!marked);
+    assert!(stale_task
+        .enqueue_canonical_repair(&mut trx, "test_stale_upload")
+        .await
+        .expect("enqueue repair"));
+    trx.commit().await.expect("commit repair");
+
+    let repair = sqlx::query(
+        "SELECT target_producer_block_hash, target_block_hash
+         FROM s3_canonical_repair_queue
+         WHERE host_chain_id = $1 AND handle = $2",
+    )
+    .bind(host_chain_id)
+    .bind(&handle)
+    .fetch_one(pool)
+    .await
+    .expect("repair row");
+    let target_producer: Vec<u8> = repair.try_get("target_producer_block_hash").unwrap();
+    let target_event: Vec<u8> = repair.try_get("target_block_hash").unwrap();
+    assert_eq!(target_producer, canonical_producer);
+    assert_eq!(target_event, canonical_event);
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn canonical_repair_queue_is_returned_as_upload_work() {
+    let test_instance = setup_test_db(ImportMode::None)
+        .await
+        .expect("valid db instance");
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(3)
+        .connect(test_instance.db_url())
+        .await
+        .expect("connect test db");
+    let pool = &pool;
+    clean_up(pool).await.expect("clean db");
+
+    let host_chain_id = 1_i64;
+    let key_id_gw = vec![0x02_u8; 32];
+    let handle = vec![0xC0_u8; 32];
+    let producer = vec![0xC1_u8; 32];
+    let event = vec![0xC2_u8; 32];
+    let ct64 = vec![0xC3_u8; 32];
+    let ct64_digest = vec![0xC4_u8; 32];
+
+    sqlx::query(
+        "INSERT INTO ciphertexts_branch(
+            handle, producer_block_hash, ciphertext, ciphertext_version, ciphertext_type
+         )
+         VALUES ($1, $2, $3, $4, 0)",
+    )
+    .bind(&handle)
+    .bind(&producer)
+    .bind(&ct64)
+    .bind(current_ciphertext_version())
+    .execute(pool)
+    .await
+    .expect("insert ct64 bytes");
+
+    sqlx::query(
+        "INSERT INTO ciphertext_digest_branch(
+            host_chain_id, key_id_gw, handle, producer_block_hash, block_hash, block_number,
+            ciphertext, ciphertext128, s3_format_version
+         )
+         VALUES ($1, $2, $3, $4, $5, 30, $6, $7, $8)",
+    )
+    .bind(host_chain_id)
+    .bind(&key_id_gw)
+    .bind(&handle)
+    .bind(&producer)
+    .bind(&event)
+    .bind(&ct64_digest)
+    .bind(vec![0_u8; 32])
+    .bind(CURRENT_S3_FORMAT_VERSION)
+    .execute(pool)
+    .await
+    .expect("insert complete digest row");
+
+    sqlx::query(
+        "INSERT INTO s3_canonical_repair_queue(
+            host_chain_id, handle, target_producer_block_hash, target_block_hash,
+            target_block_number, reason
+         )
+         VALUES ($1, $2, $3, $4, 30, 'test')",
+    )
+    .bind(host_chain_id)
+    .bind(&handle)
+    .bind(&producer)
+    .bind(&event)
+    .execute(pool)
+    .await
+    .expect("insert repair row");
+
+    let jobs = fetch_pending_uploads(pool, 10)
+        .await
+        .expect("fetch pending repairs");
+    assert_eq!(jobs.len(), 1);
+    match &jobs[0] {
+        crate::UploadJob::Normal(item) => {
+            assert_eq!(item.handle, handle);
+            assert_eq!(item.producer_block_hash, producer);
+            assert_eq!(item.block_hash, event);
+            assert_eq!(item.ct64_compressed.as_ref(), &ct64);
+            assert_eq!(item.ct64_digest.as_deref(), Some(ct64_digest.as_slice()));
+        }
+        crate::UploadJob::DatabaseLock(_) => panic!("repair work should use normal upload path"),
     }
 }
 
@@ -1106,6 +1302,9 @@ async fn clean_up(pool: &sqlx::PgPool) -> anyhow::Result<()> {
             "ciphertexts_branch",
             "ciphertexts128_branch",
             "ciphertext_digest_branch",
+            "host_chain_blocks_valid",
+            "coprocessor_settlement",
+            "s3_canonical_repair_queue",
         ],
     )
     .await?;

@@ -49,6 +49,25 @@ pub(crate) static AWS_UPLOAD_FAILURE_COUNTER: LazyLock<IntCounter> = LazyLock::n
     .unwrap()
 });
 
+pub(crate) static STALE_S3_UPLOAD_AFTER_CLEANUP_COUNTER: LazyLock<IntCounter> = LazyLock::new(
+    || {
+        register_int_counter!(
+            "coprocessor_sns_worker_stale_s3_upload_after_cleanup_total",
+            "Number of S3 uploads that succeeded externally but were rejected by branch cleanup/settlement fencing"
+        )
+        .unwrap()
+    },
+);
+
+pub(crate) static S3_CANONICAL_REPAIR_ENQUEUED_COUNTER: LazyLock<IntCounter> =
+    LazyLock::new(|| {
+        register_int_counter!(
+            "coprocessor_sns_worker_s3_canonical_repair_enqueued_total",
+            "Number of S3 canonical repair tasks enqueued by sns-worker"
+        )
+        .unwrap()
+    });
+
 pub(crate) static UNCOMPLETE_TASKS: LazyLock<IntGauge> = LazyLock::new(|| {
     register_int_gauge!(
         "coprocessor_sns_worker_uncomplete_tasks_gauge",
@@ -86,18 +105,24 @@ pub fn spawn_gauge_update_routine(period: std::time::Duration, db_pool: PgPool) 
             match sqlx::query_scalar::<Postgres, i64>(
                 "
                 SELECT COUNT(*)::BIGINT
-                FROM ciphertext_digest_branch d
-                WHERE d.ciphertext IS NULL
-                   OR (
-                     d.ciphertext128 IS NULL
-                     AND EXISTS (
-                       SELECT 1
-                       FROM ciphertexts128_branch c
-                       WHERE c.handle = d.handle
-                         AND c.producer_block_hash = d.producer_block_hash
-                         AND c.ciphertext IS NOT NULL
-                     )
-                   )
+                FROM (
+                    SELECT d.handle, d.producer_block_hash, d.block_hash
+                    FROM ciphertext_digest_branch d
+                    WHERE d.ciphertext IS NULL
+                       OR (
+                         d.ciphertext128 IS NULL
+                         AND EXISTS (
+                           SELECT 1
+                           FROM ciphertexts128_branch c
+                           WHERE c.handle = d.handle
+                             AND c.producer_block_hash = d.producer_block_hash
+                             AND c.ciphertext IS NOT NULL
+                         )
+                       )
+                    UNION
+                    SELECT q.handle, q.target_producer_block_hash, q.target_block_hash
+                    FROM s3_canonical_repair_queue q
+                ) pending
                 ",
             )
             .fetch_one(&db_pool)
