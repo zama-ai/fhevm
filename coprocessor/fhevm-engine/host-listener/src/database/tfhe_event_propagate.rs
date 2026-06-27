@@ -19,7 +19,7 @@ use prometheus::{register_int_counter_vec, IntCounterVec};
 use sqlx::postgres::PgConnectOptions;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::Error as SqlxError;
-use sqlx::{PgPool, Postgres};
+use sqlx::{PgPool, Postgres, Row};
 use std::collections::HashSet;
 use std::ops::DerefMut;
 use std::sync::Arc;
@@ -27,6 +27,9 @@ use std::sync::LazyLock;
 use std::time::Duration;
 use time::{Duration as TimeDuration, PrimitiveDateTime};
 use tokio::sync::RwLock;
+use tokio::task::JoinHandle;
+use tokio::time::{interval, MissedTickBehavior};
+use tokio_util::sync::CancellationToken;
 use tracing::error;
 use tracing::info;
 use tracing::warn;
@@ -44,6 +47,9 @@ pub type ToType = u8;
 pub type ScalarByte = FixedBytes<1>;
 pub type ClearConst = Uint<256, 4>;
 pub type ChainHash = TransactionHash;
+
+const BRANCH_CLEANUP_BATCH_SIZE: i64 = 10;
+const BRANCH_CLEANUP_RECHECK_INTERVAL: Duration = Duration::from_secs(5);
 
 static SLOW_LANE_MARKED_CHAINS_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(
     || {
@@ -834,6 +840,218 @@ impl Database {
         Ok(orphaned_hashes)
     }
 
+    pub async fn enqueue_orphaned_branch_cleanup(
+        &self,
+        tx: &mut Transaction<'_>,
+        finalized_block_number: i64,
+        finalized_block_hash: &[u8],
+        orphaned_block_hashes: &[Vec<u8>],
+    ) -> Result<(), SqlxError> {
+        if orphaned_block_hashes.is_empty() {
+            return Ok(());
+        }
+
+        sqlx::query(
+            r#"
+            INSERT INTO branch_cleanup_jobs (
+                chain_id,
+                finalized_block_hash,
+                finalized_block_number,
+                orphaned_block_hashes,
+                status
+            )
+            VALUES ($1, $2, $3, $4, 'pending')
+            ON CONFLICT (chain_id, finalized_block_hash) DO UPDATE
+            SET finalized_block_number = EXCLUDED.finalized_block_number,
+                orphaned_block_hashes = EXCLUDED.orphaned_block_hashes,
+                status = 'pending',
+                locked_at = NULL,
+                last_error = NULL,
+                updated_at = NOW()
+            "#,
+        )
+        .bind(self.chain_id.as_i64())
+        .bind(finalized_block_hash)
+        .bind(finalized_block_number)
+        .bind(orphaned_block_hashes)
+        .execute(tx.deref_mut())
+        .await?;
+
+        Ok(())
+    }
+
+    pub fn spawn_orphaned_branch_cleanup_worker(
+        &self,
+        cancel_token: CancellationToken,
+    ) -> JoinHandle<()> {
+        let db = self.clone();
+        tokio::spawn(async move {
+            db.run_orphaned_branch_cleanup_worker(cancel_token).await;
+        })
+    }
+
+    async fn run_orphaned_branch_cleanup_worker(
+        self,
+        cancel_token: CancellationToken,
+    ) {
+        let mut ticker = interval(BRANCH_CLEANUP_RECHECK_INTERVAL);
+        ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
+
+        loop {
+            if let Err(err) = self.process_orphaned_branch_cleanup_jobs().await
+            {
+                error!(?err, "Failed to process orphaned branch cleanup jobs");
+            }
+
+            tokio::select! {
+                _ = cancel_token.cancelled() => break,
+                _ = ticker.tick() => {}
+            }
+        }
+    }
+
+    pub async fn process_orphaned_branch_cleanup_jobs(
+        &self,
+    ) -> Result<u64, SqlxError> {
+        let mut processed = 0_u64;
+
+        loop {
+            let Some((finalized_block_hash, orphaned_hashes)) =
+                self.claim_orphaned_branch_cleanup_job().await?
+            else {
+                break;
+            };
+
+            match self
+                .process_orphaned_branch_cleanup_job(
+                    &finalized_block_hash,
+                    &orphaned_hashes,
+                )
+                .await
+            {
+                Ok(()) => {
+                    processed += 1;
+                }
+                Err(err) => {
+                    self.record_orphaned_branch_cleanup_error(
+                        &finalized_block_hash,
+                        &err.to_string(),
+                    )
+                    .await?;
+                    return Err(err);
+                }
+            }
+
+            if processed >= BRANCH_CLEANUP_BATCH_SIZE as u64 {
+                break;
+            }
+        }
+
+        Ok(processed)
+    }
+
+    async fn claim_orphaned_branch_cleanup_job(
+        &self,
+    ) -> Result<Option<(Vec<u8>, Vec<Vec<u8>>)>, SqlxError> {
+        let pool = self.pool().await;
+        let row = sqlx::query(
+            r#"
+            WITH selected AS (
+                SELECT chain_id, finalized_block_hash
+                  FROM branch_cleanup_jobs
+                 WHERE chain_id = $1
+                   AND status = 'pending'
+                   AND (
+                        locked_at IS NULL
+                        OR locked_at < NOW() - INTERVAL '5 minutes'
+                   )
+                 ORDER BY finalized_block_number ASC, updated_at ASC
+                 FOR UPDATE SKIP LOCKED
+                 LIMIT 1
+            )
+            UPDATE branch_cleanup_jobs j
+               SET locked_at = NOW(),
+                   attempts = attempts + 1,
+                   updated_at = NOW()
+              FROM selected s
+             WHERE j.chain_id = s.chain_id
+               AND j.finalized_block_hash = s.finalized_block_hash
+             RETURNING j.finalized_block_hash, j.orphaned_block_hashes
+            "#,
+        )
+        .bind(self.chain_id.as_i64())
+        .fetch_optional(&pool)
+        .await?;
+
+        row.map(|row| {
+            Ok((
+                row.try_get("finalized_block_hash")?,
+                row.try_get("orphaned_block_hashes")?,
+            ))
+        })
+        .transpose()
+    }
+
+    async fn process_orphaned_branch_cleanup_job(
+        &self,
+        finalized_block_hash: &[u8],
+        orphaned_hashes: &[Vec<u8>],
+    ) -> Result<(), SqlxError> {
+        let mut tx = self.new_transaction().await?;
+        self.cleanup_orphaned_branch_state(&mut tx, orphaned_hashes)
+            .await?;
+        sqlx::query(
+            r#"
+            UPDATE branch_cleanup_jobs
+               SET status = 'completed',
+                   locked_at = NULL,
+                   last_error = NULL,
+                   updated_at = NOW()
+             WHERE chain_id = $1
+               AND finalized_block_hash = $2
+            "#,
+        )
+        .bind(self.chain_id.as_i64())
+        .bind(finalized_block_hash)
+        .execute(tx.deref_mut())
+        .await?;
+        tx.commit().await?;
+
+        info!(
+            finalized_block_hash = %to_hex(finalized_block_hash),
+            orphaned_blocks = orphaned_hashes.len(),
+            "Completed orphaned branch cleanup job"
+        );
+
+        Ok(())
+    }
+
+    async fn record_orphaned_branch_cleanup_error(
+        &self,
+        finalized_block_hash: &[u8],
+        error: &str,
+    ) -> Result<(), SqlxError> {
+        let pool = self.pool().await;
+        sqlx::query(
+            r#"
+            UPDATE branch_cleanup_jobs
+               SET locked_at = NULL,
+                   last_error = $3,
+                   updated_at = NOW()
+             WHERE chain_id = $1
+               AND finalized_block_hash = $2
+               AND status = 'pending'
+            "#,
+        )
+        .bind(self.chain_id.as_i64())
+        .bind(finalized_block_hash)
+        .bind(error)
+        .execute(&pool)
+        .await?;
+
+        Ok(())
+    }
+
     pub async fn cleanup_orphaned_branch_state(
         &self,
         tx: &mut Transaction<'_>,
@@ -1261,8 +1479,13 @@ impl Database {
                     &block_summary.hash,
                 )
                 .await?;
-            self.cleanup_orphaned_branch_state(tx, &orphaned_hashes)
-                .await?;
+            self.enqueue_orphaned_branch_cleanup(
+                tx,
+                block_summary.number as i64,
+                block_summary.hash.as_ref(),
+                &orphaned_hashes,
+            )
+            .await?;
         }
         Ok(())
     }

@@ -180,6 +180,9 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
     )
     .await?;
 
+    let _branch_cleanup_worker =
+        db.spawn_orphaned_branch_cleanup_worker(cancel_token.clone());
+
     if config.dependent_ops_max_per_chain == 0 {
         let promoted = db.promote_all_dep_chains_to_fast_priority().await?;
         if promoted > 0 {

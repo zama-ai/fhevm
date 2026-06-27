@@ -1284,6 +1284,23 @@ async fn test_update_finalized_blocks_drives_orphan_cleanup_via_rpc_caller(
     .await?;
     assert_eq!(orphan_status, "orphaned");
 
+    let pending_cleanup_jobs = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*)
+         FROM branch_cleanup_jobs
+         WHERE chain_id = $1
+           AND finalized_block_hash = $2
+           AND status = 'pending'",
+    )
+    .bind(setup.chain_id.as_i64())
+    .bind(canonical_hash.to_vec())
+    .fetch_one(&setup.db_pool)
+    .await?;
+    assert_eq!(pending_cleanup_jobs, 1);
+
+    let processed_cleanup_jobs =
+        db.process_orphaned_branch_cleanup_jobs().await?;
+    assert_eq!(processed_cleanup_jobs, 1);
+
     let orphan_rows = sqlx::query_scalar!(
         r#"
         SELECT COUNT(*) AS "count!"
@@ -2149,6 +2166,10 @@ async fn test_finalization_cleanup_removes_orphaned_branch_rows_locally(
     .fetch_one(&setup.db_pool)
     .await?;
     assert_eq!(orphan_descendant_status, "orphaned");
+
+    let processed_cleanup_jobs =
+        db.process_orphaned_branch_cleanup_jobs().await?;
+    assert_eq!(processed_cleanup_jobs, 1);
 
     let canonical_computations = sqlx::query_scalar!(
         r#"

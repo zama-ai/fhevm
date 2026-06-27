@@ -125,6 +125,13 @@ pub async fn advance_settled_height(
            )
            AND NOT EXISTS (
                SELECT 1
+               FROM branch_cleanup_jobs j
+               WHERE j.chain_id = b.chain_id
+                 AND j.finalized_block_number = b.block_number
+                 AND j.status = 'pending'
+           )
+           AND NOT EXISTS (
+               SELECT 1
                FROM ciphertext_digest_branch d
                WHERE d.host_chain_id = b.chain_id
                  AND d.block_number = b.block_number

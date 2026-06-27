@@ -457,13 +457,18 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
         {
             Ok(orphaned_hashes) => {
                 if let Err(err) = db
-                    .cleanup_orphaned_branch_state(&mut tx, &orphaned_hashes)
+                    .enqueue_orphaned_branch_cleanup(
+                        &mut tx,
+                        block_number,
+                        block_hash.as_ref(),
+                        &orphaned_hashes,
+                    )
                     .await
                 {
                     error!(
                         block_number,
                         ?err,
-                        "Failed to clean orphaned branch state during finalization"
+                        "Failed to enqueue orphaned branch cleanup during finalization"
                     );
                     return;
                 }
@@ -672,6 +677,183 @@ mod tests {
             settled_height, 6,
             "settlement should use the stricter settlement_finality_lag"
         );
+    }
+
+    #[tokio::test]
+    #[serial_test::serial(db)]
+    async fn finalization_enqueues_orphan_cleanup_asynchronously() {
+        let _cutover = EnvGuard::set("FHEVM_BRANCH_CUTOVER_BLOCK", "1");
+        let db_instance =
+            test_harness::instance::setup_test_db(ImportMode::None)
+                .await
+                .expect("valid db instance");
+        let chain_id = ChainId::try_from(43_u64).unwrap();
+        let mut db = Database::new(&db_instance.db_url, chain_id, 128)
+            .await
+            .expect("database");
+        let pool = db.pool.read().await.clone();
+
+        let canonical_hash = vec![0x02_u8; 32];
+        let orphan_hash = vec![0x03_u8; 32];
+        let orphan_handle = vec![0xA3_u8; 32];
+
+        for (block_number, block_hash, parent_hash) in [
+            (0_i64, vec![0x00_u8; 32], Vec::new()),
+            (1_i64, vec![0x01_u8; 32], vec![0x00_u8; 32]),
+            (2_i64, canonical_hash.clone(), vec![0x01_u8; 32]),
+            (2_i64, orphan_hash.clone(), vec![0x01_u8; 32]),
+        ] {
+            sqlx::query(
+                "INSERT INTO host_chain_blocks_valid \
+                 (chain_id, block_hash, parent_hash, block_number, block_status) \
+                 VALUES ($1, $2, $3, $4, 'pending')",
+            )
+            .bind(chain_id.as_i64())
+            .bind(block_hash)
+            .bind(parent_hash)
+            .bind(block_number)
+            .execute(&pool)
+            .await
+            .expect("insert pending block");
+        }
+
+        sqlx::query(
+            "INSERT INTO computations_branch (
+                output_handle,
+                dependencies,
+                fhe_operation,
+                is_scalar,
+                transaction_id,
+                host_chain_id,
+                block_number,
+                producer_block_hash
+             )
+             VALUES ($1, $2, 1, FALSE, $3, $4, 2, $5)",
+        )
+        .bind(&orphan_handle)
+        .bind(vec![vec![0x55_u8; 32]])
+        .bind(vec![0x77_u8; 32])
+        .bind(chain_id.as_i64())
+        .bind(&orphan_hash)
+        .execute(&pool)
+        .await
+        .expect("insert orphan branch computation");
+
+        update_finalized_blocks_aux(
+            &mut db,
+            3,
+            1,
+            1,
+            |block_number| async move {
+                let byte = block_number as u8;
+                Ok(BlockHash::from([byte; 32]))
+            },
+        )
+        .await;
+
+        let orphan_status: String = sqlx::query_scalar(
+            "SELECT block_status::text
+             FROM host_chain_blocks_valid
+             WHERE chain_id = $1 AND block_hash = $2",
+        )
+        .bind(chain_id.as_i64())
+        .bind(&orphan_hash)
+        .fetch_one(&pool)
+        .await
+        .expect("orphan status");
+        assert_eq!(orphan_status, "orphaned");
+
+        let pending_cleanup: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*)
+             FROM branch_cleanup_jobs
+             WHERE chain_id = $1
+               AND finalized_block_hash = $2
+               AND status = 'pending'",
+        )
+        .bind(chain_id.as_i64())
+        .bind(&canonical_hash)
+        .fetch_one(&pool)
+        .await
+        .expect("pending cleanup job");
+        assert_eq!(pending_cleanup, 1);
+
+        let orphan_computations: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*)
+             FROM computations_branch
+             WHERE host_chain_id = $1
+               AND producer_block_hash = $2",
+        )
+        .bind(chain_id.as_i64())
+        .bind(&orphan_hash)
+        .fetch_one(&pool)
+        .await
+        .expect("orphan branch computation still present");
+        assert_eq!(
+            orphan_computations, 1,
+            "finalization should not run heavy cleanup inline"
+        );
+
+        let mut tx = db.new_transaction().await.expect("settlement tx");
+        let settled_height = read_settled_height(&mut tx, chain_id.as_i64())
+            .await
+            .expect("read settlement");
+        tx.rollback().await.expect("rollback settlement tx");
+        assert_eq!(
+            settled_height, 1,
+            "pending cleanup for block 2 should block settlement"
+        );
+
+        let processed = db
+            .process_orphaned_branch_cleanup_jobs()
+            .await
+            .expect("process cleanup jobs");
+        assert_eq!(processed, 1);
+
+        let orphan_computations: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*)
+             FROM computations_branch
+             WHERE host_chain_id = $1
+               AND producer_block_hash = $2",
+        )
+        .bind(chain_id.as_i64())
+        .bind(&orphan_hash)
+        .fetch_one(&pool)
+        .await
+        .expect("orphan branch computation cleaned");
+        assert_eq!(orphan_computations, 0);
+
+        let completed_cleanup: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*)
+             FROM branch_cleanup_jobs
+             WHERE chain_id = $1
+               AND finalized_block_hash = $2
+               AND status = 'completed'",
+        )
+        .bind(chain_id.as_i64())
+        .bind(&canonical_hash)
+        .fetch_one(&pool)
+        .await
+        .expect("completed cleanup job");
+        assert_eq!(completed_cleanup, 1);
+
+        update_finalized_blocks_aux(
+            &mut db,
+            3,
+            1,
+            1,
+            |block_number| async move {
+                let byte = block_number as u8;
+                Ok(BlockHash::from([byte; 32]))
+            },
+        )
+        .await;
+
+        let mut tx = db.new_transaction().await.expect("settlement tx");
+        let settled_height = read_settled_height(&mut tx, chain_id.as_i64())
+            .await
+            .expect("read settlement");
+        tx.rollback().await.expect("rollback settlement tx");
+        assert_eq!(settled_height, 2);
     }
 
     #[test]
