@@ -4,15 +4,22 @@
 // correct without a live boot: phase ordering/shape, address parsing (discover), config
 // threading (regenerate), the wired DEFAULT_CONFIG, and the --kms topology parser.
 
-import { describe, expect, test } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
+
+// The recipe phases shell out via the module-level `kubectlApply` (not through ctx), so the
+// hermetic driver tests below must stub it — otherwise `bun test` runs real `kubectl apply`
+// against the developer's live kubeconfig. ctx-level calls are stubbed by the Proxy in stubCtx.
+import * as kubectl from "./kubectl";
+
+mock.module("./kubectl", () => ({ ...kubectl, kubectlApply: async () => "" }));
 
 import { parseKmsFlag } from "../cli/up";
 import {
   DEFAULT_CONFIG,
   RECIPE,
+  STATIC_GATEWAY_ADDRESSES,
+  STATIC_HOST_ADDRESSES,
   bootStack,
-  parseGatewayAddresses,
-  parseHostAddresses,
   type Discovery,
   type Phase,
 } from "./recipe";
@@ -62,43 +69,22 @@ describe("RECIPE — §0 phase encoding", () => {
   });
 });
 
-describe("discover — address parsing from deploy logs", () => {
-  test("parseGatewayAddresses extracts the order-dependent proxy addresses", () => {
-    const log = [
-      "ZamaOFT deployed successfully at address: 0x5ffdaAB0373E62E2ea2944776209aEf29E631A64",
-      "GatewayConfig address 0x576Ea67208b146E63C5255d0f90104E25e3e04c7 written successfully!",
-      "CiphertextCommits address 0xeAC2EfFA07844aB326D92d1De29E136a6793DFFA written successfully!",
-      "Decryption address 0xF0bFB159C7381F7CB332586004d8247252C5b816 written successfully!",
-      "InputVerification address 0x35760912360E875DA50D40a74305575c23D55783 written successfully!",
-      "ProtocolPayment address 0x3b12Fc766Eb598b285998877e8E90F3e43a1F8d2 written successfully!",
-      "PauserSet address 0x1ceFA8E3F3271358218B52c33929Cf76078004c1 written successfully!",
-    ].join("\n");
-    expect(parseGatewayAddresses(log)).toEqual({
-      gatewayConfig: "0x576Ea67208b146E63C5255d0f90104E25e3e04c7",
-      ciphertextCommits: "0xeAC2EfFA07844aB326D92d1De29E136a6793DFFA",
-      decryption: "0xF0bFB159C7381F7CB332586004d8247252C5b816",
-      inputVerification: "0x35760912360E875DA50D40a74305575c23D55783",
-      protocolPayment: "0x3b12Fc766Eb598b285998877e8E90F3e43a1F8d2",
-      pauserSet: "0x1ceFA8E3F3271358218B52c33929Cf76078004c1",
-      zamaOft: "0x5ffdaAB0373E62E2ea2944776209aEf29E631A64",
-    });
+describe("static addresses — deterministic, no log-scraping", () => {
+  const isAddr = (v: string | undefined) => typeof v === "string" && /^0x[0-9a-fA-F]{40}$/.test(v);
+
+  test("gateway table is complete and well-formed", () => {
+    const a = STATIC_GATEWAY_ADDRESSES;
+    expect(
+      [a.gatewayConfig, a.inputVerification, a.ciphertextCommits, a.decryption, a.protocolPayment, a.pauserSet, a.zamaOft].every(isAddr),
+    ).toBe(true);
+    // The gateway InputVerification — its address is threaded into host-sc-env as the
+    // cross-chain EIP712 verifyingContractSource; a stale value here causes InvalidSigner.
+    expect(a.inputVerification).toBe("0x35760912360E875DA50D40a74305575c23D55783");
   });
 
-  test("parseHostAddresses extracts host contracts (both 'code set' and 'written' formats)", () => {
-    const log = [
-      "ACL code set successfully at address: 0x05fD9B5EFE0a996095f42Ed7e77c390810CF660c",
-      "FHEVMExecutor code set successfully at address: 0xcCAe95fF1d11656358E782570dF0418F59fA40e1",
-      "KMSGeneration address 0x3E0fBCcE61af7C01113027449eEFFF5DCd501419 written successfully!",
-      "KMSVerifier code set successfully at address: 0xa1880e99d86F081E8D3868A8C4732C8f65dfdB11",
-      "InputVerifier code set successfully at address: 0x857Ca72A957920Fa0FB138602995839866Bd4005",
-    ].join("\n");
-    expect(parseHostAddresses(log)).toEqual({
-      acl: "0x05fD9B5EFE0a996095f42Ed7e77c390810CF660c",
-      fhevmExecutor: "0xcCAe95fF1d11656358E782570dF0418F59fA40e1",
-      kmsGeneration: "0x3E0fBCcE61af7C01113027449eEFFF5DCd501419",
-      kmsVerifier: "0xa1880e99d86F081E8D3868A8C4732C8f65dfdB11",
-      inputVerifier: "0x857Ca72A957920Fa0FB138602995839866Bd4005",
-    });
+  test("host table is complete and well-formed", () => {
+    const h = STATIC_HOST_ADDRESSES;
+    expect([h.acl, h.fhevmExecutor, h.kmsGeneration, h.kmsVerifier, h.inputVerifier, h.hcuLimit].every(isAddr)).toBe(true);
   });
 });
 
@@ -107,7 +93,7 @@ describe("regenerate — threadDiscovery weaves discovered values into configs",
     expect(threadDiscovery(DEFAULT_CONFIG, { host: {}, gateway: {} })).toEqual([]);
   });
 
-  test("the discovered InputVerification reaches BOTH coprocessor and relayer", () => {
+  test("the discovered InputVerification reaches every consumer (incl. host-sc-env — the InvalidSigner fix)", () => {
     const patches = threadDiscovery(DEFAULT_CONFIG, {
       host: {},
       gateway: { inputVerification: "0xAAA0000000000000000000000000000000000aaa" },
@@ -116,7 +102,9 @@ describe("regenerate — threadDiscovery weaves discovered values into configs",
       .filter((p) => p.data.INPUT_VERIFICATION_ADDRESS || p.data.APP_GATEWAY__CONTRACTS__INPUT_VERIFICATION_ADDRESS)
       .map((p) => p.configMap)
       .sort();
-    expect(targets).toEqual(["coprocessor-env", "relayer-env"]);
+    // host-sc-env: the host InputVerifier's EIP712 verifyingContractSource = THIS gateway address;
+    // a stale value here is the InvalidSigner bug. erc20-env: lets `up` drive the e2e self-contained.
+    expect(targets).toEqual(["coprocessor-env", "erc20-env", "host-sc-env", "relayer-env"]);
   });
 
   test("the mocked-payment approve targets the DISCOVERED ProtocolPayment (the live bug)", () => {

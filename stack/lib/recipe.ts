@@ -87,7 +87,7 @@ export const DEFAULT_CONFIG: RecipeConfig = {
 // Discovery — everything learned at runtime (no value here is ever hardcoded)
 // ---------------------------------------------------------------------------
 
-/** Host-chain contract addresses, parsed from the host deploy's own log. */
+/** Host-chain contract addresses — deterministic per fixed deploy config (STATIC_HOST_ADDRESSES). */
 export type HostAddresses = {
   acl?: string;
   fhevmExecutor?: string;
@@ -97,13 +97,13 @@ export type HostAddresses = {
   hcuLimit?: string; // HCULimit (per-block compute caps) — the erc20 HCU tests need its address
 };
 
-/** Gateway-chain contract addresses, parsed from the gateway deploy's own log. */
+/** Gateway-chain contract addresses — deterministic per fixed deploy config (STATIC_GATEWAY_ADDRESSES). */
 export type GatewayAddresses = {
   gatewayConfig?: string;
   inputVerification?: string;
   ciphertextCommits?: string;
   decryption?: string;
-  protocolPayment?: string; // order-dependent — MUST be discovered (the mocked-payment bug)
+  protocolPayment?: string; // order-dependent (the mocked-payment bug) — pinned in STATIC_GATEWAY_ADDRESSES
   pauserSet?: string;
   zamaOft?: string;
 };
@@ -113,7 +113,7 @@ export type GatewayAddresses = {
  * discovered; ./render.threadDiscovery turns this into ConfigMap patches.
  */
 export type Discovery = {
-  /** kms-core's LIVE signer — scraped from its own log; kms-gen-keys is non-deterministic. */
+  /** kms-core's LIVE signer — read from its minio VerfAddress artifact; kms-gen-keys is non-deterministic. */
   kmsSigner?: string;
   host: HostAddresses;
   gateway: GatewayAddresses;
@@ -123,33 +123,33 @@ export type Discovery = {
   crsId?: string;
 };
 
-const ADDR = "(0x[0-9a-fA-F]{40})";
-const grab = (log: string, re: RegExp): string | undefined => re.exec(log)?.[1];
+const grab = (text: string, re: RegExp): string | undefined => re.exec(text)?.[1];
 
-/** Parse host contract addresses from `deployAllHostContracts` log output. */
-export function parseHostAddresses(log: string): HostAddresses {
-  return {
-    acl: grab(log, new RegExp(`ACL\\b.*?${ADDR}`)),
-    fhevmExecutor: grab(log, new RegExp(`FHEVMExecutor\\b.*?${ADDR}`)),
-    kmsGeneration: grab(log, new RegExp(`KMSGeneration\\b.*?${ADDR}`)),
-    kmsVerifier: grab(log, new RegExp(`KMSVerifier\\b.*?${ADDR}`)),
-    inputVerifier: grab(log, new RegExp(`InputVerifier\\b.*?${ADDR}`)),
-    hcuLimit: grab(log, new RegExp(`HCULimit\\b.*?${ADDR}`)),
-  };
-}
-
-/** Parse gateway contract addresses from `deployAllGatewayContracts` + mocked-OFT log output. */
-export function parseGatewayAddresses(log: string): GatewayAddresses {
-  return {
-    gatewayConfig: grab(log, new RegExp(`GatewayConfig address ${ADDR}`)),
-    inputVerification: grab(log, new RegExp(`InputVerification address ${ADDR}`)),
-    ciphertextCommits: grab(log, new RegExp(`CiphertextCommits address ${ADDR}`)),
-    decryption: grab(log, new RegExp(`Decryption address ${ADDR}`)),
-    protocolPayment: grab(log, new RegExp(`ProtocolPayment address ${ADDR}`)),
-    pauserSet: grab(log, new RegExp(`PauserSet address ${ADDR}`)),
-    zamaOft: grab(log, new RegExp(`ZamaOFT (?:deployed successfully at address: )?${ADDR}`)),
-  };
-}
+// Deterministic contract addresses (Tier 1: design out address discovery).
+// The deploys are CREATE1 (address = f(deployer, nonce)), so with the FIXED deployer keys and the
+// FIXED deploy order the manifests pin (ZamaOFT first, then the gateway/host suites) on a genesis
+// anvil, every address is identical on every boot. So we KNOW them ahead and stop regex-scraping
+// deploy logs (the old hack — and a regression vs the real fhevm-cli, which reads a structured
+// .env). These exact values produced the green erc20/e2e runs this session.
+// PRECONDITION: do not reorder the steps in gateway-deploy.yaml / host-deploy.yaml or these shift.
+// Tier 2 (CREATE2 salted deploys) makes them order-INDEPENDENT; until then the L2 e2e asserts them.
+export const STATIC_GATEWAY_ADDRESSES: GatewayAddresses = {
+  gatewayConfig: "0x576Ea67208b146E63C5255d0f90104E25e3e04c7",
+  inputVerification: "0x35760912360E875DA50D40a74305575c23D55783",
+  ciphertextCommits: "0xeAC2EfFA07844aB326D92d1De29E136a6793DFFA",
+  decryption: "0xF0bFB159C7381F7CB332586004d8247252C5b816",
+  protocolPayment: "0x3b12Fc766Eb598b285998877e8E90F3e43a1F8d2",
+  pauserSet: "0xacdFB015D1F3D96fBF8BDd3A4b746f4A70123937",
+  zamaOft: "0x5ffdaAB0373E62E2ea2944776209aEf29E631A64",
+};
+export const STATIC_HOST_ADDRESSES: HostAddresses = {
+  acl: "0x05fD9B5EFE0a996095f42Ed7e77c390810CF660c",
+  fhevmExecutor: "0xcCAe95fF1d11656358E782570dF0418F59fA40e1",
+  kmsGeneration: "0x3E0fBCcE61af7C01113027449eEFFF5DCd501419",
+  kmsVerifier: "0xa1880e99d86F081E8D3868A8C4732C8f65dfdB11",
+  inputVerifier: "0x857Ca72A957920Fa0FB138602995839866Bd4005",
+  hcuLimit: "0xAb30999D17FAAB8c95B2eCD500cFeFc8f658f15d",
+};
 
 // ---------------------------------------------------------------------------
 // Phase model
@@ -255,17 +255,23 @@ export const RECIPE: Phase[] = [
     id: "kms-signer",
     title: "DISCOVER kms-core's live signer → regenerate deploy envs",
     invariants: [
-      "scrape the signer from kms-core's OWN log (`stored … ethereum address 0x…`); deploy " +
-        "envs register THIS signer on-chain so responses verify (else KmsSignerDoesNotMatchTxSender)",
+      "the kms signer is the ONE genuinely-dynamic value (kms-gen-keys is non-deterministic) — read " +
+        "it from kms-core's DECLARED artifact in minio (kms-public/PUB/VerfAddress), not by scraping " +
+        "logs; deploy envs register THIS signer on-chain (else KmsSignerDoesNotMatchTxSender)",
     ],
     gate: "disc.kmsSigner set; host-sc-env/gateway-sc-env KMS_SIGNER_ADDRESS_0 patched",
     run: async (ctx, cfg, disc) => {
-      // WAIT for kms-core to come up and log its (non-deterministic) signer, then assert it —
-      // deploying before kms-core is serving registers a STALE signer on-chain (the silent-undefined
-      // trap: the first boot here deployed the gateway with a wrong signer because kms-core lagged).
+      // WAIT for kms-core to generate its (non-deterministic) signing key, then read the signer from
+      // the STRUCTURED artifact it writes to minio (VerfAddress) — the producer declaring its output.
+      // Fall back to the kms-core log line only if the object isn't materialized yet (proven safety net).
+      // Deploying before this is set registers a STALE signer on-chain (the silent-undefined trap).
       await ctx.until(async () => {
-        const log = await ctx.logs("deploy/kms-core", { tail: 4000 });
-        disc.kmsSigner = grab(log, /ethereum address (0x[0-9a-fA-F]{40})/);
+        const verf = await ctx
+          .exec("deploy/minio", ["sh", "-c", "cat /data/kms-public/PUB/VerfAddress/* 2>/dev/null || true"])
+          .catch(() => "");
+        disc.kmsSigner =
+          grab(verf, /(0x[0-9a-fA-F]{40})/) ??
+          grab(await ctx.logs("deploy/kms-core", { tail: 4000 }), /ethereum address (0x[0-9a-fA-F]{40})/);
         return Boolean(disc.kmsSigner);
       }, 180_000, 3_000);
       await regenerate(ctx, cfg, disc);
@@ -275,16 +281,17 @@ export const RECIPE: Phase[] = [
     id: "gateway-deploy",
     title: "deploy gateway contracts (+ mocked ZamaOFT) → DISCOVER addresses",
     invariants: [
-      "deploy order is ORDER-DEPENDENT: the mocked-OFT shares the gateway deployer nonce space, " +
-        "so it shifts every gateway proxy — discover the ACTUAL addresses, never assume them",
+      "addresses are ORDER-DEPENDENT (the mocked-OFT shares the deployer nonce space) but " +
+        "DETERMINISTIC for the fixed deployer+order → known ahead in STATIC_GATEWAY_ADDRESSES; " +
+        "no log-scraping (Tier 2 = CREATE2 makes them order-independent)",
       "all gateway-sc steps share an /app/addresses volume so the generated GatewayAddresses.sol " +
         "is visible to the wiring steps (which compile contracts importing it)",
     ],
-    gate: "gateway deploy Completed; disc.gateway populated from the deploy log",
+    gate: "gateway deploy Completed; disc.gateway = STATIC_GATEWAY_ADDRESSES threaded into consumers",
     run: async (ctx, cfg, disc) => {
       await kubectlApply({ path: `${cfg.dataDir}/gateway-deploy.yaml` }, { namespace: cfg.namespace });
-      await ctx.waitForJob("gateway-deploy"); // MUST complete before parsing — else partial log
-      disc.gateway = parseGatewayAddresses(await ctx.logs("job/gateway-deploy", { tail: 4000 }));
+      await ctx.waitForJob("gateway-deploy"); // deploy MUST complete — the contracts must exist on-chain
+      disc.gateway = STATIC_GATEWAY_ADDRESSES; // deterministic; no deploy-log scraping
       await regenerate(ctx, cfg, disc);
     },
   },
@@ -295,11 +302,11 @@ export const RECIPE: Phase[] = [
       "KMSGeneration is a HOST contract in v0.13 (the gateway one is view-only)",
       "host-sc-env already carries the discovered KMS_SIGNER (kms-signer phase regenerated it)",
     ],
-    gate: "host deploy Completed; disc.host populated from the deploy log",
+    gate: "host deploy Completed; disc.host = STATIC_HOST_ADDRESSES threaded into consumers",
     run: async (ctx, cfg, disc) => {
       await kubectlApply({ path: `${cfg.dataDir}/host-deploy.yaml` }, { namespace: cfg.namespace });
-      await ctx.waitForJob("host-deploy"); // MUST complete before parsing — else partial log
-      disc.host = parseHostAddresses(await ctx.logs("job/host-deploy", { tail: 4000 }));
+      await ctx.waitForJob("host-deploy"); // deploy MUST complete — the contracts must exist on-chain
+      disc.host = STATIC_HOST_ADDRESSES; // deterministic; no deploy-log scraping
       await regenerate(ctx, cfg, disc);
     },
   },
