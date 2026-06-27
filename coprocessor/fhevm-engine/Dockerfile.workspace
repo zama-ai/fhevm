@@ -90,9 +90,16 @@ WORKDIR /app/coprocessor/fhevm-engine
 # NOTE: We use cache mounts for incremental compilation. Because cache mounts
 # are NOT committed to the image layer, we must copy binaries to /out during
 # the same RUN instruction for COPY --from to work in later stages.
+#
+# gw-listener, transaction-sender, and host-listener each call Solc::find_or_install(0.8.28) in
+# their build script. Under the parallel `cargo build --workspace` they race on svm's shared solc
+# binary (one writes it while another execs it -> ETXTBSY, "Text file busy"). So build gw-listener
+# first, serially, to install solc 0.8.28 once; the workspace build then finds it already present
+# instead of re-downloading. gw-listener does not depend on tfhe, so this serial step stays small.
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/app/coprocessor/fhevm-engine/target,sharing=locked \
     cargo fetch && \
+    SQLX_OFFLINE=true cargo build --profile=${CARGO_PROFILE} -p gw-listener && \
     SQLX_OFFLINE=true BUILD_ID=${BUILD_ID} cargo build --profile=${CARGO_PROFILE} --workspace && \
     mkdir -p /out && \
     cp target/${CARGO_PROFILE}/tfhe_worker /out/ && \
