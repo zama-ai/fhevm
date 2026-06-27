@@ -180,16 +180,17 @@ async fn subscribe_loop(
     loop {
         tokio::select! {
             _ = cancel.cancelled() => return Ok(()),
-            // BlockMeta arrives every slot, so prolonged total silence means the stream stalled
-            // (e.g. the geyser plugin stopped sending after backpressure during an event burst)
-            // without ever closing. Bound the await so a stall reconnects instead of hanging.
+            // The subscription requests blocks_meta (see build_subscribe_request), which the
+            // validator emits every slot, so prolonged total silence means the stream stalled
+            // rather than the chain being idle. Bound the await so a stall reconnects instead of
+            // hanging forever waiting on a stream that will never produce again.
             msg = tokio::time::timeout(Duration::from_secs(30), stream.message()) => {
                 let msg = msg.map_err(|_| anyhow!("grpc stream idle for 30s; reconnecting"))?;
                 let Some(update) = msg.context("grpc stream")? else {
-                    // Server closed the stream (e.g. the geyser plugin dropping a client that
-                    // lagged during an event burst). This is NOT a cancellation — return an
-                    // error so the outer loop reconnects (resuming from `from_slot`) instead of
-                    // exiting silently and missing every later slot.
+                    // A None message means the server closed the stream. This is NOT a
+                    // cancellation (handled above) — return an error so the outer loop reconnects
+                    // and resumes from `from_slot`, rather than exiting silently and missing every
+                    // later slot.
                     return Err(anyhow!("grpc stream closed by server"));
                 };
                 match update.update_oneof {
