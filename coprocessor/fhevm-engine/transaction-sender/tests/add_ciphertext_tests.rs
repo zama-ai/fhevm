@@ -9,6 +9,7 @@ use common::SignerType;
 use rand::{random, Rng};
 use rstest::*;
 use serial_test::serial;
+use sqlx::Row;
 use std::time::Duration;
 use test_harness::db_utils::{insert_ciphertext_digest, insert_random_keys_and_host_chain};
 use tokio::time::sleep;
@@ -89,7 +90,7 @@ async fn add_ciphertext_digests(#[case] signer_type: SignerType) -> anyhow::Resu
     loop {
         let rows = sqlx::query!(
             "SELECT txn_is_sent
-             FROM ciphertext_digest
+             FROM ciphertext_digest_branch
              WHERE handle = $1",
             &handle,
         )
@@ -108,6 +109,205 @@ async fn add_ciphertext_digests(#[case] signer_type: SignerType) -> anyhow::Resu
         tx_count,
         initial_tx_count + 1,
         "Expected a new transaction to be sent"
+    );
+
+    env.cancel_token.cancel();
+    run_handle.await??;
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn add_ciphertext_sends_only_finalized_branch_digest_row() -> anyhow::Result<()> {
+    let env = TestEnvironment::new(SignerType::PrivateKey).await?;
+    let provider_deploy = ProviderBuilder::new()
+        .wallet(env.wallet.clone())
+        .connect_ws(WsConnect::new(env.ws_endpoint_url()))
+        .await?;
+    let provider = NonceManagedProvider::new(
+        ProviderBuilder::default()
+            .filler(FillersWithoutNonceManagement::default())
+            .wallet(env.wallet.clone())
+            .connect_ws(WsConnect::new(env.ws_endpoint_url()))
+            .await?,
+        Some(env.wallet.default_signer().address()),
+    );
+
+    let already_added_revert = false;
+    let ciphertext_commits =
+        CiphertextCommits::deploy(&provider_deploy, already_added_revert).await?;
+    let txn_sender = TransactionSender::new(
+        env.db_pool.clone(),
+        PrivateKeySigner::random().address(),
+        *ciphertext_commits.address(),
+        env.signer.clone(),
+        provider.clone(),
+        env.cancel_token.clone(),
+        env.conf.clone(),
+        None,
+    )
+    .await?;
+
+    let run_handle = tokio::spawn(async move { txn_sender.run().await });
+    let (host_chain_id, key_id) = insert_random_keys_and_host_chain(&env.db_pool).await?;
+    let initial_tx_count = provider
+        .get_transaction_count(TxSigner::address(&env.signer))
+        .await?;
+
+    let handle = random::<[u8; 32]>();
+    let producer_block_hash = vec![0x61_u8; 32];
+    let finalized_block_hash = vec![0x62_u8; 32];
+    let pending_block_hash = vec![0x63_u8; 32];
+    let missing_ct128_block_hash = vec![0x64_u8; 32];
+    let duplicate_finalized_block_hash = vec![0x65_u8; 32];
+    let finalized_ciphertext = random::<[u8; 32]>().to_vec();
+    let finalized_ciphertext128 = random::<[u8; 32]>().to_vec();
+    sqlx::query(
+        "
+        INSERT INTO host_chain_blocks_valid (chain_id, block_hash, parent_hash, block_number, block_status)
+        VALUES ($1, $2, NULL, 10, 'finalized'),
+               ($1, $3, NULL, 11, 'pending'),
+               ($1, $4, NULL, 12, 'finalized'),
+               ($1, $5, NULL, 13, 'finalized')
+        ",
+    )
+    .bind(host_chain_id)
+    .bind(&finalized_block_hash)
+    .bind(&pending_block_hash)
+    .bind(&missing_ct128_block_hash)
+    .bind(&duplicate_finalized_block_hash)
+    .execute(&env.db_pool)
+    .await?;
+
+    sqlx::query(
+        "
+        INSERT INTO ciphertexts128_branch (handle, producer_block_hash, ciphertext)
+        VALUES ($1, $2, $3)
+        ",
+    )
+    .bind(&handle[..])
+    .bind(&producer_block_hash)
+    .bind(random::<[u8; 32]>().to_vec())
+    .execute(&env.db_pool)
+    .await?;
+
+    sqlx::query(
+        "
+        INSERT INTO ciphertext_digest_branch (
+            host_chain_id,
+            key_id_gw,
+            handle,
+            producer_block_hash,
+            block_hash,
+            block_number,
+            ciphertext,
+            ciphertext128
+        )
+        VALUES
+            ($1, $2, $3, $4, $5, 10, $6, $7),
+            ($1, $2, $3, $4, $8, 11, $9, $10),
+            ($1, $2, $3, $4, $11, 12, $12, NULL),
+            ($1, $2, $3, $4, $13, 13, $6, $7)
+        ",
+    )
+    .bind(host_chain_id)
+    .bind(key_id)
+    .bind(&handle[..])
+    .bind(&producer_block_hash)
+    .bind(&finalized_block_hash)
+    .bind(&finalized_ciphertext)
+    .bind(&finalized_ciphertext128)
+    .bind(&pending_block_hash)
+    .bind(random::<[u8; 32]>().to_vec())
+    .bind(random::<[u8; 32]>().to_vec())
+    .bind(&missing_ct128_block_hash)
+    .bind(random::<[u8; 32]>().to_vec())
+    .bind(&duplicate_finalized_block_hash)
+    .execute(&env.db_pool)
+    .await?;
+
+    sqlx::query!(
+        "
+        SELECT pg_notify($1, '')",
+        env.conf.add_ciphertexts_db_channel
+    )
+    .execute(&env.db_pool)
+    .await?;
+
+    let mut attempts = 0;
+    loop {
+        let rows = sqlx::query(
+            "
+            SELECT block_hash, txn_is_sent
+            FROM ciphertext_digest_branch
+            WHERE handle = $1
+              AND producer_block_hash = $2
+            ",
+        )
+        .bind(&handle[..])
+        .bind(&producer_block_hash)
+        .fetch_all(&env.db_pool)
+        .await?;
+
+        let finalized_sent = rows.iter().any(|row| {
+            let block_hash: Vec<u8> = row.try_get("block_hash").expect("block_hash column");
+            let txn_is_sent: bool = row.try_get("txn_is_sent").expect("txn_is_sent column");
+            block_hash == finalized_block_hash && txn_is_sent
+        });
+        let pending_sent = rows.iter().any(|row| {
+            let block_hash: Vec<u8> = row.try_get("block_hash").expect("block_hash column");
+            let txn_is_sent: bool = row.try_get("txn_is_sent").expect("txn_is_sent column");
+            block_hash == pending_block_hash && txn_is_sent
+        });
+        let missing_ct128_sent = rows.iter().any(|row| {
+            let block_hash: Vec<u8> = row.try_get("block_hash").expect("block_hash column");
+            let txn_is_sent: bool = row.try_get("txn_is_sent").expect("txn_is_sent column");
+            block_hash == missing_ct128_block_hash && txn_is_sent
+        });
+        let duplicate_finalized_sent = rows.iter().any(|row| {
+            let block_hash: Vec<u8> = row.try_get("block_hash").expect("block_hash column");
+            let txn_is_sent: bool = row.try_get("txn_is_sent").expect("txn_is_sent column");
+            block_hash == duplicate_finalized_block_hash && txn_is_sent
+        });
+        if finalized_sent && duplicate_finalized_sent {
+            assert!(
+                !pending_sent,
+                "pending branch digest row must remain unsent"
+            );
+            assert!(
+                !missing_ct128_sent,
+                "branch digest without ciphertext128 must remain unsent"
+            );
+            break;
+        }
+
+        attempts += 1;
+        assert!(attempts < 60, "timed out waiting for finalized row");
+        sleep(Duration::from_millis(250)).await;
+    }
+
+    let tx_count = provider.get_transaction_count(env.signer.address()).await?;
+    assert_eq!(
+        tx_count,
+        initial_tx_count + 1,
+        "Expected exactly one transaction for the finalized branch digest"
+    );
+
+    let ct128_rows: i64 = sqlx::query_scalar(
+        "
+        SELECT COUNT(*)::BIGINT
+        FROM ciphertexts128_branch
+        WHERE handle = $1
+          AND producer_block_hash = $2
+        ",
+    )
+    .bind(&handle[..])
+    .bind(&producer_block_hash)
+    .fetch_one(&env.db_pool)
+    .await?;
+    assert_eq!(
+        ct128_rows, 1,
+        "ct128 material must remain while a sibling digest row lacks ciphertext128"
     );
 
     env.cancel_token.cancel();
@@ -186,7 +386,7 @@ async fn ciphertext_digest_already_added(#[case] signer_type: SignerType) -> any
     loop {
         let rows = sqlx::query!(
             "SELECT txn_is_sent
-             FROM ciphertext_digest
+             FROM ciphertext_digest_branch
              WHERE handle = $1",
             &handle,
         )
@@ -279,7 +479,7 @@ async fn recover_from_transport_error(#[case] signer_type: SignerType) -> anyhow
     loop {
         let rows = sqlx::query!(
             "SELECT txn_is_sent
-             FROM ciphertext_digest
+             FROM ciphertext_digest_branch
              WHERE handle = $1",
             &handle,
         )
@@ -382,7 +582,7 @@ async fn stop_on_backend_gone(#[case] signer_type: SignerType) -> anyhow::Result
     loop {
         let rows = sqlx::query!(
             "SELECT txn_is_sent, txn_limited_retries_count, txn_unlimited_retries_count
-             FROM ciphertext_digest
+             FROM ciphertext_digest_branch
              WHERE handle = $1",
             &handle,
         )
@@ -475,7 +675,7 @@ async fn retry_mechanism(#[case] signer_type: SignerType) -> anyhow::Result<()> 
     for _retries in 0..10 {
         let rows = sqlx::query!(
             "SELECT txn_is_sent, txn_limited_retries_count
-             FROM ciphertext_digest
+             FROM ciphertext_digest_branch
              WHERE handle = $1",
             &handle,
         )
@@ -579,7 +779,7 @@ async fn retry_on_aws_kms_error(#[case] signer_type: SignerType) -> anyhow::Resu
     loop {
         let rows = sqlx::query!(
             "SELECT txn_is_sent, txn_limited_retries_count, txn_unlimited_retries_count
-             FROM ciphertext_digest
+             FROM ciphertext_digest_branch
              WHERE handle = $1",
             &handle,
         )
@@ -682,7 +882,7 @@ async fn stop_retrying_add_ciphertext_on_gw_config_error(
     let row = loop {
         let row = sqlx::query!(
             "SELECT txn_is_sent, txn_limited_retries_count, txn_last_error
-             FROM ciphertext_digest
+             FROM ciphertext_digest_branch
              WHERE handle = $1",
             &handle[..],
         )

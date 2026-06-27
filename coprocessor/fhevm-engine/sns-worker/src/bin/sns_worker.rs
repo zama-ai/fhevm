@@ -39,6 +39,7 @@ fn construct_config() -> Result<Config, fhevm_engine_common::database::DatabaseC
             cleanup_interval: args.cleanup_interval,
             timeout: args.pg_timeout,
             lifo: args.lifo,
+            branch_cutover_block: args.branch_cutover_block,
         },
         s3: S3Config {
             bucket_ct128: args.bucket_name_ct128,

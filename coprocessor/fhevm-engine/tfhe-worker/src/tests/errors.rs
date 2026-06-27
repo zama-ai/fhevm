@@ -20,7 +20,7 @@ async fn test_coprocessor_input_errors() -> Result<(), Box<dyn std::error::Error
 
     sqlx::query(
         r#"
-        INSERT INTO computations (
+        INSERT INTO computations_branch (
             output_handle,
             dependencies,
             fhe_operation,
@@ -31,9 +31,10 @@ async fn test_coprocessor_input_errors() -> Result<(), Box<dyn std::error::Error
             created_at,
             schedule_order,
             is_completed,
-            host_chain_id
+            host_chain_id,
+            producer_block_hash
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW(), $8, $9)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW(), $8, $9, $10)
         "#,
     )
     .bind(&output_handle)
@@ -45,6 +46,7 @@ async fn test_coprocessor_input_errors() -> Result<(), Box<dyn std::error::Error
     .bind(true)
     .bind(false)
     .bind(TEST_CHAIN_ID as i64)
+    .bind(vec![0xE0u8; 32])
     .execute(&pool)
     .await?;
 

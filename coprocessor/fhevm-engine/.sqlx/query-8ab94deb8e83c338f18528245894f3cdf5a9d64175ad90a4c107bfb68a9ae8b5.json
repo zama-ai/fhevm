@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT handle AS \"handle!\"\n        FROM ciphertexts_branch\n        WHERE handle = ANY($1::BYTEA[])\n          AND ciphertext_version = $2\n          AND producer_block_hash = '\\\\x'::BYTEA\n        UNION\n        SELECT handle\n        FROM ciphertexts\n        WHERE handle = ANY($1::BYTEA[])\n          AND ciphertext_version = $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "handle!",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "ByteaArray",
+        "Int2"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "8ab94deb8e83c338f18528245894f3cdf5a9d64175ad90a4c107bfb68a9ae8b5"
+}

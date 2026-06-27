@@ -88,6 +88,66 @@ describe('ConsensusWatchdog', function () {
       expect(() => watchdog.checkHealth()).to.not.throw(); // divergences cleared after first throw
     });
 
+    it('should ignore one expected divergent ciphertext handle', async function () {
+      const { watchdog, setBlock, setCiphertextEvents } = mockWatchdog();
+
+      setCiphertextEvents(
+        [
+          fakeEvent('0xhandle1', 1n, '0xdigestA', '0xsnsDigestA', '0xCoprocessor1'),
+          fakeEvent('0xhandle1', 1n, '0xdigestB', '0xsnsDigestA', '0xCoprocessor2'),
+        ],
+        [],
+      );
+
+      setBlock(1);
+      await watchdog.flush();
+      watchdog.ignoreCiphertextHandle('0xhandle1');
+
+      expect(() => watchdog.checkHealth()).to.not.throw();
+      expect((watchdog as any).pendingHandles.has('0xhandle1')).to.equal(false);
+
+      setCiphertextEvents(
+        [
+          fakeEvent('0xhandle1', 1n, '0xdigestA', '0xsnsDigestA', '0xCoprocessor1'),
+          fakeEvent('0xhandle2', 1n, '0xdigestA', '0xsnsDigestA', '0xCoprocessor1'),
+        ],
+        [],
+      );
+      setBlock(2);
+      await watchdog.flush();
+
+      expect((watchdog as any).pendingHandles.has('0xhandle1')).to.equal(false);
+      expect((watchdog as any).pendingHandles.has('0xhandle2')).to.equal(true);
+    });
+
+    it('should still fail on another divergent ciphertext handle after one handle is ignored', async function () {
+      const { watchdog, setBlock, setCiphertextEvents } = mockWatchdog();
+
+      setCiphertextEvents(
+        [
+          fakeEvent('0xhandle1', 1n, '0xdigestA', '0xsnsDigestA', '0xCoprocessor1'),
+          fakeEvent('0xhandle1', 1n, '0xdigestB', '0xsnsDigestA', '0xCoprocessor2'),
+        ],
+        [],
+      );
+      setBlock(1);
+      await watchdog.flush();
+      watchdog.ignoreCiphertextHandle('0xhandle1');
+
+      setCiphertextEvents(
+        [
+          fakeEvent('0xhandle1', 1n, '0xdigestA', '0xsnsDigestA', '0xCoprocessor3'),
+          fakeEvent('0xhandle2', 1n, '0xdigestA', '0xsnsDigestA', '0xCoprocessor1'),
+          fakeEvent('0xhandle2', 1n, '0xdigestB', '0xsnsDigestA', '0xCoprocessor2'),
+        ],
+        [],
+      );
+      setBlock(2);
+      await watchdog.flush();
+
+      expect(() => watchdog.checkHealth()).to.throw('Consensus divergence detected');
+    });
+
     it('should throw on SNS digest divergence', async function () {
       const { watchdog, setBlock, setCiphertextEvents } = mockWatchdog();
 

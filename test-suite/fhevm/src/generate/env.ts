@@ -60,6 +60,9 @@ const applyTopologyEnv = (
   envs: Record<string, Record<string, string>>,
   plan: Pick<StackSpec, "topology">,
 ) => {
+  envs["test-suite"].COPROCESSOR_COUNT = String(plan.topology.count);
+  envs["test-suite"].CONSENSUS_THRESHOLD = String(plan.topology.threshold);
+  envs["test-suite"].COPROCESSOR_THRESHOLD = String(plan.topology.threshold);
   envs["gateway-sc"].NUM_COPROCESSORS = String(plan.topology.count);
   envs["gateway-sc"].COPROCESSOR_THRESHOLD = String(plan.topology.threshold);
   envs["host-sc"].NUM_COPROCESSORS = String(plan.topology.count);
@@ -102,6 +105,10 @@ const applyBaseRuntimeEnv = (
   const crsKeyId = state.discovery?.actualCrsKeyId ?? state.discovery?.crsKeyId ?? predictedCrsId();
 
   envs["coprocessor"].DATABASE_URL = `postgresql://${envs.database.POSTGRES_USER}:${envs.database.POSTGRES_PASSWORD}@${POSTGRES_HOST}/coprocessor`;
+  // Local e2e stacks start from genesis with wave-2 semantics; tests may
+  // restart workers after computations exist, so make the zero-cutover intent
+  // explicit for the worker safety guard.
+  envs["coprocessor"].FHEVM_ALLOW_ZERO_CUTOVER = "1";
   // E2E tests opt into automatic drift revert. Set via env (not CLI flag).
   envs["coprocessor"].DRIFT_AUTO_REVERT_ENABLED = "true";
   // Test-only: hold drift-revert signal in "reverting" state briefly so e2e

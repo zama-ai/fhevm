@@ -20,14 +20,6 @@ pub struct Args {
     #[arg(long)]
     pub generate_fhe_keys: bool,
 
-    /// Work items batch size
-    #[arg(long, default_value_t = 100)]
-    pub work_items_batch_size: i32,
-
-    /// Number of dependence chains to fetch per worker
-    #[arg(long, default_value_t = 20)]
-    pub dependence_chains_per_batch: i32,
-
     /// Key cache size
     #[arg(long, default_value_t = 32, alias = "tenant-key-cache-size")]
     pub key_cache_size: usize,
@@ -67,12 +59,6 @@ pub struct Args {
     #[arg(long, value_parser = clap::value_parser!(u32), default_value_t = 30)]
     pub dcid_ttl_sec: u32,
 
-    /// If set to true, disable dependence chain ID locking mechanism
-    /// Enabling this may lead to multiple workers processing the same dependence chain simultaneously
-    /// Useful for fallbacking to non-locking behavior in case of issues with the locking mechanism
-    #[arg(long, value_parser = clap::value_parser!(bool), default_value_t = false)]
-    pub disable_dcid_locking: bool,
-
     /// Time slice in seconds for processing each dependence chain
     /// If a worker exceeds this time while processing a dependence chain,
     /// it will release the lock and allow other workers to acquire it
@@ -97,6 +83,14 @@ pub struct Args {
     #[arg(long, value_parser = clap::value_parser!(u32), default_value_t = 100)]
     pub dcid_ignore_dependency_count_threshold: u32,
 
+    /// Host-chain block number at which block-scoped execution takes over.
+    /// Computations below this block belong to the legacy (pre-branch)
+    /// pipeline and are skipped; dependencies produced below it resolve as
+    /// branchless. Must be set to the operator-agreed cutover block when
+    /// upgrading an existing chain; the default (0) is for fresh chains.
+    #[arg(long, env = "FHEVM_BRANCH_CUTOVER_BLOCK", default_value_t = 0)]
+    pub branch_cutover_block: i64,
+
     /// Log level for the application
     #[arg(
         long,
@@ -106,10 +100,6 @@ pub struct Args {
 
     #[arg(long, default_value_t = 8080)]
     pub health_check_port: u16,
-
-    /// Prometheus metrics: coprocessor_rerand_batch_latency_seconds
-    #[arg(long, default_value = "0.1:5.0:0.01", value_parser = clap::value_parser!(MetricsConfig))]
-    pub metric_rerand_batch_latency: MetricsConfig,
 
     /// Prometheus metrics: coprocessor_fhe_batch_latency_seconds
     #[arg(long, default_value = "0.2:5.0:0.05", value_parser = clap::value_parser!(MetricsConfig))]
@@ -124,7 +114,6 @@ pub struct Args {
 pub fn parse_args() -> Args {
     let args = Args::parse();
     // Set global configs from args
-    let _ = scheduler::RERAND_LATENCY_BATCH_HISTOGRAM_CONF.set(args.metric_rerand_batch_latency);
     let _ = scheduler::FHE_BATCH_LATENCY_HISTOGRAM_CONF.set(args.metric_fhe_batch_latency);
     args
 }

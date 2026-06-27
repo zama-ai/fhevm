@@ -16,6 +16,7 @@ use alloy::rpc::types::{Filter, TransactionRequest};
 use alloy::signers::local::PrivateKeySigner;
 use alloy::sol;
 use bigdecimal::BigDecimal;
+use fhevm_engine_common::branch::advance_settled_height;
 use fhevm_engine_common::chain_id::ChainId;
 use futures_util::future::try_join_all;
 use serial_test::serial;
@@ -251,7 +252,9 @@ async fn setup_with_block_time(
         reorg_maximum_duration_in_blocks: 100, // to go beyond chain start
         service_name: "host-listener-test".to_string(),
         catchup_finalization_in_blocks: 3,
-        dependence_by_connexity: false,
+        // Effective settlement lag = max(settlement_finality_lag, reorg window),
+        // so the existing reorg window still gates settlement here.
+        settlement_finality_lag: 3,
         dependence_cross_block: true,
         dependent_ops_max_per_chain: 0,
         timeout_request_websocket: 30,
@@ -438,7 +441,6 @@ async fn ingest_dependent_burst_seeded(
         setup,
         &receipts,
         IngestOptions {
-            dependence_by_connexity: false,
             dependence_cross_block: true,
             dependent_ops_max_per_chain,
         },
@@ -766,7 +768,6 @@ async fn test_slow_lane_cross_block_sustained_below_cap_stays_fast_locally(
             &setup,
             &receipts,
             IngestOptions {
-                dependence_by_connexity: false,
                 dependence_cross_block: true,
                 dependent_ops_max_per_chain: cap,
             },
@@ -1253,6 +1254,7 @@ async fn test_update_finalized_blocks_drives_orphan_cleanup_via_rpc_caller(
         &mut log_iter,
         latest_block_number,
         latest_block_number - target_block_number,
+        latest_block_number - target_block_number,
     )
     .await;
 
@@ -1281,6 +1283,23 @@ async fn test_update_finalized_blocks_drives_orphan_cleanup_via_rpc_caller(
     .fetch_one(&setup.db_pool)
     .await?;
     assert_eq!(orphan_status, "orphaned");
+
+    let pending_cleanup_jobs = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*)
+         FROM branch_cleanup_jobs
+         WHERE chain_id = $1
+           AND finalized_block_hash = $2
+           AND status = 'pending'",
+    )
+    .bind(setup.chain_id.as_i64())
+    .bind(canonical_hash.to_vec())
+    .fetch_one(&setup.db_pool)
+    .await?;
+    assert_eq!(pending_cleanup_jobs, 1);
+
+    let processed_cleanup_jobs =
+        db.process_orphaned_branch_cleanup_jobs().await?;
+    assert_eq!(processed_cleanup_jobs, 1);
 
     let orphan_rows = sqlx::query_scalar!(
         r#"
@@ -1699,6 +1718,99 @@ async fn test_legacy_allowed_handle_writes_are_mirrored_branchless(
 
 #[tokio::test]
 #[serial(db)]
+async fn test_settlement_blocks_on_pbs_event_block_hash(
+) -> Result<(), anyhow::Error> {
+    let db_instance = test_harness::instance::setup_test_db(ImportMode::None)
+        .await
+        .expect("valid db instance");
+    let chain_id = ChainId::try_from(4242_u64).unwrap();
+    let db = Database::new(&db_instance.db_url, chain_id, 128).await?;
+    let pool = db.pool.read().await.clone();
+
+    let branch_cutover_block = 10_i64;
+    let block_10_hash = FixedBytes::<32>::from([0x10; 32]);
+    let block_11_hash = FixedBytes::<32>::from([0x11; 32]);
+    let ciphertext_producer_hash = FixedBytes::<32>::from([0xAA; 32]);
+    let pbs_handle = FixedBytes::<32>::from([0xBB; 32]);
+    let transaction_id = FixedBytes::<32>::from([0xCC; 32]);
+
+    sqlx::query(
+        r#"
+        INSERT INTO host_chain_blocks_valid
+            (chain_id, block_hash, parent_hash, block_number, block_status)
+        VALUES
+            ($1, $2, $3, $4, 'finalized'),
+            ($1, $5, $2, $6, 'finalized')
+        "#,
+    )
+    .bind(chain_id.as_i64())
+    .bind(block_10_hash.to_vec())
+    .bind(Vec::<u8>::new())
+    .bind(branch_cutover_block)
+    .bind(block_11_hash.to_vec())
+    .bind(branch_cutover_block + 1)
+    .execute(&pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO pbs_computations_branch (
+            handle,
+            transaction_id,
+            host_chain_id,
+            block_number,
+            producer_block_hash,
+            block_hash,
+            is_completed
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, FALSE)
+        "#,
+    )
+    .bind(pbs_handle.to_vec())
+    .bind(transaction_id.to_vec())
+    .bind(chain_id.as_i64())
+    .bind(branch_cutover_block)
+    .bind(ciphertext_producer_hash.to_vec())
+    .bind(block_10_hash.to_vec())
+    .execute(&pool)
+    .await?;
+
+    let mut tx = db.new_transaction().await?;
+    let settled_height = advance_settled_height(
+        &mut tx,
+        chain_id.as_i64(),
+        branch_cutover_block + 1,
+        branch_cutover_block,
+    )
+    .await?;
+    assert_eq!(
+        settled_height,
+        branch_cutover_block - 1,
+        "unfinished PBS work must block settlement for its event block even when its producer hash differs"
+    );
+
+    sqlx::query(
+        "UPDATE pbs_computations_branch SET is_completed = TRUE WHERE handle = $1",
+    )
+    .bind(pbs_handle.to_vec())
+    .execute(tx.as_mut())
+    .await?;
+
+    let settled_height = advance_settled_height(
+        &mut tx,
+        chain_id.as_i64(),
+        branch_cutover_block + 1,
+        branch_cutover_block,
+    )
+    .await?;
+    assert_eq!(settled_height, branch_cutover_block + 1);
+    tx.rollback().await?;
+
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
 async fn test_finalization_cleanup_removes_orphaned_branch_rows_locally(
 ) -> Result<(), anyhow::Error> {
     let setup = setup_with_block_time(None, 1.0).await?;
@@ -2055,6 +2167,10 @@ async fn test_finalization_cleanup_removes_orphaned_branch_rows_locally(
     .await?;
     assert_eq!(orphan_descendant_status, "orphaned");
 
+    let processed_cleanup_jobs =
+        db.process_orphaned_branch_cleanup_jobs().await?;
+    assert_eq!(processed_cleanup_jobs, 1);
+
     let canonical_computations = sqlx::query_scalar!(
         r#"
         SELECT COUNT(*)
@@ -2368,9 +2484,11 @@ async fn test_only_catchup_loop_requires_negative_start_at_block(
         reorg_maximum_duration_in_blocks: 50,
         service_name: String::new(),
         catchup_finalization_in_blocks: 3,
+        // Effective settlement lag = max(settlement_finality_lag, reorg window),
+        // so the existing reorg window still gates settlement here.
+        settlement_finality_lag: 3,
         only_catchup_loop: true,
         catchup_loop_sleep_secs: 60,
-        dependence_by_connexity: false,
         dependence_cross_block: true,
         dependent_ops_max_per_chain: 0,
         timeout_request_websocket: 30,

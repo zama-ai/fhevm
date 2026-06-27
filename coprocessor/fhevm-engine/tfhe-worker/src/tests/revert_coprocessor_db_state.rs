@@ -60,7 +60,7 @@ async fn setup_block(pool: &PgPool, chain_id: i64, block_number: i64, key_id_gw:
         .expect("insert transaction");
 
     sqlx::query(
-        "INSERT INTO computations (output_handle, dependencies, fhe_operation, is_scalar, transaction_id, host_chain_id, dependence_chain_id, block_number)
+        "INSERT INTO computations_branch (output_handle, dependencies, fhe_operation, is_scalar, transaction_id, host_chain_id, dependence_chain_id, block_number)
          VALUES ($1, ARRAY[]::bytea[], 1, false, $2, $3, $4, $5)",
     )
     .bind(&handle)
@@ -81,7 +81,7 @@ async fn setup_block(pool: &PgPool, chain_id: i64, block_number: i64, key_id_gw:
     .expect("insert dependence_chain");
 
     sqlx::query(
-        "INSERT INTO pbs_computations (handle, transaction_id, host_chain_id, block_number) VALUES ($1, $2, $3, $4)",
+        "INSERT INTO pbs_computations_branch (handle, transaction_id, host_chain_id, block_number) VALUES ($1, $2, $3, $4)",
     )
     .bind(&handle)
     .bind(&txn_id)
@@ -92,7 +92,7 @@ async fn setup_block(pool: &PgPool, chain_id: i64, block_number: i64, key_id_gw:
     .expect("insert pbs_computation");
 
     sqlx::query(
-        "INSERT INTO allowed_handles (handle, account_address, event_type, transaction_id, txn_block_number, host_chain_id, block_number)
+        "INSERT INTO allowed_handles_branch (handle, account_address, event_type, transaction_id, txn_block_number, host_chain_id, block_number)
          VALUES ($1, '0xAccount', 0, $2, $3, $4, $3)",
     )
     .bind(&handle)
@@ -104,7 +104,7 @@ async fn setup_block(pool: &PgPool, chain_id: i64, block_number: i64, key_id_gw:
     .expect("insert allowed_handle");
 
     sqlx::query(
-        "INSERT INTO ciphertext_digest (host_chain_id, key_id_gw, handle, transaction_id, txn_block_number)
+        "INSERT INTO ciphertext_digest_branch (host_chain_id, key_id_gw, handle, transaction_id, txn_block_number)
          VALUES ($1, $2, $3, $4, $5)",
     )
     .bind(chain_id)
@@ -117,7 +117,7 @@ async fn setup_block(pool: &PgPool, chain_id: i64, block_number: i64, key_id_gw:
     .expect("insert ciphertext_digest");
 
     sqlx::query(
-        "INSERT INTO ciphertexts (handle, ciphertext, ciphertext_version, ciphertext_type)
+        "INSERT INTO ciphertexts_branch (handle, ciphertext, ciphertext_version, ciphertext_type)
          VALUES ($1, $2, 0, 4)",
     )
     .bind(&handle)
@@ -126,7 +126,7 @@ async fn setup_block(pool: &PgPool, chain_id: i64, block_number: i64, key_id_gw:
     .await
     .expect("insert ciphertext");
 
-    sqlx::query("INSERT INTO ciphertexts128 (handle, ciphertext) VALUES ($1, $2)")
+    sqlx::query("INSERT INTO ciphertexts128_branch (handle, ciphertext) VALUES ($1, $2)")
         .bind(&handle)
         .bind([0xEEu8; 4])
         .execute(pool)
@@ -175,6 +175,100 @@ async fn setup_block(pool: &PgPool, chain_id: i64, block_number: i64, key_id_gw:
     .expect("upsert host_listener_poller_state");
 }
 
+async fn setup_pbs_only_branch_artifacts(
+    pool: &PgPool,
+    chain_id: i64,
+    block_number: i64,
+    handle: &[u8],
+    producer_block_hash: &[u8],
+    key_id_gw: &[u8],
+) {
+    let txn_id = make_id(PREFIX_TXN, chain_id, block_number);
+
+    sqlx::query("INSERT INTO transactions (id, chain_id, block_number) VALUES ($1, $2, $3)")
+        .bind(&txn_id)
+        .bind(chain_id)
+        .bind(block_number)
+        .execute(pool)
+        .await
+        .expect("insert transaction");
+
+    sqlx::query(
+        "INSERT INTO pbs_computations_branch \
+         (handle, transaction_id, host_chain_id, block_number, producer_block_hash) \
+         VALUES ($1, $2, $3, $4, $5)",
+    )
+    .bind(handle)
+    .bind(&txn_id)
+    .bind(chain_id)
+    .bind(block_number)
+    .bind(producer_block_hash)
+    .execute(pool)
+    .await
+    .expect("insert pbs_computation");
+
+    sqlx::query(
+        "INSERT INTO ciphertext_digest_branch \
+         (host_chain_id, key_id_gw, handle, transaction_id, producer_block_hash, ciphertext, ciphertext128) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7)",
+    )
+    .bind(chain_id)
+    .bind(key_id_gw)
+    .bind(handle)
+    .bind(&txn_id)
+    .bind(producer_block_hash)
+    .bind([0xFAu8; 32])
+    .bind([0xFBu8; 32])
+    .execute(pool)
+    .await
+    .expect("insert ciphertext_digest");
+
+    sqlx::query(
+        "INSERT INTO ciphertexts_branch \
+         (handle, producer_block_hash, ciphertext, ciphertext_version, ciphertext_type) \
+         VALUES ($1, $2, $3, 0, 4)",
+    )
+    .bind(handle)
+    .bind(producer_block_hash)
+    .bind([0xFCu8; 4])
+    .execute(pool)
+    .await
+    .expect("insert ciphertext");
+
+    sqlx::query(
+        "INSERT INTO ciphertexts128_branch (handle, producer_block_hash, ciphertext) \
+         VALUES ($1, $2, $3)",
+    )
+    .bind(handle)
+    .bind(producer_block_hash)
+    .bind([0xFDu8; 4])
+    .execute(pool)
+    .await
+    .expect("insert ciphertext128");
+
+    sqlx::query(
+        "INSERT INTO host_chain_blocks_valid (chain_id, block_hash, block_number) \
+         VALUES ($1, $2, $3)",
+    )
+    .bind(chain_id)
+    .bind(producer_block_hash)
+    .bind(block_number)
+    .execute(pool)
+    .await
+    .expect("insert host_chain_blocks_valid");
+
+    sqlx::query(
+        "INSERT INTO host_listener_poller_state (chain_id, last_caught_up_block) \
+         VALUES ($1, $2) \
+         ON CONFLICT (chain_id) DO UPDATE SET last_caught_up_block = GREATEST(host_listener_poller_state.last_caught_up_block, $2)",
+    )
+    .bind(chain_id)
+    .bind(block_number)
+    .execute(pool)
+    .await
+    .expect("upsert host_listener_poller_state");
+}
+
 /// Setup blocks from `from_block` to `up_to_block` (inclusive).
 async fn setup_block_range(
     pool: &PgPool,
@@ -198,6 +292,15 @@ async fn count(pool: &PgPool, query: &str) -> i64 {
 async fn count_with_bind(pool: &PgPool, query: &str, bind: i64) -> i64 {
     sqlx::query_scalar::<_, i64>(query)
         .bind(bind)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+async fn count_with_handle_hash(pool: &PgPool, query: &str, handle: &[u8], hash: &[u8]) -> i64 {
+    sqlx::query_scalar::<_, i64>(query)
+        .bind(handle)
+        .bind(hash)
         .fetch_one(pool)
         .await
         .unwrap()
@@ -257,11 +360,12 @@ async fn test_revert_deletes_data_after_block_n() {
         "delegate_user_decrypt"
     );
 
-    // Tables linked via transaction_id: verify count matches (no block_number column to check directly)
+    // Tables linked via transaction_id: verify count matches; block-number
+    // pruning is covered by the producer-row deletes above.
     assert_eq!(
         count_with_bind(
             &pool,
-            "SELECT COUNT(*) FROM computations WHERE host_chain_id = $1",
+            "SELECT COUNT(*) FROM computations_branch WHERE host_chain_id = $1",
             CHAIN_A
         )
         .await,
@@ -271,7 +375,7 @@ async fn test_revert_deletes_data_after_block_n() {
     assert_eq!(
         count_with_bind(
             &pool,
-            "SELECT COUNT(*) FROM pbs_computations WHERE host_chain_id = $1",
+            "SELECT COUNT(*) FROM pbs_computations_branch WHERE host_chain_id = $1",
             CHAIN_A
         )
         .await,
@@ -279,17 +383,17 @@ async fn test_revert_deletes_data_after_block_n() {
         "pbs_computations"
     );
     assert_eq!(
-        count_with_bind(&pool, "SELECT COUNT(*) FROM ciphertexts WHERE handle IN (SELECT output_handle FROM computations WHERE host_chain_id = $1)", CHAIN_A).await,
+        count_with_bind(&pool, "SELECT COUNT(*) FROM ciphertexts_branch WHERE handle IN (SELECT output_handle FROM computations_branch WHERE host_chain_id = $1)", CHAIN_A).await,
         15, "ciphertexts"
     );
     assert_eq!(
-        count_with_bind(&pool, "SELECT COUNT(*) FROM ciphertexts128 WHERE handle IN (SELECT output_handle FROM computations WHERE host_chain_id = $1)", CHAIN_A).await,
+        count_with_bind(&pool, "SELECT COUNT(*) FROM ciphertexts128_branch WHERE handle IN (SELECT output_handle FROM computations_branch WHERE host_chain_id = $1)", CHAIN_A).await,
         15, "ciphertexts128"
     );
     assert_eq!(
         count_with_bind(
             &pool,
-            "SELECT COUNT(*) FROM ciphertext_digest WHERE host_chain_id = $1",
+            "SELECT COUNT(*) FROM ciphertext_digest_branch WHERE host_chain_id = $1",
             CHAIN_A
         )
         .await,
@@ -299,7 +403,7 @@ async fn test_revert_deletes_data_after_block_n() {
     assert_eq!(
         count_with_bind(
             &pool,
-            "SELECT COUNT(*) FROM allowed_handles WHERE host_chain_id = $1",
+            "SELECT COUNT(*) FROM allowed_handles_branch WHERE host_chain_id = $1",
             CHAIN_A
         )
         .await,
@@ -362,7 +466,7 @@ async fn test_revert_preserves_other_chain_data() {
     assert_eq!(
         count_with_bind(
             &pool,
-            "SELECT COUNT(*) FROM computations WHERE host_chain_id = $1",
+            "SELECT COUNT(*) FROM computations_branch WHERE host_chain_id = $1",
             CHAIN_B
         )
         .await,
@@ -434,7 +538,7 @@ async fn test_revert_no_op_when_no_data_above_block_n() {
     assert_eq!(
         count_with_bind(
             &pool,
-            "SELECT COUNT(*) FROM computations WHERE host_chain_id = $1",
+            "SELECT COUNT(*) FROM computations_branch WHERE host_chain_id = $1",
             CHAIN_A
         )
         .await,
@@ -444,7 +548,7 @@ async fn test_revert_no_op_when_no_data_above_block_n() {
     assert_eq!(
         count_with_bind(
             &pool,
-            "SELECT COUNT(*) FROM pbs_computations WHERE host_chain_id = $1",
+            "SELECT COUNT(*) FROM pbs_computations_branch WHERE host_chain_id = $1",
             CHAIN_A
         )
         .await,
@@ -452,17 +556,17 @@ async fn test_revert_no_op_when_no_data_above_block_n() {
         "pbs_computations"
     );
     assert_eq!(
-        count_with_bind(&pool, "SELECT COUNT(*) FROM ciphertexts WHERE handle IN (SELECT output_handle FROM computations WHERE host_chain_id = $1)", CHAIN_A).await,
+        count_with_bind(&pool, "SELECT COUNT(*) FROM ciphertexts_branch WHERE handle IN (SELECT output_handle FROM computations_branch WHERE host_chain_id = $1)", CHAIN_A).await,
         10, "ciphertexts"
     );
     assert_eq!(
-        count_with_bind(&pool, "SELECT COUNT(*) FROM ciphertexts128 WHERE handle IN (SELECT output_handle FROM computations WHERE host_chain_id = $1)", CHAIN_A).await,
+        count_with_bind(&pool, "SELECT COUNT(*) FROM ciphertexts128_branch WHERE handle IN (SELECT output_handle FROM computations_branch WHERE host_chain_id = $1)", CHAIN_A).await,
         10, "ciphertexts128"
     );
     assert_eq!(
         count_with_bind(
             &pool,
-            "SELECT COUNT(*) FROM ciphertext_digest WHERE host_chain_id = $1",
+            "SELECT COUNT(*) FROM ciphertext_digest_branch WHERE host_chain_id = $1",
             CHAIN_A
         )
         .await,
@@ -472,7 +576,7 @@ async fn test_revert_no_op_when_no_data_above_block_n() {
     assert_eq!(
         count_with_bind(
             &pool,
-            "SELECT COUNT(*) FROM allowed_handles WHERE host_chain_id = $1",
+            "SELECT COUNT(*) FROM allowed_handles_branch WHERE host_chain_id = $1",
             CHAIN_A
         )
         .await,
@@ -517,6 +621,74 @@ async fn test_revert_no_op_when_no_data_above_block_n() {
 
 #[tokio::test]
 #[serial(db)]
+async fn test_revert_deletes_pbs_only_branch_artifacts() {
+    let db = setup_test_db(ImportMode::None).await.expect("setup db");
+    let pool = PgPool::connect(db.db_url()).await.unwrap();
+
+    setup_chains(&pool).await;
+
+    let handle = [0xA5u8; 32];
+    let retained_block_hash = [0x10u8; 32];
+    let reverted_block_hash = [0x20u8; 32];
+
+    setup_pbs_only_branch_artifacts(
+        &pool,
+        CHAIN_A,
+        10,
+        &handle,
+        &retained_block_hash,
+        &KEY_ID_GW,
+    )
+    .await;
+    setup_pbs_only_branch_artifacts(
+        &pool,
+        CHAIN_A,
+        20,
+        &handle,
+        &reverted_block_hash,
+        &KEY_ID_GW,
+    )
+    .await;
+
+    let sql = revert_coprocessor_db_state_sql(CHAIN_A, 15);
+    sqlx::raw_sql(&sql)
+        .execute(&pool)
+        .await
+        .expect("revert sql");
+
+    for (label, query) in [
+        (
+            "pbs_computations_branch",
+            "SELECT COUNT(*) FROM pbs_computations_branch WHERE handle = $1 AND producer_block_hash = $2",
+        ),
+        (
+            "ciphertext_digest_branch",
+            "SELECT COUNT(*) FROM ciphertext_digest_branch WHERE handle = $1 AND producer_block_hash = $2",
+        ),
+        (
+            "ciphertexts_branch",
+            "SELECT COUNT(*) FROM ciphertexts_branch WHERE handle = $1 AND producer_block_hash = $2",
+        ),
+        (
+            "ciphertexts128_branch",
+            "SELECT COUNT(*) FROM ciphertexts128_branch WHERE handle = $1 AND producer_block_hash = $2",
+        ),
+    ] {
+        assert_eq!(
+            count_with_handle_hash(&pool, query, &handle, &retained_block_hash).await,
+            1,
+            "{label} retained branch row should remain"
+        );
+        assert_eq!(
+            count_with_handle_hash(&pool, query, &handle, &reverted_block_hash).await,
+            0,
+            "{label} reverted branch row should be deleted"
+        );
+    }
+}
+
+#[tokio::test]
+#[serial(db)]
 async fn test_revert_preserves_shared_ciphertexts() {
     let db = setup_test_db(ImportMode::None).await.expect("setup db");
     let pool = PgPool::connect(db.db_url()).await.unwrap();
@@ -545,7 +717,7 @@ async fn test_revert_preserves_shared_ciphertexts() {
 
     // Both computations produce the same handle
     sqlx::query(
-        "INSERT INTO computations (output_handle, dependencies, fhe_operation, is_scalar, transaction_id, host_chain_id, block_number)
+        "INSERT INTO computations_branch (output_handle, dependencies, fhe_operation, is_scalar, transaction_id, host_chain_id, block_number)
          VALUES ($1, ARRAY[]::bytea[], 1, false, $2, $3, 10)",
     )
     .bind(shared_handle)
@@ -556,7 +728,7 @@ async fn test_revert_preserves_shared_ciphertexts() {
     .unwrap();
 
     sqlx::query(
-        "INSERT INTO computations (output_handle, dependencies, fhe_operation, is_scalar, transaction_id, host_chain_id, block_number)
+        "INSERT INTO computations_branch (output_handle, dependencies, fhe_operation, is_scalar, transaction_id, host_chain_id, block_number)
          VALUES ($1, ARRAY[]::bytea[], 1, false, $2, $3, 20)",
     )
     .bind(shared_handle)
@@ -568,7 +740,7 @@ async fn test_revert_preserves_shared_ciphertexts() {
 
     // Single ciphertext for the shared handle
     sqlx::query(
-        "INSERT INTO ciphertexts (handle, ciphertext, ciphertext_version, ciphertext_type)
+        "INSERT INTO ciphertexts_branch (handle, ciphertext, ciphertext_version, ciphertext_type)
          VALUES ($1, $2, 0, 4)",
     )
     .bind(shared_handle)
@@ -577,7 +749,7 @@ async fn test_revert_preserves_shared_ciphertexts() {
     .await
     .unwrap();
 
-    sqlx::query("INSERT INTO ciphertexts128 (handle, ciphertext) VALUES ($1, $2)")
+    sqlx::query("INSERT INTO ciphertexts128_branch (handle, ciphertext) VALUES ($1, $2)")
         .bind(shared_handle)
         .bind([0xEEu8; 4])
         .execute(&pool)
@@ -604,7 +776,7 @@ async fn test_revert_preserves_shared_ciphertexts() {
     assert_eq!(
         count(
             &pool,
-            "SELECT COUNT(*) FROM computations WHERE transaction_id = '\\x0120'::bytea"
+            "SELECT COUNT(*) FROM computations_branch WHERE transaction_id = '\\x0120'::bytea"
         )
         .await,
         0,
@@ -614,22 +786,23 @@ async fn test_revert_preserves_shared_ciphertexts() {
     assert_eq!(
         count(
             &pool,
-            "SELECT COUNT(*) FROM computations WHERE transaction_id = '\\x0110'::bytea"
+            "SELECT COUNT(*) FROM computations_branch WHERE transaction_id = '\\x0110'::bytea"
         )
         .await,
         1,
     );
 
     // Ciphertext should be PRESERVED because block 10 computation still references it
-    let ct_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM ciphertexts WHERE handle = $1")
-        .bind(shared_handle)
-        .fetch_one(&pool)
-        .await
-        .unwrap();
+    let ct_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM ciphertexts_branch WHERE handle = $1")
+            .bind(shared_handle)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
     assert_eq!(ct_count, 1, "shared ciphertext should be preserved");
 
     let ct128_count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM ciphertexts128 WHERE handle = $1")
+        sqlx::query_scalar("SELECT COUNT(*) FROM ciphertexts128_branch WHERE handle = $1")
             .bind(shared_handle)
             .fetch_one(&pool)
             .await

@@ -3,7 +3,7 @@ use std::sync::{LazyLock, OnceLock};
 use fhevm_engine_common::telemetry::{register_histogram, MetricsConfig};
 use prometheus::{register_int_counter, IntCounter};
 use prometheus::{register_int_gauge, Histogram, IntGauge};
-use sqlx::PgPool;
+use sqlx::{PgPool, Postgres};
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
 use tracing::{error, info};
@@ -49,6 +49,60 @@ pub(crate) static AWS_UPLOAD_FAILURE_COUNTER: LazyLock<IntCounter> = LazyLock::n
     .unwrap()
 });
 
+pub(crate) static STALE_S3_UPLOAD_AFTER_CLEANUP_COUNTER: LazyLock<IntCounter> = LazyLock::new(
+    || {
+        register_int_counter!(
+            "coprocessor_sns_worker_stale_s3_upload_after_cleanup_total",
+            "Number of S3 uploads that succeeded externally but were rejected by branch cleanup/settlement fencing"
+        )
+        .unwrap()
+    },
+);
+
+pub(crate) static S3_CANONICAL_REPAIR_ENQUEUED_COUNTER: LazyLock<IntCounter> =
+    LazyLock::new(|| {
+        register_int_counter!(
+            "coprocessor_sns_worker_s3_canonical_repair_enqueued_total",
+            "Number of S3 canonical repair tasks enqueued by sns-worker"
+        )
+        .unwrap()
+    });
+
+pub(crate) static S3_CANONICAL_REPAIR_COMPLETED_COUNTER: LazyLock<IntCounter> =
+    LazyLock::new(|| {
+        register_int_counter!(
+            "coprocessor_sns_worker_s3_canonical_repair_completed_total",
+            "Number of S3 canonical repair tasks completed by sns-worker"
+        )
+        .unwrap()
+    });
+
+pub(crate) static S3_CANONICAL_REPAIR_FAILED_COUNTER: LazyLock<IntCounter> = LazyLock::new(|| {
+    register_int_counter!(
+        "coprocessor_sns_worker_s3_canonical_repair_failed_total",
+        "Number of S3 canonical repair tasks that failed verification or upload"
+    )
+    .unwrap()
+});
+
+pub(crate) static S3_CANONICAL_RECONCILER_MISMATCH_COUNTER: LazyLock<IntCounter> =
+    LazyLock::new(|| {
+        register_int_counter!(
+            "coprocessor_sns_worker_s3_canonical_reconciler_mismatch_total",
+            "Number of settled S3 canonical publications whose attestation did not match DB state"
+        )
+        .unwrap()
+    });
+
+pub(crate) static S3_PUBLICATION_BLOCKS_SETTLEMENT_COUNTER: LazyLock<IntCounter> =
+    LazyLock::new(|| {
+        register_int_counter!(
+            "coprocessor_sns_worker_s3_publication_blocks_settlement_total",
+            "Number of unverified settled S3 publication rows enqueued by the reconciler"
+        )
+        .unwrap()
+    });
+
 pub(crate) static UNCOMPLETE_TASKS: LazyLock<IntGauge> = LazyLock::new(|| {
     register_int_gauge!(
         "coprocessor_sns_worker_uncomplete_tasks_gauge",
@@ -65,17 +119,24 @@ pub(crate) static UNCOMPLETE_AWS_UPLOADS: LazyLock<IntGauge> = LazyLock::new(|| 
     .unwrap()
 });
 
+pub(crate) static S3_CANONICAL_REPAIR_QUEUE_DEPTH: LazyLock<IntGauge> = LazyLock::new(|| {
+    register_int_gauge!(
+        "coprocessor_sns_worker_s3_canonical_repair_queue_depth",
+        "Number of queued S3 canonical publication repair tasks"
+    )
+    .unwrap()
+});
+
 pub fn spawn_gauge_update_routine(period: std::time::Duration, db_pool: PgPool) -> JoinHandle<()> {
     tokio::spawn(async move {
         loop {
-            match sqlx::query_scalar!(
-                "SELECT COUNT(*)::BIGINT FROM pbs_computations WHERE is_completed = FALSE",
+            match sqlx::query_scalar::<Postgres, i64>(
+                "SELECT COUNT(*) FROM pbs_computations_branch WHERE is_completed = FALSE",
             )
             .fetch_one(&db_pool)
             .await
             {
                 Ok(count) => {
-                    let count = count.unwrap_or(0);
                     info!(uncomplete_tasks = %count, "Fetched uncomplete tasks count");
                     UNCOMPLETE_TASKS.set(count);
                 }
@@ -84,32 +145,53 @@ pub fn spawn_gauge_update_routine(period: std::time::Duration, db_pool: PgPool) 
                 }
             }
 
-            match sqlx::query_scalar!(
+            match sqlx::query_scalar::<Postgres, i64>(
                 "
                 SELECT COUNT(*)::BIGINT
-                FROM ciphertext_digest d
-                WHERE d.ciphertext IS NULL
-                   OR (
-                     d.ciphertext128 IS NULL
-                     AND EXISTS (
-                       SELECT 1
-                       FROM ciphertexts128 c
-                       WHERE c.handle = d.handle
-                         AND c.ciphertext IS NOT NULL
-                     )
-                   )
+                FROM (
+                    SELECT d.handle, d.producer_block_hash, d.block_hash
+                    FROM ciphertext_digest_branch d
+                    WHERE d.ciphertext IS NULL
+                       OR (
+                         d.ciphertext128 IS NULL
+                         AND EXISTS (
+                           SELECT 1
+                           FROM ciphertexts128_branch c
+                           WHERE c.handle = d.handle
+                             AND c.producer_block_hash = d.producer_block_hash
+                             AND c.ciphertext IS NOT NULL
+                         )
+                       )
+                    UNION
+                    SELECT q.handle, q.target_producer_block_hash, q.target_block_hash
+                    FROM s3_canonical_repair_queue q
+                ) pending
                 ",
             )
             .fetch_one(&db_pool)
             .await
             {
                 Ok(count) => {
-                    let count = count.unwrap_or(0);
                     info!(uncomplete_aws_uploads = %count, "Fetched uncomplete AWS uploads count");
                     UNCOMPLETE_AWS_UPLOADS.set(count);
                 }
                 Err(e) => {
                     error!(error = %e, "Failed to fetch uncomplete AWS uploads count");
+                }
+            }
+
+            match sqlx::query_scalar::<Postgres, i64>(
+                "SELECT COUNT(*)::BIGINT FROM s3_canonical_repair_queue",
+            )
+            .fetch_one(&db_pool)
+            .await
+            {
+                Ok(count) => {
+                    info!(s3_canonical_repair_queue_depth = %count, "Fetched S3 canonical repair queue depth");
+                    S3_CANONICAL_REPAIR_QUEUE_DEPTH.set(count);
+                }
+                Err(e) => {
+                    error!(error = %e, "Failed to fetch S3 canonical repair queue depth");
                 }
             }
 
