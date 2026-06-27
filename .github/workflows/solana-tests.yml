@@ -38,6 +38,8 @@ jobs:
               - coprocessor/fhevm-engine/host-listener/build.rs
               - coprocessor/fhevm-engine/host-listener/idl/zama_host.json
               - coprocessor/fhevm-engine/host-listener/src/solana_adapter.rs
+              - coprocessor/fhevm-engine/host-listener/src/solana_reconstruct.rs
+              - coprocessor/fhevm-engine/host-listener/src/solana_grpc_listener.rs
 
   build-and-test:
     name: solana-tests/build-and-test
@@ -99,3 +101,42 @@ jobs:
 
       - name: Run Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
+
+  # The off-chain reconstruction path (host-listener, solana-reconstruct feature) is otherwise
+  # only built/exercised by the full solana-e2e job. Compile it here and run its unit tests so a
+  # break (e.g. the fhe_eval ACL-record account-offset) is caught in minutes, not 40+.
+  host-listener-reconstruct:
+    name: solana-tests/host-listener-reconstruct
+    needs: check-changes
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.check-changes.outputs.changes-solana == 'true' }}
+    permissions:
+      contents: 'read'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: 'false'
+
+      - name: Setup Rust toolchain file
+        run: cp coprocessor/fhevm-engine/rust-toolchain.toml .
+
+      - uses: dsherret/rust-toolchain-file@3551321aa44dd44a0393eb3b6bdfbc5d25ecf621 # v1
+
+      - name: Install protoc (host-listener builds fhevm-engine-common via prost-build)
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
+      - name: Cache cargo
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            coprocessor/fhevm-engine/target
+          key: ${{ runner.os }}-cargo-host-listener-reconstruct-${{ hashFiles('coprocessor/fhevm-engine/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-host-listener-reconstruct-
+
+      - name: Test host-listener reconstruct path (compiles the feature + pins fhe_eval layout)
+        working-directory: coprocessor/fhevm-engine
+        env:
+          SQLX_OFFLINE: 'true'
+        run: cargo test -p host-listener --features solana-grpc,solana-reconstruct fhe_eval_acl
