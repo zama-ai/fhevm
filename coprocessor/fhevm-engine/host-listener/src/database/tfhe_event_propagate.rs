@@ -115,7 +115,14 @@ async fn insert_computation_branch_row(
     tx: &mut Transaction<'_>,
     row: ComputationBranchRow<'_>,
 ) -> Result<bool, SqlxError> {
-    let rows_affected = sqlx::query!(
+    // Wave-1: isolate the branch dual-write in a savepoint so its failure
+    // (constraint, deadlock, statement_timeout) rolls back only this write and
+    // never aborts the caller's authoritative legacy write or poisons the
+    // ingest transaction. A swallowed failure returns Ok(false).
+    sqlx::query("SAVEPOINT branch_dual_write")
+        .execute(tx.deref_mut())
+        .await?;
+    let result = sqlx::query!(
         r#"
         INSERT INTO computations_branch (
             output_handle,
@@ -149,9 +156,50 @@ async fn insert_computation_branch_row(
         row.producer_block.hash,
     )
     .execute(tx.deref_mut())
-    .await?
-    .rows_affected();
-    Ok(rows_affected > 0)
+    .await;
+    finish_branch_savepoint(
+        tx,
+        result,
+        "computations_branch",
+        &to_hex(row.output_handle),
+    )
+    .await
+}
+
+/// Resolve a branch-write result inside the `branch_dual_write` savepoint:
+/// on success RELEASE and report whether a row was inserted; on failure log,
+/// ROLLBACK TO + RELEASE the savepoint (recovering the transaction), and return
+/// Ok(false) so the caller's authoritative legacy write is never aborted.
+async fn finish_branch_savepoint(
+    tx: &mut Transaction<'_>,
+    result: Result<sqlx::postgres::PgQueryResult, SqlxError>,
+    table: &str,
+    handle_hex: &str,
+) -> Result<bool, SqlxError> {
+    match result {
+        Ok(done) => {
+            sqlx::query("RELEASE SAVEPOINT branch_dual_write")
+                .execute(tx.deref_mut())
+                .await?;
+            Ok(done.rows_affected() > 0)
+        }
+        Err(err) => {
+            warn!(
+                target: "tfhe_event_propagate",
+                table,
+                handle = %handle_hex,
+                error = %err,
+                "branch write failed; rolled back to savepoint, legacy write preserved"
+            );
+            sqlx::query("ROLLBACK TO SAVEPOINT branch_dual_write")
+                .execute(tx.deref_mut())
+                .await?;
+            sqlx::query("RELEASE SAVEPOINT branch_dual_write")
+                .execute(tx.deref_mut())
+                .await?;
+            Ok(false)
+        }
+    }
 }
 
 async fn insert_pbs_computation_branch_row(
@@ -163,7 +211,13 @@ async fn insert_pbs_computation_branch_row(
     block_hash: &[u8],
     producer_block_hash: &[u8],
 ) -> Result<bool, SqlxError> {
-    let rows_affected = sqlx::query!(
+    // Wave-1: isolate in a savepoint (see insert_computation_branch_row) so a
+    // failure (incl. the digest-mirror trigger this insert fires) never aborts
+    // the caller's authoritative legacy pbs_computations write.
+    sqlx::query("SAVEPOINT branch_dual_write")
+        .execute(tx.deref_mut())
+        .await?;
+    let result = sqlx::query!(
         "INSERT INTO pbs_computations_branch(handle, transaction_id, host_chain_id, block_number, block_hash, producer_block_hash)
          VALUES($1, $2, $3, $4, $5, $6)
          ON CONFLICT DO NOTHING;",
@@ -175,9 +229,14 @@ async fn insert_pbs_computation_branch_row(
         producer_block_hash,
     )
     .execute(tx.deref_mut())
-    .await?
-    .rows_affected();
-    Ok(rows_affected > 0)
+    .await;
+    finish_branch_savepoint(
+        tx,
+        result,
+        "pbs_computations_branch",
+        &to_hex(handle),
+    )
+    .await
 }
 
 struct AllowedHandleBranchRow<'a> {
@@ -205,7 +264,13 @@ async fn insert_allowed_handle_branch_row(
     tx: &mut Transaction<'_>,
     row: AllowedHandleBranchRow<'_>,
 ) -> Result<bool, SqlxError> {
-    let rows_affected = sqlx::query!(
+    // Wave-1: isolate in a savepoint (see insert_computation_branch_row) so a
+    // failure never aborts the caller's authoritative legacy allowed_handles
+    // write.
+    sqlx::query("SAVEPOINT branch_dual_write")
+        .execute(tx.deref_mut())
+        .await?;
+    let result = sqlx::query!(
         "INSERT INTO allowed_handles_branch(handle, account_address, event_type, transaction_id, host_chain_id, block_number, block_hash, producer_block_hash)
          VALUES($1, $2, $3, $4, $5, $6, $7, $8)
          ON CONFLICT DO NOTHING;",
@@ -219,9 +284,14 @@ async fn insert_allowed_handle_branch_row(
         row.producer_block.hash,
     )
     .execute(tx.deref_mut())
-    .await?
-    .rows_affected();
-    Ok(rows_affected > 0)
+    .await;
+    finish_branch_savepoint(
+        tx,
+        result,
+        "allowed_handles_branch",
+        &to_hex(row.handle),
+    )
+    .await
 }
 
 #[derive(Clone, Debug)]
@@ -604,51 +674,30 @@ impl Database {
     ) -> Result<bool, SqlxError> {
         let is_scalar = !scalar_byte.is_zero();
         let output_handle = result.to_vec();
-        // Wave-1: isolate the branch dual-write in a savepoint so a branch-row
-        // failure (constraint, deadlock, statement_timeout) can never abort the
-        // authoritative legacy `computations` write below or poison the ingest
-        // transaction. On failure we roll back to the savepoint and continue;
-        // the legacy write (still `?`-propagated) remains the source of truth.
-        sqlx::query("SAVEPOINT branch_computation")
-            .execute(tx.deref_mut())
-            .await?;
-        let branch_row = ComputationBranchRow {
-            chain_id: self.chain_id.as_i64(),
-            output_handle: &output_handle,
-            dependencies: &dependencies,
-            fhe_operation: fhe_operation as i16,
-            is_scalar,
-            dependence_chain_id: log.dependence_chain.as_slice(),
-            transaction_id: log.transaction_hash.map(|txh| txh.to_vec()),
-            is_allowed: log.is_allowed,
-            schedule_order: log.block_timestamp.saturating_add(
-                TimeDuration::microseconds(log.tx_depth_size as i64),
-            ),
-            producer_block: ProducerBlock {
-                hash: log.block_hash.to_vec(),
-                number: log.block_number,
+        // insert_computation_branch_row isolates the branch write in its own
+        // savepoint, so a branch-write failure returns Ok(false) here rather
+        // than aborting the authoritative legacy `computations` write below.
+        let inserted = insert_computation_branch_row(
+            tx,
+            ComputationBranchRow {
+                chain_id: self.chain_id.as_i64(),
+                output_handle: &output_handle,
+                dependencies: &dependencies,
+                fhe_operation: fhe_operation as i16,
+                is_scalar,
+                dependence_chain_id: log.dependence_chain.as_slice(),
+                transaction_id: log.transaction_hash.map(|txh| txh.to_vec()),
+                is_allowed: log.is_allowed,
+                schedule_order: log.block_timestamp.saturating_add(
+                    TimeDuration::microseconds(log.tx_depth_size as i64),
+                ),
+                producer_block: ProducerBlock {
+                    hash: log.block_hash.to_vec(),
+                    number: log.block_number,
+                },
             },
-        };
-        let inserted = match insert_computation_branch_row(tx, branch_row).await
-        {
-            Ok(inserted) => {
-                sqlx::query("RELEASE SAVEPOINT branch_computation")
-                    .execute(tx.deref_mut())
-                    .await?;
-                inserted
-            }
-            Err(err) => {
-                warn!(
-                    output_handle = %to_hex(&output_handle),
-                    error = %err,
-                    "branch computation write failed; rolling back to savepoint and preserving legacy write"
-                );
-                sqlx::query("ROLLBACK TO SAVEPOINT branch_computation")
-                    .execute(tx.deref_mut())
-                    .await?;
-                false
-            }
-        };
+        )
+        .await?;
         // Wave-1 dual-write: the legacy pipeline still executes from the
         // legacy tables, so every branch row is mirrored there until the
         // block-scoped readers take over in wave 2.
