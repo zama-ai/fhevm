@@ -334,18 +334,12 @@ Metrics for zkproof-worker are to be added in future releases, if/when needed. C
  - **Alarm**: If the counter increases over a period of time.
    - **Recommendation**: more than 60 failures in 1 minute, i.e. `sum(increase(counter[1m])) > 60`.
 
-#### Metric Name: `kms_connector_pending_events`
+#### Metric Name: `kms_connector_unprocessed_operations`
  - **Type**: Gauge
  - **Labels**:
-   - `event_type`: see [description](#metric-name-kms_connector_gw_listener_event_received_counter) (only available for decryption right now!)
- - **Description**: Tracks the number of Gateway events not yet processed in the kms-connector's DB.
- - **Alarm**: Need more experience with this metric first.
-
-#### Metric Name: `kms_connector_pending_responses`
- - **Type**: Gauge
- - **Labels**:
-   - `response_type`: see [description](#metric-name-kms_connector_tx_sender_response_received_counter) (only available for decryption right now!)
- - **Description**: Tracks the number of KMS responses not yet sent to the Gateway in the kms-connector's DB.
+   - `table`: the table of the operation being counted.
+   - `status`: the database status of the operations being counted, either `pending` or `under_process`.
+ - **Description**: Tracks the number of operations not yet processed in the kms-connector's DB (i.e. still `pending` or `under_process`). Terminal statuses (`completed`/`failed`) are deliberately excluded so the gauge stays bounded, since operations are now kept in the DB forever.
  - **Alarm**: Need more experience with this metric first.
 
 #### Metric Name: `kms_connector_tx_sender_response_forwarding_latency_seconds`
