@@ -2,6 +2,12 @@
 -- covers rolling deploys where old host-listener/SNS/transaction-sender
 -- processes are still writing legacy tables after branch tables exist.
 
+-- The CREATE TRIGGER statements below take a brief ACCESS EXCLUSIVE lock on the
+-- hot legacy tables (allowed_handles, ciphertext_digest). Bound the wait so a
+-- contended attach fails fast and is retried (Job backoffLimit) instead of
+-- convoying every query on those tables behind it. Transaction-local.
+SET LOCAL lock_timeout = '3s';
+
 CREATE OR REPLACE FUNCTION mirror_allowed_handles_branchless()
 RETURNS trigger
 LANGUAGE plpgsql
