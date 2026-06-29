@@ -36,7 +36,7 @@ const MAX_USER_DECRYPT_CONTRACT_ADDRESSES = 10 as Uint8Number;
 
 ////////////////////////////////////////////////////////////////////////////////
 
-function assertKmsEIP712V1DeadlineValidity(
+function assertKmsEip712V1DeadlineValidity(
   {
     startTimestamp,
     durationDays,
@@ -122,7 +122,7 @@ export abstract class SignedDecryptionPermitV1BaseImpl {
   public abstract get encryptedDataOwnerAddress(): ChecksummedAddress;
 
   public assertNotExpired(): void {
-    assertKmsEIP712V1DeadlineValidity(this.#eip712.message, MAX_USER_DECRYPT_DURATION_DAYS);
+    assertKmsEip712V1DeadlineValidity(this.#eip712.message, MAX_USER_DECRYPT_DURATION_DAYS);
   }
 
   /**

@@ -147,7 +147,7 @@ export async function fetchKmsSigncryptedSharesV1(context: Context, parameters: 
     });
   }
 
-  // 8. Verify the EIP712 signature
+  // 8. Verify the Eip712 signature
   // Not required because a signedPermit is guaranteed to be verified.
 
   // 9. Fetch `KmsSignersContext` on-chain (cached)

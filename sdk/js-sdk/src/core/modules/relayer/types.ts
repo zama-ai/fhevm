@@ -109,7 +109,7 @@ export type FetchPublicDecryptParameters = {
 
 export type FetchPublicDecryptReturnType = {
   readonly orderedAbiEncodedClearValues: BytesHex;
-  readonly kmsPublicDecryptEIP712Signatures: Bytes65Hex[];
+  readonly kmsPublicDecryptEip712Signatures: Bytes65Hex[];
   readonly extraData: BytesHex;
 };
 

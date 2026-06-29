@@ -189,8 +189,8 @@ describe('hello', () => {
       //   signedPermit: signedDelegatePermit,
       // });
 
-      // // Let's test the creation of a simple EIP712
-      // const eip712 = fhevmDecryptClient.createUserDecryptEIP712({
+      // // Let's test the creation of a simple Eip712
+      // const eip712 = fhevmDecryptClient.createUserDecryptEip712({
       //   contractAddresses: ["0x1E7eA8fE4877E6ea5dc8856f0dA92da8d5066241"],
       //   durationDays: 356,
       //   startTimestamp: timestampNow(),
@@ -252,10 +252,10 @@ describe('hello', () => {
       //         ),
       //       },
       //     ],
-      //     userDecryptEIP712Message: eip712.message,
-      //     userDecryptEIP712Signer:
+      //     userDecryptEip712Message: eip712.message,
+      //     userDecryptEip712Signer:
       //       "0x37ac010c1c566696326813b840319b58bb5840e4" as ChecksummedAddress,
-      //     userDecryptEIP712Signature: "0x" as Bytes65Hex,
+      //     userDecryptEip712Signature: "0x" as Bytes65Hex,
       //   });
 
       /*

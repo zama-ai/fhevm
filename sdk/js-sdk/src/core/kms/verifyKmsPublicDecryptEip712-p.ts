@@ -19,7 +19,7 @@ type Context = {
 type Parameters = {
   readonly orderedHandles: readonly Handle[];
   readonly orderedAbiEncodedClearValues: BytesHex;
-  readonly kmsPublicDecryptEIP712Signatures: readonly Bytes65Hex[];
+  readonly kmsPublicDecryptEip712Signatures: readonly Bytes65Hex[];
   readonly kmsSignersContext: KmsSignersContext;
 };
 
@@ -28,7 +28,7 @@ type Parameters = {
 export async function verifyKmsPublicDecryptEip712(context: Context, parameters: Parameters): Promise<void> {
   const { kmsSignersContext, orderedHandles: orderedEncryptedValues, orderedAbiEncodedClearValues } = parameters;
 
-  // TODO:  use createKmsPublicDecryptEIP712 instead!
+  // TODO:  use createKmsPublicDecryptEip712 instead!
 
   const extraData: BytesHex = kmsSignersContextToExtraData(kmsSignersContext);
 
@@ -66,7 +66,7 @@ export async function verifyKmsPublicDecryptEip712(context: Context, parameters:
     domain,
     types: kmsPublicDecryptEip712Types,
     primaryType: 'PublicDecryptVerification',
-    signatures: parameters.kmsPublicDecryptEIP712Signatures,
+    signatures: parameters.kmsPublicDecryptEip712Signatures,
     message,
   });
 

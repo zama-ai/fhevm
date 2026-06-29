@@ -23,7 +23,7 @@ const MAX_USER_DECRYPT_CONTRACT_ADDRESSES = 10 as Uint8Number;
 
 ////////////////////////////////////////////////////////////////////////////////
 
-function assertKmsEIP712V2DeadlineValidity({
+function assertKmsEip712V2DeadlineValidity({
   startTimestamp,
   durationSeconds,
 }: {
@@ -103,7 +103,7 @@ export class SignedDecryptionPermitV2Impl implements SignedDecryptionPermitV2 {
 
   public assertNotExpired(): void {
     const { startTimestamp, durationSeconds } = this.#eip712.message;
-    assertKmsEIP712V2DeadlineValidity({ startTimestamp, durationSeconds });
+    assertKmsEip712V2DeadlineValidity({ startTimestamp, durationSeconds });
   }
 
   public assertMatchesKmsContext(kmsSignersContext: KmsSignersContext): void {
