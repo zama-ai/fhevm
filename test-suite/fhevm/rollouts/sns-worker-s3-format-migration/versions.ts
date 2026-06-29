@@ -37,12 +37,15 @@ export const scenario = "two-of-three";
 // For local dev of the feature itself, leave unset (builds from old commit using "pre-s3-format" tag).
 const fromTag = process.env.OLD_SNS_IMAGE_TAG || "pre-s3-format";
 const targetTag = "fhevm-local";   // or a post-feature published tag / sha; per-service override will build current source anyway
-const releasedComponentTag = "v0.13.0-6";
+const standardV013Tag = "v0.13.0";
+// Keep the baseline as close as possible to the standard v0.13 rollout. The
+// only intentionally older component is COPROCESSOR_SNS_WORKER_VERSION, which
+// is supplied through OLD_SNS_IMAGE_TAG to produce legacy S3 rows.
+const releasedComponentTag = standardV013Tag;
 const releasedRelayerTag = releasedComponentTag;
-// Match the KMS tag used by the v0.13 connector dependencies and the
-// v0.12-to-v0.13 rollout. The unsuffixed v0.13.20 image publishes key material
-// that the current e2e SDK bundle cannot deserialize.
-const releasedKmsCoreTag = "v0.13.20-0";
+// Match the KMS tag used by the standard v0.13 rollout.
+const releasedKmsCoreTag = "v0.13.20";
+const releasedTestSuiteTag = standardV013Tag;
 
 // Match the v0.13 rollout harness. The relayer-sdk path avoids the local
 // @fhevm/sdk TFHE deserializer mismatch with the released v0.13 KMS public key.
@@ -66,7 +69,7 @@ export const from = {
   COPROCESSOR_ZKPROOF_WORKER_VERSION: releasedComponentTag,
   COPROCESSOR_SNS_WORKER_VERSION: fromTag,   // previous version (old sns-worker binary) - deployed explicitly by run.ts
   LISTENER_CORE_VERSION: releasedComponentTag,
-  TEST_SUITE_VERSION: targetTag,
+  TEST_SUITE_VERSION: releasedTestSuiteTag,
   RELAYER_SDK_VERSION: relayerSdkVersion,
 
   // Extra (non-VERSION) keys that flow through versionsEnv and are available
@@ -107,8 +110,10 @@ export const phaseVersions = {
 
 export const versionSources = [
   `rollout=sns-worker-s3-format-migration`,
-  `target=${targetTag}`,
+  `baseline=${standardV013Tag}`,
+  `target-sns=${targetTag}`,
   `pre-s3-sns=${fromTag}`,
   `relayer=${releasedRelayerTag}`,
   `kms-core=${releasedKmsCoreTag}`,
+  `test-suite=${releasedTestSuiteTag}`,
 ];
