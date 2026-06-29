@@ -12,9 +12,11 @@ export type ReadCoprocessorSignersContextReturnType = CoprocessorSignersContext;
 
 export async function readCoprocessorSignersContext(
   fhevm: Fhevm<FhevmChain>,
+  options?: { readonly forceRefresh?: boolean | undefined },
 ): Promise<ReadCoprocessorSignersContextReturnType> {
   return readCoprocessorSignersContext_(fhevm, {
     address: fhevm.chain.fhevm.contracts.inputVerifier.address as ChecksummedAddress,
+    forceRefresh: options?.forceRefresh,
   });
 }
 

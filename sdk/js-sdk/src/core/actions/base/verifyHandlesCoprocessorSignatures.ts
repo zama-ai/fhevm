@@ -9,6 +9,7 @@ import { coprocessorEip712PrimaryType, coprocessorEip712Types } from '../../copr
 import { createCoprocessorEip712Domain } from '../../coprocessor/createCoprocessorEip712Domain.js';
 import { assertCoprocessorSignerThreshold } from '../../host-contracts/CoprocessorSignersContext-p.js';
 import { readCoprocessorSignersContext } from './readCoprocessorSignersContext.js';
+import { ThresholdSignerError, UnknownSignerError } from '../../errors/SignersError.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -53,8 +54,26 @@ export async function verifyHandlesCoprocessorSignatures(
     message,
   });
 
-  const coprocessorSignersContext: CoprocessorSignersContext = await readCoprocessorSignersContext(fhevm);
+  let coprocessorSignersContext: CoprocessorSignersContext = await readCoprocessorSignersContext(fhevm);
 
-  // 2. Verify signature threshold is reached
-  assertCoprocessorSignerThreshold(coprocessorSignersContext, recoveredAddresses);
+  // 2. Verify signature threshold is reached.
+  //
+  // The signer set/threshold comes from a 24h TTL cache, so a long-lived
+  // instance can hold a stale set after the coprocessor signers rotate on-chain
+  // (e.g. a multi-coprocessor rollout). If verification fails for a reason a
+  // refreshed signer set could fix — an unrecognized signer (UnknownSignerError)
+  // or an unmet threshold (ThresholdSignerError) — force one fresh on-chain read
+  // and re-verify before surfacing the error. A DuplicateSignerError reflects
+  // duplicate recovered addresses (a malicious-relayer signal independent of the
+  // on-chain config), so it is intentionally not retried.
+  try {
+    assertCoprocessorSignerThreshold(coprocessorSignersContext, recoveredAddresses);
+  } catch (e) {
+    if (e instanceof UnknownSignerError || e instanceof ThresholdSignerError) {
+      coprocessorSignersContext = await readCoprocessorSignersContext(fhevm, { forceRefresh: true });
+      assertCoprocessorSignerThreshold(coprocessorSignersContext, recoveredAddresses);
+    } else {
+      throw e;
+    }
+  }
 }

@@ -44,7 +44,7 @@ const cachedGetCoprocessorContextSignersAndThreshold = createCachedFetch<Context
  */
 export function getCoprocessorContextSignersAndThreshold(
   context: Context,
-  parameters: Parameters & { readonly forceRefresh?: boolean },
+  parameters: Parameters & { readonly forceRefresh?: boolean | undefined },
 ): Promise<ReturnType> {
   return cachedGetCoprocessorContextSignersAndThreshold.execute(context, parameters);
 }

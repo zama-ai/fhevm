@@ -9,6 +9,7 @@ import { coprocessorEip712PrimaryType, coprocessorEip712Types } from './coproces
 import { createCoprocessorEip712Domain } from './createCoprocessorEip712Domain.js';
 import { assertCoprocessorSignerThreshold } from '../host-contracts/CoprocessorSignersContext-p.js';
 import { readCoprocessorSignersContext } from '../host-contracts/readCoprocessorSignersContext-p.js';
+import { ThresholdSignerError, UnknownSignerError } from '../errors/SignersError.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -57,10 +58,33 @@ export async function verifyHandlesCoprocessorSignatures(context: Context, param
     message,
   });
 
-  const coprocessorSignersContext: CoprocessorSignersContext = await readCoprocessorSignersContext(context, {
-    address: context.chain.fhevm.contracts.inputVerifier.address as ChecksummedAddress,
+  const address = context.chain.fhevm.contracts.inputVerifier.address as ChecksummedAddress;
+
+  let coprocessorSignersContext: CoprocessorSignersContext = await readCoprocessorSignersContext(context, {
+    address,
   });
 
-  // 2. Verify signature threshold is reached
-  assertCoprocessorSignerThreshold(coprocessorSignersContext, recoveredAddresses);
+  // 2. Verify signature threshold is reached.
+  //
+  // The signer set/threshold comes from a 24h TTL cache, so a long-lived
+  // instance can hold a stale set after the coprocessor signers rotate on-chain
+  // (e.g. a multi-coprocessor rollout). If verification fails for a reason a
+  // refreshed signer set could fix — an unrecognized signer (UnknownSignerError)
+  // or an unmet threshold (ThresholdSignerError) — force one fresh on-chain read
+  // and re-verify before surfacing the error. A DuplicateSignerError reflects
+  // duplicate recovered addresses (a malicious-relayer signal independent of the
+  // on-chain config), so it is intentionally not retried.
+  try {
+    assertCoprocessorSignerThreshold(coprocessorSignersContext, recoveredAddresses);
+  } catch (e) {
+    if (e instanceof UnknownSignerError || e instanceof ThresholdSignerError) {
+      coprocessorSignersContext = await readCoprocessorSignersContext(context, {
+        address,
+        forceRefresh: true,
+      });
+      assertCoprocessorSignerThreshold(coprocessorSignersContext, recoveredAddresses);
+    } else {
+      throw e;
+    }
+  }
 }
