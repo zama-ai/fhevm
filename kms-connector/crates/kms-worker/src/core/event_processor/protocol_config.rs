@@ -78,7 +78,7 @@ impl<P: Provider> ProtocolConfigProcessor<P> {
         let previous_epoch = self
             .fetch_previous_epoch_info(
                 event.kmsContextId,
-                event.previousContextId,
+                event.previousEpochId,
                 event.materialBlockNumber.saturating_to(),
             )
             .await
