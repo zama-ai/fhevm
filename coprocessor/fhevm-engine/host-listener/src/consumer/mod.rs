@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -33,6 +34,7 @@ mod metrics;
 
 const MAX_DB_RETRIES: u64 = 10;
 const STATS_REPORT_INTERVAL: Duration = Duration::from_secs(60);
+static SLOW_LANE_PROMOTION_ATTEMPTED: AtomicBool = AtomicBool::new(false);
 const STATS_FINALIZATION_MARGIN: i64 = 5;
 
 #[derive(Clone, Debug)]
@@ -181,9 +183,16 @@ pub async fn promote_once_all_chains_to_fast(
     dependent_ops_max_per_chain: u32,
 ) {
     if dependent_ops_max_per_chain == 0 {
+        if SLOW_LANE_PROMOTION_ATTEMPTED
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
+            return;
+        }
         let count = match db.promote_all_dep_chains_to_fast_priority().await {
             Ok(count) => count,
             Err(err) => {
+                SLOW_LANE_PROMOTION_ATTEMPTED.store(false, Ordering::Release);
                 error!(error = %err, "Failed to initially promote dependence chains to fast priority on startup");
                 return;
             }
