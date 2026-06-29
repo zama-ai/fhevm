@@ -126,6 +126,7 @@ export async function createInstance(chain: ChainConfig) {
     kmsContractAddress: chain.kmsVerifierAddress,
     inputVerifierContractAddress: chain.inputVerifierAddress,
     aclContractAddress: chain.aclAddress,
+    protocolConfigAddress: chain.protocolConfigAddress,
     rpcUrl: chain.rpcUrl,
     relayerUrl,
     gatewayChainId,

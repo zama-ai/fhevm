@@ -137,8 +137,10 @@ describe("buildKmsThresholdOverride", () => {
 
   test("gen-keys generates ONLY signing keys, sized to exactly N parties", () => {
     const entrypoint = JSON.stringify(buildKmsThresholdOverride(fourParty, RENDER_OPTS).services["kms-core-gen-keys"].entrypoint);
-    // Guards the KMS reference flow: `--cmd` defaults to `all` (which pre-generates FHE key shares +
-    // CRS centrally) and `--num-parties` defaults to 4 (too small for a larger cluster).
+    // `--cmd signing-keys` and `--num-parties` are gated by `--help` probes (newer cores dropped both);
+    // keep the probes so a pinned newer CORE_VERSION still boots.
+    expect(entrypoint).toContain("if kms-gen-keys --help");
+    expect(entrypoint).toContain("if kms-gen-keys threshold --help");
     expect(entrypoint).toContain("--cmd signing-keys");
     expect(entrypoint).toContain("--num-parties 4");
   });
