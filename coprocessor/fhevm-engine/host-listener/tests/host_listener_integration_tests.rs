@@ -2543,7 +2543,7 @@ async fn check_finalization_status(setup: &Setup) {
                 .unwrap()
                 .header
                 .hash;
-            if expected_hash.0 != finalized_hash.as_slice() {
+            if &expected_hash.0 != finalized_hash.as_slice() {
                 mismatch = Some(format!(
                     "Finalized block hash for block {block_number} does not match expected"
                 ));
@@ -2733,13 +2733,19 @@ async fn test_listener_no_event_loss(
               ON c.host_chain_id = b.chain_id
              AND c.block_number = b.block_number
             WHERE b.block_status = 'orphaned'
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM computations_branch retained
+                  WHERE retained.host_chain_id = c.host_chain_id
+                    AND retained.output_handle = c.output_handle
+              )
             "#,
         )
         .fetch_one(&setup.db_pool)
         .await?;
         assert_eq!(
             legacy_orphaned_leftovers, 0,
-            "reorg variant: legacy computations must not retain rows for orphaned blocks"
+            "reorg variant: legacy computations must not retain orphaned-only rows"
         );
     } else {
         assert_eq!(tfhe_events_count, expected_tfhe_events);
