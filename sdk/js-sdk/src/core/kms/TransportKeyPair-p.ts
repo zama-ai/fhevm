@@ -237,11 +237,6 @@ export async function toTransportKeyPair(
     expectedType: 'Bytes | BytesHex',
     ...options,
   });
-  assertRecordNonNullableProperty(value, 'tkmsVersion', name, {
-    expectedType: 'string',
-    ...options,
-  });
-
   const rawPublicKey = value.publicKey;
   const rawPrivateKey = value.privateKey;
   const rawTkmsVersion = value.tkmsVersion;
