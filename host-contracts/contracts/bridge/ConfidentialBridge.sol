@@ -6,7 +6,6 @@ import {OAppCoreUpgradeable} from "@layerzerolabs/oapp-evm-upgradeable/contracts
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 
 import {ACLOwnable} from "../shared/ACLOwnable.sol";
-import {aclAdd} from "../../addresses/FHEVMHostAddresses.sol";
 import {UUPSUpgradeableEmptyProxy} from "../shared/UUPSUpgradeableEmptyProxy.sol";
 import {HandlesSender} from "./HandlesSender.sol";
 import {HandlesReceiver} from "./HandlesReceiver.sol";
@@ -97,7 +96,7 @@ contract ConfidentialBridge is UUPSUpgradeableEmptyProxy, ACLOwnable, HandlesSen
         // it does not write the OApp owner. We deliberately skip __Ownable_init: the
         // owner() override below makes the local Ownable storage slot unread (and the
         // overrides of transferOwnership/renounceOwnership prevent it from being written).
-        __OAppCore_init(Ownable2StepUpgradeable(aclAdd).owner());
+        __OAppCore_init(Ownable2StepUpgradeable(getACLAddress()).owner());
         __OAppReceiver_init_unchained();
         __OAppSender_init_unchained();
 
@@ -110,6 +109,34 @@ contract ConfidentialBridge is UUPSUpgradeableEmptyProxy, ACLOwnable, HandlesSen
     }
 
     /**
+     * @notice Disabled. The bridge owner is bound to the ACL owner; move it on the
+     *         ACL contract instead.
+     */
+    function transferOwnership(address) public pure virtual override {
+        revert OwnershipNotTransferable();
+    }
+
+    /**
+     * @notice Disabled. The bridge owner is bound to the ACL owner; move it on the
+     *         ACL contract instead.
+     */
+    function renounceOwnership() public pure virtual override {
+        revert OwnershipNotTransferable();
+    }
+
+    /**
+     * @notice OApp version tuple — both send (1) and receive (2) paths are active.
+     */
+    function oAppVersion()
+        public
+        pure
+        override(HandlesSender, HandlesReceiver)
+        returns (uint64 senderVersion, uint64 receiverVersion)
+    {
+        return (1, 2);
+    }
+
+    /**
      * @notice Returns the bridge owner — always equal to the current ACL owner.
      * @dev    Overrides {OwnableUpgradeable-owner} so every `onlyOwner` check in the
      *         inheritance chain (LayerZero's `setPeer`/`setDelegate`, this bridge's
@@ -118,30 +145,7 @@ contract ConfidentialBridge is UUPSUpgradeableEmptyProxy, ACLOwnable, HandlesSen
      *         owner therefore propagate to the bridge automatically.
      */
     function owner() public view virtual override returns (address) {
-        return Ownable2StepUpgradeable(aclAdd).owner();
-    }
-
-    /**
-     * @notice Disabled. The bridge owner is bound to the ACL owner; move it on the
-     *         ACL contract instead.
-     */
-    function transferOwnership(address) public pure virtual override {
-        revert OwnershipNotTransferable();
-    }
-
-    /// @notice Disabled. See {transferOwnership}.
-    function renounceOwnership() public pure virtual override {
-        revert OwnershipNotTransferable();
-    }
-
-    /// @notice OApp version tuple — both send (1) and receive (2) paths are active.
-    function oAppVersion()
-        public
-        pure
-        override(HandlesSender, HandlesReceiver)
-        returns (uint64 senderVersion, uint64 receiverVersion)
-    {
-        return (1, 2);
+        return Ownable2StepUpgradeable(getACLAddress()).owner();
     }
 
     /**

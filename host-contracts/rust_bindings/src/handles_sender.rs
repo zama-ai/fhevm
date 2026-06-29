@@ -49,6 +49,7 @@ interface HandlesSender {
     function LZ_RECEIVE_PER_PAYLOAD_BYTE_DEFAULT() external view returns (uint64);
     function MAX_HANDLES() external view returns (uint256);
     function endpoint() external view returns (address);
+    function getACLAddress() external view returns (address);
     function getDstChainId(uint32 dstEid) external view returns (uint256);
     function getLzReceiveBaseGas(uint32 dstEid) external view returns (uint64);
     function getLzReceivePerHandleGas(uint32 dstEid) external view returns (uint64);
@@ -133,6 +134,19 @@ interface HandlesSender {
         "name": "",
         "type": "address",
         "internalType": "contract ILayerZeroEndpointV2"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getACLAddress",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "stateMutability": "view"
@@ -4866,6 +4880,149 @@ function endpoint() external view returns (address);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `getACLAddress()` and selector `0xf6859bdc`.
+```solidity
+function getACLAddress() external view returns (address);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getACLAddressCall;
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    ///Container type for the return parameters of the [`getACLAddress()`](getACLAddressCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getACLAddressReturn {
+        #[allow(missing_docs)]
+        pub _0: alloy::sol_types::private::Address,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = ();
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = ();
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getACLAddressCall> for UnderlyingRustTuple<'_> {
+                fn from(value: getACLAddressCall) -> Self {
+                    ()
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getACLAddressCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getACLAddressReturn> for UnderlyingRustTuple<'_> {
+                fn from(value: getACLAddressReturn) -> Self {
+                    (value._0,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getACLAddressReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { _0: tuple.0 }
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for getACLAddressCall {
+            type Parameters<'a> = ();
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = alloy::sol_types::private::Address;
+            type ReturnTuple<'a> = (alloy::sol_types::sol_data::Address,);
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "getACLAddress()";
+            const SELECTOR: [u8; 4] = [246u8, 133u8, 155u8, 220u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                ()
+            }
+            #[inline]
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        ret,
+                    ),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
+                        let r: getACLAddressReturn = r.into();
+                        r._0
+                    })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: getACLAddressReturn = r.into();
+                        r._0
+                    })
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getDstChainId(uint32)` and selector `0x03f8b526`.
 ```solidity
 function getDstChainId(uint32 dstEid) external view returns (uint256);
@@ -7594,6 +7751,8 @@ function transferOwnership(address newOwner) external;
         #[allow(missing_docs)]
         endpoint(endpointCall),
         #[allow(missing_docs)]
+        getACLAddress(getACLAddressCall),
+        #[allow(missing_docs)]
         getDstChainId(getDstChainIdCall),
         #[allow(missing_docs)]
         getLzReceiveBaseGas(getLzReceiveBaseGasCall),
@@ -7659,13 +7818,14 @@ function transferOwnership(address newOwner) external;
             [187u8, 11u8, 106u8, 83u8],
             [202u8, 94u8, 181u8, 225u8],
             [242u8, 253u8, 227u8, 139u8],
+            [246u8, 133u8, 155u8, 220u8],
         ];
     }
     #[automatically_derived]
     impl alloy_sol_types::SolInterface for HandlesSenderCalls {
         const NAME: &'static str = "HandlesSenderCalls";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 22usize;
+        const COUNT: usize = 23usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -7682,6 +7842,9 @@ function transferOwnership(address newOwner) external;
                     <MAX_HANDLESCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::endpoint(_) => <endpointCall as alloy_sol_types::SolCall>::SELECTOR,
+                Self::getACLAddress(_) => {
+                    <getACLAddressCall as alloy_sol_types::SolCall>::SELECTOR
+                }
                 Self::getDstChainId(_) => {
                     <getDstChainIdCall as alloy_sol_types::SolCall>::SELECTOR
                 }
@@ -7970,6 +8133,17 @@ function transferOwnership(address newOwner) external;
                     }
                     transferOwnership
                 },
+                {
+                    fn getACLAddress(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<HandlesSenderCalls> {
+                        <getACLAddressCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(HandlesSenderCalls::getACLAddress)
+                    }
+                    getACLAddress
+                },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
                 return Err(
@@ -8230,6 +8404,17 @@ function transferOwnership(address newOwner) external;
                     }
                     transferOwnership
                 },
+                {
+                    fn getACLAddress(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<HandlesSenderCalls> {
+                        <getACLAddressCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(HandlesSenderCalls::getACLAddress)
+                    }
+                    getACLAddress
+                },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
                 return Err(
@@ -8266,6 +8451,11 @@ function transferOwnership(address newOwner) external;
                 }
                 Self::endpoint(inner) => {
                     <endpointCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
+                }
+                Self::getACLAddress(inner) => {
+                    <getACLAddressCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
                 }
                 Self::getDstChainId(inner) => {
                     <getDstChainIdCall as alloy_sol_types::SolCall>::abi_encoded_size(
@@ -8373,6 +8563,12 @@ function transferOwnership(address newOwner) external;
                 }
                 Self::endpoint(inner) => {
                     <endpointCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::getACLAddress(inner) => {
+                    <getACLAddressCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -9720,6 +9916,12 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ///Creates a new call builder for the [`endpoint`] function.
         pub fn endpoint(&self) -> alloy_contract::SolCallBuilder<&P, endpointCall, N> {
             self.call_builder(&endpointCall)
+        }
+        ///Creates a new call builder for the [`getACLAddress`] function.
+        pub fn getACLAddress(
+            &self,
+        ) -> alloy_contract::SolCallBuilder<&P, getACLAddressCall, N> {
+            self.call_builder(&getACLAddressCall)
         }
         ///Creates a new call builder for the [`getDstChainId`] function.
         pub fn getDstChainId(

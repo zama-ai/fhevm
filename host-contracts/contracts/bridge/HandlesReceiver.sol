@@ -73,10 +73,33 @@ abstract contract HandlesReceiver is OAppReceiverUpgradeable, ILayerZeroComposer
     ///         `FheType` encoded in `dstHandle`.
     error PlaintextOutOfRange();
 
-    /// @notice OApp version tuple. HandlesReceiver is receive-only: sender side is `0`.
-    /// @dev    Virtual so the combined {ConfidentialBridge} can return `(1, 2)`.
-    function oAppVersion() public pure virtual override returns (uint64 senderVersion, uint64 receiverVersion) {
-        return (0, 2);
+    /**
+     * @notice LayerZero compose entry-point. Invoked by the executor in a separate
+     *         transaction after `_lzReceive` has dispatched a compose message.
+     *
+     * @dev    Authenticates: msg.sender == LayerZero endpoint, and the compose
+     *         message originated from this contract (`from == address(this)`). Then
+     *         grants transient ACL allowance for each derived handle to the
+     *         destination app and invokes its `onConfidentialBridgeReceived` callback, forwarding the
+     *         LayerZero `guid` so the app can correlate the delivery with the source send.
+     *
+     *         Conforms to ILayerZeroComposer; unused parameters (`executor`, `extraData`)
+     *         are still part of the interface.
+     */
+    function lzCompose(
+        address from,
+        bytes32 guid,
+        bytes calldata message,
+        address /* executor */,
+        bytes calldata /* extraData */
+    ) external payable virtual override {
+        if (msg.sender != address(endpoint)) revert NotLzEndpoint(msg.sender);
+        if (from != address(this)) revert UnexpectedComposeOrigin(from);
+
+        // Decode + grant + dispatch in a separate frame: threading the LayerZero `guid`
+        // through to `onConfidentialBridgeReceived` alongside the six decoded fields trips the without-via-ir
+        // 16-slot stack limit if kept inline.
+        _grantAndDispatch(message, guid);
     }
 
     /**
@@ -93,7 +116,7 @@ abstract contract HandlesReceiver is OAppReceiverUpgradeable, ILayerZeroComposer
      *         `dstHandle`; if it does, the coprocessor treats only the first
      *         `FallbackGrantedPlaintext` event as the source of truth.
      */
-    function grantFallbackPlaintext(bytes32 dstHandle, uint256 plaintext) external onlyACLOwner {
+    function grantFallbackPlaintext(bytes32 dstHandle, uint256 plaintext) external virtual onlyACLOwner {
         // Bytes 22-29 must encode this chain's id (matches `_appendMetadataToPrehandle`).
         uint256 extractedChainId = uint256(
             dstHandle & 0x00000000000000000000000000000000000000000000ffffffffffffffff0000
@@ -124,60 +147,19 @@ abstract contract HandlesReceiver is OAppReceiverUpgradeable, ILayerZeroComposer
         emit FallbackGrantedPlaintext(dstHandle, plaintext);
     }
 
-    /// @dev Reverts if `plaintext` cannot be represented in the bit width of `fheType`.
-    ///      Caller is responsible for ensuring `fheType` is in the supported allowlist.
-    function _checkPlaintextFits(uint256 plaintext, FheType fheType) internal pure virtual {
-        if (fheType == FheType.Bool) {
-            if (plaintext > 1) revert PlaintextOutOfRange();
-        } else if (fheType == FheType.Uint8) {
-            if (plaintext > type(uint8).max) revert PlaintextOutOfRange();
-        } else if (fheType == FheType.Uint16) {
-            if (plaintext > type(uint16).max) revert PlaintextOutOfRange();
-        } else if (fheType == FheType.Uint32) {
-            if (plaintext > type(uint32).max) revert PlaintextOutOfRange();
-        } else if (fheType == FheType.Uint64) {
-            if (plaintext > type(uint64).max) revert PlaintextOutOfRange();
-        } else if (fheType == FheType.Uint128) {
-            if (plaintext > type(uint128).max) revert PlaintextOutOfRange();
-        } else if (fheType == FheType.Uint160) {
-            if (plaintext > type(uint160).max) revert PlaintextOutOfRange();
-        }
-        // Uint256: no upper-bound check needed (uint256 is the wire type).
-    }
-
     /**
-     * @notice LayerZero compose entry-point. Invoked by the executor in a separate
-     *         transaction after `_lzReceive` has dispatched a compose message.
-     *
-     * @dev    Authenticates: msg.sender == LayerZero endpoint, and the compose
-     *         message originated from this contract (`from == address(this)`). Then
-     *         grants transient ACL allowance for each derived handle to the
-     *         destination app and invokes its `onConfidentialBridgeReceived` callback, forwarding the
-     *         LayerZero `guid` so the app can correlate the delivery with the source send.
-     *
-     *         Conforms to ILayerZeroComposer; unused parameters (`executor`, `extraData`)
-     *         are still part of the interface.
+     * @notice OApp version tuple. HandlesReceiver is receive-only: sender side is `0`.
+     * @dev    Virtual so the combined {ConfidentialBridge} can return `(1, 2)`.
      */
-    function lzCompose(
-        address from,
-        bytes32 guid,
-        bytes calldata message,
-        address /* executor */,
-        bytes calldata /* extraData */
-    ) external payable override {
-        if (msg.sender != address(endpoint)) revert NotLzEndpoint(msg.sender);
-        if (from != address(this)) revert UnexpectedComposeOrigin(from);
-
-        // Decode + grant + dispatch in a separate frame: threading the LayerZero `guid`
-        // through to `onConfidentialBridgeReceived` alongside the six decoded fields trips the without-via-ir
-        // 16-slot stack limit if kept inline.
-        _grantAndDispatch(message, guid);
+    function oAppVersion() public pure virtual override returns (uint64 senderVersion, uint64 receiverVersion) {
+        return (0, 2);
     }
 
-    /// @dev Decodes the compose message, grants transient ACL allowance for each derived
-    ///      handle to the destination app, and invokes its `onConfidentialBridgeReceived` with the LayerZero
-    ///      `guid`. Extracted from {lzCompose} to keep the calling frame within the
-    ///      16-slot stack limit on without-via-ir builds.
+    /**  @dev Decodes the compose message, grants transient ACL allowance for each derived
+     *      handle to the destination app, and invokes its `onConfidentialBridgeReceived` with the LayerZero
+     *      `guid`. Extracted from {lzCompose} to keep the calling frame within the
+     *      16-slot stack limit on without-via-ir builds.
+     */
     function _grantAndDispatch(bytes calldata message, bytes32 guid) internal virtual {
         // Wire format: both srcApp and dstApp are bytes32 (see HandlesSender._dispatch
         // for the rationale). On EVM, srcApp is a zero-padded address; dstApp must
@@ -212,7 +194,7 @@ abstract contract HandlesReceiver is OAppReceiverUpgradeable, ILayerZeroComposer
         bytes calldata message,
         address /* executor */,
         bytes calldata /* extraData */
-    ) internal override {
+    ) internal virtual override {
         _handleInbound(origin.srcEid, guid, message);
     }
 
@@ -273,7 +255,7 @@ abstract contract HandlesReceiver is OAppReceiverUpgradeable, ILayerZeroComposer
      *      verification (matches the FHEVMExecutor's computation-handle convention),
      *      distinguishing bridged handles from user-input handles on this chain.
      */
-    function _deriveDstHandle(bytes32 srcHandle, bytes32 prevBlockHash) internal view returns (bytes32 result) {
+    function _deriveDstHandle(bytes32 srcHandle, bytes32 prevBlockHash) internal view virtual returns (bytes32 result) {
         result = keccak256(
             abi.encodePacked(
                 BRIDGE_DERIVATION_DOMAIN_SEPARATOR,
@@ -296,5 +278,28 @@ abstract contract HandlesReceiver is OAppReceiverUpgradeable, ILayerZeroComposer
         result = result | (bytes32(fheTypeByte) << 8);
         // Byte 31 = HANDLE_VERSION on this chain.
         result = result | bytes32(uint256(HANDLE_VERSION));
+    }
+
+    /**
+     * @dev Reverts if `plaintext` cannot be represented in the bit width of `fheType`.
+     *      Caller is responsible for ensuring `fheType` is in the supported allowlist.
+     */
+    function _checkPlaintextFits(uint256 plaintext, FheType fheType) internal pure virtual {
+        if (fheType == FheType.Bool) {
+            if (plaintext > 1) revert PlaintextOutOfRange();
+        } else if (fheType == FheType.Uint8) {
+            if (plaintext > type(uint8).max) revert PlaintextOutOfRange();
+        } else if (fheType == FheType.Uint16) {
+            if (plaintext > type(uint16).max) revert PlaintextOutOfRange();
+        } else if (fheType == FheType.Uint32) {
+            if (plaintext > type(uint32).max) revert PlaintextOutOfRange();
+        } else if (fheType == FheType.Uint64) {
+            if (plaintext > type(uint64).max) revert PlaintextOutOfRange();
+        } else if (fheType == FheType.Uint128) {
+            if (plaintext > type(uint128).max) revert PlaintextOutOfRange();
+        } else if (fheType == FheType.Uint160) {
+            if (plaintext > type(uint160).max) revert PlaintextOutOfRange();
+        }
+        // Uint256: no upper-bound check needed.
     }
 }
