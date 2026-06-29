@@ -49,6 +49,11 @@ BROKER_URL=redis://listener-redis:6379 host_listener_consumer \
 
 Use `--url` or `--broker-url` to override `BROKER_URL` for a single process.
 
+Wave2 branch-context deployments must also run a finalizing host-listener path
+for the same chain. Consumer-only ingestion is fail-safe, but it does not
+advance `coprocessor_settlement.settled_height`; without a settling finalizer,
+branch tables and S3 repair queues will grow without draining.
+
 ### Dependent ops throttling (optional)
 
 `--dependent-ops-max-per-chain` enables slow-lane assignment (`0` disables).

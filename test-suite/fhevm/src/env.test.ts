@@ -82,6 +82,85 @@ describe("env", () => {
     expect(rendered.componentEnvs["test-suite"].CHAIN_ID_HOST).toBe("543210");
   });
 
+  test("marks local coprocessor stacks as explicit zero-cutover e2e runs", async () => {
+    const templateEnvs = Object.fromEntries(
+      await Promise.all(
+        COMPONENTS.map(async (component) => [
+          component,
+          await readEnvFile(path.join(TEMPLATE_ENV_DIR, `.env.${component}`)),
+        ]),
+      ),
+    ) as Record<string, Record<string, string>>;
+    const state: State = {
+      target: "latest-main",
+      lockPath: "/tmp/latest-main.json",
+      requiresGitHub: true,
+      versions: presetBundle("latest-main", "abcdef0", "latest-main.json"),
+      overrides: [],
+      scenario: testDefaultScenario({
+        topology: { count: 3, threshold: 3 },
+      }),
+      completedSteps: [],
+      updatedAt: "2026-06-23T00:00:00.000Z",
+    };
+
+    const rendered = await renderEnvMaps({ discovery: undefined }, stackSpecForState(state), templateEnvs, deriveWallet);
+
+    expect(rendered.componentEnvs["coprocessor"].FHEVM_ALLOW_ZERO_CUTOVER).toBe("1");
+    expect(rendered.instanceEnvs["coprocessor.1"].FHEVM_ALLOW_ZERO_CUTOVER).toBe("1");
+    expect(rendered.instanceEnvs["coprocessor.2"].FHEVM_ALLOW_ZERO_CUTOVER).toBe("1");
+  });
+
+  test("scenario env can exercise non-zero coprocessor cutover", async () => {
+    const templateEnvs = Object.fromEntries(
+      await Promise.all(
+        COMPONENTS.map(async (component) => [
+          component,
+          await readEnvFile(path.join(TEMPLATE_ENV_DIR, `.env.${component}`)),
+        ]),
+      ),
+    ) as Record<string, Record<string, string>>;
+    const state: State = {
+      target: "latest-main",
+      lockPath: "/tmp/latest-main.json",
+      requiresGitHub: true,
+      versions: presetBundle("latest-main", "abcdef0", "latest-main.json"),
+      overrides: [],
+      scenario: testDefaultScenario({
+        topology: { count: 2, threshold: 2 },
+        instances: [
+          {
+            index: 0,
+            source: { mode: "inherit" },
+            env: {
+              FHEVM_ALLOW_ZERO_CUTOVER: "0",
+              FHEVM_BRANCH_CUTOVER_BLOCK: "10",
+            },
+            args: {},
+          },
+          {
+            index: 1,
+            source: { mode: "inherit" },
+            env: {
+              FHEVM_ALLOW_ZERO_CUTOVER: "0",
+              FHEVM_BRANCH_CUTOVER_BLOCK: "10",
+            },
+            args: {},
+          },
+        ],
+      }),
+      completedSteps: [],
+      updatedAt: "2026-06-23T00:00:00.000Z",
+    };
+
+    const rendered = await renderEnvMaps({ discovery: undefined }, stackSpecForState(state), templateEnvs, deriveWallet);
+
+    expect(rendered.componentEnvs["coprocessor"].FHEVM_ALLOW_ZERO_CUTOVER).toBe("0");
+    expect(rendered.componentEnvs["coprocessor"].FHEVM_BRANCH_CUTOVER_BLOCK).toBe("10");
+    expect(rendered.instanceEnvs["coprocessor.1"].FHEVM_ALLOW_ZERO_CUTOVER).toBe("0");
+    expect(rendered.instanceEnvs["coprocessor.1"].FHEVM_BRANCH_CUTOVER_BLOCK).toBe("10");
+  });
+
   test("projects gateway kms node settings into host contract envs", async () => {
     const templateEnvs = Object.fromEntries(
       await Promise.all(

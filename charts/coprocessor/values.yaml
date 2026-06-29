@@ -940,8 +940,6 @@ tfheWorker:
   #     --run-bg-worker                          # run the background worker loop
   #     --worker-polling-interval-ms=1000
   #     --generate-fhe-keys                      # unsafe; testing only
-  #     --work-items-batch-size=100
-  #     --dependence-chains-per-batch=20
   #     --coprocessor-fhe-threads=32
   #     --tokio-threads=4
   #     --pg-pool-max-connections=10
