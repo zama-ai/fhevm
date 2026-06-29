@@ -232,6 +232,39 @@ const applyDiscoveryEnv = (
 export type KmsParty = { party: number; endpoint: string; privateKey: string; dbName: string };
 
 /**
+ * ProtocolConfig context globals the host deploy reads, shared by both KMS modes.
+ * mock_enclave skips PCR attestation, so zero PCRs suffice. softwareVersion must be valid semver
+ * (the KMS core parses it) — fall back to a placeholder when CORE_VERSION is a git-SHA tag.
+ */
+const applyProtocolConfigKmsGlobals = (hostSc: Record<string, string>, plan: StackSpec) => {
+  const zeroPcr = `0x${"00".repeat(48)}`;
+  const coreVersion = (plan.versions.env.CORE_VERSION ?? "").replace(/^v/, "");
+  hostSc.KMS_SOFTWARE_VERSION = /^\d+(\.\d+){0,2}(-[0-9A-Za-z.-]+)?$/.test(coreVersion) ? coreVersion : "0.1.0";
+  hostSc.KMS_PCR_VALUES = JSON.stringify([{ pcr0: zeroPcr, pcr1: zeroPcr, pcr2: zeroPcr }]);
+};
+
+/**
+ * Centralized mode: the single KMS node's ProtocolConfig params the threshold path sets per-node.
+ * The rest (tx-sender, IP, storage URL, signer, CA cert) already come from the templates and
+ * discovery. storagePrefix is "PUB" for the centralized core (PUB-p{i} is threshold-only), so it
+ * tracks the discovered minioKeyPrefix. Must run after applyDiscoveryEnv.
+ */
+const applyKmsCentralizedHostEnv = (
+  envs: Record<string, Record<string, string>>,
+  plan: StackSpec,
+  state: Pick<State, "discovery">,
+) => {
+  if (plan.kms.mode === "threshold") {
+    return;
+  }
+  const hostSc = envs["host-sc"];
+  applyProtocolConfigKmsGlobals(hostSc, plan);
+  hostSc.KMS_NODE_PARTY_ID_0 = "1";
+  hostSc.KMS_NODE_MPC_IDENTITY_0 = kmsCoreName(1);
+  hostSc.KMS_NODE_STORAGE_PREFIX_0 = state.discovery?.minioKeyPrefix ?? "PUB";
+};
+
+/**
  * Threshold mode only: sets gateway-sc KMS counts/thresholds + per-party
  * tx-sender wallets, and points the base (party-1) connector at kms-core.
  * Returns the per-party connection info so connector instance envs for parties
@@ -271,17 +304,7 @@ const applyKmsThresholdGatewayEnv = async (
   gw.USER_DECRYPTION_THRESHOLD = reconstruct;
   gw.KMS_GENERATION_THRESHOLD = reconstruct;
 
-  // ProtocolConfig context params (read by the host deploy alongside the per-node KmsNodeParams).
-  // This local cluster runs the non-enclave core with mock_enclave = true, so PCR attestation is
-  // skipped — zero PCRs satisfy the required var. softwareVersion MUST be valid semver: the KMS core
-  // parses it (proto MpcContext.software_version) when it sets up a switched context, so a git-SHA
-  // image tag (the usual CORE_VERSION) is rejected with "invalid digit found in string". Use
-  // CORE_VERSION only when it is already semver-shaped (e.g. v0.13.0), else a safe placeholder.
-  // Set on host-sc only (centralized is out of scope here).
-  const zeroPcr = `0x${"00".repeat(48)}`;
-  const coreVersion = (plan.versions.env.CORE_VERSION ?? "").replace(/^v/, "");
-  hostSc.KMS_SOFTWARE_VERSION = /^\d+(\.\d+){0,2}(-[0-9A-Za-z.-]+)?$/.test(coreVersion) ? coreVersion : "0.1.0";
-  hostSc.KMS_PCR_VALUES = JSON.stringify([{ pcr0: zeroPcr, pcr1: zeroPcr, pcr2: zeroPcr }]);
+  applyProtocolConfigKmsGlobals(hostSc, plan);
 
   const result: KmsParty[] = [];
   for (let party = 1; party <= parties; party += 1) {
@@ -401,6 +424,7 @@ export const renderEnvMaps = async (
   applyBaseRuntimeEnv(envs, state);
   applyCompatEnv(envs, plan);
   applyDiscoveryEnv(envs, state, plan);
+  applyKmsCentralizedHostEnv(envs, plan, state);
   envs["host-node"].RPC_URL = `http://${defaultChain.node}:${defaultChain.rpcPort}`;
   envs["host-node"].HOST_NODE_PORT = String(defaultChain.rpcPort);
   envs["host-node"].HOST_NODE_CHAIN_ID = defaultChain.chainId;
