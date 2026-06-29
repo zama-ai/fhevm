@@ -153,7 +153,9 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
      *         for `dstEid` (via {setDstChainId}); a chain id of 0 is treated as unset.
      * @dev    Reverts with {ZeroLzComposeGas} if `lzComposeGas` is 0.
      * @dev    Reverts if any handle is not ACL-allowed for `msg.sender` on this chain.
-     *         Native fee is paid via `msg.value`; refund returns to `msg.sender`.
+     *         The native fee is computed internally via `_quote`, so `msg.value` must
+     *         equal it exactly; otherwise the call reverts with `NotEnoughNative`. Use
+     *         {quote} to obtain the required `msg.value` beforehand.
      */
     function send(
         uint32 dstEid,
