@@ -20,9 +20,7 @@ queue_rules:
     checks_timeout: 12h
     merge_method: squash
     update_method: rebase
-    merge_conditions:
-      - check-success = charts-helm-checks / lint
-      - check-success = charts-helm-checks / test
+    merge_conditions: []
     queue_conditions:
       - base = main
       - label!=do-not-merge

@@ -1430,6 +1430,26 @@ export function bytesToHexLarge(bytes: Uint8Array, no0x?: boolean): BytesHex | B
   }
 }
 
+export async function verifySha256(
+  bytes: BufferSource,
+  expectedSha256: string,
+  options?: { subject?: string },
+): Promise<void> {
+  const expected = asBytes32HexNo0x(remove0x(expectedSha256.trim()).toLowerCase(), { subject: 'SHA-256 digest' });
+
+  if (typeof crypto === 'undefined' || typeof crypto.subtle === 'undefined') {
+    throw new Error('Web Crypto API is not available');
+  }
+
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  const actual = bytesToHexLarge(new Uint8Array(digest), true) as Bytes32HexNo0x;
+
+  if (actual !== expected) {
+    const subject = options?.subject ?? 'bytes';
+    throw new Error(`SHA-256 mismatch for ${subject}: expected ${expected}, got ${actual}`);
+  }
+}
+
 /**
  * Convert a hex string prefixed by 0x or not to a Uint8Array
  * Any invalid byte string is converted to 0

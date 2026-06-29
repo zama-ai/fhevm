@@ -22,7 +22,7 @@ SCAN_DIRS=(
 
 # File patterns to exclude (glob patterns matched against the full path)
 EXCEPTIONS=(
-  "test/standalone/relayer-sdk-test"
+  "test/manual-pack"
 )
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -49,7 +49,6 @@ violations=0
 # ── Main ─────────────────────────────────────────────────────────────────────
 
 echo "Checking file name casing..."
-echo ""
 
 for dir in "${SCAN_DIRS[@]}"; do
   full_dir="$ROOT_DIR/$dir"
@@ -72,7 +71,6 @@ for dir in "${SCAN_DIRS[@]}"; do
   done < <(find "$full_dir" -name '*.ts' -not -name '*.d.ts' -print0)
 done
 
-echo ""
 if [[ $violations -gt 0 ]]; then
   echo "Found $violations file(s) with consecutive uppercase letters in their name."
   echo "Rule: file names must never contain two consecutive uppercase letters."

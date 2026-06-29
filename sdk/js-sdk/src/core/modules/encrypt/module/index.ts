@@ -4,6 +4,8 @@ import type {
   DeserializeFheEncryptionCrsParameters,
   DeserializeFheEncryptionPublicKeyParameters,
   EncryptModuleFactory,
+  GetTfheModuleInfoParameters,
+  InitTfheModuleParameters,
   ParseTFHEProvenCompactCiphertextListParameters,
   SerializeFheEncryptionCrsParameters,
   SerializeFheEncryptionKeyParameters,
@@ -27,8 +29,10 @@ import { getTfheModuleInfo, initTfheModule } from './init-p.js';
 export const encryptModule: EncryptModuleFactory = (runtime: FhevmRuntime) => {
   return Object.freeze({
     encrypt: Object.freeze({
-      initTfheModule: () => initTfheModule(runtime),
-      getTfheModuleInfo: () => getTfheModuleInfo(),
+      initTfheModule: async (args: InitTfheModuleParameters) => {
+        await initTfheModule(runtime, args);
+      },
+      getTfheModuleInfo: (args: GetTfheModuleInfoParameters) => getTfheModuleInfo(args),
       parseTFHEProvenCompactCiphertextList: (args: ParseTFHEProvenCompactCiphertextListParameters) =>
         parseTFHEProvenCompactCiphertextList(runtime, args),
       buildWithProofPacked: (args: BuildWithProofPackedParameters) => buildWithProofPacked(runtime, args),

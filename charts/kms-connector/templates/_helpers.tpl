@@ -13,6 +13,11 @@
 {{- default $kmsConnectorTxSenderNameDefault .Values.kmsConnectorTxSender.nameOverride | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
+{{- define "kmsConnectorDbMigrationName" -}}
+{{- $kmsConnectorDbMigrationNameDefault := printf "%s-db-migration-%s" .Release.Name .Values.kmsConnectorDbMigration.image.tag }}
+{{- default $kmsConnectorDbMigrationNameDefault .Values.kmsConnectorDbMigration.nameOverride | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
 {{/*
 Resolve smart contract addresses by loading the configs/contracts-<network>.yaml
 preset for commonConfig.network and overriding individual entries with any
