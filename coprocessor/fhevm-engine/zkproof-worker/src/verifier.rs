@@ -770,7 +770,14 @@ pub(crate) async fn insert_ciphertexts(
         // branchless (empty producer_block_hash) so dependency resolution can
         // fall back to them on every branch and reorg cleanup never deletes
         // them.
-        sqlx::query(
+        //
+        // Wave-1: isolate this branch dual-write in a savepoint so its failure
+        // never aborts the authoritative legacy `ciphertexts` insert above or
+        // poisons the verification transaction.
+        sqlx::query("SAVEPOINT branch_input_ct")
+            .execute(db_txn.as_mut())
+            .await?;
+        let branch_result = sqlx::query(
             "
             INSERT INTO ciphertexts_branch (
                 handle, ciphertext, ciphertext_version, ciphertext_type,
@@ -787,7 +794,27 @@ pub(crate) async fn insert_ciphertexts(
         .bind(i as i32)
         .bind(BRANCHLESS_PRODUCER_BLOCK_HASH)
         .execute(db_txn.as_mut())
-        .await?;
+        .await;
+        match branch_result {
+            Ok(_) => {
+                sqlx::query("RELEASE SAVEPOINT branch_input_ct")
+                    .execute(db_txn.as_mut())
+                    .await?;
+            }
+            Err(err) => {
+                warn!(
+                    handle = ?ct.handle,
+                    error = %err,
+                    "ciphertexts_branch input write failed; rolled back to savepoint, legacy ciphertext preserved"
+                );
+                sqlx::query("ROLLBACK TO SAVEPOINT branch_input_ct")
+                    .execute(db_txn.as_mut())
+                    .await?;
+                sqlx::query("RELEASE SAVEPOINT branch_input_ct")
+                    .execute(db_txn.as_mut())
+                    .await?;
+            }
+        }
     }
 
     // Notify all workers that new ciphertext is inserted

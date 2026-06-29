@@ -14,9 +14,26 @@ migration Job racing the service Deployments. This runbook closes both.
 1. **Before** `helm upgrade`, run the init image once with
    `RUN_BLOCK_SCOPE_WAVE1_PREREQUISITES=true` to build the ancestry index
    `CONCURRENTLY` against the live DB.
-2. Run `helm upgrade`. The migration Job runs as a `pre-upgrade` hook (gated ahead of
-   the Deployments); the in-migration index build no-ops because step 1 already built it.
-3. Verify the index is `valid`, the migration hook succeeded, and watch DB write load.
+2. **Then run the migration to completion** (the init image in its normal mode)
+   against the live DB, still **before** rolling the new binaries. This is the
+   migration-vs-binary gate: the migration Job is NOT a Helm hook (see note
+   below), so the binaries must not start against an un-migrated schema.
+3. Run `helm upgrade` to roll the new binaries. The in-migration index build
+   no-ops because step 1 already built it.
+4. Verify the index is `valid`, the migration ran, and watch DB write load.
+
+> **Why not a Helm hook?** Gating the migration Job as a `pre-upgrade` hook would
+> order it before the service Deployments, but also before the non-hook ConfigMaps
+> it mounts (RDS CA cert) / references (ACL `valueFrom`), breaking fresh installs
+> with IAM/TLS. Enabling the hook safely requires making those ConfigMaps hooks
+> too (validated with a real `helm install`/`upgrade`).
+>
+> As a backstop, the host-listener now applies an **in-code schema guard**
+> (`Database::wait_for_branch_schema`): if a binary starts before the migration
+> has applied, it waits (bounded) for the branch schema instead of crash-looping
+> on `*_branch` / `parent_hash` writes. Steps 2–3 (migrate-first) remain the
+> recommended ordering; the guard just makes an out-of-order start degrade
+> gracefully rather than fail hard.
 
 ## Why the pre-step is required
 

@@ -195,14 +195,15 @@ dbMigration:
   # with the Deployments and a new binary can issue *_branch / parent_hash
   # queries against a not-yet-migrated schema (crash-loop / ingestion stall).
   #
-  # Ordering is by hook-weight only (Helm has no "hook-needs"): config-setup
-  # must use a LOWER weight than this Job so the DB URL / secrets exist first.
-  # The blocking parent_hash index is built out-of-band by initialize_db.sh's
-  # CONCURRENTLY pre-create, so this hook stays fast and won't stall the upgrade.
-  annotations:
-    "helm.sh/hook": "pre-install,pre-upgrade"
-    "helm.sh/hook-weight": "5"
-    "helm.sh/hook-delete-policy": "before-hook-creation"
+  # The migration-vs-binary race is closed operationally by running the
+  # migration to completion BEFORE rolling the binaries (see
+  # db-migration/RUNBOOK-wave1-block-scope.md), and backstopped in code by the
+  # host-listener's schema guard (Database::wait_for_branch_schema), which makes
+  # a pre-migration start wait rather than crash-loop.
+  annotations: {}
+    # "helm.sh/hook": "pre-install,pre-upgrade"
+    # "helm.sh/hook-weight": "5"
+    # "helm.sh/hook-delete-policy": "before-hook-creation"
 
   image:
     name: hub.zama.org/zama-protocol/zama-ai/fhevm/coprocessor/db-migration
