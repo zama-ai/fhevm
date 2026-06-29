@@ -105,6 +105,10 @@ services:
       - --gateway-config-address=${GATEWAY_CONFIG_ADDRESS}
       - --error-sleep-initial-secs=1
       - --error-sleep-max-secs=10
+      - --drift-no-consensus-timeout=${DRIFT_NO_CONSENSUS_TIMEOUT:-45s}
+      - --drift-post-consensus-grace=${DRIFT_POST_CONSENSUS_GRACE:-45s}
+      - --drift-auto-revert-max-recent-attempts=${DRIFT_AUTO_REVERT_MAX_RECENT_ATTEMPTS:-100}
+      - --drift-auto-revert-recent-attempts-window=${DRIFT_AUTO_REVERT_RECENT_ATTEMPTS_WINDOW:-30m}
     depends_on:
       coprocessor-db-migration:
         condition: service_completed_successfully
@@ -120,7 +124,6 @@ services:
       - --database-url=${DATABASE_URL}
       - --pg-pool-max-connections=10
       - --worker-polling-interval-ms=1000
-      - --work-items-batch-size=10
       - --key-cache-size=32
       - --coprocessor-fhe-threads=8
       - --tokio-threads=4

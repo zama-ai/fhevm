@@ -62,6 +62,7 @@ export class ConsensusWatchdog {
   // must be ignored, since the contract only emits one consensus event per handle.
   private resolvedHandles = new Set<string>();
   private resolvedProofs = new Set<string>();
+  private ignoredCiphertextHandles = new Set<string>();
   private resolvedHandleCount = 0;
   private resolvedProofCount = 0;
   private divergences: string[] = [];
@@ -89,6 +90,19 @@ export class ConsensusWatchdog {
       this.pollTimer = null;
     }
     this.provider.destroy();
+  }
+
+  /** Ignore one expected divergent ciphertext handle without disabling health checks globally. */
+  ignoreCiphertextHandle(ctHandle: string): void {
+    this.ignoredCiphertextHandles.add(ctHandle);
+    this.pendingHandles.delete(ctHandle);
+    this.resolvedHandles.add(ctHandle);
+    this.divergences = this.divergences.filter((msg) => !msg.includes(`for handle ${ctHandle}`));
+    for (const key of [...this.divergenceKeys]) {
+      if (key.startsWith(`ct:${ctHandle}:`)) {
+        this.divergenceKeys.delete(key);
+      }
+    }
   }
 
   /** Force a poll cycle — used by Mocha hooks to catch events before checking health. */
@@ -128,6 +142,7 @@ export class ConsensusWatchdog {
             }),
       ]);
 
+      this.applyIgnoredCiphertextHandles(ciphertextResult);
       this.pendingHandles = ciphertextResult.pendingHandles;
       this.pendingProofs = proofResult.pendingProofs;
       this.resolvedHandles = ciphertextResult.resolvedHandles;
@@ -171,6 +186,7 @@ export class ConsensusWatchdog {
       const snsCiphertextDigest = log.args[3] as string;
       const coprocessor = log.args[4] as string;
 
+      if (this.ignoredCiphertextHandles.has(ctHandle)) continue;
       if (resolvedHandles.has(ctHandle)) continue;
 
       if (!pendingHandles.has(ctHandle)) {
@@ -190,6 +206,7 @@ export class ConsensusWatchdog {
     for (const event of consensuses) {
       const log = event as ethers.EventLog;
       const ctHandle = log.args[0] as string;
+      if (this.ignoredCiphertextHandles.has(ctHandle)) continue;
       resolvedHandles.add(ctHandle);
       if (pendingHandles.delete(ctHandle)) {
         resolvedHandleDelta++;
@@ -197,6 +214,21 @@ export class ConsensusWatchdog {
     }
 
     return { pendingHandles, resolvedHandles, resolvedHandleDelta, divergences, divergenceKeys };
+  }
+
+  private applyIgnoredCiphertextHandles(result: CiphertextPollResult): void {
+    for (const ctHandle of this.ignoredCiphertextHandles) {
+      result.pendingHandles.delete(ctHandle);
+      result.resolvedHandles.add(ctHandle);
+    }
+    result.divergences = result.divergences.filter(
+      (msg) => ![...this.ignoredCiphertextHandles].some((ctHandle) => msg.includes(`for handle ${ctHandle}`)),
+    );
+    for (const key of [...result.divergenceKeys]) {
+      if ([...this.ignoredCiphertextHandles].some((ctHandle) => key.startsWith(`ct:${ctHandle}:`))) {
+        result.divergenceKeys.delete(key);
+      }
+    }
   }
 
   private async pollInputVerificationEvents(fromBlock: number, toBlock: number): Promise<ProofPollResult> {
@@ -399,10 +431,30 @@ export class ConsensusWatchdog {
 
     return lines.join('\n');
   }
+
+  assertDrained(): void {
+    const failures: string[] = [];
+    if (this.divergences.length > 0) {
+      failures.push(`Consensus divergence detected:\n\n${this.divergences.join('\n\n')}`);
+    }
+    if (this.pendingHandles.size > 0) {
+      failures.push(`${this.pendingHandles.size} ciphertext handle(s) never reached consensus`);
+    }
+    if (this.pendingProofs.size > 0) {
+      failures.push(`${this.pendingProofs.size} proof(s) never reached consensus`);
+    }
+    if (failures.length > 0) {
+      throw new Error(failures.join('\n'));
+    }
+  }
 }
 
 // Singleton — shared across all tests in a Mocha run.
 let watchdog: ConsensusWatchdog | null = null;
+
+export function ignoreWatchdogCiphertextHandle(ctHandle: string): void {
+  watchdog?.ignoreCiphertextHandle(ctHandle);
+}
 
 function isEnabled(): boolean {
   return !!(process.env.GATEWAY_RPC_URL && process.env.CIPHERTEXT_COMMITS_ADDRESS);
@@ -430,18 +482,23 @@ export const mochaHooks = {
 
     // Force one last poll before checking health so we catch recent events.
     await watchdog.flush();
+    // Tests that intentionally inject divergence must explicitly ignore only
+    // their expected handle with ignoreWatchdogCiphertextHandle().
     watchdog.checkHealth();
   },
 
   async afterAll(this: Mocha.Context) {
     if (!watchdog) return;
 
-    // Final poll + summary.
-    await watchdog.flush();
-    const summary = watchdog.summary();
-    if (summary) console.log(summary);
-
-    await watchdog.stop();
-    watchdog = null;
+    try {
+      // Final poll + summary.
+      await watchdog.flush();
+      const summary = watchdog.summary();
+      if (summary) console.log(summary);
+      watchdog.assertDrained();
+    } finally {
+      await watchdog.stop();
+      watchdog = null;
+    }
   },
 };

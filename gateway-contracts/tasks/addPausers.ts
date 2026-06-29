@@ -12,7 +12,13 @@ task("task:addGatewayPausers")
     false,
     types.boolean,
   )
-  .setAction(async function ({ useInternalProxyAddress }, hre) {
+  .addParam(
+    "useInternalPauserSetAddress",
+    "Legacy alias for useInternalProxyAddress",
+    false,
+    types.boolean,
+  )
+  .setAction(async function ({ useInternalProxyAddress, useInternalPauserSetAddress }, hre) {
     await hre.run("compile:specific", { contract: "contracts/immutable" });
     console.log("Adding pausers to PauserSet contract");
 
@@ -26,7 +32,7 @@ task("task:addGatewayPausers")
       pausers.push(getRequiredEnvVar(`PAUSER_ADDRESS_${idx}`));
     }
 
-    if (useInternalProxyAddress) {
+    if (useInternalProxyAddress || useInternalPauserSetAddress) {
       loadGatewayAddresses();
     }
     const pauserSetAddress = getRequiredEnvVar("PAUSER_SET_ADDRESS");
