@@ -22,7 +22,7 @@ const POST_BOOT_HEALTH_GATE_DELAY_MS = 5_000;
 const KMS_CONNECTOR_DECRYPTION_READY =
   /Started Decryption polling from block|Last block polled updated for \d+\/\d+ event types in \[PublicDecryptionRequest, UserDecryptionRequest\]/;
 const KMS_CONNECTOR_KMS_GENERATION_READY =
-  /Started KMSGeneration polling from block|Last block polled updated for \d+\/\d+ event types in \[PrepKeygenRequest, KeygenRequest, CrsgenRequest, PrssInit, KeyReshareSameSet\]/;
+  /Started KMSGeneration polling from block|Started Ethereum polling from block|Last block polled updated for chain ethereum|Last block polled updated for \d+\/\d+ event types in \[[^\]]*PrepKeygenRequest[^\]]*\]/;
 
 /** Number of KMS connector instances: one per party in threshold mode, else one. */
 // `kms.parties` is the canonical connector/party count: 1 for centralized, N for threshold.
@@ -261,6 +261,22 @@ const fetchVerfAddress = async (
   return null;
 };
 
+/** Reads a single party's serialized CA certificate (PEM) for `handle` under `prefix`, returning
+ * it hex-encoded as `0x…`. Best-effort: returns null when the prefix has no CACert (e.g. a build
+ * that ships no TLS material), so discovery can fall back to an empty `0x` cert. */
+const fetchCaCert = async (prefix: string, handle: string): Promise<string> => {
+  try {
+    const response = await fetch(`${MINIO_EXTERNAL_URL}/kms-public/${prefix}/CACert/${handle}`);
+    if (response.ok) {
+      return `0x${Buffer.from(await response.arrayBuffer()).toString("hex")}`;
+    }
+  } catch {
+    // treat as "no cert available"
+    console.warn(`No CACert available for handle "${handle}" under prefix "${prefix}". Falling back to "0x"`)
+  }
+  return "0x";
+};
+
 /**
  * Discovers the KMS signer addresses after bootstrap: one for a centralized node,
  * one per party for a threshold-mode cluster (`parties` is 1 in the centralized case).
@@ -269,7 +285,7 @@ const fetchVerfAddress = async (
  */
 export const discoverKmsSigners = async (
   parties: number,
-): Promise<{ signers: string[]; minioKeyPrefix: string }> => {
+): Promise<{ signers: string[]; caCerts: string[]; minioKeyPrefix: string }> => {
   let lastFailure = "no signing-key handle in the kms-core logs yet";
   for (let attempt = 0; attempt <= 60; attempt += 1) {
     const logs = await run(["docker", "logs", KMS_CORE_CONTAINER], { allowFailure: true });
@@ -277,6 +293,7 @@ export const discoverKmsSigners = async (
     const handle = (text.match(/SigningKey\/([a-f0-9]{64})/) ?? text.match(/handle ([a-zA-Z0-9]+)/))?.[1];
     if (handle) {
       const signers: string[] = [];
+      const caCerts: string[] = [];
       let minioKeyPrefix = "";
       for (let party = 1; party <= parties; party += 1) {
         const prefixes = verfAddressPrefixes(parties, party);
@@ -286,12 +303,15 @@ export const discoverKmsSigners = async (
           break;
         }
         signers.push(found.address);
+        // The CA cert lives alongside the VerfAddress under the same prefix. Best-effort: an empty
+        // `0x` when a build ships no TLS material, so non-TLS stacks still resolve a signer set.
+        caCerts.push(await fetchCaCert(found.prefix, handle));
         if (party === 1) {
           minioKeyPrefix = found.prefix;
         }
       }
       if (signers.length === parties) {
-        return { signers, minioKeyPrefix };
+        return { signers, caCerts, minioKeyPrefix };
       }
     }
     await Bun.sleep(1_000);
