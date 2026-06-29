@@ -65,15 +65,12 @@ async fn setup_test_app_existing_db() -> Result<TestInstance, Box<dyn std::error
 }
 
 async fn start_coprocessor(rx: Receiver<bool>, db_url: &str) {
-    let ecfg = EnvConfig::new();
     let args: Args = Args {
         run_bg_worker: true,
         worker_polling_interval_ms: 1000,
         bridge_polling_interval_ms: 1000,
         bridge_associate_batch_size: 128,
         generate_fhe_keys: false,
-        work_items_batch_size: ecfg.batch_size,
-        dependence_chains_per_batch: 2000,
         key_cache_size: 4,
         coprocessor_fhe_threads: 64,
         tokio_threads: 32,
@@ -83,16 +80,15 @@ async fn start_coprocessor(rx: Receiver<bool>, db_url: &str) {
         service_name: std::env::var("OTEL_SERVICE_NAME").unwrap_or_default(),
         log_level: Level::INFO,
         health_check_port: 8080,
-        metric_rerand_batch_latency: MetricsConfig::default(),
         metric_fhe_batch_latency: MetricsConfig::default(),
         worker_id: None,
         dcid_ttl_sec: 30,
-        disable_dcid_locking: true,
         dcid_timeslice_sec: 90,
         dcid_cleanup_interval_sec: 0,
         processed_dcid_ttl_sec: 0,
         dcid_max_no_progress_cycles: 2,
         dcid_ignore_dependency_count_threshold: 100,
+        branch_cutover_block: 0,
         drift_revert_watcher_timeouts: Default::default(),
     };
 
@@ -154,7 +150,7 @@ pub async fn wait_until_all_allowed_handles_computed(
     loop {
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
         let current_count: i64 = sqlx::query_scalar(
-            "SELECT count(1) FROM computations WHERE is_allowed = TRUE AND is_completed = FALSE",
+            "SELECT count(1) FROM computations_branch WHERE is_allowed = TRUE AND is_completed = FALSE"
         )
         .fetch_one(&pool)
         .await?;
@@ -765,7 +761,6 @@ const MULTI_BIT_CPU_SIZES: [usize; 6] = [4, 8, 16, 32, 40, 64];
 pub struct EnvConfig {
     pub is_multi_bit: bool,
     pub is_fast_bench: bool,
-    pub batch_size: i32,
     #[allow(dead_code)]
     pub scheduling_policy: String,
     pub benchmark_type: String,
@@ -784,10 +779,6 @@ impl EnvConfig {
             Ok(val) => val.to_lowercase() == "true",
             Err(_) => false,
         };
-        let batch_size: i32 = match env::var("BENCHMARK_BATCH_SIZE") {
-            Ok(val) => val.parse::<i32>().unwrap(),
-            Err(_) => 4000,
-        };
         let scheduling_policy: String = match env::var("FHEVM_DF_SCHEDULE") {
             Ok(val) => val,
             Err(_) => "MAX_PARALLELISM".to_string(),
@@ -804,7 +795,6 @@ impl EnvConfig {
         EnvConfig {
             is_multi_bit,
             is_fast_bench,
-            batch_size,
             scheduling_policy,
             benchmark_type,
             optimization_target,

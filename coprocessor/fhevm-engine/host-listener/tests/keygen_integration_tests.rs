@@ -444,7 +444,6 @@ where
     };
     let chain_id = ChainId::try_from(TEST_CHAIN_ID)?;
     let options = IngestOptions {
-        dependence_by_connexity: false,
         dependence_cross_block: true,
         dependent_ops_max_per_chain: 0,
     };

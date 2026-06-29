@@ -2,7 +2,8 @@ use crate::{
     executor::{garbage_collect, query_sns_tasks, Order},
     keyset::fetch_client_key,
     squash_noise::safe_deserialize,
-    Config, DBConfig, S3Config, S3RetryPolicy, SchedulePolicy,
+    BigCiphertext, Ciphertext128Format, Config, DBConfig, S3Config, S3RetryPolicy, SchedulePolicy,
+    CURRENT_S3_FORMAT_VERSION,
 };
 use alloy::signers::local::PrivateKeySigner;
 use alloy_primitives::{B256, U256};
@@ -12,6 +13,7 @@ use ciphertext_attestation::{
     CiphertextAttestation, CiphertextFormat, S3_METADATA_ATTESTATION_KEY,
 };
 use fhevm_engine_common::db_keys::DbKeyId;
+use fhevm_engine_common::tfhe_ops::current_ciphertext_version;
 use fhevm_engine_common::utils::{to_hex, DatabaseURL};
 use serde::{Deserialize, Serialize};
 use serial_test::serial;
@@ -264,7 +266,7 @@ async fn test_lifo_mode() {
 
     let mut trx = pool.begin().await.unwrap();
     if let Result::Ok(Some(tasks)) =
-        query_sns_tasks(&mut trx, BATCH_SIZE as u32, Order::Desc, &key_id_gw).await
+        query_sns_tasks(&mut trx, BATCH_SIZE as u32, 0, Order::Desc, &key_id_gw).await
     {
         assert!(
             tasks.len() == BATCH_SIZE,
@@ -288,7 +290,7 @@ async fn test_lifo_mode() {
 
     let mut trx = pool.begin().await.unwrap();
     if let Result::Ok(Some(tasks)) =
-        query_sns_tasks(&mut trx, BATCH_SIZE as u32, Order::Asc, &key_id_gw).await
+        query_sns_tasks(&mut trx, BATCH_SIZE as u32, 0, Order::Asc, &key_id_gw).await
     {
         assert!(
             tasks.len() == BATCH_SIZE,
@@ -307,6 +309,328 @@ async fn test_lifo_mode() {
         }
     } else {
         panic!("No tasks found in Asc order");
+    }
+}
+
+#[tokio::test]
+#[serial(db)]
+#[cfg(not(feature = "gpu"))]
+async fn test_query_sns_tasks_reads_branch_rows() {
+    init_tracing();
+
+    let test_instance = setup_test_db(ImportMode::None)
+        .await
+        .expect("valid db instance");
+
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(3)
+        .connect(test_instance.db_url())
+        .await
+        .unwrap();
+
+    let host_chain_id: i64 = 1;
+    let key_id_gw: DbKeyId = vec![0u8; 32];
+    let first_handle = vec![0x09_u8; 32];
+    let second_handle = vec![0x0A_u8; 32];
+    let branchful_without_exact_handle = vec![0x0B_u8; 32];
+    let branchless_handle = vec![0x0C_u8; 32];
+    let branchful_null_block_handle = vec![0x0D_u8; 32];
+    let branchless_producer_pre_cutover_handle = vec![0x0E_u8; 32];
+    let first_hash = vec![0x19_u8; 32];
+    let second_hash = vec![0x1A_u8; 32];
+    let missing_exact_hash = vec![0x1B_u8; 32];
+    let null_block_hash = vec![0x1C_u8; 32];
+    let first_event_hash = vec![0x29_u8; 32];
+    let second_event_hash = vec![0x2A_u8; 32];
+    let missing_event_hash = vec![0x2B_u8; 32];
+    let null_block_event_hash = vec![0x2C_u8; 32];
+    let branchless_producer_event_hash = vec![0x2D_u8; 32];
+
+    for (handle, producer_block_hash, block_hash, block_number) in [
+        (&first_handle, &first_hash, &first_event_hash, 9_i64),
+        (&second_handle, &second_hash, &second_event_hash, 10_i64),
+    ] {
+        sqlx::query(
+            "INSERT INTO pbs_computations_branch(
+                handle, host_chain_id, block_number, producer_block_hash, block_hash
+             )
+             VALUES ($1, $2, $3, $4, $5)",
+        )
+        .bind(handle)
+        .bind(host_chain_id)
+        .bind(block_number)
+        .bind(producer_block_hash)
+        .bind(block_hash)
+        .execute(&pool)
+        .await
+        .expect("insert pbs_computations_branch");
+
+        sqlx::query(
+            "INSERT INTO ciphertexts_branch(
+                handle, producer_block_hash, ciphertext, ciphertext_version, ciphertext_type
+             )
+             VALUES ($1, $2, $3, $4, $5)",
+        )
+        .bind(handle)
+        .bind(producer_block_hash)
+        .bind(vec![0x42_u8; 32])
+        .bind(current_ciphertext_version())
+        .bind(0_i16)
+        .execute(&pool)
+        .await
+        .expect("insert ciphertexts_branch");
+    }
+
+    sqlx::query(
+        "INSERT INTO pbs_computations_branch(
+            handle, host_chain_id, block_number, producer_block_hash, block_hash
+         )
+         VALUES ($1, $2, $3, $4, $5)",
+    )
+    .bind(&branchful_without_exact_handle)
+    .bind(host_chain_id)
+    .bind(11_i64)
+    .bind(&missing_exact_hash)
+    .bind(&missing_event_hash)
+    .execute(&pool)
+    .await
+    .expect("insert branchful pbs_computations_branch without exact ciphertext");
+    sqlx::query(
+        "INSERT INTO ciphertexts_branch(
+            handle, producer_block_hash, ciphertext, ciphertext_version, ciphertext_type
+         )
+         VALUES ($1, ''::bytea, $2, $3, $4)",
+    )
+    .bind(&branchful_without_exact_handle)
+    .bind(vec![0x43_u8; 32])
+    .bind(current_ciphertext_version())
+    .bind(0_i16)
+    .execute(&pool)
+    .await
+    .expect("insert branchless ciphertext candidate");
+
+    sqlx::query(
+        "INSERT INTO pbs_computations_branch(
+            handle, host_chain_id, block_number, producer_block_hash
+         )
+         VALUES ($1, $2, NULL, ''::bytea)",
+    )
+    .bind(&branchless_handle)
+    .bind(host_chain_id)
+    .execute(&pool)
+    .await
+    .expect("insert branchless pbs_computations_branch");
+    sqlx::query(
+        "INSERT INTO ciphertexts_branch(
+            handle, producer_block_hash, ciphertext, ciphertext_version, ciphertext_type
+         )
+         VALUES ($1, ''::bytea, $2, $3, $4)",
+    )
+    .bind(&branchless_handle)
+    .bind(vec![0x44_u8; 32])
+    .bind(current_ciphertext_version())
+    .bind(0_i16)
+    .execute(&pool)
+    .await
+    .expect("insert branchless ciphertext");
+
+    sqlx::query(
+        "INSERT INTO pbs_computations_branch(
+            handle, host_chain_id, block_number, producer_block_hash, block_hash
+         )
+         VALUES ($1, $2, NULL, $3, $4)",
+    )
+    .bind(&branchful_null_block_handle)
+    .bind(host_chain_id)
+    .bind(&null_block_hash)
+    .bind(&null_block_event_hash)
+    .execute(&pool)
+    .await
+    .expect("insert branchful pbs_computations_branch without block_number");
+    sqlx::query(
+        "INSERT INTO ciphertexts_branch(
+            handle, producer_block_hash, ciphertext, ciphertext_version, ciphertext_type
+         )
+         VALUES ($1, $2, $3, $4, $5)",
+    )
+    .bind(&branchful_null_block_handle)
+    .bind(&null_block_hash)
+    .bind(vec![0x45_u8; 32])
+    .bind(current_ciphertext_version())
+    .bind(0_i16)
+    .execute(&pool)
+    .await
+    .expect("insert exact ciphertext for branchful null-block row");
+
+    sqlx::query(
+        "INSERT INTO pbs_computations_branch(
+            handle, host_chain_id, block_number, producer_block_hash, block_hash
+         )
+         VALUES ($1, $2, 9, ''::bytea, $3)",
+    )
+    .bind(&branchless_producer_pre_cutover_handle)
+    .bind(host_chain_id)
+    .bind(&branchless_producer_event_hash)
+    .execute(&pool)
+    .await
+    .expect("insert pre-cutover pbs row consuming branchless input");
+    sqlx::query(
+        "INSERT INTO ciphertexts_branch(
+            handle, producer_block_hash, ciphertext, ciphertext_version, ciphertext_type
+         )
+         VALUES ($1, ''::bytea, $2, $3, $4)",
+    )
+    .bind(&branchless_producer_pre_cutover_handle)
+    .bind(vec![0x46_u8; 32])
+    .bind(current_ciphertext_version())
+    .bind(0_i16)
+    .execute(&pool)
+    .await
+    .expect("insert branchless ciphertext for pre-cutover pbs row");
+
+    let mut trx = pool.begin().await.unwrap();
+    let tasks = query_sns_tasks(&mut trx, 10, 0, Order::Asc, &key_id_gw)
+        .await
+        .expect("query_sns_tasks")
+        .expect("branch tasks");
+
+    assert_eq!(tasks.len(), 4);
+    assert_eq!(tasks[0].handle, first_handle);
+    assert_eq!(tasks[0].block_number, Some(9));
+    assert_eq!(tasks[0].producer_block_hash, first_hash);
+    assert_eq!(tasks[0].block_hash, first_event_hash);
+    assert_eq!(tasks[1].handle, second_handle);
+    assert_eq!(tasks[1].block_number, Some(10));
+    assert_eq!(tasks[1].producer_block_hash, second_hash);
+    assert_eq!(tasks[1].block_hash, second_event_hash);
+    assert!(tasks
+        .iter()
+        .all(|task| task.handle != branchful_without_exact_handle));
+    assert!(tasks
+        .iter()
+        .all(|task| task.handle != branchful_null_block_handle));
+    assert!(tasks
+        .iter()
+        .any(|task| task.handle == branchless_producer_pre_cutover_handle));
+    let branchless_task = tasks
+        .iter()
+        .find(|task| task.handle == branchless_handle)
+        .expect("branchless PBS row should select branchless ciphertext");
+    assert_eq!(branchless_task.producer_block_hash, Vec::<u8>::new());
+    assert_eq!(branchless_task.block_hash, Vec::<u8>::new());
+
+    let upload_task = tasks[0].clone();
+    trx.rollback().await.expect("rollback zero-cutover fetch");
+
+    let mut limit_trx = pool.begin().await.unwrap();
+    let limited_post_cutover_tasks = query_sns_tasks(&mut limit_trx, 1, 10, Order::Asc, &key_id_gw)
+        .await
+        .expect("limited query_sns_tasks with nonzero cutover")
+        .expect("limited post-cutover branch task");
+    limit_trx
+        .rollback()
+        .await
+        .expect("rollback limited post-cutover fetch");
+    assert_eq!(limited_post_cutover_tasks.len(), 1);
+    assert_eq!(limited_post_cutover_tasks[0].handle, second_handle);
+
+    let mut cutover_trx = pool.begin().await.unwrap();
+    let post_cutover_tasks = query_sns_tasks(&mut cutover_trx, 10, 10, Order::Asc, &key_id_gw)
+        .await
+        .expect("query_sns_tasks with nonzero cutover")
+        .expect("post-cutover branch tasks");
+    cutover_trx
+        .rollback()
+        .await
+        .expect("rollback post-cutover fetch");
+    assert_eq!(post_cutover_tasks.len(), 2);
+    assert!(
+        post_cutover_tasks
+            .iter()
+            .all(|task| task.producer_block_hash.is_empty()
+                || task.block_number.is_some_and(|block| block >= 10)),
+        "sns-worker must skip pre-cutover branch rows while retaining branchless rows"
+    );
+    assert!(post_cutover_tasks
+        .iter()
+        .all(|task| task.handle != first_handle));
+    assert!(post_cutover_tasks
+        .iter()
+        .all(|task| task.handle != branchful_null_block_handle));
+    assert!(post_cutover_tasks
+        .iter()
+        .all(|task| task.handle != branchless_producer_pre_cutover_handle));
+    assert!(post_cutover_tasks
+        .iter()
+        .any(|task| task.handle == second_handle));
+    assert!(post_cutover_tasks
+        .iter()
+        .any(|task| task.handle == branchless_handle));
+
+    let mut trx = pool.begin().await.unwrap();
+    let mut upload_task = upload_task;
+    upload_task.ct128 = Arc::new(BigCiphertext::new(
+        vec![0x55_u8; 32],
+        Ciphertext128Format::CompressedOnCpu,
+    ));
+    upload_task
+        .enqueue_upload_task(&mut trx)
+        .await
+        .expect("enqueue upload task");
+
+    let sibling_event_hash = vec![0x2E_u8; 32];
+    sqlx::query(
+        "INSERT INTO ciphertext_digest_branch(
+            host_chain_id, key_id_gw, handle, producer_block_hash, block_hash, block_number
+         )
+         VALUES ($1, $2, $3, $4, $5, $6)",
+    )
+    .bind(host_chain_id)
+    .bind(&key_id_gw)
+    .bind(&upload_task.handle)
+    .bind(&upload_task.producer_block_hash)
+    .bind(&sibling_event_hash)
+    .bind(upload_task.block_number)
+    .execute(trx.as_mut())
+    .await
+    .expect("insert sibling digest row");
+
+    let ct64_digest = vec![0x77_u8; 32];
+    let ct128_digest = vec![0x88_u8; 32];
+    upload_task
+        .mark_ciphertexts_uploaded(
+            &mut trx,
+            ct64_digest.clone(),
+            ct128_digest.clone(),
+            CURRENT_S3_FORMAT_VERSION,
+        )
+        .await
+        .expect("mark exact digest row uploaded");
+
+    let rows = sqlx::query(
+        "SELECT block_hash, ciphertext, ciphertext128
+         FROM ciphertext_digest_branch
+         WHERE handle = $1
+           AND producer_block_hash = $2",
+    )
+    .bind(&upload_task.handle)
+    .bind(&upload_task.producer_block_hash)
+    .fetch_all(trx.as_mut())
+    .await
+    .expect("fetch digest rows");
+    assert_eq!(rows.len(), 2);
+    for row in rows {
+        let block_hash: Vec<u8> = row.try_get("block_hash").expect("block_hash");
+        let ciphertext: Option<Vec<u8>> = row.try_get("ciphertext").expect("ciphertext");
+        let ciphertext128: Option<Vec<u8>> = row.try_get("ciphertext128").expect("ciphertext128");
+        if block_hash == upload_task.block_hash {
+            assert_eq!(ciphertext, Some(ct64_digest.clone()));
+            assert_eq!(ciphertext128, Some(ct128_digest.clone()));
+        } else {
+            assert_eq!(block_hash, sibling_event_hash);
+            assert!(ciphertext.is_none());
+            assert!(ciphertext128.is_none());
+        }
     }
 }
 
@@ -338,70 +662,121 @@ async fn test_garbage_collect() {
         let mut handle = [0u8; 32];
         handle[..4].copy_from_slice(&i.to_le_bytes());
 
-        let _ = sqlx::query!(
-            "INSERT INTO ciphertexts128(handle, ciphertext)
-                VALUES ($1, $2)
+        let producer_block_hash = vec![i as u8; 32];
+        let _ = sqlx::query(
+            "INSERT INTO ciphertexts128_branch(handle, producer_block_hash, ciphertext)
+                VALUES ($1, $2, $3)
             ON CONFLICT DO NOTHING;",
-            &handle,
-            &[i as u8; 32],
         )
+        .bind(&handle[..])
+        .bind(&producer_block_hash)
+        .bind(&[i as u8; 32][..])
         .execute(&pool)
         .await
-        .expect("insert into ciphertexts");
+        .expect("insert into ciphertexts128_branch");
 
-        let _ = sqlx::query!(
-            "INSERT INTO ciphertext_digest(host_chain_id, key_id_gw, handle, ciphertext, ciphertext128 )
-                VALUES ($1, $2, $3, $4, $5)
+        let _ = sqlx::query(
+            "INSERT INTO ciphertext_digest_branch(host_chain_id, key_id_gw, handle, producer_block_hash, ciphertext, ciphertext128)
+                VALUES ($1, $2, $3, $4, $5, $6)
             ON CONFLICT DO NOTHING;",
-            host_chain_id,
-            &key_id_gw,
-            &handle,
-            &[i as u8; 32],
-            &[i as u8; 32],
         )
+        .bind(host_chain_id)
+        .bind(&key_id_gw)
+        .bind(&handle[..])
+        .bind(&producer_block_hash)
+        .bind(&[i as u8; 32][..])
+        .bind(&[i as u8; 32][..])
         .execute(&pool)
         .await
-        .expect("insert into ciphertext_digest");
+        .expect("insert into ciphertext_digest_branch");
     }
 
-    let count = sqlx::query_scalar!(
-        "SELECT COUNT(*)::BIGINT FROM ciphertexts128 WHERE ciphertext IS NOT NULL"
+    let count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM ciphertexts128_branch where ciphertext IS not NULL",
     )
     .fetch_one(&pool)
     .await
-    .expect("count ciphertexts128")
-    .unwrap_or(0);
+    .expect("count ciphertexts128_branch");
     assert_eq!(
         count, HANDLES_COUNT as i64,
         "ciphertext128 should not be empty before garbage_collect"
     );
 
     let partial_handle = vec![0xffu8; 32];
+    let partial_producer_block_hash = vec![0xeeu8; 32];
     let partial_ciphertext = vec![0xffu8; 32];
     let partial_digest = vec![0xffu8; 32];
-    sqlx::query!(
-        "INSERT INTO ciphertexts128(handle, ciphertext)
-            VALUES ($1, $2)
+    let complete_block_hash = vec![0x11u8; 32];
+    let incomplete_block_hash = vec![0x12u8; 32];
+    sqlx::query(
+        "INSERT INTO ciphertexts128_branch(handle, producer_block_hash, ciphertext)
+            VALUES ($1, $2, $3)
         ON CONFLICT DO NOTHING;",
-        &partial_handle,
-        &partial_ciphertext,
     )
+    .bind(&partial_handle)
+    .bind(&partial_producer_block_hash)
+    .bind(&partial_ciphertext)
     .execute(&pool)
     .await
-    .expect("insert partial ciphertexts128");
+    .expect("insert partial ciphertexts128_branch");
 
-    sqlx::query!(
-        "INSERT INTO ciphertext_digest(host_chain_id, key_id_gw, handle, ciphertext128)
-            VALUES ($1, $2, $3, $4)
+    sqlx::query(
+        "INSERT INTO ciphertext_digest_branch(host_chain_id, key_id_gw, handle, producer_block_hash, ciphertext128)
+            VALUES ($1, $2, $3, $4, $5)
         ON CONFLICT DO NOTHING;",
-        host_chain_id,
-        &key_id_gw,
-        &partial_handle,
-        &partial_digest,
     )
+    .bind(host_chain_id)
+    .bind(&key_id_gw)
+    .bind(&partial_handle)
+    .bind(&partial_producer_block_hash)
+    .bind(&partial_digest)
     .execute(&pool)
     .await
-    .expect("insert partial ciphertext_digest");
+    .expect("insert partial ciphertext_digest_branch");
+
+    sqlx::query(
+        "INSERT INTO ciphertext_digest_branch(
+            host_chain_id,
+            key_id_gw,
+            handle,
+            producer_block_hash,
+            block_hash,
+            ciphertext,
+            ciphertext128
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7)",
+    )
+    .bind(host_chain_id)
+    .bind(&key_id_gw)
+    .bind(&partial_handle)
+    .bind(&partial_producer_block_hash)
+    .bind(&complete_block_hash)
+    .bind(&partial_digest)
+    .bind(&partial_digest)
+    .execute(&pool)
+    .await
+    .expect("insert complete sibling ciphertext_digest_branch");
+
+    sqlx::query(
+        "INSERT INTO ciphertext_digest_branch(
+            host_chain_id,
+            key_id_gw,
+            handle,
+            producer_block_hash,
+            block_hash,
+            ciphertext
+        )
+        VALUES ($1, $2, $3, $4, $5, $6)",
+    )
+    .bind(host_chain_id)
+    .bind(&key_id_gw)
+    .bind(&partial_handle)
+    .bind(&partial_producer_block_hash)
+    .bind(&incomplete_block_hash)
+    .bind(&partial_digest)
+    .execute(&pool)
+    .await
+    .expect("insert incomplete sibling ciphertext_digest_branch");
 
     let handles: Vec<_> = (0..CONCURRENT_TASKS)
         .map(|_| {
@@ -427,24 +802,26 @@ async fn test_garbage_collect() {
         "garbage_collect tasks did not complete in time"
     );
 
-    let count = sqlx::query_scalar!("SELECT COUNT(*)::BIGINT FROM ciphertexts128")
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM ciphertexts128_branch")
         .fetch_one(&pool)
         .await
-        .expect("ciphertexts128 has been GCd")
-        .unwrap_or(0);
+        .expect("ciphertexts128_branch has been GCd");
     assert!(
         count <= 100,
         "ciphertext128 should have less entries than threshold after garbage_collect"
     );
 
-    let partial_count = sqlx::query_scalar!(
-        "SELECT COUNT(*)::BIGINT FROM ciphertexts128 WHERE handle = $1",
-        &partial_handle
+    let partial_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*)
+         FROM ciphertexts128_branch
+         WHERE handle = $1
+           AND producer_block_hash = $2",
     )
+    .bind(&partial_handle)
+    .bind(&partial_producer_block_hash)
     .fetch_one(&pool)
     .await
-    .expect("partial ciphertext128 should remain queryable")
-    .unwrap_or(0);
+    .expect("partial ciphertexts128_branch should remain queryable");
     assert_eq!(
         partial_count, 1,
         "garbage_collect should keep ct128 material until both upload digests are committed"
@@ -724,7 +1101,12 @@ async fn insert_into_pbs_computations(
 async fn clean_up(pool: &sqlx::PgPool) -> anyhow::Result<()> {
     truncate_tables(
         pool,
-        vec!["pbs_computations", "ciphertexts", "ciphertext_digest"],
+        vec![
+            "pbs_computations_branch",
+            "ciphertexts_branch",
+            "ciphertexts128_branch",
+            "ciphertext_digest_branch",
+        ],
     )
     .await?;
 
@@ -1038,6 +1420,7 @@ fn build_test_config(url: DatabaseURL, enable_compression: bool) -> Config {
             max_connections: 5,
             timeout: Duration::from_secs(5),
             lifo: false,
+            branch_cutover_block: 0,
         },
         s3: S3Config {
             bucket_ct128: "ct128".to_owned(),
