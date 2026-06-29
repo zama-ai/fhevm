@@ -374,12 +374,6 @@ function initAliceFheTestHandlesIfNeeded(
   if (!aliceHasAllFheTestHandles(fheTestAddress, aliceAddress, rpcUrl)) {
     throw new Error(`FHETest initFheTest(false) completed but Alice handles are still missing for ${aliceAddress}.`);
   }
-
-  // The coprocessor registers Alice's handles on the gateway CiphertextCommits contract
-  // asynchronously. Tests that call the relayer for public/user decryption need
-  // this registration to complete before the relayer's readiness check passes.
-  // We block the setup thread briefly so the coprocessor can catch up.
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 30_000);
 }
 
 /**
