@@ -23,8 +23,6 @@ pub const UNANIMITY_CONSENSUS_CHANNEL: &str = "event_unanimity_consensus";
 /// Must stay in sync with `consensus_detector::UNANIMITY_CONSENSUS_TIMEOUT_CHANNEL`.
 pub const UNANIMITY_CONSENSUS_TIMEOUT_CHANNEL: &str = "event_unanimity_consensus_timeout";
 
-/// Blocks past `end_block` after which a stuck dry-run is rolled back at startup.
-const STALE_DRY_RUN_SAFETY_MARGIN: i64 = 100;
 /// Re-triggers the GCS dry-run readiness check. Must stay in sync with the
 /// names emitted by `host-listener::ingest_block_logs` and the FHE workers.
 pub const NEW_BLOCK_CHANNEL: &str = "event_new_block";
@@ -1074,7 +1072,7 @@ pub async fn handle_unanimity_consensus_timeout(
     rollback_dry_run(pool, &reason).await
 }
 
-/// Rolls back dry-run rows whose `end_block + safety_margin` is already past the host tip.
+/// Rolls back dry-run rows whose `end_block` is already past the host tip.
 async fn recover_stale_dry_runs(pool: &Pool<Postgres>) -> Result<(), Error> {
     let stale: Option<(i64,)> = sqlx::query_as(
         "SELECT us.end_block
@@ -1083,21 +1081,17 @@ async fn recover_stale_dry_runs(pool: &Pool<Postgres>) -> Result<(), Error> {
             AND us.state IN ('UpgradeActivated', 'DryRunStarted')
             AND us.status = 'in_progress'
             AND us.end_block IS NOT NULL
-            AND us.end_block + $1 <= COALESCE((SELECT MAX(block_number) FROM host_chain_blocks_valid), 0)",
+            AND us.end_block <= COALESCE((SELECT MAX(block_number) FROM host_chain_blocks_valid), 0)",
     )
-    .bind(STALE_DRY_RUN_SAFETY_MARGIN)
     .fetch_optional(pool)
     .await?;
 
     if let Some((stuck_end_block,)) = stale {
         warn!(
             stuck_end_block,
-            safety_margin = STALE_DRY_RUN_SAFETY_MARGIN,
-            "startup recovery: found stuck GCS dry-run past end_block + safety_margin — rolling back"
+            "startup recovery: found stuck GCS dry-run past end_block — rolling back"
         );
-        let reason = format!(
-            "startup recovery: dry-run stuck past end_block={stuck_end_block} (safety_margin={STALE_DRY_RUN_SAFETY_MARGIN})"
-        );
+        let reason = format!("startup recovery: dry-run stuck past end_block={stuck_end_block}");
         rollback_dry_run(pool, &reason).await?;
     } else {
         debug!("startup recovery: no stale dry-runs to roll back");
@@ -1356,7 +1350,10 @@ mod tests {
 
     #[test]
     fn timeout_channel_matches_consensus_detector() {
-        assert_eq!(UNANIMITY_CONSENSUS_TIMEOUT_CHANNEL, "event_unanimity_consensus_timeout");
+        assert_eq!(
+            UNANIMITY_CONSENSUS_TIMEOUT_CHANNEL,
+            "event_unanimity_consensus_timeout"
+        );
     }
 
     #[test]
@@ -1462,9 +1459,18 @@ mod tests {
         .expect("row");
         assert_eq!(row.try_get::<String, _>("state").unwrap(), "LIVE");
         assert_eq!(row.try_get::<String, _>("status").unwrap(), "failed");
-        assert!(row.try_get::<Option<Vec<u8>>, _>("proposal_id").unwrap().is_none());
-        assert!(row.try_get::<Option<i64>, _>("start_block").unwrap().is_none());
-        assert!(row.try_get::<Option<i64>, _>("end_block").unwrap().is_none());
+        assert!(row
+            .try_get::<Option<Vec<u8>>, _>("proposal_id")
+            .unwrap()
+            .is_none());
+        assert!(row
+            .try_get::<Option<i64>, _>("start_block")
+            .unwrap()
+            .is_none());
+        assert!(row
+            .try_get::<Option<i64>, _>("end_block")
+            .unwrap()
+            .is_none());
         assert_eq!(
             row.try_get::<String, _>("last_error").unwrap(),
             "test trigger"
@@ -1492,24 +1498,23 @@ mod tests {
         rollback_dry_run(&pool, "first").await.expect("first ok");
         rollback_dry_run(&pool, "second").await.expect("second ok");
 
-        let last_error: String = sqlx::query_scalar(
-            "SELECT last_error FROM upgrade_state WHERE stack_role = 'GCS'",
-        )
-        .fetch_one(&pool)
-        .await
-        .expect("row");
+        let last_error: String =
+            sqlx::query_scalar("SELECT last_error FROM upgrade_state WHERE stack_role = 'GCS'")
+                .fetch_one(&pool)
+                .await
+                .expect("row");
         assert_eq!(last_error, "first");
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn recover_stale_dry_runs_rolls_back_past_safety_margin() {
+    async fn recover_stale_dry_runs_rolls_back_past_end_block() {
         use test_harness::instance::{setup_test_db, ImportMode};
 
         let instance = setup_test_db(ImportMode::WithKeysNoSns)
             .await
             .expect("test db");
         let pool = seed_gcs_dry_run(&instance, 100, 200).await;
-        seed_host_block(&pool, 200 + STALE_DRY_RUN_SAFETY_MARGIN + 1).await;
+        seed_host_block(&pool, 201).await;
 
         recover_stale_dry_runs(&pool).await.expect("recover ok");
 
