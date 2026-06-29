@@ -2,6 +2,14 @@
 -- Reverts all coprocessor state for a given chain to a given block number.
 -- All data from blocks strictly greater than to_block_number will be deleted.
 --
+-- Operates on the branch-keyed tables that the runtime writes to:
+-- computations_branch, pbs_computations_branch, allowed_handles_branch,
+-- ciphertext_digest_branch, ciphertexts_branch, ciphertexts128_branch.
+-- Branch rows are identified by their producer context and, for event-driven
+-- rows, their own event block. The script deletes branch tuples produced in
+-- reverted blocks and only removes ciphertext bytes when no retained branch
+-- row still references them.
+--
 -- ***WARNING***: The script validates that chain_id exists, but does not verify that
 -- to_block_number is a correct number. It is the operator's responsibility
 -- to ensure the correct chain_id and to_block_number are provided.
@@ -10,7 +18,7 @@
 -- uses the latest key from the `keys` table. If a new key was activated after
 -- to_block_number, re-processed computations will use the new key instead of
 -- the original one, producing incorrect ciphertexts. The script checks
--- ciphertext_digest.key_id_gw for affected handles and fails if a mismatch
+-- ciphertext_digest_branch.key_id_gw for affected handles and fails if a mismatch
 -- is detected, but this check is BEST-EFFORT ONLY (rows may not exist yet if the
 -- sns-worker hasn't processed them).
 --
@@ -62,9 +70,35 @@ BEGIN
 END $$;
 
 -- ===========================================================================
--- Collect affected output handles (for ciphertext cleanup)
+-- Collect affected branch tuples (handle, producer_block_hash).
+-- A branch row is "affected" when a producer row or digest row for that tuple
+-- lives in a block strictly above to_block_number. Ciphertext bytes that are
+-- still referenced by a retained branch row (same handle, same
+-- producer_block_hash, block_number <= to_block_number) must be preserved.
 -- ===========================================================================
 
+CREATE TEMP TABLE _affected_branch_rows AS
+SELECT DISTINCT handle, producer_block_hash
+  FROM (
+    SELECT output_handle AS handle, producer_block_hash
+      FROM computations_branch
+     WHERE host_chain_id = :'chain_id'
+       AND block_number > :'to_block_number'
+
+    UNION
+
+    SELECT handle, producer_block_hash
+      FROM ciphertext_digest_branch
+     WHERE host_chain_id = :'chain_id'
+       AND block_number > :'to_block_number'
+  ) affected
+ WHERE producer_block_hash <> ''::BYTEA;
+
+CREATE INDEX ON _affected_branch_rows (handle, producer_block_hash);
+
+-- Legacy (wave-1 dual-write) affected output handles, derived from the legacy
+-- `computations` table by block_number. These drive legacy ciphertext byte
+-- deletion only; PBS-only reverts must not delete canonical ciphertext bytes.
 CREATE TEMP TABLE _affected_output_handles AS
 SELECT DISTINCT output_handle AS handle
   FROM computations
@@ -73,12 +107,24 @@ SELECT DISTINCT output_handle AS handle
 
 CREATE INDEX ON _affected_output_handles (handle);
 
+-- Legacy SNS digest rows are affected both by reverted producers and by
+-- reverted PBS/ACL work for a retained producer.
+CREATE TEMP TABLE _affected_digest_handles AS
+SELECT handle FROM _affected_output_handles
+UNION
+SELECT DISTINCT handle
+  FROM pbs_computations
+ WHERE host_chain_id = :'chain_id'
+   AND block_number > :'to_block_number';
+
+CREATE INDEX ON _affected_digest_handles (handle);
+
 -- ===========================================================================
 -- Check for key rotation across the reverted range.
--- If ciphertext_digest rows for affected handles use a different key than the
--- latest key, a key rotation may have occurred. This check is best-effort:
--- if the sns-worker hasn't processed all handles, some rows may be missing
--- and the check will pass (false negative).
+-- If ciphertext_digest_branch rows for affected branch tuples use a different
+-- key than the latest key, a key rotation may have occurred. This check is
+-- best-effort: if the sns-worker hasn't processed all handles, some rows may
+-- be missing and the check will pass (false negative).
 -- ===========================================================================
 
 DO $$
@@ -91,8 +137,23 @@ BEGIN
 
   IF _latest_key_id_gw IS NOT NULL THEN
     SELECT COUNT(*) INTO _mismatched
+    FROM ciphertext_digest_branch cd
+    WHERE EXISTS (
+            SELECT 1 FROM _affected_branch_rows a
+             WHERE a.handle = cd.handle
+               AND a.producer_block_hash = cd.producer_block_hash
+          )
+      AND cd.key_id_gw != _latest_key_id_gw;
+
+    IF _mismatched > 0 THEN
+      RAISE EXCEPTION 'Found % ciphertext_digest_branch rows using a different key than the latest. Reverting across a key rotation is not supported.', _mismatched;
+    END IF;
+
+    -- Wave-1: the legacy pipeline is still live; apply the same best-effort
+    -- check to the legacy digest table.
+    SELECT COUNT(*) INTO _mismatched
     FROM ciphertext_digest
-    WHERE handle IN (SELECT handle FROM _affected_output_handles)
+    WHERE handle IN (SELECT handle FROM _affected_digest_handles)
       AND key_id_gw != _latest_key_id_gw;
 
     IF _mismatched > 0 THEN
@@ -123,14 +184,15 @@ SELECT dst_handle
 -- Delete from tables that have their own block_number column
 -- ===========================================================================
 
-DELETE FROM allowed_handles
+DELETE FROM allowed_handles_branch
  WHERE block_number > :'to_block_number'
    AND host_chain_id = :'chain_id';
 
-DELETE FROM ciphertext_digest
- WHERE handle IN (SELECT handle FROM _affected_output_handles);
+DELETE FROM ciphertext_digest_branch
+ WHERE block_number > :'to_block_number'
+   AND host_chain_id = :'chain_id';
 
-DELETE FROM pbs_computations
+DELETE FROM pbs_computations_branch
  WHERE block_number > :'to_block_number'
    AND host_chain_id = :'chain_id';
 
@@ -138,7 +200,6 @@ DELETE FROM delegate_user_decrypt
  WHERE host_chain_id = :'chain_id'
    AND block_number > :'to_block_number';
 
--- ===========================================================================
 -- Delete confidential-bridge events whose block_number is past the revert point.
 --
 -- bridge_handle_events is keyed by the source chain (src_chain_id) and the
@@ -155,16 +216,81 @@ DELETE FROM handle_bridged_events
    AND block_number > :'to_block_number';
 
 -- ===========================================================================
--- Delete ciphertexts that were produced by computations in reverted blocks.
+-- Delete ciphertext bytes produced by reverted branch rows, but preserve
+-- bytes still referenced by a retained branch row.
 --
--- ciphertexts/ciphertexts128 have no transaction_id or block_number.
--- The only link to a block is: a computation's output_handle matches a
--- ciphertext's handle. We collected those handles in _affected_output_handles.
---
--- The NOT IN guard handles the edge case where the same handle is the output
--- of both a reverted computation (block > N) and a retained computation
--- (block <= N). In that case we keep the ciphertext.
+-- The authoritative link to a block is still the producer tuple
+-- (handle, producer_block_hash). The NOT EXISTS guard keeps the row when the
+-- same tuple is also referenced by a retained producer row at
+-- block_number <= to_block_number (RFC 011 cross-branch reuse case).
 -- ===========================================================================
+
+DELETE FROM ciphertexts_branch cb
+ USING _affected_branch_rows a
+ WHERE cb.handle = a.handle
+   AND cb.producer_block_hash = a.producer_block_hash
+   AND NOT EXISTS (
+       SELECT 1 FROM computations_branch c
+        WHERE c.output_handle = cb.handle
+          AND c.producer_block_hash = cb.producer_block_hash
+          AND c.host_chain_id = :'chain_id'
+          AND (c.block_number IS NULL OR c.block_number <= :'to_block_number')
+   )
+   AND NOT EXISTS (
+       SELECT 1 FROM pbs_computations_branch p
+        WHERE p.handle = cb.handle
+          AND p.producer_block_hash = cb.producer_block_hash
+          AND p.host_chain_id = :'chain_id'
+          AND (p.block_number IS NULL OR p.block_number <= :'to_block_number')
+   );
+
+DELETE FROM ciphertexts128_branch cb
+ USING _affected_branch_rows a
+ WHERE cb.handle = a.handle
+   AND cb.producer_block_hash = a.producer_block_hash
+   AND NOT EXISTS (
+       SELECT 1 FROM computations_branch c
+        WHERE c.output_handle = cb.handle
+          AND c.producer_block_hash = cb.producer_block_hash
+          AND c.host_chain_id = :'chain_id'
+          AND (c.block_number IS NULL OR c.block_number <= :'to_block_number')
+   )
+   AND NOT EXISTS (
+       SELECT 1 FROM pbs_computations_branch p
+        WHERE p.handle = cb.handle
+          AND p.producer_block_hash = cb.producer_block_hash
+          AND p.host_chain_id = :'chain_id'
+          AND (p.block_number IS NULL OR p.block_number <= :'to_block_number')
+   );
+
+-- ===========================================================================
+-- Delete computations
+-- ===========================================================================
+
+DELETE FROM computations_branch
+ WHERE host_chain_id = :'chain_id'
+   AND block_number > :'to_block_number';
+
+-- ===========================================================================
+-- Wave-1 dual-write: the legacy pipeline still executes from the legacy
+-- tables, so the same revert applies there (identical to the pre-wave-1
+-- script). These deletes become no-ops once the legacy pipeline is retired
+-- after the wave-2 cutover.
+-- ===========================================================================
+
+-- _affected_output_handles and _affected_digest_handles are materialized
+-- earlier (before the key-rotation guard) and dropped after the deletes below.
+
+DELETE FROM allowed_handles
+ WHERE block_number > :'to_block_number'
+   AND host_chain_id = :'chain_id';
+
+DELETE FROM ciphertext_digest
+ WHERE handle IN (SELECT handle FROM _affected_digest_handles);
+
+DELETE FROM pbs_computations
+ WHERE block_number > :'to_block_number'
+   AND host_chain_id = :'chain_id';
 
 DELETE FROM ciphertexts
  WHERE handle IN (SELECT handle FROM _affected_output_handles)
@@ -182,13 +308,12 @@ DELETE FROM ciphertexts128
           AND (block_number IS NULL OR block_number <= :'to_block_number')
    );
 
--- ===========================================================================
--- Delete computations
--- ===========================================================================
-
 DELETE FROM computations
  WHERE host_chain_id = :'chain_id'
    AND block_number > :'to_block_number';
+
+DROP TABLE IF EXISTS _affected_output_handles;
+DROP TABLE IF EXISTS _affected_digest_handles;
 
 -- ===========================================================================
 -- Delete block tracking and transactions
@@ -213,10 +338,20 @@ UPDATE host_listener_poller_state
    AND last_caught_up_block > :'to_block_number';
 
 -- ===========================================================================
+-- Clamp settlement so restarted workers may legally recompute reverted blocks.
+-- ===========================================================================
+
+UPDATE coprocessor_settlement
+   SET settled_height = :'to_block_number',
+       updated_at = NOW()
+ WHERE chain_id = :'chain_id'
+   AND settled_height > :'to_block_number';
+
+-- ===========================================================================
 -- Cleanup
 -- ===========================================================================
 
 DROP TABLE IF EXISTS _param_check;
-DROP TABLE IF EXISTS _affected_output_handles;
+DROP TABLE IF EXISTS _affected_branch_rows;
 
 COMMIT;
