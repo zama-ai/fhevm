@@ -324,14 +324,72 @@ impl Database {
                 .unwrap()
                 .into(),
             )));
-        Ok(Database {
+        let db = Database {
             url: url.clone(),
             chain_id,
             pool: Arc::new(RwLock::new(pool)),
             pool_refresh_handle: Arc::new(RwLock::new(pool_refresh_handle)),
             dependence_chain: bucket_cache,
             tick: HeartBeat::default(),
-        })
+        };
+        // Wave-1 deploy safety: a binary may start before the branch-context
+        // migration has applied (e.g. a rolling deploy where the db-migration
+        // Job is still running). Wait for the branch schema rather than
+        // crash-looping on `*_branch` / `parent_hash` writes. Returns instantly
+        // once present, which is always the case after the runbook's
+        // migrate-first step and in tests (migrations run before construction).
+        db.wait_for_branch_schema().await?;
+        Ok(db)
+    }
+
+    /// Block until the wave-1 branch-context schema is present (the `*_branch`
+    /// tables, `coprocessor_settlement`, and `host_chain_blocks_valid.parent_hash`).
+    /// This degrades a pre-migration start to a bounded wait instead of a
+    /// crash-loop. Bounded so a genuinely-absent migration surfaces as an error
+    /// (→ restart) rather than hanging forever.
+    pub async fn wait_for_branch_schema(&self) -> Result<()> {
+        const MAX_ATTEMPTS: u32 = 60; // ~2 minutes at one poll / 2s
+        const POLL_INTERVAL: Duration = Duration::from_secs(2);
+        let mut attempt: u32 = 0;
+        loop {
+            let pool = self.pool().await;
+            let ready: bool = sqlx::query_scalar(
+                r#"
+                SELECT to_regclass('public.computations_branch') IS NOT NULL
+                   AND to_regclass('public.ciphertexts_branch') IS NOT NULL
+                   AND to_regclass('public.coprocessor_settlement') IS NOT NULL
+                   AND EXISTS (
+                       SELECT 1
+                       FROM information_schema.columns
+                       WHERE table_name = 'host_chain_blocks_valid'
+                         AND column_name = 'parent_hash'
+                   )
+                "#,
+            )
+            .fetch_one(&pool)
+            .await?;
+            if ready {
+                if attempt > 0 {
+                    info!(
+                        attempt,
+                        "Branch-context schema present; proceeding."
+                    );
+                }
+                return Ok(());
+            }
+            attempt += 1;
+            if attempt >= MAX_ATTEMPTS {
+                anyhow::bail!(
+                    "branch-context (wave1) schema not present after waiting; \
+                     is the db-migration job complete?"
+                );
+            }
+            warn!(
+                attempt,
+                "Branch-context (wave1) schema not yet present; waiting before ingesting..."
+            );
+            tokio::time::sleep(POLL_INTERVAL).await;
+        }
     }
 
     pub(crate) fn record_slow_lane_marked_chains(&self, count: u64) {
@@ -546,27 +604,51 @@ impl Database {
     ) -> Result<bool, SqlxError> {
         let is_scalar = !scalar_byte.is_zero();
         let output_handle = result.to_vec();
-        let inserted = insert_computation_branch_row(
-            tx,
-            ComputationBranchRow {
-                chain_id: self.chain_id.as_i64(),
-                output_handle: &output_handle,
-                dependencies: &dependencies,
-                fhe_operation: fhe_operation as i16,
-                is_scalar,
-                dependence_chain_id: log.dependence_chain.as_slice(),
-                transaction_id: log.transaction_hash.map(|txh| txh.to_vec()),
-                is_allowed: log.is_allowed,
-                schedule_order: log.block_timestamp.saturating_add(
-                    TimeDuration::microseconds(log.tx_depth_size as i64),
-                ),
-                producer_block: ProducerBlock {
-                    hash: log.block_hash.to_vec(),
-                    number: log.block_number,
-                },
+        // Wave-1: isolate the branch dual-write in a savepoint so a branch-row
+        // failure (constraint, deadlock, statement_timeout) can never abort the
+        // authoritative legacy `computations` write below or poison the ingest
+        // transaction. On failure we roll back to the savepoint and continue;
+        // the legacy write (still `?`-propagated) remains the source of truth.
+        sqlx::query("SAVEPOINT branch_computation")
+            .execute(tx.deref_mut())
+            .await?;
+        let branch_row = ComputationBranchRow {
+            chain_id: self.chain_id.as_i64(),
+            output_handle: &output_handle,
+            dependencies: &dependencies,
+            fhe_operation: fhe_operation as i16,
+            is_scalar,
+            dependence_chain_id: log.dependence_chain.as_slice(),
+            transaction_id: log.transaction_hash.map(|txh| txh.to_vec()),
+            is_allowed: log.is_allowed,
+            schedule_order: log.block_timestamp.saturating_add(
+                TimeDuration::microseconds(log.tx_depth_size as i64),
+            ),
+            producer_block: ProducerBlock {
+                hash: log.block_hash.to_vec(),
+                number: log.block_number,
             },
-        )
-        .await?;
+        };
+        let inserted = match insert_computation_branch_row(tx, branch_row).await
+        {
+            Ok(inserted) => {
+                sqlx::query("RELEASE SAVEPOINT branch_computation")
+                    .execute(tx.deref_mut())
+                    .await?;
+                inserted
+            }
+            Err(err) => {
+                warn!(
+                    output_handle = %to_hex(&output_handle),
+                    error = %err,
+                    "branch computation write failed; rolling back to savepoint and preserving legacy write"
+                );
+                sqlx::query("ROLLBACK TO SAVEPOINT branch_computation")
+                    .execute(tx.deref_mut())
+                    .await?;
+                false
+            }
+        };
         // Wave-1 dual-write: the legacy pipeline still executes from the
         // legacy tables, so every branch row is mirrored there until the
         // block-scoped readers take over in wave 2.
