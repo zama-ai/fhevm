@@ -17,7 +17,7 @@ use scheduler::dfg::{build_component_nodes, ComponentNode, DFComponentGraph, DFG
 use sha3::{Digest, Keccak256};
 use sqlx::types::Uuid;
 use sqlx::Postgres;
-use sqlx::{postgres::PgListener, query, Acquire, Row};
+use sqlx::{postgres::PgListener, query, Acquire};
 use std::collections::{HashMap, HashSet};
 use std::time::SystemTime;
 use time::PrimitiveDateTime;
@@ -69,6 +69,17 @@ lazy_static! {
         "coprocessor_settled_ciphertext_divergence_total",
         "number of times settled same-handle ciphertext rows selected by RFC 011 \
          metadata resolution had divergent compressed ciphertext bytes or types"
+    )
+    .unwrap();
+    static ref SAME_BLOCK_DB_DEPENDENCY_VIOLATION_COUNTER: IntCounter = register_int_counter!(
+        "coprocessor_same_block_db_dependency_violation_total",
+        "number of times a same-block dependency was resolved from materialized DB state \
+         instead of in-memory worker component forwarding"
+    )
+    .unwrap();
+    static ref UNRESOLVED_DEPENDENCY_PRODUCER_BLOCK_COUNTER: IntCounter = register_int_counter!(
+        "coprocessor_unresolved_dependency_producer_block_total",
+        "dependency metadata rows whose producer block hash has no observed host-chain block"
     )
     .unwrap();
     static ref WORK_ITEMS_QUERY_HISTOGRAM: Histogram = register_histogram!(
@@ -170,6 +181,23 @@ struct WorkRow {
     schedule_order: PrimitiveDateTime,
 }
 
+type WorkerDynError = Box<dyn std::error::Error + Send + Sync>;
+type QueryForWorkOutput = (
+    Vec<ComponentNode>,
+    BatchExecutionContext,
+    HashMap<Handle, ExecutionTransactionContext>,
+    PrimitiveDateTime,
+    bool,
+    bool,
+);
+type MaterializedInputs = Vec<(Vec<u8>, DFGTxInput)>;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BranchWriteStatus {
+    Allowed,
+    Settled,
+}
+
 #[derive(Clone, Debug)]
 struct CiphertextInsert {
     handle: Handle,
@@ -264,10 +292,13 @@ async fn ensure_cutover_safe(
     // completed row in the legacy computations table. Pending dual-write rows
     // and branchless input ciphertexts are excluded: they exist on fresh
     // wave-2 deployments too and are not a divergence signal on their own.
-    let legacy_executed: bool =
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM computations WHERE is_completed = TRUE)")
-            .fetch_one(&pool)
-            .await?;
+    let legacy_executed: bool = sqlx::query_scalar!(
+        r#"
+        SELECT EXISTS(SELECT 1 FROM computations WHERE is_completed = TRUE) AS "exists!"
+        "#
+    )
+    .fetch_one(&pool)
+    .await?;
     if legacy_executed {
         return Err(
             "Refusing to start: FHEVM_BRANCH_CUTOVER_BLOCK is 0/unset but this chain already \
@@ -525,16 +556,16 @@ async fn query_ciphertexts<'a>(
     let requested_handles = dependency_metadata.keys().cloned().collect::<Vec<_>>();
     let mut ciphertext_candidates: HashMap<Vec<u8>, Vec<CiphertextCandidate>> =
         HashMap::with_capacity(dependency_metadata.len());
-    let rows = sqlx::query(
-        "
+    let rows = sqlx::query!(
+        r#"
         SELECT handle, producer_block_hash, ciphertext, ciphertext_type
         FROM ciphertexts_branch
         WHERE handle = ANY($1::BYTEA[])
           AND ciphertext_version = $2
-        ",
+        "#,
+        &requested_handles as _,
+        current_ciphertext_version(),
     )
-    .bind(&requested_handles)
-    .bind(current_ciphertext_version())
     .fetch_all(trx.as_mut())
     .await
     .map_err(|err| {
@@ -542,14 +573,14 @@ async fn query_ciphertexts<'a>(
         err
     })?;
     for row in rows {
-        let handle: Vec<u8> = row.try_get("handle")?;
+        let handle = row.handle;
         ciphertext_candidates
             .entry(handle)
             .or_default()
             .push(CiphertextCandidate {
-                producer_block_hash: row.try_get("producer_block_hash")?,
-                ciphertext: row.try_get("ciphertext")?,
-                ciphertext_type: row.try_get("ciphertext_type")?,
+                producer_block_hash: row.producer_block_hash,
+                ciphertext: row.ciphertext,
+                ciphertext_type: row.ciphertext_type,
             });
     }
 
@@ -571,16 +602,16 @@ async fn query_ciphertexts<'a>(
         .map(|(handle, _)| handle.clone())
         .collect();
     if !legacy_fallback_handles.is_empty() {
-        let rows = sqlx::query(
-            "
+        let rows = sqlx::query!(
+            r#"
             SELECT handle, ciphertext, ciphertext_type
             FROM ciphertexts
             WHERE handle = ANY($1::BYTEA[])
               AND ciphertext_version = $2
-            ",
+            "#,
+            &legacy_fallback_handles as _,
+            current_ciphertext_version(),
         )
-        .bind(&legacy_fallback_handles)
-        .bind(current_ciphertext_version())
         .fetch_all(trx.as_mut())
         .await
         .map_err(|err| {
@@ -588,14 +619,14 @@ async fn query_ciphertexts<'a>(
             err
         })?;
         for row in rows {
-            let handle: Vec<u8> = row.try_get("handle")?;
+            let handle = row.handle;
             ciphertext_candidates
                 .entry(handle)
                 .or_default()
                 .push(CiphertextCandidate {
                     producer_block_hash: Vec::new(),
-                    ciphertext: row.try_get("ciphertext")?,
-                    ciphertext_type: row.try_get("ciphertext_type")?,
+                    ciphertext: row.ciphertext,
+                    ciphertext_type: row.ciphertext_type,
                 });
         }
     }
@@ -609,7 +640,9 @@ async fn query_ciphertexts<'a>(
         let Some(candidates) = ciphertext_candidates.get(&handle) else {
             continue;
         };
-        ensure_not_same_block_db_dependency(&handle, metadata, batch_context)?;
+        if observe_same_block_db_dependency_violation(&handle, metadata, batch_context) {
+            continue;
+        }
         if let Some(candidate) = select_ciphertext_candidate(candidates, metadata) {
             observe_settled_ciphertext_equivalence(&handle, candidates, metadata);
             ciphertext_map.insert(
@@ -626,22 +659,24 @@ async fn query_ciphertexts<'a>(
     Ok(ciphertext_map)
 }
 
-fn ensure_not_same_block_db_dependency(
+fn observe_same_block_db_dependency_violation(
     handle: &[u8],
     metadata: &DependencyMetadata,
     batch_context: &BatchExecutionContext,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+) -> bool {
     if is_same_block_materialized_dependency(metadata, batch_context) {
-        return Err(std::io::Error::other(format!(
+        SAME_BLOCK_DB_DEPENDENCY_VIOLATION_COUNTER.inc();
+        warn!(
+            target: "tfhe_worker",
             "same-block DB fetch invariant violation for handle {} producer_block_hash {} block {:?}: \
-             same-block dependencies must be selected in the worker component and propagated in memory",
+             treating as a missing input so the DCID can yield instead of error-looping",
             hex::encode(handle),
             hex::encode(&metadata.producer_block_hash),
             metadata.block_number,
-        ))
-        .into());
+        );
+        return true;
     }
-    Ok(())
+    false
 }
 
 fn is_same_block_materialized_dependency(
@@ -837,16 +872,16 @@ async fn query_dependency_metadata<'a>(
     }
 
     let mut computation_rows = Vec::new();
-    let rows = sqlx::query(
-        "
-        SELECT output_handle AS handle, producer_block_hash, block_number
+    let rows = sqlx::query!(
+        r#"
+        SELECT output_handle AS "handle!", producer_block_hash AS "producer_block_hash!", block_number
         FROM computations_branch
         WHERE host_chain_id = $2
         AND output_handle = ANY($1::BYTEA[])
-        ",
+        "#,
+        cts_to_query as _,
+        batch_context.host_chain_id,
     )
-    .bind(cts_to_query)
-    .bind(batch_context.host_chain_id)
     .fetch_all(trx.as_mut())
     .await
     .map_err(|err| {
@@ -855,23 +890,32 @@ async fn query_dependency_metadata<'a>(
     })?;
     for row in rows {
         computation_rows.push(DependencyRow {
-            handle: row.try_get("handle")?,
-            producer_block_hash: row.try_get("producer_block_hash")?,
-            block_number: row.try_get("block_number")?,
+            handle: row.handle,
+            producer_block_hash: row.producer_block_hash,
+            block_number: row.block_number,
         });
     }
 
     let mut allowed_handle_rows = Vec::new();
-    let rows = sqlx::query(
-        "
-        SELECT handle, producer_block_hash, block_number
-        FROM allowed_handles_branch
-        WHERE (host_chain_id = $2 OR host_chain_id IS NULL)
-        AND handle = ANY($1::BYTEA[])
-        ",
+    let rows = sqlx::query!(
+        r#"
+        SELECT
+            a.handle AS "handle!",
+            a.producer_block_hash AS "producer_block_hash!",
+            CASE
+                WHEN a.producer_block_hash = ''::BYTEA THEN a.block_number
+                ELSE producer.block_number
+            END AS block_number
+        FROM allowed_handles_branch a
+        LEFT JOIN host_chain_blocks_valid producer
+          ON producer.chain_id = a.host_chain_id
+         AND producer.block_hash = a.producer_block_hash
+        WHERE (a.host_chain_id = $2 OR a.host_chain_id IS NULL)
+        AND a.handle = ANY($1::BYTEA[])
+        "#,
+        cts_to_query as _,
+        batch_context.host_chain_id,
     )
-    .bind(cts_to_query)
-    .bind(batch_context.host_chain_id)
     .fetch_all(trx.as_mut())
     .await
     .map_err(|err| {
@@ -880,10 +924,21 @@ async fn query_dependency_metadata<'a>(
     })?;
     for row in rows {
         allowed_handle_rows.push(DependencyRow {
-            handle: row.try_get("handle")?,
-            producer_block_hash: row.try_get("producer_block_hash")?,
-            block_number: row.try_get("block_number")?,
+            handle: row.handle,
+            producer_block_hash: row.producer_block_hash,
+            block_number: row.block_number,
         });
+    }
+    for row in &allowed_handle_rows {
+        if !row.producer_block_hash.is_empty() && row.block_number.is_none() {
+            UNRESOLVED_DEPENDENCY_PRODUCER_BLOCK_COUNTER.inc();
+            warn!(
+                target: "tfhe_worker",
+                handle = %hex::encode(&row.handle),
+                producer_block_hash = %hex::encode(&row.producer_block_hash),
+                "dependency producer block is not observed; dependency remains unresolved"
+            );
+        }
     }
 
     let settled_height = read_settled_height(trx, batch_context.host_chain_id).await?;
@@ -983,22 +1038,22 @@ async fn query_branchless_ciphertext_handles<'a>(
     trx: &mut sqlx::Transaction<'a, Postgres>,
 ) -> Result<HashSet<Handle>, Box<dyn std::error::Error + Send + Sync>> {
     let mut handles = HashSet::new();
-    let rows = sqlx::query(
-        "
-        SELECT handle
+    let rows = sqlx::query!(
+        r#"
+        SELECT handle AS "handle!"
         FROM ciphertexts_branch
         WHERE handle = ANY($1::BYTEA[])
           AND ciphertext_version = $2
-          AND producer_block_hash = '\\x'::BYTEA
+          AND producer_block_hash = ''::BYTEA
         UNION
         SELECT handle
         FROM ciphertexts
         WHERE handle = ANY($1::BYTEA[])
           AND ciphertext_version = $2
-        ",
+        "#,
+        cts_to_query as _,
+        ciphertext_version,
     )
-    .bind(cts_to_query)
-    .bind(ciphertext_version)
     .fetch_all(trx.as_mut())
     .await
     .map_err(|err| {
@@ -1006,7 +1061,7 @@ async fn query_branchless_ciphertext_handles<'a>(
         err
     })?;
     for row in rows {
-        handles.insert(row.try_get("handle")?);
+        handles.insert(row.handle);
     }
     Ok(handles)
 }
@@ -1171,6 +1226,28 @@ async fn dependence_chain_has_pending_branch_work<'a>(
               AND is_error = FALSE
               AND is_allowed = TRUE
               AND (block_number IS NULL OR block_number >= $2)
+              AND (
+                  producer_block_hash = ''::BYTEA
+                  OR block_number IS NULL
+                  OR block_number > COALESCE(
+                      (
+                          SELECT s.settled_height
+                          FROM coprocessor_settlement s
+                          WHERE s.chain_id = computations_branch.host_chain_id
+                      ),
+                      -1
+                  )
+              )
+              AND (
+                  producer_block_hash = ''::BYTEA
+                  OR NOT EXISTS (
+                      SELECT 1
+                      FROM host_chain_blocks_valid b
+                      WHERE b.chain_id = computations_branch.host_chain_id
+                        AND b.block_hash = computations_branch.producer_block_hash
+                        AND b.block_status = 'orphaned'
+                  )
+              )
               AND dependence_chain_id = $1
         )
         ",
@@ -1196,125 +1273,147 @@ async fn query_work_rows_for_dcid<'a>(
     dependence_chain_id: Option<Vec<u8>>,
     branch_cutover_block: i64,
 ) -> Result<Vec<WorkRow>, sqlx::Error> {
-    let sql = "
--- DCIDs are ingestion-time same-block connected components. A repeated
--- transaction can appear on sibling forks with the same DCID, so select the
--- earliest eligible block context in the acquired lane. Lock the full DCID
--- row set first so expired-lock stealing cannot skip a locked sibling context
--- and process another fork concurrently.
-WITH expected_dcid_rows AS (
-    SELECT COUNT(*) AS count
-    FROM computations_branch c
-    WHERE c.dependence_chain_id = $1
-      AND c.is_error = FALSE
-),
-locked_dcid_rows AS MATERIALIZED (
-    SELECT
-      c.output_handle,
-      c.dependencies,
-      c.fhe_operation,
-      c.is_scalar,
-      c.is_allowed,
-      c.dependence_chain_id,
-      c.transaction_id,
-      c.producer_block_hash,
-      c.host_chain_id,
-      c.block_number,
-      c.schedule_order,
-      c.is_completed
-    FROM computations_branch c
-    WHERE c.dependence_chain_id = $1
-      AND c.is_error = FALSE
-    ORDER BY c.schedule_order ASC
-    FOR UPDATE OF c SKIP LOCKED
-),
-locked_dcid_count AS (
-    SELECT COUNT(*) AS count FROM locked_dcid_rows
-),
-selected_context AS MATERIALIZED (
-    SELECT
-      c.dependence_chain_id,
-      c.host_chain_id,
-      c.block_number,
-      c.producer_block_hash
-    FROM locked_dcid_rows c
-    WHERE c.is_completed = FALSE
-      AND c.is_allowed = TRUE
-      AND (c.block_number IS NULL OR c.block_number >= $2)
-      AND (SELECT count FROM locked_dcid_count) = (SELECT count FROM expected_dcid_rows)
-    ORDER BY c.schedule_order ASC
-    LIMIT 1
-),
-expected_rows AS (
-    SELECT COUNT(*) AS count
-    FROM locked_dcid_rows c
-    JOIN selected_context sc
-      ON c.dependence_chain_id = sc.dependence_chain_id
-     AND c.host_chain_id = sc.host_chain_id
-     AND c.block_number IS NOT DISTINCT FROM sc.block_number
-     AND c.producer_block_hash = sc.producer_block_hash
-),
-locked_rows AS MATERIALIZED (
-    SELECT
-      c.output_handle,
-      c.dependencies,
-      c.fhe_operation,
-      c.is_scalar,
-      c.is_allowed,
-      c.dependence_chain_id,
-      c.transaction_id,
-      c.producer_block_hash,
-      c.host_chain_id,
-      c.block_number,
-      c.schedule_order
-    FROM locked_dcid_rows c
-    JOIN selected_context sc
-      ON c.dependence_chain_id = sc.dependence_chain_id
-     AND c.host_chain_id = sc.host_chain_id
-     AND c.block_number IS NOT DISTINCT FROM sc.block_number
-     AND c.producer_block_hash = sc.producer_block_hash
-    ORDER BY c.schedule_order ASC
-),
-locked_count AS (
-    SELECT COUNT(*) AS count FROM locked_rows
-)
-SELECT
-  output_handle,
-  dependencies,
-  fhe_operation,
-  is_scalar,
-  is_allowed,
-  dependence_chain_id,
-  transaction_id,
-  producer_block_hash,
-  host_chain_id,
-  block_number,
-  schedule_order
-FROM locked_rows
-WHERE (SELECT count FROM locked_count) = (SELECT count FROM expected_rows)
-ORDER BY schedule_order ASC
-        ";
-    sqlx::query(sql)
-        .bind(dependence_chain_id)
-        .bind(branch_cutover_block)
-        .fetch_all(trx.as_mut())
-        .await?
+    let rows = sqlx::query!(
+        r#"
+        -- DCIDs are ingestion-time same-block connected components. A repeated
+        -- transaction can appear on sibling forks with the same DCID, so select the
+        -- earliest eligible block context in the acquired lane. Lock the full DCID
+        -- row set first so expired-lock stealing cannot skip a locked sibling context
+        -- and process another fork concurrently.
+        WITH expected_dcid_rows AS (
+            SELECT COUNT(*) AS count
+            FROM computations_branch c
+            WHERE c.dependence_chain_id = $1
+              AND c.is_error = FALSE
+        ),
+        locked_dcid_rows AS MATERIALIZED (
+            SELECT
+              c.output_handle,
+              c.dependencies,
+              c.fhe_operation,
+              c.is_scalar,
+              c.is_allowed,
+              c.dependence_chain_id,
+              c.transaction_id,
+              c.producer_block_hash,
+              c.host_chain_id,
+              c.block_number,
+              c.schedule_order,
+              c.is_completed
+            FROM computations_branch c
+            WHERE c.dependence_chain_id = $1
+              AND c.is_error = FALSE
+            ORDER BY c.schedule_order ASC
+            FOR UPDATE OF c SKIP LOCKED
+        ),
+        locked_dcid_count AS (
+            SELECT COUNT(*) AS count FROM locked_dcid_rows
+        ),
+        selected_context AS MATERIALIZED (
+            SELECT
+              c.dependence_chain_id,
+              c.host_chain_id,
+              c.block_number,
+              c.producer_block_hash
+            FROM locked_dcid_rows c
+            WHERE c.is_completed = FALSE
+              AND c.is_allowed = TRUE
+              AND (c.block_number IS NULL OR c.block_number >= $2)
+              AND (
+                c.producer_block_hash = ''::BYTEA
+                OR c.block_number IS NULL
+                OR c.block_number > COALESCE(
+                    (
+                      SELECT s.settled_height
+                      FROM coprocessor_settlement s
+                      WHERE s.chain_id = c.host_chain_id
+                    ),
+                    -1
+                )
+              )
+              AND (
+                c.producer_block_hash = ''::BYTEA
+                OR NOT EXISTS (
+                    SELECT 1
+                    FROM host_chain_blocks_valid b
+                    WHERE b.chain_id = c.host_chain_id
+                      AND b.block_hash = c.producer_block_hash
+                      AND b.block_status = 'orphaned'
+                )
+              )
+              AND (SELECT count FROM locked_dcid_count) = (SELECT count FROM expected_dcid_rows)
+            ORDER BY c.schedule_order ASC
+            LIMIT 1
+        ),
+        expected_rows AS (
+            SELECT COUNT(*) AS count
+            FROM locked_dcid_rows c
+            JOIN selected_context sc
+              ON c.dependence_chain_id = sc.dependence_chain_id
+             AND c.host_chain_id = sc.host_chain_id
+             AND c.block_number IS NOT DISTINCT FROM sc.block_number
+             AND c.producer_block_hash = sc.producer_block_hash
+        ),
+        locked_rows AS MATERIALIZED (
+            SELECT
+              c.output_handle,
+              c.dependencies,
+              c.fhe_operation,
+              c.is_scalar,
+              c.is_allowed,
+              c.dependence_chain_id,
+              c.transaction_id,
+              c.producer_block_hash,
+              c.host_chain_id,
+              c.block_number,
+              c.schedule_order
+            FROM locked_dcid_rows c
+            JOIN selected_context sc
+              ON c.dependence_chain_id = sc.dependence_chain_id
+             AND c.host_chain_id = sc.host_chain_id
+             AND c.block_number IS NOT DISTINCT FROM sc.block_number
+             AND c.producer_block_hash = sc.producer_block_hash
+            ORDER BY c.schedule_order ASC
+        ),
+        locked_count AS (
+            SELECT COUNT(*) AS count FROM locked_rows
+        )
+        SELECT
+          output_handle AS "output_handle!",
+          dependencies AS "dependencies!",
+          fhe_operation AS "fhe_operation!",
+          is_scalar AS "is_scalar!",
+          is_allowed AS "is_allowed!",
+          transaction_id AS "transaction_id!",
+          producer_block_hash AS "producer_block_hash!",
+          host_chain_id AS "host_chain_id!",
+          block_number,
+          schedule_order AS "schedule_order!"
+        FROM locked_rows
+        WHERE (SELECT count FROM locked_count) = (SELECT count FROM expected_rows)
+        ORDER BY schedule_order ASC
+        "#,
+        dependence_chain_id,
+        branch_cutover_block,
+    )
+    .fetch_all(trx.as_mut())
+    .await?;
+
+    Ok(rows
         .into_iter()
-        .map(|row| -> Result<WorkRow, sqlx::Error> {
-            Ok(WorkRow {
-                output_handle: row.try_get("output_handle")?,
-                dependencies: row.try_get("dependencies")?,
-                fhe_operation: row.try_get("fhe_operation")?,
-                is_scalar: row.try_get("is_scalar")?,
-                is_allowed: row.try_get("is_allowed")?,
-                transaction_id: row.try_get("transaction_id")?,
-                producer_block_hash: row.try_get("producer_block_hash")?,
-                host_chain_id: row.try_get("host_chain_id")?,
-                block_number: row.try_get("block_number")?,
-                schedule_order: row.try_get("schedule_order")?,
-            })
+        .map(|row| WorkRow {
+            output_handle: row.output_handle,
+            dependencies: row.dependencies,
+            fhe_operation: row.fhe_operation,
+            is_scalar: row.is_scalar,
+            is_allowed: row.is_allowed,
+            transaction_id: row.transaction_id,
+            producer_block_hash: row.producer_block_hash,
+            host_chain_id: row.host_chain_id,
+            block_number: row.block_number,
+            schedule_order: row.schedule_order,
         })
-        .collect::<Result<Vec<_>, _>>()
+        .collect())
 }
 
 #[tracing::instrument(skip_all)]
@@ -1324,17 +1423,7 @@ async fn query_for_work<'a>(
     trx: &mut sqlx::Transaction<'a, Postgres>,
     deps_chain_mngr: &mut dependence_chain::LockMngr,
     no_progress_cycles: &mut u32,
-) -> Result<
-    (
-        Vec<ComponentNode>,
-        BatchExecutionContext,
-        HashMap<Handle, ExecutionTransactionContext>,
-        PrimitiveDateTime,
-        bool,
-        bool,
-    ),
-    Box<dyn std::error::Error + Send + Sync>,
-> {
+) -> Result<QueryForWorkOutput, WorkerDynError> {
     let s_dcid = tracing::info_span!(
         "query_dependence_chain",
         dependence_chain_id = tracing::field::Empty
@@ -1635,14 +1724,13 @@ async fn build_transaction_graph_and_execute<'a>(
         let materialization_gpu_idx = next_gpu_index(keys.gpu_sks.len())?;
         #[cfg(not(feature = "gpu"))]
         let materialization_gpu_idx = 0;
-        let materialized: Vec<(Vec<u8>, DFGTxInput)> = tokio::task::spawn_blocking({
-            let ciphertext_map = ciphertext_map;
+        let materialized: MaterializedInputs = tokio::task::spawn_blocking({
             #[cfg(not(feature = "gpu"))]
             let sks_for_materialize = keys.sks.clone();
             #[cfg(feature = "gpu")]
             let sks_for_materialize = keys.gpu_sks[materialization_gpu_idx].clone();
             let gpu_idx_for_materialize = materialization_gpu_idx;
-            move || -> Result<Vec<(Vec<u8>, DFGTxInput)>, Box<dyn std::error::Error + Send + Sync>> {
+            move || -> Result<MaterializedInputs, WorkerDynError> {
                 tfhe::set_server_key(sks_for_materialize);
                 let mut results = Vec::with_capacity(ciphertext_map.len());
                 for (handle, input) in ciphertext_map {
@@ -1790,12 +1878,12 @@ fn dedupe_ciphertext_inserts_inner(
     Ok(cts_deduped)
 }
 
-fn ensure_ciphertext_write_above_settled(
+fn check_ciphertext_write_above_settled(
     entry: &CiphertextInsert,
     settled_height: i64,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<BranchWriteStatus, Box<dyn std::error::Error + Send + Sync>> {
     if is_branchless_producer(&entry.producer_block_hash) {
-        return Ok(());
+        return Ok(BranchWriteStatus::Allowed);
     }
     let Some(block_number) = entry.block_number else {
         return Err(std::io::Error::other(format!(
@@ -1806,16 +1894,35 @@ fn ensure_ciphertext_write_above_settled(
         .into());
     };
     if block_number <= settled_height {
-        return Err(std::io::Error::other(format!(
+        warn!(
+            target: "tfhe_worker",
             "refusing settled branch ciphertext write for handle {} producer_block_hash {} block {} <= settled_height {}",
             hex::encode(&entry.handle),
             hex::encode(&entry.producer_block_hash),
             block_number,
             settled_height,
-        ))
-        .into());
+        );
+        return Ok(BranchWriteStatus::Settled);
     }
-    Ok(())
+    Ok(BranchWriteStatus::Allowed)
+}
+
+#[cfg(test)]
+fn ensure_ciphertext_write_above_settled(
+    entry: &CiphertextInsert,
+    settled_height: i64,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    match check_ciphertext_write_above_settled(entry, settled_height)? {
+        BranchWriteStatus::Allowed => Ok(()),
+        BranchWriteStatus::Settled => Err(std::io::Error::other(format!(
+            "refusing settled branch ciphertext write for handle {} producer_block_hash {} block {} <= settled_height {}",
+            hex::encode(&entry.handle),
+            hex::encode(&entry.producer_block_hash),
+            entry.block_number.unwrap_or_default(),
+            settled_height,
+        ))
+        .into()),
+    }
 }
 
 #[tracing::instrument(name = "upload_results", skip_all)]
@@ -1937,48 +2044,117 @@ async fn upload_transaction_graph_results<'a>(
         // abort the batch instead.
         let cts_to_insert = dedupe_ciphertext_inserts(cts_to_insert)?;
         let settled_height = read_settled_height(trx, batch_context.host_chain_id).await?;
-        for entry in &cts_to_insert {
-            ensure_ciphertext_write_above_settled(entry, settled_height)?;
+        let mut settled_write_keys = HashSet::<(Handle, Handle)>::new();
+        let mut cts_allowed_to_insert = Vec::with_capacity(cts_to_insert.len());
+        for entry in cts_to_insert {
+            match check_ciphertext_write_above_settled(&entry, settled_height)? {
+                BranchWriteStatus::Allowed => cts_allowed_to_insert.push(entry),
+                BranchWriteStatus::Settled => {
+                    settled_write_keys
+                        .insert((entry.handle.clone(), entry.producer_block_hash.clone()));
+                }
+            }
         }
-        let s_insert = tracing::info_span!("insert_ct_into_db", count = cts_to_insert.len());
+        if !settled_write_keys.is_empty() {
+            let (stale_handles, stale_txn_ids, stale_producer_hashes) = handles_to_update
+                .iter()
+                .filter_map(|(handle, (transaction_id, producer_block_hash))| {
+                    if settled_write_keys.contains(&(handle.clone(), producer_block_hash.clone())) {
+                        Some((
+                            handle.clone(),
+                            transaction_id.clone(),
+                            producer_block_hash.clone(),
+                        ))
+                    } else {
+                        None
+                    }
+                })
+                .fold(
+                    (Vec::new(), Vec::new(), Vec::new()),
+                    |mut acc, (handle, transaction_id, producer_block_hash)| {
+                        acc.0.push(handle);
+                        acc.1.push(transaction_id);
+                        acc.2.push(producer_block_hash);
+                        acc
+                    },
+                );
+            if !stale_handles.is_empty() {
+                let stale_updated = sqlx::query!(
+                    r#"
+                    WITH stale_updates AS (
+                        SELECT *
+                        FROM unnest($1::BYTEA[], $2::BYTEA[], $3::BYTEA[])
+                            AS t(output_handle, transaction_id, producer_block_hash)
+                    )
+                    UPDATE computations_branch
+                    SET is_error = TRUE,
+                        error_message = 'settled branch work skipped by ciphertext write guard'
+                    FROM stale_updates s
+                    WHERE computations_branch.output_handle = s.output_handle
+                      AND computations_branch.transaction_id = s.transaction_id
+                      AND computations_branch.producer_block_hash = s.producer_block_hash
+                      AND computations_branch.is_completed = FALSE
+                    "#,
+                    &stale_handles as _,
+                    &stale_txn_ids as _,
+                    &stale_producer_hashes as _,
+                )
+                .execute(trx.as_mut())
+                .await
+                .map_err(|err| {
+                    error!(target: "tfhe_worker", { error = %err }, "error while marking settled branch computations as stale");
+                    err
+                })?
+                .rows_affected();
+                res |= stale_updated > 0;
+            }
+            handles_to_update.retain(|(handle, (_, producer_block_hash))| {
+                !settled_write_keys.contains(&(handle.clone(), producer_block_hash.clone()))
+            });
+        }
+        if cts_allowed_to_insert.is_empty() {
+            return Ok(res);
+        }
+        let s_insert =
+            tracing::info_span!("insert_ct_into_db", count = cts_allowed_to_insert.len());
         let cts_inserted = async {
-            let handles = cts_to_insert
+            let handles = cts_allowed_to_insert
                 .iter()
                 .map(|entry| entry.handle.clone())
                 .collect::<Vec<_>>();
-            let producer_block_hashes = cts_to_insert
+            let producer_block_hashes = cts_allowed_to_insert
                 .iter()
                 .map(|entry| entry.producer_block_hash.clone())
                 .collect::<Vec<_>>();
-            let block_numbers = cts_to_insert
+            let block_numbers = cts_allowed_to_insert
                 .iter()
                 .map(|entry| entry.block_number)
                 .collect::<Vec<_>>();
-            let ciphertexts = cts_to_insert
+            let ciphertexts = cts_allowed_to_insert
                 .iter()
                 .map(|entry| entry.ct_bytes.clone())
                 .collect::<Vec<_>>();
-            let ciphertext_versions = cts_to_insert
+            let ciphertext_versions = cts_allowed_to_insert
                 .iter()
                 .map(|entry| entry.ciphertext_version)
                 .collect::<Vec<_>>();
-            let ciphertext_types = cts_to_insert
+            let ciphertext_types = cts_allowed_to_insert
                 .iter()
                 .map(|entry| entry.ciphertext_type)
                 .collect::<Vec<_>>();
-            let cts_inserted = sqlx::query(
-                "
+            let cts_inserted = sqlx::query!(
+                r#"
             INSERT INTO ciphertexts_branch(handle, producer_block_hash, block_number, ciphertext, ciphertext_version, ciphertext_type)
             SELECT * FROM UNNEST($1::BYTEA[], $2::BYTEA[], $3::BIGINT[], $4::BYTEA[], $5::SMALLINT[], $6::SMALLINT[])
             ON CONFLICT (handle, ciphertext_version, producer_block_hash) DO NOTHING
-            ",
+            "#,
+                &handles as _,
+                &producer_block_hashes as _,
+                &block_numbers as _,
+                &ciphertexts as _,
+                &ciphertext_versions as _,
+                &ciphertext_types as _,
             )
-            .bind(&handles)
-            .bind(&producer_block_hashes)
-            .bind(&block_numbers)
-            .bind(&ciphertexts)
-            .bind(&ciphertext_versions)
-            .bind(&ciphertext_types)
             .execute(trx.as_mut())
             .await
             .map_err(|err| {
@@ -2008,8 +2184,8 @@ async fn upload_transaction_graph_results<'a>(
                 Vec<_>,
                 (Vec<_>, Vec<_>),
             ) = handles_to_update.into_iter().unzip();
-            let comp_updated = sqlx::query(
-                "
+            let comp_updated = sqlx::query!(
+                r#"
             WITH requested_updates AS (
                 SELECT *
                 FROM unnest($1::BYTEA[], $2::BYTEA[], $3::BYTEA[])
@@ -2022,11 +2198,11 @@ async fn upload_transaction_graph_results<'a>(
               AND computations_branch.output_handle = r.output_handle
               AND computations_branch.transaction_id = r.transaction_id
               AND computations_branch.producer_block_hash = r.producer_block_hash
-            ",
+            "#,
+                &handles_vec as _,
+                &txn_ids_vec as _,
+                &producer_block_hashes_vec as _,
             )
-            .bind(&handles_vec)
-            .bind(&txn_ids_vec)
-            .bind(&producer_block_hashes_vec)
             .execute(trx.as_mut())
             .await
             .map_err(|err| {
@@ -2057,19 +2233,19 @@ async fn set_computation_error<'a>(
     error!(target: "tfhe_worker", error = %err_string, output_handle = %format!("0x{}", hex::encode(output_handle)), "error while processing work item");
     telemetry::set_current_span_error(&err_string);
 
-    let _ = sqlx::query(
-        "
+    let _ = sqlx::query!(
+        r#"
         UPDATE computations_branch
         SET is_error = true, error_message = $1
         WHERE output_handle = $2
           AND transaction_id = $3
           AND producer_block_hash = $4
-        ",
+        "#,
+        &err_string,
+        output_handle,
+        transaction_id,
+        producer_block_hash,
     )
-    .bind(&err_string)
-    .bind(output_handle)
-    .bind(transaction_id)
-    .bind(producer_block_hash)
     .execute(trx.as_mut())
     .await?;
 
@@ -2085,11 +2261,11 @@ mod tests {
     use super::{
         add_branchless_ciphertext_metadata_fallback, build_current_branch_ancestry,
         dedupe_ciphertext_inserts, dedupe_ciphertext_inserts_inner,
-        ensure_ciphertext_write_above_settled, ensure_not_same_block_db_dependency,
-        query_work_rows_for_dcid, resolve_current_branch_candidates, resolve_dependency_metadata,
-        select_ciphertext_candidate, settled_ciphertext_divergence, BatchExecutionContext,
-        BlockAncestorRow, CiphertextCandidate, CiphertextDedupeEntry, CiphertextInsert,
-        DependencyMetadata, ProducerCandidate,
+        ensure_ciphertext_write_above_settled, observe_same_block_db_dependency_violation,
+        query_dependency_metadata, query_work_rows_for_dcid, resolve_current_branch_candidates,
+        resolve_dependency_metadata, select_ciphertext_candidate, settled_ciphertext_divergence,
+        BatchExecutionContext, BlockAncestorRow, CiphertextCandidate, CiphertextDedupeEntry,
+        CiphertextInsert, DependencyMetadata, ProducerCandidate,
     };
     use fhevm_engine_common::drift_revert::WatcherTimeouts;
     use fhevm_engine_common::telemetry::MetricsConfig;
@@ -2105,6 +2281,7 @@ mod tests {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn insert_work_row(
         pool: &sqlx::PgPool,
         dcid: &[u8],
@@ -2189,6 +2366,176 @@ mod tests {
                 db_down_limit: Duration::from_secs(5),
             },
         }
+    }
+
+    #[tokio::test]
+    #[serial(db)]
+    async fn acl_dependency_metadata_uses_producer_block_number() {
+        let db = setup_test_db(ImportMode::None).await.expect("test db");
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect(db.db_url())
+            .await
+            .expect("connect db");
+
+        let host_chain_id = 42_i64;
+        let handle = vec![0xA1_u8; 32];
+        let producer_hash = vec![0x10_u8; 32];
+        let middle_hash = vec![0x11_u8; 32];
+        let current_hash = vec![0x12_u8; 32];
+        let allow_event_hash = current_hash.clone();
+        let transaction_id = vec![0x33_u8; 32];
+
+        sqlx::query(
+            "INSERT INTO host_chain_blocks_valid
+                (chain_id, block_hash, parent_hash, block_number, block_status)
+             VALUES
+                ($1, $2::bytea, NULL, 10, 'pending'),
+                ($1, $3::bytea, $2::bytea, 11, 'pending'),
+                ($1, $4::bytea, $3::bytea, 12, 'pending')",
+        )
+        .bind(host_chain_id)
+        .bind(&producer_hash)
+        .bind(&middle_hash)
+        .bind(&current_hash)
+        .execute(&pool)
+        .await
+        .expect("insert host chain blocks");
+
+        sqlx::query(
+            "INSERT INTO allowed_handles_branch
+                (handle, account_address, event_type, transaction_id, host_chain_id,
+                 block_number, producer_block_hash, block_hash)
+             VALUES ($1, '0xAccount', 0, $2, $3, 12, $4, $5)",
+        )
+        .bind(&handle)
+        .bind(&transaction_id)
+        .bind(host_chain_id)
+        .bind(&producer_hash)
+        .bind(&allow_event_hash)
+        .execute(&pool)
+        .await
+        .expect("insert allowed handle");
+
+        let mut tx = pool.begin().await.expect("begin tx");
+        let metadata = query_dependency_metadata(
+            &[handle.clone()],
+            &BatchExecutionContext {
+                host_chain_id,
+                block_number: Some(12),
+                producer_block_hash: current_hash,
+            },
+            10,
+            &mut tx,
+        )
+        .await
+        .expect("metadata query");
+        tx.rollback().await.expect("rollback");
+
+        let resolved = metadata.get(&handle).expect("resolved ACL dependency");
+        assert_eq!(resolved.producer_block_hash, producer_hash);
+        assert_eq!(resolved.block_number, Some(10));
+    }
+
+    #[tokio::test]
+    #[serial(db)]
+    async fn dependency_metadata_trusts_settled_candidate_without_ancestry() {
+        let db = setup_test_db(ImportMode::None).await.expect("test db");
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect(db.db_url())
+            .await
+            .expect("connect db");
+
+        let host_chain_id = 42_i64;
+        let handle = vec![0xB1_u8; 32];
+        let settled_producer = vec![0x21_u8; 32];
+        let recent_non_current_producer = vec![0x22_u8; 32];
+        let current_25 = vec![0x25_u8; 32];
+        let current_26 = vec![0x26_u8; 32];
+        let current_27 = vec![0x27_u8; 32];
+        let current_28 = vec![0x28_u8; 32];
+        let current_29 = vec![0x29_u8; 32];
+        let current_hash = vec![0x31_u8; 32];
+
+        sqlx::query(
+            "INSERT INTO coprocessor_settlement(chain_id, settled_height)
+             VALUES ($1, 20)
+             ON CONFLICT (chain_id) DO UPDATE SET settled_height = EXCLUDED.settled_height",
+        )
+        .bind(host_chain_id)
+        .execute(&pool)
+        .await
+        .expect("insert settlement");
+
+        sqlx::query(
+            "INSERT INTO host_chain_blocks_valid
+                (chain_id, block_hash, parent_hash, block_number, block_status)
+             VALUES
+                ($1, $2::bytea, NULL, 25, 'pending'),
+                ($1, $3::bytea, $2::bytea, 26, 'pending'),
+                ($1, $4::bytea, $3::bytea, 27, 'pending'),
+                ($1, $5::bytea, $4::bytea, 28, 'pending'),
+                ($1, $6::bytea, $5::bytea, 29, 'pending'),
+                ($1, $7::bytea, $6::bytea, 30, 'pending')",
+        )
+        .bind(host_chain_id)
+        .bind(&current_25)
+        .bind(&current_26)
+        .bind(&current_27)
+        .bind(&current_28)
+        .bind(&current_29)
+        .bind(&current_hash)
+        .execute(&pool)
+        .await
+        .expect("insert current branch ancestry");
+
+        for (producer_block_hash, block_number, transaction_id) in [
+            (&settled_producer, 11_i64, vec![0x41_u8; 32]),
+            (&recent_non_current_producer, 25_i64, vec![0x42_u8; 32]),
+        ] {
+            sqlx::query(
+                "INSERT INTO computations_branch(
+                    tenant_id, output_handle, dependencies, fhe_operation, is_scalar,
+                    is_completed, transaction_id, host_chain_id, block_number,
+                    producer_block_hash
+                 )
+                 VALUES (0, $1, ARRAY[]::BYTEA[], 1, false, true, $2, $3, $4, $5)",
+            )
+            .bind(&handle)
+            .bind(&transaction_id)
+            .bind(host_chain_id)
+            .bind(block_number)
+            .bind(producer_block_hash)
+            .execute(&pool)
+            .await
+            .expect("insert computation candidate");
+        }
+
+        let mut tx = pool.begin().await.expect("begin tx");
+        let metadata = query_dependency_metadata(
+            &[handle.clone()],
+            &BatchExecutionContext {
+                host_chain_id,
+                block_number: Some(30),
+                producer_block_hash: current_hash,
+            },
+            10,
+            &mut tx,
+        )
+        .await
+        .expect("metadata query");
+        tx.rollback().await.expect("rollback");
+
+        let resolved = metadata
+            .get(&handle)
+            .expect("settled candidate should resolve through Pass 2");
+        assert_eq!(resolved.producer_block_hash, settled_producer);
+        assert_eq!(resolved.block_number, Some(11));
+        assert_eq!(
+            resolved.settled_producer_block_hashes,
+            vec![settled_producer]
+        );
     }
 
     async fn insert_legacy_computation(pool: &sqlx::PgPool, output_byte: u8, is_completed: bool) {
@@ -2485,6 +2832,126 @@ mod tests {
         assert_eq!(rows[0].block_number, None);
     }
 
+    #[tokio::test]
+    #[serial(db)]
+    async fn query_work_rows_for_dcid_excludes_settled_branchful_rows() {
+        let test_instance = setup_test_db(ImportMode::None)
+            .await
+            .expect("valid db instance");
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect(test_instance.db_url())
+            .await
+            .expect("connect test db");
+
+        sqlx::query(
+            "INSERT INTO coprocessor_settlement(chain_id, settled_height)
+             VALUES (1, 10)
+             ON CONFLICT (chain_id) DO UPDATE SET settled_height = EXCLUDED.settled_height",
+        )
+        .execute(&pool)
+        .await
+        .expect("insert settlement");
+
+        let dcid = vec![0xD3; 32];
+        let settled_hash = vec![0xA3; 32];
+        let future_hash = vec![0xB3; 32];
+        insert_work_row(
+            &pool,
+            &dcid,
+            &[0x01; 32],
+            &[0x31; 32],
+            &settled_hash,
+            Some(10),
+            0,
+            false,
+        )
+        .await;
+        insert_work_row(
+            &pool,
+            &dcid,
+            &[0x02; 32],
+            &[0x32; 32],
+            &future_hash,
+            Some(11),
+            1,
+            false,
+        )
+        .await;
+
+        let mut trx = pool.begin().await.expect("begin transaction");
+        let rows = query_work_rows_for_dcid(&mut trx, Some(dcid), 0)
+            .await
+            .expect("query unsettled work");
+        trx.rollback().await.expect("rollback transaction");
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].output_handle, [0x32; 32]);
+        assert_eq!(rows[0].producer_block_hash, future_hash);
+        assert_eq!(rows[0].block_number, Some(11));
+    }
+
+    #[tokio::test]
+    #[serial(db)]
+    async fn query_work_rows_for_dcid_excludes_orphaned_branchful_rows() {
+        let test_instance = setup_test_db(ImportMode::None)
+            .await
+            .expect("valid db instance");
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect(test_instance.db_url())
+            .await
+            .expect("connect test db");
+
+        let dcid = vec![0xD4; 32];
+        let orphaned_hash = vec![0xA4; 32];
+        let live_hash = vec![0xB4; 32];
+        sqlx::query(
+            "INSERT INTO host_chain_blocks_valid(chain_id, block_hash, parent_hash, block_number, block_status)
+             VALUES
+                (1, $1::BYTEA, NULL, 10, 'orphaned'),
+                (1, $2::BYTEA, NULL, 11, 'pending')",
+        )
+        .bind(&orphaned_hash)
+        .bind(&live_hash)
+        .execute(&pool)
+        .await
+        .expect("insert block statuses");
+
+        insert_work_row(
+            &pool,
+            &dcid,
+            &[0x01; 32],
+            &[0x41; 32],
+            &orphaned_hash,
+            Some(10),
+            0,
+            false,
+        )
+        .await;
+        insert_work_row(
+            &pool,
+            &dcid,
+            &[0x02; 32],
+            &[0x42; 32],
+            &live_hash,
+            Some(11),
+            1,
+            false,
+        )
+        .await;
+
+        let mut trx = pool.begin().await.expect("begin transaction");
+        let rows = query_work_rows_for_dcid(&mut trx, Some(dcid), 0)
+            .await
+            .expect("query live work");
+        trx.rollback().await.expect("rollback transaction");
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].output_handle, [0x42; 32]);
+        assert_eq!(rows[0].producer_block_hash, live_hash);
+    }
+
     #[test]
     fn select_ciphertext_candidate_prefers_exact_branch_match() {
         let candidates = vec![
@@ -2558,11 +3025,11 @@ mod tests {
             &batch_context
         ));
 
-        let err = ensure_not_same_block_db_dependency(&[0x42; 32], &metadata, &batch_context)
-            .expect_err("same-block DB fetch must be rejected");
-        let msg = err.to_string();
-        assert!(msg.contains("same-block DB fetch invariant violation"));
-        assert!(msg.contains("same-block dependencies must be selected in the worker component"));
+        assert!(observe_same_block_db_dependency_violation(
+            &[0x42; 32],
+            &metadata,
+            &batch_context
+        ));
     }
 
     #[test]

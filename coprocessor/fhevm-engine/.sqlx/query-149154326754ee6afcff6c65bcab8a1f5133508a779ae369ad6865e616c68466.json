@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO host_chain_blocks_valid (\n                chain_id,\n                block_hash,\n                parent_hash,\n                block_number,\n                block_status\n            )\n            VALUES ($1, $2, $3, 1, 'finalized')\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bytea",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "149154326754ee6afcff6c65bcab8a1f5133508a779ae369ad6865e616c68466"
+}

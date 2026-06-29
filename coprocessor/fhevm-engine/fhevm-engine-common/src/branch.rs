@@ -9,6 +9,7 @@
 //! rows keyed by real block hashes.
 
 use sqlx::{Postgres, Transaction};
+use std::collections::HashSet;
 
 /// `producer_block_hash` value marking a row as branchless (valid on every
 /// branch). This matches the column default in the branch-table migrations.
@@ -22,6 +23,14 @@ pub const INITIAL_SETTLED_HEIGHT: i64 = -1;
 /// A candidate row carrying the `producer_block_hash` it was stored under.
 pub trait ProducerBlockHashed {
     fn producer_block_hash(&self) -> &[u8];
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct S3CanonicalPublicationTarget {
+    pub handle: Vec<u8>,
+    pub producer_block_hash: Vec<u8>,
+    pub block_hash: Vec<u8>,
+    pub block_number: Option<i64>,
 }
 
 /// Selects the ciphertext row to use for a dependency resolved to
@@ -47,12 +56,14 @@ pub async fn read_settled_height(
     tx: &mut Transaction<'_, Postgres>,
     chain_id: i64,
 ) -> Result<i64, sqlx::Error> {
-    Ok(sqlx::query_scalar::<_, i64>(
-        "SELECT settled_height
+    Ok(sqlx::query_scalar!(
+        r#"
+        SELECT settled_height AS "settled_height!"
          FROM coprocessor_settlement
-         WHERE chain_id = $1",
+         WHERE chain_id = $1
+        "#,
+        chain_id,
     )
-    .bind(chain_id)
     .fetch_optional(tx.as_mut())
     .await?
     .unwrap_or(INITIAL_SETTLED_HEIGHT))
@@ -73,8 +84,9 @@ pub async fn advance_settled_height(
     let first_block_to_check = current.saturating_add(1).max(first_post_cutover_block);
     // `pbs_computations_branch` has no `is_error` terminal state; incomplete
     // PBS rows are the only PBS rows that can block settlement.
-    let rows = sqlx::query_scalar::<_, i64>(
-        "SELECT b.block_number
+    let rows = sqlx::query_scalar!(
+        r#"
+        SELECT b.block_number AS "block_number!"
          FROM host_chain_blocks_valid b
          WHERE b.chain_id = $1
            AND b.block_status = 'finalized'
@@ -105,19 +117,59 @@ pub async fn advance_settled_height(
                        AND pc.is_error = TRUE
                  )
            )
-         ORDER BY b.block_number ASC",
+           AND NOT EXISTS (
+               SELECT 1
+               FROM s3_canonical_repair_queue q
+               WHERE q.host_chain_id = b.chain_id
+                 AND q.target_block_number = b.block_number
+           )
+           AND NOT EXISTS (
+               SELECT 1
+               FROM branch_cleanup_jobs j
+               WHERE j.chain_id = b.chain_id
+                 AND j.finalized_block_number <= b.block_number
+                 -- Quarantined cleanup has not removed orphan rows, and
+                 -- settled dependency resolution trusts cleanup completion.
+                 AND j.status IN ('pending', 'quarantined')
+           )
+           AND NOT EXISTS (
+               SELECT 1
+               FROM ciphertext_digest_branch d
+               WHERE d.host_chain_id = b.chain_id
+                 AND d.block_number = b.block_number
+                 AND d.block_hash = b.block_hash
+                 AND (
+                      d.ciphertext IS NULL
+                      OR (
+                          d.ciphertext128 IS NULL
+                          AND EXISTS (
+                              SELECT 1
+                              FROM ciphertexts128_branch c
+                              WHERE c.handle = d.handle
+                                AND c.producer_block_hash = d.producer_block_hash
+                                AND c.ciphertext IS NOT NULL
+                          )
+                      )
+                      OR d.s3_publication_verified_at IS NULL
+                      OR d.s3_publication_verified_digest IS DISTINCT FROM d.ciphertext
+                      OR d.s3_publication_verified_producer_block_hash IS DISTINCT FROM d.producer_block_hash
+                 )
+           )
+         ORDER BY b.block_number ASC
+        "#,
+        chain_id,
+        first_block_to_check,
+        candidate_height,
     )
-    .bind(chain_id)
-    .bind(first_block_to_check)
-    .bind(candidate_height)
     .fetch_all(tx.as_mut())
     .await?;
 
     let settled_height = next_settled_height(current, candidate_height, branch_cutover_block, rows);
 
     if settled_height > current {
-        sqlx::query(
-            "INSERT INTO coprocessor_settlement(chain_id, settled_height, updated_at)
+        sqlx::query!(
+            r#"
+            INSERT INTO coprocessor_settlement(chain_id, settled_height, updated_at)
              VALUES($1, $2, CURRENT_TIMESTAMP)
              ON CONFLICT (chain_id) DO UPDATE
              SET settled_height = GREATEST(coprocessor_settlement.settled_height, EXCLUDED.settled_height),
@@ -125,15 +177,132 @@ pub async fn advance_settled_height(
                      WHEN EXCLUDED.settled_height > coprocessor_settlement.settled_height
                      THEN CURRENT_TIMESTAMP
                      ELSE coprocessor_settlement.updated_at
-                 END",
+                 END
+            "#,
+            chain_id,
+            settled_height,
         )
-        .bind(chain_id)
-        .bind(settled_height)
         .execute(tx.as_mut())
         .await?;
     }
 
     Ok(settled_height)
+}
+
+pub async fn resolve_s3_canonical_publication_target(
+    tx: &mut Transaction<'_, Postgres>,
+    chain_id: i64,
+    handle: &[u8],
+) -> Result<Option<S3CanonicalPublicationTarget>, sqlx::Error> {
+    let row = sqlx::query!(
+        r#"
+        SELECT d.handle AS "handle!",
+               d.producer_block_hash AS "producer_block_hash!",
+               d.block_hash AS "block_hash!",
+               d.block_number
+          FROM ciphertext_digest_branch d
+          LEFT JOIN host_chain_blocks_valid producer
+            ON producer.chain_id = d.host_chain_id
+           AND producer.block_hash = d.producer_block_hash
+           AND d.producer_block_hash <> ''::BYTEA
+          LEFT JOIN host_chain_blocks_valid event_block
+            ON event_block.chain_id = d.host_chain_id
+           AND event_block.block_hash = d.block_hash
+           AND d.block_hash <> ''::BYTEA
+         WHERE d.host_chain_id = $1
+           AND d.handle = $2
+           AND (
+                d.producer_block_hash = ''::BYTEA
+                OR COALESCE(producer.block_status, 'pending') <> 'orphaned'
+           )
+           AND (
+                d.block_hash = ''::BYTEA
+                OR COALESCE(event_block.block_status, 'pending') <> 'orphaned'
+           )
+         ORDER BY COALESCE(d.block_number, -1) DESC,
+                  CASE WHEN d.producer_block_hash = ''::BYTEA THEN 1 ELSE 0 END ASC,
+                  d.created_at DESC
+         LIMIT 1
+        "#,
+        chain_id,
+        handle,
+    )
+    .fetch_optional(tx.as_mut())
+    .await?;
+
+    Ok(row.map(|row| S3CanonicalPublicationTarget {
+        handle: row.handle,
+        producer_block_hash: row.producer_block_hash,
+        block_hash: row.block_hash,
+        block_number: row.block_number,
+    }))
+}
+
+pub async fn enqueue_s3_canonical_repair(
+    tx: &mut Transaction<'_, Postgres>,
+    chain_id: i64,
+    handle: &[u8],
+    reason: &str,
+) -> Result<bool, sqlx::Error> {
+    let Some(target) = resolve_s3_canonical_publication_target(tx, chain_id, handle).await? else {
+        return Ok(false);
+    };
+
+    sqlx::query!(
+        r#"
+        INSERT INTO s3_canonical_repair_queue (
+            host_chain_id,
+            handle,
+            target_producer_block_hash,
+            target_block_hash,
+            target_block_number,
+            reason
+        )
+        VALUES ($1, $2, $3, $4, $5, $6)
+        ON CONFLICT (host_chain_id, handle) DO UPDATE
+        SET target_producer_block_hash = EXCLUDED.target_producer_block_hash,
+            target_block_hash = EXCLUDED.target_block_hash,
+            target_block_number = EXCLUDED.target_block_number,
+            reason = EXCLUDED.reason,
+            attempts = CASE
+                WHEN s3_canonical_repair_queue.target_producer_block_hash IS DISTINCT FROM EXCLUDED.target_producer_block_hash
+                  OR s3_canonical_repair_queue.target_block_hash IS DISTINCT FROM EXCLUDED.target_block_hash
+                THEN 0
+                ELSE s3_canonical_repair_queue.attempts
+            END,
+            locked_at = NULL,
+            updated_at = NOW()
+        "#,
+        chain_id,
+        &target.handle,
+        &target.producer_block_hash,
+        &target.block_hash,
+        target.block_number,
+        reason,
+    )
+    .execute(tx.as_mut())
+    .await?;
+
+    Ok(true)
+}
+
+pub async fn enqueue_s3_canonical_repairs(
+    tx: &mut Transaction<'_, Postgres>,
+    chain_id: i64,
+    handles: impl IntoIterator<Item = Vec<u8>>,
+    reason: &str,
+) -> Result<u64, sqlx::Error> {
+    let mut seen = HashSet::new();
+    let mut enqueued = 0;
+    for handle in handles {
+        if !seen.insert(handle.clone()) {
+            continue;
+        }
+        if enqueue_s3_canonical_repair(tx, chain_id, &handle, reason).await? {
+            enqueued += 1;
+        }
+    }
+    Ok(enqueued)
 }
 
 fn next_settled_height(

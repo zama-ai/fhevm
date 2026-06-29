@@ -17,9 +17,9 @@ pub struct Args {
     pub work_items_batch_size: u32,
 
     /// Host-chain block number at which the block-scoped pipeline takes
-    /// over. PBS work below this block belongs to the legacy pipeline and is
-    /// skipped. Must be set to the operator-agreed cutover block when
-    /// upgrading an existing chain; the default (0) is for fresh chains.
+    /// over. Kept for rollout config parity; the SNS worker still drains
+    /// dual-written pre-cutover branch work and uses settlement/orphan guards
+    /// for safety.
     #[arg(long, env = "FHEVM_BRANCH_CUTOVER_BLOCK", default_value_t = 0)]
     pub branch_cutover_block: i64,
 

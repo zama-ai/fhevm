@@ -5,6 +5,7 @@ use alloy_primitives::Uint;
 use anyhow::Result;
 use bigdecimal::BigDecimal;
 use fhevm_engine_common::bridge::{chain_id_from_handle, derive_dst_handle};
+use fhevm_engine_common::branch::enqueue_s3_canonical_repairs;
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::database::{
     connect_pool_with_options_and_connect_options, PoolRefreshHandle,
@@ -28,6 +29,9 @@ use std::sync::LazyLock;
 use std::time::Duration;
 use time::{Duration as TimeDuration, PrimitiveDateTime};
 use tokio::sync::RwLock;
+use tokio::task::JoinHandle;
+use tokio::time::{interval, MissedTickBehavior};
+use tokio_util::sync::CancellationToken;
 use tracing::error;
 use tracing::info;
 use tracing::warn;
@@ -46,6 +50,10 @@ pub type ToType = u8;
 pub type ScalarByte = FixedBytes<1>;
 pub type ClearConst = Uint<256, 4>;
 pub type ChainHash = TransactionHash;
+
+const BRANCH_CLEANUP_BATCH_SIZE: i64 = 10;
+const BRANCH_CLEANUP_MAX_ATTEMPTS: i32 = 10;
+const BRANCH_CLEANUP_RECHECK_INTERVAL: Duration = Duration::from_secs(5);
 
 static SLOW_LANE_MARKED_CHAINS_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(
     || {
@@ -72,6 +80,16 @@ static UNRESOLVED_PRODUCER_BLOCK_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(
     .expect("host-listener unresolved-producer-block metric must register")
     },
 );
+
+static BRANCH_CLEANUP_QUARANTINED_TOTAL: LazyLock<IntCounterVec> =
+    LazyLock::new(|| {
+        register_int_counter_vec!(
+            "host_listener_branch_cleanup_quarantined_total",
+            "Async orphan branch cleanup jobs quarantined after bounded retries",
+            &["chain_id"]
+        )
+        .expect("host-listener branch-cleanup quarantine metric must register")
+    });
 
 #[derive(Clone, Debug)]
 pub struct Chain {
@@ -466,7 +484,6 @@ impl Database {
         }
 
         tx.commit().await?;
-
         Ok(total_promoted)
     }
 
@@ -903,6 +920,241 @@ impl Database {
         Ok(orphaned_hashes)
     }
 
+    pub async fn enqueue_orphaned_branch_cleanup(
+        &self,
+        tx: &mut Transaction<'_>,
+        finalized_block_number: i64,
+        finalized_block_hash: &[u8],
+        orphaned_block_hashes: &[Vec<u8>],
+    ) -> Result<(), SqlxError> {
+        if orphaned_block_hashes.is_empty() {
+            return Ok(());
+        }
+
+        sqlx::query!(
+            r#"
+            INSERT INTO branch_cleanup_jobs (
+                chain_id,
+                finalized_block_hash,
+                finalized_block_number,
+                orphaned_block_hashes,
+                status
+            )
+            VALUES ($1, $2, $3, $4, 'pending')
+            ON CONFLICT (chain_id, finalized_block_hash) DO UPDATE
+            SET finalized_block_number = EXCLUDED.finalized_block_number,
+                orphaned_block_hashes = EXCLUDED.orphaned_block_hashes,
+                status = 'pending',
+                attempts = 0,
+                locked_at = NULL,
+                last_error = NULL,
+                updated_at = NOW()
+            "#,
+            self.chain_id.as_i64(),
+            finalized_block_hash,
+            finalized_block_number,
+            orphaned_block_hashes,
+        )
+        .execute(tx.deref_mut())
+        .await?;
+
+        Ok(())
+    }
+
+    pub fn spawn_orphaned_branch_cleanup_worker(
+        &self,
+        cancel_token: CancellationToken,
+    ) -> JoinHandle<()> {
+        let db = self.clone();
+        tokio::spawn(async move {
+            db.run_orphaned_branch_cleanup_worker(cancel_token).await;
+        })
+    }
+
+    async fn run_orphaned_branch_cleanup_worker(
+        self,
+        cancel_token: CancellationToken,
+    ) {
+        let mut ticker = interval(BRANCH_CLEANUP_RECHECK_INTERVAL);
+        ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
+
+        loop {
+            if let Err(err) = self.process_orphaned_branch_cleanup_jobs().await
+            {
+                error!(?err, "Failed to process orphaned branch cleanup jobs");
+            }
+
+            tokio::select! {
+                _ = cancel_token.cancelled() => break,
+                _ = ticker.tick() => {}
+            }
+        }
+    }
+
+    pub async fn process_orphaned_branch_cleanup_jobs(
+        &self,
+    ) -> Result<u64, SqlxError> {
+        let mut processed = 0_u64;
+
+        loop {
+            let Some((finalized_block_hash, orphaned_hashes)) =
+                self.claim_orphaned_branch_cleanup_job().await?
+            else {
+                break;
+            };
+
+            match self
+                .process_orphaned_branch_cleanup_job(
+                    &finalized_block_hash,
+                    &orphaned_hashes,
+                )
+                .await
+            {
+                Ok(()) => {
+                    processed += 1;
+                }
+                Err(err) => {
+                    self.record_orphaned_branch_cleanup_error(
+                        &finalized_block_hash,
+                        &err.to_string(),
+                    )
+                    .await?;
+                    return Err(err);
+                }
+            }
+
+            if processed >= BRANCH_CLEANUP_BATCH_SIZE as u64 {
+                break;
+            }
+        }
+
+        Ok(processed)
+    }
+
+    async fn claim_orphaned_branch_cleanup_job(
+        &self,
+    ) -> Result<Option<(Vec<u8>, Vec<Vec<u8>>)>, SqlxError> {
+        let pool = self.pool().await;
+        let row = sqlx::query!(
+            r#"
+            WITH selected AS (
+                SELECT chain_id, finalized_block_hash
+                  FROM branch_cleanup_jobs
+                 WHERE chain_id = $1
+                   AND status = 'pending'
+                   AND (
+                        locked_at IS NULL
+                        OR locked_at < NOW() - INTERVAL '5 minutes'
+                   )
+                 ORDER BY finalized_block_number ASC, updated_at ASC
+                 FOR UPDATE SKIP LOCKED
+                 LIMIT 1
+            )
+            UPDATE branch_cleanup_jobs j
+               SET locked_at = NOW(),
+                   attempts = attempts + 1,
+                   updated_at = NOW()
+              FROM selected s
+             WHERE j.chain_id = s.chain_id
+               AND j.finalized_block_hash = s.finalized_block_hash
+             RETURNING
+                j.finalized_block_hash AS "finalized_block_hash!",
+                j.orphaned_block_hashes AS "orphaned_block_hashes!"
+            "#,
+            self.chain_id.as_i64(),
+        )
+        .fetch_optional(&pool)
+        .await?;
+
+        Ok(
+            row.map(|row| {
+                (row.finalized_block_hash, row.orphaned_block_hashes)
+            }),
+        )
+    }
+
+    async fn process_orphaned_branch_cleanup_job(
+        &self,
+        finalized_block_hash: &[u8],
+        orphaned_hashes: &[Vec<u8>],
+    ) -> Result<(), SqlxError> {
+        let mut tx = self.new_transaction().await?;
+        self.cleanup_orphaned_branch_state(&mut tx, orphaned_hashes)
+            .await?;
+        sqlx::query!(
+            r#"
+            UPDATE branch_cleanup_jobs
+               SET status = 'completed',
+                   locked_at = NULL,
+                   last_error = NULL,
+                   updated_at = NOW()
+             WHERE chain_id = $1
+               AND finalized_block_hash = $2
+            "#,
+            self.chain_id.as_i64(),
+            finalized_block_hash,
+        )
+        .execute(tx.deref_mut())
+        .await?;
+        tx.commit().await?;
+
+        info!(
+            finalized_block_hash = %to_hex(finalized_block_hash),
+            orphaned_blocks = orphaned_hashes.len(),
+            "Completed orphaned branch cleanup job"
+        );
+
+        Ok(())
+    }
+
+    pub async fn record_orphaned_branch_cleanup_error(
+        &self,
+        finalized_block_hash: &[u8],
+        error: &str,
+    ) -> Result<(), SqlxError> {
+        let pool = self.pool().await;
+        let row = sqlx::query!(
+            r#"
+            UPDATE branch_cleanup_jobs
+               SET status = CASE
+                       WHEN attempts >= $4 THEN 'quarantined'
+                       ELSE 'pending'
+                   END,
+                   locked_at = NULL,
+                   last_error = $3,
+                   updated_at = NOW()
+             WHERE chain_id = $1
+               AND finalized_block_hash = $2
+               AND status = 'pending'
+             RETURNING status AS "status!", attempts AS "attempts!"
+            "#,
+            self.chain_id.as_i64(),
+            finalized_block_hash,
+            error,
+            BRANCH_CLEANUP_MAX_ATTEMPTS,
+        )
+        .fetch_optional(&pool)
+        .await?;
+
+        if let Some(row) = row {
+            if row.status == "quarantined" {
+                let chain_id_label = self.chain_id.as_i64().to_string();
+                BRANCH_CLEANUP_QUARANTINED_TOTAL
+                    .with_label_values(&[chain_id_label.as_str()])
+                    .inc();
+                error!(
+                    chain_id = self.chain_id.as_i64(),
+                    finalized_block_hash = %to_hex(finalized_block_hash),
+                    attempts = row.attempts,
+                    cleanup_error = error,
+                    "Quarantined orphaned branch cleanup job after bounded retries"
+                );
+            }
+        }
+
+        Ok(())
+    }
+
     pub async fn cleanup_orphaned_branch_state(
         &self,
         tx: &mut Transaction<'_>,
@@ -1024,6 +1276,22 @@ impl Database {
             .iter()
             .map(|row| row.event_type)
             .collect::<Vec<_>>();
+
+        let orphaned_digest_handles = sqlx::query_scalar::<_, Vec<u8>>(
+            r#"
+            SELECT DISTINCT handle
+             FROM ciphertext_digest_branch
+             WHERE host_chain_id = $1
+               AND (
+                    block_hash = ANY($2::bytea[])
+                    OR producer_block_hash = ANY($2::bytea[])
+               )
+            "#,
+        )
+        .bind(self.chain_id.as_i64())
+        .bind(orphaned_block_hashes)
+        .fetch_all(tx.deref_mut())
+        .await?;
 
         if !orphaned_ciphertext_pairs.is_empty() {
             // This removes only DB branch state and materialized DB bytes. S3
@@ -1252,6 +1520,28 @@ impl Database {
             .await?;
         }
 
+        let repair_handles = orphaned_ciphertext_handles
+            .iter()
+            .cloned()
+            .chain(orphaned_digest_handles)
+            .chain(orphaned_legacy_computation_handles.iter().cloned())
+            .chain(orphaned_legacy_pbs_handles.iter().cloned())
+            .chain(orphaned_allowed_handles.iter().cloned())
+            .collect::<Vec<_>>();
+        let enqueued_repairs = enqueue_s3_canonical_repairs(
+            tx,
+            self.chain_id.as_i64(),
+            repair_handles,
+            "orphan_cleanup",
+        )
+        .await?;
+        if enqueued_repairs > 0 {
+            info!(
+                enqueued_repairs,
+                "Enqueued S3 canonical repairs after orphan branch cleanup"
+            );
+        }
+
         Ok(())
     }
 
@@ -1295,8 +1585,13 @@ impl Database {
                     &block_summary.hash,
                 )
                 .await?;
-            self.cleanup_orphaned_branch_state(tx, &orphaned_hashes)
-                .await?;
+            self.enqueue_orphaned_branch_cleanup(
+                tx,
+                block_summary.number as i64,
+                block_summary.hash.as_ref(),
+                &orphaned_hashes,
+            )
+            .await?;
         }
         Ok(())
     }
@@ -2152,6 +2447,10 @@ impl Database {
         slow_dep_chain_ids: &HashSet<ChainHash>,
     ) -> Result<(), SqlxError> {
         for chain in chains {
+            debug_assert!(
+                chain.dependencies.is_empty(),
+                "dependency_count is intentionally dormant; producer must not emit non-zero dependency edges without reworking DCID release bookkeeping"
+            );
             let schedule_priority = if slow_dep_chain_ids.contains(&chain.hash)
             {
                 SchedulePriority::Slow

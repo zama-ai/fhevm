@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH canonical_target AS (\n                SELECT d2.producer_block_hash,\n                       d2.block_hash\n                  FROM ciphertext_digest_branch d2\n                  LEFT JOIN host_chain_blocks_valid producer\n                    ON producer.chain_id = d2.host_chain_id\n                   AND producer.block_hash = d2.producer_block_hash\n                   AND d2.producer_block_hash <> ''::BYTEA\n                  LEFT JOIN host_chain_blocks_valid event_block\n                    ON event_block.chain_id = d2.host_chain_id\n                   AND event_block.block_hash = d2.block_hash\n                   AND d2.block_hash <> ''::BYTEA\n                 WHERE d2.host_chain_id = $5\n                   AND d2.handle = $6\n                   AND (\n                        d2.producer_block_hash = ''::BYTEA\n                        OR COALESCE(producer.block_status, 'pending') <> 'orphaned'\n                   )\n                   AND (\n                        d2.block_hash = ''::BYTEA\n                        OR COALESCE(event_block.block_status, 'pending') <> 'orphaned'\n                   )\n                 ORDER BY COALESCE(d2.block_number, -1) DESC,\n                          CASE WHEN d2.producer_block_hash = ''::BYTEA THEN 1 ELSE 0 END ASC,\n                          d2.created_at DESC\n                 LIMIT 1\n            )\n            UPDATE ciphertext_digest_branch d\n            SET ciphertext = $1,\n                ciphertext128 = $2,\n                ciphertext128_format = $3,\n                s3_format_version = $4,\n                s3_publication_verified_at = NOW(),\n                s3_publication_verified_digest = $1,\n                s3_publication_verified_producer_block_hash = d.producer_block_hash\n            WHERE d.host_chain_id = $5\n              AND d.handle = $6\n              AND d.producer_block_hash = $7\n              AND d.block_hash = $8\n              AND (\n                    d.producer_block_hash = ''::BYTEA\n                    OR NOT EXISTS (\n                        SELECT 1\n                        FROM host_chain_blocks_valid b\n                        WHERE b.chain_id = d.host_chain_id\n                          AND b.block_hash = d.producer_block_hash\n                          AND b.block_status = 'orphaned'\n                    )\n              )\n              AND (\n                    d.block_hash = ''::BYTEA\n                    OR NOT EXISTS (\n                        SELECT 1\n                        FROM host_chain_blocks_valid b\n                        WHERE b.chain_id = d.host_chain_id\n                          AND b.block_hash = d.block_hash\n                          AND b.block_status = 'orphaned'\n                    )\n              )\n              AND (\n                    d.block_number IS NULL\n                    OR d.block_number > COALESCE(\n                        (\n                            SELECT settled_height\n                            FROM coprocessor_settlement s\n                            WHERE s.chain_id = d.host_chain_id\n                        ),\n                        -1\n                    )\n                    OR EXISTS (\n                        SELECT 1\n                        FROM canonical_target t\n                        WHERE t.producer_block_hash = d.producer_block_hash\n                          AND t.block_hash = d.block_hash\n                    )\n              )\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Bytea",
+        "Int2",
+        "Int2",
+        "Int8",
+        "Bytea",
+        "Bytea",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "898b445b940b8135f3d1297c9f165043dc207e755c49761b7e820b3f2bc8cd8e"
+}

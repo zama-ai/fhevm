@@ -144,6 +144,7 @@ async fn set_test_component_dcid(
 }
 
 /// Insert a TrivialEncrypt event in a specific block.
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn insert_trivial_encrypt_in_block(
     listener_db: &ListenerDatabase,
     tx: &mut Transaction<'_>,
@@ -173,6 +174,7 @@ pub(crate) async fn insert_trivial_encrypt_in_block(
 }
 
 /// Insert an FheAdd event in a specific block.
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn insert_fhe_add_in_block(
     listener_db: &ListenerDatabase,
     tx: &mut Transaction<'_>,

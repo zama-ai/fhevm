@@ -1221,7 +1221,7 @@ async fn test_update_finalized_blocks_drives_orphan_cleanup_via_rpc_caller(
     .execute(&setup.db_pool)
     .await?;
 
-    sqlx::query!(
+    sqlx::query(
         r#"
         INSERT INTO ciphertexts_branch (
             handle,
@@ -1236,21 +1236,21 @@ async fn test_update_finalized_blocks_drives_orphan_cleanup_via_rpc_caller(
             ($7, $8, $9, $10, $5, $6),
             ($11, $12, $13, $14, $5, $6)
         "#,
-        canonical_handle.to_vec(),
-        canonical_hash.to_vec(),
-        target_block_number as i64,
-        vec![0xAA_u8],
-        0_i16,
-        0_i16,
-        orphan_handle.to_vec(),
-        orphan_hash.to_vec(),
-        target_block_number as i64,
-        vec![0xBB_u8],
-        orphan_descendant_handle.to_vec(),
-        orphan_descendant_hash.to_vec(),
-        target_block_number as i64 + 1,
-        vec![0xBC_u8],
     )
+    .bind(canonical_handle.to_vec())
+    .bind(canonical_hash.to_vec())
+    .bind(target_block_number as i64)
+    .bind(vec![0xAA_u8])
+    .bind(0_i16)
+    .bind(0_i16)
+    .bind(orphan_handle.to_vec())
+    .bind(orphan_hash.to_vec())
+    .bind(target_block_number as i64)
+    .bind(vec![0xBB_u8])
+    .bind(orphan_descendant_handle.to_vec())
+    .bind(orphan_descendant_hash.to_vec())
+    .bind(target_block_number as i64 + 1)
+    .bind(vec![0xBC_u8])
     .execute(&setup.db_pool)
     .await?;
 
@@ -1290,6 +1290,23 @@ async fn test_update_finalized_blocks_drives_orphan_cleanup_via_rpc_caller(
     .fetch_one(&setup.db_pool)
     .await?;
     assert_eq!(orphan_status, "orphaned");
+
+    let pending_cleanup_jobs = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*)
+         FROM branch_cleanup_jobs
+         WHERE chain_id = $1
+           AND finalized_block_hash = $2
+           AND status = 'pending'",
+    )
+    .bind(setup.chain_id.as_i64())
+    .bind(canonical_hash.to_vec())
+    .fetch_one(&setup.db_pool)
+    .await?;
+    assert_eq!(pending_cleanup_jobs, 1);
+
+    let processed_cleanup_jobs =
+        db.process_orphaned_branch_cleanup_jobs().await?;
+    assert_eq!(processed_cleanup_jobs, 1);
 
     let orphan_rows = sqlx::query_scalar!(
         r#"
@@ -1874,6 +1891,85 @@ async fn test_settlement_blocks_on_pbs_event_block_hash(
 
 #[tokio::test]
 #[serial(db)]
+async fn test_quarantined_cleanup_job_blocks_settlement(
+) -> Result<(), anyhow::Error> {
+    let db_instance = test_harness::instance::setup_test_db(ImportMode::None)
+        .await
+        .expect("valid db instance");
+    let chain_id = ChainId::try_from(139_u64).unwrap();
+    let db = Database::new(&db_instance.db_url, chain_id, 128).await?;
+    let pool = db.pool.read().await.clone();
+    let genesis_hash = vec![0x39_u8; 32];
+    let finalized_hash = vec![0x3A_u8; 32];
+    let orphaned_hash = vec![0x3B_u8; 32];
+
+    sqlx::query!(
+        r#"
+        INSERT INTO host_chain_blocks_valid(
+            chain_id, block_hash, parent_hash, block_number, block_status
+         )
+         VALUES
+            ($1, $2, NULL, 0, 'finalized'),
+            ($1, $3, $2, 1, 'finalized')
+        "#,
+        chain_id.as_i64(),
+        &genesis_hash,
+        &finalized_hash,
+    )
+    .execute(&pool)
+    .await?;
+
+    sqlx::query!(
+        r#"
+        INSERT INTO branch_cleanup_jobs(
+            chain_id,
+            finalized_block_hash,
+            finalized_block_number,
+            orphaned_block_hashes,
+            status,
+            attempts,
+            locked_at,
+            last_error
+         )
+         VALUES ($1, $2, 1, $3, 'pending', 10, NOW(), NULL)
+        "#,
+        chain_id.as_i64(),
+        &finalized_hash,
+        &vec![orphaned_hash],
+    )
+    .execute(&pool)
+    .await?;
+
+    db.record_orphaned_branch_cleanup_error(
+        &finalized_hash,
+        "forced test failure",
+    )
+    .await?;
+
+    let status = sqlx::query_scalar!(
+        r#"
+        SELECT status AS "status!"
+         FROM branch_cleanup_jobs
+         WHERE chain_id = $1 AND finalized_block_hash = $2
+        "#,
+        chain_id.as_i64(),
+        &finalized_hash,
+    )
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(status, "quarantined");
+
+    let mut tx = db.new_transaction().await?;
+    let settled_height =
+        advance_settled_height(&mut tx, chain_id.as_i64(), 1, 0).await?;
+    tx.rollback().await?;
+
+    assert_eq!(settled_height, 0);
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
 async fn test_finalization_cleanup_removes_orphaned_branch_rows_locally(
 ) -> Result<(), anyhow::Error> {
     let setup = setup_with_block_time(None, 1.0).await?;
@@ -2237,6 +2333,10 @@ async fn test_finalization_cleanup_removes_orphaned_branch_rows_locally(
     .fetch_one(&setup.db_pool)
     .await?;
     assert_eq!(orphan_descendant_status, "orphaned");
+
+    let processed_cleanup_jobs =
+        db.process_orphaned_branch_cleanup_jobs().await?;
+    assert_eq!(processed_cleanup_jobs, 1);
 
     let canonical_computations = sqlx::query_scalar!(
         r#"

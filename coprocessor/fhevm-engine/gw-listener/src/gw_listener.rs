@@ -8,7 +8,7 @@ use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::database::connect_options_for_database_url;
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::utils::to_hex;
-use sqlx::{postgres::PgPoolOptions, Pool, Postgres, Row};
+use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};
 
@@ -565,10 +565,12 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
 }
 
 async fn get_listener_progress(db_pool: &Pool<Postgres>) -> anyhow::Result<ListenerProgress> {
-    let row = sqlx::query(
-        "SELECT last_block_num, earliest_open_ct_commits_block
+    let row = sqlx::query!(
+        r#"
+        SELECT last_block_num, earliest_open_ct_commits_block
             FROM gw_listener_last_block
-            WHERE dummy_id = true",
+            WHERE dummy_id = true
+        "#,
     )
     .fetch_optional(db_pool)
     .await?;
@@ -579,10 +581,10 @@ async fn get_listener_progress(db_pool: &Pool<Postgres>) -> anyhow::Result<Liste
 
     Ok(ListenerProgress {
         last_processed_block_num: row
-            .get::<Option<i64>, _>("last_block_num")
+            .last_block_num
             .map(|n| n.try_into().expect("Got an invalid block number")),
         earliest_open_ct_commits_block: row
-            .get::<Option<i64>, _>("earliest_open_ct_commits_block")
+            .earliest_open_ct_commits_block
             .map(|n| n.try_into().expect("Got an invalid block number")),
     })
 }
@@ -601,15 +603,17 @@ async fn update_listener_progress(
         .earliest_open_ct_commits_block
         .map(i64::try_from)
         .transpose()?;
-    sqlx::query(
-        "INSERT into gw_listener_last_block (dummy_id, last_block_num, earliest_open_ct_commits_block)
+    sqlx::query!(
+        r#"
+        INSERT into gw_listener_last_block (dummy_id, last_block_num, earliest_open_ct_commits_block)
             VALUES (true, $1, $2)
             ON CONFLICT (dummy_id) DO UPDATE SET
                 last_block_num = EXCLUDED.last_block_num,
-                earliest_open_ct_commits_block = EXCLUDED.earliest_open_ct_commits_block",
+                earliest_open_ct_commits_block = EXCLUDED.earliest_open_ct_commits_block
+        "#,
+        last_block_num,
+        earliest_open_ct_commits_block,
     )
-    .bind(last_block_num)
-    .bind(earliest_open_ct_commits_block)
     .execute(db_pool)
     .await?;
 

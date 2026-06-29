@@ -119,12 +119,13 @@ pub async fn insert_ciphertext64(
 ) -> anyhow::Result<()> {
     let producer_block_hash = vec![1_u8; 32];
     let _ = sqlx::query(
-        "INSERT INTO ciphertexts_branch(handle, producer_block_hash, ciphertext, ciphertext_version, ciphertext_type)
-         VALUES ($1, $2, $3, $4, $5)
+        "INSERT INTO ciphertexts_branch(handle, producer_block_hash, block_number, ciphertext, ciphertext_version, ciphertext_type)
+         VALUES ($1, $2, $3, $4, $5, $6)
          ON CONFLICT DO NOTHING;",
     )
     .bind(handle)
     .bind(&producer_block_hash)
+    .bind(1_i64)
     .bind(ciphertext)
     .bind(current_ciphertext_version())
     .bind(0_i16)
