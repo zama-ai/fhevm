@@ -61,7 +61,7 @@ static SLOW_LANE_MARKED_CHAINS_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(
 /// ACL events whose handle could not be resolved to a ciphertext-producer
 /// block on the current branch (nor to branchless/legacy state). These are
 /// keyed branchless rather than guessing the ACL-event block; a non-zero rate
-/// indicates branch metadata is missing or inconsistent, and should alert.
+/// indicates branch metadata is missing or an inconsistency, and should alert.
 static UNRESOLVED_PRODUCER_BLOCK_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(
     || {
         register_int_counter_vec!(
@@ -77,8 +77,8 @@ static UNRESOLVED_PRODUCER_BLOCK_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(
 pub struct Chain {
     pub hash: ChainHash,
     pub dependencies: Vec<ChainHash>,
-    // Ingest-only metadata for dependency links split by no_fork grouping.
-    // Not used by scheduler execution ordering.
+    // Ingest-only metadata for dependency links outside the same-block
+    // component. Not used by scheduler execution ordering.
     pub split_dependencies: Vec<ChainHash>,
     pub dependents: Vec<ChainHash>,
     pub allowed_handle: Vec<Handle>,
@@ -97,6 +97,25 @@ const MAX_RETRY_ON_UNKNOWN_ERROR: usize = 5;
 
 // short wait in case the database had a short issue
 const RECONNECTION_DELAY: Duration = Duration::from_millis(100);
+
+/// Host-chain block number at which the block-scoped (wave-2) pipeline takes
+/// over. Blocks at or above it are no longer mirrored into the legacy work
+/// tables, so the legacy pipeline drains and idles. Defaults to "never"
+/// (always dual-write) when unset; operators set the agreed cutover block on
+/// all services when rolling out wave 2.
+fn configured_branch_cutover_block() -> Option<i64> {
+    std::env::var("FHEVM_BRANCH_CUTOVER_BLOCK")
+        .ok()
+        .and_then(|v| v.parse().ok())
+}
+
+fn legacy_mirror_cutoff() -> i64 {
+    configured_branch_cutover_block().unwrap_or(i64::MAX)
+}
+
+pub(crate) fn settlement_cutover_block() -> i64 {
+    configured_branch_cutover_block().unwrap_or(0)
+}
 
 struct ComputationBranchRow<'a> {
     chain_id: i64,
@@ -626,9 +645,12 @@ impl Database {
             },
         )
         .await?;
-        // Wave-1 dual-write: the legacy pipeline still executes from the
-        // legacy tables, so every branch row is mirrored there until the
-        // block-scoped readers take over in wave 2.
+        // Dual-write: the legacy pipeline still executes blocks below the
+        // cutover from the legacy tables; blocks at or above it belong to
+        // the block-scoped pipeline only.
+        if (log.block_number as i64) >= legacy_mirror_cutoff() {
+            return Ok(inserted);
+        }
         let query = sqlx::query!(
             r#"
             INSERT INTO computations (
@@ -1437,20 +1459,6 @@ impl Database {
         Ok(())
     }
 
-    pub async fn read_last_valid_block(&self) -> Option<i64> {
-        let query = sqlx::query!(
-            r#"
-            SELECT MAX(block_number) FROM host_chain_blocks_valid WHERE chain_id = $1;
-            "#,
-            self.chain_id.as_i64(),
-        );
-        let pool = self.pool.read().await.clone();
-        match query.fetch_one(&pool).await {
-            Ok(record) => record.max,
-            Err(_err) => None, // table could be empty
-        }
-    }
-
     async fn resolve_handle_producer_block(
         &self,
         tx: &mut Transaction<'_>,
@@ -1538,6 +1546,16 @@ impl Database {
             });
         }
 
+        // No computation on the current branch, no branchless ciphertext, and
+        // no legacy ciphertext resolve this handle. Do NOT guess the ACL-event
+        // block: keying a branch row to the allow block would silently mis-key
+        // it to a block that produced no ciphertext (the sns readiness join
+        // then skips it forever) and could even collide with an unrelated
+        // branch's ciphertext, risking a wrong-bytes noise-squash. Fall back to
+        // the branchless sentinel ('') -- the explicit "unknown branch"
+        // namespace, which matches only branchless ciphertexts and never an
+        // arbitrary fork -- and surface the anomaly via a counter and an error
+        // log so it is alertable rather than silent.
         let chain_id_label = self.chain_id.as_i64().to_string();
         UNRESOLVED_PRODUCER_BLOCK_TOTAL
             .with_label_values(&[chain_id_label.as_str()])
@@ -1552,6 +1570,20 @@ impl Database {
             hash: Vec::new(),
             number: current_block_number,
         })
+    }
+
+    pub async fn read_last_valid_block(&self) -> Option<i64> {
+        let query = sqlx::query!(
+            r#"
+            SELECT MAX(block_number) FROM host_chain_blocks_valid WHERE chain_id = $1;
+            "#,
+            self.chain_id.as_i64(),
+        );
+        let pool = self.pool.read().await.clone();
+        match query.fetch_one(&pool).await {
+            Ok(record) => record.max,
+            Err(_err) => None, // table could be empty
+        }
     }
 
     /// Handles all types of ACL events
@@ -1937,8 +1969,11 @@ impl Database {
                 &producer_block.hash,
             )
             .await?;
-            // Wave-1 dual-write: keep feeding the legacy sns-worker until
-            // wave 2 switches it to the branch tables.
+            // Dual-write below the cutover: keep feeding the legacy
+            // sns-worker while it drains pre-cutover work.
+            if (acl_block_number as i64) >= legacy_mirror_cutoff() {
+                continue;
+            }
             let query = sqlx::query!(
                 "INSERT INTO pbs_computations(handle, transaction_id, host_chain_id, block_number) VALUES($1, $2, $3, $4)
                  ON CONFLICT DO NOTHING;",
@@ -2030,8 +2065,11 @@ impl Database {
             },
         )
         .await?;
-        // Wave-1 dual-write: keep feeding the legacy readers until wave 2
-        // switches them to the branch tables.
+        // Dual-write below the cutover: keep feeding the legacy readers
+        // while the legacy pipeline drains pre-cutover work.
+        if (insert.acl_block_number as i64) >= legacy_mirror_cutoff() {
+            return Ok(branch_inserted);
+        }
         let query = sqlx::query!(
             "INSERT INTO allowed_handles(handle, account_address, event_type, transaction_id, host_chain_id, block_number) VALUES($1, $2, $3, $4, $5, $6)
                     ON CONFLICT DO NOTHING;",

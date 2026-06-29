@@ -9,8 +9,7 @@ use tracing::Level;
 use fhevm_engine_common::utils::DatabaseURL;
 use fhevm_engine_common::{metrics_server, telemetry};
 use host_listener::cmd::{
-    DEFAULT_DEPENDENCE_BY_CONNEXITY, DEFAULT_DEPENDENCE_CACHE_SIZE,
-    DEFAULT_DEPENDENCE_CROSS_BLOCK,
+    DEFAULT_DEPENDENCE_CACHE_SIZE, DEFAULT_DEPENDENCE_CROSS_BLOCK,
 };
 use host_listener::consumer::{run_consumer, ConsumerConfig};
 
@@ -83,13 +82,6 @@ struct Args {
 
     #[arg(
         long,
-        default_value_t = DEFAULT_DEPENDENCE_BY_CONNEXITY,
-        help = "Dependence chain are connected components"
-    )]
-    pub dependence_by_connexity: bool,
-
-    #[arg(
-        long,
         default_value_t = DEFAULT_DEPENDENCE_CROSS_BLOCK,
         help = "Dependence chain are across blocks"
     )]
@@ -158,7 +150,6 @@ async fn main() -> anyhow::Result<()> {
         service_name: args.service_name,
         health_port: args.health_port,
         dependence_cache_size: args.dependence_cache_size,
-        dependence_by_connexity: args.dependence_by_connexity,
         dependence_cross_block: args.dependence_cross_block,
         dependent_ops_max_per_chain: args.dependent_ops_max_per_chain,
         chain_id: args.chain_id,

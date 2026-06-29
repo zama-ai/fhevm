@@ -9,10 +9,12 @@ use tracing::Level;
 use fhevm_engine_common::utils::DatabaseURL;
 use fhevm_engine_common::{metrics_server, telemetry};
 use host_listener::cmd::{
-    DEFAULT_DEPENDENCE_BY_CONNEXITY, DEFAULT_DEPENDENCE_CACHE_SIZE,
-    DEFAULT_DEPENDENCE_CROSS_BLOCK,
+    DEFAULT_DEPENDENCE_CACHE_SIZE, DEFAULT_DEPENDENCE_CROSS_BLOCK,
 };
 use host_listener::poller::{run_poller, PollerConfig};
+
+const DEFAULT_SETTLEMENT_FINALITY_LAG: u64 = 96;
+const DEFAULT_REORG_MAXIMUM_DURATION_IN_BLOCKS: u64 = 50;
 
 #[derive(Parser, Debug, Clone)]
 #[command(version, about, long_about = None)]
@@ -53,6 +55,20 @@ struct Args {
         help = "Depth behind the head considered final (in blocks)"
     )]
     finality_lag: u64,
+
+    #[arg(
+        long,
+        default_value_t = DEFAULT_SETTLEMENT_FINALITY_LAG,
+        help = "Minimum depth before advancing coprocessor settlement; should cover true chain finality"
+    )]
+    settlement_finality_lag: u64,
+
+    #[arg(
+        long,
+        default_value_t = DEFAULT_REORG_MAXIMUM_DURATION_IN_BLOCKS,
+        help = "Maximum expected reorg depth; settlement will not advance shallower than this window"
+    )]
+    reorg_maximum_duration_in_blocks: u64,
 
     #[arg(
         long,
@@ -117,13 +133,6 @@ struct Args {
 
     #[arg(
         long,
-        default_value_t = DEFAULT_DEPENDENCE_BY_CONNEXITY,
-        help = "Dependence chain are connected components"
-    )]
-    pub dependence_by_connexity: bool,
-
-    #[arg(
-        long,
         default_value_t = DEFAULT_DEPENDENCE_CROSS_BLOCK,
         help = "Dependence chain are across blocks"
     )]
@@ -184,6 +193,8 @@ async fn main() -> anyhow::Result<()> {
         )?,
         database_url: args.database_url,
         finality_lag: args.finality_lag,
+        settlement_finality_lag: args.settlement_finality_lag,
+        reorg_maximum_duration_in_blocks: args.reorg_maximum_duration_in_blocks,
         batch_size: args.batch_size,
         poll_interval: Duration::from_millis(args.poll_interval_ms),
         retry_interval: Duration::from_millis(args.retry_interval_ms),
@@ -192,7 +203,6 @@ async fn main() -> anyhow::Result<()> {
         rpc_compute_units_per_second: args.rpc_compute_units_per_second,
         health_port: args.health_port,
         dependence_cache_size: args.dependence_cache_size,
-        dependence_by_connexity: args.dependence_by_connexity,
         dependence_cross_block: args.dependence_cross_block,
         dependent_ops_max_per_chain: args.dependent_ops_max_per_chain,
     };

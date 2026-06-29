@@ -7,10 +7,20 @@ pub struct CompressedCiphertext {
     pub ct_bytes: Vec<u8>,
 }
 
+pub struct ComputationOutput {
+    pub compressed: CompressedCiphertext,
+    pub working: SupportedFheCiphertexts,
+}
+
 pub struct TaskResult {
     pub compressed_ct: CompressedCiphertext,
+    pub working_ct: Option<SupportedFheCiphertexts>,
     pub is_allowed: bool,
     pub transaction_id: Handle,
+}
+pub struct TaskOutput {
+    pub transaction_id: Handle,
+    pub result: Result<TaskResult>,
 }
 pub struct DFGTxResult {
     pub handle: Handle,

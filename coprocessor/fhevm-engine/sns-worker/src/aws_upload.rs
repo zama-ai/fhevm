@@ -16,17 +16,19 @@ use ciphertext_attestation::{
     CiphertextAttestation, CiphertextAttestationPayload, CiphertextFormat, Version,
     S3_METADATA_ATTESTATION_KEY,
 };
+use fhevm_engine_common::branch::{select_producer_candidate, ProducerBlockHashed};
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::database::EVENT_CIPHERTEXTS_UPLOADED;
 use fhevm_engine_common::pg_pool::{is_fatal_connection_error, PostgresPoolManager, ServiceError};
 use fhevm_engine_common::telemetry;
+use fhevm_engine_common::tfhe_ops::current_ciphertext_version;
 use fhevm_engine_common::types::CoproSigner;
 use fhevm_engine_common::utils::to_hex;
 use futures::future::join_all;
 use opentelemetry::trace::{Status, TraceContextExt};
 use sha2::Sha256;
 use sha3::{Digest, Keccak256};
-use sqlx::{PgPool, Pool, Postgres, Transaction};
+use sqlx::{PgPool, Pool, Postgres, Row, Transaction};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::select;
@@ -45,6 +47,18 @@ const DEFAULT_BATCH_SIZE: usize = 10;
 pub(crate) const COPROCESSOR_CONTEXT_ID_1: U256 = U256::ONE;
 const NO_SNS_CIPHERTEXT_DIGEST: [u8; 32] = [0; 32];
 const UPLOAD_CIPHERTEXTS_TASK_SAVEPOINT: &str = "savepoint_upload_ciphertexts_task";
+
+#[derive(Clone, Debug)]
+struct UploadBytesCandidate {
+    producer_block_hash: Vec<u8>,
+    ciphertext: Vec<u8>,
+}
+
+impl ProducerBlockHashed for UploadBytesCandidate {
+    fn producer_block_hash(&self) -> &[u8] {
+        &self.producer_block_hash
+    }
+}
 
 pub(crate) async fn spawn_resubmit_task(
     pool_mngr: &PostgresPoolManager,
@@ -134,30 +148,37 @@ async fn run_uploader_loop(
                     }
                     UploadJob::DatabaseLock(mut item) => {
                         create_upload_task_savepoint(&mut trx).await?;
-                        let row = match sqlx::query!(
-                            "
-                            SELECT d.ciphertext128_format,
+                        let sql = "
+                            SELECT d.ciphertext,
+                                   d.ciphertext128,
+                                   d.ciphertext128_format,
                                    d.s3_format_version
-                            FROM ciphertext_digest d
-                            WHERE d.handle = $1
+                            FROM ciphertext_digest_branch d
+                            WHERE d.host_chain_id = $1
+                              AND d.handle = $2
+                              AND d.producer_block_hash = $3
+                              AND d.block_hash = $4
                               AND (
                                 d.ciphertext IS NULL
                                 OR (
                                   d.ciphertext128 IS NULL
                                   AND EXISTS (
                                     SELECT 1
-                                    FROM ciphertexts128 c
+                                    FROM ciphertexts128_branch c
                                     WHERE c.handle = d.handle
+                                      AND c.producer_block_hash = d.producer_block_hash
                                       AND c.ciphertext IS NOT NULL
                                   )
                                 )
-                            )
-                            FOR UPDATE SKIP LOCKED
-                            ",
-                            &item.handle,
-                        )
-                        .fetch_one(trx.as_mut())
-                        .await
+                              )
+                            FOR UPDATE SKIP LOCKED";
+                        let row = match sqlx::query(sql)
+                            .bind(item.host_chain_id.as_i64())
+                            .bind(&item.handle)
+                            .bind(&item.producer_block_hash)
+                            .bind(&item.block_hash)
+                            .fetch_one(trx.as_mut())
+                            .await
                         {
                             Ok(row) => row,
                             Err(err) => {
@@ -170,18 +191,41 @@ async fn run_uploader_loop(
                                 continue;
                             }
                         };
+                        let uploaded_ct64: Option<Vec<u8>> = row.try_get("ciphertext")?;
+                        let uploaded_ct128: Option<Vec<u8>> = row.try_get("ciphertext128")?;
+                        let ciphertext128_format: Option<i16> =
+                            row.try_get("ciphertext128_format")?;
+                        item.s3_format_version = row.try_get("s3_format_version")?;
 
-                        let ciphertext128_format = row.ciphertext128_format;
-                        item.s3_format_version = row.s3_format_version;
-                        let ct128_format = Ciphertext128Format::from_i16(ciphertext128_format)
-                            .ok_or_else(|| {
+                        // A non-null digest means another worker already uploaded that
+                        // ciphertext variant, so this recovery job must not retry it.
+                        if let Some(digest) = uploaded_ct64 {
+                            item.ct64_digest = Some(digest);
+                            item.ct64_compressed = Arc::new(Vec::new());
+                        }
+
+                        if let Some(digest) = uploaded_ct128 {
+                            item.ct128_digest = Some(digest);
+                        }
+
+                        let ct128_format = match ciphertext128_format {
+                            Some(format) => Ciphertext128Format::from_i16(format).ok_or_else(|| {
                                 ExecutionError::InvalidCiphertext128Format(format!(
                                     "pending ct128 has invalid format id, host_chain_id: {}, handle: {}, format_id: {}",
                                     item.host_chain_id.as_i64(),
                                     to_hex(&item.handle),
-                                    ciphertext128_format,
+                                    format,
                                 ))
-                            })?;
+                            })?,
+                            None if item.ct128.is_empty() => Ciphertext128Format::Unknown,
+                            None => {
+                                return Err(ExecutionError::InvalidCiphertext128Format(format!(
+                                    "pending ct128 is missing format, host_chain_id: {}, handle: {}",
+                                    item.host_chain_id.as_i64(),
+                                    to_hex(&item.handle),
+                                )));
+                            }
+                        };
 
                         if !item.ct128.is_empty() {
                             // Reconstruct with DB format as truth. Even if a digest is already
@@ -910,9 +954,11 @@ async fn fetch_pending_uploads(
     db_pool: &Pool<Postgres>,
     limit: i64,
 ) -> Result<Vec<UploadJob>, ExecutionError> {
-    let rows = sqlx::query!(
-        "
+    let sql = "
         SELECT d.handle,
+               d.producer_block_hash,
+               d.block_hash,
+               d.block_number,
                d.ciphertext,
                d.ciphertext128,
                d.ciphertext128_format,
@@ -922,41 +968,45 @@ async fn fetch_pending_uploads(
                d.key_id_gw,
                EXISTS (
                  SELECT 1
-                 FROM ciphertexts128 c
+                 FROM ciphertexts128_branch c
                  WHERE c.handle = d.handle
+                   AND c.producer_block_hash = d.producer_block_hash
                    AND c.ciphertext IS NOT NULL
-               ) AS \"has_ct128_ciphertext!\"
-        FROM ciphertext_digest d
+               ) AS has_ct128_ciphertext
+        FROM ciphertext_digest_branch d
         WHERE d.ciphertext IS NULL
            OR (
              d.ciphertext128 IS NULL
              AND EXISTS (
                SELECT 1
-               FROM ciphertexts128 c
+               FROM ciphertexts128_branch c
                WHERE c.handle = d.handle
+                 AND c.producer_block_hash = d.producer_block_hash
                  AND c.ciphertext IS NOT NULL
              )
            )
         FOR UPDATE SKIP LOCKED
-        LIMIT $1;
-        ",
-        limit
-    )
-    .fetch_all(db_pool)
-    .await?;
+        LIMIT $1";
+    let rows = sqlx::query(sql).bind(limit).fetch_all(db_pool).await?;
 
     let mut jobs = Vec::new();
 
     for row in rows {
         let mut ct64_compressed = Arc::new(Vec::new());
         let mut ct128 = Vec::new();
-        let ciphertext_digest = row.ciphertext;
-        let ciphertext128_digest = row.ciphertext128;
-        let s3_format_version = row.s3_format_version;
+        let ciphertext_digest: Option<Vec<u8>> = row.try_get("ciphertext")?;
+        let ciphertext128_digest: Option<Vec<u8>> = row.try_get("ciphertext128")?;
+        let s3_format_version: Option<i16> = row.try_get("s3_format_version")?;
         let should_verify_existing_s3 = s3_format_version != Some(CURRENT_S3_FORMAT_VERSION);
-        let handle = row.handle;
-        let transaction_id = row.transaction_id;
-        let has_ct128_ciphertext = row.has_ct128_ciphertext;
+        let handle: Vec<u8> = row.try_get("handle")?;
+        let producer_block_hash: Vec<u8> = row.try_get("producer_block_hash")?;
+        let block_hash: Vec<u8> = row.try_get("block_hash")?;
+        let block_number: Option<i64> = row.try_get("block_number")?;
+        let transaction_id: Option<Vec<u8>> = row.try_get("transaction_id")?;
+        let host_chain_id_raw: i64 = row.try_get("host_chain_id")?;
+        let key_id_gw: Vec<u8> = row.try_get("key_id_gw")?;
+        let ciphertext128_format: Option<i16> = row.try_get("ciphertext128_format")?;
+        let has_ct128_ciphertext: bool = row.try_get("has_ct128_ciphertext")?;
         let row_incomplete =
             ciphertext_digest.is_none() || (has_ct128_ciphertext && ciphertext128_digest.is_none());
 
@@ -965,20 +1015,27 @@ async fn fetch_pending_uploads(
         // Also fetch already-uploaded ciphertext for pre-v1 rows so the retry
         // can validate/rewrite old S3 objects.
         if row_incomplete || should_verify_existing_s3 {
-            if let Ok(row) = sqlx::query!(
-                "SELECT ciphertext FROM ciphertexts WHERE handle = $1;",
-                handle
-            )
-            .fetch_optional(db_pool)
-            .await
+            let mut candidates = Vec::new();
+            let sql = "SELECT producer_block_hash, ciphertext
+                 FROM ciphertexts_branch
+                 WHERE handle = $1
+                   AND ciphertext IS NOT NULL
+                   AND ciphertext_version = $2";
+            for candidate_row in sqlx::query(sql)
+                .bind(&handle)
+                .bind(current_ciphertext_version())
+                .fetch_all(db_pool)
+                .await?
             {
-                if let Some(record) = row {
-                    ct64_compressed = Arc::new(record.ciphertext);
-                } else {
-                    error!(handle = hex::encode(&handle), "Missing ciphertext");
-                }
+                candidates.push(UploadBytesCandidate {
+                    producer_block_hash: candidate_row.try_get("producer_block_hash")?,
+                    ciphertext: candidate_row.try_get("ciphertext")?,
+                });
+            }
+            if let Some(record) = select_producer_candidate(&candidates, &producer_block_hash) {
+                ct64_compressed = Arc::new(record.ciphertext.clone());
             } else {
-                error!(handle = hex::encode(&handle), "Failed to fetch ciphertext");
+                error!(handle = hex::encode(&handle), "Missing ciphertext");
             }
         }
 
@@ -987,42 +1044,49 @@ async fn fetch_pending_uploads(
         // Ct64-only rows have no ciphertext128 material, so they are completed
         // by writing the zero ct128 digest after ct64 is verified/uploaded.
         if has_ct128_ciphertext && (row_incomplete || should_verify_existing_s3) {
-            if let Ok(row) = sqlx::query!(
-                "SELECT ciphertext FROM ciphertexts128 WHERE handle = $1;",
-                handle
-            )
-            .fetch_optional(db_pool)
-            .await
-            {
-                if let Some(record) = row {
-                    match record.ciphertext {
-                        Some(ct) if !ct.is_empty() => {
-                            ct128 = ct;
-                        }
-                        _ => {
-                            warn!(handle = hex::encode(&handle), "Fetched empty ct128");
-                        }
+            let mut candidates = Vec::new();
+            let sql = "SELECT producer_block_hash, ciphertext
+                 FROM ciphertexts128_branch
+                 WHERE handle = $1";
+            for candidate_row in sqlx::query(sql).bind(&handle).fetch_all(db_pool).await? {
+                let ciphertext: Option<Vec<u8>> = candidate_row.try_get("ciphertext")?;
+                if let Some(ciphertext) = ciphertext {
+                    if !ciphertext.is_empty() {
+                        candidates.push(UploadBytesCandidate {
+                            producer_block_hash: candidate_row.try_get("producer_block_hash")?,
+                            ciphertext,
+                        });
                     }
-                } else {
-                    error!(handle = hex::encode(&handle), "Missing ciphertext128");
                 }
+            }
+            if let Some(record) = select_producer_candidate(&candidates, &producer_block_hash) {
+                ct128 = record.ciphertext.clone();
+            } else if !candidates.is_empty() {
+                warn!(handle = hex::encode(&handle), "Fetched empty ct128");
             } else {
-                error!(
-                    handle = hex::encode(&handle),
-                    "Failed to fetch ciphertext128"
-                );
+                error!(handle = hex::encode(&handle), "Missing ciphertext128");
             }
         }
 
         let is_ct128_empty = ct128.is_empty();
 
-        let ct128_format = match Ciphertext128Format::from_i16(row.ciphertext128_format) {
-            Some(format) => format,
+        let ct128_format = match ciphertext128_format {
+            Some(format) => match Ciphertext128Format::from_i16(format) {
+                Some(format) => format,
+                None => {
+                    error!(
+                        handle = to_hex(&handle),
+                        format_id = format,
+                        "Failed to create a BigCiphertext from DB data",
+                    );
+                    continue;
+                }
+            },
+            None if !has_ct128_ciphertext => Ciphertext128Format::Unknown,
             None => {
                 error!(
                     handle = to_hex(&handle),
-                    format_id = row.ciphertext128_format,
-                    "Failed to create a BigCiphertext from DB data",
+                    "Missing ciphertext128 format for pending upload",
                 );
                 continue;
             }
@@ -1054,10 +1118,13 @@ async fn fetch_pending_uploads(
                 transaction_id.as_deref(),
             );
             let item = HandleItem {
-                host_chain_id: ChainId::try_from(row.host_chain_id)
+                host_chain_id: ChainId::try_from(host_chain_id_raw)
                     .map_err(|e| ExecutionError::ConversionError(e.into()))?,
-                key_id_gw: row.key_id_gw,
+                key_id_gw,
                 handle: handle.clone(),
+                producer_block_hash,
+                block_hash,
+                block_number,
                 ct64_compressed,
                 ct128: Arc::new(ct128),
                 ct64_digest: ciphertext_digest,
@@ -1412,6 +1479,9 @@ mod tests {
             host_chain_id: ChainId::try_from(1_i64).unwrap(),
             key_id_gw: vec![7; 32],
             handle: vec![2; 32],
+            producer_block_hash: vec![3; 32],
+            block_hash: vec![4; 32],
+            block_number: Some(1),
             ct64_compressed: Arc::new(vec![1, 2, 3]),
             ct128: Arc::new(BigCiphertext::new(vec![4, 5, 6], ct128_format)),
             ct64_digest: None,
@@ -1514,6 +1584,9 @@ mod tests {
             host_chain_id: ChainId::try_from(1_i64).unwrap(),
             key_id_gw: vec![1],
             handle: vec![2; 32],
+            producer_block_hash: vec![3; 32],
+            block_hash: vec![4; 32],
+            block_number: Some(1),
             ct64_compressed: Arc::new(ct64.clone()),
             ct128: Arc::new(BigCiphertext::default()),
             ct64_digest: None,
@@ -1549,6 +1622,9 @@ mod tests {
             host_chain_id: ChainId::try_from(42_i64).unwrap(),
             key_id_gw: vec![7; 32],
             handle: vec![0xDE, 0xAD, 0xBE, 0xEF],
+            producer_block_hash: vec![3; 32],
+            block_hash: vec![4; 32],
+            block_number: Some(1),
             ct64_compressed: Arc::new(ct64.clone()),
             // This is exactly what the recovery path sets when ciphertext128 IS NOT NULL:
             // empty bytes, but the DB format retained inside BigCiphertext.
@@ -1580,6 +1656,9 @@ mod tests {
             host_chain_id: ChainId::try_from(42_i64).unwrap(),
             key_id_gw: vec![7; 32],
             handle: vec![0xDE, 0xAD, 0xBE, 0xEF],
+            producer_block_hash: vec![3; 32],
+            block_hash: vec![4; 32],
+            block_number: Some(1),
             ct64_compressed: Arc::new(ct64),
             ct128: Arc::new(BigCiphertext::new(
                 Vec::new(),
@@ -1606,6 +1685,9 @@ mod tests {
             host_chain_id: ChainId::try_from(42_i64).unwrap(),
             key_id_gw: vec![7; 32],
             handle: vec![0xDE, 0xAD, 0xBE, 0xEF],
+            producer_block_hash: vec![3; 32],
+            block_hash: vec![4; 32],
+            block_number: Some(1),
             ct64_compressed: Arc::new(vec![0xAA, 0xBB, 0xCC]),
             ct128: Arc::new(BigCiphertext::new(
                 vec![0x44, 0x55],
@@ -1652,23 +1734,36 @@ mod tests {
         client.create_bucket().bucket(bucket_ct64).send().await?;
 
         let handle = vec![0x42; 32];
+        let producer_block_hash = vec![0x24; 32];
+        let block_hash = vec![0x25; 32];
         let key_id_gw = vec![0x07; 32];
         let ct64 = vec![0xAA, 0xBB, 0xCC, 0xDD];
         let ct128_digest = vec![0x11; 32];
         let ct128_format: i16 = Ciphertext128Format::CompressedOnCpu.into();
 
-        sqlx::query!(
-            "INSERT INTO ciphertext_digest (
-                host_chain_id, key_id_gw, handle, ciphertext128, ciphertext128_format, s3_format_version
+        sqlx::query(
+            "INSERT INTO ciphertext_digest_branch (
+                host_chain_id,
+                key_id_gw,
+                handle,
+                producer_block_hash,
+                block_hash,
+                block_number,
+                ciphertext128,
+                ciphertext128_format,
+                s3_format_version
             )
-            VALUES ($1, $2, $3, $4, $5, $6)",
-            1_i64,
-            &key_id_gw,
-            &handle,
-            &ct128_digest,
-            ct128_format,
-            S3_FORMAT_VERSION_LEGACY,
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
         )
+        .bind(1_i64)
+        .bind(&key_id_gw)
+        .bind(&handle)
+        .bind(&producer_block_hash)
+        .bind(&block_hash)
+        .bind(1_i64)
+        .bind(&ct128_digest)
+        .bind(ct128_format)
+        .bind(S3_FORMAT_VERSION_LEGACY)
         .execute(&pool)
         .await?;
 
@@ -1676,6 +1771,9 @@ mod tests {
             host_chain_id: ChainId::try_from(1_i64).unwrap(),
             key_id_gw,
             handle: handle.clone(),
+            producer_block_hash: producer_block_hash.clone(),
+            block_hash: block_hash.clone(),
+            block_number: Some(1),
             ct64_compressed: Arc::new(ct64.clone()),
             ct128: Arc::new(BigCiphertext::new(
                 Vec::new(),
@@ -1713,21 +1811,28 @@ mod tests {
         .await?;
         trx.commit().await?;
 
-        let row = sqlx::query!(
+        let row = sqlx::query(
             "SELECT ciphertext, ciphertext128, s3_format_version
-             FROM ciphertext_digest
-             WHERE handle = $1",
-            &handle
+             FROM ciphertext_digest_branch
+             WHERE handle = $1
+               AND producer_block_hash = $2
+               AND block_hash = $3",
         )
+        .bind(&handle)
+        .bind(&producer_block_hash)
+        .bind(&block_hash)
         .fetch_one(&pool)
         .await?;
 
+        let ciphertext: Option<Vec<u8>> = row.try_get("ciphertext")?;
+        let ciphertext128: Option<Vec<u8>> = row.try_get("ciphertext128")?;
+        let s3_format_version: Option<i16> = row.try_get("s3_format_version")?;
         assert_eq!(
-            row.ciphertext.as_deref(),
+            ciphertext.as_deref(),
             Some(compute_digest(&ct64).as_slice())
         );
-        assert_eq!(row.ciphertext128.as_deref(), Some(ct128_digest.as_slice()));
-        assert_eq!(row.s3_format_version, Some(S3_FORMAT_VERSION_LEGACY));
+        assert_eq!(ciphertext128.as_deref(), Some(ct128_digest.as_slice()));
+        assert_eq!(s3_format_version, Some(S3_FORMAT_VERSION_LEGACY));
 
         let ct64_key = s3_ciphertext_key(&handle, COPROCESSOR_CONTEXT_ID_1);
         client

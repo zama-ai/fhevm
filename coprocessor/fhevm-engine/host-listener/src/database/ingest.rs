@@ -5,6 +5,7 @@ use alloy::primitives::Address;
 use alloy::rpc::types::Log;
 use alloy::sol_types::SolEventInterface;
 use fhevm_engine_common::bridge::chain_id_from_handle;
+use fhevm_engine_common::branch::advance_settled_height;
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::types::{
     Handle, COMPUTED_HANDLE_INDEX_MARKER, HANDLE_VERSION,
@@ -19,7 +20,8 @@ use crate::contracts::{
 };
 use crate::database::dependence_chains::dependence_chains;
 use crate::database::tfhe_event_propagate::{
-    acl_result_handles, tfhe_result_handle, Chain, ChainHash, Database, LogTfhe,
+    acl_result_handles, settlement_cutover_block, tfhe_result_handle, Chain,
+    ChainHash, Database, LogTfhe,
 };
 use crate::kms_generation::insert_kms_generation_events_tx;
 use crate::kms_generation::metrics::KMS_EVENT_DECODE_FAIL_COUNTER;
@@ -33,7 +35,6 @@ pub struct BlockLogs<T> {
 
 #[derive(Copy, Clone, Debug)]
 pub struct IngestOptions {
-    pub dependence_by_connexity: bool,
     pub dependence_cross_block: bool,
     pub dependent_ops_max_per_chain: u32,
 }
@@ -52,6 +53,14 @@ fn block_date_time_utc(timestamp: u64) -> PrimitiveDateTime {
             OffsetDateTime::now_utc()
         });
     PrimitiveDateTime::new(offset.date(), offset.time())
+}
+
+fn settlement_candidate_block(
+    last_block_number: u64,
+    finality_lag: u64,
+    settlement_finality_lag: u64,
+) -> u64 {
+    last_block_number.saturating_sub(finality_lag.max(settlement_finality_lag))
 }
 
 fn propagate_slow_lane_to_dependents(
@@ -86,7 +95,7 @@ fn propagate_slow_lane_to_dependents(
 
 /// Marks slow chains by counting inserted ops on linked split chains together.
 ///
-/// In no-fork mode, one logical workload can be split into many small chains.
+/// Same-block components can still be connected to prior-block components.
 /// Here we connect chains through `split_dependencies`, sum their inserted-op
 /// counts, and if the sum is above the cap we mark all linked chains as slow.
 fn classify_slow_by_split_dependency_closure(
@@ -379,6 +388,7 @@ pub async fn ingest_block_logs(
             );
         }
     }
+
     for tfhe_log in tfhe_event_log.iter_mut() {
         tfhe_log.is_allowed =
             if let Some(result_handle) = tfhe_result_handle(&tfhe_log.event) {
@@ -391,7 +401,6 @@ pub async fn ingest_block_logs(
     let chains = dependence_chains(
         &mut tfhe_event_log,
         &db.dependence_chain,
-        options.dependence_by_connexity,
         options.dependence_cross_block,
     )
     .await;
@@ -524,12 +533,14 @@ pub async fn update_finalized_blocks(
     log_iter: &mut InfiniteLogIter,
     last_block_number: u64,
     finality_lag: u64,
+    settlement_finality_lag: u64,
 ) {
     let log_iter = &*log_iter;
     update_finalized_blocks_aux(
         db,
         last_block_number,
         finality_lag,
+        settlement_finality_lag,
         |block_number| async move {
             log_iter
                 .get_block_by_number(block_number)
@@ -544,12 +555,19 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
     db: &mut Database,
     last_block_number: u64,
     finality_lag: u64,
+    settlement_finality_lag: u64,
     mut get_block_hash_by_number: GetBlockHash,
 ) where
     GetBlockHash: FnMut(u64) -> GetBlockHashFuture,
     GetBlockHashFuture: Future<Output = anyhow::Result<BlockHash>>,
 {
-    info!(last_block_number, finality_lag, "Updating finalized blocks");
+    info!(
+        last_block_number,
+        finality_lag,
+        settlement_finality_lag,
+        effective_settlement_lag = finality_lag.max(settlement_finality_lag),
+        "Updating finalized blocks"
+    );
     let mut tx = match db.new_transaction().await {
         Ok(tx) => tx,
         Err(err) => {
@@ -561,6 +579,11 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
         }
     };
     let last_finalized_block = last_block_number.saturating_sub(finality_lag);
+    let settlement_candidate_height = settlement_candidate_block(
+        last_block_number,
+        finality_lag,
+        settlement_finality_lag,
+    );
     let blocks_number = match Database::get_finalized_blocks_number(
         &mut tx,
         last_finalized_block as i64,
@@ -618,6 +641,29 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
             }
         }
     }
+    match advance_settled_height(
+        &mut tx,
+        db.chain_id.as_i64(),
+        settlement_candidate_height as i64,
+        settlement_cutover_block(),
+    )
+    .await
+    {
+        Ok(settled_height) => {
+            info!(
+                settled_height,
+                "Updated coprocessor branch settlement frontier"
+            );
+        }
+        Err(err) => {
+            error!(
+                ?err,
+                settlement_candidate_height,
+                "Failed to update coprocessor branch settlement frontier"
+            );
+            return;
+        }
+    }
     if let Err(err) = tx.commit().await {
         error!(?err, "Failed to commit finalized blocks update");
         return;
@@ -632,6 +678,8 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
 #[cfg(test)]
 mod tests {
     use alloy::primitives::FixedBytes;
+    use fhevm_engine_common::branch::read_settled_height;
+    use test_harness::instance::ImportMode;
 
     use super::*;
 
@@ -652,6 +700,141 @@ mod tests {
             before_size: 0,
             new_chain: true,
         }
+    }
+
+    #[test]
+    fn settlement_candidate_uses_deeper_lag_than_indexing_finality() {
+        assert_eq!(settlement_candidate_block(100, 15, 50), 50);
+    }
+
+    #[test]
+    fn settlement_candidate_never_advances_ahead_of_indexing_finality() {
+        assert_eq!(settlement_candidate_block(100, 50, 15), 50);
+    }
+
+    struct EnvGuard {
+        key: &'static str,
+        value: Option<String>,
+    }
+
+    impl EnvGuard {
+        fn set(key: &'static str, value: &str) -> Self {
+            let previous = std::env::var(key).ok();
+            std::env::set_var(key, value);
+            Self {
+                key,
+                value: previous,
+            }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            match &self.value {
+                Some(value) => std::env::set_var(self.key, value),
+                None => std::env::remove_var(self.key),
+            }
+        }
+    }
+
+    #[tokio::test]
+    #[serial_test::serial(db)]
+    async fn finalized_blocks_can_advance_ahead_of_settlement_lag() {
+        let _cutover = EnvGuard::set("FHEVM_BRANCH_CUTOVER_BLOCK", "1");
+        let db_instance =
+            test_harness::instance::setup_test_db(ImportMode::None)
+                .await
+                .expect("valid db instance");
+        let chain_id = ChainId::try_from(42_u64).unwrap();
+        let mut db = Database::new(&db_instance.db_url, chain_id, 128)
+            .await
+            .expect("database");
+        let pool = db.pool.read().await.clone();
+        sqlx::query("DELETE FROM coprocessor_settlement WHERE chain_id = $1")
+            .bind(chain_id.as_i64())
+            .execute(&pool)
+            .await
+            .expect("clear settlement row");
+        sqlx::query("DELETE FROM host_chain_blocks_valid WHERE chain_id = $1")
+            .bind(chain_id.as_i64())
+            .execute(&pool)
+            .await
+            .expect("clear block rows");
+        sqlx::query("DELETE FROM computations_branch WHERE host_chain_id = $1")
+            .bind(chain_id.as_i64())
+            .execute(&pool)
+            .await
+            .expect("clear branch computation rows");
+        sqlx::query(
+            "DELETE FROM pbs_computations_branch WHERE host_chain_id = $1",
+        )
+        .bind(chain_id.as_i64())
+        .execute(&pool)
+        .await
+        .expect("clear branch pbs rows");
+
+        for block_number in 0_i64..=10 {
+            sqlx::query(
+                "INSERT INTO host_chain_blocks_valid \
+                 (chain_id, block_hash, parent_hash, block_number, block_status) \
+                 VALUES ($1, $2, $3, $4, 'pending')",
+            )
+            .bind(chain_id.as_i64())
+            .bind(vec![block_number as u8; 32])
+            .bind(if block_number == 0 {
+                Vec::new()
+            } else {
+                vec![(block_number - 1) as u8; 32]
+            })
+            .bind(block_number)
+            .execute(&pool)
+            .await
+            .expect("insert pending block");
+        }
+
+        update_finalized_blocks_aux(
+            &mut db,
+            10,
+            1,
+            4,
+            |block_number| async move {
+                Ok(BlockHash::from([block_number as u8; 32]))
+            },
+        )
+        .await;
+
+        let mut tx = db.new_transaction().await.expect("settlement tx");
+        let settled_height = read_settled_height(&mut tx, chain_id.as_i64())
+            .await
+            .expect("read settlement");
+        tx.rollback().await.expect("rollback settlement tx");
+
+        let block_statuses = sqlx::query_as::<_, (i64, String)>(
+            "SELECT block_number, block_status::text FROM host_chain_blocks_valid \
+             WHERE chain_id = $1 ORDER BY block_number",
+        )
+        .bind(chain_id.as_i64())
+        .fetch_all(&pool)
+        .await
+        .expect("query block statuses");
+
+        assert_eq!(block_statuses.len(), 11);
+        for block_number in 0_i64..=9 {
+            assert!(
+                block_statuses
+                    .contains(&(block_number, "finalized".to_string())),
+                "block {block_number} should be finalized by indexing finality"
+            );
+        }
+        assert!(
+            block_statuses.contains(&(10, "pending".to_string())),
+            "block 10 should remain pending"
+        );
+
+        assert_eq!(
+            settled_height, 6,
+            "settlement should use the stricter settlement_finality_lag"
+        );
     }
 
     #[test]

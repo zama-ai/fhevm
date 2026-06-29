@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT txn_is_sent\n             FROM ciphertext_digest\n             WHERE handle = $1",
+  "query": "SELECT txn_is_sent\n             FROM ciphertext_digest_branch\n             WHERE handle = $1",
   "describe": {
     "columns": [
       {
@@ -18,5 +18,5 @@
       false
     ]
   },
-  "hash": "d1d558d9f86eae97eb9fd0b16b1e0bf4ad00f66119c50381c0673a0d2433567b"
+  "hash": "d7a4181df97951eb64c7b6abfc5d59bc472ac8bdd1807533071fc0eebc940fd8"
 }

@@ -3,7 +3,7 @@ use std::sync::{LazyLock, OnceLock};
 use fhevm_engine_common::telemetry::{register_histogram, MetricsConfig};
 use prometheus::{register_int_counter, IntCounter};
 use prometheus::{register_int_gauge, Histogram, IntGauge};
-use sqlx::PgPool;
+use sqlx::{PgPool, Postgres};
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
 use tracing::{error, info};
@@ -68,14 +68,13 @@ pub(crate) static UNCOMPLETE_AWS_UPLOADS: LazyLock<IntGauge> = LazyLock::new(|| 
 pub fn spawn_gauge_update_routine(period: std::time::Duration, db_pool: PgPool) -> JoinHandle<()> {
     tokio::spawn(async move {
         loop {
-            match sqlx::query_scalar!(
-                "SELECT COUNT(*)::BIGINT FROM pbs_computations WHERE is_completed = FALSE",
+            match sqlx::query_scalar::<Postgres, i64>(
+                "SELECT COUNT(*) FROM pbs_computations_branch WHERE is_completed = FALSE",
             )
             .fetch_one(&db_pool)
             .await
             {
                 Ok(count) => {
-                    let count = count.unwrap_or(0);
                     info!(uncomplete_tasks = %count, "Fetched uncomplete tasks count");
                     UNCOMPLETE_TASKS.set(count);
                 }
@@ -84,17 +83,18 @@ pub fn spawn_gauge_update_routine(period: std::time::Duration, db_pool: PgPool) 
                 }
             }
 
-            match sqlx::query_scalar!(
+            match sqlx::query_scalar::<Postgres, i64>(
                 "
                 SELECT COUNT(*)::BIGINT
-                FROM ciphertext_digest d
+                FROM ciphertext_digest_branch d
                 WHERE d.ciphertext IS NULL
                    OR (
                      d.ciphertext128 IS NULL
                      AND EXISTS (
                        SELECT 1
-                       FROM ciphertexts128 c
+                       FROM ciphertexts128_branch c
                        WHERE c.handle = d.handle
+                         AND c.producer_block_hash = d.producer_block_hash
                          AND c.ciphertext IS NOT NULL
                      )
                    )
@@ -104,7 +104,6 @@ pub fn spawn_gauge_update_routine(period: std::time::Duration, db_pool: PgPool) 
             .await
             {
                 Ok(count) => {
-                    let count = count.unwrap_or(0);
                     info!(uncomplete_aws_uploads = %count, "Fetched uncomplete AWS uploads count");
                     UNCOMPLETE_AWS_UPLOADS.set(count);
                 }
