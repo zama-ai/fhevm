@@ -158,10 +158,6 @@ pub struct Args {
     /// Maximum recorded migration failures per handle before retry selection stops.
     #[arg(long, default_value_t = DEFAULT_S3_MIGRATION_MAX_RETRIES, value_parser = clap::value_parser!(i32).range(1..), env = "S3_MIGRATION_MAX_RETRIES")]
     pub s3_migration_max_retries: i32,
-
-    /// Reserved flag for future cleanup of old S3 object formats after migration
-    #[arg(long, default_value_t = false, env = "CLEAN_OLD_S3_FORMAT_VERSION")]
-    pub clean_old_s3_format_version: bool,
 }
 
 pub fn parse_args() -> Args {

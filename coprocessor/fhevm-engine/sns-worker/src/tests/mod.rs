@@ -1263,6 +1263,5 @@ fn build_test_config(url: DatabaseURL, enable_compression: bool) -> Config {
         s3_migration: S3MigrationMode::No,
         s3_migration_sleep_duration: Duration::from_mins(5),
         s3_migration_max_retries: DEFAULT_S3_MIGRATION_MAX_RETRIES,
-        clean_old_s3_format_version: false,
     }
 }

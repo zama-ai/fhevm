@@ -144,7 +144,6 @@ pub struct Config {
     pub s3_migration: S3MigrationMode,
     pub s3_migration_sleep_duration: Duration,
     pub s3_migration_max_retries: i32,
-    pub clean_old_s3_format_version: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
