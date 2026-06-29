@@ -72,6 +72,7 @@ export class FhevmSdk implements SdkInstance {
     readonly kmsContractAddress: string;
     readonly inputVerifierContractAddress: string;
     readonly aclContractAddress: string;
+    readonly protocolConfigAddress?: string;
     readonly relayerUrl: string;
     readonly rpcUrl: string;
     readonly gatewayChainId: number;
@@ -84,6 +85,7 @@ export class FhevmSdk implements SdkInstance {
       kmsContractAddress,
       inputVerifierContractAddress,
       aclContractAddress,
+      protocolConfigAddress,
       relayerUrl,
       rpcUrl,
       gatewayChainId,
@@ -112,6 +114,7 @@ export class FhevmSdk implements SdkInstance {
             acl: { address: aclContractAddress as `0x${string}` },
             inputVerifier: { address: inputVerifierContractAddress as `0x${string}` },
             kmsVerifier: { address: kmsContractAddress as `0x${string}` },
+            ...(protocolConfigAddress ? { protocolConfig: { address: protocolConfigAddress as `0x${string}` } } : {}),
           },
           relayerUrl: sanitizedRelayerUrl,
           gateway: {
