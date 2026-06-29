@@ -62,5 +62,3 @@ export type WasmAssetLoadMode =
   | 'precheck-direct-url'
   | 'trusted-direct-url'
   | 'auto';
-
-export type WasmAssetTransport = 'url' | 'base64' | 'either';

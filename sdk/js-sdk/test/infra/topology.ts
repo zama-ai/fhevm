@@ -105,7 +105,7 @@ function slotMnemonic(t: SlotTopology): string {
 }
 
 /** Anvil specs for `startAnvils`. Carries the per-slot deployer + its ACL address
- *  (for the reuse check) so each anvil deploys to — and is recognised at — its own
+ *  (for the reuse check) so each anvil deploys to — and is recognized at — its own
  *  distinct addresses. */
 export function anvilSpecs(): AnvilSpec[] {
   return TOPOLOGY.map((t) => ({
