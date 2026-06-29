@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO host_chain_blocks_valid (chain_id, block_hash, parent_hash, block_number, block_status)\n            VALUES ($1, $2, $3, $4, $5)\n            ON CONFLICT (chain_id, block_hash) DO UPDATE\n            SET parent_hash = COALESCE(host_chain_blocks_valid.parent_hash, EXCLUDED.parent_hash);\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bytea",
+        "Bytea",
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3482ec8dacb5eec89fc9bec91a996b7b72ba7cde8fb1e4bf9987a0a7c314dde0"
+}
