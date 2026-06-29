@@ -188,8 +188,6 @@ export async function signDecryptionPermitV2(
     const logger = context.runtime.config.logger;
     if (logger?.warn !== undefined) {
       logger.warn(msg);
-    } else {
-      console.warn(msg);
     }
   }
 

@@ -352,8 +352,6 @@ function _handleModuleVersionCompatibilityPolicy(
     case 'warn':
       if (logger?.warn !== undefined) {
         logger.warn(message);
-      } else {
-        console.warn(message);
       }
       return;
     case 'off':

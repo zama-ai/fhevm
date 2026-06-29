@@ -30,8 +30,9 @@ export function defineClientDecryptDecryptTests(parameters: {
           value: config.zamaApiKey,
         },
         logger: {
-          debug: (message: string) => console.log(message),
-          error: (message: string) => console.log(message),
+          debug: console.log,
+          warn: console.log,
+          error: console.log,
         },
       });
     });
