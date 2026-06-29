@@ -41,6 +41,84 @@ impl<P> AddCiphertextOperation<P>
 where
     P: Provider<Ethereum> + Clone + 'static,
 {
+    async fn materialize_pending_legacy_ciphertext_digests(&self) -> anyhow::Result<u64> {
+        let rows = sqlx::query!(
+            r#"
+            INSERT INTO ciphertext_digest_branch (
+                tenant_id,
+                handle,
+                ciphertext,
+                ciphertext128,
+                txn_is_sent,
+                txn_limited_retries_count,
+                txn_last_error,
+                txn_last_error_at,
+                txn_unlimited_retries_count,
+                ciphertext128_format,
+                txn_hash,
+                txn_block_number,
+                transaction_id,
+                created_at,
+                host_chain_id,
+                key_id_gw,
+                s3_format_version,
+                producer_block_hash,
+                block_number,
+                block_hash
+            )
+            SELECT
+                d.tenant_id,
+                d.handle,
+                d.ciphertext,
+                d.ciphertext128,
+                d.txn_is_sent,
+                d.txn_limited_retries_count,
+                d.txn_last_error,
+                d.txn_last_error_at,
+                d.txn_unlimited_retries_count,
+                d.ciphertext128_format,
+                d.txn_hash,
+                d.txn_block_number,
+                d.transaction_id,
+                d.created_at,
+                d.host_chain_id,
+                d.key_id_gw,
+                d.s3_format_version,
+                ''::BYTEA,
+                NULL::BIGINT,
+                ''::BYTEA
+            FROM ciphertext_digest d
+            WHERE d.txn_is_sent = false
+              AND d.ciphertext IS NOT NULL
+              AND d.ciphertext128 IS NOT NULL
+              AND d.txn_limited_retries_count < $1
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM ciphertext_digest_branch b
+                  WHERE b.host_chain_id = d.host_chain_id
+                    AND b.handle = d.handle
+              )
+            ORDER BY d.created_at ASC
+            LIMIT $2
+            ON CONFLICT (handle, producer_block_hash, block_hash) DO NOTHING
+            "#,
+            self.conf.add_ciphertexts_max_retries,
+            self.conf.add_ciphertexts_batch_limit as i64,
+        )
+        .execute(&self.db_pool)
+        .await?
+        .rows_affected();
+
+        if rows > 0 {
+            info!(
+                rows,
+                "Materialized pending legacy ciphertext digests as branchless rows"
+            );
+        }
+
+        Ok(rows)
+    }
+
     #[tracing::instrument(name = "call_add_ciphertext", skip_all, fields(txn_id = tracing::field::Empty))]
     #[allow(clippy::too_many_arguments)]
     async fn send_transaction(
@@ -439,6 +517,8 @@ where
     }
 
     async fn execute(&self) -> anyhow::Result<bool> {
+        let materialized_legacy_rows = self.materialize_pending_legacy_ciphertext_digests().await?;
+
         // The service responsible for populating the ciphertext_digest table must
         // ensure that ciphertext and ciphertext128 are non-null only after the
         // ciphertexts have been successfully uploaded to AWS S3 buckets.
@@ -504,7 +584,8 @@ where
 
         info!(rows_count = rows.len(), "Selected rows to process");
 
-        let maybe_has_more_work = rows.len() == self.conf.add_ciphertexts_batch_limit as usize;
+        let maybe_has_more_work = rows.len() == self.conf.add_ciphertexts_batch_limit as usize
+            || materialized_legacy_rows >= self.conf.add_ciphertexts_batch_limit as u64;
 
         let mut join_set = JoinSet::new();
         for row in rows.into_iter() {
