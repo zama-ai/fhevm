@@ -30,6 +30,7 @@ use std::time::Duration;
 use alloy::network::Ethereum;
 use alloy::primitives::Address;
 use alloy::providers::Provider;
+use fhevm_engine_common::database::GCS_SCHEMA_QUOTED;
 use fhevm_engine_common::utils::DatabaseURL;
 use serde::{Deserialize, Serialize};
 use sqlx::{postgres::PgListener, Pool, Postgres};
@@ -226,6 +227,36 @@ pub(crate) async fn active_upgrade_window(
     Ok(start_block.zip(end_block))
 }
 
+/// True iff every block in `[start_block, end_block]` on `chain_id` has zero FHE
+/// ops (`fhe_event_count = 0`) — i.e. the whole dry-run window is vacuous. Such
+/// a window produces only [`EMPTY_BLOCK_STATE_HASH`](crate::state_hash) sentinel
+/// commitments, so unanimity would hold trivially and authorize a cutover
+/// without ever validating that the new stack produces correct ciphertexts.
+///
+/// Reads the GCS `host_chain_blocks_valid` (the same source the state-hash
+/// worker keys emptiness off), `COALESCE`-d to FALSE so a window with no rows is
+/// treated as non-empty — we only suppress when we positively know the window
+/// carries no FHE work.
+pub(crate) async fn window_is_fully_empty(
+    pool: &Pool<Postgres>,
+    chain_id: i64,
+    start_block: i64,
+    end_block: i64,
+) -> Result<bool, Error> {
+    let sql = format!(
+        "SELECT COALESCE(bool_and(fhe_event_count = 0), FALSE)
+           FROM {GCS_SCHEMA_QUOTED}.host_chain_blocks_valid
+          WHERE chain_id = $1 AND block_number BETWEEN $2 AND $3"
+    );
+    let (all_empty,): (bool,) = sqlx::query_as(&sql)
+        .bind(chain_id)
+        .bind(start_block)
+        .bind(end_block)
+        .fetch_one(pool)
+        .await?;
+    Ok(all_empty)
+}
+
 /// Run the polling loop for one `(chain_id, block_height, block_hash)` event.
 ///
 /// Emits `unanimity_consensus` on agreement, `unanimity_consensus_timeout`
@@ -387,6 +418,19 @@ where
             block_height = payload.block_height,
             end_block,
             "new_block does not match upgrade end_block — ignoring"
+        );
+        return Ok(());
+    }
+
+    // A fully empty window (every block has zero FHE ops) yields only sentinel
+    // commitments — unanimity would be vacuous and would authorize a cutover
+    // with no real cross-operator validation. Refuse to signal consensus for it.
+    if window_is_fully_empty(pool, payload.chain_id, start_block, end_block).await? {
+        warn!(
+            chain_id = payload.chain_id,
+            start_block,
+            end_block,
+            "dry-run window has zero FHE ops in every block — not emitting unanimity_consensus"
         );
         return Ok(());
     }
