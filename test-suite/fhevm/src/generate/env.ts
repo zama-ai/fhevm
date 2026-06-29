@@ -19,7 +19,7 @@ import {
   POSTGRES_HOST,
   hostChainRuntimes,
 } from "../layout";
-import { kmsConnectorDbName, kmsConnectorEnvName, kmsCoreName, kmsPublicPrefix, kmsServicePort, reconstructionThreshold } from "../kms-party";
+import { kmsConnectorDbName, kmsConnectorEnvName, kmsCoreName, kmsMpcPort, kmsPublicPrefix, kmsServicePort, reconstructionThreshold } from "../kms-party";
 import type { State } from "../types";
 import { predictedCrsId, predictedKeyId } from "../utils/fs";
 
@@ -271,12 +271,16 @@ const applyKmsThresholdGatewayEnv = async (
   gw.USER_DECRYPTION_THRESHOLD = reconstruct;
   gw.KMS_GENERATION_THRESHOLD = reconstruct;
 
-  // ProtocolConfig context params (read by the host deploy alongside the per-node
-  // KmsNodeParams). This local cluster runs the non-enclave core with mock_enclave = true, so
-  // PCR attestation is skipped — zero PCRs satisfy the required var; the software version tracks
-  // the KMS core image for traceability. Set on host-sc only (centralized is out of scope here).
+  // ProtocolConfig context params (read by the host deploy alongside the per-node KmsNodeParams).
+  // This local cluster runs the non-enclave core with mock_enclave = true, so PCR attestation is
+  // skipped — zero PCRs satisfy the required var. softwareVersion MUST be valid semver: the KMS core
+  // parses it (proto MpcContext.software_version) when it sets up a switched context, so a git-SHA
+  // image tag (the usual CORE_VERSION) is rejected with "invalid digit found in string". Use
+  // CORE_VERSION only when it is already semver-shaped (e.g. v0.13.0), else a safe placeholder.
+  // Set on host-sc only (centralized is out of scope here).
   const zeroPcr = `0x${"00".repeat(48)}`;
-  hostSc.KMS_SOFTWARE_VERSION = plan.versions.env.CORE_VERSION || "dev";
+  const coreVersion = (plan.versions.env.CORE_VERSION ?? "").replace(/^v/, "");
+  hostSc.KMS_SOFTWARE_VERSION = /^\d+(\.\d+){0,2}(-[0-9A-Za-z.-]+)?$/.test(coreVersion) ? coreVersion : "0.1.0";
   hostSc.KMS_PCR_VALUES = JSON.stringify([{ pcr0: zeroPcr, pcr1: zeroPcr, pcr2: zeroPcr }]);
 
   const result: KmsParty[] = [];
@@ -284,7 +288,8 @@ const applyKmsThresholdGatewayEnv = async (
     const idx = party - 1;
     const wallet = await deriveWallet(mnemonic, KMS_NODE_WALLET_INDICES[idx]);
     gw[`KMS_TX_SENDER_ADDRESS_${idx}`] = wallet.address;
-    gw[`KMS_NODE_IP_ADDRESS_${idx}`] = kmsCoreName(party);
+    // external_url: the core does url::Url::parse() and requires host+port, so it needs a scheme.
+    gw[`KMS_NODE_IP_ADDRESS_${idx}`] = `http://${kmsCoreName(party)}:${kmsMpcPort(party)}`;
     gw[`KMS_NODE_STORAGE_URL_${idx}`] = `${MINIO_INTERNAL_URL}/kms-public`;
     // Per-node KmsNodeParams the host ProtocolConfig deploy reads. partyId is 1-based
     // (the env index is 0-based), mpcIdentity must match the node's TLS cert CN (gen-keys sets

@@ -160,13 +160,18 @@ describe("env", () => {
     const expectedMpcIdentity = ["kms-core", "kms-core-2", "kms-core-3", "kms-core-4"];
     const expectedCaCert = ["0xaa", "0xbb", "0xcc", "0xdd"];
     for (let index = 0; index < 4; index += 1) {
-      expect(host[`KMS_NODE_PARTY_ID_${index}`]).toBe(String(index + 1));
+      const party = index + 1;
+      expect(host[`KMS_NODE_PARTY_ID_${index}`]).toBe(String(party));
+      // mpcIdentity is the bare cert CN; ipAddress (external_url) carries the core-to-core MPC port
+      // (50000 + party) — the KMS core parses a peer port from it during resharing.
       expect(host[`KMS_NODE_MPC_IDENTITY_${index}`]).toBe(expectedMpcIdentity[index]);
-      expect(host[`KMS_NODE_STORAGE_PREFIX_${index}`]).toBe(`PUB-p${index + 1}`);
+      expect(host[`KMS_NODE_IP_${index}`]).toBe(`http://${expectedMpcIdentity[index]}:${50000 + party}`);
+      expect(host[`KMS_NODE_STORAGE_PREFIX_${index}`]).toBe(`PUB-p${party}`);
       expect(host[`KMS_NODE_CA_CERT_${index}`]).toBe(expectedCaCert[index]);
     }
-    // context params the deploy requires; mock_enclave => zero PCRs.
-    expect(host.KMS_SOFTWARE_VERSION).toBeTruthy();
+    // context params the deploy requires; mock_enclave => zero PCRs. softwareVersion must be valid
+    // semver (the KMS core parses it) — never a bare git-SHA image tag like CORE_VERSION.
+    expect(host.KMS_SOFTWARE_VERSION).toMatch(/^\d+(\.\d+){0,2}(-[0-9A-Za-z.-]+)?$/);
     const pcrValues = JSON.parse(host.KMS_PCR_VALUES);
     expect(pcrValues).toHaveLength(1);
     expect(pcrValues[0].pcr0).toMatch(/^0x0+$/);

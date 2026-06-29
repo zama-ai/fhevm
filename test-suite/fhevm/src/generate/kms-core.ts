@@ -132,15 +132,16 @@ const genKeysCommand = (topology: ResolvedKmsTopology, opts: KmsRenderOptions) =
   [
     "set -e",
     `echo "=== generating signing keys for ${topology.parties} parties ==="`,
-    // Old cores need `--cmd signing-keys`; new cores removed the flag. Detect which form this image speaks.
+    // Probe per-image: old cores need `--cmd signing-keys` + `--num-parties`; newer cores dropped both.
     `if kms-gen-keys --help 2>&1 | grep -q -- '--cmd'; then CMD="--cmd signing-keys"; else CMD=""; fi`,
+    `if kms-gen-keys threshold --help 2>&1 | grep -q -- '--num-parties'; then NP="--num-parties ${topology.parties}"; else NP=""; fi`,
     ...kmsPartyIds(topology.parties).map(
       (party) => `kms-gen-keys --aws-region ${opts.s3Region} \\
   --public-storage s3 --public-s3-bucket ${opts.s3Bucket} --public-s3-prefix ${kmsPublicPrefix(party)} \\
   --aws-s3-endpoint ${opts.s3Endpoint} \\
   --private-storage s3 --private-s3-bucket ${opts.s3Bucket} --private-s3-prefix ${kmsPrivatePrefix(party)} \\
   $CMD \\
-  threshold --signing-key-party-id ${party} --tls-subject ${kmsCoreName(party)} --tls-wildcard --num-parties ${topology.parties}`,
+  threshold --signing-key-party-id ${party} --tls-subject ${kmsCoreName(party)} --tls-wildcard $NP`,
     ),
   ].join("\n");
 
