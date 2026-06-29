@@ -96,7 +96,9 @@ async function __sha256(bytes) {
 
   const nodeModuleName = 'crypto';
   const nodeModuleId = `node:${nodeModuleName}`;
-  const { createHash } = await import(/* @vite-ignore */ nodeModuleId);
+  const { createHash } = await import(
+    /* @vite-ignore */ /* webpackIgnore: true */ /* turbopackIgnore: true */ nodeModuleId
+  );
   return createHash('sha256').update(new Uint8Array(bytes)).digest('hex');
 }
 
@@ -153,8 +155,12 @@ async function __readWorkerUrlBytes(url) {
     const fsModuleId = `node:${fsModuleName}`;
     const urlModuleName = 'url';
     const urlModuleId = `node:${urlModuleName}`;
-    const { readFile } = await import(/* @vite-ignore */ fsModuleId);
-    const { fileURLToPath } = await import(/* @vite-ignore */ urlModuleId);
+    const { readFile } = await import(
+      /* @vite-ignore */ /* webpackIgnore: true */ /* turbopackIgnore: true */ fsModuleId
+    );
+    const { fileURLToPath } = await import(
+      /* @vite-ignore */ /* webpackIgnore: true */ /* turbopackIgnore: true */ urlModuleId
+    );
     return await readFile(fileURLToPath(url));
   }
 
@@ -208,14 +214,18 @@ async function __newIsomorphicWorkerFromUrl(url) {
 
   const nodeModuleName = 'worker_threads';
   const nodeModuleId = `node:${nodeModuleName}`;
-  const { Worker: NodeWorker } = await import(/* @vite-ignore */ nodeModuleId);
+  const { Worker: NodeWorker } = await import(
+    /* @vite-ignore */ /* webpackIgnore: true */ /* turbopackIgnore: true */ nodeModuleId
+  );
   return new NodeWorker(url);
 }
 
 async function __newNodeWorkerFromJsCode(jsCode) {
   const nodeModuleName = 'worker_threads';
   const nodeModuleId = `node:${nodeModuleName}`;
-  const { Worker: NodeWorker } = await import(/* @vite-ignore */ nodeModuleId);
+  const { Worker: NodeWorker } = await import(
+    /* @vite-ignore */ /* webpackIgnore: true */ /* turbopackIgnore: true */ nodeModuleId
+  );
   return { worker: new NodeWorker(jsCode, { eval: true }), blobUrl: undefined };
 }
 

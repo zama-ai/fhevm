@@ -96,7 +96,9 @@ async function __sha256(bytes) {
 
   const nodeModuleName = 'crypto';
   const nodeModuleId = `node:${nodeModuleName}`;
-  const { createHash } = await import(/* @vite-ignore */ nodeModuleId);
+  const { createHash } = await import(
+    /* @vite-ignore */ /* webpackIgnore: true */ /* turbopackIgnore: true */ nodeModuleId
+  );
   return createHash('sha256').update(new Uint8Array(bytes)).digest('hex');
 }
 
@@ -153,8 +155,12 @@ async function __readWorkerUrlBytes(url) {
     const fsModuleId = `node:${fsModuleName}`;
     const urlModuleName = 'url';
     const urlModuleId = `node:${urlModuleName}`;
-    const { readFile } = await import(/* @vite-ignore */ fsModuleId);
-    const { fileURLToPath } = await import(/* @vite-ignore */ urlModuleId);
+    const { readFile } = await import(
+      /* @vite-ignore */ /* webpackIgnore: true */ /* turbopackIgnore: true */ fsModuleId
+    );
+    const { fileURLToPath } = await import(
+      /* @vite-ignore */ /* webpackIgnore: true */ /* turbopackIgnore: true */ urlModuleId
+    );
     return await readFile(fileURLToPath(url));
   }
 
@@ -208,14 +214,18 @@ async function __newIsomorphicWorkerFromUrl(url) {
 
   const nodeModuleName = 'worker_threads';
   const nodeModuleId = `node:${nodeModuleName}`;
-  const { Worker: NodeWorker } = await import(/* @vite-ignore */ nodeModuleId);
+  const { Worker: NodeWorker } = await import(
+    /* @vite-ignore */ /* webpackIgnore: true */ /* turbopackIgnore: true */ nodeModuleId
+  );
   return new NodeWorker(url);
 }
 
 async function __newNodeWorkerFromJsCode(jsCode) {
   const nodeModuleName = 'worker_threads';
   const nodeModuleId = `node:${nodeModuleName}`;
-  const { Worker: NodeWorker } = await import(/* @vite-ignore */ nodeModuleId);
+  const { Worker: NodeWorker } = await import(
+    /* @vite-ignore */ /* webpackIgnore: true */ /* turbopackIgnore: true */ nodeModuleId
+  );
   return { worker: new NodeWorker(jsCode, { eval: true }), blobUrl: undefined };
 }
 
@@ -337,7 +347,7 @@ let _wasmAssetLoadMode = 'auto';
 // Injected by the SDK (the main thread) via setWorkerUrlConfig — the single
 // source of truth for browser-vs-Node, replacing local detection.
 let _isBrowserLike = undefined;
-const _workerUrlSha256 = "348fe6c2e77bafe0cbfb9c0a512af99b5f97de1119ceadf07cc34620dbc5690e";
+const _workerUrlSha256 = "2c648dd89132bb63d37e8b47c6fe1f53b06abb1389faeb9b3f671eea9a0db5dd";
 let _verifiedWorkerUrlBytesPromise = undefined;
 let _logger = undefined;
 let _started = false;

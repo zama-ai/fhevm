@@ -85,7 +85,7 @@ export const SLOT_INFO = {
     profileVersionDir: 'v0.13.0',
     port: 8546,
     chainId: 31338,
-    tfheVersion: '1.6.1',
+    tfheVersion: '1.6.2',
     keyFile: 'key.1.6.1.json',
     deployerMnemonic: undefined,
   },
