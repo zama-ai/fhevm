@@ -1,46 +1,8 @@
-interface MessageData {
-  type: string;
-  [key: string]: unknown;
-}
-
-interface NodeMessagePort {
-  on(event: 'error', listener: (error: Error) => void): void;
-  on(event: 'exit', listener: (code: number) => void): void;
-  on(event: string, listener: (data: MessageData) => void): void;
-  off(event: string, listener: (data: MessageData) => void): void;
-  postMessage(value: unknown): void;
-  terminate(): Promise<number>;
-}
-
-type NodeWorkerConstructor = new (code: string | URL, options?: Record<string, unknown>) => NodeMessagePort;
-
-let _supportsNodeWorkerApi: Promise<boolean> | undefined;
+import type { MessageData, NodeMessagePort } from './environment.js';
+import { getNodeWorker, supportsWebWorkerApi } from './environment.js';
 
 export async function supportsNodeWorkerApi(): Promise<boolean> {
-  _supportsNodeWorkerApi ??= (async () => {
-    try {
-      // Build the id indirectly + @vite-ignore so bundlers don't statically
-      // resolve/polyfill it (a polyfilled worker_threads would falsely resolve
-      // in a browser bundle). This mirrors the existing dynamic import.
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-template-expression
-      const id = `node:${'worker_threads'}`;
-      const mod = (await import(/* @vite-ignore */ id)) as { Worker?: unknown };
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-      return typeof mod?.Worker === 'function';
-    } catch {
-      return false; // browser, sandboxed Electron renderer, edge runtimes
-    }
-  })();
-  return _supportsNodeWorkerApi;
-}
-
-export function supportsWebWorkerApi(): boolean {
-  return (
-    typeof Worker === 'function' &&
-    typeof Blob === 'function' &&
-    typeof URL !== 'undefined' &&
-    typeof URL.createObjectURL === 'function'
-  );
+  return (await getNodeWorker()) !== undefined;
 }
 
 export type WorkerApi = 'web' | 'node';
@@ -78,41 +40,46 @@ let _resolvedWorkerApi: Promise<WorkerApi> | undefined;
  */
 export function resolveWorkerApi(): Promise<WorkerApi> {
   _resolvedWorkerApi ??= (async () => {
-    // @ts-expect-error - Bun is a runtime global only under Bun
-    const isBun = typeof Bun !== 'undefined';
-    if (isBun) {
-      return 'node';
+    try {
+      // @ts-expect-error - Bun is a runtime global only under Bun
+      const isBun = typeof Bun !== 'undefined';
+
+      // Preference order is runtime-specific:
+      // - Bun has first-class worker_threads, so prefer Node for parity with
+      //   plain Node, falling back to Web only if it's somehow unavailable.
+      // - Everywhere else, prefer the Web Worker API (browsers, the sandboxed
+      //   Electron renderer, Deno), falling back to Node (Node.js, jsdom).
+      //
+      // Probes stay short-circuited on purpose: on the non-Bun path the
+      // synchronous Web check runs first so a browser never triggers the
+      // `node:worker_threads` dynamic import (the "sync win"). Each probe runs
+      // at most once per call.
+      if (isBun) {
+        if (await supportsNodeWorkerApi()) {
+          return 'node';
+        }
+        if (supportsWebWorkerApi()) {
+          return 'web';
+        }
+      } else {
+        if (supportsWebWorkerApi()) {
+          return 'web';
+        }
+        if (await supportsNodeWorkerApi()) {
+          return 'node';
+        }
+      }
+
+      throw new Error('No worker backend available (neither Web Worker nor node:worker_threads).');
+    } catch (e) {
+      // Never cache a rejected resolution — otherwise a single (possibly
+      // transient) failure would poison every future call. The underlying
+      // probes are themselves memoized, so retrying stays cheap.
+      _resolvedWorkerApi = undefined;
+      throw e;
     }
-    if (supportsWebWorkerApi()) {
-      return 'web'; // sync win — no node probe needed
-    }
-    if (await supportsNodeWorkerApi()) {
-      return 'node';
-    }
-    throw new Error('No worker backend available (neither Web Worker nor node:worker_threads).');
   })();
   return _resolvedWorkerApi;
-}
-
-export function isNodeLike(): boolean {
-  return (
-    // eslint-disable-next-line no-restricted-globals
-    typeof process !== 'undefined' &&
-    // eslint-disable-next-line no-restricted-globals, @typescript-eslint/no-unnecessary-condition
-    typeof process.versions?.node === 'string'
-  );
-}
-
-export function isBrowserLike(): boolean {
-  return (
-    // @ts-expect-error - Bun is a runtime global only under Bun
-    typeof Bun === 'undefined' &&
-    !isNodeLike() &&
-    typeof location !== 'undefined' &&
-    typeof location.href === 'string' &&
-    typeof addEventListener === 'function' &&
-    typeof removeEventListener === 'function'
-  );
 }
 
 /*
@@ -133,12 +100,14 @@ async function createIsomorphicWorkerFromCode(jsCode: string): Promise<Worker | 
     }
   }
 
-  // workerApi === 'node'
-  const nodeWorkerModuleName = 'worker_threads';
-  const nodeWorkerModuleId = `node:${nodeWorkerModuleName}`;
-  const { Worker: NodeWorker } = (await import(/* @vite-ignore */ nodeWorkerModuleId)) as {
-    Worker: NodeWorkerConstructor;
-  };
+  // workerApi === 'node'. Both 'node' paths in resolveWorkerApi pre-probe via
+  // supportsNodeWorkerApi, so this is already confirmed (and memoized) — the
+  // guard is here to narrow the `| undefined` type and to stay correct if that
+  // invariant ever changes.
+  const NodeWorker = await getNodeWorker();
+  if (!NodeWorker) {
+    throw new Error('No worker backend available (node:worker_threads unavailable).');
+  }
   return new NodeWorker(jsCode, { eval: true });
 }
 

@@ -32,8 +32,9 @@ test('packed SDK initializes in a Next.js Turbopack client bundle', async ({ pag
   await expect(result).toHaveAttribute('data-status', /^(pass|fail)$/, { timeout: 300_000 });
 
   const status = await result.getAttribute('data-status');
-  const logs = await page.locator('#log').textContent();
-  const diagnostics = JSON.parse(logs ?? '{}') as { initialized?: boolean; packageSpecifier?: string };
+  // #log is now a readable, one-entry-per-line trace (see app/_diag/diagnostics.jsx),
+  // not a JSON blob — assert on the log lines the smoke test emits.
+  const logs = (await page.locator('#log').textContent()) ?? '';
   const relevantConsoleErrors = consoleErrors.filter((message) =>
     consoleErrorNeedles.some((needle) => message.includes(needle)),
   );
@@ -42,7 +43,7 @@ test('packed SDK initializes in a Next.js Turbopack client bundle', async ({ pag
 
   expect(pageErrors).toEqual([]);
   expect(relevantConsoleErrors).toEqual([]);
-  expect(diagnostics.packageSpecifier).toBe('@fhevm/sdk/ethers');
-  expect(diagnostics.initialized).toBe(true);
-  expect(status, logs ?? undefined).toBe('pass');
+  expect(logs).toContain('[PASS] Imported @fhevm/sdk/ethers');
+  expect(logs).toContain('[PASS] Encrypt runtime initialized');
+  expect(status, logs).toBe('pass');
 });
