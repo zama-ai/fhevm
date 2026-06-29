@@ -17,17 +17,25 @@ import type { WasmAssetLoadMode as TfheWasmAssetLoadMode } from './tfhe.js';
 type Assert<T extends true> = T;
 type IsAssignable<A, B> = [A] extends [B] ? true : false;
 type IsEqual<A, B> = IsAssignable<A, B> extends true ? (IsAssignable<B, A> extends true ? true : false) : false;
+// type InstanceWithoutEq<C extends { prototype: object }> = Omit<C['prototype'], 'eq'>;
 
-// --- Class constructors (covers instance + static surface) ---
+// --- Class constructors / instances ---
 // Note: these use one-way assignability, not strict equality. A version may
-// add methods (e.g. v1.6.1 added CompactCiphertextList.eq()) without breaking
-// the contract, as long as every member the contract requires is present.
+// add methods without breaking the contract, as long as every member the
+// contract requires is present. `eq` is ignored because wasm-bindgen may expose
+// it on some versions only, and the SDK does not use it.
 // type _CompactCiphertextList = Assert<
-//   IsAssignable<typeof Mod.CompactCiphertextList, TfheLibApi['CompactCiphertextList']>
+//   IsAssignable<
+//     InstanceWithoutEq<typeof Mod.CompactCiphertextList>,
+//     InstanceWithoutEq<TfheLibApi['CompactCiphertextList']>
+//   >
 // >;
 // type _CompactPkeCrs = Assert<IsAssignable<typeof Mod.CompactPkeCrs, TfheLibApi['CompactPkeCrs']>>;
 // type _ProvenCompactCiphertextList = Assert<
-//   IsAssignable<typeof Mod.ProvenCompactCiphertextList, TfheLibApi['ProvenCompactCiphertextList']>
+//   IsAssignable<
+//     InstanceWithoutEq<typeof Mod.ProvenCompactCiphertextList>,
+//     InstanceWithoutEq<TfheLibApi['ProvenCompactCiphertextList']>
+//   >
 // >;
 // type _TfheCompactPublicKey = Assert<IsAssignable<typeof Mod.TfheCompactPublicKey, TfheLibApi['TfheCompactPublicKey']>>;
 
