@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import {IKMSGeneration} from "./interfaces/IKMSGeneration.sol";
 import {IProtocolConfig} from "./interfaces/IProtocolConfig.sol";
 import {KmsNode} from "./shared/Structs.sol";
+import {REQUEST_TYPE_SHIFT} from "./shared/Constants.sol";
 import {protocolConfigAdd} from "../addresses/FHEVMHostAddresses.sol";
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import {EIP712Upgradeable} from "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol";
@@ -100,8 +101,6 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
     // ----------------------------------------------------------------------------------------------
     // Counter bases:
     // ----------------------------------------------------------------------------------------------
-
-    uint256 private constant REQUEST_TYPE_SHIFT = 248;
 
     // Preprocessing keygen requestId format in bytes: [0000 0011 | counter_1..31]
     uint256 private constant PREP_KEYGEN_COUNTER_BASE = uint256(PREP_KEYGEN_REQUEST_TYPE) << REQUEST_TYPE_SHIFT;

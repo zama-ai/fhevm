@@ -416,7 +416,7 @@ export function buildKmsNodes(): {
   for (let idx = 0; idx < numNodes; idx++) {
     const txSenderAddress = getRequiredEnvVar(`KMS_TX_SENDER_ADDRESS_${idx}`);
     const signerAddress = getRequiredEnvVar(`KMS_SIGNER_ADDRESS_${idx}`);
-    const ipAddress = process.env[`KMS_NODE_IP_${idx}`] || '';
+    const ipAddress = getRequiredEnvVar(`KMS_NODE_IP_${idx}`);
     const storageUrl = getRequiredEnvVar(`KMS_NODE_STORAGE_URL_${idx}`);
     nodes.push({ txSenderAddress, signerAddress, ipAddress, storageUrl });
   }

@@ -1,6 +1,6 @@
 import { task, types } from 'hardhat/config';
 
-import { getRequiredEnvVar, loadHostAddresses } from './utils/loadVariables';
+import { getRequiredCountEnvVar, getRequiredEnvVar, loadHostAddresses } from './utils/loadVariables';
 
 // Add pausers to the PauserSet contract
 // Note: Internal PauserSet address is defined in the `addresses/` directory. It should be used
@@ -17,7 +17,7 @@ task('task:addHostPausers')
     console.log('Adding pausers to PauserSet contract');
 
     const deployerPrivateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
-    const numPausers = parseInt(getRequiredEnvVar('NUM_PAUSERS'));
+    const numPausers = getRequiredCountEnvVar('NUM_PAUSERS');
     const deployer = new hre.ethers.Wallet(deployerPrivateKey).connect(hre.ethers.provider);
 
     // Parse the pauser(s)
