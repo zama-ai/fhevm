@@ -41,6 +41,15 @@ contract BridgeApp is E2ECoprocessorConfig, IDstApp {
         return _register(FHE.add(FHE.fromExternal(encryptedAmount, inputProof), FHE.asEuint64(addend)));
     }
 
+    /// @notice Compute on an EXISTING handle (e.g. one just received via the bridge): registers a
+    ///         new handle `existing + addend`, ACL-allowed to the caller, so a bridged handle can
+    ///         be computed on and then re-bridged. Requires this contract to already hold ACL
+    ///         allowance on `existing` — the bridge callback grants it (`FHE.allowThis`) when a
+    ///         handle is delivered with a user payload.
+    function addToHandle(bytes32 existing, uint64 addend) external returns (bytes32) {
+        return _register(FHE.add(euint64.wrap(existing), FHE.asEuint64(addend)));
+    }
+
     /// @dev Allow `value` for the caller (the future send sender) and this contract, and return its handle.
     function _register(euint64 value) private returns (bytes32 handle) {
         FHE.allowThis(value);
