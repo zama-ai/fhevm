@@ -131,7 +131,7 @@ pub(crate) async fn run_startup_migrations(
             break;
         }
         error!(try_count, MAX_NOT_READY, ?NOT_READY_DELAY, "S3 is not ready yet");
-        tokio::time::sleep(Duration::from_mins(1)).await;
+        tokio::time::sleep(NOT_READY_DELAY).await;
     }
     loop {
         match AssertUnwindSafe(migrate_s3_format_0_to_1(config, pool, client))
