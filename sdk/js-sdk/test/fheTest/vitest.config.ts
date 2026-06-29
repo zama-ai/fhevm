@@ -3,24 +3,27 @@ import { defineConfig } from 'vitest/config';
 
 const chain = process.env.CHAIN ?? 'sepolia';
 
+const getfile = (path: string) => join(__dirname, '../../src', path, 'index.ts');
+
 export default defineConfig({
   resolve: {
     alias: {
       //
       // WARNING!!!! Order matters! '<xxx>/cleartext' MUST BE LISTED BEFORE '<xxx>' !!!
       //
-      '@fhevm/sdk/ethers/cleartext': join(__dirname, '../../src/ethers/cleartext/index.ts'),
-      '@fhevm/sdk/ethers': join(__dirname, '../../src/ethers/index.ts'),
-      '@fhevm/sdk/viem/cleartext': join(__dirname, '../../src/viem/cleartext/index.ts'),
-      '@fhevm/sdk/viem': join(__dirname, '../../src/viem/index.ts'),
-      '@fhevm/sdk/base': join(__dirname, '../../src/core/base/index.ts'),
-      '@fhevm/sdk/chains': join(__dirname, '../../src/core/chains/index.ts'),
-      '@fhevm/sdk/types': join(__dirname, '../../src/core/types/index.ts'),
-      '@fhevm/sdk/actions/base': join(__dirname, '../../src/core/actions/base/index.ts'),
-      '@fhevm/sdk/actions/chain': join(__dirname, '../../src/core/actions/chain/index.ts'),
-      '@fhevm/sdk/actions/decrypt': join(__dirname, '../../src/core/actions/decrypt/index.ts'),
-      '@fhevm/sdk/actions/encrypt': join(__dirname, '../../src/core/actions/encrypt/index.ts'),
-      '@fhevm/sdk/actions/host': join(__dirname, '../../src/core/actions/host/index.ts'),
+      '@fhevm/sdk/ethers/cleartext': getfile('ethers/cleartext'),
+      '@fhevm/sdk/ethers': getfile('ethers'),
+      '@fhevm/sdk/viem/cleartext': getfile('viem/cleartext'),
+      '@fhevm/sdk/viem': getfile('viem'),
+
+      '@fhevm/sdk/base': getfile('core/base'),
+      '@fhevm/sdk/chains': getfile('core/chains'),
+      '@fhevm/sdk/types': getfile('core/types'),
+      '@fhevm/sdk/actions/base': getfile('core/actions/base'),
+      '@fhevm/sdk/actions/chain': getfile('core/actions/chain'),
+      '@fhevm/sdk/actions/decrypt': getfile('core/actions/decrypt'),
+      '@fhevm/sdk/actions/encrypt': getfile('core/actions/encrypt'),
+      '@fhevm/sdk/actions/host': getfile('core/actions/host'),
     },
   },
   test: {

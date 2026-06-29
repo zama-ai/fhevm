@@ -13,6 +13,7 @@ export const mainnet = /*#__PURE__*/ defineFhevmChain({
       kmsVerifier: {
         address: '0x77627828a55156b04Ac0DC0eb30467f1a552BB03',
       },
+      protocolConfig: undefined, // To be filled
     },
     relayerUrl: 'https://relayer.mainnet.zama.org',
     gateway: {

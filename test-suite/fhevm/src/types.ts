@@ -139,6 +139,9 @@ export type Discovery = {
   gateway: Record<string, string>;
   hosts: Record<string, Record<string, string>>;
   kmsSigners: string[];
+  // Per-party serialized CA certificate (hex `0x…`), discovered alongside the signers. Optional
+  // like minioKeyPrefix: seeded to [] by createDiscovery and filled at the `kms-signer` step.
+  kmsCaCerts?: string[];
   fheKeyId: string;
   crsKeyId: string;
   actualFheKeyId?: string;

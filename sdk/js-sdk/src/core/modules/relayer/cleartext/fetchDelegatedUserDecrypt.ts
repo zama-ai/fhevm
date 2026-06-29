@@ -7,7 +7,7 @@ import type {
   RelayerClientWithRuntime,
 } from '../types.js';
 import { remove0x } from '../../../base/string.js';
-import { asUint32BigInt, parseUintBigIntString, randomUniqueUints } from '../../../base/uint.js';
+import { asUint32BigInt, tryParseUintBigIntString, randomUniqueUints } from '../../../base/uint.js';
 import { getTrustedClient } from '../../../runtime/CoreFhevm-p.js';
 import { userDecryptResultToKmsSigncryptedShares } from '../utils.js';
 import { getKmsSignersPrivateKeyMap } from './signers.js';
@@ -139,7 +139,7 @@ export async function fetchDelegatedUserDecrypt(
 ////////////////////////////////////////////////////////////////////////////////
 
 function _parseUintBigIntString(label: string, value: string): bigint {
-  const bn = parseUintBigIntString(value);
+  const bn = tryParseUintBigIntString(value);
   if (bn === undefined) {
     throw new Error(`${label} is not a valid uint string, got ${JSON.stringify(value)}`);
   }

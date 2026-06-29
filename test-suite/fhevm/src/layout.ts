@@ -215,6 +215,8 @@ export const GROUP_BUILD_SERVICES: Record<OverrideGroup, string[]> = {
     "host-sc-trigger-crsgen",
     "host-sc-deploy-bridge",
     "host-sc-wire-bridge",
+    "host-sc-context-switch",
+    "host-sc-epoch-rotation",
   ],
   "test-suite": ["test-suite-e2e-debug"],
 };

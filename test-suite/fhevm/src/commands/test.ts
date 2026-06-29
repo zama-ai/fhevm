@@ -3,6 +3,7 @@
  */
 import { compatPolicyForState, supportsCoprocessorDbStateRevert } from "../compat/compat";
 import { type DecryptionRunner, runKmsGenerationProfile } from "./kms-generation";
+import { runKmsContextSwitchProfile } from "./kms-context-switch";
 import { DRIFT_CLEANUP_SQL, DRIFT_INSTALL_SQL, driftDatabaseName, parseDriftInstanceIndex, parsePositiveInteger } from "../drift";
 import { PreflightError, formatCliError } from "../errors";
 import { dockerInspect } from "../flow/readiness";
@@ -60,6 +61,7 @@ const TEST_PROFILE_NAMES = [
   "ciphertext-drift-auto-recovery",
   "coprocessor-db-state-revert",
   "heavy",
+  "kms-context-switch",
   "kms-generation",
   "light",
   "rollout-standard",
@@ -113,6 +115,8 @@ const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[numb
   "coprocessor-db-state-revert": "Run coprocessor DB state revert checks.",
   "kms-generation":
     "Audit the on-chain key/CRS generation state (KMSGeneration contract) and prove the 2t+1 decryption quorum (threshold-mode KMS).",
+  "kms-context-switch":
+    "Drive RFC-005 NewKmsContext + NewKmsEpoch on the host ProtocolConfig and prove the KMS reshares, activates, and still decrypts under each (threshold-mode KMS).",
 };
 
 /** Validates whether a named profile supports an extra grep narrowing expression. */
@@ -978,6 +982,9 @@ export const test = async (testName: string | undefined, options: TestOptions) =
   const runProfile = async (name: string) => {
     if (name === "kms-generation") {
       return runKmsGenerationProfile(state, runUserDecryption);
+    }
+    if (name === "kms-context-switch") {
+      return runKmsContextSwitchProfile(state, runUserDecryption);
     }
     if (name === "coprocessor-db-state-revert") {
       return runDbStateRevert(state, options);

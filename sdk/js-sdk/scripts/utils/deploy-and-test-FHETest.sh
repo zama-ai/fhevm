@@ -14,7 +14,7 @@ forge clean
 # Step 1: Deploy (skips if already deployed, funds if needed, verifies config)
 #
 echo "Running deploy script..."
-forge script script/DeployFHETest.s.sol \
+forge script scripts/DeployFHETest.s.sol \
   --rpc-url "$RPC_URL" \
   --broadcast
 
@@ -28,5 +28,5 @@ forge test \
   --rpc-url "$RPC_URL" \
   -vv
 
-# forge script script/DeployFHETest.s.sol --rpc-url http://localhost:8545
+# forge script scripts/DeployFHETest.s.sol --rpc-url http://localhost:8545
 # forge test test/FHETest.t.sol --rpc-url http://localhost:8545

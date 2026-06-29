@@ -152,6 +152,8 @@ const COMPONENT_BUILD_SPECS: Record<string, Record<string, Record<string, unknow
     "host-sc-trigger-crsgen": buildSpec("../../..", "host-contracts/Dockerfile"),
     "host-sc-deploy-bridge": buildSpec("../../..", "host-contracts/Dockerfile"),
     "host-sc-wire-bridge": buildSpec("../../..", "host-contracts/Dockerfile"),
+    "host-sc-context-switch": buildSpec("../../..", "host-contracts/Dockerfile"),
+    "host-sc-epoch-rotation": buildSpec("../../..", "host-contracts/Dockerfile"),
   },
   "test-suite": {
     "test-suite-e2e-debug": buildSpec("../../..", "test-suite/e2e/Dockerfile", {
@@ -160,7 +162,12 @@ const COMPONENT_BUILD_SPECS: Record<string, Record<string, Record<string, unknow
   },
 };
 const localBuildSpecFor = (component: string, service: string) => COMPONENT_BUILD_SPECS[component]?.[service];
-const CANONICAL_HOST_ONLY_SERVICES = new Set(["host-sc-trigger-keygen", "host-sc-trigger-crsgen"]);
+const CANONICAL_HOST_ONLY_SERVICES = new Set([
+  "host-sc-trigger-keygen",
+  "host-sc-trigger-crsgen",
+  "host-sc-context-switch",
+  "host-sc-epoch-rotation",
+]);
 
 /** Rewrites bind-mount volume paths to absolute template-rooted paths. */
 const rewriteVolume = (value: unknown) => {

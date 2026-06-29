@@ -630,8 +630,9 @@ export const runStep = async (state: State, step: StepName) => {
     case "kms-signer": {
       // `kms.parties` is 1 for centralized and N for threshold, so one call covers both.
       const discovery = await ensureDiscovery(state);
-      const { signers, minioKeyPrefix } = await discoverKmsSigners(state.scenario.kms.parties);
+      const { signers, caCerts, minioKeyPrefix } = await discoverKmsSigners(state.scenario.kms.parties);
       discovery.kmsSigners = signers;
+      discovery.kmsCaCerts = caCerts;
       discovery.minioKeyPrefix = minioKeyPrefix;
       await generateRuntime(state, stackSpecForState(state));
       break;

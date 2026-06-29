@@ -6,7 +6,7 @@ import type { CoprocessorSignersContext } from '../../types/coprocessorSignersCo
 import { eip712Domain, type Eip712DomainReturnType } from '../../host-contracts/eip712Domain-p.js';
 import { assertIsHostContractVersionOf } from '../../host-contracts/HostContractVersion-p.js';
 import { readCoprocessorSignersContext } from '../../host-contracts/readCoprocessorSignersContext-p.js';
-import { getVersion } from '../../host-contracts/HostContractVersion-p.js';
+import { getHostContractVersion } from '../../host-contracts/HostContractVersion-p.js';
 import { executeWithBatching } from '../../base/promise.js';
 import { assertIsCoprocessorEip712Domain } from '../../coprocessor/assertIsCoprocessorEip712Domain.js';
 import { createInputVerifierContractData } from '../../host-contracts/InputVerifierContractData-p.js';
@@ -39,7 +39,7 @@ export async function readInputVerifierContractData(
   ////////////////////////////////////////////////////////////////////////////
 
   const rpcCalls = [
-    () => getVersion(fhevm, parameters),
+    () => getHostContractVersion(fhevm, parameters),
     () => eip712Domain(fhevm, parameters),
     () => readCoprocessorSignersContext(fhevm, parameters),
   ];
