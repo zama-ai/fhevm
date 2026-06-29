@@ -990,6 +990,22 @@ async fn query_dependency_metadata<'a>(
          AND producer.block_hash = a.producer_block_hash
         WHERE (a.host_chain_id = $2 OR a.host_chain_id IS NULL)
         AND a.handle = ANY($1::BYTEA[])
+        UNION ALL
+        SELECT
+            a.handle AS "handle!",
+            ''::BYTEA AS "producer_block_hash!",
+            a.block_number
+        FROM allowed_handles a
+        WHERE (a.host_chain_id = $2 OR a.host_chain_id IS NULL)
+        AND a.handle = ANY($1::BYTEA[])
+        AND NOT EXISTS (
+            SELECT 1
+            FROM allowed_handles_branch b
+            WHERE b.host_chain_id = a.host_chain_id
+              AND b.handle = a.handle
+              AND b.account_address = a.account_address
+              AND b.event_type = a.event_type
+        )
         "#,
         cts_to_query as _,
         batch_context.host_chain_id,
@@ -1027,10 +1043,12 @@ async fn query_dependency_metadata<'a>(
     // current-branch ancestry walk.
     let candidate_block_numbers = computation_rows
         .iter()
+        .filter(|row| !row.producer_block_hash.is_empty())
         .filter_map(|row| row.block_number)
         .chain(
             allowed_handle_rows
                 .iter()
+                .filter(|row| !row.producer_block_hash.is_empty())
                 .filter_map(|row| row.block_number),
         )
         .filter(|block_number| {
