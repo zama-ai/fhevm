@@ -226,15 +226,15 @@ export async function rotateToNewKmsContext(
   const contextId = findEventArg(asOwner, defineReceipt!.logs, 'NewKmsContext', 'contextId');
 
   let epochId: bigint | undefined;
-  for (const signerSigner of committee.signerSigners) {
-    const asSigner = (await ethers.getContractAt(
+  for (const txSenderSigner of committee.txSenderSigners) {
+    const asTxSender = (await ethers.getContractAt(
       'ProtocolConfig',
       proxyAddress,
-      signerSigner,
+      txSenderSigner,
     )) as unknown as ProtocolConfig;
-    const receipt = await (await asSigner.confirmKmsContextCreation(contextId)).wait();
+    const receipt = await (await asTxSender.confirmKmsContextCreation(contextId)).wait();
     try {
-      epochId = findEventArg(asSigner, receipt!.logs, 'NewKmsEpoch', 'epochId');
+      epochId = findEventArg(asTxSender, receipt!.logs, 'NewKmsEpoch', 'epochId');
     } catch {
       // NewKmsEpoch is only emitted once the creation quorum is reached.
     }
