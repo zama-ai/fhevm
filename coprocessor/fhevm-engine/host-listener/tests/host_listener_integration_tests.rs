@@ -1225,25 +1225,29 @@ async fn test_update_finalized_blocks_drives_orphan_cleanup_via_rpc_caller(
         INSERT INTO ciphertexts_branch (
             handle,
             producer_block_hash,
+            block_number,
             ciphertext,
             ciphertext_version,
             ciphertext_type
         )
         VALUES
-            ($1, $2, $3, $4, $5),
-            ($6, $7, $8, $4, $5),
-            ($9, $10, $11, $4, $5)
+            ($1, $2, $3, $4, $5, $6),
+            ($7, $8, $9, $10, $5, $6),
+            ($11, $12, $13, $14, $5, $6)
         "#,
         canonical_handle.to_vec(),
         canonical_hash.to_vec(),
+        target_block_number as i64,
         vec![0xAA_u8],
         0_i16,
         0_i16,
         orphan_handle.to_vec(),
         orphan_hash.to_vec(),
+        target_block_number as i64,
         vec![0xBB_u8],
         orphan_descendant_handle.to_vec(),
         orphan_descendant_hash.to_vec(),
+        target_block_number as i64 + 1,
         vec![0xBC_u8],
     )
     .execute(&setup.db_pool)
@@ -1747,7 +1751,10 @@ async fn test_legacy_allowed_handle_writes_are_mirrored_branchless(
     .bind("0xwave1")
     .fetch_one(&db_pool)
     .await?;
-    assert_eq!(branchless_duplicates, 0);
+    // The late backfill migration is intentionally a no-op in wave 1. Live
+    // legacy writes are still deduplicated by the mirror trigger paths above,
+    // but the migration must not perform an online cleanup sweep.
+    assert_eq!(branchless_duplicates, 1);
 
     let txn_is_sent = sqlx::query_scalar::<_, bool>(
         r#"
@@ -1993,26 +2000,30 @@ async fn test_finalization_cleanup_removes_orphaned_branch_rows_locally(
         INSERT INTO ciphertexts_branch (
             handle,
             producer_block_hash,
+            block_number,
             ciphertext,
             ciphertext_version,
             ciphertext_type
         )
         VALUES
-            ($1, $2, $3, $4, $5),
-            ($6, $7, $8, $4, $5),
-            ($9, $10, $11, $4, $5)
+            ($1, $2, $3, $4, $5, $6),
+            ($7, $8, $9, $10, $5, $6),
+            ($11, $12, $13, $14, $5, $6)
         "#,
     )
     .bind(canonical_handle.to_vec())
     .bind(canonical_hash.to_vec())
+    .bind(block_number)
     .bind(vec![0xAA_u8])
     .bind(0_i16)
     .bind(0_i16)
     .bind(orphan_handle.to_vec())
     .bind(orphan_hash.to_vec())
+    .bind(block_number)
     .bind(vec![0xBB_u8])
     .bind(orphan_descendant_handle.to_vec())
     .bind(orphan_descendant_hash.to_vec())
+    .bind(block_number + 1)
     .bind(vec![0xBC_u8])
     .execute(&setup.db_pool)
     .await?;
@@ -2022,22 +2033,26 @@ async fn test_finalization_cleanup_removes_orphaned_branch_rows_locally(
         INSERT INTO ciphertexts128_branch (
             handle,
             producer_block_hash,
+            block_number,
             ciphertext
         )
         VALUES
-            ($1, $2, $3),
-            ($4, $5, $6),
-            ($7, $8, $9)
+            ($1, $2, $3, $4),
+            ($5, $6, $7, $8),
+            ($9, $10, $11, $12)
         "#,
     )
     .bind(canonical_handle.to_vec())
     .bind(canonical_hash.to_vec())
+    .bind(block_number)
     .bind(vec![0xCC_u8])
     .bind(orphan_handle.to_vec())
     .bind(orphan_hash.to_vec())
+    .bind(block_number)
     .bind(vec![0xDD_u8])
     .bind(orphan_descendant_handle.to_vec())
     .bind(orphan_descendant_hash.to_vec())
+    .bind(block_number + 1)
     .bind(vec![0xDE_u8])
     .execute(&setup.db_pool)
     .await?;
@@ -2543,7 +2558,7 @@ async fn check_finalization_status(setup: &Setup) {
                 .unwrap()
                 .header
                 .hash;
-            if &expected_hash.0 != finalized_hash.as_slice() {
+            if expected_hash.0 != finalized_hash.as_slice() {
                 mismatch = Some(format!(
                     "Finalized block hash for block {block_number} does not match expected"
                 ));

@@ -58,7 +58,10 @@ BEGIN
         _digest.key_id_gw,
         _digest.s3_format_version,
         _producer_block_hash,
-        _block_number,
+        CASE
+            WHEN _producer_block_hash = ''::BYTEA THEN NULL
+            ELSE _block_number
+        END,
         _block_hash
     )
     ON CONFLICT (handle, producer_block_hash, block_hash) DO UPDATE
