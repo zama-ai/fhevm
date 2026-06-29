@@ -167,15 +167,37 @@ task('task:deployFHEVMExecutor').setAction(async function (_taskArguments: TaskA
 // KMSVerifier
 ////////////////////////////////////////////////////////////////////////////////
 
-function buildKmsNodes(): { txSenderAddress: string; signerAddress: string; ipAddress: string; storageUrl: string }[] {
+function buildKmsNodeParams(): {
+  txSenderAddress: string;
+  signerAddress: string;
+  ipAddress: string;
+  storageUrl: string;
+  partyId: number;
+  mpcIdentity: string;
+  caCert: string;
+  storagePrefix: string;
+}[] {
   const numNodes = +getRequiredEnvVar('NUM_KMS_NODES');
-  const nodes: { txSenderAddress: string; signerAddress: string; ipAddress: string; storageUrl: string }[] = [];
+  const nodes: {
+    txSenderAddress: string;
+    signerAddress: string;
+    ipAddress: string;
+    storageUrl: string;
+    partyId: number;
+    mpcIdentity: string;
+    caCert: string;
+    storagePrefix: string;
+  }[] = [];
   for (let idx = 0; idx < numNodes; idx++) {
     const txSenderAddress = getRequiredEnvVar(`KMS_TX_SENDER_ADDRESS_${idx}`);
     const signerAddress = getRequiredEnvVar(`KMS_SIGNER_ADDRESS_${idx}`);
-    const ipAddress = process.env[`KMS_NODE_IP_${idx}`] || '';
+    const ipAddress = getRequiredEnvVar(`KMS_NODE_IP_${idx}`);
     const storageUrl = getRequiredEnvVar(`KMS_NODE_STORAGE_URL_${idx}`);
-    nodes.push({ txSenderAddress, signerAddress, ipAddress, storageUrl });
+    const partyId = process.env[`KMS_NODE_PARTY_ID_${idx}`] ? +getRequiredEnvVar(`KMS_NODE_PARTY_ID_${idx}`) : idx;
+    const mpcIdentity = getRequiredEnvVar(`KMS_NODE_MPC_IDENTITY_${idx}`);
+    const caCert = getRequiredEnvVar(`KMS_NODE_CA_CERT_${idx}`);
+    const storagePrefix = getRequiredEnvVar(`KMS_NODE_STORAGE_PREFIX_${idx}`);
+    nodes.push({ txSenderAddress, signerAddress, ipAddress, storageUrl, partyId, mpcIdentity, caCert, storagePrefix });
   }
   return nodes;
 }
@@ -223,10 +245,13 @@ task('task:deployProtocolConfig').setAction(async function (_taskArguments: Task
   const proxyAddress = parsedEnv.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
   const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
 
+  const softwareVersion = process.env.KMS_SOFTWARE_VERSION || '';
+  const pcrValues: { pcr0: string; pcr1: string; pcr2: string }[] = [];
+
   await upgrades.upgradeProxy(proxy, newImplem, {
     call: {
       fn: 'initializeFromEmptyProxy',
-      args: [buildKmsNodes(), buildKmsThresholds()],
+      args: [buildKmsNodeParams(), buildKmsThresholds(), softwareVersion, pcrValues],
     },
   });
   console.info('ProtocolConfig code set successfully at address:', proxyAddress);
