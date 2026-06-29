@@ -52,7 +52,6 @@ pub struct ConsumerConfig {
     pub health_port: u16,
     // Dependence chain settings
     pub dependence_cache_size: u16,
-    pub dependence_by_connexity: bool,
     pub dependence_cross_block: bool,
     pub dependent_ops_max_per_chain: u32,
     pub chain_id: String,
@@ -372,7 +371,6 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
     });
 
     let ingest_options = IngestOptions {
-        dependence_by_connexity: config.dependence_by_connexity,
         dependence_cross_block: config.dependence_cross_block,
         dependent_ops_max_per_chain: config.dependent_ops_max_per_chain,
         is_protocol_config_listener,

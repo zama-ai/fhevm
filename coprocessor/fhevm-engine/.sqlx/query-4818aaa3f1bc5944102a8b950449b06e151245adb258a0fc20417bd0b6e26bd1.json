@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT txn_is_sent, txn_limited_retries_count, txn_last_error\n             FROM ciphertext_digest\n             WHERE handle = $1",
+  "query": "SELECT txn_is_sent, txn_limited_retries_count\n             FROM ciphertext_digest_branch\n             WHERE handle = $1",
   "describe": {
     "columns": [
       {
@@ -12,11 +12,6 @@
         "ordinal": 1,
         "name": "txn_limited_retries_count",
         "type_info": "Int4"
-      },
-      {
-        "ordinal": 2,
-        "name": "txn_last_error",
-        "type_info": "Text"
       }
     ],
     "parameters": {
@@ -26,9 +21,8 @@
     },
     "nullable": [
       false,
-      false,
-      true
+      false
     ]
   },
-  "hash": "797432c3fb131ab8114f6ebae7e1800c39b91d2ee605ad35742da793ef403c7c"
+  "hash": "4818aaa3f1bc5944102a8b950449b06e151245adb258a0fc20417bd0b6e26bd1"
 }

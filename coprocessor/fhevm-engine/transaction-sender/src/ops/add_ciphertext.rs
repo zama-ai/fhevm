@@ -18,7 +18,7 @@ use alloy::{
 use anyhow::bail;
 use async_trait::async_trait;
 use fhevm_engine_common::{telemetry, utils::to_hex};
-use sqlx::{Pool, Postgres, Transaction};
+use sqlx::{Pool, Postgres, Row, Transaction};
 use tokio::task::JoinSet;
 use tracing::{error, info, warn};
 
@@ -45,6 +45,9 @@ where
     async fn send_transaction(
         &self,
         handle: &[u8],
+        host_chain_id: i64,
+        producer_block_hash: &[u8],
+        block_hash: &[u8],
         txn_request: impl Into<TransactionRequest>,
         current_limited_retries_count: i32,
         current_unlimited_retries_count: i32,
@@ -75,8 +78,16 @@ where
                     address = ?self.already_added_error(&e),
                     "Coprocessor has already added the ciphertext commit",
                 );
-                self.set_txn_is_sent(handle, None, None, src_transaction_id)
-                    .await?;
+                self.set_txn_is_sent(
+                    handle,
+                    host_chain_id,
+                    producer_block_hash,
+                    block_hash,
+                    None,
+                    None,
+                    src_transaction_id,
+                )
+                .await?;
                 return Ok(());
             }
             Err(e) => {
@@ -93,6 +104,9 @@ where
                     );
                     self.increment_txn_unlimited_retries_count(
                         handle,
+                        host_chain_id,
+                        producer_block_hash,
+                        block_hash,
                         &e.to_string(),
                         current_unlimited_retries_count,
                     )
@@ -109,6 +123,9 @@ where
                     );
                     self.stop_retrying_add_ciphertext_on_config_error(
                         handle,
+                        host_chain_id,
+                        producer_block_hash,
+                        block_hash,
                         &non_retryable_config_error.to_string(),
                     )
                     .await?;
@@ -122,6 +139,9 @@ where
                 );
                 self.increment_txn_limited_retries_count(
                     handle,
+                    host_chain_id,
+                    producer_block_hash,
+                    block_hash,
                     &e.to_string(),
                     current_limited_retries_count,
                 )
@@ -133,6 +153,9 @@ where
         if receipt.status() {
             self.set_txn_is_sent(
                 handle,
+                host_chain_id,
+                producer_block_hash,
+                block_hash,
                 Some(receipt.transaction_hash.as_slice()),
                 receipt.block_number.map(|bn| bn as i64),
                 src_transaction_id,
@@ -155,6 +178,9 @@ where
 
             self.increment_txn_limited_retries_count(
                 handle,
+                host_chain_id,
+                producer_block_hash,
+                block_hash,
                 "receipt status = false",
                 current_limited_retries_count,
             )
@@ -182,6 +208,9 @@ where
     async fn set_txn_is_sent(
         &self,
         handle: &[u8],
+        host_chain_id: i64,
+        producer_block_hash: &[u8],
+        block_hash: &[u8],
         txn_hash: Option<&[u8]>,
         txn_block_number: Option<i64>,
         src_transaction_id: Option<Vec<u8>>,
@@ -200,17 +229,47 @@ where
             return Ok(());
         };
 
-        sqlx::query!(
-            "UPDATE ciphertext_digest
-            SET
-                txn_is_sent = true,
-                txn_hash = $1,
-                txn_block_number = $2
-            WHERE handle = $3",
-            txn_hash,
-            txn_block_number,
-            handle
+        sqlx::query(
+            "WITH source AS (
+                SELECT host_chain_id, handle, producer_block_hash, key_id_gw, ciphertext, ciphertext128
+                FROM ciphertext_digest_branch
+                WHERE host_chain_id = $3
+                  AND handle = $4
+                  AND producer_block_hash = $5
+                  AND block_hash = $6
+                LIMIT 1
+             )
+             UPDATE ciphertext_digest_branch d
+             SET txn_is_sent = true,
+                 txn_hash = $1,
+                 txn_block_number = $2
+             FROM source s
+             WHERE d.host_chain_id = s.host_chain_id
+               AND d.handle = s.handle
+               AND d.producer_block_hash = s.producer_block_hash
+               AND d.key_id_gw = s.key_id_gw
+               AND d.ciphertext = s.ciphertext
+               AND d.ciphertext128 = s.ciphertext128
+               AND d.txn_is_sent = false
+               AND d.ciphertext IS NOT NULL
+               AND d.ciphertext128 IS NOT NULL
+               AND (
+                   (d.producer_block_hash = ''::bytea AND d.block_hash = ''::bytea)
+                   OR EXISTS (
+                       SELECT 1
+                       FROM host_chain_blocks_valid b
+                       WHERE b.chain_id = d.host_chain_id
+                         AND b.block_hash = d.block_hash
+                         AND b.block_status = 'finalized'
+                   )
+               )",
         )
+        .bind(txn_hash)
+        .bind(txn_block_number)
+        .bind(host_chain_id)
+        .bind(handle)
+        .bind(producer_block_hash)
+        .bind(block_hash)
         .execute(tx.as_mut())
         .await?;
 
@@ -219,7 +278,7 @@ where
         //
         // The deletion happens here but not in the SNS worker after upload because
         // here it is less probable that the deletion fails due to a race condition
-        delete_ct128_from_db(&mut tx, handle.to_vec()).await?;
+        delete_ct128_from_db(&mut tx, handle.to_vec(), producer_block_hash.to_vec()).await?;
 
         tx.commit().await?;
 
@@ -260,6 +319,9 @@ where
     async fn increment_txn_limited_retries_count(
         &self,
         handle: &[u8],
+        host_chain_id: i64,
+        producer_block_hash: &[u8],
+        block_hash: &[u8],
         err: &str,
         current_retry_count: i32,
     ) -> anyhow::Result<()> {
@@ -278,16 +340,21 @@ where
                 "Updating limited retries count"
             );
         }
-        sqlx::query!(
-            "UPDATE ciphertext_digest
-            SET
-            txn_limited_retries_count = txn_limited_retries_count + 1,
-            txn_last_error = $1,
-            txn_last_error_at = NOW()
-            WHERE handle = $2",
-            err,
-            handle,
+        sqlx::query(
+            "UPDATE ciphertext_digest_branch
+             SET txn_limited_retries_count = txn_limited_retries_count + 1,
+                 txn_last_error = $1,
+                 txn_last_error_at = NOW()
+             WHERE host_chain_id = $2
+               AND handle = $3
+               AND producer_block_hash = $4
+               AND block_hash = $5",
         )
+        .bind(err)
+        .bind(host_chain_id)
+        .bind(handle)
+        .bind(producer_block_hash)
+        .bind(block_hash)
         .execute(&self.db_pool)
         .await?;
         Ok(())
@@ -296,6 +363,9 @@ where
     async fn increment_txn_unlimited_retries_count(
         &self,
         handle: &[u8],
+        host_chain_id: i64,
+        producer_block_hash: &[u8],
+        block_hash: &[u8],
         err: &str,
         current_unlimited_retries_count: i32,
     ) -> anyhow::Result<()> {
@@ -315,16 +385,21 @@ where
                 "Updating unlimited retries count"
             );
         }
-        sqlx::query!(
-            "UPDATE ciphertext_digest
-            SET
-            txn_unlimited_retries_count = txn_unlimited_retries_count + 1,
-            txn_last_error = $1,
-            txn_last_error_at = NOW()
-            WHERE handle = $2",
-            err,
-            handle,
+        sqlx::query(
+            "UPDATE ciphertext_digest_branch
+             SET txn_unlimited_retries_count = txn_unlimited_retries_count + 1,
+                 txn_last_error = $1,
+                 txn_last_error_at = NOW()
+             WHERE host_chain_id = $2
+               AND handle = $3
+               AND producer_block_hash = $4
+               AND block_hash = $5",
         )
+        .bind(err)
+        .bind(host_chain_id)
+        .bind(handle)
+        .bind(producer_block_hash)
+        .bind(block_hash)
         .execute(&self.db_pool)
         .await?;
         Ok(())
@@ -333,19 +408,27 @@ where
     async fn stop_retrying_add_ciphertext_on_config_error(
         &self,
         handle: &[u8],
+        host_chain_id: i64,
+        producer_block_hash: &[u8],
+        block_hash: &[u8],
         error: &str,
     ) -> anyhow::Result<()> {
-        sqlx::query!(
-            "UPDATE ciphertext_digest
-            SET
-                txn_limited_retries_count = $1,
-                txn_last_error = $2,
-                txn_last_error_at = NOW()
-            WHERE handle = $3",
-            self.conf.add_ciphertexts_max_retries,
-            error,
-            handle,
+        sqlx::query(
+            "UPDATE ciphertext_digest_branch
+             SET txn_limited_retries_count = $1,
+                 txn_last_error = $2,
+                 txn_last_error_at = NOW()
+             WHERE host_chain_id = $3
+               AND handle = $4
+               AND producer_block_hash = $5
+               AND block_hash = $6",
         )
+        .bind(self.conf.add_ciphertexts_max_retries)
+        .bind(error)
+        .bind(host_chain_id)
+        .bind(handle)
+        .bind(producer_block_hash)
+        .bind(block_hash)
         .execute(&self.db_pool)
         .await?;
         Ok(())
@@ -365,21 +448,49 @@ where
         // The service responsible for populating the ciphertext_digest table must
         // ensure that ciphertext and ciphertext128 are non-null only after the
         // ciphertexts have been successfully uploaded to AWS S3 buckets.
-        let rows = sqlx::query!(
-            "
-            SELECT handle, key_id_gw, ciphertext, ciphertext128, host_chain_id, txn_limited_retries_count, txn_unlimited_retries_count, transaction_id
-            FROM ciphertext_digest
-            WHERE txn_is_sent = false
-            AND ciphertext IS NOT NULL
-            AND ciphertext128 IS NOT NULL
-            AND txn_limited_retries_count < $1
+        let sql = "WITH eligible AS (
+                SELECT
+                  d.handle,
+                  d.producer_block_hash,
+                  d.block_hash,
+                  d.key_id_gw,
+                  d.ciphertext,
+                  d.ciphertext128,
+                  d.host_chain_id,
+                  d.txn_limited_retries_count,
+                  d.txn_unlimited_retries_count,
+                  d.transaction_id,
+                  d.created_at,
+                  ROW_NUMBER() OVER (
+                      PARTITION BY d.host_chain_id, d.handle, d.producer_block_hash
+                      ORDER BY d.created_at ASC
+                  ) AS rn
+                FROM ciphertext_digest_branch d
+                WHERE d.txn_is_sent = false
+                AND d.ciphertext IS NOT NULL
+                AND d.ciphertext128 IS NOT NULL
+                AND d.txn_limited_retries_count < $1
+                AND (
+                    (d.producer_block_hash = ''::bytea AND d.block_hash = ''::bytea)
+                    OR EXISTS (
+                        SELECT 1
+                        FROM host_chain_blocks_valid b
+                        WHERE b.chain_id = d.host_chain_id
+                          AND b.block_hash = d.block_hash
+                          AND b.block_status = 'finalized'
+                    )
+                )
+            )
+            SELECT handle, producer_block_hash, block_hash, key_id_gw, ciphertext, ciphertext128, host_chain_id, txn_limited_retries_count, txn_unlimited_retries_count, transaction_id
+            FROM eligible
+            WHERE rn = 1
             ORDER BY created_at ASC
-            LIMIT $2",
-            self.conf.add_ciphertexts_max_retries,
-            self.conf.add_ciphertexts_batch_limit as i64,
-        )
-        .fetch_all(&self.db_pool)
-        .await?;
+            LIMIT $2";
+        let rows = sqlx::query(sql)
+            .bind(self.conf.add_ciphertexts_max_retries)
+            .bind(self.conf.add_ciphertexts_batch_limit as i64)
+            .fetch_all(&self.db_pool)
+            .await?;
 
         let ciphertext_manager =
             CiphertextCommits::new(self.ciphertext_commits_address, self.provider.inner());
@@ -390,29 +501,38 @@ where
 
         let mut join_set = JoinSet::new();
         for row in rows.into_iter() {
-            let transaction_id = row.transaction_id.clone();
+            let handle: Vec<u8> = row.try_get("handle")?;
+            let producer_block_hash_raw: Vec<u8> = row.try_get("producer_block_hash")?;
+            let block_hash: Vec<u8> = row.try_get("block_hash")?;
+            let key_id_gw_raw: Vec<u8> = row.try_get("key_id_gw")?;
+            let ciphertext: Option<Vec<u8>> = row.try_get("ciphertext")?;
+            let ciphertext128: Option<Vec<u8>> = row.try_get("ciphertext128")?;
+            let host_chain_id: i64 = row.try_get("host_chain_id")?;
+            let txn_limited_retries_count: i32 = row.try_get("txn_limited_retries_count")?;
+            let txn_unlimited_retries_count: i32 = row.try_get("txn_unlimited_retries_count")?;
+            let transaction_id: Option<Vec<u8>> = row.try_get("transaction_id")?;
+
             let _span =
                 tracing::info_span!("prepare_add_ciphertext", txn_id = tracing::field::Empty);
             telemetry::record_short_hex_if_some(&_span, "txn_id", transaction_id.as_deref());
             let _enter = _span.enter();
 
-            let handle = row.handle.clone();
+            let producer_block_hash = producer_block_hash_raw;
 
-            let (ciphertext64_digest, ciphertext128_digest) =
-                match (row.ciphertext, row.ciphertext128) {
-                    (Some(ct), Some(ct128)) => (
-                        FixedBytes::from(try_into_array::<32>(ct)?),
-                        FixedBytes::from(try_into_array::<32>(ct128)?),
-                    ),
-                    _ => {
-                        error!(handle = to_hex(&handle), "Missing ciphertext(s)");
-                        continue;
-                    }
-                };
+            let (ciphertext64_digest, ciphertext128_digest) = match (ciphertext, ciphertext128) {
+                (Some(ct), Some(ct128)) => (
+                    FixedBytes::from(try_into_array::<32>(ct)?),
+                    FixedBytes::from(try_into_array::<32>(ct128)?),
+                ),
+                _ => {
+                    error!(handle = to_hex(&handle), "Missing ciphertext(s)");
+                    continue;
+                }
+            };
 
             let handle_bytes32 = FixedBytes::from(try_into_array::<32>(handle.clone())?);
             let key_id_gw_bytes32: [u8; 32] =
-                row.key_id_gw.try_into().map_err(|bad: Vec<u8>| {
+                key_id_gw_raw.try_into().map_err(|bad: Vec<u8>| {
                     anyhow::anyhow!(
                         "Failed to convert key_id_gw to [u8; 32] (len={}): 0x{}",
                         bad.len(),
@@ -423,7 +543,7 @@ where
 
             info!(
                 handle = to_hex(&handle),
-                host_chain_id = row.host_chain_id,
+                host_chain_id = host_chain_id,
                 key_id_gw = to_hex(&key_id_gw_bytes32),
                 ct64_digest = to_hex(ciphertext64_digest.as_ref()),
                 ct128_digest = to_hex(ciphertext128_digest.as_ref()),
@@ -457,10 +577,13 @@ where
             join_set.spawn(async move {
                 operation
                     .send_transaction(
-                        &row.handle,
+                        &handle,
+                        host_chain_id,
+                        &producer_block_hash,
+                        &block_hash,
                         txn_request,
-                        row.txn_limited_retries_count,
-                        row.txn_unlimited_retries_count,
+                        txn_limited_retries_count,
+                        txn_unlimited_retries_count,
                         transaction_id,
                     )
                     .await
@@ -479,11 +602,25 @@ where
 async fn delete_ct128_from_db(
     tx: &mut Transaction<'_, Postgres>,
     handle: Vec<u8>,
+    producer_block_hash: Vec<u8>,
 ) -> Result<(), sqlx::Error> {
-    let rows_affected = sqlx::query!("DELETE FROM ciphertexts128 WHERE  handle = $1", handle)
-        .execute(tx.as_mut())
-        .await?
-        .rows_affected();
+    let rows_affected = sqlx::query(
+        "DELETE FROM ciphertexts128_branch
+         WHERE handle = $1
+           AND producer_block_hash = $2
+           AND NOT EXISTS (
+               SELECT 1
+               FROM ciphertext_digest_branch d
+               WHERE d.handle = ciphertexts128_branch.handle
+                 AND d.producer_block_hash = ciphertexts128_branch.producer_block_hash
+                 AND d.ciphertext128 IS NULL
+           )",
+    )
+    .bind(&handle)
+    .bind(&producer_block_hash)
+    .execute(tx.as_mut())
+    .await?
+    .rows_affected();
 
     if rows_affected > 0 {
         info!(

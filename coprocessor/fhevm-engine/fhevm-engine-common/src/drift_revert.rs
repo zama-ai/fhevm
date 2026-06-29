@@ -344,8 +344,8 @@ pub async fn on_drift_detected(pool: &Pool<Postgres>, handle: &[u8], host_chain_
         return;
     }
 
-    let host_block: Option<i64> = match sqlx::query_scalar::<_, Option<i64>>(
-        "SELECT MIN(block_number) FROM computations \
+    let host_block: Option<i64> = match sqlx::query_scalar(
+        "SELECT MIN(block_number) FROM computations_branch \
          WHERE output_handle = $1 AND host_chain_id = $2",
     )
     .bind(handle)

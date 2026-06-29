@@ -13,12 +13,16 @@ use crate::SchedulePolicy;
 use crate::UploadJob;
 use crate::{Config, ExecutionError};
 use aws_sdk_s3::Client;
+use fhevm_engine_common::branch::{
+    is_branchless_producer, read_settled_height, select_producer_candidate, ProducerBlockHashed,
+};
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::db_keys::DbKeyId;
 use fhevm_engine_common::healthz_server::{HealthCheckService, HealthStatus, Version};
 use fhevm_engine_common::pg_pool::PostgresPoolManager;
 use fhevm_engine_common::pg_pool::ServiceError;
 use fhevm_engine_common::telemetry;
+use fhevm_engine_common::tfhe_ops::current_ciphertext_version;
 use fhevm_engine_common::types::{get_ct_type, SupportedFheCiphertexts};
 use fhevm_engine_common::utils::to_hex;
 use fhevm_engine_common::versioning::StackMode;
@@ -58,6 +62,28 @@ impl fmt::Display for Order {
             Order::Asc => write!(f, "ASC"),
             Order::Desc => write!(f, "DESC"),
         }
+    }
+}
+
+#[derive(Clone, Debug)]
+struct SnsTaskRow {
+    handle: Vec<u8>,
+    transaction_id: Option<Vec<u8>>,
+    host_chain_id: i64,
+    producer_block_hash: Vec<u8>,
+    block_hash: Vec<u8>,
+    block_number: Option<i64>,
+}
+
+#[derive(Clone, Debug)]
+struct CiphertextBytesCandidate {
+    producer_block_hash: Vec<u8>,
+    ciphertext: Vec<u8>,
+}
+
+impl ProducerBlockHashed for CiphertextBytesCandidate {
+    fn producer_block_hash(&self) -> &[u8] {
+        &self.producer_block_hash
     }
 }
 
@@ -347,11 +373,11 @@ pub async fn garbage_collect(pool: &PgPool, limit: u32) -> Result<(), ExecutionE
         return Ok(());
     };
 
-    let count: Option<i64> = sqlx::query_scalar!(
+    let count: Option<i64> = sqlx::query_scalar(
         "
         SELECT COUNT(*)::BIGINT
-        FROM ciphertexts128
-        "
+        FROM ciphertexts128_branch
+        ",
     )
     .fetch_one(trx.as_mut())
     .await?;
@@ -363,40 +389,51 @@ pub async fn garbage_collect(pool: &PgPool, limit: u32) -> Result<(), ExecutionE
         return Ok(());
     }
 
-    info!(count, "Starting garbage collection of ciphertexts128");
+    info!(
+        count,
+        "Starting garbage collection of ciphertexts128_branch"
+    );
 
     // Limit the number of rows to update in case of a large backlog due to catchup or burst.
     // Skip locked to prevent concurrent updates.
     let cleanup_span = tracing::info_span!("cleanup_ct128", rows_affected = tracing::field::Empty);
-    let rows_affected: u64 = sqlx::query!(
-        "
-        WITH uploaded_ct128 AS (
-            SELECT c.handle
-            FROM ciphertexts128 c
-            JOIN ciphertext_digest d
-            ON d.handle = c.handle
-            WHERE d.ciphertext IS NOT NULL
-              AND d.ciphertext128 IS NOT NULL
-            FOR UPDATE OF c SKIP LOCKED
-            LIMIT $1
+    let rows_affected: u64 = async {
+        Ok::<u64, sqlx::Error>(
+            sqlx::query(
+                "
+                WITH uploaded_ct128 AS (
+                    SELECT c.handle, c.producer_block_hash
+                    FROM ciphertexts128_branch c
+                    WHERE NOT EXISTS (
+                        SELECT 1
+                        FROM ciphertext_digest_branch d
+                        WHERE d.handle = c.handle
+                          AND d.producer_block_hash = c.producer_block_hash
+                          AND d.ciphertext128 IS NULL
+                    )
+                    FOR UPDATE OF c SKIP LOCKED
+                    LIMIT $1
+                )
+                DELETE FROM ciphertexts128_branch c
+                USING uploaded_ct128 r
+                WHERE c.handle = r.handle
+                AND c.producer_block_hash = r.producer_block_hash
+                ",
+            )
+            .bind(limit as i32)
+            .execute(trx.as_mut())
+            .await?
+            .rows_affected(),
         )
-
-        DELETE FROM ciphertexts128 c
-        USING uploaded_ct128 r
-        WHERE c.handle = r.handle;
-        ",
-        limit as i32,
-    )
-    .execute(trx.as_mut())
+    }
     .instrument(cleanup_span.clone())
-    .await?
-    .rows_affected();
+    .await?;
     cleanup_span.record("rows_affected", rows_affected as i64);
 
     if rows_affected > 0 {
         info!(parent: &cleanup_span,
             rows_affected = rows_affected,
-            "Cleaning up old ciphertexts128"
+            "Cleaning up old ciphertexts128_branch"
         );
     }
 
@@ -445,8 +482,14 @@ async fn fetch_and_execute_sns_tasks(
 
     let mut maybe_remaining = false;
     let tasks_processed;
-    if let Some(mut tasks) =
-        query_sns_tasks(trx, conf.db.batch_limit, order, &keys.key_id_gw).await?
+    if let Some(mut tasks) = query_sns_tasks(
+        trx,
+        conf.db.batch_limit,
+        conf.db.branch_cutover_block,
+        order,
+        &keys.key_id_gw,
+    )
+    .await?
     {
         maybe_remaining = conf.db.batch_limit as usize == tasks.len();
         tasks_processed = tasks.len();
@@ -511,70 +554,163 @@ async fn fetch_and_execute_sns_tasks(
 pub async fn query_sns_tasks(
     db_txn: &mut Transaction<'_, Postgres>,
     limit: u32,
+    branch_cutover_block: i64,
     order: Order,
     key_id_gw: &DbKeyId,
 ) -> Result<Option<Vec<HandleItem>>, ExecutionError> {
-    let query = format!(
-        "
-        SELECT a.*, c.ciphertext
-        FROM pbs_computations a
-        JOIN ciphertexts c 
-        ON a.handle = c.handle
-        WHERE c.ciphertext IS NOT NULL
-        AND a.is_completed = FALSE
-        ORDER BY a.created_at {}
-        FOR UPDATE SKIP LOCKED
-        LIMIT $1;
-        ",
-        order
+    let build_task = |handle: Vec<u8>,
+                      transaction_id: Option<Vec<u8>>,
+                      host_chain_id_raw: i64,
+                      producer_block_hash: Vec<u8>,
+                      block_hash: Vec<u8>,
+                      block_number: Option<i64>,
+                      ciphertext: Vec<u8>|
+     -> Result<HandleItem, ExecutionError> {
+        let host_chain_id = ChainId::try_from(host_chain_id_raw)
+            .map_err(|e| ExecutionError::ConversionError(e.into()))?;
+        let task_span = tracing::info_span!(
+            "task",
+            txn_id = tracing::field::Empty,
+            handle = tracing::field::Empty
+        );
+        telemetry::record_short_hex(&task_span, "handle", &handle);
+        telemetry::record_short_hex_if_some(&task_span, "txn_id", transaction_id.as_deref());
+
+        Ok(HandleItem {
+            // TODO: During key rotation, ensure all coprocessors pin the same key_id_gw for a batch
+            // (e.g., via gateway coordination) to keep ciphertext_digest consistent.
+            key_id_gw: key_id_gw.clone(),
+            host_chain_id,
+            handle: handle.clone(),
+            producer_block_hash,
+            block_hash,
+            block_number,
+            ct64_compressed: Arc::new(ciphertext),
+            ct128: Arc::new(BigCiphertext::default()), // to be computed
+            ct64_digest: None,
+            ct128_digest: None,
+            s3_format_version: None,
+            span: task_span,
+            transaction_id,
+        })
+    };
+    let sql = format!(
+        "SELECT
+            a.handle,
+            a.transaction_id,
+            a.host_chain_id,
+            a.producer_block_hash,
+            a.block_hash,
+            a.block_number
+        FROM pbs_computations_branch a
+        WHERE a.is_completed = FALSE
+          AND (
+            (a.producer_block_hash = ''::bytea AND a.block_hash = ''::bytea)
+            OR a.block_number >= $2
+          )
+          AND EXISTS (
+              SELECT 1 FROM ciphertexts_branch c
+               WHERE c.handle = a.handle
+                 AND c.producer_block_hash = a.producer_block_hash
+                 AND c.ciphertext IS NOT NULL
+                 AND c.ciphertext_version = $3
+          )
+        ORDER BY a.created_at {order}
+        FOR UPDATE OF a SKIP LOCKED
+        LIMIT $1"
     );
 
-    let records = sqlx::query(&query)
+    let task_rows = sqlx::query(&sql)
         .bind(limit as i64)
+        .bind(branch_cutover_block)
+        .bind(current_ciphertext_version())
         .fetch_all(db_txn.as_mut())
-        .await?;
+        .await?
+        .into_iter()
+        .map(|row| -> Result<SnsTaskRow, sqlx::Error> {
+            Ok(SnsTaskRow {
+                handle: row.try_get("handle")?,
+                transaction_id: row.try_get("transaction_id")?,
+                host_chain_id: row.try_get("host_chain_id")?,
+                producer_block_hash: row.try_get("producer_block_hash")?,
+                block_hash: row.try_get("block_hash")?,
+                block_number: row.try_get("block_number")?,
+            })
+        })
+        .collect::<Result<Vec<_>, sqlx::Error>>()?;
 
-    info!(target: "worker", { count = records.len(), order = order.to_string() }, "Fetched SnS tasks");
-    tracing::Span::current().record("count", records.len());
-
-    if records.is_empty() {
+    if task_rows.is_empty() {
+        info!(target: "worker", { count = 0, order = order.to_string() }, "Fetched SnS tasks");
+        tracing::Span::current().record("count", 0);
         return Ok(None);
     }
 
-    // Convert the records into HandleItem structs
-    let tasks = records
-        .into_iter()
-        .map(|record| {
-            let host_chain_id_raw: i64 = record.try_get("host_chain_id")?;
-            let host_chain_id = ChainId::try_from(host_chain_id_raw)
-                .map_err(|e| ExecutionError::ConversionError(e.into()))?;
-            let handle: Vec<u8> = record.try_get("handle")?;
-            let ciphertext: Vec<u8> = record.try_get("ciphertext")?;
-            let transaction_id: Option<Vec<u8>> = record.try_get("transaction_id")?;
-            let task_span = tracing::info_span!(
-                "task",
-                txn_id = tracing::field::Empty,
-                handle = tracing::field::Empty
-            );
-            telemetry::record_short_hex(&task_span, "handle", &handle);
-            telemetry::record_short_hex_if_some(&task_span, "txn_id", transaction_id.as_deref());
+    let handles = task_rows
+        .iter()
+        .map(|row| row.handle.clone())
+        .collect::<Vec<_>>();
+    let mut ciphertext_candidates: std::collections::HashMap<
+        Vec<u8>,
+        Vec<CiphertextBytesCandidate>,
+    > = std::collections::HashMap::new();
+    let rows = sqlx::query(
+        "
+        SELECT handle, producer_block_hash, ciphertext
+        FROM ciphertexts_branch
+        WHERE handle = ANY($1::BYTEA[])
+          AND ciphertext IS NOT NULL
+          AND ciphertext_version = $2
+        ",
+    )
+    .bind(&handles)
+    .bind(current_ciphertext_version())
+    .fetch_all(db_txn.as_mut())
+    .await?;
+    for row in rows {
+        let handle: Vec<u8> = row.try_get("handle")?;
+        ciphertext_candidates
+            .entry(handle)
+            .or_default()
+            .push(CiphertextBytesCandidate {
+                producer_block_hash: row.try_get("producer_block_hash")?,
+                ciphertext: row.try_get("ciphertext")?,
+            });
+    }
 
-            Ok(HandleItem {
-                // TODO: During key rotation, ensure all coprocessors pin the same key_id_gw for a batch
-                // (e.g., via gateway coordination) to keep ciphertext_digest consistent.
-                key_id_gw: key_id_gw.clone(),
-                host_chain_id,
-                handle,
-                ct64_compressed: Arc::new(ciphertext),
-                ct128: Arc::new(BigCiphertext::default()), // to be computed
-                ct64_digest: None,
-                ct128_digest: None,
-                s3_format_version: None,
-                span: task_span,
-                transaction_id,
-            })
+    let tasks = task_rows
+        .into_iter()
+        .map(|row| {
+            let candidates = ciphertext_candidates.get(&row.handle).ok_or_else(|| {
+                ExecutionError::MissingCiphertext64(format!(
+                    "missing ciphertext candidates for handle {}",
+                    hex::encode(&row.handle)
+                ))
+            })?;
+            let ciphertext = select_producer_candidate(candidates, &row.producer_block_hash)
+                .ok_or_else(|| {
+                    ExecutionError::MissingCiphertext64(format!(
+                        "missing matching ciphertext for handle {} and producer {}",
+                        hex::encode(&row.handle),
+                        hex::encode(&row.producer_block_hash),
+                    ))
+                })?
+                .ciphertext
+                .clone();
+
+            build_task(
+                row.handle,
+                row.transaction_id,
+                row.host_chain_id,
+                row.producer_block_hash,
+                row.block_hash,
+                row.block_number,
+                ciphertext,
+            )
         })
         .collect::<Result<Vec<_>, ExecutionError>>()?;
+
+    info!(target: "worker", { count = tasks.len(), order = order.to_string() }, "Fetched SnS tasks");
+    tracing::Span::current().record("count", tasks.len());
 
     Ok(Some(tasks))
 }
@@ -769,6 +905,34 @@ fn compute_task(
     };
 }
 
+fn ensure_ct128_write_above_settled(
+    task: &HandleItem,
+    settled_height: i64,
+) -> Result<(), ExecutionError> {
+    if is_branchless_producer(&task.producer_block_hash) {
+        return Ok(());
+    }
+    let Some(block_number) = task.block_number else {
+        return Err(ExecutionError::DbError(sqlx::Error::Protocol(format!(
+            "refusing branch ct128 write without block_number for handle {} producer_block_hash {}",
+            hex::encode(&task.handle),
+            hex::encode(&task.producer_block_hash),
+        ))));
+    };
+    if block_number <= settled_height {
+        return Err(ExecutionError::DbError(sqlx::Error::Protocol(
+            format!(
+                "refusing settled branch ct128 write for handle {} producer_block_hash {} block {} <= settled_height {}",
+                hex::encode(&task.handle),
+                hex::encode(&task.producer_block_hash),
+                block_number,
+                settled_height,
+            ),
+        )));
+    }
+    Ok(())
+}
+
 /// Updates the database with the computed large ciphertexts.
 ///
 /// The ct128 is temporarily stored in PostgresDB to ensure reliability.
@@ -778,20 +942,39 @@ async fn update_ciphertext128(
     db_txn: &mut Transaction<'_, Postgres>,
     tasks: &[HandleItem],
 ) -> Result<(), ExecutionError> {
+    let mut settled_heights = std::collections::HashMap::<i64, i64>::new();
     for task in tasks {
         if !task.ct128.is_empty() {
+            let host_chain_id = task.host_chain_id.as_i64();
+            let settled_height = if let Some(settled_height) = settled_heights.get(&host_chain_id) {
+                *settled_height
+            } else {
+                let settled_height = read_settled_height(db_txn, host_chain_id).await?;
+                settled_heights.insert(host_chain_id, settled_height);
+                settled_height
+            };
+            ensure_ct128_write_above_settled(task, settled_height)?;
+
             let ciphertext128 = task.ct128.bytes();
             let persist_span = tracing::info_span!("ciphertexts128_insert");
-            let res = sqlx::query!(
+            let res = sqlx::query(
                 "
-                INSERT INTO ciphertexts128 (
-                        handle,
-                        ciphertext
+                INSERT INTO ciphertexts128_branch (
+                    handle,
+                    producer_block_hash,
+                    block_number,
+                    ciphertext
                 )
-                VALUES ($1, $2)",
-                task.handle,
-                ciphertext128,
+                VALUES ($1, $2, $3, $4)
+                ON CONFLICT (handle, producer_block_hash)
+                DO UPDATE SET
+                    ciphertext = EXCLUDED.ciphertext,
+                    block_number = COALESCE(ciphertexts128_branch.block_number, EXCLUDED.block_number)",
             )
+            .bind(&task.handle)
+            .bind(&task.producer_block_hash)
+            .bind(task.block_number)
+            .bind(&ciphertext128)
             .execute(db_txn.as_mut())
             .instrument(persist_span.clone())
             .await;
@@ -832,13 +1015,19 @@ async fn update_computations_status(
 ) -> Result<(), ExecutionError> {
     for task in tasks {
         if !task.ct128.is_empty() {
-            sqlx::query!(
+            sqlx::query(
                 "
-                UPDATE pbs_computations
+                UPDATE pbs_computations_branch
                 SET is_completed = TRUE, completed_at = NOW()
-                WHERE handle = $1;",
-                task.handle
+                WHERE host_chain_id = $1
+                  AND handle = $2
+                  AND producer_block_hash = $3
+                  AND block_hash = $4",
             )
+            .bind(task.host_chain_id.as_i64())
+            .bind(&task.handle)
+            .bind(&task.producer_block_hash)
+            .bind(&task.block_hash)
             .execute(db_txn.as_mut())
             .await?;
         } else {
@@ -897,4 +1086,144 @@ fn decrypt_big_ct(
 async fn update_last_active(last_active_at: Arc<RwLock<SystemTime>>) {
     let mut value = last_active_at.write().await;
     *value = SystemTime::now();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serial_test::serial;
+    use test_harness::instance::{setup_test_db, DBInstance, ImportMode};
+
+    fn handle_item(producer_block_hash: Vec<u8>, block_number: Option<i64>) -> HandleItem {
+        handle_item_with_ct128(producer_block_hash, block_number, BigCiphertext::default())
+    }
+
+    fn handle_item_with_ct128(
+        producer_block_hash: Vec<u8>,
+        block_number: Option<i64>,
+        ct128: BigCiphertext,
+    ) -> HandleItem {
+        HandleItem {
+            host_chain_id: ChainId::try_from(12345_i64).unwrap(),
+            key_id_gw: vec![0x11; 32],
+            handle: vec![0x42; 32],
+            producer_block_hash,
+            block_hash: vec![0x24; 32],
+            block_number,
+            ct64_compressed: Arc::new(b"ct64".to_vec()),
+            ct128: Arc::new(ct128),
+            ct64_digest: None,
+            ct128_digest: None,
+            s3_format_version: None,
+            span: tracing::Span::none(),
+            transaction_id: None,
+        }
+    }
+
+    #[test]
+    fn write_guard_rejects_branch_ct128_at_or_below_settlement() {
+        let err = ensure_ct128_write_above_settled(&handle_item(vec![0xAA; 32], Some(10)), 10)
+            .expect_err("settled branch ct128 write should be rejected");
+
+        assert!(err
+            .to_string()
+            .contains("refusing settled branch ct128 write"));
+    }
+
+    #[test]
+    fn write_guard_rejects_branch_ct128_without_block_number() {
+        let err = ensure_ct128_write_above_settled(&handle_item(vec![0xAA; 32], None), 10)
+            .expect_err("branch ct128 write without block number should be rejected");
+
+        assert!(err
+            .to_string()
+            .contains("refusing branch ct128 write without block_number"));
+    }
+
+    #[test]
+    fn write_guard_allows_branchless_and_future_branch_ct128() {
+        ensure_ct128_write_above_settled(&handle_item(vec![], None), 10)
+            .expect("branchless rows are outside settlement");
+        ensure_ct128_write_above_settled(&handle_item(vec![0xAA; 32], Some(11)), 10)
+            .expect("future branch row should be accepted");
+    }
+
+    async fn setup_pool() -> (DBInstance, sqlx::PgPool) {
+        let test_instance = setup_test_db(ImportMode::None)
+            .await
+            .expect("valid db instance");
+
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(3)
+            .connect(test_instance.db_url())
+            .await
+            .expect("connect test db");
+
+        (test_instance, pool)
+    }
+
+    async fn set_settled_height(pool: &sqlx::PgPool, settled_height: i64) {
+        sqlx::query(
+            "INSERT INTO coprocessor_settlement (chain_id, settled_height)
+             VALUES ($1, $2)
+             ON CONFLICT (chain_id)
+             DO UPDATE SET settled_height = EXCLUDED.settled_height",
+        )
+        .bind(12345_i64)
+        .bind(settled_height)
+        .execute(pool)
+        .await
+        .expect("set settled height");
+    }
+
+    async fn count_ct128_rows(pool: &sqlx::PgPool) -> i64 {
+        sqlx::query_scalar("SELECT COUNT(*) FROM ciphertexts128_branch WHERE handle = $1")
+            .bind(vec![0x42_u8; 32])
+            .fetch_one(pool)
+            .await
+            .expect("count ciphertexts128_branch rows")
+    }
+
+    fn computed_handle_item(producer_block_hash: Vec<u8>, block_number: Option<i64>) -> HandleItem {
+        handle_item_with_ct128(
+            producer_block_hash,
+            block_number,
+            BigCiphertext::new(vec![0xCA, 0xFE], Ciphertext128Format::CompressedOnCpu),
+        )
+    }
+
+    #[tokio::test]
+    #[serial(db)]
+    async fn update_ciphertext128_rejects_settled_branch_write_path() {
+        let (_test_instance, pool) = setup_pool().await;
+        set_settled_height(&pool, 10).await;
+        let task = computed_handle_item(vec![0xAA; 32], Some(10));
+
+        let mut tx = pool.begin().await.expect("begin transaction");
+        let err = update_ciphertext128(&mut tx, &[task])
+            .await
+            .expect_err("settled branch ct128 write should be rejected");
+        tx.rollback().await.expect("rollback transaction");
+
+        assert!(err
+            .to_string()
+            .contains("refusing settled branch ct128 write"));
+        assert_eq!(count_ct128_rows(&pool).await, 0);
+    }
+
+    #[tokio::test]
+    #[serial(db)]
+    async fn update_ciphertext128_allows_future_branch_write_path() {
+        let (_test_instance, pool) = setup_pool().await;
+        set_settled_height(&pool, 10).await;
+        let task = computed_handle_item(vec![0xAA; 32], Some(11));
+
+        let mut tx = pool.begin().await.expect("begin transaction");
+        update_ciphertext128(&mut tx, &[task])
+            .await
+            .expect("future branch ct128 write should be accepted");
+        tx.commit().await.expect("commit transaction");
+
+        assert_eq!(count_ct128_rows(&pool).await, 1);
+    }
 }
