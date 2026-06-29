@@ -1,8 +1,169 @@
-import type { FhevmInstance } from "@zama-fhe/relayer-sdk/node";
-import { createInstance } from "@zama-fhe/relayer-sdk/node";
-import type { Signer } from "ethers";
+import { createHash } from 'node:crypto';
 
-import type { Auth, ClearValueType, ClearValues, EncryptedInputResult, SdkInstance, TypedValue } from "../types";
+import type { FhevmInstance } from '@zama-fhe/relayer-sdk/node';
+import { createInstance } from '@zama-fhe/relayer-sdk/node';
+import type { Signer } from 'ethers';
+
+import type { Auth, ClearValueType, ClearValues, EncryptedInputResult, SdkInstance, TypedValue } from '../types';
+
+type KeyData = {
+  readonly dataId: string;
+  readonly urls: readonly string[];
+  readonly extra: Record<string, unknown>;
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null;
+
+const asStringArray = (value: unknown): readonly string[] =>
+  Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+
+const firstFhePublicKey = (value: unknown): KeyData | undefined => {
+  if (!isRecord(value) || !isRecord(value.response)) {
+    return undefined;
+  }
+  const [firstKeyInfo] = Array.isArray(value.response.fheKeyInfo) ? value.response.fheKeyInfo : [];
+  if (!isRecord(firstKeyInfo) || !isRecord(firstKeyInfo.fhePublicKey)) {
+    return undefined;
+  }
+  const { dataId, urls } = firstKeyInfo.fhePublicKey;
+  if (typeof dataId !== 'string') {
+    return undefined;
+  }
+  const parsedUrls = asStringArray(urls);
+  const { urls: _urls, dataId: _dataId, ...extra } = firstKeyInfo.fhePublicKey;
+  return parsedUrls.length > 0 ? { dataId, urls: parsedUrls, extra } : undefined;
+};
+
+const interestingHeaders = (headers: Headers): Record<string, string> => {
+  const values: Record<string, string> = {};
+  headers.forEach((value, key) => {
+    const normalized = key.toLowerCase();
+    if (
+      normalized === 'content-type' ||
+      normalized === 'content-length' ||
+      normalized === 'etag' ||
+      normalized === 'last-modified' ||
+      normalized.startsWith('x-amz-') ||
+      normalized.startsWith('x-minio-')
+    ) {
+      values[normalized] = value;
+    }
+  });
+  return values;
+};
+
+const tagUrl = (url: string): string => `${url}${url.includes('?') ? '&' : '?'}tagging`;
+
+const compactPreview = (value: string): string => value.replace(/\s+/g, ' ').trim().slice(0, 2048);
+
+const hexPreview = (bytes: Uint8Array, offset: number, length: number): string =>
+  Array.from(bytes.slice(offset, offset + length), (byte) => byte.toString(16).padStart(2, '0')).join('');
+
+const readU32Le = (bytes: Uint8Array): number | undefined =>
+  bytes.length >= 4 ? (bytes[0] | (bytes[1] << 8) | (bytes[2] << 16) | (bytes[3] << 24)) >>> 0 : undefined;
+
+const readU32Be = (bytes: Uint8Array): number | undefined =>
+  bytes.length >= 4 ? ((bytes[0] << 24) | (bytes[1] << 16) | (bytes[2] << 8) | bytes[3]) >>> 0 : undefined;
+
+const printableHints = (bytes: Uint8Array): readonly string[] => {
+  const preview = Buffer.from(bytes.slice(0, Math.min(bytes.length, 8192))).toString('latin1');
+  const runs = preview.match(/[ -~]{4,}/g) ?? [];
+  return runs
+    .filter((run) => /tfhe|key|public|compact|compressed|version|zama|type/i.test(run))
+    .slice(0, 10);
+};
+
+const formatDiagnosticError = (error: unknown): string =>
+  error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+
+const diagnosedKeyUrls = new Set<string>();
+
+const logFhePublicKeyDiagnostics = async (keyUrl: string) => {
+  if (diagnosedKeyUrls.has(keyUrl)) {
+    return;
+  }
+  diagnosedKeyUrls.add(keyUrl);
+
+  try {
+    const keyUrlResponse = await fetch(keyUrl);
+    const keyUrlText = await keyUrlResponse.text();
+    const keyUrlHeaders = JSON.stringify(interestingHeaders(keyUrlResponse.headers));
+    console.log(`[relayer-sdk] keyUrl status=${keyUrlResponse.status} headers=${keyUrlHeaders}`);
+
+    if (!keyUrlResponse.ok) {
+      console.warn(`[relayer-sdk] keyUrl non-2xx body preview=${JSON.stringify(keyUrlText.slice(0, 512))}`);
+      return;
+    }
+
+    const keyUrlJson = JSON.parse(keyUrlText) as unknown;
+    const publicKey = firstFhePublicKey(keyUrlJson);
+    if (!publicKey) {
+      console.warn(`[relayer-sdk] keyUrl response did not contain response.fheKeyInfo[0].fhePublicKey`);
+      return;
+    }
+
+    const [publicKeyUrl] = publicKey.urls;
+    const publicKeyUrls = JSON.stringify(publicKey.urls);
+    console.log(
+      [
+        `[relayer-sdk] fhePublicKey dataId=${publicKey.dataId}`,
+        `extra=${JSON.stringify(publicKey.extra)}`,
+        `url=${publicKeyUrl}`,
+        `urls=${publicKeyUrls}`,
+      ].join(' '),
+    );
+
+    const publicKeyResponse = await fetch(publicKeyUrl);
+    const bytes = new Uint8Array(await publicKeyResponse.arrayBuffer());
+    const metadataHeaders = interestingHeaders(publicKeyResponse.headers);
+    const sha256 = createHash('sha256').update(Buffer.from(bytes)).digest('hex');
+    const firstByte = bytes.length > 0 ? bytes[0] : undefined;
+    const firstU32Le = readU32Le(bytes);
+    const firstU32Be = readU32Be(bytes);
+    const hints = printableHints(bytes);
+
+    console.log(
+      [
+        `[relayer-sdk] fhePublicKey fetch status=${publicKeyResponse.status}`,
+        `metadataHeaders=${JSON.stringify(metadataHeaders)}`,
+        `bytes=${bytes.byteLength}`,
+        `sha256=${sha256}`,
+        `firstByte=${firstByte ?? 'n/a'}`,
+        `firstU32Le=${firstU32Le ?? 'n/a'}`,
+        `firstU32Be=${firstU32Be ?? 'n/a'}`,
+      ].join(' '),
+    );
+    console.log(
+      `[relayer-sdk] fhePublicKey bytePreview first32=${hexPreview(bytes, 0, 32)} last32=${hexPreview(
+        bytes,
+        Math.max(0, bytes.length - 32),
+        32,
+      )}`,
+    );
+    console.log(
+      `[relayer-sdk] fhePublicKey serializedRustTypeHints=${
+        hints.length > 0 ? JSON.stringify(hints) : 'none-found'
+      }`,
+    );
+
+    try {
+      const tagsResponse = await fetch(tagUrl(publicKeyUrl));
+      const tagsText = await tagsResponse.text();
+      console.log(
+        [
+          `[relayer-sdk] fhePublicKey objectTags status=${tagsResponse.status}`,
+          `headers=${JSON.stringify(interestingHeaders(tagsResponse.headers))}`,
+          `body=${JSON.stringify(compactPreview(tagsText))}`,
+        ].join(' '),
+      );
+    } catch (error) {
+      console.warn(`[relayer-sdk] fhePublicKey objectTags diagnostics failed: ${formatDiagnosticError(error)}`);
+    }
+  } catch (error) {
+    console.warn(`[relayer-sdk] fhePublicKey diagnostics failed: ${formatDiagnosticError(error)}`);
+  }
+};
 
 export class RelayerSdk implements SdkInstance {
   #instance: FhevmInstance;
@@ -38,6 +199,7 @@ export class RelayerSdk implements SdkInstance {
     const normalizedRelayerUrl = relayerUrl.replace(/\/+$/, "");
     console.log(`[relayer-sdk] relayerUrl=${relayerUrl}`);
     console.log(`[relayer-sdk] keyUrl=${normalizedRelayerUrl}/keyurl`);
+    await logFhePublicKeyDiagnostics(`${normalizedRelayerUrl}/keyurl`);
     const instance = await createInstance({
       verifyingContractAddressDecryption,
       verifyingContractAddressInputVerification,

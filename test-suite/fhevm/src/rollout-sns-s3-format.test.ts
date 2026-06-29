@@ -16,17 +16,19 @@ test("keeps the sns-worker migration rollout scoped to sns image and env mode", 
   expect(scenario).toBe("two-of-three");
   expect(phaseVersions.baseline.COPROCESSOR_SNS_WORKER_VERSION).toBe(process.env.OLD_SNS_IMAGE_TAG || "pre-s3-format");
   expect(phaseVersions.baseline.S3_MIGRATION_MODE).toBe("no");
-  expect(phaseVersions.baseline.RELAYER_VERSION).toBe("v0.13.0-6");
-  expect(phaseVersions.baseline.RELAYER_MIGRATE_VERSION).toBe("v0.13.0-6");
-  expect(phaseVersions.baseline.CORE_VERSION).toBe("v0.13.20-0");
-  expect(phaseVersions.baseline.RELAYER_SDK_VERSION).toBe("0.4.2");
-  expect(phaseVersions.baseline.LISTENER_CORE_VERSION).toBe("v0.13.0-6");
-  expect(phaseVersions.baseline.COPROCESSOR_HOST_LISTENER_VERSION).toBe("v0.13.0-6");
-  expect(phaseVersions.baseline.COPROCESSOR_GW_LISTENER_VERSION).toBe("v0.13.0-6");
+  expect(phaseVersions.baseline.RELAYER_VERSION).toBe("v0.13.0");
+  expect(phaseVersions.baseline.RELAYER_MIGRATE_VERSION).toBe("v0.13.0");
+  expect(phaseVersions.baseline.CORE_VERSION).toBe("v0.13.20");
+  expect(phaseVersions.baseline.TEST_SUITE_VERSION).toBe("fhevm-local");
+  expect(phaseVersions.baseline.RELAYER_SDK_VERSION).toBe("");
+  expect(phaseVersions.baseline.LISTENER_CORE_VERSION).toBe("v0.13.0");
+  expect(phaseVersions.baseline.COPROCESSOR_HOST_LISTENER_VERSION).toBe("v0.13.0");
+  expect(phaseVersions.baseline.COPROCESSOR_GW_LISTENER_VERSION).toBe("v0.13.0");
 
   expect(phaseVersions.sns.COPROCESSOR_SNS_WORKER_VERSION).toBe("fhevm-local");
   expect(phaseVersions.sns.S3_MIGRATION_MODE).toBe("concurrent");
   expect(phaseVersions.sns.CLEAN_OLD_S3_FORMAT_VERSION).toBe("false");
+  expect(phaseVersions.sns.TEST_SUITE_VERSION).toBe(phaseVersions.baseline.TEST_SUITE_VERSION);
   expect(phaseVersions.sns.RELAYER_SDK_VERSION).toBe(phaseVersions.baseline.RELAYER_SDK_VERSION);
 
   expect(phaseVersions.sns.LISTENER_CORE_VERSION).toBe(phaseVersions.baseline.LISTENER_CORE_VERSION);

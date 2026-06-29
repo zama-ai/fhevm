@@ -31,7 +31,7 @@ ROLLOUT_TEST_PROFILE=rollout-heavy ./fhevm-cli rollout run rollouts/sns-worker-s
 
 `v0.13.0-6` contains the old S3 format behavior (pre new upload format and migration feature).
 
-The GitHub workflow (`test-suite-stateful-rollout.yml`) automatically defaults `OLD_SNS_IMAGE_TAG=v0.13.0-6` (a pre-S3-format 0.13 release) when executing this specific runbook. This tests migration from a real released 0.13 deployment.
+The GitHub workflow (`test-suite-stateful-rollout.yml`) automatically defaults `OLD_SNS_IMAGE_TAG=v0.13.0-6` (a pre-S3-format 0.13 release) when executing this specific runbook. This tag is used only for `COPROCESSOR_SNS_WORKER_VERSION`; the runtime baseline stack follows the standard v0.13 pairing (`v0.13.0` components, KMS core `v0.13.20`) while the test-suite image is built from the current workspace and uses the current `@fhevm/sdk` client. This tests migration from a real released 0.13 SNS worker without carrying the whole stack on the prerelease image set.
 
 You can override with a different published old-format 0.13 tag:
 
