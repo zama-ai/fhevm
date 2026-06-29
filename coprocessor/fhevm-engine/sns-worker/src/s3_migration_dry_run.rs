@@ -371,7 +371,7 @@ async fn plan_ct64_object(
     }
 
     let source = CopySourceCandidate {
-        key: legacy_s3_ciphertext_key(&material.handle),
+        key: legacy_s3_ciphertext_key(&material.ct64_digest),
     };
 
     if object_body_matches_expected(
@@ -424,7 +424,7 @@ async fn plan_ct128_object(
     }
 
     let key = current_s3_ciphertext_key(&material.handle);
-    let legacy_key = legacy_s3_ciphertext_key(&material.handle);
+    let legacy_key = legacy_s3_ciphertext_key(&material.ct128_digest);
     let digest_key = hex::encode(&material.ct128_digest);
 
     let key_is_current = object_has_current_attestation(

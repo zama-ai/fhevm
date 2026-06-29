@@ -567,7 +567,7 @@ async fn migrate_ct64_object(
     }
 
     let source = CopySourceCandidate {
-        key: legacy_s3_ciphertext_key(&material.handle),
+        key: legacy_s3_ciphertext_key(&material.ct64_digest),
     };
 
     if try_copy_existing_object(
@@ -630,7 +630,7 @@ async fn migrate_ct128_object(
     }
 
     let key = current_s3_ciphertext_key(&material.handle);
-    let legacy_key = legacy_s3_ciphertext_key(&material.handle);
+    let legacy_key = legacy_s3_ciphertext_key(&material.ct128_digest);
     let digest_key = hex::encode(&material.ct128_digest);
     let ct_format = material.ct128_format.to_string();
 
@@ -1192,8 +1192,8 @@ pub(crate) fn current_s3_ciphertext_key(handle: &[u8]) -> String {
     s3_ciphertext_key(handle, COPROCESSOR_CONTEXT_ID_1)
 }
 
-pub(crate) fn legacy_s3_ciphertext_key(handle: &[u8]) -> String {
-    hex::encode(handle)
+pub(crate) fn legacy_s3_ciphertext_key(digest: &[u8]) -> String {
+    hex::encode(digest)
 }
 
 fn metadata_get<'a>(metadata: &'a HashMap<String, String>, key: &str) -> Option<&'a String> {
