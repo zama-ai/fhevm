@@ -1,23 +1,6 @@
 name: js-sdk-browserstack-tests
 
 on:
-    push:
-        branches:
-            - main
-        paths:
-            - "sdk/js-sdk/src/**"
-            - "sdk/js-sdk/test/browser/**"
-            - "sdk/js-sdk/test/browserstack/**"
-    pull_request:
-        branches:
-            - main
-        paths:
-            - "sdk/js-sdk/src/**"
-            - "sdk/js-sdk/test/browser/**"
-            - "sdk/js-sdk/test/browserstack/**"
-    release:
-        types:
-            - published
     workflow_dispatch:
         inputs:
             network:
