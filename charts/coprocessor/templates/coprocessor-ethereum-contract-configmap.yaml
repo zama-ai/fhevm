@@ -7,7 +7,7 @@
 {{- end -}}
 {{- $preset := dict -}}
 {{- if $network -}}
-{{- $preset = .Files.Get (printf "configs/ethegireum-%s.yaml" $network) | fromYaml -}}
+{{- $preset = .Files.Get (printf "configs/ethereum-%s.yaml" $network) | fromYaml -}}
 {{- end -}}
 {{- $merged := mergeOverwrite (deepCopy $preset) ($cm.addresses | default dict) -}}
 apiVersion: v1
