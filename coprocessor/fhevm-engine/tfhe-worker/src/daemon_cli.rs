@@ -115,6 +115,10 @@ pub struct Args {
     #[arg(long, default_value = "0.2:5.0:0.05", value_parser = clap::value_parser!(MetricsConfig))]
     pub metric_fhe_batch_latency: MetricsConfig,
 
+    /// Print the compiled-in coprocessor stack version and exit.
+    #[arg(long)]
+    pub stack_version: bool,
+
     /// Not exposed via CLI — `#[arg(skip)]` initializes the field to `WatcherTimeouts::default()`
     /// on `Args::parse()`.
     #[arg(skip)]
@@ -122,6 +126,7 @@ pub struct Args {
 }
 
 pub fn parse_args() -> Args {
+    fhevm_engine_common::handle_stack_version_flag();
     let args = Args::parse();
     // Set global configs from args
     let _ = scheduler::RERAND_LATENCY_BATCH_HISTOGRAM_CONF.set(args.metric_rerand_batch_latency);

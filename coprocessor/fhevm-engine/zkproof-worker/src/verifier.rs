@@ -762,7 +762,7 @@ fn finalize_ciphertext(
     handle[21] = ct_idx as u8;
     handle[22..30].copy_from_slice(&aux_data.chain_id.as_u64().to_be_bytes());
     handle[30] = serialized_type as u8;
-    handle[31] = current_ciphertext_version() as u8;
+    handle[31] = 0u8;
 
     tracing::Span::current().record("ct_type", tracing::field::display(serialized_type));
     info!(

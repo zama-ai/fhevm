@@ -72,9 +72,14 @@ pub struct Args {
     /// Prometheus metrics: "coprocessor_zkverify_op_latency_seconds",
     #[arg(long, default_value = "0.01:2.0:0.01", value_parser = clap::value_parser!(MetricsConfig))]
     pub metric_zkverify_op_latency: MetricsConfig,
+
+    /// Print the compiled-in coprocessor stack version and exit.
+    #[arg(long)]
+    pub stack_version: bool,
 }
 
 pub fn parse_args() -> Args {
+    fhevm_engine_common::handle_stack_version_flag();
     let args = Args::parse();
     // Set global configs from args
     let _ = ZKVERIFY_OP_LATENCY_HISTOGRAM_CONF.set(args.metric_zkverify_op_latency);

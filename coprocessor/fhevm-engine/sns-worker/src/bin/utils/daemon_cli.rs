@@ -137,9 +137,14 @@ pub struct Args {
 
     #[arg(short, long)]
     pub private_key: Option<String>,
+
+    /// Print the compiled-in coprocessor stack version and exit.
+    #[arg(long)]
+    pub stack_version: bool,
 }
 
 pub fn parse_args() -> Args {
+    fhevm_engine_common::handle_stack_version_flag();
     let args = Args::parse();
     // Set global configs from args
     let _ = SNS_LATENCY_OP_HISTOGRAM_CONF.set(args.metric_sns_op_latency);

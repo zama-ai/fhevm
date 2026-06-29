@@ -49,3 +49,23 @@ pub(crate) use stack_version;
 pub const STACK_VERSION: &str = stack_version!();
 
 pub const CIPHERTEXT_VERSION: i16 = 0;
+
+/// If `--stack-version` appears in the process arguments, prints the
+/// compiled-in coprocessor [`STACK_VERSION`] to stdout and exits with status 0.
+///
+/// Call this *before* clap parsing. It scans argv directly rather than reading
+/// a parsed flag so it short-circuits like clap's built-in `--version`: it
+/// prints and exits even when a service's other required flags are absent
+/// (e.g. `consensus-detector --stack-version` with no `--gw-url`). Each service
+/// still declares a `--stack-version` clap field so the flag is documented in
+/// `--help`.
+///
+/// `--version` reports the per-crate `CARGO_PKG_VERSION` (which diverges across
+/// the workspace); `--stack-version` reports the single fleet-wide value used
+/// for blue/green cutover decisions.
+pub fn handle_stack_version_flag() {
+    if std::env::args().any(|arg| arg == "--stack-version") {
+        println!("{STACK_VERSION}");
+        std::process::exit(0);
+    }
+}

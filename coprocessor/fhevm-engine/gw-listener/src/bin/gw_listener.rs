@@ -146,6 +146,10 @@ struct Conf {
     /// Time window over which `--drift-auto-revert-max-recent-attempts` is counted.
     #[arg(long, default_value = "30m", value_parser = parse_duration)]
     drift_auto_revert_recent_attempts_window: Duration,
+
+    /// Print the compiled-in coprocessor stack version and exit.
+    #[arg(long)]
+    stack_version: bool,
 }
 
 fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()> {
@@ -165,6 +169,7 @@ fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()
 async fn main() -> anyhow::Result<()> {
     let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
 
+    fhevm_engine_common::handle_stack_version_flag();
     let conf = Conf::parse();
 
     let _otel_guard = telemetry::init_tracing_otel_with_logs_only_fallback(

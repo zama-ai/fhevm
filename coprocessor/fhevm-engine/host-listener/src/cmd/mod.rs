@@ -184,6 +184,10 @@ pub struct Args {
         help = "Timeout in seconds for RPC calls over websocket"
     )]
     pub timeout_request_websocket: u64,
+
+    /// Print the compiled-in coprocessor stack version and exit.
+    #[arg(long)]
+    pub stack_version: bool,
 }
 
 // TODO: to merge with Levent works

@@ -36,6 +36,10 @@ struct Args {
         default_value_t = Level::INFO,
     )]
     log_level: Level,
+
+    /// Print the compiled-in coprocessor stack version and exit.
+    #[arg(long)]
+    stack_version: bool,
 }
 
 fn install_signal_handlers(cancel: CancellationToken) -> anyhow::Result<()> {
@@ -53,6 +57,7 @@ fn install_signal_handlers(cancel: CancellationToken) -> anyhow::Result<()> {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    fhevm_engine_common::handle_stack_version_flag();
     let args = Args::parse();
 
     tracing_subscriber::fmt()

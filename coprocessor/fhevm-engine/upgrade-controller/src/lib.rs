@@ -850,7 +850,7 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
     );
 
     // 0. Refuse a no-op upgrade. If `new_ciphertext_version` equals the current
-    //    `versioning.ciphertext_version`, the parent PK (tenant_id, handle,
+    //    `versioning.ciphertext_version`, the parent PK (handle,
     //    ciphertext_version) is shared between staging and parent rows for the
     //    same handle, and the merge would collide. A real upgrade always bumps
     //    the version; this guard makes the failure mode loud rather than
@@ -903,7 +903,7 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
          SELECT tenant_id, handle, ciphertext, $1::smallint, ciphertext_type,
                 input_blob_hash, input_blob_index, created_at, ciphertext128, is_input
          FROM {GCS_SCHEMA_QUOTED}.ciphertexts
-         ON CONFLICT (tenant_id, handle, ciphertext_version) DO UPDATE
+         ON CONFLICT (handle, ciphertext_version) DO UPDATE
          SET ciphertext       = EXCLUDED.ciphertext,
              ciphertext_type  = EXCLUDED.ciphertext_type,
              input_blob_hash  = EXCLUDED.input_blob_hash,
@@ -972,7 +972,7 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
          SELECT tenant_id, handle, host_chain_id, key_id_gw, transaction_id,
                 NULL, NULL, ciphertext128_format, $1::smallint
          FROM {GCS_SCHEMA_QUOTED}.ciphertext_digest
-         ON CONFLICT (tenant_id, handle) DO UPDATE
+         ON CONFLICT (handle) DO UPDATE
          SET host_chain_id        = EXCLUDED.host_chain_id,
              key_id_gw            = EXCLUDED.key_id_gw,
              transaction_id       = EXCLUDED.transaction_id,
@@ -1343,5 +1343,80 @@ mod tests {
             "UpgradeActivated"
         );
         assert_eq!(row.try_get::<String, _>("status").unwrap(), "in_progress");
+    }
+
+    /// Regression test for the cutover merge `ON CONFLICT` targets drifting away
+    /// from the live primary keys. After `collapse_overlapping_unique_keys`, the
+    /// PKs on `public.ciphertexts` and `public.ciphertext_digest` became
+    /// tenant-free (`(handle, ciphertext_version)` and `(handle)`), but the
+    /// `execute_cutover` merges still referenced the old tenant-prefixed columns,
+    /// so Postgres rejected them at planning time with "there is no unique or
+    /// exclusion constraint matching the ON CONFLICT specification" — failing
+    /// every cutover. The merge `ON CONFLICT` clauses are planned even over empty
+    /// gcs tables, so this exercises all three merges without seeding rows (which
+    /// also keeps the test stable as the merged tables' columns evolve).
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn execute_cutover_merges_match_live_unique_keys() {
+        use sqlx::postgres::PgPoolOptions;
+        use sqlx::Row;
+        use test_harness::instance::{setup_test_db, ImportMode};
+
+        let instance = setup_test_db(ImportMode::WithKeysNoSns)
+            .await
+            .expect("test db");
+        let pool = PgPoolOptions::new()
+            .max_connections(4)
+            .connect(instance.db_url())
+            .await
+            .expect("pool");
+
+        // `versioning` is seeded at ciphertext_version 0 by migration; the GCS
+        // row drives the cutover to version 1 (a real upgrade always bumps it).
+        sqlx::query(
+            r#"
+            INSERT INTO upgrade_state (
+                stack_role, state, status, proposal_id, version,
+                start_block, end_block, gw_start_block, ciphertext_version, updated_at
+            )
+            VALUES ('GCS', 'UpgradeAuthorized', 'in_progress', $1, 'v0.15',
+                    100, 200, 1, 1, NOW())
+            ON CONFLICT (stack_role) DO UPDATE
+            SET state = EXCLUDED.state, status = EXCLUDED.status,
+                ciphertext_version = EXCLUDED.ciphertext_version, updated_at = NOW()
+            "#,
+        )
+        .bind(&[0x02u8][..])
+        .execute(&pool)
+        .await
+        .expect("seed GCS row");
+
+        create_gcs_schema(&pool).await.expect("create gcs schema");
+
+        // The bug surfaced exactly here: a planning-time ON CONFLICT error.
+        execute_cutover(&pool).await.expect("cutover succeeds");
+
+        // versioning bumped to the new version inside the cutover tx.
+        let (cv,): (i16,) =
+            sqlx::query_as("SELECT ciphertext_version FROM versioning WHERE singleton = TRUE")
+                .fetch_one(&pool)
+                .await
+                .expect("versioning row");
+        assert_eq!(cv, 1, "cutover should bump versioning.ciphertext_version");
+
+        // GCS row flipped LIVE and the gcs schema was dropped.
+        let row = sqlx::query("SELECT state FROM upgrade_state WHERE stack_role = 'GCS'")
+            .fetch_one(&pool)
+            .await
+            .expect("GCS row");
+        assert_eq!(row.try_get::<String, _>("state").unwrap(), "LIVE");
+
+        let (schema_exists,): (bool,) = sqlx::query_as(
+            "SELECT EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = $1)",
+        )
+        .bind(fhevm_engine_common::database::GCS_SCHEMA)
+        .fetch_one(&pool)
+        .await
+        .expect("schema lookup");
+        assert!(!schema_exists, "cutover should drop the gcs schema");
     }
 }

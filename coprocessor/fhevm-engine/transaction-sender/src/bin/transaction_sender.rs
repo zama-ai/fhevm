@@ -147,6 +147,10 @@ struct Conf {
 
     #[arg(long, default_value_t = 10, value_parser = clap::value_parser!(u64).range(1..))]
     pub gauge_update_interval_secs: u64,
+
+    /// Print the compiled-in coprocessor stack version and exit.
+    #[arg(long)]
+    pub stack_version: bool,
 }
 
 fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()> {
@@ -164,6 +168,7 @@ fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()
 }
 
 fn parse_args() -> Conf {
+    fhevm_engine_common::handle_stack_version_flag();
     let args = Conf::parse();
     // Set global configs from args
     let _ = telemetry::HOST_TXN_LATENCY_CONFIG.set(args.metric_host_txn_latency);
