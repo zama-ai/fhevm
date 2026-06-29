@@ -89,6 +89,21 @@ describe('Confidential Bridge', function () {
   let host: BridgeEnd;
   let chainB: BridgeEnd;
 
+  /** Reads the `HandleMinted` handle out of a `makeHandle`/`makeComputedHandle`/`addToHandle` receipt. */
+  function mintedHandle(end: BridgeEnd, receipt: ethers.TransactionReceipt): string {
+    const minted = receipt.logs
+      .map((log: ethers.Log) => {
+        try {
+          return end.app.interface.parseLog({ topics: [...log.topics], data: log.data });
+        } catch {
+          return null;
+        }
+      })
+      .find((parsed: ethers.LogDescription | null) => parsed?.name === 'HandleMinted');
+    if (!minted) throw new Error('HandleMinted not emitted');
+    return minted.args.handle as string;
+  }
+
   /** Mints a handle ACL-allowed to the source `alice`; `addend` switches to a computed handle. */
   async function mint(end: BridgeEnd, value: number, addend?: number): Promise<string> {
     const enc = await end.instance.encryptUint64({
@@ -101,17 +116,16 @@ describe('Confidential Bridge', function () {
     const receipt = await sendWithNonceRetry(end.alice, () =>
       end.app.connect(end.alice).getFunction(fn)(...args, { gasLimit: 5_000_000 }),
     );
-    const minted = receipt.logs
-      .map((log: ethers.Log) => {
-        try {
-          return end.app.interface.parseLog({ topics: [...log.topics], data: log.data });
-        } catch {
-          return null;
-        }
-      })
-      .find((parsed: ethers.LogDescription | null) => parsed?.name === 'HandleMinted');
-    if (!minted) throw new Error('HandleMinted not emitted');
-    return minted.args.handle as string;
+    return mintedHandle(end, receipt);
+  }
+
+  /** Computes `existing + addend` on an already-registered handle (e.g. one received via the
+   *  bridge), returning a new handle ACL-allowed to `alice` so it can be re-bridged. */
+  async function computeOn(end: BridgeEnd, existing: string, addend: number): Promise<string> {
+    const receipt = await sendWithNonceRetry(end.alice, () =>
+      end.app.connect(end.alice).getFunction('addToHandle')(existing, addend, { gasLimit: 5_000_000 }),
+    );
+    return mintedHandle(end, receipt);
   }
 
   /** Bridges `handles` from `src` to `dst` (targeting dst's app) and delivers them. */
@@ -207,6 +221,50 @@ describe('Confidential Bridge', function () {
     const { dstHandles } = await bridge(chainB, host, [srcHandle]);
     expect(dstHandles[0].slice(46, 62)).to.equal(host.cfg.chainId.toString(16).padStart(16, '0'));
     expect(await publicDecrypt(host, dstHandles[0])).to.equal(9n);
+  });
+
+  it('round-trips a handle host->chain-b->host (re-bridges a bridge-derived handle)', async function () {
+    const value = 17;
+    const srcHandle = await mint(host, value);
+
+    // Leg 1: host -> chain-b. Use a user payload (chain-b's alice) so the derived handle is
+    // ACL-allowed to her — makePubliclyDecryptable alone would not let her re-bridge it.
+    const toB = ethers.AbiCoder.defaultAbiCoder().encode(['address'], [chainB.alice.address]);
+    const { dstHandles: onB } = await bridge(host, chainB, [srcHandle], toB);
+    expect(onB[0].slice(46, 62), 'leg-1 handle carries chain-b id').to.equal(
+      chainB.cfg.chainId.toString(16).padStart(16, '0'),
+    );
+
+    // Leg 2: chain-b -> host, re-bridging the *bridge-derived* handle (its srcHandle already
+    // carries the 0xff computation marker + chain-b metadata). Empty payload => publicly decryptable.
+    const { dstHandles: back } = await bridge(chainB, host, [onB[0]]);
+    expect(back[0].slice(46, 62), 'leg-2 handle carries host id').to.equal(
+      host.cfg.chainId.toString(16).padStart(16, '0'),
+    );
+    expect(back[0]).to.not.equal(onB[0]); // a fresh handle is derived each hop
+    expect(await publicDecrypt(host, back[0]), 'value survives the round trip').to.equal(BigInt(value));
+  });
+
+  it('computes on a bridged handle on chain-b, then bridges the result back to host', async function () {
+    const value = 20;
+    const addend = 5;
+    const srcHandle = await mint(host, value);
+
+    // Leg 1: host -> chain-b with a user payload, so chain-b's app holds ACL allowance on the
+    // received handle (FHE.allowThis) and can compute on it.
+    const toB = ethers.AbiCoder.defaultAbiCoder().encode(['address'], [chainB.alice.address]);
+    const { dstHandles: onB } = await bridge(host, chainB, [srcHandle], toB);
+
+    // Compute on the received ciphertext on chain-b (value + addend) -> a new handle allowed to alice.
+    // This proves the bridged ciphertext is functionally usable in an FHE op on the destination,
+    // not merely decryptable.
+    const computed = await computeOn(chainB, onB[0], addend);
+
+    // Leg 2: bridge the computed result back to host; empty payload => publicly decryptable.
+    const { dstHandles: back } = await bridge(chainB, host, [computed]);
+    expect(await publicDecrypt(host, back[0]), 'computed value survives the round trip').to.equal(
+      BigInt(value + addend),
+    );
   });
 
   it('associates on lzReceive but defers the dapp callback until lzCompose runs', async function () {
