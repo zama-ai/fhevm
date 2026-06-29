@@ -103,6 +103,7 @@ async fn start_coprocessor(rx: Receiver<bool>, db_url: &str) -> u16 {
             poll_query_timeout: Duration::from_secs(300),
             db_down_limit: Duration::from_secs(1800),
         },
+        stack_version: false,
     };
 
     std::thread::spawn(move || {

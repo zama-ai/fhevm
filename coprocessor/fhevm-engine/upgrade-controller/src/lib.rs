@@ -670,8 +670,7 @@ async fn wait_until_gw_dry_run_ready(
                 info!("GCS gw_dry_run_started already set — gw readiness loop exiting");
                 return Ok(false);
             }
-            Some((state, false))
-                if state == "UpgradeActivated" || state == "DryRunStarted" => {}
+            Some((state, false)) if state == "UpgradeActivated" || state == "DryRunStarted" => {}
             Some((state, false)) => {
                 info!(
                     state,

@@ -50,6 +50,8 @@ pub const STACK_VERSION: &str = stack_version!();
 
 pub const CIPHERTEXT_VERSION: i16 = 0;
 
+pub const HANDLE_VERSION: i16 = 0;
+
 /// If `--stack-version` appears in the process arguments, prints the
 /// compiled-in coprocessor [`STACK_VERSION`] to stdout and exits with status 0.
 ///

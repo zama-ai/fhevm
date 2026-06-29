@@ -6,9 +6,9 @@ use fhevm_engine_common::db_keys::DbKeyCache;
 use fhevm_engine_common::gcs_activation::{run_gcs_gw_activation_watcher, GCS_NOT_ACTIVATED};
 use fhevm_engine_common::host_chains::HostChainsCache;
 use fhevm_engine_common::pg_pool::{PostgresPoolManager, ServiceError};
-use fhevm_engine_common::telemetry;
 use fhevm_engine_common::tfhe_ops::{current_ciphertext_version, extract_ct_list};
 use fhevm_engine_common::types::{FhevmError, SupportedFheCiphertexts};
+use fhevm_engine_common::{telemetry, HANDLE_VERSION};
 
 use fhevm_engine_common::utils::safe_deserialize_conformant;
 use sha3::Digest;
@@ -762,7 +762,7 @@ fn finalize_ciphertext(
     handle[21] = ct_idx as u8;
     handle[22..30].copy_from_slice(&aux_data.chain_id.as_u64().to_be_bytes());
     handle[30] = serialized_type as u8;
-    handle[31] = 0u8;
+    handle[31] = HANDLE_VERSION as u8;
 
     tracing::Span::current().record("ct_type", tracing::field::display(serialized_type));
     info!(
@@ -770,7 +770,8 @@ fn finalize_ciphertext(
         handle = %hex::encode(&handle),
         user_address = %aux_data.user_address,
         contract_address = %aux_data.contract_address,
-        version = current_ciphertext_version(),
+        ct_version = current_ciphertext_version(),
+        handle_version = HANDLE_VERSION,
         acl_contract_address = %aux_data.acl_contract_address,
         "create_handle details"
     );
