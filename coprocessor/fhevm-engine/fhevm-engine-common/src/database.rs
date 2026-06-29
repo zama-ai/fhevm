@@ -384,6 +384,14 @@ fn identity_connect_options(options: PgConnectOptions) -> PgConnectOptions {
     options
 }
 
+/// Caps every statement on the connection at 10s. Used by services that fire
+/// the wave1 ciphertext_digest mirror trigger (e.g. transaction-sender) so a
+/// pathological reorg fan-out cannot run unbounded. Mirrors the host-listener's
+/// statement_timeout and the PostgresPoolManager after_connect bound.
+pub fn with_statement_timeout_10s(options: PgConnectOptions) -> PgConnectOptions {
+    options.options([("statement_timeout", "10000")])
+}
+
 fn apply_iam_ssl_settings_to_url(url: &mut Url, ssl_root_cert_path: Option<&str>) {
     let existing_pairs: Vec<(String, String)> = url
         .query_pairs()

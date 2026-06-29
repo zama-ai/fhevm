@@ -1047,7 +1047,10 @@ impl Database {
 
         // Wave-1 dual-write: legacy readers are still live. Remove legacy
         // computation/ACL/PBS/digest rows only when no retained branch context
-        // remains for the same logical work.
+        // remains for the same logical work, i.e. only for handles that existed
+        // solely on the now-orphaned fork (NOT EXISTS guard). Legacy ciphertext
+        // bytes (`ciphertexts`/`ciphertexts128`) are intentionally NOT deleted
+        // here.
         if !orphaned_legacy_computation_handles.is_empty() {
             sqlx::query!(
                 r#"

@@ -7,6 +7,11 @@
 -- pbs_computations_branch contexts. It intentionally does not repair historical
 -- rows, delete orphaned rows, or mutate legacy reader tables.
 
+-- The CREATE TRIGGER statements below take a brief ACCESS EXCLUSIVE lock on the
+-- hot ciphertext_digest table. Bound the wait so a contended attach fails fast
+-- and is retried instead of convoying queries behind it. Transaction-local.
+SET LOCAL lock_timeout = '3s';
+
 CREATE OR REPLACE FUNCTION upsert_ciphertext_digest_branch_from_legacy(
     _digest ciphertext_digest,
     _producer_block_hash BYTEA,
@@ -129,6 +134,19 @@ DECLARE
     _context RECORD;
     _context_count BIGINT;
 BEGIN
+    -- Serialize all ciphertext_digest_branch writes for this (chain, handle)
+    -- against the pbs-context trigger below, which writes the same rows while
+    -- reading ciphertext_digest. Without this common lock the two triggers can
+    -- acquire ciphertext_digest_branch row locks in opposite order and deadlock.
+    -- Transaction-scoped: released automatically at commit/rollback.
+    PERFORM pg_advisory_xact_lock(
+        hashtextextended(
+            COALESCE(NEW.host_chain_id, OLD.host_chain_id)::text
+                || ':' || encode(COALESCE(NEW.handle, OLD.handle), 'hex'),
+            0
+        )
+    );
+
     IF TG_OP = 'DELETE' THEN
         DELETE FROM ciphertext_digest_branch
          WHERE handle = OLD.handle
@@ -216,6 +234,17 @@ AS $$
 DECLARE
     _digest ciphertext_digest%ROWTYPE;
 BEGIN
+    -- Same (chain, handle) advisory lock as mirror_ciphertext_digest_branchless()
+    -- so the two ciphertext_digest_branch writers never deadlock on opposite-order
+    -- row-lock acquisition. Transaction-scoped; released at commit/rollback.
+    PERFORM pg_advisory_xact_lock(
+        hashtextextended(
+            COALESCE(NEW.host_chain_id, OLD.host_chain_id)::text
+                || ':' || encode(COALESCE(NEW.handle, OLD.handle), 'hex'),
+            0
+        )
+    );
+
     IF TG_OP = 'DELETE' THEN
         DELETE FROM ciphertext_digest_branch
          WHERE handle = OLD.handle
@@ -278,12 +307,44 @@ BEGIN
 END;
 $$;
 
+-- Split per-operation so the expensive context fan-out (COUNT + DISTINCT loop
+-- + N upserts) does not re-run on UPDATEs that change nothing it mirrors. A
+-- single combined trigger cannot carry this WHEN clause because it would
+-- reference OLD on INSERT / NEW on DELETE. INSERT and DELETE always fire.
 DROP TRIGGER IF EXISTS mirror_ciphertext_digest_branchless_trigger ON ciphertext_digest;
+DROP TRIGGER IF EXISTS mirror_ciphertext_digest_branchless_ins ON ciphertext_digest;
+DROP TRIGGER IF EXISTS mirror_ciphertext_digest_branchless_del ON ciphertext_digest;
+DROP TRIGGER IF EXISTS mirror_ciphertext_digest_branchless_upd ON ciphertext_digest;
 
-CREATE TRIGGER mirror_ciphertext_digest_branchless_trigger
-AFTER INSERT OR UPDATE OR DELETE
-ON ciphertext_digest
+CREATE TRIGGER mirror_ciphertext_digest_branchless_ins
+AFTER INSERT ON ciphertext_digest
 FOR EACH ROW
+EXECUTE FUNCTION mirror_ciphertext_digest_branchless();
+
+CREATE TRIGGER mirror_ciphertext_digest_branchless_del
+AFTER DELETE ON ciphertext_digest
+FOR EACH ROW
+EXECUTE FUNCTION mirror_ciphertext_digest_branchless();
+
+-- Fire only when a column the branch row actually mirrors changed. Pure
+-- status-bookkeeping UPDATEs that touch none of these are skipped, avoiding a
+-- needless context fan-out. (statement_timeout on the writer pools remains the
+-- hard bound on the worst-case reorg fan-out; this only trims redundant fires.)
+CREATE TRIGGER mirror_ciphertext_digest_branchless_upd
+AFTER UPDATE ON ciphertext_digest
+FOR EACH ROW
+WHEN (
+     OLD.handle              IS DISTINCT FROM NEW.handle
+  OR OLD.host_chain_id        IS DISTINCT FROM NEW.host_chain_id
+  OR OLD.ciphertext           IS DISTINCT FROM NEW.ciphertext
+  OR OLD.ciphertext128        IS DISTINCT FROM NEW.ciphertext128
+  OR OLD.ciphertext128_format IS DISTINCT FROM NEW.ciphertext128_format
+  OR OLD.s3_format_version    IS DISTINCT FROM NEW.s3_format_version
+  OR OLD.txn_is_sent          IS DISTINCT FROM NEW.txn_is_sent
+  OR OLD.txn_hash             IS DISTINCT FROM NEW.txn_hash
+  OR OLD.txn_block_number     IS DISTINCT FROM NEW.txn_block_number
+  OR OLD.key_id_gw            IS DISTINCT FROM NEW.key_id_gw
+)
 EXECUTE FUNCTION mirror_ciphertext_digest_branchless();
 
 DROP TRIGGER IF EXISTS mirror_ciphertext_digest_pbs_context_trigger ON pbs_computations_branch;
