@@ -367,7 +367,9 @@ async fn migrate_handle_batch(
                     error = %err,
                     "S3 migration, failed for handle"
                 );
-                record_migration_failure(pool, &handle, &err).await?;
+                if let Err(err) = record_migration_failure(pool, &handle, &err).await {
+                    error!(err, "S3 migration, cannot record failure on DB");
+                }
             }
         }
     }
