@@ -480,8 +480,8 @@ abstract contract HostContractsDeployerTestUtils is Test {
         protocolConfig.defineNewKmsContextAndEpoch(nodes, thresholds, "", pcrValues);
     }
 
-    function _confirmContextCreation(uint256 contextId, uint256 pk) internal {
-        vm.prank(vm.addr(pk));
+    function _confirmContextCreation(uint256 contextId, address txSender) internal {
+        vm.prank(txSender);
         protocolConfig.confirmKmsContextCreation(contextId);
     }
 

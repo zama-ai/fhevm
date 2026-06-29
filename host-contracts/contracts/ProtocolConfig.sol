@@ -347,27 +347,29 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         }
 
         // Caller must belong to the outgoing or incoming signer set and confirm only once.
-        address signer = msg.sender;
         uint256 previousContextId = $.latestActiveKmsContextId;
-        bool isPreviousSigner = $.isKmsSignerForContext[previousContextId][signer];
-        bool isNewSigner = $.isKmsSignerForContext[kmsContextId][signer];
-        if (!isPreviousSigner && !isNewSigner) {
-            revert KmsContextCreationUnauthorized(signer, kmsContextId);
+        bool isPreviousTxSender = $.isKmsTxSenderForContext[previousContextId][msg.sender];
+        bool isNewTxSender = $.isKmsTxSenderForContext[kmsContextId][msg.sender];
+        if (!isPreviousTxSender && !isNewTxSender) {
+            revert KmsContextCreationUnauthorized(msg.sender, kmsContextId);
         }
+        address signer = isNewTxSender
+            ? $.kmsNodeByTxSenderForContext[kmsContextId][msg.sender].signerAddress
+            : $.kmsNodeByTxSenderForContext[previousContextId][msg.sender].signerAddress;
         if ($.contextCreationConfirmedBySigner[kmsContextId][signer]) {
             revert KmsContextCreationAlreadyConfirmed(signer, kmsContextId);
         }
 
         // Record the confirmation and counts separately for the split quorum.
         $.contextCreationConfirmedBySigner[kmsContextId][signer] = true;
-        if (isPreviousSigner) {
+        if (isPreviousTxSender) {
             ++$.contextCreationPreviousSignerConfirmationCount[kmsContextId];
         }
-        if (isNewSigner) {
+        if (isNewTxSender) {
             ++$.contextCreationNewSignerConfirmationCount[kmsContextId];
         }
 
-        emit KmsContextCreationConfirmation(kmsContextId, signer, isPreviousSigner, isNewSigner);
+        emit KmsContextCreationConfirmation(kmsContextId, signer, isPreviousTxSender, isNewTxSender);
 
         // All new signers + (n - t + 1) previous signers confirm to tell Connectors the epoch transition may start.
         if (_hasContextCreationQuorum(kmsContextId)) {

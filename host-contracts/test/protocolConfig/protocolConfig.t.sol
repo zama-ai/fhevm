@@ -219,14 +219,14 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
     }
 
     function _confirmContextCreationWithTwoSigners(uint256 contextId) internal {
-        vm.prank(vm.addr(kmsPk0));
+        vm.prank(kmsTxSender0);
         protocolConfig.confirmKmsContextCreation(contextId);
-        vm.prank(vm.addr(kmsPk1));
+        vm.prank(kmsTxSender1);
         protocolConfig.confirmKmsContextCreation(contextId);
     }
 
     function _activatePendingContextWithOneKmsNode(uint256 contextId, uint256 epochId) internal {
-        vm.prank(vm.addr(kmsPk0));
+        vm.prank(kmsTxSender0);
         protocolConfig.confirmKmsContextCreation(contextId);
         _confirmEpoch(contextId, epochId, kmsPk0, kmsTxSender0);
     }
@@ -1148,18 +1148,20 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
     function test_confirmKmsContextCreationUsesNewSignersAndOldQuorum() public {
         _setupDefaultWithMpcThreshold(3);
         KmsNodeParams[] memory nodes = _makeKmsNodeParams(2);
+        nodes[0].txSenderAddress = address(0xC1);
         nodes[0].signerAddress = address(0xB2);
+        nodes[1].txSenderAddress = address(0xC2);
         nodes[1].signerAddress = address(0xB3);
 
         vm.prank(owner);
         _defineNewKmsContextAndEpoch(nodes, _defaultThresholds());
         uint256 newContextId = KMS_CONTEXT_COUNTER_BASE + 2;
 
-        vm.prank(address(0xB2));
+        vm.prank(address(0xC1));
         protocolConfig.confirmKmsContextCreation(newContextId);
-        vm.prank(address(0xB3));
+        vm.prank(address(0xC2));
         protocolConfig.confirmKmsContextCreation(newContextId);
-        vm.prank(vm.addr(kmsPk0));
+        vm.prank(kmsTxSender0);
         protocolConfig.confirmKmsContextCreation(newContextId);
         assertFalse(protocolConfig.isValidKmsContext(newContextId));
 
@@ -1172,25 +1174,27 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
             EPOCH_COUNTER_BASE + 1,
             block.number - 1
         );
-        vm.prank(vm.addr(kmsPk1));
+        vm.prank(kmsTxSender1);
         protocolConfig.confirmKmsContextCreation(newContextId);
     }
 
     function test_confirmKmsContextCreationRequiresAllNewSigners() public {
         _setupDefaultWithMpcThreshold(3);
         KmsNodeParams[] memory nodes = _makeKmsNodeParams(2);
+        nodes[0].txSenderAddress = address(0xC1);
         nodes[0].signerAddress = address(0xB2);
+        nodes[1].txSenderAddress = address(0xC2);
         nodes[1].signerAddress = address(0xB3);
 
         vm.prank(owner);
         _defineNewKmsContextAndEpoch(nodes, _defaultThresholds());
         uint256 newContextId = KMS_CONTEXT_COUNTER_BASE + 2;
 
-        vm.prank(address(0xB2));
+        vm.prank(address(0xC1));
         protocolConfig.confirmKmsContextCreation(newContextId);
-        vm.prank(vm.addr(kmsPk0));
+        vm.prank(kmsTxSender0);
         protocolConfig.confirmKmsContextCreation(newContextId);
-        vm.prank(vm.addr(kmsPk1));
+        vm.prank(kmsTxSender1);
         protocolConfig.confirmKmsContextCreation(newContextId);
         assertFalse(protocolConfig.isValidKmsContext(newContextId));
 
@@ -1204,7 +1208,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
             EPOCH_COUNTER_BASE + 1,
             block.number - 1
         );
-        vm.prank(address(0xB3));
+        vm.prank(address(0xC2));
         protocolConfig.confirmKmsContextCreation(newContextId);
     }
 
@@ -1232,9 +1236,9 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         vm.prank(owner);
         _defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), _defaultThresholds());
         uint256 createdContextId = KMS_CONTEXT_COUNTER_BASE + 2;
-        vm.prank(vm.addr(kmsPk0));
+        vm.prank(kmsTxSender0);
         protocolConfig.confirmKmsContextCreation(createdContextId);
-        vm.prank(vm.addr(kmsPk1));
+        vm.prank(kmsTxSender1);
         protocolConfig.confirmKmsContextCreation(createdContextId);
 
         vm.prank(owner);
@@ -1246,7 +1250,9 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         _setupEpochLifecycle();
         _seedActiveEpochWithMaterialForTwoNodeContext();
         KmsNodeParams[] memory nodes = _makeKmsNodeParams(2);
+        nodes[0].txSenderAddress = address(0xC1);
         nodes[0].signerAddress = vm.addr(kmsPk2);
+        nodes[1].txSenderAddress = address(0xC2);
         nodes[1].signerAddress = vm.addr(kmsPk3);
 
         vm.prank(owner);
@@ -1254,16 +1260,16 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
 
         uint256 newContextId = KMS_CONTEXT_COUNTER_BASE + 2;
         uint256 newEpochId = EPOCH_COUNTER_BASE + 3;
-        vm.prank(vm.addr(kmsPk0));
+        vm.prank(kmsTxSender0);
         protocolConfig.confirmKmsContextCreation(newContextId);
-        vm.prank(vm.addr(kmsPk1));
+        vm.prank(kmsTxSender1);
         protocolConfig.confirmKmsContextCreation(newContextId);
         (uint256 contextBeforeCreation, uint256 epochBeforeCreation) = protocolConfig.getCurrentKmsContextAndEpoch();
         assertEq(contextBeforeCreation, KMS_CONTEXT_COUNTER_BASE + 1);
         assertEq(epochBeforeCreation, EPOCH_COUNTER_BASE + 2);
-        vm.prank(vm.addr(kmsPk2));
+        vm.prank(address(0xC1));
         protocolConfig.confirmKmsContextCreation(newContextId);
-        vm.prank(vm.addr(kmsPk3));
+        vm.prank(address(0xC2));
         protocolConfig.confirmKmsContextCreation(newContextId);
         (uint256 contextBeforeActivation, uint256 epochBeforeActivation) = protocolConfig
             .getCurrentKmsContextAndEpoch();
@@ -1276,10 +1282,10 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
             kmsPk1,
             kmsTxSender1
         );
-        _confirmEpochWithMaterial(newContextId, newEpochId, kmsPk2, kmsTxSender0, keyId, crsId);
+        _confirmEpochWithMaterial(newContextId, newEpochId, kmsPk2, address(0xC1), keyId, crsId);
         assertEq(protocolConfig.getCurrentKmsContextId(), KMS_CONTEXT_COUNTER_BASE + 1);
 
-        _confirmEpochWithMaterial(newContextId, newEpochId, kmsPk3, kmsTxSender1, keyId, crsId);
+        _confirmEpochWithMaterial(newContextId, newEpochId, kmsPk3, address(0xC2), keyId, crsId);
 
         (uint256 activeContextId, uint256 activeEpochId) = protocolConfig.getCurrentKmsContextAndEpoch();
         assertEq(activeContextId, newContextId);
@@ -1293,11 +1299,11 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         _defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), _defaultThresholds());
         uint256 newContextId = KMS_CONTEXT_COUNTER_BASE + 2;
 
-        vm.prank(vm.addr(kmsPk0));
+        vm.prank(kmsTxSender0);
         protocolConfig.confirmKmsContextCreation(newContextId);
 
         vm.recordLogs();
-        vm.prank(vm.addr(kmsPk1));
+        vm.prank(kmsTxSender1);
         protocolConfig.confirmKmsContextCreation(newContextId);
         Vm.Log[] memory logs = vm.getRecordedLogs();
 
@@ -1411,9 +1417,9 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         );
         protocolConfig.confirmKmsContextCreation(newContextId);
 
-        vm.prank(vm.addr(kmsPk0));
+        vm.prank(kmsTxSender0);
         protocolConfig.confirmKmsContextCreation(newContextId);
-        vm.prank(vm.addr(kmsPk0));
+        vm.prank(kmsTxSender0);
         vm.expectRevert(
             abi.encodeWithSelector(
                 IProtocolConfig.KmsContextCreationAlreadyConfirmed.selector,
@@ -1698,9 +1704,9 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
 
         (, uint256 activeEpochBeforeContextActivation) = protocolConfig.getCurrentKmsContextAndEpoch();
         assertEq(activeEpochBeforeContextActivation, EPOCH_COUNTER_BASE + 2);
-        vm.prank(vm.addr(kmsPk0));
+        vm.prank(kmsTxSender0);
         protocolConfig.confirmKmsContextCreation(KMS_CONTEXT_COUNTER_BASE + 2);
-        vm.prank(vm.addr(kmsPk1));
+        vm.prank(kmsTxSender1);
         protocolConfig.confirmKmsContextCreation(KMS_CONTEXT_COUNTER_BASE + 2);
         (uint256 nextKeyId, uint256 nextCrsId) = _completeKmsGenerationMaterial();
         _confirmEpochWithMaterial(
@@ -2476,13 +2482,9 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         _defineNewKmsContextAndEpoch(nodes, _defaultThresholds());
         uint256 secondContextId = KMS_CONTEXT_COUNTER_BASE + 2;
         uint256 secondEpochId = EPOCH_COUNTER_BASE + 3;
-        vm.prank(vm.addr(kmsPk0));
+        vm.prank(kmsTxSender0);
         protocolConfig.confirmKmsContextCreation(secondContextId);
-        vm.prank(vm.addr(kmsPk1));
-        protocolConfig.confirmKmsContextCreation(secondContextId);
-        vm.prank(vm.addr(kmsPk2));
-        protocolConfig.confirmKmsContextCreation(secondContextId);
-        vm.prank(vm.addr(kmsPk3));
+        vm.prank(kmsTxSender1);
         protocolConfig.confirmKmsContextCreation(secondContextId);
         (uint256 keyId, uint256 crsId) = _completeKmsGenerationMaterialWithTwoResponses(
             kmsPk0,
@@ -2503,13 +2505,9 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         uint256 thirdContextId = KMS_CONTEXT_COUNTER_BASE + 3;
         uint256 thirdEpochId = EPOCH_COUNTER_BASE + 4;
 
-        vm.prank(vm.addr(kmsPk2));
+        vm.prank(kmsTxSender0);
         protocolConfig.confirmKmsContextCreation(thirdContextId);
-        vm.prank(vm.addr(kmsPk3));
-        protocolConfig.confirmKmsContextCreation(thirdContextId);
-        vm.prank(vm.addr(kmsPk0));
-        protocolConfig.confirmKmsContextCreation(thirdContextId);
-        vm.prank(vm.addr(kmsPk1));
+        vm.prank(kmsTxSender1);
         protocolConfig.confirmKmsContextCreation(thirdContextId);
 
         vm.prank(owner);
@@ -2558,7 +2556,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         uint256 newContextId = KMS_CONTEXT_COUNTER_BASE + 2;
 
         // Only one signer confirms: quorum not reached.
-        vm.prank(vm.addr(kmsPk0));
+        vm.prank(kmsTxSender0);
         protocolConfig.confirmKmsContextCreation(newContextId);
 
         assertEq(protocolConfig.getCurrentKmsContextId(), activeContextIdBefore);
@@ -2635,28 +2633,31 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
 
         // New committee: kmsPk0 (also a previous signer -> both) and kmsPk2 (new only).
         KmsNodeParams[] memory nodes = _makeKmsNodeParams(2);
+        // kmsPk0 stays same-set (tx-sender 0xA1 in both); kmsPk2 is a fresh new-only node so each signer
+        // is confirmable through a distinct tx-sender.
         nodes[0].signerAddress = vm.addr(kmsPk0);
+        nodes[1].txSenderAddress = address(0xC2);
         nodes[1].signerAddress = vm.addr(kmsPk2);
         vm.prank(owner);
         _defineNewKmsContextAndEpoch(nodes, _defaultThresholds());
         uint256 newContextId = KMS_CONTEXT_COUNTER_BASE + 2;
 
-        // kmsPk1 is a previous signer only.
+        // kmsPk1 is a previous signer only (confirmed via its previous tx-sender).
         vm.expectEmit(true, true, false, true, address(protocolConfig));
         emit IProtocolConfig.KmsContextCreationConfirmation(newContextId, vm.addr(kmsPk1), true, false);
-        vm.prank(vm.addr(kmsPk1));
+        vm.prank(kmsTxSender1);
         protocolConfig.confirmKmsContextCreation(newContextId);
 
         // kmsPk2 is a new signer only.
         vm.expectEmit(true, true, false, true, address(protocolConfig));
         emit IProtocolConfig.KmsContextCreationConfirmation(newContextId, vm.addr(kmsPk2), false, true);
-        vm.prank(vm.addr(kmsPk2));
+        vm.prank(address(0xC2));
         protocolConfig.confirmKmsContextCreation(newContextId);
 
-        // kmsPk0 belongs to both committees.
+        // kmsPk0 belongs to both committees (same-set tx-sender).
         vm.expectEmit(true, true, false, true, address(protocolConfig));
         emit IProtocolConfig.KmsContextCreationConfirmation(newContextId, vm.addr(kmsPk0), true, true);
-        vm.prank(vm.addr(kmsPk0));
+        vm.prank(kmsTxSender0);
         protocolConfig.confirmKmsContextCreation(newContextId);
     }
 
