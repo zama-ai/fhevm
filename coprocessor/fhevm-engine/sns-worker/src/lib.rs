@@ -486,7 +486,7 @@ pub async fn run_uploader_loop(
     is_ready: Arc<AtomicBool>,
     signer: CoproSigner,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let (is_ready_res, _) = check_is_ready(&client, conf).await;
+    let (is_ready_res, _) = check_is_ready(&client, &conf.s3).await;
     is_ready.store(is_ready_res, Ordering::Release);
 
     let mut handle_resubmit = spawn_resubmit_task(
@@ -538,7 +538,7 @@ pub async fn create_s3_client(conf: &Config) -> (Arc<aws_sdk_s3::Client>, bool) 
         .build();
 
     let client = Arc::new(Client::from_conf(config));
-    let (is_ready, is_connected) = check_is_ready(&client, conf).await;
+    let (is_ready, is_connected) = check_is_ready(&client, &conf.s3).await;
     if is_connected {
         info!(is_ready = is_ready, "Connected to S3");
     }
@@ -669,33 +669,31 @@ pub async fn run_all(
         max_retries: conf.s3_migration_max_retries,
     };
 
+    let not_ready_error = Err(ExecutionError::BucketNotFound(conf.s3.bucket_ct128.clone()).into());
     match migration_config.mode {
         S3MigrationMode::No => {
             info!("S3 migration is disabled");
         }
-        S3MigrationMode::Before | S3MigrationMode::BeforeAndQuit => {
+        S3MigrationMode::Before | S3MigrationMode::BeforeAndQuit | S3MigrationMode::DryRun => {
             info!("S3 migration is enabled: {}", conf.s3_migration);
             if !is_ready_bool {
-                error!("S3 is not ready");
+                error!("S3 is not ready, migration cannot be done");
+                return not_ready_error;
             };
             let db_pool = pool_mngr.pool();
-            run_startup_migrations(&migration_config, &db_pool, &client).await?;
-        }
-        S3MigrationMode::DryRun => {
-            info!("S3 migration is enabled: {}", S3MigrationMode::DryRun);
-            if !is_ready_bool {
-                error!("S3 is not ready");
-            };
-            let db_pool = pool_mngr.pool();
-            run_startup_migration_dry_run(&migration_config, &db_pool, &client).await?;
+            if matches!(migration_config.mode, S3MigrationMode::DryRun) {
+                run_startup_migration_dry_run(&migration_config, &db_pool, &client).await?;
+            } else {
+                run_startup_migrations(&migration_config, &db_pool, &client).await?;
+            }
         }
         S3MigrationMode::Concurrent => {
             let db_pool = pool_mngr.pool();
             let client = client.clone();
             spawn(async move {
-                info!("S3 migration is enabled: {}", S3MigrationMode::Concurrent);
+                info!("S3 migration is enabled: {}", conf.s3_migration);
                 if !is_ready_bool {
-                    error!("S3 is not ready");
+                    error!("S3 is not ready but will start when ready");
                 };
                 if let Err(err) = run_startup_migrations(&migration_config, &db_pool, &client).await
                 {

@@ -83,7 +83,7 @@ impl HealthCheckService for SwitchNSquashService {
         // Timeout for S3 readiness check as the S3 client has its internal retry logic
         match tokio::time::timeout(
             S3_HEALTH_CHECK_TIMEOUT,
-            check_is_ready(&self.s3_client, &self.conf),
+            check_is_ready(&self.s3_client, &self.conf.s3),
         )
         .await
         {

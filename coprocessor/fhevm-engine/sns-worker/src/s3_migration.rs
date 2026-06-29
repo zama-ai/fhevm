@@ -14,11 +14,8 @@ use futures::{stream::FuturesUnordered, FutureExt, StreamExt};
 use sqlx::PgPool;
 use tracing::{error, info, warn};
 
-use crate::{
-    aws_upload::{compute_digest, s3_ciphertext_key, COPROCESSOR_CONTEXT_ID_1},
-    Ciphertext128Format, ExecutionError, S3Config, CLEAN_OLD_S3_FORMAT_VERSION,
-    S3_FORMAT_VERSION_V1,
-};
+use crate::{CLEAN_OLD_S3_FORMAT_VERSION, Ciphertext128Format, ExecutionError, S3_FORMAT_VERSION_V1, S3Config};
+use crate::aws_upload::{COPROCESSOR_CONTEXT_ID_1, check_is_ready, compute_digest, s3_ciphertext_key};
 
 pub const DEFAULT_S3_MIGRATION_MAX_RETRIES: i32 = 100;
 const NO_SNS_CIPHERTEXT_DIGEST: [u8; 32] = [0; 32];
@@ -118,6 +115,8 @@ pub struct S3MigrationConfig {
 const PANIC_RETRY_DELAY : Duration = Duration::from_secs(10);
 const CLEAR_PANIC_WINDOW : Duration = Duration::from_mins(3);
 const MAX_PANIC_PER_WINDOW : u64 = 10;
+const NOT_READY_DELAY : Duration = Duration::from_secs(30);
+const MAX_NOT_READY : u64 = 10;
 
 pub(crate) async fn run_startup_migrations(
     config: &S3MigrationConfig,
@@ -126,6 +125,14 @@ pub(crate) async fn run_startup_migrations(
 ) -> Result<(), ExecutionError> {
     let mut last_panic_time = Instant::now();
     let mut successive_panics = 0;
+    for try_count in 1..=MAX_NOT_READY {
+        let (is_ready, _) = check_is_ready(client, &config.s3).await;
+        if is_ready {
+            break;
+        }
+        error!(try_count, MAX_NOT_READY, ?NOT_READY_DELAY, "S3 is not ready yet");
+        tokio::time::sleep(Duration::from_mins(1)).await;
+    }
     loop {
         match AssertUnwindSafe(migrate_s3_format_0_to_1(config, pool, client))
             .catch_unwind()
