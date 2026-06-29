@@ -28,6 +28,13 @@ ALTER TABLE computations_branch
 ADD COLUMN IF NOT EXISTS producer_block_hash BYTEA NOT NULL DEFAULT ''::BYTEA;
 
 ALTER TABLE computations_branch
+DROP CONSTRAINT IF EXISTS computations_branch_producer_block_number_check;
+
+ALTER TABLE computations_branch
+ADD CONSTRAINT computations_branch_producer_block_number_check
+CHECK (producer_block_hash = ''::BYTEA OR block_number IS NOT NULL);
+
+ALTER TABLE computations_branch
 DROP CONSTRAINT IF EXISTS computations_branch_pkey;
 
 ALTER TABLE computations_branch
@@ -80,6 +87,13 @@ ADD COLUMN IF NOT EXISTS producer_block_hash BYTEA NOT NULL DEFAULT ''::BYTEA,
 ADD COLUMN IF NOT EXISTS block_hash BYTEA NOT NULL DEFAULT ''::BYTEA;
 
 ALTER TABLE pbs_computations_branch
+DROP CONSTRAINT IF EXISTS pbs_computations_branch_producer_block_number_check;
+
+ALTER TABLE pbs_computations_branch
+ADD CONSTRAINT pbs_computations_branch_producer_block_number_check
+CHECK (producer_block_hash = ''::BYTEA OR block_number IS NOT NULL);
+
+ALTER TABLE pbs_computations_branch
 DROP CONSTRAINT IF EXISTS pbs_computations_branch_pkey;
 
 ALTER TABLE pbs_computations_branch
@@ -123,6 +137,13 @@ ADD COLUMN IF NOT EXISTS producer_block_hash BYTEA NOT NULL DEFAULT ''::BYTEA,
 ADD COLUMN IF NOT EXISTS block_hash BYTEA NOT NULL DEFAULT ''::BYTEA;
 
 ALTER TABLE allowed_handles_branch
+DROP CONSTRAINT IF EXISTS allowed_handles_branch_producer_block_number_check;
+
+ALTER TABLE allowed_handles_branch
+ADD CONSTRAINT allowed_handles_branch_producer_block_number_check
+CHECK (producer_block_hash = ''::BYTEA OR block_number IS NOT NULL);
+
+ALTER TABLE allowed_handles_branch
 DROP CONSTRAINT IF EXISTS allowed_handles_branch_pkey;
 
 ALTER TABLE allowed_handles_branch
@@ -152,6 +173,13 @@ ALTER TABLE ciphertext_digest_branch
 ADD COLUMN IF NOT EXISTS producer_block_hash BYTEA NOT NULL DEFAULT ''::BYTEA,
 ADD COLUMN IF NOT EXISTS block_number BIGINT NULL DEFAULT NULL,
 ADD COLUMN IF NOT EXISTS block_hash BYTEA NOT NULL DEFAULT ''::BYTEA;
+
+ALTER TABLE ciphertext_digest_branch
+DROP CONSTRAINT IF EXISTS ciphertext_digest_branch_producer_block_number_check;
+
+ALTER TABLE ciphertext_digest_branch
+ADD CONSTRAINT ciphertext_digest_branch_producer_block_number_check
+CHECK ((producer_block_hash = ''::BYTEA) = (block_number IS NULL));
 
 ALTER TABLE ciphertext_digest_branch
 DROP CONSTRAINT IF EXISTS ciphertext_digest_branch_pkey;

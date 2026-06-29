@@ -1,4 +1,5 @@
 use alloy_primitives::Address;
+use fhevm_engine_common::branch::BRANCHLESS_PRODUCER_BLOCK_HASH;
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::crs::{Crs, CrsCache};
 use fhevm_engine_common::db_keys::DbKey;
@@ -762,6 +763,29 @@ pub(crate) async fn insert_ciphertexts(
             &blob_hash,
             i as i32,
         )
+        .execute(db_txn.as_mut())
+        .await?;
+
+        // User inputs are not derived from any block: store them as
+        // branchless (empty producer_block_hash) so dependency resolution can
+        // fall back to them on every branch and reorg cleanup never deletes
+        // them.
+        sqlx::query(
+            "
+            INSERT INTO ciphertexts_branch (
+                handle, ciphertext, ciphertext_version, ciphertext_type,
+                input_blob_hash, input_blob_index, producer_block_hash, created_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+            ON CONFLICT (handle, ciphertext_version, producer_block_hash) DO NOTHING;
+            ",
+        )
+        .bind(&ct.handle)
+        .bind(&ct.compressed)
+        .bind(ct.ct_version)
+        .bind(ct.ct_type)
+        .bind(blob_hash)
+        .bind(i as i32)
+        .bind(BRANCHLESS_PRODUCER_BLOCK_HASH)
         .execute(db_txn.as_mut())
         .await?;
     }

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                    WITH candidate AS (\n                        SELECT dependence_chain_id\n                        FROM dependence_chain\n                        WHERE schedule_priority <> $1\n                        ORDER BY dependence_chain_id\n                        LIMIT $2\n                        FOR UPDATE SKIP LOCKED\n                    )\n                    UPDATE dependence_chain dc\n                    SET schedule_priority = $1\n                    FROM candidate\n                    WHERE dc.dependence_chain_id = candidate.dependence_chain_id\n                    ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int2",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "69ee598263ad484eb714db56b1028fbbcb7352602832a0269a37903fb94eaf3a"
+}

@@ -32,6 +32,64 @@ BEGIN
            AND block_hash = ''::BYTEA;
     END IF;
 
+    IF EXISTS (
+        SELECT 1
+          FROM allowed_handles_branch
+         WHERE handle = NEW.handle
+           AND account_address = NEW.account_address
+           AND host_chain_id = NEW.host_chain_id
+           AND block_number IS NOT DISTINCT FROM NEW.block_number
+           AND transaction_id IS NOT DISTINCT FROM NEW.transaction_id
+           AND (
+                producer_block_hash <> ''::BYTEA
+                OR block_hash <> ''::BYTEA
+           )
+    ) THEN
+        UPDATE allowed_handles_branch
+           SET tenant_id = NEW.tenant_id,
+               event_type = NEW.event_type,
+               txn_is_sent = allowed_handles_branch.txn_is_sent OR NEW.txn_is_sent,
+               txn_limited_retries_count = GREATEST(
+                   allowed_handles_branch.txn_limited_retries_count,
+                   NEW.txn_limited_retries_count
+               ),
+               txn_unlimited_retries_count = GREATEST(
+                   allowed_handles_branch.txn_unlimited_retries_count,
+                   NEW.txn_unlimited_retries_count
+               ),
+               txn_hash = COALESCE(allowed_handles_branch.txn_hash, NEW.txn_hash),
+               txn_block_number = COALESCE(allowed_handles_branch.txn_block_number, NEW.txn_block_number),
+               allowed_at = LEAST(allowed_handles_branch.allowed_at, NEW.allowed_at),
+               transaction_id = COALESCE(allowed_handles_branch.transaction_id, NEW.transaction_id),
+               host_chain_id = NEW.host_chain_id,
+               block_number = COALESCE(allowed_handles_branch.block_number, NEW.block_number),
+               txn_last_error = COALESCE(NEW.txn_last_error, allowed_handles_branch.txn_last_error),
+               txn_last_error_at = NULLIF(
+                   GREATEST(
+                       COALESCE(allowed_handles_branch.txn_last_error_at, '-infinity'::TIMESTAMP),
+                       COALESCE(NEW.txn_last_error_at, '-infinity'::TIMESTAMP)
+                   ),
+                   '-infinity'::TIMESTAMP
+               )
+         WHERE handle = NEW.handle
+           AND account_address = NEW.account_address
+           AND host_chain_id = NEW.host_chain_id
+           AND block_number IS NOT DISTINCT FROM NEW.block_number
+           AND transaction_id IS NOT DISTINCT FROM NEW.transaction_id
+           AND (
+                producer_block_hash <> ''::BYTEA
+                OR block_hash <> ''::BYTEA
+           );
+
+        DELETE FROM allowed_handles_branch
+         WHERE handle = NEW.handle
+           AND account_address = NEW.account_address
+           AND host_chain_id = NEW.host_chain_id
+           AND producer_block_hash = ''::BYTEA
+           AND block_hash = ''::BYTEA;
+        RETURN NEW;
+    END IF;
+
     INSERT INTO allowed_handles_branch (
         tenant_id,
         handle,

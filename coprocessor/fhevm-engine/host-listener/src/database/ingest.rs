@@ -204,6 +204,7 @@ pub async fn ingest_block_logs(
     let mut tx = db.new_transaction().await?;
     let mut is_allowed = HashSet::<Handle>::new();
     let mut seen_fallback_handles = HashSet::<Handle>::new();
+    let mut acl_event_log = vec![];
     let mut tfhe_event_log = vec![];
     let mut kms_gen_events = vec![];
     let block_hash = block_logs.summary.hash;
@@ -215,7 +216,6 @@ pub async fn ingest_block_logs(
     for log in &block_logs.logs {
         let current_address = Some(log.inner.address);
         let is_acl_address = &current_address == acl_contract_address;
-        let transaction_hash = log.transaction_hash;
         if acl_contract_address.is_none() || is_acl_address {
             if let Ok(event) =
                 AclContract::AclContractEvents::decode_log(&log.inner)
@@ -224,33 +224,7 @@ pub async fn ingest_block_logs(
                 for handle in handles {
                     is_allowed.insert(handle.to_vec());
                 }
-                let inserted = db
-                    .handle_acl_event(
-                        &mut tx,
-                        &event,
-                        &log.transaction_hash,
-                        chain_id,
-                        block_hash.as_ref(),
-                        block_number,
-                    )
-                    .await?;
-                at_least_one_insertion |= inserted;
-                if block_logs.catchup && inserted {
-                    info!(
-                        acl_event = ?event,
-                        ?transaction_hash,
-                        ?block_number,
-                        "ACL event missed before"
-                    );
-                    catchup_insertion += 1;
-                } else {
-                    info!(
-                        acl_event = ?event,
-                        ?transaction_hash,
-                        ?block_number,
-                        "ACL event"
-                    );
-                }
+                acl_event_log.push((event, log.transaction_hash));
                 continue;
             }
         }
@@ -264,6 +238,7 @@ pub async fn ingest_block_logs(
                     event,
                     transaction_hash: log.transaction_hash,
                     block_number,
+                    block_hash,
                     block_timestamp,
                     // updated in the next loop and dependence_chains
                     is_allowed: false,
@@ -440,6 +415,34 @@ pub async fn ingest_block_logs(
         }
     }
 
+    for (event, transaction_hash) in acl_event_log {
+        let inserted = db
+            .handle_acl_event(
+                &mut tx,
+                &event,
+                &transaction_hash,
+                &block_logs.summary,
+            )
+            .await?;
+        at_least_one_insertion |= inserted;
+        if block_logs.catchup && inserted {
+            info!(
+                acl_event = ?event,
+                ?transaction_hash,
+                ?block_number,
+                "ACL event missed before"
+            );
+            catchup_insertion += 1;
+        } else {
+            info!(
+                acl_event = ?event,
+                ?transaction_hash,
+                ?block_number,
+                "ACL event"
+            );
+        }
+    }
+
     let mut slow_dep_chain_ids: HashSet<ChainHash> = HashSet::new();
     if slow_lane_enabled {
         let max_per_chain = u64::from(options.dependent_ops_max_per_chain);
@@ -578,11 +581,31 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
                     continue;
                 }
             };
-        if let Err(err) = db
+        match db
             .update_block_as_finalized(&mut tx, block_number, &block_hash)
             .await
         {
-            error!(block_number, ?err, "Failed to update block as finalized");
+            Ok(orphaned_hashes) => {
+                if let Err(err) = db
+                    .cleanup_orphaned_branch_state(&mut tx, &orphaned_hashes)
+                    .await
+                {
+                    error!(
+                        block_number,
+                        ?err,
+                        "Failed to clean orphaned branch state during finalization"
+                    );
+                    return;
+                }
+            }
+            Err(err) => {
+                error!(
+                    block_number,
+                    ?err,
+                    "Failed to update block as finalized"
+                );
+                return;
+            }
         }
     }
     if let Err(err) = tx.commit().await {
