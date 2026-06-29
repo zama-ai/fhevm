@@ -181,8 +181,8 @@ async fn add_ciphertext_sends_only_finalized_branch_digest_row() -> anyhow::Resu
 
     sqlx::query(
         "
-        INSERT INTO ciphertexts128_branch (handle, producer_block_hash, ciphertext)
-        VALUES ($1, $2, $3)
+        INSERT INTO ciphertexts128_branch (handle, producer_block_hash, block_number, ciphertext)
+        VALUES ($1, $2, 10, $3)
         ",
     )
     .bind(&handle[..])
@@ -211,7 +211,7 @@ async fn add_ciphertext_sends_only_finalized_branch_digest_row() -> anyhow::Resu
         ",
     )
     .bind(host_chain_id)
-    .bind(&key_id)
+    .bind(key_id)
     .bind(&handle[..])
     .bind(&producer_block_hash)
     .bind(&finalized_block_hash)

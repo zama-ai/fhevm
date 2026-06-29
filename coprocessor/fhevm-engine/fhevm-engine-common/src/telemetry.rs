@@ -470,8 +470,8 @@ pub async fn try_end_l1_transaction(
         "Checking if L1 transaction can be ended"
     );
 
-    let transaction_completed: bool = sqlx::query_scalar(
-        "
+    let transaction_completed: bool = sqlx::query_scalar!(
+        r#"
             WITH
                 cipher_all AS (
                 SELECT COALESCE(BOOL_AND(COALESCE(txn_is_sent, false)), false) AS v
@@ -489,9 +489,10 @@ pub async fn try_end_l1_transaction(
                 WHERE transaction_id = $1
             )
             SELECT (cipher_all.v AND allowed_handles_all.v AND pbs_all.v) AS all_ok
-            FROM cipher_all, allowed_handles_all, pbs_all",
+            FROM cipher_all, allowed_handles_all, pbs_all
+        "#,
+        transaction_id,
     )
-    .bind(transaction_id)
     .fetch_one(pool)
     .await
     .unwrap_or(Some(false))

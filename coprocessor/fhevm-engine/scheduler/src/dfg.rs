@@ -344,7 +344,7 @@ impl DFComponentGraph {
             for r in tx.results.iter() {
                 self.produced
                     .entry(r.clone())
-                    .or_insert_with(Vec::new)
+                    .or_default()
                     .push((producer, tx.transaction_id.clone()));
             }
         }
@@ -920,6 +920,7 @@ pub fn partition_components<TNode, TEdge>(
 }
 
 #[cfg(test)]
+#[allow(clippy::field_reassign_with_default, clippy::redundant_clone)]
 mod tests {
     use super::*;
     use fhevm_engine_common::types::SupportedFheCiphertexts;

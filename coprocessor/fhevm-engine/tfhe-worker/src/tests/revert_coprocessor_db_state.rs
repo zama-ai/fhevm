@@ -245,14 +245,15 @@ async fn setup_pbs_only_branch_artifacts(
 
     sqlx::query(
         "INSERT INTO ciphertext_digest_branch \
-         (host_chain_id, key_id_gw, handle, transaction_id, producer_block_hash, ciphertext, ciphertext128) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7)",
+         (host_chain_id, key_id_gw, handle, transaction_id, producer_block_hash, block_number, ciphertext, ciphertext128) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
     )
     .bind(chain_id)
     .bind(key_id_gw)
     .bind(handle)
     .bind(&txn_id)
     .bind(producer_block_hash)
+    .bind(block_number)
     .bind([0xFAu8; 32])
     .bind([0xFBu8; 32])
     .execute(pool)
@@ -261,22 +262,24 @@ async fn setup_pbs_only_branch_artifacts(
 
     sqlx::query(
         "INSERT INTO ciphertexts_branch \
-         (handle, producer_block_hash, ciphertext, ciphertext_version, ciphertext_type) \
-         VALUES ($1, $2, $3, 0, 4)",
+         (handle, producer_block_hash, block_number, ciphertext, ciphertext_version, ciphertext_type) \
+         VALUES ($1, $2, $3, $4, 0, 4)",
     )
     .bind(handle)
     .bind(producer_block_hash)
+    .bind(block_number)
     .bind([0xFCu8; 4])
     .execute(pool)
     .await
     .expect("insert ciphertext");
 
     sqlx::query(
-        "INSERT INTO ciphertexts128_branch (handle, producer_block_hash, ciphertext) \
-         VALUES ($1, $2, $3)",
+        "INSERT INTO ciphertexts128_branch (handle, producer_block_hash, block_number, ciphertext) \
+         VALUES ($1, $2, $3, $4)",
     )
     .bind(handle)
     .bind(producer_block_hash)
+    .bind(block_number)
     .bind([0xFDu8; 4])
     .execute(pool)
     .await

@@ -88,7 +88,7 @@ async fn fill_tx_dependence_maps(
     txs: &mut HashMap<TransactionHash, Transaction>,
     past_chains: &ChainCache,
 ) {
-    let mut allowed_handle_tx: HashMap<Handle, TransactionHash> =
+    let mut local_output_handle_tx: HashMap<Handle, TransactionHash> =
         HashMap::new();
     for tx_hash in ordered_txs_hash {
         let Some(tx) = txs.get_mut(tx_hash) else {
@@ -98,7 +98,7 @@ async fn fill_tx_dependence_maps(
         // this tx depends on dep_tx
         let mut producer_tx = Vec::with_capacity(tx.input_handle.len());
         for input_handle in &tx.input_handle {
-            if let Some(dep_tx) = allowed_handle_tx.get(input_handle) {
+            if let Some(dep_tx) = local_output_handle_tx.get(input_handle) {
                 // intra block
                 tx.input_tx.insert(*dep_tx);
                 producer_tx.push(*dep_tx);
@@ -109,9 +109,13 @@ async fn fill_tx_dependence_maps(
                 tx.input_tx.insert(*dep_tx_hash);
             }
         }
-        // update allowed handle for next txs
-        for allowed_handle in &tx.allowed_handle {
-            allowed_handle_tx.entry(*allowed_handle).or_insert(*tx_hash);
+        // Same-block dependency grouping must include all local outputs, even
+        // intermediates that are not ACL-allowed. Only allowed outputs are
+        // propagated to the cross-block cache later.
+        for output_handle in &tx.output_handle {
+            local_output_handle_tx
+                .entry(*output_handle)
+                .or_insert(*tx_hash);
         }
         // propagate memorized producers
         let mut depth_size = 0;
@@ -660,6 +664,24 @@ mod tests {
         let chains = dependence_chains(&mut logs, &cache, true).await;
         assert_eq!(chains.len(), 2);
         assert_eq!(cache.read().await.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_dependence_chains_non_allowed_same_block_intermediate() {
+        let cache = new_cache();
+        let mut logs = vec![];
+        let tx1 = TransactionHash::with_last_byte(1);
+        let tx2 = TransactionHash::with_last_byte(2);
+        let input = input_handle(&mut logs, tx1);
+        let intermediate = op1(input, &mut logs, tx1);
+        logs[1].is_allowed = false;
+        let _output = op1(intermediate, &mut logs, tx2);
+
+        let chains = dependence_chains(&mut logs, &cache, true).await;
+
+        assert_eq!(chains.len(), 1);
+        assert!(logs.iter().all(|log| log.dependence_chain == tx1));
+        assert_eq!(cache.read().await.len(), 1);
     }
 
     #[tokio::test]

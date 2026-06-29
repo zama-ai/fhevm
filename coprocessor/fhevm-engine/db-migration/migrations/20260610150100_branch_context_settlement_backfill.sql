@@ -28,3 +28,9 @@ WHERE c.handle = src.handle
   AND c.producer_block_hash = src.producer_block_hash
   AND c.producer_block_hash <> ''::BYTEA
   AND c.block_number IS NULL;
+
+ALTER TABLE ciphertexts_branch
+VALIDATE CONSTRAINT ciphertexts_branch_producer_block_number_check;
+
+ALTER TABLE ciphertexts128_branch
+VALIDATE CONSTRAINT ciphertexts128_branch_producer_block_number_check;

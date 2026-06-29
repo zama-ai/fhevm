@@ -400,6 +400,8 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
         chain_id_str.clone(),
         client.cancel_token.clone(),
     ));
+    let _branch_cleanup_worker =
+        db.spawn_orphaned_branch_cleanup_worker(client.cancel_token.clone());
     let consumer_task = client.consume(move |payload, _cancel| {
         blockchain_tick.update();
         let mut db = db.clone();

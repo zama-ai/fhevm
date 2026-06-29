@@ -18,7 +18,7 @@ use alloy::{
 use anyhow::bail;
 use async_trait::async_trait;
 use fhevm_engine_common::{telemetry, utils::to_hex};
-use sqlx::{Pool, Postgres, Row, Transaction};
+use sqlx::{Pool, Postgres, Transaction};
 use tokio::task::JoinSet;
 use tracing::{error, info, warn};
 
@@ -42,6 +42,7 @@ where
     P: Provider<Ethereum> + Clone + 'static,
 {
     #[tracing::instrument(name = "call_add_ciphertext", skip_all, fields(txn_id = tracing::field::Empty))]
+    #[allow(clippy::too_many_arguments)]
     async fn send_transaction(
         &self,
         handle: &[u8],
@@ -205,6 +206,7 @@ where
             })
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn set_txn_is_sent(
         &self,
         handle: &[u8],
@@ -229,8 +231,9 @@ where
             return Ok(());
         };
 
-        sqlx::query(
-            "WITH source AS (
+        sqlx::query!(
+            r#"
+            WITH source AS (
                 SELECT host_chain_id, handle, producer_block_hash, key_id_gw, ciphertext, ciphertext128
                 FROM ciphertext_digest_branch
                 WHERE host_chain_id = $3
@@ -262,14 +265,15 @@ where
                          AND b.block_hash = d.block_hash
                          AND b.block_status = 'finalized'
                    )
-               )",
+               )
+            "#,
+            txn_hash,
+            txn_block_number,
+            host_chain_id,
+            handle,
+            producer_block_hash,
+            block_hash,
         )
-        .bind(txn_hash)
-        .bind(txn_block_number)
-        .bind(host_chain_id)
-        .bind(handle)
-        .bind(producer_block_hash)
-        .bind(block_hash)
         .execute(tx.as_mut())
         .await?;
 
@@ -340,21 +344,23 @@ where
                 "Updating limited retries count"
             );
         }
-        sqlx::query(
-            "UPDATE ciphertext_digest_branch
+        sqlx::query!(
+            r#"
+            UPDATE ciphertext_digest_branch
              SET txn_limited_retries_count = txn_limited_retries_count + 1,
                  txn_last_error = $1,
                  txn_last_error_at = NOW()
              WHERE host_chain_id = $2
                AND handle = $3
                AND producer_block_hash = $4
-               AND block_hash = $5",
+               AND block_hash = $5
+            "#,
+            err,
+            host_chain_id,
+            handle,
+            producer_block_hash,
+            block_hash,
         )
-        .bind(err)
-        .bind(host_chain_id)
-        .bind(handle)
-        .bind(producer_block_hash)
-        .bind(block_hash)
         .execute(&self.db_pool)
         .await?;
         Ok(())
@@ -385,21 +391,23 @@ where
                 "Updating unlimited retries count"
             );
         }
-        sqlx::query(
-            "UPDATE ciphertext_digest_branch
+        sqlx::query!(
+            r#"
+            UPDATE ciphertext_digest_branch
              SET txn_unlimited_retries_count = txn_unlimited_retries_count + 1,
                  txn_last_error = $1,
                  txn_last_error_at = NOW()
              WHERE host_chain_id = $2
                AND handle = $3
                AND producer_block_hash = $4
-               AND block_hash = $5",
+               AND block_hash = $5
+            "#,
+            err,
+            host_chain_id,
+            handle,
+            producer_block_hash,
+            block_hash,
         )
-        .bind(err)
-        .bind(host_chain_id)
-        .bind(handle)
-        .bind(producer_block_hash)
-        .bind(block_hash)
         .execute(&self.db_pool)
         .await?;
         Ok(())
@@ -413,22 +421,24 @@ where
         block_hash: &[u8],
         error: &str,
     ) -> anyhow::Result<()> {
-        sqlx::query(
-            "UPDATE ciphertext_digest_branch
+        sqlx::query!(
+            r#"
+            UPDATE ciphertext_digest_branch
              SET txn_limited_retries_count = $1,
                  txn_last_error = $2,
                  txn_last_error_at = NOW()
              WHERE host_chain_id = $3
                AND handle = $4
                AND producer_block_hash = $5
-               AND block_hash = $6",
+               AND block_hash = $6
+            "#,
+            self.conf.add_ciphertexts_max_retries,
+            error,
+            host_chain_id,
+            handle,
+            producer_block_hash,
+            block_hash,
         )
-        .bind(self.conf.add_ciphertexts_max_retries)
-        .bind(error)
-        .bind(host_chain_id)
-        .bind(handle)
-        .bind(producer_block_hash)
-        .bind(block_hash)
         .execute(&self.db_pool)
         .await?;
         Ok(())
@@ -448,7 +458,9 @@ where
         // The service responsible for populating the ciphertext_digest table must
         // ensure that ciphertext and ciphertext128 are non-null only after the
         // ciphertexts have been successfully uploaded to AWS S3 buckets.
-        let sql = "WITH eligible AS (
+        let rows = sqlx::query!(
+            r#"
+            WITH eligible AS (
                 SELECT
                   d.handle,
                   d.producer_block_hash,
@@ -481,16 +493,27 @@ where
                     )
                 )
             )
-            SELECT handle, producer_block_hash, block_hash, key_id_gw, ciphertext, ciphertext128, host_chain_id, txn_limited_retries_count, txn_unlimited_retries_count, transaction_id
+            SELECT
+                handle AS "handle!",
+                producer_block_hash AS "producer_block_hash!",
+                block_hash AS "block_hash!",
+                key_id_gw AS "key_id_gw!",
+                ciphertext,
+                ciphertext128,
+                host_chain_id AS "host_chain_id!",
+                txn_limited_retries_count AS "txn_limited_retries_count!",
+                txn_unlimited_retries_count AS "txn_unlimited_retries_count!",
+                transaction_id
             FROM eligible
             WHERE rn = 1
             ORDER BY created_at ASC
-            LIMIT $2";
-        let rows = sqlx::query(sql)
-            .bind(self.conf.add_ciphertexts_max_retries)
-            .bind(self.conf.add_ciphertexts_batch_limit as i64)
-            .fetch_all(&self.db_pool)
-            .await?;
+            LIMIT $2
+            "#,
+            self.conf.add_ciphertexts_max_retries,
+            self.conf.add_ciphertexts_batch_limit as i64,
+        )
+        .fetch_all(&self.db_pool)
+        .await?;
 
         let ciphertext_manager =
             CiphertextCommits::new(self.ciphertext_commits_address, self.provider.inner());
@@ -501,16 +524,16 @@ where
 
         let mut join_set = JoinSet::new();
         for row in rows.into_iter() {
-            let handle: Vec<u8> = row.try_get("handle")?;
-            let producer_block_hash_raw: Vec<u8> = row.try_get("producer_block_hash")?;
-            let block_hash: Vec<u8> = row.try_get("block_hash")?;
-            let key_id_gw_raw: Vec<u8> = row.try_get("key_id_gw")?;
-            let ciphertext: Option<Vec<u8>> = row.try_get("ciphertext")?;
-            let ciphertext128: Option<Vec<u8>> = row.try_get("ciphertext128")?;
-            let host_chain_id: i64 = row.try_get("host_chain_id")?;
-            let txn_limited_retries_count: i32 = row.try_get("txn_limited_retries_count")?;
-            let txn_unlimited_retries_count: i32 = row.try_get("txn_unlimited_retries_count")?;
-            let transaction_id: Option<Vec<u8>> = row.try_get("transaction_id")?;
+            let handle = row.handle;
+            let producer_block_hash_raw = row.producer_block_hash;
+            let block_hash = row.block_hash;
+            let key_id_gw_raw = row.key_id_gw;
+            let ciphertext = row.ciphertext;
+            let ciphertext128 = row.ciphertext128;
+            let host_chain_id = row.host_chain_id;
+            let txn_limited_retries_count = row.txn_limited_retries_count;
+            let txn_unlimited_retries_count = row.txn_unlimited_retries_count;
+            let transaction_id = row.transaction_id;
 
             let _span =
                 tracing::info_span!("prepare_add_ciphertext", txn_id = tracing::field::Empty);
@@ -604,8 +627,9 @@ async fn delete_ct128_from_db(
     handle: Vec<u8>,
     producer_block_hash: Vec<u8>,
 ) -> Result<(), sqlx::Error> {
-    let rows_affected = sqlx::query(
-        "DELETE FROM ciphertexts128_branch
+    let rows_affected = sqlx::query!(
+        r#"
+        DELETE FROM ciphertexts128_branch
          WHERE handle = $1
            AND producer_block_hash = $2
            AND NOT EXISTS (
@@ -614,10 +638,11 @@ async fn delete_ct128_from_db(
                WHERE d.handle = ciphertexts128_branch.handle
                  AND d.producer_block_hash = ciphertexts128_branch.producer_block_hash
                  AND d.ciphertext128 IS NULL
-           )",
+           )
+        "#,
+        &handle,
+        &producer_block_hash,
     )
-    .bind(&handle)
-    .bind(&producer_block_hash)
     .execute(tx.as_mut())
     .await?
     .rows_affected();

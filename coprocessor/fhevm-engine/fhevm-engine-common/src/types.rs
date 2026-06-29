@@ -565,6 +565,7 @@ impl SupportedFheCiphertexts {
     /// clearing carry residue left by linear (no-PBS) operations such as
     /// boolean scalar comparisons. Deterministic, so persisted bytes stay
     /// consensus-stable across coprocessors.
+    #[allow(clippy::eq_op)]
     pub fn clean_carries(&self) -> std::result::Result<Self, FhevmError> {
         Ok(match self {
             SupportedFheCiphertexts::Scalar(_) => {

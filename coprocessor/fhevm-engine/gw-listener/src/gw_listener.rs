@@ -11,7 +11,7 @@ use fhevm_engine_common::gcs_activation::EVENT_GW_NEW_BLOCK;
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::utils::to_hex;
 use fhevm_engine_common::versioning::{run_stack_version_listener, StackMode};
-use sqlx::{postgres::PgPoolOptions, Pool, Postgres, Row};
+use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};
 
@@ -670,10 +670,12 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
 }
 
 async fn get_listener_progress(db_pool: &Pool<Postgres>) -> anyhow::Result<ListenerProgress> {
-    let row = sqlx::query(
-        "SELECT last_block_num, earliest_open_ct_commits_block
+    let row = sqlx::query!(
+        r#"
+        SELECT last_block_num, earliest_open_ct_commits_block
             FROM gw_listener_last_block
-            WHERE dummy_id = true",
+            WHERE dummy_id = true
+        "#,
     )
     .fetch_optional(db_pool)
     .await?;
@@ -684,10 +686,10 @@ async fn get_listener_progress(db_pool: &Pool<Postgres>) -> anyhow::Result<Liste
 
     Ok(ListenerProgress {
         last_processed_block_num: row
-            .get::<Option<i64>, _>("last_block_num")
+            .last_block_num
             .map(|n| n.try_into().expect("Got an invalid block number")),
         earliest_open_ct_commits_block: row
-            .get::<Option<i64>, _>("earliest_open_ct_commits_block")
+            .earliest_open_ct_commits_block
             .map(|n| n.try_into().expect("Got an invalid block number")),
     })
 }
