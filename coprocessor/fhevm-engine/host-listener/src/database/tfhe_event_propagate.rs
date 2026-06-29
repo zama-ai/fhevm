@@ -18,6 +18,7 @@ use fhevm_engine_common::utils::{to_hex, HeartBeat};
 use prometheus::{register_int_counter_vec, IntCounterVec};
 use sqlx::postgres::PgConnectOptions;
 use sqlx::postgres::PgPoolOptions;
+use sqlx::Acquire;
 use sqlx::Error as SqlxError;
 use sqlx::{PgPool, Postgres};
 use std::collections::HashSet;
@@ -347,54 +348,51 @@ impl Database {
     ) -> Result<u64, SqlxError> {
         let lock_key = slow_lane_reset_advisory_lock_key(self.chain_id);
         let mut connection = self.pool().await.acquire().await?;
-        sqlx::query!("SELECT pg_advisory_lock($1)", lock_key)
-            .execute(connection.deref_mut())
-            .await?;
+        let mut tx = connection.begin().await?;
+        let lock_acquired = sqlx::query_scalar!(
+            r#"SELECT pg_try_advisory_xact_lock($1) AS "lock_acquired!""#,
+            lock_key
+        )
+        .fetch_one(tx.as_mut())
+        .await?;
+        if !lock_acquired {
+            info!("Slow-lane reset already in progress; skipping promotion attempt");
+            tx.commit().await?;
+            return Ok(0);
+        }
 
-        let rows = async {
-            let mut total_promoted: u64 = 0;
-            loop {
-                let updated = sqlx::query!(
-                    r#"
-                    WITH candidate AS (
-                        SELECT dependence_chain_id
-                        FROM dependence_chain
-                        WHERE schedule_priority <> $1
-                        ORDER BY dependence_chain_id
-                        LIMIT $2
-                        FOR UPDATE SKIP LOCKED
-                    )
-                    UPDATE dependence_chain dc
-                    SET schedule_priority = $1
-                    FROM candidate
-                    WHERE dc.dependence_chain_id = candidate.dependence_chain_id
-                    "#,
-                    i16::from(SchedulePriority::Fast),
-                    SLOW_LANE_RESET_BATCH_SIZE,
+        let mut total_promoted: u64 = 0;
+        loop {
+            let updated = sqlx::query!(
+                r#"
+                WITH candidate AS (
+                    SELECT dependence_chain_id
+                    FROM dependence_chain
+                    WHERE schedule_priority <> $1
+                    ORDER BY dependence_chain_id
+                    LIMIT $2
+                    FOR UPDATE SKIP LOCKED
                 )
-                .execute(connection.deref_mut())
-                .await?
-                .rows_affected();
-
-                total_promoted = total_promoted.saturating_add(updated);
-                if updated == 0 {
-                    break;
-                }
+                UPDATE dependence_chain dc
+                SET schedule_priority = $1
+                FROM candidate
+                WHERE dc.dependence_chain_id = candidate.dependence_chain_id
+                "#,
+                i16::from(SchedulePriority::Fast),
+                SLOW_LANE_RESET_BATCH_SIZE,
+            )
+            .execute(tx.as_mut())
+            .await?;
+            let updated = updated.rows_affected();
+            total_promoted = total_promoted.saturating_add(updated);
+            if updated == 0 {
+                break;
             }
-            Ok(total_promoted)
-        }
-        .await;
-
-        let unlock_res =
-            sqlx::query_scalar::<_, bool>("SELECT pg_advisory_unlock($1)")
-                .bind(lock_key)
-                .fetch_one(connection.deref_mut())
-                .await;
-        if let Err(err) = unlock_res {
-            warn!(error = %err, "Failed to release slow-lane reset advisory lock");
         }
 
-        rows
+        tx.commit().await?;
+
+        Ok(total_promoted)
     }
 
     pub async fn find_slow_dep_chain_ids(
@@ -1187,7 +1185,11 @@ impl Database {
             INSERT INTO host_chain_blocks_valid (chain_id, block_hash, parent_hash, block_number, block_status)
             VALUES ($1, $2, $3, $4, $5)
             ON CONFLICT (chain_id, block_hash) DO UPDATE
-            SET parent_hash = COALESCE(host_chain_blocks_valid.parent_hash, EXCLUDED.parent_hash);
+            -- A block hash immutably determines its parent, so a freshly
+            -- observed non-empty parent_hash is authoritative: prefer it. This
+            -- both fills a missing value and corrects a stale/wrong one, while
+            -- never clobbering a known parent with a NULL/empty re-observation.
+            SET parent_hash = COALESCE(NULLIF(EXCLUDED.parent_hash, ''::BYTEA), host_chain_blocks_valid.parent_hash);
             "#,
             self.chain_id.as_i64(),
             block_summary.hash.to_vec(),
