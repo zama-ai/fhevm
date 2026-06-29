@@ -169,6 +169,7 @@ impl<P: Provider> ProtocolConfigProcessor<P> {
             let key_info = self
                 .kms_generation_contract
                 .getKeyInfo(key_id)
+                .block(material_block_number.into())
                 .call()
                 .await?;
             let mut key_digests = vec![];
@@ -191,6 +192,7 @@ impl<P: Provider> ProtocolConfigProcessor<P> {
             let crs_material = self
                 .kms_generation_contract
                 .getCrsMaterials(crs_id)
+                .block(material_block_number.into())
                 .call()
                 .await?;
             crs_info.push(CrsInfo {
