@@ -12,6 +12,7 @@ use ciphertext_attestation::{
 use fhevm_engine_common::{types::CoproSigner, utils::to_hex};
 use futures::{stream::FuturesUnordered, FutureExt, StreamExt};
 use sqlx::PgPool;
+use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
 use crate::{CLEAN_OLD_S3_FORMAT_VERSION, Ciphertext128Format, ExecutionError, S3_FORMAT_VERSION_V1, S3Config};
@@ -120,6 +121,7 @@ const MAX_NOT_READY : u64 = 10;
 
 pub(crate) async fn run_startup_migrations(
     config: &S3MigrationConfig,
+    token: &CancellationToken,
     pool: &PgPool,
     client: &Client,
 ) -> Result<(), ExecutionError> {
@@ -134,7 +136,8 @@ pub(crate) async fn run_startup_migrations(
         tokio::time::sleep(NOT_READY_DELAY).await;
     }
     loop {
-        match AssertUnwindSafe(migrate_s3_format_0_to_1(config, pool, client))
+        let token = token.clone();
+        match AssertUnwindSafe(migrate_s3_format_0_to_1(config, token, pool, client))
             .catch_unwind()
             .await
         {
@@ -173,6 +176,7 @@ fn panic_payload_to_string(payload: &(dyn std::any::Any + Send)) -> String {
 
 async fn migrate_s3_format_0_to_1(
     config: &S3MigrationConfig,
+    token: CancellationToken,
     pool: &PgPool,
     client: &Client,
 ) -> Result<(), ExecutionError> {
@@ -191,6 +195,9 @@ async fn migrate_s3_format_0_to_1(
     let mut total_failed = already_failed as u64;
     let mut worked_since_idle_log = false;
     loop {
+        if token.is_cancelled() {
+            return Ok(());
+        }
         let new_handles = fetch_old_format_handles(config, pool, false).await?;
         if !new_handles.is_empty() {
             let (migrated, failed) =
@@ -368,7 +375,7 @@ async fn migrate_handle_batch(
                     "S3 migration, failed for handle"
                 );
                 if let Err(err) = record_migration_failure(pool, &handle, &err).await {
-                    error!(err, "S3 migration, cannot record failure on DB");
+                    error!(?err, "S3 migration, cannot record failure on DB");
                 }
             }
         }

@@ -669,6 +669,7 @@ pub async fn run_all(
     };
 
     let not_ready_error = Err(ExecutionError::BucketNotFound(conf.s3.bucket_ct128.clone()).into());
+    let mut concurrent_migration = None;
     match migration_config.mode {
         S3MigrationMode::No => {
             info!("S3 migration is disabled");
@@ -683,18 +684,19 @@ pub async fn run_all(
             if matches!(migration_config.mode, S3MigrationMode::DryRun) {
                 run_startup_migration_dry_run(&migration_config, &db_pool, &client).await?;
             } else {
-                run_startup_migrations(&migration_config, &db_pool, &client).await?;
+                run_startup_migrations(&migration_config,  &token, &db_pool, &client).await?;
             }
         }
         S3MigrationMode::Concurrent => {
+            let token = token.clone();
             let db_pool = pool_mngr.pool();
             let client = client.clone();
-            spawn(async move {
+            let task = spawn(async move {
                 info!("S3 migration is enabled: {}", conf.s3_migration);
                 if !is_ready_bool {
                     error!("S3 is not ready but will start when ready");
                 };
-                if let Err(err) = run_startup_migrations(&migration_config, &db_pool, &client).await
+                if let Err(err) = run_startup_migrations(&migration_config, &token, &db_pool, &client).await
                 {
                     error!(
                         error = %err,
@@ -702,6 +704,7 @@ pub async fn run_all(
                     );
                 }
             });
+            concurrent_migration = Some(task)
         }
     }
 
@@ -727,11 +730,17 @@ pub async fn run_all(
             Err(join_err) => Err(join_err.into()),
         },
     };
-    token.cancel();
 
     if let Err(err) = result {
         error!(error = %err, "SNS worker exited with a fatal error");
         return Err(err);
+    }
+
+    if let Some(migration_task) = concurrent_migration {
+        if let Err(join_err) = migration_task.await {
+            error!(error = %join_err, "SNS worker, S3 migration exited with a fatal error");
+            return Err(join_err.into());
+        }
     }
 
     info!("Worker stopped");
