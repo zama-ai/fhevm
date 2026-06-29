@@ -206,12 +206,12 @@ async fn migrate_s3_format_0_to_1(
                 worked_since_idle_log = true;
                 if failed > 0 {
                     if migrated == 0 {
-                        warn!(
+                        error!(
                             total_failed,
                             total_migrated, migrated, failed, "S3 Migration retry"
                         );
                     } else {
-                        error!(
+                        warn!(
                             total_failed,
                             total_migrated, migrated, failed, "S3 Migration retry"
                         );
