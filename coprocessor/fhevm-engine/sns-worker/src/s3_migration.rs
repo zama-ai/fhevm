@@ -1,4 +1,4 @@
-use std::{collections::HashMap, panic::AssertUnwindSafe, time::Duration};
+use std::{collections::HashMap, panic::AssertUnwindSafe, time::Duration, time::Instant};
 
 use alloy_primitives::{Address, B256, U256};
 use aws_sdk_s3::{
@@ -115,11 +115,17 @@ pub struct S3MigrationConfig {
     pub max_retries: i32,
 }
 
+const PANIC_RETRY_DELAY : Duration = Duration::from_secs(10);
+const CLEAR_PANIC_WINDOW : Duration = Duration::from_mins(3);
+const MAX_PANIC_PER_WINDOW : u64 = 10;
+
 pub(crate) async fn run_startup_migrations(
     config: &S3MigrationConfig,
     pool: &PgPool,
     client: &Client,
 ) -> Result<(), ExecutionError> {
+    let mut last_panic_time = Instant::now();
+    let mut successive_panics = 0;
     loop {
         match AssertUnwindSafe(migrate_s3_format_0_to_1(config, pool, client))
             .catch_unwind()
@@ -127,12 +133,22 @@ pub(crate) async fn run_startup_migrations(
         {
             Ok(result) => return result,
             Err(payload) => {
+                let now = Instant::now();
+                if now.duration_since(last_panic_time) > CLEAR_PANIC_WINDOW {
+                    successive_panics = 0;
+                }
+                successive_panics += 1;
+                last_panic_time = now;
+                if successive_panics > MAX_PANIC_PER_WINDOW {
+                    return Err(ExecutionError::InternalError("Lots of panics without apparent progress.".into()));
+                }
                 error!(
                     panic = %panic_payload_to_string(payload.as_ref()),
-                    retry_after = ?config.sleep_duration,
+                    ?PANIC_RETRY_DELAY,
+                    successive_panics,
                     "S3 format migration panicked; retrying"
                 );
-                tokio::time::sleep(config.sleep_duration).await;
+                tokio::time::sleep(PANIC_RETRY_DELAY).await;
             }
         }
     }
