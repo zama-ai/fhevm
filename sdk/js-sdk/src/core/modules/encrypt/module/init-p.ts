@@ -493,7 +493,7 @@ async function _resolveTfheModuleConfig(
     supportsThreads,
   };
 
-  parameters.logger?.debug(JSON.stringify(cfg, null, 2));
+  //parameters.logger?.debug?.(JSON.stringify(cfg, null, 2));
 
   return cfg;
 }

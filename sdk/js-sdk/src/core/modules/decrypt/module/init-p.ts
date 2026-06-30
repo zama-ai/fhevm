@@ -170,7 +170,7 @@ async function _resolveTkmsModuleConfig(
     logger: parameters.logger,
   };
 
-  parameters.logger?.debug(JSON.stringify(cfg, null, 2));
+  //parameters.logger?.debug?.(JSON.stringify(cfg, null, 2));
 
   return cfg;
 }
