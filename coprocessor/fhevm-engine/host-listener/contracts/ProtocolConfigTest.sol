@@ -15,8 +15,7 @@ contract ProtocolConfigTest {
         uint256 indexed proposalId,
         string softwareVersion,
         ChainUpgradeWindow[] chainUpgradeWindows,
-        uint64 gwStartBlock,
-        uint16 ciphertextVersion
+        uint64 gwStartBlock
     );
 
     /// @notice Emit a `CoprocessorUpgradeProposed` event with caller-provided fields.
@@ -24,15 +23,8 @@ contract ProtocolConfigTest {
         uint256 proposalId,
         string calldata softwareVersion,
         ChainUpgradeWindow[] calldata chainUpgradeWindows,
-        uint64 gwStartBlock,
-        uint16 ciphertextVersion
+        uint64 gwStartBlock
     ) external {
-        emit CoprocessorUpgradeProposed(
-            proposalId,
-            softwareVersion,
-            chainUpgradeWindows,
-            gwStartBlock,
-            ciphertextVersion
-        );
+        emit CoprocessorUpgradeProposed(proposalId, softwareVersion, chainUpgradeWindows, gwStartBlock);
     }
 }

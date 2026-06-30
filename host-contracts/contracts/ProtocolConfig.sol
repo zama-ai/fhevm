@@ -515,8 +515,7 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         uint256 proposalId,
         string calldata softwareVersion,
         ChainUpgradeWindow[] calldata chainUpgradeWindows,
-        uint64 gwStartBlock,
-        uint16 ciphertextVersion
+        uint64 gwStartBlock
     ) external virtual onlyACLOwner {
         if (proposalId == 0) {
             revert InvalidProposalId();
@@ -529,10 +528,6 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         }
         if (gwStartBlock == 0) {
             revert ZeroGwStartBlock();
-        }
-        // Off-chain stores `ciphertext_version` as SMALLINT (int16); reject values that would overflow.
-        if (ciphertextVersion > uint16(type(int16).max)) {
-            revert CiphertextVersionTooLarge(ciphertextVersion);
         }
 
         for (uint256 i = 0; i < chainUpgradeWindows.length; i++) {
@@ -550,13 +545,7 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
             }
         }
 
-        emit CoprocessorUpgradeProposed(
-            proposalId,
-            softwareVersion,
-            chainUpgradeWindows,
-            gwStartBlock,
-            ciphertextVersion
-        );
+        emit CoprocessorUpgradeProposed(proposalId, softwareVersion, chainUpgradeWindows, gwStartBlock);
     }
 
     /// @inheritdoc IProtocolConfig

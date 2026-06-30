@@ -2716,10 +2716,6 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         return 8421337;
     }
 
-    function _defaultCiphertextVersion() internal pure returns (uint16) {
-        return 1;
-    }
-
     function _defaultProposalId() internal pure returns (uint256) {
         return 1;
     }
@@ -2732,15 +2728,9 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         uint256 proposalId = _defaultProposalId();
 
         vm.expectEmit(true, false, false, true, address(protocolConfig));
-        emit IProtocolConfig.CoprocessorUpgradeProposed(
-            proposalId,
-            version,
-            windows,
-            gwStart,
-            _defaultCiphertextVersion()
-        );
+        emit IProtocolConfig.CoprocessorUpgradeProposed(proposalId, version, windows, gwStart);
         vm.prank(owner);
-        protocolConfig.proposeCoprocessorUpgrade(proposalId, version, windows, gwStart, _defaultCiphertextVersion());
+        protocolConfig.proposeCoprocessorUpgrade(proposalId, version, windows, gwStart);
     }
 
     function test_proposeCoprocessorUpgrade_multiChain() public {
@@ -2751,15 +2741,9 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         uint256 proposalId = _defaultProposalId();
 
         vm.expectEmit(true, false, false, true, address(protocolConfig));
-        emit IProtocolConfig.CoprocessorUpgradeProposed(
-            proposalId,
-            version,
-            windows,
-            gwStart,
-            _defaultCiphertextVersion()
-        );
+        emit IProtocolConfig.CoprocessorUpgradeProposed(proposalId, version, windows, gwStart);
         vm.prank(owner);
-        protocolConfig.proposeCoprocessorUpgrade(proposalId, version, windows, gwStart, _defaultCiphertextVersion());
+        protocolConfig.proposeCoprocessorUpgrade(proposalId, version, windows, gwStart);
     }
 
     function test_revertCoprocessor_InvalidProposalId() public {
@@ -2770,8 +2754,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
             0,
             _defaultSoftwareVersion(),
             _makeChainUpgradeWindows(1),
-            _defaultGwStartBlock(),
-            _defaultCiphertextVersion()
+            _defaultGwStartBlock()
         );
     }
 
@@ -2783,8 +2766,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
             _defaultProposalId(),
             "",
             _makeChainUpgradeWindows(1),
-            _defaultGwStartBlock(),
-            _defaultCiphertextVersion()
+            _defaultGwStartBlock()
         );
     }
 
@@ -2797,8 +2779,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
             _defaultProposalId(),
             _defaultSoftwareVersion(),
             windows,
-            _defaultGwStartBlock(),
-            _defaultCiphertextVersion()
+            _defaultGwStartBlock()
         );
     }
 
@@ -2812,8 +2793,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
             _defaultProposalId(),
             _defaultSoftwareVersion(),
             windows,
-            _defaultGwStartBlock(),
-            _defaultCiphertextVersion()
+            _defaultGwStartBlock()
         );
     }
 
@@ -2827,8 +2807,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
             _defaultProposalId(),
             _defaultSoftwareVersion(),
             windows,
-            _defaultGwStartBlock(),
-            _defaultCiphertextVersion()
+            _defaultGwStartBlock()
         );
     }
 
@@ -2850,8 +2829,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
             _defaultProposalId(),
             _defaultSoftwareVersion(),
             windows,
-            _defaultGwStartBlock(),
-            _defaultCiphertextVersion()
+            _defaultGwStartBlock()
         );
     }
 
@@ -2863,22 +2841,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
             _defaultProposalId(),
             _defaultSoftwareVersion(),
             _makeChainUpgradeWindows(1),
-            0,
-            _defaultCiphertextVersion()
-        );
-    }
-
-    function test_revertCoprocessor_CiphertextVersionTooLarge() public {
-        _setupDefault();
-        uint16 tooLarge = uint16(type(int16).max) + 1; // 32768 — overflows int16
-        vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.CiphertextVersionTooLarge.selector, tooLarge));
-        protocolConfig.proposeCoprocessorUpgrade(
-            _defaultProposalId(),
-            _defaultSoftwareVersion(),
-            _makeChainUpgradeWindows(1),
-            _defaultGwStartBlock(),
-            tooLarge
+            0
         );
     }
 
@@ -2892,8 +2855,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
             proposalId,
             _defaultSoftwareVersion(),
             windows,
-            _defaultGwStartBlock(),
-            _defaultCiphertextVersion()
+            _defaultGwStartBlock()
         );
 
         // Uniqueness is the caller's responsibility — contract does not enforce.
@@ -2902,16 +2864,14 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
             proposalId,
             _defaultSoftwareVersion(),
             windows,
-            _defaultGwStartBlock(),
-            _defaultCiphertextVersion()
+            _defaultGwStartBlock()
         );
         vm.prank(owner);
         protocolConfig.proposeCoprocessorUpgrade(
             proposalId,
             _defaultSoftwareVersion(),
             windows,
-            _defaultGwStartBlock(),
-            _defaultCiphertextVersion()
+            _defaultGwStartBlock()
         );
     }
 
@@ -2924,16 +2884,14 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
             proposalId,
             _defaultSoftwareVersion(),
             _makeChainUpgradeWindows(1),
-            _defaultGwStartBlock(),
-            _defaultCiphertextVersion()
+            _defaultGwStartBlock()
         );
         vm.prank(owner);
         protocolConfig.proposeCoprocessorUpgrade(
             proposalId,
             _defaultSoftwareVersion(),
             _makeChainUpgradeWindows(1),
-            _defaultGwStartBlock(),
-            _defaultCiphertextVersion()
+            _defaultGwStartBlock()
         );
     }
 
@@ -2942,30 +2900,12 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         ChainUpgradeWindow[] memory windows = _makeChainUpgradeWindows(1);
 
         vm.prank(owner);
-        protocolConfig.proposeCoprocessorUpgrade(
-            1,
-            _defaultSoftwareVersion(),
-            windows,
-            _defaultGwStartBlock(),
-            _defaultCiphertextVersion()
-        );
+        protocolConfig.proposeCoprocessorUpgrade(1, _defaultSoftwareVersion(), windows, _defaultGwStartBlock());
 
         vm.expectEmit(true, false, false, true, address(protocolConfig));
-        emit IProtocolConfig.CoprocessorUpgradeProposed(
-            2,
-            _defaultSoftwareVersion(),
-            windows,
-            _defaultGwStartBlock(),
-            _defaultCiphertextVersion()
-        );
+        emit IProtocolConfig.CoprocessorUpgradeProposed(2, _defaultSoftwareVersion(), windows, _defaultGwStartBlock());
         vm.prank(owner);
-        protocolConfig.proposeCoprocessorUpgrade(
-            2,
-            _defaultSoftwareVersion(),
-            windows,
-            _defaultGwStartBlock(),
-            _defaultCiphertextVersion()
-        );
+        protocolConfig.proposeCoprocessorUpgrade(2, _defaultSoftwareVersion(), windows, _defaultGwStartBlock());
     }
 
     function test_revertProposeCoprocessorUpgradeNotOwner() public {
@@ -2976,8 +2916,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
             _defaultProposalId(),
             _defaultSoftwareVersion(),
             _makeChainUpgradeWindows(1),
-            _defaultGwStartBlock(),
-            _defaultCiphertextVersion()
+            _defaultGwStartBlock()
         );
     }
 }

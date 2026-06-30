@@ -162,14 +162,12 @@ interface IProtocolConfig {
      * @param softwareVersion The coprocessor software version for the proposal.
      * @param chainUpgradeWindows The per-host-chain replay windows for the upgrade.
      * @param gwStartBlock The Gateway block at which GCS's gateway-listener resumes from.
-     * @param ciphertextVersion The ciphertext version the new software writes.
      */
     event CoprocessorUpgradeProposed(
         uint256 indexed proposalId,
         string softwareVersion,
         ChainUpgradeWindow[] chainUpgradeWindows,
-        uint64 gwStartBlock,
-        uint16 ciphertextVersion
+        uint64 gwStartBlock
     );
 
     /**
@@ -352,10 +350,6 @@ interface IProtocolConfig {
     /// @notice The `gwStartBlock` argument is zero.
     error ZeroGwStartBlock();
 
-    /// @notice `ciphertextVersion` exceeds the off-chain `int16` storage range.
-    /// @param ciphertextVersion The rejected value.
-    error CiphertextVersionTooLarge(uint16 ciphertextVersion);
-
     /// @notice The supplied `proposalId` is zero.
     error InvalidProposalId();
 
@@ -429,14 +423,12 @@ interface IProtocolConfig {
      * @param softwareVersion The coprocessor software version.
      * @param chainUpgradeWindows The per-host-chain replay windows.
      * @param gwStartBlock The Gateway block to resume from.
-     * @param ciphertextVersion The ciphertext version the new software writes.
      */
     function proposeCoprocessorUpgrade(
         uint256 proposalId,
         string calldata softwareVersion,
         ChainUpgradeWindow[] calldata chainUpgradeWindows,
-        uint64 gwStartBlock,
-        uint16 ciphertextVersion
+        uint64 gwStartBlock
     ) external;
 
     /**
