@@ -1615,10 +1615,24 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         protocolConfig.defineNewEpochForCurrentKmsContext();
         (uint256 completedKeyId, uint256 completedCrsId) = _completeKmsGenerationMaterial();
 
-        _confirmEpochWithMaterial(KMS_CONTEXT_COUNTER_BASE + 1, epochId, kmsPk0, kmsTxSender0, completedKeyId, completedCrsId);
+        _confirmEpochWithMaterial(
+            KMS_CONTEXT_COUNTER_BASE + 1,
+            epochId,
+            kmsPk0,
+            kmsTxSender0,
+            completedKeyId,
+            completedCrsId
+        );
 
         vm.recordLogs();
-        _confirmEpochWithMaterial(KMS_CONTEXT_COUNTER_BASE + 1, epochId, kmsPk1, kmsTxSender1, completedKeyId, completedCrsId);
+        _confirmEpochWithMaterial(
+            KMS_CONTEXT_COUNTER_BASE + 1,
+            epochId,
+            kmsPk1,
+            kmsTxSender1,
+            completedKeyId,
+            completedCrsId
+        );
         Vm.Log[] memory logs = vm.getRecordedLogs();
 
         uint256 activateLogIndex = type(uint256).max;
