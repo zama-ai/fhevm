@@ -14,26 +14,17 @@ migration Job racing the service Deployments. This runbook closes both.
 1. **Before** `helm upgrade`, run the init image once with
    `RUN_BLOCK_SCOPE_WAVE1_PREREQUISITES=true` to build the ancestry index
    `CONCURRENTLY` against the live DB.
-2. **Then run the migration to completion** (the init image in its normal mode)
-   against the live DB, still **before** rolling the new binaries. This is the
-   migration-vs-binary gate: the migration Job is NOT a Helm hook (see note
-   below), so the binaries must not start against an un-migrated schema.
-3. Run `helm upgrade` to roll the new binaries. The in-migration index build
-   no-ops because step 1 already built it.
-4. Verify the index is `valid`, the migration ran, and watch DB write load.
+2. Run `helm upgrade`. The db-migration Job is a `pre-install,pre-upgrade`
+   hook, so Helm runs it to completion before rolling the service Deployments.
+   The in-migration index build no-ops because step 1 already built it.
+3. Verify the index is `valid`, the migration hook completed, and watch DB
+   write load.
 
-> **Why not a Helm hook?** Gating the migration Job as a `pre-upgrade` hook would
-> order it before the service Deployments, but also before the non-hook ConfigMaps
-> it mounts (RDS CA cert) / references (ACL `valueFrom`), breaking fresh installs
-> with IAM/TLS. Enabling the hook safely requires making those ConfigMaps hooks
-> too (validated with a real `helm install`/`upgrade`).
->
-> As a backstop, the host-listener now applies an **in-code schema guard**
+> The host-listener also applies an **in-code schema guard**
 > (`Database::wait_for_branch_schema`): if a binary starts before the migration
 > has applied, it waits (bounded) for the branch schema instead of crash-looping
-> on `*_branch` / `parent_hash` writes. Steps 2–3 (migrate-first) remain the
-> recommended ordering; the guard just makes an out-of-order start degrade
-> gracefully rather than fail hard.
+> on `*_branch` / `parent_hash` writes. The Helm hook is still the primary
+> migration-vs-binary gate.
 
 ## Why the pre-step is required
 
@@ -80,8 +71,10 @@ that starts before the schema exists would otherwise fail its `*_branch` / `pare
 writes).
 
 Hook ordering is by **`helm.sh/hook-weight` only** (Helm has no `hook-needs`). The migration
-Job uses weight `5`; ensure any config-setup hook it depends on (DB URL / secrets) uses a
-**lower** weight so it runs first.
+Job uses weight `5`; ensure any hook-rendered resource it depends on (DB URL / secrets /
+ConfigMaps mounted by the Job) uses a **lower** weight so it runs first. Non-hook resources
+are not created before pre-install/pre-upgrade hooks, so fresh installs must provide those
+dependencies out of band or render them as earlier hooks.
 
 The trigger-attach migrations (`20260610130300`, `20260610145100`) set
 `SET LOCAL lock_timeout = '3s'`, so a contended `CREATE TRIGGER` on the hot `allowed_handles`
