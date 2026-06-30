@@ -219,9 +219,7 @@ task(
 
     const app = await ethers.getContractAt('HandlesListConfidentialOApp', appAddress);
 
-    // The app no longer persists the received arrays on-chain (it only commits a single
-    // hash per delivery via `resultBridgedHash[guid]` to keep lzCompose gas low). The
-    // destination handles are recovered off-chain from the emitted event instead.
+    // The destination handles are recovered off-chain from the emitted event.
     const latest = await ethers.provider.getBlockNumber();
     const fromBlock: number =
       taskArguments.fromBlock !== undefined ? taskArguments.fromBlock : Math.max(0, latest - 50_000);

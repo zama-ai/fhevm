@@ -403,7 +403,7 @@ destination chain, `onConfidentialBridgeReceived(...)` grants the owner decrypti
 the derived destination handles and emits them in an `HandlesListConfidentialOAppReceived` event.
 
 Because the values are generated on-chain, there is **no `mint` / `mock:encrypt`
-step**: the only handle input is `countHandles`. The same deployment embeds both
+step**: the only handle-related input is `countHandles`. The same deployment embeds both
 the send and receive paths, so a single instance per chain bridges in both
 directions.
 
