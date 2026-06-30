@@ -101,6 +101,16 @@ export const runKmsContextSwitchProfile = async (state: State, runDecryption: De
   console.log(
     `[kms-context-switch] context switched: contextId ${baseline.contextId} -> ${afterSwitch.contextId} (epochId=${afterSwitch.epochId})`,
   );
+
+  // The gateway keeps its own KMS-context registry; register the new context on GatewayConfig so its
+  // Decryption contract accepts decryptions tagged with it (else it reverts InvalidKmsContext).
+  console.log(`[kms-context-switch] registering context ${afterSwitch.contextId} on the gateway (updateKmsContext)…`);
+  await stepComposeTask("gateway-sc", state, ["gateway-sc-context-switch"], {
+    noDeps: true,
+    env: { KMS_CONTEXT_ID: afterSwitch.contextId.toString() },
+  });
+  await waitForContainer("gateway-sc-context-switch", "complete");
+
   if (!(await runDecryption(`kms-context-switch: decrypt after context switch (contextId=${afterSwitch.contextId})`))) {
     throw new PreflightError(
       `kms-context-switch: user-decryption failed after the context switch to contextId=${afterSwitch.contextId}`,
