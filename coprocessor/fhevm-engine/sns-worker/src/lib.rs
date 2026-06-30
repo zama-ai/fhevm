@@ -32,7 +32,6 @@ use fhevm_engine_common::{
     healthz_server::{self},
     metrics_server,
     pg_pool::{PostgresPoolManager, ServiceError},
-    tfhe_ops::current_ciphertext_version,
     types::{CoproSigner, FhevmError, SignerType},
     utils::{to_hex, DatabaseURL},
     versioning::{run_stack_version_listener, StackMode},
@@ -311,14 +310,13 @@ impl HandleItem {
         if self.ct128.is_empty() {
             sqlx::query(
                 "INSERT INTO ciphertext_digest
-                    (host_chain_id, key_id_gw, handle, transaction_id, ciphertext_version)
-                VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING",
+                    (host_chain_id, key_id_gw, handle, transaction_id)
+                VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
             )
             .bind(self.host_chain_id.as_i64())
             .bind(&self.key_id_gw)
             .bind(&self.handle)
             .bind(&self.transaction_id)
-            .bind(current_ciphertext_version())
             .execute(db_txn.as_mut())
             .await?;
         } else if self.ct128.format() == Ciphertext128Format::Unknown {
@@ -331,9 +329,9 @@ impl HandleItem {
             let ct128_format: i16 = self.ct128.format().into();
             sqlx::query(
                 "INSERT INTO ciphertext_digest (
-                    host_chain_id, key_id_gw, handle, transaction_id, ciphertext128_format, ciphertext_version
+                    host_chain_id, key_id_gw, handle, transaction_id, ciphertext128_format
                 )
-                VALUES ($1, $2, $3, $4, $5, $6)
+                VALUES ($1, $2, $3, $4, $5)
                 ON CONFLICT (handle) DO UPDATE
                 SET ciphertext128_format = EXCLUDED.ciphertext128_format
                 WHERE ciphertext_digest.ciphertext128 IS NULL",
@@ -343,7 +341,6 @@ impl HandleItem {
             .bind(&self.handle)
             .bind(&self.transaction_id)
             .bind(ct128_format)
-            .bind(current_ciphertext_version())
             .execute(db_txn.as_mut())
             .await?;
         }

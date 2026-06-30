@@ -19,7 +19,6 @@ use fhevm_engine_common::healthz_server::{HealthCheckService, HealthStatus, Vers
 use fhevm_engine_common::pg_pool::PostgresPoolManager;
 use fhevm_engine_common::pg_pool::ServiceError;
 use fhevm_engine_common::telemetry;
-use fhevm_engine_common::tfhe_ops::current_ciphertext_version;
 use fhevm_engine_common::types::{get_ct_type, SupportedFheCiphertexts};
 use fhevm_engine_common::utils::to_hex;
 use fhevm_engine_common::versioning::StackMode;
@@ -327,9 +326,7 @@ pub async fn garbage_collect(pool: &PgPool, limit: u32) -> Result<(), ExecutionE
         "
         SELECT COUNT(*)::BIGINT
         FROM ciphertexts128
-        WHERE ciphertext_version = $1
-        ",
-        current_ciphertext_version()
+        "
     )
     .fetch_one(pool)
     .await?;
@@ -356,7 +353,6 @@ pub async fn garbage_collect(pool: &PgPool, limit: u32) -> Result<(), ExecutionE
             ON d.handle = c.handle
             WHERE d.ciphertext IS NOT NULL
               AND d.ciphertext128 IS NOT NULL
-              AND c.ciphertext_version = $2
             FOR UPDATE OF c SKIP LOCKED
             LIMIT $1
         )
@@ -366,7 +362,6 @@ pub async fn garbage_collect(pool: &PgPool, limit: u32) -> Result<(), ExecutionE
         WHERE c.handle = r.handle;
         ",
                 limit as i32,
-                current_ciphertext_version(),
             )
             .execute(pool)
             .await?
@@ -753,13 +748,11 @@ async fn update_ciphertext128(
                 "
                 INSERT INTO ciphertexts128 (
                         handle,
-                        ciphertext,
-                        ciphertext_version
+                        ciphertext
                 )
-                VALUES ($1, $2, $3)",
+                VALUES ($1, $2)",
                 task.handle,
                 ciphertext128,
-                current_ciphertext_version(),
             )
             .execute(db_txn.as_mut())
             .instrument(persist_span.clone())

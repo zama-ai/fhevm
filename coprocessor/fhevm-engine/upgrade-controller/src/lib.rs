@@ -112,10 +112,6 @@ pub struct UpgradeActivatedPayload {
     pub start_block: i64,
     pub end_block: i64,
     pub gw_start_block: i64,
-    /// Ciphertext version the upgrade target uses. Persisted on the
-    /// `upgrade_state` row and later promoted into the `versioning` singleton
-    /// row by `execute_cutover` inside the exclusive advisory-lock tx.
-    pub ciphertext_version: i16,
     /// Optional — included for forward-compat with the schema's `version` column.
     #[serde(default)]
     pub version: Option<String>,
@@ -192,7 +188,6 @@ pub async fn handle_upgrade_activated(
         start_block = payload.start_block,
         end_block = payload.end_block,
         gw_start_block = payload.gw_start_block,
-        ciphertext_version = payload.ciphertext_version,
         "event_upgrade_activated received — inserting upgrade_state row"
     );
 
@@ -200,9 +195,9 @@ pub async fn handle_upgrade_activated(
         r#"
         INSERT INTO upgrade_state (
             stack_role, state, status, proposal_id, version,
-            start_block, end_block, gw_start_block, ciphertext_version, updated_at
+            start_block, end_block, gw_start_block, updated_at
         )
-        VALUES ($1, 'UpgradeActivated', 'in_progress', $2, $3, $4, $5, $6, $7, NOW())
+        VALUES ($1, 'UpgradeActivated', 'in_progress', $2, $3, $4, $5, $6, NOW())
         ON CONFLICT (stack_role) DO UPDATE
         SET state              = EXCLUDED.state,
             status             = EXCLUDED.status,
@@ -211,7 +206,6 @@ pub async fn handle_upgrade_activated(
             start_block        = EXCLUDED.start_block,
             end_block          = EXCLUDED.end_block,
             gw_start_block     = EXCLUDED.gw_start_block,
-            ciphertext_version = EXCLUDED.ciphertext_version,
             last_error         = NULL,
             updated_at         = NOW()
         WHERE upgrade_state.state IN ('LIVE', 'PAUSED')
@@ -225,7 +219,6 @@ pub async fn handle_upgrade_activated(
     .bind(payload.start_block)
     .bind(payload.end_block)
     .bind(payload.gw_start_block)
-    .bind(payload.ciphertext_version)
     .execute(pool)
     .await?;
 
@@ -333,10 +326,7 @@ pub async fn handle_upgrade_activated(
 ///
 /// `INCLUDING ALL` copies defaults, identity, constraints (incl. PKs/uniques),
 /// generated columns, indexes, statistics, storage, comments, and compression
-/// — but NOT triggers, rules, foreign keys, or ownership. That's by design:
-/// the `enforce_ciphertext_version` trigger on `public.ciphertexts` does NOT
-/// propagate to `gcs.ciphertexts`, which lets the GCS worker write V_new
-/// while `versioning` still reads V_old.
+/// — but NOT triggers, rules, foreign keys, or ownership.
 ///
 /// To add a new table to the dry-run, list it here.
 pub const GCS_DUPLICATED_TABLES: &[&str] = &[
@@ -800,34 +790,30 @@ async fn transition_to_gw_dry_run_started(pool: &Pool<Postgres>) -> Result<(), E
 /// until cutover commits.
 ///
 /// Sequence:
-///   1. Read `start_block` and `ciphertext_version` from the GCS upgrade row.
-///   2. DELETE post-snapshot BCS rows from `public.ciphertexts` (matching
-///      the old version still in `versioning`).
-///   3. UPDATE `versioning` to the new ciphertext_version.
-///   4. Merge `gcs.ciphertexts` → `public.ciphertexts` (re-stamping the new
-///      ciphertext_version so the `enforce_ciphertext_version` trigger accepts
-///      the rows).
-///   5. DROP SCHEMA gcs CASCADE.
-///   6. Mark GCS row LIVE/completed and BCS row PAUSED/completed.
+///   1. Read `start_block` and `version` from the GCS upgrade row.
+///   2. UPDATE `versioning` to the new stack_version.
+///   3. Merge `gcs.ciphertexts` → `public.ciphertexts`.
+///   4. DROP SCHEMA gcs CASCADE.
+///   5. Mark GCS row LIVE/completed and BCS row PAUSED/completed.
 ///
 /// After commit, any BCS write tx that was waiting on the shared lock
 /// acquires it, re-reads its FSM state, sees `PAUSED`, and exits cleanly.
 pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
     info!("execute_cutover() starting");
 
-    let row: Option<(Option<i64>, Option<i16>, Option<String>)> = sqlx::query_as(
-        "SELECT start_block, ciphertext_version, version
+    let row: Option<(Option<i64>, Option<String>)> = sqlx::query_as(
+        "SELECT start_block, version
          FROM upgrade_state
          WHERE stack_role = 'GCS'",
     )
     .fetch_optional(pool)
     .await?;
 
-    let (_start_block, new_ciphertext_version, stack_version) = match row {
-        Some((Some(s), Some(v), version)) => (s, v, version.unwrap_or_default()),
-        Some((s, v, _)) => {
+    let (_start_block, stack_version) = match row {
+        Some((Some(s), version)) => (s, version.unwrap_or_default()),
+        Some((s, _)) => {
             return Err(Error::Payload(format!(
-                "GCS upgrade_state row is missing required fields: start_block={s:?}, ciphertext_version={v:?}"
+                "GCS upgrade_state row is missing required fields: start_block={s:?}"
             )));
         }
         None => {
@@ -848,58 +834,32 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
         "cutover acquired exclusive advisory lock"
     );
 
-    // 0. Refuse a no-op upgrade. If `new_ciphertext_version` equals the current
-    //    `versioning.ciphertext_version`, the parent PK (handle,
-    //    ciphertext_version) is shared between staging and parent rows for the
-    //    same handle, and the merge would collide. A real upgrade always bumps
-    //    the version; this guard makes the failure mode loud rather than
-    //    silently overwriting parent rows.
-    let (current_ciphertext_version,): (i16,) =
-        sqlx::query_as("SELECT ciphertext_version FROM versioning WHERE singleton = TRUE")
-            .fetch_one(&mut *tx)
-            .await?;
-    if new_ciphertext_version == current_ciphertext_version {
-        return Err(Error::Payload(format!(
-            "refusing cutover: new ciphertext_version ({new_ciphertext_version}) equals \
-             current versioning.ciphertext_version — upgrades must bump the version"
-        )));
-    }
-
-    // 2. Promote the new version BEFORE inserting gcs rows so the
-    //    enforce_ciphertext_version() trigger lets the new-version rows through.
+    // 2. Promote the new stack version inside the cutover tx. This is the
+    //    source of truth read by `resolve_gcs_mode` / `reconcile_stack_mode`:
+    //    the green stack becomes live and the retired blue stack pauses.
     sqlx::query(
         "UPDATE versioning
-         SET ciphertext_version = $1, stack_version = $2, updated_at = NOW()
+         SET stack_version = $1, updated_at = NOW()
          WHERE singleton = TRUE",
     )
-    .bind(new_ciphertext_version)
     .bind(&stack_version)
     .execute(&mut *tx)
     .await?;
-    info!(
-        ciphertext_version = new_ciphertext_version,
-        stack_version, "versioning row updated"
-    );
+    info!(stack_version, "versioning row updated");
 
     info!(
-        ciphertext_version = new_ciphertext_version,
-        stack_version, "cutover: merging ciphertexts from gcs schema into public"
+        stack_version,
+        "cutover: merging ciphertexts from gcs schema into public"
     );
 
-    // 4. Merge gcs.ciphertexts → public.ciphertexts. The SELECT re-stamps
-    //    `ciphertext_version` with the upgrade target so the
-    //    `enforce_ciphertext_version` trigger accepts the rows regardless of
-    //    what the GCS worker binary's `current_ciphertext_version()` was at
-    //    write time — the `versioning` singleton (updated above) is the source
-    //    of truth, not the worker.
-    //
-    //    `ON CONFLICT DO UPDATE` lets the GCS rows win on PK collisions: GCS is
-    //    the canonical writer for its window.
+    // 3. Merge gcs.ciphertexts → public.ciphertexts. `ON CONFLICT DO UPDATE`
+    //    lets the GCS rows win on PK collisions: GCS is the canonical writer for
+    //    its window.
     let merge_sql = format!(
         "INSERT INTO public.ciphertexts
              (tenant_id, handle, ciphertext, ciphertext_version, ciphertext_type,
               input_blob_hash, input_blob_index, created_at, ciphertext128, is_input)
-         SELECT tenant_id, handle, ciphertext, $1::smallint, ciphertext_type,
+         SELECT tenant_id, handle, ciphertext, ciphertext_version, ciphertext_type,
                 input_blob_hash, input_blob_index, created_at, ciphertext128, is_input
          FROM {GCS_SCHEMA_QUOTED}.ciphertexts
          ON CONFLICT (handle, ciphertext_version) DO UPDATE
@@ -911,65 +871,54 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
              ciphertext128    = EXCLUDED.ciphertext128,
              is_input         = EXCLUDED.is_input"
     );
-    let merged = sqlx::query(&merge_sql)
-        .bind(new_ciphertext_version)
-        .execute(&mut *tx)
-        .await?;
+    let merged = sqlx::query(&merge_sql).execute(&mut *tx).await?;
     info!(
         merged = merged.rows_affected(),
-        ciphertext_version = new_ciphertext_version,
         "merged gcs.ciphertexts into public.ciphertexts"
     );
 
     info!(
-        ciphertext_version = new_ciphertext_version,
-        stack_version, "cutover: merging ciphertexts128 and digest from gcs schema into public"
+        stack_version,
+        "cutover: merging ciphertexts128 and digest from gcs schema into public"
     );
 
-    // 4b. Merge gcs.ciphertexts128 → public.ciphertexts128. These are the
+    // 3b. Merge gcs.ciphertexts128 → public.ciphertexts128. These are the
     //     expensive squashed-noise (PBS) outputs the green worker computed
-    //     during the dry-run. They are re-stamped with the new
-    //     ciphertext_version and the GCS rows win on PK collisions (GCS is the
+    //     during the dry-run. The GCS rows win on PK collisions (GCS is the
     //     canonical writer for its window). The now-live green uploader reads
     //     these bytes to (re)upload ct128 to S3 after cutover.
     let merge_ct128_sql = format!(
         "INSERT INTO public.ciphertexts128
-             (tenant_id, handle, ciphertext, created_at, ciphertext_version)
-         SELECT tenant_id, handle, ciphertext, created_at, $1::smallint
+             (tenant_id, handle, ciphertext, created_at)
+         SELECT tenant_id, handle, ciphertext, created_at
          FROM {GCS_SCHEMA_QUOTED}.ciphertexts128
          ON CONFLICT (tenant_id, handle) DO UPDATE
-         SET ciphertext         = EXCLUDED.ciphertext,
-             created_at         = EXCLUDED.created_at,
-             ciphertext_version = EXCLUDED.ciphertext_version"
+         SET ciphertext = EXCLUDED.ciphertext,
+             created_at = EXCLUDED.created_at"
     );
-    let merged_ct128 = sqlx::query(&merge_ct128_sql)
-        .bind(new_ciphertext_version)
-        .execute(&mut *tx)
-        .await?;
+    let merged_ct128 = sqlx::query(&merge_ct128_sql).execute(&mut *tx).await?;
     info!(
         merged = merged_ct128.rows_affected(),
-        ciphertext_version = new_ciphertext_version,
         "merged gcs.ciphertexts128 into public.ciphertexts128"
     );
 
     info!(
-        ciphertext_version = new_ciphertext_version,
-        stack_version, "cutover: merging ciphertext_digest from gcs schema into public"
+        stack_version,
+        "cutover: merging ciphertext_digest from gcs schema into public"
     );
 
-    // 4c. Merge gcs.ciphertext_digest → public.ciphertext_digest, RE-ARMED for
-    //     re-upload: both digests are NULLed and the row is stamped with the new
-    //     ciphertext_version. The now-live green uploader's resubmit loop keys
-    //     off NULL digests (scoped to its version) and re-uploads ct64+ct128,
+    // 3c. Merge gcs.ciphertext_digest → public.ciphertext_digest, RE-ARMED for
+    //     re-upload: both digests are NULLed. The now-live green uploader's
+    //     resubmit loop keys off NULL digests and re-uploads ct64+ct128,
     //     overwriting the blue stack's S3 objects. `txn_is_sent` is left
     //     untouched on conflict — this backfill is scoped to S3 only and does
     //     not re-drive the on-chain transaction-sender for already-sent handles.
     let merge_digest_sql = format!(
         "INSERT INTO public.ciphertext_digest
              (tenant_id, handle, host_chain_id, key_id_gw, transaction_id,
-              ciphertext, ciphertext128, ciphertext128_format, ciphertext_version)
+              ciphertext, ciphertext128, ciphertext128_format)
          SELECT tenant_id, handle, host_chain_id, key_id_gw, transaction_id,
-                NULL, NULL, ciphertext128_format, $1::smallint
+                NULL, NULL, ciphertext128_format
          FROM {GCS_SCHEMA_QUOTED}.ciphertext_digest
          ON CONFLICT (handle) DO UPDATE
          SET host_chain_id        = EXCLUDED.host_chain_id,
@@ -977,16 +926,11 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
              transaction_id       = EXCLUDED.transaction_id,
              ciphertext           = NULL,
              ciphertext128        = NULL,
-             ciphertext128_format = EXCLUDED.ciphertext128_format,
-             ciphertext_version   = EXCLUDED.ciphertext_version"
+             ciphertext128_format = EXCLUDED.ciphertext128_format"
     );
-    let merged_digest = sqlx::query(&merge_digest_sql)
-        .bind(new_ciphertext_version)
-        .execute(&mut *tx)
-        .await?;
+    let merged_digest = sqlx::query(&merge_digest_sql).execute(&mut *tx).await?;
     info!(
         merged = merged_digest.rows_affected(),
-        ciphertext_version = new_ciphertext_version,
         "merged gcs.ciphertext_digest into public.ciphertext_digest (re-armed for re-upload)"
     );
 
@@ -1021,7 +965,6 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
     //    into no-op mode).
     let payload = serde_json::json!({
         "new_version_number": stack_version,
-        "ciphertext_version": new_ciphertext_version,
     })
     .to_string();
     sqlx::query("SELECT pg_notify($1, $2)")
@@ -1033,9 +976,7 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
     tx.commit().await?;
     info!(
         channel = EVENT_STACK_VERSION_UPGRADED,
-        stack_version,
-        ciphertext_version = new_ciphertext_version,
-        "execute_cutover() committed; stack-version-upgraded notify delivered"
+        stack_version, "execute_cutover() committed; stack-version-upgraded notify delivered"
     );
     Ok(())
 }
@@ -1242,8 +1183,7 @@ mod tests {
             "chain_id": 12345,
             "start_block": 100,
             "end_block": 200,
-            "gw_start_block": 150,
-            "ciphertext_version": 1
+            "gw_start_block": 150
         }"#;
         let p: UpgradeActivatedPayload = serde_json::from_str(json).unwrap();
         assert_eq!(p.proposal_id, "0x01ab");
@@ -1251,7 +1191,6 @@ mod tests {
         assert_eq!(p.start_block, 100);
         assert_eq!(p.end_block, 200);
         assert_eq!(p.gw_start_block, 150);
-        assert_eq!(p.ciphertext_version, 1);
         assert!(p.version.is_none());
     }
 
@@ -1298,9 +1237,9 @@ mod tests {
             r#"
             INSERT INTO upgrade_state (
                 stack_role, state, status, proposal_id, version,
-                start_block, end_block, gw_start_block, ciphertext_version, updated_at
+                start_block, end_block, gw_start_block, updated_at
             )
-            VALUES ('BCS', 'PAUSED', 'completed', $1, 'v1', 100, 200, 1, 1, NOW())
+            VALUES ('BCS', 'PAUSED', 'completed', $1, 'v1', 100, 200, 1, NOW())
             ON CONFLICT (stack_role) DO UPDATE
             SET state = EXCLUDED.state, status = EXCLUDED.status,
                 proposal_id = EXCLUDED.proposal_id, updated_at = NOW()
@@ -1317,7 +1256,6 @@ mod tests {
             "start_block":        100_i64,
             "end_block":          200_i64,
             "gw_start_block":     1_i64,
-            "ciphertext_version": 1_i16,
             "version":            "v2",
         })
         .to_string();
@@ -1369,19 +1307,18 @@ mod tests {
             .await
             .expect("pool");
 
-        // `versioning` is seeded at ciphertext_version 0 by migration; the GCS
-        // row drives the cutover to version 1 (a real upgrade always bumps it).
+        // The GCS row's `version` drives the cutover's stack_version bump.
         sqlx::query(
             r#"
             INSERT INTO upgrade_state (
                 stack_role, state, status, proposal_id, version,
-                start_block, end_block, gw_start_block, ciphertext_version, updated_at
+                start_block, end_block, gw_start_block, updated_at
             )
             VALUES ('GCS', 'UpgradeAuthorized', 'in_progress', $1, 'v0.15',
-                    100, 200, 1, 1, NOW())
+                    100, 200, 1, NOW())
             ON CONFLICT (stack_role) DO UPDATE
             SET state = EXCLUDED.state, status = EXCLUDED.status,
-                ciphertext_version = EXCLUDED.ciphertext_version, updated_at = NOW()
+                version = EXCLUDED.version, updated_at = NOW()
             "#,
         )
         .bind(&[0x02u8][..])
@@ -1394,13 +1331,13 @@ mod tests {
         // The bug surfaced exactly here: a planning-time ON CONFLICT error.
         execute_cutover(&pool).await.expect("cutover succeeds");
 
-        // versioning bumped to the new version inside the cutover tx.
-        let (cv,): (i16,) =
-            sqlx::query_as("SELECT ciphertext_version FROM versioning WHERE singleton = TRUE")
+        // versioning bumped to the new stack version inside the cutover tx.
+        let (sv,): (String,) =
+            sqlx::query_as("SELECT stack_version FROM versioning WHERE singleton = TRUE")
                 .fetch_one(&pool)
                 .await
                 .expect("versioning row");
-        assert_eq!(cv, 1, "cutover should bump versioning.ciphertext_version");
+        assert_eq!(sv, "v0.15", "cutover should bump versioning.stack_version");
 
         // GCS row flipped LIVE and the gcs schema was dropped.
         let row = sqlx::query("SELECT state FROM upgrade_state WHERE stack_role = 'GCS'")

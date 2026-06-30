@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                INSERT INTO ciphertexts128 (\n                        handle,\n                        ciphertext\n                )\n                VALUES ($1, $2)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "70fad3e1d4f3a64354cbeb0e3ca48b8ab08df1e6358ec3e4f757d0d088c76f48"
+}

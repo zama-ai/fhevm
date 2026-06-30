@@ -494,7 +494,6 @@ async fn notify_coprocessor_upgrade_proposed(
         start_block = window.startBlock,
         end_block = window.endBlock,
         gw_start_block = event.gwStartBlock,
-        ciphertext_version = event.ciphertextVersion,
         "Decoded CoprocessorUpgradeProposed, emitting pg_notify('event_upgrade_activated')"
     );
 
@@ -504,7 +503,6 @@ async fn notify_coprocessor_upgrade_proposed(
         "start_block":        window.startBlock as i64,
         "end_block":          window.endBlock as i64,
         "gw_start_block":     event.gwStartBlock as i64,
-        "ciphertext_version": event.ciphertextVersion as i16,
         "version":            &event.softwareVersion,
     });
 

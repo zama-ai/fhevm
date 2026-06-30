@@ -19,7 +19,6 @@ use ciphertext_attestation::{
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::pg_pool::{is_fatal_connection_error, PostgresPoolManager, ServiceError};
 use fhevm_engine_common::telemetry;
-use fhevm_engine_common::tfhe_ops::current_ciphertext_version;
 use fhevm_engine_common::types::CoproSigner;
 use fhevm_engine_common::utils::to_hex;
 use futures::future::join_all;
@@ -968,9 +967,8 @@ async fn fetch_pending_uploads(
         // can validate/rewrite old S3 objects.
         if row_incomplete || should_verify_existing_s3 {
             if let Ok(row) = sqlx::query!(
-                "SELECT ciphertext FROM ciphertexts WHERE handle = $1 AND ciphertext_version = $2;",
+                "SELECT ciphertext FROM ciphertexts WHERE handle = $1;",
                 handle,
-                current_ciphertext_version(),
             )
             .fetch_optional(db_pool)
             .await
@@ -991,9 +989,8 @@ async fn fetch_pending_uploads(
         // by writing the zero ct128 digest after ct64 is verified/uploaded.
         if has_ct128_ciphertext && (row_incomplete || should_verify_existing_s3) {
             if let Ok(row) = sqlx::query!(
-                "SELECT ciphertext FROM ciphertexts128 WHERE handle = $1 AND ciphertext_version = $2;",
+                "SELECT ciphertext FROM ciphertexts128 WHERE handle = $1;",
                 handle,
-                current_ciphertext_version(),
             )
             .fetch_optional(db_pool)
             .await
