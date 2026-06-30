@@ -115,17 +115,25 @@ jobs:
 
       - name: Install fhevm-cli deps (clean-e2e.sh drives ./fhevm-cli)
         working-directory: test-suite/fhevm
-        # test-suite/fhevm depends on `@fhevm/sdk` via a `file:` path (package.json), so bun copies
-        # the built SDK into node_modules and installs its runtime deps (@noble/*,
-        # wasm-feature-detect) right beside it — full-vertical.sh's node clients resolve
-        # @fhevm/sdk/* with no hand-rolled symlink. Assert the exact import loads now, so a
-        # resolution failure surfaces here (seconds) instead of mid-vertical (40+ min in).
-        run: |
-          bun install --frozen-lockfile
-          node --input-type=module -e "await import('@fhevm/sdk/solana'); console.log('@fhevm/sdk/solana imports OK')"
+        # test-suite/fhevm declares `@fhevm/sdk` via a `file:` path (package.json), so bun links the
+        # built SDK into node_modules and installs its runtime deps — no hand-rolled symlink. node
+        # realpath-resolves that link to sdk/js-sdk/src and finds @noble/* by walking up from there.
+        run: bun install --frozen-lockfile
 
       - name: Bring up fresh stack + Solana side (clean-e2e.sh)
         run: bash solana/scripts/poc/clean-e2e.sh
+
+      - name: Ensure @fhevm/sdk runtime deps resolve for full-vertical
+        # clean-e2e's bring-up disturbs the SDK's resolved @noble/* (verified: the import resolves
+        # right after `bun install` above, but fails after clean-e2e — node walks up from the
+        # realpath'd sdk/js-sdk/src, whose node_modules clean-e2e perturbs). Reinstall the SDK's own
+        # runtime deps into src/node_modules — the first dir on that walk-up — right before the
+        # vertical, then assert the exact import loads so a resolution failure surfaces here
+        # (seconds) instead of mid-vertical (40+ min in).
+        run: |
+          ( cd "$GITHUB_WORKSPACE/sdk/js-sdk/src" && npm install --no-save --no-package-lock --install-strategy=shallow --workspaces=false )
+          cd "$GITHUB_WORKSPACE/test-suite/fhevm"
+          node --input-type=module -e "await import('@fhevm/sdk/solana'); console.log('@fhevm/sdk/solana imports OK')"
 
       - name: Drive the Solana decrypt vertical (full-vertical.sh)
         run: bash solana/scripts/poc/full-vertical.sh
