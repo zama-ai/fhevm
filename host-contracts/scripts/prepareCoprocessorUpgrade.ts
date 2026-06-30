@@ -24,7 +24,7 @@ import { ENVIRONMENTS, SUPPORTED_ENVIRONMENTS } from './utils/environments';
 // has no compile-time dependency on the typechain bindings (which require a
 // prior `hardhat compile`). Keep this in sync with IProtocolConfig.sol.
 const PROPOSE_UPGRADE_ABI = [
-  'function proposeCoprocessorUpgrade(uint256 proposalId, string softwareVersion, tuple(uint64 chainId, uint64 startBlock, uint64 endBlock)[] chainUpgradeWindows, uint64 gwStartBlock, uint16 ciphertextVersion)',
+  'function proposeCoprocessorUpgrade(uint256 proposalId, string softwareVersion, tuple(uint64 chainId, uint64 startBlock, uint64 endBlock)[] chainUpgradeWindows, uint64 gwStartBlock)',
 ];
 
 interface GatewayConfig {
@@ -41,7 +41,6 @@ interface ScriptInputs {
   gateway: GatewayConfig;
   proposalId: bigint;
   softwareVersion: string;
-  ciphertextVersion: number;
 }
 
 interface HostReport {
@@ -98,8 +97,7 @@ function printHelp(): void {
 
   console.log(`Usage: prepare-coprocessor-upgrade --environment ENV \\
                                 --start-time ISO --duration D --buffer D \\
-                                --proposal-id N --software-version V \\
-                                --ciphertext-version N
+                                --proposal-id N --software-version V
 
 Computes block windows for \`proposeCoprocessorUpgrade(...)\` across the host
 chains + gateway of the chosen environment, then ABI-encodes ready-to-submit
@@ -117,7 +115,6 @@ Required flags:
                         any chain's startBlock is closer to its tip than this.
   --proposal-id         Positive integer (decimal or 0x-hex). Contract rejects 0.
   --software-version    Coprocessor software version string, e.g. v0.14.0.
-  --ciphertext-version  Integer in [0, 32767] (fits Postgres SMALLINT).
 
 Other:
   -h, --help            Show this message and exit.
@@ -143,7 +140,6 @@ function parseInputs(): ScriptInputs {
       buffer: { type: 'string' },
       'proposal-id': { type: 'string' },
       'software-version': { type: 'string' },
-      'ciphertext-version': { type: 'string' },
       help: { type: 'boolean', short: 'h' },
     },
     strict: true,
@@ -182,11 +178,6 @@ function parseInputs(): ScriptInputs {
 
   const softwareVersion = req('software-version');
 
-  const ciphertextVersion = Number(req('ciphertext-version'));
-  if (!Number.isInteger(ciphertextVersion) || ciphertextVersion < 0 || ciphertextVersion > 0x7fff) {
-    fail('--ciphertext-version must be an integer in [0, 32767]');
-  }
-
   return {
     environment,
     startEpochSeconds,
@@ -196,7 +187,6 @@ function parseInputs(): ScriptInputs {
     gateway,
     proposalId,
     softwareVersion,
-    ciphertextVersion,
   };
 }
 
@@ -284,7 +274,6 @@ function printSummary(
   console.log(`Environment        : ${inputs.environment}`);
   console.log(`Proposal id        : ${inputs.proposalId}`);
   console.log(`Software version   : ${inputs.softwareVersion}`);
-  console.log(`Ciphertext version : ${inputs.ciphertextVersion}`);
   console.log(
     `Evaluation window  : ${isoUtc(inputs.startEpochSeconds)} → ${isoUtc(inputs.startEpochSeconds + inputs.durationSeconds)} (${inputs.durationSeconds}s)`,
   );
@@ -371,7 +360,6 @@ function encodeCalldata(inputs: ScriptInputs, reports: { host: HostReport[]; gat
     inputs.softwareVersion,
     windows,
     BigInt(reports.gateway.result.startBlock),
-    inputs.ciphertextVersion,
   ]);
 }
 
