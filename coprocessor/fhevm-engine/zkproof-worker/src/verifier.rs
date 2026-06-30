@@ -766,18 +766,12 @@ pub(crate) async fn insert_ciphertexts(
         .execute(db_txn.as_mut())
         .await?;
 
-        // User inputs are not derived from any block: store them as
-        // branchless (empty producer_block_hash) so dependency resolution can
-        // fall back to them on every branch and reorg cleanup never deletes
-        // them.
-        //
-        // Wave-1: isolate this branch dual-write in a savepoint so its failure
-        // never aborts the authoritative legacy `ciphertexts` insert above or
-        // poisons the verification transaction.
-        sqlx::query("SAVEPOINT branch_input_ct")
-            .execute(db_txn.as_mut())
-            .await?;
-        let branch_result = sqlx::query!(
+        // User inputs are not derived from any block: store them as branchless
+        // (empty producer_block_hash) so dependency resolution can fall back to
+        // them on every branch and reorg cleanup never deletes them. The branch
+        // row is required for wave-2 consumers, so failures abort the
+        // verification transaction and roll back the legacy insert above.
+        sqlx::query!(
             r#"
             INSERT INTO ciphertexts_branch (
                 handle, ciphertext, ciphertext_version, ciphertext_type,
@@ -794,27 +788,7 @@ pub(crate) async fn insert_ciphertexts(
             BRANCHLESS_PRODUCER_BLOCK_HASH,
         )
         .execute(db_txn.as_mut())
-        .await;
-        match branch_result {
-            Ok(_) => {
-                sqlx::query("RELEASE SAVEPOINT branch_input_ct")
-                    .execute(db_txn.as_mut())
-                    .await?;
-            }
-            Err(err) => {
-                warn!(
-                    handle = ?ct.handle,
-                    error = %err,
-                    "ciphertexts_branch input write failed; rolled back to savepoint, legacy ciphertext preserved"
-                );
-                sqlx::query("ROLLBACK TO SAVEPOINT branch_input_ct")
-                    .execute(db_txn.as_mut())
-                    .await?;
-                sqlx::query("RELEASE SAVEPOINT branch_input_ct")
-                    .execute(db_txn.as_mut())
-                    .await?;
-            }
-        }
+        .await?;
     }
 
     // Notify all workers that new ciphertext is inserted

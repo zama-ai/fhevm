@@ -3893,18 +3893,17 @@ async fn test_acl_branch_rows_keep_acl_block_context(
     Ok(())
 }
 
-/// Wave-1 savepoint isolation: when a branch dual-write fails, the authoritative
-/// legacy write must still commit and the ingest transaction must not be
-/// poisoned. We inject the failure with an always-false CHECK on the branch
+/// Wave-1 branch dual-write strictness: when a required branch producer write
+/// fails, the caller must see the error and roll back the whole ingest
+/// transaction. We inject the failure with an always-false CHECK on the branch
 /// tables the host-listener writes directly (`computations_branch`,
-/// `pbs_computations_branch`). Neither legacy sibling fires a mirror trigger, so
-/// the only writer hitting these tables is the savepoint-isolated dual-write
-/// under test -- a clean injection with no trigger confound.
+/// `pbs_computations_branch`).
 #[tokio::test]
 #[serial(db)]
-async fn test_wave1_branch_write_failure_preserves_legacy_write(
+async fn test_wave1_branch_write_failure_aborts_dual_write_transaction(
 ) -> Result<(), Box<dyn std::error::Error>> {
     use alloy::primitives::Log as EventLog;
+    use fhevm_engine_common::types::AllowEvents;
     use host_listener::contracts::TfheContract;
     use host_listener::contracts::TfheContract::TfheContractEvents;
     use host_listener::database::tfhe_event_propagate::{ClearConst, LogTfhe};
@@ -3919,7 +3918,11 @@ async fn test_wave1_branch_write_failure_preserves_legacy_write(
     let pool = db.pool.read().await.clone();
 
     // producer_block_hash is NOT NULL, so this CHECK rejects every branch row.
-    for table in ["computations_branch", "pbs_computations_branch"] {
+    for table in [
+        "computations_branch",
+        "allowed_handles_branch",
+        "pbs_computations_branch",
+    ] {
         sqlx::query(&format!(
             "ALTER TABLE {table}
              ADD CONSTRAINT wave1_test_force_branch_write_failure
@@ -3958,22 +3961,64 @@ async fn test_wave1_branch_write_failure_preserves_legacy_write(
     };
 
     let mut tx = db.new_transaction().await?;
-    // Each call's branch insert fails the poison CHECK inside its savepoint; the
-    // call must still return Ok and the legacy write must land.
-    db.insert_tfhe_event(&mut tx, &event).await?;
-    db.insert_pbs_computations(
-        &mut tx,
-        &[handle.to_vec()],
-        Some(tx_hash.to_vec()),
-        11,
-        block_hash.as_slice(),
-    )
-    .await?;
-    // If a failed branch write had poisoned the transaction, commit would error.
-    tx.commit().await?;
+    let err = db
+        .insert_tfhe_event(&mut tx, &event)
+        .await
+        .expect_err("poisoned computations_branch write must fail the event");
+    assert!(
+        err.to_string()
+            .contains("wave1_test_force_branch_write_failure"),
+        "unexpected branch-write error: {err}"
+    );
+    tx.rollback().await?;
 
+    let mut tx = db.new_transaction().await?;
+    let err = db
+        .insert_allowed_handle(
+            &mut tx,
+            handle.to_vec(),
+            format!("{caller:#x}"),
+            AllowEvents::AllowedAccount,
+            Some(tx_hash.to_vec()),
+            ProducerBlock::new(block_hash.as_slice(), 11),
+        )
+        .await
+        .expect_err(
+            "poisoned allowed_handles_branch write must fail ACL insert",
+        );
+    assert!(
+        err.to_string()
+            .contains("wave1_test_force_branch_write_failure"),
+        "unexpected branch-write error: {err}"
+    );
+    tx.rollback().await?;
+
+    let mut tx = db.new_transaction().await?;
+    let err = db
+        .insert_pbs_computations(
+            &mut tx,
+            &[handle.to_vec()],
+            Some(tx_hash.to_vec()),
+            11,
+            block_hash.as_slice(),
+        )
+        .await
+        .expect_err(
+            "poisoned pbs_computations_branch write must fail PBS insert",
+        );
+    assert!(
+        err.to_string()
+            .contains("wave1_test_force_branch_write_failure"),
+        "unexpected branch-write error: {err}"
+    );
+    tx.rollback().await?;
+
+    // Rolling back each failed producer transaction leaves neither legacy nor
+    // branch rows. This keeps wave-2 branch state complete instead of silently
+    // accepting legacy-only work.
     for (legacy, key_col) in [
         ("computations", "output_handle"),
+        ("allowed_handles", "handle"),
         ("pbs_computations", "handle"),
     ] {
         let legacy_count: i64 = sqlx::query_scalar(&format!(
@@ -3983,13 +4028,14 @@ async fn test_wave1_branch_write_failure_preserves_legacy_write(
         .fetch_one(&pool)
         .await?;
         assert_eq!(
-            legacy_count, 1,
-            "legacy {legacy} write must survive a failed branch dual-write"
+            legacy_count, 0,
+            "failed branch write must roll back legacy {legacy} writes"
         );
     }
 
     for (branch, key_col) in [
         ("computations_branch", "output_handle"),
+        ("allowed_handles_branch", "handle"),
         ("pbs_computations_branch", "handle"),
     ] {
         let branch_count: i64 = sqlx::query_scalar(&format!(
@@ -4000,7 +4046,7 @@ async fn test_wave1_branch_write_failure_preserves_legacy_write(
         .await?;
         assert_eq!(
             branch_count, 0,
-            "failed branch write to {branch} must have rolled back to the savepoint"
+            "failed branch write to {branch} must leave no branch row"
         );
     }
 
