@@ -214,6 +214,11 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                     .prepare_keygen_request(req)
                     .await
             }
+            ProtocolEventKind::MigrationKeygen(req) => {
+                self.kms_generation_processor
+                    .prepare_migration_keygen_request(req)
+                    .await
+            }
             ProtocolEventKind::Crsgen(req) => {
                 self.kms_generation_processor
                     .prepare_crsgen_request(req)

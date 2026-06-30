@@ -175,7 +175,9 @@ fn prepare_mocks(req: &ProtocolEventKind) -> MockSet {
             ("UserDecrypt", "GetUserDecryptionResult")
         }
         ProtocolEventKind::PrepKeygen(_) => ("KeyGenPreproc", "GetKeyGenPreprocResult"),
-        ProtocolEventKind::Keygen(_) => ("KeyGen", "GetKeyGenResult"),
+        ProtocolEventKind::Keygen(_) | ProtocolEventKind::MigrationKeygen(_) => {
+            ("KeyGen", "GetKeyGenResult")
+        }
         ProtocolEventKind::Crsgen(_) => ("CrsGen", "GetCrsGenResult"),
     };
 

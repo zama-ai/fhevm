@@ -12,7 +12,7 @@ use fhevm_gateway_bindings::decryption::Decryption::{
     UserDecryptionRequest_1 as UserDecryptionRequestV2,
 };
 use fhevm_host_bindings::kms_generation::KMSGeneration::{
-    CrsgenRequest, KeygenRequest, MigrationKeygenRequested, PrepKeygenRequest,
+    CrsgenRequest, KeygenRequest, MigrationKeygenRequest, PrepKeygenRequest,
 };
 use sqlx::{
     PgExecutor, Pool, Postgres,
@@ -27,19 +27,12 @@ use tracing::{debug, info, warn};
 pub async fn publish_batch(
     db_pool: &Pool<Postgres>,
     events: Vec<ProtocolEvent>,
-    migration_keygens: Vec<MigrationKeygenRequested>,
     event_types: &[EventType],
     block_number: u64,
 ) -> anyhow::Result<()> {
     let mut tx = db_pool.begin().await?;
     for event in events {
         publish_event_inner(&mut *tx, event).await?;
-    }
-    // RFC-029: persisted before `update_last_block_polled` so a crash never advances the cursor
-    // past a migration mapping the worker still needs.
-    let now = Utc::now();
-    for migration_keygen in migration_keygens {
-        publish_migration_keygen(&mut *tx, migration_keygen, now).await?;
     }
     update_last_block_polled(&mut *tx, event_types, Some(block_number)).await?;
     tx.commit().await?;
@@ -72,6 +65,9 @@ async fn publish_event_inner<'e>(
         }
         ProtocolEventKind::Keygen(e) => {
             publish_keygen_request(executor, e, tx_hash, created_at, otlp_ctx).await
+        }
+        ProtocolEventKind::MigrationKeygen(e) => {
+            publish_migration_keygen_request(executor, e, tx_hash, created_at, otlp_ctx).await
         }
         ProtocolEventKind::Crsgen(e) => {
             let params_type: ParamsTypeDb = e.paramsType.try_into()?;
@@ -274,28 +270,34 @@ async fn publish_keygen_request<'e>(
     .map_err(anyhow::Error::from)
 }
 
-/// RFC-029: persists the `MigrationKeygenRequested` mapping keyed by `key_id`. The ordinary
-/// `KeygenRequest` for the same `key_id` carries only plain context+epoch extra_data, so the
-/// kms-worker recovers the migration config from this table when it builds the KMS request.
+/// RFC-029: persists a `MigrationKeygenRequest` (keygen-from-existing) into its own first-class
+/// table. The worker picks it as a typed `MigrationKeygen` event and builds a UseExisting keygen —
+/// the migration data rides the row itself, so there is no side table to join and no path where a
+/// migration silently runs as a normal keygen.
 ///
 /// Runtime `sqlx::query` (not the `query!` macro) is used so no offline `.sqlx` cache is needed.
-pub async fn publish_migration_keygen<'e>(
+async fn publish_migration_keygen_request<'e>(
     executor: impl PgExecutor<'e>,
-    event: MigrationKeygenRequested,
+    request: MigrationKeygenRequest,
+    tx_hash: Option<FixedBytes<32>>,
     created_at: DateTime<Utc>,
+    otlp_ctx: PropagationContext,
 ) -> anyhow::Result<PgQueryResult> {
-    info!(
-        "Storing MigrationKeygenRequested (key_id #{}, existing_key_id #{}, copy_to_original {}) in DB...",
-        event.keyId, event.existingKeyId, event.copyToOriginal
-    );
     sqlx::query(
-        "INSERT INTO migration_keygen(key_id, existing_key_id, copy_to_original, created_at) \
-        VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
+        "INSERT INTO migration_keygen_requests(\
+            prep_keygen_id, key_id, existing_key_id, copy_to_original, extra_data, tx_hash,\
+            created_at, otlp_context\
+        ) \
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT DO NOTHING",
     )
-    .bind(event.keyId.as_le_slice())
-    .bind(event.existingKeyId.as_le_slice())
-    .bind(event.copyToOriginal)
+    .bind(request.prepKeygenId.as_le_slice().to_vec())
+    .bind(request.keyId.as_le_slice().to_vec())
+    .bind(request.existingKeyId.as_le_slice().to_vec())
+    .bind(request.copyToOriginal)
+    .bind(request.extraData.to_vec())
+    .bind(tx_hash.map(|h| h.to_vec()))
     .bind(created_at)
+    .bind(bc2wrap::serialize(&otlp_ctx)?)
     .execute(executor)
     .await
     .map_err(anyhow::Error::from)

@@ -127,15 +127,24 @@ interface IKMSGeneration {
     event AbortCrsgen(uint256 crsId);
 
     /**
-     * @notice RFC-029: emitted when a migration keygen (keygen-from-existing) is requested. The
-     * connector uses this to drive the KMS keygen-from-existing (UseExisting + copy-to-original);
-     * the keygen itself is an ordinary on-chain keygen (normal v2 extraData).
+     * @notice RFC-029: emitted at prep-keygen consensus IN PLACE OF {KeygenRequest} when the keygen is
+     * a migration (keygen-from-existing). The connector branches on this typed event to drive the KMS
+     * keygen-from-existing (UseExisting + copy-to-original) -- there is no side table and no path where
+     * a migration silently runs as a normal keygen. The keygen's extraData is the standard v2
+     * context+epoch, signed by the KMS exactly like a normal keygen.
      * @param prepKeygenId The preprocessing keygen id.
      * @param keyId The freshly generated (throwaway) key id; it is never activated.
      * @param existingKeyId The existing key whose material is re-derived in migrated format.
      * @param copyToOriginal Whether the KMS copies the migrated keyset onto the existing key id.
+     * @param extraData The keygen's v2 context+epoch extra data (same as {KeygenRequest}).
      */
-    event MigrationKeygenRequested(uint256 prepKeygenId, uint256 keyId, uint256 existingKeyId, bool copyToOriginal);
+    event MigrationKeygenRequest(
+        uint256 prepKeygenId,
+        uint256 keyId,
+        uint256 existingKeyId,
+        bool copyToOriginal,
+        bytes extraData
+    );
 
     /**
      * @notice RFC-029: emitted when migrated key material is published under an EXISTING keyId
@@ -197,8 +206,9 @@ interface IKMSGeneration {
      */
     error EmptyKeyDigests(uint256 keyId);
 
-    /// @notice RFC-029: a publish/schedule used a material version other than the supported one (1).
-    error UnsupportedMaterialVersion(uint256 version);
+    /// @notice RFC-029: addKeyMaterials was given a migrationKeyId that is not a completed migration
+    /// keygen bound to the supplied existingKeyId.
+    error MigrationKeyNotForExistingKey(uint256 migrationKeyId, uint256 existingKeyId);
 
     /// @notice RFC-029: a cutover was scheduled for a key with no published migrated material.
     error KeyMaterialNotPublished(uint256 keyId);
@@ -318,11 +328,12 @@ interface IKMSGeneration {
     /**
      * @notice RFC-029: request a migration keygen (keygen-from-existing) that re-derives
      * `existingKeyId` in the migrated (CompressedXofKeySet) format, published under the existing key.
+     * @dev One-time cutover: copy-to-original is always true, so it is not a caller parameter. It
+     * surfaces (hardcoded) on the {MigrationKeygenRequest} event for the connector.
      * @param paramsType The FHE params type.
      * @param existingKeyId The existing key to migrate.
-     * @param copyToOriginal Whether the KMS copies the migrated keyset onto the existing key id.
      */
-    function migrationKeygen(ParamsType paramsType, uint256 existingKeyId, bool copyToOriginal) external;
+    function migrationKeygen(ParamsType paramsType, uint256 existingKeyId) external;
 
     /**
      * @notice Handle the response of a preprocessing keygen request.
@@ -341,25 +352,30 @@ interface IKMSGeneration {
 
     /**
      * @notice RFC-029: governance publishes migrated key material under an EXISTING key
-     * (publish-not-activate; activeKeyId never moves). Emits {KeyMaterialAdded}.
+     * (publish-not-activate; activeKeyId never moves). The migrated digests/urls come from a completed
+     * migration keygen, bound here by `migrationKeyId`: the call reverts unless `migrationKeyId` is a
+     * completed migration keygen for `existingKeyId`. Emits {KeyMaterialAdded} (version 1).
+     * @param existingKeyId The existing key the migrated material is published under.
+     * @param migrationKeyId The completed migration keygen that produced the material.
+     * @param keyDigests The migrated key material digests.
+     * @param kmsNodeStorageUrls The KMS nodes' storage URLs to download the material from.
      */
     function addKeyMaterials(
-        uint256 keyId,
+        uint256 existingKeyId,
+        uint256 migrationKeyId,
         KeyDigest[] calldata keyDigests,
-        string[] calldata kmsNodeStorageUrls,
-        uint256 materialVersion
+        string[] calldata kmsNodeStorageUrls
     ) external;
 
     /**
-     * @notice RFC-029: governance schedules the material-version cutover. Emits
-     * {KeyMaterialMigrationScheduled}.
+     * @notice RFC-029: governance schedules the material-version cutover (always to version 1). Emits
+     * {KeyMaterialMigrationScheduled}. Reverts if no migrated material was published under `keyId`.
      */
     function scheduleKeyMaterialMigration(
         uint256 keyId,
         uint256[] calldata hostChainIds,
         uint256[] calldata hostMigrationBlocks,
-        uint256 gatewayMigrationBlock,
-        uint256 materialVersion
+        uint256 gatewayMigrationBlock
     ) external;
 
     /**

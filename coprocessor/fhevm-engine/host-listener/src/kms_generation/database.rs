@@ -263,12 +263,10 @@ pub(crate) struct PendingKeyMaterial {
 pub(crate) async fn insert_key_material_added(
     tx: &mut Transaction<'_, Postgres>,
     added: KMSGeneration::KeyMaterialAdded,
-    log: Log,
     chain_id: ChainId,
     block_hash: &[u8],
     block_number: u64,
 ) -> Result<(), sqlx::Error> {
-    let transaction_hash = log.transaction_hash.map(|txh| txh.to_vec());
     // The migrated server-key (XOF keyset) digest is the keyType==0 entry.
     let key_digest = added
         .keyDigests
@@ -279,15 +277,14 @@ pub(crate) async fn insert_key_material_added(
     let urls = added.kmsNodeStorageUrls.clone();
     sqlx::query(
         "INSERT INTO kms_key_material_events (\
-            chain_id, block_hash, block_number, transaction_hash, \
+            chain_id, block_hash, block_number, \
             key_id, material_version, key_digest, storage_urls) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7) \
          ON CONFLICT (chain_id, block_hash, key_id, material_version) DO NOTHING",
     )
     .bind(chain_id.as_i64())
     .bind(block_hash)
     .bind(block_number as i64)
-    .bind(transaction_hash)
     .bind(key_id_to_database_bytes(added.keyId).to_vec())
     .bind(material_version)
     .bind(key_digest)
@@ -358,14 +355,13 @@ pub(crate) async fn mark_key_material_error(
     );
     let _ = sqlx::query(
         "UPDATE kms_key_material_events \
-         SET last_error = $4, retry_count = retry_count + 1, last_updated_at = NOW() \
+         SET last_updated_at = NOW() \
          WHERE chain_id = $1 AND block_hash = $2 AND key_id = $3 \
-           AND material_version = $5",
+           AND material_version = $4",
     )
     .bind(pending.chain_id)
     .bind(&pending.block_hash)
     .bind(&pending.key_id)
-    .bind(error)
     .bind(pending.material_version)
     .execute(tx.deref_mut())
     .await;

@@ -2,8 +2,8 @@ use crate::core::Config;
 use anyhow::anyhow;
 use connector_utils::types::db::{
     CRSGEN_REQUEST_NOTIFICATION, EventType, KEYGEN_REQUEST_NOTIFICATION,
-    PREP_KEYGEN_REQUEST_NOTIFICATION, PUBLIC_DECRYPT_REQUEST_NOTIFICATION,
-    USER_DECRYPT_REQUEST_NOTIFICATION,
+    MIGRATION_KEYGEN_REQUEST_NOTIFICATION, PREP_KEYGEN_REQUEST_NOTIFICATION,
+    PUBLIC_DECRYPT_REQUEST_NOTIFICATION, USER_DECRYPT_REQUEST_NOTIFICATION,
 };
 use sqlx::{Pool, Postgres, postgres::PgListener};
 use std::time::Duration;
@@ -74,6 +74,9 @@ impl DbEventNotifier {
             .listen(PREP_KEYGEN_REQUEST_NOTIFICATION)
             .await?;
         self.db_listener.listen(KEYGEN_REQUEST_NOTIFICATION).await?;
+        self.db_listener
+            .listen(MIGRATION_KEYGEN_REQUEST_NOTIFICATION)
+            .await?;
         self.db_listener.listen(CRSGEN_REQUEST_NOTIFICATION).await?;
         Ok(())
     }
@@ -89,6 +92,8 @@ impl DbEventNotifier {
         let mut prep_keygen_ticker =
             EventTicker::new(db_long_event_polling, EventType::PrepKeygenRequest);
         let mut keygen_ticker = EventTicker::new(db_long_event_polling, EventType::KeygenRequest);
+        let mut migration_keygen_ticker =
+            EventTicker::new(db_long_event_polling, EventType::MigrationKeygenRequest);
         let mut crsgen_ticker = EventTicker::new(db_long_event_polling, EventType::CrsgenRequest);
 
         loop {
@@ -97,6 +102,7 @@ impl DbEventNotifier {
                 _ = user_decrypt_ticker.tick() => user_decrypt_ticker.deliver(),
                 _ = prep_keygen_ticker.tick() => prep_keygen_ticker.deliver(),
                 _ = keygen_ticker.tick() => keygen_ticker.deliver(),
+                _ = migration_keygen_ticker.tick() => migration_keygen_ticker.deliver(),
                 _ = crsgen_ticker.tick() => crsgen_ticker.deliver(),
                 result = self.db_listener.recv() => match result.map(EventType::try_from) {
                     Ok(Ok(notif)) => {
@@ -119,6 +125,7 @@ impl DbEventNotifier {
                 EventType::UserDecryptionRequest => user_decrypt_ticker.reset(),
                 EventType::PrepKeygenRequest => prep_keygen_ticker.reset(),
                 EventType::KeygenRequest => keygen_ticker.reset(),
+                EventType::MigrationKeygenRequest => migration_keygen_ticker.reset(),
                 EventType::CrsgenRequest => crsgen_ticker.reset(),
             }
 

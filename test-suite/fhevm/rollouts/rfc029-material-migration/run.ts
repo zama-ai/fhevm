@@ -109,6 +109,28 @@ const readKmsGenerationUint = async (ctx: RolloutRunContext, sig: string, ...arg
 const activeKeyId = (ctx: RolloutRunContext): Promise<bigint> => readKmsGenerationUint(ctx, "getActiveKeyId()(uint256)");
 
 /**
+ * Polls until the migration keygen `keyId` reaches consensus (isRequestDone). Option 2 publishes by
+ * reading the migration keygen's digests on-chain (getKeyMaterials), so the keygen MUST have completed
+ * before publish; otherwise addKeyMaterials has nothing to bind to. Shares the keygen timeout budget.
+ */
+const waitForKeygenDone = async (ctx: RolloutRunContext, keyId: bigint): Promise<void> => {
+  const { rpcUrl, kmsGenerationAddress } = resolveKmsGenerationTarget(await ctx.readState());
+  const started = Date.now();
+  const deadline = started + KEYGEN_ACTIVATION_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    const raw = await castCall(rpcUrl, kmsGenerationAddress, "isRequestDone(uint256)(bool)", keyId.toString());
+    const elapsed = Math.round((Date.now() - started) / 1000);
+    if (raw.trim().startsWith("true")) {
+      console.log(`[rollout] migration keygen ${keyId} reached consensus after ${elapsed}s`);
+      return;
+    }
+    console.log(`[rollout] waiting for migration keygen ${keyId} consensus... ${elapsed}s elapsed`);
+    await sleep(KEYGEN_POLL_INTERVAL_MS);
+  }
+  throw new Error(`migration keygen ${keyId} did not reach consensus within ${KEYGEN_ACTIVATION_TIMEOUT_MS / 1000}s`);
+};
+
+/**
  * Polls until the migrated material (version 1) is published under `keyId`. RFC-029 is
  * publish-not-activate: governance's addKeyMaterials emits KeyMaterialAdded under the existing key
  * (without advancing activeKeyId), which sets keyMaterialVersion[keyId] = 1. Logs progress so the
@@ -145,9 +167,9 @@ export default async function run(ctx: RolloutRunContext) {
   // behavior (DONE-WHEN: no-schedule behavior identical to today).
   logPhase("00 baseline: boot 5-coprocessor + 4-party-KMS multi-chain stack, run the standard suite (no schedule = inert v0)");
   // The coprocessor is branch-built via the scenario's local instances. The
-  // connector (v3 extraData -> keygen-from-existing) and host-contracts (the
-  // keygen(bytes) / addKeyMaterials / scheduleKeyMaterialMigration surface) must
-  // ALSO be branch-built -- registry images lack the RFC-029 surface. (Do NOT
+  // connector (typed MigrationKeygenRequest -> keygen-from-existing) and
+  // host-contracts (the migrationKeygen / addKeyMaterials / scheduleKeyMaterialMigration
+  // surface) must ALSO be branch-built -- registry images lack the RFC-029 surface. (Do NOT
   // add { group: "coprocessor" }: the scenario already owns coprocessor source.)
   await ctx.up({
     lockFile: baselineLock,
@@ -158,19 +180,25 @@ export default async function run(ctx: RolloutRunContext) {
 
   // 01 publish -- drive a real migration keygen-from-existing, then have GOVERNANCE publish the
   // migrated material under the ACTIVE key via addKeyMaterials. RFC-029 publish-not-activate: the
-  // keygen re-derives the active key's material in migrated (CompressedXofKeySet) form; governance
-  // publishes it UNDER the existing key (KeyMaterialAdded, no activeKeyId move, no KMS on-chain
-  // signature). We then wait for keyMaterialVersion(activeKey)=1 and the host-listener to download
-  // v1 into keys.migrated_xof_keyset fleet-wide. (We deliberately do NOT rely on the keygenResponse
-  // KMS-consensus path: the pinned kms-core does not sign the v3 migration extraData, so governance
-  // publishes directly -- the "DAO drives the cutover" model.)
+  // keygen re-derives the active key's material in migrated (CompressedXofKeySet) form (its extraData
+  // is the standard v2 context+epoch, so it reaches KMS consensus normally and its digests land
+  // on-chain). Governance then publishes those digests UNDER the existing key (KeyMaterialAdded, no
+  // activeKeyId move, no KMS on-chain signature -- the "DAO drives the cutover" model). We then wait
+  // for keyMaterialVersion(activeKey)=1 and the host-listener to download v1 into
+  // keys.migrated_xof_keyset fleet-wide.
   logPhase("01 publish: migration keygen-from-existing -> governance addKeyMaterials under the unchanged active key");
   const state = await ctx.readState();
   const migratedKeyId = await activeKeyId(ctx); // the key being migrated; stays active throughout
   await ctx.runHostContractTask(`npx hardhat task:triggerMigrationKeygen --params-type ${PARAMS_TYPE_TEST}`);
-  // Governance publish: waits for the keygen result, reads the KMS-attested migrated digests from the
-  // KeygenResponse event, and emits KeyMaterialAdded under the existing key.
-  await ctx.runHostContractTask(`npx hardhat task:publishMigratedKeyMaterials`);
+  // The migration keygen is the only keygen in flight, so its (throwaway) key id is the current key
+  // counter. Bind publish to exactly this id.
+  const migrationKeyId = await readKmsGenerationUint(ctx, "getKeyCounter()(uint256)");
+  // Wait for the migration keygen to reach consensus so its KMS-attested digests are stored on-chain,
+  // then have GOVERNANCE publish them under the existing key (addKeyMaterials binds to migrationKeyId).
+  await waitForKeygenDone(ctx, migrationKeyId);
+  await ctx.runHostContractTask(
+    `npx hardhat task:publishMigratedKeyMaterials --migration-key-id ${migrationKeyId} --key-id ${migratedKeyId}`,
+  );
   await waitForMaterialPublished(ctx, migratedKeyId);
   const stillActive = await activeKeyId(ctx);
   if (stillActive !== migratedKeyId) {
@@ -210,8 +238,7 @@ export default async function run(ctx: RolloutRunContext) {
     `npx hardhat task:scheduleKeyMaterialMigration ` +
       `--host-chain-ids ${hostChainIds.join(",")} ` +
       `--host-migration-blocks ${hostMigrationBlocks.join(",")} ` +
-      `--gateway-migration-block ${gatewayMigrationBlock} ` +
-      `--material-version ${MATERIAL_VERSION_MIGRATED_V1}`,
+      `--gateway-migration-block ${gatewayMigrationBlock}`,
   );
   console.log(
     `[rollout] cutover scheduled: chains=${hostChainIds.join(",")} H_C=${hostMigrationBlocks.join(",")} G=${gatewayMigrationBlock}`,

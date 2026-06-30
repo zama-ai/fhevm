@@ -305,6 +305,20 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         assertTrue(kmsGeneration.isRequestDone(keyId));
     }
 
+    /// @dev Request + complete a migration keygen (keygen-from-existing) for `existingKeyId`.
+    /// prepKeygenId/keyId advance in lockstep, so the migration prep id is derivable from its key id.
+    function _runFullMigrationKeygen(
+        uint256 existingKeyId
+    ) internal returns (uint256 migrationPrepKeygenId, uint256 migrationKeyId) {
+        vm.prank(owner);
+        kmsGeneration.migrationKeygen(IKMSGeneration.ParamsType.Default, existingKeyId);
+        migrationKeyId = kmsGeneration.getKeyCounter();
+        migrationPrepKeygenId = PREP_KEYGEN_COUNTER_BASE + (migrationKeyId - KEY_COUNTER_BASE);
+        _doPrepKeygenResponse(migrationPrepKeygenId, kmsPk0, kmsTxSender0);
+        _doKeygenResponse(migrationPrepKeygenId, migrationKeyId, kmsPk0, kmsTxSender0);
+        assertTrue(kmsGeneration.isRequestDone(migrationKeyId));
+    }
+
     /// @dev Run a full CRS cycle
     function _runFullCrsCycle() internal returns (uint256 crsId) {
         vm.prank(owner);
@@ -1515,16 +1529,39 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
     // blocks). activeKeyId must never move.
     // -----------------------------------------------------------------------
 
-    /// @dev migrationKeygen emits MigrationKeygenRequested carrying the existing key + copy flag.
-    function test_migrationKeygenEmitsRequestedEvent() public {
+    /// @dev migrationKeygen() itself emits no migration event; the typed MigrationKeygenRequest is
+    ///      emitted later, at prep-keygen consensus, IN PLACE OF the normal KeygenRequest.
+    function test_migrationKeygenEmitsRequestAtPrepConsensus() public {
         (, uint256 existingKeyId) = _runFullKeygenCycle();
-        uint256 migrationPrepKeygenId = PREP_KEYGEN_COUNTER_BASE + 2;
-        uint256 migrationKeyId = KEY_COUNTER_BASE + 2;
+
+        vm.prank(owner);
+        kmsGeneration.migrationKeygen(IKMSGeneration.ParamsType.Default, existingKeyId);
+        uint256 migrationKeyId = kmsGeneration.getKeyCounter();
+        uint256 migrationPrepKeygenId = PREP_KEYGEN_COUNTER_BASE + (migrationKeyId - KEY_COUNTER_BASE);
+
+        // The typed event carries the existing key + copy flag + the keygen's standard v2 extraData,
+        // and is emitted exactly where a normal keygen would emit KeygenRequest.
+        vm.expectEmit(true, true, true, true, address(kmsGeneration));
+        emit IKMSGeneration.MigrationKeygenRequest(
+            migrationPrepKeygenId,
+            migrationKeyId,
+            existingKeyId,
+            true,
+            _buildExtraData()
+        );
+        _doPrepKeygenResponse(migrationPrepKeygenId, kmsPk0, kmsTxSender0);
+    }
+
+    /// @dev A normal keygen must still emit KeygenRequest (NOT MigrationKeygenRequest) at prep consensus.
+    function test_normalKeygenEmitsKeygenRequestAtPrepConsensus() public {
+        vm.prank(owner);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
+        uint256 prepKeygenId = PREP_KEYGEN_COUNTER_BASE + 1;
+        uint256 keyId = KEY_COUNTER_BASE + 1;
 
         vm.expectEmit(true, true, true, true, address(kmsGeneration));
-        emit IKMSGeneration.MigrationKeygenRequested(migrationPrepKeygenId, migrationKeyId, existingKeyId, true);
-        vm.prank(owner);
-        kmsGeneration.migrationKeygen(IKMSGeneration.ParamsType.Default, existingKeyId, true);
+        emit IKMSGeneration.KeygenRequest(prepKeygenId, keyId, _buildExtraData());
+        _doPrepKeygenResponse(prepKeygenId, kmsPk0, kmsTxSender0);
     }
 
     /// @dev The core safety invariant: completing a migration keygen must NOT move activeKeyId.
@@ -1532,16 +1569,9 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         (, uint256 existingKeyId) = _runFullKeygenCycle();
         assertEq(kmsGeneration.getActiveKeyId(), existingKeyId);
 
-        vm.prank(owner);
-        kmsGeneration.migrationKeygen(IKMSGeneration.ParamsType.Default, existingKeyId, true);
-        uint256 migrationPrepKeygenId = PREP_KEYGEN_COUNTER_BASE + 2;
-        uint256 migrationKeyId = KEY_COUNTER_BASE + 2;
+        (, uint256 migrationKeyId) = _runFullMigrationKeygen(existingKeyId);
 
-        // No ActivateKey may be emitted while the migration keygen reaches consensus.
-        _doPrepKeygenResponse(migrationPrepKeygenId, kmsPk0, kmsTxSender0);
-        _doKeygenResponse(migrationPrepKeygenId, migrationKeyId, kmsPk0, kmsTxSender0);
-
-        // The migration key completed, but the active key is unchanged.
+        // The migration key completed, but the active key is unchanged (publish-not-activate).
         assertTrue(kmsGeneration.isRequestDone(migrationKeyId));
         assertEq(kmsGeneration.getActiveKeyId(), existingKeyId);
     }
@@ -1551,68 +1581,108 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         uint256 missingKeyId = KEY_COUNTER_BASE + 1;
         vm.prank(owner);
         vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.KeygenNotRequested.selector, missingKeyId));
-        kmsGeneration.migrationKeygen(IKMSGeneration.ParamsType.Default, missingKeyId, true);
+        kmsGeneration.migrationKeygen(IKMSGeneration.ParamsType.Default, missingKeyId);
     }
 
     function testFuzz_revertMigrationKeygenNotOwner(address caller) public {
         vm.assume(caller != owner);
         vm.prank(caller);
         vm.expectRevert(abi.encodeWithSelector(ACLOwnable.NotHostOwner.selector, caller));
-        kmsGeneration.migrationKeygen(IKMSGeneration.ParamsType.Default, KEY_COUNTER_BASE + 1, true);
+        kmsGeneration.migrationKeygen(IKMSGeneration.ParamsType.Default, KEY_COUNTER_BASE + 1);
     }
 
-    /// @dev addKeyMaterials records version 1 under the existing key and emits KeyMaterialAdded,
-    ///      without moving activeKeyId.
-    function test_addKeyMaterialsSetsVersionAndEmits() public {
-        (, uint256 keyId) = _runFullKeygenCycle();
-        assertEq(kmsGeneration.getKeyMaterialVersion(keyId), 0);
+    /// @dev addKeyMaterials publishes v1 under the EXISTING key and emits KeyMaterialAdded, bound to
+    ///      the completed migration keygen, without moving activeKeyId.
+    function test_addKeyMaterialsPublishesAndEmits() public {
+        (, uint256 existingKeyId) = _runFullKeygenCycle();
+        (, uint256 migrationKeyId) = _runFullMigrationKeygen(existingKeyId);
+        assertEq(kmsGeneration.getKeyMaterialVersion(existingKeyId), 0);
 
         IKMSGeneration.KeyDigest[] memory digests = _mockKeyDigests();
         string[] memory urls = _primaryStorageUrls();
 
         vm.expectEmit(true, true, true, true, address(kmsGeneration));
-        emit IKMSGeneration.KeyMaterialAdded(keyId, urls, digests, 1);
+        emit IKMSGeneration.KeyMaterialAdded(existingKeyId, urls, digests, 1);
         vm.prank(owner);
-        kmsGeneration.addKeyMaterials(keyId, digests, urls, 1);
+        kmsGeneration.addKeyMaterials(existingKeyId, migrationKeyId, digests, urls);
 
-        assertEq(kmsGeneration.getKeyMaterialVersion(keyId), 1);
-        assertEq(kmsGeneration.getActiveKeyId(), keyId);
+        assertEq(kmsGeneration.getKeyMaterialVersion(existingKeyId), 1);
+        // Publish-not-activate: the active key is still the existing key, never the throwaway migration key.
+        assertEq(kmsGeneration.getActiveKeyId(), existingKeyId);
     }
 
-    function test_revertAddKeyMaterialsKeyNotDone() public {
-        uint256 missingKeyId = KEY_COUNTER_BASE + 1;
+    /// @dev addKeyMaterials rejects a migrationKeyId that is not a migration keygen at all
+    ///      (here the existing key itself, which was a normal keygen).
+    function test_revertAddKeyMaterialsNotAMigrationKey() public {
+        (, uint256 existingKeyId) = _runFullKeygenCycle();
         vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.KeygenNotRequested.selector, missingKeyId));
-        kmsGeneration.addKeyMaterials(missingKeyId, _mockKeyDigests(), _primaryStorageUrls(), 1);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IKMSGeneration.MigrationKeyNotForExistingKey.selector,
+                existingKeyId,
+                existingKeyId
+            )
+        );
+        kmsGeneration.addKeyMaterials(existingKeyId, existingKeyId, _mockKeyDigests(), _primaryStorageUrls());
+    }
+
+    /// @dev addKeyMaterials rejects a migration keygen bound to a DIFFERENT existing key.
+    function test_revertAddKeyMaterialsMigrationKeyForOtherExistingKey() public {
+        (, uint256 existingKeyA) = _runFullKeygenCycle();
+        (, uint256 migrationKeyId) = _runFullMigrationKeygen(existingKeyA);
+        // A different existing key the migration keygen was NOT for; binding fails before any other check.
+        uint256 existingKeyB = KEY_COUNTER_BASE + 999;
+
+        vm.prank(owner);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IKMSGeneration.MigrationKeyNotForExistingKey.selector,
+                migrationKeyId,
+                existingKeyB
+            )
+        );
+        kmsGeneration.addKeyMaterials(existingKeyB, migrationKeyId, _mockKeyDigests(), _primaryStorageUrls());
+    }
+
+    /// @dev addKeyMaterials rejects a migration keygen that has not yet completed.
+    function test_revertAddKeyMaterialsMigrationNotComplete() public {
+        (, uint256 existingKeyId) = _runFullKeygenCycle();
+        vm.prank(owner);
+        kmsGeneration.migrationKeygen(IKMSGeneration.ParamsType.Default, existingKeyId);
+        uint256 migrationKeyId = kmsGeneration.getKeyCounter();
+
+        vm.prank(owner);
+        vm.expectRevert(IKMSGeneration.KeyManagementRequestPending.selector);
+        kmsGeneration.addKeyMaterials(existingKeyId, migrationKeyId, _mockKeyDigests(), _primaryStorageUrls());
     }
 
     function test_revertAddKeyMaterialsEmptyDigests() public {
-        (, uint256 keyId) = _runFullKeygenCycle();
+        (, uint256 existingKeyId) = _runFullKeygenCycle();
+        (, uint256 migrationKeyId) = _runFullMigrationKeygen(existingKeyId);
         IKMSGeneration.KeyDigest[] memory empty = new IKMSGeneration.KeyDigest[](0);
         vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.EmptyKeyDigests.selector, keyId));
-        kmsGeneration.addKeyMaterials(keyId, empty, _primaryStorageUrls(), 1);
-    }
-
-    function test_revertAddKeyMaterialsUnsupportedVersion() public {
-        (, uint256 keyId) = _runFullKeygenCycle();
-        vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.UnsupportedMaterialVersion.selector, 2));
-        kmsGeneration.addKeyMaterials(keyId, _mockKeyDigests(), _primaryStorageUrls(), 2);
+        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.EmptyKeyDigests.selector, existingKeyId));
+        kmsGeneration.addKeyMaterials(existingKeyId, migrationKeyId, empty, _primaryStorageUrls());
     }
 
     function testFuzz_revertAddKeyMaterialsNotOwner(address caller) public {
         vm.assume(caller != owner);
         vm.prank(caller);
         vm.expectRevert(abi.encodeWithSelector(ACLOwnable.NotHostOwner.selector, caller));
-        kmsGeneration.addKeyMaterials(KEY_COUNTER_BASE + 1, _mockKeyDigests(), _primaryStorageUrls(), 1);
+        kmsGeneration.addKeyMaterials(
+            KEY_COUNTER_BASE + 1,
+            KEY_COUNTER_BASE + 2,
+            _mockKeyDigests(),
+            _primaryStorageUrls()
+        );
     }
 
     /// @dev Full publish-then-schedule path emits KeyMaterialMigrationScheduled with the cutover blocks.
     function test_scheduleKeyMaterialMigrationEmits() public {
-        (, uint256 keyId) = _runFullKeygenCycle();
+        (, uint256 existingKeyId) = _runFullKeygenCycle();
+        (, uint256 migrationKeyId) = _runFullMigrationKeygen(existingKeyId);
         vm.prank(owner);
-        kmsGeneration.addKeyMaterials(keyId, _mockKeyDigests(), _primaryStorageUrls(), 1);
+        kmsGeneration.addKeyMaterials(existingKeyId, migrationKeyId, _mockKeyDigests(), _primaryStorageUrls());
 
         uint256[] memory hostChainIds = new uint256[](2);
         hostChainIds[0] = 1;
@@ -1622,9 +1692,9 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         hostMigrationBlocks[1] = 2000;
 
         vm.expectEmit(true, true, true, true, address(kmsGeneration));
-        emit IKMSGeneration.KeyMaterialMigrationScheduled(keyId, hostChainIds, hostMigrationBlocks, 3000, 1);
+        emit IKMSGeneration.KeyMaterialMigrationScheduled(existingKeyId, hostChainIds, hostMigrationBlocks, 3000, 1);
         vm.prank(owner);
-        kmsGeneration.scheduleKeyMaterialMigration(keyId, hostChainIds, hostMigrationBlocks, 3000, 1);
+        kmsGeneration.scheduleKeyMaterialMigration(existingKeyId, hostChainIds, hostMigrationBlocks, 3000);
     }
 
     /// @dev Scheduling before the migrated material is published is rejected (would point
@@ -1638,7 +1708,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
 
         vm.prank(owner);
         vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.KeyMaterialNotPublished.selector, keyId));
-        kmsGeneration.scheduleKeyMaterialMigration(keyId, hostChainIds, hostMigrationBlocks, 3000, 1);
+        kmsGeneration.scheduleKeyMaterialMigration(keyId, hostChainIds, hostMigrationBlocks, 3000);
     }
 
     function test_revertScheduleMismatchedArrays() public {
@@ -1648,17 +1718,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
 
         vm.prank(owner);
         vm.expectRevert(IKMSGeneration.MismatchedMigrationArrays.selector);
-        kmsGeneration.scheduleKeyMaterialMigration(keyId, hostChainIds, hostMigrationBlocks, 3000, 1);
-    }
-
-    function test_revertScheduleUnsupportedVersion() public {
-        (, uint256 keyId) = _runFullKeygenCycle();
-        uint256[] memory hostChainIds = new uint256[](1);
-        uint256[] memory hostMigrationBlocks = new uint256[](1);
-
-        vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.UnsupportedMaterialVersion.selector, 2));
-        kmsGeneration.scheduleKeyMaterialMigration(keyId, hostChainIds, hostMigrationBlocks, 3000, 2);
+        kmsGeneration.scheduleKeyMaterialMigration(keyId, hostChainIds, hostMigrationBlocks, 3000);
     }
 
     function testFuzz_revertScheduleNotOwner(address caller) public {
@@ -1666,6 +1726,6 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         uint256[] memory empty = new uint256[](0);
         vm.prank(caller);
         vm.expectRevert(abi.encodeWithSelector(ACLOwnable.NotHostOwner.selector, caller));
-        kmsGeneration.scheduleKeyMaterialMigration(KEY_COUNTER_BASE + 1, empty, empty, 3000, 1);
+        kmsGeneration.scheduleKeyMaterialMigration(KEY_COUNTER_BASE + 1, empty, empty, 3000);
     }
 }

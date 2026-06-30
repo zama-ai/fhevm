@@ -11,7 +11,7 @@ use fhevm_gateway_bindings::decryption::Decryption::{
 };
 use fhevm_host_bindings::kms_generation::{
     IKMSGeneration::KeyDigest,
-    KMSGeneration::{CrsgenRequest, KeygenRequest, PrepKeygenRequest},
+    KMSGeneration::{CrsgenRequest, KeygenRequest, MigrationKeygenRequest, PrepKeygenRequest},
 };
 use sqlx::postgres::PgNotification;
 use std::{fmt::Display, str::FromStr};
@@ -141,6 +141,7 @@ pub enum EventType {
     UserDecryptionRequest,
     PrepKeygenRequest,
     KeygenRequest,
+    MigrationKeygenRequest,
     CrsgenRequest,
 }
 
@@ -151,6 +152,7 @@ impl Display for EventType {
             EventType::UserDecryptionRequest => write!(f, "UserDecryptionRequest"),
             EventType::PrepKeygenRequest => write!(f, "PrepKeygenRequest"),
             EventType::KeygenRequest => write!(f, "KeygenRequest"),
+            EventType::MigrationKeygenRequest => write!(f, "MigrationKeygenRequest"),
             EventType::CrsgenRequest => write!(f, "CrsgenRequest"),
         }
     }
@@ -167,6 +169,7 @@ impl From<&ProtocolEventKind> for EventType {
             }
             ProtocolEventKind::PrepKeygen(_) => Self::PrepKeygenRequest,
             ProtocolEventKind::Keygen(_) => Self::KeygenRequest,
+            ProtocolEventKind::MigrationKeygen(_) => Self::MigrationKeygenRequest,
             ProtocolEventKind::Crsgen(_) => Self::CrsgenRequest,
         }
     }
@@ -181,6 +184,7 @@ impl TryFrom<PgNotification> for EventType {
             USER_DECRYPT_REQUEST_NOTIFICATION => Ok(Self::UserDecryptionRequest),
             PREP_KEYGEN_REQUEST_NOTIFICATION => Ok(Self::PrepKeygenRequest),
             KEYGEN_REQUEST_NOTIFICATION => Ok(Self::KeygenRequest),
+            MIGRATION_KEYGEN_REQUEST_NOTIFICATION => Ok(Self::MigrationKeygenRequest),
             CRSGEN_REQUEST_NOTIFICATION => Ok(Self::CrsgenRequest),
             s => Err(anyhow!("Unknown notification channel: {s}")),
         }
@@ -194,6 +198,7 @@ impl EventType {
             Self::UserDecryptionRequest => USER_DECRYPT_REQUEST_NOTIFICATION,
             Self::PrepKeygenRequest => PREP_KEYGEN_REQUEST_NOTIFICATION,
             Self::KeygenRequest => KEYGEN_REQUEST_NOTIFICATION,
+            Self::MigrationKeygenRequest => MIGRATION_KEYGEN_REQUEST_NOTIFICATION,
             Self::CrsgenRequest => CRSGEN_REQUEST_NOTIFICATION,
         }
     }
@@ -204,6 +209,7 @@ impl EventType {
             EventType::UserDecryptionRequest => "user_decryption_request",
             EventType::PrepKeygenRequest => "prep_keygen_request",
             EventType::KeygenRequest => "keygen_request",
+            EventType::MigrationKeygenRequest => "migration_keygen_request",
             EventType::CrsgenRequest => "crsgen_request",
         }
     }
@@ -214,6 +220,7 @@ impl EventType {
             EventType::UserDecryptionRequest => UserDecryptionRequest::SIGNATURE_HASH,
             EventType::PrepKeygenRequest => PrepKeygenRequest::SIGNATURE_HASH,
             EventType::KeygenRequest => KeygenRequest::SIGNATURE_HASH,
+            EventType::MigrationKeygenRequest => MigrationKeygenRequest::SIGNATURE_HASH,
             EventType::CrsgenRequest => CrsgenRequest::SIGNATURE_HASH,
         }
     }
@@ -239,6 +246,7 @@ pub const PUBLIC_DECRYPT_REQUEST_NOTIFICATION: &str = "public_decryption_request
 pub const USER_DECRYPT_REQUEST_NOTIFICATION: &str = "user_decryption_request_available";
 pub const PREP_KEYGEN_REQUEST_NOTIFICATION: &str = "prep_keygen_request_available";
 pub const KEYGEN_REQUEST_NOTIFICATION: &str = "keygen_request_available";
+pub const MIGRATION_KEYGEN_REQUEST_NOTIFICATION: &str = "migration_keygen_request_available";
 pub const CRSGEN_REQUEST_NOTIFICATION: &str = "crsgen_request_available";
 #[derive(sqlx::Type, Copy, Clone, Debug, PartialEq)]
 #[sqlx(type_name = "operation_status", rename_all = "lowercase")]

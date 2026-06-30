@@ -158,8 +158,7 @@ impl
             acl_contracts,
             ciphertext_manager,
         );
-        let kms_generation_processor =
-            KMSGenerationProcessor::new(&config, context_manager, db_pool.clone());
+        let kms_generation_processor = KMSGenerationProcessor::new(&config, context_manager);
         let event_processor = DbEventProcessor::new(
             kms_client.clone(),
             decryption_processor,

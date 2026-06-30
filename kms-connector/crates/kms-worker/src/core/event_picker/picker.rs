@@ -100,6 +100,7 @@ impl DbEventPicker {
             EventType::UserDecryptionRequest => self.pick_user_decryption_requests().await,
             EventType::PrepKeygenRequest => self.pick_prep_keygen_requests().await,
             EventType::KeygenRequest => self.pick_keygen_requests().await,
+            EventType::MigrationKeygenRequest => self.pick_migration_keygen_requests().await,
             EventType::CrsgenRequest => self.pick_crsgen_requests().await,
         }
     }
@@ -197,6 +198,29 @@ impl DbEventPicker {
         .await?
         .iter()
         .map(event::from_keygen_row)
+        .collect()
+    }
+
+    async fn pick_migration_keygen_requests(&self) -> anyhow::Result<Vec<ProtocolEvent>> {
+        sqlx::query(
+            "
+                UPDATE migration_keygen_requests
+                SET status = 'under_process'
+                FROM (
+                    SELECT key_id
+                    FROM migration_keygen_requests
+                    WHERE status = 'pending'
+                    LIMIT 1 FOR UPDATE SKIP LOCKED
+                ) AS req
+                WHERE migration_keygen_requests.key_id = req.key_id
+                RETURNING prep_keygen_id, req.key_id, existing_key_id, copy_to_original, extra_data,
+                tx_hash, already_sent, created_at, otlp_context
+            ",
+        )
+        .fetch_all(&self.db_pool)
+        .await?
+        .iter()
+        .map(event::from_migration_keygen_row)
         .collect()
     }
 

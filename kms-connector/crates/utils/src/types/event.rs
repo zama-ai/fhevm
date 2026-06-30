@@ -13,7 +13,7 @@ use fhevm_gateway_bindings::decryption::{
     IDecryption::{RequestValiditySeconds, UserDecryptionRequestPayload},
 };
 use fhevm_host_bindings::kms_generation::KMSGeneration::{
-    CrsgenRequest, KMSGenerationEvents, KeygenRequest, PrepKeygenRequest,
+    CrsgenRequest, KMSGenerationEvents, KeygenRequest, MigrationKeygenRequest, PrepKeygenRequest,
 };
 use sqlx::{
     Pool, Postgres, Row,
@@ -91,6 +91,9 @@ impl ProtocolEvent {
             ProtocolEventKind::Keygen(e) => {
                 update_keygen_status(db, e.keyId, status, already_sent).await
             }
+            ProtocolEventKind::MigrationKeygen(e) => {
+                update_migration_keygen_status(db, e.keyId, status, already_sent).await
+            }
             ProtocolEventKind::Crsgen(e) => {
                 update_crsgen_status(db, e.crsId, status, already_sent).await
             }
@@ -114,6 +117,9 @@ pub enum ProtocolEventKind {
     UserDecryptionV2(UserDecryptionRequestV2),
     PrepKeygen(PrepKeygenRequest),
     Keygen(KeygenRequest),
+    /// RFC-029 migration keygen (keygen-from-existing). A distinct variant from `Keygen` so the
+    /// worker branches on the type and can NEVER run a migration as a normal `GenerateAll` keygen.
+    MigrationKeygen(MigrationKeygenRequest),
     Crsgen(CrsgenRequest),
 }
 
@@ -131,6 +137,7 @@ impl std::fmt::Debug for ProtocolEventKind {
                 .finish(),
             Self::PrepKeygen(e) => f.debug_tuple("PrepKeygen").field(e).finish(),
             Self::Keygen(e) => f.debug_tuple("Keygen").field(e).finish(),
+            Self::MigrationKeygen(e) => f.debug_tuple("MigrationKeygen").field(e).finish(),
             Self::Crsgen(e) => f.debug_tuple("Crsgen").field(e).finish(),
         }
     }
@@ -149,6 +156,7 @@ impl PartialEq for ProtocolEventKind {
             }
             (Self::PrepKeygen(a), Self::PrepKeygen(b)) => a == b,
             (Self::Keygen(a), Self::Keygen(b)) => a == b,
+            (Self::MigrationKeygen(a), Self::MigrationKeygen(b)) => a == b,
             (Self::Crsgen(a), Self::Crsgen(b)) => a == b,
             _ => false,
         }
@@ -317,6 +325,29 @@ pub fn from_keygen_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
     })
 }
 
+pub fn from_migration_keygen_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
+    let kind = ProtocolEventKind::MigrationKeygen(MigrationKeygenRequest {
+        prepKeygenId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("prep_keygen_id")?),
+        keyId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("key_id")?),
+        existingKeyId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("existing_key_id")?),
+        copyToOriginal: row.try_get::<bool, _>("copy_to_original")?,
+        extraData: row.try_get::<Vec<u8>, _>("extra_data")?.into(),
+    });
+    Ok(ProtocolEvent {
+        kind,
+
+        tx_hash: row
+            .try_get::<Vec<u8>, _>("tx_hash")
+            .ok()
+            .and_then(|h| FixedBytes::try_from(h.as_slice()).ok()),
+
+        already_sent: row.try_get::<bool, _>("already_sent")?,
+        error_counter: 0,
+        created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
+        otlp_context: bc2wrap::deserialize_safe(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+    })
+}
+
 pub fn from_crsgen_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
     let kind = ProtocolEventKind::Crsgen(CrsgenRequest {
         crsId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("crs_id")?),
@@ -407,6 +438,22 @@ async fn update_keygen_status(
     execute_update_event_query(db, query).await;
 }
 
+async fn update_migration_keygen_status(
+    db: &Pool<Postgres>,
+    id: U256,
+    status: OperationStatus,
+    already_sent: bool,
+) {
+    // Runtime `sqlx::query` (not the macro) so no offline `.sqlx` cache entry is needed.
+    let query = sqlx::query(
+        "UPDATE migration_keygen_requests SET status = $1, already_sent = $2 WHERE key_id = $3",
+    )
+    .bind(status)
+    .bind(already_sent)
+    .bind(id.as_le_slice().to_vec());
+    execute_update_event_query(db, query).await;
+}
+
 async fn update_crsgen_status(
     db: &Pool<Postgres>,
     id: U256,
@@ -455,6 +502,9 @@ impl Display for ProtocolEventKind {
                 write!(f, "PrepKeygenRequest #{}", e.prepKeygenId)
             }
             ProtocolEventKind::Keygen(e) => write!(f, "KeygenRequest #{}", e.keyId),
+            ProtocolEventKind::MigrationKeygen(e) => {
+                write!(f, "MigrationKeygenRequest #{}", e.keyId)
+            }
             ProtocolEventKind::Crsgen(e) => write!(f, "CrsgenRequest #{}", e.crsId),
         }
     }
@@ -490,6 +540,12 @@ impl From<KeygenRequest> for ProtocolEventKind {
     }
 }
 
+impl From<MigrationKeygenRequest> for ProtocolEventKind {
+    fn from(value: MigrationKeygenRequest) -> Self {
+        Self::MigrationKeygen(value)
+    }
+}
+
 impl From<CrsgenRequest> for ProtocolEventKind {
     fn from(value: CrsgenRequest) -> Self {
         Self::Crsgen(value)
@@ -518,6 +574,7 @@ impl TryFrom<KMSGenerationEvents> for ProtocolEventKind {
         match value {
             KMSGenerationEvents::PrepKeygenRequest(e) => Ok(e.into()),
             KMSGenerationEvents::KeygenRequest(e) => Ok(e.into()),
+            KMSGenerationEvents::MigrationKeygenRequest(e) => Ok(e.into()),
             KMSGenerationEvents::CrsgenRequest(e) => Ok(e.into()),
             // `KMSGenerationEvents` does not currently implement `Debug` unfortunately
             _ => Err(anyhow!("Unexpected KMSGeneration event")),

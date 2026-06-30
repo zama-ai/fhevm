@@ -45,6 +45,7 @@ use tracing::{info, warn};
 #[case::user_decryption_v2(TestEventType::UserDecryptionV2, false)]
 #[case::prep_keygen(TestEventType::PrepKeygen, false)]
 #[case::keygen(TestEventType::Keygen, false)]
+#[case::migration_keygen(TestEventType::MigrationKeygen, false)]
 #[case::crsgen(TestEventType::Crsgen, false)]
 #[case::public_decryption_already_sent(TestEventType::PublicDecryption, true)]
 #[case::user_decryption_already_sent(TestEventType::UserDecryption, true)]
@@ -168,6 +169,7 @@ fn prepare_mocks(req: &ProtocolEventKind, already_sent: bool) -> MockSet {
             (r.prepKeygenId, "KeyGenPreproc", "GetKeyGenPreprocResult")
         }
         ProtocolEventKind::Keygen(r) => (r.keyId, "KeyGen", "GetKeyGenResult"),
+        ProtocolEventKind::MigrationKeygen(r) => (r.keyId, "KeyGen", "GetKeyGenResult"),
         ProtocolEventKind::Crsgen(r) => (r.crsId, "CrsGen", "GetCrsGenResult"),
     };
     let request_id = Some(u256_to_request_id(request_id_u256));
@@ -202,10 +204,12 @@ fn prepare_mocks(req: &ProtocolEventKind, already_sent: bool) -> MockSet {
                 preprocessing_id: request_id,
                 ..Default::default()
             }),
-            ProtocolEventKind::Keygen(_) => then.pb(KeyGenResult {
-                request_id,
-                ..Default::default()
-            }),
+            ProtocolEventKind::Keygen(_) | ProtocolEventKind::MigrationKeygen(_) => {
+                then.pb(KeyGenResult {
+                    request_id,
+                    ..Default::default()
+                })
+            }
             ProtocolEventKind::Crsgen(_) => then.pb(CrsGenResult {
                 request_id,
                 ..Default::default()
@@ -227,7 +231,9 @@ async fn wait_for_response_in_db(
             "SELECT * FROM user_decryption_responses"
         }
         ProtocolEventKind::PrepKeygen(_) => "SELECT * FROM prep_keygen_responses",
-        ProtocolEventKind::Keygen(_) => "SELECT * FROM keygen_responses",
+        ProtocolEventKind::Keygen(_) | ProtocolEventKind::MigrationKeygen(_) => {
+            "SELECT * FROM keygen_responses"
+        }
         ProtocolEventKind::Crsgen(_) => "SELECT * FROM crsgen_responses",
     };
     let response = loop {
@@ -247,7 +253,7 @@ async fn wait_for_response_in_db(
                 ProtocolEventKind::PrepKeygen(_) => {
                     break kms_response::from_prep_keygen_row(&result[0])?;
                 }
-                ProtocolEventKind::Keygen(_) => {
+                ProtocolEventKind::Keygen(_) | ProtocolEventKind::MigrationKeygen(_) => {
                     break kms_response::from_keygen_row(&result[0])?;
                 }
                 ProtocolEventKind::Crsgen(_) => {
@@ -289,6 +295,10 @@ fn check_response_data(request: &ProtocolEventKind, response: KmsResponse) -> an
             ..Default::default()
         }),
         ProtocolEventKind::Keygen(r) => KmsGrpcResponse::Keygen(KeyGenResult {
+            request_id: Some(u256_to_request_id(r.keyId)),
+            ..Default::default()
+        }),
+        ProtocolEventKind::MigrationKeygen(r) => KmsGrpcResponse::Keygen(KeyGenResult {
             request_id: Some(u256_to_request_id(r.keyId)),
             ..Default::default()
         }),

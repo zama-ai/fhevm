@@ -7,16 +7,14 @@ use alloy::{
     network::Ethereum,
     providers::Provider,
     rpc::types::{Filter, Log},
-    sol_types::{SolEvent, SolEventInterface},
+    sol_types::SolEventInterface,
 };
 use anyhow::anyhow;
 use connector_utils::{
     monitoring::otlp::PropagationContext,
     types::{ProtocolEvent, db::EventType},
 };
-use fhevm_host_bindings::kms_generation::KMSGeneration::{
-    KMSGenerationEvents, MigrationKeygenRequested,
-};
+use fhevm_host_bindings::kms_generation::KMSGeneration::KMSGenerationEvents;
 use fhevm_host_bindings::kms_verifier::KMSVerifier::{self, KMSVerifierInstance};
 use sqlx::{Pool, Postgres};
 use tokio::select;
@@ -26,9 +24,11 @@ use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 use super::publish::publish_context_id;
 
-const KMS_GENERATION_EVENT_TYPES: [EventType; 3] = [
+const KMS_GENERATION_EVENT_TYPES: [EventType; 4] = [
     EventType::PrepKeygenRequest,
     EventType::KeygenRequest,
+    // RFC-029: migration keygen is a first-class event, decoded + tracked exactly like KeygenRequest.
+    EventType::MigrationKeygenRequest,
     EventType::CrsgenRequest,
 ];
 
@@ -98,14 +98,10 @@ where
 
     /// Polling loop to listen to [`KMSGeneration`] events on Ethereum.
     async fn run_poll_loop(&self) -> anyhow::Result<()> {
-        let mut event_signatures = KMS_GENERATION_EVENT_TYPES
+        let event_signatures = KMS_GENERATION_EVENT_TYPES
             .iter()
             .map(|e| e.signature_hash())
             .collect::<Vec<_>>();
-        // RFC-029: `MigrationKeygenRequested` is not a worker-processed event (it has no
-        // `EventType`), but it carries the migration mapping the worker needs, so we still
-        // subscribe to it and persist it as a side table.
-        event_signatures.push(MigrationKeygenRequested::SIGNATURE_HASH);
         let base_filter = Filter::new()
             .address(self.config.kms_generation_contract.address)
             .event_signature(event_signatures);
@@ -176,37 +172,18 @@ where
         let filter = base_filter.from_block(from_block).to_block(to_block);
 
         let logs = self.provider.get_logs(&filter).await?;
-        let (events, migration_keygens) = Self::prepare_events(logs)?;
-        publish_batch(
-            &self.db_pool,
-            events,
-            migration_keygens,
-            &KMS_GENERATION_EVENT_TYPES,
-            to_block,
-        )
-        .await?;
+        let events = Self::prepare_events(logs)?;
+        publish_batch(&self.db_pool, events, &KMS_GENERATION_EVENT_TYPES, to_block).await?;
 
         Ok((to_block.saturating_add(1), to_block < finalized_block))
     }
 
-    /// Decodes logs into worker-processed `ProtocolEvent`s (with OTLP context and metrics) and,
-    /// separately, RFC-029 `MigrationKeygenRequested` mappings — the latter are persisted as a side
-    /// table rather than routed through the worker pipeline.
-    fn prepare_events(
-        logs: Vec<Log>,
-    ) -> anyhow::Result<(Vec<ProtocolEvent>, Vec<MigrationKeygenRequested>)> {
+    /// Decodes logs into worker-processed `ProtocolEvent`s (with OTLP context and metrics). RFC-029's
+    /// `MigrationKeygenRequest` is a first-class `KMSGenerationEvents` variant, so it decodes through
+    /// the same path as every other keygen event — no special-casing, no side table.
+    fn prepare_events(logs: Vec<Log>) -> anyhow::Result<Vec<ProtocolEvent>> {
         let mut events = Vec::with_capacity(logs.len());
-        let mut migration_keygens = Vec::new();
         for log in logs {
-            // RFC-029: `MigrationKeygenRequested` is not part of `KMSGenerationEvents` handling in
-            // the worker pipeline, so decode it on its own topic0 and collect the mapping.
-            if log.topic0() == Some(&MigrationKeygenRequested::SIGNATURE_HASH) {
-                let decoded = MigrationKeygenRequested::decode_log(&log.inner)
-                    .map_err(|e| anyhow!("Failed to decode MigrationKeygenRequested event: {e}"))?;
-                migration_keygens.push(decoded.data);
-                continue;
-            }
-
             let event_kind = KMSGenerationEvents::decode_log(&log.inner)
                 .map_err(|e| anyhow!("Failed to decode KMSGeneration event: {e}"))?
                 .data
@@ -223,7 +200,7 @@ where
                 otlp_ctx,
             ));
         }
-        Ok((events, migration_keygens))
+        Ok(events)
     }
 
     /// Determines the block to start event listening from.

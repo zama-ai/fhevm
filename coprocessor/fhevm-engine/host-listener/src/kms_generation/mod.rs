@@ -152,15 +152,7 @@ pub async fn insert_kms_generation_events_tx(
                     urls = added.kmsNodeStorageUrls.len(),
                     "RFC-029 KeyMaterialAdded observed (staging v1 publish)"
                 );
-                insert_key_material_added(
-                    tx,
-                    added,
-                    log,
-                    chain_id,
-                    block_hash,
-                    block_number,
-                )
-                .await?;
+                insert_key_material_added(tx, added, chain_id, block_hash, block_number).await?;
             }
             KMSGeneration::KMSGenerationEvents::KeyMaterialMigrationScheduled(
                 scheduled,
