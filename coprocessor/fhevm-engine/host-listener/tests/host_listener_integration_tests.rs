@@ -3892,3 +3892,332 @@ async fn test_acl_branch_rows_keep_acl_block_context(
 
     Ok(())
 }
+
+/// Wave-1 savepoint isolation: when a branch dual-write fails, the authoritative
+/// legacy write must still commit and the ingest transaction must not be
+/// poisoned. We inject the failure with an always-false CHECK on the branch
+/// tables the host-listener writes directly (`computations_branch`,
+/// `pbs_computations_branch`). Neither legacy sibling fires a mirror trigger, so
+/// the only writer hitting these tables is the savepoint-isolated dual-write
+/// under test -- a clean injection with no trigger confound.
+#[tokio::test]
+#[serial(db)]
+async fn test_wave1_branch_write_failure_preserves_legacy_write(
+) -> Result<(), Box<dyn std::error::Error>> {
+    use alloy::primitives::Log as EventLog;
+    use host_listener::contracts::TfheContract;
+    use host_listener::contracts::TfheContract::TfheContractEvents;
+    use host_listener::database::tfhe_event_propagate::{ClearConst, LogTfhe};
+    use sqlx::types::time::PrimitiveDateTime;
+
+    let test_instance =
+        test_harness::instance::setup_test_db(ImportMode::WithKeysNoSns)
+            .await?;
+    let chain_id = ChainId::try_from(42_u64)?;
+    let db_url = test_instance.db_url.clone();
+    let db = Database::new(&db_url, chain_id, 128).await?;
+    let pool = db.pool.read().await.clone();
+
+    // producer_block_hash is NOT NULL, so this CHECK rejects every branch row.
+    for table in ["computations_branch", "pbs_computations_branch"] {
+        sqlx::query(&format!(
+            "ALTER TABLE {table}
+             ADD CONSTRAINT wave1_test_force_branch_write_failure
+             CHECK (producer_block_hash IS NULL)"
+        ))
+        .execute(&pool)
+        .await?;
+    }
+
+    let handle = FixedBytes::<32>::from([0x61; 32]);
+    let tx_hash = FixedBytes::<32>::from([0x62; 32]);
+    let block_hash = FixedBytes::<32>::from([0x63; 32]);
+    let caller: Address =
+        "0x3333333333333333333333333333333333333333".parse()?;
+
+    let event = LogTfhe {
+        event: EventLog {
+            address: Address::ZERO,
+            data: TfheContractEvents::TrivialEncrypt(
+                TfheContract::TrivialEncrypt {
+                    caller,
+                    pt: ClearConst::from_be_slice(&[5u8]),
+                    toType: 4u8,
+                    result: handle,
+                },
+            ),
+        },
+        transaction_hash: Some(tx_hash),
+        is_allowed: true,
+        block_number: 11,
+        block_hash,
+        block_timestamp: PrimitiveDateTime::MAX,
+        dependence_chain: tx_hash,
+        tx_depth_size: 0,
+        log_index: None,
+    };
+
+    let mut tx = db.new_transaction().await?;
+    // Each call's branch insert fails the poison CHECK inside its savepoint; the
+    // call must still return Ok and the legacy write must land.
+    db.insert_tfhe_event(&mut tx, &event).await?;
+    db.insert_pbs_computations(
+        &mut tx,
+        &[handle.to_vec()],
+        Some(tx_hash.to_vec()),
+        11,
+        block_hash.as_slice(),
+    )
+    .await?;
+    // If a failed branch write had poisoned the transaction, commit would error.
+    tx.commit().await?;
+
+    for (legacy, key_col) in [
+        ("computations", "output_handle"),
+        ("pbs_computations", "handle"),
+    ] {
+        let legacy_count: i64 = sqlx::query_scalar(&format!(
+            "SELECT COUNT(*) FROM {legacy} WHERE {key_col} = $1"
+        ))
+        .bind(handle.to_vec())
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(
+            legacy_count, 1,
+            "legacy {legacy} write must survive a failed branch dual-write"
+        );
+    }
+
+    for (branch, key_col) in [
+        ("computations_branch", "output_handle"),
+        ("pbs_computations_branch", "handle"),
+    ] {
+        let branch_count: i64 = sqlx::query_scalar(&format!(
+            "SELECT COUNT(*) FROM {branch} WHERE {key_col} = $1"
+        ))
+        .bind(handle.to_vec())
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(
+            branch_count, 0,
+            "failed branch write to {branch} must have rolled back to the savepoint"
+        );
+    }
+
+    Ok(())
+}
+
+/// Wave-1 orphan cleanup must delete the orphaned branch's ciphertext bytes but
+/// must NEVER delete the legacy `ciphertexts`/`ciphertexts128` bytes -- they are
+/// retained as the authoritative pre-cutover byte store for the wave-2 legacy
+/// fallback. The legacy index-row (NOT EXISTS) deletion is covered by
+/// `test_acl_branch_rows_keep_acl_block_context`; this test pins the
+/// ciphertext-bytes behaviour, which is otherwise only asserted by absence.
+#[tokio::test]
+#[serial(db)]
+async fn test_wave1_reorg_cleanup_preserves_legacy_ciphertext_bytes(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let test_instance =
+        test_harness::instance::setup_test_db(ImportMode::WithKeysNoSns)
+            .await?;
+    let chain_id = ChainId::try_from(42_u64)?;
+    let db_url = test_instance.db_url.clone();
+    let db = Database::new(&db_url, chain_id, 128).await?;
+    let pool = db.pool.read().await.clone();
+
+    let handle = FixedBytes::<32>::from([0x71; 32]);
+    let orphan_hash = FixedBytes::<32>::from([0x72; 32]);
+    let canonical_hash = FixedBytes::<32>::from([0x73; 32]);
+    let block_number = 30_i64;
+
+    // Producer metadata ties (handle, orphan_hash) to the orphaned branch so
+    // cleanup collects it as an orphaned ciphertext pair; the canonical context
+    // on the retained branch must survive.
+    sqlx::query(
+        "INSERT INTO pbs_computations_branch (
+            handle, transaction_id, host_chain_id, block_number, block_hash, producer_block_hash
+         )
+         VALUES
+            ($1, NULL, $2, $3, $4, $4),
+            ($1, NULL, $2, $3, $5, $5)",
+    )
+    .bind(handle.to_vec())
+    .bind(chain_id.as_i64())
+    .bind(block_number)
+    .bind(orphan_hash.to_vec())
+    .bind(canonical_hash.to_vec())
+    .execute(&pool)
+    .await?;
+
+    // Branch ciphertext bytes for both the orphaned and the canonical producer.
+    for (producer, ct_tag) in
+        [(orphan_hash, 0xA0_u8), (canonical_hash, 0xA1_u8)]
+    {
+        sqlx::query(
+            "INSERT INTO ciphertexts_branch (
+                handle, ciphertext, ciphertext_version, ciphertext_type,
+                producer_block_hash, block_number
+             ) VALUES ($1, $2, 0, 4, $3, $4)",
+        )
+        .bind(handle.to_vec())
+        .bind(vec![ct_tag; 32])
+        .bind(producer.to_vec())
+        .bind(block_number)
+        .execute(&pool)
+        .await?;
+        sqlx::query(
+            "INSERT INTO ciphertexts128_branch (
+                handle, ciphertext, producer_block_hash, block_number
+             ) VALUES ($1, $2, $3, $4)",
+        )
+        .bind(handle.to_vec())
+        .bind(vec![ct_tag; 48])
+        .bind(producer.to_vec())
+        .bind(block_number)
+        .execute(&pool)
+        .await?;
+    }
+
+    // Legacy ciphertext bytes: cleanup must leave these untouched even though the
+    // handle's only producer metadata lives on the orphaned branch.
+    sqlx::query(
+        "INSERT INTO ciphertexts (handle, ciphertext, ciphertext_version, ciphertext_type)
+         VALUES ($1, $2, 0, 4)",
+    )
+    .bind(handle.to_vec())
+    .bind(vec![0xB0_u8; 32])
+    .execute(&pool)
+    .await?;
+    sqlx::query(
+        "INSERT INTO ciphertexts128 (handle, ciphertext) VALUES ($1, $2)",
+    )
+    .bind(handle.to_vec())
+    .bind(vec![0xB1_u8; 48])
+    .execute(&pool)
+    .await?;
+
+    let mut tx = db.new_transaction().await?;
+    db.cleanup_orphaned_branch_state(&mut tx, &[orphan_hash.to_vec()])
+        .await?;
+    tx.commit().await?;
+
+    for branch in ["ciphertexts_branch", "ciphertexts128_branch"] {
+        let orphaned: i64 = sqlx::query_scalar(&format!(
+            "SELECT COUNT(*) FROM {branch} WHERE handle = $1 AND producer_block_hash = $2"
+        ))
+        .bind(handle.to_vec())
+        .bind(orphan_hash.to_vec())
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(
+            orphaned, 0,
+            "orphaned-branch bytes in {branch} must be deleted"
+        );
+
+        let canonical: i64 = sqlx::query_scalar(&format!(
+            "SELECT COUNT(*) FROM {branch} WHERE handle = $1 AND producer_block_hash = $2"
+        ))
+        .bind(handle.to_vec())
+        .bind(canonical_hash.to_vec())
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(
+            canonical, 1,
+            "canonical-branch bytes in {branch} must survive cleanup"
+        );
+    }
+
+    let legacy_ct: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM ciphertexts WHERE handle = $1",
+    )
+    .bind(handle.to_vec())
+    .fetch_one(&pool)
+    .await?;
+    let legacy_ct128: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM ciphertexts128 WHERE handle = $1",
+    )
+    .bind(handle.to_vec())
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(
+        legacy_ct, 1,
+        "legacy ciphertexts bytes must NOT be deleted by orphan cleanup"
+    );
+    assert_eq!(
+        legacy_ct128, 1,
+        "legacy ciphertexts128 bytes must NOT be deleted by orphan cleanup"
+    );
+
+    Ok(())
+}
+
+/// Wave-1 digest mirror hardening: a deterministic failure of the branchless
+/// `ciphertext_digest` mirror must NOT abort the authoritative legacy
+/// `ciphertext_digest` write (sns-worker / transaction-sender do not
+/// savepoint-wrap it). We poison `ciphertext_digest_branch` so the trigger's
+/// branch upsert fails; the hardened trigger must catch it and let the legacy
+/// write commit.
+#[tokio::test]
+#[serial(db)]
+async fn test_wave1_digest_mirror_failure_preserves_legacy_digest_write(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let test_instance =
+        test_harness::instance::setup_test_db(ImportMode::WithKeysNoSns)
+            .await?;
+    let chain_id = ChainId::try_from(42_u64)?;
+    let db_url = test_instance.db_url.clone();
+    let db = Database::new(&db_url, chain_id, 128).await?;
+    let pool = db.pool.read().await.clone();
+
+    let handle = FixedBytes::<32>::from([0x81; 32]);
+
+    // producer_block_hash is NOT NULL, so the trigger's branchless upsert
+    // (producer_block_hash = '') deterministically violates this CHECK.
+    sqlx::query(
+        "ALTER TABLE ciphertext_digest_branch
+         ADD CONSTRAINT wave1_test_force_digest_mirror_failure
+         CHECK (producer_block_hash IS NULL)",
+    )
+    .execute(&pool)
+    .await?;
+
+    // Fires mirror_ciphertext_digest_branchless. Without the trigger's EXCEPTION
+    // guard, the branch upsert's failure would abort this legacy INSERT.
+    sqlx::query(
+        "INSERT INTO ciphertext_digest (host_chain_id, key_id_gw, handle, ciphertext, ciphertext128)
+         VALUES ($1, $2, $3, $4, $5)",
+    )
+    .bind(chain_id.as_i64())
+    .bind(vec![0x82_u8; 32])
+    .bind(handle.to_vec())
+    .bind(vec![0x83_u8; 32])
+    .bind(vec![0x84_u8; 48])
+    .execute(&pool)
+    .await?;
+
+    let legacy_digest: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM ciphertext_digest WHERE host_chain_id = $1 AND handle = $2",
+    )
+    .bind(chain_id.as_i64())
+    .bind(handle.to_vec())
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(
+        legacy_digest, 1,
+        "legacy ciphertext_digest write must survive a failing branch mirror"
+    );
+
+    let branch_digest: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM ciphertext_digest_branch WHERE host_chain_id = $1 AND handle = $2",
+    )
+    .bind(chain_id.as_i64())
+    .bind(handle.to_vec())
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(
+        branch_digest, 0,
+        "the poisoned branch mirror must have been rolled back, not committed"
+    );
+
+    Ok(())
+}
