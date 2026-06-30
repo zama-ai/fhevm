@@ -1,0 +1,115 @@
+# Manually-triggered helper for operators preparing a `proposeCoprocessorUpgrade`
+# DAO call. Runs `scripts/prepareCoprocessorUpgrade.ts` against the chosen
+# environment's real RPC URLs (stored as repo secrets) and emits the report +
+# ABI-encoded calldata to the workflow log.
+#
+# The chain set per environment lives in
+# scripts/utils/environments.ts (`ENVIRONMENTS`). This workflow only wires the
+# per-env secrets to the env vars the script expects.
+#
+# Required repo secrets:
+#   For environment=devnet:
+#     RPC_URL_SEPOLIA, RPC_URL_AMOY, RPC_URL_GATEWAY_DEVNET
+#   For environment=testnet:
+#     RPC_URL_SEPOLIA, RPC_URL_AMOY, RPC_URL_GATEWAY_TESTNET
+#   For environment=mainnet:
+#     RPC_URL_ETHEREUM, RPC_URL_POLYGON, RPC_URL_GATEWAY_MAINNET
+name: host-contracts-prepare-coprocessor-upgrade
+
+permissions: {}
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment"
+        required: true
+        type: choice
+        options:
+          - devnet
+          - testnet
+          - mainnet
+      start-time:
+        description: "Wall-clock start, ISO 8601 UTC (e.g. 2026-07-01T12:00:00Z)"
+        required: true
+        type: string
+      duration:
+        description: "Evaluation window duration (e.g. 30m, 2h)"
+        required: true
+        type: string
+        default: "30m"
+      buffer:
+        description: "DAO lead time before startBlock (e.g. 1h, 2h)"
+        required: true
+        type: string
+        default: "2h"
+      proposal-id:
+        description: "Coprocessor upgrade proposal id (positive integer)"
+        required: true
+        type: string
+      software-version:
+        description: "Coprocessor software version (e.g. v0.14.0)"
+        required: true
+        type: string
+
+jobs:
+  compute:
+    name: compute (${{ inputs.environment }})
+    runs-on: runs-on=${{ github.run_id }}/runner=2cpu-linux-x64
+    permissions:
+      contents: 'read'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: 'false'
+
+      - name: Use Node.js 20.x
+        uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2
+        with:
+          node-version: 20.x
+
+      - name: Cache npm
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+
+      - name: Install safe-chain
+        shell: bash
+        run: |
+          # safe-chain v1.5.3 is distributed as an immutable GitHub release asset.
+          curl -fsSL https://github.com/AikidoSec/safe-chain/releases/download/1.5.3/install-safe-chain.sh | sh -s -- --ci
+
+      - name: Install host-contracts dependencies
+        working-directory: host-contracts
+        run: npm ci
+
+      # Inputs go through `env:` (not interpolated in `run:`) to prevent
+      # shell-injection via workflow_dispatch fields. All RPC secrets are
+      # wired unconditionally; the script reads only the ones for the chosen
+      # environment.
+      - name: Prepare upgrade proposal
+        working-directory: host-contracts
+        env:
+          RPC_URL_ETHEREUM: ${{ secrets.RPC_URL_ETHEREUM }}
+          RPC_URL_POLYGON: ${{ secrets.RPC_URL_POLYGON }}
+          RPC_URL_SEPOLIA: ${{ secrets.RPC_URL_SEPOLIA }}
+          RPC_URL_AMOY: ${{ secrets.RPC_URL_AMOY }}
+          RPC_URL_GATEWAY_DEVNET: ${{ secrets.RPC_URL_GATEWAY_DEVNET }}
+          RPC_URL_GATEWAY_TESTNET: ${{ secrets.RPC_URL_GATEWAY_TESTNET }}
+          RPC_URL_GATEWAY_MAINNET: ${{ secrets.RPC_URL_GATEWAY_MAINNET }}
+          ENVIRONMENT: ${{ inputs.environment }}
+          START_TIME: ${{ inputs.start-time }}
+          DURATION: ${{ inputs.duration }}
+          BUFFER: ${{ inputs.buffer }}
+          PROPOSAL_ID: ${{ inputs.proposal-id }}
+          SOFTWARE_VERSION: ${{ inputs.software-version }}
+        run: |
+          npm run --silent prepare-coprocessor-upgrade -- \
+            --environment "$ENVIRONMENT" \
+            --start-time "$START_TIME" \
+            --duration "$DURATION" \
+            --buffer "$BUFFER" \
+            --proposal-id "$PROPOSAL_ID" \
+            --software-version "$SOFTWARE_VERSION"
