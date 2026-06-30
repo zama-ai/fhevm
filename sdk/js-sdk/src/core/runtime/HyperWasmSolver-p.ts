@@ -350,9 +350,7 @@ function _handleModuleVersionCompatibilityPolicy(
     case 'throw':
       throw new Error(message);
     case 'warn':
-      if (logger?.warn !== undefined) {
-        logger.warn(message);
-      }
+      logger?.warn?.(message);
       return;
     case 'off':
       return;

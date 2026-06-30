@@ -186,9 +186,7 @@ export async function signDecryptionPermitV2(
   if (contractAddresses.length === 0 && durationSeconds > MAX_DURATION_SECONDS) {
     const msg = `permissive mode (allowedContracts=[]) with durationSeconds ${durationSeconds} exceeds the recommended maximum of ${MAX_DURATION_SECONDS}s — consider using a shorter window or app-bounded allowedContracts`;
     const logger = context.runtime.config.logger;
-    if (logger?.warn !== undefined) {
-      logger.warn(msg);
-    }
+    logger?.warn?.(msg);
   }
 
   assertIsTransportKeyPair(transportKeyPair, {});

@@ -426,10 +426,11 @@ function applyRuntimeConfig(matrix_: Matrix, versionPair: VersionPair, options: 
             return resolveWasmAssetUrl(versionPair, assetUrls, file);
           },
     logger: {
-      debug: (message: string) => log(`debug: ${message}`),
+      debug: (message: string) => log(`[debug] ${message}`),
+      warn: (message: string) => log(`[warn] ${message}`),
       error: (message: string, cause: unknown) => {
-        log(`runtime error: ${message}`);
-        if (cause !== undefined) log(String(cause));
+        log(`[error] ${message}`);
+        if (cause !== undefined) log(`[error] ${String(cause)}`);
       },
     },
   });

@@ -6,6 +6,7 @@ import { getViemTestConfig, type CreateViemDecryptClientFn, type FheTestViemConf
 import { FHETestABI } from '../FheTest-abi-v2.js';
 import { createWalletClient, http } from 'viem';
 import {
+  createLogger,
   decryptTestCases,
   fheTypeIdFromName,
   clearTypeFromHandle,
@@ -115,6 +116,7 @@ export function defineClientDecryptDelegateDecryptTests(parameters: {
             type: 'ApiKeyHeader',
             value: config.zamaApiKey,
           },
+          logger: createLogger(console.log),
         });
         console.log(`  Alice: ${config.alice.account.address}`);
         console.log(`  Bob:   ${config.bob.account.address}`);

@@ -90,21 +90,21 @@ async function _resolveKmsAssets(
 function _logResolvedKmsAssets(resolvedAssets: ResolvedKmsAssets, logger: FhevmRuntimeConfig['logger']): void {
   const { wasm } = resolvedAssets;
   if (wasm.resolution === 'user') {
-    logger?.debug(`resolve tkms wasm filename using 'locateFile' function: ${wasm.filename} -> url: ${wasm.url}`);
+    logger?.debug?.(`resolve tkms wasm filename using 'locateFile' function: ${wasm.filename} -> url: ${wasm.url}`);
   } else if (wasm.resolution === 'node') {
     if (wasm.url === undefined) {
       // Auto-derived assets were missing on disk (e.g. a bundler such as Turbopack
       // relocated the package) and were cleared by _resolveTkmsAssets -> base64.
-      logger?.debug(
+      logger?.debug?.(
         `tkms auto-derived assets not found on disk (bundler relocation?); using embedded base64 ` +
           `(wasm: ${wasm.localRelativePath})`,
       );
     } else {
-      logger?.debug(`resolve tkms wasm local path: ${wasm.localRelativePath} -> url: ${wasm.url}`);
+      logger?.debug?.(`resolve tkms wasm local path: ${wasm.localRelativePath} -> url: ${wasm.url}`);
     }
   } else {
     // 'none': browser zero-config (no 'locateFile', not Node) -> embedded base64.
-    logger?.debug(`resolve tkms assets using embedded base64 (browser, no 'locateFile')`);
+    logger?.debug?.(`resolve tkms assets using embedded base64 (browser, no 'locateFile')`);
   }
 }
 
@@ -226,11 +226,11 @@ async function _compileWasmModule(cfg: ResolvedTkmsModuleConfig): Promise<WebAss
   let wasmModule;
 
   if (cfg.assets.wasm.url !== undefined) {
-    cfg.logger?.debug(`compile tkms verified wasm at: ${cfg.assets.wasm.url}`);
+    cfg.logger?.debug?.(`compile tkms verified wasm at: ${cfg.assets.wasm.url}`);
     wasmModule = await isomorphicCompileVerifiedWasm(cfg.assets.wasm.url, cfg.assets.wasm.sha256);
   } else {
     const { tkmsWasmBase64, tkmsWasmBase64CompressionFormat } = await loadKmsWasmBase64(cfg.version);
-    cfg.logger?.debug(
+    cfg.logger?.debug?.(
       `compile tkms wasm from embedded base64 (compression:${tkmsWasmBase64CompressionFormat ?? 'none'})`,
     );
     wasmModule = await isomorphicCompileWasmFromBase64(tkmsWasmBase64, tkmsWasmBase64CompressionFormat);

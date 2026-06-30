@@ -3,7 +3,13 @@ import { ethers } from 'ethers';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
 import { getEthersTestConfig, type CreateEthersDecryptClientFn, type FheTestEthersConfig } from '../setup-ethers.js';
-import { decryptTestCases, fheTypeIdFromName, clearTypeFromHandle, fheTypeIdFromHandle } from '../setupCommon.js';
+import {
+  createLogger,
+  decryptTestCases,
+  fheTypeIdFromName,
+  clearTypeFromHandle,
+  fheTypeIdFromHandle,
+} from '../setupCommon.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -101,6 +107,7 @@ export function defineClientDecryptDelegateDecryptTests(parameters: {
             type: 'ApiKeyHeader',
             value: config.zamaApiKey,
           },
+          logger: createLogger(console.log),
         });
         console.log(`  Alice: ${config.alice.wallet.address}`);
         console.log(`  Bob:   ${config.bob.wallet.address}`);

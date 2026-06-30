@@ -71,13 +71,12 @@ function setConfig(numThreads: number) {
     //   return undefined as unknown as URL;
     // },
     logger: {
-      debug: (message: string) => {
-        console.log(message);
-      },
+      debug: (message: string) => console.log(`[debug] ${message}`),
+      warn: (message: string) => console.log(`[warn] ${message}`),
       error: (message: string, cause: unknown) => {
-        console.log(message);
+        console.log(`[error] ${message}`);
         if (cause !== undefined) {
-          console.log(cause);
+          console.log(`[error] ${cause}`);
         }
       },
     },

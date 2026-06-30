@@ -2,6 +2,7 @@ import type { FhevmChain } from '@fhevm/sdk/chains';
 import type { EncryptedValue, TypedValue } from '@fhevm/sdk/types';
 import type { ProtocolVersion } from '../../src/core/types/coreFhevmClient.js';
 import type { FhevmModuleVersions } from '../../src/core/types/moduleVersions.js';
+import type { Logger } from '../../src/core/types/logger.js';
 import { execFileSync } from 'node:child_process';
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -125,6 +126,23 @@ const FHE_ENCRYPTION_KEY_TFHE_VERSION_BY_CHAIN: Readonly<Partial<Record<FheTestC
 
 export function getFheEncryptionKeyTfheVersion(chainName: FheTestChainName): string {
   return FHE_ENCRYPTION_KEY_TFHE_VERSION_BY_CHAIN[chainName] ?? getTfheVersion(chainName) ?? 'unknown';
+}
+
+// ---------------------------------------------------------------------------
+// createLogger
+// ---------------------------------------------------------------------------
+
+export function createLogger(log: (msg: string) => void): Logger {
+  return {
+    debug: (message: string) => log(`[debug] ${message}`),
+    warn: (message: string) => log(`[warn] ${message}`),
+    error: (message: string, cause: unknown) => {
+      log(`[error] ${message}`);
+      if (cause !== undefined) {
+        log(`[error] ${String(cause)}`);
+      }
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------

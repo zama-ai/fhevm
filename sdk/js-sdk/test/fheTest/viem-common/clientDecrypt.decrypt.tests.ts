@@ -3,7 +3,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
 import { getViemTestConfig, type CreateViemDecryptClientFn, type FheTestViemConfig } from '../setup-viem.js';
 import { FHETestABI } from '../FheTest-abi-v2.js';
-import { decryptTestCases, fheTypeIdFromName, clearTypeFromHandle } from '../setupCommon.js';
+import { decryptTestCases, fheTypeIdFromName, clearTypeFromHandle, createLogger } from '../setupCommon.js';
 import { asEncryptedValue, type EncryptedValue, type TypedValue } from '@fhevm/sdk/types';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -29,11 +29,7 @@ export function defineClientDecryptDecryptTests(parameters: {
           type: 'ApiKeyHeader',
           value: config.zamaApiKey,
         },
-        logger: {
-          debug: console.log,
-          warn: console.log,
-          error: console.log,
-        },
+        logger: createLogger(console.log),
       });
     });
 

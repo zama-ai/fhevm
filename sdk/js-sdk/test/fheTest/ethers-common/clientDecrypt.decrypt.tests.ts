@@ -2,7 +2,13 @@ import type { ethers } from 'ethers';
 import type { EncryptedValue, TypedValue } from '@fhevm/sdk/types';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
-import { decryptTestCases, fheTypeIdFromName, clearTypeFromHandle, fheTypeIdFromHandle } from '../setupCommon.js';
+import {
+  decryptTestCases,
+  fheTypeIdFromName,
+  clearTypeFromHandle,
+  fheTypeIdFromHandle,
+  createLogger,
+} from '../setupCommon.js';
 import { asEncryptedValue } from '@fhevm/sdk/types';
 import { getEthersTestConfig, type CreateEthersDecryptClientFn, type FheTestEthersConfig } from '../setup-ethers.js';
 
@@ -29,11 +35,7 @@ export function defineClientDecryptDecryptTests(parameters: {
           type: 'ApiKeyHeader',
           value: config.zamaApiKey,
         },
-        logger: {
-          debug: console.log,
-          warn: console.log,
-          error: console.log,
-        },
+        logger: createLogger(console.log),
       });
     });
 

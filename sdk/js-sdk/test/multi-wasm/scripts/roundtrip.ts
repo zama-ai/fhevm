@@ -170,10 +170,11 @@ async function run() {
               return resolveWasmAssetUrl(versionPair, assetUrls, file);
             },
       logger: {
-        debug: (message: string) => log(`  [debug] ${message}`),
+        debug: (message: string) => log(`[debug] ${message}`),
+        warn: (message: string) => log(`[warn] ${message}`),
         error: (message: string, cause: unknown) => {
-          log(`  [error] ${message}`);
-          if (cause !== undefined) log(`  [error] ${cause}`);
+          log(`[error] ${message}`);
+          if (cause !== undefined) log(`[error] ${cause}`);
         },
       },
     });

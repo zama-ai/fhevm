@@ -11,6 +11,7 @@ import type { FhevmChain } from '../../../src/core/types/fhevmChain.js';
 import type { FhevmRuntime, WithDecrypt, WithEncrypt } from '../../../src/core/types/coreFhevmRuntime.js';
 import type { ZkProof } from '../../../src/core/types/zkProof-p.js';
 import { setFhevmRuntimeConfig } from '../../../src/ethers/index.js';
+import { createLogger } from './common.js';
 import { getEthersRuntime } from '../../../src/ethers/internal/runtime.js';
 import { encryptModule } from '../../../src/core/modules/encrypt/module/index.js';
 import { decryptModule } from '../../../src/core/modules/decrypt/module/index.js';
@@ -137,15 +138,7 @@ export function setupMultiWasmRuntime(): MultiWasmRuntime {
     singleThread: false,
     numberOfThreads: EXPECTED_THREADS,
     locateFile: locateWasmFile,
-    logger: {
-      debug: (message: string) => log(`  [debug] ${message}`),
-      error: (message: string, cause: unknown) => {
-        log(`  [error] ${message}`);
-        if (cause !== undefined) {
-          log(`  [error] ${cause}`);
-        }
-      },
-    },
+    logger: createLogger(log),
   });
   log('[PASS] Runtime config set');
 

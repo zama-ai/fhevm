@@ -208,23 +208,25 @@ async function _resolveTfheAssets(
 function _logResolvedTfheAssets(resolvedAssets: ResolvedTfheAssets, logger: FhevmRuntimeConfig['logger']): void {
   const { wasm, worker } = resolvedAssets;
   if (wasm.resolution === 'user') {
-    logger?.debug(`resolve tfhe wasm filename using 'locateFile' function: ${wasm.filename} -> url: ${wasm.url}`);
-    logger?.debug(`resolve tfhe worker filename using 'locateFile' function: ${worker.filename} -> url: ${worker.url}`);
+    logger?.debug?.(`resolve tfhe wasm filename using 'locateFile' function: ${wasm.filename} -> url: ${wasm.url}`);
+    logger?.debug?.(
+      `resolve tfhe worker filename using 'locateFile' function: ${worker.filename} -> url: ${worker.url}`,
+    );
   } else if (wasm.resolution === 'node') {
     if (wasm.url === undefined) {
       // Auto-derived assets were missing on disk (e.g. a bundler such as Turbopack
       // relocated the package) and were cleared by _resolveTfheAssets -> base64.
-      logger?.debug(
+      logger?.debug?.(
         `tfhe auto-derived assets not found on disk (bundler relocation?); using embedded base64 ` +
           `(wasm: ${wasm.localRelativePath}, worker: ${worker.localRelativePath})`,
       );
     } else {
-      logger?.debug(`resolve tfhe wasm local path: ${wasm.localRelativePath} -> url: ${wasm.url}`);
-      logger?.debug(`resolve tfhe worker local path: ${worker.localRelativePath} -> url: ${worker.url}`);
+      logger?.debug?.(`resolve tfhe wasm local path: ${wasm.localRelativePath} -> url: ${wasm.url}`);
+      logger?.debug?.(`resolve tfhe worker local path: ${worker.localRelativePath} -> url: ${worker.url}`);
     }
   } else {
     // 'none': browser zero-config (no 'locateFile', not Node) -> embedded base64.
-    logger?.debug(`resolve tfhe assets using embedded base64 (browser, no 'locateFile')`);
+    logger?.debug?.(`resolve tfhe assets using embedded base64 (browser, no 'locateFile')`);
   }
 }
 
@@ -475,7 +477,10 @@ async function _resolveTfheModuleConfig(
     // Single source of truth for browser-vs-Node, resolved on the main thread
     // (robust to bundler `process` shims) — the worker bootstrap no longer detects it.
     isBrowserLike: isBrowserLike(),
-    logger: parameters.logger,
+    logger:
+      parameters.logger?.debug !== undefined && parameters.logger.error !== undefined
+        ? { debug: parameters.logger.debug, error: parameters.logger.error }
+        : undefined,
   });
 
   const cfg = {
@@ -572,11 +577,11 @@ async function _compileWasmModule(cfg: ResolvedTfheModuleConfig): Promise<WebAss
   let wasmModule;
 
   if (cfg.assets.wasm.url !== undefined) {
-    cfg.logger?.debug(`compile verified wasm at: ${cfg.assets.wasm.url}`);
+    cfg.logger?.debug?.(`compile verified wasm at: ${cfg.assets.wasm.url}`);
     wasmModule = await isomorphicCompileVerifiedWasm(cfg.assets.wasm.url, cfg.assets.wasm.sha256);
   } else {
     const { tfheWasmBase64, tfheWasmBase64CompressionFormat } = await loadTfheWasmBase64(cfg.version);
-    cfg.logger?.debug(`compile wasm from embedded base64 (compression:${tfheWasmBase64CompressionFormat ?? 'none'})`);
+    cfg.logger?.debug?.(`compile wasm from embedded base64 (compression:${tfheWasmBase64CompressionFormat ?? 'none'})`);
     wasmModule = await isomorphicCompileWasmFromBase64(tfheWasmBase64, tfheWasmBase64CompressionFormat);
   }
 
@@ -599,7 +604,7 @@ async function _initTfheModule(cfg: ResolvedTfheModuleConfig): Promise<TfheLibAp
 
   // 4. Spawn Web Workers for parallel FHE operations (skipped when single-threaded)
   if (!cfg.singleThread) {
-    cfg.logger?.debug(`initThreadPool(${cfg.numberOfThreads})`);
+    cfg.logger?.debug?.(`initThreadPool(${cfg.numberOfThreads})`);
     await tfheLib.initThreadPool(cfg.numberOfThreads);
   }
 
