@@ -475,10 +475,7 @@ mod tests {
         let add = binary_op_hcu(FheBinaryOpCode::Add, EU64, false).unwrap();
         assert_eq!(m.total, t + t + add);
         for d in &m.step_depths {
-            assert!(
-                *d <= m.total,
-                "per-value depth never exceeds frame total"
-            );
+            assert!(*d <= m.total, "per-value depth never exceeds frame total");
         }
         assert_eq!(*m.step_depths.last().unwrap(), add + t);
     }
