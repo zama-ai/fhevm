@@ -14,17 +14,18 @@ migration Job racing the service Deployments. This runbook closes both.
 1. **Before** `helm upgrade`, run the init image once with
    `RUN_BLOCK_SCOPE_WAVE1_PREREQUISITES=true` to build the ancestry index
    `CONCURRENTLY` against the live DB.
-2. Run `helm upgrade`. The db-migration Job is a `pre-install,pre-upgrade`
-   hook, so Helm runs it to completion before rolling the service Deployments.
-   The in-migration index build no-ops because step 1 already built it.
-3. Verify the index is `valid`, the migration hook completed, and watch DB
+2. **Mandatory:** run the full db-migration image/job to completion before
+   rolling any wave 1 service Deployment. The in-migration index build no-ops
+   because step 1 already built it.
+3. Run `helm upgrade` only after the migration has completed.
+4. Verify the index is `valid`, the migration completed, and watch DB
    write load.
 
 > The host-listener also applies an **in-code schema guard**
 > (`Database::wait_for_branch_schema`): if a binary starts before the migration
 > has applied, it waits (bounded) for the branch schema instead of crash-looping
-> on `*_branch` / `parent_hash` writes. The Helm hook is still the primary
-> migration-vs-binary gate.
+> on `*_branch` / `parent_hash` writes. This is a backstop, not the rollout
+> plan: operators must still complete the migration before rolling wave 1 pods.
 
 ## Why the pre-step is required
 
@@ -63,32 +64,42 @@ the remaining migrations and does **not** seed `host_chains`. It is idempotent: 
 skips an already-`valid` index and fails loudly on a left-over `invalid` index (drop it and
 re-run, per the `precreate_index` message).
 
-### 2. helm upgrade
-Run the normal `helm upgrade`. The migration Job is now a `pre-install,pre-upgrade` hook
-(`charts/coprocessor/values.yaml` → `dbMigration.annotations`), so it **runs to completion
-before the service Deployments roll**. This removes the migration-vs-binary race (a binary
-that starts before the schema exists would otherwise fail its `*_branch` / `parent_hash`
-writes).
+### 2. Mandatory migration gate before workload rollout
+Before any wave 1 service Deployment rolls, run the full db-migration image/job to completion
+against the target DB. This is the required migration-vs-binary ordering gate: a wave 1 binary
+can issue `*_branch` / `parent_hash` queries, so the branch schema must exist before those pods
+start.
 
-Hook ordering is by **`helm.sh/hook-weight` only** (Helm has no `hook-needs`). The migration
-Job uses weight `5`; ensure any hook-rendered resource it depends on (DB URL / secrets /
-ConfigMaps mounted by the Job) uses a **lower** weight so it runs first. Non-hook resources
-are not created before pre-install/pre-upgrade hooks, so fresh installs must provide those
-dependencies out of band or render them as earlier hooks.
+Do not rely on the chart's normal db-migration Job object for this ordering: with Helm hooks
+disabled by default, Helm may create the Job and service Deployments in the same upgrade. The
+normal chart Job is still useful and idempotent, but it is not a rollout gate by itself.
+
+Infra may opt into a `pre-upgrade` hook by uncommenting `dbMigration.annotations` in
+`charts/coprocessor/values.yaml`. If a hook is enabled, hook ordering is by
+**`helm.sh/hook-weight` only** (Helm has no `hook-needs`). Every mounted or `valueFrom`
+dependency of the migration Job (DB URL, IAM auth inputs, Secrets, ConfigMaps, including the
+chart-managed RDS CA ConfigMap) must either already exist before the upgrade or be rendered as
+an earlier hook with a **lower** weight. Pre-install hooks have the same restriction and are not
+safe with chart-created dependencies on fresh installs.
 
 The trigger-attach migrations (`20260610130300`, `20260610145100`) set
 `SET LOCAL lock_timeout = '3s'`, so a contended `CREATE TRIGGER` on the hot `allowed_handles`
 / `ciphertext_digest` tables fails fast and is retried (Job `backoffLimit: 3`) instead of
-convoying every query behind it. If the hook fails on lock contention, re-running the
-upgrade (or the Job) is safe — all migrations are idempotent.
+convoying every query behind it. If the migration fails on lock contention, re-running the Job
+is safe — all migrations are idempotent.
 
-### 3. Verify
+### 3. helm upgrade
+Run the normal `helm upgrade` only after step 2 has completed successfully. At that point the
+chart-rendered db-migration Job may run again during the upgrade; this is expected and should
+no-op or apply only already-idempotent migrations.
+
+### 4. Verify
 - Index is valid:
   ```sql
   SELECT indisvalid FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
   WHERE c.relname = 'idx_host_chain_blocks_valid_parent_hash';   -- expect t
   ```
-- Migration hook Job completed (`kubectl get jobs -l app=coprocessor-db-migration`).
+- Migration Job completed (`kubectl get jobs -l app=coprocessor-db-migration`).
 - Branch tables exist and are being dual-written (`computations_branch`, `pbs_computations_branch`,
   `allowed_handles_branch`, `ciphertext_digest_branch`, `ciphertexts_branch`, `ciphertexts128_branch`).
 - DB load: the digest mirror trigger fans a legacy `ciphertext_digest` write across branch

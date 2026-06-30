@@ -188,19 +188,22 @@ polygonContractConfigMap:
 dbMigration:
   enabled: true
 
-  # Helm hook annotations for deployment ordering.
+  # Optional Helm hook annotations for Infra-owned deployment ordering.
   #
-  # The migration Job runs as a pre-install/pre-upgrade hook so it completes
-  # BEFORE the service Deployments roll. Without this the Job runs concurrently
-  # with the Deployments and a new binary can issue *_branch / parent_hash
-  # queries against a not-yet-migrated schema (crash-loop / ingestion stall).
+  # Default hooks are disabled because Helm pre-install/pre-upgrade hooks run
+  # before normal chart resources. The migration Job can depend on chart-created
+  # ConfigMaps/Secrets (for example the IAM DB auth RDS CA ConfigMap), which
+  # would not exist yet during a hook on fresh installs or first enablement.
   #
-  # The host-listener schema guard (Database::wait_for_branch_schema) remains a
-  # backstop for out-of-order starts, but the hook is the primary rollout gate.
-  annotations:
-    "helm.sh/hook": "pre-install,pre-upgrade"
-    "helm.sh/hook-weight": "5"
-    "helm.sh/hook-delete-policy": "before-hook-creation"
+  # Wave-1 upgrades still require the migration to complete before service
+  # Deployments roll; see RUNBOOK-wave1-block-scope.md. Infra may opt into a
+  # hook only if every Job dependency is pre-existing or rendered as an earlier
+  # hook with a lower hook weight.
+  annotations: {}
+  # annotations:
+  #   "helm.sh/hook": "pre-upgrade"
+  #   "helm.sh/hook-weight": "5"
+  #   "helm.sh/hook-delete-policy": "before-hook-creation"
 
   image:
     name: hub.zama.org/zama-protocol/zama-ai/fhevm/coprocessor/db-migration
