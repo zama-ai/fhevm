@@ -1,3 +1,4 @@
+import type { TkmsVersion } from '../../wasm/tkms/KmsLibApi.js';
 import type { HostContractData } from './hostContract.js';
 import type { Bytes32Hex, BytesHex, ChecksummedAddress, Uint64BigInt } from './primitives.js';
 import type { Prettify } from './utils.js';
@@ -65,6 +66,24 @@ export type KmsDelegateUserDecryptEip712Types = {
   ];
 };
 
+export type KmsUserDecryptEip712V2Types = {
+  readonly EIP712Domain: readonly [
+    { readonly name: 'name'; readonly type: 'string' },
+    { readonly name: 'version'; readonly type: 'string' },
+    { readonly name: 'chainId'; readonly type: 'uint256' },
+    { readonly name: 'verifyingContract'; readonly type: 'address' },
+  ];
+  // CRITICAL: Field order is authoritative — determines the EIP-712 type hash.
+  readonly UserDecryptRequestVerification: readonly [
+    { readonly name: 'userAddress'; readonly type: 'address' },
+    { readonly name: 'publicKey'; readonly type: 'bytes' },
+    { readonly name: 'allowedContracts'; readonly type: 'address[]' },
+    { readonly name: 'startTimestamp'; readonly type: 'uint256' },
+    { readonly name: 'durationSeconds'; readonly type: 'uint256' },
+    { readonly name: 'extraData'; readonly type: 'bytes' },
+  ];
+};
+
 export type KmsPublicDecryptEip712Types = {
   readonly EIP712Domain: readonly [
     { readonly name: 'name'; readonly type: 'string' },
@@ -99,24 +118,14 @@ export type KmsPublicDecryptEip712Message = Readonly<{
   extraData: BytesHex;
 }>;
 
-export type KmsDecryptEip712Like = {
-  readonly domain: {
-    readonly name: string;
-    readonly version: string;
-    readonly chainId: number | bigint;
-    readonly verifyingContract: string;
-  };
-  readonly primaryType?: string | undefined;
-  readonly types: Record<string, ReadonlyArray<{ readonly name: string; readonly type: string }>>;
-  readonly message: {
-    readonly publicKey: string | Uint8Array;
-    readonly contractAddresses: string[];
-    readonly startTimestamp: number;
-    readonly durationDays: number;
-    readonly extraData: string | Uint8Array;
-    readonly delegatorAddress?: string | undefined;
-  };
-};
+export type KmsUserDecryptEip712V2Message = Readonly<{
+  userAddress: ChecksummedAddress;
+  publicKey: BytesHex;
+  allowedContracts: readonly ChecksummedAddress[];
+  startTimestamp: string;
+  durationSeconds: string;
+  extraData: BytesHex;
+}>;
 
 export type KmsUserDecryptEip712 = Prettify<{
   readonly domain: KmsEip712Domain;
@@ -139,6 +148,13 @@ export type KmsPublicDecryptEip712 = Prettify<{
   readonly message: KmsPublicDecryptEip712Message;
 }>;
 
+export type KmsUserDecryptEip712V2 = Prettify<{
+  readonly domain: KmsEip712Domain;
+  readonly types: KmsUserDecryptEip712V2Types;
+  readonly primaryType: 'UserDecryptRequestVerification';
+  readonly message: KmsUserDecryptEip712V2Message;
+}>;
+
 ////////////////////////////////////////////////////////////////////////////////
 //
 // KmsSigncryptedShares
@@ -147,5 +163,19 @@ export type KmsPublicDecryptEip712 = Prettify<{
 
 export declare const KmsSigncryptedSharesBrand: unique symbol;
 export interface KmsSigncryptedShares {
+  readonly tkmsVersion: TkmsVersion;
   readonly [KmsSigncryptedSharesBrand]: never;
 }
+
+////////////////////////////////////////////////////////////////////////////////
+//
+// Eip712Like
+//
+////////////////////////////////////////////////////////////////////////////////
+
+export type Eip712Like = {
+  readonly domain: Record<string, unknown>;
+  readonly primaryType?: string | undefined;
+  readonly types: Record<string, ReadonlyArray<{ readonly name: string; readonly type: string }>>;
+  readonly message: Record<string, unknown>;
+};

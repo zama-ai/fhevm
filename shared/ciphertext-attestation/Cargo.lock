@@ -863,6 +863,7 @@ dependencies = [
  "sha3 0.10.9",
  "thiserror",
  "tokio",
+ "tracing",
 ]
 
 [[package]]

@@ -1,0 +1,281 @@
+name: js-sdk-dod
+
+# Parallel fan-out of `npm run dod:full` (test/scripts/dod.mjs).
+#
+# dod.mjs runs every command SEQUENTIALLY (~1h30). This workflow runs the same
+# commands as independent jobs on separate runners, so wall-clock collapses to
+# roughly the slowest single job (the ~20-25 min localstack legs).
+#
+# NOT a required status check — this runs on PRs for visibility but does not
+# block merge (branch protection is not configured for it).
+#
+# Triggers:
+#   - pull_request to devex/js-sdk / main  -> runs the REAL jobs.
+#   - workflow_dispatch                    -> `mode: dry-run` (default) runs a
+#     cheap sleep+trace matrix to validate the parallel fan-out (works with
+#     `act` locally); `mode: real` runs the real jobs.
+#
+# act (local, dry-run only):
+#   act workflow_dispatch -W .github/workflows/js-sdk-dod.yml --input mode=dry-run
+
+on:
+  pull_request:
+    branches:
+      - devex/js-sdk
+      - main
+    paths:
+      - 'sdk/js-sdk/**'
+      - '.github/workflows/js-sdk-dod.yml'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'dry-run = sleep+traces (validate fan-out, act-friendly); real = run the actual dod:full jobs'
+        type: choice
+        default: dry-run
+        options:
+          - dry-run
+          - real
+
+permissions: {}
+
+# Harden `npm ci` (run in every job) against transient registry blips such as
+# ECONNRESET / "network aborted" by giving npm more retries and longer timeouts.
+env:
+  NPM_CONFIG_FETCH_RETRIES: '5'
+  NPM_CONFIG_FETCH_RETRY_MINTIMEOUT: '20000'
+  NPM_CONFIG_FETCH_RETRY_MAXTIMEOUT: '120000'
+  NPM_CONFIG_FETCH_TIMEOUT: '600000'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: ./sdk/js-sdk
+
+jobs:
+  # ===========================================================================
+  # DRY RUN — cheap parallel fan-out probe (workflow_dispatch + mode=dry-run).
+  # One matrix leg per real job; each sleeps ~30s and prints traces. Runs every
+  # leg in parallel so you can confirm the fan-out (and exercise it with `act`)
+  # without paying for the real jobs.
+  # ===========================================================================
+  dry-run:
+    name: dod ${{ matrix.name }} (dry-run)
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'dry-run' }}
+    runs-on: ubuntu-latest
+    permissions: {}
+    strategy:
+      fail-fast: false
+      matrix:
+        name:
+          - quality
+          - build-dev
+          - browser
+          - cleartext-v12
+          - cleartext-v13
+          - localstack-v11
+          - localstack-v12
+          - localstack-v13
+          - localstack-latest
+    steps:
+      # Pass matrix values through env (not direct ${{ }} expansion in the
+      # shell) to avoid template-injection — zizmor / GitHub code scanning.
+      - env:
+          MATRIX_NAME: ${{ matrix.name }}
+        run: echo "::notice title=${MATRIX_NAME}::start $(date -u +%T) on ${RUNNER_NAME}"
+      - run: sleep 30
+      - env:
+          MATRIX_NAME: ${{ matrix.name }}
+        run: echo "::notice title=${MATRIX_NAME}::end $(date -u +%T)"
+
+  # ===========================================================================
+  # REAL JOBS — run on PRs, or on workflow_dispatch with mode=real.
+  # Each job mirrors a slice of dod.mjs. They are independent and run in
+  # parallel; fail-fast is irrelevant across jobs (GitHub does not cancel
+  # sibling jobs on failure unless a job-level matrix opts in).
+  # ===========================================================================
+
+  # --- Standard gate: prod build (clean/codegen/prettier/lint/builds) + unit ---
+  quality:
+    name: dod quality (build:prod + unit)
+    if: ${{ github.event_name == 'pull_request' || inputs.mode == 'real' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: 'read' # checkout the repository
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: 'false'
+      - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        with:
+          node-version: 22.x
+      - uses: foundry-rs/foundry-toolchain@82dee4ba654bd2146511f85f0d013af94670c4de # v1.4.0
+        with:
+          version: stable
+      - run: npm ci
+      - run: npm run build:prod # clean, codegen, prettier(+ext), lint, cjs/esm/types/tests
+      - run: npm run test:unit
+
+  # --- Dev-profile build check (dod step: BUILD_PROFILE=dev build) ---
+  build-dev:
+    name: dod build:dev
+    if: ${{ github.event_name == 'pull_request' || inputs.mode == 'real' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: 'read' # checkout the repository
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: 'false'
+      - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        with:
+          node-version: 22.x
+      - uses: foundry-rs/foundry-toolchain@82dee4ba654bd2146511f85f0d013af94670c4de # v1.4.0
+        with:
+          version: stable
+      - run: npm ci
+      - run: npm run build:dev
+
+  # --- Browser WASM test (Playwright) ---
+  browser:
+    name: dod browser
+    if: ${{ github.event_name == 'pull_request' || inputs.mode == 'real' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: 'read' # checkout the repository
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: 'false'
+      - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        with:
+          node-version: 22.x
+      - uses: foundry-rs/foundry-toolchain@82dee4ba654bd2146511f85f0d013af94670c4de # v1.4.0
+        with:
+          version: stable
+      - run: npm ci
+      - run: npm run build:prod
+      - run: npx playwright install --with-deps
+      - run: npm run test:browser
+
+  # --- Cleartext (Anvil) suites: one job per foundry profile ---
+  cleartext:
+    name: dod cleartext ${{ matrix.profile }}
+    if: ${{ github.event_name == 'pull_request' || inputs.mode == 'real' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: 'read' # checkout the repository
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - profile: v12
+            flags: '--use-pack --foundry-profile=v12'
+          - profile: v13
+            flags: '--use-pack --foundry-profile=v13'
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: 'false'
+      - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        with:
+          node-version: 22.x
+      - uses: foundry-rs/foundry-toolchain@82dee4ba654bd2146511f85f0d013af94670c4de # v1.4.0
+        with:
+          version: stable
+      - run: npm ci
+      - run: cd contracts && forge soldeer install
+      - name: Write test .env
+        run: |
+          echo 'MNEMONIC="test test test test test test test test test test test junk"' > test/.env
+          echo 'ZAMA_FHEVM_API_KEY="zmr_mainnet_blahblah"' >> test/.env
+      - run: npm run build:prod
+      - run: ./test/scripts/rebuild_sdk_and_pack.sh --build-profile=skip
+      - name: Run cleartext suite (${{ matrix.profile }})
+        env:
+          CLEARTEXT_FLAGS: ${{ matrix.flags }}
+        run: |
+          ulimit -n 65536
+          # CLEARTEXT_FLAGS is a controlled literal that must word-split into args:
+          # shellcheck disable=SC2086
+          ./test/scripts/localcleartext-run-tests.sh ${CLEARTEXT_FLAGS}
+
+  # --- Localstack (full FHE stack) suites: one job per protocol version ---
+  localstack:
+    name: dod localstack ${{ matrix.name }}
+    if: ${{ github.event_name == 'pull_request' || inputs.mode == 'real' }}
+    runs-on: large_ubuntu_32
+    timeout-minutes: 60
+    permissions:
+      contents: 'read' # checkout the repository
+      packages: 'read' # pull stack images from ghcr.io
+      id-token: 'write' # OIDC for registry / stack auth
+    env:
+      GH_TOKEN: ${{ github.token }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        include:
+          - name: v11
+            script: test:localstack:v11
+          - name: v12
+            script: test:localstack:v12
+          - name: v13
+            script: test:localstack:v13
+          - name: latest
+            script: test:localstack
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: 'false'
+          fetch-depth: 0
+      # The stack exposes its S3 store (and other services) by hostname; the
+      # tests resolve `minio` directly. Locally this is a documented /etc/hosts
+      # entry (see test/README.md); CI needs the same mapping.
+      - name: Map minio hostname to localhost
+        run: echo "127.0.0.1 minio" | sudo tee -a /etc/hosts
+      - uses: docker/setup-buildx-action@d70bba72b1f3fd22344832f00baa16ece964efeb # v3.3.0
+      - uses: oven-sh/setup-bun@ecf28ddc73e819eb6fa29df6b34ef8921c743461 # v2.1.3
+      - uses: foundry-rs/foundry-toolchain@82dee4ba654bd2146511f85f0d013af94670c4de # v1.4.0
+        with:
+          version: stable
+      - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        with:
+          node-version: 22.x
+      - name: Log in to GitHub Container Registry
+        uses: zama-ai/ci-templates/.github/actions/retry@542103e14b9ae6a9aea27787b8724b3b35bb3918 # v1.0.9
+        env:
+          GHCR_USERNAME: ${{ github.actor }}
+          GHCR_PASSWORD: ${{ secrets.GHCR_READ_TOKEN }}
+        with:
+          command: |
+            echo "$GHCR_PASSWORD" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
+      - name: Log in to Chainguard Registry
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: cgr.dev
+          username: ${{ secrets.CGR_USERNAME }}
+          password: ${{ secrets.CGR_PASSWORD }}
+      - name: Install fhevm-cli deps
+        working-directory: test-suite/fhevm
+        run: bun install --frozen-lockfile
+      - run: npm ci
+      - run: cd contracts && forge soldeer install
+      - run: npm run codegen:loaders:prod
+      - name: Write test .env
+        run: |
+          echo 'MNEMONIC="test test test test test test test test test test test junk"' > test/.env
+          echo 'ZAMA_FHEVM_API_KEY="zmr_mainnet_blahblah"' >> test/.env
+      - name: Run localstack suite (${{ matrix.name }})
+        env:
+          LOCALSTACK_SCRIPT: ${{ matrix.script }}
+        run: |
+          ulimit -n 65536
+          npm run "${LOCALSTACK_SCRIPT}"

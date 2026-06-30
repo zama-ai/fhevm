@@ -329,7 +329,8 @@ pub async fn garbage_collect(pool: &PgPool, limit: u32) -> Result<(), ExecutionE
             FROM ciphertexts128 c
             JOIN ciphertext_digest d
             ON d.handle = c.handle
-            WHERE d.ciphertext128 IS NOT NULL
+            WHERE d.ciphertext IS NOT NULL
+              AND d.ciphertext128 IS NOT NULL
             FOR UPDATE OF c SKIP LOCKED
             LIMIT $1
         )
@@ -507,6 +508,9 @@ pub async fn query_sns_tasks(
                 handle,
                 ct64_compressed: Arc::new(ciphertext),
                 ct128: Arc::new(BigCiphertext::default()), // to be computed
+                ct64_digest: None,
+                ct128_digest: None,
+                s3_format_version: None,
                 span: task_span,
                 transaction_id,
             })

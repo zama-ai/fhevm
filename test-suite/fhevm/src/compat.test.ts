@@ -101,6 +101,40 @@ describe("compat", () => {
     ]);
   });
 
+  test("drops signer flags for legacy sns-worker images", () => {
+    const policy = compatPolicyForState({
+      versions: {
+        target: "latest-supported",
+        lockName: "latest-supported.json",
+        env: {
+          COPROCESSOR_SNS_WORKER_VERSION: "v0.11.0",
+        } as Record<string, string>,
+        sources: [],
+      },
+      overrides: [],
+      scenario: testDefaultScenario(),
+    });
+    expect(policy.coprocessorDropFlags["sns-worker"]).toContain("--signer-type");
+    expect(policy.coprocessorDropFlags["sns-worker"]).toContain("--private-key");
+  });
+
+  test("keeps signer flags for non-semver sns-worker images", () => {
+    const policy = compatPolicyForState({
+      versions: {
+        target: "latest-main",
+        lockName: "latest-main.json",
+        env: {
+          COPROCESSOR_SNS_WORKER_VERSION: "80f2357",
+        } as Record<string, string>,
+        sources: [],
+      },
+      overrides: [],
+      scenario: testDefaultScenario(),
+    });
+    expect(policy.coprocessorDropFlags["sns-worker"] ?? []).not.toContain("--signer-type");
+    expect(policy.coprocessorDropFlags["sns-worker"] ?? []).not.toContain("--private-key");
+  });
+
   test("drops kms-generation-address for old host listener images", () => {
     const policy = compatPolicyForState({
       versions: {
@@ -186,7 +220,9 @@ describe("compat", () => {
     ).toBe(false);
   });
 
-  test("does not require legacy host chain seed shim for v0.13 coprocessor images", () => {
+  test("requires legacy host chain seed shim for v0.13.0 coprocessor images", () => {
+    // initialize_db.sh gained declarative seeding after v0.13.0 was cut;
+    // all v0.13.0-N Docker builds still need the harness shim.
     expect(
       requiresLegacyHostChainSeedShim({
         versions: {
@@ -195,6 +231,22 @@ describe("compat", () => {
           env: {
             COPROCESSOR_DB_MIGRATION_VERSION: "v0.13.0-6",
             COPROCESSOR_ZKPROOF_WORKER_VERSION: "v0.13.0-6",
+          } as Record<string, string>,
+          sources: [],
+        },
+      }),
+    ).toBe(true);
+  });
+
+  test("does not require legacy host chain seed shim for v0.13.1+ coprocessor images", () => {
+    expect(
+      requiresLegacyHostChainSeedShim({
+        versions: {
+          target: "latest-supported",
+          lockName: "v0.13.1.json",
+          env: {
+            COPROCESSOR_DB_MIGRATION_VERSION: "v0.13.1",
+            COPROCESSOR_ZKPROOF_WORKER_VERSION: "v0.13.1",
           } as Record<string, string>,
           sources: [],
         },
@@ -295,7 +347,7 @@ describe("compat", () => {
     expect(policy.composeEnv.GATEWAY_ADD_PAUSERS_INTERNAL_FLAG).toBe("--use-internal-pauser-set-address");
   });
 
-  test("renders mixed pauser flags for v0.12 contract tags", () => {
+  test("keeps legacy pauser flags for v0.12 contract tags", () => {
     const policy = compatPolicyForState({
       versions: {
         target: "latest-supported",
@@ -309,7 +361,7 @@ describe("compat", () => {
       overrides: [],
       scenario: testDefaultScenario(),
     });
-    expect(policy.composeEnv.HOST_ADD_PAUSERS_INTERNAL_FLAG).toBe("--use-internal-proxy-address");
+    expect(policy.composeEnv.HOST_ADD_PAUSERS_INTERNAL_FLAG).toBe("--use-internal-pauser-set-address");
     expect(policy.composeEnv.GATEWAY_ADD_PAUSERS_INTERNAL_FLAG).toBe("--use-internal-pauser-set-address");
   });
 
@@ -379,17 +431,29 @@ describe("compat", () => {
   test("treats v0.13 prerelease contract bundles as modern host address artifacts", () => {
     const state = {
       versions: {
-        target: "sha" as const,
-        lockName: "sha.json",
-        env: { GATEWAY_VERSION: "v0.13.0-1", HOST_VERSION: "v0.13.0-1" } as Record<string, string>,
+        target: "mainnet" as const,
+        lockName: "v0.13.0.json",
+        env: {
+          GATEWAY_VERSION: "v0.13.0-1",
+          HOST_VERSION: "v0.13.0-1",
+          COPROCESSOR_GW_LISTENER_VERSION: "v0.13.0-1",
+          COPROCESSOR_HOST_LISTENER_VERSION: "v0.13.0-1",
+        } as Record<string, string>,
         sources: [],
       },
       overrides: [],
       scenario: testDefaultScenario(),
     };
+
     expect(requiresLegacyGatewayKmsGenerationAddress(state)).toBe(false);
     expect(requiresModernHostAddressArtifacts(state)).toBe(true);
     expect(requiresGatewayKmsGenerationAddress(state)).toBe(false);
+
+    const policy = compatPolicyForState(state);
+    expect(policy.coprocessorArgs["gw-listener"]).toBeUndefined();
+    expect(policy.coprocessorDropFlags["host-listener"]).toBeUndefined();
+    expect(policy.composeEnv.HOST_ADD_PAUSERS_INTERNAL_FLAG).toBe("--use-internal-proxy-address");
+    expect(policy.composeEnv.GATEWAY_ADD_PAUSERS_INTERNAL_FLAG).toBe("--use-internal-proxy-address");
   });
 
   test("requires modern host addresses when host-contracts is locally overridden", () => {
@@ -490,6 +554,24 @@ describe("compat", () => {
     });
     expect(policy.composeEnv.RELAYER_IMAGE_REPOSITORY).toBe(LEGACY_RELAYER_IMAGE_REPOSITORY);
     expect(policy.composeEnv.RELAYER_MIGRATE_IMAGE_REPOSITORY).toBe(LEGACY_RELAYER_MIGRATE_IMAGE_REPOSITORY);
+  });
+
+  test("routes v0.13 relayer images to the fhevm registry", () => {
+    const policy = compatPolicyForState({
+      versions: {
+        target: "mainnet",
+        lockName: "v0.13.0.json",
+        env: {
+          RELAYER_VERSION: "v0.13.0-2",
+          RELAYER_MIGRATE_VERSION: "v0.13.0-2",
+        } as Record<string, string>,
+        sources: [],
+      },
+      overrides: [],
+      scenario: testDefaultScenario(),
+    });
+    expect(policy.composeEnv.RELAYER_IMAGE_REPOSITORY).toBe(MODERN_RELAYER_IMAGE_REPOSITORY);
+    expect(policy.composeEnv.RELAYER_MIGRATE_IMAGE_REPOSITORY).toBe(MODERN_RELAYER_MIGRATE_IMAGE_REPOSITORY);
   });
 
   test("routes sha-style relayer images to the fhevm registry", () => {

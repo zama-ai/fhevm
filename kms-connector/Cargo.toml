@@ -24,6 +24,7 @@ kms-grpc = { git = "https://github.com/zama-ai/kms.git", tag = "v0.13.20-0", def
 bc2wrap = { git = "https://github.com/zama-ai/kms.git", tag = "v0.13.20-0", default-features = true }
 tfhe = { version = "=1.6.1", default-features = false }
 user-decryption-signature = { path = "../shared/user-decryption-signature", default-features = false }
+ciphertext-attestation = { path = "../shared/ciphertext-attestation" }
 
 #####################################################################
 #                       External dependencies                       #
@@ -40,9 +41,13 @@ alloy = { version = "=1.0.38", default-features = false, features = [
 anyhow = { version = "=1.0.100", default-features = false }
 async-trait = { version = "=0.1.89", default-features = false }
 aws-config = { version = "=1.8.6", default-features = false, features = [
+    "default-https-client",
     "rt-tokio",
 ] }
-aws-sdk-kms = { version = "=1.86.0", default-features = false }
+aws-sdk-kms = { version = "=1.86.0", default-features = false, features = [
+    "default-https-client",
+    "rt-tokio",
+] }
 aws-sdk-s3 = { version = "=1.105.0", default-features = true }
 clap = { version = "=4.5.47", default-features = true, features = [
     "cargo",
@@ -83,7 +88,7 @@ tokio = { version = "=1.47.1", default-features = false, features = [
     "signal",
     "sync",
 ] }
-tokio-util = { version = "=0.7.16", default-features = false }
+tokio-util = { version = "=0.7.18", default-features = false }
 tokio-stream = { version = "=0.1.17", default-features = false }
 tonic = { version = "=0.14.5", default-features = true, features = [
     "tls-ring",
@@ -119,4 +124,3 @@ debug = "line-tables-only"
 
 [profile.test]
 debug = "line-tables-only"
-

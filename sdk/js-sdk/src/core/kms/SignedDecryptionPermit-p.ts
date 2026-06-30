@@ -132,6 +132,10 @@ abstract class SignedDecryptionPermitBaseImpl {
   public get kmsContextId(): Uint256BigInt {
     return fromKmsExtraData(this.#eip712.message.extraData).kmsContextId;
   }
+
+  public get kmsEpochId(): Uint256BigInt {
+    return fromKmsExtraData(this.#eip712.message.extraData).kmsEpochId;
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -343,7 +347,8 @@ export async function signDecryptionPermit(
   parameters: SignDecryptionPermitParameters,
 ): Promise<SignedDecryptionPermit> {
   const kmsSignersContext = await readKmsSignersContext(context, {
-    address: context.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
+    kmsVerifierAddress: context.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
+    protocolConfigAddress: context.chain.fhevm.contracts.protocolConfig?.address as ChecksummedAddress | undefined,
   });
 
   const extraData: BytesHex = kmsSignersContextToExtraData(kmsSignersContext);

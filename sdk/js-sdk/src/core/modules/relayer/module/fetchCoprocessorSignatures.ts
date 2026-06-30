@@ -6,9 +6,9 @@ import type {
   RelayerClientWithRuntime,
 } from '../types.js';
 import { bytesToHexNo0x } from '../../../base/bytes.js';
-import { removeSuffix } from '../../../base/string.js';
 import { uintToHex0x } from '../../../base/uint.js';
 import { RelayerAsyncRequest } from './RelayerAsyncRequest.js';
+import { buildRelayerUrlString, validateRelayerBaseUrl } from './relayerUrl.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 // fetchCoprocessorSignatures
@@ -28,9 +28,13 @@ export async function fetchCoprocessorSignatures(
     userAddress: payload.zkProof.userAddress,
   };
 
+  const hasAuth: boolean = options?.auth !== undefined;
+  const relayerBaseUrl: URL = validateRelayerBaseUrl(relayerClient.chain.fhevm.relayerUrl, hasAuth);
+  const url = buildRelayerUrlString(relayerBaseUrl, 'v2/input-proof');
+
   const request = new RelayerAsyncRequest({
     relayerOperation: 'INPUT_PROOF',
-    url: `${removeSuffix(relayerClient.chain.fhevm.relayerUrl, '/')}/v2/input-proof`,
+    url,
     payload: inputProofPayload,
     options,
   });
