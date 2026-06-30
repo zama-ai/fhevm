@@ -320,6 +320,7 @@ pub async fn ingest_block_logs(
                         },
                         transaction_hash: log.transaction_hash,
                         block_number,
+                        block_hash,
                         block_timestamp,
 
                         // This is a placeholder. The real value can't be known yet
@@ -342,6 +343,7 @@ pub async fn ingest_block_logs(
                             &vec![dst_handle.to_vec()],
                             log.transaction_hash.map(|h| h.to_vec()),
                             block_number,
+                            block_hash.as_ref(),
                         )
                         .await?;
                 } else {
