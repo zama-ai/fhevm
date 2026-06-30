@@ -37,6 +37,13 @@ struct Args {
     )]
     pub kms_generation_address: String,
 
+    #[arg(
+        long,
+        default_value = "",
+        help = "Optional ConfidentialBridge contract address to monitor"
+    )]
+    pub confidential_bridge_address: String,
+
     #[arg(long, help = "PostgreSQL connection URL")]
     database_url: DatabaseURL,
 
@@ -170,6 +177,10 @@ async fn main() -> anyhow::Result<()> {
         kms_generation_address: parse_optional_address(
             &args.kms_generation_address,
             "KMS generation contract",
+        )?,
+        confidential_bridge_address: parse_optional_address(
+            &args.confidential_bridge_address,
+            "ConfidentialBridge contract",
         )?,
         database_url: args.database_url,
         finality_lag: args.finality_lag,
