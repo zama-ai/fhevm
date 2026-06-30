@@ -195,15 +195,12 @@ dbMigration:
   # with the Deployments and a new binary can issue *_branch / parent_hash
   # queries against a not-yet-migrated schema (crash-loop / ingestion stall).
   #
-  # The migration-vs-binary race is closed operationally by running the
-  # migration to completion BEFORE rolling the binaries (see
-  # db-migration/RUNBOOK-wave1-block-scope.md), and backstopped in code by the
-  # host-listener's schema guard (Database::wait_for_branch_schema), which makes
-  # a pre-migration start wait rather than crash-loop.
-  annotations: {}
-    # "helm.sh/hook": "pre-install,pre-upgrade"
-    # "helm.sh/hook-weight": "5"
-    # "helm.sh/hook-delete-policy": "before-hook-creation"
+  # The host-listener schema guard (Database::wait_for_branch_schema) remains a
+  # backstop for out-of-order starts, but the hook is the primary rollout gate.
+  annotations:
+    "helm.sh/hook": "pre-install,pre-upgrade"
+    "helm.sh/hook-weight": "5"
+    "helm.sh/hook-delete-policy": "before-hook-creation"
 
   image:
     name: hub.zama.org/zama-protocol/zama-ai/fhevm/coprocessor/db-migration
