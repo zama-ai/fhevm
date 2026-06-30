@@ -16,16 +16,26 @@ sol!(
     "./../../../host-contracts/artifacts/contracts/FHEVMExecutor.sol/FHEVMExecutor.json"
 );
 
-sol!(
-    #[sol(rpc)]
-    #[derive(Debug, serde::Serialize, serde::Deserialize)]
-    KMSGeneration,
-    "./../../../host-contracts/artifacts/contracts/KMSGeneration.sol/KMSGeneration.json"
-);
+// Each ABI re-declares `IKMSGeneration`; scope them into submodules to avoid
+// the name colliding in this module.
+pub mod kms_generation {
+    use alloy::sol;
+    sol!(
+        #[sol(rpc)]
+        #[derive(Debug, serde::Serialize, serde::Deserialize)]
+        KMSGeneration,
+        "./../../../host-contracts/artifacts/contracts/KMSGeneration.sol/KMSGeneration.json"
+    );
+}
+pub use kms_generation::KMSGeneration;
 
-sol!(
-    #[sol(rpc)]
-    #[derive(Debug, serde::Serialize, serde::Deserialize)]
-    ProtocolConfig,
-    "./../../../host-contracts/artifacts/contracts/ProtocolConfig.sol/ProtocolConfig.json"
-);
+pub mod protocol_config {
+    use alloy::sol;
+    sol!(
+        #[sol(rpc)]
+        #[derive(Debug, serde::Serialize, serde::Deserialize)]
+        ProtocolConfig,
+        "./../../../host-contracts/artifacts/contracts/ProtocolConfig.sol/ProtocolConfig.json"
+    );
+}
+pub use protocol_config::ProtocolConfig;

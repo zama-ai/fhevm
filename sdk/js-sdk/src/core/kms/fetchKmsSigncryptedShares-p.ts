@@ -16,6 +16,7 @@ import { checkPersistAllowed } from '../host-contracts/checkPersistAllowed.js';
 import { assertExtraDataMatchesKmsSingersContext } from '../host-contracts/KmsSignersContext-p.js';
 import { createKmsEip712Domain } from './createKmsEip712Domain.js';
 import { checkDelegation } from '../host-contracts/checkDelegation.js';
+import { resolveFhevmTkmsVersion } from '../runtime/resolveFhevmVersions-p.js';
 
 /*
     See: in KMS (eip712Domain)
@@ -70,6 +71,10 @@ const MAX_USER_DECRYPT_CONTRACT_ADDRESSES = 10;
 export async function fetchKmsSigncryptedShares(context: Context, parameters: Parameters): Promise<ReturnType> {
   const { signedPermit, options, pairs } = parameters;
 
+  // This helper must support base clients, where TKMS is not mandatory
+  // and tkmsVersion may not be initialized in the CoreFhevm instance yet.
+  const tkmsVersion = await resolveFhevmTkmsVersion(context);
+
   // Check: every requested contractAddress is listed in the permit
   assertPermitIncludesContractAddresses(
     signedPermit,
@@ -121,14 +126,14 @@ export async function fetchKmsSigncryptedShares(context: Context, parameters: Pa
   // 7. Check: ACL permissions (user is signer or delegatorAddress)
   if (signedPermit.isDelegated) {
     await checkDelegation(context, {
-      address: context.chain.fhevm.contracts.acl.address as ChecksummedAddress,
+      aclAddress: context.chain.fhevm.contracts.acl.address as ChecksummedAddress,
       delegate: signerAddress,
       delegator: encryptedDataOwnerAddress,
       handleContractPairs,
     });
   } else {
     await checkPersistAllowed(context, {
-      address: context.chain.fhevm.contracts.acl.address as ChecksummedAddress,
+      aclAddress: context.chain.fhevm.contracts.acl.address as ChecksummedAddress,
       userAddress: encryptedDataOwnerAddress,
       handleContractPairs,
     });
@@ -152,7 +157,8 @@ export async function fetchKmsSigncryptedShares(context: Context, parameters: Pa
   // though the context ID matches. Consider comparing the decoded `kmsContextId`
   // instead of the raw `extraData` bytes.
   const requestedKmsSignersContext: KmsSignersContext = await readKmsSignersContext(context, {
-    address: context.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
+    kmsVerifierAddress: context.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
+    protocolConfigAddress: context.chain.fhevm.contracts.protocolConfig?.address as ChecksummedAddress | undefined,
   });
 
   assertExtraDataMatchesKmsSingersContext(
@@ -201,6 +207,7 @@ export async function fetchKmsSigncryptedShares(context: Context, parameters: Pa
     eip712Signature: signature,
     eip712SignerAddress: signerAddress,
     handles,
+    tkmsVersion,
   };
 
   // 12. The returned KmsSigncryptedShares is guaranteed to be fully verified:

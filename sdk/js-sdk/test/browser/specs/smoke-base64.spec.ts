@@ -7,10 +7,8 @@ test('createFhevmClient initializes with base64 WASM', async ({ page }) => {
   await result.waitFor({ timeout: 300_000 });
 
   const status = await result.getAttribute('data-status');
-  if (status !== 'pass') {
-    const logs = await page.locator('#log').textContent();
-    console.error('Smoke base64 logs:\n', logs);
-  }
+  const logs = await page.locator('#log').textContent();
+  console.log('Smoke base64 logs:\n', logs);
 
   expect(status).toBe('pass');
 });

@@ -39,7 +39,8 @@ export async function publicDecrypt(context: Context, parameters: Parameters): P
   // EIP-712 signature from the user, so the SDK can safely fetch the current
   // context ID and build the extraData transparently to the user.
   const requestedKmsSignersContext = await readKmsSignersContext(context, {
-    address: context.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
+    kmsVerifierAddress: context.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
+    protocolConfigAddress: context.chain.fhevm.contracts.protocolConfig?.address as ChecksummedAddress | undefined,
   });
 
   const requestedExtraData: BytesHex = kmsSignersContextToExtraData(requestedKmsSignersContext);
@@ -65,7 +66,7 @@ export async function publicDecrypt(context: Context, parameters: Parameters): P
 
   // 4. Check: ACL permissions
   await checkAllowedForDecryption(context, {
-    address: context.chain.fhevm.contracts.acl.address as ChecksummedAddress,
+    aclAddress: context.chain.fhevm.contracts.acl.address as ChecksummedAddress,
     handles: orderedHandles,
   });
 
@@ -84,7 +85,8 @@ export async function publicDecrypt(context: Context, parameters: Parameters): P
 
   // 6. Reconcile KMS signer context using 'loose' mode
   const reconciledKmsSignersContext: KmsSignersContext = await reconcileKmsSignersContext(context, {
-    address: context.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
+    kmsVerifierAddress: context.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
+    protocolConfigAddress: context.chain.fhevm.contracts.protocolConfig?.address as ChecksummedAddress | undefined,
     relayerExtraData,
     requestedKmsSignersContext: requestedKmsSignersContext,
     mode: 'loose',

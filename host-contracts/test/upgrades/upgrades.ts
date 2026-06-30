@@ -45,7 +45,10 @@ describe('Upgrades', function () {
     const factoryUpgraded = await ethers.getContractFactory('ProtocolConfigUpgradedExample', this.signers.fred);
     const emptyUUPS = await deployEmptyProxy(this.emptyUUPSFactory);
     const pc = await upgrades.upgradeProxy(emptyUUPS, factory, {
-      call: { fn: 'initializeFromEmptyProxy', args: [buildProtocolConfigNodes(), buildProtocolConfigThresholds()] },
+      call: {
+        fn: 'initializeFromEmptyProxy',
+        args: [buildProtocolConfigNodes(), buildProtocolConfigThresholds(), '', []],
+      },
     });
     await pc.waitForDeployment();
     expect(await pc.getVersion()).to.equal('ProtocolConfig v0.2.0');
@@ -58,7 +61,7 @@ describe('Upgrades', function () {
     await expectThresholds(pc);
     const pc2 = await upgrades.upgradeProxy(pc, factoryUpgraded);
     await pc2.waitForDeployment();
-    expect(await pc2.getVersion()).to.equal('ProtocolConfig v0.2.0');
+    expect(await pc2.getVersion()).to.equal('ProtocolConfig v0.3.0');
     await expectThresholds(pc2);
   });
 
@@ -98,7 +101,7 @@ describe('Upgrades', function () {
       unsafeAllow: ['missing-initializer'],
     });
     await kms.waitForDeployment();
-    expect(await kms.getVersion()).to.equal('KMSVerifier v0.3.0');
+    expect(await kms.getVersion()).to.equal('KMSVerifier v0.4.0');
 
     const domain = Array.from(await kms.eip712Domain());
     expect(domain.slice(1, 5)).to.deep.equal(['Decryption', '1', BigInt(chainIDSource), verifyingContractSource]);

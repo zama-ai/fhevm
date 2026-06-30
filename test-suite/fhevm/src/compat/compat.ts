@@ -162,22 +162,36 @@ const SHIM_PROFILES = {
 
 /** Parses a semver-like version string into comparable numeric parts. */
 const parseCompatVersion = (version: string) => {
-  const match = version.match(/^v?(\d+)\.(\d+)\.(\d+)(?:([-+]).*)?$/);
+  const match = version.match(/^v?(\d+)\.(\d+)\.(\d+)(?:([-+])(.+))?$/);
   if (!match) {
     return undefined;
   }
-  const [, major, minor, patch, suffixType] = match;
+  const [, major, minor, patch, suffixType, suffix = ""] = match;
   return {
     parts: [Number(major), Number(minor), Number(patch)] as const,
-    prerelease: suffixType === "-",
+    prerelease: suffixType === "-" && !/^\d+$/.test(suffix),
   };
 };
 
-// Non-semver tags (e.g. SHA-style tags built from main) belong to the modern registry.
-const usesModernRelayerRepository = (version: string) => {
+const compatVersionGte = (
+  version: string,
+  target: CompatSemver,
+  options?: { unparsed?: "modern" | "legacy" },
+) => {
   const parsed = parseCompatVersion(version);
-  return !parsed || parsed.parts[0] > 0 || parsed.parts[1] >= 13;
+  if (!parsed) {
+    return options?.unparsed === "modern";
+  }
+  for (let index = 0; index < parsed.parts.length; index += 1) {
+    if (parsed.parts[index] !== target[index]) {
+      return parsed.parts[index] > target[index];
+    }
+  }
+  return !parsed.prerelease;
 };
+
+const usesModernRelayerRepository = (version: string) =>
+  compatVersionGte(version, [0, 13, 0], { unparsed: "modern" });
 
 const sameCompatBase = (version: string, target: CompatSemver) => {
   const parsed = parseCompatVersion(version);
@@ -251,16 +265,18 @@ export const supportsCoprocessorDbStateRevert = (state: Pick<CompatState, "versi
  *
  * The host_chains table only exists from v0.12.0 onward (the remove_tenants
  * migration splits it out of the old `tenants` table); v0.11.x images have no
- * such table, so seeding it would fail. Within [0.12.0, 0.13.0) the table
+ * such table, so seeding it would fail. Within [0.12.0, 0.13.1) the table
  * exists but the runtime does not reliably seed it before zkproof caches it, so
- * the harness seeds it manually. From v0.13.0 the runtime self-seeds.
+ * the harness seeds it manually. Declarative seeding was added to
+ * initialize_db.sh after v0.13.0 was cut, so all v0.13.0-N Docker builds still
+ * need the manual shim; v0.13.1+ images self-seed.
  */
 export const requiresLegacyHostChainSeedShim = (state: Pick<CompatState, "versions">) => {
   const dbMigrationVersion = state.versions.env.COPROCESSOR_DB_MIGRATION_VERSION ?? "";
   const hostChainsTableExists = !versionBeforeReleaseFamily(dbMigrationVersion, [0, 12, 0], { unparsed: "modern" });
   const runtimeNeedsManualSeed =
-    versionBeforeReleaseFamily(dbMigrationVersion, [0, 13, 0], { unparsed: "modern" }) ||
-    versionBeforeReleaseFamily(state.versions.env.COPROCESSOR_ZKPROOF_WORKER_VERSION ?? "", [0, 13, 0], {
+    versionBeforeReleaseFamily(dbMigrationVersion, [0, 13, 1], { unparsed: "modern" }) ||
+    versionBeforeReleaseFamily(state.versions.env.COPROCESSOR_ZKPROOF_WORKER_VERSION ?? "", [0, 13, 1], {
       unparsed: "modern",
     });
   return hostChainsTableExists && runtimeNeedsManualSeed;
@@ -290,7 +306,7 @@ export const requiresLegacyGatewayKmsGenerationAddress = (state: Pick<CompatStat
 
 /** Detects when contract tasks still expect the legacy internal PauserSet flag name. */
 const requiresLegacyHostPauserTaskFlag = (version: string) =>
-  versionBeforeReleaseFamily(version, [0, 12, 0], { unparsed: "modern" });
+  versionBeforeReleaseFamily(version, [0, 13, 0], { unparsed: "modern" });
 
 const requiresLegacyGatewayPauserTaskFlag = (version: string) =>
   versionBeforeReleaseFamily(version, [0, 13, 0], { unparsed: "modern" });

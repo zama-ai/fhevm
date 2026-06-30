@@ -20,7 +20,8 @@ struct Args {
     #[arg(
         long = "url",
         alias = "broker-url",
-        help = "Broker (Redis or Rabbit)"
+        env = "BROKER_URL",
+        help = "Broker (Redis or Rabbit); falls back to BROKER_URL env var if unset"
     )]
     url: String,
 

@@ -36,20 +36,21 @@ import {
   type ParseSignedDecryptionPermitReturnType,
 } from '../../actions/chain/parseSignedDecryptionPermit.js';
 import {
-  readPublicValue,
-  type ReadPublicValueParameters,
-  type ReadPublicValueReturnType,
-} from '../../actions/base/readPublicValue.js';
+  decryptPublicValue,
+  type DecryptPublicValueParameters,
+  type DecryptPublicValueReturnType,
+} from '../../actions/base/decryptPublicValue.js';
 import {
-  readPublicValues,
-  type ReadPublicValuesParameters,
-  type ReadPublicValuesReturnType,
-} from '../../actions/base/readPublicValues.js';
+  decryptPublicValues,
+  type DecryptPublicValuesParameters,
+  type DecryptPublicValuesReturnType,
+} from '../../actions/base/decryptPublicValues.js';
 import {
-  readPublicValuesWithSignatures,
-  type ReadPublicValuesWithSignaturesParameters,
-  type ReadPublicValuesWithSignaturesReturnType,
-} from '../../actions/base/readPublicValuesWithSignatures.js';
+  decryptPublicValuesWithSignatures,
+  type DecryptPublicValuesWithSignaturesParameters,
+  type DecryptPublicValuesWithSignaturesReturnType,
+} from '../../actions/base/decryptPublicValuesWithSignatures.js';
+import { ensureResolvedProtocolVersion } from '../../runtime/resolveFhevmVersions-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -59,30 +60,30 @@ export type BaseActions = {
    *
    * By default, encrypted values on-chain can only be decrypted by their owner.
    * When a contract calls `TFHE.allowForDecryption(encryptedValue)` in Solidity,
-   * the value becomes publicly readable. Anyone can then call `readPublicValue`
+   * the value becomes publicly readable. Anyone can then call `decryptPublicValue`
    * to get the clear value — no permit or private key needed.
    *
    * @example
    * ```ts
-   * const result = await client.readPublicValue({
+   * const result = await client.decryptPublicValue({
    *   encryptedValue: "0xabcd..."
    * });
    * console.log(result.value); // e.g. 42
    * console.log(result.type); // e.g. 'uint8'
    * ```
    */
-  readonly readPublicValue: (parameters: ReadPublicValueParameters) => Promise<ReadPublicValueReturnType>;
+  readonly decryptPublicValue: (parameters: DecryptPublicValueParameters) => Promise<DecryptPublicValueReturnType>;
   /**
    * Reads the decrypted (clear) values of encrypted values that were made public.
    *
    * By default, encrypted values on-chain can only be decrypted by their owner.
    * When a contract calls `TFHE.allowForDecryption(encryptedValue)` in Solidity,
-   * a value becomes publicly readable. Anyone can then call `readPublicValues`
+   * a value becomes publicly readable. Anyone can then call `decryptPublicValues`
    * to get the clear values — no permit or private key needed.
    *
    * @example
    * ```ts
-   * const results = await client.readPublicValues({
+   * const results = await client.decryptPublicValues({
    *   encryptedValues: ["0xabcd...", "0xef..."]
    * });
    * console.log(results[0].value); // e.g. 42
@@ -91,13 +92,13 @@ export type BaseActions = {
    * console.log(results[1].type); // e.g. 'uint32'
    * ```
    */
-  readonly readPublicValues: (parameters: ReadPublicValuesParameters) => Promise<ReadPublicValuesReturnType>;
+  readonly decryptPublicValues: (parameters: DecryptPublicValuesParameters) => Promise<DecryptPublicValuesReturnType>;
   /**
    * Reads the decrypted (clear) value of an encrypted value that was made public.
    *
    * By default, encrypted values on-chain can only be decrypted by their owner.
    * When a contract calls `TFHE.allowForDecryption(encryptedValue)` in Solidity,
-   * the value becomes publicly readable. Anyone can then call `readPublicValue`
+   * the value becomes publicly readable. Anyone can then call `decryptPublicValue`
    * to get the clear value — no permit or private key needed.
    *
    * Returns both the clear values and a decryption proof. The proof can be
@@ -106,13 +107,13 @@ export type BaseActions = {
    *
    * @example
    * ```ts
-   * const result = await client.readPublicValuesWithSignatures({
+   * const result = await client.decryptPublicValuesWithSignatures({
    *   encryptedValues: ["0xabcd...", "0xef..."]
    * });
-   * console.log(results.clearValues[0].value); // e.g. 42
-   * console.log(results.clearValues[0].type); // e.g. 'uint8'
-   * console.log(results.clearValues[1].value); // e.g. 123456789
-   * console.log(results.clearValues[1].type); // e.g. 'uint32'
+   * console.log(result.clearValues[0].value); // e.g. 42
+   * console.log(result.clearValues[0].type); // e.g. 'uint8'
+   * console.log(result.clearValues[1].value); // e.g. 123456789
+   * console.log(result.clearValues[1].type); // e.g. 'uint32'
    *
    * // Forward the proof on-chain for smart contract verification
    * // Solidity side:
@@ -123,9 +124,9 @@ export type BaseActions = {
    * await contract.verify(args.handlesList, args.abiEncodedCleartexts, args.decryptionProof);
    * ```
    */
-  readonly readPublicValuesWithSignatures: (
-    parameters: ReadPublicValuesWithSignaturesParameters,
-  ) => Promise<ReadPublicValuesWithSignaturesReturnType>;
+  readonly decryptPublicValuesWithSignatures: (
+    parameters: DecryptPublicValuesWithSignaturesParameters,
+  ) => Promise<DecryptPublicValuesWithSignaturesReturnType>;
   readonly signDecryptionPermit: {
     /**
      * Signs a self decryption permit — Alice decrypts her own encrypted values.
@@ -173,9 +174,9 @@ export type BaseActions = {
 
 function _baseActions(fhevm: Fhevm<FhevmChain>): BaseActions {
   return {
-    readPublicValue: (parameters) => readPublicValue(fhevm, parameters),
-    readPublicValues: (parameters) => readPublicValues(fhevm, parameters),
-    readPublicValuesWithSignatures: (parameters) => readPublicValuesWithSignatures(fhevm, parameters),
+    decryptPublicValue: (parameters) => decryptPublicValue(fhevm, parameters),
+    decryptPublicValues: (parameters) => decryptPublicValues(fhevm, parameters),
+    decryptPublicValuesWithSignatures: (parameters) => decryptPublicValuesWithSignatures(fhevm, parameters),
     // Preserve the original action overloads on the decorated client API.
     // Runtime behavior is unchanged: this is a direct pass-through wrapper.
     signDecryptionPermit: ((parameters: SignSelfDecryptionPermitParameters | SignDelegatedDecryptionPermitParameters) =>
@@ -193,11 +194,17 @@ function _baseActions(fhevm: Fhevm<FhevmChain>): BaseActions {
 
 ////////////////////////////////////////////////////////////////////////////////
 
+async function _initBase(fhevm: FhevmBase<FhevmChain>): Promise<void> {
+  await ensureResolvedProtocolVersion(fhevm);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
 export function baseActions(fhevm: FhevmBase<FhevmChain>): FhevmExtension<BaseActions> {
   assertIsFhevmBaseClient(fhevm);
   return {
     actions: _baseActions(fhevm),
     runtime: fhevm.runtime,
-    // no init required, no prefetch of the FheEncryptionKey. This is the whole purpose of the fetchFheEncryptionKeyBytes action
+    init: _initBase,
   };
 }
