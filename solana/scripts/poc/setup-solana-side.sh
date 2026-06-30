@@ -25,6 +25,10 @@ SOLANA="$ROOT/solana"
 FHEVM="$ROOT/test-suite/fhevm"
 GW_RPC="${GW_RPC:-http://127.0.0.1:8546}"
 VALIDATOR_RPC="http://127.0.0.1:8899"
+# Deployer/fee-payer wallet. airdrop + program deploy + the live-client (which reads this exact
+# path, main.rs) all sign with it. Passed explicitly via -u/-k below so this script never depends
+# on or mutates the developer's global `solana config` (URL or keypair).
+DEPLOYER_KEYPAIR="$HOME/.config/solana/id.json"
 # RFC-021 Solana host chain id: chain-type high bit | 12345.
 SID_U64=9223372036854788153
 SID_I64=-9223372036854763463
@@ -32,14 +36,18 @@ SID_I64=-9223372036854763463
 # Reconstruct mode (adjacent CI run, see solana-e2e.yml). When 1, deploy an EMITLESS
 # zama-host (no `emit-events`) and feed the coprocessor purely via the gRPC Yellowstone
 # transport with off-chain event RECONSTRUCTION — no on-chain emit-decode. That needs the
-# geyser plugin on the validator, so the validator runs from the prebuilt geyser Docker
-# image (RPC 8899 + gRPC 10000) instead of a native solana-test-validator. The dockerized
-# KMS worker still reaches RPC over host.docker.internal:8899 (published to the host), so
-# the rest of the fhevm-cli stack is unaffected. Default 0 = unchanged native/emit path.
+# geyser plugin on the validator, so the host is a native solana-test-validator (agave 2.1.21,
+# multi-arch incl. Apple Silicon) loading the external Yellowstone plugin via
+# --geyser-plugin-config (RPC 8899 + gRPC 10000) — the same real validator as the default path,
+# just with the plugin. It binds 0.0.0.0 so the dockerized KMS worker reaches RPC over
+# host.docker.internal:8899 — the rest of the fhevm-cli stack is unaffected. (surfpool was
+# evaluated and rejected: its LiteSVM does not stream the SlotHashes/Clock sysvar accounts over
+# geyser, which reconstruction needs.) Default 0 = unchanged native/emit path.
 RECONSTRUCT="${RECONSTRUCT:-0}"
-GEYSER_IMAGE="${GEYSER_IMAGE:-poc-solana-validator-yellowstone:ci}"
 GRPC_URL="${GRPC_URL:-http://127.0.0.1:10000}"
-VAL_CONTAINER="${VAL_CONTAINER:-solana-e2e-validator}"
+# Yellowstone plugin cdylib for the validator's --geyser-plugin-config. Prebuilt/built on demand
+# by geyser/build-yellowstone-plugin.sh; CI may set PLUGIN_LIB to a prefetched artifact.
+PLUGIN_LIB="${PLUGIN_LIB:-}"
 
 echo "==> [1/5] gathering live gateway addresses + ProtocolConfig signer set"
 # shellcheck disable=SC1091
@@ -58,23 +66,43 @@ mkdir -p "$SOLANA/target/deploy"
 for p in zama_host confidential_token confidential_token_receiver; do
   cp -n "$SOLANA/scripts/poc/test-keypairs/$p-keypair.json" "$SOLANA/target/deploy/$p-keypair.json" 2>/dev/null || true
 done
+# Ensure the deployer wallet exists. Created only if absent so a developer's existing wallet is
+# untouched; fresh CI runners have none (otherwise deploy fails with "No default signer found").
+mkdir -p "$(dirname "$DEPLOYER_KEYPAIR")"
+[ -f "$DEPLOYER_KEYPAIR" ] || solana-keygen new --no-bip39-passphrase --silent -o "$DEPLOYER_KEYPAIR"
+# cargo-build-sbf (agave 2.1.21, used by both `anchor build` and `cargo build-sbf` below) panics
+# with a NotFound error instead of creating its platform-tools cache on a fresh machine; pre-create
+# it so the SBF toolchain can self-provision. Harmless where it already exists (dev machines).
+mkdir -p "$HOME/.cache/solana"
 
 if [ "$RECONSTRUCT" = 1 ]; then
-  # Validator with the Yellowstone geyser plugin (gRPC :10000) from the prebuilt image
-  # (the workflow docker-builds solana/geyser/Dockerfile). Publish 8899+10000 to the host;
-  # the dockerized KMS worker reaches RPC the same way as the native validator — over
-  # host.docker.internal:8899. Local only — no mainnet exposure.
-  docker rm -f "$VAL_CONTAINER" >/dev/null 2>&1 || true
-  docker run -d --name "$VAL_CONTAINER" -p 8899:8899 -p 10000:10000 "$GEYSER_IMAGE" \
-    solana-test-validator --reset --rpc-port 8899 --bind-address 0.0.0.0 \
-    --geyser-plugin-config /plugins/yellowstone-config.json >/dev/null
+  # Host = native solana-test-validator (agave 2.1.21, pinned in solana-e2e.yml) with the
+  # Yellowstone geyser plugin (gRPC :10000) loaded via --geyser-plugin-config. Replaces the baked
+  # amd64 geyser image: the real validator runs on the host arch directly (multi-arch incl. Apple
+  # Silicon) and — unlike surfpool's LiteSVM — streams the SlotHashes/Clock sysvar accounts the
+  # reconstruction needs per slot. The matching plugin cdylib is resolved by
+  # geyser/build-yellowstone-plugin.sh (prebuilt x86 release in CI; built from source on arm64).
+  # Bind 0.0.0.0 so the dockerized KMS worker reaches RPC over host.docker.internal:8899. Local
+  # only — no mainnet exposure.
+  pkill -f solana-test-validator 2>/dev/null || true
+  sleep 2
+  [ -n "$PLUGIN_LIB" ] || PLUGIN_LIB="$("$SOLANA/geyser/build-yellowstone-plugin.sh")"
+  [ -f "$PLUGIN_LIB" ] || { echo "[setup] Yellowstone plugin not found (PLUGIN_LIB=$PLUGIN_LIB)" >&2; exit 1; }
+  GEYSER_CONFIG="$SOLANA/target/yellowstone-config.runtime.json"
+  mkdir -p "$SOLANA/target"
+  sed "s#@LIBPATH@#$PLUGIN_LIB#" "$SOLANA/geyser/yellowstone-config.json" > "$GEYSER_CONFIG"
+  echo "    geyser host: solana-test-validator + Yellowstone plugin $PLUGIN_LIB"
+  LEDGER="$ROOT/.solana-test-ledger"
+  rm -rf "$LEDGER"
+  solana-test-validator --reset --rpc-port 8899 --bind-address 0.0.0.0 --ledger "$LEDGER" \
+    --geyser-plugin-config "$GEYSER_CONFIG" >/tmp/solana-validator.log 2>&1 &
   until curl -s -m2 "$VALIDATOR_RPC" -X POST -H 'Content-Type: application/json' \
     -d '{"jsonrpc":"2.0","id":1,"method":"getHealth"}' 2>/dev/null | grep -q '"ok"'; do
-    [ -z "$(docker ps -q -f name="$VAL_CONTAINER" -f status=running)" ] \
-      && { echo "[setup] geyser validator container died:" >&2; docker logs "$VAL_CONTAINER" 2>&1 | tail -20 >&2; exit 1; }
+    pgrep -f solana-test-validator >/dev/null \
+      || { echo "[setup] geyser validator died:" >&2; tail -20 /tmp/solana-validator.log >&2; exit 1; }
     sleep 1
   done
-  solana airdrop 500 >/dev/null 2>&1 || true
+  solana airdrop 500 -u "$VALIDATOR_RPC" -k "$DEPLOYER_KEYPAIR" >/dev/null 2>&1 || true
   # EMITLESS build: drop the default `emit-events` feature on zama-host so the deployed
   # program emits NOTHING — off-chain reconstruction from instructions is the sole event
   # source. anchor build gives per-crate feature control (cargo build-sbf builds the whole
@@ -88,7 +116,7 @@ if [ "$RECONSTRUCT" = 1 ]; then
     || { echo "[setup] emitless anchor build failed" >&2; exit 1; }
   # --use-rpc: deploy over RPC (8899) since the container doesn't publish the TPU ports.
   for p in zama_host confidential_token confidential_token_receiver; do
-    solana program deploy -u "$VALIDATOR_RPC" --use-rpc \
+    solana program deploy -u "$VALIDATOR_RPC" -k "$DEPLOYER_KEYPAIR" --use-rpc \
       --program-id "$SOLANA/target/deploy/$p-keypair.json" "$SOLANA/target/deploy/$p.so" >/dev/null
   done
 else
@@ -102,15 +130,18 @@ else
   solana-test-validator --reset --rpc-port 8899 --bind-address 0.0.0.0 --ledger "$LEDGER" >/tmp/solana-validator.log 2>&1 &
   until curl -s -m2 "$VALIDATOR_RPC" -X POST -H 'Content-Type: application/json' \
     -d '{"jsonrpc":"2.0","id":1,"method":"getHealth"}' 2>/dev/null | grep -q '"ok"'; do sleep 1; done
-  solana airdrop 500 >/dev/null 2>&1 || true
+  solana airdrop 500 -u "$VALIDATOR_RPC" -k "$DEPLOYER_KEYPAIR" >/dev/null 2>&1 || true
   # SKIP_BUILD reuses the already-built program .so (SBF bytecode is portable across
   # validator versions); useful when the active build toolchain differs from the
   # validator (e.g. building under one Agave release, running the validator on another).
-  if [ "${SKIP_BUILD:-0}" != "1" ]; then
+  # But a fresh machine (CI) has no prebuilt .so, so build anyway when it is absent —
+  # SKIP_BUILD is an optimization, not a reason to deploy a nonexistent program.
+  if [ "${SKIP_BUILD:-0}" != "1" ] || [ ! -f "$SOLANA/target/deploy/zama_host.so" ]; then
     ( cd "$SOLANA" && cargo build-sbf --tools-version v1.52 )
   fi
   for p in zama_host confidential_token confidential_token_receiver; do
-    solana program deploy --program-id "$SOLANA/target/deploy/$p-keypair.json" "$SOLANA/target/deploy/$p.so" >/dev/null
+    solana program deploy -u "$VALIDATOR_RPC" -k "$DEPLOYER_KEYPAIR" \
+      --program-id "$SOLANA/target/deploy/$p-keypair.json" "$SOLANA/target/deploy/$p.so" >/dev/null
   done
 fi
 ZAMA_HOST_ID="$(solana address -k "$SOLANA/target/deploy/zama_host-keypair.json")"

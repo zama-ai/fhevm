@@ -14,8 +14,8 @@ import initSolanaTkms, {
   process_user_decryption_resp_solana_from_js,
   type PublicEncKeyMlKem512,
   type PrivateEncKeyMlKem512,
-} from '../wasm/tkms/kms_lib.v0.14.0-solana.07be70ab.js';
-import { tkmsWasmBase64 } from '../wasm/tkms/kms_lib_bg.v0.14.0-solana.07be70ab.wasm.base64.js';
+} from '../wasm/tkms/kms_lib.v0.14.0-solana.047a6862.js';
+import { tkmsWasmBase64 } from '../wasm/tkms/kms_lib_bg.v0.14.0-solana.047a6862.wasm.base64.js';
 import { bytesToHexNo0x } from '../core/base/bytes.js';
 import { remove0x } from '../core/base/string.js';
 

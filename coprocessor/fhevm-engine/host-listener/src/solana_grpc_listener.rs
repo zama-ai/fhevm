@@ -132,6 +132,25 @@ pub async fn run(
     }
 }
 
+/// Resolve a durable `fhe_eval` step's output ACL record from the instruction's accounts.
+///
+/// `remaining_index` (the program's `output_acl_record_index`) is relative to
+/// `remaining_accounts`, which follow the 7 named `fhe_eval` accounts — payer,
+/// compute_subject, app_account_authority, host_config, system_program, then
+/// `#[event_cpi]`'s event_authority + program (see `FheEval` in fhe_eval.rs). Returns
+/// `None` when the index is out of range; the caller treats that as a hard problem, since
+/// the durable output would otherwise never be marked allowed and never materialize.
+#[cfg(feature = "solana-reconstruct")]
+fn fhe_eval_durable_acl_record(
+    accounts: &[[u8; 32]],
+    remaining_index: u16,
+) -> Option<[u8; 32]> {
+    const FHE_EVAL_REMAINING_BASE: usize = 7;
+    accounts
+        .get(FHE_EVAL_REMAINING_BASE + remaining_index as usize)
+        .copied()
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn subscribe_loop(
     db: &Database,
@@ -180,8 +199,19 @@ async fn subscribe_loop(
     loop {
         tokio::select! {
             _ = cancel.cancelled() => return Ok(()),
-            msg = stream.message() => {
-                let Some(update) = msg.context("grpc stream")? else { return Ok(()); };
+            // The subscription requests blocks_meta (see build_subscribe_request), which the
+            // validator emits every slot, so prolonged total silence means the stream stalled
+            // rather than the chain being idle. Bound the await so a stall reconnects instead of
+            // hanging forever waiting on a stream that will never produce again.
+            msg = tokio::time::timeout(Duration::from_secs(30), stream.message()) => {
+                let msg = msg.map_err(|_| anyhow!("grpc stream idle for 30s; reconnecting"))?;
+                let Some(update) = msg.context("grpc stream")? else {
+                    // A None message means the server closed the stream. This is NOT a
+                    // cancellation (handled above) — return an error so the outer loop reconnects
+                    // and resumes from `from_slot`, rather than exiting silently and missing every
+                    // later slot.
+                    return Err(anyhow!("grpc stream closed by server"));
+                };
                 match update.update_oneof {
                     Some(UpdateOneof::BlockMeta(bm)) => {
                         if let Some(ts) = bm.block_time.and_then(|t| unix_to_pdt(t.timestamp)) {
@@ -560,11 +590,9 @@ async fn reconstruct_events_for_insert(
     };
     use solana_sdk::pubkey::Pubkey;
 
-    // fhe_eval named accounts: payer, compute_subject, app_account_authority,
-    // host_config, system_program, instructions_sysvar, then event_cpi's
-    // event_authority + program = 8; remaining_accounts (ACL records) follow.
+    // compute_subject is the 2nd named fhe_eval account. (Durable ACL records live in
+    // remaining_accounts; resolved via fhe_eval_durable_acl_record.)
     const COMPUTE_SUBJECT_INDEX: usize = 1;
-    const FHE_EVAL_REMAINING_BASE: usize = 8;
     // commit_handle_material's acl_record (account 3): its emitted handle comes from
     // that record's account state, so it must be read on-chain.
     const COMMIT_ACL_RECORD_INDEX: usize = 3;
@@ -627,16 +655,27 @@ async fn reconstruct_events_for_insert(
                 if let (Some(index), Some(handle)) =
                     (step.durable_acl_record_index, handle)
                 {
-                    if let Some(acl_record) = ix
-                        .accounts
-                        .get(FHE_EVAL_REMAINING_BASE + index as usize)
+                    if let Some(acl_record) =
+                        fhe_eval_durable_acl_record(&ix.accounts, index)
                     {
                         events.push(SolanaHostEvent::FinalizedAccountFetch(
                             reconstruct_acl_record_bound_fetch(
-                                *acl_record,
-                                handle,
+                                acl_record, handle,
                             ),
                         ));
+                    } else {
+                        // The durable bind marks the output handle allowed; dropping
+                        // it silently leaves the handle unmaterialized and starves
+                        // every later consumer. A miss here means the account layout
+                        // drifted from the program — surface it loudly.
+                        warn!(
+                            slot,
+                            remaining_index = index,
+                            accounts = ix.accounts.len(),
+                            handle = %bs58::encode(handle).into_string(),
+                            "reconstruct: fhe_eval durable bind acl_record out of range; \
+                             output handle will not be allowed/materialized"
+                        );
                     }
                 }
             }
@@ -667,5 +706,40 @@ fn compute_result_handle(
         E::FheRand(e) => Some(e.result),
         E::FheRandBounded(e) => Some(e.result),
         E::FinalizedAccountFetch(_) | E::AclAllowed(_) => None,
+    }
+}
+
+#[cfg(all(test, feature = "solana-reconstruct"))]
+mod fhe_eval_acl_tests {
+    use super::fhe_eval_durable_acl_record;
+
+    fn acct(n: u8) -> [u8; 32] {
+        [n; 32]
+    }
+
+    #[test]
+    fn durable_output_as_sole_remaining_account_resolves() {
+        // The trivial-encrypt-eval shape: 7 named accounts (0..=6) + exactly one
+        // remaining account, the durable output ACL record, at absolute index 7
+        // (remaining_index 0). The off-by-one (base 8) read accounts.get(8) here, found
+        // nothing, and silently dropped the allow-fetch — leaving the output handle
+        // unmaterialized. This pins the base at 7.
+        let accounts: Vec<[u8; 32]> = (0..8).map(acct).collect();
+        assert_eq!(fhe_eval_durable_acl_record(&accounts, 0), Some(acct(7)));
+    }
+
+    #[test]
+    fn output_after_input_acl_records_resolves() {
+        // A durable input ACL record at 7 and the durable output at 8 (remaining_index 1).
+        let accounts: Vec<[u8; 32]> = (0..9).map(acct).collect();
+        assert_eq!(fhe_eval_durable_acl_record(&accounts, 1), Some(acct(8)));
+    }
+
+    #[test]
+    fn missing_remaining_account_returns_none() {
+        // Only the 7 named accounts, no remaining: a durable bind here is a layout drift
+        // the caller must surface, not silently drop.
+        let accounts: Vec<[u8; 32]> = (0..7).map(acct).collect();
+        assert_eq!(fhe_eval_durable_acl_record(&accounts, 0), None);
     }
 }

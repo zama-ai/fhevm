@@ -63,7 +63,9 @@ export const solanaProgramId = (discovery: Pick<Discovery, "hosts"> | undefined,
  *
  * The Solana host runs a NATIVE `solana-test-validator` on the host (the ecosystem norm on macOS;
  * the only published agave images are amd64, so a container would mean qemu emulation). Containers
- * reach the host via Docker Desktop's `host.docker.internal`; the validator publishes `rpcPort`.
+ * reach the host via `host.docker.internal`; the validator publishes `rpcPort`. Docker Desktop
+ * provides that name automatically; on Linux (CI) the connector container maps it to the host
+ * gateway via `extra_hosts` (see kms-connector-docker-compose.yml).
  */
 export const solanaValidatorUrl = (chain: { readonly rpcPort: number }): string =>
   `http://host.docker.internal:${chain.rpcPort}`;
