@@ -777,22 +777,22 @@ pub(crate) async fn insert_ciphertexts(
         sqlx::query("SAVEPOINT branch_input_ct")
             .execute(db_txn.as_mut())
             .await?;
-        let branch_result = sqlx::query(
-            "
+        let branch_result = sqlx::query!(
+            r#"
             INSERT INTO ciphertexts_branch (
                 handle, ciphertext, ciphertext_version, ciphertext_type,
                 input_blob_hash, input_blob_index, producer_block_hash, created_at
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
             ON CONFLICT (handle, ciphertext_version, producer_block_hash) DO NOTHING;
-            ",
+            "#,
+            &ct.handle,
+            &ct.compressed,
+            ct.ct_version,
+            ct.ct_type,
+            &blob_hash,
+            i as i32,
+            BRANCHLESS_PRODUCER_BLOCK_HASH,
         )
-        .bind(&ct.handle)
-        .bind(&ct.compressed)
-        .bind(ct.ct_version)
-        .bind(ct.ct_type)
-        .bind(blob_hash)
-        .bind(i as i32)
-        .bind(BRANCHLESS_PRODUCER_BLOCK_HASH)
         .execute(db_txn.as_mut())
         .await;
         match branch_result {

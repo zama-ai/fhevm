@@ -423,17 +423,19 @@ impl Database {
         let mut attempt: u32 = 0;
         loop {
             let pool = self.pool().await;
-            let ready: bool = sqlx::query_scalar(
+            let ready: bool = sqlx::query_scalar!(
                 r#"
-                SELECT to_regclass('public.computations_branch') IS NOT NULL
-                   AND to_regclass('public.ciphertexts_branch') IS NOT NULL
-                   AND to_regclass('public.coprocessor_settlement') IS NOT NULL
-                   AND EXISTS (
-                       SELECT 1
-                       FROM information_schema.columns
-                       WHERE table_name = 'host_chain_blocks_valid'
-                         AND column_name = 'parent_hash'
-                   )
+                SELECT (
+                    to_regclass('public.computations_branch') IS NOT NULL
+                    AND to_regclass('public.ciphertexts_branch') IS NOT NULL
+                    AND to_regclass('public.coprocessor_settlement') IS NOT NULL
+                    AND EXISTS (
+                        SELECT 1
+                        FROM information_schema.columns
+                        WHERE table_name = 'host_chain_blocks_valid'
+                          AND column_name = 'parent_hash'
+                    )
+                ) AS "ready!"
                 "#,
             )
             .fetch_one(&pool)
@@ -860,7 +862,7 @@ impl Database {
         block_number: i64,
         block_hash: &BlockHash,
     ) -> Result<Vec<Vec<u8>>, SqlxError> {
-        let finalized_result = sqlx::query(
+        let finalized_result = sqlx::query!(
             r#"
             UPDATE host_chain_blocks_valid
             SET block_status = 'finalized'
@@ -869,10 +871,10 @@ impl Database {
               AND block_number = $3
               AND block_status <> 'orphaned'
             "#,
+            self.chain_id.as_i64(),
+            block_hash.to_vec(),
+            block_number,
         )
-        .bind(self.chain_id.as_i64())
-        .bind(block_hash.to_vec())
-        .bind(block_number)
         .execute(tx.deref_mut())
         .await?;
 
