@@ -22,7 +22,7 @@ use crate::state::{FheBinaryOpCode, FheEvalOperand, FheEvalStep, FheTernaryOpCod
 
 /// Cost of a binary op producing `fhe_type`. `scalar` is true when the RHS is a plaintext scalar.
 pub(super) fn binary_op_hcu(op: FheBinaryOpCode, fhe_type: u8, scalar: bool) -> Result<u64> {
-    // No `_ =>` arm: a new FheBinaryOpCode variant must break the build here (INV-8).
+    // No `_ =>` arm: a new FheBinaryOpCode variant must break the build here.
     match op {
         FheBinaryOpCode::Add | FheBinaryOpCode::Sub => arithmetic_hcu(fhe_type, scalar),
         FheBinaryOpCode::Ge => comparison_hcu(fhe_type, scalar),
@@ -31,7 +31,7 @@ pub(super) fn binary_op_hcu(op: FheBinaryOpCode, fhe_type: u8, scalar: bool) -> 
 
 /// Cost of a ternary op producing `fhe_type`.
 pub(super) fn ternary_op_hcu(op: FheTernaryOpCode, fhe_type: u8) -> Result<u64> {
-    // No `_ =>` arm: a new FheTernaryOpCode variant must break the build here (INV-8).
+    // No `_ =>` arm: a new FheTernaryOpCode variant must break the build here.
     match op {
         FheTernaryOpCode::IfThenElse => select_hcu(fhe_type),
     }
@@ -140,8 +140,8 @@ pub(super) struct FrameMeter {
 }
 
 /// Depth a resolved operand contributes: an `AllowedLocal` carries its producer's cumulative depth;
-/// every other operand kind is a zero-depth leaf (durable resets in-frame — INV-22; verified input &
-/// scalar are intrinsic zero leaves — INV-21). An out-of-range producer index is treated as `0` here;
+/// every other operand kind is a zero-depth leaf (durable resets in-frame; verified input &
+/// scalar are intrinsic zero leaves). An out-of-range producer index is treated as `0` here;
 /// the walk's operand resolver rejects it with the precise `FheEvalAllowedLocalMissing`.
 fn operand_depth(operand: &FheEvalOperand, step_depths: &[u64]) -> u64 {
     // No `_ =>` arm: a new FheEvalOperand variant must break the build here.
@@ -202,7 +202,7 @@ pub(super) fn meter_eval_plan(
             FheEvalStep::Rand { fhe_type, .. } => (rand_hcu(*fhe_type)?, 0),
         };
 
-        // Total: running sum, capped (INV-9, INV-10).
+        // Total: running sum, capped.
         total = accumulate_total(total, op_hcu)?;
         enforce_le(
             total,
@@ -210,7 +210,7 @@ pub(super) fn meter_eval_plan(
             ZamaHostError::HcuTransactionLimitExceeded,
         )?;
 
-        // Depth: critical path, capped independently of total (INV-11, INV-12, INV-23).
+        // Depth: critical path, capped independently of total.
         let depth = step_depth(op_hcu, max_input_depth)?;
         enforce_le(
             depth,
@@ -286,7 +286,7 @@ mod tests {
         }
     }
 
-    // ---- INV-8 / INV-20: cost table is fail-closed + pure ----
+    // ---- cost table is fail-closed + pure ----
 
     #[test]
     fn binary_op_hcu_returns_cost_for_shipping_combos() {
@@ -395,7 +395,7 @@ mod tests {
         );
     }
 
-    // ---- INV-13: 0 = unlimited ----
+    // ---- 0 = unlimited ----
 
     #[test]
     fn enforce_le_zero_limit_is_noop() {
@@ -416,7 +416,7 @@ mod tests {
         );
     }
 
-    // ---- INV-9 / INV-11: checked arithmetic, fail-closed on overflow ----
+    // ---- checked arithmetic, fail-closed on overflow ----
 
     #[test]
     fn accumulate_total_sums() {
@@ -446,7 +446,7 @@ mod tests {
         );
     }
 
-    // ---- INV-9 / INV-10 / INV-11 / INV-12 / INV-23: the metering pass ----
+    // ---- the metering pass ----
 
     #[test]
     fn meter_single_step_total_and_depth() {
@@ -477,7 +477,7 @@ mod tests {
         for d in &m.step_depths {
             assert!(
                 *d <= m.total,
-                "INV-23: per-value depth never exceeds frame total"
+                "per-value depth never exceeds frame total"
             );
         }
         assert_eq!(*m.step_depths.last().unwrap(), add + t);
@@ -537,7 +537,7 @@ mod tests {
         );
     }
 
-    // ---- INV-21 / INV-22: leaf semantics ----
+    // ---- leaf semantics ----
 
     #[test]
     fn meter_scalar_is_zero_leaf() {
@@ -592,7 +592,7 @@ mod tests {
 
     #[test]
     fn meter_durable_input_is_zero_depth_leaf() {
-        // INV-22 + HCU_DEFERRED.md §2: a durable operand contributes depth 0 (in-frame reset), so a
+        // A durable operand contributes depth 0 (in-frame reset), so a
         // chain split across a durable boundary resets depth there rather than carrying it forward.
         let steps = vec![trivial(EU64), add_durable(EU64, 0)];
         let m = meter_eval_plan(&steps, 0, 0).unwrap();
@@ -601,7 +601,7 @@ mod tests {
         assert_eq!(*m.step_depths.last().unwrap(), add + t); // add + max(depth(a)=t, durable=0)
     }
 
-    // ---- INV-13 / INV-24: disabled at deploy ----
+    // ---- disabled at deploy ----
 
     #[test]
     fn meter_disabled_limits_accept_costliest_plan() {
@@ -614,7 +614,7 @@ mod tests {
         assert!(meter_eval_plan(&steps, 0, 0).is_ok());
     }
 
-    // ---- INV-20 / INV-26: determinism is the admission==execution parity basis ----
+    // ---- determinism is the admission==execution parity basis ----
 
     #[test]
     fn meter_is_deterministic() {
@@ -629,7 +629,7 @@ mod tests {
 
     #[test]
     fn doc_cross_frame_total_not_metered() {
-        // HCU_DEFERRED.md §1: the total is per-frame. Two separate frames, each under the per-frame
+        // the total is per-frame. Two separate frames, each under the per-frame
         // total, BOTH succeed even though their combined cost exceeds the limit. A future reviewer
         // must not "fix" this into a false cross-frame coverage claim.
         let frame = vec![trivial(EU64), add_local(EU64, 0, 0)];

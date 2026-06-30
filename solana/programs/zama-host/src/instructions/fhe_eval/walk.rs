@@ -102,8 +102,8 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor>(
 ) -> Result<()> {
     // HCU metering: pure pass over the plan, enforcing the per-frame total + in-frame depth caps
     // against the canonical host_config limits (0 = unlimited). Runs in both the admission and
-    // execution phases (both call this walk), so they compute and trip identically (INV-26); a trip
-    // in admission — which runs first — reverts before execution mutates any account (INV-18).
+    // execution phases (both call this walk), so they compute and trip identically; a trip
+    // in admission — which runs first — reverts before execution mutates any account.
     let host_config = &ctx.accounts.host_config;
     super::hcu::meter_eval_plan(
         &args.steps,

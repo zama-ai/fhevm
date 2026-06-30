@@ -82,7 +82,7 @@ mod tests {
 
     #[test]
     fn host_config_space_grows_by_sixteen() {
-        // INV-16: the pre-HCU SPACE was 225 (sum of existing fields); +16 for two u64s => 241.
+        // The pre-HCU SPACE was 225 (sum of existing fields); +16 for two u64s => 241.
         const PRIOR_SPACE: usize = 225;
         assert_eq!(HostConfig::SPACE, PRIOR_SPACE + 16);
 

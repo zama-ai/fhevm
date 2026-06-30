@@ -844,7 +844,7 @@ mod tests {
         assert!(!is_absent_deny_record(&info).unwrap());
     }
 
-    // ---- INV-6 / INV-7: ordering invariant, expressed in (total, depth) terms ----
+    // ---- ordering invariant, expressed in (total, depth) terms ----
 
     #[test]
     fn check_hcu_ordering_accepts_total_ge_depth() {
@@ -854,7 +854,7 @@ mod tests {
 
     #[test]
     fn check_hcu_ordering_rejects_total_lt_depth() {
-        // INV-6: depth=5M, set total=4M -> reject. INV-7: total=20M, set depth=21M -> reject.
+        // depth=5M, set total=4M -> reject. total=20M, set depth=21M -> reject.
         assert_eq!(
             check_hcu_ordering(4_000_000, 5_000_000).unwrap_err(),
             error!(ZamaHostError::HcuLimitOrderingInvalid)
@@ -867,7 +867,7 @@ mod tests {
 
     #[test]
     fn check_hcu_ordering_zero_is_unlimited() {
-        // 0 = +inf on either side (INV-13 sentinel); both 0 is the deploy default (INV-14).
+        // 0 = +inf on either side (the unlimited sentinel); both 0 is the deploy default.
         assert!(check_hcu_ordering(0, 5_000_000).is_ok());
         assert!(check_hcu_ordering(4_000_000, 0).is_ok());
         assert!(check_hcu_ordering(0, 0).is_ok());
@@ -875,13 +875,13 @@ mod tests {
 
     #[test]
     fn hcu_ordering_unreachable_under_setter_sequences() {
-        // INV-15: no ordered setter sequence can reach 0 < total < depth. Simulate both setters as
+        // No ordered setter sequence can reach 0 < total < depth. Simulate both setters as
         // guarded mutations over a small value space; the bad state must never be reachable.
         let values = [0u64, 1, 5, 10, 20];
         for &a in &values {
             for &b in &values {
                 for &c in &values {
-                    let (mut total, mut depth) = (0u64, 0u64); // init state (INV-14)
+                    let (mut total, mut depth) = (0u64, 0u64); // init state (both disabled)
                                                                // sequence: set_total(a), set_depth(b), set_total(c)
                     if check_hcu_ordering(a, depth).is_ok() {
                         total = a;
@@ -899,7 +899,7 @@ mod tests {
         }
     }
 
-    // ---- INV-17: the config-updated event carries the HCU limits (compile-time proof) ----
+    // ---- the config-updated event carries the HCU limits (compile-time proof) ----
 
     #[test]
     fn host_config_updated_event_carries_hcu_limits() {

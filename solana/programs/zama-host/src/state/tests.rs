@@ -349,7 +349,7 @@ fn handle_derivation_rand_uses_keccak() {
 
 #[test]
 fn acl_record_layout_unchanged_by_hcu() {
-    // INV-16: the HCU feature must not touch AclRecord (no hcu_depth field). Self-consistency: a
+    // The HCU feature must not touch AclRecord (no hcu_depth field). Self-consistency: a
     // serialized record must occupy exactly 8 + AclRecord::SPACE bytes, so any accidental field/SPACE
     // drift fails here. (Cross-instruction depth — persisting depth on AclRecord — is HCU_DEFERRED §2.)
     use anchor_lang::AccountSerialize;

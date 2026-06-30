@@ -3926,12 +3926,11 @@ fn serialized_account<T: AccountSerialize>(account: T) -> Vec<u8> {
 
 // ---------------------------------------------------------------------------
 // HCU limit setters + fhe_eval enforcement
-// (INV-2/4/5/6/7/10/12/14/15/17/18 — see solana/artifacts/05-tests-hcu-limit.md).
 // ---------------------------------------------------------------------------
 
 #[test]
 fn mollusk_set_max_hcu_limits_persist_and_advance_slot() {
-    // INV-17 + happy path: enable both limits from the disabled (0) default; each write persists
+    // happy path: enable both limits from the disabled (0) default; each write persists
     // and stamps updated_slot.
     let program_id = host::id();
     let admin = Pubkey::new_unique();
@@ -3966,7 +3965,7 @@ fn mollusk_set_max_hcu_limits_persist_and_advance_slot() {
 
 #[test]
 fn mollusk_set_max_hcu_per_tx_rejects_wrong_admin() {
-    // INV-2 / INV-4: a valid signer that is not the stored admin is rejected; no mutation.
+    // A valid signer that is not the stored admin is rejected; no mutation.
     let program_id = host::id();
     let admin = Pubkey::new_unique();
     let wrong_admin = Pubkey::new_unique();
@@ -3990,7 +3989,7 @@ fn mollusk_set_max_hcu_per_tx_rejects_wrong_admin() {
 
 #[test]
 fn mollusk_set_max_hcu_per_tx_rejects_remaining_accounts() {
-    // INV-5: a trailing account meta is rejected; no mutation.
+    // A trailing account meta is rejected; no mutation.
     let program_id = host::id();
     let admin = Pubkey::new_unique();
     let (host_config, account) = host_config_account(admin);
@@ -4014,7 +4013,7 @@ fn mollusk_set_max_hcu_per_tx_rejects_remaining_accounts() {
 
 #[test]
 fn mollusk_set_max_hcu_per_tx_rejects_below_depth() {
-    // INV-6 / INV-15: with depth=5M set, a total of 4M would make the depth cap dead -> rejected.
+    // With depth=5M set, a total of 4M would make the depth cap dead -> rejected.
     let program_id = host::id();
     let admin = Pubkey::new_unique();
     let (host_config, account) = host_config_account_with_hcu_limits(admin, 0, 5_000_000);
@@ -4037,7 +4036,7 @@ fn mollusk_set_max_hcu_per_tx_rejects_below_depth() {
 
 #[test]
 fn mollusk_set_max_hcu_depth_per_tx_rejects_above_total() {
-    // INV-7 / INV-15: with total=20M set, a depth of 21M would exceed it -> rejected.
+    // With total=20M set, a depth of 21M would exceed it -> rejected.
     let program_id = host::id();
     let admin = Pubkey::new_unique();
     let (host_config, account) = host_config_account_with_hcu_limits(admin, 20_000_000, 0);
@@ -4060,7 +4059,7 @@ fn mollusk_set_max_hcu_depth_per_tx_rejects_above_total() {
 
 #[test]
 fn mollusk_initialize_host_config_defaults_hcu_limits_to_zero() {
-    // INV-14: a freshly initialized config ships with both limits disabled.
+    // A freshly initialized config ships with both limits disabled.
     let program_id = host::id();
     let payer = Pubkey::new_unique();
     let admin = Pubkey::new_unique();
@@ -4095,8 +4094,7 @@ fn mollusk_initialize_host_config_defaults_hcu_limits_to_zero() {
 
 #[test]
 fn mollusk_fhe_eval_within_enabled_limits_succeeds() {
-    // INV-10 / INV-12 happy + INV-24: limits enabled but generous -> the plan still succeeds and
-    // binds its durable output.
+    // Limits enabled but generous -> the plan still succeeds and binds its durable output.
     let fixture = EvalFixture::with_hcu_limits(1_000_000, 1_000_000);
     let context_id = label("hcu-within");
     let ix = fixture.standard_instruction(
@@ -4114,7 +4112,7 @@ fn mollusk_fhe_eval_within_enabled_limits_succeeds() {
 
 #[test]
 fn mollusk_fhe_eval_total_limit_exceeded_reverts_without_output() {
-    // INV-10 + INV-18: a tiny total cap trips in admission; no durable output ACL record is created.
+    // A tiny total cap trips in admission; no durable output ACL record is created.
     let fixture = EvalFixture::with_hcu_limits(1, 0);
     let context_id = label("hcu-total-trip");
     let ix = fixture.standard_instruction(
@@ -4131,7 +4129,7 @@ fn mollusk_fhe_eval_total_limit_exceeded_reverts_without_output() {
 
 #[test]
 fn mollusk_fhe_eval_depth_limit_exceeded_reverts_without_output() {
-    // INV-12 + INV-18: total unlimited (0), a tiny depth cap trips independently; no output created.
+    // Total unlimited (0), a tiny depth cap trips independently; no output created.
     let fixture = EvalFixture::with_hcu_limits(0, 1);
     let context_id = label("hcu-depth-trip");
     let ix = fixture.standard_instruction(
