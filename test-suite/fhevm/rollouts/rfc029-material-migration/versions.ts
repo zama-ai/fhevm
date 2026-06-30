@@ -31,14 +31,16 @@ const target = "v0.13.0";
 // test OLD tfhe-1.4 coprocessor images; this rollout runs the branch.)
 const relayerSdkVersion = "";
 
-// kms-core image anchor. MUST match the kms release the connector compiles its gRPC
-// proto against: kms-connector/Cargo.toml pins `kms-grpc` at tag v0.13.20-0, so the
-// RFC-029 migration keygen RPC (KeyGenRequest + KeySetAddedInfo /
-// copy_compressed_key_to_original, UseExisting + CompressedAll) is proto-compatible
-// end to end. v0.13.20-0 also ships the RFC-028 keygen-from-existing server
-// implementation. It is the same core-service image the v0.12-to-v0.13 rollout runs
-// as its target, so it is published and CI-exercised.
-const kmsCoreImage = "v0.13.20-0";
+// kms-core image anchor. The RFC-029 migration keygen RPC uses
+// copy_compressed_key_to_original + UseExisting + CompressedAll + KeySetAddedInfo, which first
+// shipped in kms PR #530 (commit 07b2a8fc, 2026-04-30). The earliest release tag carrying that
+// working server impl is the PRE-RELEASE v0.13.20-0; v0.13.20 (tagged 2026-06-11) is its STABLE
+// counterpart with a byte-identical proto. We run the stable image: it is wire-compatible with the
+// connector (which compiles kms-grpc from tag v0.13.20-0 -- identical proto) and is the v0.13.0
+// release pairing the v0.13.0-testnet rollout also uses.
+// NB: v0.13.10/.11 predate the feature (no copy_compressed_key_to_original, old wire format);
+// v0.13.21 is a proto-identical later stable if a bump is ever wanted.
+const kmsCoreImage = "v0.13.20";
 
 export const versions = {
   RELAYER_VERSION: target,
@@ -71,7 +73,7 @@ export const phaseVersions = {
 export const versionSources = [
   "rollout=rfc029-material-migration",
   `target=${target}`,
-  `kms-core=${kmsCoreImage} (matches connector kms-grpc tag v0.13.20-0)`,
+  `kms-core=${kmsCoreImage} (stable; proto-identical to connector kms-grpc tag v0.13.20-0; has RFC-028 copy_compressed_key_to_original)`,
   "feature=branch-local (RFC-029 coprocessor material-version cutover)",
   "tracks=fhevm-internal#1568",
 ];

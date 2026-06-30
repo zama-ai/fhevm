@@ -34,10 +34,11 @@ test("pins one coherent target across the whole stack (cutover is internal, not 
   expect(tags.size).toBeGreaterThan(0);
 });
 
-test("pins kms-core to the connector-matched commit so the migration keygen RPC is proto-compatible", () => {
-  // The connector compiles its kms-grpc proto from rev 1edf3a0; the running
-  // kms-core image MUST be that same commit (published as core-service:1edf3a0).
-  expect(phaseVersions.baseline.CORE_VERSION).toBe("1edf3a0");
+test("pins kms-core to a stable release that has RFC-028 keygen-from-existing and is proto-compatible with the connector", () => {
+  // RFC-029's migration keygen needs copy_compressed_key_to_original (kms PR #530), which first
+  // shipped in pre-release v0.13.20-0. v0.13.20 is its stable, proto-identical counterpart, so the
+  // running kms-core image matches the connector's v0.13.20-0 kms-grpc proto on the wire.
+  expect(phaseVersions.baseline.CORE_VERSION).toBe("v0.13.20");
 });
 
 test("loads the checked-in rfc029-material-migration runbook", async () => {
