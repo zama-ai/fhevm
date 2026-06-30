@@ -166,6 +166,167 @@ edv="$(echo "$er" | python3 -c "import sys,json;print(int(json.load(sys.stdin)['
 [ "$edv" = "$EXPECT" ] && echo "    input-flow public-decrypt cleartext=$edv == $IV+$ADD OK" \
   || fail "input-flow $edv != $EXPECT"
 
+# Helper: wait for coprocessor SNS commit of $handle then public-decrypt and assert cleartext.
+# Usage: assert_decrypt LABEL HANDLE EXPECTED_VALUE  (use "lt:N" to assert result < N)
+assert_decrypt() {
+  local label="$1" handle="$2" expected="$3"
+  local hh="${handle#0x}"
+  local i row r st dv job
+  for i in $(seq 1 30); do
+    row="$(docker exec coprocessor-and-kms-db psql -U postgres -d coprocessor -tAc \
+      "SELECT ciphertext IS NOT NULL, ciphertext128 IS NOT NULL FROM ciphertext_digest WHERE handle=decode('$hh','hex')" 2>/dev/null | tr -d '[:space:]')" || row=""
+    [ "$row" = "t|t" ] && break
+    [ "$i" = 30 ] && fail "$label SNS commit timed out"
+    sleep 6
+  done
+  job="$(curl -s -m15 localhost:3000/v2/public-decrypt -H 'content-type: application/json' \
+    -d "{\"ciphertextHandles\":[\"$handle\"],\"extraData\":\"$EXTRA\"}" | \
+    python3 -c "import sys,json;print(json.load(sys.stdin)['result']['jobId'])")"
+  for i in $(seq 1 40); do
+    r="$(curl -s -m10 "localhost:3000/v2/public-decrypt/$job")"
+    st="$(echo "$r" | python3 -c "import sys,json;print(json.load(sys.stdin).get('status',''))" 2>/dev/null)" || st=""
+    [ "$st" = succeeded ] && break
+    [ "$st" = failed ] && fail "$label public-decrypt failed: $r"
+    [ "$i" = 40 ] && fail "$label public-decrypt timed out"
+    sleep 3
+  done
+  dv="$(echo "$r" | python3 -c "import sys,json;print(int(json.load(sys.stdin)['result']['decryptedValue'],16))")"
+  if [[ "$expected" == lt:* ]]; then
+    local bound="${expected#lt:}"
+    [ "$dv" -lt "$bound" ] && echo "    $label cleartext=$dv < $bound OK" || fail "$label cleartext $dv not < $bound"
+  else
+    [ "$dv" = "$expected" ] && echo "    $label cleartext=$dv OK" || fail "$label cleartext $dv != $expected"
+  fi
+}
+
+# Helper: run a binary fhe_eval, capture the result handle.
+run_binary() {
+  local op="$1" a="$2" b="$3" scalar="$4" ftype="$5"
+  local out h extra_env=""
+  [ "$scalar" = "1" ] && extra_env="BINARY_B_SCALAR=1"
+  out="$(cd "$ROOT/solana/scripts/poc/live-client" && \
+    env FHE_EVAL_BINARY=1 BINARY_OP="$op" BINARY_A="$a" BINARY_B="$b" \
+        BINARY_FHE_TYPE="$ftype" BINARY_ALLOW=1 ${extra_env} \
+    ./target/debug/poc-live-client 2>&1)"
+  echo "$out" | grep -qE 'allow_for_decryption' || fail "fhe_eval binary $op: $out"
+  h="$(echo "$out" | grep -oE 'result handle 0x[0-9a-f]+' | grep -oE '0x[0-9a-f]+')"
+  [ -n "$h" ] || fail "no $op result handle"
+  echo "$h"
+}
+
+# Helper: run a unary fhe_eval, capture the result handle.
+run_unary() {
+  local op="$1" a="$2" in_type="$3" out_type="$4"
+  local out h
+  out="$(cd "$ROOT/solana/scripts/poc/live-client" && \
+    FHE_EVAL_UNARY=1 UNARY_OP="$op" UNARY_A="$a" UNARY_IN_FHE_TYPE="$in_type" \
+    UNARY_OUT_FHE_TYPE="$out_type" UNARY_ALLOW=1 \
+    ./target/debug/poc-live-client 2>&1)"
+  echo "$out" | grep -qE 'allow_for_decryption' || fail "fhe_eval unary $op: $out"
+  h="$(echo "$out" | grep -oE 'result handle 0x[0-9a-f]+' | grep -oE '0x[0-9a-f]+')"
+  [ -n "$h" ] || fail "no $op result handle"
+  echo "$h"
+}
+
+echo "==> [binary ops] fhe_eval — 19 binary ops (euint8/euint64)"
+# Arithmetic
+echo "    Sub(100, enc(30)=70)"
+H="$(run_binary Sub 100 30 0 5)"; assert_decrypt "Sub" "$H" 70
+echo "    Mul(6, scalar(7))=42"
+H="$(run_binary Mul 6 7 1 5)"; assert_decrypt "Mul" "$H" 42
+echo "    Div(42, scalar(6))=7"
+H="$(run_binary Div 42 6 1 5)"; assert_decrypt "Div" "$H" 7
+echo "    Rem(42, scalar(10))=2"
+H="$(run_binary Rem 42 10 1 5)"; assert_decrypt "Rem" "$H" 2
+echo "    Min(10, enc(20))=10"
+H="$(run_binary Min 10 20 0 5)"; assert_decrypt "Min" "$H" 10
+echo "    Max(10, enc(20))=20"
+H="$(run_binary Max 10 20 0 5)"; assert_decrypt "Max" "$H" 20
+# Bitwise (euint8=type 2): and(240,15)=0  or(240,15)=255  xor(240,255)=15
+echo "    And(240, enc(15) euint8)=0"
+H="$(run_binary And 240 15 0 2)"; assert_decrypt "And" "$H" 0
+echo "    Or(240, enc(15) euint8)=255"
+H="$(run_binary Or 240 15 0 2)"; assert_decrypt "Or" "$H" 255
+echo "    Xor(240, enc(255) euint8)=15"
+H="$(run_binary Xor 240 255 0 2)"; assert_decrypt "Xor" "$H" 15
+# Shifts/rotations (euint8=type 2, scalar RHS)
+echo "    Shl(1, scalar(3) euint8)=8"
+H="$(run_binary Shl 1 3 1 2)"; assert_decrypt "Shl" "$H" 8
+echo "    Shr(8, scalar(3) euint8)=1"
+H="$(run_binary Shr 8 3 1 2)"; assert_decrypt "Shr" "$H" 1
+echo "    Rotl(1, scalar(1) euint8)=2"
+H="$(run_binary Rotl 1 1 1 2)"; assert_decrypt "Rotl" "$H" 2
+echo "    Rotr(2, scalar(1) euint8)=1"
+H="$(run_binary Rotr 2 1 1 2)"; assert_decrypt "Rotr" "$H" 1
+# Comparisons (euint64, output is ebool 0/1)
+echo "    Eq(42, enc(42))=1"
+H="$(run_binary Eq 42 42 0 5)"; assert_decrypt "Eq" "$H" 1
+echo "    Ne(42, enc(43))=1"
+H="$(run_binary Ne 42 43 0 5)"; assert_decrypt "Ne" "$H" 1
+echo "    Ge(42, enc(41))=1"
+H="$(run_binary Ge 42 41 0 5)"; assert_decrypt "Ge" "$H" 1
+echo "    Gt(42, enc(41))=1"
+H="$(run_binary Gt 42 41 0 5)"; assert_decrypt "Gt" "$H" 1
+echo "    Le(41, enc(42))=1"
+H="$(run_binary Le 41 42 0 5)"; assert_decrypt "Le" "$H" 1
+echo "    Lt(41, enc(42))=1"
+H="$(run_binary Lt 41 42 0 5)"; assert_decrypt "Lt" "$H" 1
+
+echo "==> [unary ops] fhe_eval — Neg, Not, Cast"
+echo "    Neg(100 euint8)=156"
+H="$(run_unary Neg 100 2 2)"; assert_decrypt "Neg" "$H" 156
+echo "    Not(240 euint8)=15"
+H="$(run_unary Not 240 2 2)"; assert_decrypt "Not" "$H" 15
+echo "    Cast(42 euint8->euint16)=42"
+H="$(run_unary Cast 42 2 3)"; assert_decrypt "Cast" "$H" 42
+
+echo "==> [ternary] fhe_eval IfThenElse(ctrl=1, true=42, false=99)->42"
+tout="$(cd "$ROOT/solana/scripts/poc/live-client" && \
+  FHE_EVAL_TERNARY=1 TERNARY_CTRL=1 TERNARY_TRUE=42 TERNARY_FALSE=99 TERNARY_FHE_TYPE=5 TERNARY_ALLOW=1 \
+  ./target/debug/poc-live-client 2>&1)"
+echo "$tout" | grep -qE 'allow_for_decryption' || fail "fhe_eval ternary: $tout"
+TH="$(echo "$tout" | grep -oE 'result handle 0x[0-9a-f]+' | grep -oE '0x[0-9a-f]+')"
+[ -n "$TH" ] || fail "no ternary result handle"
+assert_decrypt "IfThenElse" "$TH" 42
+
+echo "==> [rand_bounded] fhe_eval RandBounded(upper=100)"
+rbout="$(cd "$ROOT/solana/scripts/poc/live-client" && \
+  FHE_EVAL_RAND_BOUNDED=1 RAND_UPPER=100 RAND_FHE_TYPE=5 RAND_ALLOW=1 \
+  ./target/debug/poc-live-client 2>&1)"
+echo "$rbout" | grep -qE 'allow_for_decryption' || fail "fhe_eval rand_bounded: $rbout"
+RBH="$(echo "$rbout" | grep -oE 'result handle 0x[0-9a-f]+' | grep -oE '0x[0-9a-f]+')"
+[ -n "$RBH" ] || fail "no rand_bounded result handle"
+assert_decrypt "RandBounded" "$RBH" "lt:100"
+
+echo "==> [composite/sum] fhe_eval sum(${SUM_A:-10} + ${SUM_B:-20})"
+SUM_A="${SUM_A:-10}"; SUM_B="${SUM_B:-20}"; EXPECTED_SUM=$((SUM_A + SUM_B))
+sout="$(cd "$ROOT/solana/scripts/poc/live-client" && \
+  FHE_EVAL_SUM=1 SUM_A="$SUM_A" SUM_B="$SUM_B" SUM_ALLOW=1 ./target/debug/poc-live-client 2>&1)"
+echo "$sout" | grep -qE 'allow_for_decryption' || fail "fhe_eval sum: $sout"
+SH="$(echo "$sout" | grep -oE 'result handle 0x[0-9a-f]+' | grep -oE '0x[0-9a-f]+')"
+[ -n "$SH" ] || fail "no sum result handle"
+assert_decrypt "sum" "$SH" "$EXPECTED_SUM"
+
+echo "==> [composite/isIn] fhe_eval isIn(${ISIN_VALUE:-42} in [10,42,100])->true"
+ISIN_VALUE="${ISIN_VALUE:-42}"
+iout="$(cd "$ROOT/solana/scripts/poc/live-client" && \
+  FHE_EVAL_IS_IN=1 ISIN_VALUE="$ISIN_VALUE" ISIN_ALLOW=1 ./target/debug/poc-live-client 2>&1)"
+echo "$iout" | grep -qE 'allow_for_decryption' || fail "fhe_eval isIn: $iout"
+IH="$(echo "$iout" | grep -oE 'result handle 0x[0-9a-f]+' | grep -oE '0x[0-9a-f]+')"
+[ -n "$IH" ] || fail "no isIn result handle"
+assert_decrypt "isIn" "$IH" 1
+
+echo "==> [composite/mulDiv] fhe_eval mulDiv(${MULDIV_A:-6} * ${MULDIV_B:-7} / ${MULDIV_D:-3})"
+MULDIV_A="${MULDIV_A:-6}"; MULDIV_B="${MULDIV_B:-7}"; MULDIV_D="${MULDIV_D:-3}"
+EXPECTED_MULDIV=$((MULDIV_A * MULDIV_B / MULDIV_D))
+mdout="$(cd "$ROOT/solana/scripts/poc/live-client" && \
+  FHE_EVAL_MUL_DIV=1 MULDIV_A="$MULDIV_A" MULDIV_B="$MULDIV_B" MULDIV_D="$MULDIV_D" MULDIV_ALLOW=1 \
+  ./target/debug/poc-live-client 2>&1)"
+echo "$mdout" | grep -qE 'allow_for_decryption' || fail "fhe_eval mulDiv: $mdout"
+MDH="$(echo "$mdout" | grep -oE 'result handle 0x[0-9a-f]+' | grep -oE '0x[0-9a-f]+')"
+[ -n "$MDH" ] || fail "no mulDiv result handle"
+assert_decrypt "mulDiv" "$MDH" "$EXPECTED_MULDIV"
+
 echo "==> [consume] confidential mint + USDC; wrap -> burn -> release -> public-decrypt -> redeem(secp) + disclose(secp)"
 LCDIR="$ROOT/solana/scripts/poc/live-client"
 lc() { ( cd "$LCDIR" && env "$@" ./target/debug/poc-live-client 2>&1 ); }
@@ -253,4 +414,4 @@ disout="$(lc CONSUME_DISCLOSE=1 TS_ACL="$BURNED_ACL" TS_HANDLE="$BURNED_HANDLE" 
 echo "$disout" | grep -q 'OK disclose_amount_secp' || fail "disclose_amount_secp: $(echo "$disout" | tail -3)"
 echo "    disclose_amount_secp OK -- witness-bound secp256k1 KMS-cert verify emitted cleartext $CLEARTEXT"
 
-echo "==> FULL VERTICAL GREEN: input(ZK+secp bind) -> compute -> public-decrypt($VALUE) + user-decrypt($VALUE) -> input-flow(VerifiedInput $IV+$ADD -> public-decrypt $EXPECT) -> consume redeem($CLEARTEXT)+disclose($CLEARTEXT) [secp256k1 KMS cert]"
+echo "==> FULL VERTICAL GREEN: input(ZK+secp bind) -> compute -> public-decrypt($VALUE) + user-decrypt($VALUE) -> input-flow(VerifiedInput $IV+$ADD -> public-decrypt $EXPECT) -> composite sum($SUM_A+$SUM_B=$EXPECTED_SUM) + isIn($ISIN_VALUE in [10,42,100]=true) + mulDiv($MULDIV_A*$MULDIV_B/$MULDIV_D=$EXPECTED_MULDIV) -> consume redeem($CLEARTEXT)+disclose($CLEARTEXT) [secp256k1 KMS cert]"
