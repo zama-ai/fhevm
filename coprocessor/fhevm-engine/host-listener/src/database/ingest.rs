@@ -340,7 +340,7 @@ pub async fn ingest_block_logs(
                     at_least_one_insertion |= db
                         .insert_pbs_computations(
                             &mut tx,
-                            &vec![dst_handle.to_vec()],
+                            &[dst_handle.to_vec()],
                             log.transaction_hash.map(|h| h.to_vec()),
                             block_number,
                             block_hash.as_ref(),

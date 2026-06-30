@@ -180,6 +180,18 @@ SELECT dst_handle
  WHERE dst_chain_id = :'chain_id'
    AND block_number > :'to_block_number';
 
+-- `_affected_digest_handles` was already materialized above (before the
+-- key-rotation check), so the bridged destination handles just added to
+-- `_affected_output_handles` are not in it yet. Add them here too so the legacy
+-- `ciphertext_digest` cleanup below removes the bridged digest rows as well, not
+-- just the bridged ciphertext bytes. Kept after the key-rotation check so
+-- bridged copies stay exempt from it (see note above).
+INSERT INTO _affected_digest_handles (handle)
+SELECT dst_handle
+  FROM handle_bridged_events
+ WHERE dst_chain_id = :'chain_id'
+   AND block_number > :'to_block_number';
+
 -- ===========================================================================
 -- Delete from tables that have their own block_number column
 -- ===========================================================================
