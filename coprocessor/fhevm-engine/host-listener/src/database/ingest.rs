@@ -4,8 +4,8 @@ use std::future::Future;
 use alloy::primitives::Address;
 use alloy::rpc::types::Log;
 use alloy::sol_types::SolEventInterface;
-use fhevm_engine_common::bridge::chain_id_from_handle;
 use fhevm_engine_common::branch::advance_settled_height;
+use fhevm_engine_common::bridge::chain_id_from_handle;
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::types::{
     Handle, COMPUTED_HANDLE_INDEX_MARKER, HANDLE_VERSION,

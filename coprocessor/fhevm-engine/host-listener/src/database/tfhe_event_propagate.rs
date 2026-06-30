@@ -4,8 +4,8 @@ use alloy_primitives::Log;
 use alloy_primitives::Uint;
 use anyhow::Result;
 use bigdecimal::BigDecimal;
-use fhevm_engine_common::bridge::{chain_id_from_handle, derive_dst_handle};
 use fhevm_engine_common::branch::enqueue_s3_canonical_repairs;
+use fhevm_engine_common::bridge::{chain_id_from_handle, derive_dst_handle};
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::database::{
     connect_pool_with_options_and_connect_options, PoolRefreshHandle,

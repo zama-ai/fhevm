@@ -2360,6 +2360,8 @@ mod tests {
         crate::daemon_cli::Args {
             run_bg_worker: true,
             worker_polling_interval_ms: 1000,
+            bridge_polling_interval_ms: 1000,
+            bridge_associate_batch_size: 128,
             generate_fhe_keys: false,
             key_cache_size: 4,
             coprocessor_fhe_threads: 4,
