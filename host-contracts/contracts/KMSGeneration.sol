@@ -503,7 +503,13 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
             revert KeyMaterialNotPublished(keyId);
         }
 
-        emit KeyMaterialMigrationScheduled(keyId, hostChainIds, hostMigrationBlocks, gatewayMigrationBlock, materialVersion);
+        emit KeyMaterialMigrationScheduled(
+            keyId,
+            hostChainIds,
+            hostMigrationBlocks,
+            gatewayMigrationBlock,
+            materialVersion
+        );
     }
 
     /**
