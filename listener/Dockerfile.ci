@@ -4,7 +4,7 @@
 ARG RUST_IMAGE_VERSION=1.91.1
 
 # ── Builder (self-contained Chainguard dev image + inlined Rust setup) ──
-FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0-dev AS builder
+FROM cgr.dev/zama.ai/glibc-dynamic:16-dev AS builder
 
 ARG RUST_IMAGE_VERSION
 
