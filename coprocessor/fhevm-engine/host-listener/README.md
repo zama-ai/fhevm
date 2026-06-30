@@ -33,6 +33,22 @@ By default the listener propagate TFHE operation events to the database.
 You can change the database url using --database-url, it defaults to a local test database url.
 If you want to disable TFHE operation events propagation, you can provide an empty database-url.
 
+### Host listener consumer
+
+`host_listener_consumer` consumes listener events from the broker and writes the
+matching coprocessor work to the database. Configure the broker with `--url`,
+`--broker-url`, or the `BROKER_URL` environment variable.
+
+```bash
+BROKER_URL=redis://listener-redis:6379 host_listener_consumer \
+  --database-url=postgresql://postgres:testmdp@0.0.0.0:5432/coprocessor \
+  --acl-contract-address=<ACL_CONTRACT_ADDRESS> \
+  --tfhe-contract-address=<TFHE_CONTRACT_ADDRESS> \
+  --chain-id=<CHAIN_ID>
+```
+
+Use `--url` or `--broker-url` to override `BROKER_URL` for a single process.
+
 ### Dependent ops throttling (optional)
 
 `--dependent-ops-max-per-chain` enables slow-lane assignment (`0` disables).

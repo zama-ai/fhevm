@@ -2,6 +2,7 @@ import { Interface, Wallet } from 'ethers';
 import { task, types } from 'hardhat/config';
 import { HardhatRuntimeEnvironment, TaskArguments } from 'hardhat/types';
 
+import { buildProtocolConfigReinitializeArgs } from './taskDeploy';
 import { getRequiredEnvVar, loadHostAddresses } from './utils/loadVariables';
 
 const REINITIALIZE_FUNCTION_PREFIX = 'reinitializeV'; // Prefix for reinitialize functions
@@ -92,6 +93,9 @@ async function upgradeCurrentToNew(
   }
 }
 
+// Relies on incremental compilation: run only on a clean working tree whose generated
+// addresses/FHEVMHostAddresses.sol matches the target environment, otherwise the implementation
+// embeds the wrong addresses.
 async function deployImplementationForPreparedUpgrade(
   proxyAddress: string,
   expectedArtifactName: string,
@@ -100,13 +104,7 @@ async function deployImplementationForPreparedUpgrade(
   verifyContract: boolean,
   hre: HardhatRuntimeEnvironment,
   reinitializeArgs: unknown[] = [],
-  forceClean = false,
 ): Promise<void> {
-  if (forceClean) {
-    // FHEVMExecutor pulls in generated host addresses, so force a clean rebuild to avoid
-    // reusing artifacts compiled against another environment.
-    await hre.run('clean');
-  }
   await compileImplementations(currentImplementation, newImplementation, hre);
 
   await checkImplementationArtifacts(expectedArtifactName, currentImplementation, newImplementation, hre);
@@ -233,7 +231,6 @@ async function prepareUpgradeContract(
   taskArgs: TaskArguments,
   hre: HardhatRuntimeEnvironment,
   reinitializeArgs: unknown[] = [],
-  forceClean = false,
 ) {
   if (taskArgs.useInternalProxyAddress) {
     loadHostAddresses();
@@ -248,7 +245,6 @@ async function prepareUpgradeContract(
     taskArgs.verifyContract,
     hre,
     reinitializeArgs,
-    forceClean,
   );
 }
 
@@ -324,7 +320,7 @@ task('task:prepareUpgradeFHEVMExecutor')
     types.boolean,
   )
   .setAction(async function (taskArgs: TaskArguments, hre) {
-    await prepareUpgradeContract('FHEVMExecutor', 'FHEVM_EXECUTOR_CONTRACT_ADDRESS', taskArgs, hre, [], true);
+    await prepareUpgradeContract('FHEVMExecutor', 'FHEVM_EXECUTOR_CONTRACT_ADDRESS', taskArgs, hre);
   });
 
 task('task:prepareUpgradeACL')
@@ -397,6 +393,58 @@ task('task:prepareUpgradeKMSVerifier')
   )
   .setAction(async function (taskArgs: TaskArguments, hre) {
     await prepareUpgradeContract('KMSVerifier', 'KMS_VERIFIER_CONTRACT_ADDRESS', taskArgs, hre);
+  });
+
+task('task:upgradeProtocolConfig')
+  .addParam(
+    'currentImplementation',
+    'The currently deployed implementation solidity contract path and name, eg: contracts/ProtocolConfig.sol:ProtocolConfig',
+  )
+  .addParam(
+    'newImplementation',
+    'The new implementation solidity contract path and name, eg: examples/ProtocolConfigUpgradedExample.sol:ProtocolConfigUpgradedExample',
+  )
+  .addOptionalParam(
+    'useInternalProxyAddress',
+    'If proxy address from the /addresses directory should be used',
+    false,
+    types.boolean,
+  )
+  .addOptionalParam(
+    'verifyContract',
+    'Verify new implementation on Etherscan (for eg if deploying on Sepolia or Mainnet)',
+    true,
+    types.boolean,
+  )
+  .setAction(async function (taskArgs: TaskArguments, hre) {
+    const reinitializeArgs = buildProtocolConfigReinitializeArgs();
+    await upgradeContract('ProtocolConfig', 'PROTOCOL_CONFIG_CONTRACT_ADDRESS', taskArgs, hre, reinitializeArgs);
+  });
+
+task('task:prepareUpgradeProtocolConfig')
+  .addParam(
+    'currentImplementation',
+    'The currently deployed implementation solidity contract path and name, eg: contracts/ProtocolConfig.sol:ProtocolConfig',
+  )
+  .addParam(
+    'newImplementation',
+    'The new implementation solidity contract path and name, eg: contracts/ProtocolConfig.sol:ProtocolConfig',
+  )
+  .addOptionalParam(
+    'useInternalProxyAddress',
+    'If proxy address from the /addresses directory should be used',
+    false,
+    types.boolean,
+  )
+  .addOptionalParam(
+    'verifyContract',
+    'Verify new implementation on Etherscan (for eg if deploying on Sepolia or Mainnet)',
+    true,
+    types.boolean,
+  )
+  .setAction(async function (taskArgs: TaskArguments, hre) {
+    const reinitializeArgs = buildProtocolConfigReinitializeArgs();
+    await prepareUpgradeContract('ProtocolConfig', 'PROTOCOL_CONFIG_CONTRACT_ADDRESS', taskArgs, hre, reinitializeArgs);
   });
 
 task('task:upgradeInputVerifier')

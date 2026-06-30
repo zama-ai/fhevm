@@ -91,6 +91,44 @@ pub struct Config {
     /// The timeout to perform each external service connection healthcheck.
     #[serde(with = "humantime_serde", default = "default_healthcheck_timeout")]
     pub healthcheck_timeout: Duration,
+
+    /// Off-chain ciphertext-attestation verifier config.
+    #[serde(default)]
+    pub ct_attestation: CtAttestationConfig,
+}
+
+/// Configuration of the off-chain ciphertext-attestation verifier.
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[cfg_attr(debug_assertions, derive(Serialize))]
+#[serde(default)]
+pub struct CtAttestationConfig {
+    /// Whether the verifier runs at all. Defaults to `true`.
+    #[serde(default = "default_ct_attestation_verifier_enabled")]
+    pub enabled: bool,
+
+    /// Per-bucket S3 attestation HEAD request timeout, in seconds. Defaults to 5.
+    #[serde(
+        with = "humantime_serde",
+        default = "default_ct_attestation_head_timeout"
+    )]
+    pub head_timeout: Duration,
+
+    /// Coprocessor registry snapshot refresh interval, in seconds. Defaults to 60.
+    #[serde(
+        with = "humantime_serde",
+        default = "default_copro_registry_refresh_interval"
+    )]
+    pub registry_refresh: Duration,
+}
+
+impl Default for CtAttestationConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_ct_attestation_verifier_enabled(),
+            head_timeout: default_ct_attestation_head_timeout(),
+            registry_refresh: default_copro_registry_refresh_interval(),
+        }
+    }
 }
 
 /// Supported host-chain ACL backends.
@@ -217,6 +255,18 @@ fn default_erc1271_gas_limit() -> u64 {
     100_000
 }
 
+fn default_ct_attestation_verifier_enabled() -> bool {
+    true
+}
+
+fn default_ct_attestation_head_timeout() -> Duration {
+    Duration::from_secs(5)
+}
+
+fn default_copro_registry_refresh_interval() -> Duration {
+    Duration::from_secs(60)
+}
+
 impl DeserializeConfig for Config {}
 
 // Default implementation for testing purpose
@@ -251,6 +301,7 @@ impl Default for Config {
             task_limit: default_task_limit(),
             monitoring_endpoint: default_monitoring_endpoint(),
             healthcheck_timeout: default_healthcheck_timeout(),
+            ct_attestation: CtAttestationConfig::default(),
         }
     }
 }

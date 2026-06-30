@@ -15,7 +15,7 @@ type Context = {
 };
 
 type Parameters = {
-  readonly address: ChecksummedAddress;
+  readonly aclAddress: ChecksummedAddress;
   readonly delegate: ChecksummedAddress;
   readonly delegator: ChecksummedAddress;
   readonly pairs: readonly HandleContractPair[];
@@ -29,12 +29,12 @@ export async function isHandleDelegatedForUserDecryption(
   context: Context,
   parameters: Parameters,
 ): Promise<ReturnType> {
-  const { address, delegate, delegator, pairs } = parameters;
+  const { aclAddress, delegate, delegator, pairs } = parameters;
 
   const rpcCalls = pairs.map(
     (pair) => () =>
       _isHandleDelegatedForUserDecryption(context, {
-        address,
+        aclAddress,
         delegate,
         delegator,
         handle: pair.handle,
@@ -52,25 +52,25 @@ export async function isHandleDelegatedForUserDecryption(
 async function _isHandleDelegatedForUserDecryption(
   context: Context,
   parameters: {
-    readonly address: ChecksummedAddress;
+    readonly aclAddress: ChecksummedAddress;
     readonly delegator: ChecksummedAddress;
     readonly delegate: ChecksummedAddress;
     readonly contractAddress: ChecksummedAddress;
     readonly handle: Handle;
   },
 ): Promise<boolean> {
-  const { address, delegator, delegate, contractAddress, handle } = parameters;
+  const { aclAddress, delegator, delegate, contractAddress, handle } = parameters;
   const trustedClient = getTrustedClient(context);
 
   const res = await context.runtime.ethereum.readContract(trustedClient, {
-    address: address,
+    address: aclAddress,
     abi: isHandleDelegatedForUserDecryptionAbi,
     args: [delegator, delegate, contractAddress, handle.bytes32Hex],
     functionName: isHandleDelegatedForUserDecryptionAbi[0].name,
   });
 
   if (typeof res !== 'boolean') {
-    throw new Error(`Invalid isHandleDelegatedForUserDecryptionAbi result.`);
+    throw new Error(`Invalid isHandleDelegatedForUserDecryption result.`);
   }
 
   return res;

@@ -1,9 +1,8 @@
 use crate::core::{
     config::{Config, HostChainKind},
     event_processor::{
-        ProcessingError,
+        CiphertextManager, ProcessingError,
         context::ContextManager,
-        s3::S3Service,
         solana_user_decrypt::{
             SolanaHost, check_solana_handles_acl, check_solana_handles_public_decrypt,
             verify_solana_user_decrypt_signature,
@@ -58,8 +57,8 @@ pub struct DecryptionProcessor<GP: Provider, HP: Provider, C> {
     /// account fetcher used for the Solana user-decryption ACL check.
     solana_hosts: HashMap<u64, SolanaHost>,
 
-    /// The entity used to collect ciphertexts from S3 buckets.
-    s3_service: S3Service<GP>,
+    /// The entity used to verify and collect the ciphertexts of decryption requests.
+    ciphertext_manager: CiphertextManager<GP>,
 
     /// Gas cap for the `IERC1271.isValidSignature` static call (RFC-012).
     erc1271_gas_limit: u64,
@@ -67,7 +66,7 @@ pub struct DecryptionProcessor<GP: Provider, HP: Provider, C> {
 
 impl<GP, HP, C> DecryptionProcessor<GP, HP, C>
 where
-    GP: Provider,
+    GP: Provider + Clone + 'static,
     HP: Provider,
     C: ContextManager,
 {
@@ -76,7 +75,7 @@ where
         context_manager: C,
         gateway_provider: GP,
         acl_contracts: HashMap<u64, ACLInstance<HP>>,
-        s3_service: S3Service<GP>,
+        ciphertext_manager: CiphertextManager<GP>,
     ) -> Self {
         let domain = Eip712DomainMsg {
             name: config.decryption_contract.domain_name.clone(),
@@ -94,7 +93,7 @@ where
             decryption_contract,
             acl_contracts,
             solana_hosts: build_solana_hosts(config),
-            s3_service,
+            ciphertext_manager,
             erc1271_gas_limit: config.erc1271_gas_limit,
         }
     }
@@ -690,8 +689,8 @@ where
         sns_materials: &[SnsCiphertextMaterial],
     ) -> Result<Vec<TypedCiphertext>, ProcessingError> {
         let sns_ciphertext_materials = self
-            .s3_service
-            .retrieve_sns_ciphertext_materials(sns_materials)
+            .ciphertext_manager
+            .retrieve_verified_ciphertexts(sns_materials)
             .await
             .map_err(ProcessingError::Recoverable)?;
 
@@ -830,7 +829,8 @@ mod tests {
     fn setup_test_processor(
         asserter: Asserter,
         sns_ct: &SnsCiphertextMaterial,
-    ) -> DecryptionProcessor<impl Provider + use<>, impl Provider + use<>, MockContextManager> {
+    ) -> DecryptionProcessor<impl Provider + Clone + use<>, impl Provider + use<>, MockContextManager>
+    {
         let mock_provider = ProviderBuilder::new()
             .disable_recommended_fillers()
             .connect_mocked_client(asserter);
@@ -840,13 +840,14 @@ mod tests {
             ACL::new(Address::default(), mock_provider.clone()),
         )]);
         let config = Config::default();
-        let s3_service = S3Service::new(&config, mock_provider.clone(), reqwest::Client::new());
+        let ciphertext_manager =
+            CiphertextManager::disabled(mock_provider.clone(), reqwest::Client::new());
         DecryptionProcessor::new(
             &config,
             MockContextManager,
             mock_provider,
             acl_contracts,
-            s3_service,
+            ciphertext_manager,
         )
     }
 

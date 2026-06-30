@@ -10,7 +10,7 @@ import { getAclAddress } from '../../host-contracts/getAclAddress-p.js';
 import { getHandleVersion } from '../../host-contracts/getHandleVersion-p.js';
 import { getHcuLimitAddress } from '../../host-contracts/getHcuLimitAddress-p.js';
 import { assertIsHostContractVersionOf } from '../../host-contracts/HostContractVersion-p.js';
-import { getVersion } from '../../host-contracts/HostContractVersion-p.js';
+import { getHostContractVersion } from '../../host-contracts/HostContractVersion-p.js';
 import { getInputVerifierAddress } from '../../host-contracts/getInputVerifierAddress-p.js';
 
 export type ReadFhevmExecutorContractDataParameters = {
@@ -22,7 +22,7 @@ export async function readFhevmExecutorContractData(
   fhevm: Fhevm,
   parameters: ReadFhevmExecutorContractDataParameters,
 ): Promise<ReadFhevmExecutorContractDataReturnType> {
-  const fhevmExecutorContractAddress = parameters.address;
+  const fhevmExecutorAddress = parameters.address;
 
   ////////////////////////////////////////////////////////////////////////////
   //
@@ -36,11 +36,11 @@ export async function readFhevmExecutorContractData(
   ////////////////////////////////////////////////////////////////////////////
 
   const rpcCalls = [
-    () => getVersion(fhevm, parameters),
-    () => getAclAddress(fhevm, parameters),
-    () => getHcuLimitAddress(fhevm, parameters),
-    () => getInputVerifierAddress(fhevm, parameters),
-    () => getHandleVersion(fhevm, parameters),
+    () => getHostContractVersion(fhevm, parameters),
+    () => getAclAddress(fhevm, { fhevmExecutorAddress }),
+    () => getHcuLimitAddress(fhevm, { fhevmExecutorAddress }),
+    () => getInputVerifierAddress(fhevm, { fhevmExecutorAddress }),
+    () => getHandleVersion(fhevm, { fhevmExecutorAddress }),
   ];
 
   const res = await executeWithBatching<unknown>(rpcCalls, fhevm.options.batchRpcCalls);
@@ -63,7 +63,7 @@ export async function readFhevmExecutorContractData(
 
   const data = createFhevmExecutorContractData(new WeakRef(fhevm.runtime), {
     version: contractVersion,
-    address: fhevmExecutorContractAddress,
+    address: fhevmExecutorAddress,
     aclContractAddress,
     inputVerifierContractAddress,
     hcuLimitContractAddress,

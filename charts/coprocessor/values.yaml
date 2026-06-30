@@ -47,9 +47,24 @@ commonConfig:
   # (secretKeyRef/configMapKeyRef).
   databaseIamRegion: {}
 
-  # Required when databaseAuthMode=iam. Path inside the pod to the RDS CA
-  # bundle. The runtime enforces verify-full TLS. Accepts `value` or
-  # `valueFrom` (secretKeyRef/configMapKeyRef).
+  # RDS CA bundle injection (databaseAuthMode=iam only). When enabled, the chart
+  # renders configs/global-rds-ca-root.pem into a ConfigMap, mounts it read-only
+  # into every component, and AUTO-SETS DATABASE_SSL_ROOT_CERT_PATH to
+  # mountPath/fileName — so you do not also set databaseSslRootCertPath below.
+  # The runtime enforces verify-full TLS against this bundle.
+  databaseSslRootCert:
+    enabled: false
+    mountPath: /etc/ssl/rds
+    fileName: global-rds-ca-root.pem
+    # Optional: override the bundled AWS RDS global CA with your own PEM content.
+    # When empty, the chart uses configs/global-rds-ca-root.pem shipped here.
+    content: ""
+
+  # Path inside the pod to the RDS CA bundle, used when databaseAuthMode=iam.
+  # Only needed as a fallback when databaseSslRootCert.enabled=false and you
+  # mount the cert yourself (e.g. via your own volume or an IRSA sidecar); when
+  # databaseSslRootCert.enabled=true this field is ignored (the path is derived
+  # from the mount). Accepts `value` or `valueFrom` (secretKeyRef/configMapKeyRef).
   databaseSslRootCertPath: {}
 
   # Optional tenant API key. Accepts `value` or `valueFrom`
@@ -105,7 +120,7 @@ hostContractConfigMap:
   # Resource name. Downstream components reference this via configMapKeyRef.name.
   name: eth-sc-addresses
 
-  # Selects a bundled preset from configs/host-<network>.yaml.
+  # Selects a bundled preset from configs/ethereum-<network>.yaml.
   # Allowed values: "" (no preset), "devnet", "testnet", "mainnet".
   # An unrecognized value fails the render.
   network: ""
@@ -139,6 +154,30 @@ gatewayContractConfigMap:
   # Example:
   #   addresses:
   #     kms_generation.address: "0xabc..."  # override preset
+  #     custom_thing.address: "0xdef..."    # add bespoke key
+  addresses: {}
+
+# -----------------------------------------------------------------------------
+# Polygon Contract ConfigMap
+# -----------------------------------------------------------------------------
+# Optional ConfigMap rendering Polygon host chain contract addresses. Downstream
+# components reference its keys via configMapKeyRef.
+polygonContractConfigMap:
+  enabled: false
+
+  # Resource name. Downstream components reference this via configMapKeyRef.name.
+  name: polygon-sc-addresses
+
+  # Selects a bundled preset from configs/polygon-<network>.yaml.
+  # Allowed values: "" (no preset), "devnet", "testnet", "mainnet".
+  # An unrecognized value fails the render.
+  network: ""
+
+  # Operator overrides, deep-merged on top of the preset. Keys are used
+  # as-is. Operator entries win on key collision with the preset.
+  # Example:
+  #   addresses:
+  #     acl.address: "0xabc..."             # override preset
   #     custom_thing.address: "0xdef..."    # add bespoke key
   addresses: {}
 
@@ -1130,14 +1169,40 @@ snsWorker:
   # Additional environment variables
   env: []
 
+  # Wallet configuration for ciphertext attestation signing
+  wallet:
+    # Optional ciphertext-attestation signer. OFF by default (opt-in). Only
+    # sns-worker images that must sign ciphertext attestations need this. When
+    # false, the sns-worker runs without a signer: no --signer-type / --private-key
+    # args and no AWS_KEY_ID / TX_SENDER_PRIVATE_KEY env are injected, so the pod
+    # does not depend on a coprocessor-tx-sender Secret/ConfigMap. Set to true only
+    # when this worker must sign attestations, then configure awsKms or secret below.
+    enabled: false
+    awsKms:
+      # If set to true, will use the AWS KMS key specified in the configmap
+      # instead of the private key specified in the secret
+      enabled: false
+      configmap:
+        name: coprocessor-tx-sender
+        key: AWS_KEY_ID
+    secret:
+      name: coprocessor-tx-sender
+      key: private-key
+      value: ""  # devnet only: set a raw private key here to skip secret creation (not for production)
+
   # Suppress any template-injected arg above. Values are kebab-case flag names
   # (no leading `--`).
   disabledArgs: []
 
   # Additional raw CLI flags, appended after template-injected args.
+  # Example for S3-compatible servers that reject SHA256 checksum headers:
+  # extraArgs:
+  #   - --s3-disable-sha256-checksum
   # Full sns_worker CLI for v0.11 / v0.12 images:
   #   built-in via template: --database-url, --bucket-name-ct64,
   #     --bucket-name-ct128, --metrics-addr, --health-check-port
+  #   built-in when wallet.enabled=true: --signer-type
+  #   built-in when wallet.enabled=true and wallet.awsKms.enabled=false: --private-key
   #   v0.11 built-in when commonConfig.tenantApiKey is set: --tenant-api-key
   #   shared extraArgs:
   #     --pg-listen-channels
@@ -1157,6 +1222,7 @@ snsWorker:
   #     --s3-max-retries-timeout=120s
   #     --s3-recheck-duration=2s
   #     --s3-regular-recheck-duration=120s
+  #     --s3-disable-sha256-checksum             # for S3-compatible servers without checksum support
   #     --cleanup-interval=15min
   #     --gc-batch-size=1000                     # set to 0 to disable GC
   #     --log-level=INFO

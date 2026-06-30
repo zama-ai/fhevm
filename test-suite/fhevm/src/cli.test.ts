@@ -88,7 +88,7 @@ const bootstrappedState = (target: State["target"] = "latest-main"): State => ({
       minioExternal: `http://127.0.0.1:${MINIO_PORT}`,
       minioInternal: `http://minio:${MINIO_PORT}`,
     },
-    kmsSigner: "0x0000000000000000000000000000000000000014",
+    kmsSigners: ["0x0000000000000000000000000000000000000014"],
     fheKeyId: "a".repeat(64),
     crsKeyId: "b".repeat(64),
     actualFheKeyId: "a".repeat(64),
@@ -329,6 +329,14 @@ describe("cli", () => {
       const result = await execCli(["test", "multi-chain-isolation"], env);
       expect(result.code).toBe(1);
       expect(result.stderr).toContain("multi-chain-isolation requires a multi-chain topology");
+    });
+  });
+
+  test("gates priority coprocessor before launching tests on a single-coprocessor stack", async () => {
+    await withState(bootstrappedState(), async (env) => {
+      const result = await execCli(["test", "priority-coprocessor"], env);
+      expect(result.code).toBe(1);
+      expect(result.stderr).toContain("priority-coprocessor requires a multi-coprocessor topology");
     });
   });
 

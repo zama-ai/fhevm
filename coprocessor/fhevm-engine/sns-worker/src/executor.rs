@@ -145,7 +145,7 @@ impl SwitchNSquashService {
         })
     }
 
-    pub async fn run(&self, pool_mngr: &PostgresPoolManager) {
+    pub async fn run(&self, pool_mngr: &PostgresPoolManager) -> Result<(), ServiceError> {
         let keys_cache: Arc<RwLock<lru::LruCache<DbKeyId, KeySet>>> = Arc::new(RwLock::new(
             lru::LruCache::new(NonZeroUsize::new(10).unwrap()),
         ));
@@ -172,7 +172,7 @@ impl SwitchNSquashService {
             }
         };
 
-        let _ = pool_mngr.blocking_with_db_retry(op, "sns").await;
+        pool_mngr.blocking_with_db_retry(op, "sns").await
     }
 }
 
@@ -267,8 +267,17 @@ pub(crate) async fn run_loop(
 
         select! {
             _ = token.cancelled() => return Ok(()),
-            n = listener.try_recv() => {
-                info!( notification = ?n, "Received notification");
+            notification = listener.try_recv() => {
+                match notification? {
+                    Some(notification) => {
+                        info!(notification = ?notification, "Received notification");
+                    }
+                    None => {
+                        // sqlx already reconnected the LISTEN connection; keep going.
+                        warn!("postgres LISTEN connection reset; reconnected");
+                        continue;
+                    }
+                }
             },
             _ = polling_ticker.tick() => {
                 debug!( "Polling timeout, rechecking for tasks");
@@ -320,7 +329,8 @@ pub async fn garbage_collect(pool: &PgPool, limit: u32) -> Result<(), ExecutionE
             FROM ciphertexts128 c
             JOIN ciphertext_digest d
             ON d.handle = c.handle
-            WHERE d.ciphertext128 IS NOT NULL
+            WHERE d.ciphertext IS NOT NULL
+              AND d.ciphertext128 IS NOT NULL
             FOR UPDATE OF c SKIP LOCKED
             LIMIT $1
         )
@@ -500,6 +510,9 @@ pub async fn query_sns_tasks(
                 handle,
                 ct64_compressed: Arc::new(ciphertext),
                 ct128: Arc::new(BigCiphertext::default()), // to be computed
+                ct64_digest: None,
+                ct128_digest: None,
+                s3_format_version: None,
                 span: task_span,
                 transaction_id,
             })

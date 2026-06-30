@@ -14,6 +14,18 @@ queue_rules:
       - label!=do-not-merge
       - -files~=^(?!docs/)
 
+  - name: charts-only
+    batch_size: 1
+    batch_max_wait_time: 1m
+    checks_timeout: 12h
+    merge_method: squash
+    update_method: rebase
+    merge_conditions: []
+    queue_conditions:
+      - base = main
+      - label!=do-not-merge
+      - -files~=^(?!charts/)
+
   - name: main
     batch_size: 3
     batch_max_wait_time: 1h
@@ -21,6 +33,12 @@ queue_rules:
     merge_method: squash
     update_method: rebase
     merge_conditions:
+      # Fail fast: this job throws on a failed docker build, so the batch is
+      # dequeued immediately instead of waiting on the never-emitted e2e check.
+      # `or check-skipped` keeps non-orchestrated contributor PRs (job skipped) green.
+      - or:
+        - check-success = create-e2e-tests-input
+        - check-skipped = create-e2e-tests-input
       - check-success = run-e2e-tests / fhevm-e2e-test
     queue_conditions:
       - base = main

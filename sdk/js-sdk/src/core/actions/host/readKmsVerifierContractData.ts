@@ -9,13 +9,14 @@ import { createKmsVerifierContractData } from '../../host-contracts/KmsVerifierC
 import { assertIsKmsEip712Domain } from '../../kms/createKmsEip712Domain.js';
 import { eip712Domain } from '../../host-contracts/eip712Domain-p.js';
 import { assertIsHostContractVersionOf } from '../../host-contracts/HostContractVersion-p.js';
-import { getVersion } from '../../host-contracts/HostContractVersion-p.js';
+import { getHostContractVersion } from '../../host-contracts/HostContractVersion-p.js';
 import { readKmsSignersContext } from '../../host-contracts/readKmsSignersContext-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
 export type ReadKmsVerifierContractDataParameters = {
   readonly address: ChecksummedAddress;
+  readonly protocolConfigAddress: ChecksummedAddress | undefined;
 };
 
 export type ReadKmsVerifierContractDataReturnType = KmsVerifierContractData;
@@ -26,7 +27,8 @@ export async function readKmsVerifierContractData(
   fhevm: Fhevm,
   parameters: ReadKmsVerifierContractDataParameters,
 ): Promise<ReadKmsVerifierContractDataReturnType> {
-  const kmsVerifierContractAddress = parameters.address;
+  const kmsVerifierAddress = parameters.address;
+  const protocolConfigAddress = parameters.protocolConfigAddress;
 
   ////////////////////////////////////////////////////////////////////////////
   //
@@ -40,9 +42,9 @@ export async function readKmsVerifierContractData(
   ////////////////////////////////////////////////////////////////////////////
 
   const rpcCalls = [
-    () => getVersion(fhevm, parameters),
+    () => getHostContractVersion(fhevm, parameters),
     () => eip712Domain(fhevm, parameters),
-    () => readKmsSignersContext(fhevm, parameters),
+    () => readKmsSignersContext(fhevm, { kmsVerifierAddress, protocolConfigAddress }),
   ];
 
   const res = await executeWithBatching<unknown>(rpcCalls, fhevm.options.batchRpcCalls);
@@ -59,13 +61,13 @@ export async function readKmsVerifierContractData(
     throw new Error(`Invalid KMSVerifier EIP-712 domain.`, { cause: e });
   }
 
-  if (eip712DomainRes.verifyingContract.toLowerCase() === kmsVerifierContractAddress.toLowerCase()) {
+  if (eip712DomainRes.verifyingContract.toLowerCase() === kmsVerifierAddress.toLowerCase()) {
     throw new Error(`Invalid KMSVerifier EIP-712 domain. Unexpected verifyingContract.`);
   }
 
   const data = createKmsVerifierContractData(new WeakRef(fhevm.runtime), {
     version: contractVersion,
-    address: kmsVerifierContractAddress,
+    address: kmsVerifierAddress,
     eip712Domain: eip712DomainRes,
     kmsSignerThreshold: kmsSignersContext.threshold,
     kmsSigners: kmsSignersContext.signers,

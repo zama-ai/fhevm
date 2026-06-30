@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/require-await */
+import type { TfheVersion } from '../../../wasm/tfhe/TfheApi.js';
 import { concatBytes, hexToBytes32 } from '../../base/bytes.js';
 import { remove0x } from '../../base/string.js';
 import { typedValueToBytes32Hex } from '../../base/typedValue.js';
@@ -43,17 +44,23 @@ class CleartextTfheCompactPublicKeyImpl implements FheEncryptionPublicKey {
 
   readonly #id: string;
   readonly #tfheCompactPublicKeyWasmType: Bytes;
+  readonly #tfheVersion: TfheVersion;
 
-  constructor(token: symbol, id: string, publicEncKeyMlKem512Wasm: Bytes) {
+  constructor(token: symbol, id: string, tfheVersion: TfheVersion, publicEncKeyMlKem512Wasm: Bytes) {
     if (token !== PRIVATE_CLEARTEXT_TFHE_LIB_TOKEN) {
       throw new Error('Unauthorized');
     }
     this.#id = id;
+    this.#tfheVersion = tfheVersion;
     this.#tfheCompactPublicKeyWasmType = publicEncKeyMlKem512Wasm;
   }
 
   public get id(): string {
     return this.#id;
+  }
+
+  public get tfheVersion(): TfheVersion {
+    return this.#tfheVersion;
   }
 
   public static [GET_NATIVE_FUNC](key: unknown, token: symbol): Bytes {
@@ -75,20 +82,32 @@ class CleartextTfheCompactPkeCrsImpl implements FheEncryptionCrs {
   declare readonly [FheEncryptionCrsBrand]: never;
 
   readonly #id: string;
+  readonly #tfheVersion: TfheVersion;
   readonly #capacity: UintNumber;
   readonly #compactPublicKeyWasmType: Bytes;
 
-  constructor(token: symbol, id: string, capacity: UintNumber, compactPublicKeyWasmType: Bytes) {
+  constructor(
+    token: symbol,
+    id: string,
+    tfheVersion: TfheVersion,
+    capacity: UintNumber,
+    compactPublicKeyWasmType: Bytes,
+  ) {
     if (token !== PRIVATE_CLEARTEXT_TFHE_LIB_TOKEN) {
       throw new Error('Unauthorized');
     }
     this.#id = id;
+    this.#tfheVersion = tfheVersion;
     this.#capacity = capacity;
     this.#compactPublicKeyWasmType = compactPublicKeyWasmType;
   }
 
   public get id(): string {
     return this.#id;
+  }
+
+  public get tfheVersion(): TfheVersion {
+    return this.#tfheVersion;
   }
 
   public get capacity(): UintNumber {
@@ -150,6 +169,7 @@ export async function buildWithProofPacked(
   return {
     ciphertextWithZKProofBytes,
     extraData: cleartextExtraData,
+    tfheVersion: parameters.tfheVersion,
   };
 }
 
@@ -181,7 +201,7 @@ export async function serializeFheEncryptionKey(
     PRIVATE_CLEARTEXT_TFHE_LIB_TOKEN,
   );
 
-  return Object.freeze({
+  const keyBytes: FheEncryptionKeyBytes = Object.freeze({
     publicKeyBytes: Object.freeze({
       id: publicEncryptionParams.publicKey.id,
       bytes: tfhePublicKeyBytes,
@@ -191,7 +211,13 @@ export async function serializeFheEncryptionKey(
       capacity: publicEncryptionParams.crs.capacity,
       bytes: tfheCrsBytes,
     }),
-  }) as FheEncryptionKeyBytes;
+    metadata: Object.freeze({
+      relayerUrl: publicEncryptionParams.metadata.relayerUrl,
+      chainId: publicEncryptionParams.metadata.chainId,
+    }),
+  });
+
+  return keyBytes;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -217,6 +243,7 @@ export async function serializeFheEncryptionPublicKey(
   return Object.freeze({
     id: tfhePublicKey.id,
     bytes: tfhePublicKeyBytes,
+    tfheVersion: parameters.tfheVersion,
   });
 }
 
@@ -244,6 +271,7 @@ export async function serializeFheEncryptionCrs(
     id: tfheCrs.id,
     capacity: tfheCrs.capacity,
     bytes: tfheCrsBytes,
+    tfheVersion: parameters.tfheVersion,
   });
 }
 
@@ -259,6 +287,7 @@ export async function deserializeFheEncryptionCrs(
   return new CleartextTfheCompactPkeCrsImpl(
     PRIVATE_CLEARTEXT_TFHE_LIB_TOKEN,
     globalFheCrsBytes.id,
+    parameters.tfheVersion,
     globalFheCrsBytes.capacity,
     globalFheCrsBytes.bytes,
   );
@@ -276,6 +305,7 @@ export async function deserializeFheEncryptionPublicKey(
   return new CleartextTfheCompactPublicKeyImpl(
     PRIVATE_CLEARTEXT_TFHE_LIB_TOKEN,
     globalFhePublicKeyBytes.id,
+    parameters.tfheVersion,
     globalFhePublicKeyBytes.bytes,
   );
 }

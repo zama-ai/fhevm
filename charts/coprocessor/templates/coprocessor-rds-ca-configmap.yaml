@@ -1,0 +1,17 @@
+{{- if eq (include "coprocessor.databaseSslRootCertMountEnabled" .) "true" }}
+{{- $cfg := .Values.commonConfig.databaseSslRootCert }}
+{{- $content := $cfg.content | default (.Files.Get "configs/global-rds-ca-root.pem") }}
+{{- if not $content }}
+{{- fail "commonConfig.databaseSslRootCert.enabled=true but no certificate content found: set commonConfig.databaseSslRootCert.content or ship configs/global-rds-ca-root.pem" }}
+{{- end }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "coprocessor.databaseSslRootCertConfigMapName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: {{ include "coprocessor.databaseSslRootCertConfigMapName" . }}
+data:
+  {{ $cfg.fileName }}: |-
+{{ $content | indent 4 }}
+{{- end }}

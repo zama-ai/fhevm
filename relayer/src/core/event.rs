@@ -905,7 +905,7 @@ impl TryFrom<PublicDecryptRequestJson> for PublicDecryptRequest {
             ct_handles.push(ct_handle.to_be_bytes());
         }
 
-        // Note: we validate extraData to be 0x00 in the http listener.
+        // Parse extraData (validated at HTTP layer). It is propagated verbatim to the Gateway.
         let extra_data = Bytes::from_str(&value.extra_data)?;
 
         Ok(PublicDecryptRequest {
@@ -1330,5 +1330,28 @@ mod tests {
             }
             other => panic!("expected SolanaUnifiedV1, got {}", other.attestation_kind()),
         }
+    }
+
+    /// The Relayer must propagate `extraData` to the Gateway verbatim, without
+    /// interpreting or rewriting any of its fields (version, contextId, epochId).
+    #[test]
+    fn test_public_decrypt_propagates_extra_data_verbatim() -> Result<(), Box<dyn std::error::Error>>
+    {
+        // Version 0x02: [version(1B) | contextId(32B) | epochId(32B)] = 65 bytes.
+        let context_id = "00000000000000000000000000000000000000000000000000000000000000a1";
+        let epoch_id = "00000000000000000000000000000000000000000000000000000000000000b2";
+        let extra_data = format!("0x02{context_id}{epoch_id}");
+
+        let json = PublicDecryptRequestJson {
+            ciphertext_handles: vec![format!("0x{}", "11".repeat(32))],
+            extra_data: extra_data.clone(),
+        };
+
+        let request = PublicDecryptRequest::try_from(json)?;
+
+        // The parsed bytes must equal the raw input bytes, unchanged (verbatim propagation).
+        assert_eq!(request.extra_data, Bytes::from_str(&extra_data)?);
+
+        Ok(())
     }
 }

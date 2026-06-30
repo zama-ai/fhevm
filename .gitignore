@@ -76,6 +76,8 @@ lerna-debug.log*
 
 # Build output directories
 build/
+!sdk/js-sdk/scripts/build/
+!sdk/js-sdk/scripts/build/**
 dist/
 out/
 public/ # If serving static assets from a 'public' dir built by a framework

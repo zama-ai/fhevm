@@ -23,12 +23,92 @@ import type {
   HostChainNodeProvisioning,
   HostChainScenario,
   HostChainType,
+  KmsMode,
+  KmsScenarioBlock,
   LocalOverride,
   OverrideGroup,
   ResolvedCoprocessorScenario,
   ResolvedCoprocessorScenarioInstance,
+  ResolvedKmsTopology,
   ScenarioSummary,
 } from "../types";
+
+/** Centralized single-node KMS — today's behaviour when a scenario omits `kms`. */
+export const DEFAULT_KMS_TOPOLOGY: ResolvedKmsTopology = {
+  mode: "centralized",
+  parties: 1,
+  threshold: 1,
+  fheParams: "Default",
+};
+
+const MAX_KMS_PARTIES = 7;
+
+/**
+ * Parses + validates the optional `kms` block from a scenario.
+ * Returns the centralized default when the block is absent.
+ */
+export const resolveKmsTopology = (
+  block: KmsScenarioBlock | undefined,
+  sourceLabel = "scenario.kms",
+): ResolvedKmsTopology => {
+  if (block === undefined) {
+    return DEFAULT_KMS_TOPOLOGY;
+  }
+  // YAML parses an empty `kms:` key to null, and `typeof null === "object"`.
+  if (block === null || typeof block !== "object" || Array.isArray(block)) {
+    throw new Error(`${sourceLabel}: must be a map (omit the key entirely for the centralized default)`);
+  }
+  const mode: KmsMode = block.mode ?? "centralized";
+  if (mode !== "centralized" && mode !== "threshold") {
+    throw new Error(`${sourceLabel}.mode must be "centralized" or "threshold"`);
+  }
+  if (mode === "centralized") {
+    // Single node: ignore parties/threshold. Only `KEYGEN_PARAMS_TYPE=1` (Test) is wired for the
+    // threshold path; centralized never emits it, so accepting `fheParams: Test` here would be a
+    // silent no-op (the stack would still run Default params). Reject it instead of lying.
+    if (block.fheParams === "Test") {
+      throw new Error(
+        `${sourceLabel}.fheParams "Test" is only supported for threshold mode; centralized KMS runs Default params`,
+      );
+    }
+    if (block.fheParams !== undefined && block.fheParams !== "Default") {
+      throw new Error(`${sourceLabel}.fheParams must be "Test" or "Default", got "${block.fheParams}"`);
+    }
+    return {
+      mode,
+      parties: 1,
+      threshold: 1,
+      fheParams: "Default",
+    };
+  }
+  const parties = block.parties ?? 4;
+  const threshold = block.threshold ?? 1;
+  if (!Number.isInteger(parties) || parties < 4) {
+    throw new Error(`${sourceLabel}.parties must be an integer >= 4 for threshold mode`);
+  }
+  if (parties > MAX_KMS_PARTIES) {
+    throw new Error(`${sourceLabel}.parties must be <= ${MAX_KMS_PARTIES}`);
+  }
+  // The KMS core enforces parties === 3*threshold + 1 (see zama-ai/kms
+  // core/service/src/conf/threshold.rs). Valid cluster sizes are therefore only
+  // 4, 7, 10, ... — 2 and 3 parties cannot form a threshold-mode cluster at all.
+  if (!Number.isInteger(threshold) || threshold < 1 || 3 * threshold + 1 !== parties) {
+    throw new Error(
+      `${sourceLabel}: KMS core requires parties === 3*threshold + 1; smallest threshold-mode cluster is 4 parties (t=1), next valid sizes 7, 10. Got parties=${parties}, threshold=${threshold}`,
+    );
+  }
+  // Threshold uses SECURE keygen (real DKG preprocessing): it signs the on-chain prepKeygenId, so it
+  // passes the host KeygenVerification. With Test params it is ~360s for 4 parties (measured) — viable
+  // in CI. Default (prod-size) params need a multi-hour DKG (32-96 GiB/party), deferred to a follow-up
+  // PR, so threshold mode is Test-params-only for now.
+  const fheParams = block.fheParams ?? "Test";
+  if (fheParams !== "Test") {
+    throw new Error(
+      `${sourceLabel}.fheParams must be "Test" for threshold mode (Default params are deferred to a follow-up PR: secure DKG with Default params is hours + 32-96 GiB/party, not viable in CI)`,
+    );
+  }
+  return { mode, parties, threshold, fheParams };
+};
 
 const COPROCESSOR_SCENARIO_KIND = "coprocessor-consensus";
 const COPROCESSOR_SCENARIO_VERSION = 1;
@@ -192,6 +272,7 @@ export const defaultCoprocessorScenario = (): ResolvedCoprocessorScenario => ({
   hostChains: resolveHostChains(undefined),
   topology: { count: 1, threshold: 1 },
   instances: [{ index: 0, source: { mode: "inherit" }, env: {}, args: {} }],
+  kms: DEFAULT_KMS_TOPOLOGY,
 });
 
 /** Parses and validates a YAML coprocessor scenario file. */
@@ -317,6 +398,7 @@ export const parseCoprocessorScenario = (text: string, sourceLabel = "scenario")
     hostChains,
     topology: { count, threshold },
     instances,
+    kms: parsed.kms as KmsScenarioBlock | undefined,
   };
 };
 
@@ -365,6 +447,7 @@ export const resolveScenarioFile = (filePath: string, input: CoprocessorScenario
     hostChains: resolveHostChains(input.hostChains),
     sourcePath: path.resolve(filePath),
     topology: { ...input.topology },
+    kms: resolveKmsTopology(input.kms),
     instances: Array.from({ length: input.topology.count }, (_, index) => {
       const instance = byIndex.get(index);
       return {
@@ -467,6 +550,7 @@ export const synthesizeOverrideScenario = (overrides: LocalOverride[]): Resolved
     hostChains: resolveHostChains(undefined),
     topology: { count: 1, threshold: 1 },
     instances: [{ index: 0, source: { mode: "local" }, env: {}, args: {}, localServices: mergeOverrideServices(overrides) }],
+    kms: DEFAULT_KMS_TOPOLOGY,
   };
 };
 

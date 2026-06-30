@@ -1,6 +1,27 @@
 import { task, types } from 'hardhat/config';
+import type { RunTaskFunction } from 'hardhat/types';
 
 import { getRequiredEnvVar, loadHostAddresses } from './utils/loadVariables';
+
+// Verifies a single contract on the block explorer, skipping the benign "already verified" response.
+//
+// `@nomicfoundation/hardhat-verify` rethrows "Already Verified" as a hard error — for the auto-matched
+// ERC1967 proxy, and for the deterministic implementation when a prior deploy already verified it.
+// When a per-contract `task:verify*` is called straight from a deploy script (the gitops sc-deploy
+// pattern), that error combines with `set -eo pipefail` to abort the whole deploy. Genuine failures
+// (bad API key, explorer down, bytecode mismatch) are rethrown unchanged.
+export async function verifyContract(run: RunTaskFunction, address: string): Promise<void> {
+  try {
+    await run('verify:verify', { address, constructorArguments: [] });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (/already verified/i.test(message)) {
+      console.log(`${address} is already verified — skipping.`);
+    } else {
+      throw error;
+    }
+  }
+}
 
 task('task:verifyACL')
   .addOptionalParam(
@@ -15,14 +36,8 @@ task('task:verifyACL')
     }
     const proxyAddress = getRequiredEnvVar('ACL_CONTRACT_ADDRESS');
     const implementationACLAddress = await upgrades.erc1967.getImplementationAddress(proxyAddress);
-    await run('verify:verify', {
-      address: implementationACLAddress,
-      constructorArguments: [],
-    });
-    await run('verify:verify', {
-      address: proxyAddress,
-      constructorArguments: [],
-    });
+    await verifyContract(run, implementationACLAddress);
+    await verifyContract(run, proxyAddress);
   });
 
 task('task:verifyFHEVMExecutor')
@@ -38,14 +53,8 @@ task('task:verifyFHEVMExecutor')
     }
     const proxyAddress = getRequiredEnvVar('FHEVM_EXECUTOR_CONTRACT_ADDRESS');
     const implementationFHEVMExecutorAddress = await upgrades.erc1967.getImplementationAddress(proxyAddress);
-    await run('verify:verify', {
-      address: implementationFHEVMExecutorAddress,
-      constructorArguments: [],
-    });
-    await run('verify:verify', {
-      address: proxyAddress,
-      constructorArguments: [],
-    });
+    await verifyContract(run, implementationFHEVMExecutorAddress);
+    await verifyContract(run, proxyAddress);
   });
 
 task('task:verifyKMSVerifier')
@@ -61,14 +70,8 @@ task('task:verifyKMSVerifier')
     }
     const proxyAddress = getRequiredEnvVar('KMS_VERIFIER_CONTRACT_ADDRESS');
     const implementationKMSVerifierAddress = await upgrades.erc1967.getImplementationAddress(proxyAddress);
-    await run('verify:verify', {
-      address: implementationKMSVerifierAddress,
-      constructorArguments: [],
-    });
-    await run('verify:verify', {
-      address: proxyAddress,
-      constructorArguments: [],
-    });
+    await verifyContract(run, implementationKMSVerifierAddress);
+    await verifyContract(run, proxyAddress);
   });
 
 task('task:verifyInputVerifier')
@@ -84,14 +87,8 @@ task('task:verifyInputVerifier')
     }
     const proxyAddress = getRequiredEnvVar('INPUT_VERIFIER_CONTRACT_ADDRESS');
     const implementationInputVerifierAddress = await upgrades.erc1967.getImplementationAddress(proxyAddress);
-    await run('verify:verify', {
-      address: implementationInputVerifierAddress,
-      constructorArguments: [],
-    });
-    await run('verify:verify', {
-      address: proxyAddress,
-      constructorArguments: [],
-    });
+    await verifyContract(run, implementationInputVerifierAddress);
+    await verifyContract(run, proxyAddress);
   });
 
 task('task:verifyHCULimit')
@@ -107,14 +104,8 @@ task('task:verifyHCULimit')
     }
     const proxyAddress = getRequiredEnvVar('HCU_LIMIT_CONTRACT_ADDRESS');
     const implementationHCULimitAddress = await upgrades.erc1967.getImplementationAddress(proxyAddress);
-    await run('verify:verify', {
-      address: implementationHCULimitAddress,
-      constructorArguments: [],
-    });
-    await run('verify:verify', {
-      address: proxyAddress,
-      constructorArguments: [],
-    });
+    await verifyContract(run, implementationHCULimitAddress);
+    await verifyContract(run, proxyAddress);
   });
 
 task('task:verifyPauserSet')
@@ -129,10 +120,7 @@ task('task:verifyPauserSet')
       loadHostAddresses();
     }
     const implementationPauserSetAddress = getRequiredEnvVar('PAUSER_SET_CONTRACT_ADDRESS');
-    await run('verify:verify', {
-      address: implementationPauserSetAddress,
-      constructorArguments: [],
-    });
+    await verifyContract(run, implementationPauserSetAddress);
   });
 
 task('task:verifyProtocolConfig')
@@ -148,14 +136,8 @@ task('task:verifyProtocolConfig')
     }
     const proxyAddress = getRequiredEnvVar('PROTOCOL_CONFIG_CONTRACT_ADDRESS');
     const implementationProtocolConfigAddress = await upgrades.erc1967.getImplementationAddress(proxyAddress);
-    await run('verify:verify', {
-      address: implementationProtocolConfigAddress,
-      constructorArguments: [],
-    });
-    await run('verify:verify', {
-      address: proxyAddress,
-      constructorArguments: [],
-    });
+    await verifyContract(run, implementationProtocolConfigAddress);
+    await verifyContract(run, proxyAddress);
   });
 
 task('task:verifyKMSGeneration')
@@ -171,14 +153,8 @@ task('task:verifyKMSGeneration')
     }
     const proxyAddress = getRequiredEnvVar('KMS_GENERATION_CONTRACT_ADDRESS');
     const implementationKMSGenerationAddress = await upgrades.erc1967.getImplementationAddress(proxyAddress);
-    await run('verify:verify', {
-      address: implementationKMSGenerationAddress,
-      constructorArguments: [],
-    });
-    await run('verify:verify', {
-      address: proxyAddress,
-      constructorArguments: [],
-    });
+    await verifyContract(run, implementationKMSGenerationAddress);
+    await verifyContract(run, proxyAddress);
   });
 
 task('task:verifyAllHostContracts')

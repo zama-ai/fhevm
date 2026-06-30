@@ -45,10 +45,13 @@ describe('Upgrades', function () {
     const factoryUpgraded = await ethers.getContractFactory('ProtocolConfigUpgradedExample', this.signers.fred);
     const emptyUUPS = await deployEmptyProxy(this.emptyUUPSFactory);
     const pc = await upgrades.upgradeProxy(emptyUUPS, factory, {
-      call: { fn: 'initializeFromEmptyProxy', args: [buildProtocolConfigNodes(), buildProtocolConfigThresholds()] },
+      call: {
+        fn: 'initializeFromEmptyProxy',
+        args: [buildProtocolConfigNodes(), buildProtocolConfigThresholds(), '', []],
+      },
     });
     await pc.waitForDeployment();
-    expect(await pc.getVersion()).to.equal('ProtocolConfig v0.1.0');
+    expect(await pc.getVersion()).to.equal('ProtocolConfig v0.2.0');
     const expectThresholds = async (c: any) => {
       expect(await c.getPublicDecryptionThreshold()).to.equal(1n);
       expect(await c.getUserDecryptionThreshold()).to.equal(2n);
@@ -58,7 +61,7 @@ describe('Upgrades', function () {
     await expectThresholds(pc);
     const pc2 = await upgrades.upgradeProxy(pc, factoryUpgraded);
     await pc2.waitForDeployment();
-    expect(await pc2.getVersion()).to.equal('ProtocolConfig v0.2.0');
+    expect(await pc2.getVersion()).to.equal('ProtocolConfig v0.3.0');
     await expectThresholds(pc2);
   });
 
@@ -70,7 +73,7 @@ describe('Upgrades', function () {
       call: { fn: 'initializeFromEmptyProxy' },
     });
     await kg.waitForDeployment();
-    expect(await kg.getVersion()).to.equal('KMSGeneration v0.1.0');
+    expect(await kg.getVersion()).to.equal('KMSGeneration v0.2.0');
     const expectInitialState = async (c: any) => {
       expect(await c.getActiveKeyId()).to.equal(0n);
       expect(await c.getActiveCrsId()).to.equal(0n);
@@ -80,7 +83,7 @@ describe('Upgrades', function () {
     await expectInitialState(kg);
     const kg2 = await upgrades.upgradeProxy(kg, factoryUpgraded);
     await kg2.waitForDeployment();
-    expect(await kg2.getVersion()).to.equal('KMSGeneration v0.2.0');
+    expect(await kg2.getVersion()).to.equal('KMSGeneration v0.3.0');
     await expectInitialState(kg2);
   });
 
@@ -98,7 +101,7 @@ describe('Upgrades', function () {
       unsafeAllow: ['missing-initializer'],
     });
     await kms.waitForDeployment();
-    expect(await kms.getVersion()).to.equal('KMSVerifier v0.3.0');
+    expect(await kms.getVersion()).to.equal('KMSVerifier v0.4.0');
 
     const domain = Array.from(await kms.eip712Domain());
     expect(domain.slice(1, 5)).to.deep.equal(['Decryption', '1', BigInt(chainIDSource), verifyingContractSource]);
@@ -122,10 +125,10 @@ describe('Upgrades', function () {
       call: { fn: 'initializeFromEmptyProxy' },
     });
     await executor.waitForDeployment();
-    expect(await executor.getVersion()).to.equal('FHEVMExecutor v0.4.0');
+    expect(await executor.getVersion()).to.equal('FHEVMExecutor v0.5.0');
     const executor2 = await upgrades.upgradeProxy(executor, executorFactoryUpgraded);
     await executor2.waitForDeployment();
-    expect(await executor2.getVersion()).to.equal('FHEVMExecutor v0.5.0');
+    expect(await executor2.getVersion()).to.equal('FHEVMExecutor v0.6.0');
   });
 
   it('deploy upgradeable HCULimit', async function () {
@@ -139,10 +142,10 @@ describe('Upgrades', function () {
       },
     });
     await payment.waitForDeployment();
-    expect(await payment.getVersion()).to.equal('HCULimit v0.3.0');
+    expect(await payment.getVersion()).to.equal('HCULimit v0.4.0');
     const payment2 = await upgrades.upgradeProxy(payment, paymentFactoryUpgraded);
     await payment2.waitForDeployment();
-    expect(await payment2.getVersion()).to.equal('HCULimit v0.4.0');
+    expect(await payment2.getVersion()).to.equal('HCULimit v0.5.0');
   });
 
   it('original owner upgrades the original ACL and transfer ownership', async function () {

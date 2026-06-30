@@ -1,0 +1,75 @@
+{
+  "localcleartext": {
+    "rpcUrl": "http://127.0.0.1:8544",
+    "mnemonic": "test test test test test test test future home engine virtual motion",
+    "fheTestAddress": "0x61a8e950161daCCA06b0b623Efa2b7237BaBD4a0",
+    "fheTestVersion": "v2"
+  },
+  "localcleartext_v12": {
+    "rpcUrl": "http://127.0.0.1:8544",
+    "mnemonic": "test test test test test test test future home engine virtual motion",
+    "fheTestAddress": "0x61a8e950161daCCA06b0b623Efa2b7237BaBD4a0",
+    "fheTestVersion": "v2"
+  },
+  "localcleartext_v13": {
+    "rpcUrl": "http://127.0.0.1:8544",
+    "mnemonic": "test test test test test test test future home engine virtual motion",
+    "fheTestAddress": "0x61a8e950161daCCA06b0b623Efa2b7237BaBD4a0",
+    "fheTestVersion": "v2"
+  },
+  "localstack": {
+    "rpcUrl": "http://localhost:8545",
+    "mnemonic": "test test test test test test test future home engine virtual motion",
+    "fheTestAddress": "0x61a8e950161daCCA06b0b623Efa2b7237BaBD4a0",
+    "fheTestVersion": "v2"
+  },
+  "localstack_v11": {
+    "rpcUrl": "http://localhost:8545",
+    "mnemonic": "test test test test test test test future home engine virtual motion",
+    "fheTestAddress": "0x61a8e950161daCCA06b0b623Efa2b7237BaBD4a0",
+    "fheTestVersion": "v2"
+  },
+  "localstack_v12": {
+    "rpcUrl": "http://localhost:8545",
+    "mnemonic": "test test test test test test test future home engine virtual motion",
+    "fheTestAddress": "0x61a8e950161daCCA06b0b623Efa2b7237BaBD4a0",
+    "fheTestVersion": "v2"
+  },
+  "localstack_v13": {
+    "rpcUrl": "http://localhost:8545",
+    "mnemonic": "test test test test test test test future home engine virtual motion",
+    "fheTestAddress": "0x61a8e950161daCCA06b0b623Efa2b7237BaBD4a0",
+    "fheTestVersion": "v2"
+  },
+  "localstack_v14": {
+    "rpcUrl": "http://localhost:8545",
+    "mnemonic": "test test test test test test test future home engine virtual motion",
+    "fheTestAddress": "0x61a8e950161daCCA06b0b623Efa2b7237BaBD4a0",
+    "fheTestVersion": "v2"
+  },
+  "sepolia": {
+    "rpcUrl": "https://ethereum-sepolia-rpc.publicnode.com",
+    "fheTestAddress": "0x94B9d3aF050687D1F76251aD7D09a1F216a19845",
+    "fheTestVersion": "v2"
+  },
+  "testnet": {
+    "rpcUrl": "https://ethereum-sepolia-rpc.publicnode.com",
+    "fheTestAddress": "0x94B9d3aF050687D1F76251aD7D09a1F216a19845",
+    "fheTestVersion": "v2"
+  },
+  "mainnet": {
+    "rpcUrl": "https://ethereum-rpc.publicnode.com",
+    "fheTestAddress": "0xba4d707745689eD409d4Afac8722224f5FD78C63",
+    "fheTestVersion": "v2"
+  },
+  "devnet": {
+    "rpcUrl": "https://ethereum-sepolia-rpc.publicnode.com",
+    "fheTestAddress": "0xf56a7990E63a63eC75aD9Aa07De8cB6bF7baa805",
+    "fheTestVersion": "v2"
+  },
+  "polygon_devnet": {
+    "rpcUrl": "https://rpc-amoy.polygon.technology",
+    "fheTestAddress": "0x7553CB9124f974Ee475E5cE45482F90d5B6076BC",
+    "fheTestVersion": "v2"
+  }
+}

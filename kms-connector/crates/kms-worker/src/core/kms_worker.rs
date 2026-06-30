@@ -4,8 +4,8 @@ use crate::{
         config::{Config, HostChainKind},
         event_picker::{DbEventPicker, EventPicker},
         event_processor::{
-            DbContextManager, DbEventProcessor, DecryptionProcessor, EventProcessor,
-            KMSGenerationProcessor, KmsClient, s3::S3Service,
+            CiphertextManager, DbContextManager, DbEventProcessor, DecryptionProcessor,
+            EventProcessor, KMSGenerationProcessor, KmsClient,
         },
         kms_response_publisher::DbKmsResponsePublisher,
     },
@@ -117,7 +117,10 @@ impl
     KmsWorker<DbEventPicker, DbEventProcessor<DefaultProvider, DefaultProvider, DbContextManager>>
 {
     /// Creates a new `KmsWorker` instance from a valid `Config`.
-    pub async fn from_config(config: Config) -> anyhow::Result<(Self, State<DefaultProvider>)> {
+    pub async fn from_config(
+        config: Config,
+        cancel_token: CancellationToken,
+    ) -> anyhow::Result<(Self, State<DefaultProvider>)> {
         let db_pool = connect_to_db(&config.database_url, config.database_pool_size).await?;
 
         let gateway_provider =
@@ -168,13 +171,15 @@ impl
         let event_picker = DbEventPicker::connect(db_pool.clone(), &config).await?;
 
         let context_manager = DbContextManager::new(db_pool.clone());
-        let s3_service = S3Service::new(&config, gateway_provider.clone(), s3_client);
+        let ciphertext_manager =
+            CiphertextManager::connect(gateway_provider.clone(), s3_client, &config, cancel_token)
+                .await?;
         let decryption_processor = DecryptionProcessor::new(
             &config,
             context_manager.clone(),
             gateway_provider.clone(),
             acl_contracts,
-            s3_service,
+            ciphertext_manager,
         );
         let kms_generation_processor = KMSGenerationProcessor::new(&config, context_manager);
         let event_processor = DbEventProcessor::new(

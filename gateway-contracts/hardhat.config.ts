@@ -15,8 +15,9 @@ import "./tasks/addHostChains";
 import "./tasks/addPausers";
 import "./tasks/blockExplorerVerify";
 import "./tasks/deployment";
-import "./tasks/exportMigrationState";
 import "./tasks/getters";
+import "./tasks/kmsContext";
+import "./tasks/manageHostChains";
 import "./tasks/mockedTokenFund";
 import "./tasks/ownership";
 import "./tasks/pauseContracts";
@@ -188,7 +189,10 @@ const config: HardhatUserConfig = {
       // https://hardhat.org/hardhat-network/#solidity-optimizer-support
       optimizer: {
         enabled: true,
-        runs: 800,
+        // 800 -> 200: once the Solana user-decrypt entrypoint and main's contextId validation
+        // coexist (sync merge), Decryption.sol exceeds the 24576-byte EIP-170 limit at 800.
+        // Lowering runs (optimize for size) keeps it deployable. Mirror this in foundry.toml.
+        runs: 200,
       },
       evmVersion: "cancun",
       viaIR: false,
