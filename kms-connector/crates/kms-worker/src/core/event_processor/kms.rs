@@ -194,15 +194,19 @@ mod tests {
         KMSGenerationProcessor::new(&Config::default(), MockContextManager)
     }
 
-    fn into_keygen(req: KmsGrpcRequest) -> KeyGenRequest {
-        match req {
-            KmsGrpcRequest::Keygen(k) => k,
-            other => panic!("expected a Keygen gRPC request, got {other:?}"),
-        }
+    fn standard_config(req: KmsGrpcRequest) -> (KeyGenRequest, StandardKeySetConfig) {
+        let KmsGrpcRequest::Keygen(keygen) = req else {
+            panic!("expected a Keygen gRPC request");
+        };
+        let standard = keygen
+            .keyset_config
+            .and_then(|c| c.standard_keyset_config)
+            .expect("keygen carries a standard keyset config");
+        (keygen, standard)
     }
 
-    /// A migration keygen MUST map to keygen-from-existing (UseExisting + copy-to-original), never to
-    /// the GenerateAll path a normal keygen uses — this is the core "no silent degrade" invariant.
+    // The core "no silent degrade" invariant: a migration keygen builds a keygen-from-existing
+    // (UseExisting + CompressedAll + copy-to-original), never the GenerateAll path.
     #[tokio::test]
     async fn migration_keygen_maps_to_use_existing_not_generate_all() {
         let existing_key_id = rand_u256();
@@ -214,29 +218,22 @@ mod tests {
             extraData: Bytes::new(),
         };
 
-        let keygen = into_keygen(
+        let (keygen, standard) = standard_config(
             test_processor()
                 .prepare_migration_keygen_request(&request)
                 .await
                 .unwrap(),
         );
 
-        let standard = keygen
-            .keyset_config
-            .and_then(|c| c.standard_keyset_config)
-            .expect("migration keygen must carry a standard keyset config");
         assert_eq!(
             standard.secret_key_config,
-            KeyGenSecretKeyConfig::UseExisting as i32,
-            "migration keygen must re-use existing shares, never GenerateAll"
+            KeyGenSecretKeyConfig::UseExisting as i32
         );
         assert_eq!(
             standard.compressed_key_config,
             CompressedKeyConfig::CompressedAll as i32
         );
-        let added = keygen
-            .keyset_added_info
-            .expect("migration keygen must carry keyset_added_info");
+        let added = keygen.keyset_added_info.unwrap();
         assert!(added.copy_compressed_key_to_original);
         assert_eq!(
             added.existing_keyset_id,
@@ -244,8 +241,6 @@ mod tests {
         );
     }
 
-    /// A normal keygen MUST stay GenerateAll with no keyset_added_info — the migration branch must not
-    /// leak into the ordinary path.
     #[tokio::test]
     async fn normal_keygen_stays_generate_all() {
         let request = KeygenRequest {
@@ -254,17 +249,13 @@ mod tests {
             extraData: Bytes::new(),
         };
 
-        let keygen = into_keygen(
+        let (keygen, standard) = standard_config(
             test_processor()
                 .prepare_keygen_request(&request)
                 .await
                 .unwrap(),
         );
 
-        let standard = keygen
-            .keyset_config
-            .and_then(|c| c.standard_keyset_config)
-            .expect("keygen must carry a standard keyset config");
         assert_eq!(
             standard.secret_key_config,
             KeyGenSecretKeyConfig::GenerateAll as i32

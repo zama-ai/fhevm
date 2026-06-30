@@ -31,16 +31,14 @@ const target = "v0.13.0";
 // test OLD tfhe-1.4 coprocessor images; this rollout runs the branch.)
 const relayerSdkVersion = "";
 
-// kms-core image anchor. MUST be the same kms commit the connector compiles its
-// gRPC proto against (kms-connector/Cargo.toml pins kms-grpc rev 1edf3a0), so
-// the RFC-029 migration keygen RPC (KeyGenRequest + KeySetAddedInfo /
+// kms-core image anchor. MUST match the kms release the connector compiles its gRPC
+// proto against: kms-connector/Cargo.toml pins `kms-grpc` at tag v0.13.20-0, so the
+// RFC-029 migration keygen RPC (KeyGenRequest + KeySetAddedInfo /
 // copy_compressed_key_to_original, UseExisting + CompressedAll) is proto-compatible
-// end to end. `ghcr.io/zama-ai/kms/core-service:1edf3a0` is published and
-// pullable, and 1edf3a0 ("explicit num_parties #619", 2026-05-29) carries the
-// RFC-028 keygen-from-existing implementation. (NOTE: an earlier note referenced
-// "43fb606" -- that is not a kms commit and has no image; 1edf3a0 is the correct,
-// connector-matched anchor.)
-const kmsCoreImage = "1edf3a0";
+// end to end. v0.13.20-0 also ships the RFC-028 keygen-from-existing server
+// implementation. It is the same core-service image the v0.12-to-v0.13 rollout runs
+// as its target, so it is published and CI-exercised.
+const kmsCoreImage = "v0.13.20-0";
 
 export const versions = {
   RELAYER_VERSION: target,
@@ -73,7 +71,7 @@ export const phaseVersions = {
 export const versionSources = [
   "rollout=rfc029-material-migration",
   `target=${target}`,
-  `kms-core=${kmsCoreImage} (matches connector kms-grpc pin 1edf3a0)`,
+  `kms-core=${kmsCoreImage} (matches connector kms-grpc tag v0.13.20-0)`,
   "feature=branch-local (RFC-029 coprocessor material-version cutover)",
   "tracks=fhevm-internal#1568",
 ];

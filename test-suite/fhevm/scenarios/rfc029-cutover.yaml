@@ -13,8 +13,8 @@ description: >
   built locally from the working tree (source.mode: local) so the branch's
   material-version selection + version-partitioned worker code is what runs; the
   connector and host-contracts are likewise built locally via ctx.up overrides in
-  run.ts. kms-core is pulled at the connector-matched commit (CORE_VERSION in the
-  rollout versions.ts) so the migration keygen RPC is proto-compatible.
+  run.ts. kms-core is pulled at the connector-matched release tag (CORE_VERSION in
+  the rollout versions.ts) so the migration keygen RPC is proto-compatible.
 hostChains:
   - key: host
     chainId: "12345"
