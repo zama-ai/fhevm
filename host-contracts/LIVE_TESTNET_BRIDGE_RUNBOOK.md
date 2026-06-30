@@ -5,6 +5,10 @@ testnets, wiring the `ConfidentialBridge` between them with production-grade
 LayerZero V2 settings, running the mock coprocessor daemon, and exercising a
 confidential OFT bridging using `ConfidentialOFT` contract instances.
 
+**NOTE:** Last 2 steps (steps 6 and 7) of this runbook are optional and do not involve the confidential OFT.
+Step 6 shows how to run the bridge's `lzReceive` gas profiler in order to fit the corresponding default constant gas parameters.
+Step 7 shows how to deploy and test another minimalistic confidential OApp: `HandlesListCOnfidentialOApp`.
+
 Target chains used as the running example:
 
 | Chain            | EVM chainId | LZ V2 EID |
@@ -360,7 +364,7 @@ A printed `1000` on Amoy confirms: the OFT burned on Sepolia, the bridge
 delivered the handle association via LayerZero, the OFT minted on Amoy, and
 the mock coprocessor propagated the cleartext end-to-end.
 
-### 6. Optional : run gas profiler for `lzReceive` parameters
+### Step 6 (Optional) - Run gas profiler for `lzReceive` parameters
 
 In order to get the recommended `lzReceive`-specific gas parameters from `HandlesSender` (i.e `LZ_RECEIVE_BASE_GAS_DEFAULT`, `LZ_RECEIVE_PER_HANDLE_GAS_DEFAULT` and `LZ_RECEIVE_PER_PAYLOAD_BYTE_DEFAULT`) you can run the following script:
 
@@ -385,3 +389,193 @@ PROFILE_SRC_EID=40161 \
 PROFILE_DST_EID=40267 \
 forge script scripts/HandlesReceiverProfiler.s.sol:HandlesReceiverProfilerExample -vv
 ```
+
+---
+
+## Step 7 (Optional) — Deploy and test `HandlesListConfidentialOApp`
+
+`HandlesListConfidentialOApp` is a second minimal example app riding on
+the same bridge. Instead of tracking balances, it bridges an arbitrary _list_ of
+FHE handles: `generateAndSendHandlesList(...)` mints `countHandles` fresh
+encrypted `euint32` values on-chain via `FHE.randEuint32`, grants itself (and the
+owner) ACL allowance on each, and bridges that list to the peer. On the
+destination chain, `onConfidentialBridgeReceived(...)` grants the owner decryption rights on
+the derived destination handles and emits them in an `HandlesListConfidentialOAppReceived` event.
+
+Because the values are generated on-chain, there is **no `mint` / `mock:encrypt`
+step**: the only handle input is `countHandles`. The same deployment embeds both
+the send and receive paths, so a single instance per chain bridges in both
+directions.
+
+> **Prerequisites.** This reuses everything from steps 1–4: the host stack on
+> both chains (steps 1–2), the wired `ConfidentialBridge` instances including the
+> `dstChainId` mapping (step 3), and a **running mock coprocessor daemon**
+> (step 4). The daemon is live-events-only, so it must be up _before_ you submit
+> the send in step 7.4.
+
+### 7.1 — Deploy on Sepolia
+
+```bash
+cp addresses-sepolia/{FHEVMHostAddresses.sol,.env.host} addresses/
+
+npx hardhat clean
+
+npx hardhat compile
+
+npx hardhat compile:specific --contract examples
+
+RPC_URL="$SEPOLIA_RPC_URL" npx hardhat --network sepolia task:deployHandlesListConfidentialOApp
+
+cp addresses/.env.host addresses-sepolia/.env.host
+```
+
+The new address is appended to `addresses/.env.host` as
+`HANDLES_LIST_OAPP_CONTRACT_ADDRESS`. The constructor wires the app to the local
+bridge it just read from the same file, and sets the deployer wallet as the app's
+`Ownable2Step` owner.
+
+Then, if you want to verify the contract on Sepolia Etherscan (optional):
+
+```bash
+RPC_URL="$SEPOLIA_RPC_URL" npx hardhat --network sepolia task:verifyHandlesListConfidentialOApp --use-internal-proxy-address true
+```
+
+### 7.2 — Deploy on Polygon Amoy
+
+```bash
+cp addresses-amoy/{FHEVMHostAddresses.sol,.env.host} addresses/
+
+npx hardhat clean
+
+npx hardhat compile
+
+npx hardhat compile:specific --contract examples
+
+RPC_URL="$POLYGON_AMOY_RPC_URL" npx hardhat --network polygonAmoy task:deployHandlesListConfidentialOApp
+
+cp addresses/.env.host addresses-amoy/.env.host
+```
+
+Then, if you want to verify the contract on Amoy Etherscan (optional):
+
+```bash
+RPC_URL="$POLYGON_AMOY_RPC_URL" npx hardhat --network polygonAmoy task:verifyHandlesListConfidentialOApp --use-internal-proxy-address true
+```
+
+Export the two app addresses for the next steps:
+
+```bash
+export SEPOLIA_HANDLES_OAPP_ADDRESS=$(grep '^HANDLES_LIST_OAPP_CONTRACT_ADDRESS=' addresses-sepolia/.env.host | cut -d= -f2)
+export POLYGON_AMOY_HANDLES_OAPP_ADDRESS=$(grep '^HANDLES_LIST_OAPP_CONTRACT_ADDRESS=' addresses-amoy/.env.host | cut -d= -f2)
+```
+
+### 7.3 — Set each remote app as the peer
+
+Like the OFT, each app resolves its destination peer from a single
+peer-per-eid registry (`setPeer`), which also authenticates inbound deliveries:
+`onConfidentialBridgeReceived` rejects any `(srcEid, srcApp)` that doesn't match
+the configured peer (`UntrustedPeer`), and `generateAndSendHandlesList` reverts
+with `PeerNotSet` for an eid with no configured peer. Call
+`task:wireHandlesListConfidentialOApp` once per direction.
+
+```bash
+# Sepolia → set the Amoy app as peer
+cp addresses-sepolia/{FHEVMHostAddresses.sol,.env.host} addresses/
+
+RPC_URL="$SEPOLIA_RPC_URL" \
+  npx hardhat --network sepolia task:wireHandlesListConfidentialOApp \
+  --remote-eid 40267 \
+  --remote-app "$POLYGON_AMOY_HANDLES_OAPP_ADDRESS"
+
+# Amoy → set the Sepolia app as peer
+cp addresses-amoy/{FHEVMHostAddresses.sol,.env.host} addresses/
+
+RPC_URL="$POLYGON_AMOY_RPC_URL" \
+  npx hardhat --network polygonAmoy task:wireHandlesListConfidentialOApp \
+  --remote-eid 40161 \
+  --remote-app "$SEPOLIA_HANDLES_OAPP_ADDRESS"
+```
+
+### 7.4 — End-to-end send: generate a handle list on Sepolia, bridge to Amoy
+
+`task:sendHandlesList` quotes the LayerZero fee, calls
+`generateAndSendHandlesList` (which mints the random handles on-chain and bridges
+them), and prints the freshly generated source-side handles parsed from the
+`HandlesListConfidentialOAppSent` event. The owner is ACL-allowed on each, so you
+can decrypt them on the source chain.
+
+```bash
+RPC_URL="$SEPOLIA_RPC_URL" npx hardhat task:sendHandlesList \
+  --app "$SEPOLIA_HANDLES_OAPP_ADDRESS" \
+  --dst-eid 40267 \
+  --dst-app "$POLYGON_AMOY_HANDLES_OAPP_ADDRESS" \
+  --count 4 \
+  --payload-length 512 \
+  --network sepolia
+```
+
+`--count` controls how many handles are generated and bridged (capped by the
+bridge's `MAX_HANDLES`); `--payload-length` (default `0`) attaches an opaque
+app-level blob of that many `0xff` bytes (forwarded verbatim to the destination
+peer, useful for exercising the message-size impact on the fee). The
+destination-side `lzCompose` gas budget is derived automatically from a simple
+linear over-estimate (`base + perHandle·count + perByte·payloadLength`), so it
+scales with both `--count` and `--payload-length`.
+
+Once the send transaction is processed, the daemon's terminal logs the source-side
+handle insertions (one per generated handle):
+
+```
+[mock-coprocessor:sepolia] processed blocks XXXXX-XXXXX (head=XXXXX): inserted=2 pending=0 skipped=0
+```
+
+You can already decrypt each printed source handle on Sepolia (they hold random
+values; note them down to compare with the destination side later):
+
+```bash
+pnpm mock:query <source handle from task:sendHandlesList logs>
+# → some random uint32, e.g. 2718281828
+```
+
+### 7.5 — Confirm delivery and decrypt on Amoy
+
+LayerZero delivery on testnet typically takes up to **10 minutes**. Track it on
+[LayerZero Scan Testnet](https://testnet.layerzeroscan.com/), but as in step
+5.4.2 a more reliable signal on testnet is to poll the destination app directly.
+
+Once the destination side fires, the daemon terminal logs the derived-handle
+insertions on Amoy:
+
+```
+[mock-coprocessor:polygonAmoy] processed blocks YYYYY-YYYYY (head=YYYYY): inserted=2 pending=0 skipped=0
+```
+
+Recover the destination handles from the most recent inbound delivery with
+`task:readReceivedHandlesList`. To keep the destination-side `lzCompose` gas low,
+the app does **not** persist the received arrays on-chain — it only commits a
+single `keccak256(srcHandles, dstHandles, payload)` per delivery in
+`resultBridgedHash[guid]`. The handles themselves are recovered off-chain from the
+`HandlesListConfidentialOAppReceived` event, which this task scans and prints
+(along with the on-chain commitment hash for cross-checking):
+
+```bash
+RPC_URL="$POLYGON_AMOY_RPC_URL" npx hardhat task:readReceivedHandlesList \
+  --app "$POLYGON_AMOY_HANDLES_OAPP_ADDRESS" \
+  --network polygonAmoy
+```
+
+If nothing is found yet, the bridge hasn't delivered — wait and retry, or widen
+the overall scan window with `--from-block <number>`.
+
+Finally decrypt each destination handle on Amoy:
+
+```bash
+pnpm mock:query <destination handle on Amoy>
+# → matches the corresponding source value decrypted in step 7.4
+```
+
+Each destination value matching its source counterpart confirms the full path:
+the app generated the encrypted list on Sepolia, the bridge delivered the handle
+associations via LayerZero, the destination app committed the delivery hash and
+re-granted the derived handles on Amoy, and the mock coprocessor propagated the
+cleartext end-to-end.

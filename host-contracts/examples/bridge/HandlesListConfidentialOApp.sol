@@ -81,15 +81,12 @@ contract HandlesListConfidentialOApp is Ownable2Step, IDstApp {
     ///      pass `bytes32(uint256(uint160(remoteAddress)))`.
     mapping(uint32 eid => bytes32 peer) private _peers;
 
-    /// @dev The last list of source-chain handles received via `onConfidentialBridgeReceived` (opaque).
-    bytes32[] private _lastReceivedSrcHandleList;
-
-    /// @dev The last list of destination-chain handles received via `onConfidentialBridgeReceived`. These are
-    ///      usable on this chain and have been ACL-allowed to this contract by the bridge.
-    bytes32[] private _lastReceivedDstHandleList;
-
-    /// @dev The last app-level payload received via `onConfidentialBridgeReceived`.
-    bytes private _lastReceivedPayload;
+    /// @dev Per-delivery commitment, keyed by the LayerZero GUID of the inbound message.
+    ///      Stores `keccak256(abi.encode(srcHandleList, dstHandleList, payload))` instead
+    ///      of the full arrays/payload, so `onConfidentialBridgeReceived` only writes one
+    ///      32-byte slot per delivery. This keeps the destination-side `lzCompose` cost
+    ///      (and therefore the required `lzComposeGas`) to a minimum.
+    mapping(bytes32 guid => bytes32 resultHash) public resultBridgedHash;
 
     constructor(address _confidentialBridge, address _owner) Ownable(_owner) {
         FHE.setCoprocessor(CoprocessorSetup.defaultConfig());
@@ -184,11 +181,11 @@ contract HandlesListConfidentialOApp is Ownable2Step, IDstApp {
      *         of `dstHandleList`.
      *
      *         The `payload` is opaque, app-defined data forwarded by the source peer
-     *         (see {generateAndSendHandlesList}); it is stored verbatim in
-     *         {lastReceivedPayload} but not otherwise interpreted. For every derived
-     *         handle we grant *persistent* ACL allowance to both this contract
-     *         (`FHE.allowThis`) and the app `owner()` (`FHE.allow`), so the owner can
-     *         later `userDecrypt` the destination handles.
+     *         (see {generateAndSendHandlesList}); it is not interpreted here and is only
+     *         folded into the per-delivery commitment stored in {resultBridgedHash}
+     *         (keyed by `guid`). For every derived handle we grant *persistent* ACL
+     *         allowance to both this contract (`FHE.allowThis`) and the app `owner()`
+     *         (`FHE.allow`), so the owner can later `userDecrypt` the destination handles.
      */
     function onConfidentialBridgeReceived(
         uint32 srcEid,
@@ -202,9 +199,10 @@ contract HandlesListConfidentialOApp is Ownable2Step, IDstApp {
         bytes32 trustedPeer = _peers[srcEid];
         if (trustedPeer == bytes32(0) || trustedPeer != srcApp) revert UntrustedPeer(srcEid, srcApp);
 
-        _lastReceivedSrcHandleList = srcHandleList;
-        _lastReceivedDstHandleList = dstHandleList;
-        _lastReceivedPayload = payload;
+        // Commit to the delivery with a single SSTORE rather than persisting the full
+        // arrays/payload, keeping the lzCompose gas cost low. The pre-image is available
+        // off-chain via the `HandlesListConfidentialOAppReceived` event.
+        resultBridgedHash[guid] = keccak256(abi.encode(srcHandleList, dstHandleList, payload));
 
         // Re-type the received destination handles and grant persistent decryption rights
         // to this contract and the initiating user. These handles are usable on this
@@ -237,21 +235,6 @@ contract HandlesListConfidentialOApp is Ownable2Step, IDstApp {
     /// @notice Returns the configured peer app on the chain at `eid` (bytes32(0) if unset).
     function peers(uint32 eid) external view returns (bytes32) {
         return _peers[eid];
-    }
-
-    /// @notice The list of source-chain handles from the most recent `onConfidentialBridgeReceived`.
-    function lastReceivedSrcHandleList() external view returns (bytes32[] memory) {
-        return _lastReceivedSrcHandleList;
-    }
-
-    /// @notice The list of destination-chain handles from the most recent `onConfidentialBridgeReceived`.
-    function lastReceivedDstHandleList() external view returns (bytes32[] memory) {
-        return _lastReceivedDstHandleList;
-    }
-
-    /// @notice The app-level payload from the most recent `onConfidentialBridgeReceived`.
-    function lastReceivedPayload() external view returns (bytes memory) {
-        return _lastReceivedPayload;
     }
 
     /// @dev Mint `count` random encrypted 32-bit values, granting persistent ACL

@@ -305,13 +305,9 @@ contract HandlesListConfidentialOAppTest is TestHelperOz5, HostContractsDeployer
             guid
         );
 
-        bytes32[] memory storedDst = appDst.lastReceivedDstHandleList();
-        bytes32[] memory storedSrc = appDst.lastReceivedSrcHandleList();
-        assertEq(storedDst.length, 2);
-        assertEq(storedDst[0], dstList[0]);
-        assertEq(storedDst[1], dstList[1]);
-        assertEq(storedSrc[0], srcList[0]);
-        assertEq(keccak256(appDst.lastReceivedPayload()), keccak256(payload));
+        // The delivery is committed as a single hash over (srcList, dstList, payload),
+        // keyed by guid, rather than the full arrays being persisted.
+        assertEq(appDst.resultBridgedHash(guid), keccak256(abi.encode(srcList, dstList, payload)));
 
         // The app owner and the app itself both hold persistent decryption rights now.
         assertTrue(acl.isAllowed(dstList[0], owner));
@@ -352,14 +348,13 @@ contract HandlesListConfidentialOAppTest is TestHelperOz5, HostContractsDeployer
         _allow(dstH0, address(dstBridge));
         _allow(dstH1, address(dstBridge));
 
+        bytes32 guid = keccak256("g");
         vm.prank(address(endpoints[DST_EID]));
-        dstBridge.lzCompose(address(dstBridge), keccak256("g"), composeMsg, address(0), "");
+        dstBridge.lzCompose(address(dstBridge), guid, composeMsg, address(0), "");
 
-        bytes32[] memory storedDst = appDst.lastReceivedDstHandleList();
-        assertEq(storedDst.length, 2);
-        assertEq(storedDst[0], dstH0);
-        assertEq(storedDst[1], dstH1);
-        assertEq(keccak256(appDst.lastReceivedPayload()), keccak256(payload));
+        // The delivery is committed as a single hash over (srcList, dstList, payload),
+        // keyed by the forwarded LayerZero guid.
+        assertEq(appDst.resultBridgedHash(guid), keccak256(abi.encode(srcList, dstList, payload)));
 
         // The bridge granted the app transient allowance, which let it re-grant
         // persistent decryption rights to the app owner.

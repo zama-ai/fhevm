@@ -15,6 +15,7 @@ import './tasks/accounts';
 import './tasks/addPausers';
 import './tasks/blockExplorerVerify';
 import './tasks/examples/cOFT';
+import './tasks/examples/handlesList';
 import './tasks/generateKmsMaterials';
 import './tasks/kmsContext';
 import './tasks/ownership';
