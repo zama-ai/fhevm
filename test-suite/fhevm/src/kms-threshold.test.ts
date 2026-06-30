@@ -135,25 +135,14 @@ describe("buildKmsThresholdOverride", () => {
     );
   });
 
-  test("gen-keys generates ONLY signing keys via the positional threshold subcommand (modern CLI)", () => {
-    // RENDER_OPTS pins a SHA-tagged (main-built) kms-core, whose kms-gen-keys dropped the
-    // top-level `--cmd` flag: the mode is the positional `threshold` subcommand. Emitting
-    // `--cmd signing-keys` here makes gen-keys exit 2 ("unexpected argument '--cmd'").
+  test("gen-keys generates ONLY signing keys, sized to exactly N parties", () => {
     const entrypoint = JSON.stringify(buildKmsThresholdOverride(fourParty, RENDER_OPTS).services["kms-core-gen-keys"].entrypoint);
-    expect(entrypoint).not.toContain("--cmd");
-    expect(entrypoint).toContain("threshold --signing-key-party-id");
-    // --num-parties defaults to 4 in the CLI (too small for a larger cluster), so it is always set.
+    // `--cmd signing-keys` and `--num-parties` are gated by `--help` probes (newer cores dropped both);
+    // keep the probes so a pinned newer CORE_VERSION still boots.
+    expect(entrypoint).toContain("if kms-gen-keys --help");
+    expect(entrypoint).toContain("if kms-gen-keys threshold --help");
+    expect(entrypoint).toContain("--cmd signing-keys");
     expect(entrypoint).toContain("--num-parties 4");
-  });
-
-  test("gen-keys keeps the legacy `--cmd signing-keys` form on the v0.13 line", () => {
-    // The v0.13.x CLI selects the signing-keys mode with `--cmd signing-keys` before the
-    // `threshold` subcommand; only post-v0.13 builds dropped it.
-    const legacy = JSON.stringify(
-      buildKmsThresholdOverride(fourParty, kmsRenderOptionsFor("v0.13.20-0")).services["kms-core-gen-keys"].entrypoint,
-    );
-    expect(legacy).toContain("--cmd signing-keys");
-    expect(legacy).toContain("--num-parties 4");
   });
 
   test("rejects a non-threshold topology", () => {

@@ -18,14 +18,13 @@ if (copyOnly) {
 // CJS-context code. Everything else (workers, dead code, .wasm binaries,
 // .d.ts, .cjs, etc.) is copied verbatim.
 //
-// The files below are the ones whose ESM `import`/`export` syntax would
+// The 5 files below are the ones whose ESM `import`/`export` syntax would
 // otherwise be evaluated under `_cjs/package.json {"type":"commonjs"}` and
 // produce a SyntaxError at load time.
 const TRANSPILE = [
-  'tfhe/tfhe.v1.6.0.js',
-  'tfhe/startWorkers.v1.6.0.js',
-  'tfhe/tfhe_bg.v1.6.0.wasm.base64.js',
-  'tfhe/tfhe-worker.v1.6.0.inline.js',
+  'tfhe/tfhe.v1.5.3.js',
+  'tfhe/startWorkers.v1.5.3.js',
+  'tfhe/tfhe_bg.v1.5.3.wasm.base64.js',
   'tkms/kms_lib.v0.13.10.js',
   'tkms/kms_lib_bg.v0.13.10.wasm.base64.js',
   'wasmBaseUrl.js',

@@ -28,7 +28,14 @@ function isNodePort(target: IsomorphicMessagePort): target is NodeMessagePort {
 }
 
 export function isBrowserLike(): boolean {
-  return typeof addEventListener === 'function' && typeof removeEventListener === 'function';
+  return (
+    // @ts-expect-error - Bun is a runtime global only under Bun
+    typeof Bun === 'undefined' &&
+    // eslint-disable-next-line no-restricted-globals
+    typeof process === 'undefined' &&
+    typeof addEventListener === 'function' &&
+    typeof removeEventListener === 'function'
+  );
 }
 
 /**
@@ -55,6 +62,9 @@ export async function createIsomorphicWorker(url: string): Promise<Worker | Node
   return createNodeLikeWorker(url);
 }
 
+/*
+  TODO: add support for TrustedScriptURL if needed
+*/
 export async function createIsomorphicWorkerFromCode(jsCode: string): Promise<Worker | NodeMessagePort> {
   if (isBrowserLike()) {
     const blob = new Blob([jsCode], { type: 'application/javascript' });

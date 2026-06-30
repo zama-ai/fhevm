@@ -82,7 +82,7 @@ export async function canDecryptValuesFromPairs(context: Context, parameters: Pa
   }
 
   const details = await isUserDecryptable(context, {
-    address: context.chain.fhevm.contracts.acl.address as ChecksummedAddress,
+    aclAddress: context.chain.fhevm.contracts.acl.address as ChecksummedAddress,
     userAddress,
     handleContractPairs,
   });

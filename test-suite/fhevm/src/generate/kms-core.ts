@@ -113,44 +113,37 @@ export const thresholdCoreEnv = (
   AWS_SECRET_ACCESS_KEY: opts.s3SecretKey,
 });
 
-/** Whether this kms-core version's `kms-gen-keys` still takes the `--cmd signing-keys`
- * flag. It was a top-level option through the v0.13 line; after that the CLI was
- * restructured so the mode is the positional `threshold` / `centralized` subcommand
- * only (no `--cmd`). Non-semver tags (SHA-style main builds, e.g. the RFC-029 anchor
- * 1edf3a0) and >= v0.14 images use the new positional form. Pinning the wrong form
- * makes gen-keys exit 2 on an `unexpected argument '--cmd'` parse error. */
-const kmsGenKeysTakesCmdFlag = (coreVersion: string): boolean => {
-  const match = coreVersion.match(/^v?(\d+)\.(\d+)\./);
-  if (!match) return false; // SHA / non-semver main build -> new positional CLI
-  const [major, minor] = [Number(match[1]), Number(match[2])];
-  return major === 0 && minor <= 13;
-};
-
 /** Shell for the signing-key setup container, one invocation per party (unrolled in TS rather
  * than a shell loop, so prefixes come from kms-party.ts and no `$$` compose-interpolation
- * escaping is needed). Generates ONLY each party's signing key into S3 (the `signing-keys`
- * mode) — mirroring the KMS reference threshold compose. The FHE key shares and CRS are NOT
- * pre-generated here; they come from the real on-chain DKG (keygen/crsgen). `--num-parties`
- * must match the cluster size (the CLI rejects a signing-key-party-id greater than num-parties;
- * it also defaults to 4). The `--tls-*` flags only shape generated cert material, which is inert
- * here: core-to-core mTLS is disabled. AWS creds come from the container env. */
-const genKeysCommand = (topology: ResolvedKmsTopology, opts: KmsRenderOptions) => {
-  const coreVersion = opts.coreImage.split(":").pop() ?? "";
-  // Pre-v0.14 selected the signing-keys mode with `--cmd signing-keys`; newer
-  // builds dropped it (the `threshold` subcommand alone generates signing keys).
-  const cmdFlag = kmsGenKeysTakesCmdFlag(coreVersion) ? "--cmd signing-keys \\\n  " : "";
-  return [
+ * escaping is needed). Generates ONLY each party's signing key + self-signed CA cert into S3,
+ * mirroring the KMS reference threshold compose. The FHE key shares and CRS are NOT pre-generated
+ * here; they come from the real on-chain DKG (keygen/crsgen). `--num-parties` must match the
+ * cluster size (the CLI rejects a signing-key-party-id greater than num-parties; it also defaults
+ * to 4). The `--tls-*` flags shape the generated cert material — CN = the core name — which the
+ * KMS context wiring surfaces as each node's caCert / mpcIdentity.
+ *
+ * The kms-gen-keys CLI differs across core images: older ones scope to signing keys with a
+ * `--cmd signing-keys` selector (their `--cmd` default is `all`, which would also generate FHE
+ * keys centrally), while newer ones dropped it and have the `threshold` subcommand emit the
+ * signing keys + CA certs directly. Probe `--help` once and inject the selector only when the
+ * image still understands it, so a pinned old or new CORE_VERSION both boot. AWS creds come from
+ * the container env. */
+const genKeysCommand = (topology: ResolvedKmsTopology, opts: KmsRenderOptions) =>
+  [
     "set -e",
     `echo "=== generating signing keys for ${topology.parties} parties ==="`,
+    // Probe per-image: old cores need `--cmd signing-keys` + `--num-parties`; newer cores dropped both.
+    `if kms-gen-keys --help 2>&1 | grep -q -- '--cmd'; then CMD="--cmd signing-keys"; else CMD=""; fi`,
+    `if kms-gen-keys threshold --help 2>&1 | grep -q -- '--num-parties'; then NP="--num-parties ${topology.parties}"; else NP=""; fi`,
     ...kmsPartyIds(topology.parties).map(
       (party) => `kms-gen-keys --aws-region ${opts.s3Region} \\
   --public-storage s3 --public-s3-bucket ${opts.s3Bucket} --public-s3-prefix ${kmsPublicPrefix(party)} \\
   --aws-s3-endpoint ${opts.s3Endpoint} \\
   --private-storage s3 --private-s3-bucket ${opts.s3Bucket} --private-s3-prefix ${kmsPrivatePrefix(party)} \\
-  ${cmdFlag}threshold --signing-key-party-id ${party} --tls-subject ${kmsCoreName(party)} --tls-wildcard --num-parties ${topology.parties}`,
+  $CMD \\
+  threshold --signing-key-party-id ${party} --tls-subject ${kmsCoreName(party)} --tls-wildcard $NP`,
     ),
   ].join("\n");
-};
 
 /**
  * Builds the threshold-mode cluster compose doc: 1 gen-keys container + N cores +

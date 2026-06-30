@@ -27,7 +27,7 @@ fi
 ON_CHAIN_CODE=$(cast code "${FHETEST_ADDRESS}" --rpc-url "${RPC_URL}")
 if [ "${ON_CHAIN_CODE}" = "0x" ] || [ -z "${ON_CHAIN_CODE}" ]; then
   echo "Error: No contract deployed at ${FHETEST_ADDRESS}"
-  echo "Run: forge script script/DeployFHETest.s.sol --rpc-url ${RPC_URL} --broadcast"
+  echo "Run: forge script scripts/DeployFHETest.s.sol --rpc-url ${RPC_URL} --broadcast"
   exit 1
 fi
 
@@ -40,35 +40,21 @@ LOCAL_DEPLOYED_CODE=$(node -e "
 if [ "${ON_CHAIN_CODE}" != "${LOCAL_DEPLOYED_CODE}" ]; then
   echo "Error: On-chain bytecode at ${FHETEST_ADDRESS} does not match the locally compiled FHETest."
   echo "The contract needs to be redeployed."
-  echo "Run: forge script script/DeployFHETest.s.sol --rpc-url ${RPC_URL} --broadcast"
+  echo "Run: forge script scripts/DeployFHETest.s.sol --rpc-url ${RPC_URL} --broadcast"
   exit 1
 fi
 
 echo "  FHETest verified at: ${FHETEST_ADDRESS}"
 
-# Extract ABI, write to abi-v2.ts. Addresses live in a sibling JSON file
-# (fhe-test-addresses-v2.json) so the shell deploy scripts can also read
-# them; this script only refreshes the ABI block.
+# Extract ABI, write to abi-v2.ts. This script only refreshes the ABI block;
+# addresses are sourced from chains/chain-defaults.json (consumed by both
+# setupCommon.ts and the `assert_fhetest_address` shell helper in fhevm-lib.sh).
 node -e "
 const fs = require('fs');
 const artifact = JSON.parse(fs.readFileSync('${ARTIFACT}', 'utf8'));
 const abi = JSON.stringify(artifact.abi, null, 2);
 
-const ts = \`import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
-
-// Single source of truth for FHETest addresses lives in the sibling JSON
-// file so the shell deploy scripts (\\\`assert_fhetest_address_in_abi_v2\\\` in
-// fhevm-lib.sh) can also read/validate them.
-export const FHETestAddresses = JSON.parse(
-  readFileSync(join(import.meta.dirname, 'fhe-test-addresses-v2.json'), 'utf-8'),
-) as Readonly<{
-  localhost: string;
-  localhostFhevm: string;
-  devnet: string;
-}>;
-
-export const FHETestABI = \${abi} as const;
+const ts = \`export const FHETestABI = \${abi} as const;
 \`;
 
 fs.writeFileSync('${ABI_FILE}', ts);

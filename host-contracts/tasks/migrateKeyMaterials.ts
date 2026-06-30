@@ -17,11 +17,6 @@ import { getRequiredEnvVar, loadHostAddresses } from './utils/loadVariables';
 // coprocessor host-listener ingests the emitted KeyMaterialAdded /
 // KeyMaterialMigrationScheduled events.
 
-// v3 extra_data the connector decodes into a migration KeyGenRequest
-// (UseExisting + CompressedAll + copy_compressed_key_to_original).
-// Layout: [0x03][contextId(32)][existingKeysetId(32)][copyToOriginal(1)] == 66 bytes.
-const EXTRA_DATA_V3 = 3;
-
 // RFC-029 cutover material version (0 = legacy, 1 = migrated CompressedXofKeySet).
 const MIGRATED_MATERIAL_VERSION = 1;
 
@@ -31,16 +26,6 @@ async function getKmsGeneration(hre: any) {
   const proxyAddress = getRequiredEnvVar('KMS_GENERATION_CONTRACT_ADDRESS');
   const kmsGeneration = await hre.ethers.getContractAt('KMSGeneration', proxyAddress, deployer);
   return { kmsGeneration, deployer };
-}
-
-async function getCurrentKmsContextId(hre: any): Promise<bigint> {
-  const protocolConfigAddress = getRequiredEnvVar('PROTOCOL_CONFIG_CONTRACT_ADDRESS');
-  const protocolConfig = new hre.ethers.Contract(
-    protocolConfigAddress,
-    ['function getCurrentKmsContextId() view returns (uint256)'],
-    hre.ethers.provider,
-  );
-  return protocolConfig.getCurrentKmsContextId();
 }
 
 task('task:triggerMigrationKeygen')
@@ -56,19 +41,13 @@ task('task:triggerMigrationKeygen')
     loadHostAddresses(); // KMS_GENERATION_CONTRACT_ADDRESS + PROTOCOL_CONFIG_CONTRACT_ADDRESS live in the host addresses file
 
     const { kmsGeneration } = await getKmsGeneration(hre);
-    // The existing key whose private shares are re-used (keygen-from-existing).
-    const existingKeysetId: bigint = await kmsGeneration.getActiveKeyId();
-    const contextId = await getCurrentKmsContextId(hre);
+    // The existing key whose private shares are re-used (keygen-from-existing). The contract derives
+    // the v2 (context+epoch) extraData internally and flags the request as a migration; the connector
+    // reads MigrationKeygenRequested to drive UseExisting + copy-to-original on the KMS.
+    const existingKeyId: bigint = await kmsGeneration.getActiveKeyId();
 
-    const extraData = hre.ethers.solidityPacked(
-      ['uint8', 'uint256', 'uint256', 'uint8'],
-      [EXTRA_DATA_V3, contextId, existingKeysetId, copyToOriginal ? 1 : 0],
-    );
-
-    console.log(
-      `RFC-029 migration keygen: existingKeysetId=${existingKeysetId} contextId=${contextId} copyToOriginal=${copyToOriginal}`,
-    );
-    const tx = await kmsGeneration['keygen(uint8,bytes)'](paramsType, extraData);
+    console.log(`RFC-029 migration keygen: existingKeyId=${existingKeyId} copyToOriginal=${copyToOriginal}`);
+    const tx = await kmsGeneration.migrationKeygen(paramsType, existingKeyId, copyToOriginal);
     await tx.wait();
     console.log('Migration keygen triggered.');
   });

@@ -74,7 +74,8 @@ where
         acl_contracts_mock,
         ciphertext_manager,
     );
-    let kms_generation_processor = KMSGenerationProcessor::new(&config, context_manager);
+    let kms_generation_processor =
+        KMSGenerationProcessor::new(&config, context_manager, db.clone());
     let event_processor = DbEventProcessor::new(
         kms_client.clone(),
         decryption_processor,

@@ -1,3 +1,4 @@
+import type { TkmsVersion } from '../../wasm/tkms/KmsLibApi.js';
 import type { Handle } from './encryptedTypes-p.js';
 import type { KmsEip712Domain } from './kms.js';
 import type { KmsSignersContext } from './kmsSignersContext.js';
@@ -9,6 +10,7 @@ export interface KmsSigncryptedSharesMetadata {
   readonly eip712Signature: Bytes65Hex;
   readonly eip712SignerAddress: ChecksummedAddress;
   readonly handles: readonly Handle[];
+  readonly tkmsVersion: TkmsVersion;
 }
 
 export interface KmsSigncryptedShare {

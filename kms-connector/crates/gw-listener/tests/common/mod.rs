@@ -154,9 +154,7 @@ pub async fn mock_event_on_gw(
             };
             let tx = test_instance
                 .kms_generation_contract()
-                // keygen_1 is the single-arg keygen(ParamsType) overload; keygen_0 is the
-                // RFC-029 keygen(ParamsType, bytes) migration overload (alloy disambiguates).
-                .keygen_1(ParamsTypeDb::Test as u8)
+                .keygen(ParamsTypeDb::Test as u8)
                 .send()
                 .await?;
             (tx, event.into())

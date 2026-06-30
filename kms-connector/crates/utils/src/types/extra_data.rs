@@ -13,49 +13,36 @@ pub const EXTRA_DATA_V2_VERSION: u8 = 0x02;
 /// The expected length of v2 `extra_data` (version + context_id + epoch_id).
 pub const EXTRA_DATA_V2_LENGTH: usize = 65;
 
-/// Version `0x03`: context_id + migration config (RFC 029). Drives a
-/// keygen-from-existing-shares: the connector maps it to a KMS KeyGenRequest
-/// with `UseExisting` + `CompressedKeyConfig::All` + `keyset_added_info`.
-pub const EXTRA_DATA_V3_VERSION: u8 = 0x03;
-
-/// The expected length of v3 `extra_data` (version + context_id +
-/// existing_keyset_id + copy_to_original flag).
-pub const EXTRA_DATA_V3_LENGTH: usize = 66;
-
-/// RFC-029 migration config carried in v3 `extra_data`.
-#[derive(Debug, Clone, PartialEq)]
-pub struct MigrationConfig {
-    /// The existing keyset whose private shares are re-used (UseExisting).
-    pub existing_keyset_id: U256,
-    /// Whether the resulting CompressedXofKeySet is copied to the original
-    /// key id (copy_compressed_key_to_original).
-    pub copy_to_original: bool,
-}
-
 /// Parsed extra_data contents.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExtraData {
     pub context_id: Option<U256>,
     pub epoch_id: Option<U256>,
-    /// Set only for v3 (RFC-029 migration keygen).
-    pub migration: Option<MigrationConfig>,
 }
 
-/// Parses the `extra_data` bytes to extract a context ID, optional epoch ID,
-/// and optional RFC-029 migration config.
+/// Parses the `extra_data` bytes to extract a context ID and an optional epoch ID.
 ///
-/// Versions `0x01`, `0x02`, `0x03` are accepted. Empty extra_data and `0x00`
-/// are legacy default-context markers.
+/// Versions `0x01` and `0x02` are accepted (rolling compatibility window).
+/// Empty extra_data and `0x00` are legacy default-context markers.
 ///
-/// Format (v1, RFC 003): `[0x01][context_id(32)]`
-/// Format (v2, RFC 005): `[0x02][context_id(32)][epoch_id(32)]`
-/// Format (v3, RFC 029): `[0x03][context_id(32)][existing_keyset_id(32)][copy_to_original(1)]`
+/// Format (v1, RFC 003):
+/// - Byte 0: version (`0x01`)
+/// - Bytes 1..33: context ID (32 bytes, big-endian U256)
+/// - Bytes 33..: optional additional data (ignored)
+///
+/// Format (v2, RFC 005):
+/// - Byte 0: version (`0x02`)
+/// - Bytes 1..33: context ID (32 bytes, big-endian U256)
+/// - Bytes 33..65: epoch ID (32 bytes, big-endian U256)
+/// - Bytes 65..: optional additional data (ignored)
+///
+/// Version `0x01` → epoch_id is `None` (caller should fall back to DEFAULT_EPOCH_ID).
+/// Empty or `[0x00]` → no explicit context and no epoch.
 pub fn parse_extra_data(extra_data: &[u8]) -> anyhow::Result<ExtraData> {
     if extra_data.is_empty() || extra_data == [0x00] {
         return Ok(ExtraData {
             context_id: None,
             epoch_id: None,
-            migration: None,
         });
     }
 
@@ -76,7 +63,6 @@ pub fn parse_extra_data(extra_data: &[u8]) -> anyhow::Result<ExtraData> {
             Ok(ExtraData {
                 context_id: Some(U256::from_be_bytes(context_id_bytes)),
                 epoch_id: None,
-                migration: None,
             })
         }
         EXTRA_DATA_V2_VERSION => {
@@ -99,41 +85,13 @@ pub fn parse_extra_data(extra_data: &[u8]) -> anyhow::Result<ExtraData> {
             Ok(ExtraData {
                 context_id: Some(U256::from_be_bytes(context_id_bytes)),
                 epoch_id: Some(U256::from_be_bytes(epoch_id_bytes)),
-                migration: None,
-            })
-        }
-        EXTRA_DATA_V3_VERSION => {
-            if extra_data.len() < EXTRA_DATA_V3_LENGTH {
-                return Err(anyhow!(
-                    "extra_data too short for v3: {} bytes, expected at least {} bytes",
-                    extra_data.len(),
-                    EXTRA_DATA_V3_LENGTH
-                ));
-            }
-
-            let context_id_bytes: [u8; 32] = extra_data[1..33]
-                .try_into()
-                .map_err(|e| anyhow!("Failed to extract context_id from extra_data: {e}"))?;
-            let existing_keyset_id_bytes: [u8; 32] =
-                extra_data[33..65].try_into().map_err(|e| {
-                    anyhow!("Failed to extract existing_keyset_id from extra_data: {e}")
-                })?;
-
-            Ok(ExtraData {
-                context_id: Some(U256::from_be_bytes(context_id_bytes)),
-                epoch_id: None,
-                migration: Some(MigrationConfig {
-                    existing_keyset_id: U256::from_be_bytes(existing_keyset_id_bytes),
-                    copy_to_original: extra_data[65] != 0,
-                }),
             })
         }
         _ => Err(anyhow!(
-            "Unsupported extra_data version: 0x{:02x}, expected 0x00, 0x{:02x}, 0x{:02x}, or 0x{:02x}",
+            "Unsupported extra_data version: 0x{:02x}, expected 0x00, 0x{:02x}, or 0x{:02x}",
             extra_data[0],
             EXTRA_DATA_V1_VERSION,
-            EXTRA_DATA_V2_VERSION,
-            EXTRA_DATA_V3_VERSION
+            EXTRA_DATA_V2_VERSION
         )),
     }
 }
@@ -148,8 +106,7 @@ mod tests {
             parse_extra_data(&[]).unwrap(),
             ExtraData {
                 context_id: None,
-                epoch_id: None,
-                migration: None,
+                epoch_id: None
             }
         );
     }
@@ -160,8 +117,7 @@ mod tests {
             parse_extra_data(&[0x00]).unwrap(),
             ExtraData {
                 context_id: None,
-                epoch_id: None,
-                migration: None,
+                epoch_id: None
             }
         );
     }
@@ -178,8 +134,7 @@ mod tests {
             result,
             ExtraData {
                 context_id: Some(U256::from(69u64)),
-                epoch_id: None,
-                migration: None,
+                epoch_id: None
             }
         );
     }
@@ -197,29 +152,7 @@ mod tests {
             result,
             ExtraData {
                 context_id: Some(U256::from(42u64)),
-                epoch_id: Some(U256::from(7u64)),
-                migration: None,
-            }
-        );
-    }
-
-    #[test]
-    fn valid_v3_returns_migration_config() {
-        let mut data = vec![EXTRA_DATA_V3_VERSION];
-        data.extend_from_slice(&U256::from(42u64).to_be_bytes::<32>()); // context_id
-        data.extend_from_slice(&U256::from(123u64).to_be_bytes::<32>()); // existing_keyset_id
-        data.push(0x01); // copy_to_original
-
-        let result = parse_extra_data(&data).unwrap();
-        assert_eq!(
-            result,
-            ExtraData {
-                context_id: Some(U256::from(42u64)),
-                epoch_id: None,
-                migration: Some(MigrationConfig {
-                    existing_keyset_id: U256::from(123u64),
-                    copy_to_original: true,
-                }),
+                epoch_id: Some(U256::from(7u64))
             }
         );
     }
@@ -236,15 +169,14 @@ mod tests {
             result,
             ExtraData {
                 context_id: Some(U256::from(1u64)),
-                epoch_id: Some(U256::from(2u64)),
-                migration: None,
+                epoch_id: Some(U256::from(2u64))
             }
         );
     }
 
     #[test]
     fn wrong_version_byte_errors() {
-        let mut data = vec![0x04];
+        let mut data = vec![0x03];
         data.extend_from_slice(&[0u8; 64]);
 
         let err = parse_extra_data(&data).unwrap_err();

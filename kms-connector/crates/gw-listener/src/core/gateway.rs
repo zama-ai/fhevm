@@ -152,7 +152,8 @@ where
 
         let logs = self.provider.get_logs(&filter).await?;
         let events = Self::prepare_events(logs)?;
-        publish_batch(&self.db_pool, events, event_types, to_block).await?;
+        // Gateway emits no `MigrationKeygenRequested` (RFC-029 keygen lives on the host chain).
+        publish_batch(&self.db_pool, events, vec![], event_types, to_block).await?;
 
         Ok((to_block.saturating_add(1), to_block < current_block))
     }

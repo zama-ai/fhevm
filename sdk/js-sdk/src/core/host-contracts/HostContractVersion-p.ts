@@ -19,15 +19,33 @@ type Parameters = {
 };
 
 type ReturnType = HostContractVersion;
+type InvalidateVersionCacheOptions = {
+  readonly includeInflight?: boolean | undefined;
+};
+type InvalidateVersionCacheParameters = Parameters & InvalidateVersionCacheOptions;
 
 ////////////////////////////////////////////////////////////////////////////////
 
 const cachedGetVersion = createCachedFetch<Context, Parameters, ReturnType>({
   executeFn: _getVersion,
-  cacheKeyFn: (context, params) => `${context.runtime.uid.toLowerCase()}:${params.address.toLowerCase()}`,
+  cacheKeyFn: _getVersionCacheKey,
   // Host contract versions are immutable per deployment, so a long TTL is safe.
   ttlMs: CACHE_TTL_24H,
 });
+
+/**
+ * Builds the cache key for a host contract version lookup.
+ *
+ * The runtime UID scopes the entry to one SDK runtime instance, while the
+ * address scopes it to one deployed host contract within that runtime.
+ *
+ * Host-contract addresses are treated as globally unique deployment
+ * identifiers across supported chains. If that invariant changes, include the
+ * chain id in this key.
+ */
+function _getVersionCacheKey(context: Context, parameters: Parameters): string {
+  return `${context.runtime.uid.toLowerCase()}:${parameters.address.toLowerCase()}`;
+}
 
 /**
  * Reads the version of a host contract at the given address.
@@ -46,11 +64,49 @@ const cachedGetVersion = createCachedFetch<Context, Parameters, ReturnType>({
  *   Use this after a known contract upgrade to ensure all subsequent callers
  *   see the updated version.
  */
-export function getVersion(
+export function getHostContractVersion(
   context: Context,
   parameters: Parameters & { readonly forceRefresh?: boolean },
 ): Promise<ReturnType> {
   return cachedGetVersion.execute(context, parameters);
+}
+
+/**
+ * Invalidates cached host contract versions.
+ *
+ * When called with `context` and `address`, only that runtime/address entry is
+ * invalidated. When called without arguments, all settled host-version cache
+ * entries in the current JS realm are invalidated.
+ *
+ * In-flight entries are kept by default. Pass `includeInflight: true` to also
+ * discard in-flight fetches; existing callers still receive their promises, but
+ * those results will no longer be stored in the cache.
+ */
+export function invalidateVersionCache(options?: InvalidateVersionCacheOptions): void;
+export function invalidateVersionCache(context: Context, parameters: InvalidateVersionCacheParameters): void;
+export function invalidateVersionCache(
+  contextOrOptions?: Context | InvalidateVersionCacheOptions,
+  parameters?: InvalidateVersionCacheParameters,
+): void {
+  if (parameters === undefined) {
+    const options = contextOrOptions as InvalidateVersionCacheOptions | undefined;
+    cachedGetVersion.clear(_makeClearOptions(options));
+    return;
+  }
+
+  cachedGetVersion.clear({
+    key: _getVersionCacheKey(contextOrOptions as Context, parameters),
+    ..._makeClearOptions(parameters),
+  });
+}
+
+function _makeClearOptions(
+  options: InvalidateVersionCacheOptions | undefined,
+): { readonly includeInflight?: boolean } | undefined {
+  if (options?.includeInflight === undefined) {
+    return undefined;
+  }
+  return { includeInflight: options.includeInflight };
 }
 
 async function _getVersion(context: Context, parameters: Parameters): Promise<HostContractVersion> {
@@ -109,7 +165,8 @@ function parseVersion(version: string): HostContractVersion {
     contractName !== 'FHEVMExecutor' &&
     contractName !== 'InputVerifier' &&
     contractName !== 'KMSVerifier' &&
-    contractName !== 'HCULimit'
+    contractName !== 'HCULimit' &&
+    contractName !== 'ProtocolConfig'
   ) {
     throw new Error(err);
   }

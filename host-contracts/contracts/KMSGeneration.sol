@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import {IKMSGeneration} from "./interfaces/IKMSGeneration.sol";
 import {IProtocolConfig} from "./interfaces/IProtocolConfig.sol";
 import {KmsNode} from "./shared/Structs.sol";
+import {PREP_KEYGEN_COUNTER_BASE, KEY_COUNTER_BASE, CRS_COUNTER_BASE, EXTRA_DATA_V1, EXTRA_DATA_V2} from "./shared/Constants.sol";
 import {protocolConfigAdd} from "../addresses/FHEVMHostAddresses.sol";
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import {EIP712Upgradeable} from "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol";
@@ -89,30 +90,6 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
     IProtocolConfig private constant PROTOCOL_CONFIG = IProtocolConfig(protocolConfigAdd);
 
     // ----------------------------------------------------------------------------------------------
-    // Request type tags:
-    // ----------------------------------------------------------------------------------------------
-
-    // Top-byte request type tags kept compatible with the existing protocol encoding.
-    uint8 private constant PREP_KEYGEN_REQUEST_TYPE = 3;
-    uint8 private constant KEYGEN_REQUEST_TYPE = 4;
-    uint8 private constant CRSGEN_REQUEST_TYPE = 5;
-
-    // ----------------------------------------------------------------------------------------------
-    // Counter bases:
-    // ----------------------------------------------------------------------------------------------
-
-    uint256 private constant REQUEST_TYPE_SHIFT = 248;
-
-    // Preprocessing keygen requestId format in bytes: [0000 0011 | counter_1..31]
-    uint256 private constant PREP_KEYGEN_COUNTER_BASE = uint256(PREP_KEYGEN_REQUEST_TYPE) << REQUEST_TYPE_SHIFT;
-
-    // Keygen requestId format in bytes: [0000 0100 | counter_1..31]
-    uint256 private constant KEY_COUNTER_BASE = uint256(KEYGEN_REQUEST_TYPE) << REQUEST_TYPE_SHIFT;
-
-    // CRS generation requestId format in bytes: [0000 0101 | counter_1..31]
-    uint256 private constant CRS_COUNTER_BASE = uint256(CRSGEN_REQUEST_TYPE) << REQUEST_TYPE_SHIFT;
-
-    // ----------------------------------------------------------------------------------------------
     // Contract information:
     // ----------------------------------------------------------------------------------------------
 
@@ -126,22 +103,8 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
     uint256 private constant MINOR_VERSION = 2;
     uint256 private constant PATCH_VERSION = 0;
 
-    /**
-     * @dev Extra data versions
-     */
-    uint8 private constant EXTRA_DATA_V1 = 0x01;
-    /// @dev RFC-029 migration extraData: [version][contextId(32)][existingKeysetId(32)][copyToOriginal(1)].
-    /// The contextId sits at the same offset as v1; the trailing migration config is consumed by the
-    /// connector only, so on-chain context extraction treats v3 exactly like v1.
-    uint8 private constant EXTRA_DATA_V3 = 0x03;
-
-    /// @dev Canonical extraData wire lengths: v1 = [version(1)][contextId(32)] = 33 bytes;
-    /// v3 appends [existingKeysetId(32)][copyToOriginal(1)] for 66 bytes total.
-    uint256 private constant EXTRA_DATA_V1_LENGTH = 33;
-    uint256 private constant EXTRA_DATA_V3_LENGTH = 66;
-
     /// @dev RFC-029 is a one-time legacy -> migrated cutover, so the only valid migrated material
-    /// version is 1. Reject anything else until later versions have real storage + fetch semantics.
+    /// version is 1. addKeyMaterials / scheduleKeyMaterialMigration reject anything else.
     uint256 private constant MIGRATED_MATERIAL_VERSION = 1;
 
     /**
@@ -202,14 +165,20 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         // ----------------------------------------------------------------------------------------------
         /// @notice The parameters type used for the request
         mapping(uint256 requestId => ParamsType paramsType) requestParamsType;
-        /// @notice The extra data associated with each request (0x01 || contextId)
+        /// @notice Request extra data: v1 for migrated/imported state, v2 for new requests.
         mapping(uint256 requestId => bytes extraData) requestExtraData;
+        /// @notice Key IDs that reached consensus.
+        uint256[] completedKeyIds;
+        /// @notice CRS IDs that reached consensus.
+        uint256[] completedCrsIds;
         // ----------------------------------------------------------------------------------------------
-        // RFC-029 material-migration state variables (append-only):
+        // RFC-029 material-migration state (append-only):
         // ----------------------------------------------------------------------------------------------
-        /// @notice Migrated (v1) key material digests published under an existing keyId.
-        mapping(uint256 keyId => KeyDigest[] keyDigests) migratedKeyDigests;
-        /// @notice The published material version for a keyId (0 = none/legacy).
+        /// @notice Marks a keyId as a migration keygen (keygen-from-existing). keygenResponse then
+        /// publishes-not-activates: the freshly generated key is NOT activated; the migrated material
+        /// is published under the existing key by governance.
+        mapping(uint256 keyId => bool isMigration) isMigrationKeygen;
+        /// @notice Published material version for a keyId (0 = legacy/none, 1 = migrated).
         mapping(uint256 keyId => uint256 materialVersion) keyMaterialVersion;
     }
 
@@ -223,7 +192,7 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
 
     /**
      * @notice Loads a request's pinned context and authorizes the response sender against it.
-     * @dev Uses the request-time context, not the live context, so rotations do not invalidate
+     * @dev Uses the request-time context, not the latest active context, so rotations do not invalidate
      * in-flight responses from the original KMS committee.
      */
     function _loadExtraDataAndAuthorizeResponse(
@@ -263,25 +232,59 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {
+        KMSGenerationStorage storage $ = _getKMSGenerationStorage();
+
+        // Backfill completed key/CRS IDs from pre-V2 state. These arrays were added in V2: existing
+        // deployments reached consensus without populating them. "Completed" means consensus was
+        // reached, which is recorded by a non-zero consensusDigest, unlike `isRequestDone`, which is
+        // also set on abort (see abortKeygen/abortCrsgen).
+        for (uint256 keyId = KEY_COUNTER_BASE + 1; keyId <= $.keyCounter; keyId++) {
+            if ($.consensusDigest[keyId] != bytes32(0)) {
+                $.completedKeyIds.push(keyId);
+            }
+        }
+        for (uint256 crsId = CRS_COUNTER_BASE + 1; crsId <= $.crsCounter; crsId++) {
+            if ($.consensusDigest[crsId] != bytes32(0)) {
+                $.completedCrsIds.push(crsId);
+            }
+        }
+    }
 
     /**
      * @notice See {IKMSGeneration-keygen}.
      */
     function keygen(ParamsType paramsType) external virtual onlyACLOwner {
-        uint256 contextId = PROTOCOL_CONFIG.getCurrentKmsContextId();
-        _keygen(paramsType, _encodeRequestExtraData(contextId));
+        _keygen(paramsType);
     }
 
     /**
-     * @notice RFC-029: see {IKMSGeneration-keygen(ParamsType,bytes)}. Carries caller-supplied
-     * opaque extraData (e.g. a migration config the connector decodes) through to the events.
+     * @notice See {IKMSGeneration-migrationKeygen}.
+     * @dev RFC-029: a keygen-from-existing that re-derives `existingKeyId`'s material in the migrated
+     * (CompressedXofKeySet) format. The request is an ordinary keygen on-chain (normal v2 extraData,
+     * so the KMS signs it as usual), additionally flagged as a migration so keygenResponse
+     * publishes-not-activates. The connector reads MigrationKeygenRequested to drive the
+     * keygen-from-existing (UseExisting + copy-to-original) on the KMS.
      */
-    function keygen(ParamsType paramsType, bytes calldata extraData) external virtual onlyACLOwner {
-        _keygen(paramsType, extraData);
+    function migrationKeygen(
+        ParamsType paramsType,
+        uint256 existingKeyId,
+        bool copyToOriginal
+    ) external virtual onlyACLOwner {
+        KMSGenerationStorage storage $ = _getKMSGenerationStorage();
+        // The key being migrated must already exist (reached consensus).
+        if (!$.isRequestDone[existingKeyId]) {
+            revert KeygenNotRequested(existingKeyId);
+        }
+        (uint256 prepKeygenId, uint256 keyId) = _keygen(paramsType);
+        $.isMigrationKeygen[keyId] = true;
+        emit MigrationKeygenRequested(prepKeygenId, keyId, existingKeyId, copyToOriginal);
     }
 
-    function _keygen(ParamsType paramsType, bytes memory extraData) internal {
+    /// @dev Shared keygen-request body: allocates prepKeygenId/keyId, pins the v2 (context+epoch)
+    /// extraData, and emits PrepKeygenRequest. Returns the ids so callers can annotate the request
+    /// (e.g. migrationKeygen flagging it as a migration).
+    function _keygen(ParamsType paramsType) internal virtual returns (uint256 prepKeygenId, uint256 keyId) {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
 
         // Check that the previous keygen request has reached consensus
@@ -295,7 +298,7 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         // The counter is initialized at deployment such that prepKeygenId's first byte uniquely
         // represents a preprocessing keygen request, with format: [0000 0011 | counter_1..31]
         $.prepKeygenCounter++;
-        uint256 prepKeygenId = $.prepKeygenCounter;
+        prepKeygenId = $.prepKeygenCounter;
 
         // Generate a globally unique keyId for the key generation
         // The counter is initialized at deployment such that keyId's first byte uniquely
@@ -304,7 +307,7 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         // of key lifecycle: the keyId will be set to `Generating` status here
         // See https://github.com/zama-ai/fhevm-internal/issues/185
         $.keyCounter++;
-        uint256 keyId = $.keyCounter;
+        keyId = $.keyCounter;
 
         // Associate both the prepKeygenId and the keyId to each other in order to retrieve them later
         // Since IDs are globally unique, the IDs can't overlap and the same mapping can be used
@@ -316,6 +319,8 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         // has been generated
         $.requestParamsType[prepKeygenId] = paramsType;
 
+        (uint256 contextId, uint256 epochId) = PROTOCOL_CONFIG.getCurrentKmsContextAndEpoch();
+        bytes memory extraData = _encodeRequestExtraDataV2(contextId, epochId);
         $.requestExtraData[prepKeygenId] = extraData;
         $.requestExtraData[keyId] = extraData;
 
@@ -433,61 +438,26 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
 
             // Store the digest on which consensus was reached for the keygen request
             $.consensusDigest[keyId] = digest;
+            $.completedKeyIds.push(keyId);
 
-            string[] memory consensusUrls = _buildConsensusStorageUrls(contextId, consensusTxSenders);
-
-            // One consensus path, two finalizations: a v3 migration publishes under the existing
-            // key (publish-not-activate); anything else activates the freshly generated key.
-            if (extraData.length > 0 && uint8(extraData[0]) == EXTRA_DATA_V3) {
-                _finalizeMigration($, keyDigests, consensusUrls, extraData);
-            } else {
-                _finalizeActivation($, keyId, keyDigests, consensusUrls);
+            // RFC-029 publish-not-activate: a migration keygen (keygen-from-existing) is NOT
+            // activated -- its freshly generated key is a throwaway used only to produce the
+            // migrated material; that material is published under the EXISTING key by governance
+            // (addKeyMaterials). So skip moving activeKeyId / emitting ActivateKey for migrations.
+            if (!$.isMigrationKeygen[keyId]) {
+                $.activeKeyId = keyId;
+                string[] memory consensusUrls = _buildConsensusStorageUrls(contextId, consensusTxSenders);
+                emit ActivateKey(keyId, consensusUrls, keyDigests);
             }
-        }
-    }
-
-    /// @dev Normal keygen finalization: activate the freshly generated key.
-    function _finalizeActivation(
-        KMSGenerationStorage storage $,
-        uint256 keyId,
-        KeyDigest[] calldata keyDigests,
-        string[] memory consensusUrls
-    ) private {
-        $.activeKeyId = keyId;
-        emit ActivateKey(keyId, consensusUrls, keyDigests);
-    }
-
-    /// @dev RFC-029 publish-not-activate: the migration keygen re-derived the key material from the
-    /// EXISTING active key's shares. Publish it as migrated material UNDER that existing key (taken
-    /// from the v3 extraData), WITHOUT moving activeKeyId and WITHOUT emitting ActivateKey, so v0
-    /// (legacy) stays resolvable and the material-version cutover is governed solely by
-    /// scheduleKeyMaterialMigration. (kms-core copy_compressed_key_to_original places the migrated
-    /// keyset under the existing key's storage id for the coprocessor to fetch.)
-    function _finalizeMigration(
-        KMSGenerationStorage storage $,
-        KeyDigest[] calldata keyDigests,
-        string[] memory consensusUrls,
-        bytes memory extraData
-    ) private {
-        uint256 migratedKeyId = _extractMigrationExistingKeyId(extraData);
-        delete $.migratedKeyDigests[migratedKeyId];
-        for (uint256 i = 0; i < keyDigests.length; i++) {
-            $.migratedKeyDigests[migratedKeyId].push(keyDigests[i]);
-        }
-        $.keyMaterialVersion[migratedKeyId] = MIGRATED_MATERIAL_VERSION;
-        emit KeyMaterialAdded(migratedKeyId, consensusUrls, keyDigests, MIGRATED_MATERIAL_VERSION);
-    }
-
-    /// @dev RFC-029 is a one-time cutover: only material version 1 is schedulable/publishable.
-    function _requireSupportedMaterialVersion(uint256 materialVersion) private pure {
-        if (materialVersion != MIGRATED_MATERIAL_VERSION) {
-            revert UnsupportedMaterialVersion(materialVersion);
         }
     }
 
     /**
      * @notice See {IKMSGeneration-addKeyMaterials}.
-     * @dev Governance-published (see interface note). Publish-not-activate.
+     * @dev RFC-029 governance publish-not-activate: records the migrated material's version under an
+     * EXISTING key (NEVER moves activeKeyId) and emits KeyMaterialAdded for the coprocessor
+     * host-listener to download. No KMS signature is verified here -- governance is the ACL owner;
+     * the digests it supplies come from the (KMS-attested) migration keygen result.
      */
     function addKeyMaterials(
         uint256 keyId,
@@ -496,27 +466,17 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         uint256 materialVersion
     ) external virtual onlyACLOwner {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
-
-        // The key must already exist and be finalized; migrated material is published UNDER it.
-        if (keyId > $.keyCounter || keyId <= KEY_COUNTER_BASE) {
-            revert KeygenNotRequested(keyId);
-        }
         if (!$.isRequestDone[keyId]) {
-            revert KeyManagementRequestPending();
+            revert KeygenNotRequested(keyId);
         }
         if (keyDigests.length == 0) {
             revert EmptyKeyDigests(keyId);
         }
-        _requireSupportedMaterialVersion(materialVersion);
-
-        // Record the migrated digests + version and emit, but NEVER touch activeKeyId. The cutover
-        // is governed separately by scheduleKeyMaterialMigration.
-        delete $.migratedKeyDigests[keyId];
-        for (uint256 i = 0; i < keyDigests.length; i++) {
-            $.migratedKeyDigests[keyId].push(keyDigests[i]);
+        if (materialVersion != MIGRATED_MATERIAL_VERSION) {
+            revert UnsupportedMaterialVersion(materialVersion);
         }
-        $.keyMaterialVersion[keyId] = materialVersion;
 
+        $.keyMaterialVersion[keyId] = materialVersion;
         emit KeyMaterialAdded(keyId, kmsNodeStorageUrls, keyDigests, materialVersion);
     }
 
@@ -531,27 +491,19 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         uint256 materialVersion
     ) external virtual onlyACLOwner {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
-
-        if (keyId > $.keyCounter || keyId <= KEY_COUNTER_BASE) {
-            revert KeygenNotRequested(keyId);
-        }
         if (hostChainIds.length != hostMigrationBlocks.length) {
             revert MismatchedMigrationArrays();
         }
-        _requireSupportedMaterialVersion(materialVersion);
-        // Migrated material must already be published under this key, else the cutover would point
-        // coprocessors at material that does not exist (halt-and-retry forever).
+        if (materialVersion != MIGRATED_MATERIAL_VERSION) {
+            revert UnsupportedMaterialVersion(materialVersion);
+        }
+        // The migrated material must already be published under this key, else the cutover would
+        // point coprocessors at material that does not exist (halt-and-retry forever).
         if ($.keyMaterialVersion[keyId] != MIGRATED_MATERIAL_VERSION) {
             revert KeyMaterialNotPublished(keyId);
         }
 
-        emit KeyMaterialMigrationScheduled(
-            keyId,
-            hostChainIds,
-            hostMigrationBlocks,
-            gatewayMigrationBlock,
-            materialVersion
-        );
+        emit KeyMaterialMigrationScheduled(keyId, hostChainIds, hostMigrationBlocks, gatewayMigrationBlock, materialVersion);
     }
 
     /**
@@ -581,8 +533,8 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         // been generated
         $.requestParamsType[crsId] = paramsType;
 
-        uint256 contextId = PROTOCOL_CONFIG.getCurrentKmsContextId();
-        bytes memory extraData = _encodeRequestExtraData(contextId);
+        (uint256 contextId, uint256 epochId) = PROTOCOL_CONFIG.getCurrentKmsContextAndEpoch();
+        bytes memory extraData = _encodeRequestExtraDataV2(contextId, epochId);
         $.requestExtraData[crsId] = extraData;
 
         emit CrsgenRequest(crsId, maxBitLength, paramsType, extraData);
@@ -635,6 +587,7 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
 
             // Set the active CRS ID
             $.activeCrsId = crsId;
+            $.completedCrsIds.push(crsId);
 
             string[] memory consensusUrls = _buildConsensusStorageUrls(contextId, consensusTxSenders);
             emit ActivateCrs(crsId, consensusUrls, crsDigest);
@@ -784,6 +737,22 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
     }
 
     /**
+     * @notice See {IKMSGeneration-getCompletedKeyIds}.
+     */
+    function getCompletedKeyIds() external view virtual returns (uint256[] memory) {
+        KMSGenerationStorage storage $ = _getKMSGenerationStorage();
+        return $.completedKeyIds;
+    }
+
+    /**
+     * @notice See {IKMSGeneration-getCompletedCrsIds}.
+     */
+    function getCompletedCrsIds() external view virtual returns (uint256[] memory) {
+        KMSGenerationStorage storage $ = _getKMSGenerationStorage();
+        return $.completedCrsIds;
+    }
+
+    /**
      * @notice See {IKMSGeneration-getKeyMaterials}.
      */
     function getKeyMaterials(uint256 keyId) external view virtual returns (string[] memory, KeyDigest[] memory) {
@@ -801,6 +770,27 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         string[] memory consensusUrls = _buildConsensusStorageUrls(contextId, consensusTxSenders);
 
         return (consensusUrls, $.keyDigests[keyId]);
+    }
+
+    /**
+     * @notice See {IKMSGeneration-getKeyInfo}.
+     */
+    function getKeyInfo(uint256 keyId) external view virtual returns (KeyInfo memory) {
+        KMSGenerationStorage storage $ = _getKMSGenerationStorage();
+        if (!$.isRequestDone[keyId]) {
+            revert KeyNotGenerated(keyId);
+        }
+        if ($.consensusDigest[keyId] == bytes32(0)) {
+            revert KeyAborted(keyId);
+        }
+        uint256 prepKeygenId = $.keygenIdPairs[keyId];
+        return
+            KeyInfo({
+                prepKeygenId: prepKeygenId,
+                keyId: keyId,
+                paramsType: $.requestParamsType[prepKeygenId],
+                keyDigests: $.keyDigests[keyId]
+            });
     }
 
     /**
@@ -1014,7 +1004,7 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
     }
 
     /**
-     * @notice Extracts the KMS context ID from request extraData.
+     * @notice Extracts the context ID from the request extraData.
      * @param extraData The stored extra data.
      * @return contextId The extracted context ID, or the current context if extraData is empty.
      */
@@ -1026,44 +1016,27 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         }
 
         uint8 version = uint8(extraData[0]);
-        // v1 (RFC 003) and v3 (RFC 029 migration) both carry contextId at bytes [1..33].
-        // v3's trailing migration config (existingKeysetId, copyToOriginal) is decoded by the
-        // connector only and is ignored here, so context extraction is identical for both.
-        if (version != EXTRA_DATA_V1 && version != EXTRA_DATA_V3) {
+        if (version != EXTRA_DATA_V1 && version != EXTRA_DATA_V2) {
             revert UnsupportedExtraDataVersion(version);
         }
-        // Validate against the version's full canonical length, so a truncated v3 blob fails here
-        // with a clear error rather than later in _extractMigrationExistingKeyId.
-        uint256 minLength = (version == EXTRA_DATA_V3) ? EXTRA_DATA_V3_LENGTH : EXTRA_DATA_V1_LENGTH;
-        if (extraData.length < minLength) {
+        if (version == EXTRA_DATA_V1 && extraData.length != 33) {
             revert DeserializingExtraDataFail();
         }
-        // v1/v3 extraData layout: [version(1)] [contextId(32)] [...]
+        if (version == EXTRA_DATA_V2 && extraData.length != 65) {
+            revert DeserializingExtraDataFail();
+        }
+        // v1 extraData layout: [version(1)] [contextId(32)]
+        // v2 extraData layout: [version(1)] [contextId(32)] [epochId(32)]
         // mload at offset 33 reads 32 bytes starting after the 1-byte version prefix.
         assembly {
             contextId := mload(add(extraData, 33))
         }
     }
 
-    /**
-     * @notice RFC-029: extracts the existing keyset id a migration keygen re-derives from.
-     * @param extraData v3 migration extraData: [0x03][contextId(32)][existingKeysetId(32)][copyToOriginal(1)].
-     * @return existingKeyId The key the migrated material is published under (activeKeyId is unchanged).
-     */
-    function _extractMigrationExistingKeyId(
-        bytes memory extraData
-    ) internal pure virtual returns (uint256 existingKeyId) {
-        // existingKeysetId occupies bytes [33..65); mload at offset 65 reads it.
-        if (extraData.length < EXTRA_DATA_V3_LENGTH) {
-            revert DeserializingExtraDataFail();
-        }
-        assembly {
-            existingKeyId := mload(add(extraData, 65))
-        }
-    }
-
-    function _encodeRequestExtraData(uint256 contextId) internal pure virtual returns (bytes memory) {
-        // Encode V1 (contextId only) until resharing (RFC 005) is implemented.
-        return abi.encodePacked(EXTRA_DATA_V1, contextId);
+    function _encodeRequestExtraDataV2(
+        uint256 contextId,
+        uint256 epochId
+    ) internal pure virtual returns (bytes memory) {
+        return abi.encodePacked(EXTRA_DATA_V2, contextId, epochId);
     }
 }
