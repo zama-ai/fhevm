@@ -58,9 +58,9 @@ fn version_at(cutover: Option<i64>, observed: Option<i64>) -> MaterialVersion {
 /// regenerating the offline query cache.
 #[derive(Clone, Default)]
 pub struct MigrationScheduleCache {
-    /// Per host chain: its cutover block (H_C).
+    /// Per host chain: the block at/after which that chain uses migrated material.
     host: HashMap<ChainId, i64>,
-    /// The gateway cutover block (G), if scheduled.
+    /// The gateway cutover block (block at/after which inputs use migrated material), if scheduled.
     gateway: Option<i64>,
 }
 
@@ -142,9 +142,9 @@ mod tests {
 
     #[test]
     fn cutover_boundary_is_inclusive() {
-        assert_eq!(version_at(Some(100), Some(99)), V0); // before H_C
-        assert_eq!(version_at(Some(100), Some(100)), V1); // exactly H_C
-        assert_eq!(version_at(Some(100), Some(101)), V1); // after H_C
+        assert_eq!(version_at(Some(100), Some(99)), V0); // before the cutover block
+        assert_eq!(version_at(Some(100), Some(100)), V1); // at the cutover block
+        assert_eq!(version_at(Some(100), Some(101)), V1); // after the cutover block
         assert_eq!(version_at(Some(100), Some(10_000)), V1);
     }
 

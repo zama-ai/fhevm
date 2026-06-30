@@ -13,8 +13,8 @@ type Env = Record<string, string>;
 // and two host chains (L1 + a Polygon stand-in, chain-b). The 5-coprocessor
 // shape makes the zero-divergence assertion meaningful (any per-operation
 // material-version split across the fleet breaks consensus); the two-host-chain
-// shape exercises a per-chain cutover block (H_C) on each chain plus the single
-// gateway cutover block (G). Defined in scenarios/rfc029-cutover.yaml.
+// shape exercises a per-chain cutover block on each chain plus the single
+// gateway cutover block. Defined in scenarios/rfc029-cutover.yaml.
 export const scenario = "rfc029-cutover";
 
 // Single coherent target: the RFC-029 cutover is a coprocessor-INTERNAL material

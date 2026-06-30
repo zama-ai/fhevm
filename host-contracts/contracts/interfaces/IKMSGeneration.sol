@@ -158,9 +158,9 @@ interface IKMSGeneration {
     event KeyMaterialAdded(uint256 keyId, string[] kmsNodeStorageUrls, KeyDigest[] keyDigests, uint256 materialVersion);
 
     /**
-     * @notice RFC-029: emitted to schedule the material-version cutover. Per-host-chain migration
-     * blocks (H_C) + the gateway migration block (G); a coprocessor switches an operation to
-     * `materialVersion` once its anchoring block reaches the corresponding migration block.
+     * @notice RFC-029: emitted to schedule the material-version cutover. Carries a per-host-chain
+     * cutover block plus the gateway cutover block; a coprocessor switches an operation to
+     * `materialVersion` once its anchoring block reaches the corresponding cutover block.
      * @param keyId The key whose material is being migrated.
      * @param hostChainIds Host chain ids, parallel to hostMigrationBlocks.
      * @param hostMigrationBlocks Per-chain block at/after which the migrated material applies.

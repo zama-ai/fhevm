@@ -94,8 +94,8 @@ task('task:publishMigratedKeyMaterials')
 
 task('task:scheduleKeyMaterialMigration')
   .addParam('hostChainIds', 'Comma-separated host chain ids, parallel to hostMigrationBlocks.')
-  .addParam('hostMigrationBlocks', 'Comma-separated per-chain migration blocks (H_C).')
-  .addParam('gatewayMigrationBlock', 'Gateway migration block (G).')
+  .addParam('hostMigrationBlocks', 'Comma-separated per-host-chain cutover blocks (parallel to hostChainIds).')
+  .addParam('gatewayMigrationBlock', 'Gateway cutover block.')
   .addOptionalParam('keyId', 'Key id being migrated; defaults to the active key id.', '', types.string)
   .setAction(async function ({ hostChainIds, hostMigrationBlocks, gatewayMigrationBlock, keyId }, hre) {
     await hre.run('compile:specific', { contract: 'contracts' });

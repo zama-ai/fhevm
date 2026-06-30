@@ -57,11 +57,12 @@ export type MigrationScheduleArgs = {
 
 /**
  * Builds the scheduleKeyMaterialMigration arguments from each host chain's
- * current block height. Pure (heights are passed in) so the per-chain H_C and
- * gateway G computation is unit-testable without a running stack. EVERY host
- * chain in the topology gets its own H_C (parallel arrays), so the cutover is
- * scheduled on the canonical chain AND every non-canonical chain -- the
- * two-host-chain migration is genuinely covered, not just the canonical one.
+ * current block height. Pure (heights are passed in) so the per-chain host
+ * cutover block and the gateway cutover block computation is unit-testable
+ * without a running stack. EVERY host chain in the topology gets its own host
+ * cutover block (parallel arrays), so the cutover is scheduled on the canonical
+ * chain AND every non-canonical chain -- the two-host-chain migration is
+ * genuinely covered, not just the canonical one.
  */
 export const buildMigrationScheduleArgs = (
   hostChains: { key: string; chainId: string | number }[],
@@ -209,7 +210,7 @@ export default async function run(ctx: RolloutRunContext) {
   console.log(`[rollout] activeKeyId held at ${migratedKeyId}; waiting ${PUBLISH_GRACE_MS / 1000}s for v1 download fleet-wide`);
   await sleep(PUBLISH_GRACE_MS);
 
-  // 02 schedule -- publish the per-chain (H_C) + gateway (G) cutover blocks, set
+  // 02 schedule -- publish the per-host-chain + gateway cutover blocks, set
   // a small distance ahead of each chain's current height so the standard suite
   // crosses them mid-run.
   logPhase("02 schedule: publish the per-chain + gateway material-version cutover blocks");
@@ -241,16 +242,16 @@ export default async function run(ctx: RolloutRunContext) {
       `--gateway-migration-block ${gatewayMigrationBlock}`,
   );
   console.log(
-    `[rollout] cutover scheduled: chains=${hostChainIds.join(",")} H_C=${hostMigrationBlocks.join(",")} G=${gatewayMigrationBlock}`,
+    `[rollout] cutover scheduled: chains=${hostChainIds.join(",")} hostCutoverBlocks=${hostMigrationBlocks.join(",")} gatewayCutoverBlock=${gatewayMigrationBlock}`,
   );
 
   // 03 cross -- run workload across the cutover on BOTH host chains. rollout-standard
-  // exercises the canonical chain (its H_C) and the gateway (G); multi-chain-isolation
-  // additionally transacts on the non-canonical chain-b, so its H_C is genuinely
+  // exercises the canonical chain (its host cutover block) and the gateway; multi-chain-isolation
+  // additionally transacts on the non-canonical chain-b, so its host cutover block is genuinely
   // crossed too. Each coprocessor switches v0 -> v1 deterministically per chain
-  // (block < H_C ? v0 : v1). On a 3-of-5 fleet, any per-operation material-version
+  // (block < cutover block ? v0 : v1). On a 3-of-5 fleet, any per-operation material-version
   // split breaks consensus and turns this red -- so green is the zero-divergence
-  // proof through EVERY host_migration_block and the gateway_migration_block.
+  // proof through EVERY host cutover block and the gateway cutover block.
   logPhase("03 cross: run workload across the cutover on both host chains (3-of-5 consensus = zero-divergence detector)");
   await ctx.test("rollout-standard", { parallel: false });
   await ctx.test("multi-chain-isolation", { parallel: false });

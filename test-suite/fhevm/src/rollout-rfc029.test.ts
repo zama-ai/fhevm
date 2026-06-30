@@ -47,9 +47,9 @@ test("loads the checked-in rfc029-material-migration runbook", async () => {
   ).resolves.toBeFunction();
 });
 
-// --- schedule-arg prep: every host chain (canonical + non-canonical) gets an H_C ---
+// --- schedule-arg prep: every host chain (canonical + non-canonical) gets its own cutover block ---
 
-test("buildMigrationScheduleArgs gives every host chain its own H_C from its current block", () => {
+test("buildMigrationScheduleArgs gives every host chain its own cutover block from its current block", () => {
   const args = buildMigrationScheduleArgs(
     [
       { key: "host", chainId: "12345" }, // canonical
