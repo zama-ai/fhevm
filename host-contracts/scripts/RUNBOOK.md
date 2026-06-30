@@ -68,8 +68,7 @@ npm run prepare-coprocessor-upgrade -- \
   --duration 30m \
   --buffer 1h \
   --proposal-id 1 \
-  --software-version v0.14.0 \
-  --ciphertext-version 2
+  --software-version v0.14.0
 ```
 
 Output and calldata are identical to the workflow run. `--help` prints the full flag reference.

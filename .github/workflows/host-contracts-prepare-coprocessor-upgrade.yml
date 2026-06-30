@@ -51,11 +51,6 @@ on:
         description: "Coprocessor software version (e.g. v0.14.0)"
         required: true
         type: string
-      ciphertext-version:
-        description: "Ciphertext version (integer in [0, 32767])"
-        required: true
-        type: string
-        default: "2"
 
 jobs:
   compute:
@@ -110,7 +105,6 @@ jobs:
           BUFFER: ${{ inputs.buffer }}
           PROPOSAL_ID: ${{ inputs.proposal-id }}
           SOFTWARE_VERSION: ${{ inputs.software-version }}
-          CIPHERTEXT_VERSION: ${{ inputs.ciphertext-version }}
         run: |
           npm run --silent prepare-coprocessor-upgrade -- \
             --environment "$ENVIRONMENT" \
@@ -118,5 +112,4 @@ jobs:
             --duration "$DURATION" \
             --buffer "$BUFFER" \
             --proposal-id "$PROPOSAL_ID" \
-            --software-version "$SOFTWARE_VERSION" \
-            --ciphertext-version "$CIPHERTEXT_VERSION"
+            --software-version "$SOFTWARE_VERSION"
