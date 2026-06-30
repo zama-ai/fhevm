@@ -22,6 +22,9 @@ import { getRequiredEnvVar, loadHostAddresses } from './utils/loadVariables';
 // Layout: [0x03][contextId(32)][existingKeysetId(32)][copyToOriginal(1)] == 66 bytes.
 const EXTRA_DATA_V3 = 3;
 
+// RFC-029 cutover material version (0 = legacy, 1 = migrated CompressedXofKeySet).
+const MIGRATED_MATERIAL_VERSION = 1;
+
 async function getKmsGeneration(hre: any) {
   const deployerPrivateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
   const deployer = new hre.ethers.Wallet(deployerPrivateKey).connect(hre.ethers.provider);
@@ -70,11 +73,68 @@ task('task:triggerMigrationKeygen')
     console.log('Migration keygen triggered.');
   });
 
-// NOTE: there is intentionally no governance "publish" task. The migration keygen's
-// keygenResponse (v3 extraData) publishes the re-derived material under the existing key directly
-// (publish-not-activate). A governance addKeyMaterials path would have to source the *migrated*
-// digests, which are not retrievable on-chain (getKeyMaterials returns the original keygen digests),
-// so it is omitted rather than shipped wrong.
+// RFC-029 GOVERNANCE PUBLISH (path that needs no KMS on-chain signature).
+// The migration keygen produced the migrated CompressedXofKeySet (kms-core copied it under the
+// existing key id via copy_compressed_key_to_original). The KMS-attested digests for it are carried
+// in the KeygenResponse event the connector forwards (emitted on every call, independent of whether
+// on-chain consensus forms). Governance reads those digests, reuses the existing key's per-node
+// storage URLs, and publishes under the EXISTING key via addKeyMaterials -- emitting KeyMaterialAdded
+// with NO KMS signature verification, so it is unaffected by the v3-extraData signing mismatch.
+task('task:publishMigratedKeyMaterials')
+  .addOptionalParam(
+    'keyId',
+    'Existing key to publish migrated material under; defaults to the active key.',
+    '',
+    types.string,
+  )
+  .addOptionalParam('lookbackBlocks', 'Recent blocks to scan for the migration KeygenResponse.', 50000, types.int)
+  .addOptionalParam('timeoutMs', 'How long to wait for the migration keygen result event.', 20 * 60 * 1000, types.int)
+  .setAction(async function ({ keyId, lookbackBlocks, timeoutMs }, hre) {
+    await hre.run('compile:specific', { contract: 'contracts' });
+    loadHostAddresses();
+
+    const { kmsGeneration } = await getKmsGeneration(hre);
+    const existingKeyId: bigint = keyId ? BigInt(keyId) : await kmsGeneration.getActiveKeyId();
+
+    // Wait for the migration keygen to produce a result on-chain. The migration keygen is the only
+    // keygen in flight this phase; take the latest KeygenResponse carrying a Server-type (the
+    // migrated keyset) digest.
+    const deadline = Date.now() + timeoutMs;
+    let migratedDigests: unknown[] | null = null;
+    while (Date.now() < deadline) {
+      const tip = await hre.ethers.provider.getBlockNumber();
+      const fromBlock = Math.max(0, tip - lookbackBlocks);
+      const events = await kmsGeneration.queryFilter(kmsGeneration.filters.KeygenResponse(), fromBlock, tip);
+      const withServerDigest = events.filter((e: any) =>
+        (e.args?.keyDigests ?? []).some((d: any) => Number(d.keyType) === 0),
+      );
+      if (withServerDigest.length > 0) {
+        const latest = withServerDigest[withServerDigest.length - 1] as any;
+        migratedDigests = latest.args.keyDigests;
+        console.log(`RFC-029 publish: using migrated digests from KeygenResponse key_id=${latest.args.keyId}`);
+        break;
+      }
+      console.log('[publish] waiting for the migration KeygenResponse event...');
+      await new Promise((resolve) => setTimeout(resolve, 15_000));
+    }
+    if (!migratedDigests) {
+      throw new Error('no migration KeygenResponse event observed within timeout; did the keygen produce a result?');
+    }
+
+    // Reuse the existing key's per-KMS-node storage URLs: the migrated keyset lives under the same
+    // nodes (copied to the existing key id), and the host-listener builds the object path from keyId.
+    const [urls] = await kmsGeneration.getKeyMaterials(existingKeyId);
+    if (urls.length === 0) {
+      throw new Error(`no storage URLs found for existing key ${existingKeyId}`);
+    }
+
+    console.log(
+      `RFC-029 governance publish: keyId=${existingKeyId} version=${MIGRATED_MATERIAL_VERSION} digests=${migratedDigests.length} urls=${urls.length}`,
+    );
+    const tx = await kmsGeneration.addKeyMaterials(existingKeyId, migratedDigests, urls, MIGRATED_MATERIAL_VERSION);
+    await tx.wait();
+    console.log('Migrated key materials published via governance addKeyMaterials (KeyMaterialAdded emitted).');
+  });
 
 task('task:scheduleKeyMaterialMigration')
   .addParam('hostChainIds', 'Comma-separated host chain ids, parallel to hostMigrationBlocks.')

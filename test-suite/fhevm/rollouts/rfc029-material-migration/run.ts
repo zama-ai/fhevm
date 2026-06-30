@@ -110,9 +110,9 @@ const activeKeyId = (ctx: RolloutRunContext): Promise<bigint> => readKmsGenerati
 
 /**
  * Polls until the migrated material (version 1) is published under `keyId`. RFC-029 is
- * publish-not-activate: the migration keygen does NOT advance activeKeyId, it emits
- * KeyMaterialAdded under the existing key once consensus is reached, which sets
- * keyMaterialVersion[keyId] = 1. Logs progress so the (slow) MPC cycle is observable.
+ * publish-not-activate: governance's addKeyMaterials emits KeyMaterialAdded under the existing key
+ * (without advancing activeKeyId), which sets keyMaterialVersion[keyId] = 1. Logs progress so the
+ * (slow) keygen + publish cycle is observable.
  */
 const waitForMaterialPublished = async (ctx: RolloutRunContext, keyId: bigint): Promise<void> => {
   const started = Date.now();
@@ -156,16 +156,21 @@ export default async function run(ctx: RolloutRunContext) {
   });
   await ctx.test("rollout-standard", { parallel: false });
 
-  // 01 publish -- drive a real migration keygen-from-existing under the ACTIVE key.
-  // RFC-029 publish-not-activate: the keygen re-derives the active key's material in the
-  // migrated format; on KMS consensus the contract emits KeyMaterialAdded UNDER the existing
-  // key and does NOT advance activeKeyId (so v0/legacy stays resolvable and the cutover is a
-  // genuine v0->v1 switch, not a new-active-key swap). We wait for keyMaterialVersion(activeKey)
-  // to reach 1, then for the host-listener to download v1 into keys.migrated_xof_keyset fleet-wide.
-  logPhase("01 publish: migration keygen-from-existing -> KeyMaterialAdded under the unchanged active key");
+  // 01 publish -- drive a real migration keygen-from-existing, then have GOVERNANCE publish the
+  // migrated material under the ACTIVE key via addKeyMaterials. RFC-029 publish-not-activate: the
+  // keygen re-derives the active key's material in migrated (CompressedXofKeySet) form; governance
+  // publishes it UNDER the existing key (KeyMaterialAdded, no activeKeyId move, no KMS on-chain
+  // signature). We then wait for keyMaterialVersion(activeKey)=1 and the host-listener to download
+  // v1 into keys.migrated_xof_keyset fleet-wide. (We deliberately do NOT rely on the keygenResponse
+  // KMS-consensus path: the pinned kms-core does not sign the v3 migration extraData, so governance
+  // publishes directly -- the "DAO drives the cutover" model.)
+  logPhase("01 publish: migration keygen-from-existing -> governance addKeyMaterials under the unchanged active key");
   const state = await ctx.readState();
   const migratedKeyId = await activeKeyId(ctx); // the key being migrated; stays active throughout
   await ctx.runHostContractTask(`npx hardhat task:triggerMigrationKeygen --params-type ${PARAMS_TYPE_TEST}`);
+  // Governance publish: waits for the keygen result, reads the KMS-attested migrated digests from the
+  // KeygenResponse event, and emits KeyMaterialAdded under the existing key.
+  await ctx.runHostContractTask(`npx hardhat task:publishMigratedKeyMaterials`);
   await waitForMaterialPublished(ctx, migratedKeyId);
   const stillActive = await activeKeyId(ctx);
   if (stillActive !== migratedKeyId) {
