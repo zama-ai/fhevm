@@ -1,4 +1,8 @@
 //! Sets the per-`fhe_eval` total HCU limit (mirrors EVM `setMaxHCUPerTx`).
+//!
+//! Naming note: the field is `max_hcu_per_tx` to match EVM's `setMaxHCUPerTx`, but on Solana the
+//! limit is enforced per `fhe_eval` frame, which can be smaller than a whole transaction (a tx may
+//! contain several frames). The EVM-aligned name is intentional; the scope difference is by design.
 
 use anchor_lang::prelude::*;
 
@@ -16,6 +20,9 @@ use super::set_host_pause::HostAdmin;
 pub fn set_max_hcu_per_tx(ctx: Context<HostAdmin>, value: u64) -> Result<()> {
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
     assert_admin(&ctx.accounts.host_config, ctx.accounts.admin.key())?;
+    if ctx.accounts.host_config.max_hcu_per_tx == value {
+        return Ok(());
+    }
     let admin = ctx.accounts.admin.key();
     let config = &mut ctx.accounts.host_config;
     // The new total must not fall below the current depth limit (0 = unlimited on either side).
