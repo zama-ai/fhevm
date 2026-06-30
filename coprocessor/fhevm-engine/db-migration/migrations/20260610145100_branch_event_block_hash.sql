@@ -138,9 +138,7 @@ BEGIN
     -- against the pbs-context trigger below, which writes the same rows while
     -- reading ciphertext_digest. Without this common lock the two triggers can
     -- acquire ciphertext_digest_branch row locks in opposite order and deadlock.
-    -- Transaction-scoped: released automatically at commit/rollback. Acquired
-    -- OUTSIDE the exception block below so the deadlock-avoidance ordering is
-    -- unconditional and not affected by the subtransaction's rollback.
+    -- Transaction-scoped: released automatically at commit/rollback.
     PERFORM pg_advisory_xact_lock(
         hashtextextended(
             COALESCE(NEW.host_chain_id, OLD.host_chain_id)::text
@@ -149,103 +147,81 @@ BEGIN
         )
     );
 
-    -- Wave-1: this mirror is best-effort and must never abort the authoritative
-    -- legacy ciphertext_digest write that fired the trigger -- sns-worker and
-    -- transaction-sender do NOT savepoint-wrap that write, so an unhandled error
-    -- here would roll back their legacy write. Run the mirror in a subtransaction
-    -- so a deterministic branch-side failure (e.g. a CHECK/constraint violation)
-    -- is logged and swallowed, mirroring the Rust-side savepoint isolation used
-    -- by the host-listener dual-writes.
-    --
-    -- WHEN OTHERS deliberately does NOT catch query_canceled (57014): the 10s
-    -- statement_timeout still aborts the statement so the writer retries the
-    -- whole op (self-healing, keeping the branch mirror complete) instead of
-    -- silently dropping it.
-    BEGIN
-        IF TG_OP = 'DELETE' THEN
-            DELETE FROM ciphertext_digest_branch
-             WHERE handle = OLD.handle
-               AND host_chain_id = OLD.host_chain_id
-               AND producer_block_hash = ''::BYTEA
-               AND block_hash = ''::BYTEA;
-            RETURN OLD;
-        END IF;
+    IF TG_OP = 'DELETE' THEN
+        DELETE FROM ciphertext_digest_branch
+         WHERE handle = OLD.handle
+           AND host_chain_id = OLD.host_chain_id
+           AND producer_block_hash = ''::BYTEA
+           AND block_hash = ''::BYTEA;
+        RETURN OLD;
+    END IF;
 
-        IF TG_OP = 'UPDATE'
-           AND (
-                OLD.handle IS DISTINCT FROM NEW.handle
-                OR OLD.host_chain_id IS DISTINCT FROM NEW.host_chain_id
-           )
-        THEN
-            DELETE FROM ciphertext_digest_branch
-             WHERE handle = OLD.handle
-               AND host_chain_id = OLD.host_chain_id
-               AND producer_block_hash = ''::BYTEA
-               AND block_hash = ''::BYTEA;
-        END IF;
+    IF TG_OP = 'UPDATE'
+       AND (
+            OLD.handle IS DISTINCT FROM NEW.handle
+            OR OLD.host_chain_id IS DISTINCT FROM NEW.host_chain_id
+       )
+    THEN
+        DELETE FROM ciphertext_digest_branch
+         WHERE handle = OLD.handle
+           AND host_chain_id = OLD.host_chain_id
+           AND producer_block_hash = ''::BYTEA
+           AND block_hash = ''::BYTEA;
+    END IF;
 
-        SELECT COUNT(*)
-          INTO _context_count
-          FROM pbs_computations_branch
-         WHERE host_chain_id = NEW.host_chain_id
-           AND handle = NEW.handle;
+    SELECT COUNT(*)
+      INTO _context_count
+      FROM pbs_computations_branch
+     WHERE host_chain_id = NEW.host_chain_id
+       AND handle = NEW.handle;
 
-        IF _context_count = 0 THEN
+    IF _context_count = 0 THEN
+        PERFORM upsert_ciphertext_digest_branch_from_legacy(
+            NEW,
+            ''::BYTEA,
+            NULL,
+            ''::BYTEA
+        );
+    ELSE
+        FOR _context IN
+            SELECT DISTINCT producer_block_hash, block_number, block_hash
+              FROM pbs_computations_branch
+             WHERE host_chain_id = NEW.host_chain_id
+               AND handle = NEW.handle
+        LOOP
             PERFORM upsert_ciphertext_digest_branch_from_legacy(
                 NEW,
-                ''::BYTEA,
-                NULL,
-                ''::BYTEA
+                _context.producer_block_hash,
+                _context.block_number,
+                _context.block_hash
             );
-        ELSE
-            FOR _context IN
-                SELECT DISTINCT producer_block_hash, block_number, block_hash
-                  FROM pbs_computations_branch
-                 WHERE host_chain_id = NEW.host_chain_id
-                   AND handle = NEW.handle
-            LOOP
-                PERFORM upsert_ciphertext_digest_branch_from_legacy(
-                    NEW,
-                    _context.producer_block_hash,
-                    _context.block_number,
-                    _context.block_hash
-                );
-            END LOOP;
+        END LOOP;
 
-            IF EXISTS (
-                SELECT 1
-                  FROM pbs_computations_branch
-                 WHERE host_chain_id = NEW.host_chain_id
-                   AND handle = NEW.handle
-                   AND (
-                        producer_block_hash <> ''::BYTEA
-                        OR block_hash <> ''::BYTEA
-                   )
-            )
-            AND NOT EXISTS (
-                SELECT 1
-                  FROM pbs_computations_branch
-                 WHERE host_chain_id = NEW.host_chain_id
-                   AND handle = NEW.handle
-                   AND producer_block_hash = ''::BYTEA
-                   AND block_hash = ''::BYTEA
-            ) THEN
-                DELETE FROM ciphertext_digest_branch
-                 WHERE handle = NEW.handle
-                   AND host_chain_id = NEW.host_chain_id
-                   AND producer_block_hash = ''::BYTEA
-                   AND block_hash = ''::BYTEA;
-            END IF;
+        IF EXISTS (
+            SELECT 1
+              FROM pbs_computations_branch
+             WHERE host_chain_id = NEW.host_chain_id
+               AND handle = NEW.handle
+               AND (
+                    producer_block_hash <> ''::BYTEA
+                    OR block_hash <> ''::BYTEA
+               )
+        )
+        AND NOT EXISTS (
+            SELECT 1
+              FROM pbs_computations_branch
+             WHERE host_chain_id = NEW.host_chain_id
+               AND handle = NEW.handle
+               AND producer_block_hash = ''::BYTEA
+               AND block_hash = ''::BYTEA
+        ) THEN
+            DELETE FROM ciphertext_digest_branch
+             WHERE handle = NEW.handle
+               AND host_chain_id = NEW.host_chain_id
+               AND producer_block_hash = ''::BYTEA
+               AND block_hash = ''::BYTEA;
         END IF;
-    EXCEPTION
-        WHEN OTHERS THEN
-            RAISE WARNING
-                'wave1 ciphertext_digest branch mirror skipped (handle=%, host_chain_id=%, sqlstate=%): %',
-                encode(COALESCE(NEW.handle, OLD.handle), 'hex'),
-                COALESCE(NEW.host_chain_id, OLD.host_chain_id),
-                SQLSTATE,
-                SQLERRM;
-    END;
+    END IF;
 
     RETURN NEW;
 END;

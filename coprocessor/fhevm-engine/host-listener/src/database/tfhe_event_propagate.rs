@@ -347,8 +347,11 @@ impl Database {
     pub async fn wait_for_branch_schema(&self) -> Result<()> {
         const MAX_ATTEMPTS: u32 = 60; // ~2 minutes at one poll / 2s
         const POLL_INTERVAL: Duration = Duration::from_secs(2);
-        let mut attempt: u32 = 0;
-        loop {
+        for attempt in 0..MAX_ATTEMPTS {
+            // Wait between polls, but not before the first one.
+            if attempt > 0 {
+                tokio::time::sleep(POLL_INTERVAL).await;
+            }
             let pool = self.pool().await;
             let ready: bool = sqlx::query_scalar!(
                 r#"
@@ -376,19 +379,15 @@ impl Database {
                 }
                 return Ok(());
             }
-            attempt += 1;
-            if attempt >= MAX_ATTEMPTS {
-                anyhow::bail!(
-                    "branch-context (wave1) schema not present after waiting; \
-                     is the db-migration job complete?"
-                );
-            }
             warn!(
                 attempt,
                 "Branch-context (wave1) schema not yet present; waiting before ingesting..."
             );
-            tokio::time::sleep(POLL_INTERVAL).await;
         }
+        anyhow::bail!(
+            "branch-context (wave1) schema not present after waiting; \
+             is the db-migration job complete?"
+        );
     }
 
     pub(crate) fn record_slow_lane_marked_chains(&self, count: u64) {
