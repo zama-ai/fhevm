@@ -69,12 +69,10 @@ impl PostgresPoolManager {
                 .after_connect(move |conn, _meta| {
                     info!(auto_explain = ?auto_explain_with_min_duration, "New DB connection established");
                     Box::pin(async move {
-                        // Bound every statement on this pooled connection at 10s,
-                        // matching the host-listener. This caps the wave1
-                        // ciphertext_digest mirror-trigger fan-out (COUNT + DISTINCT
-                        // loop + N upserts) fired from sns-worker, so a pathological
-                        // reorg fan-out cannot hold row locks unbounded. Non-fatal:
-                        // a failed SET just leaves the connection without the bound.
+                        // Bound every statement on this pooled connection at 10s
+                        // so a pathological query cannot run (or hold row locks)
+                        // unbounded. Non-fatal: a failed SET just leaves the
+                        // connection without the bound.
                         if let Err(err) = (&mut *conn)
                             .execute("SET statement_timeout = '10s'")
                             .await

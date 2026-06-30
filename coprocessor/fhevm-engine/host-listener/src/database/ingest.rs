@@ -415,6 +415,14 @@ pub async fn ingest_block_logs(
         }
     }
 
+    // ACL events are processed only after every tfhe compute event for this
+    // block has been inserted into computations_branch. handle_acl_event
+    // resolves each allowed handle's producer block by matching
+    // computations_branch against the current-branch ancestry (which includes
+    // this block); a handle produced *and* allowed within this same block only
+    // has its producer row once the loop above has run. Resolving ACL events
+    // earlier would miss the same-block producer and fall back to branchless,
+    // spuriously incrementing host_listener_unresolved_producer_block_total.
     for (event, transaction_hash) in acl_event_log {
         let inserted = db
             .handle_acl_event(

@@ -15,7 +15,7 @@ use aws_config::BehaviorVersion;
 use clap::Parser;
 use fhevm_engine_common::database::{
     connect_pool_with_options_and_connect_options, resolve_database_url_from_option,
-    with_statement_timeout_10s,
+    with_statement_timeout,
 };
 use fhevm_engine_common::drift_revert;
 use tokio::signal::unix::{signal, SignalKind};
@@ -320,9 +320,8 @@ async fn main() -> anyhow::Result<()> {
         &database_url,
         sqlx::postgres::PgPoolOptions::new().max_connections(conf.database_pool_size),
         Some(&cancel_token),
-        // Bound the wave1 ciphertext_digest mirror-trigger fan-out fired from
-        // this writer; without it the trigger has no DB-level cancellation.
-        with_statement_timeout_10s,
+        // Bound this writer's statements so none can run unbounded against the DB.
+        |options| with_statement_timeout(options, Duration::from_secs(10)),
     )
     .await?;
 

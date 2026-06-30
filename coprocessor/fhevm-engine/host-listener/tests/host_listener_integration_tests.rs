@@ -4197,15 +4197,16 @@ async fn test_wave1_reorg_cleanup_preserves_legacy_ciphertext_bytes(
     Ok(())
 }
 
-/// Wave-1 digest mirror hardening: a deterministic failure of the branchless
-/// `ciphertext_digest` mirror must NOT abort the authoritative legacy
-/// `ciphertext_digest` write (sns-worker / transaction-sender do not
-/// savepoint-wrap it). We poison `ciphertext_digest_branch` so the trigger's
-/// branch upsert fails; the hardened trigger must catch it and let the legacy
-/// write commit.
+/// Wave-1 branch dual-write strictness (require-branch-writes): the
+/// `ciphertext_digest` branch mirror is required, so a deterministic failure of
+/// the branchless mirror must ABORT the authoritative legacy `ciphertext_digest`
+/// write rather than be silently swallowed -- a missing branch row would break
+/// wave-2 consumers. We poison `ciphertext_digest_branch` so the trigger's
+/// branch upsert fails; the legacy INSERT must then fail and roll back, leaving
+/// neither the legacy row nor any branch row.
 #[tokio::test]
 #[serial(db)]
-async fn test_wave1_digest_mirror_failure_preserves_legacy_digest_write(
+async fn test_wave1_digest_mirror_failure_aborts_legacy_digest_write(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let test_instance =
         test_harness::instance::setup_test_db(ImportMode::WithKeysNoSns)
@@ -4227,9 +4228,10 @@ async fn test_wave1_digest_mirror_failure_preserves_legacy_digest_write(
     .execute(&pool)
     .await?;
 
-    // Fires mirror_ciphertext_digest_branchless. Without the trigger's EXCEPTION
-    // guard, the branch upsert's failure would abort this legacy INSERT.
-    sqlx::query(
+    // Fires mirror_ciphertext_digest_branchless. The branch upsert violates the
+    // poison CHECK and, with no EXCEPTION guard, the error propagates and aborts
+    // this legacy INSERT (autocommit -> the whole statement rolls back).
+    let result = sqlx::query(
         "INSERT INTO ciphertext_digest (host_chain_id, key_id_gw, handle, ciphertext, ciphertext128)
          VALUES ($1, $2, $3, $4, $5)",
     )
@@ -4239,7 +4241,11 @@ async fn test_wave1_digest_mirror_failure_preserves_legacy_digest_write(
     .bind(vec![0x83_u8; 32])
     .bind(vec![0x84_u8; 48])
     .execute(&pool)
-    .await?;
+    .await;
+    assert!(
+        result.is_err(),
+        "a failing required branch mirror must abort the legacy ciphertext_digest write"
+    );
 
     let legacy_digest: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM ciphertext_digest WHERE host_chain_id = $1 AND handle = $2",
@@ -4249,8 +4255,8 @@ async fn test_wave1_digest_mirror_failure_preserves_legacy_digest_write(
     .fetch_one(&pool)
     .await?;
     assert_eq!(
-        legacy_digest, 1,
-        "legacy ciphertext_digest write must survive a failing branch mirror"
+        legacy_digest, 0,
+        "legacy ciphertext_digest write must roll back when the branch mirror fails"
     );
 
     let branch_digest: i64 = sqlx::query_scalar(
@@ -4262,7 +4268,7 @@ async fn test_wave1_digest_mirror_failure_preserves_legacy_digest_write(
     .await?;
     assert_eq!(
         branch_digest, 0,
-        "the poisoned branch mirror must have been rolled back, not committed"
+        "the poisoned branch mirror must not have committed any row"
     );
 
     Ok(())
