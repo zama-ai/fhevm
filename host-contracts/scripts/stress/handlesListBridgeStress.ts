@@ -35,15 +35,24 @@
  *
  * Usage:
  *   ts-node --transpile-only scripts/stress/handlesListBridgeStress.ts <source>
- *     <source> = sepolia | amoy   (the lzSend originates on this chain; the other is the destination)
+ *     <source> = sepolia | amoy           (testnet, BRIDGE_ENV=testnet, the default)
+ *     <source> = ethereum | polygon       (mainnet, BRIDGE_ENV=mainnet)
+ *   (the lzSend originates on <source>; the other chain of the same environment is the destination)
  *
- * Required env (.env at repo root): DEPLOYER_PRIVATE_KEY, and the per-chain RPC URLs
- * (SEPOLIA_RPC_URL, POLYGON_AMOY_RPC_URL). The app/bridge addresses are read from the
- * per-chain snapshots addresses-sepolia/.env.host and addresses-amoy/.env.host.
+ * The environment is selected by `BRIDGE_ENV` (`testnet` by default, or `mainnet`). The
+ * source/destination pair is then resolved within that environment.
+ *
+ * Required env (.env at repo root): DEPLOYER_PRIVATE_KEY, and the per-chain RPC URLs:
+ *   - testnet: SEPOLIA_RPC_URL, POLYGON_AMOY_RPC_URL
+ *   - mainnet: ETHEREUM_MAINNET_RPC_URL, POLYGON_MAINNET_RPC_URL
+ * The app/bridge addresses are read from the per-chain snapshots:
+ *   - testnet: addresses-sepolia/.env.host, addresses-amoy/.env.host
+ *   - mainnet: addresses-ethereum/.env.host, addresses-polygon/.env.host
  *
  * Optional env: per-chain EndpointV2 address overrides (SEPOLIA_LZ_ENDPOINT,
- * POLYGON_AMOY_LZ_ENDPOINT). These default to the shared testnet endpoint; set them when
- * the EndpointV2 address differs (e.g. mainnets) so the script can be reused there.
+ * POLYGON_AMOY_LZ_ENDPOINT, ETHEREUM_LZ_ENDPOINT, POLYGON_LZ_ENDPOINT). Each chain defaults
+ * to the correct shared endpoint for its environment (testnet vs mainnet); override only if
+ * a specific chain's EndpointV2 address differs.
  */
 import * as dotenv from 'dotenv';
 import { ethers } from 'ethers';
@@ -52,9 +61,12 @@ import { resolve } from 'path';
 
 dotenv.config({ path: resolve(__dirname, '..', '..', '.env') });
 
-// Default LayerZero V2 endpoint. Same address on all *testnets*, but NOT guaranteed on
-// mainnets — so each chain can override it via its `endpointEnvVar` env var (see CHAINS).
-const DEFAULT_LZ_ENDPOINT = '0x6EDCE65403992e310A62460808c4b910D972f10f';
+// Default LayerZero V2 endpoint addresses. Same address on all *testnets*; on mainnets the
+// address is NOT guaranteed identical across chains but happens to match on Ethereum and
+// Polygon mainnet. Each chain picks its environment default and can still override it via
+// its `endpointEnvVar` env var (see CHAINS).
+const TESTNET_LZ_ENDPOINT = '0x6EDCE65403992e310A62460808c4b910D972f10f';
+const MAINNET_LZ_ENDPOINT = '0x1a44076050125825900e736c501f859c50fE728c';
 
 // guid lives at byte offset 81 (len 32) inside the PacketV1 encodedPayload (see
 // PacketV1Codec: version[1] nonce[8] srcEid[4] sender[32] dstEid[4] receiver[32] = 81).
@@ -89,7 +101,11 @@ const HANDLES_APP_ABI = [
   'function generateAndSendHandlesList(uint32 dstEid, uint256 countHandles, bytes customPayload, uint64 lzComposeGas) payable returns (tuple(bytes32 guid, uint64 nonce, tuple(uint256 nativeFee, uint256 lzTokenFee) fee) receipt)',
 ];
 
+type BridgeEnv = 'testnet' | 'mainnet';
+
 interface ChainSpec {
+  /** Environment this chain belongs to. Source/destination are paired within one env. */
+  env: BridgeEnv;
   name: string;
   aliases: string[];
   chainId: number;
@@ -98,12 +114,16 @@ interface ChainSpec {
   rpcDefault: string;
   addressesEnv: string;
   // Optional override for the EndpointV2 address on this chain (defaults to
-  // DEFAULT_LZ_ENDPOINT). Needed for mainnets where the endpoint address may differ.
+  // `endpointDefault`). Needed if a chain's endpoint address differs.
   endpointEnvVar: string;
+  // Environment-appropriate default EndpointV2 address.
+  endpointDefault: string;
 }
 
 const CHAINS: ChainSpec[] = [
+  // ── testnet ──────────────────────────────────────────────────────────────
   {
+    env: 'testnet',
     name: 'sepolia',
     aliases: ['sepolia', 'eth', 'ethereum'],
     chainId: 11155111,
@@ -112,8 +132,10 @@ const CHAINS: ChainSpec[] = [
     rpcDefault: 'https://sepolia.drpc.org',
     addressesEnv: 'addresses-sepolia/.env.host',
     endpointEnvVar: 'SEPOLIA_LZ_ENDPOINT',
+    endpointDefault: TESTNET_LZ_ENDPOINT,
   },
   {
+    env: 'testnet',
     name: 'polygonAmoy',
     aliases: ['polygonamoy', 'amoy', 'polygon-amoy', 'polygon'],
     chainId: 80002,
@@ -122,8 +144,42 @@ const CHAINS: ChainSpec[] = [
     rpcDefault: 'https://rpc-amoy.polygon.technology',
     addressesEnv: 'addresses-amoy/.env.host',
     endpointEnvVar: 'POLYGON_AMOY_LZ_ENDPOINT',
+    endpointDefault: TESTNET_LZ_ENDPOINT,
+  },
+  // ── mainnet ──────────────────────────────────────────────────────────────
+  {
+    env: 'mainnet',
+    name: 'ethereum',
+    aliases: ['ethereum', 'eth', 'mainnet', 'ethereum-mainnet'],
+    chainId: 1,
+    lzEid: 30101,
+    rpcEnvVar: 'ETHEREUM_MAINNET_RPC_URL',
+    rpcDefault: 'https://eth.llamarpc.com',
+    addressesEnv: 'addresses-ethereum/.env.host',
+    endpointEnvVar: 'ETHEREUM_LZ_ENDPOINT',
+    endpointDefault: MAINNET_LZ_ENDPOINT,
+  },
+  {
+    env: 'mainnet',
+    name: 'polygon',
+    aliases: ['polygon', 'matic', 'polygon-mainnet'],
+    chainId: 137,
+    lzEid: 30109,
+    rpcEnvVar: 'POLYGON_MAINNET_RPC_URL',
+    rpcDefault: 'https://polygon-rpc.com',
+    addressesEnv: 'addresses-polygon/.env.host',
+    endpointEnvVar: 'POLYGON_LZ_ENDPOINT',
+    endpointDefault: MAINNET_LZ_ENDPOINT,
   },
 ];
+
+/** Resolve the active bridge environment from `BRIDGE_ENV` (default `testnet`). */
+function activeBridgeEnv(): BridgeEnv {
+  const raw = (process.env.BRIDGE_ENV ?? 'testnet').trim().toLowerCase();
+  if (raw === 'mainnet' || raw === 'main' || raw === 'prod') return 'mainnet';
+  if (raw === 'testnet' || raw === 'test' || raw === '') return 'testnet';
+  throw new Error(`Invalid BRIDGE_ENV="${process.env.BRIDGE_ENV}". Use "testnet" (default) or "mainnet".`);
+}
 
 type Status =
   | 'PENDING'
@@ -175,10 +231,15 @@ function parseEnvFile(path: string): Record<string, string> {
 }
 
 function resolveChain(arg: string): ChainSpec {
+  const env = activeBridgeEnv();
   const needle = arg.trim().toLowerCase();
-  const spec = CHAINS.find((c) => c.name.toLowerCase() === needle || c.aliases.includes(needle));
+  const candidates = CHAINS.filter((c) => c.env === env);
+  const spec = candidates.find((c) => c.name.toLowerCase() === needle || c.aliases.includes(needle));
   if (!spec) {
-    throw new Error(`Unknown chain "${arg}". Valid sources: ${CHAINS.map((c) => c.name).join(', ')} (or aliases).`);
+    throw new Error(
+      `Unknown chain "${arg}" for BRIDGE_ENV=${env}. ` +
+        `Valid sources: ${candidates.map((c) => c.name).join(', ')} (or aliases).`,
+    );
   }
   return spec;
 }
@@ -201,7 +262,7 @@ function loadChainRuntime(spec: ChainSpec): ChainRuntime {
   if (!bridgeAddress) {
     throw new Error(`${spec.addressesEnv} is missing CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS on ${spec.name}.`);
   }
-  const endpointAddress = (process.env[spec.endpointEnvVar] ?? DEFAULT_LZ_ENDPOINT).trim();
+  const endpointAddress = (process.env[spec.endpointEnvVar] ?? spec.endpointDefault).trim();
   if (!ethers.isAddress(endpointAddress)) {
     throw new Error(`${spec.endpointEnvVar}="${endpointAddress}" is not a valid EndpointV2 address on ${spec.name}.`);
   }
@@ -258,7 +319,11 @@ async function chunkedQueryFilter(
 async function main(): Promise<void> {
   const sourceArg = process.argv[2] ?? process.env.STRESS_SOURCE ?? '';
   if (!sourceArg || sourceArg === '--help' || sourceArg === '-h') {
-    console.log('Usage: ts-node --transpile-only scripts/stress/handlesListBridgeStress.ts <sepolia|amoy>');
+    console.log(
+      'Usage: ts-node --transpile-only scripts/stress/handlesListBridgeStress.ts <source>\n' +
+        '  BRIDGE_ENV=testnet (default): <source> = sepolia | amoy\n' +
+        '  BRIDGE_ENV=mainnet:          <source> = ethereum | polygon',
+    );
     process.exit(sourceArg ? 0 : 2);
   }
 
@@ -266,7 +331,7 @@ async function main(): Promise<void> {
   if (!privateKey) throw new Error('DEPLOYER_PRIVATE_KEY is not set in .env');
 
   const srcSpec = resolveChain(sourceArg);
-  const dstSpec = CHAINS.find((c) => c.name !== srcSpec.name);
+  const dstSpec = CHAINS.find((c) => c.env === srcSpec.env && c.name !== srcSpec.name);
   if (!dstSpec) throw new Error('Could not resolve a distinct destination chain.');
 
   const src = loadChainRuntime(srcSpec);
