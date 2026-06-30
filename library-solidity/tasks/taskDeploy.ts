@@ -128,6 +128,9 @@ task('task:deployEmptyUUPSProxies')
       const kmsGenerationAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
       await run('task:setKMSGenerationAddress', { address: kmsGenerationAddress });
     }
+
+    const confidentialBridgeAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
+    await run('task:setBridgeAddress', { address: confidentialBridgeAddress });
   });
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -569,6 +572,36 @@ address constant protocolConfigAdd = ${taskArguments.address};\n`;
         flag: 'a',
       });
       console.log('./fhevmTemp/addresses/FHEVMHostAddresses.sol appended with protocolConfigAdd successfully!');
+    } catch (error) {
+      throw new Error(`Failed to write ./fhevmTemp/addresses/FHEVMHostAddresses.sol: ${String(error)}`);
+    }
+  });
+
+////////////////////////////////////////////////////////////////////////////////
+// Setup ConfidentialBridge Address
+////////////////////////////////////////////////////////////////////////////////
+
+task('task:setBridgeAddress')
+  .addParam('address', 'The address of the contract')
+  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
+    const envFilePath = path.join(__dirname, '../fhevmTemp/addresses/.env.host');
+    const content = `CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS=${taskArguments.address}\n`;
+    try {
+      fs.appendFileSync(envFilePath, content, { flag: 'a' });
+      console.log(`ConfidentialBridge address ${taskArguments.address} written successfully!`);
+    } catch (err) {
+      throw new Error(`Failed to write ConfidentialBridge address: ${String(err)}`);
+    }
+
+    const solidityTemplate = `
+address constant confidentialBridgeAdd = ${taskArguments.address};\n`;
+
+    try {
+      fs.appendFileSync('./fhevmTemp/addresses/FHEVMHostAddresses.sol', solidityTemplate, {
+        encoding: 'utf8',
+        flag: 'a',
+      });
+      console.log('./fhevmTemp/addresses/FHEVMHostAddresses.sol appended with confidentialBridgeAdd successfully!');
     } catch (error) {
       throw new Error(`Failed to write ./fhevmTemp/addresses/FHEVMHostAddresses.sol: ${String(error)}`);
     }
