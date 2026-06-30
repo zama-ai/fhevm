@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO lineage_state\n                 (pda, value_key, current_handle, current_subjects, leaf_count, updated_at)\n               VALUES ($1, $2, $3, $4, $5, NOW())\n               ON CONFLICT (pda) DO UPDATE SET\n                 value_key = COALESCE(lineage_state.value_key, EXCLUDED.value_key),\n                 current_handle = EXCLUDED.current_handle,\n                 current_subjects = EXCLUDED.current_subjects,\n                 leaf_count = EXCLUDED.leaf_count,\n                 updated_at = NOW()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Bytea",
+        "Bytea",
+        "ByteaArray",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e5d3e9b7ab79f258b9b52f537bcda07e2484117a03c8d3e894b5686843f7c97f"
+}

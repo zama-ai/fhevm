@@ -1,0 +1,57 @@
+# Standalone workspace: NOT a member of any parent workspace. Carbon 1.0.0 pulls
+# the Solana 3.x client ecosystem; kms-connector is pinned to Solana 2.x. Keeping
+# our own [workspace] + Cargo.lock isolates the two graphs. zama-solana-acl is a
+# pure-borsh + [u8;32] crate (zero Solana deps) so the path dep has no version skew.
+[workspace]
+resolver = "2"
+members = ["crates/indexer", "crates/indexer-migrate"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "BSD-3-Clause-Clear"
+
+[workspace.dependencies]
+# --- Carbon listener stack (MIT) ---
+carbon-core = "1.0.0"
+# Datasource: getSignaturesForAddress backfill + forward poll at `finalized`,
+# works against a plain solana-test-validator (no Geyser).
+# SEAM: swap to carbon-yellowstone-grpc-datasource = "1.0.0" here to move to a Geyser feed.
+carbon-rpc-transaction-crawler-datasource = "1.0.0"
+
+# --- Solana RPC client (for build_verified_proof getAccountInfo cross-check) ---
+# Solana 3.x to match Carbon 1.0.0's resolved graph (it pulls solana-*-3.x).
+solana-client = "3"
+solana-commitment-config = "3"
+solana-pubkey = { version = "3", features = ["borsh"] }
+solana-signature = "3"
+solana-instruction = "3"
+
+# --- shared ACL/MMR core (path dep; solana-version-agnostic) ---
+zama-solana-acl = { path = "../solana/crates/zama-solana-acl" }
+
+# --- service shell (mirrors relayer) ---
+axum = "0.8"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal"] }
+tokio-util = "0.7"
+sqlx = { version = "0.8.6", features = ["chrono", "macros", "postgres", "runtime-tokio"] }
+config = "0.15"
+clap = { version = "4", features = ["derive", "env"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+thiserror = "2"
+async-trait = "0.1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+prometheus = "0.14"
+utoipa = { version = "5", features = ["axum_extras"] }
+borsh = { version = "1", features = ["derive"] }
+hex = "0.4"
+sha2 = "0.10"
+chrono = { version = "0.4", features = ["serde"] }
+humantime = "2"
+dotenvy = "0.15"
+
+[profile.release]
+opt-level = 3

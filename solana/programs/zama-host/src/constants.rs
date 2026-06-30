@@ -31,6 +31,7 @@ pub const DELEGATION_SEED: &[u8] = b"user-decryption-delegation";
 pub const WILDCARD_APP_CONTEXT_BYTES: [u8; 32] = [0xff; 32];
 /// Seed prefix for host-owned material commitment records.
 pub const HANDLE_MATERIAL_SEED: &[u8] = b"handle-material";
+// Encrypted-value ACL seed + subject cap live in the shared `zama_solana_acl` crate.
 
 /// Subject may use a handle in host operations and decrypt checks.
 pub const ACL_ROLE_USE: u8 = 0x01;

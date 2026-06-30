@@ -278,6 +278,10 @@ pub fn from_user_decryption_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
                     let nonce: Vec<u8> = row.try_get("solana_nonce")?;
                     let domain_keys: Vec<Vec<u8>> =
                         row.try_get("solana_allowed_acl_domain_keys")?;
+                    // MMR-proof fields (RFC-021 P2): NULL for current-ACL rows.
+                    let acl_value_key: Option<Vec<u8>> = row.try_get("solana_acl_value_key")?;
+                    let mmr_proof: Option<Vec<u8>> = row.try_get("solana_mmr_proof")?;
+                    let proof_slot: Option<i64> = row.try_get("solana_proof_slot")?;
                     let user_identity = FixedBytes::<32>::try_from(identity.as_slice())
                         .map_err(|_| anyhow!("solana_identity is not 32 bytes"))?;
                     let nonce = FixedBytes::<32>::try_from(nonce.as_slice())
@@ -302,6 +306,22 @@ pub fn from_user_decryption_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
                             nonce,
                             extraData: extra_data.into(),
                             signature: signature.into(),
+                            aclValueKey: acl_value_key
+                                .map(|k| {
+                                    FixedBytes::<32>::try_from(k.as_slice()).map_err(|_| {
+                                        anyhow!("solana_acl_value_key is not 32 bytes")
+                                    })
+                                })
+                                .transpose()?
+                                .unwrap_or(FixedBytes::ZERO),
+                            mmrProof: mmr_proof.unwrap_or_default().into(),
+                            proofSlot: proof_slot
+                                .map(|s| {
+                                    u64::try_from(s)
+                                        .map_err(|_| anyhow!("solana_proof_slot is negative: {s}"))
+                                })
+                                .transpose()?
+                                .unwrap_or(0),
                         },
                     })
                 }

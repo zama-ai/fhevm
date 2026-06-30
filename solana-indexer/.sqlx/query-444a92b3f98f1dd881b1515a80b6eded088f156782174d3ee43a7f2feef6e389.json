@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE indexer_cursor\n               SET last_signature = $1, last_slot = $2, updated_at = NOW()\n               WHERE id = 1 AND last_slot < $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "444a92b3f98f1dd881b1515a80b6eded088f156782174d3ee43a7f2feef6e389"
+}

@@ -35,6 +35,9 @@ contract DecryptionMock {
         bytes32 nonce;
         bytes extraData;
         bytes signature;
+        bytes32 aclValueKey;
+        bytes mmrProof;
+        uint64 proofSlot;
     }
 
     struct DelegationAccounts {

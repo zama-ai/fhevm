@@ -1,0 +1,17 @@
+[package]
+name = "indexer-migrate"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "indexer-migrate"
+path = "src/main.rs"
+
+[dependencies]
+sqlx = { workspace = true, features = ["migrate"] }
+tokio.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+dotenvy.workspace = true

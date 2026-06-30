@@ -1,0 +1,24 @@
+# Default config. Every field is overridable via APP_<SECTION>__<FIELD> env vars
+# (double-underscore nesting), e.g. APP_SOLANA__RPC_URL, APP_DATABASE__URL.
+
+[solana]
+rpc_url = "https://api.mainnet-beta.solana.com"
+# zama-host program id. Mainnet default; for a local validator set this to the
+# local keypair pubkey (solana/target/deploy/zama_host-keypair.json).
+program_id = "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
+commitment = "finalized"
+poll_interval = "5s"
+backfill_batch = 100
+
+[http]
+endpoint = "0.0.0.0:8080"
+
+[metrics]
+endpoint = "0.0.0.0:9090"
+
+[database]
+url = "postgresql://postgres:postgres@localhost:5432/indexer"
+max_connections = 10
+
+[log]
+format = "json"

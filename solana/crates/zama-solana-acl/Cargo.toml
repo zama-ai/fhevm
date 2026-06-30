@@ -1,0 +1,18 @@
+[package]
+name = "zama-solana-acl"
+version = "0.1.0"
+description = "Shared encrypted-value ACL layout, MMR history, and authorization for the Zama Solana PoC"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "zama_solana_acl"
+
+[dependencies]
+# Pure-Rust, solana-version-agnostic so both the on-chain programs (solana 3.x)
+# and the KMS connector (solana 2.x) can depend on this one crate. Keccak-256 via
+# `sha3` is byte-identical to the on-chain syscall hasher.
+borsh = { version = "1", features = ["derive"] }
+sha3 = { version = "0.10", default-features = false }
+sha2 = { version = "0.10", default-features = false }

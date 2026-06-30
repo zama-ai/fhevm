@@ -12,6 +12,9 @@ export type { SolanaUserDecryptSigner } from './signer.js';
 export type { SolanaUserDecryptParameters, SolanaUserDecryptResult } from './actions/userDecrypt.js';
 export type { SolanaDecryptActions } from './clients/decorators/decrypt.js';
 
+export { fetchSolanaDecryptProof } from './proof.js';
+export type { SolanaDecryptProof } from './proof.js';
+
 export type {
   SolanaEncryptInputParameters,
   SolanaEncryptInputResult,

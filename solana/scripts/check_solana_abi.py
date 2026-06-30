@@ -60,12 +60,11 @@ PINNED_SCHEMAS = [
     ("confidential_token", "instruction_args", "create_random_amount", True),
     ("confidential_token", "instruction_args", "create_random_bounded_amount", True),
     ("confidential_token", "instruction_args", "disclose_amount_secp", True),
-    ("confidential_token", "instruction_args", "disclose_balance_secp", True),
+    ("confidential_token", "instruction_args", "disclose_balance_public", True),
     ("confidential_token", "instruction_args", "initialize_mint", True),
     ("confidential_token", "instruction_args", "initialize_token_account", True),
     ("confidential_token", "instruction_args", "request_burn_redemption", True),
     ("confidential_token", "instruction_args", "request_disclose_amount", True),
-    ("confidential_token", "instruction_args", "request_disclose_balance", True),
     ("confidential_token", "instruction_args", "redeem_burned_amount_secp", True),
     ("confidential_token", "instruction_args", "wrap_usdc", True),
 ]

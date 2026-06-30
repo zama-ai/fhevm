@@ -43,9 +43,8 @@ pub use instructions::{
     CloseExpiredBurnRedemptionRequest, CloseExpiredDisclosureRequest, ConfidentialBurn,
     ConfidentialCallTransferReceiver, ConfidentialFinalizeTransferCallback,
     ConfidentialPrepareTransferCallback, ConfidentialTransfer, CreateRandomAmount,
-    DiscloseAmountSecp, DiscloseBalanceSecp, InitializeMint, InitializeTokenAccount,
-    RedeemBurnedAmountSecp, RequestBurnRedemption, RequestDiscloseAmount, RequestDiscloseBalance,
-    WrapUsdc,
+    DiscloseAmountSecp, InitializeMint, InitializeTokenAccount, RedeemBurnedAmountSecp,
+    RequestBurnRedemption, RequestDiscloseAmount, WrapUsdc,
 };
 /// Re-export account layouts and helper functions used by clients and tests.
 pub use state::*;
@@ -167,13 +166,11 @@ pub mod confidential_token {
         )
     }
 
-    /// Requests public disclosure for the current confidential balance handle.
-    pub fn request_disclose_balance(
-        ctx: Context<RequestDiscloseBalance>,
-        request_nonce: [u8; 32],
-        expires_slot: u64,
-    ) -> Result<()> {
-        instructions::request_disclose_balance(ctx, request_nonce, expires_slot)
+    /// Marks the caller's confidential balance publicly decryptable: records an exact
+    /// public-decrypt MMR leaf on the owner's balance lineage via the zama-host CPI. The
+    /// on-chain trigger for the KMS public-decrypt path (encrypted-value ACL + MMR PoC).
+    pub fn disclose_balance_public(ctx: Context<DiscloseBalancePublic>) -> Result<()> {
+        instructions::disclose_balance_public(ctx)
     }
 
     /// Requests public disclosure for any token-scoped encrypted amount handle.
@@ -194,17 +191,6 @@ pub mod confidential_token {
         expires_slot: u64,
     ) -> Result<()> {
         instructions::request_burn_redemption(ctx, burned_handle, request_nonce, expires_slot)
-    }
-
-    /// Gateway-compatible balance disclosure: verifies the KMS `PublicDecryptVerification`
-    /// EIP-712 certificate on-chain via secp256k1_recover against the HostConfig KMS signer.
-    pub fn disclose_balance_secp(
-        ctx: Context<DiscloseBalanceSecp>,
-        cleartext_amount: u64,
-        signatures: Vec<[u8; 65]>,
-        extra_data: Vec<u8>,
-    ) -> Result<()> {
-        instructions::disclose_balance_secp(ctx, cleartext_amount, signatures, extra_data)
     }
 
     /// Gateway-compatible amount disclosure: verifies the KMS `PublicDecryptVerification`

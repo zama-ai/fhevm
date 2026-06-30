@@ -232,6 +232,17 @@ impl<T: FheTyped> Encrypted<T> {
         Ok(Self::from_operand(Operand::durable(handle, slot.address())))
     }
 
+    /// Durable input referenced directly by its authorizing account address — an
+    /// `AclRecord` or an encrypted-value-ACL lineage. The host authorizes the
+    /// compute subject against whichever account it finds there. Used for rotating
+    /// values (balance/total_supply) whose authorization lives in a lineage.
+    pub fn durable_at(handle: [u8; 32], acl_account: Pubkey) -> Result<Self> {
+        if handle_fhe_type(handle) != T::FHE_TYPE.byte() {
+            return Err(EvalBuildError::UnsupportedFheType);
+        }
+        Ok(Self::from_operand(Operand::durable(handle, acl_account)))
+    }
+
     pub fn durable_with_permission(
         handle: [u8; 32],
         slot: DurableSlot,
@@ -256,6 +267,17 @@ impl<T> Encrypted<T> {
 
     fn operand(self) -> Operand {
         self.operand
+    }
+
+    /// The eval step that produces this value, when it is an instruction-local
+    /// (transient) output. Index into `fhe_eval`'s `set_return_data` to read the
+    /// computed handle — the way an app binds a transient output (e.g. a token
+    /// balance) into its encrypted-value ACL lineage without a per-rotation ACL record.
+    pub fn producer_index(&self) -> Option<u16> {
+        match self.operand.0 {
+            OperandKind::Transient { producer_index, .. } => Some(producer_index),
+            _ => None,
+        }
     }
 }
 
