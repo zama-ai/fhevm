@@ -1,10 +1,7 @@
 use std::{collections::HashMap, panic::AssertUnwindSafe, time::Duration, time::Instant};
 
 use alloy_primitives::{Address, B256, U256};
-use aws_sdk_s3::{
-    error::SdkError, operation::head_object::HeadObjectError, primitives::ByteStream,
-    types::MetadataDirective, Client,
-};
+use aws_sdk_s3::{error::SdkError, primitives::ByteStream, types::MetadataDirective, Client};
 use ciphertext_attestation::{
     CiphertextAttestation, CiphertextAttestationPayload, CiphertextFormat, Version,
     S3_METADATA_ATTESTATION_KEY,
@@ -45,6 +42,11 @@ pub(crate) struct MigrationRow {
 #[derive(Debug, Clone)]
 pub(crate) struct CopySourceCandidate {
     pub(crate) key: String,
+}
+
+struct ExistingS3Object {
+    metadata: HashMap<String, String>,
+    bytes: Vec<u8>,
 }
 
 pub(crate) struct MigrationMaterial {
@@ -877,17 +879,13 @@ pub(crate) async fn download_existing_object(
     expected_digest: &[u8],
 ) -> Result<Option<Vec<u8>>, ExecutionError> {
     for source in sources {
-        if head_object_metadata(client, bucket, &source.key)
-            .await?
-            .is_none()
-        {
+        let Some(object) = get_object_if_exists(client, bucket, &source.key).await? else {
             continue;
-        }
+        };
 
-        let bytes = get_object_bytes(client, bucket, &source.key).await?;
-        let digest = compute_digest(&bytes);
+        let digest = compute_digest(&object.bytes);
         if digest == expected_digest {
-            return Ok(Some(bytes));
+            return Ok(Some(object.bytes));
         }
 
         warn!(
@@ -910,22 +908,21 @@ pub(crate) async fn object_has_current_attestation(
     kind: CiphertextKind,
     material: &MigrationMaterial,
 ) -> Result<bool, ExecutionError> {
-    let Some(metadata) = head_object_metadata(client, bucket, key).await? else {
+    let Some(object) = get_object_if_exists(client, bucket, key).await? else {
         return Ok(false);
     };
 
-    if !metadata_matches_expected(&metadata, kind, material) {
+    if !metadata_matches_expected(&object.metadata, kind, material) {
         return Ok(false);
     }
 
-    object_body_matches_expected(
-        client,
+    Ok(object_bytes_match_expected_digest(
+        &object.bytes,
         bucket,
         key,
         kind,
         expected_digest_for_kind(kind, material),
-    )
-    .await
+    ))
 }
 
 pub(crate) async fn object_body_matches_expected(
@@ -935,14 +932,29 @@ pub(crate) async fn object_body_matches_expected(
     kind: CiphertextKind,
     expected_digest: &[u8],
 ) -> Result<bool, ExecutionError> {
-    if head_object_metadata(client, bucket, key).await?.is_none() {
+    let Some(object) = get_object_if_exists(client, bucket, key).await? else {
         return Ok(false);
-    }
+    };
 
-    let bytes = get_object_bytes(client, bucket, key).await?;
-    let digest = compute_digest(&bytes);
+    Ok(object_bytes_match_expected_digest(
+        &object.bytes,
+        bucket,
+        key,
+        kind,
+        expected_digest,
+    ))
+}
+
+fn object_bytes_match_expected_digest(
+    bytes: &[u8],
+    bucket: &str,
+    key: &str,
+    kind: CiphertextKind,
+    expected_digest: &[u8],
+) -> bool {
+    let digest = compute_digest(bytes);
     if digest == expected_digest {
-        return Ok(true);
+        return true;
     }
 
     warn!(
@@ -953,7 +965,7 @@ pub(crate) async fn object_body_matches_expected(
         actual_digest = hex::encode(digest),
         "S3 object bytes do not match expected digest"
     );
-    Ok(false)
+    false
 }
 
 fn expected_digest_for_kind(kind: CiphertextKind, material: &MigrationMaterial) -> &[u8] {
@@ -1022,39 +1034,30 @@ fn metadata_matches_expected(
     true
 }
 
-async fn head_object_metadata(
+async fn get_object_if_exists(
     client: &Client,
     bucket: &str,
     key: &str,
-) -> Result<Option<HashMap<String, String>>, ExecutionError> {
-    match client.head_object().bucket(bucket).key(key).send().await {
-        Ok(output) => Ok(Some(output.metadata().cloned().unwrap_or_default())),
-        Err(SdkError::ServiceError(err)) if matches!(err.err(), HeadObjectError::NotFound(_)) => {
-            Ok(None)
+) -> Result<Option<ExistingS3Object>, ExecutionError> {
+    let output = match client.get_object().bucket(bucket).key(key).send().await {
+        Ok(output) => output,
+        Err(SdkError::ServiceError(err)) if err.err().is_no_such_key() => {
+            return Ok(None);
         }
-        Err(err) => Err(ExecutionError::S3TransientError(err.to_string())),
-    }
-}
+        Err(err) => return Err(ExecutionError::S3TransientError(err.to_string())),
+    };
 
-async fn get_object_bytes(
-    client: &Client,
-    bucket: &str,
-    key: &str,
-) -> Result<Vec<u8>, ExecutionError> {
-    let output = client
-        .get_object()
-        .bucket(bucket)
-        .key(key)
-        .send()
-        .await
-        .map_err(|err| ExecutionError::S3TransientError(err.to_string()))?;
+    let metadata = output.metadata().cloned().unwrap_or_default();
     let bytes = output
         .body
         .collect()
         .await
         .map_err(|err| ExecutionError::S3TransientError(err.to_string()))?;
 
-    Ok(bytes.into_bytes().to_vec())
+    Ok(Some(ExistingS3Object {
+        metadata,
+        bytes: bytes.into_bytes().to_vec(),
+    }))
 }
 
 async fn copy_object_with_metadata(
