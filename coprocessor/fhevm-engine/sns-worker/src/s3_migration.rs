@@ -15,8 +15,13 @@ use sqlx::PgPool;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
-use crate::{CLEAN_OLD_S3_FORMAT_VERSION, Ciphertext128Format, ExecutionError, S3_FORMAT_VERSION_V1, S3Config};
-use crate::aws_upload::{COPROCESSOR_CONTEXT_ID_1, check_is_ready, compute_digest, s3_ciphertext_key};
+use crate::aws_upload::{
+    check_is_ready, compute_digest, s3_ciphertext_key, COPROCESSOR_CONTEXT_ID_1,
+};
+use crate::{
+    Ciphertext128Format, ExecutionError, S3Config, CLEAN_OLD_S3_FORMAT_VERSION,
+    S3_FORMAT_VERSION_V1,
+};
 
 pub const DEFAULT_S3_MIGRATION_MAX_RETRIES: i32 = 100;
 const NO_SNS_CIPHERTEXT_DIGEST: [u8; 32] = [0; 32];
@@ -113,11 +118,11 @@ pub struct S3MigrationConfig {
     pub max_retries: i32,
 }
 
-const PANIC_RETRY_DELAY : Duration = Duration::from_secs(10);
-const CLEAR_PANIC_WINDOW : Duration = Duration::from_mins(3);
-const MAX_PANIC_PER_WINDOW : u64 = 10;
-const NOT_READY_DELAY : Duration = Duration::from_secs(30);
-const MAX_NOT_READY : u64 = 10;
+const PANIC_RETRY_DELAY: Duration = Duration::from_secs(10);
+const CLEAR_PANIC_WINDOW: Duration = Duration::from_mins(3);
+const MAX_PANIC_PER_WINDOW: u64 = 10;
+const NOT_READY_DELAY: Duration = Duration::from_secs(30);
+const MAX_NOT_READY: u64 = 10;
 
 pub(crate) async fn run_startup_migrations(
     config: &S3MigrationConfig,
@@ -132,7 +137,12 @@ pub(crate) async fn run_startup_migrations(
         if is_ready {
             break;
         }
-        error!(try_count, MAX_NOT_READY, ?NOT_READY_DELAY, "S3 is not ready yet");
+        error!(
+            try_count,
+            MAX_NOT_READY,
+            ?NOT_READY_DELAY,
+            "S3 is not ready yet"
+        );
         tokio::time::sleep(NOT_READY_DELAY).await;
     }
     loop {
@@ -150,7 +160,9 @@ pub(crate) async fn run_startup_migrations(
                 successive_panics += 1;
                 last_panic_time = now;
                 if successive_panics > MAX_PANIC_PER_WINDOW {
-                    return Err(ExecutionError::InternalError("Lots of panics without apparent progress.".into()));
+                    return Err(ExecutionError::InternalError(
+                        "Lots of panics without apparent progress.".into(),
+                    ));
                 }
                 error!(
                     panic = %panic_payload_to_string(payload.as_ref()),

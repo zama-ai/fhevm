@@ -684,7 +684,7 @@ pub async fn run_all(
             if matches!(migration_config.mode, S3MigrationMode::DryRun) {
                 run_startup_migration_dry_run(&migration_config, &db_pool, &client).await?;
             } else {
-                run_startup_migrations(&migration_config,  &token, &db_pool, &client).await?;
+                run_startup_migrations(&migration_config, &token, &db_pool, &client).await?;
             }
         }
         S3MigrationMode::Concurrent => {
@@ -696,7 +696,8 @@ pub async fn run_all(
                 if !is_ready_bool {
                     error!("S3 is not ready but will start when ready");
                 };
-                if let Err(err) = run_startup_migrations(&migration_config, &token, &db_pool, &client).await
+                if let Err(err) =
+                    run_startup_migrations(&migration_config, &token, &db_pool, &client).await
                 {
                     error!(
                         error = %err,
