@@ -568,6 +568,8 @@ async fn setup_localstack(
 }
 
 async fn recreate_bucket(s3_client: &aws_sdk_s3::Client, bucket_name: &str) -> anyhow::Result<()> {
+    empty_bucket(s3_client, bucket_name).await?;
+
     s3_client
         .delete_bucket()
         .set_bucket(Some(bucket_name.to_string()))
@@ -581,6 +583,28 @@ async fn recreate_bucket(s3_client: &aws_sdk_s3::Client, bucket_name: &str) -> a
         .send()
         .await
         .expect("Failed to create bucket");
+
+    Ok(())
+}
+
+async fn empty_bucket(s3_client: &aws_sdk_s3::Client, bucket_name: &str) -> anyhow::Result<()> {
+    let result = match s3_client.list_objects().bucket(bucket_name).send().await {
+        std::result::Result::Ok(result) => result,
+        Err(_) => return Ok(()),
+    };
+
+    for object in result.contents() {
+        let Some(key) = object.key() else {
+            continue;
+        };
+
+        s3_client
+            .delete_object()
+            .bucket(bucket_name)
+            .key(key)
+            .send()
+            .await?;
+    }
 
     Ok(())
 }
