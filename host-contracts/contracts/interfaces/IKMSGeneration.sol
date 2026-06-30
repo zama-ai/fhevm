@@ -210,8 +210,20 @@ interface IKMSGeneration {
     /// keygen bound to the supplied existingKeyId.
     error MigrationKeyNotForExistingKey(uint256 migrationKeyId, uint256 existingKeyId);
 
+    /// @notice RFC-029: migrated material was already published under this key. The one-time cutover
+    /// publishes exactly once, so a second addKeyMaterials is rejected (single-assignment).
+    error KeyMaterialAlreadyPublished(uint256 keyId);
+
+    /// @notice RFC-029: addKeyMaterials was given no storage URLs, which would mark the key migrated
+    /// while leaving coprocessors unable to download the material (post-cutover halt-and-retry).
+    error EmptyStorageUrls(uint256 keyId);
+
     /// @notice RFC-029: a cutover was scheduled for a key with no published migrated material.
     error KeyMaterialNotPublished(uint256 keyId);
+
+    /// @notice RFC-029: the migration cutover was already scheduled for this key. The one-time cutover
+    /// is scheduled exactly once, so a second scheduleKeyMaterialMigration is rejected.
+    error MigrationAlreadyScheduled(uint256 keyId);
 
     /// @notice RFC-029: scheduleKeyMaterialMigration got mismatched hostChainIds / hostMigrationBlocks.
     error MismatchedMigrationArrays();
@@ -429,6 +441,12 @@ interface IKMSGeneration {
      * @notice RFC-029: the published material version for a key (0 = legacy/none, 1 = migrated).
      */
     function getKeyMaterialVersion(uint256 keyId) external view returns (uint256);
+
+    /**
+     * @notice RFC-029: whether the one-time material-version cutover has already been scheduled for
+     * `keyId`. The schedule is single-assignment; a second schedule reverts.
+     */
+    function isKeyMaterialMigrationScheduled(uint256 keyId) external view returns (bool);
 
     /**
      * @notice Get the ID of the current active CRS.

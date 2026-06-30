@@ -174,10 +174,13 @@ pub(crate) async fn apply_finalized_migration_schedules(
         let host_target_blocks: Vec<i64> = row.try_get("host_target_blocks")?;
         let gateway_block: i64 = row.try_get("gateway_target_block")?;
 
+        // RFC-029 is a one-time cutover and KMSGeneration enforces single-assignment of the schedule,
+        // so the first finalized schedule wins: DO NOTHING (never rewrite cutover blocks the fleet may
+        // already have crossed).
         sqlx::query(
             "INSERT INTO material_version_host_schedule (host_chain_id, target_block) \
              SELECT * FROM unnest($1::bigint[], $2::bigint[]) \
-             ON CONFLICT (host_chain_id) DO UPDATE SET target_block = EXCLUDED.target_block",
+             ON CONFLICT (host_chain_id) DO NOTHING",
         )
         .bind(&host_chain_ids)
         .bind(&host_target_blocks)
@@ -187,7 +190,7 @@ pub(crate) async fn apply_finalized_migration_schedules(
         sqlx::query(
             "INSERT INTO material_version_gateway_schedule (singleton, target_block) \
              VALUES (TRUE, $1) \
-             ON CONFLICT (singleton) DO UPDATE SET target_block = EXCLUDED.target_block",
+             ON CONFLICT (singleton) DO NOTHING",
         )
         .bind(gateway_block)
         .execute(tx.deref_mut())

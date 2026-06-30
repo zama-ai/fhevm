@@ -1669,6 +1669,32 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         );
     }
 
+    /// @dev Single-assignment: v1 material is published exactly once per key; a second publish reverts
+    ///      (even with a fresh, valid migration keygen for the same existing key).
+    function test_revertAddKeyMaterialsAlreadyPublished() public {
+        (, uint256 existingKeyId) = _runFullKeygenCycle();
+        (, uint256 migrationKeyId1) = _runFullMigrationKeygen(existingKeyId);
+        (, uint256 migrationKeyId2) = _runFullMigrationKeygen(existingKeyId);
+
+        vm.prank(owner);
+        kmsGeneration.addKeyMaterials(existingKeyId, migrationKeyId1, _mockKeyDigests(), _primaryStorageUrls());
+
+        vm.prank(owner);
+        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.KeyMaterialAlreadyPublished.selector, existingKeyId));
+        kmsGeneration.addKeyMaterials(existingKeyId, migrationKeyId2, _mockKeyDigests(), _primaryStorageUrls());
+    }
+
+    /// @dev Publishing with no storage URLs is rejected: it would mark the key migrated while leaving
+    ///      coprocessors unable to download the material.
+    function test_revertAddKeyMaterialsEmptyStorageUrls() public {
+        (, uint256 existingKeyId) = _runFullKeygenCycle();
+        (, uint256 migrationKeyId) = _runFullMigrationKeygen(existingKeyId);
+        string[] memory noUrls = new string[](0);
+        vm.prank(owner);
+        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.EmptyStorageUrls.selector, existingKeyId));
+        kmsGeneration.addKeyMaterials(existingKeyId, migrationKeyId, _mockKeyDigests(), noUrls);
+    }
+
     /// @dev Full publish-then-schedule path emits KeyMaterialMigrationScheduled with the cutover blocks.
     function test_scheduleKeyMaterialMigrationEmits() public {
         (, uint256 existingKeyId) = _runFullKeygenCycle();
@@ -1683,10 +1709,33 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         hostMigrationBlocks[0] = 1000;
         hostMigrationBlocks[1] = 2000;
 
+        assertFalse(kmsGeneration.isKeyMaterialMigrationScheduled(existingKeyId));
         vm.expectEmit(true, true, true, true, address(kmsGeneration));
         emit IKMSGeneration.KeyMaterialMigrationScheduled(existingKeyId, hostChainIds, hostMigrationBlocks, 3000, 1);
         vm.prank(owner);
         kmsGeneration.scheduleKeyMaterialMigration(existingKeyId, hostChainIds, hostMigrationBlocks, 3000);
+        assertTrue(kmsGeneration.isKeyMaterialMigrationScheduled(existingKeyId));
+    }
+
+    /// @dev Single-assignment: the one-time cutover is scheduled exactly once; a second schedule
+    ///      reverts so it can't rewrite cutover blocks the fleet may already have crossed.
+    function test_revertScheduleAlreadyScheduled() public {
+        (, uint256 existingKeyId) = _runFullKeygenCycle();
+        (, uint256 migrationKeyId) = _runFullMigrationKeygen(existingKeyId);
+        vm.prank(owner);
+        kmsGeneration.addKeyMaterials(existingKeyId, migrationKeyId, _mockKeyDigests(), _primaryStorageUrls());
+
+        uint256[] memory hostChainIds = new uint256[](1);
+        hostChainIds[0] = 1;
+        uint256[] memory hostMigrationBlocks = new uint256[](1);
+        hostMigrationBlocks[0] = 1000;
+
+        vm.prank(owner);
+        kmsGeneration.scheduleKeyMaterialMigration(existingKeyId, hostChainIds, hostMigrationBlocks, 3000);
+
+        vm.prank(owner);
+        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.MigrationAlreadyScheduled.selector, existingKeyId));
+        kmsGeneration.scheduleKeyMaterialMigration(existingKeyId, hostChainIds, hostMigrationBlocks, 4000);
     }
 
     /// @dev Scheduling before the migrated material is published is rejected (would point

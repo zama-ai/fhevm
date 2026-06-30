@@ -183,6 +183,9 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         /// @notice For an existing key, the migration keygen its published migrated material came from
         /// (0 = none published). Presence marks that v1 material exists under the key.
         mapping(uint256 existingKeyId => uint256 migrationKeyId) publishedFrom;
+        /// @notice Whether the one-time material-version cutover was already scheduled for a key.
+        /// Enforces single-assignment of the schedule (a second scheduleKeyMaterialMigration reverts).
+        mapping(uint256 keyId => bool isScheduled) migrationScheduled;
     }
 
     /// @notice RFC-029 migration keygen parameters, recorded at migrationKeygen() call time.
@@ -499,8 +502,17 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         if (!$.isRequestDone[migrationKeyId]) {
             revert KeyManagementRequestPending();
         }
+        // Single-assignment: the one-time cutover publishes exactly once per key.
+        if ($.publishedFrom[existingKeyId] != 0) {
+            revert KeyMaterialAlreadyPublished(existingKeyId);
+        }
         if (keyDigests.length == 0) {
             revert EmptyKeyDigests(existingKeyId);
+        }
+        // Storage URLs are how the coprocessor downloads the migrated material; without them the key
+        // would read as migrated while no node can fetch it (post-cutover halt-and-retry forever).
+        if (kmsNodeStorageUrls.length == 0) {
+            revert EmptyStorageUrls(existingKeyId);
         }
 
         $.publishedFrom[existingKeyId] = migrationKeyId;
@@ -525,6 +537,12 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         if ($.publishedFrom[keyId] == 0) {
             revert KeyMaterialNotPublished(keyId);
         }
+        // Single-assignment: the one-time cutover is scheduled exactly once. Re-scheduling could
+        // rewrite the cutover blocks under a fleet that already crossed them.
+        if ($.migrationScheduled[keyId]) {
+            revert MigrationAlreadyScheduled(keyId);
+        }
+        $.migrationScheduled[keyId] = true;
 
         emit KeyMaterialMigrationScheduled(
             keyId,
@@ -716,6 +734,13 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
     function getKeyMaterialVersion(uint256 keyId) external view virtual returns (uint256) {
         // Migrated material exists iff a migration keygen was published under this key.
         return _getKMSGenerationStorage().publishedFrom[keyId] != 0 ? MIGRATED_MATERIAL_VERSION : 0;
+    }
+
+    /**
+     * @notice See {IKMSGeneration-isKeyMaterialMigrationScheduled}.
+     */
+    function isKeyMaterialMigrationScheduled(uint256 keyId) external view virtual returns (bool) {
+        return _getKMSGenerationStorage().migrationScheduled[keyId];
     }
 
     /**
