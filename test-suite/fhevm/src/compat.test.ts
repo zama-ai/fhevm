@@ -451,7 +451,8 @@ describe("compat", () => {
 
     const policy = compatPolicyForState(state);
     expect(policy.coprocessorArgs["gw-listener"]).toBeUndefined();
-    expect(policy.coprocessorDropFlags["host-listener"]).toBeUndefined();
+    expect(policy.coprocessorDropFlags["host-listener"]).toEqual(["--protocol-config-address"]);
+    expect(policy.coprocessorDropFlags["host-listener-poller"]).toEqual(["--protocol-config-address"]);
     expect(policy.composeEnv.HOST_ADD_PAUSERS_INTERNAL_FLAG).toBe("--use-internal-proxy-address");
     expect(policy.composeEnv.GATEWAY_ADD_PAUSERS_INTERNAL_FLAG).toBe("--use-internal-proxy-address");
   });
