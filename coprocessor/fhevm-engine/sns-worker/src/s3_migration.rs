@@ -192,21 +192,20 @@ async fn migrate_s3_format_0_to_1(
     pool: &PgPool,
     client: &Client,
 ) -> Result<(), ExecutionError> {
-    let total = count_pending_old_format_handles(pool).await?;
-    let already_failed = count_failed_old_format_handles(pool).await?;
-
-    info!(
-        handles_to_process = total,
-        handles_with_recorded_failures = already_failed,
-        from_s3_format_version = CLEAN_OLD_S3_FORMAT_VERSION,
-        to_s3_format_version = S3_FORMAT_VERSION_V1,
-        "Detected ciphertext initial handles for S3 format migration"
-    );
-
     let mut total_migrated = 0_u64;
-    let mut total_failed = already_failed as u64;
     let mut worked_since_idle_log = false;
     loop {
+        let already_failed = count_failed_old_format_handles(pool).await?;
+        let mut total_failed = already_failed as u64;
+        let remainings = count_pending_old_format_handles(pool).await?;
+
+        info!(
+            handles_to_process = remainings,
+            handles_with_recorded_failures = already_failed,
+            from_s3_format_version = CLEAN_OLD_S3_FORMAT_VERSION,
+            to_s3_format_version = S3_FORMAT_VERSION_V1,
+            "S3 format migration global status"
+        );
         if token.is_cancelled() {
             return Ok(());
         }
