@@ -390,6 +390,49 @@ PROFILE_DST_EID=40267 \
 forge script scripts/HandlesReceiverProfiler.s.sol:HandlesReceiverProfilerExample -vv
 ```
 
+#### Verify the fitted parameters cover the whole input domain (WARNING: this can take more than 2 hours to run until completion)
+
+The profiler fits the three coefficients (`base`, `perHandle`, `perByte`) from a **coarse** grid. To gain confidence that the resulting formula `base + perHandle·nHandles + perByte·payloadLen` is an **upper bound** on the real `lzReceive` gas for _every_ admissible input, use `scripts/verify_lzreceive_budget.sh`. It measures each `(nHandles, payloadLen)` cell through the same real `EndpointV2.lzReceive` path as the profiler and asserts the budget covers the measured gas, sweeping all handle counts values in `1..32` and every single payload length value in `[0, 10000]`.
+
+Pass the wiring exactly as for the profiler (the fork must be the **destination** chain, matching `PROFILE_RECEIVER` / `PROFILE_DST_EID`), plus the three fitted coefficients you want to validate : use the margin-included **RECOMMENDED** values the profiler printed previously for the 3 arguments `<RECOMMENDED_LZ_RECEIVE_BASE_GAS>`, `<RECOMMENDED_LZ_RECEIVE_PER_HANDLE_GAS>` and `<RECOMMENDED_LZ_RECEIVE_PER_PAYLOAD_BYTE_GAS>`:
+
+```bash
+# Amoy verifier command
+PROFILE_RPC_URL="$POLYGON_AMOY_RPC_URL" \
+PROFILE_RECEIVER="$POLYGON_AMOY_BRIDGE_ADDRESS" \
+PROFILE_SENDER="$SEPOLIA_BRIDGE_ADDRESS" \
+PROFILE_SRC_EID=40161 PROFILE_DST_EID=40267 \
+VERIFY_BASE_GAS=<RECOMMENDED_LZ_RECEIVE_BASE_GAS> \
+VERIFY_PER_HANDLE_GAS=<RECOMMENDED_LZ_RECEIVE_PER_HANDLE_GAS> \
+VERIFY_PER_PAYLOAD_BYTE_GAS=<RECOMMENDED_LZ_RECEIVE_PER_PAYLOAD_BYTE_GAS> \
+scripts/verify_lzreceive_budget.sh
+
+# Sepolia verifier script
+PROFILE_RPC_URL="$SEPOLIA_RPC_URL" \
+PROFILE_RECEIVER="$SEPOLIA_BRIDGE_ADDRESS" \
+PROFILE_SENDER="$POLYGON_AMOY_BRIDGE_ADDRESS" \
+PROFILE_SRC_EID=40267 PROFILE_DST_EID=40161 \
+VERIFY_BASE_GAS=<RECOMMENDED_LZ_RECEIVE_BASE_GAS> \
+VERIFY_PER_HANDLE_GAS=<RECOMMENDED_LZ_RECEIVE_PER_HANDLE_GAS> \
+VERIFY_PER_PAYLOAD_BYTE_GAS=<RECOMMENDED_LZ_RECEIVE_PER_PAYLOAD_BYTE_GAS> \
+scripts/verify_lzreceive_budget.sh
+```
+
+A clean run ends with `PASS: every cell ... is within budget`. If any cell exceeds the budget, the offending `(nHandles, payloadLen)` is printed and the script exits non-zero.
+
+> **⚠️ Use a paid/dedicated RPC, and expect it to run for a few hours.** The exhaustive sweep performs roughly `32 × 10001 ≈ 320k` real `lzReceive` calls against a fork of the destination chain, each fetching cold state over the network — far beyond the rate limits of free public endpoints. To keep host memory bounded the script runs the sweep in **batches, each in its own short-lived `forge` process** (a single monolithic run gets OOM-killed: `zsh: killed`). When a batch is still OOM-killed it is automatically subdivided and retried, so no manual tuning is needed.
+
+> The script exits with such an error (see below) **only** if it finds a counter-example — a `(nHandles, payloadLen)` pair whose measured gas exceeds the budget, meaning the fitted coefficients are insufficient. In that case it stops at the first offending cell and prints a report of the form below. This should not happen with coefficients obtained from the profiler; if it does, re-run the profiler from the previous step with a finer grid to derive larger parameters, then re-verify.
+
+```
+# only this kind of Error output shows that the budget parameters are ill-fitted
+     slack: NEGATIVE by 45424
+  RESULT: FAIL - first under-budget cell  n / len: 1 0
+     measured / budget: 56525 11525
+Error: script failed: budget insufficient: see FAIL log above
+FAIL: forge exited 1 on payloadLen in [0, 249] -- verifier reverted (under-budget)
+```
+
 ---
 
 ## Step 7 (Optional) — Deploy and test `HandlesListConfidentialOApp`

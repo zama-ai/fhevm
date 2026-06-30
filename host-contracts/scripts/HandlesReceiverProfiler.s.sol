@@ -119,7 +119,7 @@ contract HandlesReceiverGasProfiler is GasProfilerScript {
         uint256 payloadLen,
         uint64 nonce,
         uint256 coldSlotsSnapshotId
-    ) private returns (uint256) {
+    ) internal returns (uint256) {
         vm.revertToState(coldSlotsSnapshotId);
 
         bytes memory message = _encodeReceiveMessage(p.sender, nHandles, payloadLen);
