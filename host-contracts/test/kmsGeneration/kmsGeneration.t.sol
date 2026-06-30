@@ -1617,11 +1617,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         (, uint256 existingKeyId) = _runFullKeygenCycle();
         vm.prank(owner);
         vm.expectRevert(
-            abi.encodeWithSelector(
-                IKMSGeneration.MigrationKeyNotForExistingKey.selector,
-                existingKeyId,
-                existingKeyId
-            )
+            abi.encodeWithSelector(IKMSGeneration.MigrationKeyNotForExistingKey.selector, existingKeyId, existingKeyId)
         );
         kmsGeneration.addKeyMaterials(existingKeyId, existingKeyId, _mockKeyDigests(), _primaryStorageUrls());
     }
@@ -1635,11 +1631,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
 
         vm.prank(owner);
         vm.expectRevert(
-            abi.encodeWithSelector(
-                IKMSGeneration.MigrationKeyNotForExistingKey.selector,
-                migrationKeyId,
-                existingKeyB
-            )
+            abi.encodeWithSelector(IKMSGeneration.MigrationKeyNotForExistingKey.selector, migrationKeyId, existingKeyB)
         );
         kmsGeneration.addKeyMaterials(existingKeyB, migrationKeyId, _mockKeyDigests(), _primaryStorageUrls());
     }

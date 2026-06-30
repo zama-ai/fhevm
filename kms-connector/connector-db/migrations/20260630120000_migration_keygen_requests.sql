@@ -68,6 +68,7 @@ EXECUTE FUNCTION complete_migration_keygen_now();
 
 -- Seed the block cursor for the new event type (the enum value was added in the prior migration, so
 -- it is now usable in this separate transaction). The gw-listener UPDATEs this row as it polls.
-INSERT INTO last_block_polled(event_type, block_number) VALUES
-    ('MigrationKeygenRequest', NULL)
+-- `updated_at` is NOT NULL with no default (its default was dropped in 20260203091107), so set it.
+INSERT INTO last_block_polled(event_type, block_number, updated_at) VALUES
+    ('MigrationKeygenRequest', NULL, NOW())
 ON CONFLICT DO NOTHING;
