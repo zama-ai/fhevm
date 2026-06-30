@@ -81,8 +81,7 @@ impl<P: Provider> ProtocolConfigProcessor<P> {
                 event.previousEpochId,
                 event.materialBlockNumber.saturating_to(),
             )
-            .await
-            .map_err(ProcessingError::Recoverable)?;
+            .await?;
 
         Ok(KmsGrpcRequest::NewMpcEpoch(NewMpcEpochRequest {
             context_id: Some(u256_to_request_id(event.kmsContextId)),
@@ -150,51 +149,65 @@ impl<P: Provider> ProtocolConfigProcessor<P> {
         context_id: U256,
         previous_epoch_id: U256,
         material_block_number: u64,
-    ) -> anyhow::Result<PreviousEpochInfo> {
+    ) -> Result<PreviousEpochInfo, ProcessingError> {
         let key_ids = self
             .kms_generation_contract
             .getCompletedKeyIds()
             .block(material_block_number.into())
             .call()
-            .await?;
+            .await
+            .map_err(|e| {
+                ProcessingError::Recoverable(anyhow!("getCompletedKeyIds call failed: {e}"))
+            })?;
         let crs_ids = self
             .kms_generation_contract
             .getCompletedCrsIds()
             .block(material_block_number.into())
             .call()
-            .await?;
+            .await
+            .map_err(|e| {
+                ProcessingError::Recoverable(anyhow!("getCompletedCrsIds call failed: {e}"))
+            })?;
 
-        let mut keys_info = vec![];
+        let mut keys_info = Vec::with_capacity(key_ids.len());
         for key_id in key_ids {
             let key_info = self
                 .kms_generation_contract
                 .getKeyInfo(key_id)
                 .block(material_block_number.into())
                 .call()
-                .await?;
-            let mut key_digests = vec![];
+                .await
+                .map_err(|e| {
+                    ProcessingError::Recoverable(anyhow!("getKeyInfo call failed: {e}"))
+                })?;
+            let mut key_digests = Vec::with_capacity(key_info.keyDigests.len());
             for d in key_info.keyDigests.iter() {
                 key_digests.push(KeyDigest {
-                    key_type: key_type_to_string(d.keyType)?,
+                    key_type: key_type_to_string(d.keyType)
+                        .map_err(ProcessingError::Irrecoverable)?,
                     digest: d.digest.to_vec(),
                 });
             }
             keys_info.push(KeyInfo {
                 key_id: Some(u256_to_request_id(key_id)),
                 preproc_id: Some(u256_to_request_id(key_info.prepKeygenId)),
-                key_parameters: params_type_to_fhe_parameter(key_info.paramsType)?,
+                key_parameters: params_type_to_fhe_parameter(key_info.paramsType)
+                    .map_err(ProcessingError::Irrecoverable)?,
                 key_digests,
             });
         }
 
-        let mut crs_info = vec![];
+        let mut crs_info = Vec::with_capacity(crs_ids.len());
         for crs_id in crs_ids {
             let crs_material = self
                 .kms_generation_contract
                 .getCrsMaterials(crs_id)
                 .block(material_block_number.into())
                 .call()
-                .await?;
+                .await
+                .map_err(|e| {
+                    ProcessingError::Recoverable(anyhow!("getCrsMaterials call failed: {e}"))
+                })?;
             crs_info.push(CrsInfo {
                 crs_id: Some(u256_to_request_id(crs_id)),
                 crs_digest: crs_material._1.to_vec(),
