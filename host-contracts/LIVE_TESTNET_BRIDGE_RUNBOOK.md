@@ -405,7 +405,7 @@ PROFILE_SRC_EID=40161 PROFILE_DST_EID=40267 \
 VERIFY_BASE_GAS=<RECOMMENDED_LZ_RECEIVE_BASE_GAS> \
 VERIFY_PER_HANDLE_GAS=<RECOMMENDED_LZ_RECEIVE_PER_HANDLE_GAS> \
 VERIFY_PER_PAYLOAD_BYTE_GAS=<RECOMMENDED_LZ_RECEIVE_PER_PAYLOAD_BYTE_GAS> \
-scripts/verify_lzreceive_budget.sh
+bash scripts/verify_lzreceive_budget.sh
 
 # Sepolia verifier command
 PROFILE_RPC_URL="$SEPOLIA_RPC_URL" \
@@ -415,22 +415,23 @@ PROFILE_SRC_EID=40267 PROFILE_DST_EID=40161 \
 VERIFY_BASE_GAS=<RECOMMENDED_LZ_RECEIVE_BASE_GAS> \
 VERIFY_PER_HANDLE_GAS=<RECOMMENDED_LZ_RECEIVE_PER_HANDLE_GAS> \
 VERIFY_PER_PAYLOAD_BYTE_GAS=<RECOMMENDED_LZ_RECEIVE_PER_PAYLOAD_BYTE_GAS> \
-scripts/verify_lzreceive_budget.sh
+bash scripts/verify_lzreceive_budget.sh
 ```
 
 A clean run ends with `PASS: every cell ... is within budget`. If any cell exceeds the budget, the offending `(nHandles, payloadLen)` is printed and the script exits non-zero.
 
-> **⚠️ Use a paid/dedicated RPC, and expect it to run for a few hours.** The exhaustive sweep performs roughly `32 × 10001 ≈ 320k` real `lzReceive` calls against a fork of the destination chain, each fetching cold state over the network — far beyond the rate limits of free public endpoints. To keep host memory bounded the script runs the sweep in **batches, each in its own short-lived `forge` process** (a single monolithic run gets OOM-killed: `zsh: killed`). When a batch is still OOM-killed it is automatically subdivided and retried, so no manual tuning is needed.
+> **⚠️ Use a paid/dedicated RPC, and expect it to run for more than 20 minutes.** The exhaustive sweep performs roughly `32 × 10001 ≈ 320k` real `lzReceive` calls against a fork of the destination chain, each fetching cold state over the network — far beyond the rate limits of free public endpoints. To keep host memory bounded the script runs the sweep in **batches, each in its own short-lived `forge` process** (a single monolithic run gets OOM-killed: `zsh: killed`). When a batch is still OOM-killed it is automatically subdivided and retried, so no manual tuning is needed.
 
 > The script exits with such an error (see below) **only** if it finds a counter-example — a `(nHandles, payloadLen)` pair whose measured gas exceeds the budget, meaning the fitted coefficients are insufficient. In that case it stops at the first offending cell and prints a report of the form below. This should not happen with coefficients obtained from the profiler; if it does, re-run the profiler from the previous step with a finer grid to derive larger parameters, then re-verify.
 
 ```
 # only this kind of Error output shows that the budget parameters are ill-fitted
-     slack: NEGATIVE by 45424
+     slack: NEGATIVE by 45438
   RESULT: FAIL - first under-budget cell  n / len: 1 0
-     measured / budget: 56525 11525
+     measured / budget: 56525 11511
 Error: script failed: budget insufficient: see FAIL log above
-FAIL: forge exited 1 on payloadLen in [0, 249] -- verifier reverted (under-budget)
+FAIL: forge exited 1 on payloadLen in [0, 49] -- verifier reverted (under-budget)
+      or a config/RPC error. See UNDER-BUDGET / RESULT: FAIL lines above for (n, len).
 ```
 
 ---
