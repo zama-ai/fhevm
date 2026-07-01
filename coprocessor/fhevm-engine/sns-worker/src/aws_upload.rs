@@ -1124,7 +1124,7 @@ async fn do_resubmits_loop(
             _ = recheck_ticker.tick() => {
                 if !is_ready.load(Ordering::Acquire) {
                     info!("Recheck S3 setup ...");
-                    let (is_ready_res, _) = check_is_ready(&client, &conf).await;
+                    let (is_ready_res, _) = check_is_ready(&client, &conf.s3).await;
                     if is_ready_res {
                         info!("Reconnected to S3, buckets exist");
                         is_ready.store(true, Ordering::Release);
@@ -1201,13 +1201,13 @@ async fn try_resubmit(
 /// the ct64 and ct128 buckets.
 ///
 /// Returns is_ready and is_connected status.
-pub(crate) async fn check_is_ready(client: &Client, conf: &Config) -> (bool, bool) {
+pub(crate) async fn check_is_ready(client: &Client, conf: &S3Config) -> (bool, bool) {
     // Check if the S3 client is ready
     //
     // By checking the existence of both ct64 and ct128 buckets here,
     // we also incorporate the aws-sdk connection retry
-    let (ct64_exists, _) = check_bucket_exists(client, &conf.s3.bucket_ct64).await;
-    let (ct128_exists, conn) = check_bucket_exists(client, &conf.s3.bucket_ct128).await;
+    let (ct64_exists, _) = check_bucket_exists(client, &conf.bucket_ct64).await;
+    let (ct128_exists, conn) = check_bucket_exists(client, &conf.bucket_ct128).await;
 
     ((ct64_exists && ct128_exists), conn)
 }
@@ -1355,7 +1355,7 @@ async fn check_ct128_objects_exist(
     Ok(key_exists && digest_key_exists)
 }
 
-async fn check_bucket_exists(
+pub async fn check_bucket_exists(
     client: &Client,
     bucket: &str,
 ) -> (bool, bool /* connection status */) {
