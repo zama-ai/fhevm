@@ -1395,6 +1395,16 @@ fn initialize_mint(
         .send()?;
     println!("OK initialize_mint: {sig}");
     println!("  confidential mint  {mint_pk}");
+    // The mint compute-signer PDA is the fromExternal `contract` an attested transfer/burn amount
+    // must bind to; print base58 + 0x-hex so the e2e can fetch a compute-signer-bound input-proof.
+    println!(
+        "  compute_signer     {compute_signer} 0x{}",
+        compute_signer
+            .to_bytes()
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect::<String>()
+    );
     println!("  underlying SPL     {underlying_mint}");
     println!("  total_supply ACL   {total_supply_acl_record}");
 

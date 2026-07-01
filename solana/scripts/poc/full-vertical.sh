@@ -185,12 +185,36 @@ export MINT UNDERLYING_MINT="$UNDER"
 # under `set -o pipefail` lets a late SIGPIPE mask the match, so grep the captured output.
 wout="$(lc CONSUME_WRAP=1 WRAP_AMOUNT=1000)" || true
 echo "$wout" | grep -q 'OK wrap_usdc' || fail "wrap_usdc: $(echo "$wout" | tail -3)"
-# fromExternal burn: the burn amount is a coprocessor-attested external input (BIND_*), bound to
-# (user = owner, contract = mint compute-signer PDA). NOTE: this reuses the input-proof fetched
-# above (contract = USER); a burn needs a proof bound to the compute-signer PDA — wired for CI
-# iteration on the e2e vertical.
-bout="$(lc CONSUME_BURN=1 BIND_HANDLE="$ih" BIND_COPRO_SIG="$isig" BIND_USER="$USER" \
-  BIND_CONTRACT="$USER" BIND_CHAIN_ID="$SID" BIND_EXTRA="$iextra")" || true
+# fromExternal burn: the burn amount is a coprocessor-attested external input bound to
+# (user = owner, contract = mint compute-signer PDA). Unlike the top input-proof (contract = USER),
+# a transfer/burn amount must attest to the compute-signer PDA (the token + host require
+# contract == compute_signer), so fetch a dedicated compute-signer-bound proof here.
+CS_B58="$(echo "$minit" | grep -oE 'compute_signer +[A-Za-z0-9]+' | awk '{print $2}')"
+CS_HEX="$(echo "$minit" | grep -oE 'compute_signer +[A-Za-z0-9]+ 0x[0-9a-f]+' | grep -oE '0x[0-9a-f]+')"
+[ -n "$CS_B58" ] && [ -n "$CS_HEX" ] || fail "could not read compute_signer from mint init: $minit"
+berr="$(mktemp)"
+bproof="$(cd "$ROOT/test-suite/fhevm" && \
+  IN_RELAYER_URL=http://127.0.0.1:3000 IN_CONTRACTS_CHAIN_ID="$SID" IN_ACL_PROGRAM="$ACL" \
+  IN_CONTRACT="$CS_HEX" IN_USER="$USER" IN_CONTRACT_B58="$CS_B58" IN_USER_B58="$USER_B58" \
+  IN_VALUE=7 IN_TYPE=uint64 \
+  node solana-input.ts 2>"$berr" || true)"
+bpost="$(printf '%s\n' "$bproof" | grep -oE '"jobId":"[^"]+"' | head -1 | cut -d'"' -f4 || true)"
+[ -n "$bpost" ] || fail "burn input-proof POST failed.
+  client stdout: $(printf '%s' "$bproof" | tail -3)
+  client stderr: $(tail -30 "$berr")"
+for i in $(seq 1 40); do
+  br="$(curl -s -m10 "localhost:3000/v2/input-proof/$bpost")"
+  bst="$(echo "$br" | python3 -c "import sys,json;print(json.load(sys.stdin).get('status',''))" 2>/dev/null)"
+  [ "$bst" = succeeded ] && break
+  [ "$bst" = failed ] && fail "burn input-proof failed: $br"
+  [ "$i" = 40 ] && fail "burn input-proof timed out"; sleep 4
+done
+bh="$(echo "$br" | python3 -c "import sys,json;print(json.load(sys.stdin)['result']['handles'][0])")"
+bsig="$(echo "$br" | python3 -c "import sys,json;print(json.load(sys.stdin)['result']['signatures'][0])")"
+bextra="$(echo "$br" | python3 -c "import sys,json;print(json.load(sys.stdin)['result'].get('extraData','0x00'))")"
+echo "    burn amount handle=$bh (attested for compute_signer $CS_B58)"
+bout="$(lc CONSUME_BURN=1 BIND_HANDLE="$bh" BIND_COPRO_SIG="$bsig" BIND_USER="$USER" \
+  BIND_CONTRACT="$CS_HEX" BIND_CHAIN_ID="$SID" BIND_EXTRA="$bextra")" || true
 BURNED_ACL="$(echo "$bout" | grep -oE 'burned amount ACL [A-Za-z0-9]+' | awk '{print $4}')"
 BURNED_HANDLE="$(echo "$bout" | grep -oE 'burned handle 0x[0-9a-f]+' | awk '{print $3}')"
 [ -n "$BURNED_HANDLE" ] && [ -n "$BURNED_ACL" ] || fail "confidential_burn: $bout"
