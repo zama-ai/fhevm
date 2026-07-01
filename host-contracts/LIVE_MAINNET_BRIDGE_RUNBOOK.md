@@ -423,7 +423,7 @@ PROFILE_ENDPOINT=0x1a44076050125825900e736c501f859c50fE728c \
 forge script scripts/HandlesReceiverProfiler.s.sol:HandlesReceiverProfilerExample -vv
 ```
 
-#### Verify the fitted parameters cover the whole input domain (WARNING: this can take more than 2 hours to run until completion)
+#### Verify the fitted parameters cover the whole input domain (WARNING: this can take more than 20 minutes to run until completion)
 
 The profiler fits the three coefficients (`base`, `perHandle`, `perByte`) from a **coarse** grid. To gain confidence that the resulting formula `base + perHandle·nHandles + perByte·payloadLen` is an **upper bound** on the real `lzReceive` gas for _every_ admissible input, use `scripts/verify_lzreceive_budget.sh`. It measures each `(nHandles, payloadLen)` cell through the same real `EndpointV2.lzReceive` path as the profiler and asserts the budget covers the measured gas, sweeping all handle counts values in `1..32` and every single payload length value in `[0, 10000]`.
 
