@@ -12,6 +12,9 @@ const PREFIX_TXN: u8 = 1;
 const PREFIX_HANDLE: u8 = 2;
 const PREFIX_DC: u8 = 3;
 const PREFIX_BLOCK_HASH: u8 = 4;
+const PREFIX_SRC_HANDLE: u8 = 5;
+const PREFIX_GUID: u8 = 6;
+const PREFIX_DST_HANDLE: u8 = 7;
 
 async fn setup_chains(pool: &PgPool) {
     sqlx::query("INSERT INTO host_chains (chain_id, name, acl_contract_address) VALUES ($1, 'chain_a', '0xACL')")
@@ -162,6 +165,37 @@ async fn setup_block(pool: &PgPool, chain_id: i64, block_number: i64, key_id_gw:
     .await
     .expect("insert host_chain_blocks_valid");
 
+    let src_handle = make_id(PREFIX_SRC_HANDLE, chain_id, block_number);
+    let guid = make_id(PREFIX_GUID, chain_id, block_number);
+    let dst_handle = make_id(PREFIX_DST_HANDLE, chain_id, block_number);
+
+    sqlx::query(
+        "INSERT INTO bridge_handle_events (src_handle, dst_chain_id, src_chain_id, sender_dapp, guid, block_number, transaction_id)
+         VALUES ($1, 999, $2, '\\xdada'::bytea, $3, $4, $5)",
+    )
+    .bind(&src_handle)
+    .bind(chain_id)
+    .bind(&guid)
+    .bind(block_number)
+    .bind(&txn_id)
+    .execute(pool)
+    .await
+    .expect("insert bridge_handle_events");
+
+    sqlx::query(
+        "INSERT INTO handle_bridged_events (src_handle, dst_handle, dst_chain_id, receiver_dapp, guid, block_number, transaction_id)
+         VALUES ($1, $2, $3, '\\xdada'::bytea, $4, $5, $6)",
+    )
+    .bind(&src_handle)
+    .bind(&dst_handle)
+    .bind(chain_id)
+    .bind(&guid)
+    .bind(block_number)
+    .bind(&txn_id)
+    .execute(pool)
+    .await
+    .expect("insert handle_bridged_events");
+
     // only keep the latest block
     sqlx::query(
         "INSERT INTO host_listener_poller_state (chain_id, last_caught_up_block)
@@ -198,6 +232,14 @@ async fn count(pool: &PgPool, query: &str) -> i64 {
 async fn count_with_bind(pool: &PgPool, query: &str, bind: i64) -> i64 {
     sqlx::query_scalar::<_, i64>(query)
         .bind(bind)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+async fn count_handle(pool: &PgPool, query: &str, handle: &[u8]) -> i64 {
+    sqlx::query_scalar::<_, i64>(query)
+        .bind(handle)
         .fetch_one(pool)
         .await
         .unwrap()
@@ -306,6 +348,29 @@ async fn test_revert_deletes_data_after_block_n() {
         15,
         "allowed_handles"
     );
+    let remaining_bridge_handle_blocks: Vec<i64> = sqlx::query_scalar(
+        "SELECT block_number FROM bridge_handle_events WHERE src_chain_id = $1 ORDER BY block_number",
+    )
+    .bind(CHAIN_A)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        remaining_bridge_handle_blocks, expected,
+        "bridge_handle_events"
+    );
+
+    let remaining_handle_bridged_blocks: Vec<i64> = sqlx::query_scalar(
+        "SELECT block_number FROM handle_bridged_events WHERE dst_chain_id = $1 ORDER BY block_number",
+    )
+    .bind(CHAIN_A)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        remaining_handle_bridged_blocks, expected,
+        "handle_bridged_events"
+    );
 
     // Poller state should be reset to 15
     let poller_block: i64 = sqlx::query_scalar(
@@ -388,6 +453,26 @@ async fn test_revert_preserves_other_chain_data() {
         .await,
         20,
         "chain B delegations should be untouched"
+    );
+    assert_eq!(
+        count_with_bind(
+            &pool,
+            "SELECT COUNT(*) FROM bridge_handle_events WHERE src_chain_id = $1",
+            CHAIN_B
+        )
+        .await,
+        20,
+        "chain B bridge_handle_events should be untouched"
+    );
+    assert_eq!(
+        count_with_bind(
+            &pool,
+            "SELECT COUNT(*) FROM handle_bridged_events WHERE dst_chain_id = $1",
+            CHAIN_B
+        )
+        .await,
+        20,
+        "chain B handle_bridged_events should be untouched"
     );
 
     // Chain B poller should be unchanged at 20
@@ -478,6 +563,29 @@ async fn test_revert_no_op_when_no_data_above_block_n() {
         .await,
         10,
         "allowed_handles"
+    );
+    let remaining_bridge_handle_blocks: Vec<i64> = sqlx::query_scalar(
+        "SELECT block_number FROM bridge_handle_events WHERE src_chain_id = $1 ORDER BY block_number",
+    )
+    .bind(CHAIN_A)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        remaining_bridge_handle_blocks, expected,
+        "bridge_handle_events"
+    );
+
+    let remaining_handle_bridged_blocks: Vec<i64> = sqlx::query_scalar(
+        "SELECT block_number FROM handle_bridged_events WHERE dst_chain_id = $1 ORDER BY block_number",
+    )
+    .bind(CHAIN_A)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        remaining_handle_bridged_blocks, expected,
+        "handle_bridged_events"
     );
 
     let remaining_delegation_blocks: Vec<i64> = sqlx::query_scalar(
@@ -717,5 +825,145 @@ async fn test_revert_fails_on_key_rotation() {
     assert!(
         result.is_err(),
         "revert should fail when key rotation detected"
+    );
+}
+
+/// Inserts a copy-bridged destination handle: the bridge worker materializes it
+/// as a ciphertext + retargeted ciphertext_digest, but there is NO computations
+/// row for it. The only link to a chain/block is the handle_bridged_events row.
+async fn insert_bridged_handle(pool: &PgPool, chain_id: i64, block_number: i64, dst_handle: &[u8]) {
+    let txn_id = make_id(PREFIX_TXN, chain_id, block_number);
+    let src_handle = make_id(PREFIX_SRC_HANDLE, chain_id, block_number);
+    let guid = make_id(PREFIX_GUID, chain_id, block_number);
+
+    sqlx::query(
+        "INSERT INTO handle_bridged_events (src_handle, dst_handle, dst_chain_id, receiver_dapp, guid, block_number, transaction_id)
+         VALUES ($1, $2, $3, '\\xdada'::bytea, $4, $5, $6)",
+    )
+    .bind(&src_handle)
+    .bind(dst_handle)
+    .bind(chain_id)
+    .bind(&guid)
+    .bind(block_number)
+    .bind(&txn_id)
+    .execute(pool)
+    .await
+    .expect("insert handle_bridged_events");
+
+    sqlx::query(
+        "INSERT INTO ciphertexts (handle, ciphertext, ciphertext_version, ciphertext_type)
+         VALUES ($1, $2, 0, 4)",
+    )
+    .bind(dst_handle)
+    .bind([0xCCu8; 4])
+    .execute(pool)
+    .await
+    .expect("insert bridged ciphertext");
+
+    sqlx::query(
+        "INSERT INTO ciphertext_digest (host_chain_id, key_id_gw, handle, transaction_id, txn_block_number)
+         VALUES ($1, $2, $3, $4, $5)",
+    )
+    .bind(chain_id)
+    .bind(&KEY_ID_GW[..])
+    .bind(dst_handle)
+    .bind(&txn_id)
+    .bind(block_number)
+    .execute(pool)
+    .await
+    .expect("insert bridged ciphertext_digest");
+}
+
+/// A copy-bridged destination handle has a ciphertext + ciphertext_digest but
+/// NO computations row, so the computations-derived cleanup cannot see it. The
+/// revert must still delete those rows via handle_bridged_events when the
+/// bridged block is past the revert point, while leaving earlier blocks and
+/// other chains untouched.
+#[tokio::test]
+#[serial(db)]
+async fn test_revert_deletes_bridged_ciphertext_without_computation() {
+    let db = setup_test_db(ImportMode::None).await.expect("setup db");
+    let pool = PgPool::connect(db.db_url()).await.unwrap();
+
+    setup_chains(&pool).await;
+
+    let a_reverted = make_id(PREFIX_DST_HANDLE, CHAIN_A, 20); // past cut -> deleted
+    let a_retained = make_id(PREFIX_DST_HANDLE, CHAIN_A, 10); // before cut -> kept
+    let b_other = make_id(PREFIX_DST_HANDLE, CHAIN_B, 20); // other chain -> kept
+    insert_bridged_handle(&pool, CHAIN_A, 20, &a_reverted).await;
+    insert_bridged_handle(&pool, CHAIN_A, 10, &a_retained).await;
+    insert_bridged_handle(&pool, CHAIN_B, 20, &b_other).await;
+
+    let sql = revert_coprocessor_db_state_sql(CHAIN_A, 15);
+    sqlx::raw_sql(&sql)
+        .execute(&pool)
+        .await
+        .expect("revert sql");
+
+    // The bridged copy past the cut is deleted even though no computations row
+    // ever referenced it.
+    assert_eq!(
+        count_handle(
+            &pool,
+            "SELECT COUNT(*) FROM ciphertexts WHERE handle = $1",
+            &a_reverted,
+        )
+        .await,
+        0,
+        "reverted bridged ciphertext deleted"
+    );
+    assert_eq!(
+        count_handle(
+            &pool,
+            "SELECT COUNT(*) FROM ciphertext_digest WHERE handle = $1",
+            &a_reverted,
+        )
+        .await,
+        0,
+        "reverted bridged digest deleted"
+    );
+
+    // The earlier block's copy is retained.
+    assert_eq!(
+        count_handle(
+            &pool,
+            "SELECT COUNT(*) FROM ciphertexts WHERE handle = $1",
+            &a_retained,
+        )
+        .await,
+        1,
+        "retained bridged ciphertext kept"
+    );
+    assert_eq!(
+        count_handle(
+            &pool,
+            "SELECT COUNT(*) FROM ciphertext_digest WHERE handle = $1",
+            &a_retained,
+        )
+        .await,
+        1,
+        "retained bridged digest kept"
+    );
+
+    // The other chain's copy is untouched (dst_chain_id scoping).
+    assert_eq!(
+        count_handle(
+            &pool,
+            "SELECT COUNT(*) FROM ciphertexts WHERE handle = $1",
+            &b_other,
+        )
+        .await,
+        1,
+        "other-chain bridged ciphertext kept"
+    );
+    assert_eq!(
+        count_handle(
+            &pool,
+            "SELECT COUNT(*) FROM ciphertext_digest WHERE handle = $1",
+            &b_other,
+        )
+        .await,
+        1,
+        "other-chain bridged digest kept"
     );
 }
