@@ -65,7 +65,14 @@ impl TestInstance {
     }
 
     pub fn db_container(&self) -> &ContainerAsync<GenericImage> {
-        &self.db.as_ref().expect("DB is not setup").db_container
+        self.db
+            .as_ref()
+            .expect("DB is not setup")
+            .db_container
+            .as_ref()
+            .expect(
+                "DB container is not available when running against an external Postgres server",
+            )
     }
 
     pub fn db_url(&self) -> &str {
@@ -84,8 +91,14 @@ impl TestInstance {
         &self.blockchain().provider
     }
 
-    pub fn anvil_container(&self) -> &ContainerAsync<GenericImage> {
-        &self.blockchain().anvil
+    /// Freezes the Anvil process.
+    pub fn pause_anvil(&self) -> anyhow::Result<()> {
+        self.blockchain().pause_anvil()
+    }
+
+    /// Resumes a previously paused Anvil process.
+    pub fn unpause_anvil(&self) -> anyhow::Result<()> {
+        self.blockchain().unpause_anvil()
     }
 
     pub fn decryption_contract(&self) -> &DecryptionInstance<WalletProvider> {
@@ -196,29 +209,20 @@ impl TestInstanceBuilder {
     }
 
     /// Test setup with a DB only.
+    ///
+    /// Uses an already-running, shared Postgres server (one fresh database per test) rather than
+    /// spinning up a container, which is much faster for the many DB-only tests.
     pub async fn db_setup() -> anyhow::Result<TestInstance> {
         let builder = TestInstanceBuilder::default();
-        let db = DbInstance::setup().await?;
+        let db = DbInstance::setup_external().await?;
         Ok(builder.with_db(db).build())
     }
 
     /// Test setup with a DB and Anvil blockchain.
     pub async fn db_bc_setup() -> anyhow::Result<TestInstance> {
         let builder = TestInstanceBuilder::default();
-        let db = DbInstance::setup().await?;
+        let db = DbInstance::setup_external().await?;
         let blockchain = BlockchainInstance::setup().await?;
         Ok(builder.with_db(db).with_blockchain(blockchain).build())
-    }
-
-    /// Full test setup.
-    pub async fn full() -> anyhow::Result<TestInstance> {
-        let s3_instance = S3Instance::setup().await?;
-        let kms_instance = KmsInstance::setup(&s3_instance.url).await?;
-        let test_instance_builder = TestInstanceBuilder::default()
-            .with_db(DbInstance::setup().await?)
-            .with_blockchain(BlockchainInstance::setup().await?)
-            .with_s3(s3_instance)
-            .with_kms(kms_instance);
-        Ok(test_instance_builder.build())
     }
 }
