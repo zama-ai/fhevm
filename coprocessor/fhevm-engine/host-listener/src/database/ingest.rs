@@ -19,7 +19,8 @@ use crate::contracts::{
 };
 use crate::database::dependence_chains::dependence_chains;
 use crate::database::tfhe_event_propagate::{
-    acl_result_handles, tfhe_result_handle, Chain, ChainHash, Database, LogTfhe,
+    acl_result_handles, tfhe_result_handles, Chain, ChainHash, Database,
+    LogTfhe,
 };
 use crate::kms_generation::insert_kms_generation_events_tx;
 use crate::kms_generation::metrics::KMS_EVENT_DECODE_FAIL_COUNTER;
@@ -403,12 +404,10 @@ pub async fn ingest_block_logs(
         }
     }
     for tfhe_log in tfhe_event_log.iter_mut() {
-        tfhe_log.is_allowed =
-            if let Some(result_handle) = tfhe_result_handle(&tfhe_log.event) {
-                is_allowed.contains(&result_handle.to_vec())
-            } else {
-                false
-            };
+        // For multi-output ops all outputs are produced together, so one allowed handle runs the op.
+        tfhe_log.is_allowed = tfhe_result_handles(&tfhe_log.event)
+            .iter()
+            .any(|h| is_allowed.contains(&h.to_vec()));
     }
 
     let chains = dependence_chains(
