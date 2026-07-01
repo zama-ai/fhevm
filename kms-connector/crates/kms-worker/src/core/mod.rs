@@ -6,7 +6,7 @@ mod kms_worker;
 pub mod solana_acl;
 pub mod solana_v2_fetcher;
 
-pub use config::Config;
+pub use config::{Config, CtAttestationConfig};
 pub use event_picker::{DbEventPicker, EventPicker};
 pub use kms_response_publisher::{DbKmsResponsePublisher, KmsResponsePublisher};
 pub use kms_worker::KmsWorker;

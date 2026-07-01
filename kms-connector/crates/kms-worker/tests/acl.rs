@@ -1,6 +1,9 @@
 mod common;
 
-use crate::common::{create_mock_user_decryption_request_tx, init_kms_worker};
+use crate::common::{
+    create_mock_user_decryption_request_tx, init_kms_worker, mock_copro_registry_load,
+    testing_ct_attestation_config,
+};
 use alloy::{
     primitives::U256,
     providers::{ProviderBuilder, mock::Asserter},
@@ -38,8 +41,9 @@ async fn test_decryption_acl_failure(#[case] event_type: TestEventType) -> anyho
     // Test constant
     const MAX_DECRYPTION_ATTEMPTS: u16 = 3;
 
-    // Mocking Gateway
+    // Mocking Gateway/Ethereum
     let asserter = Asserter::new();
+    mock_copro_registry_load(&asserter, "http://unused-bucket-url");
     let sns_ct = rand_sns_ct();
     let tx_hash = rand_digest();
     let insert_options = InsertRequestOptions::new()
@@ -57,10 +61,10 @@ async fn test_decryption_acl_failure(#[case] event_type: TestEventType) -> anyho
         };
     }
 
-    let gateway_mock_provider = ProviderBuilder::new()
+    let mock_provider = ProviderBuilder::new()
         .disable_recommended_fillers()
         .connect_mocked_client(asserter);
-    info!("Gateway mock started!");
+    info!("Gateway + Ethereum mock started!");
 
     // Mocking Host chain ACL to DENY decryption.
     // Per attempt: Public → 1 bool; Legacy user → 2 bools;
@@ -96,11 +100,12 @@ async fn test_decryption_acl_failure(#[case] event_type: TestEventType) -> anyho
         kms_core_endpoints: vec![kms_mock_server.base_url().unwrap().to_string()],
         max_decryption_attempts: MAX_DECRYPTION_ATTEMPTS,
         db_fast_event_polling: Duration::from_millis(500),
+        ct_attestation: testing_ct_attestation_config(false),
         ..Default::default()
     };
     let kms_worker = init_kms_worker(
         config,
-        gateway_mock_provider,
+        mock_provider,
         acl_contracts_mock,
         test_instance.db(),
     )

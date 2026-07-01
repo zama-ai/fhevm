@@ -15,7 +15,7 @@ jobs:
       actions: 'read' # Required to read workflow run information
       contents: 'read' # Required to checkout repository code
       pull-requests: 'read' # Required to read pull request information
-    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
+    runs-on: ubuntu-latest
     outputs:
       changes-host-contracts: ${{ steps.filter.outputs.host-contracts }}
     steps:
@@ -45,6 +45,13 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: 'false'
+      - name: Install safe-chain
+        shell: bash
+        run: |
+          # safe-chain v1.5.3 is distributed as an immutable GitHub release asset —
+          # its content is permanently fixed and cannot be modified after the tag is published.
+          # Verify immutability: curl -fsSL https://api.github.com/repos/AikidoSec/safe-chain/releases/tags/1.5.3 | grep immutable
+          curl -fsSL https://github.com/AikidoSec/safe-chain/releases/download/1.5.3/install-safe-chain.sh | sh -s -- --ci
       - run: cp ./host-contracts/.env.example ./host-contracts/.env
       - run: npm --workspace=host-contracts ci --include=optional
       - run: npm --workspace=host-contracts run deploy:emptyProxies

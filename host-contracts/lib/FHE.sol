@@ -8505,6 +8505,17 @@ library FHE {
     }
 
     /**
+     * @dev Convert an encrypted ebool handle to its externalEbool representation.
+     * @dev This only re-wraps the underlying handle into the externalEbool type; it performs no
+     *      verification or access control. The resulting externalEbool can be passed to another
+     *      contract and turned back into an ebool via fromExternal with an empty inputProof,
+     *      provided the handle has already been allowed to the caller.
+     */
+    function toExternal(ebool value) internal pure returns (externalEbool) {
+        return externalEbool.wrap(ebool.unwrap(value));
+    }
+
+    /**
      * @dev Converts a plaintext boolean to an encrypted boolean.
      */
     function asEbool(bool value) internal returns (ebool) {
@@ -8528,6 +8539,17 @@ library FHE {
             if (!Impl.isAllowed(inputBytes32, msg.sender)) revert SenderNotAllowedToUseHandle(inputBytes32, msg.sender);
             return euint8.wrap(inputBytes32);
         }
+    }
+
+    /**
+     * @dev Convert an encrypted euint8 handle to its externalEuint8 representation.
+     * @dev This only re-wraps the underlying handle into the externalEuint8 type; it performs no
+     *      verification or access control. The resulting externalEuint8 can be passed to another
+     *      contract and turned back into an euint8 via fromExternal with an empty inputProof,
+     *      provided the handle has already been allowed to the caller.
+     */
+    function toExternal(euint8 value) internal pure returns (externalEuint8) {
+        return externalEuint8.wrap(euint8.unwrap(value));
     }
 
     /**
@@ -8557,6 +8579,17 @@ library FHE {
     }
 
     /**
+     * @dev Convert an encrypted euint16 handle to its externalEuint16 representation.
+     * @dev This only re-wraps the underlying handle into the externalEuint16 type; it performs no
+     *      verification or access control. The resulting externalEuint16 can be passed to another
+     *      contract and turned back into an euint16 via fromExternal with an empty inputProof,
+     *      provided the handle has already been allowed to the caller.
+     */
+    function toExternal(euint16 value) internal pure returns (externalEuint16) {
+        return externalEuint16.wrap(euint16.unwrap(value));
+    }
+
+    /**
      * @dev Convert a plaintext value to an encrypted euint16 value.
      */
     function asEuint16(uint16 value) internal returns (euint16) {
@@ -8580,6 +8613,17 @@ library FHE {
             if (!Impl.isAllowed(inputBytes32, msg.sender)) revert SenderNotAllowedToUseHandle(inputBytes32, msg.sender);
             return euint32.wrap(inputBytes32);
         }
+    }
+
+    /**
+     * @dev Convert an encrypted euint32 handle to its externalEuint32 representation.
+     * @dev This only re-wraps the underlying handle into the externalEuint32 type; it performs no
+     *      verification or access control. The resulting externalEuint32 can be passed to another
+     *      contract and turned back into an euint32 via fromExternal with an empty inputProof,
+     *      provided the handle has already been allowed to the caller.
+     */
+    function toExternal(euint32 value) internal pure returns (externalEuint32) {
+        return externalEuint32.wrap(euint32.unwrap(value));
     }
 
     /**
@@ -8609,6 +8653,17 @@ library FHE {
     }
 
     /**
+     * @dev Convert an encrypted euint64 handle to its externalEuint64 representation.
+     * @dev This only re-wraps the underlying handle into the externalEuint64 type; it performs no
+     *      verification or access control. The resulting externalEuint64 can be passed to another
+     *      contract and turned back into an euint64 via fromExternal with an empty inputProof,
+     *      provided the handle has already been allowed to the caller.
+     */
+    function toExternal(euint64 value) internal pure returns (externalEuint64) {
+        return externalEuint64.wrap(euint64.unwrap(value));
+    }
+
+    /**
      * @dev Convert a plaintext value to an encrypted euint64 value.
      */
     function asEuint64(uint64 value) internal returns (euint64) {
@@ -8632,6 +8687,17 @@ library FHE {
             if (!Impl.isAllowed(inputBytes32, msg.sender)) revert SenderNotAllowedToUseHandle(inputBytes32, msg.sender);
             return euint128.wrap(inputBytes32);
         }
+    }
+
+    /**
+     * @dev Convert an encrypted euint128 handle to its externalEuint128 representation.
+     * @dev This only re-wraps the underlying handle into the externalEuint128 type; it performs no
+     *      verification or access control. The resulting externalEuint128 can be passed to another
+     *      contract and turned back into an euint128 via fromExternal with an empty inputProof,
+     *      provided the handle has already been allowed to the caller.
+     */
+    function toExternal(euint128 value) internal pure returns (externalEuint128) {
+        return externalEuint128.wrap(euint128.unwrap(value));
     }
 
     /**
@@ -8661,6 +8727,17 @@ library FHE {
     }
 
     /**
+     * @dev Convert an encrypted eaddress handle to its externalEaddress representation.
+     * @dev This only re-wraps the underlying handle into the externalEaddress type; it performs no
+     *      verification or access control. The resulting externalEaddress can be passed to another
+     *      contract and turned back into an eaddress via fromExternal with an empty inputProof,
+     *      provided the handle has already been allowed to the caller.
+     */
+    function toExternal(eaddress value) internal pure returns (externalEaddress) {
+        return externalEaddress.wrap(eaddress.unwrap(value));
+    }
+
+    /**
      * @dev Convert a plaintext value to an encrypted eaddress value.
      */
     function asEaddress(address value) internal returns (eaddress) {
@@ -8684,6 +8761,17 @@ library FHE {
             if (!Impl.isAllowed(inputBytes32, msg.sender)) revert SenderNotAllowedToUseHandle(inputBytes32, msg.sender);
             return euint256.wrap(inputBytes32);
         }
+    }
+
+    /**
+     * @dev Convert an encrypted euint256 handle to its externalEuint256 representation.
+     * @dev This only re-wraps the underlying handle into the externalEuint256 type; it performs no
+     *      verification or access control. The resulting externalEuint256 can be passed to another
+     *      contract and turned back into an euint256 via fromExternal with an empty inputProof,
+     *      provided the handle has already been allowed to the caller.
+     */
+    function toExternal(euint256 value) internal pure returns (externalEuint256) {
+        return externalEuint256.wrap(euint256.unwrap(value));
     }
 
     /**

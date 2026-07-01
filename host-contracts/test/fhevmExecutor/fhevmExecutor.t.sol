@@ -470,7 +470,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         assertEq(fhevmExecutor.getInputVerifierAddress(), inputVerifierAdd);
         assertEq(fhevmExecutor.getACLAddress(), aclAdd);
         assertEq(fhevmExecutor.getHCULimitAddress(), hcuLimitAdd);
-        assertEq(fhevmExecutor.getVersion(), string(abi.encodePacked("FHEVMExecutor v0.4.0")));
+        assertEq(fhevmExecutor.getVersion(), string(abi.encodePacked("FHEVMExecutor v0.5.0")));
     }
 
     /// @dev This function exists for the test below to call it externally.
@@ -2251,7 +2251,13 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         _approveHandleInACL(factor1, sender);
         _approveHandleInACL(factor2, sender);
 
-        bytes32 expectedResult = _computeExpectedResultFheMulDiv(factor1, factor2, divisor, scalarByte, FheType(fheType));
+        bytes32 expectedResult = _computeExpectedResultFheMulDiv(
+            factor1,
+            factor2,
+            divisor,
+            scalarByte,
+            FheType(fheType)
+        );
 
         vm.prank(sender);
         vm.expectEmit(true, true, true, true);
@@ -2273,7 +2279,13 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
 
         _approveHandleInACL(factor1, sender);
 
-        bytes32 expectedResult = _computeExpectedResultFheMulDiv(factor1, factor2, divisor, scalarByte, FheType(fheType));
+        bytes32 expectedResult = _computeExpectedResultFheMulDiv(
+            factor1,
+            factor2,
+            divisor,
+            scalarByte,
+            FheType(fheType)
+        );
 
         vm.prank(sender);
         vm.expectEmit(true, true, true, true);

@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       release:
-        description: "Set to true for release tagging"
+        description: 'Set to true for release tagging'
         required: false
         default: false
 
@@ -14,13 +14,13 @@ permissions: {}
 jobs:
   publish:
     name: js-sdk-publish/publish
-    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
+    runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: ./sdk/js-sdk
     permissions:
-      contents: "read" # Required to checkout repository code
-      id-token: "write" # Required for OIDC / npm provenance attestation
+      contents: 'read' # Required to checkout repository code
+      id-token: 'write' # Required for OIDC / npm provenance attestation
     steps:
       # -----------------------------------------------------------------------
       # 1. Checkout
@@ -31,7 +31,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
-          persist-credentials: "false"
+          persist-credentials: 'false'
 
       # -----------------------------------------------------------------------
       # 2. Node.js setup
@@ -44,8 +44,27 @@ jobs:
         with:
           node-version: 22.x
 
+      - name: Install safe-chain
+        shell: bash
+        run: |
+          # safe-chain v1.5.3 is distributed as an immutable GitHub release asset —
+          # its content is permanently fixed and cannot be modified after the tag is published.
+          # Verify immutability: curl -fsSL https://api.github.com/repos/AikidoSec/safe-chain/releases/tags/1.5.3 | grep immutable
+          curl -fsSL https://github.com/AikidoSec/safe-chain/releases/download/1.5.3/install-safe-chain.sh | sh -s -- --ci
+
       # -----------------------------------------------------------------------
-      # 3. Upgrade npm
+      # 3. safe-chain
+      #    Aikido's supply-chain monitor. Hooks into npm install so that any
+      #    package with a known-malicious checksum is blocked before it can
+      #    execute. --ci makes it exit non-zero on any violation instead of
+      #    prompting interactively.
+      # -----------------------------------------------------------------------
+      - name: Install safe-chain
+        shell: bash
+        run: curl -fsSL https://github.com/AikidoSec/safe-chain/releases/download/1.5.3/install-safe-chain.sh | sh -s -- --ci
+
+      # -----------------------------------------------------------------------
+      # 4. Upgrade npm
       #    The bundled npm in Node 22 may not support provenance publishing.
       #    Pin to the same version used in the sibling library-solidity workflow
       #    for consistency. The .npmrc already sets provenance=true.
@@ -54,7 +73,7 @@ jobs:
         run: npm install -g npm@11.7.0
 
       # -----------------------------------------------------------------------
-      # 4. Install dependencies
+      # 5. Install dependencies
       #    npm ci is strict and deterministic: it installs exactly what is in
       #    package-lock.json, fails if the lockfile is out of sync, and never
       #    modifies it. This is preferred over npm install in CI environments.
@@ -65,21 +84,17 @@ jobs:
         run: npm ci
 
       # -----------------------------------------------------------------------
-      # 5. Build
-      #    The top-level "build" script orchestrates all sub-builds:
-      #      - build:cjs       → CommonJS output
-      #      - build:cjs:wasm  → WASM glue for CJS
-      #      - build:esm       → ES Modules output
-      #      - build:esm:wasm  → WASM glue for ESM
-      #      - build:types     → TypeScript declaration files (.d.ts)
-      #    Running "build" ensures the dist/ folder is fully populated before
-      #    packing. Publishing without this step would ship source-only.
+      # 6. Build
+      #    Run the same full validation/build path used by PR CI, but with the
+      #    production WASM profile for package outputs. This also runs
+      #    codegen:loaders:check:dev so stale generated loaders/API declarations
+      #    fail CI instead of being silently regenerated during publish.
       # -----------------------------------------------------------------------
       - name: Build package (CJS + ESM + types)
-        run: npm run build:cjs && npm run build:esm && npm run build:types
+        run: npm run build:prod
 
       # -----------------------------------------------------------------------
-      # 6. Pack inspection
+      # 7. Pack inspection
       #    "npm pack --dry-run" lists every file that would be included in the
       #    tarball, along with its size and the total packed/unpacked sizes.
       #    This is useful to catch .npmignore or "files" field issues — e.g.,
@@ -90,7 +105,7 @@ jobs:
         run: cd src && npm pack --dry-run
 
       # -----------------------------------------------------------------------
-      # 7a. Prerelease publish
+      # 8a. Prerelease publish
       #     Runs when release != 'true' (the default).
       #     tag: alpha        → published under the "alpha" dist-tag so
       #                         "npm install @fhevm/sdk" (which resolves "latest")
@@ -114,11 +129,11 @@ jobs:
           access: public
 
       # -----------------------------------------------------------------------
-      # 7b. Release publish
+      # 8b. Release publish
       #     Runs only when release == 'true'.
       #     No tag input → publishes to the "latest" dist-tag, the default
       #     that users get when they run "npm install @fhevm/sdk".
-      #     All other inputs and behaviours identical to 7a.
+      #     All other inputs and behaviours identical to 8a.
       # -----------------------------------------------------------------------
       - name: Publish release to npm
         if: ${{ inputs.release == 'true' }}

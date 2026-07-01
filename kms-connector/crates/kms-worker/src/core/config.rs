@@ -5,8 +5,10 @@ use connector_utils::{
         ContractConfig, DeserializeConfig,
         contract::{
             default_decryption_contract_config, default_gateway_config_contract_config,
-            default_kms_generation_contract_config, deserialize_decryption_contract_config,
-            deserialize_gateway_config_contract_config, deserialize_kms_generation_contract_config,
+            default_kms_generation_contract_config, default_protocol_config_contract_config,
+            deserialize_decryption_contract_config, deserialize_gateway_config_contract_config,
+            deserialize_kms_generation_contract_config,
+            deserialize_protocol_config_contract_config,
         },
         default_database_pool_size,
     },
@@ -47,11 +49,16 @@ pub struct Config {
     #[serde(deserialize_with = "deserialize_gateway_config_contract_config")]
     pub gateway_config_contract: ContractConfig,
 
+    /// The Ethereum RPC endpoint.
+    pub ethereum_url: Url,
     /// The Chain ID of the Ethereum chain.
     pub ethereum_chain_id: u64,
     /// The `KMSGeneration` contract configuration (on Ethereum).
     #[serde(deserialize_with = "deserialize_kms_generation_contract_config")]
     pub kms_generation_contract: ContractConfig,
+    /// The `ProtocolConfig` contract configuration (on Ethereum).
+    #[serde(deserialize_with = "deserialize_protocol_config_contract_config")]
+    pub protocol_config_contract: ContractConfig,
 
     /// The Host Chains configuration.
     #[serde(deserialize_with = "deserialize_host_chains")]
@@ -91,6 +98,44 @@ pub struct Config {
     /// The timeout to perform each external service connection healthcheck.
     #[serde(with = "humantime_serde", default = "default_healthcheck_timeout")]
     pub healthcheck_timeout: Duration,
+
+    /// Off-chain ciphertext-attestation verifier config.
+    #[serde(default)]
+    pub ct_attestation: CtAttestationConfig,
+}
+
+/// Configuration of the off-chain ciphertext-attestation verifier.
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[cfg_attr(debug_assertions, derive(Serialize))]
+#[serde(default)]
+pub struct CtAttestationConfig {
+    /// Whether the verifier runs at all. Defaults to `true`.
+    #[serde(default = "default_ct_attestation_verifier_enabled")]
+    pub enabled: bool,
+
+    /// Per-bucket S3 attestation HEAD request timeout, in seconds. Defaults to 5.
+    #[serde(
+        with = "humantime_serde",
+        default = "default_ct_attestation_head_timeout"
+    )]
+    pub head_timeout: Duration,
+
+    /// Coprocessor registry snapshot refresh interval, in seconds. Defaults to 60.
+    #[serde(
+        with = "humantime_serde",
+        default = "default_copro_registry_refresh_interval"
+    )]
+    pub registry_refresh: Duration,
+}
+
+impl Default for CtAttestationConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_ct_attestation_verifier_enabled(),
+            head_timeout: default_ct_attestation_head_timeout(),
+            registry_refresh: default_copro_registry_refresh_interval(),
+        }
+    }
 }
 
 /// Supported host-chain ACL backends.
@@ -217,6 +262,18 @@ fn default_erc1271_gas_limit() -> u64 {
     100_000
 }
 
+fn default_ct_attestation_verifier_enabled() -> bool {
+    true
+}
+
+fn default_ct_attestation_head_timeout() -> Duration {
+    Duration::from_secs(5)
+}
+
+fn default_copro_registry_refresh_interval() -> Duration {
+    Duration::from_secs(60)
+}
+
 impl DeserializeConfig for Config {}
 
 // Default implementation for testing purpose
@@ -232,8 +289,10 @@ impl Default for Config {
             gateway_chain_id: 54321,
             decryption_contract: default_decryption_contract_config(),
             gateway_config_contract: default_gateway_config_contract_config(),
+            ethereum_url: Url::from_str("http://localhost:8545").unwrap(),
             ethereum_chain_id: 11155111, // Sepolia
             kms_generation_contract: default_kms_generation_contract_config(),
+            protocol_config_contract: default_protocol_config_contract_config(),
             host_chains: vec![HostChainConfig {
                 url: Url::from_str("http://localhost:8545").unwrap(),
                 chain_id: 12345,
@@ -251,6 +310,7 @@ impl Default for Config {
             task_limit: default_task_limit(),
             monitoring_endpoint: default_monitoring_endpoint(),
             healthcheck_timeout: default_healthcheck_timeout(),
+            ct_attestation: CtAttestationConfig::default(),
         }
     }
 }
@@ -268,10 +328,12 @@ mod tests {
             env::remove_var("KMS_CONNECTOR_EVENTS_BATCH_SIZE");
             env::remove_var("KMS_CONNECTOR_GATEWAY_URL");
             env::remove_var("KMS_CONNECTOR_GATEWAY_CHAIN_ID");
+            env::remove_var("KMS_CONNECTOR_ETHEREUM_URL");
             env::remove_var("KMS_CONNECTOR_ETHEREUM_CHAIN_ID");
             env::remove_var("KMS_CONNECTOR_DECRYPTION_CONTRACT__ADDRESS");
             env::remove_var("KMS_CONNECTOR_GATEWAY_CONFIG_CONTRACT__ADDRESS");
             env::remove_var("KMS_CONNECTOR_KMS_GENERATION_CONTRACT__ADDRESS");
+            env::remove_var("KMS_CONNECTOR_PROTOCOL_CONFIG_CONTRACT__ADDRESS");
             env::remove_var("KMS_CONNECTOR_HOST_CHAINS");
             env::remove_var("KMS_CONNECTOR_KMS_CORE_ENDPOINTS");
             env::remove_var("KMS_CONNECTOR_GRPC_REQUEST_RETRIES");
@@ -305,6 +367,7 @@ mod tests {
             env::set_var("KMS_CONNECTOR_EVENTS_BATCH_SIZE", "15");
             env::set_var("KMS_CONNECTOR_GATEWAY_URL", "http://localhost:9545");
             env::set_var("KMS_CONNECTOR_GATEWAY_CHAIN_ID", "31888");
+            env::set_var("KMS_CONNECTOR_ETHEREUM_URL", "http://localhost:9546");
             env::set_var("KMS_CONNECTOR_ETHEREUM_CHAIN_ID", "31444");
             env::set_var(
                 "KMS_CONNECTOR_DECRYPTION_CONTRACT__ADDRESS",
@@ -316,6 +379,10 @@ mod tests {
             );
             env::set_var(
                 "KMS_CONNECTOR_KMS_GENERATION_CONTRACT__ADDRESS",
+                "0x5fbdb2315678afecb367f032d93f642f64180aa3",
+            );
+            env::set_var(
+                "KMS_CONNECTOR_PROTOCOL_CONFIG_CONTRACT__ADDRESS",
                 "0x5fbdb2315678afecb367f032d93f642f64180aa3",
             );
             env::set_var(
@@ -351,6 +418,10 @@ mod tests {
             Url::from_str("http://localhost:9545").unwrap()
         );
         assert_eq!(config.gateway_chain_id, 31888);
+        assert_eq!(
+            config.ethereum_url,
+            Url::from_str("http://localhost:9546").unwrap()
+        );
         assert_eq!(config.ethereum_chain_id, 31444);
         assert_eq!(
             config.decryption_contract.address,
@@ -362,6 +433,10 @@ mod tests {
         );
         assert_eq!(
             config.kms_generation_contract.address,
+            Address::from_str("0x5fbdb2315678afecb367f032d93f642f64180aa3").unwrap()
+        );
+        assert_eq!(
+            config.protocol_config_contract.address,
             Address::from_str("0x5fbdb2315678afecb367f032d93f642f64180aa3").unwrap()
         );
         assert_eq!(

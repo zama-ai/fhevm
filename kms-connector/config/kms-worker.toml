@@ -12,6 +12,10 @@ gateway_url = "http://localhost:8545"
 # ENV: KMS_CONNECTOR_GATEWAY_CHAIN_ID
 gateway_chain_id = 54321
 
+# Ethereum HTTP RPC URL endpoint (required)
+# ENV: KMS_CONNECTOR_ETHEREUM_URL
+ethereum_url = "http://localhost:8545"
+
 # Chain ID for the Ethereum-like network; defaults to Sepolia (required)
 # ENV: KMS_CONNECTOR_ETHEREUM_CHAIN_ID
 ethereum_chain_id = 11155111
@@ -117,6 +121,31 @@ address = "0x0000000000000000000000000000000000000000"
 # EIP-712 domain version for KMSGeneration contract (optional, defaults to "1")
 # ENV: KMS_CONNECTOR_KMS_GENERATION_CONTRACT__DOMAIN_VERSION
 # domain_version = "1"
+
+# Configuration of the ProtocolConfig contract (required)
+[protocol_config_contract]
+# Address of the ProtocolConfig contract on Ethereum (required)
+# Format: hex string with 0x prefix
+# ENV: KMS_CONNECTOR_PROTOCOL_CONFIG_CONTRACT__ADDRESS
+address = "0x0000000000000000000000000000000000000000"
+# EIP-712 domain name for ProtocolConfig contract (optional, defaults to "ProtocolConfig")
+# ENV: KMS_CONNECTOR_PROTOCOL_CONFIG_CONTRACT__DOMAIN_NAME
+# domain_name = "ProtocolConfig"
+# EIP-712 domain version for ProtocolConfig contract (optional, defaults to "1")
+# ENV: KMS_CONNECTOR_PROTOCOL_CONFIG_CONTRACT__DOMAIN_VERSION
+# domain_version = "1"
+
+# Off-chain ciphertext-attestation verifier configuration
+# [ct_attestation]
+# Emergency kill switch (optional, defaults to true)
+# ENV: KMS_CONNECTOR_CT_ATTESTATION__ENABLED
+# enabled = true
+# Per-bucket S3 attestation HEAD request timeout in seconds (optional, defaults to 5)
+# ENV: KMS_CONNECTOR_CT_ATTESTATION__HEAD_TIMEOUT (format: https://docs.rs/humantime/latest/humantime/)
+# head_timeout = 5s
+# Coprocessor registry snapshot refresh interval in seconds (optional, defaults to 60)
+# ENV: KMS_CONNECTOR_CT_ATTESTATION__REGISTRY_REFRESH (format: https://docs.rs/humantime/latest/humantime/)
+# registry_refresh = 60s
 
 # List of supported host chains (required)
 # ENV: KMS_CONNECTOR_HOST_CHAINS

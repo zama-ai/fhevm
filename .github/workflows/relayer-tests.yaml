@@ -18,7 +18,7 @@ jobs:
       actions: 'read' # Required to read workflow run information
       contents: 'read' # Required to checkout repository code
       pull-requests: 'read' # Required to read pull request information
-    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
+    runs-on: ubuntu-latest
     outputs:
       changes-rust-files: ${{ steps.filter.outputs.rust-files }}
     steps:
@@ -64,9 +64,7 @@ jobs:
 
       - name: Format
         working-directory: relayer
-        # `make fmt` checks the relayer and the rpc-mock test-support crate without `--all`,
-        # which would otherwise descend into path deps (e.g. the in-tree generated
-        # `rust_bindings`) that are formatted by their own component, not the relayer.
+        # Use the Makefile target so local and CI run the exact same check.
         run: make fmt
 
       - name: Build for tests (no rpc mock)
@@ -106,7 +104,8 @@ jobs:
 
       - name: Clippy
         working-directory: relayer
-        run: cargo clippy -- -D warnings
+        # Use the Makefile target so local and CI run the exact same check.
+        run: make clippy
 
   integration-test:
     name: relayer-test/integration-test (bpr)

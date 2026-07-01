@@ -1,10 +1,12 @@
-use alloy::{primitives::Address, transports::http::reqwest::Url};
+use alloy::transports::http::reqwest::Url;
 use connector_utils::{
     config::{
         ContractConfig, DeserializeConfig,
         contract::{
             default_decryption_contract_config, default_kms_generation_contract_config,
-            deserialize_decryption_contract_config, deserialize_kms_generation_contract_config,
+            default_protocol_config_contract_config, deserialize_decryption_contract_config,
+            deserialize_kms_generation_contract_config,
+            deserialize_protocol_config_contract_config,
         },
         default_database_pool_size,
     },
@@ -34,13 +36,14 @@ pub struct Config {
     /// The `KMSGeneration` contract configuration.
     #[serde(deserialize_with = "deserialize_kms_generation_contract_config")]
     pub kms_generation_contract: ContractConfig,
+    /// The `ProtocolConfig` contract configuration.
+    #[serde(deserialize_with = "deserialize_protocol_config_contract_config")]
+    pub protocol_config_contract: ContractConfig,
 
     /// The Ethereum RPC node endpoint.
     pub ethereum_url: Url,
     /// The Chain ID of the Ethereum chain.
     pub ethereum_chain_id: u64,
-    /// The address of the `KMSVerifier` contract.
-    pub kms_verifier_address: Address,
 
     /// The service name used for tracing.
     #[serde(default = "default_service_name")]
@@ -108,9 +111,9 @@ impl Default for Config {
             gateway_chain_id: 54321,
             ethereum_url: Url::from_str("http://localhost:8545").unwrap(),
             ethereum_chain_id: 11155111,
-            kms_verifier_address: Address::default(),
             decryption_contract: default_decryption_contract_config(),
             kms_generation_contract: default_kms_generation_contract_config(),
+            protocol_config_contract: default_protocol_config_contract_config(),
             service_name: default_service_name(),
             task_limit: default_task_limit(),
             monitoring_endpoint: default_monitoring_endpoint(),
@@ -139,9 +142,9 @@ mod tests {
             env::remove_var("KMS_CONNECTOR_GATEWAY_CHAIN_ID");
             env::remove_var("KMS_CONNECTOR_ETHEREUM_URL");
             env::remove_var("KMS_CONNECTOR_ETHEREUM_CHAIN_ID");
-            env::remove_var("KMS_CONNECTOR_KMS_VERIFIER_ADDRESS");
             env::remove_var("KMS_CONNECTOR_DECRYPTION_CONTRACT__ADDRESS");
             env::remove_var("KMS_CONNECTOR_KMS_GENERATION_CONTRACT__ADDRESS");
+            env::remove_var("KMS_CONNECTOR_PROTOCOL_CONFIG_CONTRACT__ADDRESS");
             env::remove_var("KMS_CONNECTOR_SERVICE_NAME");
             env::remove_var("KMS_CONNECTOR_GET_LOGS_BATCH_SIZE");
             env::remove_var("KMS_CONNECTOR_MAX_CONSECUTIVE_POLLING_ERRORS");
@@ -173,16 +176,16 @@ mod tests {
             env::set_var("KMS_CONNECTOR_ETHEREUM_URL", "http://localhost:9545");
             env::set_var("KMS_CONNECTOR_ETHEREUM_CHAIN_ID", "31444");
             env::set_var(
-                "KMS_CONNECTOR_KMS_VERIFIER_ADDRESS",
-                "0x0000000000000000000000000000000000000001",
-            );
-            env::set_var(
                 "KMS_CONNECTOR_DECRYPTION_CONTRACT__ADDRESS",
                 "0x5fbdb2315678afecb367f032d93f642f64180aa3",
             );
             env::set_var(
                 "KMS_CONNECTOR_KMS_GENERATION_CONTRACT__ADDRESS",
                 "0x0000000000000000000000000000000000000002",
+            );
+            env::set_var(
+                "KMS_CONNECTOR_PROTOCOL_CONFIG_CONTRACT__ADDRESS",
+                "0x0000000000000000000000000000000000000003",
             );
             env::set_var("KMS_CONNECTOR_SERVICE_NAME", "kms-connector-test");
         }
@@ -205,14 +208,14 @@ mod tests {
             address!("0x0000000000000000000000000000000000000002")
         );
         assert_eq!(
+            config.protocol_config_contract.address,
+            address!("0x0000000000000000000000000000000000000003")
+        );
+        assert_eq!(
             config.ethereum_url,
             Url::from_str("http://localhost:9545").unwrap()
         );
         assert_eq!(config.ethereum_chain_id, 31444);
-        assert_eq!(
-            config.kms_verifier_address,
-            address!("0x0000000000000000000000000000000000000001")
-        );
         assert_eq!(config.service_name, "kms-connector-test");
 
         cleanup_env_vars();

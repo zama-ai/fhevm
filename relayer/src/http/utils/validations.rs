@@ -28,7 +28,7 @@ pub mod validation_messages {
     pub const MUST_NOT_BE_EMPTY: &str = "Must not be empty";
 
     pub const INVALID_EXTRA_DATA_FORMAT: &str =
-        "Must be 0x00 or versioned format: version byte followed by payload (e.g. 0x01 + bytes)";
+        "Must be 0x00, or a versioned format: 0x01 + 32-byte contextId (33 bytes), or 0x02 + 32-byte contextId + 32-byte epochId (65 bytes)";
     pub const TIMESTAMP_MUST_NOT_BE_IN_FUTURE: &str = "Timestamp must not be in the future";
 }
 
@@ -143,6 +143,14 @@ pub fn validate_0x_hexs(hex_strs: &Vec<String>) -> Result<(), ValidationError> {
     Ok(())
 }
 
+/// Validates an empty string or a valid `0x`-prefixed hex string.
+pub fn validate_0x_hex_allow_empty(hex_str: &str) -> Result<(), ValidationError> {
+    if hex_str.is_empty() {
+        return Ok(());
+    }
+    validate_0x_hex(hex_str)
+}
+
 /// Solana `extraData` version byte (`0x03`): a versioned blob carrying
 /// {context_id, ed25519 identity, nonce, allowed ACL domain keys}. The relayer
 /// treats it as opaque and forwards it verbatim; the canonical layout and its
@@ -158,21 +166,28 @@ const EXTRA_DATA_SOLANA_MIN_HEX_LEN: usize = 2 + 101 * 2;
 /// Validates the extraData field format for decryption requests.
 ///
 /// Accepted formats:
-/// - `"0x00"`: Legacy format (version 0)
-/// - `"0x01" + 64 hex chars`: Versioned format (version 1: 1 byte version + 32 bytes payload)
-/// - `"0x03" + …`: Solana ed25519 user-decrypt blob (version 3). Forwarded
-///   opaquely; only the version byte, a minimum header length, and hex
+/// - `"0x00"`: Legacy format (version 0).
+/// - `"0x01"` + 64 hex chars: Version 1 — `[version(1B) | contextId(32B)]` = 33 bytes
+///   (66 hex chars + `"0x"` prefix = 68 chars).
+/// - `"0x02"` + 128 hex chars: Version 2 — `[version(1B) | contextId(32B) | epochId(32B)]`
+///   = 65 bytes (130 hex chars + `"0x"` prefix = 132 chars).
+/// - `"0x03"` + variable: Solana ed25519 user-decrypt blob (version 3). Minimum 101 bytes.
+///   Forwarded opaquely; only the version byte, minimum header length, and hex
 ///   well-formedness are checked here — the relayer never parses the tail.
+///
+/// The contextId and epochId are opaque to the Relayer: not interpreted, only
+/// validated for shape, and propagated verbatim to the Gateway.
 pub fn validate_extra_data_field_decryption(extra_data: &str) -> Result<(), ValidationError> {
     match extra_data {
         "0x00" => Ok(()),
         s if s.len() == 68 && s.starts_with("0x01") => {
             // Version 1: [0x01 | contextId(32B)] = 33 bytes = 66 hex chars + "0x" prefix = 68 chars
-            hex::decode(&s[2..]).map_err(|_| {
-                ValidationError::new("validation_error")
-                    .with_message(validation_messages::INVALID_EXTRA_DATA_FORMAT.into())
-            })?;
-            Ok(())
+            decode_versioned_extra_data(s)
+        }
+        s if s.len() == 132 && s.starts_with("0x02") => {
+            // Version 2: [0x02 | contextId(32B) | epochId(32B)] = 65 bytes
+            // = 130 hex chars + "0x" prefix = 132 chars.
+            decode_versioned_extra_data(s)
         }
         s if s.len() >= EXTRA_DATA_SOLANA_MIN_HEX_LEN
             && s.starts_with("0x")
@@ -187,6 +202,15 @@ pub fn validate_extra_data_field_decryption(extra_data: &str) -> Result<(), Vali
         _ => Err(ValidationError::new("validation_error")
             .with_message(validation_messages::INVALID_EXTRA_DATA_FORMAT.into())),
     }
+}
+
+/// Ensures the hex payload of a versioned extraData string decodes cleanly.
+fn decode_versioned_extra_data(extra_data: &str) -> Result<(), ValidationError> {
+    hex::decode(&extra_data[2..]).map_err(|_| {
+        ValidationError::new("validation_error")
+            .with_message(validation_messages::INVALID_EXTRA_DATA_FORMAT.into())
+    })?;
+    Ok(())
 }
 
 /// Validates the extraData field for input proof requests.
@@ -504,8 +528,100 @@ mod tests {
         assert!(validate_extra_data_field_decryption("0x00").is_ok());
         let v1 = format!("0x01{}", "00".repeat(32));
         assert!(validate_extra_data_field_decryption(&v1).is_ok());
-        // An unknown version byte (e.g. 0x02-as-decryption-extraData) still fails.
-        let v2 = format!("0x02{}", "00".repeat(32));
-        assert!(validate_extra_data_field_decryption(&v2).is_err());
+        // A correctly-sized 0x02 (132 chars) is valid.
+        let v2_ok = format!("0x02{}", "00".repeat(64));
+        assert!(validate_extra_data_field_decryption(&v2_ok).is_ok());
+        // A wrong-size 0x02 (missing epochId) is invalid.
+        let v2_short = format!("0x02{}", "00".repeat(32));
+        assert!(validate_extra_data_field_decryption(&v2_short).is_err());
+    }
+
+    // 32-byte contextId / epochId payloads (64 hex chars each).
+    const CONTEXT_ID_HEX: &str = "00000000000000000000000000000000000000000000000000000000000000a1";
+    const EPOCH_ID_HEX: &str = "00000000000000000000000000000000000000000000000000000000000000b2";
+
+    #[test]
+    fn accepts_legacy_version_0x00() {
+        assert!(validate_extra_data_field_decryption("0x00").is_ok());
+    }
+
+    #[test]
+    fn accepts_version_0x01_with_context_id() {
+        // [0x01 | contextId(32B)] = 33 bytes = 68 chars (backward compatibility).
+        let extra_data = format!("0x01{CONTEXT_ID_HEX}");
+        assert_eq!(extra_data.len(), 68);
+        assert!(validate_extra_data_field_decryption(&extra_data).is_ok());
+    }
+
+    #[test]
+    fn accepts_version_0x02_with_context_id_and_epoch_id() {
+        // [0x02 | contextId(32B) | epochId(32B)] = 65 bytes = 132 chars.
+        let extra_data = format!("0x02{CONTEXT_ID_HEX}{EPOCH_ID_HEX}");
+        assert_eq!(extra_data.len(), 132);
+        assert!(validate_extra_data_field_decryption(&extra_data).is_ok());
+    }
+
+    #[test]
+    fn rejects_version_0x02_missing_epoch_id() {
+        // [0x02 | contextId(32B)] = 33 bytes, shorter than the fixed 65-byte size.
+        let extra_data = format!("0x02{CONTEXT_ID_HEX}");
+        assert!(validate_extra_data_field_decryption(&extra_data).is_err());
+    }
+
+    #[test]
+    fn rejects_version_0x02_with_trailing_bytes() {
+        // v0x02 is exactly 65 bytes; any extra bytes past the epochId are rejected.
+        let extra_data = format!("0x02{CONTEXT_ID_HEX}{EPOCH_ID_HEX}ff");
+        assert_eq!(extra_data.len(), 134);
+        assert!(validate_extra_data_field_decryption(&extra_data).is_err());
+    }
+
+    #[test]
+    fn rejects_version_0x01_with_trailing_bytes() {
+        // v0x01 is exactly 33 bytes; an appended epochId is not a valid v0x01 payload.
+        let extra_data = format!("0x01{CONTEXT_ID_HEX}{EPOCH_ID_HEX}");
+        assert!(validate_extra_data_field_decryption(&extra_data).is_err());
+    }
+
+    #[test]
+    fn rejects_unsupported_version_byte() {
+        // 0x04 is unknown; must be rejected.
+        let extra_data = format!("0x04{CONTEXT_ID_HEX}{EPOCH_ID_HEX}");
+        assert!(validate_extra_data_field_decryption(&extra_data).is_err());
+    }
+
+    #[test]
+    fn rejects_too_short_solana_v3_blob() {
+        // 0x03 is valid but requires the minimum header length; a short blob is rejected.
+        let extra_data = format!("0x03{CONTEXT_ID_HEX}{EPOCH_ID_HEX}");
+        assert!(validate_extra_data_field_decryption(&extra_data).is_err());
+    }
+
+    #[test]
+    fn rejects_bare_version_byte() {
+        assert!(validate_extra_data_field_decryption("0x01").is_err());
+        assert!(validate_extra_data_field_decryption("0x02").is_err());
+    }
+
+    #[test]
+    fn rejects_non_hex_payload() {
+        // Correct length and version prefix, but a non-hex character in the payload.
+        let extra_data = format!("0x02{}", "z".repeat(128));
+        assert_eq!(extra_data.len(), 132);
+        assert!(validate_extra_data_field_decryption(&extra_data).is_err());
+    }
+
+    #[test]
+    fn rejects_empty_and_garbage() {
+        assert!(validate_extra_data_field_decryption("").is_err());
+        assert!(validate_extra_data_field_decryption("invalid").is_err());
+    }
+
+    #[test]
+    fn input_proof_accepts_only_0x00() {
+        assert!(validate_extra_data_field_input_proof("0x00").is_ok());
+        // Versioned extraData for input proofs is not supported yet.
+        let v2 = format!("0x02{CONTEXT_ID_HEX}{EPOCH_ID_HEX}");
+        assert!(validate_extra_data_field_input_proof(&v2).is_err());
     }
 }

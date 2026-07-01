@@ -14,11 +14,13 @@ import CustomProvider from './CustomProvider';
 import './tasks/accounts';
 import './tasks/addPausers';
 import './tasks/blockExplorerVerify';
+import './tasks/examples/cOFT';
+import './tasks/examples/handlesList';
 import './tasks/generateKmsMaterials';
+import './tasks/kmsContext';
 import './tasks/ownership';
 import './tasks/pauseContracts';
 import './tasks/taskDeploy';
-import './tasks/taskMigrate';
 import './tasks/taskUtils';
 import './tasks/upgradeContracts';
 

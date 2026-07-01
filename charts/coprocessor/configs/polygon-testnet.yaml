@@ -1,0 +1,8 @@
+acl.address: 0xD99Cb9Fc3c42c87f2A4A12e8Fd60318d6bDdf985
+contracts.version: v0.13.0
+fhevm_executor.address: 0x89420269f61e4db00545cd99da0aEcA7fF0912f9
+hcu_limit.address: 0x462f1920A9a7b5Aa74A36c3f49E38C34392B0546
+input_verifier.address: 0x6e5A7D8b0c645467Cba7e62D6624917085118631
+kms_verifier.address: 0xCD1D89E311bce4C8DEa9a0857a0c9A4E153D4041
+pauser_set.address: 0xbD005B85E5de614661111930684d6F61D4a914a3
+protocol_config.address: 0x4CcF009Aba90D04f52b31fc7aDdE240578aFe10F

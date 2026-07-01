@@ -571,6 +571,12 @@ pub struct ContractConfig {
     pub user_decrypt_shares_threshold: u32,
 }
 
+/// User-decryption signature check configuration.
+#[derive(Debug, Deserialize, Clone)]
+pub struct UserDecryptSignatureCheckConfig {
+    pub erc1271_gas_limit: u64,
+}
+
 impl ContractConfig {
     pub fn validate(&self) -> Result<(), AppConfigError> {
         if self.user_decrypt_shares_threshold < 1 {
@@ -659,6 +665,8 @@ pub struct Settings {
     pub host_chains: Vec<HostChainConfig>,
     /// ProtocolConfig contract settings for dynamic threshold resolution
     pub protocol_config: ProtocolConfigSettings,
+    /// User-decryption signature check configuration
+    pub user_decrypt_signature_check: UserDecryptSignatureCheckConfig,
 }
 
 // Error type for application-specific configuration errors

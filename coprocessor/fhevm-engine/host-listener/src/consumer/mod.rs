@@ -6,7 +6,8 @@ use alloy::rpc::types::Log;
 use alloy_primitives::LogData;
 use anyhow::Result;
 use tokio::sync::RwLock;
-use tokio::time::sleep;
+use tokio::time::{interval_at, sleep, Instant, MissedTickBehavior};
+use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
 use fhevm_engine_common::drift_revert::SignalStatus as DriftStatus;
@@ -14,9 +15,13 @@ use fhevm_engine_common::drift_revert::SignalStatus as DriftStatus;
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::healthz_server::HttpServer as HealthHttpServer;
 use fhevm_engine_common::utils::{DatabaseURL, HeartBeat};
+use primitives::event::BlockFlow;
 
 use crate::cmd::block_history::BlockSummary;
-use crate::consumer::metrics::{inc_blocks_processed, inc_db_errors};
+use crate::consumer::metrics::{
+    inc_blocks_duplicated, inc_blocks_missing, inc_blocks_processed,
+    inc_db_errors,
+};
 use crate::database::ingest::{ingest_block_logs, BlockLogs, IngestOptions};
 use crate::database::tfhe_event_propagate::Database;
 use crate::health_check::HealthCheck;
@@ -27,6 +32,8 @@ use consumer::{
 mod metrics;
 
 const MAX_DB_RETRIES: u64 = 10;
+const STATS_REPORT_INTERVAL: Duration = Duration::from_secs(60);
+const STATS_FINALIZATION_MARGIN: i64 = 5;
 
 #[derive(Clone, Debug)]
 pub struct ConsumerConfig {
@@ -34,6 +41,7 @@ pub struct ConsumerConfig {
     pub acl_address: Address,
     pub tfhe_address: Address,
     pub kms_generation_address: Option<Address>,
+    pub confidential_bridge_address: Option<Address>,
     pub database_url: DatabaseURL,
     pub database_retry_interval: Duration,
     pub service_name: String,
@@ -189,11 +197,87 @@ pub async fn promote_once_all_chains_to_fast(
     }
 }
 
+async fn observe_consumer_stats(
+    db: &Database,
+    chain_id: &str,
+    finalization_margin: i64,
+) {
+    info!("Checking recents blocks stats");
+
+    let stats = db.detect_gap_seen_by_consumer(finalization_margin).await;
+    let stats = match stats {
+        Ok(stats) => stats,
+        Err(err) => {
+            inc_db_errors(chain_id, 1);
+            warn!(
+                finalization_margin,
+                error = %err,
+                "Failed to compute delayed consumer stats"
+            );
+            return;
+        }
+    };
+
+    if stats.total_new_gap_size > 0 {
+        error!(
+            chain_id,
+            nb_missing_blocks = stats.total_new_gap_size,
+            nb_gaps = stats.number_of_new_gaps,
+            finalization_margin,
+            "Gaps detected for consumer",
+        );
+        inc_blocks_missing(chain_id, stats.total_new_gap_size as u64);
+    }
+    if stats.number_of_duplicated_inserts > 0 {
+        warn!(
+            chain_id,
+            nb_missing_blocks = stats.total_new_gap_size,
+            nb_gaps = stats.number_of_new_gaps,
+            finalization_margin,
+            "Duplicated insertion for consumer",
+        );
+        inc_blocks_duplicated(
+            chain_id,
+            stats.number_of_duplicated_inserts as u64,
+        );
+    }
+}
+
+async fn run_consumer_stats_observer(
+    db: Database,
+    chain_id: String,
+    cancel_token: CancellationToken,
+) {
+    let mut tick = interval_at(
+        Instant::now() + STATS_REPORT_INTERVAL,
+        STATS_REPORT_INTERVAL,
+    );
+    tick.set_missed_tick_behavior(MissedTickBehavior::Delay);
+    loop {
+        tokio::select! {
+            _ = cancel_token.cancelled() => break,
+            _ = tick.tick() => {
+                observe_consumer_stats(
+                    &db,
+                    &chain_id,
+                    STATS_FINALIZATION_MARGIN,
+                )
+                .await;
+            }
+        }
+    }
+}
+
 pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
     info!("Starting consumer with config: {:?}", config);
     let mut contracts = vec![config.acl_address, config.tfhe_address];
     if let Some(kms_generation_address) = config.kms_generation_address {
         contracts.push(kms_generation_address);
+    }
+    if let Some(confidential_bridge_address) =
+        config.confidential_bridge_address
+    {
+        contracts.push(confidential_bridge_address);
     }
     let chain_id: u64 = config.chain_id.parse()?;
     let chain_id = ChainId::try_from(chain_id)?;
@@ -248,6 +332,11 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
 
     let last_known_drift = Arc::new(RwLock::new(STARTING_DRIFT));
     let chain_id_str = config.chain_id.to_string();
+    let stats_task = tokio::spawn(run_consumer_stats_observer(
+        db.clone(),
+        chain_id_str.clone(),
+        client.cancel_token.clone(),
+    ));
     let consumer_task = client.consume(move |payload, _cancel| {
         blockchain_tick.update();
         let mut db = db.clone();
@@ -284,6 +373,10 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
                 parent_hash: payload.parent_hash,
                 timestamp: payload.timestamp,
             };
+            let catchup = payload.flow == BlockFlow::Catchup;
+            let _ = db
+                .mark_block_as_seen_by_consumer(&block_summary, catchup)
+                .await;
             let logs = collect_logs(&payload);
             info!(
                 chain_id = %payload.chain_id,
@@ -306,6 +399,7 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
                 config.acl_address,
                 config.tfhe_address,
                 config.kms_generation_address,
+                config.confidential_bridge_address,
                 config.database_retry_interval,
                 ingest_options,
             )
@@ -342,6 +436,9 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
         "Host listener consumer graceful stop"
     );
     client.cancel();
+    if let Err(err) = stats_task.await {
+        error!(error = %err, "Consumer stats background task failed");
+    }
     match consumer_result {
         Ok(Ok(())) => {
             info!("Consumer task completed successfully");
@@ -366,6 +463,7 @@ async fn ingest_with_retry(
     acl_address: Address,
     tfhe_address: Address,
     kms_generation_address: Option<Address>,
+    confidential_bridge_address: Option<Address>,
     retry_interval: Duration,
     options: IngestOptions,
 ) -> Result<u64, (sqlx::Error, u64)> {
@@ -380,6 +478,7 @@ async fn ingest_with_retry(
             &acl,
             &tfhe,
             &kms_generation_address,
+            &confidential_bridge_address,
             options,
         )
         .await

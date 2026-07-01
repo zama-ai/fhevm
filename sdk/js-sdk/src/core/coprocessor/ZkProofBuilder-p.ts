@@ -1,7 +1,7 @@
 import type { BytesHex, ChecksummedAddress, UintNumber } from '../types/primitives.js';
 import type { ZkProof } from '../types/zkProof-p.js';
 import type { EncryptionBits, FheType } from '../types/fheType.js';
-import type { ZkProofBuilder } from '../types/zkProofBuilder.js';
+import type { ZkProofBuilder } from '../types/zkProofBuilder-p.js';
 import type { WithEncrypt } from '../types/coreFhevmRuntime.js';
 import type { FhevmChain } from '../types/fhevmChain.js';
 import type {
@@ -16,6 +16,7 @@ import type {
   AddressValueLike,
 } from '../types/primitives.js';
 import type { SolanaZkProof } from './SolanaZkProof-p.js';
+import type { TfheVersion } from '../../wasm/tfhe/TfheApi.js';
 import { assert } from '../base/errors/InternalError.js';
 import { isUint64 } from '../base/uint.js';
 import { asBytesHex } from '../base/bytes.js';
@@ -32,6 +33,7 @@ import { fetchFheEncryptionKeyWasm } from '../key/fetchFheEncryptionKey.js';
 type Context = {
   readonly chain: FhevmChain;
   readonly runtime: WithEncrypt;
+  readonly tfheVersion: TfheVersion;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -244,7 +246,7 @@ class ZkProofBuilderImpl implements ZkProofBuilder {
     readonly extraData: BytesHex;
   }> {
     // Fetch the FheEncryptionKey (in wasm format) from the global cache.
-    const fheEncryptionKeyWasm = await fetchFheEncryptionKeyWasm(context);
+    const fheEncryptionKeyWasm = await fetchFheEncryptionKeyWasm(context, {});
 
     if (this.#totalBits === 0) {
       throw new ZkProofError({
@@ -280,7 +282,8 @@ class ZkProofBuilderImpl implements ZkProofBuilder {
         typedValues: [...this.#builder.build()],
         fheEncryptionKey: fheEncryptionKeyWasm,
         metaData,
-        extraData,
+        extraData: asBytesHex(extraData),
+        tfheVersion: context.tfheVersion,
       });
 
     return {

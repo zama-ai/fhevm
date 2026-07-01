@@ -83,6 +83,7 @@ COPY host-contracts/contracts ./host-contracts/contracts
 # confidential-token}; the whole-workspace build must resolve their manifests, so
 # the Solana sources must be present. .dockerignore excludes solana/target.
 COPY solana ./solana
+COPY shared/ciphertext-attestation ./shared/ciphertext-attestation
 
 WORKDIR /app/coprocessor/fhevm-engine
 

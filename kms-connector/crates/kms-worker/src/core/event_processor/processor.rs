@@ -1,8 +1,9 @@
 use crate::core::event_processor::{
-    KmsClient,
+    KmsClient, ProcessingError, RequestCheckError,
     context::ContextManager,
     decryption::{DecryptionProcessor, UserDecryptionExtraData},
     kms::KMSGenerationProcessor,
+    protocol_config::ProtocolConfigProcessor,
 };
 use alloy::providers::Provider;
 use anyhow::anyhow;
@@ -10,10 +11,7 @@ use connector_utils::types::{
     KmsGrpcRequest, KmsGrpcResponse, KmsResponseKind, ProtocolEvent, ProtocolEventKind,
 };
 use sqlx::{Pool, Postgres};
-use thiserror::Error;
-use tonic::Code;
 use tracing::{error, info};
-use user_decryption_signature::Erc1271Error;
 
 /// Interface used to process Gateway's events.
 pub trait EventProcessor: Send {
@@ -37,6 +35,9 @@ pub struct DbEventProcessor<GP: Provider, HP: Provider, C> {
     /// The entity used to process key management requests.
     kms_generation_processor: KMSGenerationProcessor<C>,
 
+    /// The entity used to build `ProtocolConfig` event requests (context/epoch lifecycle).
+    protocol_config_processor: ProtocolConfigProcessor<HP>,
+
     /// The maximum number of decryption attempts.
     max_decryption_attempts: u16,
 
@@ -44,7 +45,12 @@ pub struct DbEventProcessor<GP: Provider, HP: Provider, C> {
     db_pool: Pool<Postgres>,
 }
 
-impl<GP: Provider, HP: Provider, C: ContextManager> EventProcessor for DbEventProcessor<GP, HP, C> {
+impl<GP, HP, C> EventProcessor for DbEventProcessor<GP, HP, C>
+where
+    GP: Provider + Clone + 'static,
+    HP: Provider,
+    C: ContextManager,
+{
     type Event = ProtocolEvent;
 
     #[tracing::instrument(skip_all)]
@@ -88,36 +94,12 @@ impl<GP: Provider, HP: Provider, C: ContextManager> EventProcessor for DbEventPr
     }
 }
 
-#[derive(Debug, Error)]
-pub enum ProcessingError {
-    #[error("Processing failed with irrecoverable error : {0}")]
-    Irrecoverable(anyhow::Error),
-    #[error("Processing failed: {0}")]
-    Recoverable(anyhow::Error),
-}
-
-/// ERC-1271 (RFC-012) signature errors map onto `ProcessingError` so callers can use the `?`
-/// operator. Missing code at an EOA is terminal, but smart-account validation can depend on
-/// mutable wallet state, so negative ERC-1271 results are retried through the existing attempt
-/// and validity-window limits.
-impl From<Erc1271Error> for ProcessingError {
-    fn from(err: Erc1271Error) -> Self {
-        match err {
-            Erc1271Error::EoaMismatchNoCode(_) | Erc1271Error::EmptySigOnEoa(_) => {
-                Self::Irrecoverable(anyhow::Error::new(err))
-            }
-            Erc1271Error::Transport(_)
-            | Erc1271Error::WrongMagic(..)
-            | Erc1271Error::Rejected(..) => Self::Recoverable(anyhow::Error::new(err)),
-        }
-    }
-}
-
-impl<GP: Provider, HP: Provider, C: ContextManager> DbEventProcessor<GP, HP, C> {
+impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventProcessor<GP, HP, C> {
     pub fn new(
         kms_client: KmsClient,
         decryption_processor: DecryptionProcessor<GP, HP, C>,
         kms_generation_processor: KMSGenerationProcessor<C>,
+        protocol_config_processor: ProtocolConfigProcessor<HP>,
         max_decryption_attempts: u16,
         db_pool: Pool<Postgres>,
     ) -> Self {
@@ -125,6 +107,7 @@ impl<GP: Provider, HP: Provider, C: ContextManager> DbEventProcessor<GP, HP, C> 
             kms_client,
             decryption_processor,
             kms_generation_processor,
+            protocol_config_processor,
             max_decryption_attempts,
             db_pool,
         }
@@ -140,7 +123,8 @@ impl<GP: Provider, HP: Provider, C: ContextManager> DbEventProcessor<GP, HP, C> 
             ProtocolEventKind::PublicDecryption(req) => {
                 self.decryption_processor
                     .check_ciphertexts_allowed_for_public_decryption(&req.snsCtMaterials)
-                    .await?;
+                    .await
+                    .map_err(RequestCheckError::record)?;
 
                 self.decryption_processor
                     .prepare_decryption_request(
@@ -167,7 +151,8 @@ impl<GP: Provider, HP: Provider, C: ContextManager> DbEventProcessor<GP, HP, C> 
                         &req.snsCtMaterials,
                         req.userAddress,
                     )
-                    .await?;
+                    .await
+                    .map_err(RequestCheckError::record)?;
                 self.decryption_processor
                     .prepare_decryption_request(
                         req.decryptionId,
@@ -185,7 +170,8 @@ impl<GP: Provider, HP: Provider, C: ContextManager> DbEventProcessor<GP, HP, C> 
                 // need to re-fetch the transaction calldata. EVM-only (Solana is its own arm below).
                 self.decryption_processor
                     .check_user_decryption_request_v2(req)
-                    .await?;
+                    .await
+                    .map_err(RequestCheckError::record)?;
                 let payload = &req.payload;
                 let user_decrypt_data =
                     DecryptionProcessor::<GP, HP, C>::user_decryption_extra_data_for_v2(req);
@@ -204,7 +190,8 @@ impl<GP: Provider, HP: Provider, C: ContextManager> DbEventProcessor<GP, HP, C> 
                 // identity>` prefix (kms#637). `extraData` carries only the KMS context.
                 self.decryption_processor
                     .check_user_decryption_request_solana(req)
-                    .await?;
+                    .await
+                    .map_err(RequestCheckError::record)?;
                 let payload = &req.payload;
                 let user_decrypt_data =
                     DecryptionProcessor::<GP, HP, C>::user_decryption_extra_data_for_solana(req);
@@ -230,6 +217,16 @@ impl<GP: Provider, HP: Provider, C: ContextManager> DbEventProcessor<GP, HP, C> 
             ProtocolEventKind::Crsgen(req) => {
                 self.kms_generation_processor
                     .prepare_crsgen_request(req)
+                    .await
+            }
+            ProtocolEventKind::NewKmsContext(req) => {
+                self.protocol_config_processor
+                    .prepare_new_kms_context_request(req)
+                    .await
+            }
+            ProtocolEventKind::NewKmsEpoch(req) => {
+                self.protocol_config_processor
+                    .prepare_new_kms_epoch_request(req)
                     .await
             }
         }
@@ -264,18 +261,5 @@ impl<GP: Provider, HP: Provider, C: ContextManager> DbEventProcessor<GP, HP, C> 
         let processed_response =
             KmsResponseKind::process(grpc_response).map_err(ProcessingError::Irrecoverable)?;
         Ok(Some(processed_response))
-    }
-}
-
-impl ProcessingError {
-    /// Converts GRPC status of the polling of a KMS Response into a `ProcessingError`.
-    pub fn from_response_status(value: tonic::Status) -> Self {
-        let anyhow_error = anyhow!("KMS GRPC error: {value}");
-        match value.code() {
-            Code::DeadlineExceeded | Code::Unavailable | Code::ResourceExhausted => {
-                Self::Recoverable(anyhow_error)
-            }
-            _ => Self::Irrecoverable(anyhow_error),
-        }
     }
 }

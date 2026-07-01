@@ -1,4 +1,5 @@
 {{- if .Values.kmsConnectorTxSender.enabled -}}
+{{- $contracts := include "kmsConnector.contracts" . | fromYaml -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -61,19 +62,19 @@ spec:
             - name: KMS_CONNECTOR_GATEWAY_URL
               value: {{ default .Values.commonConfig.gatewayUrl (.Values.kmsConnectorTxSender.config).gatewayUrl | quote }}
             - name: KMS_CONNECTOR_GATEWAY_CHAIN_ID
-              value: {{ .Values.commonConfig.gatewayChainId | quote }}
+              value: {{ $contracts.gatewayChainId | quote }}
             - name: KMS_CONNECTOR_DECRYPTION_CONTRACT__ADDRESS
-              value: {{ .Values.commonConfig.gatewayContractAddresses.decryption | quote }}
+              value: {{ $contracts.decryption | quote }}
             - name: KMS_CONNECTOR_GATEWAY_CONFIG_CONTRACT__ADDRESS
-              value: {{ .Values.commonConfig.gatewayContractAddresses.gatewayConfig | quote }}
+              value: {{ $contracts.gatewayConfig | quote }}
             - name: KMS_CONNECTOR_KMS_GENERATION_CONTRACT__ADDRESS
-              value: {{ .Values.commonConfig.gatewayContractAddresses.kmsGeneration | quote }}
+              value: {{ $contracts.ethereumKmsGeneration | quote }}
             - name: KMS_CONNECTOR_ETHEREUM_URL
               value: {{ .Values.commonConfig.ethereumUrl | quote }}
             - name: KMS_CONNECTOR_ETHEREUM_CHAIN_ID
-              value: {{ .Values.commonConfig.ethereumChainId | quote }}
-            - name: KMS_CONNECTOR_KMS_VERIFIER_ADDRESS
-              value: {{ .Values.commonConfig.ethereumContractAddresses.kmsVerifier | quote }}
+              value: {{ $contracts.ethereumChainId | quote }}
+            - name: KMS_CONNECTOR_PROTOCOL_CONFIG_CONTRACT__ADDRESS
+              value: {{ $contracts.ethereumProtocolConfig | quote }}
             {{- if .Values.kmsConnectorTxSender.wallet.awsKms.enabled }}
             - name: KMS_CONNECTOR_AWS_KMS_CONFIG__KEY_ID
               valueFrom:

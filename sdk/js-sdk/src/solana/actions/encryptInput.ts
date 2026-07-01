@@ -1,4 +1,4 @@
-import type { Fhevm } from '../../core/types/coreFhevmClient.js';
+import type { Fhevm, WithTfheVersion } from '../../core/types/coreFhevmClient.js';
 import type { WithEncrypt } from '../../core/types/coreFhevmRuntime.js';
 import type { FhevmChain } from '../../core/types/fhevmChain.js';
 import type { SolanaZkProof } from '../../core/types/zkProof-p.js';
@@ -31,7 +31,7 @@ export type SolanaEncryptInputResult = SolanaZkProof;
  * reading back the verified handle is the caller's job.
  */
 export async function encryptInput(
-  fhevm: Fhevm<FhevmChain, WithEncrypt>,
+  fhevm: Fhevm<FhevmChain, WithEncrypt> & WithTfheVersion,
   parameters: SolanaEncryptInputParameters,
 ): Promise<SolanaEncryptInputResult> {
   const { values, contractAddress, userAddress } = parameters;
@@ -39,5 +39,6 @@ export async function encryptInput(
   for (const value of values) {
     builder.addTypedValue(createTypedValue(value));
   }
-  return builder.buildSolana(fhevm, { contractAddress, userAddress });
+  const context = { chain: fhevm.chain, runtime: fhevm.runtime, tfheVersion: fhevm.tfheVersion };
+  return builder.buildSolana(context, { contractAddress, userAddress });
 }

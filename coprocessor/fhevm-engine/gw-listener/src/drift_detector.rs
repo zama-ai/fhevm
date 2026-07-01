@@ -1541,6 +1541,7 @@ mod tests {
         assert_eq!(detector.deferred_missing_submission, 0);
     }
 
+    use fhevm_engine_common::types::COMPUTED_HANDLE_INDEX_MARKER;
     use serial_test::serial;
     use sqlx::postgres::PgPoolOptions;
     use std::time::Duration;
@@ -1608,9 +1609,10 @@ mod tests {
         chain_id: i64,
         block_number: i64,
     ) -> [u8; 32] {
-        // Compute-output handle (byte 21 = 0xff) carrying chain_id.
+        // Compute-output handle (byte 21 = COMPUTED_HANDLE_INDEX_MARKER)
+        // carrying chain_id.
         let mut handle = [0xAA; 32];
-        handle[21] = 0xff;
+        handle[21] = COMPUTED_HANDLE_INDEX_MARKER;
         handle[22..30].copy_from_slice(&(chain_id as u64).to_be_bytes());
 
         sqlx::query(

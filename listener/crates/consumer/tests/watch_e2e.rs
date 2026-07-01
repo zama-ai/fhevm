@@ -177,6 +177,24 @@ async fn watch_contract_publishes_register_filter() {
 
 #[tokio::test]
 #[ignore = "requires Docker"]
+async fn register_full_block_publishes_wildcard_filter() {
+    // A full-block subscription carries no address fields; it must validate and
+    // round-trip over the broker just like an address-scoped filter.
+    let command = FilterCommand {
+        consumer_id: "gateway".into(),
+        from: None,
+        to: None,
+        log_address: None,
+    };
+
+    let msg =
+        assert_filter_command_roundtrip(routing::WATCH, "watch-e2e-full-block", &command).await;
+    assert_eq!(msg, command);
+    assert!(msg.from.is_none() && msg.to.is_none() && msg.log_address.is_none());
+}
+
+#[tokio::test]
+#[ignore = "requires Docker"]
 async fn unwatch_contract_publishes_unregister_filter() {
     let command = FilterCommand {
         consumer_id: "gateway".into(),

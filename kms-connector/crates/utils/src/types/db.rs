@@ -9,9 +9,12 @@ use fhevm_gateway_bindings::decryption::Decryption::{
     UserDecryptionRequest_0 as UserDecryptionRequest,
     UserDecryptionRequest_1 as UserDecryptionRequestV2, UserDecryptionRequestSolana,
 };
-use fhevm_host_bindings::kms_generation::{
-    IKMSGeneration::KeyDigest,
-    KMSGeneration::{CrsgenRequest, KeygenRequest, PrepKeygenRequest},
+use fhevm_host_bindings::{
+    kms_generation::{
+        IKMSGeneration::KeyDigest,
+        KMSGeneration::{CrsgenRequest, KeygenRequest, PrepKeygenRequest},
+    },
+    protocol_config::ProtocolConfig::{NewKmsContext, NewKmsEpoch},
 };
 use sqlx::postgres::PgNotification;
 use std::{fmt::Display, str::FromStr};
@@ -130,15 +133,16 @@ impl From<KeyDigestDbItem> for KeyDigest {
     }
 }
 
-/// Struct representing the `EventType` enum in the database.
+/// Enum of all the events monitored by the KMS Connector.
 #[derive(sqlx::Type, Copy, Clone, Debug, PartialEq)]
-#[sqlx(type_name = "event_type")]
 pub enum EventType {
     PublicDecryptionRequest,
     UserDecryptionRequest,
     PrepKeygenRequest,
     KeygenRequest,
     CrsgenRequest,
+    NewKmsContext,
+    NewKmsEpoch,
 }
 
 impl Display for EventType {
@@ -149,6 +153,8 @@ impl Display for EventType {
             EventType::PrepKeygenRequest => write!(f, "PrepKeygenRequest"),
             EventType::KeygenRequest => write!(f, "KeygenRequest"),
             EventType::CrsgenRequest => write!(f, "CrsgenRequest"),
+            EventType::NewKmsContext => write!(f, "NewKmsContext"),
+            EventType::NewKmsEpoch => write!(f, "NewKmsEpoch"),
         }
     }
 }
@@ -165,6 +171,8 @@ impl From<&ProtocolEventKind> for EventType {
             ProtocolEventKind::PrepKeygen(_) => Self::PrepKeygenRequest,
             ProtocolEventKind::Keygen(_) => Self::KeygenRequest,
             ProtocolEventKind::Crsgen(_) => Self::CrsgenRequest,
+            ProtocolEventKind::NewKmsContext(_) => Self::NewKmsContext,
+            ProtocolEventKind::NewKmsEpoch(_) => Self::NewKmsEpoch,
         }
     }
 }
@@ -179,6 +187,8 @@ impl TryFrom<PgNotification> for EventType {
             PREP_KEYGEN_REQUEST_NOTIFICATION => Ok(Self::PrepKeygenRequest),
             KEYGEN_REQUEST_NOTIFICATION => Ok(Self::KeygenRequest),
             CRSGEN_REQUEST_NOTIFICATION => Ok(Self::CrsgenRequest),
+            NEW_KMS_CONTEXT_NOTIFICATION => Ok(Self::NewKmsContext),
+            NEW_KMS_EPOCH_NOTIFICATION => Ok(Self::NewKmsEpoch),
             s => Err(anyhow!("Unknown notification channel: {s}")),
         }
     }
@@ -192,6 +202,8 @@ impl EventType {
             Self::PrepKeygenRequest => PREP_KEYGEN_REQUEST_NOTIFICATION,
             Self::KeygenRequest => KEYGEN_REQUEST_NOTIFICATION,
             Self::CrsgenRequest => CRSGEN_REQUEST_NOTIFICATION,
+            Self::NewKmsContext => NEW_KMS_CONTEXT_NOTIFICATION,
+            Self::NewKmsEpoch => NEW_KMS_EPOCH_NOTIFICATION,
         }
     }
 
@@ -202,6 +214,8 @@ impl EventType {
             EventType::PrepKeygenRequest => "prep_keygen_request",
             EventType::KeygenRequest => "keygen_request",
             EventType::CrsgenRequest => "crsgen_request",
+            EventType::NewKmsContext => "new_kms_context",
+            EventType::NewKmsEpoch => "new_kms_epoch",
         }
     }
 
@@ -212,6 +226,8 @@ impl EventType {
             EventType::PrepKeygenRequest => PrepKeygenRequest::SIGNATURE_HASH,
             EventType::KeygenRequest => KeygenRequest::SIGNATURE_HASH,
             EventType::CrsgenRequest => CrsgenRequest::SIGNATURE_HASH,
+            EventType::NewKmsContext => NewKmsContext::SIGNATURE_HASH,
+            EventType::NewKmsEpoch => NewKmsEpoch::SIGNATURE_HASH,
         }
     }
 
@@ -240,6 +256,9 @@ pub const USER_DECRYPT_REQUEST_NOTIFICATION: &str = "user_decryption_request_ava
 pub const PREP_KEYGEN_REQUEST_NOTIFICATION: &str = "prep_keygen_request_available";
 pub const KEYGEN_REQUEST_NOTIFICATION: &str = "keygen_request_available";
 pub const CRSGEN_REQUEST_NOTIFICATION: &str = "crsgen_request_available";
+pub const NEW_KMS_CONTEXT_NOTIFICATION: &str = "new_kms_context_available";
+pub const NEW_KMS_EPOCH_NOTIFICATION: &str = "new_kms_epoch_available";
+
 #[derive(sqlx::Type, Copy, Clone, Debug, PartialEq)]
 #[sqlx(type_name = "operation_status", rename_all = "lowercase")]
 pub enum OperationStatus {

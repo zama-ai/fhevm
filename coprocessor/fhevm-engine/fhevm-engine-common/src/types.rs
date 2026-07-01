@@ -1,9 +1,12 @@
+use alloy::primitives::Signature;
 use alloy::providers::RootProvider;
+use alloy::signers::Signer;
 use alloy_provider::fillers::{
     BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller,
 };
 use anyhow::Result;
 use bigdecimal::num_bigint::BigInt;
+use clap::{Parser, ValueEnum};
 use tfhe::integer::bigint::StaticUnsignedBigInt;
 use tfhe::integer::ciphertext::{BaseRadixCiphertext, ReRandomizationSeed};
 use tfhe::integer::U256;
@@ -722,6 +725,48 @@ impl SupportedFheCiphertexts {
         }
     }
 
+    pub fn add_re_randomization_metadata(&mut self, hash_data: &[u8]) {
+        match self {
+            SupportedFheCiphertexts::FheBool(ct) => {
+                ct.re_randomization_metadata_mut().set_data(hash_data);
+            }
+            SupportedFheCiphertexts::FheUint4(ct) => {
+                ct.re_randomization_metadata_mut().set_data(hash_data);
+            }
+            SupportedFheCiphertexts::FheUint8(ct) => {
+                ct.re_randomization_metadata_mut().set_data(hash_data);
+            }
+            SupportedFheCiphertexts::FheUint16(ct) => {
+                ct.re_randomization_metadata_mut().set_data(hash_data);
+            }
+            SupportedFheCiphertexts::FheUint32(ct) => {
+                ct.re_randomization_metadata_mut().set_data(hash_data);
+            }
+            SupportedFheCiphertexts::FheUint64(ct) => {
+                ct.re_randomization_metadata_mut().set_data(hash_data);
+            }
+            SupportedFheCiphertexts::FheUint128(ct) => {
+                ct.re_randomization_metadata_mut().set_data(hash_data);
+            }
+            SupportedFheCiphertexts::FheUint160(ct) => {
+                ct.re_randomization_metadata_mut().set_data(hash_data);
+            }
+            SupportedFheCiphertexts::FheUint256(ct) => {
+                ct.re_randomization_metadata_mut().set_data(hash_data);
+            }
+            SupportedFheCiphertexts::FheBytes64(ct) => {
+                ct.re_randomization_metadata_mut().set_data(hash_data);
+            }
+            SupportedFheCiphertexts::FheBytes128(ct) => {
+                ct.re_randomization_metadata_mut().set_data(hash_data);
+            }
+            SupportedFheCiphertexts::FheBytes256(ct) => {
+                ct.re_randomization_metadata_mut().set_data(hash_data);
+            }
+            SupportedFheCiphertexts::Scalar(_) => (),
+        }
+    }
+
     pub fn add_to_rerandomisation_context(&self, context: &mut ReRandomizationContext) {
         match self {
             SupportedFheCiphertexts::FheBool(c) => context.add_ciphertext(c),
@@ -999,6 +1044,16 @@ impl From<SupportedFheOperations> for i16 {
 pub type Handle = Vec<u8>;
 pub const HANDLE_LEN: usize = 32;
 
+/// Byte 21 marker for handles produced by FHE operations or by the bridge,
+/// distinguishing them from input-verification handles which encode the input
+/// index in this position (0..=254). Matches the `0xff` literal used by the
+/// FHEVMExecutor and the bridge contracts in `host-contracts/`.
+pub const COMPUTED_HANDLE_INDEX_MARKER: u8 = 0xff;
+
+/// Byte 31 of every handle. Matches the contract-side `HANDLE_VERSION`
+/// constant in `host-contracts/contracts/shared/Constants.sol`.
+pub const HANDLE_VERSION: u8 = 0;
+
 pub fn get_ct_type(handle: &[u8]) -> Result<i16, FhevmError> {
     match handle.len() {
         HANDLE_LEN => Ok(handle[30] as i16),
@@ -1052,6 +1107,14 @@ pub type BlockchainProvider = FillProvider<
     >,
     RootProvider,
 >;
+
+#[derive(Parser, Debug, Clone, ValueEnum)]
+pub enum SignerType {
+    PrivateKey,
+    AwsKms,
+}
+
+pub type CoproSigner = std::sync::Arc<dyn Signer<Signature> + Send + Sync>;
 
 #[cfg(test)]
 mod tests {

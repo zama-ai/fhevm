@@ -6,7 +6,7 @@ import {MulticallUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/Mu
 import {UUPSUpgradeableEmptyProxy} from "./shared/UUPSUpgradeableEmptyProxy.sol";
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
-import {fhevmExecutorAdd, pauserSetAdd} from "../addresses/FHEVMHostAddresses.sol";
+import {confidentialBridgeAdd, fhevmExecutorAdd, pauserSetAdd} from "../addresses/FHEVMHostAddresses.sol";
 import {IPauserSet} from "./interfaces/IPauserSet.sol";
 
 import {ACLEvents} from "./ACLEvents.sol";
@@ -162,6 +162,9 @@ contract ACL is
     /// @notice Patch version of the contract.
     uint256 private constant PATCH_VERSION = 0;
 
+    /// @notice ConfidentialBridge address.
+    address private constant CONFIDENTIAL_BRIDGE_ADDRESS = confidentialBridgeAdd;
+
     /// @notice FHEVMExecutor address.
     address private constant FHEVM_EXECUTOR_ADDRESS = fhevmExecutorAdd;
 
@@ -270,13 +273,13 @@ contract ACL is
     /**
      * @notice Allows the use of `handle` by address `account` for this transaction.
      * @dev The caller must not be in the deny list and must be allowed to use `handle` for allowTransient() to succeed.
-     *      If not, allowTransient() reverts. The Coprocessor contract can always `allowTransient`,
+     *      If not, allowTransient() reverts. The FHEVMExecutor and ConfidentialBridge contracts can always `allowTransient`,
      *      contrarily to `allow`.
      * @param handle Handle.
      * @param account Address of the account.
      */
     function allowTransient(bytes32 handle, address account) public virtual whenNotPaused {
-        if (msg.sender != FHEVM_EXECUTOR_ADDRESS) {
+        if (msg.sender != FHEVM_EXECUTOR_ADDRESS && msg.sender != CONFIDENTIAL_BRIDGE_ADDRESS) {
             if (isAccountDenied(msg.sender)) {
                 revert SenderDenied(msg.sender);
             }
@@ -361,7 +364,8 @@ contract ACL is
     /**
      * @notice Revokes the access to handles for user decryption delegated to an account.
      * @param delegate The address of the account that receives the delegation.
-     * @param contractAddress The contract address to delegate access to.
+     * @param contractAddress The contract address to revoke access to, or `WILDCARD_DELEGATION_ADDRESS` to revoke the
+     *        wildcard delegation across all contracts.
      */
     function revokeDelegationForUserDecryption(address delegate, address contractAddress) public virtual whenNotPaused {
         ACLStorage storage $ = _getACLStorage();
@@ -458,6 +462,14 @@ contract ACL is
             isAllowedTransient := tload(key)
         }
         return isAllowedTransient;
+    }
+
+    /**
+     * @notice Getter function for the ConfidentialBridge contract address.
+     * @return confidentialBridgeAddress Address of the ConfidentialBridge contract.
+     */
+    function getConfidentialBridgeAddress() public view virtual returns (address) {
+        return CONFIDENTIAL_BRIDGE_ADDRESS;
     }
 
     /**

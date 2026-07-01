@@ -53,11 +53,12 @@ clap = { version = "4.5.60", features = ["derive"] }
 rustls = { version = "0.23.36", features = [
   "aws-lc-rs",
 ], default-features = false }
-# Use the in-monorepo gateway bindings so the relayer picks up the Solana (RFC-021)
-# input-verification calls (verifyProofRequestSolana). Repoint to a published rev once merged.
+# Path dependency to stay up to date and in sync with the shared crate.
 fhevm_gateway_bindings = { path = "../gateway-contracts/rust_bindings", default-features = false }
 # Use a pinned version of fhevm host bindings contract as the feature branch is still unmerged.
 fhevm_host_bindings = { git = "https://github.com/zama-ai/fhevm.git", rev = "2a6cf820b", default-features = false }
+# Shared utils for signature verification in user-decrypt requests.
+user-decryption-signature = { path = "../shared/user-decryption-signature" }
 utoipa = { version = "5.4.0", features = ["axum_extras", "preserve_path_order"] }
 utoipa-redoc = { version = "6.0.0", features = ["axum"] }
 validator = { version = "0.20.0", features = ["derive"] }
@@ -86,6 +87,9 @@ built = { version = "0.8", features = [
 
 
 [dev-dependencies]
+# `signer-local` (PrivateKeySigner) is needed to forge EOA signatures in pre-check tests;
+# the mock provider used there is already available via the `json-rpc` feature above.
+alloy = { version = "1.7.3", features = ["signer-local"] }
 tempfile = "3.25.0"
 rand = "0.10.0"
 rstest = "0.26.1"

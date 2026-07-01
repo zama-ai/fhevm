@@ -7,7 +7,7 @@ authors = ["Zama"]
 edition = "2024"
 license = "BSD-3-Clause-Clear"
 publish = true
-version = "0.12.0"
+version = "0.14.0"
 
 [workspace.dependencies]
 
@@ -20,10 +20,11 @@ tx-sender.path = "crates/tx-sender"
 connector-utils.path = "crates/utils"
 fhevm_gateway_bindings = { path = "../gateway-contracts/rust_bindings", default-features = false }
 fhevm_host_bindings = { path = "../host-contracts/rust_bindings", default-features = false }
-kms-grpc = { git = "https://github.com/zama-ai/kms.git", tag = "v0.13.20-0", default-features = true }
-bc2wrap = { git = "https://github.com/zama-ai/kms.git", tag = "v0.13.20-0", default-features = true }
-tfhe = "=1.6.1"
+kms-grpc = { git = "https://github.com/zama-ai/kms.git", rev = "b9087af025de26cd6ada5033e8044b05a518cf22", default-features = true }
+bc2wrap = { git = "https://github.com/zama-ai/kms.git", rev = "b9087af025de26cd6ada5033e8044b05a518cf22", default-features = true }
+tfhe = { version = "=1.6.2", default-features = false }
 user-decryption-signature = { path = "../shared/user-decryption-signature", default-features = false }
+ciphertext-attestation = { path = "../shared/ciphertext-attestation" }
 
 #####################################################################
 #                       External dependencies                       #
@@ -37,12 +38,16 @@ alloy = { version = "=1.0.38", default-features = false, features = [
     "signer-aws",
     "std",
 ] }
-anyhow = { version = "=1.0.100", default-features = false }
+anyhow = { version = "=1.0.102", default-features = false }
 async-trait = { version = "=0.1.89", default-features = false }
 aws-config = { version = "=1.8.6", default-features = false, features = [
+    "default-https-client",
     "rt-tokio",
 ] }
-aws-sdk-kms = { version = "=1.86.0", default-features = false }
+aws-sdk-kms = { version = "=1.86.0", default-features = false, features = [
+    "default-https-client",
+    "rt-tokio",
+] }
 aws-sdk-s3 = { version = "=1.105.0", default-features = true }
 clap = { version = "=4.5.47", default-features = true, features = [
     "cargo",
@@ -85,16 +90,16 @@ sqlx = { version = "=0.8.6", default-features = false, features = [
     "runtime-tokio",
     "tls-rustls",
 ] }
-thiserror = { version = "=2.0.12", default-features = false }
+thiserror = { version = "=2.0.18", default-features = false }
 tokio = { version = "=1.47.1", default-features = false, features = [
     "macros",
     "rt-multi-thread",
     "signal",
     "sync",
 ] }
-tokio-util = { version = "=0.7.16", default-features = false }
+tokio-util = { version = "=0.7.18", default-features = false }
 tokio-stream = { version = "=0.1.17", default-features = false }
-tonic = { version = "=0.14.5", default-features = true, features = [
+tonic = { version = "=0.14.6", default-features = true, features = [
     "tls-ring",
     "tls-native-roots",
 ] }
@@ -122,3 +127,9 @@ inherits = "release"
 opt-level = 1
 lto = false
 codegen-units = 16
+
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.test]
+debug = "line-tables-only"

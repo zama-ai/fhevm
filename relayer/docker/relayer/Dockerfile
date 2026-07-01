@@ -22,6 +22,11 @@ RUN --mount=type=bind,source=relayer/Cargo.toml,target=Cargo.toml \
     --mount=type=bind,source=relayer/build.rs,target=build.rs \
     --mount=type=bind,source=relayer/src,target=src \
     --mount=type=bind,source=relayer/test-support,target=test-support \
+    # Out-of-tree crates the relayer depends on; bound at absolute paths so Cargo
+    # can resolve the `../` path dependencies declared in relayer/Cargo.toml.
+    --mount=type=bind,source=gateway-contracts/rust_bindings,target=/gateway-contracts/rust_bindings \
+    --mount=type=bind,source=host-contracts/rust_bindings,target=/host-contracts/rust_bindings \
+    --mount=type=bind,source=shared/user-decryption-signature,target=/shared/user-decryption-signature \
 #    --mount=type=bind,source=.git/HEAD,target=.git/HEAD \
 #    --mount=type=bind,source=.git/index,target=.git/index \
 #    --mount=type=bind,source=.git/objects,target=.git/objects \
@@ -40,7 +45,7 @@ RUN --mount=type=bind,source=relayer/Cargo.toml,target=Cargo.toml \
 # runtime dependencies for the application. This often uses a different base
 # image from the build stage where the necessary files are copied from the build
 # stage.
-FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0-dev AS prod
+FROM cgr.dev/zama.ai/glibc-dynamic:16-dev AS prod
 USER root
 RUN apk add --no-cache ca-certificates=20241010-r0
 

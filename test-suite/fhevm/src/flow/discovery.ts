@@ -68,7 +68,8 @@ export const defaultEndpoints = async () => {
 export const createDiscovery = (endpoints: Discovery["endpoints"]): Discovery => ({
   gateway: {},
   hosts: {},
-  kmsSigner: "",
+  kmsSigners: [],
+  kmsCaCerts: [],
   fheKeyId: predictedKeyId(),
   crsKeyId: predictedCrsId(),
   endpoints,

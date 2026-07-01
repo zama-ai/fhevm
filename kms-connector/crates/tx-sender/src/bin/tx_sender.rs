@@ -1,6 +1,9 @@
 use tx_sender::{
     core::{Config, TransactionSender},
-    monitoring::{health::HealthStatus, metrics::spawn_gauge_update_routine},
+    monitoring::{
+        health::HealthStatus, metrics::spawn_gauge_update_routine,
+        operation_recovery::spawn_operation_recovery_routine,
+    },
 };
 
 use connector_utils::{
@@ -44,11 +47,21 @@ async fn run() -> anyhow::Result<()> {
             install_signal_handlers(cancel_token.clone())?;
             let monitoring_endpoint = config.monitoring_endpoint;
             let gauge_update_interval = config.gauge_update_interval;
+            let operation_recovery_run_interval = config.operation_recovery_run_interval;
+            let decryption_expiry = config.decryption_expiry;
+            let operation_under_process_timeout = config.operation_under_process_timeout;
 
             info!("Starting TransactionSender");
             let (tx_sender, state) = TransactionSender::from_config(config).await?;
             spawn_gauge_update_routine(
                 gauge_update_interval,
+                state.db_pool.clone(),
+                cancel_token.clone(),
+            );
+            spawn_operation_recovery_routine(
+                operation_recovery_run_interval,
+                decryption_expiry,
+                operation_under_process_timeout,
                 state.db_pool.clone(),
                 cancel_token.clone(),
             );

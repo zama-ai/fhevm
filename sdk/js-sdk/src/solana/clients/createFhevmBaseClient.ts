@@ -23,10 +23,10 @@ export function createFhevmBaseClient<chain extends FhevmSolanaChain>(parameters
   // The core client is chain-agnostic at runtime (it just freezes and exposes `chain`); the
   // Solana chain shape differs from `FhevmChain`, so it is carried as `solanaChain` instead and
   // the core `chain` is left undefined (no EVM semantics apply).
-  const c: Fhevm<undefined, FhevmRuntime, undefined> = createCoreFhevm(PRIVATE_SOLANA_TOKEN, {
+  const c = createCoreFhevm(PRIVATE_SOLANA_TOKEN, {
     runtime: getSolanaRuntime(),
     options: parameters.options,
-  });
+  }) as unknown as Fhevm<undefined, FhevmRuntime, undefined>;
 
   Object.defineProperty(c, 'solanaChain', {
     value: parameters.chain,

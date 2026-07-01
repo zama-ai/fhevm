@@ -463,10 +463,9 @@ clippy-fix: ## Fix code issues with clippy
 	@cargo clippy --all-targets --all-features --fix --allow-dirty --allow-staged
 	@cargo clippy --all-targets --all-features --fix --allow-dirty --allow-staged --manifest-path $(MOCK_RPC_MANIFEST)
 
-# `--all` is intentionally omitted: for this single-package crate it would descend into path
-# dependencies (e.g. the in-tree generated `rust_bindings`), which are not ours to format.
+# Scope fmt to owned packages; generated path dependencies are excluded.
 fmt: ## Check code formatting
-	@cargo fmt -- --check
+	@cargo fmt --package fhevm-relayer -- --check
 	@cargo fmt --manifest-path $(MOCK_RPC_MANIFEST) -- --check
 
 fmt-fix: ## Fix code formatting
