@@ -169,7 +169,7 @@ impl DbKmsResponsePicker {
                     LIMIT $1 FOR UPDATE SKIP LOCKED
                 ) AS resp
                 WHERE prep_keygen_responses.prep_keygen_id = resp.prep_keygen_id
-                RETURNING resp.prep_keygen_id, signature, created_at, otlp_context
+                RETURNING resp.prep_keygen_id, signature, is_migration, created_at, otlp_context
             ",
         )
         .bind(self.responses_batch_size as i16)
@@ -192,7 +192,7 @@ impl DbKmsResponsePicker {
                     LIMIT $1 FOR UPDATE SKIP LOCKED
                 ) AS resp
                 WHERE keygen_responses.key_id = resp.key_id
-                RETURNING resp.key_id, key_digests, signature, created_at, otlp_context
+                RETURNING resp.key_id, key_digests, signature, is_migration, created_at, otlp_context
             ",
         )
         .bind(self.responses_batch_size as i16)

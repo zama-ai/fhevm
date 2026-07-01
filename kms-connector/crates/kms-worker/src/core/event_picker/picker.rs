@@ -100,6 +100,10 @@ impl DbEventPicker {
             EventType::UserDecryptionRequest => self.pick_user_decryption_requests().await,
             EventType::PrepKeygenRequest => self.pick_prep_keygen_requests().await,
             EventType::KeygenRequest => self.pick_keygen_requests().await,
+            EventType::PrepMigrationKeygenRequest => {
+                self.pick_prep_migration_keygen_requests().await
+            }
+            EventType::MigrationKeygenRequest => self.pick_migration_keygen_requests().await,
             EventType::CrsgenRequest => self.pick_crsgen_requests().await,
             EventType::NewKmsContext => self.pick_new_kms_context_events().await,
             EventType::NewKmsEpoch => self.pick_new_kms_epoch_events().await,
@@ -199,6 +203,52 @@ impl DbEventPicker {
         .await?
         .iter()
         .map(event::from_keygen_row)
+        .collect()
+    }
+
+    async fn pick_prep_migration_keygen_requests(&self) -> anyhow::Result<Vec<ProtocolEvent>> {
+        sqlx::query(
+            "
+                UPDATE prep_migration_keygen_requests
+                SET status = 'under_process'
+                FROM (
+                    SELECT prep_keygen_id
+                    FROM prep_migration_keygen_requests
+                    WHERE status = 'pending'
+                    LIMIT 1 FOR UPDATE SKIP LOCKED
+                ) AS req
+                WHERE prep_migration_keygen_requests.prep_keygen_id = req.prep_keygen_id
+                RETURNING req.prep_keygen_id, key_id, existing_key_id, params_type, extra_data,
+                tx_hash, already_sent, created_at, otlp_context
+            ",
+        )
+        .fetch_all(&self.db_pool)
+        .await?
+        .iter()
+        .map(event::from_prep_migration_keygen_row)
+        .collect()
+    }
+
+    async fn pick_migration_keygen_requests(&self) -> anyhow::Result<Vec<ProtocolEvent>> {
+        sqlx::query(
+            "
+                UPDATE migration_keygen_requests
+                SET status = 'under_process'
+                FROM (
+                    SELECT key_id
+                    FROM migration_keygen_requests
+                    WHERE status = 'pending'
+                    LIMIT 1 FOR UPDATE SKIP LOCKED
+                ) AS req
+                WHERE migration_keygen_requests.key_id = req.key_id
+                RETURNING prep_keygen_id, req.key_id, existing_key_id, extra_data, tx_hash,
+                already_sent, created_at, otlp_context
+            ",
+        )
+        .fetch_all(&self.db_pool)
+        .await?
+        .iter()
+        .map(event::from_migration_keygen_row)
         .collect()
     }
 

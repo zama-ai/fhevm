@@ -2,6 +2,9 @@ use crate::dependence_chain::{self};
 use crate::types::CoprocessorError;
 use fhevm_engine_common::database::{connect_pool_with_options, resolve_database_url_from_option};
 use fhevm_engine_common::db_keys::DbKeyCache;
+use fhevm_engine_common::material_version::{
+    CompressedKeyMigrationScheduleCache, MaterialVersion, COMPRESSED_KEY_MIGRATION_SCHEDULE_CHANNEL,
+};
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::tfhe_ops::check_fhe_operand_types;
 use fhevm_engine_common::types::{FhevmError, Handle, SupportedFheCiphertexts};
@@ -103,6 +106,17 @@ async fn tfhe_worker_cycle(
         DbKeyCache::new(args.key_cache_size).map_err(|e| CoprocessorError::Other(e.into()))?;
     let mut listener = PgListener::connect_with(&pool).await?;
     listener.listen("work_available").await?;
+    listener
+        .listen(COMPRESSED_KEY_MIGRATION_SCHEDULE_CHANNEL)
+        .await?;
+
+    // The compressed-key migration schedule is published exactly once and is
+    // immutable thereafter, so load it once and refresh only when the listener
+    // signals a change (or a reconnect may have missed it). The happy path
+    // never polls.
+    let mut compressed_key_migration_schedule = CompressedKeyMigrationScheduleCache::load(&pool)
+        .await
+        .map_err(|e| CoprocessorError::Other(e.into()))?;
 
     let mut dcid_mngr = dependence_chain::LockMngr::new_with_conf(
         worker_id,
@@ -133,12 +147,23 @@ async fn tfhe_worker_cycle(
             tokio::select! {
                 notification = listener.try_recv() => {
                     match notification? {
+                        Some(n) if n.channel() == COMPRESSED_KEY_MIGRATION_SCHEDULE_CHANNEL => {
+                            // One-shot compressed-key migration schedule published/changed: reload once.
+                            compressed_key_migration_schedule = CompressedKeyMigrationScheduleCache::load(&pool)
+                                .await
+                                .map_err(|e| CoprocessorError::Other(e.into()))?;
+                            info!(target: "tfhe_worker", "Reloaded compressed-key migration schedule");
+                        }
                         Some(_) => {
                             WORK_ITEMS_NOTIFICATIONS_COUNTER.inc();
                             info!(target: "tfhe_worker", "Received work_available notification from postgres");
                         }
                         None => {
-                            // sqlx already reconnected the LISTEN connection; poll for work.
+                            // sqlx already reconnected the LISTEN connection; it may have
+                            // missed a schedule NOTIFY, so refresh, then poll for work.
+                            compressed_key_migration_schedule = CompressedKeyMigrationScheduleCache::load(&pool)
+                                .await
+                                .map_err(|e| CoprocessorError::Other(e.into()))?;
                             warn!(target: "tfhe_worker", "postgres LISTEN connection reset; reconnected");
                         }
                     }
@@ -161,13 +186,14 @@ async fn tfhe_worker_cycle(
         let txn_span = tracing::info_span!(parent: &loop_span, "begin_transaction");
         let mut trx = conn.begin().instrument(txn_span).await?;
 
-        // Query for transactions to execute
-        let (mut transactions, earliest_computation, has_more_work) = query_for_work(
+        // Query for transactions to execute, grouped by material version.
+        let (groups, earliest_computation, has_more_work) = query_for_work(
             args,
             &health_check,
             &mut trx,
             &mut dcid_mngr,
             &mut no_progress_cycles,
+            &compressed_key_migration_schedule,
         )
         .instrument(loop_span.clone())
         .await?;
@@ -219,19 +245,27 @@ async fn tfhe_worker_cycle(
             }
         }
 
-        let mut tx_graph = build_transaction_graph_and_execute(
-            &mut transactions,
-            db_key_cache.clone(),
-            &health_check,
-            &mut trx,
-            &dcid_mngr,
-        )
-        .instrument(loop_span.clone())
-        .await?;
-        let has_progressed =
-            upload_transaction_graph_results(&mut tx_graph, &mut trx, &mut dcid_mngr)
-                .instrument(loop_span.clone())
-                .await?;
+        // Execute each material-version group on its own DFG with that
+        // version's key. One version per execution keeps the global server
+        // key correct across the cutover; a group whose version is not yet
+        // available halts (its rows stay unclaimed) rather than substituting.
+        let mut has_progressed = false;
+        for (version, mut txs) in groups {
+            let mut tx_graph = build_transaction_graph_and_execute(
+                &mut txs,
+                version,
+                db_key_cache.clone(),
+                &health_check,
+                &mut trx,
+                &dcid_mngr,
+            )
+            .instrument(loop_span.clone())
+            .await?;
+            has_progressed |=
+                upload_transaction_graph_results(&mut tx_graph, version, &mut trx, &mut dcid_mngr)
+                    .instrument(loop_span.clone())
+                    .await?;
+        }
         if has_progressed {
             no_progress_cycles = 0;
         } else {
@@ -290,6 +324,7 @@ async fn query_ciphertexts<'a>(
     Ok(ciphertext_map)
 }
 
+#[allow(clippy::type_complexity)]
 #[tracing::instrument(skip_all)]
 async fn query_for_work<'a>(
     args: &crate::daemon_cli::Args,
@@ -297,7 +332,15 @@ async fn query_for_work<'a>(
     trx: &mut sqlx::Transaction<'a, Postgres>,
     deps_chain_mngr: &mut dependence_chain::LockMngr,
     no_progress_cycles: &mut u32,
-) -> Result<(Vec<ComponentNode>, PrimitiveDateTime, bool), CoprocessorError> {
+    compressed_key_migration_schedule: &CompressedKeyMigrationScheduleCache,
+) -> Result<
+    (
+        Vec<(MaterialVersion, Vec<ComponentNode>)>,
+        PrimitiveDateTime,
+        bool,
+    ),
+    CoprocessorError,
+> {
     let s_dcid = tracing::info_span!(
         "query_dependence_chain",
         dependence_chain_id = tracing::field::Empty
@@ -345,14 +388,16 @@ async fn query_for_work<'a>(
         "
 -- Acquire all computations from a transaction set
 SELECT
-  c.output_handle, 
-  c.dependencies, 
-  c.fhe_operation, 
+  c.output_handle,
+  c.dependencies,
+  c.fhe_operation,
   c.is_scalar,
-  c.is_allowed, 
+  c.is_allowed,
   c.dependence_chain_id,
   c.transaction_id,
-  c.schedule_order
+  c.schedule_order,
+  c.host_chain_id,
+  c.block_number
 FROM computations c
 WHERE c.transaction_id IN (
     SELECT DISTINCT
@@ -394,16 +439,29 @@ WHERE c.transaction_id IN (
     info!(target: "tfhe_worker", { count = the_work.len(), dcid = ?dependence_chain_id.as_ref().map(hex::encode),
 				    locking = ?locking_reason }, "Processing work items");
     let s_prep = tracing::info_span!("prepare_dataflow_graphs", work_items = the_work.len());
-    let (transactions, earliest_schedule_order) = async {
+    let (by_version, earliest_schedule_order) = async {
         let mut earliest_schedule_order = the_work.first().unwrap().schedule_order;
         // Partition work directly by transaction
         let work_by_transaction: HashMap<Handle, Vec<_>> = the_work
             .into_iter()
             .into_group_map_by(|k| k.transaction_id.clone());
-        // Traverse transactions and build transaction nodes
-        let mut transactions: Vec<ComponentNode> = vec![];
+        // Group whole transactions by their RFC-029 material version. A
+        // transaction is one (host_chain_id, block_number), so every
+        // computation in it resolves to the same version -- we never split a
+        // transaction across versions. An unparsable chain or NULL block
+        // falls back to LEGACY (inert/safe).
+        let mut by_version: HashMap<MaterialVersion, Vec<ComponentNode>> = HashMap::new();
         for (transaction_id, txwork) in work_by_transaction.iter() {
             let transaction_id: &Vec<u8> = transaction_id;
+            // A transaction is one (host_chain_id, block_number), so every computation in it
+            // resolves to the same version; an unparsable chain or NULL block falls back to LEGACY.
+            let version = txwork
+                .first()
+                .map(|w| {
+                    compressed_key_migration_schedule
+                        .host_compute_material_version(w.host_chain_id, w.block_number)
+                })
+                .unwrap_or(MaterialVersion::LEGACY);
             let mut ops = vec![];
             for w in txwork {
                 let fhe_op: SupportedFheOperations = match w.fhe_operation.try_into() {
@@ -453,18 +511,23 @@ WHERE c.transaction_id IN (
             }
             let (mut components, _) = build_component_nodes(ops, transaction_id)
                 .map_err(|e| CoprocessorError::Other(e.into()))?;
-            transactions.append(&mut components);
+            by_version.entry(version).or_default().append(&mut components);
         }
-        Ok::<_, CoprocessorError>((transactions, earliest_schedule_order))
+        Ok::<_, CoprocessorError>((by_version, earliest_schedule_order))
     }
     .instrument(s_prep)
     .await?;
-    Ok((transactions, earliest_schedule_order, true))
+    Ok((
+        by_version.into_iter().collect::<Vec<_>>(),
+        earliest_schedule_order,
+        true,
+    ))
 }
 
 #[tracing::instrument(name = "build_and_execute", skip_all)]
 async fn build_transaction_graph_and_execute<'a>(
     txs: &mut Vec<ComponentNode>,
+    version: MaterialVersion,
     db_key_cache: DbKeyCache,
     health_check: &crate::health_check::HealthCheck,
     trx: &mut sqlx::Transaction<'a, Postgres>,
@@ -511,10 +574,22 @@ async fn build_transaction_graph_and_execute<'a>(
     // Execute the DFG
     let s_compute = tracing::info_span!("compute_fhe_ops");
     async {
-        // Fetch the latest key from the database
-        let keys = match db_key_cache.fetch_latest(trx.as_mut()).await {
+        // Fetch the key material for this group's version.
+        let keys = match db_key_cache
+            .fetch_latest_for_version(Some(version), trx.as_mut())
+            .await
+        {
             Ok(k) => k,
             Err(err) => {
+                if version != MaterialVersion::LEGACY {
+                    // Migrated material is not ingested yet: halt-and-retry
+                    // this group (its computations stay unclaimed). NEVER fall
+                    // back to another version -- a downgrade would diverge
+                    // from the rest of the fleet.
+                    warn!(target: "tfhe_worker", { material_version = version.0, error = %err },
+                        "migrated key material unavailable; deferring this version's work");
+                    return Ok::<(), CoprocessorError>(());
+                }
                 // Extract the sqlx error from anyhow so it classifies as a
                 // fatal connection (fail fast) instead of looking like missing keys.
                 let cerr: CoprocessorError = match err.downcast::<sqlx::Error>() {
@@ -555,6 +630,7 @@ async fn build_transaction_graph_and_execute<'a>(
 #[tracing::instrument(name = "upload_results", skip_all)]
 async fn upload_transaction_graph_results<'a>(
     tx_graph: &mut DFComponentGraph,
+    version: MaterialVersion,
     trx: &mut sqlx::Transaction<'a, Postgres>,
     deps_mngr: &mut dependence_chain::LockMngr,
 ) -> Result<bool, CoprocessorError> {
@@ -636,13 +712,16 @@ async fn upload_transaction_graph_results<'a>(
                 Vec<_>,
                 (Vec<_>, (Vec<_>, Vec<_>)),
             ) = cts_to_insert.into_iter().unzip();
+            // Stamp the material version this group was computed under so the
+            // squash stage can pin to it and provenance is explicit.
+            let material_versions: Vec<i16> = vec![version.0; handles.len()];
             let cts_inserted = query!(
                 "
-            INSERT INTO ciphertexts(handle, ciphertext, ciphertext_version, ciphertext_type)
-            SELECT * FROM UNNEST($1::BYTEA[], $2::BYTEA[], $3::SMALLINT[], $4::SMALLINT[])
+            INSERT INTO ciphertexts(handle, ciphertext, ciphertext_version, ciphertext_type, material_version)
+            SELECT * FROM UNNEST($1::BYTEA[], $2::BYTEA[], $3::SMALLINT[], $4::SMALLINT[], $5::SMALLINT[])
             ON CONFLICT (handle, ciphertext_version) DO NOTHING
             ",
-                &handles, &ciphertexts, &ciphertext_versions, &ciphertext_types
+                &handles, &ciphertexts, &ciphertext_versions, &ciphertext_types, &material_versions
             )
                 .execute(trx.as_mut())
                 .await.map_err(|err| {

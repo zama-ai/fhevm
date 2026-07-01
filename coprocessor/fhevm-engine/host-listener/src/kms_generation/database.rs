@@ -1,11 +1,14 @@
 use std::ops::DerefMut;
 
 use alloy::rpc::types::Log;
-use sqlx::{Postgres, Transaction};
-use tracing::{error, info};
+use sqlx::{Postgres, Row, Transaction};
+use tracing::{error, info, warn};
 
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::db_keys::write_large_object_in_chunks_tx;
+use fhevm_engine_common::material_version::{
+    CompressedKeyMigrationStatus, COMPRESSED_KEY_MIGRATION_SCHEDULE_CHANNEL,
+};
 
 use crate::contracts::KMSGeneration;
 use crate::kms_generation::key_id_to_database_bytes;
@@ -84,6 +87,185 @@ pub(crate) async fn insert_key_activation_event(
     .execute(tx.deref_mut())
     .await?;
     Ok(())
+}
+
+pub(crate) async fn apply_compressed_key_migration_schedule(
+    tx: &mut Transaction<'_, Postgres>,
+    scheduled: KMSGeneration::KeyMaterialMigrationScheduled,
+) -> Result<(), sqlx::Error> {
+    let key_id = key_id_to_database_bytes(scheduled.keyId);
+    let host_chain_ids: Vec<i64> = scheduled
+        .hostChainIds
+        .iter()
+        .map(|c| c.to::<u64>() as i64)
+        .collect();
+    let host_target_blocks: Vec<i64> = scheduled
+        .hostMigrationBlocks
+        .iter()
+        .map(|b| b.to::<u64>() as i64)
+        .collect();
+    let gateway_block = scheduled.gatewayMigrationBlock.to::<u64>() as i64;
+
+    sqlx::query(
+        "INSERT INTO material_version_host_schedule (host_chain_id, target_block) \
+         SELECT * FROM unnest($1::bigint[], $2::bigint[]) \
+         ON CONFLICT (host_chain_id) DO NOTHING",
+    )
+    .bind(&host_chain_ids)
+    .bind(&host_target_blocks)
+    .execute(tx.deref_mut())
+    .await?;
+
+    sqlx::query(
+        "INSERT INTO material_version_gateway_schedule (singleton, target_block) \
+         VALUES (TRUE, $1) \
+         ON CONFLICT (singleton) DO NOTHING",
+    )
+    .bind(gateway_block)
+    .execute(tx.deref_mut())
+    .await?;
+
+    sqlx::query(
+        "UPDATE keys \
+         SET compressed_key_migration_status = $2 \
+         WHERE key_id = $1",
+    )
+    .bind(key_id.to_vec())
+    .bind(CompressedKeyMigrationStatus::SCHEDULED)
+    .execute(tx.deref_mut())
+    .await?;
+
+    sqlx::query("SELECT pg_notify($1, '')")
+        .bind(COMPRESSED_KEY_MIGRATION_SCHEDULE_CHANNEL)
+        .execute(tx.deref_mut())
+        .await?;
+
+    info!(
+        gateway_block,
+        chains = host_chain_ids.len(),
+        "RFC-029 finalized compressed-key migration schedule applied"
+    );
+    Ok(())
+}
+
+/// RFC-029: a finalized `KeyMaterialAdded` event waiting for S3 download.
+#[derive(Debug, Clone)]
+pub(crate) struct PendingKeyMaterial {
+    pub chain_id: i64,
+    pub block_hash: Vec<u8>,
+    pub key_id: Vec<u8>,
+    pub key_digest: Option<Vec<u8>>,
+    pub storage_urls: Vec<String>,
+}
+
+/// Queue migrated material from a finalized `KeyMaterialAdded` event for S3 download.
+pub(crate) async fn insert_key_material_added(
+    tx: &mut Transaction<'_, Postgres>,
+    added: KMSGeneration::KeyMaterialAdded,
+    chain_id: ChainId,
+    block_hash: &[u8],
+    block_number: u64,
+) -> Result<(), sqlx::Error> {
+    // The migrated server-key (XOF keyset) digest is the keyType==0 entry.
+    let key_digest = added
+        .keyDigests
+        .iter()
+        .find(|d| d.keyType == 0)
+        .map(|d| d.digest.to_vec());
+    let urls = added.kmsNodeStorageUrls.clone();
+    sqlx::query(
+        "INSERT INTO kms_key_material_events (\
+            chain_id, block_hash, block_number, \
+            key_id, key_digest, storage_urls) \
+         VALUES ($1, $2, $3, $4, $5, $6) \
+         ON CONFLICT (chain_id, block_hash, key_id) DO NOTHING",
+    )
+    .bind(chain_id.as_i64())
+    .bind(block_hash)
+    .bind(block_number as i64)
+    .bind(key_id_to_database_bytes(added.keyId).to_vec())
+    .bind(key_digest)
+    .bind(&urls)
+    .execute(tx.deref_mut())
+    .await?;
+    Ok(())
+}
+
+/// Finalized key-material rows awaiting an S3 download.
+pub(crate) async fn all_pending_key_material_to_download(
+    tx: &mut Transaction<'_, Postgres>,
+) -> Result<Vec<PendingKeyMaterial>, sqlx::Error> {
+    let rows = sqlx::query(
+        "SELECT chain_id, block_hash, key_id, key_digest, storage_urls \
+         FROM kms_key_material_events \
+         WHERE status = 'pending' \
+         FOR UPDATE SKIP LOCKED",
+    )
+    .fetch_all(tx.deref_mut())
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| PendingKeyMaterial {
+            chain_id: r.get("chain_id"),
+            block_hash: r.get("block_hash"),
+            key_id: r.get("key_id"),
+            key_digest: r.get("key_digest"),
+            storage_urls: r.get("storage_urls"),
+        })
+        .collect())
+}
+
+/// Store downloaded migrated material in the single compressed-XOF column.
+pub(crate) async fn publish_key_material(
+    tx: &mut Transaction<'_, Postgres>,
+    pending: &PendingKeyMaterial,
+    bytes: &[u8],
+) -> Result<u64, sqlx::Error> {
+    let query = sqlx::query(
+        "WITH upd AS (\
+            UPDATE keys \
+            SET compressed_xof_keyset = $4, \
+                compressed_key_migration_status = COALESCE(compressed_key_migration_status, $5) \
+            WHERE key_id = $3 \
+            RETURNING key_id\
+        ) \
+        UPDATE kms_key_material_events AS e \
+        SET status = 'published', last_updated_at = NOW() \
+        FROM upd \
+        WHERE e.chain_id = $1 AND e.block_hash = $2 AND e.key_id = upd.key_id",
+    )
+    .bind(pending.chain_id)
+    .bind(&pending.block_hash)
+    .bind(&pending.key_id)
+    .bind(bytes)
+    .bind(CompressedKeyMigrationStatus::MATERIAL_READY)
+    .execute(tx.deref_mut())
+    .await?;
+    Ok(query.rows_affected())
+}
+
+pub(crate) async fn mark_key_material_error(
+    tx: &mut Transaction<'_, Postgres>,
+    error: &str,
+    pending: PendingKeyMaterial,
+) {
+    // Mirror mark_key_activation_error: leave status = 'pending' so the download
+    // loop retries next cycle. A transient S3 failure must not strand the v1
+    // material -- that would halt every post-cutover worker indefinitely.
+    warn!(
+        error,
+        "RFC-029 v1 key-material download failed; staying pending for retry"
+    );
+    let _ = sqlx::query(
+        "UPDATE kms_key_material_events \
+         SET last_updated_at = NOW() \
+         WHERE chain_id = $1 AND block_hash = $2 AND key_id = $3",
+    )
+    .bind(pending.chain_id)
+    .bind(&pending.block_hash)
+    .bind(&pending.key_id)
+    .execute(tx.deref_mut())
+    .await;
 }
 
 pub(crate) async fn insert_crs_activation_event(
@@ -637,7 +819,6 @@ pub async fn mark_crs_activation_error(
 mod tests {
     use super::*;
     use fhevm_engine_common::chain_id::ChainId;
-    use sqlx::Row;
     use test_harness::instance::{setup_test_db, ImportMode};
 
     #[tokio::test]

@@ -5,11 +5,13 @@ use crate::core::{
 use alloy::primitives::U256;
 use connector_utils::types::{KmsGrpcRequest, extra_data::parse_extra_data, u256_to_request_id};
 use fhevm_host_bindings::kms_generation::KMSGeneration::{
-    CrsgenRequest, KeygenRequest, PrepKeygenRequest,
+    CrsgenRequest, KeygenRequest, MigrationKeygenRequest, PrepKeygenRequest,
+    PrepMigrationKeygenRequest,
 };
 use kms_grpc::kms::v1::{
     CompressedKeyConfig, ComputeKeyType, CrsGenRequest, Eip712DomainMsg, KeyGenPreprocRequest,
-    KeyGenRequest, KeyGenSecretKeyConfig, KeySetConfig, KeySetType, StandardKeySetConfig,
+    KeyGenRequest, KeyGenSecretKeyConfig, KeySetAddedInfo, KeySetConfig, KeySetType,
+    StandardKeySetConfig,
 };
 use tracing::error;
 
@@ -65,6 +67,28 @@ where
         }))
     }
 
+    pub async fn prepare_prep_migration_keygen_request(
+        &self,
+        request: &PrepMigrationKeygenRequest,
+    ) -> Result<KmsGrpcRequest, ProcessingError> {
+        let parsed_extra_data =
+            parse_extra_data(&request.extraData).map_err(ProcessingError::Irrecoverable)?;
+        self.context_manager
+            .validate_context(&parsed_extra_data)
+            .await
+            .map_err(RequestCheckError::record)?;
+
+        Ok(KmsGrpcRequest::PrepKeygen(KeyGenPreprocRequest {
+            request_id: Some(u256_to_request_id(request.prepKeygenId)),
+            domain: Some(self.domain.clone()),
+            params: request.paramsType as i32,
+            epoch_id: parsed_extra_data.epoch_id.map(u256_to_request_id),
+            context_id: parsed_extra_data.context_id.map(u256_to_request_id),
+            extra_data: request.extraData.to_vec(),
+            keyset_config: Some(UNCOMPRESSED_KEY_SET_CONFIG),
+        }))
+    }
+
     pub async fn prepare_keygen_request(
         &self,
         keygen_request: &KeygenRequest,
@@ -84,9 +108,41 @@ where
             epoch_id: parsed_extra_data.epoch_id.map(u256_to_request_id),
             context_id: parsed_extra_data.context_id.map(u256_to_request_id),
             extra_data: keygen_request.extraData.to_vec(),
-            // Used to generate other types of key, but not planned to be supported by the Gateway
             keyset_config: Some(UNCOMPRESSED_KEY_SET_CONFIG),
             keyset_added_info: None,
+        }))
+    }
+
+    /// Builds the RFC-029 compressed-key migration request.
+    ///
+    /// The KMS keeps the existing FHE key and adds compressed XOF material derived from it. The live
+    /// network still computes on CPU after this cutover; GPU production can only use the key after
+    /// this compressed material exists.
+    pub async fn prepare_migration_keygen_request(
+        &self,
+        request: &MigrationKeygenRequest,
+    ) -> Result<KmsGrpcRequest, ProcessingError> {
+        let parsed_extra_data =
+            parse_extra_data(&request.extraData).map_err(ProcessingError::Irrecoverable)?;
+        self.context_manager
+            .validate_context(&parsed_extra_data)
+            .await
+            .map_err(RequestCheckError::record)?;
+
+        Ok(KmsGrpcRequest::Keygen(KeyGenRequest {
+            request_id: Some(u256_to_request_id(request.keyId)),
+            preproc_id: Some(u256_to_request_id(request.prepKeygenId)),
+            domain: Some(self.domain.clone()),
+            params: None,
+            epoch_id: parsed_extra_data.epoch_id.map(u256_to_request_id),
+            context_id: parsed_extra_data.context_id.map(u256_to_request_id),
+            extra_data: request.extraData.to_vec(),
+            keyset_config: Some(MIGRATION_KEY_SET_CONFIG),
+            keyset_added_info: Some(KeySetAddedInfo {
+                existing_keyset_id: Some(u256_to_request_id(request.existingKeyId)),
+                copy_compressed_key_to_original: true,
+                ..Default::default()
+            }),
         }))
     }
 
@@ -132,3 +188,100 @@ const UNCOMPRESSED_KEY_SET_CONFIG: KeySetConfig = KeySetConfig {
         compressed_key_config: CompressedKeyConfig::CompressedNone as i32,
     }),
 };
+
+/// RFC-029 keygen-from-existing: re-derive the existing key's public material in compressed form.
+const MIGRATION_KEY_SET_CONFIG: KeySetConfig = KeySetConfig {
+    keyset_type: KeySetType::Standard as i32,
+    standard_keyset_config: Some(StandardKeySetConfig {
+        compute_key_type: ComputeKeyType::Cpu as i32,
+        secret_key_config: KeyGenSecretKeyConfig::UseExisting as i32,
+        compressed_key_config: CompressedKeyConfig::CompressedAll as i32,
+    }),
+};
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloy::primitives::Bytes;
+    use connector_utils::{tests::rand::rand_u256, types::extra_data::ExtraData};
+
+    struct MockContextManager;
+
+    impl ContextManager for MockContextManager {
+        async fn validate_context(&self, _extra_data: &ExtraData) -> Result<(), RequestCheckError> {
+            Ok(())
+        }
+    }
+
+    fn test_processor() -> KMSGenerationProcessor<MockContextManager> {
+        KMSGenerationProcessor::new(&Config::default(), MockContextManager)
+    }
+
+    fn standard_config(req: KmsGrpcRequest) -> (KeyGenRequest, StandardKeySetConfig) {
+        let KmsGrpcRequest::Keygen(keygen) = req else {
+            panic!("expected a Keygen gRPC request");
+        };
+        let standard = keygen
+            .keyset_config
+            .and_then(|c| c.standard_keyset_config)
+            .expect("keygen carries a standard keyset config");
+        (keygen, standard)
+    }
+
+    // The core "no silent degrade" invariant: a migration keygen builds a keygen-from-existing
+    // (UseExisting + CompressedAll + copy-to-original), never the GenerateAll path.
+    #[tokio::test]
+    async fn migration_keygen_maps_to_use_existing_not_generate_all() {
+        let existing_key_id = rand_u256();
+        let request = MigrationKeygenRequest {
+            prepKeygenId: rand_u256(),
+            keyId: rand_u256(),
+            existingKeyId: existing_key_id,
+            extraData: Bytes::new(),
+        };
+
+        let (keygen, standard) = standard_config(
+            test_processor()
+                .prepare_migration_keygen_request(&request)
+                .await
+                .unwrap(),
+        );
+
+        assert_eq!(
+            standard.secret_key_config,
+            KeyGenSecretKeyConfig::UseExisting as i32
+        );
+        assert_eq!(
+            standard.compressed_key_config,
+            CompressedKeyConfig::CompressedAll as i32
+        );
+        let added = keygen.keyset_added_info.unwrap();
+        assert!(added.copy_compressed_key_to_original);
+        assert_eq!(
+            added.existing_keyset_id,
+            Some(u256_to_request_id(existing_key_id))
+        );
+    }
+
+    #[tokio::test]
+    async fn normal_keygen_stays_generate_all() {
+        let request = KeygenRequest {
+            prepKeygenId: rand_u256(),
+            keyId: rand_u256(),
+            extraData: Bytes::new(),
+        };
+
+        let (keygen, standard) = standard_config(
+            test_processor()
+                .prepare_keygen_request(&request)
+                .await
+                .unwrap(),
+        );
+
+        assert_eq!(
+            standard.secret_key_config,
+            KeyGenSecretKeyConfig::GenerateAll as i32
+        );
+        assert!(keygen.keyset_added_info.is_none());
+    }
+}

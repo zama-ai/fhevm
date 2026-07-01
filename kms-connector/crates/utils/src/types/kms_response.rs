@@ -40,7 +40,9 @@ pub enum KmsResponseKind {
     PublicDecryption(PublicDecryptionResponse),
     UserDecryption(UserDecryptionResponse),
     PrepKeygen(PrepKeygenResponse),
+    PrepMigrationKeygen(PrepKeygenResponse),
     Keygen(KeygenResponse),
+    MigrationKeygen(KeygenResponse),
     Crsgen(CrsgenResponse),
     NewKmsContext(NewKmsContextResponse),
     EpochResult(EpochResultResponse),
@@ -145,7 +147,17 @@ impl KmsResponse {
                 status as OperationStatus,
                 r.prep_keygen_id.as_le_slice()
             ),
+            KmsResponseKind::PrepMigrationKeygen(r) => sqlx::query!(
+                "UPDATE prep_keygen_responses SET status = $1 WHERE prep_keygen_id = $2",
+                status as OperationStatus,
+                r.prep_keygen_id.as_le_slice()
+            ),
             KmsResponseKind::Keygen(r) => sqlx::query!(
+                "UPDATE keygen_responses SET status = $1 WHERE key_id = $2",
+                status as OperationStatus,
+                r.key_id.as_le_slice()
+            ),
+            KmsResponseKind::MigrationKeygen(r) => sqlx::query!(
                 "UPDATE keygen_responses SET status = $1 WHERE key_id = $2",
                 status as OperationStatus,
                 r.key_id.as_le_slice()
@@ -297,24 +309,36 @@ pub fn from_user_decryption_row(row: &PgRow) -> anyhow::Result<KmsResponse> {
 }
 
 pub fn from_prep_keygen_row(row: &PgRow) -> anyhow::Result<KmsResponse> {
+    let response = PrepKeygenResponse {
+        prep_keygen_id: U256::from_le_bytes(row.try_get::<[u8; 32], _>("prep_keygen_id")?),
+        signature: row.try_get("signature")?,
+    };
+    let kind = if row.try_get::<bool, _>("is_migration")? {
+        KmsResponseKind::PrepMigrationKeygen(response)
+    } else {
+        KmsResponseKind::PrepKeygen(response)
+    };
     Ok(KmsResponse {
         otlp_context: bc2wrap::deserialize_slice(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
-        kind: KmsResponseKind::PrepKeygen(PrepKeygenResponse {
-            prep_keygen_id: U256::from_le_bytes(row.try_get::<[u8; 32], _>("prep_keygen_id")?),
-            signature: row.try_get("signature")?,
-        }),
+        kind,
         created_at: row.try_get("created_at")?,
     })
 }
 
 pub fn from_keygen_row(row: &PgRow) -> anyhow::Result<KmsResponse> {
+    let response = KeygenResponse {
+        key_id: U256::from_le_bytes(row.try_get::<[u8; 32], _>("key_id")?),
+        key_digests: row.try_get("key_digests")?,
+        signature: row.try_get("signature")?,
+    };
+    let kind = if row.try_get::<bool, _>("is_migration")? {
+        KmsResponseKind::MigrationKeygen(response)
+    } else {
+        KmsResponseKind::Keygen(response)
+    };
     Ok(KmsResponse {
         otlp_context: bc2wrap::deserialize_slice(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
-        kind: KmsResponseKind::Keygen(KeygenResponse {
-            key_id: U256::from_le_bytes(row.try_get::<[u8; 32], _>("key_id")?),
-            key_digests: row.try_get("key_digests")?,
-            signature: row.try_get("signature")?,
-        }),
+        kind,
         created_at: row.try_get("created_at")?,
     })
 }
@@ -495,8 +519,14 @@ impl Display for KmsResponseKind {
             KmsResponseKind::PrepKeygen(r) => {
                 write!(f, "PrepKeygenResponse #{}", r.prep_keygen_id)
             }
+            KmsResponseKind::PrepMigrationKeygen(r) => {
+                write!(f, "PrepMigrationKeygenResponse #{}", r.prep_keygen_id)
+            }
             KmsResponseKind::Keygen(r) => {
                 write!(f, "KeygenResponse #{}", r.key_id)
+            }
+            KmsResponseKind::MigrationKeygen(r) => {
+                write!(f, "MigrationKeygenResponse #{}", r.key_id)
             }
             KmsResponseKind::Crsgen(r) => {
                 write!(f, "CrsgenResponse #{}", r.crs_id)
@@ -520,7 +550,9 @@ impl KmsResponseKind {
             KmsResponseKind::PublicDecryption(_) => PUBLIC_DECRYPTION_RESPONSE_STR,
             KmsResponseKind::UserDecryption(_) => USER_DECRYPTION_RESPONSE_STR,
             KmsResponseKind::PrepKeygen(_) => PREP_KEYGEN_RESPONSE_STR,
+            KmsResponseKind::PrepMigrationKeygen(_) => PREP_KEYGEN_RESPONSE_STR,
             KmsResponseKind::Keygen(_) => KEYGEN_RESPONSE_STR,
+            KmsResponseKind::MigrationKeygen(_) => KEYGEN_RESPONSE_STR,
             KmsResponseKind::Crsgen(_) => CRSGEN_RESPONSE_STR,
             KmsResponseKind::NewKmsContext(_) => NEW_KMS_CONTEXT_RESPONSE_STR,
             KmsResponseKind::EpochResult(_) => EPOCH_RESULT_RESPONSE_STR,

@@ -48,6 +48,7 @@ use tracing::{info, warn};
 #[case::user_decryption_v2(TestEventType::UserDecryptionV2, false)]
 #[case::prep_keygen(TestEventType::PrepKeygen, false)]
 #[case::keygen(TestEventType::Keygen, false)]
+#[case::migration_keygen(TestEventType::MigrationKeygen, false)]
 #[case::crsgen(TestEventType::Crsgen, false)]
 #[case::new_kms_context(TestEventType::NewKmsContext, false)]
 #[case::new_kms_epoch(TestEventType::NewKmsEpoch, false)]
@@ -203,7 +204,11 @@ fn prepare_mocks(req: &ProtocolEventKind, already_sent: bool) -> MockSet {
         ProtocolEventKind::PrepKeygen(r) => {
             (r.prepKeygenId, "KeyGenPreproc", "GetKeyGenPreprocResult")
         }
+        ProtocolEventKind::PrepMigrationKeygen(r) => {
+            (r.prepKeygenId, "KeyGenPreproc", "GetKeyGenPreprocResult")
+        }
         ProtocolEventKind::Keygen(r) => (r.keyId, "KeyGen", "GetKeyGenResult"),
+        ProtocolEventKind::MigrationKeygen(r) => (r.keyId, "KeyGen", "GetKeyGenResult"),
         ProtocolEventKind::Crsgen(r) => (r.crsId, "CrsGen", "GetCrsGenResult"),
         ProtocolEventKind::NewKmsContext(r) => (r.contextId, "NewMpcContext", "unreachable"),
         ProtocolEventKind::NewKmsEpoch(r) => (r.epochId, "NewMpcEpoch", "GetEpochResult"),
@@ -236,14 +241,17 @@ fn prepare_mocks(req: &ProtocolEventKind, already_sent: bool) -> MockSet {
                     payload: Some(UserDecryptionResponsePayload::default()),
                     ..Default::default()
                 }),
-            ProtocolEventKind::PrepKeygen(_) => then.pb(KeyGenPreprocResult {
-                preprocessing_id: request_id,
-                ..Default::default()
-            }),
-            ProtocolEventKind::Keygen(_) => then.pb(KeyGenResult {
-                request_id,
-                ..Default::default()
-            }),
+            ProtocolEventKind::PrepKeygen(_) | ProtocolEventKind::PrepMigrationKeygen(_) => then
+                .pb(KeyGenPreprocResult {
+                    preprocessing_id: request_id,
+                    ..Default::default()
+                }),
+            ProtocolEventKind::Keygen(_) | ProtocolEventKind::MigrationKeygen(_) => {
+                then.pb(KeyGenResult {
+                    request_id,
+                    ..Default::default()
+                })
+            }
             ProtocolEventKind::Crsgen(_) => then.pb(CrsGenResult {
                 request_id,
                 ..Default::default()
@@ -269,8 +277,12 @@ async fn wait_for_response_in_db(
         ProtocolEventKind::UserDecryption(_) | ProtocolEventKind::UserDecryptionV2(_) => {
             "SELECT * FROM user_decryption_responses"
         }
-        ProtocolEventKind::PrepKeygen(_) => "SELECT * FROM prep_keygen_responses",
-        ProtocolEventKind::Keygen(_) => "SELECT * FROM keygen_responses",
+        ProtocolEventKind::PrepKeygen(_) | ProtocolEventKind::PrepMigrationKeygen(_) => {
+            "SELECT * FROM prep_keygen_responses"
+        }
+        ProtocolEventKind::Keygen(_) | ProtocolEventKind::MigrationKeygen(_) => {
+            "SELECT * FROM keygen_responses"
+        }
         ProtocolEventKind::Crsgen(_) => "SELECT * FROM crsgen_responses",
         ProtocolEventKind::NewKmsContext(_) => "SELECT * FROM new_kms_context_responses",
         ProtocolEventKind::NewKmsEpoch(_) => "SELECT * FROM epoch_result_responses",
@@ -289,10 +301,10 @@ async fn wait_for_response_in_db(
                 ProtocolEventKind::UserDecryption(_) | ProtocolEventKind::UserDecryptionV2(_) => {
                     break kms_response::from_user_decryption_row(&result[0])?;
                 }
-                ProtocolEventKind::PrepKeygen(_) => {
+                ProtocolEventKind::PrepKeygen(_) | ProtocolEventKind::PrepMigrationKeygen(_) => {
                     break kms_response::from_prep_keygen_row(&result[0])?;
                 }
-                ProtocolEventKind::Keygen(_) => {
+                ProtocolEventKind::Keygen(_) | ProtocolEventKind::MigrationKeygen(_) => {
                     break kms_response::from_keygen_row(&result[0])?;
                 }
                 ProtocolEventKind::Crsgen(_) => {
@@ -339,7 +351,17 @@ fn check_response_data(request: &ProtocolEventKind, response: KmsResponse) -> an
             preprocessing_id: Some(u256_to_request_id(r.prepKeygenId)),
             ..Default::default()
         }),
+        ProtocolEventKind::PrepMigrationKeygen(r) => {
+            KmsGrpcResponse::PrepKeygen(KeyGenPreprocResult {
+                preprocessing_id: Some(u256_to_request_id(r.prepKeygenId)),
+                ..Default::default()
+            })
+        }
         ProtocolEventKind::Keygen(r) => KmsGrpcResponse::Keygen(KeyGenResult {
+            request_id: Some(u256_to_request_id(r.keyId)),
+            ..Default::default()
+        }),
+        ProtocolEventKind::MigrationKeygen(r) => KmsGrpcResponse::Keygen(KeyGenResult {
             request_id: Some(u256_to_request_id(r.keyId)),
             ..Default::default()
         }),
@@ -356,7 +378,17 @@ fn check_response_data(request: &ProtocolEventKind, response: KmsResponse) -> an
             grpc_response: GrpcEpochResultResponse::default(),
         },
     };
-    assert_eq!(response.kind, KmsResponseKind::process(expected_response)?);
+    let expected_kind = KmsResponseKind::process(expected_response)?;
+    let expected_kind = match (request, expected_kind) {
+        (ProtocolEventKind::PrepMigrationKeygen(_), KmsResponseKind::PrepKeygen(response)) => {
+            KmsResponseKind::PrepMigrationKeygen(response)
+        }
+        (ProtocolEventKind::MigrationKeygen(_), KmsResponseKind::Keygen(response)) => {
+            KmsResponseKind::MigrationKeygen(response)
+        }
+        (_, response) => response,
+    };
+    assert_eq!(response.kind, expected_kind);
     info!("OK!");
     Ok(())
 }

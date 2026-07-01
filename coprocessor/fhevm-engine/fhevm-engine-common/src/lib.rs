@@ -9,6 +9,7 @@ pub mod gpu_memory;
 pub mod healthz_server;
 pub mod host_chains;
 pub mod keys;
+pub mod material_version;
 pub mod metrics_server;
 pub mod pg_pool;
 pub mod telemetry;
