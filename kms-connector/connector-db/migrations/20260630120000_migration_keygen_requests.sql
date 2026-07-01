@@ -2,8 +2,8 @@
 --   RFC-029: first-class migration keygen requests (keygen-from-existing, no side table)         --
 --                                                                                                --
 -- A migration keygen is its own request type: the host contract emits MigrationKeygenRequest in   --
--- place of KeygenRequest, carrying the existing key + copy-to-original flag the worker needs to    --
--- build a UseExisting + compressed keygen. The kms-worker branches on the event type, so a         --
+-- place of KeygenRequest, carrying the existing key the worker needs to build a UseExisting +      --
+-- compressed keygen. The kms-worker branches on the event type, so a                               --
 -- migration can never silently run as a normal keygen. The KMS still answers with an ordinary      --
 -- keygen response (keyed by key_id, stored in keygen_responses), which marks this request done.    --
 --------------------------------------------------------------------------------------------------
@@ -11,7 +11,6 @@ CREATE TABLE IF NOT EXISTS migration_keygen_requests (
     prep_keygen_id BYTEA NOT NULL,
     key_id BYTEA NOT NULL,
     existing_key_id BYTEA NOT NULL,
-    copy_to_original BOOLEAN NOT NULL,
     extra_data BYTEA,
     tx_hash BYTEA,
     already_sent BOOLEAN NOT NULL DEFAULT FALSE,

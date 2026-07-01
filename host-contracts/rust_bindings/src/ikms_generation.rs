@@ -51,11 +51,11 @@ interface IKMSGeneration {
     event ActivateKey(uint256 keyId, string[] kmsNodeStorageUrls, KeyDigest[] keyDigests);
     event CrsgenRequest(uint256 crsId, uint256 maxBitLength, ParamsType paramsType, bytes extraData);
     event CrsgenResponse(uint256 crsId, bytes crsDigest, bytes signature, address kmsTxSender);
-    event KeyMaterialAdded(uint256 keyId, string[] kmsNodeStorageUrls, KeyDigest[] keyDigests, uint256 materialVersion);
-    event KeyMaterialMigrationScheduled(uint256 keyId, uint256[] hostChainIds, uint256[] hostMigrationBlocks, uint256 gatewayMigrationBlock, uint256 materialVersion);
+    event KeyMaterialAdded(uint256 keyId, string[] kmsNodeStorageUrls, KeyDigest[] keyDigests);
+    event KeyMaterialMigrationScheduled(uint256 keyId, uint256[] hostChainIds, uint256[] hostMigrationBlocks, uint256 gatewayMigrationBlock);
     event KeygenRequest(uint256 prepKeygenId, uint256 keyId, bytes extraData);
     event KeygenResponse(uint256 keyId, KeyDigest[] keyDigests, bytes signature, address kmsTxSender);
-    event MigrationKeygenRequest(uint256 prepKeygenId, uint256 keyId, uint256 existingKeyId, bool copyToOriginal, bytes extraData);
+    event MigrationKeygenRequest(uint256 prepKeygenId, uint256 keyId, uint256 existingKeyId, bytes extraData);
     event PrepKeygenRequest(uint256 prepKeygenId, ParamsType paramsType, bytes extraData);
     event PrepKeygenResponse(uint256 prepKeygenId, bytes signature, address kmsTxSender);
 
@@ -811,12 +811,6 @@ interface IKMSGeneration {
             "internalType": "bytes"
           }
         ]
-      },
-      {
-        "name": "materialVersion",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
       }
     ],
     "anonymous": false
@@ -845,12 +839,6 @@ interface IKMSGeneration {
       },
       {
         "name": "gatewayMigrationBlock",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      },
-      {
-        "name": "materialVersion",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -947,12 +935,6 @@ interface IKMSGeneration {
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
-      },
-      {
-        "name": "copyToOriginal",
-        "type": "bool",
-        "indexed": false,
-        "internalType": "bool"
       },
       {
         "name": "extraData",
@@ -5194,9 +5176,9 @@ event CrsgenResponse(uint256 crsId, bytes crsDigest, bytes signature, address km
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Event with signature `KeyMaterialAdded(uint256,string[],(uint8,bytes)[],uint256)` and selector `0xa47664861ab58c5bd5040e9cc45e68d0e48ec04371035fd75099e217e0a6aa81`.
+    /**Event with signature `KeyMaterialAdded(uint256,string[],(uint8,bytes)[])` and selector `0x0e4c70e675cb26bb9f8f898e041f3d776848331e8a1c8a1689b7df25afa93de1`.
 ```solidity
-event KeyMaterialAdded(uint256 keyId, string[] kmsNodeStorageUrls, KeyDigest[] keyDigests, uint256 materialVersion);
+event KeyMaterialAdded(uint256 keyId, string[] kmsNodeStorageUrls, KeyDigest[] keyDigests);
 ```*/
     #[allow(
         non_camel_case_types,
@@ -5216,8 +5198,6 @@ event KeyMaterialAdded(uint256 keyId, string[] kmsNodeStorageUrls, KeyDigest[] k
         pub keyDigests: alloy::sol_types::private::Vec<
             <KeyDigest as alloy::sol_types::SolType>::RustType,
         >,
-        #[allow(missing_docs)]
-        pub materialVersion: alloy::sol_types::private::primitives::aliases::U256,
     }
     #[allow(
         non_camel_case_types,
@@ -5233,17 +5213,16 @@ event KeyMaterialAdded(uint256 keyId, string[] kmsNodeStorageUrls, KeyDigest[] k
                 alloy::sol_types::sol_data::Uint<256>,
                 alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::String>,
                 alloy::sol_types::sol_data::Array<KeyDigest>,
-                alloy::sol_types::sol_data::Uint<256>,
             );
             type DataToken<'a> = <Self::DataTuple<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
-            const SIGNATURE: &'static str = "KeyMaterialAdded(uint256,string[],(uint8,bytes)[],uint256)";
+            const SIGNATURE: &'static str = "KeyMaterialAdded(uint256,string[],(uint8,bytes)[])";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                164u8, 118u8, 100u8, 134u8, 26u8, 181u8, 140u8, 91u8, 213u8, 4u8, 14u8,
-                156u8, 196u8, 94u8, 104u8, 208u8, 228u8, 142u8, 192u8, 67u8, 113u8, 3u8,
-                95u8, 215u8, 80u8, 153u8, 226u8, 23u8, 224u8, 166u8, 170u8, 129u8,
+                14u8, 76u8, 112u8, 230u8, 117u8, 203u8, 38u8, 187u8, 159u8, 143u8, 137u8,
+                142u8, 4u8, 31u8, 61u8, 119u8, 104u8, 72u8, 51u8, 30u8, 138u8, 28u8,
+                138u8, 22u8, 137u8, 183u8, 223u8, 37u8, 175u8, 169u8, 61u8, 225u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -5256,7 +5235,6 @@ event KeyMaterialAdded(uint256 keyId, string[] kmsNodeStorageUrls, KeyDigest[] k
                     keyId: data.0,
                     kmsNodeStorageUrls: data.1,
                     keyDigests: data.2,
-                    materialVersion: data.3,
                 }
             }
             #[inline]
@@ -5286,9 +5264,6 @@ event KeyMaterialAdded(uint256 keyId, string[] kmsNodeStorageUrls, KeyDigest[] k
                     <alloy::sol_types::sol_data::Array<
                         KeyDigest,
                     > as alloy_sol_types::SolType>::tokenize(&self.keyDigests),
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.materialVersion),
                 )
             }
             #[inline]
@@ -5328,9 +5303,9 @@ event KeyMaterialAdded(uint256 keyId, string[] kmsNodeStorageUrls, KeyDigest[] k
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Event with signature `KeyMaterialMigrationScheduled(uint256,uint256[],uint256[],uint256,uint256)` and selector `0x8bfa7d0ed6f87e526b62342918ee7bfa53952badd463dc934054d7dd940eafdc`.
+    /**Event with signature `KeyMaterialMigrationScheduled(uint256,uint256[],uint256[],uint256)` and selector `0x2091fb126fd7ded10b2e6e572fdac5ca9a7447a3b6a5cd17af25a78fd751c096`.
 ```solidity
-event KeyMaterialMigrationScheduled(uint256 keyId, uint256[] hostChainIds, uint256[] hostMigrationBlocks, uint256 gatewayMigrationBlock, uint256 materialVersion);
+event KeyMaterialMigrationScheduled(uint256 keyId, uint256[] hostChainIds, uint256[] hostMigrationBlocks, uint256 gatewayMigrationBlock);
 ```*/
     #[allow(
         non_camel_case_types,
@@ -5352,8 +5327,6 @@ event KeyMaterialMigrationScheduled(uint256 keyId, uint256[] hostChainIds, uint2
         >,
         #[allow(missing_docs)]
         pub gatewayMigrationBlock: alloy::sol_types::private::primitives::aliases::U256,
-        #[allow(missing_docs)]
-        pub materialVersion: alloy::sol_types::private::primitives::aliases::U256,
     }
     #[allow(
         non_camel_case_types,
@@ -5370,17 +5343,16 @@ event KeyMaterialMigrationScheduled(uint256 keyId, uint256[] hostChainIds, uint2
                 alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Uint<256>>,
                 alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Uint<256>>,
                 alloy::sol_types::sol_data::Uint<256>,
-                alloy::sol_types::sol_data::Uint<256>,
             );
             type DataToken<'a> = <Self::DataTuple<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
-            const SIGNATURE: &'static str = "KeyMaterialMigrationScheduled(uint256,uint256[],uint256[],uint256,uint256)";
+            const SIGNATURE: &'static str = "KeyMaterialMigrationScheduled(uint256,uint256[],uint256[],uint256)";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                139u8, 250u8, 125u8, 14u8, 214u8, 248u8, 126u8, 82u8, 107u8, 98u8, 52u8,
-                41u8, 24u8, 238u8, 123u8, 250u8, 83u8, 149u8, 43u8, 173u8, 212u8, 99u8,
-                220u8, 147u8, 64u8, 84u8, 215u8, 221u8, 148u8, 14u8, 175u8, 220u8,
+                32u8, 145u8, 251u8, 18u8, 111u8, 215u8, 222u8, 209u8, 11u8, 46u8, 110u8,
+                87u8, 47u8, 218u8, 197u8, 202u8, 154u8, 116u8, 71u8, 163u8, 182u8, 165u8,
+                205u8, 23u8, 175u8, 37u8, 167u8, 143u8, 215u8, 81u8, 192u8, 150u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -5394,7 +5366,6 @@ event KeyMaterialMigrationScheduled(uint256 keyId, uint256[] hostChainIds, uint2
                     hostChainIds: data.1,
                     hostMigrationBlocks: data.2,
                     gatewayMigrationBlock: data.3,
-                    materialVersion: data.4,
                 }
             }
             #[inline]
@@ -5426,12 +5397,7 @@ event KeyMaterialMigrationScheduled(uint256 keyId, uint256[] hostChainIds, uint2
                     > as alloy_sol_types::SolType>::tokenize(&self.hostMigrationBlocks),
                     <alloy::sol_types::sol_data::Uint<
                         256,
-                    > as alloy_sol_types::SolType>::tokenize(
-                        &self.gatewayMigrationBlock,
-                    ),
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.materialVersion),
+                    > as alloy_sol_types::SolType>::tokenize(&self.gatewayMigrationBlock),
                 )
             }
             #[inline]
@@ -5728,9 +5694,9 @@ event KeygenResponse(uint256 keyId, KeyDigest[] keyDigests, bytes signature, add
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Event with signature `MigrationKeygenRequest(uint256,uint256,uint256,bool,bytes)` and selector `0xe453c29c46ccc7664c0398e8464d5bb421e995432daf5506a3fdbc6aa0966a93`.
+    /**Event with signature `MigrationKeygenRequest(uint256,uint256,uint256,bytes)` and selector `0x908be268f61bdbe0d7bce0db1676e9949a397f6e0bd8d36dfc3d28daebafbcf1`.
 ```solidity
-event MigrationKeygenRequest(uint256 prepKeygenId, uint256 keyId, uint256 existingKeyId, bool copyToOriginal, bytes extraData);
+event MigrationKeygenRequest(uint256 prepKeygenId, uint256 keyId, uint256 existingKeyId, bytes extraData);
 ```*/
     #[allow(
         non_camel_case_types,
@@ -5746,8 +5712,6 @@ event MigrationKeygenRequest(uint256 prepKeygenId, uint256 keyId, uint256 existi
         pub keyId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
         pub existingKeyId: alloy::sol_types::private::primitives::aliases::U256,
-        #[allow(missing_docs)]
-        pub copyToOriginal: bool,
         #[allow(missing_docs)]
         pub extraData: alloy::sol_types::private::Bytes,
     }
@@ -5765,18 +5729,17 @@ event MigrationKeygenRequest(uint256 prepKeygenId, uint256 keyId, uint256 existi
                 alloy::sol_types::sol_data::Uint<256>,
                 alloy::sol_types::sol_data::Uint<256>,
                 alloy::sol_types::sol_data::Uint<256>,
-                alloy::sol_types::sol_data::Bool,
                 alloy::sol_types::sol_data::Bytes,
             );
             type DataToken<'a> = <Self::DataTuple<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
-            const SIGNATURE: &'static str = "MigrationKeygenRequest(uint256,uint256,uint256,bool,bytes)";
+            const SIGNATURE: &'static str = "MigrationKeygenRequest(uint256,uint256,uint256,bytes)";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                228u8, 83u8, 194u8, 156u8, 70u8, 204u8, 199u8, 102u8, 76u8, 3u8, 152u8,
-                232u8, 70u8, 77u8, 91u8, 180u8, 33u8, 233u8, 149u8, 67u8, 45u8, 175u8,
-                85u8, 6u8, 163u8, 253u8, 188u8, 106u8, 160u8, 150u8, 106u8, 147u8,
+                144u8, 139u8, 226u8, 104u8, 246u8, 27u8, 219u8, 224u8, 215u8, 188u8,
+                224u8, 219u8, 22u8, 118u8, 233u8, 148u8, 154u8, 57u8, 127u8, 110u8, 11u8,
+                216u8, 211u8, 109u8, 252u8, 61u8, 40u8, 218u8, 235u8, 175u8, 188u8, 241u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -5789,8 +5752,7 @@ event MigrationKeygenRequest(uint256 prepKeygenId, uint256 keyId, uint256 existi
                     prepKeygenId: data.0,
                     keyId: data.1,
                     existingKeyId: data.2,
-                    copyToOriginal: data.3,
-                    extraData: data.4,
+                    extraData: data.3,
                 }
             }
             #[inline]
@@ -5820,9 +5782,6 @@ event MigrationKeygenRequest(uint256 prepKeygenId, uint256 keyId, uint256 existi
                     <alloy::sol_types::sol_data::Uint<
                         256,
                     > as alloy_sol_types::SolType>::tokenize(&self.existingKeyId),
-                    <alloy::sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(
-                        &self.copyToOriginal,
-                    ),
                     <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
                         &self.extraData,
                     ),
@@ -12499,6 +12458,16 @@ function scheduleKeyMaterialMigration(uint256 keyId, uint256[] memory hostChainI
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 32usize]] = &[
             [
+                14u8, 76u8, 112u8, 230u8, 117u8, 203u8, 38u8, 187u8, 159u8, 143u8, 137u8,
+                142u8, 4u8, 31u8, 61u8, 119u8, 104u8, 72u8, 51u8, 30u8, 138u8, 28u8,
+                138u8, 22u8, 137u8, 183u8, 223u8, 37u8, 175u8, 169u8, 61u8, 225u8,
+            ],
+            [
+                32u8, 145u8, 251u8, 18u8, 111u8, 215u8, 222u8, 209u8, 11u8, 46u8, 110u8,
+                87u8, 47u8, 218u8, 197u8, 202u8, 154u8, 116u8, 71u8, 163u8, 182u8, 165u8,
+                205u8, 23u8, 175u8, 37u8, 167u8, 143u8, 215u8, 81u8, 192u8, 150u8,
+            ],
+            [
                 34u8, 88u8, 183u8, 63u8, 174u8, 211u8, 63u8, 178u8, 226u8, 234u8, 69u8,
                 68u8, 3u8, 190u8, 249u8, 116u8, 146u8, 12u8, 175u8, 104u8, 42u8, 179u8,
                 167u8, 35u8, 72u8, 79u8, 207u8, 103u8, 85u8, 59u8, 22u8, 162u8,
@@ -12534,24 +12503,14 @@ function scheduleKeyMaterialMigration(uint256 keyId, uint256[] memory hostChainI
                 34u8, 240u8, 227u8, 188u8, 107u8, 47u8, 214u8, 206u8, 208u8, 189u8,
             ],
             [
-                139u8, 250u8, 125u8, 14u8, 214u8, 248u8, 126u8, 82u8, 107u8, 98u8, 52u8,
-                41u8, 24u8, 238u8, 123u8, 250u8, 83u8, 149u8, 43u8, 173u8, 212u8, 99u8,
-                220u8, 147u8, 64u8, 84u8, 215u8, 221u8, 148u8, 14u8, 175u8, 220u8,
-            ],
-            [
                 140u8, 240u8, 21u8, 19u8, 147u8, 248u8, 79u8, 214u8, 148u8, 197u8, 227u8,
                 21u8, 203u8, 116u8, 204u8, 5u8, 178u8, 71u8, 222u8, 10u8, 69u8, 79u8,
                 217u8, 233u8, 18u8, 156u8, 102u8, 30u8, 253u8, 249u8, 64u8, 29u8,
             ],
             [
-                164u8, 118u8, 100u8, 134u8, 26u8, 181u8, 140u8, 91u8, 213u8, 4u8, 14u8,
-                156u8, 196u8, 94u8, 104u8, 208u8, 228u8, 142u8, 192u8, 67u8, 113u8, 3u8,
-                95u8, 215u8, 80u8, 153u8, 226u8, 23u8, 224u8, 166u8, 170u8, 129u8,
-            ],
-            [
-                228u8, 83u8, 194u8, 156u8, 70u8, 204u8, 199u8, 102u8, 76u8, 3u8, 152u8,
-                232u8, 70u8, 77u8, 91u8, 180u8, 33u8, 233u8, 149u8, 67u8, 45u8, 175u8,
-                85u8, 6u8, 163u8, 253u8, 188u8, 106u8, 160u8, 150u8, 106u8, 147u8,
+                144u8, 139u8, 226u8, 104u8, 246u8, 27u8, 219u8, 224u8, 215u8, 188u8,
+                224u8, 219u8, 22u8, 118u8, 233u8, 148u8, 154u8, 57u8, 127u8, 110u8, 11u8,
+                216u8, 211u8, 109u8, 252u8, 61u8, 40u8, 218u8, 235u8, 175u8, 188u8, 241u8,
             ],
             [
                 235u8, 133u8, 194u8, 109u8, 188u8, 173u8, 70u8, 184u8, 10u8, 104u8,

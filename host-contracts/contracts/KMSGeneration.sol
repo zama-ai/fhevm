@@ -175,25 +175,17 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         // RFC-029 material-migration state (append-only):
         // ----------------------------------------------------------------------------------------------
         /// @notice Migration keygens (keygen-from-existing), keyed by the freshly generated keyId.
-        /// Presence (existingKeyId != 0) IS the "is a migration" flag: prepKeygenResponse emits the
+        /// Presence (non-zero value) IS the "is a migration" flag: prepKeygenResponse emits the
         /// typed MigrationKeygenRequest in place of KeygenRequest, and keygenResponse
         /// publishes-not-activates (the throwaway key is never activated). The migrated material is
         /// published under the existing key by governance (addKeyMaterials).
-        mapping(uint256 keyId => MigrationKeygenInfo info) migrationKeygens;
+        mapping(uint256 keyId => uint256 existingKeyId) migrationKeygens;
         /// @notice For an existing key, the migration keygen its published migrated material came from
         /// (0 = none published). Presence marks that v1 material exists under the key.
         mapping(uint256 existingKeyId => uint256 migrationKeyId) publishedFrom;
         /// @notice Whether the one-time material-version cutover was already scheduled for a key.
         /// Enforces single-assignment of the schedule (a second scheduleKeyMaterialMigration reverts).
         mapping(uint256 keyId => bool isScheduled) migrationScheduled;
-    }
-
-    /// @notice RFC-029 migration keygen parameters, recorded at migrationKeygen() call time.
-    struct MigrationKeygenInfo {
-        /// @notice The existing key whose material is re-derived in migrated format.
-        uint256 existingKeyId;
-        /// @notice Whether the KMS copies the migrated keyset onto the existing key id (always true).
-        bool copyToOriginal;
     }
 
     /**
@@ -288,9 +280,7 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
             revert KeygenNotRequested(existingKeyId);
         }
         (, uint256 keyId) = _keygen(paramsType);
-        // copy-to-original is always true for the one-time cutover; the typed event is emitted later,
-        // at prep-keygen consensus, so the connector sees it in the same place as a normal KeygenRequest.
-        $.migrationKeygens[keyId] = MigrationKeygenInfo({existingKeyId: existingKeyId, copyToOriginal: true});
+        $.migrationKeygens[keyId] = existingKeyId;
     }
 
     /// @dev Shared keygen-request body: allocates prepKeygenId/keyId, pins the v2 (context+epoch)
@@ -388,15 +378,9 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
             // A migration keygen emits the typed MigrationKeygenRequest IN PLACE OF KeygenRequest, so
             // the connector branches on the event type with no side table and no path where a migration
             // silently runs as a normal keygen.
-            MigrationKeygenInfo storage migration = $.migrationKeygens[keyId];
-            if (migration.existingKeyId != 0) {
-                emit MigrationKeygenRequest(
-                    prepKeygenId,
-                    keyId,
-                    migration.existingKeyId,
-                    migration.copyToOriginal,
-                    extraData
-                );
+            uint256 existingKeyId = $.migrationKeygens[keyId];
+            if (existingKeyId != 0) {
+                emit MigrationKeygenRequest(prepKeygenId, keyId, existingKeyId, extraData);
             } else {
                 emit KeygenRequest(prepKeygenId, keyId, extraData);
             }
@@ -470,7 +454,7 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
             // activated -- its freshly generated key is a throwaway used only to produce the
             // migrated material; that material is published under the EXISTING key by governance
             // (addKeyMaterials). So skip moving activeKeyId / emitting ActivateKey for migrations.
-            if ($.migrationKeygens[keyId].existingKeyId == 0) {
+            if ($.migrationKeygens[keyId] == 0) {
                 $.activeKeyId = keyId;
                 string[] memory consensusUrls = _buildConsensusStorageUrls(contextId, consensusTxSenders);
                 emit ActivateKey(keyId, consensusUrls, keyDigests);
@@ -495,7 +479,7 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
     ) external virtual onlyACLOwner {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
         // Bind the published material to a migration keygen that targeted exactly this existing key.
-        if ($.migrationKeygens[migrationKeyId].existingKeyId != existingKeyId) {
+        if ($.migrationKeygens[migrationKeyId] != existingKeyId) {
             revert MigrationKeyNotForExistingKey(migrationKeyId, existingKeyId);
         }
         // ...and that the migration keygen has actually completed (its material exists).
@@ -516,7 +500,7 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         }
 
         $.publishedFrom[existingKeyId] = migrationKeyId;
-        emit KeyMaterialAdded(existingKeyId, kmsNodeStorageUrls, keyDigests, MIGRATED_MATERIAL_VERSION);
+        emit KeyMaterialAdded(existingKeyId, kmsNodeStorageUrls, keyDigests);
     }
 
     /**
@@ -548,8 +532,7 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
             keyId,
             hostChainIds,
             hostMigrationBlocks,
-            gatewayMigrationBlock,
-            MIGRATED_MATERIAL_VERSION
+            gatewayMigrationBlock
         );
     }
 

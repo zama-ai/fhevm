@@ -1539,14 +1539,13 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         uint256 migrationKeyId = kmsGeneration.getKeyCounter();
         uint256 migrationPrepKeygenId = PREP_KEYGEN_COUNTER_BASE + (migrationKeyId - KEY_COUNTER_BASE);
 
-        // The typed event carries the existing key + copy flag + the keygen's standard v2 extraData,
+        // The typed event carries the existing key + the keygen's standard v2 extraData,
         // and is emitted exactly where a normal keygen would emit KeygenRequest.
         vm.expectEmit(true, true, true, true, address(kmsGeneration));
         emit IKMSGeneration.MigrationKeygenRequest(
             migrationPrepKeygenId,
             migrationKeyId,
             existingKeyId,
-            true,
             _buildExtraData()
         );
         _doPrepKeygenResponse(migrationPrepKeygenId, kmsPk0, kmsTxSender0);
@@ -1602,7 +1601,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         string[] memory urls = _primaryStorageUrls();
 
         vm.expectEmit(true, true, true, true, address(kmsGeneration));
-        emit IKMSGeneration.KeyMaterialAdded(existingKeyId, urls, digests, 1);
+        emit IKMSGeneration.KeyMaterialAdded(existingKeyId, urls, digests);
         vm.prank(owner);
         kmsGeneration.addKeyMaterials(existingKeyId, migrationKeyId, digests, urls);
 
@@ -1711,7 +1710,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
 
         assertFalse(kmsGeneration.isKeyMaterialMigrationScheduled(existingKeyId));
         vm.expectEmit(true, true, true, true, address(kmsGeneration));
-        emit IKMSGeneration.KeyMaterialMigrationScheduled(existingKeyId, hostChainIds, hostMigrationBlocks, 3000, 1);
+        emit IKMSGeneration.KeyMaterialMigrationScheduled(existingKeyId, hostChainIds, hostMigrationBlocks, 3000);
         vm.prank(owner);
         kmsGeneration.scheduleKeyMaterialMigration(existingKeyId, hostChainIds, hostMigrationBlocks, 3000);
         assertTrue(kmsGeneration.isKeyMaterialMigrationScheduled(existingKeyId));

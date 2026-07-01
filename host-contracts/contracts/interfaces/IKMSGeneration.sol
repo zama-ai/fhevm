@@ -135,14 +135,12 @@ interface IKMSGeneration {
      * @param prepKeygenId The preprocessing keygen id.
      * @param keyId The freshly generated (throwaway) key id; it is never activated.
      * @param existingKeyId The existing key whose material is re-derived in migrated format.
-     * @param copyToOriginal Whether the KMS copies the migrated keyset onto the existing key id.
      * @param extraData The keygen's v2 context+epoch extra data (same as {KeygenRequest}).
      */
     event MigrationKeygenRequest(
         uint256 prepKeygenId,
         uint256 keyId,
         uint256 existingKeyId,
-        bool copyToOriginal,
         bytes extraData
     );
 
@@ -153,26 +151,23 @@ interface IKMSGeneration {
      * @param keyId The existing key the migrated material is published under.
      * @param kmsNodeStorageUrls The KMS nodes' storage URLs to download the material from.
      * @param keyDigests The digests of the migrated key material.
-     * @param materialVersion The published material version (1 for the RFC-029 cutover).
      */
-    event KeyMaterialAdded(uint256 keyId, string[] kmsNodeStorageUrls, KeyDigest[] keyDigests, uint256 materialVersion);
+    event KeyMaterialAdded(uint256 keyId, string[] kmsNodeStorageUrls, KeyDigest[] keyDigests);
 
     /**
      * @notice RFC-029: emitted to schedule the material-version cutover. Carries a per-host-chain
      * cutover block plus the gateway cutover block; a coprocessor switches an operation to
-     * `materialVersion` once its anchoring block reaches the corresponding cutover block.
+     * migrated material once its anchoring block reaches the corresponding cutover block.
      * @param keyId The key whose material is being migrated.
      * @param hostChainIds Host chain ids, parallel to hostMigrationBlocks.
      * @param hostMigrationBlocks Per-chain block at/after which the migrated material applies.
      * @param gatewayMigrationBlock Gateway block at/after which migrated material applies to inputs.
-     * @param materialVersion The target material version (1).
      */
     event KeyMaterialMigrationScheduled(
         uint256 keyId,
         uint256[] hostChainIds,
         uint256[] hostMigrationBlocks,
-        uint256 gatewayMigrationBlock,
-        uint256 materialVersion
+        uint256 gatewayMigrationBlock
     );
 
     /**
@@ -340,8 +335,7 @@ interface IKMSGeneration {
     /**
      * @notice RFC-029: request a migration keygen (keygen-from-existing) that re-derives
      * `existingKeyId` in the migrated (CompressedXofKeySet) format, published under the existing key.
-     * @dev One-time cutover: copy-to-original is always true, so it is not a caller parameter. It
-     * surfaces (hardcoded) on the {MigrationKeygenRequest} event for the connector.
+     * @dev One-time cutover: copy-to-original is always true in the KMS worker.
      * @param paramsType The FHE params type.
      * @param existingKeyId The existing key to migrate.
      */
@@ -366,7 +360,7 @@ interface IKMSGeneration {
      * @notice RFC-029: governance publishes migrated key material under an EXISTING key
      * (publish-not-activate; activeKeyId never moves). The migrated digests/urls come from a completed
      * migration keygen, bound here by `migrationKeyId`: the call reverts unless `migrationKeyId` is a
-     * completed migration keygen for `existingKeyId`. Emits {KeyMaterialAdded} (version 1).
+     * completed migration keygen for `existingKeyId`. Emits {KeyMaterialAdded}.
      * @param existingKeyId The existing key the migrated material is published under.
      * @param migrationKeyId The completed migration keygen that produced the material.
      * @param keyDigests The migrated key material digests.

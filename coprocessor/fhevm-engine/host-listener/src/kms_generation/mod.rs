@@ -11,16 +11,15 @@ use crate::kms_generation::database::{
     activate_ready_crs_activations, activate_ready_key_activations,
     all_pending_crs_activations_to_download,
     all_pending_key_activations_to_download,
-    all_pending_key_material_to_download, apply_finalized_migration_schedules,
-    cancel_orphaned_crs_activations, cancel_orphaned_key_activations,
-    cancel_orphaned_key_material, cancel_orphaned_migration_schedules,
-    count_crs_activation_remaining_pending,
+    all_pending_key_material_to_download,
+    apply_key_material_migration_scheduled, cancel_orphaned_crs_activations,
+    cancel_orphaned_key_activations, count_crs_activation_remaining_pending,
     count_key_activation_remaining_pending, insert_crs_activation_event,
     insert_key_activation_event, insert_key_material_added,
-    insert_key_material_migration_scheduled, mark_crs_activation_error,
-    mark_key_activation_error, mark_key_material_error, publish_key_material,
-    set_ready_crs_activation, set_ready_key_activation, PendingCrsActivation,
-    PendingKeyActivation, PendingKeyMaterial,
+    mark_crs_activation_error, mark_key_activation_error,
+    mark_key_material_error, publish_key_material, set_ready_crs_activation,
+    set_ready_key_activation, PendingCrsActivation, PendingKeyActivation,
+    PendingKeyMaterial,
 };
 use crate::kms_generation::digest::{digest_crs, digest_key};
 use crate::kms_generation::metrics::{
@@ -113,6 +112,7 @@ pub async fn insert_kms_generation_events_tx(
     chain_id: ChainId,
     block_hash: &[u8],
     block_number: u64,
+    finalized: bool,
 ) -> Result<(), sqlx::Error> {
     for (event, log) in events {
         match event {
@@ -139,9 +139,15 @@ pub async fn insert_kms_generation_events_tx(
                 .await?;
             }
             KMSGeneration::KMSGenerationEvents::KeyMaterialAdded(added) => {
+                if !finalized {
+                    warn!(
+                        key_id = ?added.keyId,
+                        "RFC-029 KeyMaterialAdded ignored from non-finalized ingestion"
+                    );
+                    continue;
+                }
                 info!(
                     key_id = ?added.keyId,
-                    material_version = ?added.materialVersion,
                     urls = added.kmsNodeStorageUrls.len(),
                     "RFC-029 KeyMaterialAdded observed"
                 );
@@ -150,14 +156,14 @@ pub async fn insert_kms_generation_events_tx(
             KMSGeneration::KMSGenerationEvents::KeyMaterialMigrationScheduled(
                 scheduled,
             ) => {
-                insert_key_material_migration_scheduled(
-                    tx,
-                    scheduled,
-                    chain_id,
-                    block_hash,
-                    block_number,
-                )
-                .await?;
+                if !finalized {
+                    warn!(
+                        key_id = ?scheduled.keyId,
+                        "RFC-029 KeyMaterialMigrationScheduled ignored from non-finalized ingestion"
+                    );
+                    continue;
+                }
+                apply_key_material_migration_scheduled(tx, scheduled).await?;
             }
             _ => {
                 warn!(
@@ -181,14 +187,8 @@ pub async fn process_kms_generation_activations<
     let mut tx = db_pool.begin().await?;
     cancel_orphaned_key_activations(&mut tx).await?;
     cancel_orphaned_crs_activations(&mut tx).await?;
-    cancel_orphaned_key_material(&mut tx).await?;
-    cancel_orphaned_migration_schedules(&mut tx).await?;
     activate_ready_key_activations(&mut tx).await?;
     activate_ready_crs_activations(&mut tx).await?;
-    // RFC-029: apply any pending cutover schedule whose block is now finalized
-    // (writes the live schedule tables + NOTIFY), so an orphaned governance tx
-    // can't flip workers to v1.
-    apply_finalized_migration_schedules(&mut tx).await?;
     tx.commit().await?;
 
     // RFC-029: download migrated keysets from finalized KeyMaterialAdded events.

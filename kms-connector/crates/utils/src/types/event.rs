@@ -330,7 +330,6 @@ pub fn from_migration_keygen_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
         prepKeygenId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("prep_keygen_id")?),
         keyId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("key_id")?),
         existingKeyId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("existing_key_id")?),
-        copyToOriginal: row.try_get::<bool, _>("copy_to_original")?,
         extraData: row.try_get::<Vec<u8>, _>("extra_data")?.into(),
     });
     Ok(ProtocolEvent {

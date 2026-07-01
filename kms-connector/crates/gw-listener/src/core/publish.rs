@@ -285,15 +285,13 @@ async fn publish_migration_keygen_request<'e>(
 ) -> anyhow::Result<PgQueryResult> {
     sqlx::query(
         "INSERT INTO migration_keygen_requests(\
-            prep_keygen_id, key_id, existing_key_id, copy_to_original, extra_data, tx_hash,\
-            created_at, otlp_context\
+            prep_keygen_id, key_id, existing_key_id, extra_data, tx_hash, created_at, otlp_context\
         ) \
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT DO NOTHING",
+        VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING",
     )
     .bind(request.prepKeygenId.as_le_slice().to_vec())
     .bind(request.keyId.as_le_slice().to_vec())
     .bind(request.existingKeyId.as_le_slice().to_vec())
-    .bind(request.copyToOriginal)
     .bind(request.extraData.to_vec())
     .bind(tx_hash.map(|h| h.to_vec()))
     .bind(created_at)

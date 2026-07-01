@@ -117,7 +117,7 @@ where
             keyset_config: Some(MIGRATION_KEY_SET_CONFIG),
             keyset_added_info: Some(KeySetAddedInfo {
                 existing_keyset_id: Some(u256_to_request_id(request.existingKeyId)),
-                copy_compressed_key_to_original: request.copyToOriginal,
+                copy_compressed_key_to_original: true,
                 ..Default::default()
             }),
         }))
@@ -214,7 +214,6 @@ mod tests {
             prepKeygenId: rand_u256(),
             keyId: rand_u256(),
             existingKeyId: existing_key_id,
-            copyToOriginal: true,
             extraData: Bytes::new(),
         };
 

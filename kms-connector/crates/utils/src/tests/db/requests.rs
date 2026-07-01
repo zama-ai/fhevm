@@ -371,15 +371,14 @@ pub async fn insert_rand_migration_keygen_request(
     // Runtime `sqlx::query` (not the macro) so no offline `.sqlx` cache entry is needed.
     sqlx::query(
         "INSERT INTO migration_keygen_requests(\
-            prep_keygen_id, key_id, existing_key_id, copy_to_original, extra_data, created_at, \
-            otlp_context, already_sent, status\
+            prep_keygen_id, key_id, existing_key_id, extra_data, created_at, otlp_context, \
+            already_sent, status\
         ) \
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT DO NOTHING",
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT DO NOTHING",
     )
     .bind(prep_key_id.as_le_slice().to_vec())
     .bind(key_id.as_le_slice().to_vec())
     .bind(existing_key_id.as_le_slice().to_vec())
-    .bind(true)
     .bind(extra_data.to_vec())
     .bind(Utc::now())
     .bind(bc2wrap::serialize(&PropagationContext::empty())?)
@@ -392,7 +391,6 @@ pub async fn insert_rand_migration_keygen_request(
         prepKeygenId: prep_key_id,
         keyId: key_id,
         existingKeyId: existing_key_id,
-        copyToOriginal: true,
         extraData: extra_data.into(),
     })
 }

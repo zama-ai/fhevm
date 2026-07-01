@@ -213,8 +213,8 @@ impl DbEventPicker {
                     LIMIT 1 FOR UPDATE SKIP LOCKED
                 ) AS req
                 WHERE migration_keygen_requests.key_id = req.key_id
-                RETURNING prep_keygen_id, req.key_id, existing_key_id, copy_to_original, extra_data,
-                tx_hash, already_sent, created_at, otlp_context
+                RETURNING prep_keygen_id, req.key_id, existing_key_id, extra_data, tx_hash,
+                already_sent, created_at, otlp_context
             ",
         )
         .fetch_all(&self.db_pool)
