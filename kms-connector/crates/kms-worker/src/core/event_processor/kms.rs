@@ -113,7 +113,11 @@ where
         }))
     }
 
-    /// Builds a keygen-from-existing-shares request for RFC-029 material migration.
+    /// Builds the RFC-029 GPU-enablement migration request.
+    ///
+    /// The KMS keeps the existing FHE key and adds compressed XOF material derived from it. This lets
+    /// coprocessors move to GPU-compatible material at the scheduled cutover without changing the
+    /// key that determines ciphertext bytes before that cutover.
     pub async fn prepare_migration_keygen_request(
         &self,
         request: &MigrationKeygenRequest,
