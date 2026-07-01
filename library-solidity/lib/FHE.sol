@@ -4,7 +4,6 @@ pragma solidity ^0.8.24;
 import "./Impl.sol";
 import {FhevmECDSA} from "./cryptography/FhevmECDSA.sol";
 import {FheType} from "./FheType.sol";
-import "./bridge/IConfidentialBridge.sol";
 
 import "encrypted-types/EncryptedTypes.sol";
 
@@ -10127,12 +10126,11 @@ library FHE {
         return IConfidentialBridge(cBridgeAddr);
     }
 
-
     /**
      * @notice Requests `ConfidentialBridge` to bridge an explicit list of `bytes32` handles to a `bytes32` destination app (`bytes32` instead of `address` to also support non-EVM destinations).
-     * @dev    The source app contract must already hold ACL allowance on every handle; `lzComposeGas` must be non-zero (the bridge reverts otherwise) 
+     * @dev    The source app contract must already hold ACL allowance on every handle; `lzComposeGas` must be non-zero (the bridge reverts otherwise)
      *         and should be set to a reasonable value after estimation of the gas needed by the destination app callback `onConfidentialBridgeReceived`.
-     * @dev    If `lzComposeGas` is set to a too low value, the message will not be automatically relayed by LayerZero and will be stuck in the `lzCompose` queue. 
+     * @dev    If `lzComposeGas` is set to a too low value, the message will not be automatically relayed by LayerZero and will be stuck in the `lzCompose` queue.
      *         To unstuck the message, anyone could manually relay the message by calling the `lzCompose` function on the destination endpoint contract with the same `guid` as the stuck message.
      * @dev    The function will revert if the `ConfidentialBridge` is not deployed on the current chain.
      * @param dstEid        Destination LayerZero endpoint id.
@@ -10141,7 +10139,7 @@ library FHE {
      * @param handleList    Raw `bytes32` handles to bridge, should be non-empty and contain a maximum of 32 handles. The source app contract calling this function must already hold ACL allowance on every handle.
      * @param lzComposeGas  Gas budget for the destination app callback `onConfidentialBridgeReceived` (lzCompose leg). The amount needed is
      *                      app-specific, apps should size it for their `onConfidentialBridgeReceived` workload.
-     * @param nativeFee     LayerZero native fee to forward as msg.value to the `ConfidentialBridge` contract (query {quoteLZConfidentialBridge} to fetch the fee 
+     * @param nativeFee     LayerZero native fee to forward as msg.value to the `ConfidentialBridge` contract (query {quoteLZConfidentialBridge} to fetch the fee
      *                      for a message with similar parameters before calling this function).
      * @return guid         The LayerZero message guid.
      * @return nonce        The LayerZero message nonce.
@@ -10154,7 +10152,13 @@ library FHE {
         uint64 lzComposeGas,
         uint256 nativeFee
     ) internal returns (bytes32 guid, uint64 nonce) {
-        MessagingReceipt memory receipt = getConfidentialBridge().send{value: nativeFee}(dstEid, dstApp, payload, handleList, lzComposeGas);
+        MessagingReceiptLZ memory receipt = getConfidentialBridge().send{value: nativeFee}(
+            dstEid,
+            dstApp,
+            payload,
+            handleList,
+            lzComposeGas
+        );
         guid = receipt.guid;
         nonce = receipt.nonce;
     }
@@ -10183,7 +10187,14 @@ library FHE {
         bytes32[] memory handleList,
         uint64 lzComposeGas
     ) internal view returns (uint256 nativeFee) {
-        MessagingFee memory fee = getConfidentialBridge().quote(dstEid, srcApp, dstApp, payload, handleList, lzComposeGas);
+        MessagingFeeLZ memory fee = getConfidentialBridge().quote(
+            dstEid,
+            srcApp,
+            dstApp,
+            payload,
+            handleList,
+            lzComposeGas
+        );
         nativeFee = fee.nativeFee;
     }
 }
