@@ -378,7 +378,7 @@ it should be an uninitialized (i.e. zero) handle. Run this command several times
 cast call "$POLYGON_OFT_ADDRESS" "balanceOf(address)(bytes32)" "$DEPLOYER_ADDRESS" --rpc-url "$POLYGON_MAINNET_RPC_URL"
 ```
 
-Note also that when the destination side fires, the daemon termina should log something like:
+Note also that when the destination side fires, the daemon terminal should log something like:
 
 ```
 [mock-coprocessor:polygon] processed blocks YYYYY-YYYYY (head=YYYYY): inserted=1 pending=0 skipped=0

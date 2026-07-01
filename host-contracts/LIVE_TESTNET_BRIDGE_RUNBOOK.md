@@ -347,7 +347,7 @@ it should be an uninitialized (i.e. zero) handle. Run this command several times
 cast call "$POLYGON_AMOY_OFT_ADDRESS" "balanceOf(address)(bytes32)" "$DEPLOYER_ADDRESS" --rpc-url "$POLYGON_AMOY_RPC_URL"
 ```
 
-Note also that when the destination side fires, the daemon termina should log something like:
+Note also that when the destination side fires, the daemon terminal should log something like:
 
 ```
 [mock-coprocessor:polygonAmoy] processed blocks YYYYY-YYYYY (head=YYYYY): inserted=1 pending=0 skipped=0
