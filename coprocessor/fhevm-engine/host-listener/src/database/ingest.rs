@@ -353,6 +353,7 @@ pub async fn ingest_block_logs(
                             &event,
                             &log.transaction_hash,
                             block_number,
+                            &block_logs.summary.hash,
                             &block_logs.summary.parent_hash,
                             block_logs.summary.timestamp,
                             acl_contract_address,
