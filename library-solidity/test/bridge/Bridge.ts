@@ -308,6 +308,49 @@ describe('Confidential bridge helpers', function () {
       expect(sent.lzComposeGas).to.equal(200_000n);
     });
 
+    it('_bridgeFrom bridges when the caller is ACL-allowed on the handle', async function () {
+      const { acl, bridge, oapp } = await deployOAppFixture();
+      const peer = padded(randAddr());
+      await oapp.setPeer(DST_EID, peer);
+      const [caller] = await ethers.getSigners();
+      await acl.setAllowed(handleA, caller.address, true);
+
+      await oapp.bridgeFromCaller(DST_EID, '0x', handleA, 200_000);
+
+      const sent = await bridge.lastSend();
+      expect(sent.dstApp).to.equal(peer);
+      expect(sent.handleList).to.deep.equal([handleA]);
+    });
+
+    it('_bridgeFrom reverts UnauthorizedSender(handle, caller) when the caller is not allowed', async function () {
+      const { oapp } = await deployOAppFixture();
+      await oapp.setPeer(DST_EID, padded(randAddr()));
+      const [caller] = await ethers.getSigners();
+      // No setAllowed for handleA -> isAllowed is false.
+      await expect(oapp.bridgeFromCaller(DST_EID, '0x', handleA, 200_000))
+        .to.be.revertedWithCustomError(oapp, 'UnauthorizedSender')
+        .withArgs(handleA, caller.address);
+    });
+
+    it('_bridgeFrom (multi) bridges a list the caller owns and pinpoints the first it does not', async function () {
+      const { acl, bridge, oapp } = await deployOAppFixture();
+      const peer = padded(randAddr());
+      await oapp.setPeer(DST_EID, peer);
+      const [caller] = await ethers.getSigners();
+      // Caller owns A and C but NOT B.
+      await acl.setAllowed(handleA, caller.address, true);
+      await acl.setAllowed(handleC, caller.address, true);
+
+      // Mixed list reverts on the first disallowed handle (B).
+      await expect(oapp.bridgeManyFromCaller(DST_EID, '0x', [handleA, handleB, handleC], 200_000))
+        .to.be.revertedWithCustomError(oapp, 'UnauthorizedSender')
+        .withArgs(handleB, caller.address);
+
+      // A fully-owned list goes through.
+      await oapp.bridgeManyFromCaller(DST_EID, '0x', [handleA, handleC], 200_000);
+      expect((await bridge.lastSend()).handleList).to.deep.equal([handleA, handleC]);
+    });
+
     it('reverts NoPeer when no peer is configured for the destination eid', async function () {
       const { oapp } = await deployOAppFixture();
       await expect(oapp.bridgeToPeer(DST_EID, '0x', handleA, 50_000)).to.be.revertedWithCustomError(oapp, 'NoPeer');

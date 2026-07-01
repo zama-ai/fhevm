@@ -15,7 +15,7 @@ import {MessagingFee, MessagingReceipt} from "../../lib/bridge/IConfidentialBrid
  *          `fhevm/solidity` library. It is a confidential omnichain app (OApp): it inherits
  *          {ConfidentialOAppSender} for the send half and {ConfidentialOAppReceiver} for the
  *          receive half, which together give it:
- *            - Sending: `_bridge(...)` burns an encrypted amount here and has it minted on the
+ *            - Sending: {send} burns an encrypted amount here and has it minted on the
  *              destination chain. The app never touches LayerZero or the bridge contract.
  *            - Receiving: one hook ({_onReceiveHandles}) mints the incoming amount; the base
  *              authenticates the bridge and the source peer first.
@@ -68,11 +68,14 @@ contract ConfidentialOFTViaLib is Ownable2Step, ConfidentialOAppSender, Confiden
 
         // The bridged amount is delivered out-of-band in the bridge's handle list (minted from
         // `handles[0]` on receipt), so the payload only needs to carry the recipient.
-        // `mintComposeGas` is validated (must be non-zero) by {ConfidentialOAppSender-_bridge}.
+        // `mintComposeGas` is validated (must be non-zero) by {ConfidentialOAppSender-_bridgeUnchecked}.
         bytes memory payload = abi.encode(recipient);
 
         emit Bridged(msg.sender, dstEid, recipient);
-        return _bridge(dstEid, payload, actualAmount, mintComposeGas, msg.value);
+        // `actualAmount` is a fresh burn result the caller holds no allowance on, so {_bridgeFrom}'s
+        // `isSenderAllowed` check cannot apply here; the entrypoint is instead gated above on the
+        // input `amount` (line: `isSenderAllowed(amount)`), so the unchecked send is deliberate.
+        return _bridgeUnchecked(dstEid, payload, euint64.unwrap(actualAmount), mintComposeGas, msg.value);
     }
 
     /// @notice Quote the native fee to {send} `amount` to `recipient` on `dstEid`; pass the
@@ -83,7 +86,7 @@ contract ConfidentialOFTViaLib is Ownable2Step, ConfidentialOAppSender, Confiden
         address recipient,
         uint64 mintComposeGas
     ) external view returns (MessagingFee memory) {
-        return _quoteBridge(dstEid, abi.encode(recipient), amount, mintComposeGas);
+        return _quoteBridge(dstEid, abi.encode(recipient), euint64.unwrap(amount), mintComposeGas);
     }
 
     // ---------------------------- Receive side ----------------------------
