@@ -1,6 +1,6 @@
 use crate::core::{
     config::Config,
-    event_processor::{ContextManager, ProcessingError},
+    event_processor::{ContextManager, ProcessingError, RequestCheckError},
 };
 use alloy::primitives::U256;
 use connector_utils::types::{KmsGrpcRequest, extra_data::parse_extra_data, u256_to_request_id};
@@ -49,10 +49,10 @@ where
     ) -> Result<KmsGrpcRequest, ProcessingError> {
         let parsed_extra_data = parse_extra_data(&prep_keygen_request.extraData)
             .map_err(ProcessingError::Irrecoverable)?;
-        if let Some(context_id) = parsed_extra_data.context_id {
-            self.context_manager.validate_context(context_id).await?;
-        }
-        // TODO: validation of epoch_id during RFC-005 implementation
+        self.context_manager
+            .validate_context(&parsed_extra_data)
+            .await
+            .map_err(RequestCheckError::record)?;
 
         Ok(KmsGrpcRequest::PrepKeygen(KeyGenPreprocRequest {
             request_id: Some(u256_to_request_id(prep_keygen_request.prepKeygenId)),
@@ -72,10 +72,10 @@ where
     ) -> Result<KmsGrpcRequest, ProcessingError> {
         let parsed_extra_data =
             parse_extra_data(&keygen_request.extraData).map_err(ProcessingError::Irrecoverable)?;
-        if let Some(context_id) = parsed_extra_data.context_id {
-            self.context_manager.validate_context(context_id).await?;
-        }
-        // TODO: validation of epoch_id during RFC-005 implementation
+        self.context_manager
+            .validate_context(&parsed_extra_data)
+            .await
+            .map_err(RequestCheckError::record)?;
 
         Ok(KmsGrpcRequest::Keygen(KeyGenRequest {
             request_id: Some(u256_to_request_id(keygen_request.keyId)),
@@ -90,21 +90,17 @@ where
         }))
     }
 
-    /// RFC-029: a migration keygen drives a keygen-from-existing-shares — re-derive the existing
-    /// key's public keyset in compressed form and (optionally) copy it onto the original key id. The
-    /// migration parameters come straight off the typed `MigrationKeygenRequest` event, so a
-    /// migration can NEVER silently run as an ordinary `GenerateAll` keygen. Its extra_data is the
-    /// standard v2 context+epoch, signed by the KMS exactly like a normal keygen.
+    /// Builds a keygen-from-existing-shares request for RFC-029 material migration.
     pub async fn prepare_migration_keygen_request(
         &self,
         request: &MigrationKeygenRequest,
     ) -> Result<KmsGrpcRequest, ProcessingError> {
         let parsed_extra_data =
             parse_extra_data(&request.extraData).map_err(ProcessingError::Irrecoverable)?;
-        if let Some(context_id) = parsed_extra_data.context_id {
-            self.context_manager.validate_context(context_id).await?;
-        }
-        // TODO: validation of epoch_id during RFC-005 implementation
+        self.context_manager
+            .validate_context(&parsed_extra_data)
+            .await
+            .map_err(RequestCheckError::record)?;
 
         Ok(KmsGrpcRequest::Keygen(KeyGenRequest {
             request_id: Some(u256_to_request_id(request.keyId)),
@@ -129,10 +125,10 @@ where
     ) -> Result<KmsGrpcRequest, ProcessingError> {
         let parsed_extra_data =
             parse_extra_data(&crsgen_request.extraData).map_err(ProcessingError::Irrecoverable)?;
-        if let Some(context_id) = parsed_extra_data.context_id {
-            self.context_manager.validate_context(context_id).await?;
-        }
-        // TODO: validation of epoch_id during RFC-005 implementation
+        self.context_manager
+            .validate_context(&parsed_extra_data)
+            .await
+            .map_err(RequestCheckError::record)?;
 
         let max_num_bits = crsgen_request
             .maxBitLength
@@ -180,12 +176,12 @@ const MIGRATION_KEY_SET_CONFIG: KeySetConfig = KeySetConfig {
 mod tests {
     use super::*;
     use alloy::primitives::Bytes;
-    use connector_utils::tests::rand::rand_u256;
+    use connector_utils::{tests::rand::rand_u256, types::extra_data::ExtraData};
 
     struct MockContextManager;
 
     impl ContextManager for MockContextManager {
-        async fn validate_context(&self, _context_id: U256) -> Result<(), ProcessingError> {
+        async fn validate_context(&self, _extra_data: &ExtraData) -> Result<(), RequestCheckError> {
             Ok(())
         }
     }
