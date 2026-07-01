@@ -138,6 +138,15 @@ async fn count_unassociated_handles(pool: &PgPool) -> Result<i64, sqlx::Error> {
         FROM handle_bridged_events
         WHERE NOT is_associated
           AND NOT EXISTS (SELECT 1 FROM ciphertexts WHERE handle = handle_bridged_events.dst_handle)
+          AND (
+                block_hash = ''::bytea
+                OR EXISTS (
+                    SELECT 1 FROM host_chain_blocks_valid dst_block
+                    WHERE dst_block.chain_id = handle_bridged_events.dst_chain_id
+                      AND dst_block.block_hash = handle_bridged_events.block_hash
+                      AND dst_block.block_status = 'finalized'
+                )
+          )
           AND created_at <= now() - make_interval(secs => $1::int)
         "#,
         IN_FLIGHT_GRACE_SECS,
@@ -164,10 +173,28 @@ async fn associate_batch(pool: &PgPool, batch_size: i64) -> Result<u64, sqlx::Er
           AND NOT EXISTS (
                 SELECT 1 FROM ciphertexts dst_ct
                 WHERE dst_ct.handle = dst_event.dst_handle)
+          AND (
+                dst_event.block_hash = ''::bytea
+                OR EXISTS (
+                    SELECT 1 FROM host_chain_blocks_valid dst_block
+                    WHERE dst_block.chain_id = dst_event.dst_chain_id
+                      AND dst_block.block_hash = dst_event.block_hash
+                      AND dst_block.block_status = 'finalized'
+                )
+          )
           AND EXISTS (
                 SELECT 1 FROM bridge_handle_events src_event
                 WHERE src_event.src_handle = dst_event.src_handle
-                  AND src_event.dst_chain_id = dst_event.dst_chain_id)
+                  AND src_event.dst_chain_id = dst_event.dst_chain_id
+                  AND (
+                        src_event.block_hash = ''::bytea
+                        OR EXISTS (
+                            SELECT 1 FROM host_chain_blocks_valid src_block
+                            WHERE src_block.chain_id = src_event.src_chain_id
+                              AND src_block.block_hash = src_event.block_hash
+                              AND src_block.block_status = 'finalized'
+                        )
+                  ))
           AND EXISTS (
                 SELECT 1 FROM ciphertexts src_ct
                 WHERE src_ct.handle = dst_event.src_handle)

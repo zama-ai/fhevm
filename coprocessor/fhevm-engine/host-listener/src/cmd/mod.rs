@@ -241,7 +241,7 @@ fn websocket_config() -> WebSocketConfig {
 }
 
 impl InfiniteLogIter {
-    fn new(args: &Args) -> Self {
+    pub fn new(args: &Args) -> Self {
         let mut contract_addresses = vec![];
         if !args.acl_contract_address.is_empty() {
             contract_addresses
@@ -810,6 +810,14 @@ impl InfiniteLogIter {
             warn!(error = %err, "Error creating new log stream, retrying");
             tokio::time::sleep(Duration::from_secs(1)).await;
         }
+    }
+
+    pub async fn init_provider_for_rpc(&mut self) -> Result<()> {
+        let config = websocket_config();
+        let ws = WsConnect::new(&self.url).with_config(config);
+        let provider = ProviderBuilder::new().connect_ws(ws).await?;
+        let _ = self.provider.write().await.replace(provider);
+        Ok(())
     }
 
     async fn next_block(&mut self) -> Result<BlockOrTimeoutOrNone> {
