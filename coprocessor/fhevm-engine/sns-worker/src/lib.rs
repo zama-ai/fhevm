@@ -782,14 +782,14 @@ pub async fn run_all(
                 if !is_ready_bool {
                     error!("S3 is not ready but will start when ready");
                 };
-                if let Err(err) =
-                    run_startup_migrations(&migration_config, &token, &db_pool, &client).await
-                {
+                let res = run_startup_migrations(&migration_config, &token, &db_pool, &client).await;
+                if let Err(err) = &res{
                     error!(
                         error = %err,
                         "Failed to run concurrent S3 format migration"
                     );
                 }
+                res
             });
             concurrent_migration = Some(task)
         }
@@ -845,9 +845,16 @@ pub async fn run_all(
     }
 
     if let Some(migration_task) = concurrent_migration {
-        if let Err(join_err) = migration_task.await {
-            error!(error = %join_err, "SNS worker, S3 migration exited with a fatal error");
-            return Err(join_err.into());
+        match migration_task.await {
+            Ok(Ok(())) => {}
+            Ok(Err(err)) => {
+                error!(error = %err, "SNS worker, S3 migration exited with a fatal error");
+                return Err(err.into());
+            }
+            Err(join_err) => {
+                error!(error = %join_err, "SNS worker, S3 migration exited with a fatal error");
+                return Err(join_err.into());
+            }
         }
     }
 
