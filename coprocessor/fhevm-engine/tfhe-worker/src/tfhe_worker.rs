@@ -27,12 +27,6 @@ use tracing::{debug, error, info, warn, Instrument};
 
 const EVENT_CIPHERTEXT_COMPUTED: &str = "event_ciphertext_computed";
 
-/// PostgreSQL advisory-lock key used to serialize cutover against in-flight
-/// BCS writes. Must match `upgrade_controller::CUTOVER_LOCK_ID`. The BCS
-/// write tx takes the shared form at the top of each cycle; the cutover tx
-/// takes the exclusive form.
-const CUTOVER_LOCK_ID: i64 = 0x4648_4556_4355_5456;
-
 lazy_static! {
     pub static ref TIMING: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 }
@@ -238,34 +232,21 @@ async fn tfhe_worker_cycle(
             "acquire_connection"
         );
         let mut conn = pool.acquire().instrument(acq_span).await?;
+        // Cutover safety (BCS only): begin a write tx fenced against cutover —
+        // BEGIN-time retirement fence + shared cutover lock + retirement re-check.
+        // `None` means a committed cutover retired this stack: exit the cycle
+        // cleanly without writing. GCS workers write the gcs schema (not the
+        // cutover target), so the gate is a no-op for them. See
+        // versioning::begin_write_guarded.
         let txn_span = tracing::info_span!(parent: &loop_span, "begin_transaction");
-        let mut trx = fhevm_engine_common::versioning::begin_guarded_conn(&mut conn)
-            .instrument(txn_span)
-            .await?;
-
-        // Cutover safety (BCS only): take the shared cutover advisory lock
-        // and re-read the FSM state. The shared lock blocks if execute_cutover
-        // holds the exclusive form; once unblocked, the FSM read returns
-        // post-cutover state and the worker exits the cycle cleanly. GCS
-        // workers write to staging tables, which are not the cutover target,
-        // so this gate does not apply to them.
-        if !gcs_mode {
-            sqlx::query("SELECT pg_advisory_xact_lock_shared($1)")
-                .bind(CUTOVER_LOCK_ID)
-                .execute(&mut *trx)
-                .await?;
-            let bcs_state: Option<(String,)> =
-                sqlx::query_as("SELECT state FROM upgrade_state WHERE stack_role = 'BCS'")
-                    .fetch_optional(&mut *trx)
-                    .await?;
-            if let Some((state,)) = bcs_state {
-                if matches!(state.as_str(), "UpgradeAuthorized" | "PAUSED") {
-                    info!(target: "tfhe_worker", bcs_state = %state, "Cutover authorized or completed — BCS worker exiting cycle");
-                    trx.rollback().await?;
-                    return Ok(());
-                }
-            }
-        }
+        let Some(mut trx) =
+            fhevm_engine_common::versioning::begin_write_guarded_conn(&mut conn, gcs_mode)
+                .instrument(txn_span)
+                .await?
+        else {
+            info!(target: "tfhe_worker", "Cutover completed — BCS worker exiting cycle");
+            return Ok(());
+        };
 
         // Query for transactions to execute
         let (mut transactions, earliest_computation, has_more_work) = query_for_work(

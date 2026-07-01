@@ -340,8 +340,15 @@ impl Database {
         pool.expect("unreachable")
     }
 
-    pub async fn new_transaction(&self) -> Result<Transaction<'_>, SqlxError> {
-        self.pool().await.begin().await
+    /// Begin a write transaction fenced against cutover. Runs `assert_not_retired`
+    /// at BEGIN (via `begin_guarded_pool`), then takes the shared cutover advisory
+    /// lock and re-checks retirement. Returns `Ok(None)` if a committed cutover has
+    /// retired this stack — the caller must skip the write. GCS-mode connections
+    /// (`self.gcs_mode`) skip the gate: they write the gcs schema, not the cutover
+    /// target. See `versioning::cutover_gate`.
+    pub async fn new_transaction(&self) -> Result<Option<Transaction<'_>>, SqlxError> {
+        let pool = self.pool().await;
+        fhevm_engine_common::versioning::begin_write_guarded(&pool, self.gcs_mode).await
     }
 
     pub async fn pool(&self) -> sqlx::Pool<Postgres> {
@@ -659,7 +666,9 @@ impl Database {
         catchup: bool,
     ) -> Result<(), SqlxError> {
         let duplicate_count_increase = if catchup { 0 } else { 1 };
-        let pool = self.pool().await;
+        let Some(mut tx) = self.new_transaction().await? else {
+            return Ok(());
+        };
         sqlx::query!(
             r#"
             INSERT INTO host_chain_consumer_blocks (
@@ -677,8 +686,9 @@ impl Database {
             block_summary.number as i64,
             duplicate_count_increase
         )
-        .execute(&pool)
+        .execute(tx.as_mut())
         .await?;
+        tx.commit().await?;
 
         Ok(())
     }
@@ -688,7 +698,15 @@ impl Database {
         &self,
         finalization_margin: i64,
     ) -> Result<StatsForConsumer, SqlxError> {
-        let pool = self.pool().await;
+        // This CTE marks rows `stats_processed` (a write), so gate it against
+        // cutover. On a retired stack, report zero stats and touch nothing.
+        let Some(mut tx) = self.new_transaction().await? else {
+            return Ok(StatsForConsumer {
+                number_of_new_gaps: 0,
+                total_new_gap_size: 0,
+                number_of_duplicated_inserts: 0,
+            });
+        };
         let row = sqlx::query!(
             r#"
             WITH last_block_number AS (
@@ -737,8 +755,9 @@ impl Database {
             self.chain_id.as_i64(),
             finalization_margin,
         )
-        .fetch_one(&pool)
+        .fetch_one(tx.as_mut())
         .await?;
+        tx.commit().await?;
 
         Ok(StatsForConsumer {
             number_of_new_gaps: row.number_of_new_gaps,
@@ -793,7 +812,9 @@ impl Database {
         chain_id: ChainId,
         block: i64,
     ) -> Result<(), SqlxError> {
-        let pool = self.pool.read().await.clone();
+        let Some(mut tx) = self.new_transaction().await? else {
+            return Ok(());
+        };
         sqlx::query(
             r#"
             INSERT INTO host_listener_poller_state (chain_id, last_caught_up_block)
@@ -805,8 +826,9 @@ impl Database {
         )
         .bind(chain_id.as_i64())
         .bind(block)
-        .execute(&pool)
+        .execute(tx.as_mut())
         .await?;
+        tx.commit().await?;
 
         Ok(())
     }
