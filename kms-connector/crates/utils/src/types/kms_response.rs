@@ -272,7 +272,7 @@ fn encode_epoch_result(response: GrpcEpochResultResponse) -> anyhow::Result<(Vec
 
 pub fn from_public_decryption_row(row: &PgRow) -> anyhow::Result<KmsResponse> {
     Ok(KmsResponse {
-        otlp_context: bc2wrap::deserialize_safe(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+        otlp_context: bc2wrap::deserialize_slice(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
         kind: KmsResponseKind::PublicDecryption(PublicDecryptionResponse {
             decryption_id: U256::from_le_bytes(row.try_get::<[u8; 32], _>("decryption_id")?),
             decrypted_result: row.try_get("decrypted_result")?,
@@ -285,7 +285,7 @@ pub fn from_public_decryption_row(row: &PgRow) -> anyhow::Result<KmsResponse> {
 
 pub fn from_user_decryption_row(row: &PgRow) -> anyhow::Result<KmsResponse> {
     Ok(KmsResponse {
-        otlp_context: bc2wrap::deserialize_safe(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+        otlp_context: bc2wrap::deserialize_slice(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
         kind: KmsResponseKind::UserDecryption(UserDecryptionResponse {
             decryption_id: U256::from_le_bytes(row.try_get::<[u8; 32], _>("decryption_id")?),
             user_decrypted_shares: row.try_get("user_decrypted_shares")?,
@@ -298,7 +298,7 @@ pub fn from_user_decryption_row(row: &PgRow) -> anyhow::Result<KmsResponse> {
 
 pub fn from_prep_keygen_row(row: &PgRow) -> anyhow::Result<KmsResponse> {
     Ok(KmsResponse {
-        otlp_context: bc2wrap::deserialize_safe(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+        otlp_context: bc2wrap::deserialize_slice(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
         kind: KmsResponseKind::PrepKeygen(PrepKeygenResponse {
             prep_keygen_id: U256::from_le_bytes(row.try_get::<[u8; 32], _>("prep_keygen_id")?),
             signature: row.try_get("signature")?,
@@ -309,7 +309,7 @@ pub fn from_prep_keygen_row(row: &PgRow) -> anyhow::Result<KmsResponse> {
 
 pub fn from_keygen_row(row: &PgRow) -> anyhow::Result<KmsResponse> {
     Ok(KmsResponse {
-        otlp_context: bc2wrap::deserialize_safe(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+        otlp_context: bc2wrap::deserialize_slice(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
         kind: KmsResponseKind::Keygen(KeygenResponse {
             key_id: U256::from_le_bytes(row.try_get::<[u8; 32], _>("key_id")?),
             key_digests: row.try_get("key_digests")?,
@@ -321,7 +321,7 @@ pub fn from_keygen_row(row: &PgRow) -> anyhow::Result<KmsResponse> {
 
 pub fn from_crsgen_row(row: &PgRow) -> anyhow::Result<KmsResponse> {
     Ok(KmsResponse {
-        otlp_context: bc2wrap::deserialize_safe(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+        otlp_context: bc2wrap::deserialize_slice(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
         kind: KmsResponseKind::Crsgen(CrsgenResponse {
             crs_id: U256::from_le_bytes(row.try_get::<[u8; 32], _>("crs_id")?),
             crs_digest: row.try_get("crs_digest")?,
@@ -333,7 +333,7 @@ pub fn from_crsgen_row(row: &PgRow) -> anyhow::Result<KmsResponse> {
 
 pub fn from_new_kms_context_response_row(row: &PgRow) -> anyhow::Result<KmsResponse> {
     Ok(KmsResponse {
-        otlp_context: bc2wrap::deserialize_safe(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+        otlp_context: bc2wrap::deserialize_slice(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
         kind: KmsResponseKind::NewKmsContext(NewKmsContextResponse {
             context_id: U256::from_le_bytes(row.try_get::<[u8; 32], _>("context_id")?),
         }),
@@ -343,7 +343,7 @@ pub fn from_new_kms_context_response_row(row: &PgRow) -> anyhow::Result<KmsRespo
 
 pub fn from_epoch_result_row(row: &PgRow) -> anyhow::Result<KmsResponse> {
     Ok(KmsResponse {
-        otlp_context: bc2wrap::deserialize_safe(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+        otlp_context: bc2wrap::deserialize_slice(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
         kind: KmsResponseKind::EpochResult(EpochResultResponse {
             context_id: U256::from_le_bytes(row.try_get::<[u8; 32], _>("context_id")?),
             epoch_id: U256::from_le_bytes(row.try_get::<[u8; 32], _>("epoch_id")?),

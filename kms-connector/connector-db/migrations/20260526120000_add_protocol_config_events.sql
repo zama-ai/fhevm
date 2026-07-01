@@ -45,9 +45,10 @@ ALTER TABLE kms_context
     DROP CONSTRAINT kms_context_pkey,
     ADD PRIMARY KEY (id, epoch_id);
 
--- Nested ABI types (KmsNodeParams[], PreviousKeyInfo[], PreviousCrsInfo[],
--- PcrValues[], KmsThresholds) are stored as ABI-encoded BYTEA to keep the
--- schema flat. Decoding is the consumer's responsibility.
+-- Nested ABI types (KmsNodeParams[], PcrValues[], KmsThresholds) are stored as
+-- ABI-encoded BYTEA to keep the schema flat. Decoding is the consumer's
+-- responsibility. Scalar uint256 fields (ids, material_block_number) are stored
+-- as their little-endian byte representation.
 
 CREATE TABLE IF NOT EXISTS new_kms_context (
     context_id BYTEA NOT NULL,
@@ -70,8 +71,7 @@ CREATE TABLE IF NOT EXISTS new_kms_epoch (
     previous_context_id BYTEA NOT NULL,
     epoch_id BYTEA NOT NULL,
     previous_epoch_id BYTEA NOT NULL,
-    keys BYTEA NOT NULL,
-    crs_list BYTEA NOT NULL,
+    material_block_number BYTEA NOT NULL,
     tx_hash BYTEA,
     created_at TIMESTAMPTZ NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),

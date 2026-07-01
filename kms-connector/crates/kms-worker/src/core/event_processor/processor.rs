@@ -205,9 +205,11 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                     .prepare_new_kms_context_request(req)
                     .await
             }
-            ProtocolEventKind::NewKmsEpoch(req) => self
-                .protocol_config_processor
-                .prepare_new_kms_epoch_request(req),
+            ProtocolEventKind::NewKmsEpoch(req) => {
+                self.protocol_config_processor
+                    .prepare_new_kms_epoch_request(req)
+                    .await
+            }
         }
     }
 

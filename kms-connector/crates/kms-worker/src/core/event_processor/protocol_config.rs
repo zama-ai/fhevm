@@ -9,9 +9,9 @@ use anyhow::anyhow;
 use connector_utils::types::{
     KmsGrpcRequest, db::KeyType, extra_data::extra_data_v2_payload, u256_to_request_id,
 };
-use fhevm_host_bindings::protocol_config::{
-    IProtocolConfig::{PreviousCrsInfo, PreviousKeyInfo},
-    ProtocolConfig::{NewKmsContext, NewKmsEpoch, ProtocolConfigInstance},
+use fhevm_host_bindings::{
+    kms_generation::KMSGeneration::{self, KMSGenerationInstance},
+    protocol_config::ProtocolConfig::{NewKmsContext, NewKmsEpoch, ProtocolConfigInstance},
 };
 use kms_grpc::kms::v1::{
     CrsInfo, Eip712DomainMsg, FheParameter, KeyDigest, KeyInfo, MpcContext, MpcNode,
@@ -29,9 +29,12 @@ pub struct ProtocolConfigProcessor<P: Provider> {
     /// See [RFC-005](https://github.com/zama-ai/tech-spec/blob/main/rfcs/005-key-resharing.md#cross-context-party-communication)
     /// for the anchor definition.
     protocol_config_contract: ProtocolConfigInstance<P>,
+
+    /// The `KMSGeneration` contract instance, used to fetch the previous epoch material.
+    kms_generation_contract: KMSGenerationInstance<P>,
 }
 
-impl<P: Provider> ProtocolConfigProcessor<P> {
+impl<P: Provider + Clone> ProtocolConfigProcessor<P> {
     pub fn new(config: &Config, ethereum_provider: P) -> Self {
         let domain = Eip712DomainMsg {
             name: config.protocol_config_contract.domain_name.clone(),
@@ -40,14 +43,21 @@ impl<P: Provider> ProtocolConfigProcessor<P> {
             verifying_contract: config.protocol_config_contract.address.to_string(),
             salt: None,
         };
-        let protocol_config_contract =
-            ProtocolConfigInstance::new(config.protocol_config_contract.address, ethereum_provider);
+        let protocol_config_contract = ProtocolConfigInstance::new(
+            config.protocol_config_contract.address,
+            ethereum_provider.clone(),
+        );
+        let kms_generation_contract =
+            KMSGeneration::new(config.kms_generation_contract.address, ethereum_provider);
         Self {
             domain,
             protocol_config_contract,
+            kms_generation_contract,
         }
     }
+}
 
+impl<P: Provider> ProtocolConfigProcessor<P> {
     pub async fn prepare_new_kms_context_request(
         &self,
         event: &NewKmsContext,
@@ -61,17 +71,17 @@ impl<P: Provider> ProtocolConfigProcessor<P> {
         Ok(KmsGrpcRequest::NewMpcContext { new, old })
     }
 
-    pub fn prepare_new_kms_epoch_request(
+    pub async fn prepare_new_kms_epoch_request(
         &self,
         event: &NewKmsEpoch,
     ) -> Result<KmsGrpcRequest, ProcessingError> {
-        let previous_epoch = build_previous_epoch_payload(
-            event.previousContextId,
-            event.previousEpochId,
-            &event.keys,
-            &event.crsList,
-        )
-        .map_err(ProcessingError::Irrecoverable)?;
+        let previous_epoch = self
+            .fetch_previous_epoch_info(
+                event.previousContextId,
+                event.previousEpochId,
+                event.materialBlockNumber.saturating_to(),
+            )
+            .await?;
 
         Ok(KmsGrpcRequest::NewMpcEpoch(NewMpcEpochRequest {
             context_id: Some(u256_to_request_id(event.kmsContextId)),
@@ -132,6 +142,90 @@ impl<P: Provider> ProtocolConfigProcessor<P> {
             )),
         }
     }
+
+    /// Fetch the material of the previous epoch from `KMSGeneration` contract.
+    ///
+    /// We use the `previousContextId` field of the event because:
+    /// * KMS Context switch: the previous epoch belongs to the previous context
+    /// * Same set resharing: the previous epoch belongs to the current context, but in such case,
+    ///   `previousContextId` == `kmsContextId`
+    async fn fetch_previous_epoch_info(
+        &self,
+        previous_context_id: U256,
+        previous_epoch_id: U256,
+        material_block_number: u64,
+    ) -> Result<PreviousEpochInfo, ProcessingError> {
+        let key_ids = self
+            .kms_generation_contract
+            .getCompletedKeyIds()
+            .block(material_block_number.into())
+            .call()
+            .await
+            .map_err(|e| {
+                ProcessingError::Recoverable(anyhow!("getCompletedKeyIds call failed: {e}"))
+            })?;
+        let crs_ids = self
+            .kms_generation_contract
+            .getCompletedCrsIds()
+            .block(material_block_number.into())
+            .call()
+            .await
+            .map_err(|e| {
+                ProcessingError::Recoverable(anyhow!("getCompletedCrsIds call failed: {e}"))
+            })?;
+
+        let mut keys_info = Vec::with_capacity(key_ids.len());
+        for key_id in key_ids {
+            let key_info = self
+                .kms_generation_contract
+                .getKeyInfo(key_id)
+                .block(material_block_number.into())
+                .call()
+                .await
+                .map_err(|e| {
+                    ProcessingError::Recoverable(anyhow!("getKeyInfo call failed: {e}"))
+                })?;
+            let mut key_digests = Vec::with_capacity(key_info.keyDigests.len());
+            for d in key_info.keyDigests.iter() {
+                key_digests.push(KeyDigest {
+                    key_type: key_type_to_string(d.keyType)
+                        .map_err(ProcessingError::Irrecoverable)?,
+                    digest: d.digest.to_vec(),
+                });
+            }
+            keys_info.push(KeyInfo {
+                key_id: Some(u256_to_request_id(key_id)),
+                preproc_id: Some(u256_to_request_id(key_info.prepKeygenId)),
+                key_parameters: params_type_to_fhe_parameter(key_info.paramsType)
+                    .map_err(ProcessingError::Irrecoverable)?,
+                key_digests,
+            });
+        }
+
+        let mut crs_info = Vec::with_capacity(crs_ids.len());
+        for crs_id in crs_ids {
+            let crs_material = self
+                .kms_generation_contract
+                .getCrsMaterials(crs_id)
+                .block(material_block_number.into())
+                .call()
+                .await
+                .map_err(|e| {
+                    ProcessingError::Recoverable(anyhow!("getCrsMaterials call failed: {e}"))
+                })?;
+            crs_info.push(CrsInfo {
+                crs_id: Some(u256_to_request_id(crs_id)),
+                crs_digest: crs_material._1.to_vec(),
+            });
+        }
+
+        Ok(PreviousEpochInfo {
+            context_id: Some(u256_to_request_id(previous_context_id)),
+            epoch_id: Some(u256_to_request_id(previous_epoch_id)),
+            keys_info,
+            crs_info,
+        })
+    }
 }
 
 fn build_new_kms_context_grpc_from_event(
@@ -147,11 +241,11 @@ fn build_new_kms_context_grpc_from_event(
             ca_cert: Some(n.caCert.to_vec()),
             public_storage_url: n.storageUrl.clone(),
             // Public key used to verify the signature of this KMS node
-            verification_key: Some(n.signerAddress.to_vec()),
+            signer_address: Some(n.signerAddress.to_vec()),
             public_storage_prefix: Some(n.storagePrefix.clone()),
             // Public keys allowed to sign transactions on behalf of this KMS node, i.e. the
             // connector transaction sender's address of this node
-            extra_verification_keys: vec![n.txSenderAddress.to_vec()],
+            extra_signer_addresses: vec![n.txSenderAddress.to_vec()],
         })
         .collect();
 
@@ -180,45 +274,6 @@ fn build_new_kms_context_grpc_from_event(
             threshold,
             pcr_values,
         }),
-    })
-}
-
-fn build_previous_epoch_payload(
-    context_id: U256,
-    previous_epoch_id: U256,
-    keys: &[PreviousKeyInfo],
-    crs_list: &[PreviousCrsInfo],
-) -> anyhow::Result<PreviousEpochInfo> {
-    let mut keys_info = vec![];
-    for key in keys {
-        let mut key_digests = vec![];
-        for d in key.keyDigests.iter() {
-            key_digests.push(KeyDigest {
-                key_type: key_type_to_string(d.keyType)?,
-                digest: d.digest.to_vec(),
-            });
-        }
-        keys_info.push(KeyInfo {
-            key_id: Some(u256_to_request_id(key.keyId)),
-            preproc_id: Some(u256_to_request_id(key.prepKeygenId)),
-            key_parameters: params_type_to_fhe_parameter(key.paramsType)?,
-            key_digests,
-        });
-    }
-
-    let crs_info = crs_list
-        .iter()
-        .map(|c| CrsInfo {
-            crs_id: Some(u256_to_request_id(c.crsId)),
-            crs_digest: c.crsDigest.to_vec(),
-        })
-        .collect();
-
-    Ok(PreviousEpochInfo {
-        context_id: Some(u256_to_request_id(context_id)),
-        epoch_id: Some(u256_to_request_id(previous_epoch_id)),
-        keys_info,
-        crs_info,
     })
 }
 
