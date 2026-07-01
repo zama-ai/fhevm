@@ -1,5 +1,4 @@
 use crate::{
-    monitoring::otlp::PropagationContext,
     tests::{
         rand::{rand_address, rand_public_key, rand_signature, rand_sns_ct, rand_u256},
         setup::{S3_CT_DIGEST, S3_CT_HANDLE},
@@ -13,7 +12,6 @@ use crate::{
 use alloy::{
     hex,
     primitives::{FixedBytes, U256},
-    sol_types::SolValue,
 };
 use anyhow::anyhow;
 use fhevm_gateway_bindings::decryption::{
