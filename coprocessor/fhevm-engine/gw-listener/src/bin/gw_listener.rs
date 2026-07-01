@@ -131,6 +131,13 @@ struct Conf {
     /// detector still runs and logs drift, but no revert signal is created
     /// and no automatic recovery kicks in. Opt-in while the feature rolls out.
     /// Also readable from `DRIFT_AUTO_REVERT_ENABLED` env var.
+    ///
+    /// SAFETY: only enable with a proper majority quorum — at least 3
+    /// registered coprocessors and a strict-majority coprocessor threshold.
+    /// With <= 2 coprocessors (or a non-majority threshold) the Gateway
+    /// consensus cannot be trusted as the source of truth and a correct node
+    /// could revert its own valid state. See the coprocessor architecture docs
+    /// (docs/protocol/architecture/coprocessor.md, "Drift auto-reversal and quorum").
     #[arg(long, env = "DRIFT_AUTO_REVERT_ENABLED", default_value_t = false)]
     drift_auto_revert_enabled: bool,
 
