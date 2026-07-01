@@ -46,6 +46,11 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
     /// @notice Returned when the caller is not allowed to use a handle.
     error HandleNotAllowed(bytes32 handle, address srcApp);
 
+    /// @notice Returned when a bridge {send} or {quote} is attempted while the source-chain
+    ///         ACL is paused. Bridging is halted alongside the ACL so no new cross-chain
+    ///         handle approvals are created while the host is in its stopped state.
+    error ACLPaused();
+
     /// @notice Returned when `lzComposeGas` is 0. LayerZero rejects a compose option with
     ///         zero gas (`Executor_ZeroLzComposeGasProvided`), and the bridge requires the
     ///         destination `lzCompose` to be executor-driven, so a non-zero budget is
@@ -140,6 +145,9 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
      * @dev    Reverts with {UnknownDstEid} if no destination chain id has been registered
      *         for `dstEid` (via {setDstChainId}); a chain id of 0 is treated as unset.
      * @dev    Reverts with {ZeroLzComposeGas} if `lzComposeGas` is 0.
+     * @dev    Reverts with {ACLPaused} if the source-chain ACL is paused; bridging is
+     *         halted alongside the ACL so no new cross-chain handle approvals are created
+     *         while the host is stopped.
      * @dev    Reverts if any handle is not ACL-allowed for `msg.sender` on this chain.
      *         The native fee is computed internally via `_quote`, so `msg.value` must
      *         equal it exactly; otherwise the call reverts with `NotEnoughNative`. Use
@@ -152,6 +160,8 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
         bytes32[] calldata handleList,
         uint64 lzComposeGas
     ) external payable virtual returns (MessagingReceipt memory receipt) {
+        _requireACLNotPaused();
+
         uint256 nHandles = handleList.length;
         if (nHandles == 0) revert EmptyHandleList();
         if (nHandles > MAX_HANDLES) revert TooManyHandles(nHandles, MAX_HANDLES);
@@ -218,8 +228,8 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
      * @notice Quote the native fee for a `send` call without sending.
      * @dev    Useful for callers wishing to compute msg.value before invoking `send`.
      * @dev    Applies the same input validation as {send} — reverts with {EmptyHandleList},
-     *         {TooManyHandles}, {UnknownDstEid}, or {ZeroLzComposeGas} under the same
-     *         conditions — so a successful quote guarantees those `send` guards will pass.
+     *         {TooManyHandles}, {UnknownDstEid}, {ZeroLzComposeGas}, or {ACLPaused} under the
+     *         same conditions — so a successful quote guarantees those `send` guards will pass.
      *         The ACL allowance check is intentionally NOT applied: this lets callers
      *         estimate `msg.value` before the transaction that grants ACL access to the
      *         handles being bridged.
@@ -237,6 +247,8 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
         bytes32[] calldata handleList,
         uint64 lzComposeGas
     ) external view virtual returns (MessagingFee memory fee) {
+        _requireACLNotPaused();
+
         uint256 nHandles = handleList.length;
         if (nHandles == 0) revert EmptyHandleList();
         if (nHandles > MAX_HANDLES) revert TooManyHandles(nHandles, MAX_HANDLES);
@@ -292,6 +304,14 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
      */
     function oAppVersion() public pure virtual override returns (uint64 senderVersion, uint64 receiverVersion) {
         return (1, 0);
+    }
+
+    /**
+     * @dev Reverts with {ACLPaused} when the source-chain ACL is paused. Both {send} and
+     *      {quote} short-circuit on this so bridging tracks the ACL's stopped state.
+     */
+    function _requireACLNotPaused() internal view virtual {
+        if (ACL_CONTRACT.paused()) revert ACLPaused();
     }
 
     /**
