@@ -513,7 +513,7 @@ async function main(): Promise<void> {
       return r && (r.receiveAlerts > 0 || r.composeAlerts > 0);
     }).length;
     console.log(
-      `  SUCCESS ${records.length - pending.size}/${guidToRecord.size}; ${pending.size} pending ` +
+      `  SUCCESS ${guidToRecord.size - pending.size}/${guidToRecord.size}; ${pending.size} pending ` +
         `(${alerted} currently alerted/retrying); ${Math.ceil(remainingMs / 1000)}s left — re-checking in ${POLL_INTERVAL_MS / 1000}s`,
     );
     await sleep(Math.min(POLL_INTERVAL_MS, remainingMs));
