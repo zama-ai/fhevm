@@ -91,8 +91,22 @@ pub(super) fn emit_config_updated(config: &HostConfig, admin: Pubkey) {
         mock_input_enabled: config.mock_input_enabled,
         test_shims_enabled: config.test_shims_enabled,
         grant_deny_list_enabled: config.grant_deny_list_enabled,
+        max_hcu_per_tx: config.max_hcu_per_tx,
+        max_hcu_depth_per_tx: config.max_hcu_depth_per_tx,
         updated_slot: config.updated_slot,
     });
+}
+
+/// Enforces the HCU limit ordering invariant `max_hcu_per_tx >= max_hcu_depth_per_tx`, treating `0`
+/// as unlimited on either side. Both setters reuse this in `(total, depth)` terms:
+/// `set_max_hcu_per_tx(v)` calls `check_hcu_ordering(v, cfg.max_hcu_depth_per_tx)`;
+/// `set_max_hcu_depth_per_tx(v)` calls `check_hcu_ordering(cfg.max_hcu_per_tx, v)`.
+pub(super) fn check_hcu_ordering(total: u64, depth: u64) -> Result<()> {
+    require!(
+        total == 0 || depth == 0 || total >= depth,
+        ZamaHostError::HcuLimitOrderingInvalid
+    );
+    Ok(())
 }
 
 pub(super) fn write_acl_record(
@@ -828,5 +842,80 @@ mod tests {
         let info = AccountInfo::new(&key, false, false, &mut lamports, &mut data, &owner, false);
 
         assert!(!is_absent_deny_record(&info).unwrap());
+    }
+
+    // ---- ordering invariant, expressed in (total, depth) terms ----
+
+    #[test]
+    fn check_hcu_ordering_accepts_total_ge_depth() {
+        assert!(check_hcu_ordering(20_000_000, 5_000_000).is_ok()); // total > depth
+        assert!(check_hcu_ordering(5_000_000, 5_000_000).is_ok()); // total == depth (boundary)
+    }
+
+    #[test]
+    fn check_hcu_ordering_rejects_total_lt_depth() {
+        // depth=5M, set total=4M -> reject. total=20M, set depth=21M -> reject.
+        assert_eq!(
+            check_hcu_ordering(4_000_000, 5_000_000).unwrap_err(),
+            error!(ZamaHostError::HcuLimitOrderingInvalid)
+        );
+        assert_eq!(
+            check_hcu_ordering(20_000_000, 21_000_000).unwrap_err(),
+            error!(ZamaHostError::HcuLimitOrderingInvalid)
+        );
+    }
+
+    #[test]
+    fn check_hcu_ordering_zero_is_unlimited() {
+        // 0 = +inf on either side (the unlimited sentinel); both 0 is the deploy default.
+        assert!(check_hcu_ordering(0, 5_000_000).is_ok());
+        assert!(check_hcu_ordering(4_000_000, 0).is_ok());
+        assert!(check_hcu_ordering(0, 0).is_ok());
+    }
+
+    #[test]
+    fn hcu_ordering_unreachable_under_setter_sequences() {
+        // No ordered setter sequence can reach 0 < total < depth. Simulate both setters as
+        // guarded mutations over a small value space; the bad state must never be reachable.
+        let values = [0u64, 1, 5, 10, 20];
+        for &a in &values {
+            for &b in &values {
+                for &c in &values {
+                    let (mut total, mut depth) = (0u64, 0u64); // init state (both disabled)
+                                                               // sequence: set_total(a), set_depth(b), set_total(c)
+                    if check_hcu_ordering(a, depth).is_ok() {
+                        total = a;
+                    }
+                    if check_hcu_ordering(total, b).is_ok() {
+                        depth = b;
+                    }
+                    if check_hcu_ordering(c, depth).is_ok() {
+                        total = c;
+                    }
+                    let bad = total != 0 && depth != 0 && total < depth;
+                    assert!(!bad, "reached 0<total<depth: total={total} depth={depth}");
+                }
+            }
+        }
+    }
+
+    // ---- the config-updated event carries the HCU limits (compile-time proof) ----
+
+    #[test]
+    fn host_config_updated_event_carries_hcu_limits() {
+        // If the two fields were missing, this would not build. (The updated_slot write + emit! are
+        // exercised end-to-end by the Mollusk setter tests in runtime-tests/tests/host_mollusk.rs.)
+        let _event = HostConfigUpdatedEvent {
+            version: EVENT_VERSION,
+            config: Pubkey::new_unique(),
+            admin: Pubkey::new_unique(),
+            paused: false,
+            mock_input_enabled: false,
+            test_shims_enabled: false,
+            grant_deny_list_enabled: false,
+            max_hcu_per_tx: 20_000_000,
+            max_hcu_depth_per_tx: 5_000_000,
+            updated_slot: 42,
+        };
     }
 }

@@ -778,6 +778,8 @@ fn seed_host_config(
                 mock_input_enabled: true,
                 test_shims_enabled: true,
                 grant_deny_list_enabled: false,
+                max_hcu_per_tx: 0,
+                max_hcu_depth_per_tx: 0,
                 updated_slot: 0,
                 bump,
             }),

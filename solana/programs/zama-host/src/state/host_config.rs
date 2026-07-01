@@ -42,6 +42,10 @@ pub struct HostConfig {
     pub test_shims_enabled: bool,
     /// Enables deny-list checks for persistent grant authorities.
     pub grant_deny_list_enabled: bool,
+    /// Max total HCU summed over one `fhe_eval` plan. `0` = unlimited (enforcement off).
+    pub max_hcu_per_tx: u64,
+    /// Max critical-path (depth) HCU within one `fhe_eval` plan. `0` = unlimited.
+    pub max_hcu_depth_per_tx: u64,
     /// Slot in which the config was initialized or last changed.
     pub updated_slot: u64,
     /// PDA bump for `PDA("host-config")`.
@@ -49,7 +53,9 @@ pub struct HostConfig {
 }
 
 impl HostConfig {
-    pub const SPACE: usize = 32 + 8 + 32 + 8 + 20 + 20 + 20 + 8 + 32 + 32 + 1 + 1 + 1 + 1 + 8 + 1;
+    // + max_hcu_per_tx (8) + max_hcu_depth_per_tx (8): 225 -> 241.
+    pub const SPACE: usize =
+        32 + 8 + 32 + 8 + 20 + 20 + 20 + 8 + 32 + 32 + 1 + 1 + 1 + 1 + 8 + 8 + 8 + 1;
 
     /// True only for the local PoC sentinel chain id.
     ///
@@ -66,5 +72,44 @@ impl HostConfig {
     /// handle birth keeps using runtime entropy and fails closed without it.
     pub fn zero_birth_entropy_allowed(&self) -> bool {
         self.test_shims_enabled && self.is_local_poc_chain()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use anchor_lang::AccountSerialize;
+
+    #[test]
+    fn host_config_space_grows_by_sixteen() {
+        // The pre-HCU SPACE was 225 (sum of existing fields); +16 for two u64s => 241.
+        const PRIOR_SPACE: usize = 225;
+        assert_eq!(HostConfig::SPACE, PRIOR_SPACE + 16);
+
+        // Serialized account (8-byte discriminator + data) must be exactly 8 + SPACE, the size
+        // `assert_host_config_shape` requires — a short SPACE would truncate the account.
+        let cfg = HostConfig {
+            admin: Pubkey::new_unique(),
+            chain_id: 1,
+            input_verifier_authority: Pubkey::new_unique(),
+            gateway_chain_id: 0,
+            input_verification_contract: [0u8; 20],
+            coprocessor_signer: [0u8; 20],
+            decryption_contract: [0u8; 20],
+            current_kms_context_id: 0,
+            material_authority: Pubkey::new_unique(),
+            test_authority: Pubkey::new_unique(),
+            paused: false,
+            mock_input_enabled: false,
+            test_shims_enabled: false,
+            grant_deny_list_enabled: false,
+            max_hcu_per_tx: 0,
+            max_hcu_depth_per_tx: 0,
+            updated_slot: 0,
+            bump: 0,
+        };
+        let mut buf = Vec::new();
+        cfg.try_serialize(&mut buf).unwrap();
+        assert_eq!(buf.len(), 8 + HostConfig::SPACE);
     }
 }
