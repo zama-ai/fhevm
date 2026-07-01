@@ -207,10 +207,15 @@ impl KmsClient {
     }
 
     async fn request_keygen(&self, request: &KeyGenRequest) -> (i16, Result<(), ProcessingError>) {
-        let Some(request_id) = request.request_id.clone() else {
+        if request.request_id.is_none() {
             return irrecoverable_error(anyhow!("Missing request ID"));
+        }
+        // Route to the shard holding this keygen's preprocessing material (keyed by the
+        // preprocessing ID), so prep-keygen, keygen and abort-keygen all target the same shard.
+        let Some(preproc_id) = request.preproc_id.clone() else {
+            return irrecoverable_error(anyhow!("Missing preprocessing ID"));
         };
-        let inner_client = self.choose_client(request_id.clone());
+        let inner_client = self.choose_client(preproc_id);
 
         send_request_with_retries(
             self.grpc_request_retries,
@@ -380,7 +385,12 @@ impl KmsClient {
         let Some(request_id) = request.request_id.clone() else {
             return irrecoverable_error(anyhow!("Missing request ID"));
         };
-        let inner_client = self.choose_client(request_id.clone());
+        // Poll the shard that ran the keygen, i.e. the one holding its preprocessing material
+        // (keyed by the preprocessing ID). The result itself is still fetched by key ID.
+        let Some(preproc_id) = request.preproc_id.clone() else {
+            return irrecoverable_error(anyhow!("Missing preprocessing ID"));
+        };
+        let inner_client = self.choose_client(preproc_id);
 
         let (error_count, grpc_result) = poll_for_result(
             self.grpc_request_retries,
