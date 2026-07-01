@@ -89,7 +89,7 @@ pub(crate) async fn insert_key_activation_event(
     Ok(())
 }
 
-pub(crate) async fn apply_key_material_migration_scheduled(
+pub(crate) async fn apply_compressed_key_migration_schedule(
     tx: &mut Transaction<'_, Postgres>,
     scheduled: KMSGeneration::KeyMaterialMigrationScheduled,
 ) -> Result<(), sqlx::Error> {
@@ -127,7 +127,7 @@ pub(crate) async fn apply_key_material_migration_scheduled(
 
     sqlx::query(
         "UPDATE keys \
-         SET material_migration_status = $2 \
+         SET compressed_key_migration_status = $2 \
          WHERE key_id = $1",
     )
     .bind(key_id.to_vec())
@@ -225,7 +225,7 @@ pub(crate) async fn publish_key_material(
         "WITH upd AS (\
             UPDATE keys \
             SET compressed_xof_keyset = $4, \
-                material_migration_status = COALESCE(material_migration_status, $5) \
+                compressed_key_migration_status = COALESCE(compressed_key_migration_status, $5) \
             WHERE key_id = $3 \
             RETURNING key_id\
         ) \

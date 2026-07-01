@@ -1,12 +1,12 @@
 -- RFC-029: key-material cutover state (coprocessor side).
 --
 -- `keys.compressed_xof_keyset` is the single home for CompressedXofKeySet
--- material. `material_migration_status` only tells readers whether that column
+-- material. `compressed_key_migration_status` only tells readers whether that column
 -- is native material (NULL, read with today's COALESCE path) or migrated
 -- material that must be hidden until a finalized schedule says to use it.
 ALTER TABLE keys
-ADD COLUMN IF NOT EXISTS material_migration_status SMALLINT NULL
-CHECK (material_migration_status IN (1, 2));
+ADD COLUMN IF NOT EXISTS compressed_key_migration_status SMALLINT NULL
+CHECK (compressed_key_migration_status IN (1, 2));
 
 -- Material version a ciphertext was produced under: 0 = legacy, 1 = migrated.
 -- SnS pins each task to its SOURCE ciphertext's version (read via JOIN), so a

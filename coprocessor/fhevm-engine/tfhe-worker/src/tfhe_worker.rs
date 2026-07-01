@@ -576,7 +576,7 @@ async fn build_transaction_graph_and_execute<'a>(
     async {
         // Fetch the key material for this group's version.
         let keys = match db_key_cache
-            .fetch_latest_for_version(version, trx.as_mut())
+            .fetch_latest_for_version(Some(version), trx.as_mut())
             .await
         {
             Ok(k) => k,

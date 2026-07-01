@@ -172,7 +172,7 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         /// @notice CRS IDs that reached consensus.
         uint256[] completedCrsIds;
         // ----------------------------------------------------------------------------------------------
-        // RFC-029 material-migration state (append-only):
+        // RFC-029 compressed-key migration state (append-only):
         // ----------------------------------------------------------------------------------------------
         /// @notice Migration keygens (keygen-from-existing), keyed by the migration keyId.
         mapping(uint256 keyId => uint256 existingKeyId) migrationKeygens;

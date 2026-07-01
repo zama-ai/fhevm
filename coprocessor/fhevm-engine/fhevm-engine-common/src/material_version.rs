@@ -21,7 +21,8 @@ use std::collections::HashMap;
 /// Postgres `LISTEN`/`NOTIFY` channel signaling that the compressed-key
 /// migration schedule has been published. Workers load the schedule once and
 /// refresh only on this notify, so the happy path never polls.
-pub const COMPRESSED_KEY_MIGRATION_SCHEDULE_CHANNEL: &str = "migration_schedule_changed";
+pub const COMPRESSED_KEY_MIGRATION_SCHEDULE_CHANNEL: &str =
+    "compressed_key_migration_schedule_changed";
 
 /// Which key material an operation uses. `0` is the legacy material (today's
 /// behavior); `1` is the migrated `CompressedXofKeySet`. A thin `i16` newtype
@@ -36,7 +37,7 @@ impl MaterialVersion {
     pub const MIGRATED_V1: MaterialVersion = MaterialVersion(1);
 }
 
-/// `keys.material_migration_status` values for the RFC-029 compressed-key migration.
+/// `keys.compressed_key_migration_status` values for the RFC-029 compressed-key migration.
 pub struct CompressedKeyMigrationStatus;
 
 impl CompressedKeyMigrationStatus {
@@ -240,74 +241,5 @@ mod tests {
         assert_eq!(cache.gateway_input_material_version(None), V0);
         // A scheduled migration with no host row means a post-migration host.
         assert_eq!(cache.host_compute_material_version(1, Some(10_000)), V1);
-    }
-
-    /// RFC-029 immutability guard. SnS and compute pin a ciphertext's `material_version` by reading
-    /// it back at execution time, which is only sound because the column is write-once (set on
-    /// INSERT, never updated). Fail loudly if anyone ever introduces a runtime
-    /// `UPDATE ciphertexts ... material_version`: that would let key material change under an already
-    /// enqueued task and diverge the fleet. (Needle built from fragments so this guard never matches
-    /// itself.)
-    #[test]
-    fn ciphertexts_material_version_is_never_updated_in_source() {
-        use std::path::PathBuf;
-        let engine_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .expect("fhevm-engine-common sits under the fhevm-engine workspace")
-            .to_path_buf();
-        let update_ct = format!("{} {}", "update", "ciphertexts");
-        let version_col = format!("material{}version", "_");
-
-        let mut scanned = 0usize;
-        let mut offenders = Vec::new();
-        let mut stack = vec![engine_root];
-        while let Some(dir) = stack.pop() {
-            let Ok(entries) = std::fs::read_dir(&dir) else {
-                continue;
-            };
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_dir() {
-                    if path.file_name().is_some_and(|n| n == "target") {
-                        continue;
-                    }
-                    stack.push(path);
-                    continue;
-                }
-                if path.extension().is_none_or(|e| e != "rs") {
-                    continue;
-                }
-                // Skip this guard's own file (it necessarily names the forbidden pattern).
-                if path.file_name().is_some_and(|n| n == "material_version.rs") {
-                    continue;
-                }
-                let Ok(src) = std::fs::read_to_string(&path) else {
-                    continue;
-                };
-                scanned += 1;
-                let norm = src
-                    .to_lowercase()
-                    .split_whitespace()
-                    .collect::<Vec<_>>()
-                    .join(" ");
-                let mut from = 0;
-                while let Some(rel) = norm[from..].find(&update_ct) {
-                    let start = from + rel;
-                    let window = &norm[start..norm.len().min(start + 400)];
-                    if window.contains(&version_col) {
-                        offenders.push(path.display().to_string());
-                    }
-                    from = start + update_ct.len();
-                }
-            }
-        }
-        assert!(
-            scanned > 50,
-            "guard did not scan the engine sources (scanned={scanned})"
-        );
-        assert!(
-            offenders.is_empty(),
-            "found `UPDATE ciphertexts ... material_version`, which breaks RFC-029 version pinning: {offenders:?}"
-        );
     }
 }

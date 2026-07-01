@@ -1,8 +1,7 @@
 use fhevm_engine_common::{
     db_keys::{
-        read_compressed_xof_keyset_by_sequence_number,
-        read_compressed_xof_keyset_by_sequence_number_with_fallback, CompressedXofKeysetEncoding,
-        DbKeyId,
+        read_compressed_server_key_blob, read_default_sns_server_key_blob, DbKeyId,
+        ServerKeyBlobEncoding,
     },
     utils::safe_deserialize_sns_key,
 };
@@ -17,16 +16,16 @@ use crate::{ExecutionError, KeySet};
 #[cfg(not(feature = "gpu"))]
 fn decode_server_key(
     blob: &[u8],
-    encoding: CompressedXofKeysetEncoding,
+    encoding: ServerKeyBlobEncoding,
 ) -> Result<tfhe::ServerKey, ExecutionError> {
     match encoding {
-        CompressedXofKeysetEncoding::CompressedXof => {
+        ServerKeyBlobEncoding::CompressedXof => {
             let kxs: CompressedXofKeySet = safe_deserialize_sns_key(blob)?;
             info!("Decompressing CompressedXofKeySet to ServerKey");
             let (_public_key, server_key) = kxs.decompress()?.into_raw_parts();
             Ok(server_key)
         }
-        CompressedXofKeysetEncoding::Legacy => Ok(safe_deserialize_sns_key(blob)?),
+        ServerKeyBlobEncoding::Legacy => Ok(safe_deserialize_sns_key(blob)?),
     }
 }
 
@@ -37,9 +36,9 @@ fn decode_server_key(
 #[cfg(feature = "gpu")]
 fn decode_server_key(
     blob: &[u8],
-    encoding: CompressedXofKeysetEncoding,
+    encoding: ServerKeyBlobEncoding,
 ) -> Result<tfhe::CudaServerKey, ExecutionError> {
-    if encoding == CompressedXofKeysetEncoding::Legacy {
+    if encoding == ServerKeyBlobEncoding::Legacy {
         return Err(anyhow::anyhow!(
             "GPU coprocessor cannot read a legacy ServerKey-format key (compressed_xof_keyset is NULL); \
              rotate kms-core to publish CompressedXofKeySet so the host-listener can ingest it into the compressed column"
@@ -95,14 +94,13 @@ pub(crate) async fn fetch_migrated_keyset(pool: &PgPool) -> Result<Option<KeySet
     let Some((key_id_gw, sequence_number)) = fetch_latest_key_id_gw(pool).await? else {
         return Ok(None);
     };
-    let Some(blob) = read_compressed_xof_keyset_by_sequence_number(pool, sequence_number).await?
-    else {
+    let Some(blob) = read_compressed_server_key_blob(pool, sequence_number).await? else {
         return Ok(None);
     };
     if blob.is_empty() {
         return Ok(None);
     }
-    let server_key = decode_server_key(&blob, CompressedXofKeysetEncoding::CompressedXof)?;
+    let server_key = decode_server_key(&blob, ServerKeyBlobEncoding::CompressedXof)?;
     let client_key = fetch_client_key_by_sequence_number(pool, sequence_number).await?;
     Ok(Some(KeySet {
         key_id_gw,
@@ -142,12 +140,9 @@ async fn fetch_keyset_by_id(
         sequence_number, "Cache miss"
     );
 
-    let (blob, encoding) = read_compressed_xof_keyset_by_sequence_number_with_fallback(
-        pool,
-        sequence_number,
-        SKS_KEY_WITH_NOISE_SQUASHING_SIZE,
-    )
-    .await?;
+    let (blob, encoding) =
+        read_default_sns_server_key_blob(pool, sequence_number, SKS_KEY_WITH_NOISE_SQUASHING_SIZE)
+            .await?;
     info!(
         bytes_len = blob.len(),
         ?encoding,

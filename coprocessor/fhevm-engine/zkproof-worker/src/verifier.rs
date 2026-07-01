@@ -395,7 +395,7 @@ async fn execute_verify_proof_routine(
         } else {
             if migrated_key.is_none() {
                 match db_key_cache
-                    .fetch_latest_for_version(material_version, &mut txn)
+                    .fetch_latest_for_version(Some(material_version), &mut txn)
                     .await
                 {
                     Ok(k) => *migrated_key = Some(Arc::new(k)),

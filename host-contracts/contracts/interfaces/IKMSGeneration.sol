@@ -128,9 +128,9 @@ interface IKMSGeneration {
 
     /**
      * @notice RFC-029: emitted to trigger preprocessing for a migration keygen.
-     * @dev This path exists for the CPU-to-GPU material migration. GPU execution needs compressed
-     * XOF material, but live ciphertext consensus depends on all coprocessors using material derived
-     * from the same underlying FHE key until the scheduled cutover block.
+     * @dev This path prepares compressed material for future GPU execution while the live network
+     * keeps using CPU coprocessors and material derived from the same underlying FHE key until the
+     * scheduled cutover block.
      * @param prepKeygenId The preprocessing keygen id.
      * @param keyId The migration keygen id; it is never activated.
      * @param existingKeyId The existing key whose material is re-derived in migrated format.
@@ -366,9 +366,10 @@ interface IKMSGeneration {
     /**
      * @notice RFC-029: request a migration keygen (keygen-from-existing) that re-derives
      * `existingKeyId` in the migrated (CompressedXofKeySet) format, published under the existing key.
-     * @dev One-time cutover for GPU enablement: KMS derives compressed material from the same FHE key,
-     * then coprocessors switch by schedule. Generating and activating a fresh key here would make
-     * ciphertext bytes diverge across the fleet.
+     * @dev One-time cutover to compressed material: KMS derives it from the same FHE key, then
+     * CPU coprocessors switch material format by schedule. GPU production can only be enabled after
+     * this migration completes. Generating and activating a fresh key here would make ciphertext bytes
+     * diverge across the fleet.
      * @param paramsType The FHE params type.
      * @param existingKeyId The existing key to migrate.
      */
