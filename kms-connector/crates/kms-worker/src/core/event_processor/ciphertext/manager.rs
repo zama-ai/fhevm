@@ -4,7 +4,7 @@ use super::{
 };
 use crate::core::{
     config::{Config, CtAttestationConfig},
-    event_processor::ciphertext::COPROCESSOR_CONTEXT_ID,
+    event_processor::{RequestCheckKind, ciphertext::COPROCESSOR_CONTEXT_ID},
 };
 use alloy::{hex, primitives::B256, providers::Provider, transports::http::Client};
 use anyhow::{Context, anyhow};
@@ -28,7 +28,7 @@ pub struct CiphertextManager<P: Provider> {
     /// HTTP client for the attestation HEAD fan-out and the ciphertext retrieval.
     client: Client,
 
-    /// Off-chain ciphertext-attestation config.
+    /// Off-chain ciphertext-attestation verification config.
     config: CtAttestationConfig,
 
     /// Number of retries for S3 ciphertext retrieval.
@@ -69,6 +69,7 @@ where
         sns_materials: &[SnsCiphertextMaterial],
     ) -> anyhow::Result<Vec<TypedCiphertext>> {
         if let Err(e) = self.verify_attestations(sns_materials).await {
+            RequestCheckKind::CoproConsensus.inc_metric();
             warn!("{e:#}");
         }
 
@@ -86,10 +87,7 @@ where
     /// Fans HEAD requests out to every registered Coprocessor bucket and computes an off-chain
     /// consensus verdict for each handle. Stops at the first failing material: a single failed
     /// verification invalidates the whole decryption request.
-    pub async fn verify_attestations(
-        &self,
-        materials: &[SnsCiphertextMaterial],
-    ) -> anyhow::Result<()> {
+    async fn verify_attestations(&self, materials: &[SnsCiphertextMaterial]) -> anyhow::Result<()> {
         if !self.config.enabled {
             return Ok(());
         }

@@ -101,6 +101,8 @@ impl DbEventPicker {
             EventType::PrepKeygenRequest => self.pick_prep_keygen_requests().await,
             EventType::KeygenRequest => self.pick_keygen_requests().await,
             EventType::CrsgenRequest => self.pick_crsgen_requests().await,
+            EventType::NewKmsContext => self.pick_new_kms_context_events().await,
+            EventType::NewKmsEpoch => self.pick_new_kms_epoch_events().await,
         }
     }
 
@@ -197,6 +199,52 @@ impl DbEventPicker {
         .await?
         .iter()
         .map(event::from_keygen_row)
+        .collect()
+    }
+
+    async fn pick_new_kms_context_events(&self) -> anyhow::Result<Vec<ProtocolEvent>> {
+        sqlx::query(
+            "
+                UPDATE new_kms_context
+                SET status = 'under_process'
+                FROM (
+                    SELECT context_id
+                    FROM new_kms_context
+                    WHERE status = 'pending'
+                    LIMIT 1 FOR UPDATE SKIP LOCKED
+                ) AS req
+                WHERE new_kms_context.context_id = req.context_id
+                RETURNING req.context_id, previous_context_id, kms_node_params, thresholds,
+                software_version, pcr_values, tx_hash, already_sent, created_at, otlp_context
+            ",
+        )
+        .fetch_all(&self.db_pool)
+        .await?
+        .iter()
+        .map(event::from_new_kms_context_row)
+        .collect()
+    }
+
+    async fn pick_new_kms_epoch_events(&self) -> anyhow::Result<Vec<ProtocolEvent>> {
+        sqlx::query(
+            "
+                UPDATE new_kms_epoch
+                SET status = 'under_process'
+                FROM (
+                    SELECT epoch_id
+                    FROM new_kms_epoch
+                    WHERE status = 'pending'
+                    LIMIT 1 FOR UPDATE SKIP LOCKED
+                ) AS req
+                WHERE new_kms_epoch.epoch_id = req.epoch_id
+                RETURNING context_id, previous_context_id, new_kms_epoch.epoch_id,
+                previous_epoch_id, material_block_number, tx_hash, already_sent, created_at, otlp_context
+            ",
+        )
+        .fetch_all(&self.db_pool)
+        .await?
+        .iter()
+        .map(event::from_new_kms_epoch_row)
         .collect()
     }
 
