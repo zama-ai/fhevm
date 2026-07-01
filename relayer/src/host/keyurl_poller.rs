@@ -1,14 +1,10 @@
 //! Host-chain poller that keeps the `/v2/keyurl` response in sync with on-chain KMS state.
 //!
-//! Per RFC 005 (relayer side), `/v2/keyurl` serves chain-sourced values: `dataId` is the
-//! real on-chain `getActiveKeyId` / `getActiveCrsId`, `urls` come from `getKeyMaterials` /
-//! `getCrsMaterials`, and `contextId` / `epochId` come from `getCurrentKmsContextAndEpoch`.
-//!
-//! The active key/CRS/context is read by **polling view getters**, not by subscribing to
-//! events (rare activation events are unreliable to subscribe to; periodic id comparison is
-//! idempotent and self-healing). State is held **in memory only** and repopulated from chain
-//! on restart. On each id change the new value is pushed into a [`tokio::sync::watch`] channel
-//! that backs the HTTP endpoint, and the rotation is logged at INFO.
+//! Polls the active key/CRS/context on an interval rather than subscribing to events: the
+//! activations are rare and unreliable to subscribe to, whereas periodic comparison is
+//! idempotent and self-healing. State lives in memory only (repopulated from chain on
+//! restart); on each change the new value is pushed into the [`tokio::sync::watch`] channel
+//! that backs the endpoint and the rotation is logged at INFO.
 
 use std::str::FromStr;
 use std::sync::Arc;
@@ -31,8 +27,7 @@ use crate::http::endpoints::v2::types::keyurl::{KeyData, KeyUrlResponseJson};
 type HostKmsGeneration = KMSGenerationInstance<Arc<Provider>, alloy::network::AnyNetwork>;
 type HostProtocolConfig = IProtocolConfigInstance<Arc<Provider>, alloy::network::AnyNetwork>;
 
-/// Read on-chain state at the finalized block tag to avoid serving a reorged-away activation,
-/// in parity with the kms-connector host-chain listener.
+/// Read on-chain state at the finalized block tag to avoid serving a reorged-away activation.
 fn finalized() -> BlockId {
     BlockId::finalized()
 }
@@ -105,8 +100,7 @@ pub struct KeyUrlPoller {
 }
 
 impl KeyUrlPoller {
-    /// Build the poller from the protocol-config settings (host RPC, contract addresses,
-    /// retry, and poll interval all live there).
+    /// Build the poller from the protocol-config settings.
     pub fn new(settings: &ProtocolConfigSettings) -> anyhow::Result<Self> {
         let provider = build_host_provider(&settings.ethereum_http_rpc_url)?;
 

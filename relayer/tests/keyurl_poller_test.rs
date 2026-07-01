@@ -2,10 +2,8 @@
 //!
 //! These drive a real `KeyUrlPoller` against the `ethereum_rpc_mock` HTTP mock (no database),
 //! exercising the binding calls and ABI decoding end-to-end:
-//! - `initialize()` maps on-chain `getActiveKeyId` / `getActiveCrsId` to `dataId`, surfaces
-//!   `contextId` / `epochId`, and pulls `urls` from `getKeyMaterials` / `getCrsMaterials`.
-//! - A simulated `getActiveKeyId` change is detected by the poll loop and pushed to the watch
-//!   channel that backs the endpoint.
+//! - the initial fetch maps the on-chain ids/context into the served response, and
+//! - a simulated id change is detected by the poll loop and pushed to the watch channel.
 
 #![cfg(feature = "integration-tests")]
 

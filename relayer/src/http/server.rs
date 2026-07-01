@@ -53,8 +53,6 @@ pub async fn run_http_server(
         crate::http::endpoints::v2::types::keyurl::KeyUrlResponseJson,
     >,
 ) -> SocketAddr {
-    // Read the HTTP-relevant config off the shared Settings so the server keeps a single
-    // config parameter rather than one per scalar it needs.
     let http = &settings.http;
     let user_decrypt_shares_threshold = settings.gateway.contracts.user_decrypt_shares_threshold;
 

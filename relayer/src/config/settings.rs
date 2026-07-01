@@ -573,8 +573,7 @@ pub struct ProtocolConfigSettings {
     pub retry: RetrySettings,
     /// KMSGeneration contract address on the Ethereum host chain.
     pub kms_generation_address: String,
-    /// Poll interval (ms) for the `/v2/keyurl` host-chain poller. ~12000ms
-    /// (≈ Ethereum block time) is a sensible default.
+    /// How often the `/v2/keyurl` poller reads the active key/CRS/context from the host chain.
     pub keyurl_poll_interval_ms: u64,
 }
 

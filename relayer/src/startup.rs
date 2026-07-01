@@ -150,9 +150,8 @@ pub async fn run_fhevm_relayer(
     if settings.http.endpoint.is_some() {
         info!("Starting Relayer HTTP server");
 
-        // Gate startup on the first successful host-chain poll so `/v2/keyurl` always serves
-        // a chain-sourced value. If it fails after retries the relayer exits and k8s restarts
-        // it (same fail-fast philosophy as fatal DB-connection loss).
+        // Gate startup on the first successful host-chain poll so `/v2/keyurl` always serves a
+        // chain-sourced value; if it keeps failing the relayer exits and is restarted.
         let mut keyurl_poller = KeyUrlPoller::new(&settings.protocol_config)
             .context("Failed to build KeyUrl poller")?;
         let initial_keyurl = keyurl_poller

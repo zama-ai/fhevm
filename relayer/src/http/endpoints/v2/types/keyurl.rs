@@ -22,10 +22,10 @@ pub struct KeyUrlResponseJson {
 pub struct Response {
     pub fhe_key_info: Vec<FheKeyInfo>,
     pub crs: HashMap<String, KeyData>,
-    /// Active KMS context id, from on-chain `getCurrentKmsContextAndEpoch`.
+    /// Active KMS context id.
     #[schema(example = "1")]
     pub context_id: String,
-    /// Active epoch id, from on-chain `getCurrentKmsContextAndEpoch`.
+    /// Active epoch id.
     #[schema(example = "1")]
     pub epoch_id: String,
 }
@@ -39,10 +39,10 @@ pub struct FheKeyInfo {
 #[derive(Serialize, Deserialize, Debug, Clone, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct KeyData {
-    /// On-chain `getActiveKeyId` / `getActiveCrsId` as a decimal string.
+    /// On-chain key/CRS identifier, as a decimal string.
     #[schema(example = "3")]
     pub data_id: String,
-    /// Storage URLs from `getKeyMaterials` / `getCrsMaterials`.
+    /// Storage URLs for the key/CRS material.
     pub urls: Vec<String>,
 }
 

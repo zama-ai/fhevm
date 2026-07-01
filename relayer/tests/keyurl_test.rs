@@ -108,7 +108,7 @@ mod helpers {
         );
         assert!(crs_2048["urls"].is_array(), "'urls' should be an array");
 
-        // --- Chain-sourced values (from the host-chain poller, RFC 005) ---
+        // --- Chain-sourced values (served from the host-chain poller) ---
 
         // dataId carries the real on-chain getActiveKeyId / getActiveCrsId (decimal string).
         assert_eq!(

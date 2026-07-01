@@ -3,11 +3,6 @@
 //! Both [`crate::host::threshold_resolver`] and [`crate::host::keyurl_poller`] build the
 //! same alloy HTTP provider from `protocol_config.ethereum_http_rpc_url`, so the provider
 //! type and its constructor live here.
-//!
-//! Retry/error-redaction is intentionally NOT shared as a generic helper: alloy's
-//! `CallBuilder::call(&self)` borrows the builder, so a closure that builds-and-calls
-//! would drop the temporary builder while the returned future still borrows it. Each
-//! caller keeps its retry loop local (see `keyurl_poller::retry_view!`).
 
 use std::sync::Arc;
 
