@@ -338,4 +338,28 @@ describe("render-compose", () => {
       );
     });
   });
+
+  test("passes sns-worker S3 migration mode as an explicit command argument", async () => {
+    const migrationState: State = {
+      ...state,
+      versions: {
+        ...state.versions,
+        env: {
+          ...state.versions.env,
+          S3_MIGRATION_MODE: "concurrent",
+        },
+      },
+    };
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      await writeFile(envPath("coprocessor"), "S3_MIGRATION_MODE=concurrent\n");
+      await writeFile(envPath("coprocessor.1"), "S3_MIGRATION_MODE=concurrent\n");
+      await generateComposeOverrides(migrationState, stackSpecForState(migrationState));
+      const doc = YAML.parse(await readFile(composePath("coprocessor"), "utf8")) as {
+        services: Record<string, { command?: string[] }>;
+      };
+      expect(doc.services["coprocessor-sns-worker"]?.command).toContain("--s3-migration=concurrent");
+      expect(doc.services["coprocessor1-sns-worker"]?.command).toContain("--s3-migration=concurrent");
+    });
+  });
 });
