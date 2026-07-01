@@ -3,7 +3,7 @@ use alloy::rpc::types::Log;
 use anyhow::anyhow;
 use fhevm_engine_common::chain_id::ChainId;
 use sqlx::{Pool, Postgres, Transaction};
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::contracts::KMSGeneration::{self, KMSGenerationEvents};
 use crate::kms_generation::aws_s3::{download_key_from_s3, AwsS3Interface};
@@ -140,9 +140,9 @@ pub async fn insert_kms_generation_events_tx(
             }
             KMSGeneration::KMSGenerationEvents::KeyMaterialAdded(added) => {
                 if !finalized {
-                    warn!(
+                    debug!(
                         key_id = ?added.keyId,
-                        "RFC-029 KeyMaterialAdded ignored from non-finalized ingestion"
+                        "RFC-029 KeyMaterialAdded skipped until finalized ingestion"
                     );
                     continue;
                 }
@@ -157,9 +157,9 @@ pub async fn insert_kms_generation_events_tx(
                 scheduled,
             ) => {
                 if !finalized {
-                    warn!(
+                    debug!(
                         key_id = ?scheduled.keyId,
-                        "RFC-029 KeyMaterialMigrationScheduled ignored from non-finalized ingestion"
+                        "RFC-029 KeyMaterialMigrationScheduled skipped until finalized ingestion"
                     );
                     continue;
                 }
@@ -191,7 +191,10 @@ pub async fn process_kms_generation_activations<
     activate_ready_crs_activations(&mut tx).await?;
     tx.commit().await?;
 
-    // RFC-029: download migrated keysets from finalized KeyMaterialAdded events.
+    // RFC-029 material migration events are one-off governance events and are
+    // only accepted from finalized ingestion. In 0.14 that means the poller
+    // path; listener-core consumer payloads are skipped until finalized
+    // delivery exists there.
     let mut tx = db_pool.begin().await?;
     let pending_material =
         all_pending_key_material_to_download(&mut tx).await?;
