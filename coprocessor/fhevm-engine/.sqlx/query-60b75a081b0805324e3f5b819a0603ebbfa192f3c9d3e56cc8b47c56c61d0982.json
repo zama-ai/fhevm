@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT count(*) AS \"count!\"\n        FROM handle_bridged_events\n        WHERE NOT is_associated\n          AND NOT EXISTS (SELECT 1 FROM ciphertexts WHERE handle = handle_bridged_events.dst_handle)\n          AND created_at <= now() - make_interval(secs => $1::int)\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "60b75a081b0805324e3f5b819a0603ebbfa192f3c9d3e56cc8b47c56c61d0982"
+}

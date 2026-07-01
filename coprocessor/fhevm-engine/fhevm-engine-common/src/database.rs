@@ -20,6 +20,8 @@ const DATABASE_IAM_REGION: &str = "DATABASE_IAM_REGION";
 const DATABASE_SSL_ROOT_CERT_PATH: &str = "DATABASE_SSL_ROOT_CERT_PATH";
 const DATABASE_URL_ENV: &str = "DATABASE_URL";
 
+pub const EVENT_CIPHERTEXTS_UPLOADED: &str = "event_ciphertexts_uploaded";
+
 const IAM_TOKEN_TTL: Duration = Duration::from_secs(15 * 60);
 const IAM_REFRESH_MARGIN: Duration = Duration::from_secs(2 * 60);
 const IAM_REFRESH_RETRY_DELAY: Duration = Duration::from_secs(30);

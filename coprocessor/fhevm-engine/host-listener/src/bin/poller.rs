@@ -40,6 +40,13 @@ struct Args {
     #[command(flatten)]
     pub protocol_config: host_listener::protocol_config::ProtocolConfigArgs,
 
+    #[arg(
+        long,
+        default_value = "",
+        help = "Optional ConfidentialBridge contract address to monitor"
+    )]
+    pub confidential_bridge_address: String,
+
     #[arg(long, help = "PostgreSQL connection URL")]
     database_url: DatabaseURL,
 
@@ -197,6 +204,10 @@ async fn main() -> anyhow::Result<()> {
             "KMS generation contract",
         )?,
         protocol_config_address,
+        confidential_bridge_address: parse_optional_address(
+            &args.confidential_bridge_address,
+            "ConfidentialBridge contract",
+        )?,
         database_url: args.database_url,
         finality_lag: args.finality_lag,
         batch_size: args.batch_size,

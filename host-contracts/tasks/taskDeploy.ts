@@ -34,7 +34,7 @@ export function readHostEnv() {
   return dotenv.parse(fs.readFileSync(HOST_ENV_FILE));
 }
 
-function writeHostEnvLine(content: string, mode: 'w' | 'a') {
+export function writeHostEnvLine(content: string, mode: 'w' | 'a') {
   fs.writeFileSync(HOST_ENV_FILE, content, { flag: mode });
 }
 
@@ -162,6 +162,35 @@ task('task:deployAllHostContracts')
     await hre.run('task:deployInputVerifier');
     await hre.run('task:deployHCULimit');
 
+    // ConfidentialBridge upgrade is opt-in via the LZ_ENDPOINT_ADDRESS env var.
+    // When unset, the bridge stays at its empty-proxy stage and can be upgraded
+    // later by running `task:deployBridge` once LZ_ENDPOINT_ADDRESS is configured.
+    //
+    // We also skip the bridge upgrade on the in-memory `hardhat` network: the
+    // canonical LZ endpoint doesn't exist there, so initializeFromEmptyProxy →
+    // __OAppCore_init → endpoint.setDelegate(...) would revert. Test fixtures
+    // that need the bridge deploy their own proxies (see test/bridge/fixture.ts
+    // and test/bridge/Bridge.t.sol::_deployBridgeProxy).
+    if (!process.env.LZ_ENDPOINT_ADDRESS) {
+      console.log(
+        '[task:deployAllHostContracts] LZ_ENDPOINT_ADDRESS not set; ' +
+          'ConfidentialBridge stays at its empty-proxy stage. Set LZ_ENDPOINT_ADDRESS and run task:deployBridge when ready.',
+      );
+    } else if (hre.network.name === 'hardhat') {
+      console.log(
+        "[task:deployAllHostContracts] Skipping bridge upgrade on the in-memory 'hardhat' network " +
+          '(no LayerZero endpoint contract exists there). Run on a real network to upgrade the bridge.',
+      );
+    } else if ((await hre.ethers.provider.getCode(process.env.LZ_ENDPOINT_ADDRESS)) === '0x') {
+      console.log(
+        `[task:deployAllHostContracts] No contract deployed at LZ_ENDPOINT_ADDRESS (${process.env.LZ_ENDPOINT_ADDRESS}) ` +
+          'on this network; ConfidentialBridge stays at its empty-proxy stage. ' +
+          'Run task:deployBridge against a network with a real LayerZero endpoint to upgrade the bridge.',
+      );
+    } else {
+      await hre.run('task:deployBridge');
+    }
+
     console.log('Contract deployment done!');
   });
 
@@ -249,6 +278,9 @@ task('task:deployEmptyUUPSProxies')
       const kmsGenerationAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
       await run('task:setKMSGenerationAddress', { address: kmsGenerationAddress });
     }
+
+    const confidentialBridgeAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
+    await run('task:setBridgeAddress', { address: confidentialBridgeAddress });
   });
 
 task('task:deployEmptyProxiesProtocolConfigKMSGeneration').setAction(async function (_, { ethers, upgrades, run }) {
@@ -259,13 +291,14 @@ task('task:deployEmptyProxiesProtocolConfigKMSGeneration').setAction(async funct
   const targets = [
     { envKey: 'PROTOCOL_CONFIG_CONTRACT_ADDRESS', setterTask: 'task:setProtocolConfigAddress' },
     { envKey: 'KMS_GENERATION_CONTRACT_ADDRESS', setterTask: 'task:setKMSGenerationAddress' },
+    { envKey: 'CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS', setterTask: 'task:setBridgeAddress' },
   ] as const;
 
   const missingTargets = targets.filter(({ envKey }) => !existingEnv[envKey]);
 
   if (missingTargets.length === 0) {
     console.warn(
-      'Empty-proxy bootstrap is a no-op; addresses/.env.host already contains ProtocolConfig and KMSGeneration.',
+      'Empty-proxy bootstrap is a no-op; addresses/.env.host already contains ProtocolConfig, KMSGeneration and ConfidentialBridge.',
     );
     return;
   }
@@ -426,6 +459,43 @@ task('task:deployPauserSet').setAction(async function (_, hre) {
   await hre.run('task:setPauserSetAddress', {
     address: pauserSetAddress,
   });
+});
+
+////////////////////////////////////////////////////////////////////////////////
+// ConfidentialBridge
+////////////////////////////////////////////////////////////////////////////////
+
+task('task:deployBridge').setAction(async function (_, { ethers, upgrades }) {
+  const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
+  const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
+  const lzEndpoint = getRequiredEnvVar('LZ_ENDPOINT_ADDRESS');
+  if (!ethers.isAddress(lzEndpoint)) {
+    throw new Error(`LZ_ENDPOINT_ADDRESS is not a valid address: ${lzEndpoint}`);
+  }
+
+  const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
+  const newImplem = await ethers.getContractFactory('ConfidentialBridge', deployer);
+  const parsedEnv = readHostEnv();
+  const proxyAddress = parsedEnv.CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS;
+  if (!proxyAddress) {
+    throw new Error(
+      'CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS not found in addresses/.env.host. ' +
+        'Run task:deployEmptyUUPSProxies first.',
+    );
+  }
+
+  const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
+  await upgrades.upgradeProxy(proxy, newImplem, {
+    constructorArgs: [lzEndpoint],
+    // - constructor / state-variable-immutable: LayerZero's `OAppCoreUpgradeable`
+    //   stores the endpoint as an immutable in the implementation's constructor.
+    // - missing-initializer-call: `__OApp(Sender|Receiver)_init_unchained()` are no-ops
+    //   and we call them explicitly; OZ's static validator doesn't recognize the
+    //   `_unchained` variants as satisfying the `_init` requirement.
+    unsafeAllow: ['constructor', 'state-variable-immutable', 'missing-initializer-call'],
+    call: { fn: 'initializeFromEmptyProxy', args: [[], []] },
+  });
+  console.log(`ConfidentialBridge upgraded at ${proxyAddress} (lzEndpoint=${lzEndpoint})`);
 });
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1039,4 +1109,161 @@ address constant kmsGenerationAdd = ${taskArguments.address};\n`;
     } catch (error) {
       throw new Error(`Failed to write ${HOST_ADDRESSES_FILE}: ${String(error)}`);
     }
+  });
+
+////////////////////////////////////////////////////////////////////////////////
+// Setup ConfidentialBridge Address
+////////////////////////////////////////////////////////////////////////////////
+
+task('task:setBridgeAddress')
+  .addParam('address', 'The address of the contract')
+  .setAction(async function (taskArguments: TaskArguments) {
+    ensureAddressesDirectoryExists();
+    const content = `CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS=${taskArguments.address}\n`;
+    try {
+      writeHostEnvLine(content, 'a');
+      console.log(`ConfidentialBridge address ${taskArguments.address} written successfully!`);
+    } catch (err) {
+      throw new Error(`Failed to write ConfidentialBridge address: ${String(err)}`);
+    }
+
+    const solidityTemplate = `
+address constant confidentialBridgeAdd = ${taskArguments.address};\n`;
+    try {
+      writeHostAddressesSol(solidityTemplate, 'a');
+      console.log(`${HOST_ADDRESSES_FILE} appended with confidentialBridgeAdd successfully!`);
+    } catch (error) {
+      throw new Error(`Failed to write ${HOST_ADDRESSES_FILE}: ${String(error)}`);
+    }
+  });
+
+////////////////////////////////////////////////////////////////////////////////
+// Set the bridge-specific `dstChainId`
+////////////////////////////////////////////////////////////////////////////////
+
+task('task:setDstChainId')
+  .addParam('bridgeAddress', 'The address of the contract')
+  .addParam('remoteEid', 'The remote EID')
+  .addParam('remoteChainId', 'The remote chain ID')
+  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
+    const deployerPrivateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
+    const deployer = new Wallet(deployerPrivateKey).connect(ethers.provider);
+    const confidentialBridgeAddress = taskArguments.bridgeAddress;
+    const confidentialBridge = await ethers.getContractAt('ConfidentialBridge', confidentialBridgeAddress, deployer);
+    await confidentialBridge.setDstChainId(taskArguments.remoteEid, taskArguments.remoteChainId);
+    console.log('setDstChainId done successfully!');
+  });
+
+////////////////////////////////////////////////////////////////////////////////
+// Set custom per-dstEid `lzReceive` gas overrides
+////////////////////////////////////////////////////////////////////////////////
+
+task('task:setLzReceiveBaseGas')
+  .addParam('bridgeAddress', 'The address of the contract')
+  .addParam('remoteEid', 'The remote EID')
+  .addParam('baseGas', 'The custom base lzReceive gas (0 to clear and fall back to the default)')
+  .setAction(async function (taskArguments: TaskArguments, { ethers, network }) {
+    const deployerPrivateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
+    const deployer = new Wallet(deployerPrivateKey).connect(ethers.provider);
+    const confidentialBridgeAddress = taskArguments.bridgeAddress;
+    const confidentialBridge = await ethers.getContractAt('ConfidentialBridge', confidentialBridgeAddress, deployer);
+    const oldBaseGas = await confidentialBridge.getLzReceiveBaseGas(taskArguments.remoteEid);
+    const receipt = await confidentialBridge.setLzReceiveBaseGas(taskArguments.remoteEid, taskArguments.baseGas);
+    await receipt.wait(1);
+    const newBaseGas = await confidentialBridge.getLzReceiveBaseGas(taskArguments.remoteEid);
+    console.log(
+      `setLzReceiveBaseGas done on network "${network.name}" for bridge ${confidentialBridgeAddress} ` +
+        `(remoteEid=${taskArguments.remoteEid}): effective base gas ${oldBaseGas.toString()} -> ${newBaseGas.toString()}`,
+    );
+  });
+
+task('task:setLzReceivePerHandleGas')
+  .addParam('bridgeAddress', 'The address of the contract')
+  .addParam('remoteEid', 'The remote EID')
+  .addParam('perHandleGas', 'The custom per-handle lzReceive gas (0 to clear and fall back to the default)')
+  .setAction(async function (taskArguments: TaskArguments, { ethers, network }) {
+    const deployerPrivateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
+    const deployer = new Wallet(deployerPrivateKey).connect(ethers.provider);
+    const confidentialBridgeAddress = taskArguments.bridgeAddress;
+    const confidentialBridge = await ethers.getContractAt('ConfidentialBridge', confidentialBridgeAddress, deployer);
+    const oldPerHandleGas = await confidentialBridge.getLzReceivePerHandleGas(taskArguments.remoteEid);
+    const receipt = await confidentialBridge.setLzReceivePerHandleGas(
+      taskArguments.remoteEid,
+      taskArguments.perHandleGas,
+    );
+    await receipt.wait(1);
+    const newPerHandleGas = await confidentialBridge.getLzReceivePerHandleGas(taskArguments.remoteEid);
+    console.log(
+      `setLzReceivePerHandleGas done on network "${network.name}" for bridge ${confidentialBridgeAddress} ` +
+        `(remoteEid=${taskArguments.remoteEid}): effective per-handle gas ${oldPerHandleGas.toString()} -> ${newPerHandleGas.toString()}`,
+    );
+  });
+
+task('task:setLzReceivePerPayloadByteGas')
+  .addParam('bridgeAddress', 'The address of the contract')
+  .addParam('remoteEid', 'The remote EID')
+  .addParam('perPayloadByteGas', 'The custom per-payload-byte lzReceive gas (0 to clear and fall back to the default)')
+  .setAction(async function (taskArguments: TaskArguments, { ethers, network }) {
+    const deployerPrivateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
+    const deployer = new Wallet(deployerPrivateKey).connect(ethers.provider);
+    const confidentialBridgeAddress = taskArguments.bridgeAddress;
+    const confidentialBridge = await ethers.getContractAt('ConfidentialBridge', confidentialBridgeAddress, deployer);
+    const oldPerPayloadByteGas = await confidentialBridge.getLzReceivePerPayloadByteGas(taskArguments.remoteEid);
+    const receipt = await confidentialBridge.setLzReceivePerPayloadByteGas(
+      taskArguments.remoteEid,
+      taskArguments.perPayloadByteGas,
+    );
+    await receipt.wait(1);
+    const newPerPayloadByteGas = await confidentialBridge.getLzReceivePerPayloadByteGas(taskArguments.remoteEid);
+    console.log(
+      `setLzReceivePerPayloadByteGas done on network "${network.name}" for bridge ${confidentialBridgeAddress} ` +
+        `(remoteEid=${taskArguments.remoteEid}): effective per-payload-byte gas ${oldPerPayloadByteGas.toString()} -> ${newPerPayloadByteGas.toString()}`,
+    );
+  });
+
+////////////////////////////////////////////////////////////////////////////////
+// Local LayerZero endpoint (e2e only)
+////////////////////////////////////////////////////////////////////////////////
+
+// Deploys a local EndpointV2Mock + LocalSimpleMessageLib for the e2e setup (real networks use
+// the canonical LayerZero endpoint), giving task:deployBridge an LZ_ENDPOINT_ADDRESS.
+task('task:deployLocalLzEndpoint')
+  .addParam('eid', 'This chain LayerZero endpoint id', undefined, types.int)
+  .addParam('remoteEid', 'Remote endpoint id to default the libraries for', undefined, types.int)
+  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
+    const deployer = new Wallet(getRequiredEnvVar('DEPLOYER_PRIVATE_KEY')).connect(ethers.provider);
+
+    const endpoint = await (
+      await ethers.getContractFactory('EndpointV2Mock', deployer)
+    ).deploy(taskArguments.eid, deployer.address);
+    await endpoint.waitForDeployment();
+    const endpointAddress = await endpoint.getAddress();
+
+    const lib = await (await ethers.getContractFactory('LocalSimpleMessageLib', deployer)).deploy(endpointAddress);
+    await lib.waitForDeployment();
+    const libAddress = await lib.getAddress();
+
+    await (await endpoint.registerLibrary(libAddress)).wait();
+    await (await endpoint.setDefaultSendLibrary(taskArguments.remoteEid, libAddress)).wait();
+    await (await endpoint.setDefaultReceiveLibrary(taskArguments.remoteEid, libAddress, 0)).wait();
+
+    // Persist for task:deployBridge, both in-process and across runs (via addresses/.env.host).
+    process.env.LZ_ENDPOINT_ADDRESS = endpointAddress;
+    ensureAddressesDirectoryExists();
+    writeHostEnvLine(`LZ_ENDPOINT_ADDRESS=${endpointAddress}\n`, 'a');
+
+    console.log(`Local LZ endpoint deployed at ${endpointAddress} (message lib ${libAddress})`);
+  });
+
+// Sets the LayerZero peer on the local bridge for a remote chain (run once per chain).
+task('task:setBridgePeer')
+  .addParam('bridgeAddress', 'Local ConfidentialBridge address')
+  .addParam('remoteEid', 'Remote endpoint id', undefined, types.int)
+  .addParam('remoteBridge', 'Remote ConfidentialBridge address')
+  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
+    const deployer = new Wallet(getRequiredEnvVar('DEPLOYER_PRIVATE_KEY')).connect(ethers.provider);
+    const bridge = await ethers.getContractAt('ConfidentialBridge', taskArguments.bridgeAddress, deployer);
+    const peer = ethers.zeroPadValue(taskArguments.remoteBridge, 32);
+    await (await bridge.setPeer(taskArguments.remoteEid, peer)).wait();
+    console.log(`setPeer(${taskArguments.remoteEid}, ${taskArguments.remoteBridge}) done successfully!`);
   });

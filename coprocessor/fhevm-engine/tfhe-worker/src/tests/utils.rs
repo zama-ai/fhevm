@@ -74,6 +74,8 @@ async fn start_coprocessor(rx: Receiver<bool>, db_url: &str) -> u16 {
     let args: Args = Args {
         run_bg_worker: true,
         worker_polling_interval_ms: 1000,
+        bridge_polling_interval_ms: 1000,
+        bridge_associate_batch_size: 128,
         generate_fhe_keys: false,
         work_items_batch_size: 40,
         dependence_chains_per_batch: 10,

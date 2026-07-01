@@ -247,6 +247,7 @@ async fn setup_with_block_time(
             address: protocol_config_contract.address().to_string(),
             chain_id: Some(node_chain_id.unwrap_or(12345)),
         },
+        confidential_bridge_address: String::new(),
         database_url: test_instance.db_url.clone(),
         start_at_block: None,
         end_at_block: None,
@@ -374,6 +375,7 @@ async fn ingest_blocks_for_receipts(
             &tfhe_address,
             &kms_generation_address,
             &protocol_config_address,
+            &None,
             options.clone(),
         )
         .await?;
@@ -1022,6 +1024,7 @@ async fn test_only_catchup_loop_requires_negative_start_at_block(
             address: String::new(),
             chain_id: None,
         },
+        confidential_bridge_address: String::new(),
         database_url: fhevm_engine_common::utils::DatabaseURL::default(),
         start_at_block: Some(0),
         end_at_block: None,

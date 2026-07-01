@@ -1615,15 +1615,24 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         protocolConfig.defineNewEpochForCurrentKmsContext();
         (uint256 completedKeyId, uint256 completedCrsId) = _completeKmsGenerationMaterial();
 
-        uint256[] memory keyIds = new uint256[](1);
-        keyIds[0] = completedKeyId;
-        uint256[] memory crsIds = new uint256[](1);
-        crsIds[0] = completedCrsId;
-
-        _confirmEpochWithMaterial(KMS_CONTEXT_COUNTER_BASE + 1, epochId, kmsPk0, kmsTxSender0, keyIds[0], crsIds[0]);
+        _confirmEpochWithMaterial(
+            KMS_CONTEXT_COUNTER_BASE + 1,
+            epochId,
+            kmsPk0,
+            kmsTxSender0,
+            completedKeyId,
+            completedCrsId
+        );
 
         vm.recordLogs();
-        _confirmEpochWithMaterial(KMS_CONTEXT_COUNTER_BASE + 1, epochId, kmsPk1, kmsTxSender1, keyIds[0], crsIds[0]);
+        _confirmEpochWithMaterial(
+            KMS_CONTEXT_COUNTER_BASE + 1,
+            epochId,
+            kmsPk1,
+            kmsTxSender1,
+            completedKeyId,
+            completedCrsId
+        );
         Vm.Log[] memory logs = vm.getRecordedLogs();
 
         uint256 activateLogIndex = type(uint256).max;
@@ -1637,22 +1646,28 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         assertEq(uint256(logs[activateLogIndex].topics[1]), KMS_CONTEXT_COUNTER_BASE + 1);
         assertEq(uint256(logs[activateLogIndex].topics[2]), epochId);
 
+        (uint256 eventKeyId, uint256 eventCrsId) = this._decodeActivateEpochEventData(logs[activateLogIndex].data);
+        assertEq(eventKeyId, completedKeyId);
+        assertEq(eventCrsId, completedCrsId);
+    }
+
+    /// @dev `external` (called via `this.`) with a single `calldata` argument so the heavy
+    ///      multi-array `abi.decode` runs in its own minimal stack frame; this keeps the
+    ///      legacy (non-IR) codegen below the EVM stack limit.
+    function _decodeActivateEpochEventData(bytes calldata data) external returns (uint256 keyId, uint256 crsId) {
         (
             IProtocolConfig.EpochKeyResult[] memory eventKeys,
             IProtocolConfig.EpochCrsResult[] memory eventCrsList,
             string[] memory urls
-        ) = abi.decode(
-                logs[activateLogIndex].data,
-                (IProtocolConfig.EpochKeyResult[], IProtocolConfig.EpochCrsResult[], string[])
-            );
+        ) = abi.decode(data, (IProtocolConfig.EpochKeyResult[], IProtocolConfig.EpochCrsResult[], string[]));
         assertEq(eventKeys.length, 1);
-        assertEq(eventKeys[0].keyId, completedKeyId);
         assertEq(eventCrsList.length, 1);
-        assertEq(eventCrsList[0].crsId, completedCrsId);
         // URLs must match the activated context's nodes in insertion order.
         assertEq(urls.length, 2);
         assertEq(urls[0], "https://s0.example.com");
         assertEq(urls[1], "https://s1.example.com");
+        keyId = eventKeys[0].keyId;
+        crsId = eventCrsList[0].crsId;
     }
 
     function test_epochIdsUseTaggedCounterAndIncrementGlobally() public {
