@@ -13,18 +13,48 @@ export function generateFhevmECDSALib() {
   return code;
 }
 
+export function generateIConfidentialBridgeLib() {
+  const file = resolveTemplatePath('IConfidentialBridge.sol-template');
+  const template = readFileSync(file, 'utf8');
+  let code = removeTemplateComments(template);
+  return code;
+}
+
+export function generateConfidentialOAppCoreLib() {
+  const file = resolveTemplatePath('ConfidentialOAppCore.sol-template');
+  const template = readFileSync(file, 'utf8');
+  let code = removeTemplateComments(template);
+  return code;
+}
+
+export function generateConfidentialOAppSenderLib() {
+  const file = resolveTemplatePath('ConfidentialOAppSender.sol-template');
+  const template = readFileSync(file, 'utf8');
+  let code = removeTemplateComments(template);
+  return code;
+}
+
+export function generateConfidentialOAppReceiverLib() {
+  const file = resolveTemplatePath('ConfidentialOAppReceiver.sol-template');
+  const template = readFileSync(file, 'utf8');
+  let code = removeTemplateComments(template);
+  return code;
+}
+
 export function generateSolidityFHELib({
   operators,
   fheTypes,
   fheTypeDotSol,
   implDotSol,
   ecdsaDotSol,
+  bridge,
 }: {
   operators: Operator[];
   fheTypes: FheTypeInfo[];
   fheTypeDotSol: string;
   implDotSol: string;
   ecdsaDotSol: string;
+  bridge: boolean;
 }): string {
   // Placeholders:
   // =============
@@ -34,6 +64,7 @@ export function generateSolidityFHELib({
   // $${FHEOperators}$$
   // $${ACLFunctions}$$
   // $${FHEtoBytes32}$$
+  // $${FHEBridge}$$
   const file = resolveTemplatePath('FHE.sol-template');
   const template = readFileSync(file, 'utf8');
 
@@ -49,8 +80,70 @@ export function generateSolidityFHELib({
   code = code.replace('$${FHEOperators}$$', generateFHEOperators(operators, adjustedFheTypes));
   code = code.replace('$${ACLFunctions}$$', generateSolidityACLMethods(adjustedFheTypes));
   code = code.replace('$${FHEtoBytes32}$$', generateToBytes32(adjustedFheTypes));
+  code = code.replace('$${FHEBridge}$$', bridge ? generateBridgeFunctions(adjustedFheTypes) : '');
 
   return code;
+}
+
+/**
+ * Generates per-type `bridge` / `quoteBridge` overloads: a single-handle variant for every
+ * encrypted type. Multi-handle bridging (which is realistically heterogeneous) goes through the
+ * type-agnostic low-level `bytes32[]` overloads appended below, since the encrypted type never
+ * crosses the wire (the receiver re-wraps raw `bytes32` handles).
+ */
+function generateBridgeFunctions(fheTypes: AdjustedFheType[]): string {
+  const res: string[] = [];
+  fheTypes.forEach((fheType: AdjustedFheType) => {
+    const t = `e${fheType.type.toLowerCase()}`;
+    res.push(`
+    /**
+     * @notice Bridges a single encrypted \`${t}\` handle plus an app-defined \`payload\` to
+     *         \`dstApp\` on the chain at \`dstEid\`, via the host \`ConfidentialBridge\`.
+     * @dev    Builds the one-element handle list. \`lzComposeGas\` is the gas budget for the
+     *         destination receive callback (lzCompose leg) and must be non-zero, else the host
+     *         \`send\` reverts. The caller must already hold ACL allowance on the handle (e.g. via
+     *         {allowThis}); the payload must reference it at index 0.
+     */
+    function bridge(uint32 dstEid, address dstApp, bytes memory payload, ${t} handle, uint64 lzComposeGas, uint256 nativeFee) internal returns (MessagingReceipt memory receipt) {
+        bytes32[] memory handleList = new bytes32[](1);
+        handleList[0] = ${t}.unwrap(handle);
+        receipt = Impl.bridge(dstEid, bytes32(uint256(uint160(dstApp))), payload, handleList, lzComposeGas, nativeFee);
+    }
+
+    /// @notice Quotes the native fee for a single-\`${t}\` {bridge} call.
+    function quoteBridge(uint32 dstEid, address srcApp, address dstApp, bytes memory payload, ${t} handle, uint64 lzComposeGas) internal view returns (MessagingFee memory fee) {
+        bytes32[] memory handleList = new bytes32[](1);
+        handleList[0] = ${t}.unwrap(handle);
+        fee = Impl.quoteBridge(dstEid, srcApp, bytes32(uint256(uint160(dstApp))), payload, handleList, lzComposeGas);
+    }
+`);
+  });
+
+  // Type-agnostic low-level escape hatch: explicit `bytes32` handle list with a `bytes32`
+  // destination app, for mixed-type handle lists or non-EVM destinations.
+  res.push(`
+    /**
+     * @notice Low-level bridge of an explicit \`bytes32\` handle list to a \`bytes32\` destination
+     *         app (mixed handle types, or non-EVM destinations).
+     * @dev    The caller must already hold ACL allowance on every handle; \`lzComposeGas\` must be
+     *         non-zero (the bridge reverts otherwise).
+     * @param dstEid        Destination LayerZero endpoint id.
+     * @param dstApp        Destination app as bytes32 (EVM address left-padded, or native id).
+     * @param payload       Opaque app payload.
+     * @param handleList    Raw \`bytes32\` handles to bridge.
+     * @param lzComposeGas  Gas budget for the destination \`onConfidentialBridgeReceived\` (lzCompose leg).
+     * @param nativeFee     LayerZero native fee to forward as msg.value (query via {quoteBridge}).
+     */
+    function bridge(uint32 dstEid, bytes32 dstApp, bytes memory payload, bytes32[] memory handleList, uint64 lzComposeGas, uint256 nativeFee) internal returns (MessagingReceipt memory receipt) {
+        receipt = Impl.bridge(dstEid, dstApp, payload, handleList, lzComposeGas, nativeFee);
+    }
+
+    /// @notice Low-level fee quote matching the explicit \`bytes32\` handle list {bridge} overload.
+    function quoteBridge(uint32 dstEid, address srcApp, bytes32 dstApp, bytes memory payload, bytes32[] memory handleList, uint64 lzComposeGas) internal view returns (MessagingFee memory fee) {
+        fee = Impl.quoteBridge(dstEid, srcApp, dstApp, payload, handleList, lzComposeGas);
+    }
+`);
+  return res.join('');
 }
 
 function generateFHEOperators(operators: Operator[], adjustedFheTypes: AdjustedFheType[]): string {

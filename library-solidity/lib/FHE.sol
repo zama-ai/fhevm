@@ -10111,4 +10111,319 @@ library FHE {
     function toBytes32(euint256 value) internal pure returns (bytes32 ct) {
         ct = euint256.unwrap(value);
     }
+
+    /**
+     * @notice Bridges a single encrypted `ebool` handle plus an app-defined `payload` to
+     *         `dstApp` on the chain at `dstEid`, via the host `ConfidentialBridge`.
+     * @dev    Builds the one-element handle list. `lzComposeGas` is the gas budget for the
+     *         destination receive callback (lzCompose leg) and must be non-zero, else the host
+     *         `send` reverts. The caller must already hold ACL allowance on the handle (e.g. via
+     *         {allowThis}); the payload must reference it at index 0.
+     */
+    function bridge(
+        uint32 dstEid,
+        address dstApp,
+        bytes memory payload,
+        ebool handle,
+        uint64 lzComposeGas,
+        uint256 nativeFee
+    ) internal returns (MessagingReceipt memory receipt) {
+        bytes32[] memory handleList = new bytes32[](1);
+        handleList[0] = ebool.unwrap(handle);
+        receipt = Impl.bridge(dstEid, bytes32(uint256(uint160(dstApp))), payload, handleList, lzComposeGas, nativeFee);
+    }
+
+    /// @notice Quotes the native fee for a single-`ebool` {bridge} call.
+    function quoteBridge(
+        uint32 dstEid,
+        address srcApp,
+        address dstApp,
+        bytes memory payload,
+        ebool handle,
+        uint64 lzComposeGas
+    ) internal view returns (MessagingFee memory fee) {
+        bytes32[] memory handleList = new bytes32[](1);
+        handleList[0] = ebool.unwrap(handle);
+        fee = Impl.quoteBridge(dstEid, srcApp, bytes32(uint256(uint160(dstApp))), payload, handleList, lzComposeGas);
+    }
+
+    /**
+     * @notice Bridges a single encrypted `euint8` handle plus an app-defined `payload` to
+     *         `dstApp` on the chain at `dstEid`, via the host `ConfidentialBridge`.
+     * @dev    Builds the one-element handle list. `lzComposeGas` is the gas budget for the
+     *         destination receive callback (lzCompose leg) and must be non-zero, else the host
+     *         `send` reverts. The caller must already hold ACL allowance on the handle (e.g. via
+     *         {allowThis}); the payload must reference it at index 0.
+     */
+    function bridge(
+        uint32 dstEid,
+        address dstApp,
+        bytes memory payload,
+        euint8 handle,
+        uint64 lzComposeGas,
+        uint256 nativeFee
+    ) internal returns (MessagingReceipt memory receipt) {
+        bytes32[] memory handleList = new bytes32[](1);
+        handleList[0] = euint8.unwrap(handle);
+        receipt = Impl.bridge(dstEid, bytes32(uint256(uint160(dstApp))), payload, handleList, lzComposeGas, nativeFee);
+    }
+
+    /// @notice Quotes the native fee for a single-`euint8` {bridge} call.
+    function quoteBridge(
+        uint32 dstEid,
+        address srcApp,
+        address dstApp,
+        bytes memory payload,
+        euint8 handle,
+        uint64 lzComposeGas
+    ) internal view returns (MessagingFee memory fee) {
+        bytes32[] memory handleList = new bytes32[](1);
+        handleList[0] = euint8.unwrap(handle);
+        fee = Impl.quoteBridge(dstEid, srcApp, bytes32(uint256(uint160(dstApp))), payload, handleList, lzComposeGas);
+    }
+
+    /**
+     * @notice Bridges a single encrypted `euint16` handle plus an app-defined `payload` to
+     *         `dstApp` on the chain at `dstEid`, via the host `ConfidentialBridge`.
+     * @dev    Builds the one-element handle list. `lzComposeGas` is the gas budget for the
+     *         destination receive callback (lzCompose leg) and must be non-zero, else the host
+     *         `send` reverts. The caller must already hold ACL allowance on the handle (e.g. via
+     *         {allowThis}); the payload must reference it at index 0.
+     */
+    function bridge(
+        uint32 dstEid,
+        address dstApp,
+        bytes memory payload,
+        euint16 handle,
+        uint64 lzComposeGas,
+        uint256 nativeFee
+    ) internal returns (MessagingReceipt memory receipt) {
+        bytes32[] memory handleList = new bytes32[](1);
+        handleList[0] = euint16.unwrap(handle);
+        receipt = Impl.bridge(dstEid, bytes32(uint256(uint160(dstApp))), payload, handleList, lzComposeGas, nativeFee);
+    }
+
+    /// @notice Quotes the native fee for a single-`euint16` {bridge} call.
+    function quoteBridge(
+        uint32 dstEid,
+        address srcApp,
+        address dstApp,
+        bytes memory payload,
+        euint16 handle,
+        uint64 lzComposeGas
+    ) internal view returns (MessagingFee memory fee) {
+        bytes32[] memory handleList = new bytes32[](1);
+        handleList[0] = euint16.unwrap(handle);
+        fee = Impl.quoteBridge(dstEid, srcApp, bytes32(uint256(uint160(dstApp))), payload, handleList, lzComposeGas);
+    }
+
+    /**
+     * @notice Bridges a single encrypted `euint32` handle plus an app-defined `payload` to
+     *         `dstApp` on the chain at `dstEid`, via the host `ConfidentialBridge`.
+     * @dev    Builds the one-element handle list. `lzComposeGas` is the gas budget for the
+     *         destination receive callback (lzCompose leg) and must be non-zero, else the host
+     *         `send` reverts. The caller must already hold ACL allowance on the handle (e.g. via
+     *         {allowThis}); the payload must reference it at index 0.
+     */
+    function bridge(
+        uint32 dstEid,
+        address dstApp,
+        bytes memory payload,
+        euint32 handle,
+        uint64 lzComposeGas,
+        uint256 nativeFee
+    ) internal returns (MessagingReceipt memory receipt) {
+        bytes32[] memory handleList = new bytes32[](1);
+        handleList[0] = euint32.unwrap(handle);
+        receipt = Impl.bridge(dstEid, bytes32(uint256(uint160(dstApp))), payload, handleList, lzComposeGas, nativeFee);
+    }
+
+    /// @notice Quotes the native fee for a single-`euint32` {bridge} call.
+    function quoteBridge(
+        uint32 dstEid,
+        address srcApp,
+        address dstApp,
+        bytes memory payload,
+        euint32 handle,
+        uint64 lzComposeGas
+    ) internal view returns (MessagingFee memory fee) {
+        bytes32[] memory handleList = new bytes32[](1);
+        handleList[0] = euint32.unwrap(handle);
+        fee = Impl.quoteBridge(dstEid, srcApp, bytes32(uint256(uint160(dstApp))), payload, handleList, lzComposeGas);
+    }
+
+    /**
+     * @notice Bridges a single encrypted `euint64` handle plus an app-defined `payload` to
+     *         `dstApp` on the chain at `dstEid`, via the host `ConfidentialBridge`.
+     * @dev    Builds the one-element handle list. `lzComposeGas` is the gas budget for the
+     *         destination receive callback (lzCompose leg) and must be non-zero, else the host
+     *         `send` reverts. The caller must already hold ACL allowance on the handle (e.g. via
+     *         {allowThis}); the payload must reference it at index 0.
+     */
+    function bridge(
+        uint32 dstEid,
+        address dstApp,
+        bytes memory payload,
+        euint64 handle,
+        uint64 lzComposeGas,
+        uint256 nativeFee
+    ) internal returns (MessagingReceipt memory receipt) {
+        bytes32[] memory handleList = new bytes32[](1);
+        handleList[0] = euint64.unwrap(handle);
+        receipt = Impl.bridge(dstEid, bytes32(uint256(uint160(dstApp))), payload, handleList, lzComposeGas, nativeFee);
+    }
+
+    /// @notice Quotes the native fee for a single-`euint64` {bridge} call.
+    function quoteBridge(
+        uint32 dstEid,
+        address srcApp,
+        address dstApp,
+        bytes memory payload,
+        euint64 handle,
+        uint64 lzComposeGas
+    ) internal view returns (MessagingFee memory fee) {
+        bytes32[] memory handleList = new bytes32[](1);
+        handleList[0] = euint64.unwrap(handle);
+        fee = Impl.quoteBridge(dstEid, srcApp, bytes32(uint256(uint160(dstApp))), payload, handleList, lzComposeGas);
+    }
+
+    /**
+     * @notice Bridges a single encrypted `euint128` handle plus an app-defined `payload` to
+     *         `dstApp` on the chain at `dstEid`, via the host `ConfidentialBridge`.
+     * @dev    Builds the one-element handle list. `lzComposeGas` is the gas budget for the
+     *         destination receive callback (lzCompose leg) and must be non-zero, else the host
+     *         `send` reverts. The caller must already hold ACL allowance on the handle (e.g. via
+     *         {allowThis}); the payload must reference it at index 0.
+     */
+    function bridge(
+        uint32 dstEid,
+        address dstApp,
+        bytes memory payload,
+        euint128 handle,
+        uint64 lzComposeGas,
+        uint256 nativeFee
+    ) internal returns (MessagingReceipt memory receipt) {
+        bytes32[] memory handleList = new bytes32[](1);
+        handleList[0] = euint128.unwrap(handle);
+        receipt = Impl.bridge(dstEid, bytes32(uint256(uint160(dstApp))), payload, handleList, lzComposeGas, nativeFee);
+    }
+
+    /// @notice Quotes the native fee for a single-`euint128` {bridge} call.
+    function quoteBridge(
+        uint32 dstEid,
+        address srcApp,
+        address dstApp,
+        bytes memory payload,
+        euint128 handle,
+        uint64 lzComposeGas
+    ) internal view returns (MessagingFee memory fee) {
+        bytes32[] memory handleList = new bytes32[](1);
+        handleList[0] = euint128.unwrap(handle);
+        fee = Impl.quoteBridge(dstEid, srcApp, bytes32(uint256(uint160(dstApp))), payload, handleList, lzComposeGas);
+    }
+
+    /**
+     * @notice Bridges a single encrypted `eaddress` handle plus an app-defined `payload` to
+     *         `dstApp` on the chain at `dstEid`, via the host `ConfidentialBridge`.
+     * @dev    Builds the one-element handle list. `lzComposeGas` is the gas budget for the
+     *         destination receive callback (lzCompose leg) and must be non-zero, else the host
+     *         `send` reverts. The caller must already hold ACL allowance on the handle (e.g. via
+     *         {allowThis}); the payload must reference it at index 0.
+     */
+    function bridge(
+        uint32 dstEid,
+        address dstApp,
+        bytes memory payload,
+        eaddress handle,
+        uint64 lzComposeGas,
+        uint256 nativeFee
+    ) internal returns (MessagingReceipt memory receipt) {
+        bytes32[] memory handleList = new bytes32[](1);
+        handleList[0] = eaddress.unwrap(handle);
+        receipt = Impl.bridge(dstEid, bytes32(uint256(uint160(dstApp))), payload, handleList, lzComposeGas, nativeFee);
+    }
+
+    /// @notice Quotes the native fee for a single-`eaddress` {bridge} call.
+    function quoteBridge(
+        uint32 dstEid,
+        address srcApp,
+        address dstApp,
+        bytes memory payload,
+        eaddress handle,
+        uint64 lzComposeGas
+    ) internal view returns (MessagingFee memory fee) {
+        bytes32[] memory handleList = new bytes32[](1);
+        handleList[0] = eaddress.unwrap(handle);
+        fee = Impl.quoteBridge(dstEid, srcApp, bytes32(uint256(uint160(dstApp))), payload, handleList, lzComposeGas);
+    }
+
+    /**
+     * @notice Bridges a single encrypted `euint256` handle plus an app-defined `payload` to
+     *         `dstApp` on the chain at `dstEid`, via the host `ConfidentialBridge`.
+     * @dev    Builds the one-element handle list. `lzComposeGas` is the gas budget for the
+     *         destination receive callback (lzCompose leg) and must be non-zero, else the host
+     *         `send` reverts. The caller must already hold ACL allowance on the handle (e.g. via
+     *         {allowThis}); the payload must reference it at index 0.
+     */
+    function bridge(
+        uint32 dstEid,
+        address dstApp,
+        bytes memory payload,
+        euint256 handle,
+        uint64 lzComposeGas,
+        uint256 nativeFee
+    ) internal returns (MessagingReceipt memory receipt) {
+        bytes32[] memory handleList = new bytes32[](1);
+        handleList[0] = euint256.unwrap(handle);
+        receipt = Impl.bridge(dstEid, bytes32(uint256(uint160(dstApp))), payload, handleList, lzComposeGas, nativeFee);
+    }
+
+    /// @notice Quotes the native fee for a single-`euint256` {bridge} call.
+    function quoteBridge(
+        uint32 dstEid,
+        address srcApp,
+        address dstApp,
+        bytes memory payload,
+        euint256 handle,
+        uint64 lzComposeGas
+    ) internal view returns (MessagingFee memory fee) {
+        bytes32[] memory handleList = new bytes32[](1);
+        handleList[0] = euint256.unwrap(handle);
+        fee = Impl.quoteBridge(dstEid, srcApp, bytes32(uint256(uint160(dstApp))), payload, handleList, lzComposeGas);
+    }
+
+    /**
+     * @notice Low-level bridge of an explicit `bytes32` handle list to a `bytes32` destination
+     *         app (mixed handle types, or non-EVM destinations).
+     * @dev    The caller must already hold ACL allowance on every handle; `lzComposeGas` must be
+     *         non-zero (the bridge reverts otherwise).
+     * @param dstEid        Destination LayerZero endpoint id.
+     * @param dstApp        Destination app as bytes32 (EVM address left-padded, or native id).
+     * @param payload       Opaque app payload.
+     * @param handleList    Raw `bytes32` handles to bridge.
+     * @param lzComposeGas  Gas budget for the destination `onConfidentialBridgeReceived` (lzCompose leg).
+     * @param nativeFee     LayerZero native fee to forward as msg.value (query via {quoteBridge}).
+     */
+    function bridge(
+        uint32 dstEid,
+        bytes32 dstApp,
+        bytes memory payload,
+        bytes32[] memory handleList,
+        uint64 lzComposeGas,
+        uint256 nativeFee
+    ) internal returns (MessagingReceipt memory receipt) {
+        receipt = Impl.bridge(dstEid, dstApp, payload, handleList, lzComposeGas, nativeFee);
+    }
+
+    /// @notice Low-level fee quote matching the explicit `bytes32` handle list {bridge} overload.
+    function quoteBridge(
+        uint32 dstEid,
+        address srcApp,
+        bytes32 dstApp,
+        bytes memory payload,
+        bytes32[] memory handleList,
+        uint64 lzComposeGas
+    ) internal view returns (MessagingFee memory fee) {
+        fee = Impl.quoteBridge(dstEid, srcApp, dstApp, payload, handleList, lzComposeGas);
+    }
 }

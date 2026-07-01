@@ -1,0 +1,142 @@
+// SPDX-License-Identifier: BSD-3-Clause-Clear
+pragma solidity ^0.8.24;
+
+import {FHE} from "../../lib/FHE.sol";
+import {CoprocessorConfig} from "../../lib/Impl.sol";
+import {MessagingFee, MessagingReceipt} from "../../lib/bridge/IConfidentialBridge.sol";
+import {ConfidentialOAppSender} from "../../lib/bridge/ConfidentialOAppSender.sol";
+import {ConfidentialOAppReceiver} from "../../lib/bridge/ConfidentialOAppReceiver.sol";
+
+/**
+ * @title   OAppHarness
+ * @notice  Minimal confidential OApp (both {ConfidentialOAppSender} and
+ *          {ConfidentialOAppReceiver}) used to exercise the abstracts: it sends through the
+ *          sender helper and records the last inbound delivery so a test can assert auth +
+ *          dispatch. The constructor wires the ACL (which resolves the trusted bridge). `setPeer`
+ *          is exposed without access control on purpose (test-only); `setTrustAllPeers` flips an
+ *          {isPeer} override to exercise the custom-trust-policy extension point.
+ * @dev     Test-only helper; not part of the published library.
+ */
+contract OAppHarness is ConfidentialOAppSender, ConfidentialOAppReceiver {
+    uint32 public lastSrcEid;
+    bytes32 public lastSrcApp;
+    bytes public lastPayload;
+    bytes32[] public lastHandles;
+    bytes32 public lastGuid;
+    uint256 public receiveCount;
+    bool public trustAllPeers;
+
+    constructor(address acl) {
+        FHE.setCoprocessor(
+            CoprocessorConfig({ACLAddress: acl, CoprocessorAddress: address(1), KMSVerifierAddress: address(2)})
+        );
+    }
+
+    /// @dev Accept native-fee change refunded by the (mock) bridge so {bridgeRefundingExcess} can
+    ///      forward it on, mirroring `ConfidentialOFTViaLib`.
+    receive() external payable {}
+
+    function setPeer(uint32 eid, bytes32 peer) external {
+        _setPeer(eid, peer);
+    }
+
+    function setTrustAllPeers(bool v) external {
+        trustAllPeers = v;
+    }
+
+    /// @dev Mirrors the `ConfidentialOFTViaLib` fee-refund pattern: bridge, then forward any overpaid
+    ///      native fee (`msg.value - receipt.fee.nativeFee`) back to the caller so it isn't trapped.
+    function bridgeRefundingExcess(
+        uint32 dstEid,
+        bytes calldata payload,
+        bytes32 handle,
+        uint64 lzComposeGas
+    ) external payable returns (MessagingReceipt memory receipt) {
+        receipt = _bridgeUnchecked(dstEid, payload, handle, lzComposeGas, msg.value);
+        uint256 excess = msg.value - receipt.fee.nativeFee;
+        if (excess != 0) {
+            (bool ok, ) = payable(msg.sender).call{value: excess}("");
+            require(ok, "refund failed");
+        }
+    }
+
+    /// @dev Send a single raw handle to the peer on `dstEid` via the unchecked sender helper.
+    function bridgeToPeer(
+        uint32 dstEid,
+        bytes calldata payload,
+        bytes32 handle,
+        uint64 lzComposeGas
+    ) external payable returns (MessagingReceipt memory) {
+        return _bridgeUnchecked(dstEid, payload, handle, lzComposeGas, msg.value);
+    }
+
+    /// @dev Send a single handle the caller owns via the safe {_bridgeFrom} helper (asserts
+    ///      `isSenderAllowed`). Reverts `UnauthorizedSender` if the caller is not ACL-allowed.
+    function bridgeFromCaller(
+        uint32 dstEid,
+        bytes calldata payload,
+        bytes32 handle,
+        uint64 lzComposeGas
+    ) external payable returns (MessagingReceipt memory) {
+        return _bridgeFrom(dstEid, payload, handle, lzComposeGas, msg.value);
+    }
+
+    /// @dev Send a list of handles the caller owns via the type-agnostic safe {_bridgeFrom} helper;
+    ///      reverts `UnauthorizedSender` pinpointing the first handle the caller is not allowed on.
+    function bridgeManyFromCaller(
+        uint32 dstEid,
+        bytes calldata payload,
+        bytes32[] calldata handles,
+        uint64 lzComposeGas
+    ) external payable returns (MessagingReceipt memory) {
+        return _bridgeFrom(dstEid, payload, handles, lzComposeGas, msg.value);
+    }
+
+    /// @dev Quote the fee for a single raw handle to the peer on `dstEid` via the sender helper.
+    function quoteToPeer(
+        uint32 dstEid,
+        bytes calldata payload,
+        bytes32 handle,
+        uint64 lzComposeGas
+    ) external view returns (MessagingFee memory) {
+        return _quoteBridge(dstEid, payload, handle, lzComposeGas);
+    }
+
+    /// @dev Send a list of raw handles to the peer on `dstEid` via the multi-handle unchecked helper.
+    function bridgeManyToPeer(
+        uint32 dstEid,
+        bytes calldata payload,
+        bytes32[] calldata handles,
+        uint64 lzComposeGas
+    ) external payable returns (MessagingReceipt memory) {
+        return _bridgeUnchecked(dstEid, payload, handles, lzComposeGas, msg.value);
+    }
+
+    function lastHandlesLength() external view returns (uint256) {
+        return lastHandles.length;
+    }
+
+    /// @dev Custom trust policy: accept any peer when `trustAllPeers`, else the default registry.
+    function isPeer(uint32 eid, bytes32 peer) public view override returns (bool) {
+        if (trustAllPeers) return true;
+        return super.isPeer(eid, peer);
+    }
+
+    function _onReceiveHandles(
+        uint32 srcEid,
+        bytes32 srcApp,
+        bytes calldata payload,
+        bytes32[] calldata handles,
+        bytes32 guid
+    ) internal override {
+        lastSrcEid = srcEid;
+        lastSrcApp = srcApp;
+        lastPayload = payload;
+        lastGuid = guid;
+        delete lastHandles;
+        for (uint256 i = 0; i < handles.length; i++) {
+            lastHandles.push(handles[i]);
+        }
+        receiveCount++;
+    }
+}

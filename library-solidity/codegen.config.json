@@ -4,7 +4,8 @@
   "noHostContracts": true,
   "lib": {
     "outDir": "./lib",
-    "fheTypeDir": "./lib"
+    "fheTypeDir": "./lib",
+    "bridge": true
   },
   "tests": {
     "numberOfTestSplits": 12,

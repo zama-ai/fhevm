@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {FheType} from "./FheType.sol";
+import {IConfidentialBridge, MessagingFee, MessagingReceipt} from "./bridge/IConfidentialBridge.sol";
 
 /**
  * @title   CoprocessorConfig
@@ -319,6 +320,12 @@ interface IACL {
     function multicall(bytes[] calldata data) external payable returns (bytes[] memory results);
 
     /**
+     * @notice              Returns the per-chain `ConfidentialBridge` address tracked by the ACL.
+     * @return              The ConfidentialBridge contract address (address(0) if unset).
+     */
+    function getConfidentialBridgeAddress() external view returns (address);
+
+    /**
      * @notice              Allows the use of handle by address account for this transaction.
      * @dev                 The caller must be allowed to use handle for allowTransient() to succeed.
      *                      If not, allowTransient() reverts.
@@ -464,6 +471,52 @@ library Impl {
         $.ACLAddress = coprocessorConfig.ACLAddress;
         $.CoprocessorAddress = coprocessorConfig.CoprocessorAddress;
         $.KMSVerifierAddress = coprocessorConfig.KMSVerifierAddress;
+    }
+
+    /// @notice Returned when the ACL reports no `ConfidentialBridge` for this chain.
+    error BridgeNotConfigured();
+
+    /**
+     * @dev Resolves the `ConfidentialBridge` from the ACL (`getConfidentialBridgeAddress`),
+     *      reverting if unset. No bridge address is stored in the library config: the ACL —
+     *      already known via `CoprocessorConfig.ACLAddress` — is the single source of truth,
+     *      so no struct change or extra setup call is needed.
+     */
+    function getConfidentialBridge() internal view returns (IConfidentialBridge) {
+        CoprocessorConfig storage $ = getCoprocessorConfig();
+        address addr = IACL($.ACLAddress).getConfidentialBridgeAddress();
+        if (addr == address(0)) revert BridgeNotConfigured();
+        return IConfidentialBridge(addr);
+    }
+
+    /**
+     * @notice Forwards a bridge send to the host `ConfidentialBridge`, paying `nativeFee`.
+     * @dev    Runs in the caller's context, so the bridge sees `msg.sender == <app>` and the
+     *         source ACL check resolves against the app.
+     */
+    function bridge(
+        uint32 dstEid,
+        bytes32 dstApp,
+        bytes memory payload,
+        bytes32[] memory handleList,
+        uint64 lzComposeGas,
+        uint256 nativeFee
+    ) internal returns (MessagingReceipt memory receipt) {
+        receipt = getConfidentialBridge().send{value: nativeFee}(dstEid, dstApp, payload, handleList, lzComposeGas);
+    }
+
+    /**
+     * @notice Quotes the native fee for a bridge send.
+     */
+    function quoteBridge(
+        uint32 dstEid,
+        address srcApp,
+        bytes32 dstApp,
+        bytes memory payload,
+        bytes32[] memory handleList,
+        uint64 lzComposeGas
+    ) internal view returns (MessagingFee memory fee) {
+        fee = getConfidentialBridge().quote(dstEid, srcApp, dstApp, payload, handleList, lzComposeGas);
     }
 
     function add(bytes32 lhs, bytes32 rhs, bool scalar) internal returns (bytes32 result) {
