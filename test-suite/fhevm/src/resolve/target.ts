@@ -209,13 +209,16 @@ export const presetBundle = (
   sources: [`preset=${target}`, `repo-owned=${repoVersion}`, ...sources],
 });
 
-/** Applies explicit version env overrides on top of a resolved bundle. */
+const RUNTIME_ENV_OVERRIDE_KEYS = ["S3_MIGRATION_MODE"] as const;
+
+/** Applies explicit version and runtime env overrides on top of a resolved bundle. */
 export const applyVersionEnvOverrides = (
   bundle: VersionBundle,
   env: Record<string, string | undefined>,
 ): VersionBundle => {
+  const overrideKeys = new Set([...Object.keys(bundle.env), ...RUNTIME_ENV_OVERRIDE_KEYS]);
   const overrides = Object.fromEntries(
-    Object.keys(bundle.env)
+    [...overrideKeys]
       .filter((key) => env[key]?.length)
       .map((key) => [key, env[key] as string]),
   );
