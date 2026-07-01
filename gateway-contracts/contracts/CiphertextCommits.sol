@@ -164,10 +164,11 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
         // Send the event if and only if the consensus is reached in the current response call.
         // This means a "late" response will not be reverted, just ignored and no event will be emitted
         if (!$.isCiphertextMaterialAdded[ctHandle]) {
-            bool finalizedByPriority = msg.sender == GATEWAY_CONFIG.getPriorityCoprocessorTxSender();
+            address priorityCoprocessorTxSender = GATEWAY_CONFIG.getPriorityCoprocessorTxSender();
+            bool finalizedByPriority = msg.sender == priorityCoprocessorTxSender;
             if (
                 finalizedByPriority ||
-                (GATEWAY_CONFIG.getPriorityCoprocessorTxSender() == address(0) &&
+                (priorityCoprocessorTxSender == address(0) &&
                     _isConsensusReached($.addCiphertextHashCounters[addCiphertextHash]))
             ) {
                 $.ciphertextDigests[ctHandle] = ciphertextDigest;
