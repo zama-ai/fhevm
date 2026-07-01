@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import {FHE, euint64} from "../../lib/FHE.sol";
+import {FHE} from "../../lib/FHE.sol";
 import {CoprocessorConfig} from "../../lib/Impl.sol";
 import {MessagingFee, MessagingReceipt} from "../../lib/bridge/IConfidentialBridge.sol";
 import {ConfidentialOAppSender} from "../../lib/bridge/ConfidentialOAppSender.sol";
@@ -40,14 +40,36 @@ contract OAppHarness is ConfidentialOAppSender, ConfidentialOAppReceiver {
         trustAllPeers = v;
     }
 
-    /// @dev Send a single raw handle to the peer on `dstEid` via the sender helper.
+    /// @dev Send a single raw handle to the peer on `dstEid` via the unchecked sender helper.
     function bridgeToPeer(
         uint32 dstEid,
         bytes calldata payload,
         bytes32 handle,
         uint64 lzComposeGas
     ) external payable returns (MessagingReceipt memory) {
-        return _bridge(dstEid, payload, euint64.wrap(handle), lzComposeGas, msg.value);
+        return _bridgeUnchecked(dstEid, payload, handle, lzComposeGas, msg.value);
+    }
+
+    /// @dev Send a single handle the caller owns via the safe {_bridgeFrom} helper (asserts
+    ///      `isSenderAllowed`). Reverts `UnauthorizedSender` if the caller is not ACL-allowed.
+    function bridgeFromCaller(
+        uint32 dstEid,
+        bytes calldata payload,
+        bytes32 handle,
+        uint64 lzComposeGas
+    ) external payable returns (MessagingReceipt memory) {
+        return _bridgeFrom(dstEid, payload, handle, lzComposeGas, msg.value);
+    }
+
+    /// @dev Send a list of handles the caller owns via the type-agnostic safe {_bridgeFrom} helper;
+    ///      reverts `UnauthorizedSender` pinpointing the first handle the caller is not allowed on.
+    function bridgeManyFromCaller(
+        uint32 dstEid,
+        bytes calldata payload,
+        bytes32[] calldata handles,
+        uint64 lzComposeGas
+    ) external payable returns (MessagingReceipt memory) {
+        return _bridgeFrom(dstEid, payload, handles, lzComposeGas, msg.value);
     }
 
     /// @dev Quote the fee for a single raw handle to the peer on `dstEid` via the sender helper.
@@ -57,17 +79,17 @@ contract OAppHarness is ConfidentialOAppSender, ConfidentialOAppReceiver {
         bytes32 handle,
         uint64 lzComposeGas
     ) external view returns (MessagingFee memory) {
-        return _quoteBridge(dstEid, payload, euint64.wrap(handle), lzComposeGas);
+        return _quoteBridge(dstEid, payload, handle, lzComposeGas);
     }
 
-    /// @dev Send a list of raw handles to the peer on `dstEid` via the multi-handle sender helper.
+    /// @dev Send a list of raw handles to the peer on `dstEid` via the multi-handle unchecked helper.
     function bridgeManyToPeer(
         uint32 dstEid,
         bytes calldata payload,
         bytes32[] calldata handles,
         uint64 lzComposeGas
     ) external payable returns (MessagingReceipt memory) {
-        return _bridge(dstEid, payload, handles, lzComposeGas, msg.value);
+        return _bridgeUnchecked(dstEid, payload, handles, lzComposeGas, msg.value);
     }
 
     function lastHandlesLength() external view returns (uint256) {
