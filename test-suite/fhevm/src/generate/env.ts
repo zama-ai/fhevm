@@ -284,7 +284,7 @@ const applyKmsThresholdGatewayEnv = async (
   if (plan.kms.mode !== "threshold") {
     return [];
   }
-  const { parties, threshold } = plan.kms;
+  const { parties, threshold, committeeSize } = plan.kms;
   if (parties > KMS_NODE_WALLET_INDICES.length) {
     throw new Error(`KMS parties ${parties} exceeds supported ${KMS_NODE_WALLET_INDICES.length}`);
   }
@@ -294,7 +294,9 @@ const applyKmsThresholdGatewayEnv = async (
   if (!mnemonic) {
     throw new Error("Missing gateway mnemonic for threshold-mode KMS setup");
   }
-  gw.NUM_KMS_NODES = String(parties);
+  // On-chain committee = the first committeeSize parties; cores beyond it are spares (still provisioned
+  // below with a connector + signing key so a context switch can rotate one into the committee).
+  gw.NUM_KMS_NODES = String(committeeSize);
   gw.MPC_THRESHOLD = String(threshold);
   // host-sc deploy reads MPC_THRESHOLD too (ProtocolConfig). applyHostScKmsEnv
   // mirrors the other KMS thresholds gateway->host but NOT MPC_THRESHOLD, and
@@ -338,6 +340,63 @@ const applyKmsThresholdGatewayEnv = async (
     result.push({ party, endpoint, privateKey: wallet.privateKey, dbName });
   }
   return result;
+};
+
+const isKmsSwapTopology = (plan: StackSpec) =>
+  plan.kms.mode === "threshold" && plan.kms.parties > plan.kms.committeeSize;
+
+/** Node swap: maps the trailing committee slots onto the spare cores (parties beyond
+ * committeeSize). For 5 parties / committee 4 / 1 spare this overwrites slot 3 (node 4) with the
+ * spare at env index 4 (node 5), yielding committee {1,2,3,5}. */
+const kmsSwapSlots = (plan: StackSpec): { slot: number; src: number }[] => {
+  const { parties, committeeSize } = plan.kms;
+  const spares = parties - committeeSize;
+  return Array.from({ length: spares }, (_, k) => ({ slot: committeeSize - spares + k, src: committeeSize + k }));
+};
+
+/** host ProtocolConfig swap-committee env for `defineNewKmsContextAndEpoch`. The spare's connection
+ * vars (tx-sender/ip/storage-url) live only in gateway-sc (host copies just the committee), so they
+ * are pulled from there; its identity + discovered signer/CA-cert come from host-sc. Returns
+ * undefined for non-swap topologies or before the spare's signer is discovered. */
+export const buildHostScSwapEnv = (
+  hostSc: Record<string, string>,
+  gatewaySc: Record<string, string>,
+  plan: StackSpec,
+): Record<string, string> | undefined => {
+  if (!isKmsSwapTopology(plan)) return undefined;
+  const swap = { ...hostSc };
+  for (const { slot, src } of kmsSwapSlots(plan)) {
+    if (!hostSc[`KMS_SIGNER_ADDRESS_${src}`]) return undefined;
+    // The spare joins at the dropped node's MPC position, so KMS_NODE_PARTY_ID_{slot} stays the
+    // positional id (1..committeeSize) — the core rejects party ids outside that range. Only the
+    // node's identity (signer, tx-sender, cert), address and storage prefix move to the spare.
+    swap[`KMS_TX_SENDER_ADDRESS_${slot}`] = gatewaySc[`KMS_TX_SENDER_ADDRESS_${src}`];
+    swap[`KMS_SIGNER_ADDRESS_${slot}`] = hostSc[`KMS_SIGNER_ADDRESS_${src}`];
+    swap[`KMS_NODE_IP_${slot}`] = gatewaySc[`KMS_NODE_IP_ADDRESS_${src}`];
+    swap[`KMS_NODE_STORAGE_URL_${slot}`] = gatewaySc[`KMS_NODE_STORAGE_URL_${src}`];
+    swap[`KMS_NODE_MPC_IDENTITY_${slot}`] = hostSc[`KMS_NODE_MPC_IDENTITY_${src}`];
+    swap[`KMS_NODE_CA_CERT_${slot}`] = hostSc[`KMS_NODE_CA_CERT_${src}`];
+    swap[`KMS_NODE_STORAGE_PREFIX_${slot}`] = hostSc[`KMS_NODE_STORAGE_PREFIX_${src}`];
+  }
+  return swap;
+};
+
+/** gateway GatewayConfig swap-committee env for `updateKmsContext`. The Gateway KmsNode carries only
+ * (txSender, signer, ip, storageUrl), all present in gateway-sc for every party. */
+export const buildGatewayScSwapEnv = (
+  gatewaySc: Record<string, string>,
+  plan: StackSpec,
+): Record<string, string> | undefined => {
+  if (!isKmsSwapTopology(plan)) return undefined;
+  const swap = { ...gatewaySc };
+  for (const { slot, src } of kmsSwapSlots(plan)) {
+    if (!gatewaySc[`KMS_SIGNER_ADDRESS_${src}`]) return undefined;
+    swap[`KMS_TX_SENDER_ADDRESS_${slot}`] = gatewaySc[`KMS_TX_SENDER_ADDRESS_${src}`];
+    swap[`KMS_SIGNER_ADDRESS_${slot}`] = gatewaySc[`KMS_SIGNER_ADDRESS_${src}`];
+    swap[`KMS_NODE_IP_ADDRESS_${slot}`] = gatewaySc[`KMS_NODE_IP_ADDRESS_${src}`];
+    swap[`KMS_NODE_STORAGE_URL_${slot}`] = gatewaySc[`KMS_NODE_STORAGE_URL_${src}`];
+  }
+  return swap;
 };
 
 /** Clones the (discovery-rewritten) base connector env into per-party instance envs. */
