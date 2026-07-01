@@ -63,7 +63,7 @@ dotenv.config({ path: resolve(__dirname, '..', '..', '.env') });
 
 // Default LayerZero V2 endpoint addresses. The address is NOT guaranteed identical
 // across chains but happens to match on Ethereum and Polygon mainnet, and
-// is also the same on Sepolia and Amoy but with a different shared value. 
+// is also the same on Sepolia and Amoy but with a different shared value.
 // Each chain picks its environment default and can still override it via
 // its `endpointEnvVar` env var (see CHAINS).
 const TESTNET_LZ_ENDPOINT = '0x6EDCE65403992e310A62460808c4b910D972f10f';
