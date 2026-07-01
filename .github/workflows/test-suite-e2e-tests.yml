@@ -166,6 +166,7 @@ jobs:
       ORCHESTRATED: ${{ inputs.orchestrated && 'true' || 'false' }}
       SCENARIO: ${{ inputs.scenario || 'two-of-three-multi-chain' }}
       TEST_PROFILE: ${{ inputs.test-profile || 'standard' }}
+      S3_MIGRATION_MODE: concurrent
     runs-on: large_ubuntu_32
     steps:
       - name: Checkout code

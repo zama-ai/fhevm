@@ -37,10 +37,12 @@ describe("resolve", () => {
     const bundle = presetBundle("latest-main", "abcdef0", "latest-main-abcdef0.json");
     const next = applyVersionEnvOverrides(bundle, {
       HOST_VERSION: "override-host",
+      S3_MIGRATION_MODE: "concurrent",
       UNUSED: "ignored",
     });
     expect(next.env.HOST_VERSION).toBe("override-host");
-    expect(next.sources.at(-1)).toBe("env=HOST_VERSION");
+    expect(next.env.S3_MIGRATION_MODE).toBe("concurrent");
+    expect(next.sources.at(-1)).toBe("env=HOST_VERSION,S3_MIGRATION_MODE");
   });
 
   test("resolves relayer images as repo-owned for latest-main presets", () => {
