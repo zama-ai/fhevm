@@ -89,10 +89,20 @@ pub async fn run_gcs_activation_watcher(
                 );
             }
         } else {
-            debug!(
-                target: "gcs_activation",
-                "GCS row in upgrade_state has no start_block yet"
-            );
+            // Pause workers on initial startup AND after a rollback clears start_block.
+            let prev = state.swap(GCS_NOT_ACTIVATED, Ordering::SeqCst);
+            if prev != GCS_NOT_ACTIVATED {
+                info!(
+                    target: "gcs_activation",
+                    prev,
+                    "GCS row left DryRunStarted — workers paused"
+                );
+            } else {
+                debug!(
+                    target: "gcs_activation",
+                    "GCS row in upgrade_state has no start_block yet"
+                );
+            }
         }
 
         // Fallback poll catches a missed NOTIFY (dropped connection, late start).
