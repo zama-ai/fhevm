@@ -26,6 +26,7 @@ else
 fi
 
 REMOVE_TENANTS_PREVIOUS_VERSION=20260120102002
+BRANCH_COMPONENT_INDEX_PREVIOUS_VERSION=20260610150100
 
 run_sql() {
   psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "$1"
@@ -163,6 +164,20 @@ run_block_scope_materialization_wave1_prerequisites() {
      ON host_chain_blocks_valid (chain_id, parent_hash);"
 }
 
+run_branch_context_wave2_prerequisites() {
+  echo "Running online migrations before branch-context wave2 component index..."
+  sqlx migrate run --source "$MIGRATION_DIR" --target-version $BRANCH_COMPONENT_INDEX_PREVIOUS_VERSION || { echo "Failed to run migrations."; exit 1; }
+
+  precreate_index "idx_computations_branch_component_rows_v2" \
+    "CREATE INDEX CONCURRENTLY idx_computations_branch_component_rows_v2 ON computations_branch (
+      dependence_chain_id,
+      schedule_order,
+      host_chain_id,
+      block_number,
+      producer_block_hash
+    ) WHERE is_error = false;"
+}
+
 echo "-------------- Start database initilaization --------------"
 
 echo "Creating database..."
@@ -178,6 +193,8 @@ elif [ "${RUN_BLOCK_SCOPE_WAVE1_PREREQUISITES:-}" = "true" ]; then
   # live DB before `helm upgrade` applies the rest of the wave1 migrations.
   # Does not run the remaining migrations and does not seed.
   run_block_scope_materialization_wave1_prerequisites
+elif [ "${RUN_BRANCH_CONTEXT_WAVE2_PREREQUISITES:-}" = "true" ]; then
+  run_branch_context_wave2_prerequisites
 else
   sqlx migrate run --source "$MIGRATION_DIR" || { echo "Failed to run migrations."; exit 1; }
   seed_host_chains

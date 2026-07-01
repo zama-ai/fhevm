@@ -6,7 +6,7 @@ use fhevm_engine_common::telemetry::MetricsConfig;
 use fhevm_engine_common::tfhe_ops::current_ciphertext_version;
 use fhevm_engine_common::types::SupportedFheCiphertexts;
 use std::collections::BTreeMap;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use test_harness::db_utils::setup_test_key;
 use testcontainers::{core::WaitFor, runners::AsyncRunner, GenericImage, ImageExt};
 use tokio::sync::watch::Receiver;
@@ -49,18 +49,58 @@ pub fn default_dependence_cache_size() -> u16 {
 }
 
 pub async fn setup_test_app() -> Result<TestInstance, Box<dyn std::error::Error>> {
+    setup_test_app_with_worker_config(0, 2).await
+}
+
+pub async fn setup_test_app_with_worker_config(
+    branch_cutover_block: i64,
+    pg_pool_max_connections: u32,
+) -> Result<TestInstance, Box<dyn std::error::Error>> {
     if std::env::var("COPROCESSOR_TEST_LOCAL_DB").is_ok() {
-        setup_test_app_existing_db().await
+        setup_test_app_existing_db(branch_cutover_block, pg_pool_max_connections).await
     } else {
-        setup_test_app_custom_docker().await
+        setup_test_app_custom_docker(branch_cutover_block, pg_pool_max_connections).await
     }
 }
 
 const LOCAL_DB_URL: &str = "postgresql://postgres:postgres@127.0.0.1:5432/coprocessor";
 
-async fn setup_test_app_existing_db() -> Result<TestInstance, Box<dyn std::error::Error>> {
+const LOCAL_DB_RESET_SQL: &str = "
+    TRUNCATE
+        computations, ciphertexts, ciphertexts128, allowed_handles,
+        pbs_computations, ciphertext_digest,
+        computations_branch, ciphertexts_branch, ciphertexts128_branch,
+        allowed_handles_branch, pbs_computations_branch, ciphertext_digest_branch,
+        host_chain_blocks_valid
+    CASCADE
+";
+
+pub async fn reset_local_test_db_if_needed() -> Result<(), Box<dyn std::error::Error>> {
+    if std::env::var("COPROCESSOR_TEST_LOCAL_DB").is_err() {
+        return Ok(());
+    }
+
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(1)
+        .connect(LOCAL_DB_URL)
+        .await?;
+
+    sqlx::query(LOCAL_DB_RESET_SQL).execute(&pool).await?;
+    Ok(())
+}
+
+async fn setup_test_app_existing_db(
+    branch_cutover_block: i64,
+    pg_pool_max_connections: u32,
+) -> Result<TestInstance, Box<dyn std::error::Error>> {
     let (app_close_channel, rx) = tokio::sync::watch::channel(false);
-    let health_check_port = start_coprocessor(rx, LOCAL_DB_URL).await;
+    let health_check_port = start_coprocessor(
+        rx,
+        LOCAL_DB_URL,
+        branch_cutover_block,
+        pg_pool_max_connections,
+    )
+    .await;
     Ok(TestInstance {
         _container: None,
         app_close_channel: Some(app_close_channel),
@@ -69,7 +109,12 @@ async fn setup_test_app_existing_db() -> Result<TestInstance, Box<dyn std::error
     })
 }
 
-async fn start_coprocessor(rx: Receiver<bool>, db_url: &str) -> u16 {
+async fn start_coprocessor(
+    rx: Receiver<bool>,
+    db_url: &str,
+    branch_cutover_block: i64,
+    pg_pool_max_connections: u32,
+) -> u16 {
     let health_check_port = test_harness::localstack::pick_free_port();
     let args: Args = Args {
         run_bg_worker: true,
@@ -77,22 +122,18 @@ async fn start_coprocessor(rx: Receiver<bool>, db_url: &str) -> u16 {
         bridge_polling_interval_ms: 1000,
         bridge_associate_batch_size: 128,
         generate_fhe_keys: false,
-        work_items_batch_size: 40,
-        dependence_chains_per_batch: 10,
         key_cache_size: 4,
         coprocessor_fhe_threads: 4,
         tokio_threads: 2,
-        pg_pool_max_connections: 2,
+        pg_pool_max_connections,
         metrics_addr: None,
         database_url: Some(db_url.into()),
         service_name: "coprocessor".to_string(),
         log_level: Level::INFO,
         health_check_port,
-        metric_rerand_batch_latency: MetricsConfig::default(),
         metric_fhe_batch_latency: MetricsConfig::default(),
         worker_id: None,
         dcid_ttl_sec: 30,
-        disable_dcid_locking: true,
         dcid_timeslice_sec: 90,
         dcid_cleanup_interval_sec: 0,
         processed_dcid_ttl_sec: 0,
@@ -101,6 +142,7 @@ async fn start_coprocessor(rx: Receiver<bool>, db_url: &str) -> u16 {
         // Heavy FHE tests can saturate a test Postgres instance for tens of seconds;
         // relax the watcher's production-tuned thresholds so fail-fast doesn't trip
         // on slow polls during the test workload.
+        branch_cutover_block,
         drift_revert_watcher_timeouts: WatcherTimeouts {
             poll_query_timeout: Duration::from_secs(300),
             db_down_limit: Duration::from_secs(1800),
@@ -116,7 +158,10 @@ async fn start_coprocessor(rx: Receiver<bool>, db_url: &str) -> u16 {
     health_check_port
 }
 
-async fn setup_test_app_custom_docker() -> Result<TestInstance, Box<dyn std::error::Error>> {
+async fn setup_test_app_custom_docker(
+    branch_cutover_block: i64,
+    pg_pool_max_connections: u32,
+) -> Result<TestInstance, Box<dyn std::error::Error>> {
     let container = GenericImage::new("postgres", "15.7")
         .with_wait_for(WaitFor::message_on_stderr(
             "database system is ready to accept connections",
@@ -152,7 +197,8 @@ async fn setup_test_app_custom_docker() -> Result<TestInstance, Box<dyn std::err
     println!("DB prepared");
 
     let (app_close_channel, rx) = tokio::sync::watch::channel(false);
-    let health_check_port = start_coprocessor(rx, &db_url).await;
+    let health_check_port =
+        start_coprocessor(rx, &db_url, branch_cutover_block, pg_pool_max_connections).await;
     Ok(TestInstance {
         _container: Some(container),
         app_close_channel: Some(app_close_channel),
@@ -168,19 +214,16 @@ pub async fn errors_on_allowed_handles(
         .max_connections(2)
         .connect(test_instance.db_url())
         .await?;
-    let records = sqlx::query!(
-        "SELECT error_message FROM computations WHERE is_allowed = TRUE AND is_error = TRUE",
+    use sqlx::Row;
+    let records = sqlx::query(
+        "SELECT error_message FROM computations_branch WHERE is_allowed = TRUE AND is_error = TRUE",
     )
     .fetch_all(&pool)
     .await?;
     let mut errors: Vec<String> = vec![];
-    for error in &records {
-        errors.push(
-            error
-                .error_message
-                .clone()
-                .unwrap_or_else(|| "No error message".to_string()),
-        );
+    for row in &records {
+        let error_message: Option<String> = row.try_get("error_message")?;
+        errors.push(error_message.unwrap_or_else(|| "No error message".to_string()));
     }
     Ok(errors)
 }
@@ -193,10 +236,17 @@ pub async fn wait_until_all_allowed_handles_computed(
         .connect(test_instance.db_url())
         .await?;
 
+    let timeout = std::env::var("FHEVM_TEST_WAIT_TIMEOUT_SECS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .map(Duration::from_secs)
+        .unwrap_or(Duration::from_secs(90));
+    let started_at = Instant::now();
+
     loop {
         tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
         let (current_count,): (i64,) = sqlx::query_as(
-            "SELECT count(1) FROM computations WHERE is_allowed = TRUE AND is_completed = FALSE AND is_error = FALSE",
+            "SELECT count(1) FROM computations_branch WHERE is_allowed = TRUE AND is_completed = FALSE AND is_error = FALSE",
         )
         .fetch_one(&pool)
         .await?;
@@ -205,6 +255,31 @@ pub async fn wait_until_all_allowed_handles_computed(
             break;
         } else {
             println!("{current_count} computations remaining, waiting...");
+        }
+
+        if started_at.elapsed() >= timeout {
+            let pending = sqlx::query_as::<_, (String, String, Option<String>, Option<i64>)>(
+                "
+                SELECT
+                    encode(output_handle, 'hex'),
+                    encode(producer_block_hash, 'hex'),
+                    encode(transaction_id, 'hex'),
+                    block_number
+                FROM computations_branch
+                WHERE is_allowed = TRUE
+                  AND is_completed = FALSE
+                  AND is_error = FALSE
+                ORDER BY block_number NULLS LAST, producer_block_hash, output_handle
+                LIMIT 10
+                ",
+            )
+            .fetch_all(&pool)
+            .await?;
+            return Err(std::io::Error::other(format!(
+                "timed out after {:?} waiting for allowed computations to finish; pending rows: {:?}",
+                timeout, pending
+            ))
+            .into());
         }
     }
 
@@ -239,21 +314,33 @@ pub async fn decrypt_ciphertexts(
     for (idx, h) in input.iter().enumerate() {
         ct_indexes.insert(h.as_slice(), idx);
     }
-    let cts = sqlx::query!(
+    use sqlx::Row;
+    let rows = sqlx::query(
         "
             SELECT ciphertext, ciphertext_type, handle
-            FROM ciphertexts
+            FROM ciphertexts_branch
             WHERE handle = ANY($1::BYTEA[])
-            AND ciphertext_version = $2
+              AND ciphertext_version = $2
         ",
-        &input,
-        current_ciphertext_version()
     )
+    .bind(&input)
+    .bind(current_ciphertext_version())
     .fetch_all(pool)
     .await?;
-    if cts.is_empty() {
+    if rows.is_empty() {
         panic!("ciphertext not found");
     }
+
+    let cts: Vec<(Vec<u8>, i16, Vec<u8>)> = rows
+        .into_iter()
+        .map(|row| -> Result<_, sqlx::Error> {
+            Ok((
+                row.try_get::<Vec<u8>, _>("ciphertext")?,
+                row.try_get::<i16, _>("ciphertext_type")?,
+                row.try_get::<Vec<u8>, _>("handle")?,
+            ))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
 
     let mut values = tokio::task::spawn_blocking(move || {
         let client_key = key.cks.unwrap();
@@ -261,14 +348,14 @@ pub async fn decrypt_ciphertexts(
         tfhe::set_server_key(sks);
 
         let mut decrypted: Vec<(Vec<u8>, DecryptionResult)> = Vec::with_capacity(cts.len());
-        for ct in cts {
+        for (ciphertext, ciphertext_type, handle) in cts {
             let deserialized =
-                SupportedFheCiphertexts::decompress_no_memcheck(ct.ciphertext_type, &ct.ciphertext)
+                SupportedFheCiphertexts::decompress_no_memcheck(ciphertext_type, &ciphertext)
                     .unwrap();
             decrypted.push((
-                ct.handle,
+                handle,
                 DecryptionResult {
-                    output_type: ct.ciphertext_type,
+                    output_type: ciphertext_type,
                     value: deserialized.decrypt(&client_key),
                 },
             ));

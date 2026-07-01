@@ -45,10 +45,10 @@ const RETRY_GET_BLOCK_DELAY_IN_MS: u64 = 100;
 
 const DEFAULT_BLOCK_TIME: u64 = 12;
 pub const DEFAULT_DEPENDENCE_CACHE_SIZE: u16 = 10_000;
-pub const DEFAULT_DEPENDENCE_BY_CONNEXITY: bool = false;
 pub const DEFAULT_DEPENDENCE_CROSS_BLOCK: bool = true;
 
 const TIMEOUT_REQUEST_ON_WEBSOCKET: u64 = 15;
+const DEFAULT_SETTLEMENT_FINALITY_LAG: u64 = 96;
 
 #[derive(Parser, Debug, Clone)]
 #[command(version, about, long_about = None)]
@@ -124,13 +124,6 @@ pub struct Args {
 
     #[arg(
         long,
-        default_value_t = DEFAULT_DEPENDENCE_BY_CONNEXITY,
-        help = "Dependence chain are connected components"
-    )]
-    pub dependence_by_connexity: bool,
-
-    #[arg(
-        long,
         default_value_t = DEFAULT_DEPENDENCE_CROSS_BLOCK,
         help = "Dependence chain are across blocks"
     )]
@@ -160,6 +153,13 @@ pub struct Args {
         help = "Maximum number of blocks to wait before a block is finalized"
     )]
     pub catchup_finalization_in_blocks: u64,
+
+    #[arg(
+        long,
+        default_value_t = DEFAULT_SETTLEMENT_FINALITY_LAG,
+        help = "Minimum depth before advancing coprocessor settlement; should cover true chain finality"
+    )]
+    pub settlement_finality_lag: u64,
 
     #[arg(
         long,
@@ -982,7 +982,6 @@ async fn db_insert_block(
             kms_generation_address,
             confidential_bridge_address,
             IngestOptions {
-                dependence_by_connexity: args.dependence_by_connexity,
                 dependence_cross_block: args.dependence_cross_block,
                 dependent_ops_max_per_chain: args.dependent_ops_max_per_chain,
             },
@@ -1142,6 +1141,9 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
     )
     .await?;
 
+    let _branch_cleanup_worker =
+        db.spawn_orphaned_branch_cleanup_worker(cancel_token.clone());
+
     if args.dependent_ops_max_per_chain == 0 {
         let promoted = db.promote_all_dep_chains_to_fast_priority().await?;
         if promoted > 0 {
@@ -1196,6 +1198,8 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
                     &mut log_iter,
                     block_logs.summary.number,
                     args.catchup_finalization_in_blocks,
+                    args.settlement_finality_lag
+                        .max(args.reorg_maximum_duration_in_blocks),
                 )
                 .await;
             }

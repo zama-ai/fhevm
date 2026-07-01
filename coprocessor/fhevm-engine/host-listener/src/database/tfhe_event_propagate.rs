@@ -4,6 +4,7 @@ use alloy_primitives::Log;
 use alloy_primitives::Uint;
 use anyhow::Result;
 use bigdecimal::BigDecimal;
+use fhevm_engine_common::branch::enqueue_s3_canonical_repairs;
 use fhevm_engine_common::bridge::{chain_id_from_handle, derive_dst_handle};
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::database::{
@@ -28,6 +29,9 @@ use std::sync::LazyLock;
 use std::time::Duration;
 use time::{Duration as TimeDuration, PrimitiveDateTime};
 use tokio::sync::RwLock;
+use tokio::task::JoinHandle;
+use tokio::time::{interval, MissedTickBehavior};
+use tokio_util::sync::CancellationToken;
 use tracing::error;
 use tracing::info;
 use tracing::warn;
@@ -47,6 +51,10 @@ pub type ScalarByte = FixedBytes<1>;
 pub type ClearConst = Uint<256, 4>;
 pub type ChainHash = TransactionHash;
 
+const BRANCH_CLEANUP_BATCH_SIZE: i64 = 10;
+const BRANCH_CLEANUP_MAX_ATTEMPTS: i32 = 10;
+const BRANCH_CLEANUP_RECHECK_INTERVAL: Duration = Duration::from_secs(5);
+
 static SLOW_LANE_MARKED_CHAINS_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(
     || {
         register_int_counter_vec!(
@@ -61,7 +69,7 @@ static SLOW_LANE_MARKED_CHAINS_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(
 /// ACL events whose handle could not be resolved to a ciphertext-producer
 /// block on the current branch (nor to branchless/legacy state). These are
 /// keyed branchless rather than guessing the ACL-event block; a non-zero rate
-/// indicates branch metadata is missing or inconsistent, and should alert.
+/// indicates branch metadata is missing or an inconsistency, and should alert.
 static UNRESOLVED_PRODUCER_BLOCK_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(
     || {
         register_int_counter_vec!(
@@ -73,12 +81,22 @@ static UNRESOLVED_PRODUCER_BLOCK_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(
     },
 );
 
+static BRANCH_CLEANUP_QUARANTINED_TOTAL: LazyLock<IntCounterVec> =
+    LazyLock::new(|| {
+        register_int_counter_vec!(
+            "host_listener_branch_cleanup_quarantined_total",
+            "Async orphan branch cleanup jobs quarantined after bounded retries",
+            &["chain_id"]
+        )
+        .expect("host-listener branch-cleanup quarantine metric must register")
+    });
+
 #[derive(Clone, Debug)]
 pub struct Chain {
     pub hash: ChainHash,
     pub dependencies: Vec<ChainHash>,
-    // Ingest-only metadata for dependency links split by no_fork grouping.
-    // Not used by scheduler execution ordering.
+    // Ingest-only metadata for dependency links outside the same-block
+    // component. Not used by scheduler execution ordering.
     pub split_dependencies: Vec<ChainHash>,
     pub dependents: Vec<ChainHash>,
     pub allowed_handle: Vec<Handle>,
@@ -97,6 +115,25 @@ const MAX_RETRY_ON_UNKNOWN_ERROR: usize = 5;
 
 // short wait in case the database had a short issue
 const RECONNECTION_DELAY: Duration = Duration::from_millis(100);
+
+/// Host-chain block number at which the block-scoped (wave-2) pipeline takes
+/// over. Blocks at or above it are no longer mirrored into the legacy work
+/// tables, so the legacy pipeline drains and idles. Defaults to "never"
+/// (always dual-write) when unset; operators set the agreed cutover block on
+/// all services when rolling out wave 2.
+fn configured_branch_cutover_block() -> Option<i64> {
+    std::env::var("FHEVM_BRANCH_CUTOVER_BLOCK")
+        .ok()
+        .and_then(|v| v.parse().ok())
+}
+
+fn legacy_mirror_cutoff() -> i64 {
+    configured_branch_cutover_block().unwrap_or(i64::MAX)
+}
+
+pub(crate) fn settlement_cutover_block() -> i64 {
+    configured_branch_cutover_block().unwrap_or(0)
+}
 
 struct ComputationBranchRow<'a> {
     chain_id: i64,
@@ -447,7 +484,6 @@ impl Database {
         }
 
         tx.commit().await?;
-
         Ok(total_promoted)
     }
 
@@ -626,9 +662,12 @@ impl Database {
             },
         )
         .await?;
-        // Wave-1 dual-write: the legacy pipeline still executes from the
-        // legacy tables, so every branch row is mirrored there until the
-        // block-scoped readers take over in wave 2.
+        // Dual-write: the legacy pipeline still executes blocks below the
+        // cutover from the legacy tables; blocks at or above it belong to
+        // the block-scoped pipeline only.
+        if (log.block_number as i64) >= legacy_mirror_cutoff() {
+            return Ok(inserted);
+        }
         let query = sqlx::query!(
             r#"
             INSERT INTO computations (
@@ -881,6 +920,241 @@ impl Database {
         Ok(orphaned_hashes)
     }
 
+    pub async fn enqueue_orphaned_branch_cleanup(
+        &self,
+        tx: &mut Transaction<'_>,
+        finalized_block_number: i64,
+        finalized_block_hash: &[u8],
+        orphaned_block_hashes: &[Vec<u8>],
+    ) -> Result<(), SqlxError> {
+        if orphaned_block_hashes.is_empty() {
+            return Ok(());
+        }
+
+        sqlx::query!(
+            r#"
+            INSERT INTO branch_cleanup_jobs (
+                chain_id,
+                finalized_block_hash,
+                finalized_block_number,
+                orphaned_block_hashes,
+                status
+            )
+            VALUES ($1, $2, $3, $4, 'pending')
+            ON CONFLICT (chain_id, finalized_block_hash) DO UPDATE
+            SET finalized_block_number = EXCLUDED.finalized_block_number,
+                orphaned_block_hashes = EXCLUDED.orphaned_block_hashes,
+                status = 'pending',
+                attempts = 0,
+                locked_at = NULL,
+                last_error = NULL,
+                updated_at = NOW()
+            "#,
+            self.chain_id.as_i64(),
+            finalized_block_hash,
+            finalized_block_number,
+            orphaned_block_hashes,
+        )
+        .execute(tx.deref_mut())
+        .await?;
+
+        Ok(())
+    }
+
+    pub fn spawn_orphaned_branch_cleanup_worker(
+        &self,
+        cancel_token: CancellationToken,
+    ) -> JoinHandle<()> {
+        let db = self.clone();
+        tokio::spawn(async move {
+            db.run_orphaned_branch_cleanup_worker(cancel_token).await;
+        })
+    }
+
+    async fn run_orphaned_branch_cleanup_worker(
+        self,
+        cancel_token: CancellationToken,
+    ) {
+        let mut ticker = interval(BRANCH_CLEANUP_RECHECK_INTERVAL);
+        ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
+
+        loop {
+            if let Err(err) = self.process_orphaned_branch_cleanup_jobs().await
+            {
+                error!(?err, "Failed to process orphaned branch cleanup jobs");
+            }
+
+            tokio::select! {
+                _ = cancel_token.cancelled() => break,
+                _ = ticker.tick() => {}
+            }
+        }
+    }
+
+    pub async fn process_orphaned_branch_cleanup_jobs(
+        &self,
+    ) -> Result<u64, SqlxError> {
+        let mut processed = 0_u64;
+
+        loop {
+            let Some((finalized_block_hash, orphaned_hashes)) =
+                self.claim_orphaned_branch_cleanup_job().await?
+            else {
+                break;
+            };
+
+            match self
+                .process_orphaned_branch_cleanup_job(
+                    &finalized_block_hash,
+                    &orphaned_hashes,
+                )
+                .await
+            {
+                Ok(()) => {
+                    processed += 1;
+                }
+                Err(err) => {
+                    self.record_orphaned_branch_cleanup_error(
+                        &finalized_block_hash,
+                        &err.to_string(),
+                    )
+                    .await?;
+                    return Err(err);
+                }
+            }
+
+            if processed >= BRANCH_CLEANUP_BATCH_SIZE as u64 {
+                break;
+            }
+        }
+
+        Ok(processed)
+    }
+
+    async fn claim_orphaned_branch_cleanup_job(
+        &self,
+    ) -> Result<Option<(Vec<u8>, Vec<Vec<u8>>)>, SqlxError> {
+        let pool = self.pool().await;
+        let row = sqlx::query!(
+            r#"
+            WITH selected AS (
+                SELECT chain_id, finalized_block_hash
+                  FROM branch_cleanup_jobs
+                 WHERE chain_id = $1
+                   AND status = 'pending'
+                   AND (
+                        locked_at IS NULL
+                        OR locked_at < NOW() - INTERVAL '5 minutes'
+                   )
+                 ORDER BY finalized_block_number ASC, updated_at ASC
+                 FOR UPDATE SKIP LOCKED
+                 LIMIT 1
+            )
+            UPDATE branch_cleanup_jobs j
+               SET locked_at = NOW(),
+                   attempts = attempts + 1,
+                   updated_at = NOW()
+              FROM selected s
+             WHERE j.chain_id = s.chain_id
+               AND j.finalized_block_hash = s.finalized_block_hash
+             RETURNING
+                j.finalized_block_hash AS "finalized_block_hash!",
+                j.orphaned_block_hashes AS "orphaned_block_hashes!"
+            "#,
+            self.chain_id.as_i64(),
+        )
+        .fetch_optional(&pool)
+        .await?;
+
+        Ok(
+            row.map(|row| {
+                (row.finalized_block_hash, row.orphaned_block_hashes)
+            }),
+        )
+    }
+
+    async fn process_orphaned_branch_cleanup_job(
+        &self,
+        finalized_block_hash: &[u8],
+        orphaned_hashes: &[Vec<u8>],
+    ) -> Result<(), SqlxError> {
+        let mut tx = self.new_transaction().await?;
+        self.cleanup_orphaned_branch_state(&mut tx, orphaned_hashes)
+            .await?;
+        sqlx::query!(
+            r#"
+            UPDATE branch_cleanup_jobs
+               SET status = 'completed',
+                   locked_at = NULL,
+                   last_error = NULL,
+                   updated_at = NOW()
+             WHERE chain_id = $1
+               AND finalized_block_hash = $2
+            "#,
+            self.chain_id.as_i64(),
+            finalized_block_hash,
+        )
+        .execute(tx.deref_mut())
+        .await?;
+        tx.commit().await?;
+
+        info!(
+            finalized_block_hash = %to_hex(finalized_block_hash),
+            orphaned_blocks = orphaned_hashes.len(),
+            "Completed orphaned branch cleanup job"
+        );
+
+        Ok(())
+    }
+
+    pub async fn record_orphaned_branch_cleanup_error(
+        &self,
+        finalized_block_hash: &[u8],
+        error: &str,
+    ) -> Result<(), SqlxError> {
+        let pool = self.pool().await;
+        let row = sqlx::query!(
+            r#"
+            UPDATE branch_cleanup_jobs
+               SET status = CASE
+                       WHEN attempts >= $4 THEN 'quarantined'
+                       ELSE 'pending'
+                   END,
+                   locked_at = NULL,
+                   last_error = $3,
+                   updated_at = NOW()
+             WHERE chain_id = $1
+               AND finalized_block_hash = $2
+               AND status = 'pending'
+             RETURNING status AS "status!", attempts AS "attempts!"
+            "#,
+            self.chain_id.as_i64(),
+            finalized_block_hash,
+            error,
+            BRANCH_CLEANUP_MAX_ATTEMPTS,
+        )
+        .fetch_optional(&pool)
+        .await?;
+
+        if let Some(row) = row {
+            if row.status == "quarantined" {
+                let chain_id_label = self.chain_id.as_i64().to_string();
+                BRANCH_CLEANUP_QUARANTINED_TOTAL
+                    .with_label_values(&[chain_id_label.as_str()])
+                    .inc();
+                error!(
+                    chain_id = self.chain_id.as_i64(),
+                    finalized_block_hash = %to_hex(finalized_block_hash),
+                    attempts = row.attempts,
+                    cleanup_error = error,
+                    "Quarantined orphaned branch cleanup job after bounded retries"
+                );
+            }
+        }
+
+        Ok(())
+    }
+
     pub async fn cleanup_orphaned_branch_state(
         &self,
         tx: &mut Transaction<'_>,
@@ -1002,6 +1276,22 @@ impl Database {
             .iter()
             .map(|row| row.event_type)
             .collect::<Vec<_>>();
+
+        let orphaned_digest_handles = sqlx::query_scalar::<_, Vec<u8>>(
+            r#"
+            SELECT DISTINCT handle
+             FROM ciphertext_digest_branch
+             WHERE host_chain_id = $1
+               AND (
+                    block_hash = ANY($2::bytea[])
+                    OR producer_block_hash = ANY($2::bytea[])
+               )
+            "#,
+        )
+        .bind(self.chain_id.as_i64())
+        .bind(orphaned_block_hashes)
+        .fetch_all(tx.deref_mut())
+        .await?;
 
         if !orphaned_ciphertext_pairs.is_empty() {
             // This removes only DB branch state and materialized DB bytes. S3
@@ -1230,6 +1520,28 @@ impl Database {
             .await?;
         }
 
+        let repair_handles = orphaned_ciphertext_handles
+            .iter()
+            .cloned()
+            .chain(orphaned_digest_handles)
+            .chain(orphaned_legacy_computation_handles.iter().cloned())
+            .chain(orphaned_legacy_pbs_handles.iter().cloned())
+            .chain(orphaned_allowed_handles.iter().cloned())
+            .collect::<Vec<_>>();
+        let enqueued_repairs = enqueue_s3_canonical_repairs(
+            tx,
+            self.chain_id.as_i64(),
+            repair_handles,
+            "orphan_cleanup",
+        )
+        .await?;
+        if enqueued_repairs > 0 {
+            info!(
+                enqueued_repairs,
+                "Enqueued S3 canonical repairs after orphan branch cleanup"
+            );
+        }
+
         Ok(())
     }
 
@@ -1273,8 +1585,13 @@ impl Database {
                     &block_summary.hash,
                 )
                 .await?;
-            self.cleanup_orphaned_branch_state(tx, &orphaned_hashes)
-                .await?;
+            self.enqueue_orphaned_branch_cleanup(
+                tx,
+                block_summary.number as i64,
+                block_summary.hash.as_ref(),
+                &orphaned_hashes,
+            )
+            .await?;
         }
         Ok(())
     }
@@ -1437,20 +1754,6 @@ impl Database {
         Ok(())
     }
 
-    pub async fn read_last_valid_block(&self) -> Option<i64> {
-        let query = sqlx::query!(
-            r#"
-            SELECT MAX(block_number) FROM host_chain_blocks_valid WHERE chain_id = $1;
-            "#,
-            self.chain_id.as_i64(),
-        );
-        let pool = self.pool.read().await.clone();
-        match query.fetch_one(&pool).await {
-            Ok(record) => record.max,
-            Err(_err) => None, // table could be empty
-        }
-    }
-
     async fn resolve_handle_producer_block(
         &self,
         tx: &mut Transaction<'_>,
@@ -1538,6 +1841,16 @@ impl Database {
             });
         }
 
+        // No computation on the current branch, no branchless ciphertext, and
+        // no legacy ciphertext resolve this handle. Do NOT guess the ACL-event
+        // block: keying a branch row to the allow block would silently mis-key
+        // it to a block that produced no ciphertext (the sns readiness join
+        // then skips it forever) and could even collide with an unrelated
+        // branch's ciphertext, risking a wrong-bytes noise-squash. Fall back to
+        // the branchless sentinel ('') -- the explicit "unknown branch"
+        // namespace, which matches only branchless ciphertexts and never an
+        // arbitrary fork -- and surface the anomaly via a counter and an error
+        // log so it is alertable rather than silent.
         let chain_id_label = self.chain_id.as_i64().to_string();
         UNRESOLVED_PRODUCER_BLOCK_TOTAL
             .with_label_values(&[chain_id_label.as_str()])
@@ -1552,6 +1865,20 @@ impl Database {
             hash: Vec::new(),
             number: current_block_number,
         })
+    }
+
+    pub async fn read_last_valid_block(&self) -> Option<i64> {
+        let query = sqlx::query!(
+            r#"
+            SELECT MAX(block_number) FROM host_chain_blocks_valid WHERE chain_id = $1;
+            "#,
+            self.chain_id.as_i64(),
+        );
+        let pool = self.pool.read().await.clone();
+        match query.fetch_one(&pool).await {
+            Ok(record) => record.max,
+            Err(_err) => None, // table could be empty
+        }
     }
 
     /// Handles all types of ACL events
@@ -1937,8 +2264,11 @@ impl Database {
                 &producer_block.hash,
             )
             .await?;
-            // Wave-1 dual-write: keep feeding the legacy sns-worker until
-            // wave 2 switches it to the branch tables.
+            // Dual-write below the cutover: keep feeding the legacy
+            // sns-worker while it drains pre-cutover work.
+            if (acl_block_number as i64) >= legacy_mirror_cutoff() {
+                continue;
+            }
             let query = sqlx::query!(
                 "INSERT INTO pbs_computations(handle, transaction_id, host_chain_id, block_number) VALUES($1, $2, $3, $4)
                  ON CONFLICT DO NOTHING;",
@@ -2030,8 +2360,11 @@ impl Database {
             },
         )
         .await?;
-        // Wave-1 dual-write: keep feeding the legacy readers until wave 2
-        // switches them to the branch tables.
+        // Dual-write below the cutover: keep feeding the legacy readers
+        // while the legacy pipeline drains pre-cutover work.
+        if (insert.acl_block_number as i64) >= legacy_mirror_cutoff() {
+            return Ok(branch_inserted);
+        }
         let query = sqlx::query!(
             "INSERT INTO allowed_handles(handle, account_address, event_type, transaction_id, host_chain_id, block_number) VALUES($1, $2, $3, $4, $5, $6)
                     ON CONFLICT DO NOTHING;",
@@ -2114,6 +2447,10 @@ impl Database {
         slow_dep_chain_ids: &HashSet<ChainHash>,
     ) -> Result<(), SqlxError> {
         for chain in chains {
+            debug_assert!(
+                chain.dependencies.is_empty(),
+                "dependency_count is intentionally dormant; producer must not emit non-zero dependency edges without reworking DCID release bookkeeping"
+            );
             let schedule_priority = if slow_dep_chain_ids.contains(&chain.hash)
             {
                 SchedulePriority::Slow

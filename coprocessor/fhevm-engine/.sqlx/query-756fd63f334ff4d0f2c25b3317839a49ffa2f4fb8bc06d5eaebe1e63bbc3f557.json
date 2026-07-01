@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO coprocessor_settlement(chain_id, settled_height, updated_at)\n             VALUES($1, $2, CURRENT_TIMESTAMP)\n             ON CONFLICT (chain_id) DO UPDATE\n             SET settled_height = GREATEST(coprocessor_settlement.settled_height, EXCLUDED.settled_height),\n                 updated_at = CASE\n                     WHEN EXCLUDED.settled_height > coprocessor_settlement.settled_height\n                     THEN CURRENT_TIMESTAMP\n                     ELSE coprocessor_settlement.updated_at\n                 END\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "756fd63f334ff4d0f2c25b3317839a49ffa2f4fb8bc06d5eaebe1e63bbc3f557"
+}

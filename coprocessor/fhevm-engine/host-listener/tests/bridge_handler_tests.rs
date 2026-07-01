@@ -404,7 +404,6 @@ async fn ingest_fallback_block(
         finalized: false,
     };
     let options = IngestOptions {
-        dependence_by_connexity: false,
         dependence_cross_block: true,
         dependent_ops_max_per_chain: 0,
     };
