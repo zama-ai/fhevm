@@ -718,9 +718,13 @@ export const runStep = async (state: State, step: StepName) => {
       // Confidential bridge needs >= 2 host chains. Per chain: deploy a LayerZero endpoint +
       // upgrade the bridge, then wire each chain to its remote (peer + dstChainId). eid == chainId
       // locally. Verify with: ./fhevm-cli up --scenario multi-chain --build
-      const chains = hostChainsForState(state);
+      //
+      // The bridge is EVM-only (LayerZero endpoint + Solidity bridge contract), so a Solana host is
+      // never part of the bridge topology — filter it out before counting and wiring. For EVM-only
+      // scenarios this is a no-op; for mixed EVM+Solana it leaves too few EVM chains and skips.
+      const chains = hostChainsForState(state).filter((chain) => chain.type === "evm");
       if (chains.length < 2) {
-        console.log("[bridge-deploy] skipping: confidential bridge needs >= 2 host chains");
+        console.log("[bridge-deploy] skipping: confidential bridge needs >= 2 EVM host chains");
         break;
       }
       const discovery = await ensureDiscovery(state);
