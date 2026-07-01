@@ -77,7 +77,7 @@ impl<P: Provider> ProtocolConfigProcessor<P> {
     ) -> Result<KmsGrpcRequest, ProcessingError> {
         let previous_epoch = self
             .fetch_previous_epoch_info(
-                event.kmsContextId,
+                event.previousContextId,
                 event.previousEpochId,
                 event.materialBlockNumber.saturating_to(),
             )
@@ -144,9 +144,14 @@ impl<P: Provider> ProtocolConfigProcessor<P> {
     }
 
     /// Fetch the material of the previous epoch from `KMSGeneration` contract.
+    ///
+    /// We use the `previousContextId` field of the event because:
+    /// * KMS Context switch: the previous epoch belongs to the previous context
+    /// * Same set resharing: the previous epoch belongs to the current context, but in such case,
+    ///   `previousContextId` == `kmsContextId`
     async fn fetch_previous_epoch_info(
         &self,
-        context_id: U256,
+        previous_context_id: U256,
         previous_epoch_id: U256,
         material_block_number: u64,
     ) -> Result<PreviousEpochInfo, ProcessingError> {
@@ -215,7 +220,7 @@ impl<P: Provider> ProtocolConfigProcessor<P> {
         }
 
         Ok(PreviousEpochInfo {
-            context_id: Some(u256_to_request_id(context_id)),
+            context_id: Some(u256_to_request_id(previous_context_id)),
             epoch_id: Some(u256_to_request_id(previous_epoch_id)),
             keys_info,
             crs_info,
