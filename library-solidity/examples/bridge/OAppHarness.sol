@@ -32,12 +32,32 @@ contract OAppHarness is ConfidentialOAppSender, ConfidentialOAppReceiver {
         );
     }
 
+    /// @dev Accept native-fee change refunded by the (mock) bridge so {bridgeRefundingExcess} can
+    ///      forward it on, mirroring `ConfidentialOFTViaLib`.
+    receive() external payable {}
+
     function setPeer(uint32 eid, bytes32 peer) external {
         _setPeer(eid, peer);
     }
 
     function setTrustAllPeers(bool v) external {
         trustAllPeers = v;
+    }
+
+    /// @dev Mirrors the `ConfidentialOFTViaLib` fee-refund pattern: bridge, then forward any overpaid
+    ///      native fee (`msg.value - receipt.fee.nativeFee`) back to the caller so it isn't trapped.
+    function bridgeRefundingExcess(
+        uint32 dstEid,
+        bytes calldata payload,
+        bytes32 handle,
+        uint64 lzComposeGas
+    ) external payable returns (MessagingReceipt memory receipt) {
+        receipt = _bridgeUnchecked(dstEid, payload, handle, lzComposeGas, msg.value);
+        uint256 excess = msg.value - receipt.fee.nativeFee;
+        if (excess != 0) {
+            (bool ok, ) = payable(msg.sender).call{value: excess}("");
+            require(ok, "refund failed");
+        }
     }
 
     /// @dev Send a single raw handle to the peer on `dstEid` via the unchecked sender helper.

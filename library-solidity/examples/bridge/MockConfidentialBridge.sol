@@ -31,10 +31,19 @@ contract MockConfidentialBridge is IConfidentialBridge {
     /// @dev Native fee returned by {quote}; settable so tests can exercise fee plumbing.
     uint256 public quotedNativeFee;
 
+    /// @dev Fee {send} actually charges. When 0 (default) it charges the full `msg.value` (no
+    ///      excess); when set below `msg.value` it refunds the difference to the caller — mirroring
+    ///      how the LayerZero endpoint pushes back native-fee change — so refund paths are testable.
+    uint256 public chargedFee;
+
     event Sent(uint32 indexed dstEid, bytes32 indexed dstApp, address indexed caller, uint256 value);
 
     function setQuotedNativeFee(uint256 fee) external {
         quotedNativeFee = fee;
+    }
+
+    function setChargedFee(uint256 fee) external {
+        chargedFee = fee;
     }
 
     function send(
@@ -56,11 +65,19 @@ contract MockConfidentialBridge is IConfidentialBridge {
         sendCalled = true;
         emit Sent(dstEid, dstApp, msg.sender, msg.value);
 
+        // Charge `chargedFee` (or the full value when unset) and refund any excess to the caller,
+        // as the real endpoint does — so the receipt's `fee.nativeFee` can be below `msg.value`.
+        uint256 fee = chargedFee == 0 ? msg.value : chargedFee;
+        if (msg.value > fee) {
+            (bool ok, ) = payable(msg.sender).call{value: msg.value - fee}("");
+            require(ok, "mock refund failed");
+        }
+
         // Deterministic receipt so tests can assert pass-through of the return value.
         receipt = MessagingReceipt({
             guid: keccak256(abi.encode(dstEid, dstApp, payload)),
             nonce: 1,
-            fee: MessagingFee({nativeFee: msg.value, lzTokenFee: 0})
+            fee: MessagingFee({nativeFee: fee, lzTokenFee: 0})
         });
     }
 

@@ -351,6 +351,22 @@ describe('Confidential bridge helpers', function () {
       expect((await bridge.lastSend()).handleList).to.deep.equal([handleA, handleC]);
     });
 
+    it('forwards overpaid native fee back to the caller (OFT refund pattern)', async function () {
+      const { bridge, oapp } = await deployOAppFixture();
+      await oapp.setPeer(DST_EID, padded(randAddr()));
+      const chargedFee = ethers.parseEther('0.01');
+      await bridge.setChargedFee(chargedFee); // bridge keeps this, refunds the rest
+
+      // Overpay 0.03; the bridge charges 0.01 and pushes back 0.02, which the app forwards on.
+      await oapp.bridgeRefundingExcess(DST_EID, '0x', handleA, 200_000, { value: ethers.parseEther('0.03') });
+
+      // Nothing is trapped in the app; the bridge kept exactly the fee (the 0.02 went to the caller).
+      expect(await ethers.provider.getBalance(await oapp.getAddress()), 'nothing trapped in app').to.equal(0n);
+      expect(await ethers.provider.getBalance(await bridge.getAddress()), 'bridge kept only the fee').to.equal(
+        chargedFee,
+      );
+    });
+
     it('reverts NoPeer when no peer is configured for the destination eid', async function () {
       const { oapp } = await deployOAppFixture();
       await expect(oapp.bridgeToPeer(DST_EID, '0x', handleA, 50_000)).to.be.revertedWithCustomError(oapp, 'NoPeer');

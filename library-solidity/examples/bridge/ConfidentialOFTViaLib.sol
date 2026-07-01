@@ -30,6 +30,7 @@ contract ConfidentialOFTViaLib is Ownable2Step, ConfidentialOAppSender, Confiden
 
     error UnauthorizedUseOfEncryptedAmount(euint64 amount, address sender);
     error SweepFailed();
+    error RefundFailed();
 
     mapping(address holder => euint64 balance) private _balances;
 
@@ -40,7 +41,8 @@ contract ConfidentialOFTViaLib is Ownable2Step, ConfidentialOAppSender, Confiden
         // {ConfidentialOAppReceiver}. Nothing else to wire — and the two anchors can never diverge.
     }
 
-    /// @dev Accept native-fee refunds the bridge / LayerZero endpoint may push back on `send`.
+    /// @dev Accept the native-fee change the LayerZero endpoint pushes back during {send}; {send}
+    ///      forwards it on to the caller in the same transaction.
     receive() external payable {}
 
     // ----------------------------- Send side -----------------------------
@@ -48,7 +50,8 @@ contract ConfidentialOFTViaLib is Ownable2Step, ConfidentialOAppSender, Confiden
     /**
      * @notice Burn `amount` locally and bridge it to `recipient` on `dstEid`.
      * @dev    Quote the LayerZero fee with {quoteSend} and forward it as `msg.value`; any excess
-     *         is refunded to this contract (see `receive()` / {sweep}).
+     *         over the actual fee is refunded to `msg.sender` in the same transaction (see the
+     *         refund at the end of this function and `receive()`).
      *         NOTE: FHE cannot revert on an encrypted comparison, so if `amount` exceeds the
      *         caller's balance the burn yields an encrypted 0 and a zero-value message is still
      *         bridged (the caller pays the fee for a no-op `_mint`). Callers should confirm a
@@ -75,7 +78,24 @@ contract ConfidentialOFTViaLib is Ownable2Step, ConfidentialOAppSender, Confiden
         // `actualAmount` is a fresh burn result the caller holds no allowance on, so {_bridgeFrom}'s
         // `isSenderAllowed` check cannot apply here; the entrypoint is instead gated above on the
         // input `amount` (line: `isSenderAllowed(amount)`), so the unchecked send is deliberate.
-        return _bridgeUnchecked(dstEid, payload, euint64.unwrap(actualAmount), mintComposeGas, msg.value);
+        MessagingReceipt memory receipt = _bridgeUnchecked(
+            dstEid,
+            payload,
+            euint64.unwrap(actualAmount),
+            mintComposeGas,
+            msg.value
+        );
+
+        // Refund any overpaid native fee to the caller. The endpoint refunds the excess
+        // (`msg.value - receipt.fee.nativeFee`) to this contract within the same tx (accepted by
+        // `receive()`); forward it on so overpayment isn't trapped for the owner to {sweep}.
+        // Underpayment reverts upstream in the endpoint, so this cannot underflow.
+        uint256 excess = msg.value - receipt.fee.nativeFee;
+        if (excess != 0) {
+            (bool ok, ) = payable(msg.sender).call{value: excess}("");
+            if (!ok) revert RefundFailed();
+        }
+        return receipt;
     }
 
     /// @notice Quote the native fee to {send} `amount` to `recipient` on `dstEid`; pass the
@@ -124,8 +144,9 @@ contract ConfidentialOFTViaLib is Ownable2Step, ConfidentialOAppSender, Confiden
         return _balances[holder];
     }
 
-    /// @notice Withdraw native balance accumulated from bridge fee refunds (see `receive()`),
-    ///         so overpaid fees aren't trapped in the contract.
+    /// @notice Withdraw any stray native balance (e.g. a direct transfer). Overpaid bridge fees are
+    ///         refunded to the caller inside {send}, so this is only a dust safety net, not the
+    ///         refund path.
     function sweep(address to) external onlyOwner {
         (bool ok, ) = to.call{value: address(this).balance}("");
         if (!ok) revert SweepFailed();
