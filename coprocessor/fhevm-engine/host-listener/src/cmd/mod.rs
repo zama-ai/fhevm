@@ -69,6 +69,9 @@ pub struct Args {
     #[command(flatten)]
     pub protocol_config: crate::protocol_config::ProtocolConfigArgs,
 
+    #[arg(long, default_value = "")]
+    pub confidential_bridge_address: String,
+
     #[arg(
         long,
         default_value = "postgresql://postgres:postgres@localhost:5432/coprocessor"
@@ -263,6 +266,11 @@ impl InfiniteLogIter {
         if !args.protocol_config.address.is_empty() {
             contract_addresses.push(
                 Address::from_str(&args.protocol_config.address).unwrap(),
+            );
+        };
+        if !args.confidential_bridge_address.is_empty() {
+            contract_addresses.push(
+                Address::from_str(&args.confidential_bridge_address).unwrap(),
             );
         };
         Self {
@@ -960,6 +968,7 @@ async fn db_insert_block(
     tfhe_contract_address: &Option<Address>,
     kms_generation_address: &Option<Address>,
     protocol_config_address: &Option<Address>,
+    confidential_bridge_address: &Option<Address>,
     args: &Args,
     is_protocol_config_listener: bool,
 ) -> anyhow::Result<()> {
@@ -979,6 +988,7 @@ async fn db_insert_block(
             tfhe_contract_address,
             kms_generation_address,
             protocol_config_address,
+            confidential_bridge_address,
             IngestOptions {
                 dependence_by_connexity: args.dependence_by_connexity,
                 dependence_cross_block: args.dependence_cross_block,
@@ -1072,6 +1082,21 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
         )?)
     };
     let protocol_config_address = args.protocol_config.parsed_address()?;
+    let confidential_bridge_address = if args
+        .confidential_bridge_address
+        .is_empty()
+    {
+        None
+    } else {
+        Some(
+                Address::from_str(&args.confidential_bridge_address).map_err(
+                    |err| {
+                        error!(error = %err, "Invalid ConfidentialBridge contract address");
+                        anyhow!("Invalid ConfidentialBridge contract address: {err}")
+                    },
+                )?,
+            )
+    };
     let aws_s3_client = AwsS3Client {};
 
     let mut log_iter = InfiniteLogIter::new(&args);
@@ -1213,6 +1238,7 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
                 &tfhe_contract_address,
                 &kms_generation_address,
                 &protocol_config_address,
+                &confidential_bridge_address,
                 &args,
                 is_protocol_config_listener,
             )

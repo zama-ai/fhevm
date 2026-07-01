@@ -140,7 +140,7 @@ struct Conf {
     /// Maximum number of successful reverts allowed for a host chain within
     /// `--drift-auto-revert-recent-attempts-window` before refusing further
     /// reverts. Catches loops where each revert succeeds but drift recurs.
-    #[arg(long, default_value_t = 2)]
+    #[arg(long, default_value_t = 10)]
     drift_auto_revert_max_recent_attempts: u32,
 
     /// Time window over which `--drift-auto-revert-max-recent-attempts` is counted.

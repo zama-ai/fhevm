@@ -7,7 +7,13 @@ import type { StackSpec } from "../stack-spec/stack-spec";
 import type { State } from "../types";
 
 type CompatSemver = readonly [number, number, number];
-type CompatService = "gw-listener" | "host-listener" | "host-listener-poller" | "sns-worker" | "transaction-sender";
+type CompatService =
+  | "gw-listener"
+  | "host-listener"
+  | "host-listener-poller"
+  | "host-listener-consumer"
+  | "sns-worker"
+  | "transaction-sender";
 type CompatArgValue = { env: string } | { value: string };
 
 export type CompatPolicy = {
@@ -50,6 +56,12 @@ export const COMPAT_MATRIX = {
       key: "COPROCESSOR_HOST_LISTENER_VERSION",
       below: [0, 13, 0] as CompatSemver,
       profile: "legacy-host-listener-no-kms-generation-address",
+      unparsed: "modern" as const,
+    },
+    {
+      key: "COPROCESSOR_HOST_LISTENER_VERSION",
+      below: [0, 14, 0] as CompatSemver,
+      profile: "legacy-host-listener-no-confidential-bridge-address",
       unparsed: "modern" as const,
     },
     {
@@ -124,6 +136,16 @@ const SHIM_PROFILES = {
     coprocessorDropFlags: {
       "host-listener": ["--protocol-config-address"],
       "host-listener-poller": ["--protocol-config-address"],
+    },
+    connectorEnv: {},
+    composeEnv: {},
+  },
+  "legacy-host-listener-no-confidential-bridge-address": {
+    coprocessorArgs: {},
+    coprocessorDropFlags: {
+      "host-listener": ["--confidential-bridge-address"],
+      "host-listener-poller": ["--confidential-bridge-address"],
+      "host-listener-consumer": ["--confidential-bridge-address"],
     },
     connectorEnv: {},
     composeEnv: {},

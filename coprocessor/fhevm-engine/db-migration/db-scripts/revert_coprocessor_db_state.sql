@@ -102,6 +102,24 @@ BEGIN
 END $$;
 
 -- ===========================================================================
+-- Confidential bridge: a copy-bridged destination handle has no `computations`
+-- row (the bridge worker copies the source ciphertext directly), so it is
+-- absent from the set built above. Add the destination handles being reverted
+-- on this chain so their copied ciphertexts/ciphertext_digest rows are cleaned
+-- too; on re-ingest the worker re-copies the source ciphertext fresh.
+--
+-- Placed after the key-rotation check on purpose: re-association re-copies the
+-- source bytes (no re-encryption), so the new-key hazard that check guards for
+-- does not apply to bridged copies.
+-- ===========================================================================
+
+INSERT INTO _affected_output_handles (handle)
+SELECT dst_handle
+  FROM handle_bridged_events
+ WHERE dst_chain_id = :'chain_id'
+   AND block_number > :'to_block_number';
+
+-- ===========================================================================
 -- Delete from tables that have their own block_number column
 -- ===========================================================================
 
@@ -118,6 +136,22 @@ DELETE FROM pbs_computations
 
 DELETE FROM delegate_user_decrypt
  WHERE host_chain_id = :'chain_id'
+   AND block_number > :'to_block_number';
+
+-- ===========================================================================
+-- Delete confidential-bridge events whose block_number is past the revert point.
+--
+-- bridge_handle_events is keyed by the source chain (src_chain_id) and the
+-- destination-side handle_bridged_events by the destination chain (dst_chain_id).
+-- Each is cleaned for whichever role this chain plays.
+-- ===========================================================================
+
+DELETE FROM bridge_handle_events
+ WHERE src_chain_id = :'chain_id'
+   AND block_number > :'to_block_number';
+
+DELETE FROM handle_bridged_events
+ WHERE dst_chain_id = :'chain_id'
    AND block_number > :'to_block_number';
 
 -- ===========================================================================

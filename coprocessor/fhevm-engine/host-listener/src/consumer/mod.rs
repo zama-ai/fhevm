@@ -43,6 +43,7 @@ pub struct ConsumerConfig {
     pub tfhe_address: Address,
     pub kms_generation_address: Option<Address>,
     pub protocol_config_address: Address,
+    pub confidential_bridge_address: Option<Address>,
     pub database_url: DatabaseURL,
     pub database_retry_interval: Duration,
     pub service_name: String,
@@ -281,6 +282,11 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
     if let Some(kms_generation_address) = config.kms_generation_address {
         contracts.push(kms_generation_address);
     }
+    if let Some(confidential_bridge_address) =
+        config.confidential_bridge_address
+    {
+        contracts.push(confidential_bridge_address);
+    }
     let chain_id: u64 = config.chain_id.parse()?;
     let chain_id = ChainId::try_from(chain_id)?;
     let is_protocol_config_listener =
@@ -442,6 +448,7 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
                 config.tfhe_address,
                 config.kms_generation_address,
                 config.protocol_config_address,
+                config.confidential_bridge_address,
                 config.database_retry_interval,
                 ingest_options.clone(),
             )
@@ -507,6 +514,7 @@ async fn ingest_with_retry(
     tfhe_address: Address,
     kms_generation_address: Option<Address>,
     protocol_config_address: Address,
+    confidential_bridge_address: Option<Address>,
     retry_interval: Duration,
     options: IngestOptions,
 ) -> Result<u64, (sqlx::Error, u64)> {
@@ -523,6 +531,7 @@ async fn ingest_with_retry(
             &tfhe,
             &kms_generation_address,
             &protocol_config,
+            &confidential_bridge_address,
             options.clone(),
         )
         .await

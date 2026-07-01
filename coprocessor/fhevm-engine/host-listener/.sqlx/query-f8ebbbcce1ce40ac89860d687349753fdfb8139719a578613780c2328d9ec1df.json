@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT COALESCE(SUM(octet_length(data))::bigint, 0) AS \"size!\" FROM pg_largeobject WHERE loid = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "size!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Oid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "f8ebbbcce1ce40ac89860d687349753fdfb8139719a578613780c2328d9ec1df"
+}

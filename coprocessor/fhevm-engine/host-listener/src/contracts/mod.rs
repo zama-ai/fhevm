@@ -39,3 +39,14 @@ pub mod protocol_config {
     );
 }
 pub use protocol_config::ProtocolConfig;
+
+pub mod bridge_contract {
+    use alloy::sol;
+    sol!(
+        #[sol(rpc)]
+        #[derive(Debug, serde::Serialize, serde::Deserialize)]
+        BridgeContract,
+        "./../../../host-contracts/artifacts/contracts/bridge/BridgeEvents.sol/BridgeEvents.json"
+    );
+}
+pub use bridge_contract::BridgeContract;
