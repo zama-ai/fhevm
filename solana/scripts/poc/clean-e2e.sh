@@ -6,9 +6,13 @@
 #
 # The kms-core image carrying `compute_link_solana` is pinned in the lock; its tag is the
 # single source of truth in test-suite/fhevm/solana-images.env (kms-core is not an fhevm
-# override group). The four source-built groups are passed as --override so they build from
+# override group). The five source-built groups are passed as --override so they build from
 # THIS worktree:
 #   - gateway-contracts : userDecryptionRequestSolana + verifyProofRequestSolana
+#   - host-contracts    : must track HEAD because the source-built kms-connector's gw-listener
+#                         reads ProtocolConfig.getCurrentKmsContextAndEpoch() at startup (the
+#                         epoch-lifecycle interface, #2615). The pinned baseline predates it, so a
+#                         stock host-sc image lacks the method and the startup context-store reverts.
 #   - coprocessor       : FULL group from this worktree (zkproof-worker 128B aux, tx-sender
 #                         Solana EIP-712, plus host-listener/sns/tfhe + db-migration) so the
 #                         DB schema and ALL coprocessor binaries are one consistent version
@@ -54,6 +58,7 @@ PY
     --scenario solana \
     --lock-file "$LOCK" \
     --override gateway-contracts \
+    --override host-contracts \
     --override coprocessor \
     --override relayer \
     --override kms-connector \
