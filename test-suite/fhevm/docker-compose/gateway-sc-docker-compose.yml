@@ -71,7 +71,7 @@ services:
     container_name: gateway-sc-context-switch
     image: ghcr.io/zama-ai/fhevm/gateway-contracts:${GATEWAY_VERSION}
     env_file:
-      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/gateway-sc.env
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/${GATEWAY_SC_CONTEXT_ENV:-gateway-sc.env}
     environment:
       KMS_CONTEXT_ID: ${KMS_CONTEXT_ID}
     command:
