@@ -316,6 +316,14 @@ IH="$(echo "$iout" | grep -oE 'result handle 0x[0-9a-f]+' | grep -oE '0x[0-9a-f]
 [ -n "$IH" ] || fail "no isIn result handle"
 assert_decrypt "isIn" "$IH" 1
 
+echo "==> [composite/isIn] fhe_eval isIn(${ISIN_MISS_VALUE:-43} in [10,42,100])->false"
+ioutf="$(cd "$ROOT/solana/scripts/poc/live-client" && \
+  FHE_EVAL_IS_IN=1 ISIN_VALUE="${ISIN_MISS_VALUE:-43}" ISIN_ALLOW=1 ./target/debug/poc-live-client 2>&1)"
+echo "$ioutf" | grep -qE 'allow_for_decryption' || fail "fhe_eval isIn(miss): $ioutf"
+IHF="$(echo "$ioutf" | grep -oE 'result handle 0x[0-9a-f]+' | grep -oE '0x[0-9a-f]+')"
+[ -n "$IHF" ] || fail "no isIn(miss) result handle"
+assert_decrypt "isIn(miss)" "$IHF" 0
+
 echo "==> [composite/mulDiv] fhe_eval mulDiv(${MULDIV_A:-6} * ${MULDIV_B:-7} / ${MULDIV_D:-3})"
 MULDIV_A="${MULDIV_A:-6}"; MULDIV_B="${MULDIV_B:-7}"; MULDIV_D="${MULDIV_D:-3}"
 EXPECTED_MULDIV=$((MULDIV_A * MULDIV_B / MULDIV_D))
@@ -414,4 +422,4 @@ disout="$(lc CONSUME_DISCLOSE=1 TS_ACL="$BURNED_ACL" TS_HANDLE="$BURNED_HANDLE" 
 echo "$disout" | grep -q 'OK disclose_amount_secp' || fail "disclose_amount_secp: $(echo "$disout" | tail -3)"
 echo "    disclose_amount_secp OK -- witness-bound secp256k1 KMS-cert verify emitted cleartext $CLEARTEXT"
 
-echo "==> FULL VERTICAL GREEN: input(ZK+secp bind) -> compute -> public-decrypt($VALUE) + user-decrypt($VALUE) -> input-flow(VerifiedInput $IV+$ADD -> public-decrypt $EXPECT) -> composite sum($SUM_A+$SUM_B=$EXPECTED_SUM) + isIn($ISIN_VALUE in [10,42,100]=true) + mulDiv($MULDIV_A*$MULDIV_B/$MULDIV_D=$EXPECTED_MULDIV) -> consume redeem($CLEARTEXT)+disclose($CLEARTEXT) [secp256k1 KMS cert]"
+echo "==> FULL VERTICAL GREEN: input(ZK+secp bind) -> compute -> public-decrypt($VALUE) + user-decrypt($VALUE) -> input-flow(VerifiedInput $IV+$ADD -> public-decrypt $EXPECT) -> composite sum($SUM_A+$SUM_B=$EXPECTED_SUM) + isIn($ISIN_VALUE in [10,42,100]=true, ${ISIN_MISS_VALUE:-43}=false) + mulDiv($MULDIV_A*$MULDIV_B/$MULDIV_D=$EXPECTED_MULDIV) -> consume redeem($CLEARTEXT)+disclose($CLEARTEXT) [secp256k1 KMS cert]"

@@ -222,4 +222,8 @@ pub enum ZamaHostError {
     /// A limit setter would violate the ordering invariant `max_hcu_per_tx >= max_hcu_depth_per_tx`.
     #[msg("HCU limits violate max_hcu_per_tx >= max_hcu_depth_per_tx")]
     HcuLimitOrderingInvalid,
+
+    /// `fheMulDiv` divisor is a plaintext scalar that must never be zero (EVM parity).
+    #[msg("fheMulDiv divisor must be non-zero")]
+    MulDivDivisorZero,
 }

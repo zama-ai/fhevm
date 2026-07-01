@@ -151,11 +151,13 @@ fn mul_div_rem_hcu(fhe_type: u8, scalar: bool) -> Result<u64> {
 /// And/Or/Xor: bitwise, cheaper than arithmetic (no carry propagation); scalar form is cheaper.
 fn bitwise_hcu(fhe_type: u8, scalar: bool) -> Result<u64> {
     let base: u64 = match fhe_type {
+        0 => 16_000, // ebool
         2 => 20_000, // euint8
         3 => 22_000, // euint16
         4 => 24_000, // euint32
         5 => 27_000, // euint64
         6 => 32_000, // euint128
+        8 => 40_000, // euint256
         _ => return Err(error!(ZamaHostError::HcuUnknownCost)),
     };
     Ok(if scalar { base - base / 8 } else { base })
@@ -169,6 +171,7 @@ fn shift_hcu(fhe_type: u8, scalar: bool) -> Result<u64> {
         4 => 31_000, // euint32
         5 => 35_000, // euint64
         6 => 42_000, // euint128
+        8 => 55_000, // euint256
         _ => return Err(error!(ZamaHostError::HcuUnknownCost)),
     };
     Ok(if scalar { base - base / 8 } else { base })
@@ -183,6 +186,7 @@ fn unary_transform_hcu(fhe_type: u8) -> Result<u64> {
         4 => Ok(23_000), // euint32
         5 => Ok(27_000), // euint64
         6 => Ok(33_000), // euint128
+        8 => Ok(42_000), // euint256
         _ => Err(error!(ZamaHostError::HcuUnknownCost)),
     }
 }

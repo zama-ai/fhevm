@@ -83,6 +83,8 @@ pub enum EvalBuildError {
     SumTooFewOperands,
     /// `is_in` was called with an empty set; the host rejects it.
     IsInEmptySet,
+    /// `mul_div` was given a zero divisor; the host rejects it (EVM DivisionByZero parity).
+    MulDivDivisorZero,
 }
 
 /// Typed FHE handle tag used by the host ABI.
@@ -1913,6 +1915,15 @@ impl EvalBuilder {
         }
         let fhe_type = T::FHE_TYPE.byte();
         validate_uint_fhe_type(fhe_type)?;
+        // fheMulDiv factor1 caps at Uint64 (EVM + coprocessor); reject Uint128.
+        if !matches!(fhe_type, 2..=5) {
+            return Err(EvalBuildError::UnsupportedFheType);
+        }
+        // Divisor is an always-scalar plaintext that must be non-zero (EVM DivisionByZero parity).
+        let divisor_bytes = divisor.bytes();
+        if divisor_bytes.iter().all(|byte| byte == &0) {
+            return Err(EvalBuildError::MulDivDivisorZero);
+        }
         let step_index = u16::try_from(self.steps.len()).map_err(|_| EvalBuildError::TooManyOps)?;
         let mut remaining_accounts = self.remaining_accounts.clone();
         let factor1 = lower_operand(
@@ -1934,7 +1945,7 @@ impl EvalBuilder {
         self.steps.push(FheEvalStep::MulDiv {
             factor1,
             factor2,
-            divisor: divisor.bytes(),
+            divisor: divisor_bytes,
             output_fhe_type: fhe_type,
             output,
         });
@@ -2220,20 +2231,24 @@ where
         &produced_type,
     )?
     .ok_or(EvalBuildError::ScalarLhsOperand)?;
-    if !matches!(lhs_type, 2..=6) {
-        return Err(EvalBuildError::UnsupportedFheType);
-    }
-    let is_comparison = matches!(
-        op,
-        FheBinaryOpCode::Eq
-            | FheBinaryOpCode::Ne
-            | FheBinaryOpCode::Ge
-            | FheBinaryOpCode::Gt
-            | FheBinaryOpCode::Le
-            | FheBinaryOpCode::Lt
-    );
-    if !is_comparison && lhs_type != output_fhe_type {
-        return Err(EvalBuildError::BinaryOperandTypeMismatch);
+    match op {
+        // Eq/Ne accept the widest operand set (Bool..Uint256); ordered comparisons Uint8..Uint128.
+        FheBinaryOpCode::Eq | FheBinaryOpCode::Ne => {
+            if !matches!(lhs_type, 0 | 2..=8) {
+                return Err(EvalBuildError::UnsupportedFheType);
+            }
+        }
+        FheBinaryOpCode::Ge | FheBinaryOpCode::Gt | FheBinaryOpCode::Le | FheBinaryOpCode::Lt => {
+            if !matches!(lhs_type, 2..=6) {
+                return Err(EvalBuildError::UnsupportedFheType);
+            }
+        }
+        // Non-comparison ops: operand type must equal the (op-gated) output type.
+        _ => {
+            if lhs_type != output_fhe_type {
+                return Err(EvalBuildError::BinaryOperandTypeMismatch);
+            }
+        }
     }
     if let Some(rhs_type) = operand_fhe_type(
         rhs,
@@ -2264,8 +2279,8 @@ where
 {
     validate_supported_fhe_type(output_fhe_type)?;
     let valid_output = match op {
-        FheUnaryOpCode::Neg => matches!(output_fhe_type, 2..=6),
-        FheUnaryOpCode::Not => matches!(output_fhe_type, 0 | 2..=6),
+        FheUnaryOpCode::Neg => matches!(output_fhe_type, 2..=6 | 8),
+        FheUnaryOpCode::Not => matches!(output_fhe_type, 0 | 2..=6 | 8),
         FheUnaryOpCode::Cast => true,
     };
     if !valid_output {
@@ -2281,7 +2296,7 @@ where
     .ok_or(EvalBuildError::ScalarEncryptedOperand)?;
     match op {
         FheUnaryOpCode::Neg => {
-            if !matches!(operand_type, 2..=6) {
+            if !matches!(operand_type, 2..=6 | 8) {
                 return Err(EvalBuildError::UnsupportedFheType);
             }
             if operand_type != output_fhe_type {
@@ -2289,14 +2304,19 @@ where
             }
         }
         FheUnaryOpCode::Not => {
-            if !matches!(operand_type, 0 | 2..=6) {
+            if !matches!(operand_type, 0 | 2..=6 | 8) {
                 return Err(EvalBuildError::UnsupportedFheType);
             }
             if operand_type != output_fhe_type {
                 return Err(EvalBuildError::BinaryOperandTypeMismatch);
             }
         }
-        FheUnaryOpCode::Cast => {}
+        FheUnaryOpCode::Cast => {
+            // Same-type cast is rejected (EVM InvalidType parity).
+            if operand_type == output_fhe_type {
+                return Err(EvalBuildError::UnsupportedFheType);
+            }
+        }
     }
     Ok(())
 }
@@ -2388,14 +2408,14 @@ fn validate_supported_binary_output_type(op: FheBinaryOpCode, output_fhe_type: u
         | FheBinaryOpCode::Div
         | FheBinaryOpCode::Rem
         | FheBinaryOpCode::Min
-        | FheBinaryOpCode::Max
-        | FheBinaryOpCode::And
-        | FheBinaryOpCode::Or
-        | FheBinaryOpCode::Xor
-        | FheBinaryOpCode::Shl
+        | FheBinaryOpCode::Max => matches!(output_fhe_type, 2..=6),
+        FheBinaryOpCode::And | FheBinaryOpCode::Or | FheBinaryOpCode::Xor => {
+            matches!(output_fhe_type, 0 | 2..=6 | 8)
+        }
+        FheBinaryOpCode::Shl
         | FheBinaryOpCode::Shr
         | FheBinaryOpCode::Rotl
-        | FheBinaryOpCode::Rotr => matches!(output_fhe_type, 2..=6),
+        | FheBinaryOpCode::Rotr => matches!(output_fhe_type, 2..=6 | 8),
         FheBinaryOpCode::Eq
         | FheBinaryOpCode::Ne
         | FheBinaryOpCode::Ge
@@ -3801,7 +3821,9 @@ mod tests {
                 Output::transient(),
             )
             .unwrap_err();
-        assert_eq!(error, EvalBuildError::UnsupportedFheType);
+        // Add gates its output to uint types, and the operand must equal that output type, so a
+        // Bool lhs against a Uint64 output is a type mismatch (host + client agree).
+        assert_eq!(error, EvalBuildError::BinaryOperandTypeMismatch);
 
         let mut builder = EvalBuilder::new(context_id(9), app_authority(primary_authority));
         let error = builder
@@ -3817,6 +3839,64 @@ mod tests {
             )
             .unwrap_err();
         assert_eq!(error, EvalBuildError::BinaryOperandTypeMismatch);
+    }
+
+    #[test]
+    fn unary_validation_rejects_same_type_cast_and_bad_operand_types() {
+        let primary_authority = Pubkey::new_unique();
+        let mut builder = EvalBuilder::new(context_id(9), app_authority(primary_authority));
+        // A cast to a different type is accepted.
+        assert!(builder
+            .unary_op(
+                FheUnaryOpCode::Cast,
+                Operand::durable(balance_handle(1), Pubkey::new_unique()),
+                FheType::UINT32,
+                Output::transient(),
+            )
+            .is_ok());
+        // A same-type cast is rejected (EVM InvalidType parity).
+        assert_eq!(
+            builder
+                .unary_op(
+                    FheUnaryOpCode::Cast,
+                    Operand::durable(balance_handle(1), Pubkey::new_unique()),
+                    FheType::UINT64,
+                    Output::transient(),
+                )
+                .unwrap_err(),
+            EvalBuildError::UnsupportedFheType
+        );
+        // Neg rejects a Bool operand (EVM fheNeg supportedTypes = Uint8..Uint128 + Uint256).
+        assert_eq!(
+            builder
+                .unary_op(
+                    FheUnaryOpCode::Neg,
+                    Operand::durable(typed_handle(1, FheType::BOOL.byte()), Pubkey::new_unique()),
+                    FheType::BOOL,
+                    Output::transient(),
+                )
+                .unwrap_err(),
+            EvalBuildError::UnsupportedFheType
+        );
+    }
+
+    #[test]
+    fn mul_div_rejects_zero_divisor() {
+        let primary_authority = Pubkey::new_unique();
+        let mut builder = EvalBuilder::new(context_id(9), app_authority(primary_authority));
+        let balance =
+            Uint64Handle::durable(balance_handle(1), durable_slot(primary_authority, 1)).unwrap();
+        assert_eq!(
+            builder
+                .mul_div(
+                    balance,
+                    Scalar::<Uint<64>>::u64(3),
+                    Scalar::<Uint<64>>::u64(0),
+                    Output::transient(),
+                )
+                .unwrap_err(),
+            EvalBuildError::MulDivDivisorZero
+        );
     }
 
     #[test]

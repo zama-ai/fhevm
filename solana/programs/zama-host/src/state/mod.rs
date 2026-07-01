@@ -518,13 +518,15 @@ pub fn assert_supported_binary_output_type(op: FheBinaryOpCode, fhe_type: u8) ->
         | FheBinaryOpCode::Rem
         | FheBinaryOpCode::Min
         | FheBinaryOpCode::Max => matches!(fhe_type, 2..=6),
+        // Bitwise: EVM allows Bool + Uint8..Uint128 + Uint256.
         FheBinaryOpCode::And | FheBinaryOpCode::Or | FheBinaryOpCode::Xor => {
-            matches!(fhe_type, 2..=6)
+            matches!(fhe_type, 0 | 2..=6 | 8)
         }
+        // Shifts/rotations: EVM allows Uint8..Uint128 + Uint256.
         FheBinaryOpCode::Shl
         | FheBinaryOpCode::Shr
         | FheBinaryOpCode::Rotl
-        | FheBinaryOpCode::Rotr => matches!(fhe_type, 2..=6),
+        | FheBinaryOpCode::Rotr => matches!(fhe_type, 2..=6 | 8),
         FheBinaryOpCode::Eq
         | FheBinaryOpCode::Ne
         | FheBinaryOpCode::Ge
@@ -546,21 +548,24 @@ pub fn assert_binary_operand_types(
 ) -> Result<()> {
     assert_supported_binary_output_type(op, output_fhe_type)?;
     let lhs_type = handle_fhe_type(lhs);
-    require!(matches!(lhs_type, 2..=6), ZamaHostError::UnsupportedFheType);
-    let is_comparison = matches!(
-        op,
-        FheBinaryOpCode::Eq
-            | FheBinaryOpCode::Ne
-            | FheBinaryOpCode::Ge
-            | FheBinaryOpCode::Gt
-            | FheBinaryOpCode::Le
-            | FheBinaryOpCode::Lt
-    );
-    if !is_comparison {
-        require!(
-            lhs_type == output_fhe_type,
-            ZamaHostError::BinaryOperandTypeMismatch
-        );
+    match op {
+        // Comparisons produce `ebool`, so the operand type is gated here: Eq/Ne accept Bool..Uint256 while ordered comparisons accept Uint8..Uint128, matching EVM's fheEq/fheGe supportedTypes.
+        FheBinaryOpCode::Eq | FheBinaryOpCode::Ne => {
+            require!(
+                matches!(lhs_type, 0 | 2..=8),
+                ZamaHostError::UnsupportedFheType
+            );
+        }
+        FheBinaryOpCode::Ge | FheBinaryOpCode::Gt | FheBinaryOpCode::Le | FheBinaryOpCode::Lt => {
+            require!(matches!(lhs_type, 2..=6), ZamaHostError::UnsupportedFheType);
+        }
+        // Non-comparison ops: the operand type must equal the (op-gated) output type.
+        _ => {
+            require!(
+                lhs_type == output_fhe_type,
+                ZamaHostError::BinaryOperandTypeMismatch
+            );
+        }
     }
     if !scalar {
         require!(
@@ -603,8 +608,8 @@ pub fn assert_valid_bounded_rand_upper_bound(upper_bound: [u8; 32], fhe_type: u8
 pub fn assert_supported_unary_output_type(op: FheUnaryOpCode, fhe_type: u8) -> Result<()> {
     assert_supported_fhe_type(fhe_type)?;
     let valid = match op {
-        FheUnaryOpCode::Neg => matches!(fhe_type, 2..=6),
-        FheUnaryOpCode::Not => matches!(fhe_type, 0 | 2..=6),
+        FheUnaryOpCode::Neg => matches!(fhe_type, 2..=6 | 8),
+        FheUnaryOpCode::Not => matches!(fhe_type, 0 | 2..=6 | 8),
         FheUnaryOpCode::Cast => is_supported_fhe_type(fhe_type),
     };
     require!(valid, ZamaHostError::UnsupportedFheType);
@@ -625,7 +630,7 @@ pub fn assert_unary_operand_type(
     match op {
         FheUnaryOpCode::Neg => {
             require!(
-                matches!(operand_type, 2..=6),
+                matches!(operand_type, 2..=6 | 8),
                 ZamaHostError::UnsupportedFheType
             );
             require!(
@@ -635,7 +640,7 @@ pub fn assert_unary_operand_type(
         }
         FheUnaryOpCode::Not => {
             require!(
-                matches!(operand_type, 0 | 2..=6),
+                matches!(operand_type, 0 | 2..=6 | 8),
                 ZamaHostError::UnsupportedFheType
             );
             require!(
@@ -644,31 +649,83 @@ pub fn assert_unary_operand_type(
             );
         }
         FheUnaryOpCode::Cast => {
-            // cast: any valid type in, any valid type out; they may differ
+            // Cast reinterprets to a different type; a same-type cast is rejected (EVM InvalidType).
+            require!(
+                operand_type != output_fhe_type,
+                ZamaHostError::UnsupportedFheType
+            );
         }
     }
     Ok(())
 }
 
-pub fn assert_sum_operand_types(operands: &[FheEvalOperand], fhe_type: u8) -> Result<()> {
-    require!(operands.len() >= 2, ZamaHostError::InvalidFheEvalAccount);
+/// Requires at least two operands whose resolved handle types all equal the declared uint type (2..=6), matching the discipline binary/unary/ternary enforce.
+pub fn assert_sum_operand_types(operand_handles: &[[u8; 32]], fhe_type: u8) -> Result<()> {
+    require!(
+        operand_handles.len() >= 2,
+        ZamaHostError::InvalidFheEvalAccount
+    );
     require!(matches!(fhe_type, 2..=6), ZamaHostError::UnsupportedFheType);
+    for handle in operand_handles {
+        require!(
+            handle_fhe_type(*handle) == fhe_type,
+            ZamaHostError::BinaryOperandTypeMismatch
+        );
+    }
     Ok(())
 }
 
-pub fn assert_is_in_operand_types(set: &[FheEvalOperand], fhe_type: u8) -> Result<()> {
-    require!(!set.is_empty(), ZamaHostError::InvalidFheEvalAccount);
+/// Requires a non-empty set whose members and the value all share the declared uint type (2..=6), excluding `ebool` to match the coprocessor's FheIsIn discipline.
+pub fn assert_is_in_operand_types(
+    value_handle: [u8; 32],
+    set_handles: &[[u8; 32]],
+    fhe_type: u8,
+) -> Result<()> {
     require!(
-        is_supported_fhe_type(fhe_type),
+        !set_handles.is_empty(),
+        ZamaHostError::InvalidFheEvalAccount
+    );
+    require!(matches!(fhe_type, 2..=6), ZamaHostError::UnsupportedFheType);
+    require!(
+        handle_fhe_type(value_handle) == fhe_type,
+        ZamaHostError::BinaryOperandTypeMismatch
+    );
+    for handle in set_handles {
+        require!(
+            handle_fhe_type(*handle) == fhe_type,
+            ZamaHostError::BinaryOperandTypeMismatch
+        );
+    }
+    Ok(())
+}
+
+/// MulDiv: factor1 is an encrypted uint8..uint64 (EVM + coprocessor cap at Uint64); factor2 is
+/// either an encrypted operand of the same type or a plaintext scalar; divisor is an always-scalar
+/// plaintext that must be non-zero (EVM DivisionByZero parity).
+pub fn assert_mul_div_operand_types(
+    factor1: [u8; 32],
+    factor2: [u8; 32],
+    factor2_scalar: bool,
+    divisor: [u8; 32],
+    output_fhe_type: u8,
+) -> Result<()> {
+    require!(
+        matches!(output_fhe_type, 2..=5),
         ZamaHostError::UnsupportedFheType
     );
-    Ok(())
-}
-
-pub fn assert_mul_div_operand_types(output_fhe_type: u8) -> Result<()> {
     require!(
-        matches!(output_fhe_type, 2..=6),
-        ZamaHostError::UnsupportedFheType
+        handle_fhe_type(factor1) == output_fhe_type,
+        ZamaHostError::BinaryOperandTypeMismatch
+    );
+    if !factor2_scalar {
+        require!(
+            handle_fhe_type(factor2) == output_fhe_type,
+            ZamaHostError::BinaryOperandTypeMismatch
+        );
+    }
+    require!(
+        divisor.iter().any(|byte| *byte != 0),
+        ZamaHostError::MulDivDivisorZero
     );
     Ok(())
 }

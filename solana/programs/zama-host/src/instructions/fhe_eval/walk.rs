@@ -311,10 +311,10 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor>(
                 for operand in operands {
                     resolved.push(visitor.resolve_encrypted_operand(operand)?);
                 }
-                assert_sum_operand_types(operands, *fhe_type)?;
+                let operand_handles: Vec<[u8; 32]> = resolved.iter().map(|r| r.handle).collect();
+                assert_sum_operand_types(&operand_handles, *fhe_type)?;
                 let resolved_refs: Vec<&ResolvedOperand> = resolved.iter().collect();
                 let verified_input = combine_verified_input_binding(resolved_refs.as_slice())?;
-                let operand_handles: Vec<[u8; 32]> = resolved.iter().map(|r| r.handle).collect();
                 let public_decrypt = resolved.iter().all(|r| r.public_decrypt_allowed);
                 let result = expected_sum_eval_result(
                     &operand_handles,
@@ -343,13 +343,13 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor>(
                 for operand in set {
                     set_resolved.push(visitor.resolve_encrypted_operand(operand)?);
                 }
-                assert_is_in_operand_types(set, *fhe_type)?;
+                let set_handles: Vec<[u8; 32]> = set_resolved.iter().map(|r| r.handle).collect();
+                assert_is_in_operand_types(value_resolved.handle, &set_handles, *fhe_type)?;
                 let mut all_refs: Vec<&ResolvedOperand> =
                     Vec::with_capacity(1 + set_resolved.len());
                 all_refs.push(&value_resolved);
                 all_refs.extend(set_resolved.iter());
                 let verified_input = combine_verified_input_binding(all_refs.as_slice())?;
-                let set_handles: Vec<[u8; 32]> = set_resolved.iter().map(|r| r.handle).collect();
                 let public_decrypt = value_resolved.public_decrypt_allowed
                     && set_resolved.iter().all(|r| r.public_decrypt_allowed);
                 let result = expected_is_in_eval_result(
@@ -380,7 +380,13 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor>(
                 let factor1 = visitor.resolve_lhs_operand(factor1)?;
                 let factor2 = visitor.resolve_rhs_operand(factor2)?;
                 let verified_input = combine_verified_input_binding(&[&factor1, &factor2])?;
-                assert_mul_div_operand_types(*output_fhe_type)?;
+                assert_mul_div_operand_types(
+                    factor1.handle,
+                    factor2.handle,
+                    factor2.scalar,
+                    *divisor,
+                    *output_fhe_type,
+                )?;
                 let result = expected_mul_div_eval_result(
                     factor1.handle,
                     factor2.handle,
