@@ -1,15 +1,10 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO crsgen_responses(crs_id, crs_digest, signature, created_at, otlp_context, status)\n        VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING",
+  "query": "UPDATE abort_keygen_requests SET status = $1, already_sent = $2 WHERE prep_keygen_id = $3",
   "describe": {
     "columns": [],
     "parameters": {
       "Left": [
-        "Bytea",
-        "Bytea",
-        "Bytea",
-        "Timestamptz",
-        "Bytea",
         {
           "Custom": {
             "name": "operation_status",
@@ -18,14 +13,17 @@
                 "pending",
                 "under_process",
                 "completed",
-                "failed"
+                "failed",
+                "aborted"
               ]
             }
           }
-        }
+        },
+        "Bool",
+        "Bytea"
       ]
     },
     "nullable": []
   },
-  "hash": "899b032c79550e865fea260911fbbc536a15da542d58140c591572af3350fbc0"
+  "hash": "b6f3dbe1dd007f421add179c43265c03bb34bb77021f0b1302695570dd26d612"
 }

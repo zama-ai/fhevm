@@ -26,7 +26,9 @@ use fhevm_gateway_bindings::decryption::{
     },
 };
 use fhevm_host_bindings::{
-    kms_generation::KMSGeneration::{CrsgenRequest, KeygenRequest, PrepKeygenRequest},
+    kms_generation::KMSGeneration::{
+        AbortCrsgen, AbortKeygen, CrsgenRequest, KeygenRequest, PrepKeygenRequest,
+    },
     protocol_config::ProtocolConfig::{NewKmsContext, NewKmsEpoch},
 };
 
@@ -190,6 +192,30 @@ pub async fn mock_event_on_gw(
                 .await?;
             (tx, event.into())
         }
+        // TODO should this be changed to take a prepKeygenId as input?
+        TestEventType::AbortKeygen => {
+            let rand_prep_id = rand_u256();
+            let event = AbortKeygen {
+                prepKeygenId: rand_prep_id,
+            };
+            let tx = test_instance
+                .kms_generation_contract()
+                .abortKeygen(rand_prep_id)
+                .send()
+                .await?;
+            (tx, event.into())
+        }
+        // TODO should this be changed to take a crsId as input?
+        TestEventType::AbortCrsgen => {
+            let rand_crs_id = rand_u256();
+            let event = AbortCrsgen { crsId: rand_crs_id };
+            let tx = test_instance
+                .kms_generation_contract()
+                .abortCrsgen(rand_crs_id)
+                .send()
+                .await?;
+            (tx, event.into())
+        }
         TestEventType::NewKmsContext => {
             let thresholds = rand_kms_thresholds();
             let kms_node_params = vec![rand_kms_node_params()];
@@ -259,6 +285,8 @@ pub async fn fetch_from_db(
         TestEventType::PrepKeygen => "SELECT * FROM prep_keygen_requests",
         TestEventType::Keygen => "SELECT * FROM keygen_requests",
         TestEventType::Crsgen => "SELECT * FROM crsgen_requests",
+        TestEventType::AbortKeygen => "SELECT * FROM abort_keygen_requests",
+        TestEventType::AbortCrsgen => "SELECT * FROM abort_crsgen_requests",
         TestEventType::NewKmsContext => "SELECT * FROM new_kms_context",
         TestEventType::NewKmsEpoch => "SELECT * FROM new_kms_epoch",
     };
@@ -334,6 +362,23 @@ pub fn check_event_in_db(rows: &[PgRow], event: ProtocolEventKind) -> anyhow::Re
                 if e.maxBitLength
                     == U256::from_le_bytes(r.try_get::<[u8; 32], _>("max_bit_length")?)
                 {
+                    return Ok(());
+                }
+            }
+        }
+        // TODO not completely sure this is the right approach since it is not used for prep key gen and crs gen
+        ProtocolEventKind::AbortKeygen(e) => {
+            for r in rows {
+                if e.prepKeygenId
+                    == U256::from_le_bytes(r.try_get::<[u8; 32], _>("prep_keygen_id")?)
+                {
+                    return Ok(());
+                }
+            }
+        }
+        ProtocolEventKind::AbortCrsgen(e) => {
+            for r in rows {
+                if e.crsId == U256::from_le_bytes(r.try_get::<[u8; 32], _>("crs_id")?) {
                     return Ok(());
                 }
             }

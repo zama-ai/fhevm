@@ -98,6 +98,8 @@ impl KmsClient {
             KmsGrpcRequest::PrepKeygen(req) => self.request_prep_keygen(req).await,
             KmsGrpcRequest::Keygen(req) => self.request_keygen(req).await,
             KmsGrpcRequest::Crsgen(req) => self.request_crsgen(req).await,
+            KmsGrpcRequest::AbortKeygen(req) => self.request_abort_keygen(req).await,
+            KmsGrpcRequest::AbortCrsgen(req) => self.request_abort_crsgen(req).await,
             KmsGrpcRequest::NewMpcContext { old, new } => {
                 // Create the old context in case it doesn't exist, then the new context.
                 match self.request_new_mpc_context(old).await {
@@ -124,6 +126,12 @@ impl KmsClient {
             KmsGrpcRequest::PrepKeygen(req) => self.poll_prep_keygen_result(req).await,
             KmsGrpcRequest::Keygen(req) => self.poll_keygen_result(req).await,
             KmsGrpcRequest::Crsgen(req) => self.poll_crsgen_result(req).await,
+            // Abort has no result-polling endpoint on the Core: the send-side ack is the only
+            // signal. The original keygen/crsgen request is separately retired when its own result
+            // poll returns `Code::Aborted` (see the poll functions below).
+            KmsGrpcRequest::AbortKeygen(_) | KmsGrpcRequest::AbortCrsgen(_) => {
+                (0, Ok(KmsGrpcResponse::NoResponseExpected))
+            }
             // `NewMpcContext` has no result-polling endpoint: the Core's send-side ack is the
             // only signal we get. The caller has already observed a successful send; we emit a
             // synthetic response so the publisher can write the row. `context_id` is sourced
@@ -234,6 +242,42 @@ impl KmsClient {
         .await
     }
 
+    async fn request_abort_keygen(
+        &self,
+        request_id: &RequestId,
+    ) -> (i16, Result<(), ProcessingError>) {
+        let inner_client = self.choose_client(request_id.clone());
+
+        send_request_with_retries(
+            self.grpc_request_retries,
+            || {
+                let mut client = inner_client.clone();
+                let request_id = request_id.clone();
+                async move { client.abort_key_gen(request_id).await }
+            },
+            EventType::AbortKeygenRequest,
+        )
+        .await
+    }
+
+    async fn request_abort_crsgen(
+        &self,
+        request_id: &RequestId,
+    ) -> (i16, Result<(), ProcessingError>) {
+        let inner_client = self.choose_client(request_id.clone());
+
+        send_request_with_retries(
+            self.grpc_request_retries,
+            || {
+                let mut client = inner_client.clone();
+                let request_id = request_id.clone();
+                async move { client.abort_crs_gen(request_id).await }
+            },
+            EventType::AbortCrsgenRequest,
+        )
+        .await
+    }
+
     async fn poll_public_decryption_result(
         &self,
         request: PublicDecryptionRequest,
@@ -314,8 +358,14 @@ impl KmsClient {
         )
         .await;
 
-        match grpc_result.map_err(ProcessingError::from_response_status) {
-            Err(e) => (error_count, Err(e)),
+        match grpc_result {
+            Err(status) if status.code() == Code::Aborted => {
+                (error_count, Err(ProcessingError::Aborted))
+            }
+            Err(status) => (
+                error_count,
+                Err(ProcessingError::from_response_status(status)),
+            ),
             Ok(grpc_response) => (
                 error_count,
                 Ok(KmsGrpcResponse::PrepKeygen(grpc_response.into_inner())),
@@ -343,8 +393,14 @@ impl KmsClient {
         )
         .await;
 
-        match grpc_result.map_err(ProcessingError::from_response_status) {
-            Err(e) => (error_count, Err(e)),
+        match grpc_result {
+            Err(status) if status.code() == Code::Aborted => {
+                (error_count, Err(ProcessingError::Aborted))
+            }
+            Err(status) => (
+                error_count,
+                Err(ProcessingError::from_response_status(status)),
+            ),
             Ok(grpc_response) => (
                 error_count,
                 Ok(KmsGrpcResponse::Keygen(grpc_response.into_inner())),
@@ -372,8 +428,14 @@ impl KmsClient {
         )
         .await;
 
-        match grpc_result.map_err(ProcessingError::from_response_status) {
-            Err(e) => (error_count, Err(e)),
+        match grpc_result {
+            Err(status) if status.code() == Code::Aborted => {
+                (error_count, Err(ProcessingError::Aborted))
+            }
+            Err(status) => (
+                error_count,
+                Err(ProcessingError::from_response_status(status)),
+            ),
             Ok(grpc_response) => (
                 error_count,
                 Ok(KmsGrpcResponse::Crsgen(grpc_response.into_inner())),

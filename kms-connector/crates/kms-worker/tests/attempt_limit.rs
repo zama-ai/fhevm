@@ -189,6 +189,9 @@ fn prepare_mocks(req: &ProtocolEventKind) -> MockSet {
             return kms_mocks;
         }
         ProtocolEventKind::NewKmsEpoch(_) => ("NewMpcEpoch", "GetEpochResult"),
+        ProtocolEventKind::AbortKeygen(_) | ProtocolEventKind::AbortCrsgen(_) => {
+            unreachable!("abort events are not exercised by the attempt-limit test")
+        }
     };
 
     // Mock initial KMS response to initial GRPC request

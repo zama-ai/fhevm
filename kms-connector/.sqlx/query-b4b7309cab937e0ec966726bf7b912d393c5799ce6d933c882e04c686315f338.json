@@ -1,13 +1,10 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO new_kms_context_responses(context_id, created_at, otlp_context, status)\n        VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
+  "query": "UPDATE abort_crsgen_requests SET status = $1, already_sent = $2 WHERE crs_id = $3",
   "describe": {
     "columns": [],
     "parameters": {
       "Left": [
-        "Bytea",
-        "Timestamptz",
-        "Bytea",
         {
           "Custom": {
             "name": "operation_status",
@@ -16,14 +13,17 @@
                 "pending",
                 "under_process",
                 "completed",
-                "failed"
+                "failed",
+                "aborted"
               ]
             }
           }
-        }
+        },
+        "Bool",
+        "Bytea"
       ]
     },
     "nullable": []
   },
-  "hash": "3a0f17054110ae01faf3f5243a2e969b9e902b4bf6ce7e7ca157b9735a7592e9"
+  "hash": "b4b7309cab937e0ec966726bf7b912d393c5799ce6d933c882e04c686315f338"
 }

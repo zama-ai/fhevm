@@ -16,6 +16,10 @@ pub enum KmsGrpcRequest {
     PrepKeygen(KeyGenPreprocRequest),
     Keygen(KeyGenRequest),
     Crsgen(CrsGenRequest),
+    /// Abort an ongoing key generation on the KMS Core, keyed by the preprocessing keygen ID.
+    AbortKeygen(RequestId),
+    /// Abort an ongoing CRS generation on the KMS Core, keyed by the CRS ID.
+    AbortCrsgen(RequestId),
     NewMpcContext {
         old: NewMpcContextRequest,
         new: NewMpcContextRequest,

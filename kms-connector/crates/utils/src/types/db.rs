@@ -12,7 +12,9 @@ use fhevm_gateway_bindings::decryption::Decryption::{
 use fhevm_host_bindings::{
     kms_generation::{
         IKMSGeneration::KeyDigest,
-        KMSGeneration::{CrsgenRequest, KeygenRequest, PrepKeygenRequest},
+        KMSGeneration::{
+            AbortCrsgen, AbortKeygen, CrsgenRequest, KeygenRequest, PrepKeygenRequest,
+        },
     },
     protocol_config::ProtocolConfig::{NewKmsContext, NewKmsEpoch},
 };
@@ -141,6 +143,8 @@ pub enum EventType {
     PrepKeygenRequest,
     KeygenRequest,
     CrsgenRequest,
+    AbortKeygenRequest,
+    AbortCrsgenRequest,
     NewKmsContext,
     NewKmsEpoch,
 }
@@ -153,6 +157,8 @@ impl Display for EventType {
             EventType::PrepKeygenRequest => write!(f, "PrepKeygenRequest"),
             EventType::KeygenRequest => write!(f, "KeygenRequest"),
             EventType::CrsgenRequest => write!(f, "CrsgenRequest"),
+            EventType::AbortKeygenRequest => write!(f, "AbortKeygenRequest"),
+            EventType::AbortCrsgenRequest => write!(f, "AbortCrsgenRequest"),
             EventType::NewKmsContext => write!(f, "NewKmsContext"),
             EventType::NewKmsEpoch => write!(f, "NewKmsEpoch"),
         }
@@ -171,6 +177,8 @@ impl From<&ProtocolEventKind> for EventType {
             ProtocolEventKind::PrepKeygen(_) => Self::PrepKeygenRequest,
             ProtocolEventKind::Keygen(_) => Self::KeygenRequest,
             ProtocolEventKind::Crsgen(_) => Self::CrsgenRequest,
+            ProtocolEventKind::AbortKeygen(_) => Self::AbortKeygenRequest,
+            ProtocolEventKind::AbortCrsgen(_) => Self::AbortCrsgenRequest,
             ProtocolEventKind::NewKmsContext(_) => Self::NewKmsContext,
             ProtocolEventKind::NewKmsEpoch(_) => Self::NewKmsEpoch,
         }
@@ -187,6 +195,8 @@ impl TryFrom<PgNotification> for EventType {
             PREP_KEYGEN_REQUEST_NOTIFICATION => Ok(Self::PrepKeygenRequest),
             KEYGEN_REQUEST_NOTIFICATION => Ok(Self::KeygenRequest),
             CRSGEN_REQUEST_NOTIFICATION => Ok(Self::CrsgenRequest),
+            ABORT_KEYGEN_REQUEST_NOTIFICATION => Ok(Self::AbortKeygenRequest),
+            ABORT_CRSGEN_REQUEST_NOTIFICATION => Ok(Self::AbortCrsgenRequest),
             NEW_KMS_CONTEXT_NOTIFICATION => Ok(Self::NewKmsContext),
             NEW_KMS_EPOCH_NOTIFICATION => Ok(Self::NewKmsEpoch),
             s => Err(anyhow!("Unknown notification channel: {s}")),
@@ -202,6 +212,8 @@ impl EventType {
             Self::PrepKeygenRequest => PREP_KEYGEN_REQUEST_NOTIFICATION,
             Self::KeygenRequest => KEYGEN_REQUEST_NOTIFICATION,
             Self::CrsgenRequest => CRSGEN_REQUEST_NOTIFICATION,
+            Self::AbortKeygenRequest => ABORT_KEYGEN_REQUEST_NOTIFICATION,
+            Self::AbortCrsgenRequest => ABORT_CRSGEN_REQUEST_NOTIFICATION,
             Self::NewKmsContext => NEW_KMS_CONTEXT_NOTIFICATION,
             Self::NewKmsEpoch => NEW_KMS_EPOCH_NOTIFICATION,
         }
@@ -214,6 +226,8 @@ impl EventType {
             EventType::PrepKeygenRequest => "prep_keygen_request",
             EventType::KeygenRequest => "keygen_request",
             EventType::CrsgenRequest => "crsgen_request",
+            EventType::AbortKeygenRequest => "abort_keygen_request",
+            EventType::AbortCrsgenRequest => "abort_crsgen_request",
             EventType::NewKmsContext => "new_kms_context",
             EventType::NewKmsEpoch => "new_kms_epoch",
         }
@@ -226,6 +240,8 @@ impl EventType {
             EventType::PrepKeygenRequest => PrepKeygenRequest::SIGNATURE_HASH,
             EventType::KeygenRequest => KeygenRequest::SIGNATURE_HASH,
             EventType::CrsgenRequest => CrsgenRequest::SIGNATURE_HASH,
+            EventType::AbortKeygenRequest => AbortKeygen::SIGNATURE_HASH,
+            EventType::AbortCrsgenRequest => AbortCrsgen::SIGNATURE_HASH,
             EventType::NewKmsContext => NewKmsContext::SIGNATURE_HASH,
             EventType::NewKmsEpoch => NewKmsEpoch::SIGNATURE_HASH,
         }
@@ -253,6 +269,8 @@ pub const USER_DECRYPT_REQUEST_NOTIFICATION: &str = "user_decryption_request_ava
 pub const PREP_KEYGEN_REQUEST_NOTIFICATION: &str = "prep_keygen_request_available";
 pub const KEYGEN_REQUEST_NOTIFICATION: &str = "keygen_request_available";
 pub const CRSGEN_REQUEST_NOTIFICATION: &str = "crsgen_request_available";
+pub const ABORT_KEYGEN_REQUEST_NOTIFICATION: &str = "abort_keygen_request_available";
+pub const ABORT_CRSGEN_REQUEST_NOTIFICATION: &str = "abort_crsgen_request_available";
 pub const NEW_KMS_CONTEXT_NOTIFICATION: &str = "new_kms_context_available";
 pub const NEW_KMS_EPOCH_NOTIFICATION: &str = "new_kms_epoch_available";
 
@@ -264,4 +282,5 @@ pub enum OperationStatus {
     UnderProcess,
     Completed,
     Failed,
+    Aborted,
 }
