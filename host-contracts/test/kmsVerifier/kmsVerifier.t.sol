@@ -186,6 +186,10 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
         assertEq(verifierCtx, configCtx);
     }
 
+    function test_GetProtocolConfigAddress() public view {
+        assertEq(kmsVerifier.getProtocolConfigAddress(), address(protocolConfig));
+    }
+
     function test_ProtocolConfigStateChangeReflectedInVerifier() public {
         uint256 currentCtx = protocolConfig.getCurrentKmsContextId();
         uint256 verifierCtx = kmsVerifier.getCurrentKmsContextId();
