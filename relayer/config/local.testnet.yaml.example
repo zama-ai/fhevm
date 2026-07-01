@@ -10,10 +10,14 @@ host_chains:
 
 protocol_config:
   ethereum_http_rpc_url: "https://ethereum-sepolia-rpc.publicnode.com"
-  address: "TODO"
+  address: "0x0000000000000000000000000000000000000000"
   retry:
     max_attempts: 3
     retry_interval_ms: 200
+  # KMSGeneration contract address on the host chain (source for /v2/keyurl).
+  kms_generation_address: "0x0000000000000000000000000000000000000000"
+  # /v2/keyurl poll interval in ms; the poller reads at the finalized block.
+  keyurl_poll_interval_ms: 12000
 
 # User-decryption signature check. Gas cap for the ERC-1271 isValidSignature static call.
 user_decrypt_signature_check:
@@ -129,14 +133,6 @@ log:
   show_thread_ids: false
   show_timestamp: true
   show_target: true
-
-keyurl:
-    fhe_public_key:
-      data_id: "fhe-public-key-data-id"
-      url: "https://zama-mpc-testnet-public-efd88e2b.s3.eu-west-1.amazonaws.com/PUB-p1/PublicKey/0400000000000000000000000000000000000000000000000000000000000003"
-    crs:
-      data_id: "crs-data-id"
-      url: "https://zama-mpc-testnet-public-efd88e2b.s3.eu-west-1.amazonaws.com/PUB-p1/CRS/0500000000000000000000000000000000000000000000000000000000000004"
 
 http:
   endpoint: "0.0.0.0:3000"
