@@ -23,7 +23,8 @@
     "forge:soldeer": "forge soldeer install",
     "mock:daemon": "ts-node --transpile-only scripts/mock-coprocessor/index.ts daemon",
     "mock:query": "ts-node --transpile-only scripts/mock-coprocessor/index.ts query",
-    "mock:encrypt": "ts-node --transpile-only scripts/mock-coprocessor/index.ts encrypt"
+    "mock:encrypt": "ts-node --transpile-only scripts/mock-coprocessor/index.ts encrypt",
+    "stress:handlesList": "ts-node --transpile-only scripts/stress/handlesListBridgeStress.ts"
   },
   "author": "",
   "license": "BSD-3-Clause-Clear",
