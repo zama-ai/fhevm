@@ -39,7 +39,7 @@ export async function fetchPublicDecrypt(
 
   return {
     orderedAbiEncodedClearValues: ensure0x(result.decryptedValue),
-    kmsPublicDecryptEIP712Signatures: result.signatures.map(ensure0x) as Bytes65Hex[],
+    kmsPublicDecryptEip712Signatures: result.signatures.map(ensure0x) as Bytes65Hex[],
     extraData: result.extraData,
   };
 }

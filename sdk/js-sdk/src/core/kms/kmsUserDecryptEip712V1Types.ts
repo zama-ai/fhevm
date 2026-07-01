@@ -1,10 +1,11 @@
-import type { KmsDelegateUserDecryptEip712Types } from '../types/kms.js';
+import type { KmsUserDecryptEip712V1Types } from '../types/kms.js';
 
 ////////////////////////////////////////////////////////////////////////////////
-// KmsDelegateUserDecryptEIP712Types
+// KmsUserDecryptEip712V1Types
 ////////////////////////////////////////////////////////////////////////////////
 
-export const kmsDelegatedUserDecryptEip712Types: KmsDelegateUserDecryptEip712Types = {
+// Careful: do not change any fields in this structure
+export const kmsUserDecryptEip712V1Types: KmsUserDecryptEip712V1Types = {
   EIP712Domain: [
     { name: 'name', type: 'string' },
     { name: 'version', type: 'string' },
@@ -14,18 +15,17 @@ export const kmsDelegatedUserDecryptEip712Types: KmsDelegateUserDecryptEip712Typ
   // CRITICAL: Field order is authoritative — it determines the EIP-712 type hash.
   // Changing the order will produce a different signature and break on-chain verification.
   // Must match the Solidity struct definition exactly.
-  DelegatedUserDecryptRequestVerification: [
+  UserDecryptRequestVerification: [
     { name: 'publicKey', type: 'bytes' },
     { name: 'contractAddresses', type: 'address[]' },
-    { name: 'delegatorAddress', type: 'address' },
     { name: 'startTimestamp', type: 'uint256' },
     { name: 'durationDays', type: 'uint256' },
     { name: 'extraData', type: 'bytes' },
   ] as const,
 } as const;
 
-Object.freeze(kmsDelegatedUserDecryptEip712Types);
-Object.freeze(kmsDelegatedUserDecryptEip712Types.EIP712Domain);
-Object.freeze(kmsDelegatedUserDecryptEip712Types.DelegatedUserDecryptRequestVerification);
-kmsDelegatedUserDecryptEip712Types.EIP712Domain.forEach(Object.freeze);
-kmsDelegatedUserDecryptEip712Types.DelegatedUserDecryptRequestVerification.forEach(Object.freeze);
+Object.freeze(kmsUserDecryptEip712V1Types);
+Object.freeze(kmsUserDecryptEip712V1Types.EIP712Domain);
+Object.freeze(kmsUserDecryptEip712V1Types.UserDecryptRequestVerification);
+kmsUserDecryptEip712V1Types.EIP712Domain.forEach(Object.freeze);
+kmsUserDecryptEip712V1Types.UserDecryptRequestVerification.forEach(Object.freeze);

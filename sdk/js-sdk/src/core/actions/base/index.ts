@@ -67,8 +67,7 @@ export {
 } from './verifyZkProofCoprocessorSignatures.js';
 
 export {
-  type FetchSelfKmsSigncryptedSharesParameters,
-  type FetchDelegatedKmsSigncryptedSharesParameters,
+  type FetchKmsSigncryptedSharesParameters,
   type FetchKmsSigncryptedSharesReturnType,
   fetchKmsSigncryptedShares,
 } from './fetchKmsSigncryptedShares.js';
