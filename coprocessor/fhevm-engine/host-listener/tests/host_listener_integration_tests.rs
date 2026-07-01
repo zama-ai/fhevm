@@ -56,9 +56,17 @@ sol!(
     "artifacts/KMSGenerationTest.sol/KMSGenerationTest.json"
 );
 
+sol!(
+    #[sol(rpc)]
+    #[derive(Debug, serde::Serialize, serde::Deserialize)]
+    ProtocolConfigTest,
+    "artifacts/ProtocolConfigTest.sol/ProtocolConfigTest.json"
+);
+
 use crate::ACLTest::ACLTestInstance;
 use crate::FHEVMExecutorTest::FHEVMExecutorTestInstance;
 use crate::KMSGenerationTest::KMSGenerationTestInstance;
+use crate::ProtocolConfigTest::ProtocolConfigTestInstance;
 
 const NB_EVENTS_PER_WALLET: i64 = 50;
 
@@ -182,6 +190,7 @@ struct Setup {
     acl_contract: ACLTestInstance<SetupProvider>,
     tfhe_contract: FHEVMExecutorTestInstance<SetupProvider>,
     kms_generation_contract: KMSGenerationTestInstance<SetupProvider>,
+    protocol_config_contract: ProtocolConfigTestInstance<SetupProvider>,
     db_pool: sqlx::Pool<sqlx::Postgres>,
     _test_instance: test_harness::instance::DBInstance, // maintain db alive
     health_check_url: String,
@@ -226,12 +235,18 @@ async fn setup_with_block_time(
     let acl_contract = ACLTest::deploy(provider.clone()).await?;
     let kms_generation_contract =
         KMSGenerationTest::deploy(provider.clone()).await?;
+    let protocol_config_contract =
+        ProtocolConfigTest::deploy(provider.clone()).await?;
     let args = Args {
         url,
         initial_block_time: 1,
         acl_contract_address: acl_contract.address().to_string(),
         tfhe_contract_address: tfhe_contract.address().to_string(),
         kms_generation_address: kms_generation_contract.address().to_string(),
+        protocol_config: host_listener::protocol_config::ProtocolConfigArgs {
+            address: protocol_config_contract.address().to_string(),
+            chain_id: Some(node_chain_id.unwrap_or(12345)),
+        },
         confidential_bridge_address: String::new(),
         database_url: test_instance.db_url.clone(),
         start_at_block: None,
@@ -250,6 +265,7 @@ async fn setup_with_block_time(
         dependence_cross_block: true,
         dependent_ops_max_per_chain: 0,
         timeout_request_websocket: 30,
+        stack_version: false,
     };
     let health_check_url = format!("http://127.0.0.1:{}", args.health_port);
 
@@ -266,6 +282,7 @@ async fn setup_with_block_time(
         acl_contract,
         tfhe_contract,
         kms_generation_contract,
+        protocol_config_contract,
         db_pool,
         _test_instance: test_instance,
         health_check_url,
@@ -326,6 +343,8 @@ async fn ingest_blocks_for_receipts(
     let acl_address = Some(*setup.acl_contract.address());
     let tfhe_address = Some(*setup.tfhe_contract.address());
     let kms_generation_address = Some(*setup.kms_generation_contract.address());
+    let protocol_config_address =
+        Some(*setup.protocol_config_contract.address());
 
     let provider = ProviderBuilder::new()
         .wallet(setup.wallets[0].clone())
@@ -355,8 +374,9 @@ async fn ingest_blocks_for_receipts(
             &acl_address,
             &tfhe_address,
             &kms_generation_address,
+            &protocol_config_address,
             &None,
-            options,
+            options.clone(),
         )
         .await?;
     }
@@ -381,6 +401,7 @@ async fn ingest_dependent_burst_seeded(
             dependence_by_connexity: false,
             dependence_cross_block: true,
             dependent_ops_max_per_chain,
+            is_protocol_config_listener: true,
         },
     )
     .await?;
@@ -700,6 +721,7 @@ async fn test_slow_lane_cross_block_sustained_below_cap_stays_fast_locally(
                 dependence_by_connexity: false,
                 dependence_cross_block: true,
                 dependent_ops_max_per_chain: cap,
+                is_protocol_config_listener: true,
             },
         )
         .await?;
@@ -998,6 +1020,10 @@ async fn test_only_catchup_loop_requires_negative_start_at_block(
         acl_contract_address: "".to_string(),
         tfhe_contract_address: "".to_string(),
         kms_generation_address: String::new(),
+        protocol_config: host_listener::protocol_config::ProtocolConfigArgs {
+            address: String::new(),
+            chain_id: None,
+        },
         confidential_bridge_address: String::new(),
         database_url: fhevm_engine_common::utils::DatabaseURL::default(),
         start_at_block: Some(0),
@@ -1017,6 +1043,7 @@ async fn test_only_catchup_loop_requires_negative_start_at_block(
         dependence_cross_block: true,
         dependent_ops_max_per_chain: 0,
         timeout_request_websocket: 30,
+        stack_version: false,
     };
 
     let result = main(args).await;

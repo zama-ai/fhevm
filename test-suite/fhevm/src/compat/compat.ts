@@ -48,6 +48,12 @@ export const COMPAT_MATRIX = {
     },
     {
       key: "COPROCESSOR_HOST_LISTENER_VERSION",
+      below: [0, 14, 0] as CompatSemver,
+      profile: "legacy-host-listener-no-protocol-config-address",
+      unparsed: "modern" as const,
+    },
+    {
+      key: "COPROCESSOR_HOST_LISTENER_VERSION",
       below: [0, 13, 0] as CompatSemver,
       profile: "legacy-host-listener-no-kms-generation-address",
       unparsed: "modern" as const,
@@ -121,6 +127,15 @@ const SHIM_PROFILES = {
     coprocessorDropFlags: {
       "host-listener": ["--kms-generation-address"],
       "host-listener-poller": ["--kms-generation-address"],
+    },
+    connectorEnv: {},
+    composeEnv: {},
+  },
+  "legacy-host-listener-no-protocol-config-address": {
+    coprocessorArgs: {},
+    coprocessorDropFlags: {
+      "host-listener": ["--protocol-config-address"],
+      "host-listener-poller": ["--protocol-config-address"],
     },
     connectorEnv: {},
     composeEnv: {},
@@ -310,6 +325,20 @@ export const supportsHostListenerConsumer = (state: Pick<CompatState, "versions"
   return !versionBeforeReleaseFamily(version, [0, 13, 0], { unparsed: "modern" });
 };
 
+/** Detects when the resolved coprocessor bundle includes the consensus-detector service. */
+export const supportsConsensusDetector = (state: Pick<CompatState, "versions">) => {
+  const version = state.versions.env.COPROCESSOR_CONSENSUS_DETECTOR_VERSION;
+  if (!version) return false;
+  return sameCompatBase(version, [0, 13, 0]) || !versionLt(version, [0, 13, 0], { unparsed: "modern" });
+};
+
+/** Detects when the resolved coprocessor bundle includes the upgrade-controller service. */
+export const supportsUpgradeController = (state: Pick<CompatState, "versions">) => {
+  const version = state.versions.env.COPROCESSOR_UPGRADE_CONTROLLER_VERSION;
+  if (!version) return false;
+  return sameCompatBase(version, [0, 13, 0]) || !versionLt(version, [0, 13, 0], { unparsed: "modern" });
+};
+
 /** Detects when gateway deployment still emits a gateway-side KMSGeneration address. */
 export const requiresLegacyGatewayKmsGenerationAddress = (state: Pick<CompatState, "versions">) =>
   versionBeforeReleaseFamily(state.versions.env.GATEWAY_VERSION ?? "", [0, 13, 0], { unparsed: "modern" });
@@ -429,16 +458,19 @@ export const compatPolicyForState = (state: CompatState): CompatPolicy => {
     }
     Object.assign(policy.connectorEnv, profile.connectorEnv);
   }
-  policy.composeEnv.HOST_ADD_PAUSERS_INTERNAL_FLAG = requiresLegacyHostPauserTaskFlag(
-    state.versions.env.HOST_VERSION ?? "",
-  )
-    ? "--use-internal-pauser-set-address"
-    : "--use-internal-proxy-address";
-  policy.composeEnv.GATEWAY_ADD_PAUSERS_INTERNAL_FLAG = requiresLegacyGatewayPauserTaskFlag(
-    state.versions.env.GATEWAY_VERSION ?? "",
-  )
-    ? "--use-internal-pauser-set-address"
-    : "--use-internal-proxy-address";
+  // Local overrides build the current working tree, which always uses the
+  // modern --use-internal-proxy-address flag regardless of the version label.
+  const overrides = effectiveCompatOverrides(state);
+  const hostOverridden = overrides.some((override) => override.group === "host-contracts");
+  const gatewayOverridden = overrides.some((override) => override.group === "gateway-contracts");
+  policy.composeEnv.HOST_ADD_PAUSERS_INTERNAL_FLAG =
+    !hostOverridden && requiresLegacyHostPauserTaskFlag(state.versions.env.HOST_VERSION ?? "")
+      ? "--use-internal-pauser-set-address"
+      : "--use-internal-proxy-address";
+  policy.composeEnv.GATEWAY_ADD_PAUSERS_INTERNAL_FLAG =
+    !gatewayOverridden && requiresLegacyGatewayPauserTaskFlag(state.versions.env.GATEWAY_VERSION ?? "")
+      ? "--use-internal-pauser-set-address"
+      : "--use-internal-proxy-address";
   if (state.versions.env.RELAYER_VERSION) {
     policy.composeEnv.RELAYER_IMAGE_REPOSITORY = relayerImageRepository(state.versions.env.RELAYER_VERSION);
   }

@@ -1,5 +1,5 @@
 use std::{
-    sync::Arc,
+    sync::{atomic::AtomicI64, Arc},
     time::{Duration, SystemTime},
 };
 
@@ -143,6 +143,7 @@ async fn test_worker_recovers_after_backend_termination() {
         worker_thread_count: 1,
         pg_timeout: Duration::from_secs(60),
         pg_auto_explain_with_min_duration: None,
+        gcs_mode: false,
     };
 
     let pool_mngr = PostgresPoolManager::connect_pool(
@@ -168,6 +169,7 @@ async fn test_worker_recovers_after_backend_termination() {
         pool_mngr,
         conf,
         Arc::new(RwLock::new(SystemTime::now())),
+        Arc::new(AtomicI64::new(-1)),
     ));
 
     // Process one proof so the worker is fully up and running.

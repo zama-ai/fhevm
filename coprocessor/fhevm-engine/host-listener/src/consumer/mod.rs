@@ -15,6 +15,7 @@ use fhevm_engine_common::drift_revert::SignalStatus as DriftStatus;
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::healthz_server::HttpServer as HealthHttpServer;
 use fhevm_engine_common::utils::{DatabaseURL, HeartBeat};
+use fhevm_engine_common::versioning::{run_stack_version_listener, StackMode};
 use primitives::event::BlockFlow;
 
 use crate::cmd::block_history::BlockSummary;
@@ -41,6 +42,7 @@ pub struct ConsumerConfig {
     pub acl_address: Address,
     pub tfhe_address: Address,
     pub kms_generation_address: Option<Address>,
+    pub protocol_config_address: Address,
     pub confidential_bridge_address: Option<Address>,
     pub database_url: DatabaseURL,
     pub database_retry_interval: Duration,
@@ -52,6 +54,8 @@ pub struct ConsumerConfig {
     pub dependence_cross_block: bool,
     pub dependent_ops_max_per_chain: u32,
     pub chain_id: String,
+    pub gcs_mode: bool,
+    pub ethereum_chain_id: Option<u64>,
 }
 
 pub fn collect_logs(payload: &BlockPayload) -> Vec<Log> {
@@ -270,7 +274,11 @@ async fn run_consumer_stats_observer(
 
 pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
     info!("Starting consumer with config: {:?}", config);
-    let mut contracts = vec![config.acl_address, config.tfhe_address];
+    let mut contracts = vec![
+        config.acl_address,
+        config.tfhe_address,
+        config.protocol_config_address,
+    ];
     if let Some(kms_generation_address) = config.kms_generation_address {
         contracts.push(kms_generation_address);
     }
@@ -281,6 +289,11 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
     }
     let chain_id: u64 = config.chain_id.parse()?;
     let chain_id = ChainId::try_from(chain_id)?;
+    let is_protocol_config_listener =
+        crate::protocol_config::resolve_protocol_config_listener(
+            config.ethereum_chain_id,
+            chain_id.as_u64(),
+        )?;
 
     let blockchain_tick = HeartBeat::new();
     let blockchain_timeout_tick = HeartBeat::new();
@@ -292,10 +305,11 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
     let client =
         ListenerConsumer::new(&broker, chain_id.as_u64(), &consumer_id);
 
-    let db = Database::new(
+    let db = Database::new_with_gcs_mode(
         &config.database_url,
         chain_id,
         config.dependence_cache_size,
+        config.gcs_mode,
     )
     .await?;
 
@@ -328,7 +342,25 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
         dependence_by_connexity: config.dependence_by_connexity,
         dependence_cross_block: config.dependence_cross_block,
         dependent_ops_max_per_chain: config.dependent_ops_max_per_chain,
+        is_protocol_config_listener,
     };
+
+    // Runtime stack mode + `event_stack_version_upgraded` listener: at cutover
+    // this (blue) stack is retired and `stack_mode` flips to paused; the
+    // consume handler then drops incoming blocks without writing to the DB.
+    let stack_mode = StackMode::new(config.gcs_mode);
+    {
+        let pool = db.pool().await;
+        let stack_mode = stack_mode.clone();
+        let cancel = client.cancel_token.clone();
+        tokio::spawn(async move {
+            if let Err(err) =
+                run_stack_version_listener(pool, stack_mode, cancel).await
+            {
+                error!(error = %err, "stack-version listener exited with error");
+            }
+        });
+    }
 
     let last_known_drift = Arc::new(RwLock::new(STARTING_DRIFT));
     let chain_id_str = config.chain_id.to_string();
@@ -342,7 +374,14 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
         let mut db = db.clone();
         let chain_id_str = chain_id_str.clone();
         let last_known_drift = last_known_drift.clone();
+        let ingest_options = ingest_options.clone();
+        let stack_mode = stack_mode.clone();
         async move {
+            // Paused (retired blue stack after cutover): no-op — ack and drop
+            // the block without writing anything to the DB.
+            if stack_mode.is_paused() {
+                return Ok(AckDecision::Ack);
+            }
             let drift_revert_is_over = check_if_drift_revert_is_over(
                 &db,
                 chain_id.as_u64() as i64,
@@ -367,6 +406,15 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
                 ingest_options.dependent_ops_max_per_chain,
             )
             .await;
+            if payload.chain_id != chain_id.as_u64() {
+                error!(
+                    payload_chain_id = payload.chain_id,
+                    configured_chain_id = chain_id.as_u64(),
+                    block_number = payload.block_number,
+                    "Block delivered for wrong chain — broker routing misconfigured; dropping"
+                );
+                return Ok(AckDecision::Ack);
+            }
             let block_summary = BlockSummary {
                 number: payload.block_number,
                 hash: payload.block_hash,
@@ -399,14 +447,16 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
                 config.acl_address,
                 config.tfhe_address,
                 config.kms_generation_address,
+                config.protocol_config_address,
                 config.confidential_bridge_address,
                 config.database_retry_interval,
-                ingest_options,
+                ingest_options.clone(),
             )
             .await
             {
                 Ok(_) => {
                     db.tick.update();
+
                     inc_blocks_processed(&chain_id_str, 1);
                     Ok(AckDecision::Ack)
                 }
@@ -463,6 +513,7 @@ async fn ingest_with_retry(
     acl_address: Address,
     tfhe_address: Address,
     kms_generation_address: Option<Address>,
+    protocol_config_address: Address,
     confidential_bridge_address: Option<Address>,
     retry_interval: Duration,
     options: IngestOptions,
@@ -470,6 +521,7 @@ async fn ingest_with_retry(
     let mut errors = 0;
     let acl = Some(acl_address);
     let tfhe = Some(tfhe_address);
+    let protocol_config = Some(protocol_config_address);
     loop {
         match ingest_block_logs(
             chain_id,
@@ -478,8 +530,9 @@ async fn ingest_with_retry(
             &acl,
             &tfhe,
             &kms_generation_address,
+            &protocol_config,
             &confidential_bridge_address,
-            options,
+            options.clone(),
         )
         .await
         {

@@ -87,7 +87,24 @@ const STATEMENT_CANCELLED: DbErrorCode = DbErrorCode::Borrowed("57014"); // SQLS
 
 fn apply_connection_options(options: PgConnectOptions) -> PgConnectOptions {
     options.options([
-        ("statement_timeout", "10000"), // 10 seconds
+        // 120s: large-object (lowrite) writes of the KMS server key can take
+        // 25s+ under DB contention; 10s was too tight and rolled back the
+        // key-activation download every cycle.
+        ("statement_timeout", "120000"), // 120 seconds
+    ])
+}
+
+/// Same as [`apply_connection_options`] but additionally pins
+/// `search_path = gcs,public` so every connection routes unqualified writes
+/// to the `gcs` schema (with fallback to `public` for shared read-only
+/// tables). Used by the host-listener in `--gcs-mode`.
+fn apply_connection_options_gcs(options: PgConnectOptions) -> PgConnectOptions {
+    options.options([
+        ("statement_timeout", "120000"), // 120 seconds; see apply_connection_options
+        (
+            "search_path",
+            fhevm_engine_common::database::GCS_SEARCH_PATH,
+        ),
     ])
 }
 
@@ -127,6 +144,9 @@ pub struct Database {
     pub chain_id: ChainId,
     pub dependence_chain: ChainCache,
     pub tick: HeartBeat,
+    /// When true, every connection in this pool sets
+    /// `search_path = gcs,public` so writes resolve to the GCS schema.
+    gcs_mode: bool,
 }
 
 #[derive(Debug)]
@@ -157,7 +177,17 @@ impl Database {
         chain_id: ChainId,
         dependence_cache_size: u16,
     ) -> Result<Self> {
-        let (pool, pool_refresh_handle) = Self::new_pool(url).await;
+        Self::new_with_gcs_mode(url, chain_id, dependence_cache_size, false)
+            .await
+    }
+
+    pub async fn new_with_gcs_mode(
+        url: &DatabaseURL,
+        chain_id: ChainId,
+        dependence_cache_size: u16,
+        gcs_mode: bool,
+    ) -> Result<Self> {
+        let (pool, pool_refresh_handle) = Self::new_pool(url, gcs_mode).await;
         let bucket_cache =
             Arc::new(tokio::sync::RwLock::new(lru::LruCache::new(
                 std::num::NonZeroU16::new(
@@ -173,6 +203,7 @@ impl Database {
             pool_refresh_handle: Arc::new(RwLock::new(pool_refresh_handle)),
             dependence_chain: bucket_cache,
             tick: HeartBeat::default(),
+            gcs_mode,
         })
     }
 
@@ -276,7 +307,15 @@ impl Database {
         Ok(slow_dep_chain_ids)
     }
 
-    async fn new_pool(url: &DatabaseURL) -> (PgPool, PoolRefreshHandle) {
+    async fn new_pool(
+        url: &DatabaseURL,
+        gcs_mode: bool,
+    ) -> (PgPool, PoolRefreshHandle) {
+        let transform: fn(PgConnectOptions) -> PgConnectOptions = if gcs_mode {
+            apply_connection_options_gcs
+        } else {
+            apply_connection_options
+        };
         let connect = || {
             connect_pool_with_options_and_connect_options(
                 url,
@@ -286,7 +325,7 @@ impl Database {
                     .max_connections(8)
                     .acquire_timeout(Duration::from_secs(5)),
                 None,
-                apply_connection_options,
+                transform,
             )
         };
         let mut pool = connect().await;
@@ -301,8 +340,15 @@ impl Database {
         pool.expect("unreachable")
     }
 
-    pub async fn new_transaction(&self) -> Result<Transaction<'_>, SqlxError> {
-        self.pool().await.begin().await
+    /// Begin a write transaction fenced against cutover. Runs `assert_not_retired`
+    /// at BEGIN (via `begin_guarded_pool`), then takes the shared cutover advisory
+    /// lock and re-checks retirement. Returns `Ok(None)` if a committed cutover has
+    /// retired this stack — the caller must skip the write. GCS-mode connections
+    /// (`self.gcs_mode`) skip the gate: they write the gcs schema, not the cutover
+    /// target. See `versioning::cutover_gate`.
+    pub async fn new_transaction(&self) -> Result<Option<Transaction<'_>>, SqlxError> {
+        let pool = self.pool().await;
+        fhevm_engine_common::versioning::begin_write_guarded(&pool, self.gcs_mode).await
     }
 
     pub async fn pool(&self) -> sqlx::Pool<Postgres> {
@@ -313,7 +359,7 @@ impl Database {
         tokio::time::sleep(RECONNECTION_DELAY).await;
         let (old_pool, old_refresh_handle) = {
             let (new_pool, new_refresh_handle) =
-                Self::new_pool(&self.url).await;
+                Self::new_pool(&self.url, self.gcs_mode).await;
             let mut pool = self.pool.write().await;
             let mut pool_refresh_handle =
                 self.pool_refresh_handle.write().await;
@@ -392,6 +438,9 @@ impl Database {
     ) -> Result<bool, SqlxError> {
         let is_scalar = !scalar_byte.is_zero();
         let output_handle = result.to_vec();
+        // Schema isolation handles BCS/GCS routing at the connection layer
+        // (`search_path = gcs,public` for GCS, default `public` for BCS), so
+        // this INSERT references `computations` unqualified.
         let query = sqlx::query!(
             r#"
             INSERT INTO computations (
@@ -574,19 +623,27 @@ impl Database {
         tx: &mut Transaction<'_>,
         block_summary: &BlockSummary,
         finalized: bool,
+        fhe_event_count: i32,
+        allow_event_count: i32,
     ) -> Result<(), SqlxError> {
         let status = if finalized { "finalized" } else { "pending" };
-        // 1. Insert if not exists (never overwrites existing row)
+        // 1. Insert if not exists (never overwrites existing row).
+        //    Event counts are written at first insert and not touched on
+        //    later finalization transitions.
         sqlx::query!(
             r#"
-            INSERT INTO host_chain_blocks_valid (chain_id, block_hash, block_number, block_status)
-            VALUES ($1, $2, $3, $4)
+            INSERT INTO host_chain_blocks_valid
+                (chain_id, block_hash, block_number, block_status,
+                 fhe_event_count, allow_event_count)
+            VALUES ($1, $2, $3, $4, $5, $6)
             ON CONFLICT (chain_id, block_hash) DO NOTHING;
             "#,
             self.chain_id.as_i64(),
             block_summary.hash.to_vec(),
             block_summary.number as i64,
             status,
+            fhe_event_count,
+            allow_event_count,
         )
         .execute(tx.deref_mut())
         .await?;
@@ -609,7 +666,9 @@ impl Database {
         catchup: bool,
     ) -> Result<(), SqlxError> {
         let duplicate_count_increase = if catchup { 0 } else { 1 };
-        let pool = self.pool().await;
+        let Some(mut tx) = self.new_transaction().await? else {
+            return Ok(());
+        };
         sqlx::query!(
             r#"
             INSERT INTO host_chain_consumer_blocks (
@@ -627,8 +686,9 @@ impl Database {
             block_summary.number as i64,
             duplicate_count_increase
         )
-        .execute(&pool)
+        .execute(tx.as_mut())
         .await?;
+        tx.commit().await?;
 
         Ok(())
     }
@@ -638,7 +698,15 @@ impl Database {
         &self,
         finalization_margin: i64,
     ) -> Result<StatsForConsumer, SqlxError> {
-        let pool = self.pool().await;
+        // This CTE marks rows `stats_processed` (a write), so gate it against
+        // cutover. On a retired stack, report zero stats and touch nothing.
+        let Some(mut tx) = self.new_transaction().await? else {
+            return Ok(StatsForConsumer {
+                number_of_new_gaps: 0,
+                total_new_gap_size: 0,
+                number_of_duplicated_inserts: 0,
+            });
+        };
         let row = sqlx::query!(
             r#"
             WITH last_block_number AS (
@@ -687,8 +755,9 @@ impl Database {
             self.chain_id.as_i64(),
             finalization_margin,
         )
-        .fetch_one(&pool)
+        .fetch_one(tx.as_mut())
         .await?;
+        tx.commit().await?;
 
         Ok(StatsForConsumer {
             number_of_new_gaps: row.number_of_new_gaps,
@@ -743,7 +812,9 @@ impl Database {
         chain_id: ChainId,
         block: i64,
     ) -> Result<(), SqlxError> {
-        let pool = self.pool.read().await.clone();
+        let Some(mut tx) = self.new_transaction().await? else {
+            return Ok(());
+        };
         sqlx::query(
             r#"
             INSERT INTO host_listener_poller_state (chain_id, last_caught_up_block)
@@ -755,8 +826,9 @@ impl Database {
         )
         .bind(chain_id.as_i64())
         .bind(block)
-        .execute(&pool)
+        .execute(tx.as_mut())
         .await?;
+        tx.commit().await?;
 
         Ok(())
     }

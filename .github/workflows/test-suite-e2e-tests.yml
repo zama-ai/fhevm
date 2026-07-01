@@ -45,6 +45,14 @@ on:
         description: "Coprocessor ZKProof Worker Image Version"
         default: ""
         type: string
+      coprocessor-consensus-detector-version:
+        description: "Coprocessor Consensus Detector Image Version"
+        default: ""
+        type: string
+      coprocessor-upgrade-controller-version:
+        description: "Coprocessor Upgrade Controller Image Version"
+        default: ""
+        type: string
       listener-core-version:
         description: "Listener Core Image Version"
         default: ""
@@ -152,6 +160,8 @@ jobs:
       COPROCESSOR_TFHE_WORKER_VERSION: ${{ inputs.coprocessor-tfhe-worker-version }}
       COPROCESSOR_SNS_WORKER_VERSION: ${{ inputs.coprocessor-sns-worker-version }}
       COPROCESSOR_ZKPROOF_WORKER_VERSION: ${{ inputs.coprocessor-zkproof-worker-version }}
+      COPROCESSOR_CONSENSUS_DETECTOR_VERSION: ${{ inputs.coprocessor-consensus-detector-version }}
+      COPROCESSOR_UPGRADE_CONTROLLER_VERSION: ${{ inputs.coprocessor-upgrade-controller-version }}
       LISTENER_CORE_VERSION: ${{ inputs.listener-core-version }}
       GATEWAY_VERSION: ${{ inputs.gateway-version }}
       HOST_VERSION: ${{ inputs.host-version }}

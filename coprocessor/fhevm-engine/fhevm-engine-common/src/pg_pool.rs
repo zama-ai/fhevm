@@ -1,4 +1,6 @@
-use crate::database::{connect_pool_with_options, PoolRefreshHandle};
+use crate::database::{
+    apply_gcs_mode_search_path, connect_pool_with_options_and_connect_options, PoolRefreshHandle,
+};
 use sqlx::postgres::PgPoolOptions;
 use sqlx::Executor;
 use sqlx::{Pool, Postgres};
@@ -55,13 +57,39 @@ impl PostgresPoolManager {
         retry_db_conn_interval: Duration,
         auto_explain_with_min_duration: Option<Duration>,
     ) -> Option<Self> {
+        Self::connect_pool_with_gcs_mode(
+            cancel_token,
+            url,
+            acquire_timeout,
+            max_connections,
+            retry_db_conn_interval,
+            auto_explain_with_min_duration,
+            false,
+        )
+        .await
+    }
+
+    /// Same as [`Self::connect_pool`] but, when `gcs_mode = true`, pins
+    /// every connection in the pool to `search_path = gcs,public` so
+    /// unqualified writes resolve to the `gcs` schema (with fallback to
+    /// `public` for shared read-only tables).
+    #[allow(clippy::too_many_arguments)]
+    pub async fn connect_pool_with_gcs_mode(
+        cancel_token: CancellationToken,
+        url: &str,
+        acquire_timeout: Duration,
+        max_connections: u32,
+        retry_db_conn_interval: Duration,
+        auto_explain_with_min_duration: Option<Duration>,
+        gcs_mode: bool,
+    ) -> Option<Self> {
         let database_url = crate::utils::DatabaseURL::from(url.to_owned());
         let pool = loop {
             if cancel_token.is_cancelled() {
                 return None;
             }
 
-            match connect_pool_with_options(
+            match connect_pool_with_options_and_connect_options(
                 &database_url,
                 PgPoolOptions::new()
                 .max_connections(max_connections)
@@ -80,6 +108,7 @@ impl PostgresPoolManager {
                     })
                 }),
                 Some(&cancel_token),
+                apply_gcs_mode_search_path(gcs_mode),
             )
             .await
             {

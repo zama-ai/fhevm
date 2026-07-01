@@ -451,7 +451,14 @@ describe("compat", () => {
 
     const policy = compatPolicyForState(state);
     expect(policy.coprocessorArgs["gw-listener"]).toBeUndefined();
-    expect(policy.coprocessorDropFlags["host-listener"]).toEqual(["--confidential-bridge-address"]);
+    expect(policy.coprocessorDropFlags["host-listener"]?.sort()).toEqual([
+      "--confidential-bridge-address",
+      "--protocol-config-address",
+    ]);
+    expect(policy.coprocessorDropFlags["host-listener-poller"]?.sort()).toEqual([
+      "--confidential-bridge-address",
+      "--protocol-config-address",
+    ]);
     expect(policy.composeEnv.HOST_ADD_PAUSERS_INTERNAL_FLAG).toBe("--use-internal-proxy-address");
     expect(policy.composeEnv.GATEWAY_ADD_PAUSERS_INTERNAL_FLAG).toBe("--use-internal-proxy-address");
   });
