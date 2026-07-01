@@ -14,6 +14,12 @@ type Context = {
 
 type Parameters = {
   readonly address: ChecksummedAddress;
+  /**
+   * If `true`, bypasses the TTL cache and forces a fresh on-chain read of the
+   * coprocessor signers and threshold. The fresh result is stored back in the
+   * cache. Used to recover from a stale signer set after a verification failure.
+   */
+  readonly forceRefresh?: boolean | undefined;
 };
 
 type ReturnType = CoprocessorSignersContext;
