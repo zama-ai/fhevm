@@ -225,8 +225,9 @@ impl TestSetup {
 
         // Register KMSGeneration / ProtocolConfig getter responses so the /v2/keyurl poller's
         // startup fetch succeeds (the relayer gates startup on the first successful poll).
-        let kms_generation_addr = Address::from_str(&settings.protocol_config.kms_generation_address)
-            .expect("Invalid kms_generation_address in test config");
+        let kms_generation_addr =
+            Address::from_str(&settings.protocol_config.kms_generation_address)
+                .expect("Invalid kms_generation_address in test config");
         let protocol_config_addr = Address::from_str(&settings.protocol_config.address)
             .expect("Invalid protocol_config address in test config");
         register_default_keyurl_poller_responses(
@@ -1016,9 +1017,7 @@ fn register_call_response(
 ) {
     let return_bytes = Bytes::from(return_data);
     host_server.on_call(
-        move |params| {
-            params.to == to && params.input.len() >= 4 && params.input[0..4] == selector
-        },
+        move |params| params.to == to && params.input.len() >= 4 && params.input[0..4] == selector,
         Response::call_success(return_bytes.clone()),
         UsageLimit::Unlimited,
     );

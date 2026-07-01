@@ -49,7 +49,12 @@ pub struct KeyData {
 impl KeyUrlResponseJson {
     /// Build a chain-sourced `/v2/keyurl` response from the values the host-chain
     /// poller read on-chain.
-    pub fn new(fhe_public_key: KeyData, crs: KeyData, context_id: String, epoch_id: String) -> Self {
+    pub fn new(
+        fhe_public_key: KeyData,
+        crs: KeyData,
+        context_id: String,
+        epoch_id: String,
+    ) -> Self {
         let mut crs_map = HashMap::new();
         crs_map.insert(CRS_PARAM_SIZE_KEY.to_string(), crs);
 

@@ -72,7 +72,11 @@ fn register_static_getters(server: &MockServer) {
     let contract = addr();
 
     server.on_call(
-        move |p| p.to == contract && p.input.len() >= 4 && p.input[0..4] == KMSGeneration::getActiveCrsIdCall::SELECTOR,
+        move |p| {
+            p.to == contract
+                && p.input.len() >= 4
+                && p.input[0..4] == KMSGeneration::getActiveCrsIdCall::SELECTOR
+        },
         Response::call_success(Bytes::from(U256::from(4u64).abi_encode())),
         UsageLimit::Unlimited,
     );
@@ -88,12 +92,20 @@ fn register_static_getters(server: &MockServer) {
         UsageLimit::Unlimited,
     );
     server.on_call(
-        move |p| p.to == contract && p.input.len() >= 4 && p.input[0..4] == KMSGeneration::getKeyMaterialsCall::SELECTOR,
+        move |p| {
+            p.to == contract
+                && p.input.len() >= 4
+                && p.input[0..4] == KMSGeneration::getKeyMaterialsCall::SELECTOR
+        },
         Response::call_success(key_materials_bytes()),
         UsageLimit::Unlimited,
     );
     server.on_call(
-        move |p| p.to == contract && p.input.len() >= 4 && p.input[0..4] == KMSGeneration::getCrsMaterialsCall::SELECTOR,
+        move |p| {
+            p.to == contract
+                && p.input.len() >= 4
+                && p.input[0..4] == KMSGeneration::getCrsMaterialsCall::SELECTOR
+        },
         Response::call_success(crs_materials_bytes()),
         UsageLimit::Unlimited,
     );
@@ -109,7 +121,11 @@ async fn initialize_maps_chain_state_to_response() {
 
     let contract = addr();
     mock.on_call(
-        move |p| p.to == contract && p.input.len() >= 4 && p.input[0..4] == KMSGeneration::getActiveKeyIdCall::SELECTOR,
+        move |p| {
+            p.to == contract
+                && p.input.len() >= 4
+                && p.input[0..4] == KMSGeneration::getActiveKeyIdCall::SELECTOR
+        },
         Response::call_success(Bytes::from(U256::from(3u64).abi_encode())),
         UsageLimit::Unlimited,
     );
@@ -117,17 +133,26 @@ async fn initialize_maps_chain_state_to_response() {
     let _handle = mock.start().await.unwrap();
 
     let mut poller = KeyUrlPoller::new(&make_config(port, 12_000)).unwrap();
-    let response = poller.initialize().await.expect("initialize should succeed");
+    let response = poller
+        .initialize()
+        .await
+        .expect("initialize should succeed");
 
     // dataId carries the real on-chain getActiveKeyId / getActiveCrsId (decimal string).
-    assert_eq!(response.response.fhe_key_info[0].fhe_public_key.data_id, "3");
+    assert_eq!(
+        response.response.fhe_key_info[0].fhe_public_key.data_id,
+        "3"
+    );
     assert_eq!(response.response.crs["2048"].data_id, "4");
     // urls come from getKeyMaterials / getCrsMaterials.
     assert_eq!(
         response.response.fhe_key_info[0].fhe_public_key.urls,
         vec![KEY_URL.to_string()]
     );
-    assert_eq!(response.response.crs["2048"].urls, vec![CRS_URL.to_string()]);
+    assert_eq!(
+        response.response.crs["2048"].urls,
+        vec![CRS_URL.to_string()]
+    );
     // contextId / epochId from getCurrentKmsContextAndEpoch.
     assert_eq!(response.response.context_id, "1");
     assert_eq!(response.response.epoch_id, "2");
@@ -146,7 +171,11 @@ async fn run_pushes_updated_value_on_id_change() {
     let active_key_id_for_mock = active_key_id.clone();
     let contract = addr();
     mock.on_call_dynamic(
-        move |p| p.to == contract && p.input.len() >= 4 && p.input[0..4] == KMSGeneration::getActiveKeyIdCall::SELECTOR,
+        move |p| {
+            p.to == contract
+                && p.input.len() >= 4
+                && p.input[0..4] == KMSGeneration::getActiveKeyIdCall::SELECTOR
+        },
         move |_params| {
             let id = active_key_id_for_mock.load(Ordering::SeqCst);
             Response::call_success(Bytes::from(U256::from(id).abi_encode()))
@@ -158,7 +187,10 @@ async fn run_pushes_updated_value_on_id_change() {
 
     // Seed via the startup fetch (reads key id 3), then run the loop on a short interval.
     let mut poller = KeyUrlPoller::new(&make_config(port, 100)).unwrap();
-    let initial = poller.initialize().await.expect("initialize should succeed");
+    let initial = poller
+        .initialize()
+        .await
+        .expect("initialize should succeed");
     assert_eq!(initial.response.fhe_key_info[0].fhe_public_key.data_id, "3");
 
     let (tx, mut rx) = watch::channel(initial);
@@ -172,7 +204,10 @@ async fn run_pushes_updated_value_on_id_change() {
         .expect("watch should update within timeout after id change")
         .expect("watch sender should stay alive");
 
-    assert_eq!(rx.borrow().response.fhe_key_info[0].fhe_public_key.data_id, "7");
+    assert_eq!(
+        rx.borrow().response.fhe_key_info[0].fhe_public_key.data_id,
+        "7"
+    );
 
     run_handle.abort();
 }

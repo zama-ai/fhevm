@@ -129,12 +129,18 @@ impl KeyUrlPoller {
         let key_id: U256 = retry_view!(
             self.retry,
             "getActiveKeyId",
-            self.kms_generation.getActiveKeyId().block(finalized()).call()
+            self.kms_generation
+                .getActiveKeyId()
+                .block(finalized())
+                .call()
         )?;
         let crs_id: U256 = retry_view!(
             self.retry,
             "getActiveCrsId",
-            self.kms_generation.getActiveCrsId().block(finalized()).call()
+            self.kms_generation
+                .getActiveCrsId()
+                .block(finalized())
+                .call()
         )?;
         let context_and_epoch = retry_view!(
             self.retry,
@@ -158,12 +164,18 @@ impl KeyUrlPoller {
         let key_materials = retry_view!(
             self.retry,
             "getKeyMaterials",
-            self.kms_generation.getKeyMaterials(ids.key_id).block(finalized()).call()
+            self.kms_generation
+                .getKeyMaterials(ids.key_id)
+                .block(finalized())
+                .call()
         )?;
         let crs_materials = retry_view!(
             self.retry,
             "getCrsMaterials",
-            self.kms_generation.getCrsMaterials(ids.crs_id).block(finalized()).call()
+            self.kms_generation
+                .getCrsMaterials(ids.crs_id)
+                .block(finalized())
+                .call()
         )?;
 
         Ok(KeyUrlResponseJson::new(

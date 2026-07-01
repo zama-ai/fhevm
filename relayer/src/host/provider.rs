@@ -35,7 +35,8 @@ pub type Provider = FillProvider<
 
 /// Build an HTTP provider for the Ethereum host chain from its RPC URL.
 pub fn build_host_provider(rpc_url: &str) -> anyhow::Result<Arc<Provider>> {
-    let url = Url::parse(rpc_url).map_err(|e| anyhow::anyhow!("Invalid host-chain RPC URL: {e}"))?;
+    let url =
+        Url::parse(rpc_url).map_err(|e| anyhow::anyhow!("Invalid host-chain RPC URL: {e}"))?;
     Ok(Arc::new(
         ProviderBuilder::new()
             .network::<alloy::network::AnyNetwork>()

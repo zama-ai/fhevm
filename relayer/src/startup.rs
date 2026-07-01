@@ -162,10 +162,9 @@ pub async fn run_fhevm_relayer(
         let (keyurl_tx, keyurl_rx) = tokio::sync::watch::channel(initial_keyurl);
 
         let addr = run_http_server(
-            &settings.http,
+            &settings,
             Arc::clone(&orchestrator),
             repositories.clone(),
-            settings.gateway.contracts.user_decrypt_shares_threshold,
             bouncer_throttlers,
             host_chain_id_checker,
             signature_prechecker,
