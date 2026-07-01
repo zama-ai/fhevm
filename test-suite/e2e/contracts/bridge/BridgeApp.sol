@@ -9,7 +9,7 @@ import {MessagingReceipt} from "@fhevm/solidity/lib/bridge/IConfidentialBridge.s
 
 /// @notice Test dapp exercising the confidential bridge end-to-end THROUGH the `@fhevm/solidity`
 ///         OApp wrappers (rather than calling the host `ConfidentialBridge` directly).
-/// @dev It sends via {ConfidentialOAppSender-_bridge} (peer resolved from the OApp registry) and
+/// @dev It sends via {ConfidentialOAppSender-_bridgeUnchecked} (peer resolved from the OApp registry) and
 ///      receives via {ConfidentialOAppReceiver}, which authenticates `msg.sender == bridge` and
 ///      `isPeer(srcEid, srcApp)` before dispatching to {_onReceiveHandles}. Peers are wired once
 ///      with {setPeer} (one entry serves both directions). `setPeer` is intentionally unguarded
@@ -53,16 +53,17 @@ contract BridgeApp is E2ECoprocessorConfig, ConfidentialOAppSender, Confidential
     }
 
     /// @notice Bridge `handles` to this app's peer on `dstEid`, via the OApp sender wrapper.
-    /// @dev Uses the multi-handle {ConfidentialOAppSender-_bridge}, which resolves the peer from
-    ///      the registry; this contract must already hold ACL allowance on every handle (see
-    ///      {makeHandle}).
+    /// @dev Uses the multi-handle {ConfidentialOAppSender-_bridgeUnchecked}, which resolves the peer
+    ///      from the registry; this contract must already hold ACL allowance on every handle (see
+    ///      {makeHandle}). Unchecked is intentional for this test dapp: the entrypoint is open so the
+    ///      e2e can drive arbitrary handle lists.
     function send(
         uint32 dstEid,
         bytes32[] calldata handles,
         bytes calldata payload,
         uint64 lzComposeGas
     ) external payable returns (MessagingReceipt memory) {
-        return _bridge(dstEid, payload, handles, lzComposeGas, msg.value);
+        return _bridgeUnchecked(dstEid, payload, handles, lzComposeGas, msg.value);
     }
 
     /// @notice Receive hook (post-auth): empty `payload` => make each handle publicly decryptable;
