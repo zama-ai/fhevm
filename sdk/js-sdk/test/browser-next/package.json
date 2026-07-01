@@ -7,7 +7,7 @@
     "test": "node scripts/run.mjs"
   },
   "dependencies": {
-    "@fhevm/sdk": "file:../manual-pack/fhevm-sdk-1.1.0-alpha.5.tgz",
+    "@fhevm/sdk": "file:../manual-pack/fhevm-sdk-1.1.0-alpha.6.tgz",
     "ethers": "^6.15.0",
     "viem": "^2.46.3"
   },

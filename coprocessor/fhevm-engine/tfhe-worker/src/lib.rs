@@ -8,6 +8,7 @@ use tokio_util::sync::CancellationToken;
 use std::sync::{Once, OnceLock};
 use tokio::task::JoinSet;
 
+pub mod bridge;
 pub mod daemon_cli;
 pub mod dependence_chain;
 pub mod health_check;
@@ -115,11 +116,22 @@ pub async fn async_main(
             args.clone(),
             health_check.clone(),
         ));
+
+        set.spawn(bridge::run_confidential_bridge(
+            args.clone(),
+            cancel_token.child_token(),
+        ));
     }
 
     while let Some(res) = set.join_next().await {
-        if let Err(e) = res {
-            panic!("Error background initializing worker: {:?}", e);
+        match res {
+            Ok(Ok(())) => {}
+            Ok(Err(err)) => {
+                panic!("Background worker exited with error: {err:?}");
+            }
+            Err(join_err) => {
+                panic!("Background worker task failed: {join_err:?}");
+            }
         }
     }
 

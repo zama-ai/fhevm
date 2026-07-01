@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO ciphertext_digest\n                (handle, ciphertext, ciphertext128, ciphertext128_format, host_chain_id, key_id_gw)\n            SELECT $1, ciphertext, ciphertext128, ciphertext128_format, $2, key_id_gw\n            FROM ciphertext_digest\n            WHERE handle = $3\n            ON CONFLICT (handle) DO NOTHING\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Int8",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4a81ac929273a747fc5f7ddddc9f6bd215c2a74ef65da2eec504df3e4dff457d"
+}

@@ -35,6 +35,9 @@ const fakeContext = () => {
     async runHostContractTask(command) {
       calls.push(`host:${command}`);
     },
+    async runHostContractTaskOnChain(chainKey, command) {
+      calls.push(`host[${chainKey}]:${command}`);
+    },
     async snapshotContracts(surface) {
       calls.push(`snapshot:${surface}`);
     },

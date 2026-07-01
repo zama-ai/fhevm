@@ -16,6 +16,7 @@ import "./tasks/addPausers";
 import "./tasks/blockExplorerVerify";
 import "./tasks/deployment";
 import "./tasks/getters";
+import "./tasks/kmsContext";
 import "./tasks/manageHostChains";
 import "./tasks/mockedTokenFund";
 import "./tasks/ownership";

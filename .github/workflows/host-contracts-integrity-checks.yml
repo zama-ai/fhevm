@@ -20,7 +20,7 @@ jobs:
     permissions:
       contents: 'read' # Required to checkout repository code
       pull-requests: 'read' # Required to read pull request information
-    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
+    runs-on: ubuntu-latest
     outputs:
       changes-host-contracts: ${{ steps.filter.outputs.host-contracts }}
       changes-codegen: ${{ steps.filter.outputs.codegen }}
@@ -81,6 +81,10 @@ jobs:
       - name: Install dependencies
         working-directory: host-contracts
         run: npm ci && forge soldeer install
+
+      - name: Check formatting
+        working-directory: host-contracts
+        run: npm run prettier:check
 
       - name: Check bindings are up-to-date
         working-directory: host-contracts

@@ -331,9 +331,12 @@ pub async fn update_signal_status(
 /// Transient failures (DB errors) are logged and swallowed so they don't
 /// cascade into the drift detector — the next detection cycle will retry.
 pub async fn on_drift_detected(pool: &Pool<Postgres>, handle: &[u8], host_chain_id: i64) {
-    // Byte 21 is 0xff for compute outputs; inputs encode the ciphertext index
-    // in the proof (0x00..=0xfe). Input drift is out of scope for auto-recovery.
-    if handle.len() != 32 || handle[21] != 0xff {
+    // Byte 21 is `COMPUTED_HANDLE_INDEX_MARKER` for compute outputs; inputs
+    // encode the ciphertext index in the proof (0x00..=0xfe). Input drift is
+    // out of scope for auto-recovery.
+    if handle.len() != crate::types::HANDLE_LEN
+        || handle[21] != crate::types::COMPUTED_HANDLE_INDEX_MARKER
+    {
         warn!(
             host_chain_id,
             "Drifted handle is a ZK input; auto-recovery is not supported for input handles"
@@ -341,13 +344,13 @@ pub async fn on_drift_detected(pool: &Pool<Postgres>, handle: &[u8], host_chain_
         return;
     }
 
-    let host_block: Option<i64> = match sqlx::query_scalar(
+    let host_block: Option<i64> = match sqlx::query_scalar::<_, Option<i64>>(
         "SELECT MIN(block_number) FROM computations \
          WHERE output_handle = $1 AND host_chain_id = $2",
     )
     .bind(handle)
     .bind(host_chain_id)
-    .fetch_optional(pool)
+    .fetch_one(pool)
     .await
     {
         Ok(row) => row,
@@ -357,10 +360,32 @@ pub async fn on_drift_detected(pool: &Pool<Postgres>, handle: &[u8], host_chain_
         }
     };
 
+    // A copy-bridged handle has no `computations` row. Fall back to
+    // the block where the `HandleBridged` event was observed so drift recovery
+    // still has a revert point.
+    let host_block = match host_block {
+        Some(block) => Some(block),
+        None => match sqlx::query_scalar(
+            "SELECT block_number FROM handle_bridged_events \
+             WHERE dst_handle = $1 AND dst_chain_id = $2",
+        )
+        .bind(handle)
+        .bind(host_chain_id)
+        .fetch_optional(pool)
+        .await
+        {
+            Ok(row) => row,
+            Err(e) => {
+                error!(error = %e, host_chain_id, "Failed to look up bridged event for drifted handle");
+                return;
+            }
+        },
+    };
+
     let Some(block) = host_block else {
         error!(
             host_chain_id,
-            "Cannot create revert signal: no computation found for drifted handle"
+            "Cannot create revert signal: no computation or bridged event found for drifted handle"
         );
         return;
     };

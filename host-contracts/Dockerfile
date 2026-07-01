@@ -44,6 +44,7 @@ COPY --chown=fhevm:fhevm host-contracts/*.ts host-contracts/tsconfig.json ./
 COPY --chown=fhevm:fhevm host-contracts/contracts ./contracts/
 COPY --chown=fhevm:fhevm host-contracts/tasks ./tasks/
 COPY --chown=fhevm:fhevm host-contracts/lib ./lib/
+COPY --chown=fhevm:fhevm host-contracts/examples/bridge/mocks ./examples/bridge/mocks/
 
 RUN mkdir -p ./addresses && chown fhevm:fhevm ./addresses
 

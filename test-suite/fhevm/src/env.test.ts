@@ -120,6 +120,113 @@ describe("env", () => {
     expect(rendered.componentEnvs["host-sc"].MPC_THRESHOLD).toBe("1");
   });
 
+  test("projects threshold KMS node params into the host contract env", async () => {
+    const templateEnvs = Object.fromEntries(
+      await Promise.all(
+        COMPONENTS.map(async (component) => [
+          component,
+          await readEnvFile(path.join(TEMPLATE_ENV_DIR, `.env.${component}`)),
+        ]),
+      ),
+    ) as Record<string, Record<string, string>>;
+    const state: State = {
+      target: "latest-main",
+      lockPath: "/tmp/latest-main.json",
+      requiresGitHub: true,
+      versions: presetBundle("latest-main", "abcdef0", "latest-main.json"),
+      overrides: [],
+      scenario: testDefaultScenario({ kms: { mode: "threshold", parties: 4, threshold: 1, fheParams: "Test" } }),
+      discovery: {
+        gateway: {},
+        hosts: {},
+        kmsSigners: ["0x1", "0x2", "0x3", "0x4"],
+        kmsCaCerts: ["0xaa", "0xbb", "0xcc", "0xdd"],
+        fheKeyId: "f".repeat(64),
+        crsKeyId: "c".repeat(64),
+        endpoints: {
+          gateway: { http: "http://gateway-node:8546", ws: "ws://gateway-node:8546" },
+          hosts: { host: { http: "http://host-node:8545", ws: "ws://host-node:8545" } },
+          minioInternal: "http://minio:9000",
+          minioExternal: "http://localhost:9000",
+        },
+      },
+      completedSteps: [],
+      updatedAt: "2026-06-25T00:00:00.000Z",
+    };
+
+    const rendered = await renderEnvMaps({ discovery: state.discovery }, stackSpecForState(state), templateEnvs, deriveWallet);
+    const host = rendered.componentEnvs["host-sc"];
+
+    const expectedMpcIdentity = ["kms-core", "kms-core-2", "kms-core-3", "kms-core-4"];
+    const expectedCaCert = ["0xaa", "0xbb", "0xcc", "0xdd"];
+    for (let index = 0; index < 4; index += 1) {
+      const party = index + 1;
+      expect(host[`KMS_NODE_PARTY_ID_${index}`]).toBe(String(party));
+      // mpcIdentity is the bare cert CN; ipAddress (external_url) carries the core-to-core MPC port
+      // (50000 + party) — the KMS core parses a peer port from it during resharing.
+      expect(host[`KMS_NODE_MPC_IDENTITY_${index}`]).toBe(expectedMpcIdentity[index]);
+      expect(host[`KMS_NODE_IP_${index}`]).toBe(`http://${expectedMpcIdentity[index]}:${50000 + party}`);
+      expect(host[`KMS_NODE_STORAGE_PREFIX_${index}`]).toBe(`PUB-p${party}`);
+      expect(host[`KMS_NODE_CA_CERT_${index}`]).toBe(expectedCaCert[index]);
+    }
+    // context params the deploy requires; mock_enclave => zero PCRs. softwareVersion must be valid
+    // semver (the KMS core parses it) — never a bare git-SHA image tag like CORE_VERSION.
+    expect(host.KMS_SOFTWARE_VERSION).toMatch(/^\d+(\.\d+){0,2}(-[0-9A-Za-z.-]+)?$/);
+    const pcrValues = JSON.parse(host.KMS_PCR_VALUES);
+    expect(pcrValues).toHaveLength(1);
+    expect(pcrValues[0].pcr0).toMatch(/^0x0+$/);
+  });
+
+  test("projects centralized single-node KMS params into the host contract env", async () => {
+    const templateEnvs = Object.fromEntries(
+      await Promise.all(
+        COMPONENTS.map(async (component) => [
+          component,
+          await readEnvFile(path.join(TEMPLATE_ENV_DIR, `.env.${component}`)),
+        ]),
+      ),
+    ) as Record<string, Record<string, string>>;
+    const state: State = {
+      target: "latest-main",
+      lockPath: "/tmp/latest-main.json",
+      requiresGitHub: true,
+      versions: presetBundle("latest-main", "abcdef0", "latest-main.json"),
+      overrides: [],
+      scenario: testDefaultScenario({ kms: { mode: "centralized", parties: 1, threshold: 1, fheParams: "Default" } }),
+      discovery: {
+        gateway: {},
+        hosts: {},
+        kmsSigners: ["0x1"],
+        kmsCaCerts: ["0xaa"],
+        minioKeyPrefix: "PUB",
+        fheKeyId: "f".repeat(64),
+        crsKeyId: "c".repeat(64),
+        endpoints: {
+          gateway: { http: "http://gateway-node:8546", ws: "ws://gateway-node:8546" },
+          hosts: { host: { http: "http://host-node:8545", ws: "ws://host-node:8545" } },
+          minioInternal: "http://minio:9000",
+          minioExternal: "http://localhost:9000",
+        },
+      },
+      completedSteps: [],
+      updatedAt: "2026-06-25T00:00:00.000Z",
+    };
+
+    const rendered = await renderEnvMaps({ discovery: state.discovery }, stackSpecForState(state), templateEnvs, deriveWallet);
+    const host = rendered.componentEnvs["host-sc"];
+
+    // The deploy reads the same per-node params as threshold, here for one node. The centralized
+    // core's public vault prefix is "PUB" (PUB-p{i} is threshold-only) — it tracks minioKeyPrefix.
+    expect(host.KMS_NODE_PARTY_ID_0).toBe("1");
+    expect(host.KMS_NODE_MPC_IDENTITY_0).toBe("kms-core");
+    expect(host.KMS_NODE_STORAGE_PREFIX_0).toBe("PUB");
+    expect(host.KMS_NODE_CA_CERT_0).toBe("0xaa");
+    expect(host.KMS_SOFTWARE_VERSION).toMatch(/^\d+(\.\d+){0,2}(-[0-9A-Za-z.-]+)?$/);
+    const pcrValues = JSON.parse(host.KMS_PCR_VALUES);
+    expect(pcrValues).toHaveLength(1);
+    expect(pcrValues[0].pcr0).toMatch(/^0x0+$/);
+  });
+
   test("allows pre-deploy renders while kms-generation addresses are undiscovered", async () => {
     const templateEnvs = Object.fromEntries(
       await Promise.all(
