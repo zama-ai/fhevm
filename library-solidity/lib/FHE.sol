@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import "./Impl.sol";
 import {FhevmECDSA} from "./cryptography/FhevmECDSA.sol";
 import {FheType} from "./FheType.sol";
+import "./bridge/IConfidentialBridge.sol";
 
 import "encrypted-types/EncryptedTypes.sol";
 
@@ -49,6 +50,9 @@ library FHE {
     /// @notice EIP-712 domain  typehash.
     bytes32 private constant EIP712_DOMAIN_TYPEHASH =
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
+
+    /// @notice Returned if the confidential bridge is not deployed.
+    error ConfidentialBridgeNotDeployed();
 
     /// @notice Returned if the deserializing of the decryption proof fails.
     error DeserializingDecryptionProofFail();
@@ -10110,5 +10114,76 @@ library FHE {
      */
     function toBytes32(euint256 value) internal pure returns (bytes32 ct) {
         ct = euint256.unwrap(value);
+    }
+
+    /**
+     * @dev Resolves the `ConfidentialBridge` from the ACL (`getConfidentialBridgeAddress`),
+     *      reverting if the confidential bridge is not deployed on the current chain.
+     */
+    function getConfidentialBridge() internal view returns (IConfidentialBridge) {
+        CoprocessorConfig storage $ = Impl.getCoprocessorConfig();
+        address cBridgeAddr = IACL($.ACLAddress).getConfidentialBridgeAddress();
+        if (cBridgeAddr == address(0)) revert ConfidentialBridgeNotDeployed();
+        return IConfidentialBridge(cBridgeAddr);
+    }
+
+
+    /**
+     * @notice Requests `ConfidentialBridge` to bridge an explicit list of `bytes32` handles to a `bytes32` destination app (`bytes32` instead of `address` to also support non-EVM destinations).
+     * @dev    The source app contract must already hold ACL allowance on every handle; `lzComposeGas` must be non-zero (the bridge reverts otherwise) 
+     *         and should be set to a reasonable value after estimation of the gas needed by the destination app callback `onConfidentialBridgeReceived`.
+     * @dev    If `lzComposeGas` is set to a too low value, the message will not be automatically relayed by LayerZero and will be stuck in the `lzCompose` queue. 
+     *         To unstuck the message, anyone could manually relay the message by calling the `lzCompose` function on the destination endpoint contract with the same `guid` as the stuck message.
+     * @dev    The function will revert if the `ConfidentialBridge` is not deployed on the current chain.
+     * @param dstEid        Destination LayerZero endpoint id.
+     * @param dstApp        Destination app as bytes32 (EVM address left-padded, or native id for other chains like Solana).
+     * @param payload       Opaque app payload; encoding is fully app-defined. Typically this will be abi-decoded in the destination app `onConfidentialBridgeReceived` callback.
+     * @param handleList    Raw `bytes32` handles to bridge, should be non-empty and contain a maximum of 32 handles. The source app contract calling this function must already hold ACL allowance on every handle.
+     * @param lzComposeGas  Gas budget for the destination app callback `onConfidentialBridgeReceived` (lzCompose leg). The amount needed is
+     *                      app-specific, apps should size it for their `onConfidentialBridgeReceived` workload.
+     * @param nativeFee     LayerZero native fee to forward as msg.value to the `ConfidentialBridge` contract (query {quoteLZConfidentialBridge} to fetch the fee 
+     *                      for a message with similar parameters before calling this function).
+     * @return guid         The LayerZero message guid.
+     * @return nonce        The LayerZero message nonce.
+     */
+    function sendLZConfidentialBridge(
+        uint32 dstEid,
+        bytes32 dstApp,
+        bytes memory payload,
+        bytes32[] memory handleList,
+        uint64 lzComposeGas,
+        uint256 nativeFee
+    ) internal returns (bytes32 guid, uint64 nonce) {
+        MessagingReceipt memory receipt = getConfidentialBridge().send{value: nativeFee}(dstEid, dstApp, payload, handleList, lzComposeGas);
+        guid = receipt.guid;
+        nonce = receipt.nonce;
+    }
+
+    /**
+     * @notice Quotes the LayerZero native fee required to bridge an explicit list of `bytes32` handles to a `bytes32` destination app via {sendLZConfidentialBridge}.
+     * @dev    Call this before {sendLZConfidentialBridge} to size the `nativeFee` (msg.value) for a message with similar parameters.
+     *         The returned fee depends on the destination endpoint, payload size, number of handles and the `lzComposeGas` budget, so pass values matching the intended send.
+     * @dev    The function will revert if the `ConfidentialBridge` is not deployed on the current chain.
+     * @param dstEid        Destination LayerZero endpoint id.
+     * @param srcApp        Source app address (the contract that will call {sendLZConfidentialBridge}).
+     * @param dstApp        Destination app as bytes32 (EVM address left-padded, or native id for other chains like Solana).
+     * @param payload       Opaque app payload; encoding is fully app-defined. Typically this will be abi-decoded in the destination app `onConfidentialBridgeReceived` callback.
+     * @param handleList    Raw `bytes32` handles used only to size the quote. It does not need to equal the list that will ultimately be sent, and its handles do not
+     *                      need to be allowed to any account (e.g. it can be a list of null handles); however it should be of equal size to the list that will
+     *                      be sent to get a correct fee estimation. Should be non-empty and contain a maximum of 32 handles.
+     * @param lzComposeGas  Gas budget for the destination app callback `onConfidentialBridgeReceived` (lzCompose leg). The amount needed is
+     *                      app-specific, apps should size it for their `onConfidentialBridgeReceived` workload.
+     * @return nativeFee    The fee to be passed as `nativeFee` to {sendLZConfidentialBridge} (i.e native fee to forward as msg.value when calling {sendLZConfidentialBridge}).
+     */
+    function quoteLZConfidentialBridge(
+        uint32 dstEid,
+        address srcApp,
+        bytes32 dstApp,
+        bytes memory payload,
+        bytes32[] memory handleList,
+        uint64 lzComposeGas
+    ) internal view returns (uint256 nativeFee) {
+        MessagingFee memory fee = getConfidentialBridge().quote(dstEid, srcApp, dstApp, payload, handleList, lzComposeGas);
+        nativeFee = fee.nativeFee;
     }
 }

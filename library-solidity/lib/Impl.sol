@@ -406,6 +406,12 @@ interface IACL {
     ) external view returns (uint64);
 
     /**
+     * @notice              Returns the `ConfidentialBridge` address.
+     * @return cBridgeAddr  The ConfidentialBridge contract address, or address(0) if not deployed.
+     */
+    function getConfidentialBridgeAddress() external view returns (address);
+
+    /**
      * @notice Returns whether an account is delegated to access the handle for user decryption.
      * @param delegator The address of the account that delegates access to its handles.
      * @param delegate The address of the account that receives the delegation.
