@@ -424,7 +424,7 @@ pub async fn insert_rand_abort_keygen_request(
         bc2wrap::serialize(&PropagationContext::empty())?,
         Utc::now(),
         options.already_sent,
-        status,
+        status as OperationStatus,
     )
     .execute(db)
     .await?;
@@ -442,15 +442,15 @@ pub async fn insert_rand_abort_crsgen_request(
     let status = options.status.unwrap_or(OperationStatus::Pending);
 
     sqlx::query!(
-            "INSERT INTO abort_crsgen_requests(
+        "INSERT INTO abort_crsgen_requests(
             crs_id, otlp_context, created_at, already_sent, status
         )
         VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING",
         crs_id.as_le_slice(),
-        bc2wrap::serialize(&PropagationContext::empty())?.
+        bc2wrap::serialize(&PropagationContext::empty())?,
         Utc::now(),
-        options.already_sent
-        status,
+        options.already_sent,
+        status as OperationStatus,
     )
     .execute(db)
     .await?;

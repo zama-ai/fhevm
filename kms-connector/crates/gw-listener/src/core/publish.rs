@@ -355,7 +355,7 @@ async fn publish_abort_crsgen_request<'e>(
     otlp_ctx: PropagationContext,
 ) -> anyhow::Result<PgQueryResult> {
     sqlx::query!(
-            "INSERT INTO abort_crsgen_requests(crs_id, tx_hash, created_at, otlp_context)
+        "INSERT INTO abort_crsgen_requests(crs_id, tx_hash, created_at, otlp_context)
                 VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
         request.crsId.as_le_slice(),
         tx_hash.map(|h| h.to_vec()),
