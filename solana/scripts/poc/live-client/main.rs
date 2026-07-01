@@ -39,14 +39,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    // BIND_INPUT drives the coprocessor-attested input bind against the live host_config
-    // (created by BOOTSTRAP with the real gateway verifier config); it does not touch
-    // host_config or the mint, so it runs standalone with the relayer-returned attestation.
-    if std::env::var("BIND_INPUT").is_ok() {
-        bind_coprocessor_input(&host, host_config)?;
-        return Ok(());
-    }
-
     // TRIVIAL_ENCRYPT drives a real zama-host FHE op (trivial encryption): the program
     // computes the result handle on-chain and emits a TrivialEncryptEvent the live
     // host-listener ingests into the coprocessor DB for the tfhe-worker to materialize.
@@ -220,61 +212,6 @@ fn bootstrap(
         })
         .send()?;
     println!("OK define_kms_context: {sig} (signers: {signer_count})");
-    Ok(())
-}
-
-/// Verifies a coprocessor-attested input on the live zama-host: feeds the handle + EIP-712
-/// `CiphertextVerification` attestation (handles + signature) the relayer returned, which the
-/// host verifies on-chain via secp256k1_recover against the configured coprocessor signer
-/// before emitting the verified-input receipt. No persistent ACL is created (EVM parity).
-/// Inputs come from the relayer response via env
-/// (BIND_HANDLE, BIND_COPRO_SIG, BIND_USER, BIND_CONTRACT, BIND_CHAIN_ID, optional BIND_EXTRA).
-fn bind_coprocessor_input(
-    host: &Program<Rc<Keypair>>,
-    host_config: Pubkey,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let handle: [u8; 32] = hexdec(&std::env::var("BIND_HANDLE")?)
-        .try_into()
-        .expect("BIND_HANDLE must be 32 bytes");
-    let signature: [u8; 65] = hexdec(&std::env::var("BIND_COPRO_SIG")?)
-        .try_into()
-        .expect("BIND_COPRO_SIG must be 65 bytes");
-    let user_address: [u8; 32] = hexdec(&std::env::var("BIND_USER")?)
-        .try_into()
-        .expect("BIND_USER must be 32 bytes");
-    let contract_address: [u8; 32] = hexdec(&std::env::var("BIND_CONTRACT")?)
-        .try_into()
-        .expect("BIND_CONTRACT must be 32 bytes");
-    let contract_chain_id: u64 = std::env::var("BIND_CHAIN_ID")?.parse()?;
-    let extra_data = std::env::var("BIND_EXTRA")
-        .map(|s| hexdec(&s))
-        .unwrap_or_else(|_| vec![0u8]);
-
-    let (zama_event_authority, _) =
-        Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
-
-    let handle_hex: String = handle.iter().map(|b| format!("{b:02x}")).collect();
-    println!("binding input_handle 0x{handle_hex}");
-    let sig = host
-        .request()
-        .accounts(zama_host::accounts::VerifyCoprocessorInput {
-            host_config,
-            event_authority: zama_event_authority,
-            program: zama_host::ID,
-        })
-        .args(zama_host::instruction::VerifyCoprocessorInput {
-            input_handle: handle,
-            ct_handles: vec![handle],
-            handle_index: 0,
-            user_address,
-            contract_address,
-            contract_chain_id,
-            extra_data,
-            signatures: vec![signature],
-        })
-        .send()?;
-    println!("OK verify_coprocessor_input: {sig}");
-    println!("  (secp256k1 coprocessor attestation verified on-chain; no persistent input ACL)");
     Ok(())
 }
 
@@ -1065,7 +1002,6 @@ fn consume_burn(
     let ta = token.rpc().get_account(&token_account)?;
     let current_balance_acl = Pubkey::new_from_array(ta.data[104..136].try_into().unwrap());
     let bal_seq = u64::from_le_bytes(ta.data[136..144].try_into().unwrap());
-    let amt_seq = u64::from_le_bytes(ta.data[144..152].try_into().unwrap());
 
     // Read live mint state: current total-supply ACL + next total-supply nonce sequence.
     // ConfidentialMint layout incl. 8-byte disc: authority(32)[8..40] acl_domain_key(32)[40..72]
@@ -1076,58 +1012,38 @@ fn consume_burn(
     let current_ts_acl = Pubkey::new_from_array(mi.data[169..201].try_into().unwrap());
     let ts_seq = u64::from_le_bytes(mi.data[201..209].try_into().unwrap());
 
-    // 1. create_random_amount(Burn): owner-scoped random burn amount at the amount sequence.
-    // BURN_BOUND (a power of two) uses the bounded variant so the random amount stays below the
-    // balance and the burn yields a positive burned amount (unbounded randoms exceed the balance,
-    // so burn_success is false and the burned amount is 0).
-    let burn_label = confidential_token::burn_amount_label();
-    let (burn_amount_acl, _) = zama_host::acl_record_address(
-        confidential_token::nonce_key(mint, owner, burn_label),
-        amt_seq,
-    );
-    let accounts = confidential_token::accounts::CreateRandomAmount {
-        owner,
-        mint,
-        token_account,
-        compute_signer,
-        amount_acl_record: burn_amount_acl,
-        zama_event_authority: zama_evt,
-        zama_program: zama_host::ID,
-        host_config,
-        system_program: system_program::ID,
-        event_authority: token_evt,
-        program: confidential_token::ID,
+    // 1. fromExternal burn amount: a coprocessor-attested external input (BIND_* env from the
+    // relayer input-proof), bound to (user = owner, contract = compute_signer PDA). confidential_burn
+    // re-verifies the EIP-712 attestation in-frame and transient-allows it for the burn eval — no
+    // durable amount ACL, no create_random_amount. The attested handle must be a euint64.
+    let input_handle: [u8; 32] = hexdec(&std::env::var("BIND_HANDLE")?)
+        .try_into()
+        .expect("BIND_HANDLE must be 32 bytes");
+    let signature: [u8; 65] = hexdec(&std::env::var("BIND_COPRO_SIG")?)
+        .try_into()
+        .expect("BIND_COPRO_SIG must be 65 bytes");
+    let user_address: [u8; 32] = hexdec(&std::env::var("BIND_USER")?)
+        .try_into()
+        .expect("BIND_USER must be 32 bytes");
+    let contract_address: [u8; 32] = hexdec(&std::env::var("BIND_CONTRACT")?)
+        .try_into()
+        .expect("BIND_CONTRACT must be 32 bytes");
+    let contract_chain_id: u64 = std::env::var("BIND_CHAIN_ID")?.parse()?;
+    let extra_data = std::env::var("BIND_EXTRA")
+        .map(|s| hexdec(&s))
+        .unwrap_or_else(|_| vec![0u8]);
+    let amount_attestation = zama_host::CoprocessorInputAttestation {
+        input_handle,
+        ct_handles: vec![input_handle],
+        handle_index: 0,
+        user_address,
+        contract_address,
+        contract_chain_id,
+        extra_data,
+        signatures: vec![signature],
     };
-    let send_cfg = anchor_client::RpcSendTransactionConfig {
-        skip_preflight: true,
-        ..Default::default()
-    };
-    let sig0 = if let Ok(bound) = std::env::var("BURN_BOUND") {
-        let bound: u64 = bound.parse()?;
-        let mut upper_bound = [0u8; 32];
-        upper_bound[24..].copy_from_slice(&bound.to_be_bytes());
-        token
-            .request()
-            .accounts(accounts)
-            .args(confidential_token::instruction::CreateRandomBoundedAmount {
-                amount_kind: confidential_token::ConfidentialAmountKind::Burn,
-                upper_bound,
-            })
-            .send_with_spinner_and_config(send_cfg)?
-    } else {
-        token
-            .request()
-            .accounts(accounts)
-            .args(confidential_token::instruction::CreateRandomAmount {
-                amount_kind: confidential_token::ConfidentialAmountKind::Burn,
-            })
-            .send_with_spinner_and_config(send_cfg)?
-    };
-    println!("OK create_random_amount(Burn): {sig0}");
-    let amt_acct = token.rpc().get_account(&burn_amount_acl)?;
-    let amount_handle: [u8; 32] = amt_acct.data[8..40].try_into().unwrap();
-    let hh: String = amount_handle.iter().map(|b| format!("{b:02x}")).collect();
-    println!("  burn amount ACL {burn_amount_acl}  handle 0x{hh}");
+    let hh: String = input_handle.iter().map(|b| format!("{b:02x}")).collect();
+    println!("  burn amount (attested external input) handle 0x{hh}");
 
     // 2. Derive the three durable burn output ACLs: the rotated balance + burned amount at
     // bal_seq plus the total-supply output at ts_seq. burn_success and debit_candidate are
@@ -1178,7 +1094,6 @@ fn consume_burn(
             total_supply_authority: ts_authority,
             current_compute_acl: current_balance_acl,
             current_total_supply_acl: current_ts_acl,
-            amount_compute_acl: burn_amount_acl,
             output_acl: output_balance_acl,
             burned_amount_acl: burned_acl,
             total_supply_output_acl: ts_output_acl,
@@ -1189,7 +1104,7 @@ fn consume_burn(
             event_authority: token_evt,
             program: confidential_token::ID,
         })
-        .args(confidential_token::instruction::ConfidentialBurn { amount_handle })
+        .args(confidential_token::instruction::ConfidentialBurn { amount_attestation })
         .send_with_spinner_and_config(anchor_client::RpcSendTransactionConfig {
             skip_preflight: std::env::var("BURN_NO_PREFLIGHT").is_err(),
             ..Default::default()
@@ -1480,6 +1395,16 @@ fn initialize_mint(
         .send()?;
     println!("OK initialize_mint: {sig}");
     println!("  confidential mint  {mint_pk}");
+    // The mint compute-signer PDA is the fromExternal `contract` an attested transfer/burn amount
+    // must bind to; print base58 + 0x-hex so the e2e can fetch a compute-signer-bound input-proof.
+    println!(
+        "  compute_signer     {compute_signer} 0x{}",
+        compute_signer
+            .to_bytes()
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect::<String>()
+    );
     println!("  underlying SPL     {underlying_mint}");
     println!("  total_supply ACL   {total_supply_acl_record}");
 

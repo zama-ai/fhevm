@@ -71,6 +71,12 @@ confidential_transfer
   -> fhe_binary_op_and_bind_output Add for receiver balance
   -> rotates balance handle + ACL record for each changed token account
 
+### SUPERSEDED (issue #1593): the transfer-and-call callback flow below was removed.
+# The 3 callback instructions + confidential-token-receiver(-sdk) are deleted. Solana-native
+# composition replaces them: a receiving app exposes its own `deposit` that CPIs
+# confidential_transfer with the user as sole signer (authority flows through the CPI — no operator,
+# no callback, no refund leg). See the confidential-deposit-app reference program. Kept for context.
+
 confidential_call_transfer_receiver
   -> owner-gated split instruction that invokes a receiver hook program with caller-provided
      instruction data and remaining accounts
@@ -181,12 +187,15 @@ comes from app state. ACL authorization is durable and can also apply to histori
 
 Input path:
   mock_input_verified_and_bind is a test short-circuit (chain-id confined, DD-014).
-  verify_coprocessor_input is the production-shaped path:
-    it verifies the coprocessor EIP-712 CiphertextVerification attestation on-chain via secp256k1
-    (recovers + threshold-checks the EVM coprocessor signers) and emits an InputVerifiedEvent receipt.
-    It creates NO persistent ACL record (matching EVM verifyInput's tx-scoped transient allow); a durable
-    permission on the input handle is a separate explicit app grant. (Using a verified input as a compute
-    operand still needs the host-listener to consume InputVerifiedEvent — a follow-up.)
+  The production path is the fhe_eval FheEvalOperand::VerifiedInput operand (the Solana
+    FHE.fromExternal analog): consuming it re-verifies the coprocessor EIP-712 CiphertextVerification
+    attestation on-chain via secp256k1 (recovers + threshold-checks the EVM coprocessor signers) and
+    transient-allows the input for that eval only — NO persistent ACL, matching EVM verifyInput +
+    allowTransient(input, msg.sender). The caller-is-contract gate is enforced at consumption
+    (attestation.contract_address == compute_subject); derived durable outputs are unconstrained.
+    confidential_transfer / confidential_burn consume an attested external amount via this operand.
+  The redundant standalone verify_coprocessor_input instruction + InputVerifiedEvent were removed;
+    the shared verifier lives in zama_host::instructions::input_verification.
   The removed verify_input_and_bind Ed25519 verifier-set path is the superseded design in DD-007.
   Real ZKPoK / transciphering still lives behind the attestation (PoC shortcut).
 

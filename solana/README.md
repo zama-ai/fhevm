@@ -443,7 +443,6 @@ zama-host program
     TrivialEncryptEvent
     FheRandEvent
     AclAllowedEvent
-    InputVerifiedEvent
     rich host config / ACL role / public decrypt / deny / delegation / material events
   |
   | Anchor self-CPI event bytes
@@ -1039,6 +1038,14 @@ an independent payer may fund rent and fees. This is a deliberate simplification
 to mirror ERC7984 operator parity.
 
 ### Receiver Hook Interface
+
+> **SUPERSEDED (issue #1593).** The transfer-and-call callback flow described in this section
+> (`confidential_call_transfer_receiver` / `confidential_prepare_transfer_callback` /
+> `confidential_finalize_transfer_callback`) and the `confidential-token-receiver` program were
+> **removed**. Solana doesn't need the token to call receivers back: signer authority propagates
+> through CPI, so a receiving app drives its own atomic `deposit` that CPIs `confidential_transfer`
+> (user signs once — no operator, no callback, no refund leg). See the `confidential-deposit-app`
+> reference program. The text below is retained for historical context only.
 
 `confidential_call_transfer_receiver` invokes the caller-supplied receiver program with
 caller-supplied instruction data and remaining accounts. The token program clears Solana return data

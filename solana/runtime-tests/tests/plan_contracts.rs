@@ -14,9 +14,6 @@ const TOKEN_COMMON: &str =
     include_str!("../../programs/confidential-token/src/instructions/common.rs");
 const TOKEN_WRAP_USDC: &str =
     include_str!("../../programs/confidential-token/src/instructions/wrap_usdc.rs");
-const TOKEN_PREPARE_CALLBACK: &str = include_str!(
-    "../../programs/confidential-token/src/instructions/confidential_prepare_transfer_callback.rs"
-);
 const IDL_CHECK_SCRIPT: &str = include_str!("../../scripts/check-zama-host-idl.sh");
 const SOLANA_ABI_CHECK: &str = include_str!("../../scripts/check_solana_abi.py");
 const HOST_LISTENER_BUILD: &str =
@@ -62,12 +59,14 @@ fn host_idl_drops_verifier_set_and_keeps_secp_kms_context_path() {
             "KmsContext is missing field `{required}`"
         );
     }
-    // Encrypted inputs are verified from the secp256k1 coprocessor attestation.
+    // Encrypted inputs are verified in-frame by the `fhe_eval` `VerifiedInput` operand
+    // (the fromExternal path); the redundant standalone verify_coprocessor_input instruction
+    // and its InputVerifiedEvent were removed.
     assert!(
-        instructions
+        !instructions
             .iter()
             .any(|name| name == "verify_coprocessor_input"),
-        "zama-host IDL must expose verify_coprocessor_input"
+        "standalone verify_coprocessor_input must be removed (input verification is inline in fhe_eval)"
     );
 }
 
@@ -106,18 +105,17 @@ fn token_idl_removed_operator_surface_and_splits_payer_from_owner() {
         .iter()
         .position(|account| account == "payer")
         .expect("confidential_transfer must add distinct payer account");
-    let amount_acl_index = transfer_accounts
-        .iter()
-        .position(|account| account == "amount_compute_acl")
-        .expect("confidential_transfer must keep amount ACL witness");
-
-    assert!(
-        payer_index < amount_acl_index,
-        "payer should be explicit before output/rent-funded accounts"
-    );
     assert_ne!(
         owner_index, payer_index,
         "owner authority and payer must be separate account metas even when callers pass the same key"
+    );
+    // fromExternal: the transfer amount is now a coprocessor-attested instruction argument, so the
+    // durable amount_compute_acl witness account is gone.
+    assert!(
+        !transfer_accounts
+            .iter()
+            .any(|account| account == "amount_compute_acl"),
+        "confidential_transfer amount is an attested external input, not a durable amount_compute_acl account"
     );
 
     // The per-mint verifier-set rotation surface is gone; disclosure/redemption requests pin a
@@ -165,7 +163,7 @@ fn token_idl_removed_operator_surface_and_splits_payer_from_owner() {
 }
 
 #[test]
-fn transient_wrap_and_requested_refund_do_not_leave_durable_acl_contracts() {
+fn transient_wrap_does_not_leave_durable_acl_contracts() {
     let idl = parse_idl(TOKEN_IDL);
     let wrap_accounts = instruction_account_names(&idl, "wrap_usdc");
     assert!(
@@ -174,35 +172,41 @@ fn transient_wrap_and_requested_refund_do_not_leave_durable_acl_contracts() {
             .any(|account| account == "amount_compute_acl"),
         "wrap_usdc must not require a durable amount_compute_acl for public deposit amount"
     );
-
-    let prepare_accounts =
-        instruction_account_names(&idl, "confidential_prepare_transfer_callback");
-    assert!(
-        !prepare_accounts
-            .iter()
-            .any(|account| account == "requested_refund_acl"),
-        "callback prepare must not require a durable requested_refund_acl"
-    );
-
-    let settlement_fields = type_field_names(&idl, "TransferCallbackSettlement");
-    for removed in ["requested_refund_handle", "requested_refund_acl_record"] {
-        assert!(
-            !settlement_fields.iter().any(|field| field == removed),
-            "TransferCallbackSettlement must not persist transient `{removed}`"
-        );
-    }
-
     assert!(
         TOKEN_WRAP_USDC.contains("Output::transient()")
             || TOKEN_WRAP_USDC.contains("transient_output")
             || TOKEN_WRAP_USDC.contains("TrivialAmount::transient"),
         "wrap_usdc should trivial-encrypt the public amount as an instruction-local transient value"
     );
-    assert!(
-        TOKEN_PREPARE_CALLBACK.contains("Output::transient()")
-            || TOKEN_COMMON.contains("Output::transient()"),
-        "requested_refund should be represented as a transient FHE value"
-    );
+}
+
+#[test]
+fn token_idl_drops_transfer_and_call_callback_surface() {
+    let idl = parse_idl(TOKEN_IDL);
+    let instructions = names(&idl, "instructions");
+    let accounts = names(&idl, "accounts");
+    let types = names(&idl, "types");
+
+    // The ported transfer-and-call callback flow (issue #1593) is replaced by app-driven CPI
+    // composition, so its instructions and settlement state must be gone.
+    for removed in [
+        "confidential_call_transfer_receiver",
+        "confidential_prepare_transfer_callback",
+        "confidential_finalize_transfer_callback",
+        "test_receiver_return_callback",
+    ] {
+        assert!(
+            !instructions.iter().any(|name| name == removed),
+            "callback instruction `{removed}` must be removed from the token IDL"
+        );
+    }
+    for removed in ["TransferCallbackSettlement", "TransferReceiverHookCall"] {
+        assert!(
+            !accounts.iter().any(|name| name == removed)
+                && !types.iter().any(|name| name == removed),
+            "callback state `{removed}` must be removed from the token IDL"
+        );
+    }
 }
 
 #[test]
@@ -344,7 +348,6 @@ fn abi_golden_drift_checks_cover_host_token_listener_and_kms_layouts() {
         "KmsContext",
         "AclRecord",
         "HandleMaterialCommitment",
-        "TransferCallbackSettlement",
     ] {
         assert!(
             IDL_CHECK_SCRIPT.contains(required)

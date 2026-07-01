@@ -58,9 +58,10 @@ const client = createFhevmEncryptClient({
   aclProgramAddress: reqEnv('IN_ACL_PROGRAM') as Bytes32Hex,
 });
 
-// zama-host verify_coprocessor_input verifies the coprocessor's EIP-712 attestation on-chain; the
-// proof attests the deployer as both the user and the contract identity. No persistent input ACL is
-// created (EVM parity) — durable permission on an input-derived handle is a separate app grant.
+// The coprocessor's EIP-712 attestation is verified on-chain in-frame when the input is consumed as
+// an fhe_eval VerifiedInput operand (the fromExternal path); the proof attests the deployer as both
+// the user and the contract identity. No persistent input ACL is created (EVM parity) — the input is
+// transient-allowed for that eval only, and derived durable outputs are ACL'd by the consuming app.
 const proof = await client.buildInputProof({
   contractAddress: reqEnv('IN_CONTRACT'),
   userAddress: reqEnv('IN_USER'),

@@ -56,6 +56,12 @@ pub enum ConfidentialTokenError {
     /// Transfer amount ACL record is not scoped to the sender token account.
     #[msg("transfer amount ACL record is invalid")]
     AmountAclMismatch,
+    /// The attested input's user does not match the transaction owner/authority.
+    #[msg("attested input user does not match owner")]
+    AttestationUserMismatch,
+    /// The attested input's contract is not the mint compute-signer PDA.
+    #[msg("attested input contract does not match compute signer")]
+    AttestationContractMismatch,
     /// Total-supply authority PDA did not match the mint.
     #[msg("total supply authority does not match mint")]
     TotalSupplyAuthorityMismatch,

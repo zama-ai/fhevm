@@ -6,8 +6,8 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
+confidential_deposit_app = "8JdZ2wLbRJtc969bcY6rqSRUKFovxHeKhWPmQaLhHojd"
 confidential_token = "pS2gMMq6PNZKpjxiANeoN5XxJgwaFsUR6xaJkpUHcDg"
-confidential_token_receiver = "8JdZ2wLbRJtc969bcY6rqSRUKFovxHeKhWPmQaLhHojd"
 zama_host = "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
 
 [provider]

@@ -321,18 +321,3 @@ pub struct AclAllowedEvent {
     /// Allowed subject pubkey bytes.
     pub subject: [u8; 32],
 }
-
-/// Test/mock event for encrypted input verification.
-#[event]
-pub struct InputVerifiedEvent {
-    /// Event schema version.
-    pub version: u8,
-    /// Input handle supplied to the verifier boundary.
-    pub input_handle: [u8; 32],
-    /// Result handle emitted to the worker/listener path.
-    pub result_handle: [u8; 32],
-    /// User pubkey bytes associated with the input.
-    pub user: [u8; 32],
-    /// ACL domain key bytes associated with the input.
-    pub acl_domain_key: [u8; 32],
-}

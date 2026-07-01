@@ -32,8 +32,8 @@ use anchor_lang::{
 
 use zama_host::{
     acl_nonce_key, acl_record_address, role_flags_are_known, subject_has_role, AclSubjectEntry,
-    FheBinaryOpCode, FheEvalArgs, FheEvalOperand, FheEvalOutput, FheEvalStep, FheTernaryOpCode,
-    ACL_ROLE_USE, MAX_ACL_SUBJECTS, MAX_FHE_EVAL_OPS,
+    CoprocessorInputAttestation, FheBinaryOpCode, FheEvalArgs, FheEvalOperand, FheEvalOutput,
+    FheEvalStep, FheTernaryOpCode, ACL_ROLE_USE, MAX_ACL_SUBJECTS, MAX_FHE_EVAL_OPS,
 };
 
 /// Result type used by the builder helpers.
@@ -79,6 +79,8 @@ pub enum EvalBuildError {
     InvalidPermissionRecord,
     /// A lowered host account index does not match the eval plan account list.
     InvalidRemainingAccountReference,
+    /// A verified-input operand referenced an attestation not registered with the builder.
+    MissingVerifiedInput,
 }
 
 /// Typed FHE handle tag used by the host ABI.
@@ -390,6 +392,14 @@ enum OperandKind {
         context_id: EvalContextId,
         builder_scope: EvalBuilderScope,
     },
+    /// External input verified in-frame via a coprocessor attestation (EVM `fromExternal`). The
+    /// `Vec`-bearing attestation is held by the [`EvalBuilder`] and referenced by index; keeping
+    /// only the index + `input_handle` here leaves the operand `Copy`. `input_handle` carries the
+    /// FHE type for operand type-checks without touching the attestation.
+    VerifiedInput {
+        input_handle: [u8; 32],
+        attestation_index: u16,
+    },
     Scalar([u8; 32]),
 }
 
@@ -416,6 +426,13 @@ impl Operand {
 
     fn scalar(value: [u8; 32]) -> Self {
         Self(OperandKind::Scalar(value))
+    }
+
+    fn verified_input(input_handle: [u8; 32], attestation_index: u16) -> Self {
+        Self(OperandKind::VerifiedInput {
+            input_handle,
+            attestation_index,
+        })
     }
 }
 
@@ -1164,6 +1181,9 @@ pub struct EvalBuilder {
     steps: Vec<FheEvalStep>,
     produced_types: Vec<u8>,
     remaining_accounts: Vec<EvalAccountMeta>,
+    /// Coprocessor attestations backing `VerifiedInput` operands, referenced by index. Held here
+    /// (rather than inline in the operand) so `Operand` stays `Copy`.
+    verified_inputs: Vec<CoprocessorInputAttestation>,
 }
 
 impl Clone for EvalBuilder {
@@ -1175,6 +1195,7 @@ impl Clone for EvalBuilder {
             steps: self.steps.clone(),
             produced_types: self.produced_types.clone(),
             remaining_accounts: self.remaining_accounts.clone(),
+            verified_inputs: self.verified_inputs.clone(),
         }
     }
 }
@@ -1188,7 +1209,30 @@ impl EvalBuilder {
             steps: Vec::new(),
             produced_types: Vec::new(),
             remaining_accounts: Vec::new(),
+            verified_inputs: Vec::new(),
         }
+    }
+
+    /// Introduces a coprocessor-attested external input as a transient operand — the Solana analog
+    /// of EVM `FHE.fromExternal`. The host re-verifies the attestation in-frame and requires the
+    /// caller to be the attested contract (`compute_subject == contract_address`); derived outputs
+    /// are then unconstrained, exactly like EVM `allowTransient(input, msg.sender)`. The returned
+    /// value is an operand usable only in later steps of this builder.
+    pub fn verified_input<T: FheTyped>(
+        &mut self,
+        attestation: CoprocessorInputAttestation,
+    ) -> Result<Encrypted<T>> {
+        if handle_fhe_type(attestation.input_handle) != T::FHE_TYPE.byte() {
+            return Err(EvalBuildError::UnsupportedFheType);
+        }
+        let attestation_index =
+            u16::try_from(self.verified_inputs.len()).map_err(|_| EvalBuildError::TooManyOps)?;
+        let input_handle = attestation.input_handle;
+        self.verified_inputs.push(attestation);
+        Ok(Encrypted::from_operand(Operand::verified_input(
+            input_handle,
+            attestation_index,
+        )))
     }
 
     pub fn add<T: FheUint>(
@@ -1273,6 +1317,7 @@ impl EvalBuilder {
             self.steps.len(),
             self.context_id,
             self.scope,
+            &self.verified_inputs,
             lhs,
         )?;
         let rhs = lower_operand(
@@ -1280,6 +1325,7 @@ impl EvalBuilder {
             self.steps.len(),
             self.context_id,
             self.scope,
+            &self.verified_inputs,
             rhs,
         )?;
         let output = lower_output(&mut remaining_accounts, self.app_authority, output)?;
@@ -1328,6 +1374,7 @@ impl EvalBuilder {
             self.steps.len(),
             self.context_id,
             self.scope,
+            &self.verified_inputs,
             control,
         )?;
         let if_true = lower_operand(
@@ -1335,6 +1382,7 @@ impl EvalBuilder {
             self.steps.len(),
             self.context_id,
             self.scope,
+            &self.verified_inputs,
             if_true,
         )?;
         let if_false = lower_operand(
@@ -1342,6 +1390,7 @@ impl EvalBuilder {
             self.steps.len(),
             self.context_id,
             self.scope,
+            &self.verified_inputs,
             if_false,
         )?;
         let output = lower_output(&mut remaining_accounts, self.app_authority, output)?;
@@ -1715,6 +1764,7 @@ where
                 .map(Some)
                 .ok_or(EvalBuildError::InvalidTransientReference)
         }
+        OperandKind::VerifiedInput { input_handle, .. } => Ok(Some(handle_fhe_type(*input_handle))),
         OperandKind::Scalar(_) => Ok(None),
     }
 }
@@ -1798,6 +1848,7 @@ fn lower_operand(
     produced_count: usize,
     context_id: EvalContextId,
     builder_scope: EvalBuilderScope,
+    verified_inputs: &[CoprocessorInputAttestation],
     operand: Operand,
 ) -> Result<FheEvalOperand> {
     match operand.0 {
@@ -1833,6 +1884,15 @@ fn lower_operand(
                 return Err(EvalBuildError::InvalidTransientReference);
             }
             Ok(FheEvalOperand::AllowedLocal { producer_index })
+        }
+        OperandKind::VerifiedInput {
+            attestation_index, ..
+        } => {
+            let attestation = verified_inputs
+                .get(attestation_index as usize)
+                .ok_or(EvalBuildError::MissingVerifiedInput)?
+                .clone();
+            Ok(FheEvalOperand::VerifiedInput { attestation })
         }
         OperandKind::Scalar(value) => Ok(FheEvalOperand::Scalar(value)),
     }
@@ -2246,6 +2306,19 @@ mod tests {
         Operand::scalar(Scalar::<Uint<64>>::u64(value).bytes())
     }
 
+    fn dummy_attestation(input_handle: [u8; 32], contract: Pubkey) -> CoprocessorInputAttestation {
+        CoprocessorInputAttestation {
+            input_handle,
+            ct_handles: vec![input_handle],
+            handle_index: 0,
+            user_address: Pubkey::new_unique().to_bytes(),
+            contract_address: contract.to_bytes(),
+            contract_chain_id: 1,
+            extra_data: vec![],
+            signatures: vec![[0u8; 65]],
+        }
+    }
+
     #[cfg(feature = "cpi")]
     fn cpi_accounts(app_authority: Pubkey) -> EvalCpiAccounts<'static> {
         EvalCpiAccounts {
@@ -2303,6 +2376,62 @@ mod tests {
             }
             other => panic!("unexpected step: {other:?}"),
         }
+    }
+
+    #[test]
+    fn eval_plan_build_lowers_verified_input_operand() {
+        let primary_authority = Pubkey::new_unique();
+        let output_slot = durable_slot(primary_authority, 7);
+        let output_acl = output_slot.address();
+        let input_handle = balance_handle(2);
+        let attestation = dummy_attestation(input_handle, primary_authority);
+
+        let plan = EvalPlan::build(context_id(9), app_authority(primary_authority), |builder| {
+            let amount: Uint64Handle = builder.verified_input(attestation.clone())?;
+            builder.add(
+                amount,
+                Scalar::<Uint<64>>::u64(1),
+                Output::durable(output_slot, access_policy(primary_authority)),
+            )
+        })
+        .unwrap();
+
+        assert_eq!(plan.args.steps.len(), 1);
+        match &plan.args.steps[0] {
+            FheEvalStep::Binary { lhs, rhs, .. } => {
+                assert_eq!(
+                    *lhs,
+                    FheEvalOperand::VerifiedInput {
+                        attestation: attestation.clone()
+                    }
+                );
+                assert_eq!(
+                    *rhs,
+                    FheEvalOperand::Scalar(Scalar::<Uint<64>>::u64(1).bytes())
+                );
+            }
+            other => panic!("unexpected step: {other:?}"),
+        }
+        // A verified input carries no remaining account: the attestation is inline in the operand.
+        assert_eq!(
+            plan.remaining_accounts,
+            vec![EvalAccountMeta::writable(
+                output_acl,
+                EvalAccountPurpose::DurableOutputAcl
+            )]
+        );
+    }
+
+    #[test]
+    fn verified_input_rejects_type_mismatch() {
+        let primary_authority = Pubkey::new_unique();
+        // Input handle typed as BOOL (0) but requested as Uint64: caught at build time.
+        let attestation = dummy_attestation(typed_handle(2, 0), primary_authority);
+        let mut builder = EvalBuilder::new(context_id(9), app_authority(primary_authority));
+        assert_eq!(
+            builder.verified_input::<Uint<64>>(attestation).unwrap_err(),
+            EvalBuildError::UnsupportedFheType
+        );
     }
 
     #[test]

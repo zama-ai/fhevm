@@ -25,8 +25,6 @@ pub struct ConfidentialBurn<'info> {
     pub current_compute_acl: Box<Account<'info, zama_host::AclRecord>>,
     /// Current total-supply ACL record used as the left-hand operand.
     pub current_total_supply_acl: Box<Account<'info, zama_host::AclRecord>>,
-    /// Encrypted burn amount ACL record.
-    pub amount_compute_acl: Box<Account<'info, zama_host::AclRecord>>,
     /// CHECK: initialized and validated by the Zama host program CPI.
     #[account(mut)]
     pub output_acl: UncheckedAccount<'info>,
@@ -47,7 +45,10 @@ pub struct ConfidentialBurn<'info> {
 }
 
 /// Burns an encrypted amount by rotating the account balance and encrypted total supply.
-pub fn confidential_burn(ctx: Context<ConfidentialBurn>, amount_handle: [u8; 32]) -> Result<()> {
+pub fn confidential_burn(
+    ctx: Context<ConfidentialBurn>,
+    amount_attestation: zama_host::CoprocessorInputAttestation,
+) -> Result<()> {
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
     assert_confidential_mint_shape(&ctx.accounts.mint)?;
     let mint_key = ctx.accounts.mint.key();
@@ -97,13 +98,9 @@ pub fn confidential_burn(ctx: Context<ConfidentialBurn>, amount_handle: [u8; 32]
         mint_key,
         total_supply_authority,
     )?;
-    assert_burn_amount_acl(
-        &ctx.accounts.amount_compute_acl,
-        amount_handle,
-        mint_key,
-        owner,
-        compute_signer,
-    )?;
+    // fromExternal parity: the burn amount is a coprocessor-attested external input authored by the
+    // owner and bound to the mint compute-signer PDA (see assert_amount_attestation_binding).
+    assert_amount_attestation_binding(&amount_attestation, owner, compute_signer)?;
     let balance_output = fhe::DurableOutput::new(
         ctx.accounts.output_acl.to_account_info(),
         durable_slot(
@@ -137,7 +134,6 @@ pub fn confidential_burn(ctx: Context<ConfidentialBurn>, amount_handle: [u8; 32]
     )?;
 
     let balance = uint64_from_acl(old_balance_handle, &ctx.accounts.current_compute_acl)?;
-    let amount = uint64_from_acl(amount_handle, &ctx.accounts.amount_compute_acl)?;
     let total_supply = uint64_from_acl(
         old_total_supply_handle,
         &ctx.accounts.current_total_supply_acl,
@@ -147,7 +143,7 @@ pub fn confidential_burn(ctx: Context<ConfidentialBurn>, amount_handle: [u8; 32]
         mint_key,
         token_account_key,
         token_account_key,
-        amount_handle,
+        amount_attestation.input_handle,
         balance_nonce_sequence,
         total_supply_nonce_sequence,
     )?;
@@ -155,6 +151,9 @@ pub fn confidential_burn(ctx: Context<ConfidentialBurn>, amount_handle: [u8; 32]
         context_id,
         zama_fhe::EvalAppAuthority::new(token_account_key),
     );
+    let amount: zama_fhe::Uint64Handle = builder
+        .verified_input(amount_attestation)
+        .map_err(invalid_eval_plan)?;
     let burn_success = builder
         .ge(balance, amount, zama_fhe::Output::transient())
         .map_err(invalid_eval_plan)?;
@@ -187,7 +186,6 @@ pub fn confidential_burn(ctx: Context<ConfidentialBurn>, amount_handle: [u8; 32]
         [
             ctx.accounts.current_compute_acl.to_account_info(),
             ctx.accounts.current_total_supply_acl.to_account_info(),
-            ctx.accounts.amount_compute_acl.to_account_info(),
             balance_output.account_info(),
             burned_output.account_info(),
             total_supply_output.account_info(),

@@ -57,6 +57,10 @@ const BALANCE_FHE_TYPE: u8 = 5;
 const TOKEN_BALANCE_FHE_TYPE: u8 = 5;
 type SeededCiphertext = ([u8; 32], i16, Vec<u8>);
 const DEFAULT_SOLANA_LOG_BYTES_LIMIT: usize = 10_000;
+// Coprocessor `CiphertextVerification` EIP-712 domain used by the `fromExternal` transfer amount
+// attestations; must match the fixture's `host_config` verifier settings.
+const SECP_GATEWAY_CHAIN_ID: u64 = 31337;
+const INPUT_VERIFICATION_CONTRACT: [u8; 20] = [0xCDu8; 20];
 
 #[tokio::test]
 #[serial(db)]
@@ -78,7 +82,6 @@ async fn solana_confidential_transfer_with_real_ciphertexts_computes_and_decrypt
     )
     .await?;
 
-    authorize_input_compute_acl(&mut fixture, amount_handle);
     let output = transfer_output_accounts(&fixture, 1);
     let transfer_ix = transfer_ix(&fixture, output, amount_handle);
     let (meta, account_keys, signature) =
@@ -509,7 +512,6 @@ async fn solana_trivial_encrypt_then_confidential_transfer_computes_and_decrypts
     insert_host_events(&harness.listener_db, initial_events, signature, 1).await?;
     wait_until_computed(&harness.app).await?;
 
-    authorize_input_compute_acl(&mut fixture, amount_handle);
     let output = transfer_output_accounts(&fixture, 1);
     let transfer_ix = transfer_ix(&fixture, output, amount_handle);
     let (meta, account_keys, signature) =
@@ -610,7 +612,6 @@ async fn solana_fhe_rand_creates_ciphertext_and_decrypts() -> Result<(), Box<dyn
 fn solana_user_decrypt_acl_invariants_match_evm_semantics() {
     let mut fixture = token_fixture();
     let amount_handle = balance_handle(0x39);
-    authorize_input_compute_acl(&mut fixture, amount_handle);
     let output = transfer_output_accounts(&fixture, 1);
     let transfer_ix = transfer_ix(&fixture, output, amount_handle);
     send_with_meta(&mut fixture.svm, &fixture.alice, transfer_ix);
@@ -767,9 +768,11 @@ fn seed_host_config(
                 admin,
                 chain_id: host::SOLANA_POC_CHAIN_ID,
                 input_verifier_authority,
-                gateway_chain_id: 0,
-                input_verification_contract: [0u8; 20],
-                coprocessor_signer: [0u8; 20],
+                // Coprocessor `fromExternal` verifier: transfers bind the amount via a
+                // secp256k1 EIP-712 attestation that fhe_eval re-verifies in-frame.
+                gateway_chain_id: SECP_GATEWAY_CHAIN_ID,
+                input_verification_contract: INPUT_VERIFICATION_CONTRACT,
+                coprocessor_signer: secp_evm_address(&coprocessor_signing_key()),
                 decryption_contract: [0u8; 20],
                 current_kms_context_id: 0,
                 material_authority: input_verifier_authority,
@@ -997,66 +1000,6 @@ fn transfer_output_accounts(fixture: &TokenFixture, nonce_sequence: u64) -> Tran
     }
 }
 
-fn input_compute_acl_address(fixture: &TokenFixture, handle: [u8; 32]) -> Pubkey {
-    acl_record_address(
-        fixture.host_program_id,
-        token::nonce_key(
-            fixture.mint.pubkey(),
-            fixture.alice.pubkey(),
-            token::transfer_amount_label(),
-        ),
-        u64::from(handle[0]),
-    )
-}
-
-fn authorize_input_compute_acl(fixture: &mut TokenFixture, handle: [u8; 32]) {
-    // Test-only ACL fixture: inject a durable ACL record granting the compute
-    // signer the compute-subject role over `handle`, so the transfer/compute
-    // tests can run without the (removed) mock_input_verified_and_bind
-    // instruction. In production this record is born by the real verified-input
-    // -> fhe_eval -> durable-output path, exercised by the live full-vertical.
-    let acl_domain_key = fixture.mint.pubkey();
-    let app_account = fixture.alice.pubkey();
-    let encrypted_value_label = token::transfer_amount_label();
-    let nonce_key = token::nonce_key(acl_domain_key, app_account, encrypted_value_label);
-    let nonce_sequence = u64::from(handle[0]);
-    let (address, bump) = host::acl_record_address(nonce_key, nonce_sequence);
-    let mut subjects = [Pubkey::default(); host::MAX_ACL_SUBJECTS];
-    let mut subject_roles = [0; host::MAX_ACL_SUBJECTS];
-    subjects[0] = fixture.compute_signer;
-    subject_roles[0] = host::ACL_ROLE_COMPUTE_SUBJECT;
-    fixture
-        .svm
-        .set_account(
-            address,
-            Account {
-                lamports: 1_000_000_000,
-                data: serialized_account(AclRecord {
-                    handle,
-                    nonce_key,
-                    nonce_sequence,
-                    acl_domain_key,
-                    app_account,
-                    encrypted_value_label,
-                    subjects,
-                    subject_roles,
-                    subject_count: 1,
-                    overflow_subject_count: 0,
-                    public_decrypt: false,
-                    material_commitment: Pubkey::default(),
-                    material_commitment_hash: [0; 32],
-                    material_key_id: [0; 32],
-                    created_slot: 0,
-                    bump,
-                }),
-                owner: host::id(),
-                executable: false,
-                rent_epoch: 0,
-            },
-        )
-        .unwrap();
-}
-
 fn transfer_ix(
     fixture: &TokenFixture,
     output: TransferOutputAccounts,
@@ -1073,7 +1016,6 @@ fn transfer_ix(
             compute_signer: fixture.compute_signer,
             from_current_compute_acl: fixture.alice_current_compute_acl,
             to_current_compute_acl: fixture.bob_current_compute_acl,
-            amount_compute_acl: input_compute_acl_address(fixture, amount_handle),
             from_output_acl: output.alice,
             transferred_amount_acl: output.transferred,
             to_output_acl: output.bob,
@@ -1085,7 +1027,80 @@ fn transfer_ix(
             program: fixture.token_program_id,
         }
         .to_account_metas(None),
-        data: token::instruction::ConfidentialTransfer { amount_handle }.data(),
+        data: token::instruction::ConfidentialTransfer {
+            // fromExternal: the amount is a coprocessor-signed attestation bound to
+            // (user = owner, contract = mint compute-signer PDA), re-verified in fhe_eval.
+            amount_attestation: amount_attestation_for(
+                amount_handle,
+                fixture.alice.pubkey(),
+                fixture.compute_signer,
+            ),
+        }
+        .data(),
+    }
+}
+
+/// Coprocessor signing key backing the `fromExternal` amount attestations; its EVM address is the
+/// `coprocessor_signer` configured on the fixture's `host_config`.
+fn coprocessor_signing_key() -> k256::ecdsa::SigningKey {
+    k256::ecdsa::SigningKey::from_bytes(&[0x44u8; 32].into()).unwrap()
+}
+
+/// Recovers the EVM address (keccak(pubkey)[12..]) for a coprocessor signing key, matching the
+/// on-chain `secp256k1_recover` derivation.
+fn secp_evm_address(key: &k256::ecdsa::SigningKey) -> [u8; 20] {
+    let encoded = key.verifying_key().to_encoded_point(false); // 0x04 || X || Y
+    let hash = solana_sdk::keccak::hash(&encoded.as_bytes()[1..]).to_bytes();
+    let mut address = [0u8; 20];
+    address.copy_from_slice(&hash[12..]);
+    address
+}
+
+/// 65-byte `[r || s || v]` recoverable signature over an EIP-712 digest.
+fn secp_sign(key: &k256::ecdsa::SigningKey, digest: &[u8; 32]) -> [u8; 65] {
+    let (signature, recovery_id) = key.sign_prehash_recoverable(digest).unwrap();
+    let mut out = [0u8; 65];
+    out[..64].copy_from_slice(&signature.to_bytes());
+    out[64] = 27 + recovery_id.to_byte();
+    out
+}
+
+/// Builds a coprocessor-signed `fromExternal` attestation over `amount_handle`, binding it to
+/// (`user`, `contract`). The token program checks `user == transfer owner` and
+/// `contract == mint compute-signer PDA`; the host re-verifies this signature in-frame.
+fn amount_attestation_for(
+    amount_handle: [u8; 32],
+    user: Pubkey,
+    contract: Pubkey,
+) -> host::CoprocessorInputAttestation {
+    let key = coprocessor_signing_key();
+    let ct_handles = vec![amount_handle];
+    let contract_chain_id = 12345u64;
+    let extra_data = vec![0x00u8];
+    let digest = host::eip712::typed_data_digest(
+        &host::eip712::domain_separator(
+            b"InputVerification",
+            b"1",
+            SECP_GATEWAY_CHAIN_ID,
+            &INPUT_VERIFICATION_CONTRACT,
+        ),
+        &host::eip712::ciphertext_verification_struct_hash(
+            &ct_handles,
+            &user.to_bytes(),
+            &contract.to_bytes(),
+            contract_chain_id,
+            &extra_data,
+        ),
+    );
+    host::CoprocessorInputAttestation {
+        input_handle: amount_handle,
+        ct_handles,
+        handle_index: 0,
+        user_address: user.to_bytes(),
+        contract_address: contract.to_bytes(),
+        contract_chain_id,
+        extra_data,
+        signatures: vec![secp_sign(&key, &digest)],
     }
 }
 

@@ -1,11 +1,10 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/confidential-token-receiver-sdk",
     "crates/solana-ed25519-instruction",
     "crates/zama-fhe",
+    "programs/confidential-deposit-app",
     "programs/confidential-token",
-    "programs/confidential-token-receiver",
     "programs/zama-host",
     "runtime-tests",
 ]

@@ -27,8 +27,6 @@ pub struct ConfidentialTransfer<'info> {
     pub from_current_compute_acl: Box<Account<'info, zama_host::AclRecord>>,
     /// Recipient current balance ACL record.
     pub to_current_compute_acl: Box<Account<'info, zama_host::AclRecord>>,
-    /// Encrypted amount ACL record.
-    pub amount_compute_acl: Box<Account<'info, zama_host::AclRecord>>,
     /// CHECK: initialized and validated by the Zama host program CPI.
     #[account(mut)]
     pub from_output_acl: UncheckedAccount<'info>,
@@ -49,12 +47,6 @@ pub struct ConfidentialTransfer<'info> {
 }
 
 impl<'info> ConfidentialTransfer<'info> {
-    pub(crate) const OWNER_ACCOUNT_INDEX: usize = 0;
-    pub(crate) const MINT_ACCOUNT_INDEX: usize = 2;
-    pub(crate) const FROM_ACCOUNT_INDEX: usize = 3;
-    pub(crate) const TO_ACCOUNT_INDEX: usize = 4;
-    pub(crate) const TRANSFERRED_AMOUNT_ACL_INDEX: usize = 10;
-
     pub(crate) fn as_transfer_accounts(&mut self) -> TransferAccounts<'_, 'info> {
         TransferAccounts {
             payer: &self.payer,
@@ -65,7 +57,6 @@ impl<'info> ConfidentialTransfer<'info> {
             compute_signer: &self.compute_signer,
             from_current_compute_acl: self.from_current_compute_acl.as_ref(),
             to_current_compute_acl: self.to_current_compute_acl.as_ref(),
-            amount_compute_acl: &self.amount_compute_acl,
             from_output_acl: self.from_output_acl.to_account_info(),
             transferred_amount_acl: self.transferred_amount_acl.to_account_info(),
             to_output_acl: self.to_output_acl.to_account_info(),
@@ -80,7 +71,7 @@ impl<'info> ConfidentialTransfer<'info> {
 /// Transfers an encrypted amount by rotating the sender and recipient balance handles.
 pub fn confidential_transfer(
     ctx: Context<ConfidentialTransfer>,
-    amount_handle: [u8; 32],
+    amount_attestation: zama_host::CoprocessorInputAttestation,
 ) -> Result<()> {
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
     require_keys_eq!(
@@ -91,7 +82,7 @@ pub fn confidential_transfer(
     let outcome = execute_transfer(
         ctx.accounts.as_transfer_accounts(),
         ctx.bumps.compute_signer,
-        amount_handle,
+        amount_attestation,
     )?;
     if let Some(outcome) = outcome {
         emit_cpi!(ConfidentialTransferEvent {
