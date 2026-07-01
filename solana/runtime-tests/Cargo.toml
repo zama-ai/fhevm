@@ -10,7 +10,6 @@ anchor-lang = "1.0.2"
 anchor-spl = { version = "1.0.2", default-features = false, features = ["associated_token", "token", "token_2022"] }
 base64 = "0.22.1"
 confidential-token = { path = "../programs/confidential-token", features = ["no-entrypoint"] }
-confidential-token-receiver = { path = "../programs/confidential-token-receiver", features = ["no-entrypoint"] }
 mollusk-svm = { version = "0.12.1-agave-4.0", features = ["inner-instructions", "precompiles"] }
 mollusk-svm-programs-token = { version = "0.12.1-agave-4.0", default-features = false, features = ["token"] }
 solana-program = "3.0.0"

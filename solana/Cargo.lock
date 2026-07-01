@@ -971,32 +971,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "confidential-deposit-app"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang",
+ "confidential-token",
+ "zama-host",
+]
+
+[[package]]
 name = "confidential-token"
 version = "0.1.0"
 dependencies = [
  "anchor-lang",
  "anchor-spl",
- "confidential-token-receiver-sdk",
  "solana-ed25519-instruction",
  "solana-instructions-sysvar",
  "solana-sha256-hasher",
  "zama-fhe",
  "zama-host",
-]
-
-[[package]]
-name = "confidential-token-receiver"
-version = "0.1.0"
-dependencies = [
- "anchor-lang",
- "confidential-token-receiver-sdk",
-]
-
-[[package]]
-name = "confidential-token-receiver-sdk"
-version = "0.1.0"
-dependencies = [
- "anchor-lang",
 ]
 
 [[package]]
@@ -4953,7 +4946,6 @@ dependencies = [
  "anchor-spl",
  "base64 0.22.1",
  "confidential-token",
- "confidential-token-receiver",
  "k256",
  "mollusk-svm",
  "mollusk-svm-programs-token",

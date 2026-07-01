@@ -22,7 +22,6 @@ poc = []
 [dependencies]
 anchor-lang = "1.0.2"
 anchor-spl = { version = "1.0.2", default-features = false, features = ["associated_token", "token", "token_2022"] }
-confidential-token-receiver-sdk = { path = "../../crates/confidential-token-receiver-sdk" }
 solana-instructions-sysvar = "3.0.1"
 solana-ed25519-instruction = { path = "../../crates/solana-ed25519-instruction" }
 solana-sha256-hasher = "3.1.0"

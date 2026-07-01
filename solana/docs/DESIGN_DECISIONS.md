@@ -195,6 +195,17 @@ was a Solana-only trust root divorced from the EVM coprocessor trust model.
 
 Decision:
 
+> **Update (fromExternal wiring — closes the follow-up below).** Inputs now enter compute through the
+> `FheEvalOperand::VerifiedInput` operand consumed inside `fhe_eval` (the Solana `FHE.fromExternal`
+> analog): the coprocessor attestation is re-verified in-frame and the input is transient-allowed for
+> that eval only. The "caller is the attested contract" gate moved to input-consumption time
+> (`attestation.contract_address == compute_subject`, the msg.sender analog) and derived durable
+> outputs are unconstrained — exactly EVM parity, and stricter output-binding was removed. The
+> redundant standalone `verify_coprocessor_input` instruction and its `InputVerifiedEvent` were
+> **deleted**; the shared `verify_input_attestation` verifier moved to `instructions::input_verification`.
+> `confidential_transfer` / `confidential_burn` consume an attested external amount via this operand.
+> The rest of this entry is the prior (verify-and-receipt) design, kept for the record.
+
 Inputs are verified via an on-chain secp256k1 verification of the **coprocessor's EIP-712
 `CiphertextVerification` attestation**. `zama_host::instructions::verify_coprocessor_input`
 recovers the EVM coprocessor signer(s) from the attestation (`secp256k1_recover`), checks them
@@ -330,6 +341,18 @@ Disclosure fixtures and KMS tests must seed amount-shaped ACL records when testi
 disclosure. Balance disclosure remains a separate path.
 
 ## DD-011: Transfer-And-Call Uses Split Settlement
+
+Status: SUPERSEDED (issue #1593)
+
+> **Superseded.** The ported multi-leg transfer-and-call callback flow (`confidential_transfer` →
+> `confidential_call_transfer_receiver` → `confidential_prepare_transfer_callback` →
+> `confidential_finalize_transfer_callback`) and the `confidential-token-receiver` program + SDK were
+> **removed**. It transliterated an EVM workaround (contracts can't observe incoming transfers, so the
+> token calls them back) that Solana doesn't need: signer authority propagates through CPI, so a
+> receiving app drives its own atomic `deposit` that CPIs `confidential_transfer` (user signs once, no
+> operator, no callback, no refund leg — the all-or-zero transferred amount is the accept signal). See
+> the `confidential-deposit-app` reference program. DD-018 (the split prepare/finalize refund) is
+> superseded with it. The rest of this entry is kept for the record.
 
 Status: product-open
 

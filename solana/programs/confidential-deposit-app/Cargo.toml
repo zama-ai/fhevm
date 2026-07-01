@@ -1,0 +1,28 @@
+[package]
+name = "confidential-deposit-app"
+version = "0.1.0"
+description = "Reference app-driven deposit vault: composes confidential-token via CPI (no operator, no callback)"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "confidential_deposit_app"
+
+[features]
+default = []
+cpi = ["no-entrypoint"]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+idl-build = [
+    "anchor-lang/idl-build",
+    "confidential-token/idl-build",
+    "zama-host/idl-build",
+]
+
+[dependencies]
+anchor-lang = "1.0.2"
+confidential-token = { path = "../confidential-token", features = ["cpi"] }
+zama-host = { path = "../zama-host", features = ["cpi"] }

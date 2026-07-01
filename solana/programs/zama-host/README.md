@@ -79,9 +79,11 @@ Admission invariants for `fhe_eval`:
 - Transient operands may only reference outputs produced by earlier steps in the same frame.
 - Only the RHS of a binary operation may be scalar; encrypted operands must match the operator's FHE
   type rules.
-- There is no verified-input eval step; input verification is the separate `verify_coprocessor_input`
-  instruction, which verifies the coprocessor attestation and emits a receipt only — it creates no ACL
-  (DD-007).
+- External encrypted inputs enter compute through the `FheEvalOperand::VerifiedInput` operand: the
+  coprocessor attestation is re-verified in-frame and the input is transient-allowed for that eval only
+  (the EVM `fromExternal` / `allowTransient(input, msg.sender)` analog). The caller-is-contract gate is
+  checked at input consumption (`attestation.contract_address == compute_subject`); derived outputs are
+  unconstrained. The redundant standalone `verify_coprocessor_input` instruction was removed (DD-007).
 - Durable outputs must be born with `public_decrypt = false`; public decrypt is granted later through
   the dedicated role-aware instruction path. `ACL_ROLE_PUBLIC_DECRYPT` in output subjects authorizes
   that later explicit path; it does not set the durable record's `public_decrypt` flag at birth.
@@ -95,17 +97,18 @@ Admission invariants for `fhe_eval`:
 > Superseded (reconciliation, June 2026): the Ed25519 verifier-set path described in older revisions
 > was REMOVED. See `solana/docs/DESIGN_DECISIONS.md` DD-007.
 
-`verify_coprocessor_input` is the production-shaped encrypted-input *verification* path. It verifies
-the **coprocessor's EIP-712 `CiphertextVerification` attestation on-chain via secp256k1** (recovering
-the EVM coprocessor signers and threshold-checking them against the configured coprocessor signer set),
-then emits an `InputVerifiedEvent` receipt. It does **not** create a persistent ACL record and takes no
-`output_*` / ACL-binding parameters — matching the EVM `FHEVMExecutor.verifyInput`, which grants only a
-tx-scoped transient allow. Solana has no transient-storage analog, so the verified input is surfaced
-solely as the signed receipt; durable permission on an input handle is a separate explicit app grant.
-This mirrors the EVM `InputVerification` coprocessor-threshold model; the gateway counterpart is the
-RFC-021 bytes32 path `InputVerification.verifyProofRequestSolana`. There is no `FheEvalStep::Input` —
-input verification is its own instruction, not an eval step. (Fully using a verified input as a compute
-operand still needs the host-listener to consume `InputVerifiedEvent`, a follow-up.)
+The `FheEvalOperand::VerifiedInput` operand is the production encrypted-input path (the Solana
+`FHE.fromExternal` analog). When an `fhe_eval` step consumes it, the host re-verifies the
+**coprocessor's EIP-712 `CiphertextVerification` attestation on-chain via secp256k1** (recovering the
+EVM coprocessor signers and threshold-checking them against the configured coprocessor signer set) and
+transient-allows the input for that eval only — no persistent ACL, matching `FHEVMExecutor.verifyInput`
++ `allowTransient(result, msg.sender)`. The "caller is the attested contract" check is enforced at
+consumption (`attestation.contract_address` must equal the eval's `compute_subject`, the msg.sender
+analog); derived durable outputs are then unconstrained, exactly like EVM. This mirrors the EVM
+`InputVerification` coprocessor-threshold model; the gateway counterpart is the RFC-021 bytes32 path
+`InputVerification.verifyProofRequestSolana`. The host-listener reconstruct path resolves the operand
+from `attestation.input_handle`. The redundant standalone `verify_coprocessor_input` instruction and
+its `InputVerifiedEvent` were removed.
 
 `mock_input_verified_and_bind` remains local-PoC test-only glue, chain-id confined (DD-014). The
 removed `verify_input_and_bind` (native Ed25519 over `SolanaInputProof` + `SolanaInputBindIntent`,

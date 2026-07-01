@@ -19,6 +19,7 @@ pub mod fhe_rand_and_bind;
 pub mod fhe_rand_bounded_and_bind;
 pub mod fhe_ternary_op_and_bind_output;
 pub mod initialize_host_config;
+pub mod input_verification;
 pub mod revoke_delegation_for_user_decryption;
 pub mod set_deny_subject;
 pub mod set_grant_deny_list_enabled;
@@ -34,11 +35,8 @@ pub mod test_emit_acl_allowed;
 #[cfg(feature = "poc")]
 pub mod test_emit_fhe_rand;
 #[cfg(feature = "poc")]
-pub mod test_emit_input_verified;
-#[cfg(feature = "poc")]
 pub mod test_emit_trivial_encrypt;
 pub mod trivial_encrypt_and_bind;
-pub mod verify_coprocessor_input;
 
 pub use allow_acl_subjects::*;
 pub use allow_for_decryption::*;
@@ -69,8 +67,5 @@ pub use test_emit_acl_allowed::*;
 #[cfg(feature = "poc")]
 pub use test_emit_fhe_rand::*;
 #[cfg(feature = "poc")]
-pub use test_emit_input_verified::*;
-#[cfg(feature = "poc")]
 pub use test_emit_trivial_encrypt::*;
 pub use trivial_encrypt_and_bind::*;
-pub use verify_coprocessor_input::*;

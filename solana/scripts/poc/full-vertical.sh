@@ -77,12 +77,9 @@ ih="$(echo "$ir" | python3 -c "import sys,json;print(json.load(sys.stdin)['resul
 isig="$(echo "$ir" | python3 -c "import sys,json;print(json.load(sys.stdin)['result']['signatures'][0])")"
 iextra="$(echo "$ir" | python3 -c "import sys,json;print(json.load(sys.stdin)['result'].get('extraData','0x00'))")"
 echo "    input handle=$ih (coprocessor EIP-712 attestation $isig)"
-# zama-host verifies the coprocessor's EIP-712 attestation on-chain via secp256k1 and emits the
-# verified-input receipt. EVM parity: no persistent input ACL is created (FHEVMExecutor.verifyInput).
-BIND_INPUT=1 BIND_HANDLE="$ih" BIND_COPRO_SIG="$isig" BIND_USER="$USER" BIND_CONTRACT="$USER" \
-  BIND_CHAIN_ID="$SID" BIND_EXTRA="$iextra" "$LC" 2>&1 | grep -E 'verify_coprocessor_input|secp256k1' \
-  || fail "zama-host input verification failed"
-echo "    input verified on zama-host via on-chain secp256k1 verify of coprocessor attestation"
+# The coprocessor attestation is verified in-frame when consumed as an FheEvalOperand::VerifiedInput
+# (the fromExternal path) — exercised by the FHE_EVAL_VERIFIED_INPUT step below. The redundant
+# standalone verify_coprocessor_input instruction was removed.
 
 echo "==> [compute] eval-based fhe_eval trivial_encrypt $VALUE on zama-host (#2755 eval executor + ACL allow)"
 out="$(cd "$ROOT/solana/scripts/poc/live-client" && TRIVIAL_ENCRYPT_EVAL=1 TE_VALUE="$VALUE" TE_ALLOW=1 ./target/debug/poc-live-client 2>&1)"
@@ -188,7 +185,12 @@ export MINT UNDERLYING_MINT="$UNDER"
 # under `set -o pipefail` lets a late SIGPIPE mask the match, so grep the captured output.
 wout="$(lc CONSUME_WRAP=1 WRAP_AMOUNT=1000)" || true
 echo "$wout" | grep -q 'OK wrap_usdc' || fail "wrap_usdc: $(echo "$wout" | tail -3)"
-bout="$(lc CONSUME_BURN=1 BURN_BOUND=256)" || true
+# fromExternal burn: the burn amount is a coprocessor-attested external input (BIND_*), bound to
+# (user = owner, contract = mint compute-signer PDA). NOTE: this reuses the input-proof fetched
+# above (contract = USER); a burn needs a proof bound to the compute-signer PDA — wired for CI
+# iteration on the e2e vertical.
+bout="$(lc CONSUME_BURN=1 BIND_HANDLE="$ih" BIND_COPRO_SIG="$isig" BIND_USER="$USER" \
+  BIND_CONTRACT="$USER" BIND_CHAIN_ID="$SID" BIND_EXTRA="$iextra")" || true
 BURNED_ACL="$(echo "$bout" | grep -oE 'burned amount ACL [A-Za-z0-9]+' | awk '{print $4}')"
 BURNED_HANDLE="$(echo "$bout" | grep -oE 'burned handle 0x[0-9a-f]+' | awk '{print $3}')"
 [ -n "$BURNED_HANDLE" ] && [ -n "$BURNED_ACL" ] || fail "confidential_burn: $bout"

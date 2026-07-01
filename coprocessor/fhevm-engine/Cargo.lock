@@ -3271,19 +3271,11 @@ version = "0.1.0"
 dependencies = [
  "anchor-lang",
  "anchor-spl",
- "confidential-token-receiver-sdk",
  "solana-ed25519-instruction",
  "solana-instructions-sysvar",
  "solana-sha256-hasher",
  "zama-fhe",
  "zama-host",
-]
-
-[[package]]
-name = "confidential-token-receiver-sdk"
-version = "0.1.0"
-dependencies = [
- "anchor-lang",
 ]
 
 [[package]]
@@ -12211,6 +12203,7 @@ dependencies = [
  "hex",
  "host-listener",
  "itertools 0.13.0",
+ "k256",
  "lazy_static",
  "litesvm",
  "opentelemetry",
