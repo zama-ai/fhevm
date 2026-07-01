@@ -1,4 +1,4 @@
--- RFC-029 finalized key-material download queue. The migration schedule is
+-- RFC-029 finalized key-material download queue. The legacy-key cutover is
 -- applied directly from finalized KMSGeneration events.
 
 CREATE TABLE IF NOT EXISTS kms_key_material_events (

@@ -6,8 +6,8 @@ use tracing::{error, info, warn};
 
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::db_keys::write_large_object_in_chunks_tx;
-use fhevm_engine_common::material_version::{
-    CompressedKeyMigrationStatus, COMPRESSED_KEY_MIGRATION_SCHEDULE_CHANNEL,
+use fhevm_engine_common::key_material_policy::{
+    CompressedKeyState, LEGACY_KEY_CUTOVER_CHANNEL,
 };
 
 use crate::contracts::KMSGeneration;
@@ -89,7 +89,7 @@ pub(crate) async fn insert_key_activation_event(
     Ok(())
 }
 
-pub(crate) async fn apply_key_material_migration_scheduled(
+pub(crate) async fn apply_legacy_key_cutover(
     tx: &mut Transaction<'_, Postgres>,
     scheduled: KMSGeneration::KeyMaterialMigrationScheduled,
 ) -> Result<(), sqlx::Error> {
@@ -107,7 +107,7 @@ pub(crate) async fn apply_key_material_migration_scheduled(
     let gateway_block = scheduled.gatewayMigrationBlock.to::<u64>() as i64;
 
     sqlx::query(
-        "INSERT INTO material_version_host_schedule (host_chain_id, target_block) \
+        "INSERT INTO legacy_key_host_cutover (host_chain_id, target_block) \
          SELECT * FROM unnest($1::bigint[], $2::bigint[]) \
          ON CONFLICT (host_chain_id) DO NOTHING",
     )
@@ -117,7 +117,7 @@ pub(crate) async fn apply_key_material_migration_scheduled(
     .await?;
 
     sqlx::query(
-        "INSERT INTO material_version_gateway_schedule (singleton, target_block) \
+        "INSERT INTO legacy_key_gateway_cutover (singleton, target_block) \
          VALUES (TRUE, $1) \
          ON CONFLICT (singleton) DO NOTHING",
     )
@@ -127,23 +127,23 @@ pub(crate) async fn apply_key_material_migration_scheduled(
 
     sqlx::query(
         "UPDATE keys \
-         SET material_migration_status = $2 \
+         SET compressed_key_state = $2 \
          WHERE key_id = $1",
     )
     .bind(key_id.to_vec())
-    .bind(CompressedKeyMigrationStatus::SCHEDULED)
+    .bind(CompressedKeyState::CUTOVER_SCHEDULED)
     .execute(tx.deref_mut())
     .await?;
 
     sqlx::query("SELECT pg_notify($1, '')")
-        .bind(COMPRESSED_KEY_MIGRATION_SCHEDULE_CHANNEL)
+        .bind(LEGACY_KEY_CUTOVER_CHANNEL)
         .execute(tx.deref_mut())
         .await?;
 
     info!(
         gateway_block,
         chains = host_chain_ids.len(),
-        "RFC-029 finalized compressed-key migration schedule applied"
+        "RFC-029 finalized legacy-key cutover applied"
     );
     Ok(())
 }
@@ -225,7 +225,7 @@ pub(crate) async fn publish_key_material(
         "WITH upd AS (\
             UPDATE keys \
             SET compressed_xof_keyset = $4, \
-                material_migration_status = COALESCE(material_migration_status, $5) \
+                compressed_key_state = COALESCE(compressed_key_state, $5) \
             WHERE key_id = $3 \
             RETURNING key_id\
         ) \
@@ -238,7 +238,7 @@ pub(crate) async fn publish_key_material(
     .bind(&pending.block_hash)
     .bind(&pending.key_id)
     .bind(bytes)
-    .bind(CompressedKeyMigrationStatus::MATERIAL_READY)
+    .bind(CompressedKeyState::STAGED_FOR_CUTOVER)
     .execute(tx.deref_mut())
     .await?;
     Ok(query.rows_affected())

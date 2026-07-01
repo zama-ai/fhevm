@@ -16,7 +16,7 @@ use aws_sdk_s3::Client;
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::db_keys::DbKeyId;
 use fhevm_engine_common::healthz_server::{HealthCheckService, HealthStatus, Version};
-use fhevm_engine_common::material_version::MaterialVersion;
+use fhevm_engine_common::key_material_policy::MaterialVersion;
 use fhevm_engine_common::pg_pool::PostgresPoolManager;
 use fhevm_engine_common::pg_pool::ServiceError;
 use fhevm_engine_common::telemetry;
@@ -398,20 +398,16 @@ async fn fetch_and_execute_sns_tasks(
         maybe_remaining = conf.db.batch_limit as usize == tasks.len();
         tasks_processed = tasks.len();
 
-        // RFC-029: SnS pins each task to its SOURCE ciphertext's material
-        // version. Group same-version tasks contiguously and run each group
-        // under that version's keyset. Happy path = all v0 = one group using
-        // the v0 `keys`, unchanged. v1 uses the migrated keyset (fetched once,
-        // lazily); if it isn't published yet, defer the whole batch and retry
-        // rather than substitute a different version.
+        // `set_server_key` is process-global, so mixed v0/v1 batches must run
+        // as same-version groups.
         tasks.sort_by_key(|t| t.material_version.0);
-        let needs_migrated = tasks
+        let has_migrated_tasks = tasks
             .iter()
             .any(|t| t.material_version != MaterialVersion::LEGACY);
-        if needs_migrated && migrated_keys.is_none() {
+        if has_migrated_tasks && migrated_keys.is_none() {
             *migrated_keys = fetch_migrated_keyset(pool).await?;
         }
-        if needs_migrated && migrated_keys.is_none() {
+        if has_migrated_tasks && migrated_keys.is_none() {
             warn!("migrated keyset not published yet; deferring SnS batch");
             return Ok((false, 0));
         }

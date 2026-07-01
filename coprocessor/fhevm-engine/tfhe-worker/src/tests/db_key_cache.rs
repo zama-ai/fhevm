@@ -1,4 +1,4 @@
-use fhevm_engine_common::db_keys::DbKeyCache;
+use fhevm_engine_common::{db_keys::DbKeyCache, key_material_policy::KeyMaterialSelection};
 use serial_test::serial;
 use sqlx::postgres::PgPoolOptions;
 use test_harness::instance::{setup_test_db, ImportMode};
@@ -16,7 +16,7 @@ fn random_key_id() -> Vec<u8> {
 
 #[tokio::test]
 #[serial(db)]
-async fn test_fetch_latest_uses_cache_without_selecting_key_blobs(
+async fn test_fetch_legacy_override_uses_cache_without_selecting_key_blobs(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let db = setup_test_db(ImportMode::WithKeysNoSns).await?;
     let admin_pool = PgPoolOptions::new()
@@ -25,7 +25,10 @@ async fn test_fetch_latest_uses_cache_without_selecting_key_blobs(
         .await?;
     let cache = DbKeyCache::new(1)?;
 
-    let expected = cache.fetch_latest_from_pool(&admin_pool).await?;
+    let mut admin_conn = admin_pool.acquire().await?;
+    let expected = cache
+        .fetch_key_for(KeyMaterialSelection::ForceLegacy, &mut admin_conn)
+        .await?;
 
     let role = format!("key_meta_reader_{}", rand::random::<u32>());
     let password = "key_meta_reader_password";
@@ -49,7 +52,10 @@ async fn test_fetch_latest_uses_cache_without_selecting_key_blobs(
         .connect(&db_url_for_role(db.db_url(), &role, password))
         .await?;
 
-    let cached = cache.fetch_latest_from_pool(&limited_pool).await?;
+    let mut limited_conn = limited_pool.acquire().await?;
+    let cached = cache
+        .fetch_key_for(KeyMaterialSelection::ForceLegacy, &mut limited_conn)
+        .await?;
     assert_eq!(cached.key_id, expected.key_id);
     assert_eq!(cached.sequence_number, expected.sequence_number);
 

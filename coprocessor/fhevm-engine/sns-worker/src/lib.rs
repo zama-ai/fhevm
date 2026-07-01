@@ -29,7 +29,7 @@ use fhevm_engine_common::{
     db_keys::DbKeyId,
     drift_revert,
     healthz_server::{self},
-    material_version::MaterialVersion,
+    key_material_policy::MaterialVersion,
     metrics_server,
     pg_pool::{PostgresPoolManager, ServiceError},
     types::{CoproSigner, FhevmError, SignerType},

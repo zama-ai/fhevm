@@ -7,7 +7,7 @@ const logPhase = (label: string) => {
 };
 
 // RFC-029 key-material versions (mirrors the coprocessor's
-// fhevm-engine-common::material_version::MaterialVersion).
+// fhevm-engine-common::key_material_policy::MaterialVersion).
 export const MATERIAL_VERSION_LEGACY = 0;
 export const MATERIAL_VERSION_MIGRATED_V1 = 1;
 

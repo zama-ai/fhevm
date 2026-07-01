@@ -4,8 +4,8 @@ use fhevm_engine_common::crs::{Crs, CrsCache};
 use fhevm_engine_common::db_keys::DbKey;
 use fhevm_engine_common::db_keys::DbKeyCache;
 use fhevm_engine_common::host_chains::HostChainsCache;
-use fhevm_engine_common::material_version::{
-    CompressedKeyMigrationScheduleCache, MaterialVersion, COMPRESSED_KEY_MIGRATION_SCHEDULE_CHANNEL,
+use fhevm_engine_common::key_material_policy::{
+    KeyMaterialSelection, LegacyKeyCutoverPolicy, MaterialVersion, LEGACY_KEY_CUTOVER_CHANNEL,
 };
 use fhevm_engine_common::pg_pool::{PostgresPoolManager, ServiceError};
 use fhevm_engine_common::telemetry;
@@ -214,9 +214,7 @@ async fn execute_worker(
 
     let mut listener = PgListener::connect_with(&pool).await?;
     listener.listen(&conf.listen_database_channel).await?;
-    listener
-        .listen(COMPRESSED_KEY_MIGRATION_SCHEDULE_CHANNEL)
-        .await?;
+    listener.listen(LEGACY_KEY_CUTOVER_CHANNEL).await?;
 
     let mut idle_event = interval(Duration::from_secs(conf.pg_polling_interval as u64));
 
@@ -227,11 +225,11 @@ async fn execute_worker(
             .map_err(|_| ExecutionError::DbError(sqlx::Error::RowNotFound))?,
     );
 
-    // RFC-029: the compressed-key migration schedule (loaded once, refreshed
-    // only on the publish NOTIFY or a reconnect -- no happy-path polling) and
-    // the lazily-fetched v1 key, reused for the worker's life (one cutover,
-    // immutable). v0 selection keeps using `latest_key` exactly as today.
-    let mut compressed_key_migration_schedule = CompressedKeyMigrationScheduleCache::load(&pool)
+    // RFC-029: the legacy-key cutover (loaded once, refreshed only on the
+    // publish NOTIFY or a reconnect -- no happy-path polling) and the lazily
+    // fetched default key, reused for the worker's life. Legacy override keeps
+    // using `latest_key` exactly as today.
+    let mut legacy_key_cutover = LegacyKeyCutoverPolicy::load(&pool)
         .await
         .map_err(|e| ExecutionError::Other(e.into()))?;
     let mut migrated_key: Option<Arc<DbKey>> = None;
@@ -263,7 +261,7 @@ async fn execute_worker(
             latest_key.clone(),
             &db_key_cache,
             &mut migrated_key,
-            &compressed_key_migration_schedule,
+            &legacy_key_cutover,
             latest_crs.clone(),
             host_chain_cache.as_ref(),
             &known_chain_ids,
@@ -280,17 +278,17 @@ async fn execute_worker(
             res = listener.try_recv() => {
                 let res = res?;
                 match res {
-                    Some(n) if n.channel() == COMPRESSED_KEY_MIGRATION_SCHEDULE_CHANNEL => {
-                        // One-shot compressed-key migration schedule published/changed: reload once.
-                        compressed_key_migration_schedule = CompressedKeyMigrationScheduleCache::load(&pool)
+                    Some(n) if n.channel() == LEGACY_KEY_CUTOVER_CHANNEL => {
+                        // One-shot legacy-key cutover published/changed: reload once.
+                        legacy_key_cutover = LegacyKeyCutoverPolicy::load(&pool)
                             .await
                             .map_err(|e| ExecutionError::Other(e.into()))?;
-                        info!("Reloaded compressed-key migration schedule");
+                        info!("Reloaded legacy-key cutover policy");
                     }
                     Some(notification) => info!( src = %notification.process_id(), "Received notification"),
                     None => {
                         // Reconnect may have missed a schedule NOTIFY; refresh, then keep going.
-                        compressed_key_migration_schedule = CompressedKeyMigrationScheduleCache::load(&pool)
+                        legacy_key_cutover = LegacyKeyCutoverPolicy::load(&pool)
                             .await
                             .map_err(|e| ExecutionError::Other(e.into()))?;
                         warn!("postgres LISTEN connection reset; reconnected");
@@ -316,7 +314,7 @@ async fn execute_verify_proof_routine(
     db_key: Arc<DbKey>,
     db_key_cache: &DbKeyCache,
     migrated_key: &mut Option<Arc<DbKey>>,
-    compressed_key_migration_schedule: &CompressedKeyMigrationScheduleCache,
+    legacy_key_cutover: &LegacyKeyCutoverPolicy,
     crs: Arc<Crs>,
     host_chain_cache: &HostChainsCache,
     known_chain_ids: &[i64],
@@ -383,24 +381,23 @@ async fn execute_verify_proof_routine(
         let user_address = row.user_address;
         let transaction_id: Option<Vec<u8>> = row.transaction_id;
 
-        // RFC-029: select the input-verification material version from the
-        // gateway block, and the key for it. v0 reuses `db_key` (an Arc clone,
-        // no key copy); v1 uses the migrated key, fetched once and reused. If
-        // v1 isn't published yet, defer this proof (txn rolls back, retried) --
-        // never fall back to v0.
-        let material_version =
-            compressed_key_migration_schedule.gateway_input_material_version(row.gw_block_number);
-        let key = if material_version == MaterialVersion::LEGACY {
+        // RFC-029: persist the material label selected from the gateway block.
+        // Runtime key selection is simpler: pre-cutover work reuses the legacy
+        // key, while post-cutover work uses default material. If default
+        // material is not published yet, defer this proof (txn rolls back,
+        // retried) -- never fall back to legacy.
+        let selection = legacy_key_cutover.gateway_input_selection(row.gw_block_number);
+        let key = if selection.key_read == KeyMaterialSelection::ForceLegacy {
             db_key.clone()
         } else {
             if migrated_key.is_none() {
                 match db_key_cache
-                    .fetch_latest_for_version(material_version, &mut txn)
+                    .fetch_key_for(selection.key_read, &mut txn)
                     .await
                 {
                     Ok(k) => *migrated_key = Some(Arc::new(k)),
                     Err(e) => {
-                        warn!(request_id, error = %e, "migrated key unavailable; deferring proof");
+                        warn!(request_id, error = %e, "default compressed key unavailable; deferring proof");
                         return Ok(());
                     }
                 }
@@ -472,7 +469,7 @@ async fn execute_verify_proof_routine(
                     });
                     verified = true;
                     let count = cts.len();
-                    insert_ciphertexts(&mut txn, cts, blob_hash, material_version).await?;
+                    insert_ciphertexts(&mut txn, cts, blob_hash, selection.output_label).await?;
                     tracing::Span::current().record("count", count);
 
                     info!(message = "Ciphertexts inserted", request_id, count);

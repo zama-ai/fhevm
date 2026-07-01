@@ -18,7 +18,7 @@ use ciphertext_attestation::{
 };
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::database::EVENT_CIPHERTEXTS_UPLOADED;
-use fhevm_engine_common::material_version::MaterialVersion;
+use fhevm_engine_common::key_material_policy::MaterialVersion;
 use fhevm_engine_common::pg_pool::{is_fatal_connection_error, PostgresPoolManager, ServiceError};
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::types::CoproSigner;

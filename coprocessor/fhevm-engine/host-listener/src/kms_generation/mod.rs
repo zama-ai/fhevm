@@ -11,9 +11,9 @@ use crate::kms_generation::database::{
     activate_ready_crs_activations, activate_ready_key_activations,
     all_pending_crs_activations_to_download,
     all_pending_key_activations_to_download,
-    all_pending_key_material_to_download,
-    apply_key_material_migration_scheduled, cancel_orphaned_crs_activations,
-    cancel_orphaned_key_activations, count_crs_activation_remaining_pending,
+    all_pending_key_material_to_download, apply_legacy_key_cutover,
+    cancel_orphaned_crs_activations, cancel_orphaned_key_activations,
+    count_crs_activation_remaining_pending,
     count_key_activation_remaining_pending, insert_crs_activation_event,
     insert_key_activation_event, insert_key_material_added,
     mark_crs_activation_error, mark_key_activation_error,
@@ -163,7 +163,7 @@ pub async fn insert_kms_generation_events_tx(
                     );
                     continue;
                 }
-                apply_key_material_migration_scheduled(tx, scheduled).await?;
+                apply_legacy_key_cutover(tx, scheduled).await?;
             }
             _ => {
                 warn!(
@@ -183,7 +183,7 @@ pub async fn process_kms_generation_activations<
     db_pool: Pool<Postgres>,
     s3_client: A,
 ) -> anyhow::Result<u64> {
-    //first we handle every thing that is ready to be cancelled or activated
+    // First handle finalized activation state.
     let mut tx = db_pool.begin().await?;
     cancel_orphaned_key_activations(&mut tx).await?;
     cancel_orphaned_crs_activations(&mut tx).await?;
@@ -191,25 +191,22 @@ pub async fn process_kms_generation_activations<
     activate_ready_crs_activations(&mut tx).await?;
     tx.commit().await?;
 
-    // RFC-029 material migration events are one-off governance events and are
-    // only accepted from finalized ingestion. In 0.14 that means the poller
-    // path; listener-core consumer payloads are skipped until finalized
-    // delivery exists there.
+    // RFC-029 compressed-key material is downloaded only after a finalized
+    // `KeyMaterialAdded` event has been queued.
     let mut tx = db_pool.begin().await?;
     let pending_material =
         all_pending_key_material_to_download(&mut tx).await?;
     if !pending_material.is_empty() {
         info!(
             count = pending_material.len(),
-            "RFC-029: pending v1 key material to download"
+            "RFC-029: pending compressed key material to download"
         );
         download_and_store_key_material(&mut tx, &s3_client, pending_material)
             .await?;
     }
     tx.commit().await?;
 
-    // second we download and check keys and preprocess in background in advance so it's ready when block is finalized
-    // rows are locked so there's no double work
+    // Then download pending activations. Rows are locked so there is no double work.
     let mut tx = db_pool.begin().await?;
     let key_activations =
         all_pending_key_activations_to_download(&mut tx).await?;
@@ -227,7 +224,7 @@ pub async fn process_kms_generation_activations<
         "Pending {} CRS activation to download",
         crs_activations.len()
     );
-    // do all downloads
+    // Do all downloads.
     download_and_store_key_activations(&mut tx, &s3_client, key_activations)
         .await?;
     download_and_store_crs_activations(&mut tx, &s3_client, crs_activations)
@@ -286,11 +283,7 @@ async fn download_and_store_crs_activations<
     Ok(())
 }
 
-/// RFC-029: download each migrated keyset from S3 and publish it to `keys`.
-/// kms-core's copy_compressed_key_to_original writes the migrated
-/// CompressedXofKeySet under the ORIGINAL keyId, so it is fetched from the same
-/// `/CompressedXofKeySet/{key_id}` prefix as a v0 XOF key -- the bytes there are
-/// now the migrated keyset.
+/// Download migrated compressed material from S3 and publish it to `keys`.
 async fn download_and_store_key_material<
     A: AwsS3Interface + Clone + 'static,
 >(
