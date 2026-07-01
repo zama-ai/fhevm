@@ -17,6 +17,7 @@ mod admission;
 mod event_budget;
 mod event_transport;
 mod handles;
+mod hcu;
 mod preflight;
 mod walk;
 

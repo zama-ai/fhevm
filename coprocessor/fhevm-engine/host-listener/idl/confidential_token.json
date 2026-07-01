@@ -4884,6 +4884,20 @@
             "type": "bool"
           },
           {
+            "name": "max_hcu_per_tx",
+            "docs": [
+              "Max total HCU summed over one `fhe_eval` plan. `0` = unlimited (enforcement off)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "max_hcu_depth_per_tx",
+            "docs": [
+              "Max critical-path (depth) HCU within one `fhe_eval` plan. `0` = unlimited."
+            ],
+            "type": "u64"
+          },
+          {
             "name": "updated_slot",
             "docs": [
               "Slot in which the config was initialized or last changed."

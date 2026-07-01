@@ -2038,6 +2038,116 @@
       ]
     },
     {
+      "name": "set_max_hcu_depth_per_tx",
+      "discriminator": [
+        91,
+        44,
+        21,
+        100,
+        184,
+        62,
+        233,
+        235
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "docs": [
+            "Configured host admin."
+          ],
+          "signer": true
+        },
+        {
+          "name": "host_config",
+          "docs": [
+            "Singleton config PDA."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  115,
+                  116,
+                  45,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "value",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "set_max_hcu_per_tx",
+      "discriminator": [
+        142,
+        36,
+        236,
+        121,
+        170,
+        67,
+        212,
+        118
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "docs": [
+            "Configured host admin."
+          ],
+          "signer": true
+        },
+        {
+          "name": "host_config",
+          "docs": [
+            "Singleton config PDA."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  115,
+                  116,
+                  45,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "value",
+          "type": "u64"
+        }
+      ]
+    },
+    {
       "name": "trivial_encrypt_and_bind",
       "discriminator": [
         191,
@@ -2955,6 +3065,26 @@
       "code": 6066,
       "name": "InputBindUserNotSubject",
       "msg": "attested user address is not an output ACL subject"
+    },
+    {
+      "code": 6067,
+      "name": "HcuTransactionLimitExceeded",
+      "msg": "FHE op total HCU exceeds the per-transaction limit"
+    },
+    {
+      "code": 6068,
+      "name": "HcuTransactionDepthLimitExceeded",
+      "msg": "FHE op depth HCU exceeds the per-transaction depth limit"
+    },
+    {
+      "code": 6069,
+      "name": "HcuUnknownCost",
+      "msg": "no HCU cost is defined for this op / type / scalar combination"
+    },
+    {
+      "code": 6070,
+      "name": "HcuLimitOrderingInvalid",
+      "msg": "HCU limits violate max_hcu_per_tx >= max_hcu_depth_per_tx"
     }
   ],
   "types": [
@@ -4713,6 +4843,20 @@
             "type": "bool"
           },
           {
+            "name": "max_hcu_per_tx",
+            "docs": [
+              "Max total HCU summed over one `fhe_eval` plan. `0` = unlimited (enforcement off)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "max_hcu_depth_per_tx",
+            "docs": [
+              "Max critical-path (depth) HCU within one `fhe_eval` plan. `0` = unlimited."
+            ],
+            "type": "u64"
+          },
+          {
             "name": "updated_slot",
             "docs": [
               "Slot in which the config was initialized or last changed."
@@ -4845,6 +4989,20 @@
               "Current grant deny-list gate."
             ],
             "type": "bool"
+          },
+          {
+            "name": "max_hcu_per_tx",
+            "docs": [
+              "Current max total HCU per `fhe_eval` plan (`0` = unlimited)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "max_hcu_depth_per_tx",
+            "docs": [
+              "Current max critical-path HCU per `fhe_eval` plan (`0` = unlimited)."
+            ],
+            "type": "u64"
           },
           {
             "name": "updated_slot",
