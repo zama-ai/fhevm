@@ -317,7 +317,7 @@ pub async fn cutover_gate(
         .bind(CUTOVER_LOCK_ID)
         .execute(&mut **tx)
         .await?;
-    is_retired(&mut **tx).await
+    is_retired(tx).await
 }
 
 /// Begin a **write** transaction fenced against cutover, in one call.
