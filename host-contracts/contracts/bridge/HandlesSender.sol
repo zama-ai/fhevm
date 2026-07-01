@@ -59,7 +59,7 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
     ///         of the handle count. Covers payload decoding, event emission overhead, and
     ///         the `sendCompose` call. Used for any `dstEid` without a custom override
     ///         (see {setLzReceiveBaseGas}).
-    uint64 public constant LZ_RECEIVE_BASE_GAS_DEFAULT = 68_998;
+    uint64 public constant LZ_RECEIVE_BASE_GAS_DEFAULT = 68_858;
 
     /// @notice Default per-handle gas reserved for `lzReceive` on the destination. Covers
     ///         deriving the destination handle, emitting one `HandleBridged` event, and
