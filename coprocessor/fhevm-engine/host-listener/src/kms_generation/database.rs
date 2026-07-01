@@ -7,7 +7,7 @@ use tracing::{error, info, warn};
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::db_keys::write_large_object_in_chunks_tx;
 use fhevm_engine_common::material_version::{
-    MaterialVersion, MIGRATION_SCHEDULE_CHANNEL,
+    MaterialMigrationStatus, MaterialVersion, MIGRATION_SCHEDULE_CHANNEL,
 };
 
 use crate::contracts::KMSGeneration;
@@ -89,11 +89,7 @@ pub(crate) async fn insert_key_activation_event(
     Ok(())
 }
 
-/// RFC-029: STAGE a `KeyMaterialMigrationScheduled` event. The schedule is
-/// written into the live cutover tables only once its scheduling block is
-/// finalized (see [`apply_finalized_migration_schedules`]), mirroring the
-/// activation/publish paths -- so an orphaned governance tx can't flip workers
-/// to v1. Idempotent on re-observation of the same event.
+/// RFC-029: remember a `KeyMaterialMigrationScheduled` event until its block is finalized.
 pub(crate) async fn insert_key_material_migration_scheduled(
     tx: &mut Transaction<'_, Postgres>,
     scheduled: KMSGeneration::KeyMaterialMigrationScheduled,
@@ -102,7 +98,7 @@ pub(crate) async fn insert_key_material_migration_scheduled(
     block_number: u64,
 ) -> Result<(), sqlx::Error> {
     // RFC-029 is a one-time cutover to v1 (the contract guards this too); ignore
-    // any other target rather than staging a schedule the selectors can't honor.
+    // any other target rather than keeping a schedule the selectors can't honor.
     let material_version = scheduled.materialVersion.to::<u64>() as i16;
     if material_version != MaterialVersion::MIGRATED_V1.0 {
         warn!(
@@ -112,6 +108,7 @@ pub(crate) async fn insert_key_material_migration_scheduled(
         return Ok(());
     }
 
+    let key_id = key_id_to_database_bytes(scheduled.keyId);
     let host_chain_ids: Vec<i64> = scheduled
         .hostChainIds
         .iter()
@@ -126,13 +123,14 @@ pub(crate) async fn insert_key_material_migration_scheduled(
 
     sqlx::query(
         "INSERT INTO kms_key_material_schedule_events \
-            (chain_id, block_hash, block_number, host_chain_ids, host_target_blocks, gateway_target_block) \
-         VALUES ($1, $2, $3, $4, $5, $6) \
-         ON CONFLICT (chain_id, block_hash) DO NOTHING",
+            (chain_id, block_hash, block_number, key_id, host_chain_ids, host_target_blocks, gateway_target_block) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7) \
+         ON CONFLICT (chain_id, block_hash, key_id) DO NOTHING",
     )
     .bind(chain_id.as_i64())
     .bind(block_hash)
     .bind(block_number as i64)
+    .bind(key_id.to_vec())
     .bind(&host_chain_ids)
     .bind(&host_target_blocks)
     .bind(gateway_block)
@@ -143,19 +141,17 @@ pub(crate) async fn insert_key_material_migration_scheduled(
         gateway_block,
         chains = host_chain_ids.len(),
         block_number,
-        "RFC-029 migration schedule staged (applies on finalization)"
+        "RFC-029 migration schedule recorded (applies on finalization)"
     );
     Ok(())
 }
 
-/// RFC-029: apply staged cutover schedules whose scheduling block is finalized
-/// into the live `material_version_*_schedule` tables, then NOTIFY the workers
-/// to reload. Returns the number of schedule events applied.
+/// RFC-029: apply schedules whose event block is finalized.
 pub(crate) async fn apply_finalized_migration_schedules(
     tx: &mut Transaction<'_, Postgres>,
 ) -> Result<u64, sqlx::Error> {
     let ready = sqlx::query(
-        "SELECT e.chain_id, e.block_hash, e.host_chain_ids, e.host_target_blocks, \
+        "SELECT e.chain_id, e.block_hash, e.key_id, e.host_chain_ids, e.host_target_blocks, \
                 e.gateway_target_block \
          FROM kms_key_material_schedule_events AS e \
          INNER JOIN host_chain_blocks_valid AS b \
@@ -170,6 +166,7 @@ pub(crate) async fn apply_finalized_migration_schedules(
     for row in ready {
         let event_chain_id: i64 = row.try_get("chain_id")?;
         let event_block_hash: Vec<u8> = row.try_get("block_hash")?;
+        let key_id: Vec<u8> = row.try_get("key_id")?;
         let host_chain_ids: Vec<i64> = row.try_get("host_chain_ids")?;
         let host_target_blocks: Vec<i64> = row.try_get("host_target_blocks")?;
         let gateway_block: i64 = row.try_get("gateway_target_block")?;
@@ -197,12 +194,23 @@ pub(crate) async fn apply_finalized_migration_schedules(
         .await?;
 
         sqlx::query(
+            "UPDATE keys \
+             SET material_migration_status = $2 \
+             WHERE key_id = $1",
+        )
+        .bind(&key_id)
+        .bind(MaterialMigrationStatus::SCHEDULED)
+        .execute(tx.deref_mut())
+        .await?;
+
+        sqlx::query(
             "UPDATE kms_key_material_schedule_events \
              SET status = 'applied', last_updated_at = NOW() \
-             WHERE chain_id = $1 AND block_hash = $2",
+             WHERE chain_id = $1 AND block_hash = $2 AND key_id = $3",
         )
         .bind(event_chain_id)
         .bind(&event_block_hash)
+        .bind(&key_id)
         .execute(tx.deref_mut())
         .await?;
         applied += 1;
@@ -222,7 +230,7 @@ pub(crate) async fn apply_finalized_migration_schedules(
     Ok(applied)
 }
 
-/// RFC-029: cancel staged cutover schedules whose scheduling block was orphaned,
+/// RFC-029: cancel pending cutover schedules whose scheduling block was orphaned,
 /// mirroring [`cancel_orphaned_key_activations`].
 pub(crate) async fn cancel_orphaned_migration_schedules(
     tx: &mut Transaction<'_, Postgres>,
@@ -240,29 +248,45 @@ pub(crate) async fn cancel_orphaned_migration_schedules(
     if query.rows_affected() > 0 {
         info!(
             cancelled = query.rows_affected(),
-            "RFC-029 cancelled staged migration schedule(s) on orphaned blocks"
+            "RFC-029 cancelled pending migration schedule(s) on orphaned blocks"
         );
     }
     Ok(query.rows_affected())
 }
 
-/// RFC-029: a `KeyMaterialAdded` event staged for the v1 PUBLISH path. The
-/// migrated CompressedXofKeySet must be downloaded from S3 (kms-core wrote it
-/// under the original keyId via copy_compressed_key_to_original) and written
-/// to `keys.migrated_xof_keyset` -- never to a v0 column, never moving
-/// activeKeyId.
+pub(crate) async fn cancel_orphaned_key_material(
+    tx: &mut Transaction<'_, Postgres>,
+) -> Result<u64, sqlx::Error> {
+    let query = sqlx::query(
+        "UPDATE kms_key_material_events AS e \
+         SET status = 'cancelled', last_updated_at = NOW() \
+         FROM host_chain_blocks_valid AS b \
+         WHERE e.status = 'pending' \
+           AND e.chain_id = b.chain_id AND e.block_hash = b.block_hash \
+           AND b.block_status = 'orphaned'",
+    )
+    .execute(tx.deref_mut())
+    .await?;
+    if query.rows_affected() > 0 {
+        info!(
+            cancelled = query.rows_affected(),
+            "RFC-029 cancelled key-material event(s) on orphaned blocks"
+        );
+    }
+    Ok(query.rows_affected())
+}
+
+/// RFC-029: a finalized `KeyMaterialAdded` event waiting for S3 download.
 #[derive(Debug, Clone)]
 pub(crate) struct PendingKeyMaterial {
     pub chain_id: i64,
     pub block_hash: Vec<u8>,
     pub key_id: Vec<u8>,
-    pub material_version: i16,
     pub key_digest: Option<Vec<u8>>,
     pub storage_urls: Vec<String>,
 }
 
-/// Stage a `KeyMaterialAdded` event for the background download/publish loop.
-/// Idempotent on re-observation (same chain/block/key/version).
+/// Remember a `KeyMaterialAdded` event until its block is finalized.
 pub(crate) async fn insert_key_material_added(
     tx: &mut Transaction<'_, Postgres>,
     added: KMSGeneration::KeyMaterialAdded,
@@ -277,19 +301,25 @@ pub(crate) async fn insert_key_material_added(
         .find(|d| d.keyType == 0)
         .map(|d| d.digest.to_vec());
     let material_version = added.materialVersion.to::<u64>() as i16;
+    if material_version != MaterialVersion::MIGRATED_V1.0 {
+        warn!(
+            material_version,
+            "ignoring KeyMaterialAdded with non-v1 material"
+        );
+        return Ok(());
+    }
     let urls = added.kmsNodeStorageUrls.clone();
     sqlx::query(
         "INSERT INTO kms_key_material_events (\
             chain_id, block_hash, block_number, \
-            key_id, material_version, key_digest, storage_urls) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7) \
-         ON CONFLICT (chain_id, block_hash, key_id, material_version) DO NOTHING",
+            key_id, key_digest, storage_urls) \
+         VALUES ($1, $2, $3, $4, $5, $6) \
+         ON CONFLICT (chain_id, block_hash, key_id) DO NOTHING",
     )
     .bind(chain_id.as_i64())
     .bind(block_hash)
     .bind(block_number as i64)
     .bind(key_id_to_database_bytes(added.keyId).to_vec())
-    .bind(material_version)
     .bind(key_digest)
     .bind(&urls)
     .execute(tx.deref_mut())
@@ -297,15 +327,17 @@ pub(crate) async fn insert_key_material_added(
     Ok(())
 }
 
-/// Pending v1 key-material rows awaiting an S3 download.
+/// Finalized v1 key-material rows awaiting an S3 download.
 pub(crate) async fn all_pending_key_material_to_download(
     tx: &mut Transaction<'_, Postgres>,
 ) -> Result<Vec<PendingKeyMaterial>, sqlx::Error> {
     let rows = sqlx::query(
-        "SELECT chain_id, block_hash, key_id, material_version, key_digest, storage_urls \
-         FROM kms_key_material_events \
-         WHERE status = 'pending' \
-         FOR UPDATE SKIP LOCKED",
+        "SELECT e.chain_id, e.block_hash, e.key_id, e.key_digest, e.storage_urls \
+         FROM kms_key_material_events AS e \
+         INNER JOIN host_chain_blocks_valid AS b \
+            ON e.chain_id = b.chain_id AND e.block_hash = b.block_hash \
+         WHERE e.status = 'pending' AND b.block_status = 'finalized' \
+         FOR UPDATE OF e SKIP LOCKED",
     )
     .fetch_all(tx.deref_mut())
     .await?;
@@ -315,33 +347,39 @@ pub(crate) async fn all_pending_key_material_to_download(
             chain_id: r.get("chain_id"),
             block_hash: r.get("block_hash"),
             key_id: r.get("key_id"),
-            material_version: r.get("material_version"),
             key_digest: r.get("key_digest"),
             storage_urls: r.get("storage_urls"),
         })
         .collect())
 }
 
-/// Store the downloaded migrated keyset bytes and mark the row ready to publish.
-pub(crate) async fn set_ready_key_material(
+/// Store downloaded migrated material in the single compressed-XOF column.
+pub(crate) async fn publish_key_material(
     tx: &mut Transaction<'_, Postgres>,
     pending: &PendingKeyMaterial,
     bytes: &[u8],
-) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        "UPDATE kms_key_material_events \
-         SET key_content_migrated_xof = $4, status = 'ready', last_updated_at = NOW() \
-         WHERE chain_id = $1 AND block_hash = $2 AND key_id = $3 \
-           AND material_version = $5",
+) -> Result<u64, sqlx::Error> {
+    let query = sqlx::query(
+        "WITH upd AS (\
+            UPDATE keys \
+            SET compressed_xof_keyset = $4, \
+                material_migration_status = COALESCE(material_migration_status, $5) \
+            WHERE key_id = $3 \
+            RETURNING key_id\
+        ) \
+        UPDATE kms_key_material_events AS e \
+        SET status = 'published', last_updated_at = NOW() \
+        FROM upd \
+        WHERE e.chain_id = $1 AND e.block_hash = $2 AND e.key_id = upd.key_id",
     )
     .bind(pending.chain_id)
     .bind(&pending.block_hash)
     .bind(&pending.key_id)
     .bind(bytes)
-    .bind(pending.material_version)
+    .bind(MaterialMigrationStatus::MATERIAL_READY)
     .execute(tx.deref_mut())
     .await?;
-    Ok(())
+    Ok(query.rows_affected())
 }
 
 pub(crate) async fn mark_key_material_error(
@@ -359,47 +397,13 @@ pub(crate) async fn mark_key_material_error(
     let _ = sqlx::query(
         "UPDATE kms_key_material_events \
          SET last_updated_at = NOW() \
-         WHERE chain_id = $1 AND block_hash = $2 AND key_id = $3 \
-           AND material_version = $4",
+         WHERE chain_id = $1 AND block_hash = $2 AND key_id = $3",
     )
     .bind(pending.chain_id)
     .bind(&pending.block_hash)
     .bind(&pending.key_id)
-    .bind(pending.material_version)
     .execute(tx.deref_mut())
     .await;
-}
-
-/// Publish ready v1 material: on a finalized block, write the downloaded
-/// migrated keyset into `keys.migrated_xof_keyset` for the matching key row.
-/// Touches only the v1 column -- no activeKeyId move, no v0 columns.
-pub(crate) async fn publish_ready_key_material(
-    tx: &mut Transaction<'_, Postgres>,
-) -> Result<u64, sqlx::Error> {
-    let published = sqlx::query(
-        "WITH ready AS (\
-            SELECT e.chain_id, e.block_hash, e.key_id, e.material_version, \
-                   e.key_content_migrated_xof \
-            FROM kms_key_material_events AS e \
-            INNER JOIN host_chain_blocks_valid AS b \
-                ON e.chain_id = b.chain_id AND e.block_hash = b.block_hash \
-            WHERE e.status = 'ready' \
-              AND b.block_status = 'finalized' \
-              AND e.key_content_migrated_xof IS NOT NULL \
-            FOR UPDATE OF e SKIP LOCKED\
-        ), upd AS (\
-            UPDATE keys SET migrated_xof_keyset = ready.key_content_migrated_xof \
-            FROM ready WHERE keys.key_id = ready.key_id \
-            RETURNING ready.chain_id, ready.block_hash, ready.key_id, ready.material_version \
-        ) \
-        UPDATE kms_key_material_events AS e SET status = 'published', last_updated_at = NOW() \
-        FROM upd \
-        WHERE e.chain_id = upd.chain_id AND e.block_hash = upd.block_hash \
-          AND e.key_id = upd.key_id AND e.material_version = upd.material_version",
-    )
-    .execute(tx.deref_mut())
-    .await?;
-    Ok(published.rows_affected())
 }
 
 pub(crate) async fn insert_crs_activation_event(

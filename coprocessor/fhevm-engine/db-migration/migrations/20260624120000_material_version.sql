@@ -1,22 +1,16 @@
--- RFC-029: key-material version cutover (coprocessor side).
+-- RFC-029: key-material cutover state (coprocessor side).
 --
--- Adds a `material_version` dimension so the coprocessor can pick, per
--- operation, which key material to use as it crosses a per-host-chain
--- migration block (`host_migration_block`) or the gateway migration block
--- (`gateway_migration_block`). Everything here is ADDITIVE and INERT:
--- new artifact columns default to 0, the v1 key column is NULL until
--- published, and with no schedule rows the selection logic always resolves
--- to version 0 -- i.e. byte-identical to today. See fhevm-internal#1568.
-
--- v1 (migrated) key material in its OWN column so v0 stays resolvable after
--- the cutover (SnS may still squash pre-cutover ciphertexts under v0). v0 keeps
--- reading compressed_xof_keyset/sks_key; v1 reads this column.
+-- `keys.compressed_xof_keyset` is the single home for CompressedXofKeySet
+-- material. `material_migration_status` only tells readers whether that column
+-- is native material (NULL, read with today's COALESCE path) or migrated
+-- material that must be hidden until a finalized schedule says to use it.
 ALTER TABLE keys
-ADD COLUMN IF NOT EXISTS migrated_xof_keyset BYTEA;
+ADD COLUMN IF NOT EXISTS material_migration_status SMALLINT NULL
+CHECK (material_migration_status IN (1, 2));
 
 -- Material version a ciphertext was produced under: 0 = legacy, 1 = migrated.
 -- SnS pins each task to its SOURCE ciphertext's version (read via JOIN), so a
--- pre-cutover ciphertext keeps squashing under the material it was created with.
+-- pre-cutover ciphertext keeps squashing under `sks_key` after the cutover.
 ALTER TABLE ciphertexts
 ADD COLUMN IF NOT EXISTS material_version SMALLINT NOT NULL DEFAULT 0;
 
@@ -27,7 +21,7 @@ ADD COLUMN IF NOT EXISTS material_version SMALLINT NOT NULL DEFAULT 0;
 ALTER TABLE verify_proofs
 ADD COLUMN IF NOT EXISTS gw_block_number BIGINT NULL DEFAULT NULL;
 
--- Per-host-chain cutover: the migrated material (v1) takes effect for a host
+-- Per-host-chain cutover: the compressed material (v1) takes effect for a host
 -- chain at `target_block`. One row per chain; a (chain, block) computation is
 -- v1 iff block >= target_block, else v0. RFC-029 is a one-time cutover, so
 -- there is no version column -- the table IS the v1 cutover schedule.

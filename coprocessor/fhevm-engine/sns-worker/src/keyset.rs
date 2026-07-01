@@ -1,5 +1,6 @@
 use fhevm_engine_common::{
     db_keys::{
+        read_compressed_xof_keyset_by_sequence_number,
         read_compressed_xof_keyset_by_sequence_number_with_fallback, CompressedXofKeysetEncoding,
         DbKeyId,
     },
@@ -89,20 +90,13 @@ pub(crate) async fn fetch_latest_keyset(
     Ok(keyset.map(|keys| (key_id_gw, keys)))
 }
 
-/// Fetches the migrated (RFC-029 v1) keyset for the latest key: the
-/// `migrated_xof_keyset` column. Returns `None` while the migration hasn't
-/// been published yet (the column is NULL) so the caller can defer rather
-/// than substitute v0. The migrated keyset is always an XOF keyset.
+/// Fetches the compressed (RFC-029 v1) keyset for the latest key.
 pub(crate) async fn fetch_migrated_keyset(pool: &PgPool) -> Result<Option<KeySet>, ExecutionError> {
-    use sqlx::Row;
     let Some((key_id_gw, sequence_number)) = fetch_latest_key_id_gw(pool).await? else {
         return Ok(None);
     };
-    let row = sqlx::query("SELECT migrated_xof_keyset FROM keys WHERE sequence_number = $1")
-        .bind(sequence_number)
-        .fetch_one(pool)
-        .await?;
-    let Some(blob) = row.try_get::<Option<Vec<u8>>, _>("migrated_xof_keyset")? else {
+    let Some(blob) = read_compressed_xof_keyset_by_sequence_number(pool, sequence_number).await?
+    else {
         return Ok(None);
     };
     if blob.is_empty() {

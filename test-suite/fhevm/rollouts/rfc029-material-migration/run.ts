@@ -36,7 +36,7 @@ const GATEWAY_MIGRATION_OFFSET = 30;
 // within 25min; budget 45min.
 const KEYGEN_ACTIVATION_TIMEOUT_MS = 45 * 60 * 1000;
 const KEYGEN_POLL_INTERVAL_MS = 15_000;
-// Grace for the host-listener to download + publish v1 onto keys.migrated_xof_keyset
+// Grace for the host-listener to download + publish v1 onto keys.compressed_xof_keyset.
 // across the whole fleet before the cutover blocks are crossed.
 const PUBLISH_GRACE_MS = 90_000;
 
@@ -186,7 +186,7 @@ export default async function run(ctx: RolloutRunContext) {
   // on-chain). Governance then publishes those digests UNDER the existing key (KeyMaterialAdded, no
   // activeKeyId move, no KMS on-chain signature -- the "DAO drives the cutover" model). We then wait
   // for keyMaterialVersion(activeKey)=1 and the host-listener to download v1 into
-  // keys.migrated_xof_keyset fleet-wide.
+  // keys.compressed_xof_keyset fleet-wide.
   logPhase("01 publish: migration keygen-from-existing -> governance addKeyMaterials under the unchanged active key");
   const state = await ctx.readState();
   const migratedKeyId = await activeKeyId(ctx); // the key being migrated; stays active throughout
@@ -206,7 +206,7 @@ export default async function run(ctx: RolloutRunContext) {
     throw new Error(`publish-not-activate violated: activeKeyId moved ${migratedKeyId} -> ${stillActive}`);
   }
   // Let the host-listener download the migrated keyset + publish it onto
-  // keys.migrated_xof_keyset across the fleet before anyone crosses a cutover block.
+  // keys.compressed_xof_keyset across the fleet before anyone crosses a cutover block.
   console.log(`[rollout] activeKeyId held at ${migratedKeyId}; waiting ${PUBLISH_GRACE_MS / 1000}s for v1 download fleet-wide`);
   await sleep(PUBLISH_GRACE_MS);
 

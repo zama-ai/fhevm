@@ -1,4 +1,4 @@
-//! RFC-029 key-material version selection (coprocessor side).
+//! RFC-029 key-material selection (coprocessor side).
 //!
 //! RFC-029 is a one-time cutover from legacy material (v0) to the migrated
 //! `CompressedXofKeySet` (v1). Selection must be deterministic and identical
@@ -11,8 +11,7 @@
 //! anchors to the gateway block; SnS does not anchor to a block at all -- it is
 //! pinned to its source ciphertext's stored version (handled by the caller).
 //!
-//! With no schedule published every selector returns [`MaterialVersion::LEGACY`],
-//! so a node that has never seen a schedule behaves byte-for-byte like today.
+//! With no schedule published every selector returns [`MaterialVersion::LEGACY`].
 
 use crate::chain_id::ChainId;
 use anyhow::Result;
@@ -20,9 +19,8 @@ use sqlx::{PgPool, Row};
 use std::collections::HashMap;
 
 /// Postgres `LISTEN`/`NOTIFY` channel signaling that the cutover schedule has
-/// been published or updated. Workers load the schedule once and refresh only
-/// on this notify, so the happy path never polls (a re-published schedule
-/// overwrites the prior cutover block and re-notifies).
+/// been published. Workers load the schedule once and refresh only on this
+/// notify, so the happy path never polls.
 pub const MIGRATION_SCHEDULE_CHANNEL: &str = "migration_schedule_changed";
 
 /// Which key material an operation uses. `0` is the legacy material (today's
@@ -36,6 +34,14 @@ impl MaterialVersion {
     pub const LEGACY: MaterialVersion = MaterialVersion(0);
     /// Migrated material: the RFC-029 `CompressedXofKeySet` cutover.
     pub const MIGRATED_V1: MaterialVersion = MaterialVersion(1);
+}
+
+/// `keys.material_migration_status` values.
+pub struct MaterialMigrationStatus;
+
+impl MaterialMigrationStatus {
+    pub const MATERIAL_READY: i16 = 1;
+    pub const SCHEDULED: i16 = 2;
 }
 
 /// The cutover rule for a single timeline: v1 once `observed` reaches the
@@ -62,6 +68,7 @@ pub struct MigrationScheduleCache {
     host: HashMap<ChainId, i64>,
     /// The gateway cutover block (block at/after which inputs use migrated material), if scheduled.
     gateway: Option<i64>,
+    scheduled: bool,
 }
 
 impl MigrationScheduleCache {
@@ -89,7 +96,11 @@ impl MigrationScheduleCache {
                 .map(|row| row.try_get("target_block"))
                 .transpose()?;
 
-        Ok(Self { host, gateway })
+        Ok(Self {
+            scheduled: gateway.is_some() || !host.is_empty(),
+            host,
+            gateway,
+        })
     }
 
     /// Material version for an input-verification (zkpok) operation anchored at
@@ -98,17 +109,21 @@ impl MigrationScheduleCache {
         version_at(self.gateway, gw_block_number)
     }
 
-    /// Material version for a host-compute operation requested at `block_number` on a RAW
-    /// `host_chain_id` as stored by sqlx (`i64`). Unknown chain, `None` block, or an unparsable
-    /// chain id all resolve to [`MaterialVersion::LEGACY`] (the safe default), so a malformed row
-    /// can never silently select migrated material.
+    /// Material version for a host-compute operation requested at `block_number`.
+    /// Once a migration schedule exists, a host chain with no row is treated as
+    /// post-migration and uses compressed material; this covers hosts added
+    /// after the migration.
     pub fn select_host_raw(
         &self,
         host_chain_id: i64,
         block_number: Option<i64>,
     ) -> MaterialVersion {
         match ChainId::try_from(host_chain_id) {
-            Ok(chain_id) => version_at(self.host.get(&chain_id).copied(), block_number),
+            Ok(chain_id) => match self.host.get(&chain_id).copied() {
+                Some(cutover) => version_at(Some(cutover), block_number),
+                None if self.scheduled => MaterialVersion::MIGRATED_V1,
+                None => MaterialVersion::LEGACY,
+            },
             Err(_) => MaterialVersion::LEGACY,
         }
     }
@@ -168,12 +183,13 @@ mod tests {
         let cache = MigrationScheduleCache {
             host,
             gateway: None,
+            scheduled: true,
         };
         assert_eq!(cache.select_host_raw(1, Some(99)), V0);
         assert_eq!(cache.select_host_raw(1, Some(100)), V1);
-        // chain 2 stays on legacy at the same block; unknown chain → legacy.
-        assert_eq!(cache.select_host_raw(2, Some(100)), V0);
-        assert_eq!(cache.select_host_raw(999, Some(10_000)), V0);
+        // chain 2 has no row after scheduling, so it is a post-migration host.
+        assert_eq!(cache.select_host_raw(2, Some(100)), V1);
+        assert_eq!(cache.select_host_raw(999, Some(10_000)), V1);
     }
 
     #[test]
@@ -183,12 +199,14 @@ mod tests {
         let cache = MigrationScheduleCache {
             host,
             gateway: None,
+            scheduled: true,
         };
         // Valid chain id resolves against that chain's cutover block.
         assert_eq!(cache.select_host_raw(1, Some(99)), V0);
         assert_eq!(cache.select_host_raw(1, Some(100)), V1);
-        // A chain not in the schedule (or an out-of-range id) is LEGACY, never migrated.
-        assert_eq!(cache.select_host_raw(2, Some(10_000)), V0);
+        // A chain not in the schedule is a post-migration host. An out-of-range
+        // id still falls back to legacy because it cannot identify a host.
+        assert_eq!(cache.select_host_raw(2, Some(10_000)), V1);
         assert_eq!(cache.select_host_raw(i64::MIN, Some(10_000)), V0);
     }
 
@@ -197,12 +215,13 @@ mod tests {
         let cache = MigrationScheduleCache {
             host: HashMap::new(),
             gateway: Some(500),
+            scheduled: true,
         };
         assert_eq!(cache.select_gateway(Some(499)), V0);
         assert_eq!(cache.select_gateway(Some(500)), V1);
         assert_eq!(cache.select_gateway(None), V0);
-        // gateway schedule must not leak into host selection.
-        assert_eq!(cache.select_host_raw(1, Some(10_000)), V0);
+        // A scheduled migration with no host row means a post-migration host.
+        assert_eq!(cache.select_host_raw(1, Some(10_000)), V1);
     }
 
     /// RFC-029 immutability guard. SnS and compute pin a ciphertext's `material_version` by reading
