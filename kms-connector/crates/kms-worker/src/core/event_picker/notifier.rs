@@ -1,6 +1,7 @@
 use crate::core::Config;
 use anyhow::anyhow;
 use connector_utils::types::db::{
+    ABORT_CRSGEN_REQUEST_NOTIFICATION, ABORT_KEYGEN_REQUEST_NOTIFICATION,
     CRSGEN_REQUEST_NOTIFICATION, EventType, KEYGEN_REQUEST_NOTIFICATION,
     NEW_KMS_CONTEXT_NOTIFICATION, NEW_KMS_EPOCH_NOTIFICATION, PREP_KEYGEN_REQUEST_NOTIFICATION,
     PUBLIC_DECRYPT_REQUEST_NOTIFICATION, USER_DECRYPT_REQUEST_NOTIFICATION,
@@ -76,6 +77,12 @@ impl DbEventNotifier {
         self.db_listener.listen(KEYGEN_REQUEST_NOTIFICATION).await?;
         self.db_listener.listen(CRSGEN_REQUEST_NOTIFICATION).await?;
         self.db_listener
+            .listen(ABORT_KEYGEN_REQUEST_NOTIFICATION)
+            .await?;
+        self.db_listener
+            .listen(ABORT_CRSGEN_REQUEST_NOTIFICATION)
+            .await?;
+        self.db_listener
             .listen(NEW_KMS_CONTEXT_NOTIFICATION)
             .await?;
         self.db_listener.listen(NEW_KMS_EPOCH_NOTIFICATION).await?;
@@ -94,6 +101,10 @@ impl DbEventNotifier {
             EventTicker::new(db_long_event_polling, EventType::PrepKeygenRequest);
         let mut keygen_ticker = EventTicker::new(db_long_event_polling, EventType::KeygenRequest);
         let mut crsgen_ticker = EventTicker::new(db_long_event_polling, EventType::CrsgenRequest);
+        let mut abort_keygen_ticker =
+            EventTicker::new(db_long_event_polling, EventType::AbortKeygenRequest);
+        let mut abort_crsgen_ticker =
+            EventTicker::new(db_long_event_polling, EventType::AbortCrsgenRequest);
         let mut new_kms_context_ticker =
             EventTicker::new(db_long_event_polling, EventType::NewKmsContext);
         let mut new_kms_epoch_ticker =
@@ -106,6 +117,8 @@ impl DbEventNotifier {
                 _ = prep_keygen_ticker.tick() => prep_keygen_ticker.deliver(),
                 _ = keygen_ticker.tick() => keygen_ticker.deliver(),
                 _ = crsgen_ticker.tick() => crsgen_ticker.deliver(),
+                _ = abort_keygen_ticker.tick() => abort_keygen_ticker.deliver(),
+                _ = abort_crsgen_ticker.tick() => abort_crsgen_ticker.deliver(),
                 _ = new_kms_context_ticker.tick() => new_kms_context_ticker.deliver(),
                 _ = new_kms_epoch_ticker.tick() => new_kms_epoch_ticker.deliver(),
                 result = self.db_listener.recv() => match result.map(EventType::try_from) {
@@ -130,6 +143,8 @@ impl DbEventNotifier {
                 EventType::PrepKeygenRequest => prep_keygen_ticker.reset(),
                 EventType::KeygenRequest => keygen_ticker.reset(),
                 EventType::CrsgenRequest => crsgen_ticker.reset(),
+                EventType::AbortKeygenRequest => abort_keygen_ticker.reset(),
+                EventType::AbortCrsgenRequest => abort_crsgen_ticker.reset(),
                 EventType::NewKmsContext => new_kms_context_ticker.reset(),
                 EventType::NewKmsEpoch => new_kms_epoch_ticker.reset(),
             }

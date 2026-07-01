@@ -66,6 +66,15 @@ where
                 event.mark_as_failed(&self.db_pool).await;
                 None
             }
+            // The KMS Core reported that the operation was aborted (e.g. an operator
+            // called `abortKeygen`/`abortCrsgen` on-chain, which we relayed to the Core). This is a
+            // terminal, expected outcome: retire the request as `aborted` rather than `failed`, and
+            // don't retry or emit a response.
+            (Err(ProcessingError::Aborted), _) => {
+                info!("{}", ProcessingError::Aborted);
+                event.mark_as_aborted(&self.db_pool).await;
+                None
+            }
             // For now, we only check the error counter for public and user decryptions as they are
             // the most frequent operations, and we want to avoid infinite retry loop for them.
             // For key management operations, as they are not frequent at all, we currently rely on
@@ -200,6 +209,12 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                     .prepare_crsgen_request(req)
                     .await
             }
+            ProtocolEventKind::AbortKeygen(req) => Ok(self
+                .kms_generation_processor
+                .prepare_abort_keygen_request(req)),
+            ProtocolEventKind::AbortCrsgen(req) => Ok(self
+                .kms_generation_processor
+                .prepare_abort_crsgen_request(req)),
             ProtocolEventKind::NewKmsContext(req) => {
                 self.protocol_config_processor
                     .prepare_new_kms_context_request(req)

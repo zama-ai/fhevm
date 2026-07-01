@@ -15,7 +15,9 @@ use fhevm_gateway_bindings::decryption::Decryption::{
     UserDecryptionRequest_1 as UserDecryptionRequestV2,
 };
 use fhevm_host_bindings::{
-    kms_generation::KMSGeneration::{CrsgenRequest, KeygenRequest, PrepKeygenRequest},
+    kms_generation::KMSGeneration::{
+        AbortCrsgen, AbortKeygen, CrsgenRequest, KeygenRequest, PrepKeygenRequest,
+    },
     protocol_config::ProtocolConfig::{NewKmsContext, NewKmsEpoch},
 };
 use sqlx::{
@@ -89,6 +91,12 @@ async fn publish_event_inner<'e>(
         ProtocolEventKind::Crsgen(e) => {
             let params_type: ParamsTypeDb = e.paramsType.try_into()?;
             publish_crsgen_request(executor, e, params_type, tx_hash, created_at, otlp_ctx).await
+        }
+        ProtocolEventKind::AbortKeygen(e) => {
+            publish_abort_keygen_request(executor, e, tx_hash, created_at, otlp_ctx).await
+        }
+        ProtocolEventKind::AbortCrsgen(e) => {
+            publish_abort_crsgen_request(executor, e, tx_hash, created_at, otlp_ctx).await
         }
         ProtocolEventKind::NewKmsContext(e) => {
             publish_new_kms_context(executor, e, tx_hash, created_at, otlp_ctx).await
@@ -310,6 +318,46 @@ async fn publish_crsgen_request<'e>(
         request.maxBitLength.as_le_slice(),
         params_type as ParamsTypeDb,
         request.extraData.as_ref(),
+        tx_hash.map(|h| h.to_vec()),
+        created_at,
+        bc2wrap::serialize(&otlp_ctx)?,
+    )
+    .execute(executor)
+    .await
+    .map_err(anyhow::Error::from)
+}
+
+async fn publish_abort_keygen_request<'e>(
+    executor: impl PgExecutor<'e>,
+    request: AbortKeygen,
+    tx_hash: Option<FixedBytes<32>>,
+    created_at: DateTime<Utc>,
+    otlp_ctx: PropagationContext,
+) -> anyhow::Result<PgQueryResult> {
+    sqlx::query!(
+        "INSERT INTO abort_keygen_requests(prep_keygen_id, tx_hash, created_at, otlp_context)
+            VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
+        request.prepKeygenId.as_le_slice(),
+        tx_hash.map(|h| h.to_vec()),
+        created_at,
+        bc2wrap::serialize(&otlp_ctx)?,
+    )
+    .execute(executor)
+    .await
+    .map_err(anyhow::Error::from)
+}
+
+async fn publish_abort_crsgen_request<'e>(
+    executor: impl PgExecutor<'e>,
+    request: AbortCrsgen,
+    tx_hash: Option<FixedBytes<32>>,
+    created_at: DateTime<Utc>,
+    otlp_ctx: PropagationContext,
+) -> anyhow::Result<PgQueryResult> {
+    sqlx::query!(
+            "INSERT INTO abort_crsgen_requests(crs_id, tx_hash, created_at, otlp_context)
+                VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
+        request.crsId.as_le_slice(),
         tx_hash.map(|h| h.to_vec()),
         created_at,
         bc2wrap::serialize(&otlp_ctx)?,
