@@ -939,7 +939,7 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
 
     // 5. Drop the gcs schema (and everything in it) now that its data has been
     //    merged back into public.
-    drop_gcs_schema(&mut *tx).await?;
+    drop_gcs_schema(&mut tx).await?;
 
     // 6. Flip FSM rows.
     sqlx::query(
@@ -1028,7 +1028,7 @@ pub async fn rollback_dry_run(pool: &Pool<Postgres>, reason: &str) -> Result<(),
         return Ok(());
     }
 
-    drop_gcs_schema(&mut *tx).await?;
+    drop_gcs_schema(&mut tx).await?;
 
     sqlx::query("SELECT pg_notify($1, '')")
         .bind(DRY_RUN_STARTED_CHANNEL)
