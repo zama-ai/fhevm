@@ -1798,6 +1798,7 @@ impl Database {
         event: &Log<BridgeContractEvents>,
         transaction_hash: &Option<Handle>,
         block_number: u64,
+        block_hash: &BlockHash,
         prev_block_hash: &BlockHash,
         block_timestamp: u64,
         acl_contract_address: &Option<Address>,
@@ -1833,15 +1834,16 @@ impl Database {
                 sqlx::query!(
                     "INSERT INTO bridge_handle_events
                         (src_handle, dst_chain_id, src_chain_id, sender_dapp,
-                         guid, block_number, transaction_id)
-                     VALUES ($1, $2, $3, $4, $5, $6, $7)
-                     ON CONFLICT (src_handle, dst_chain_id) DO NOTHING",
+                         guid, block_number, block_hash, transaction_id)
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                     ON CONFLICT (src_handle, dst_chain_id, block_hash) DO NOTHING",
                     e.srcHandle.as_slice(),
                     dst_chain_id.as_i64(),
                     self.chain_id.as_i64(),
                     e.senderDapp.as_slice(),
                     e.guid.as_slice(),
                     block_number as i64,
+                    block_hash.as_slice(),
                     transaction_id,
                 )
                 .execute(tx.deref_mut())
@@ -1880,15 +1882,16 @@ impl Database {
                 sqlx::query!(
                     "INSERT INTO handle_bridged_events
                         (src_handle, dst_handle, dst_chain_id, receiver_dapp,
-                         guid, block_number, transaction_id)
-                     VALUES ($1, $2, $3, $4, $5, $6, $7)
-                     ON CONFLICT (dst_handle) DO NOTHING",
+                         guid, block_number, block_hash, transaction_id)
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                     ON CONFLICT (dst_handle, block_hash) DO NOTHING",
                     e.srcHandle.as_slice(),
                     e.dstHandle.as_slice(),
                     self.chain_id.as_i64(),
                     e.receiverDapp.as_slice(),
                     e.guid.as_slice(),
                     block_number as i64,
+                    block_hash.as_slice(),
                     transaction_id,
                 )
                 .execute(tx.deref_mut())
