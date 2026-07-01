@@ -10116,10 +10116,9 @@ library FHE {
      * @notice Bridges a single encrypted `ebool` handle plus an app-defined `payload` to
      *         `dstApp` on the chain at `dstEid`, via the host `ConfidentialBridge`.
      * @dev    Builds the one-element handle list. `lzComposeGas` is the gas budget for the
-     *         destination receive callback (lzCompose leg) and must be at least the bridge's
-     *         per-`dstEid` minimum, else the host `send` reverts. The caller must already hold
-     *         ACL allowance on the handle (e.g. via {allowThis}); the payload must reference it
-     *         at index 0.
+     *         destination receive callback (lzCompose leg) and must be non-zero, else the host
+     *         `send` reverts. The caller must already hold ACL allowance on the handle (e.g. via
+     *         {allowThis}); the payload must reference it at index 0.
      */
     function bridge(
         uint32 dstEid,
@@ -10152,10 +10151,9 @@ library FHE {
      * @notice Bridges a single encrypted `euint8` handle plus an app-defined `payload` to
      *         `dstApp` on the chain at `dstEid`, via the host `ConfidentialBridge`.
      * @dev    Builds the one-element handle list. `lzComposeGas` is the gas budget for the
-     *         destination receive callback (lzCompose leg) and must be at least the bridge's
-     *         per-`dstEid` minimum, else the host `send` reverts. The caller must already hold
-     *         ACL allowance on the handle (e.g. via {allowThis}); the payload must reference it
-     *         at index 0.
+     *         destination receive callback (lzCompose leg) and must be non-zero, else the host
+     *         `send` reverts. The caller must already hold ACL allowance on the handle (e.g. via
+     *         {allowThis}); the payload must reference it at index 0.
      */
     function bridge(
         uint32 dstEid,
@@ -10188,10 +10186,9 @@ library FHE {
      * @notice Bridges a single encrypted `euint16` handle plus an app-defined `payload` to
      *         `dstApp` on the chain at `dstEid`, via the host `ConfidentialBridge`.
      * @dev    Builds the one-element handle list. `lzComposeGas` is the gas budget for the
-     *         destination receive callback (lzCompose leg) and must be at least the bridge's
-     *         per-`dstEid` minimum, else the host `send` reverts. The caller must already hold
-     *         ACL allowance on the handle (e.g. via {allowThis}); the payload must reference it
-     *         at index 0.
+     *         destination receive callback (lzCompose leg) and must be non-zero, else the host
+     *         `send` reverts. The caller must already hold ACL allowance on the handle (e.g. via
+     *         {allowThis}); the payload must reference it at index 0.
      */
     function bridge(
         uint32 dstEid,
@@ -10224,10 +10221,9 @@ library FHE {
      * @notice Bridges a single encrypted `euint32` handle plus an app-defined `payload` to
      *         `dstApp` on the chain at `dstEid`, via the host `ConfidentialBridge`.
      * @dev    Builds the one-element handle list. `lzComposeGas` is the gas budget for the
-     *         destination receive callback (lzCompose leg) and must be at least the bridge's
-     *         per-`dstEid` minimum, else the host `send` reverts. The caller must already hold
-     *         ACL allowance on the handle (e.g. via {allowThis}); the payload must reference it
-     *         at index 0.
+     *         destination receive callback (lzCompose leg) and must be non-zero, else the host
+     *         `send` reverts. The caller must already hold ACL allowance on the handle (e.g. via
+     *         {allowThis}); the payload must reference it at index 0.
      */
     function bridge(
         uint32 dstEid,
@@ -10260,10 +10256,9 @@ library FHE {
      * @notice Bridges a single encrypted `euint64` handle plus an app-defined `payload` to
      *         `dstApp` on the chain at `dstEid`, via the host `ConfidentialBridge`.
      * @dev    Builds the one-element handle list. `lzComposeGas` is the gas budget for the
-     *         destination receive callback (lzCompose leg) and must be at least the bridge's
-     *         per-`dstEid` minimum, else the host `send` reverts. The caller must already hold
-     *         ACL allowance on the handle (e.g. via {allowThis}); the payload must reference it
-     *         at index 0.
+     *         destination receive callback (lzCompose leg) and must be non-zero, else the host
+     *         `send` reverts. The caller must already hold ACL allowance on the handle (e.g. via
+     *         {allowThis}); the payload must reference it at index 0.
      */
     function bridge(
         uint32 dstEid,
@@ -10296,10 +10291,9 @@ library FHE {
      * @notice Bridges a single encrypted `euint128` handle plus an app-defined `payload` to
      *         `dstApp` on the chain at `dstEid`, via the host `ConfidentialBridge`.
      * @dev    Builds the one-element handle list. `lzComposeGas` is the gas budget for the
-     *         destination receive callback (lzCompose leg) and must be at least the bridge's
-     *         per-`dstEid` minimum, else the host `send` reverts. The caller must already hold
-     *         ACL allowance on the handle (e.g. via {allowThis}); the payload must reference it
-     *         at index 0.
+     *         destination receive callback (lzCompose leg) and must be non-zero, else the host
+     *         `send` reverts. The caller must already hold ACL allowance on the handle (e.g. via
+     *         {allowThis}); the payload must reference it at index 0.
      */
     function bridge(
         uint32 dstEid,
@@ -10332,10 +10326,9 @@ library FHE {
      * @notice Bridges a single encrypted `eaddress` handle plus an app-defined `payload` to
      *         `dstApp` on the chain at `dstEid`, via the host `ConfidentialBridge`.
      * @dev    Builds the one-element handle list. `lzComposeGas` is the gas budget for the
-     *         destination receive callback (lzCompose leg) and must be at least the bridge's
-     *         per-`dstEid` minimum, else the host `send` reverts. The caller must already hold
-     *         ACL allowance on the handle (e.g. via {allowThis}); the payload must reference it
-     *         at index 0.
+     *         destination receive callback (lzCompose leg) and must be non-zero, else the host
+     *         `send` reverts. The caller must already hold ACL allowance on the handle (e.g. via
+     *         {allowThis}); the payload must reference it at index 0.
      */
     function bridge(
         uint32 dstEid,
@@ -10368,10 +10361,9 @@ library FHE {
      * @notice Bridges a single encrypted `euint256` handle plus an app-defined `payload` to
      *         `dstApp` on the chain at `dstEid`, via the host `ConfidentialBridge`.
      * @dev    Builds the one-element handle list. `lzComposeGas` is the gas budget for the
-     *         destination receive callback (lzCompose leg) and must be at least the bridge's
-     *         per-`dstEid` minimum, else the host `send` reverts. The caller must already hold
-     *         ACL allowance on the handle (e.g. via {allowThis}); the payload must reference it
-     *         at index 0.
+     *         destination receive callback (lzCompose leg) and must be non-zero, else the host
+     *         `send` reverts. The caller must already hold ACL allowance on the handle (e.g. via
+     *         {allowThis}); the payload must reference it at index 0.
      */
     function bridge(
         uint32 dstEid,
@@ -10403,8 +10395,8 @@ library FHE {
     /**
      * @notice Low-level bridge of an explicit `bytes32` handle list to a `bytes32` destination
      *         app (mixed handle types, or non-EVM destinations).
-     * @dev    The caller must already hold ACL allowance on every handle; `lzComposeGas` must
-     *         meet the bridge's per-`dstEid` minimum.
+     * @dev    The caller must already hold ACL allowance on every handle; `lzComposeGas` must be
+     *         non-zero (the bridge reverts otherwise).
      * @param dstEid        Destination LayerZero endpoint id.
      * @param dstApp        Destination app as bytes32 (EVM address left-padded, or native id).
      * @param payload       Opaque app payload.
