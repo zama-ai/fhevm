@@ -21,6 +21,7 @@ const SRC_CHAIN_ID: u64 = 1000;
 const DST_CHAIN_ID: u64 = 2000;
 const BLOCK_NUMBER: u64 = 42;
 const BLOCK_TIMESTAMP: u64 = 1_700_000_000;
+const BLOCK_HASH: [u8; 32] = [0xBC; 32];
 const ACL: [u8; 20] = [0xAC; 20];
 
 fn handle_for_chain(chain_id: u64, seed: u8) -> FixedBytes<32> {
@@ -56,6 +57,7 @@ async fn ingest(
             &log,
             &None,
             BLOCK_NUMBER,
+            &FixedBytes::from(BLOCK_HASH),
             &prev_block_hash,
             BLOCK_TIMESTAMP,
             &acl,
@@ -97,7 +99,7 @@ async fn bridge_handle_with_matching_chain_id_is_inserted() {
 
     let pool = db.pool().await;
     let row = sqlx::query(
-        "SELECT src_chain_id, dst_chain_id, sender_dapp, guid, block_number
+        "SELECT src_chain_id, dst_chain_id, sender_dapp, guid, block_number, block_hash
          FROM bridge_handle_events WHERE src_handle = $1",
     )
     .bind(src_handle.as_slice())
@@ -109,6 +111,7 @@ async fn bridge_handle_with_matching_chain_id_is_inserted() {
     assert_eq!(row.get::<Vec<u8>, _>("sender_dapp"), vec![0xDA; 20]);
     assert_eq!(row.get::<Vec<u8>, _>("guid"), guid.to_vec());
     assert_eq!(row.get::<i64, _>("block_number"), BLOCK_NUMBER as i64);
+    assert_eq!(row.get::<Vec<u8>, _>("block_hash"), BLOCK_HASH.to_vec());
 }
 
 #[tokio::test]
@@ -226,7 +229,7 @@ async fn handle_bridged_with_valid_derivation_is_inserted() {
 
     let pool = db.pool().await;
     let row = sqlx::query(
-        "SELECT src_handle, dst_chain_id, receiver_dapp, guid, block_number
+        "SELECT src_handle, dst_chain_id, receiver_dapp, guid, block_number, block_hash
          FROM handle_bridged_events WHERE dst_handle = $1",
     )
     .bind(dst_handle.as_slice())
@@ -238,6 +241,7 @@ async fn handle_bridged_with_valid_derivation_is_inserted() {
     assert_eq!(row.get::<Vec<u8>, _>("receiver_dapp"), vec![0xDB; 20]);
     assert_eq!(row.get::<Vec<u8>, _>("guid"), guid.to_vec());
     assert_eq!(row.get::<i64, _>("block_number"), BLOCK_NUMBER as i64);
+    assert_eq!(row.get::<Vec<u8>, _>("block_hash"), BLOCK_HASH.to_vec());
 }
 
 #[tokio::test]

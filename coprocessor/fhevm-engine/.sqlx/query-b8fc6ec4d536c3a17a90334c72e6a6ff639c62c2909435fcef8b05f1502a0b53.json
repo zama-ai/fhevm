@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                DELETE FROM ciphertext_digest d\n                WHERE d.host_chain_id = $1\n                  AND d.handle = ANY($2::bytea[])\n                  AND NOT EXISTS (\n                      SELECT 1\n                      FROM pbs_computations_branch p\n                      WHERE p.host_chain_id = d.host_chain_id\n                        AND p.handle = d.handle\n                  )\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "ByteaArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b8fc6ec4d536c3a17a90334c72e6a6ff639c62c2909435fcef8b05f1502a0b53"
+}
