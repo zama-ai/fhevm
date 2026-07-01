@@ -5,8 +5,10 @@ use connector_utils::{
         ContractConfig, DeserializeConfig,
         contract::{
             default_decryption_contract_config, default_gateway_config_contract_config,
-            default_kms_generation_contract_config, deserialize_decryption_contract_config,
-            deserialize_gateway_config_contract_config, deserialize_kms_generation_contract_config,
+            default_kms_generation_contract_config, default_protocol_config_contract_config,
+            deserialize_decryption_contract_config, deserialize_gateway_config_contract_config,
+            deserialize_kms_generation_contract_config,
+            deserialize_protocol_config_contract_config,
         },
         default_database_pool_size,
     },
@@ -47,11 +49,16 @@ pub struct Config {
     #[serde(deserialize_with = "deserialize_gateway_config_contract_config")]
     pub gateway_config_contract: ContractConfig,
 
+    /// The Ethereum RPC endpoint.
+    pub ethereum_url: Url,
     /// The Chain ID of the Ethereum chain.
     pub ethereum_chain_id: u64,
     /// The `KMSGeneration` contract configuration (on Ethereum).
     #[serde(deserialize_with = "deserialize_kms_generation_contract_config")]
     pub kms_generation_contract: ContractConfig,
+    /// The `ProtocolConfig` contract configuration (on Ethereum).
+    #[serde(deserialize_with = "deserialize_protocol_config_contract_config")]
+    pub protocol_config_contract: ContractConfig,
 
     /// The Host Chains configuration.
     #[serde(deserialize_with = "deserialize_host_chains")]
@@ -282,8 +289,10 @@ impl Default for Config {
             gateway_chain_id: 54321,
             decryption_contract: default_decryption_contract_config(),
             gateway_config_contract: default_gateway_config_contract_config(),
+            ethereum_url: Url::from_str("http://localhost:8545").unwrap(),
             ethereum_chain_id: 11155111, // Sepolia
             kms_generation_contract: default_kms_generation_contract_config(),
+            protocol_config_contract: default_protocol_config_contract_config(),
             host_chains: vec![HostChainConfig {
                 url: Url::from_str("http://localhost:8545").unwrap(),
                 chain_id: 12345,
@@ -319,10 +328,12 @@ mod tests {
             env::remove_var("KMS_CONNECTOR_EVENTS_BATCH_SIZE");
             env::remove_var("KMS_CONNECTOR_GATEWAY_URL");
             env::remove_var("KMS_CONNECTOR_GATEWAY_CHAIN_ID");
+            env::remove_var("KMS_CONNECTOR_ETHEREUM_URL");
             env::remove_var("KMS_CONNECTOR_ETHEREUM_CHAIN_ID");
             env::remove_var("KMS_CONNECTOR_DECRYPTION_CONTRACT__ADDRESS");
             env::remove_var("KMS_CONNECTOR_GATEWAY_CONFIG_CONTRACT__ADDRESS");
             env::remove_var("KMS_CONNECTOR_KMS_GENERATION_CONTRACT__ADDRESS");
+            env::remove_var("KMS_CONNECTOR_PROTOCOL_CONFIG_CONTRACT__ADDRESS");
             env::remove_var("KMS_CONNECTOR_HOST_CHAINS");
             env::remove_var("KMS_CONNECTOR_KMS_CORE_ENDPOINTS");
             env::remove_var("KMS_CONNECTOR_GRPC_REQUEST_RETRIES");
@@ -356,6 +367,7 @@ mod tests {
             env::set_var("KMS_CONNECTOR_EVENTS_BATCH_SIZE", "15");
             env::set_var("KMS_CONNECTOR_GATEWAY_URL", "http://localhost:9545");
             env::set_var("KMS_CONNECTOR_GATEWAY_CHAIN_ID", "31888");
+            env::set_var("KMS_CONNECTOR_ETHEREUM_URL", "http://localhost:9546");
             env::set_var("KMS_CONNECTOR_ETHEREUM_CHAIN_ID", "31444");
             env::set_var(
                 "KMS_CONNECTOR_DECRYPTION_CONTRACT__ADDRESS",
@@ -367,6 +379,10 @@ mod tests {
             );
             env::set_var(
                 "KMS_CONNECTOR_KMS_GENERATION_CONTRACT__ADDRESS",
+                "0x5fbdb2315678afecb367f032d93f642f64180aa3",
+            );
+            env::set_var(
+                "KMS_CONNECTOR_PROTOCOL_CONFIG_CONTRACT__ADDRESS",
                 "0x5fbdb2315678afecb367f032d93f642f64180aa3",
             );
             env::set_var(
@@ -402,6 +418,10 @@ mod tests {
             Url::from_str("http://localhost:9545").unwrap()
         );
         assert_eq!(config.gateway_chain_id, 31888);
+        assert_eq!(
+            config.ethereum_url,
+            Url::from_str("http://localhost:9546").unwrap()
+        );
         assert_eq!(config.ethereum_chain_id, 31444);
         assert_eq!(
             config.decryption_contract.address,
@@ -413,6 +433,10 @@ mod tests {
         );
         assert_eq!(
             config.kms_generation_contract.address,
+            Address::from_str("0x5fbdb2315678afecb367f032d93f642f64180aa3").unwrap()
+        );
+        assert_eq!(
+            config.protocol_config_contract.address,
             Address::from_str("0x5fbdb2315678afecb367f032d93f642f64180aa3").unwrap()
         );
         assert_eq!(

@@ -120,6 +120,13 @@ export const KEYGEN_ID_SELECTOR = "0xd52f10eb";
 export const CRSGEN_ID_SELECTOR = "0xbaff211e";
 export const DEFAULT_CHAIN_ID = "12345";
 
+/**
+ * Confidential bridge opt-out: a real LayerZero endpoint preconfigured for a chain via
+ * BRIDGE_LZ_ENDPOINT_<CHAINKEY>. When set, the bridge is wired against it.
+ */
+export const realLzEndpointFor = (chainKey: string): string | undefined =>
+  process.env[`BRIDGE_LZ_ENDPOINT_${chainKey.toUpperCase().replace(/[^A-Z0-9]/g, "_")}`];
+
 export const COMPONENTS = [
   "minio",
   "database",
@@ -146,6 +153,7 @@ export const COMPONENT_BY_STEP: Record<StepName, string[]> = {
   "gateway-deploy": ["gateway-mocked-payment", "gateway-sc"],
   "host-deploy": ["host-sc"],
   "discover": [],
+  "bridge-deploy": ["host-sc"],
   "regenerate": [],
   "validate": [],
   "listener-core": ["listener-core"],
@@ -211,6 +219,8 @@ export const GROUP_BUILD_SERVICES: Record<OverrideGroup, string[]> = {
     "host-sc-add-pausers",
     "host-sc-trigger-keygen",
     "host-sc-trigger-crsgen",
+    "host-sc-deploy-bridge",
+    "host-sc-wire-bridge",
     "host-sc-context-switch",
     "host-sc-epoch-rotation",
   ],
@@ -286,6 +296,7 @@ export const TEST_GREP: Record<string, string> = {
   "erc20": "should transfer tokens between two users.",
   "negative-acl": "negative-acl",
   "multi-chain-isolation": "Multi-Chain State Isolation",
+  "confidential-bridge": "Confidential Bridge",
 };
 
 export const TEST_PARALLEL: Record<string, boolean> = {
@@ -321,6 +332,7 @@ export const STANDARD_TEST_PROFILES = [
   "negative-acl",
   "random-subset",
   "multi-chain-isolation",
+  "confidential-bridge",
   "hcu-block-cap",
   // Covers both drift detection (incl. an on-chain divergence cross-check folded
   // in from the former `ciphertext-drift` profile) and full auto-recovery.

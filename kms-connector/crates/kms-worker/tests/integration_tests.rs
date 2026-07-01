@@ -6,9 +6,10 @@ use crate::common::{
 };
 use alloy::{
     hex::FromHex,
-    primitives::{FixedBytes, U256},
+    primitives::{Address, FixedBytes, Log, U256},
     providers::{ProviderBuilder, mock::Asserter},
-    sol_types::SolValue,
+    rpc::types::Log as RpcLog,
+    sol_types::{SolEvent, SolValue},
 };
 use connector_utils::{
     tests::{
@@ -27,12 +28,14 @@ use connector_utils::{
         u256_to_request_id,
     },
 };
+use fhevm_host_bindings::protocol_config::ProtocolConfig::NewKmsContext;
 use kms_grpc::kms::v1::{
-    CrsGenResult, Empty, KeyGenPreprocResult, KeyGenResult, PublicDecryptionResponse,
-    PublicDecryptionResponsePayload, UserDecryptionResponse, UserDecryptionResponsePayload,
+    CrsGenResult, Empty, EpochResultResponse as GrpcEpochResultResponse, KeyGenPreprocResult,
+    KeyGenResult, PublicDecryptionResponse, PublicDecryptionResponsePayload,
+    UserDecryptionResponse, UserDecryptionResponsePayload,
 };
-use kms_worker::core::Config;
-use mocktail::{MockSet, server::MockServer};
+use kms_worker::core::{Config, event_processor::compute_anchor_event_hash};
+use mocktail::{MockSet, StatusCode, server::MockServer};
 use rstest::rstest;
 use sqlx::{Pool, Postgres};
 use std::time::Duration;
@@ -46,12 +49,16 @@ use tracing::{info, warn};
 #[case::prep_keygen(TestEventType::PrepKeygen, false)]
 #[case::keygen(TestEventType::Keygen, false)]
 #[case::crsgen(TestEventType::Crsgen, false)]
+#[case::new_kms_context(TestEventType::NewKmsContext, false)]
+#[case::new_kms_epoch(TestEventType::NewKmsEpoch, false)]
 #[case::public_decryption_already_sent(TestEventType::PublicDecryption, true)]
 #[case::user_decryption_already_sent(TestEventType::UserDecryption, true)]
 #[case::user_decryption_v2_already_sent(TestEventType::UserDecryptionV2, true)]
 #[case::prep_keygen_already_sent(TestEventType::PrepKeygen, true)]
 #[case::keygen_already_sent(TestEventType::Keygen, true)]
 #[case::crsgen_already_sent(TestEventType::Crsgen, true)]
+#[case::new_kms_context_already_sent(TestEventType::NewKmsContext, true)]
+#[case::new_kms_epoch_already_sent(TestEventType::NewKmsEpoch, true)]
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
 async fn test_processing_request(
@@ -64,7 +71,7 @@ async fn test_processing_request(
         .with_s3(S3Instance::setup().await?)
         .build();
 
-    // Mocking Gateway
+    // Mocking Gateway/Ethereum
     let asserter = Asserter::new();
     let copro_tx_sender = mock_copro_registry_load(&asserter, test_instance.s3_url());
     let mut sns_ct = rand_sns_ct();
@@ -76,19 +83,48 @@ async fn test_processing_request(
     let mut insert_options = InsertRequestOptions::new()
         .with_already_sent(already_sent)
         .with_sns_ct_materials(vec![sns_ct.clone()]);
-    // Only the legacy `UserDecryptionRequest` path re-fetches calldata via `get_transaction_by_hash`
-    // — the RFC016 V2 event carries the full payload in-event, so no such mock is needed.
-    if matches!(event_type, TestEventType::UserDecryption) {
-        let tx_hash = rand_digest();
-        let mock_tx = create_mock_user_decryption_request_tx(tx_hash, sns_ct.ctHandle)?;
-        insert_options = insert_options.with_tx_hash(tx_hash);
-        asserter.push_success(&mock_tx);
+
+    match event_type {
+        // Only the legacy `UserDecryptionRequest` path re-fetches calldata via `get_transaction_by_hash`
+        // — the RFC016 V2 event carries the full payload in-event, so no such mock is needed.
+        TestEventType::UserDecryption => {
+            let tx_hash = rand_digest();
+            let mock_tx = create_mock_user_decryption_request_tx(tx_hash, sns_ct.ctHandle)?;
+            insert_options = insert_options.with_tx_hash(tx_hash);
+            asserter.push_success(&mock_tx);
+        }
+        // The `NewKmsContext` flow makes two RPC calls before going to the Core: an `eth_call`
+        // on `getKmsContextAnchor(previousContextId)` and an `eth_getLogs` to fetch the
+        // previous-context event. We fabricate a default previous event, hash it the same way
+        // the production code does, and queue both responses on the FIFO asserter.
+        TestEventType::NewKmsContext => {
+            let previous_event = NewKmsContext::default();
+            let anchor_hash = compute_anchor_event_hash(&previous_event);
+            asserter.push_success(&(U256::ZERO, anchor_hash).abi_encode_sequence());
+            let rpc_log = RpcLog {
+                inner: Log {
+                    address: Address::ZERO,
+                    data: previous_event.encode_log_data(),
+                },
+                ..Default::default()
+            };
+            asserter.push_success(&vec![rpc_log]);
+        }
+        // The `NewKmsEpoch` flow fetches the previous epoch material from `KMSGeneration` via two
+        // `eth_call`s at `materialBlockNumber`: `getCompletedKeyIds()` then `getCompletedCrsIds()`.
+        // Returning empty id lists short-circuits the per-key/per-crs `getKeyInfo`/`getCrsMaterials`
+        // follow-ups, so these two responses are all the flow needs.
+        TestEventType::NewKmsEpoch => {
+            asserter.push_success(&Vec::<U256>::new().abi_encode());
+            asserter.push_success(&Vec::<U256>::new().abi_encode());
+        }
+        _ => (),
     }
 
-    let gateway_mock_provider = ProviderBuilder::new()
+    let mock_provider = ProviderBuilder::new()
         .disable_recommended_fillers()
         .connect_mocked_client(asserter.clone());
-    info!("Gateway mock started!");
+    info!("Gateway + Ethereum mock started!");
 
     // Mocking Host chain. ACL call counts per variant:
     //   - Public:            1 `isAllowedForDecryption`
@@ -130,7 +166,7 @@ async fn test_processing_request(
     };
     let kms_worker = init_kms_worker(
         config,
-        gateway_mock_provider,
+        mock_provider,
         acl_contracts_mock,
         test_instance.db(),
     )
@@ -172,6 +208,8 @@ fn prepare_mocks(req: &ProtocolEventKind, already_sent: bool) -> MockSet {
         }
         ProtocolEventKind::Keygen(r) => (r.keyId, "KeyGen", "GetKeyGenResult"),
         ProtocolEventKind::Crsgen(r) => (r.crsId, "CrsGen", "GetCrsGenResult"),
+        ProtocolEventKind::NewKmsContext(r) => (r.contextId, "NewMpcContext", "unreachable"),
+        ProtocolEventKind::NewKmsEpoch(r) => (r.epochId, "NewMpcEpoch", "GetEpochResult"),
     };
     let request_id = Some(u256_to_request_id(request_id_u256));
 
@@ -214,6 +252,11 @@ fn prepare_mocks(req: &ProtocolEventKind, already_sent: bool) -> MockSet {
                 request_id,
                 ..Default::default()
             }),
+            ProtocolEventKind::NewKmsContext(_) => then.error(
+                StatusCode::BAD_REQUEST,
+                "No response expected response from kms-core",
+            ),
+            ProtocolEventKind::NewKmsEpoch(_) => then.pb(GrpcEpochResultResponse::default()),
         };
     });
 
@@ -233,6 +276,8 @@ async fn wait_for_response_in_db(
         ProtocolEventKind::PrepKeygen(_) => "SELECT * FROM prep_keygen_responses",
         ProtocolEventKind::Keygen(_) => "SELECT * FROM keygen_responses",
         ProtocolEventKind::Crsgen(_) => "SELECT * FROM crsgen_responses",
+        ProtocolEventKind::NewKmsContext(_) => "SELECT * FROM new_kms_context_responses",
+        ProtocolEventKind::NewKmsEpoch(_) => "SELECT * FROM epoch_result_responses",
     };
     let response = loop {
         let result = sqlx::query(query).fetch_all(db).await?;
@@ -258,6 +303,12 @@ async fn wait_for_response_in_db(
                 }
                 ProtocolEventKind::Crsgen(_) => {
                     break kms_response::from_crsgen_row(&result[0])?;
+                }
+                ProtocolEventKind::NewKmsContext(_) => {
+                    break kms_response::from_new_kms_context_response_row(&result[0])?;
+                }
+                ProtocolEventKind::NewKmsEpoch(_) => {
+                    break kms_response::from_epoch_result_row(&result[0])?;
                 }
             };
         }
@@ -309,6 +360,14 @@ fn check_response_data(request: &ProtocolEventKind, response: KmsResponse) -> an
             request_id: Some(u256_to_request_id(r.crsId)),
             ..Default::default()
         }),
+        ProtocolEventKind::NewKmsContext(r) => KmsGrpcResponse::NewKmsContext {
+            context_id: r.contextId,
+        },
+        ProtocolEventKind::NewKmsEpoch(r) => KmsGrpcResponse::EpochResult {
+            context_id: r.kmsContextId,
+            epoch_id: r.epochId,
+            grpc_response: GrpcEpochResultResponse::default(),
+        },
     };
     assert_eq!(response.kind, KmsResponseKind::process(expected_response)?);
     info!("OK!");

@@ -1,3 +1,4 @@
+mod bridge;
 mod db_key_cache;
 mod dependence_chain;
 mod drift_revert;
