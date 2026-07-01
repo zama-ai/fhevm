@@ -17,7 +17,7 @@ import { assertContractMatchesVersionPrefix } from './utils/contractVersion';
 import { formatError } from './utils/formatError';
 import { CRS_COUNTER_BASE, KEY_COUNTER_BASE } from './utils/kmsGenerationConstants';
 import { getRequiredEnvVar } from './utils/loadVariables';
-import { executeUpgradeProposal } from './utils/upgradeProposal';
+import { executeUpgradeProposal, printUpgradeProposal, verifyProposalImplementation } from './utils/upgradeProposal';
 
 const ADDRESSES_DIR = path.join(__dirname, '../addresses');
 const HOST_ENV_FILE = path.join(ADDRESSES_DIR, '.env.host');
@@ -34,7 +34,7 @@ export function readHostEnv() {
   return dotenv.parse(fs.readFileSync(HOST_ENV_FILE));
 }
 
-function writeHostEnvLine(content: string, mode: 'w' | 'a') {
+export function writeHostEnvLine(content: string, mode: 'w' | 'a') {
   fs.writeFileSync(HOST_ENV_FILE, content, { flag: mode });
 }
 
@@ -42,18 +42,14 @@ function writeHostAddressesSol(content: string, mode: 'w' | 'a') {
   fs.writeFileSync(HOST_ADDRESSES_FILE, content, { encoding: 'utf8', flag: mode });
 }
 
-export function readExistingHostEnv(): Record<string, string> {
+export function readExistingHostEnv(): Record {
   if (!fs.existsSync(HOST_ENV_FILE)) {
     return {};
   }
   return readHostEnv();
 }
 
-export async function waitForTaskReady(
-  hre: HardhatRuntimeEnvironment,
-  taskName: string,
-  timeoutMs = 60_000,
-): Promise<void> {
+export async function waitForTaskReady(hre: HardhatRuntimeEnvironment, taskName: string, timeoutMs = 60_000): Promise {
   const deadline = Date.now() + timeoutMs;
 
   while (true) {
@@ -69,15 +65,15 @@ export async function waitForTaskReady(
   }
 }
 
-// Re-exported for existing call sites (taskMigrate). Lives in utils/contractVersion to avoid a
-// cyclic import: protocolConfigMirror needs it too, and taskDeploy already imports from there.
+// Re-exported for existing call sites. Lives in utils/contractVersion to avoid a cyclic import:
+// protocolConfigMirror needs it too, and taskDeploy already imports from there.
 export { assertContractMatchesVersionPrefix };
 
 ////////////////////////////////////////////////////////////////////////////////
 // All Host Contracts
 ////////////////////////////////////////////////////////////////////////////////
 
-const PROTOCOL_CONFIG_SOURCES = ['fresh', 'migration', 'canonical'] as const;
+const PROTOCOL_CONFIG_SOURCES = ['fresh', 'canonical'] as const;
 type ProtocolConfigSource = (typeof PROTOCOL_CONFIG_SOURCES)[number];
 
 task('task:deployAllHostContracts')
@@ -89,7 +85,7 @@ task('task:deployAllHostContracts')
   )
   .addOptionalParam(
     'protocolConfigSource',
-    "How to initialize ProtocolConfig: 'fresh' (default) calls initializeFromEmptyProxy with env-driven KMS nodes/thresholds; 'migration' calls initializeFromMigration consuming MIGRATION_CONTEXT_ID / MIGRATION_KMS_NODES / MIGRATION_KMS_THRESHOLDS; 'canonical' mirrors the canonical chain's ProtocolConfig via task:deployProtocolConfigFromCanonical (non-canonical hosts only).",
+    "How to initialize ProtocolConfig: 'fresh' (default) calls initializeFromEmptyProxy with env-driven KMS nodes/thresholds; 'canonical' mirrors the canonical chain's ProtocolConfig via task:deployProtocolConfigFromCanonical (non-canonical hosts only).",
     'fresh',
     types.string,
   )
@@ -121,7 +117,9 @@ task('task:deployAllHostContracts')
   ) {
     if (!PROTOCOL_CONFIG_SOURCES.includes(protocolConfigSource as ProtocolConfigSource)) {
       throw new Error(
-        `Invalid --protocol-config-source "${protocolConfigSource}". Allowed values: ${PROTOCOL_CONFIG_SOURCES.join(', ')}.`,
+        `Invalid --protocol-config-source "${protocolConfigSource}". Allowed values: ${PROTOCOL_CONFIG_SOURCES.join(
+          ', ',
+        )}.`,
       );
     }
     if (protocolConfigSource === 'canonical') {
@@ -152,9 +150,7 @@ task('task:deployAllHostContracts')
 
     await hre.run('task:deployACL');
     await hre.run('task:deployFHEVMExecutor');
-    if (protocolConfigSource === 'migration') {
-      await hre.run('task:deployProtocolConfigFromMigration');
-    } else if (protocolConfigSource === 'canonical') {
+    if (protocolConfigSource === 'canonical') {
       await hre.run('task:deployProtocolConfigFromCanonical', { canonicalRpcUrl, canonicalProtocolConfigAddress });
     } else {
       await hre.run('task:deployProtocolConfig');
@@ -165,6 +161,35 @@ task('task:deployAllHostContracts')
     await hre.run('task:deployKMSVerifier');
     await hre.run('task:deployInputVerifier');
     await hre.run('task:deployHCULimit');
+
+    // ConfidentialBridge upgrade is opt-in via the LZ_ENDPOINT_ADDRESS env var.
+    // When unset, the bridge stays at its empty-proxy stage and can be upgraded
+    // later by running `task:deployBridge` once LZ_ENDPOINT_ADDRESS is configured.
+    //
+    // We also skip the bridge upgrade on the in-memory `hardhat` network: the
+    // canonical LZ endpoint doesn't exist there, so initializeFromEmptyProxy →
+    // __OAppCore_init → endpoint.setDelegate(...) would revert. Test fixtures
+    // that need the bridge deploy their own proxies (see test/bridge/fixture.ts
+    // and test/bridge/Bridge.t.sol::_deployBridgeProxy).
+    if (!process.env.LZ_ENDPOINT_ADDRESS) {
+      console.log(
+        '[task:deployAllHostContracts] LZ_ENDPOINT_ADDRESS not set; ' +
+          'ConfidentialBridge stays at its empty-proxy stage. Set LZ_ENDPOINT_ADDRESS and run task:deployBridge when ready.',
+      );
+    } else if (hre.network.name === 'hardhat') {
+      console.log(
+        "[task:deployAllHostContracts] Skipping bridge upgrade on the in-memory 'hardhat' network " +
+          '(no LayerZero endpoint contract exists there). Run on a real network to upgrade the bridge.',
+      );
+    } else if ((await hre.ethers.provider.getCode(process.env.LZ_ENDPOINT_ADDRESS)) === '0x') {
+      console.log(
+        `[task:deployAllHostContracts] No contract deployed at LZ_ENDPOINT_ADDRESS (${process.env.LZ_ENDPOINT_ADDRESS}) ` +
+          'on this network; ConfidentialBridge stays at its empty-proxy stage. ' +
+          'Run task:deployBridge against a network with a real LayerZero endpoint to upgrade the bridge.',
+      );
+    } else {
+      await hre.run('task:deployBridge');
+    }
 
     console.log('Contract deployment done!');
   });
@@ -253,7 +278,42 @@ task('task:deployEmptyUUPSProxies')
       const kmsGenerationAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
       await run('task:setKMSGenerationAddress', { address: kmsGenerationAddress });
     }
+
+    const confidentialBridgeAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
+    await run('task:setBridgeAddress', { address: confidentialBridgeAddress });
   });
+
+task('task:deployEmptyProxiesProtocolConfigKMSGeneration').setAction(async function (_, { ethers, upgrades, run }) {
+  ensureAddressesDirectoryExists();
+
+  const existingEnv = readExistingHostEnv();
+
+  const targets = [
+    { envKey: 'PROTOCOL_CONFIG_CONTRACT_ADDRESS', setterTask: 'task:setProtocolConfigAddress' },
+    { envKey: 'KMS_GENERATION_CONTRACT_ADDRESS', setterTask: 'task:setKMSGenerationAddress' },
+    { envKey: 'CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS', setterTask: 'task:setBridgeAddress' },
+  ] as const;
+
+  const missingTargets = targets.filter(({ envKey }) => !existingEnv[envKey]);
+
+  if (missingTargets.length === 0) {
+    console.warn(
+      'Empty-proxy bootstrap is a no-op; addresses/.env.host already contains ProtocolConfig, KMSGeneration and ConfidentialBridge.',
+    );
+    return;
+  }
+
+  const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
+  const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
+
+  await run('compile:specific', { contract: 'contracts/emptyProxy' });
+
+  for (const { envKey, setterTask } of missingTargets) {
+    const proxyAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
+    await run(setterTask, { address: proxyAddress });
+    process.env[envKey] = proxyAddress;
+  }
+});
 
 ////////////////////////////////////////////////////////////////////////////////
 // ACL
@@ -402,23 +462,86 @@ task('task:deployPauserSet').setAction(async function (_, hre) {
 });
 
 ////////////////////////////////////////////////////////////////////////////////
+// ConfidentialBridge
+////////////////////////////////////////////////////////////////////////////////
+
+task('task:deployBridge').setAction(async function (_, { ethers, upgrades }) {
+  const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
+  const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
+  const lzEndpoint = getRequiredEnvVar('LZ_ENDPOINT_ADDRESS');
+  if (!ethers.isAddress(lzEndpoint)) {
+    throw new Error(`LZ_ENDPOINT_ADDRESS is not a valid address: ${lzEndpoint}`);
+  }
+
+  const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
+  const newImplem = await ethers.getContractFactory('ConfidentialBridge', deployer);
+  const parsedEnv = readHostEnv();
+  const proxyAddress = parsedEnv.CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS;
+  if (!proxyAddress) {
+    throw new Error(
+      'CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS not found in addresses/.env.host. ' +
+        'Run task:deployEmptyUUPSProxies first.',
+    );
+  }
+
+  const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
+  await upgrades.upgradeProxy(proxy, newImplem, {
+    constructorArgs: [lzEndpoint],
+    // - constructor / state-variable-immutable: LayerZero's `OAppCoreUpgradeable`
+    //   stores the endpoint as an immutable in the implementation's constructor.
+    // - missing-initializer-call: `__OApp(Sender|Receiver)_init_unchained()` are no-ops
+    //   and we call them explicitly; OZ's static validator doesn't recognize the
+    //   `_unchained` variants as satisfying the `_init` requirement.
+    unsafeAllow: ['constructor', 'state-variable-immutable', 'missing-initializer-call'],
+    call: { fn: 'initializeFromEmptyProxy', args: [[], []] },
+  });
+  console.log(`ConfidentialBridge upgraded at ${proxyAddress} (lzEndpoint=${lzEndpoint})`);
+});
+
+////////////////////////////////////////////////////////////////////////////////
 // ProtocolConfig helpers
 ////////////////////////////////////////////////////////////////////////////////
 
-export function buildKmsNodes(): {
+export function buildKmsNodeParams(): {
   txSenderAddress: string;
   signerAddress: string;
   ipAddress: string;
   storageUrl: string;
+  partyId: number;
+  mpcIdentity: string;
+  caCert: string;
+  storagePrefix: string;
 }[] {
   const numNodes = +getRequiredEnvVar('NUM_KMS_NODES');
-  const nodes: { txSenderAddress: string; signerAddress: string; ipAddress: string; storageUrl: string }[] = [];
+  const nodes: {
+    txSenderAddress: string;
+    signerAddress: string;
+    ipAddress: string;
+    storageUrl: string;
+    partyId: number;
+    mpcIdentity: string;
+    caCert: string;
+    storagePrefix: string;
+  }[] = [];
   for (let idx = 0; idx < numNodes; idx++) {
     const txSenderAddress = getRequiredEnvVar(`KMS_TX_SENDER_ADDRESS_${idx}`);
     const signerAddress = getRequiredEnvVar(`KMS_SIGNER_ADDRESS_${idx}`);
-    const ipAddress = process.env[`KMS_NODE_IP_${idx}`] || '';
+    const ipAddress = getRequiredEnvVar(`KMS_NODE_IP_${idx}`);
     const storageUrl = getRequiredEnvVar(`KMS_NODE_STORAGE_URL_${idx}`);
-    nodes.push({ txSenderAddress, signerAddress, ipAddress, storageUrl });
+    const partyId = +getRequiredEnvVar(`KMS_NODE_PARTY_ID_${idx}`);
+    const mpcIdentity = getRequiredEnvVar(`KMS_NODE_MPC_IDENTITY_${idx}`);
+    const caCert = getRequiredEnvVar(`KMS_NODE_CA_CERT_${idx}`);
+    const storagePrefix = getRequiredEnvVar(`KMS_NODE_STORAGE_PREFIX_${idx}`);
+    nodes.push({
+      txSenderAddress,
+      signerAddress,
+      ipAddress,
+      storageUrl,
+      partyId,
+      mpcIdentity,
+      caCert,
+      storagePrefix,
+    });
   }
   return nodes;
 }
@@ -432,6 +555,17 @@ export function buildKmsThresholds() {
   };
 }
 
+export function buildPcrValues(): { pcr0: string; pcr1: string; pcr2: string }[] {
+  return JSON.parse(getRequiredEnvVar('KMS_PCR_VALUES'));
+}
+
+export function buildProtocolConfigContextArgs(): [ReturnType, ReturnType, string, ReturnType] {
+  return [buildKmsNodeParams(), buildKmsThresholds(), getRequiredEnvVar('KMS_SOFTWARE_VERSION'), buildPcrValues()];
+}
+
+// Reinitialize takes the same argument tuple as context construction; alias to avoid drift.
+export const buildProtocolConfigReinitializeArgs = buildProtocolConfigContextArgs;
+
 task('task:assertProtocolConfigReady').setAction(async function (_, hre) {
   const parsedEnv = readHostEnv();
   const protocolConfigAddress = parsedEnv.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
@@ -444,7 +578,11 @@ task('task:assertProtocolConfigReady').setAction(async function (_, hre) {
 
   const protocolConfig = new hre.ethers.Contract(
     protocolConfigAddress,
-    ['function getCurrentKmsContextId() view returns (uint256)'],
+    [
+      'function getCurrentKmsContextId() view returns (uint256)',
+      'function getKmsSignersForContext(uint256) view returns (address[])',
+      'function getPublicDecryptionThresholdForContext(uint256) view returns (uint256)',
+    ],
     hre.ethers.provider,
   );
 
@@ -453,13 +591,34 @@ task('task:assertProtocolConfigReady').setAction(async function (_, hre) {
     currentKmsContextId = await protocolConfig.getCurrentKmsContextId();
   } catch (err) {
     throw new Error(
-      `Cannot deploy KMSVerifier: ProtocolConfig at ${protocolConfigAddress} is not initialized (reading current context reverted: ${formatError(err)}).`,
+      `Cannot deploy KMSVerifier: ProtocolConfig at ${protocolConfigAddress} is not initialized (reading active context reverted: ${formatError(
+        err,
+      )}).`,
     );
   }
 
   if (currentKmsContextId === 0n) {
     throw new Error(
       `Cannot deploy KMSVerifier: ProtocolConfig at ${protocolConfigAddress} has no active KMS context (currentKmsContextId=0).`,
+    );
+  }
+
+  try {
+    const [signers, threshold] = await Promise.all([
+      protocolConfig.getKmsSignersForContext(currentKmsContextId),
+      protocolConfig.getPublicDecryptionThresholdForContext(currentKmsContextId),
+    ]);
+    if (signers.length === 0) {
+      throw new Error('current context has no KMS signers');
+    }
+    if (threshold === 0n) {
+      throw new Error('current context public decryption threshold is zero');
+    }
+  } catch (err) {
+    throw new Error(
+      `Cannot deploy KMSVerifier: ProtocolConfig at ${protocolConfigAddress} has unreadable active context ${currentKmsContextId.toString()}: ${formatError(
+        err,
+      )}.`,
     );
   }
 });
@@ -489,12 +648,14 @@ task('task:assertNoPendingKeyManagementRequest')
     await assertContractMatchesVersionPrefix(hre, kmsGenAddress, 'KMSGeneration');
 
     const kmsGen = await hre.ethers.getContractAt('KMSGeneration', kmsGenAddress);
-    const readKmsStatusView = async <T>(viewLabel: string, read: () => Promise<T>): Promise<T> => {
+    const readKmsStatusView = async <T>(viewLabel: string, read: () => Promise): Promise => {
       try {
         return await read();
       } catch (err) {
         const wrapped = new Error(
-          `Failed reading ${viewLabel} from KMSGeneration at ${kmsGenAddress}. Re-check the configured address and confirm this KMSGeneration version exposes ${viewLabel}. (${formatError(err)})`,
+          `Failed reading ${viewLabel} from KMSGeneration at ${kmsGenAddress}. Re-check the configured address and confirm this KMSGeneration version exposes ${viewLabel}. (${formatError(
+            err,
+          )})`,
         ) as Error & { cause?: unknown };
         wrapped.cause = err;
         throw wrapped;
@@ -534,28 +695,62 @@ task('task:assertNoPendingKeyManagementRequest')
 // ProtocolConfig
 ////////////////////////////////////////////////////////////////////////////////
 
-task('task:deployProtocolConfig').setAction(async function (_taskArguments: TaskArguments, hre) {
+task('task:deployProtocolConfig').setAction(async function (_, hre) {
   const { ethers, upgrades } = hre;
   const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
   const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
   const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
+  const initArgs = buildProtocolConfigContextArgs();
   const newImplem = await ethers.getContractFactory('ProtocolConfig', deployer);
   const parsedEnv = readHostEnv();
   const proxyAddress = parsedEnv.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
   const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
-  const initialKmsNodes = buildKmsNodes();
-  const thresholds = buildKmsThresholds();
 
   await upgrades.upgradeProxy(proxy, newImplem, {
     call: {
       fn: 'initializeFromEmptyProxy',
-      args: [initialKmsNodes, thresholds],
+      args: initArgs,
     },
   });
   // On interval-mining networks, upgradeProxy can return before the tx is mined.
   await waitForTaskReady(hre, 'task:assertProtocolConfigReady');
   console.log('ProtocolConfig code set successfully at address:', proxyAddress);
 });
+
+// DAO path for initializing a non-canonical ProtocolConfig replica from the canonical chain
+// (Ethereum). Consumes a reviewed task:exportCanonicalProtocolConfig artifact — not a live RPC
+// read — so the DAO executes exactly the state its signers reproduced and diffed. Devnet
+// equivalent: task:deployProtocolConfigFromCanonical.
+task(
+  'task:prepareDeployProtocolConfigFromCanonical',
+  'Deploys a ProtocolConfig implementation and prints DAO upgrade calldata from a reviewed canonical snapshot artifact',
+)
+  .addParam(
+    'snapshot',
+    'Path to the reviewed task:exportCanonicalProtocolConfig artifact to encode into the DAO payload.',
+    undefined,
+    types.string,
+  )
+  .addOptionalParam(
+    'verifyContract',
+    'Verify new implementation on Etherscan (for eg if deploying on Sepolia or Mainnet)',
+    true,
+    types.boolean,
+  )
+  .setAction(async function ({ snapshot: snapshotPath, verifyContract }, hre) {
+    const parsedEnv = readHostEnv();
+    const proxyAddress = parsedEnv.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
+    // The bootstrap task may have updated addresses/FHEVMHostAddresses.sol, so rebuild.
+    await hre.run('compile:specific', { contract: 'contracts' });
+    const snapshot = parseSnapshotArtifact(fs.readFileSync(snapshotPath, 'utf-8'));
+    const preparedUpgrade = await buildCanonicalUpgradeProposal(hre, { snapshot, proxyAddress });
+
+    printUpgradeProposal(preparedUpgrade);
+    if (verifyContract) {
+      await verifyProposalImplementation(hre, preparedUpgrade, 'contracts/ProtocolConfig.sol:ProtocolConfig');
+    }
+    return preparedUpgrade;
+  });
 
 // Initializes the local (non-canonical) ProtocolConfig replica from the canonical chain's current
 // KMS context — from a reviewed export artifact (--snapshot) or a live block-pinned RPC read.
@@ -621,7 +816,7 @@ task(
     // On interval-mining networks, upgradeProxy can return before the tx is mined.
     await waitForTaskReady(hre, 'task:assertProtocolConfigReady');
     console.log(
-      `ProtocolConfig code set successfully at ${secondaryProxyAddress}, mirroring canonical chain ${snapshot.canonicalChainId} context ${snapshot.currentKmsContextId} (block ${snapshot.blockNumber}) with ${snapshot.kmsNodes.length} KMS nodes.`,
+      `ProtocolConfig code set successfully at ${secondaryProxyAddress}, mirroring canonical chain ${snapshot.canonicalChainId} context ${snapshot.currentKmsContextId} epoch ${snapshot.currentEpochId} (block ${snapshot.blockNumber}) with ${snapshot.kmsNodes.length} KMS nodes.`,
     );
   });
 
@@ -673,7 +868,7 @@ task(
     const artifact = buildSnapshotArtifact(snapshot, canonicalProtocolConfigAddress);
     fs.writeFileSync(out, JSON.stringify(artifact, null, 2));
     console.log(
-      `Canonical ProtocolConfig snapshot written to ${out}: chain ${snapshot.canonicalChainId}, block ${snapshot.blockNumber}, context ${snapshot.currentKmsContextId}, ${snapshot.kmsNodes.length} KMS nodes.`,
+      `Canonical ProtocolConfig snapshot written to ${out}: chain ${snapshot.canonicalChainId}, block ${snapshot.blockNumber}, context ${snapshot.currentKmsContextId}, epoch ${snapshot.currentEpochId}, ${snapshot.kmsNodes.length} KMS nodes.`,
     );
     return artifact;
   });
@@ -914,4 +1109,161 @@ address constant kmsGenerationAdd = ${taskArguments.address};\n`;
     } catch (error) {
       throw new Error(`Failed to write ${HOST_ADDRESSES_FILE}: ${String(error)}`);
     }
+  });
+
+////////////////////////////////////////////////////////////////////////////////
+// Setup ConfidentialBridge Address
+////////////////////////////////////////////////////////////////////////////////
+
+task('task:setBridgeAddress')
+  .addParam('address', 'The address of the contract')
+  .setAction(async function (taskArguments: TaskArguments) {
+    ensureAddressesDirectoryExists();
+    const content = `CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS=${taskArguments.address}\n`;
+    try {
+      writeHostEnvLine(content, 'a');
+      console.log(`ConfidentialBridge address ${taskArguments.address} written successfully!`);
+    } catch (err) {
+      throw new Error(`Failed to write ConfidentialBridge address: ${String(err)}`);
+    }
+
+    const solidityTemplate = `
+address constant confidentialBridgeAdd = ${taskArguments.address};\n`;
+    try {
+      writeHostAddressesSol(solidityTemplate, 'a');
+      console.log(`${HOST_ADDRESSES_FILE} appended with confidentialBridgeAdd successfully!`);
+    } catch (error) {
+      throw new Error(`Failed to write ${HOST_ADDRESSES_FILE}: ${String(error)}`);
+    }
+  });
+
+////////////////////////////////////////////////////////////////////////////////
+// Set the bridge-specific `dstChainId`
+////////////////////////////////////////////////////////////////////////////////
+
+task('task:setDstChainId')
+  .addParam('bridgeAddress', 'The address of the contract')
+  .addParam('remoteEid', 'The remote EID')
+  .addParam('remoteChainId', 'The remote chain ID')
+  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
+    const deployerPrivateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
+    const deployer = new Wallet(deployerPrivateKey).connect(ethers.provider);
+    const confidentialBridgeAddress = taskArguments.bridgeAddress;
+    const confidentialBridge = await ethers.getContractAt('ConfidentialBridge', confidentialBridgeAddress, deployer);
+    await confidentialBridge.setDstChainId(taskArguments.remoteEid, taskArguments.remoteChainId);
+    console.log('setDstChainId done successfully!');
+  });
+
+////////////////////////////////////////////////////////////////////////////////
+// Set custom per-dstEid `lzReceive` gas overrides
+////////////////////////////////////////////////////////////////////////////////
+
+task('task:setLzReceiveBaseGas')
+  .addParam('bridgeAddress', 'The address of the contract')
+  .addParam('remoteEid', 'The remote EID')
+  .addParam('baseGas', 'The custom base lzReceive gas (0 to clear and fall back to the default)')
+  .setAction(async function (taskArguments: TaskArguments, { ethers, network }) {
+    const deployerPrivateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
+    const deployer = new Wallet(deployerPrivateKey).connect(ethers.provider);
+    const confidentialBridgeAddress = taskArguments.bridgeAddress;
+    const confidentialBridge = await ethers.getContractAt('ConfidentialBridge', confidentialBridgeAddress, deployer);
+    const oldBaseGas = await confidentialBridge.getLzReceiveBaseGas(taskArguments.remoteEid);
+    const receipt = await confidentialBridge.setLzReceiveBaseGas(taskArguments.remoteEid, taskArguments.baseGas);
+    await receipt.wait(1);
+    const newBaseGas = await confidentialBridge.getLzReceiveBaseGas(taskArguments.remoteEid);
+    console.log(
+      `setLzReceiveBaseGas done on network "${network.name}" for bridge ${confidentialBridgeAddress} ` +
+        `(remoteEid=${taskArguments.remoteEid}): effective base gas ${oldBaseGas.toString()} -> ${newBaseGas.toString()}`,
+    );
+  });
+
+task('task:setLzReceivePerHandleGas')
+  .addParam('bridgeAddress', 'The address of the contract')
+  .addParam('remoteEid', 'The remote EID')
+  .addParam('perHandleGas', 'The custom per-handle lzReceive gas (0 to clear and fall back to the default)')
+  .setAction(async function (taskArguments: TaskArguments, { ethers, network }) {
+    const deployerPrivateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
+    const deployer = new Wallet(deployerPrivateKey).connect(ethers.provider);
+    const confidentialBridgeAddress = taskArguments.bridgeAddress;
+    const confidentialBridge = await ethers.getContractAt('ConfidentialBridge', confidentialBridgeAddress, deployer);
+    const oldPerHandleGas = await confidentialBridge.getLzReceivePerHandleGas(taskArguments.remoteEid);
+    const receipt = await confidentialBridge.setLzReceivePerHandleGas(
+      taskArguments.remoteEid,
+      taskArguments.perHandleGas,
+    );
+    await receipt.wait(1);
+    const newPerHandleGas = await confidentialBridge.getLzReceivePerHandleGas(taskArguments.remoteEid);
+    console.log(
+      `setLzReceivePerHandleGas done on network "${network.name}" for bridge ${confidentialBridgeAddress} ` +
+        `(remoteEid=${taskArguments.remoteEid}): effective per-handle gas ${oldPerHandleGas.toString()} -> ${newPerHandleGas.toString()}`,
+    );
+  });
+
+task('task:setLzReceivePerPayloadByteGas')
+  .addParam('bridgeAddress', 'The address of the contract')
+  .addParam('remoteEid', 'The remote EID')
+  .addParam('perPayloadByteGas', 'The custom per-payload-byte lzReceive gas (0 to clear and fall back to the default)')
+  .setAction(async function (taskArguments: TaskArguments, { ethers, network }) {
+    const deployerPrivateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
+    const deployer = new Wallet(deployerPrivateKey).connect(ethers.provider);
+    const confidentialBridgeAddress = taskArguments.bridgeAddress;
+    const confidentialBridge = await ethers.getContractAt('ConfidentialBridge', confidentialBridgeAddress, deployer);
+    const oldPerPayloadByteGas = await confidentialBridge.getLzReceivePerPayloadByteGas(taskArguments.remoteEid);
+    const receipt = await confidentialBridge.setLzReceivePerPayloadByteGas(
+      taskArguments.remoteEid,
+      taskArguments.perPayloadByteGas,
+    );
+    await receipt.wait(1);
+    const newPerPayloadByteGas = await confidentialBridge.getLzReceivePerPayloadByteGas(taskArguments.remoteEid);
+    console.log(
+      `setLzReceivePerPayloadByteGas done on network "${network.name}" for bridge ${confidentialBridgeAddress} ` +
+        `(remoteEid=${taskArguments.remoteEid}): effective per-payload-byte gas ${oldPerPayloadByteGas.toString()} -> ${newPerPayloadByteGas.toString()}`,
+    );
+  });
+
+////////////////////////////////////////////////////////////////////////////////
+// Local LayerZero endpoint (e2e only)
+////////////////////////////////////////////////////////////////////////////////
+
+// Deploys a local EndpointV2Mock + LocalSimpleMessageLib for the e2e setup (real networks use
+// the canonical LayerZero endpoint), giving task:deployBridge an LZ_ENDPOINT_ADDRESS.
+task('task:deployLocalLzEndpoint')
+  .addParam('eid', 'This chain LayerZero endpoint id', undefined, types.int)
+  .addParam('remoteEid', 'Remote endpoint id to default the libraries for', undefined, types.int)
+  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
+    const deployer = new Wallet(getRequiredEnvVar('DEPLOYER_PRIVATE_KEY')).connect(ethers.provider);
+
+    const endpoint = await (
+      await ethers.getContractFactory('EndpointV2Mock', deployer)
+    ).deploy(taskArguments.eid, deployer.address);
+    await endpoint.waitForDeployment();
+    const endpointAddress = await endpoint.getAddress();
+
+    const lib = await (await ethers.getContractFactory('LocalSimpleMessageLib', deployer)).deploy(endpointAddress);
+    await lib.waitForDeployment();
+    const libAddress = await lib.getAddress();
+
+    await (await endpoint.registerLibrary(libAddress)).wait();
+    await (await endpoint.setDefaultSendLibrary(taskArguments.remoteEid, libAddress)).wait();
+    await (await endpoint.setDefaultReceiveLibrary(taskArguments.remoteEid, libAddress, 0)).wait();
+
+    // Persist for task:deployBridge, both in-process and across runs (via addresses/.env.host).
+    process.env.LZ_ENDPOINT_ADDRESS = endpointAddress;
+    ensureAddressesDirectoryExists();
+    writeHostEnvLine(`LZ_ENDPOINT_ADDRESS=${endpointAddress}\n`, 'a');
+
+    console.log(`Local LZ endpoint deployed at ${endpointAddress} (message lib ${libAddress})`);
+  });
+
+// Sets the LayerZero peer on the local bridge for a remote chain (run once per chain).
+task('task:setBridgePeer')
+  .addParam('bridgeAddress', 'Local ConfidentialBridge address')
+  .addParam('remoteEid', 'Remote endpoint id', undefined, types.int)
+  .addParam('remoteBridge', 'Remote ConfidentialBridge address')
+  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
+    const deployer = new Wallet(getRequiredEnvVar('DEPLOYER_PRIVATE_KEY')).connect(ethers.provider);
+    const bridge = await ethers.getContractAt('ConfidentialBridge', taskArguments.bridgeAddress, deployer);
+    const peer = ethers.zeroPadValue(taskArguments.remoteBridge, 32);
+    await (await bridge.setPeer(taskArguments.remoteEid, peer)).wait();
+    console.log(`setPeer(${taskArguments.remoteEid}, ${taskArguments.remoteBridge}) done successfully!`);
   });

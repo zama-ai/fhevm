@@ -71,6 +71,7 @@ import {
   envPath,
   gatewayAddressesPath,
   hostChainAddressesPath,
+  realLzEndpointFor,
 } from "../layout";
 import type {
   BuiltImage,
@@ -629,8 +630,9 @@ export const runStep = async (state: State, step: StepName) => {
     case "kms-signer": {
       // `kms.parties` is 1 for centralized and N for threshold, so one call covers both.
       const discovery = await ensureDiscovery(state);
-      const { signers, minioKeyPrefix } = await discoverKmsSigners(state.scenario.kms.parties);
+      const { signers, caCerts, minioKeyPrefix } = await discoverKmsSigners(state.scenario.kms.parties);
       discovery.kmsSigners = signers;
+      discovery.kmsCaCerts = caCerts;
       discovery.minioKeyPrefix = minioKeyPrefix;
       await generateRuntime(state, stackSpecForState(state));
       break;
@@ -705,6 +707,78 @@ export const runStep = async (state: State, step: StepName) => {
       const discovery = await ensureDiscovery(state);
       discovery.gateway = contracts.gateway;
       discovery.hosts = { ...discovery.hosts, ...contracts.hosts };
+      break;
+    }
+    case "bridge-deploy": {
+      // Confidential bridge needs >= 2 host chains. Per chain: deploy a LayerZero endpoint +
+      // upgrade the bridge, then wire each chain to its remote (peer + dstChainId). eid == chainId
+      // locally. Verify with: ./fhevm-cli up --scenario multi-chain --build
+      const chains = hostChainsForState(state);
+      if (chains.length < 2) {
+        console.log("[bridge-deploy] skipping: confidential bridge needs >= 2 host chains");
+        break;
+      }
+      const discovery = await ensureDiscovery(state);
+      const remoteOf = (i: number) => chains[(i + 1) % chains.length];
+
+      const runBridgeService = async (
+        chain: (typeof chains)[number],
+        suffix: string,
+        env: Record<string, string>,
+        onComplete?: (service: string) => Promise<void>,
+      ) => {
+        Object.assign(process.env, env);
+        const service = chain.isDefault ? `host-sc-${suffix}` : `${chain.sc}-${suffix}`;
+        await timed(`[bridge-deploy] ${service}`, async () => {
+          if (chain.isDefault) {
+            await stepComposeTask("host-sc", state, [service], { env, noDeps: true });
+          } else {
+            await multiChainComposeTask(chain.sc, [service]);
+          }
+          await waitForContainer(service, "complete");
+          await onComplete?.(service);
+        });
+      };
+
+      // Pass 1: deploy the LZ endpoint (local mock unless a real one is configured) and upgrade
+      // the bridge proxy against it. LZ_ENDPOINT_ADDRESS is always pinned (empty = deploy mock) so
+      // a real value from a prior chain or the ambient env can't leak into a mock chain's command.
+      for (let i = 0; i < chains.length; i++) {
+        const chain = chains[i];
+        const realEndpoint = realLzEndpointFor(chain.key);
+        console.log(
+          realEndpoint
+            ? `[bridge-deploy] ${chain.key}: using preconfigured LZ endpoint ${realEndpoint} (skipping local mock)`
+            : `[bridge-deploy] ${chain.key}: deploying local LZ mock endpoint`,
+        );
+        await runBridgeService(
+          chain,
+          "deploy-bridge",
+          { BRIDGE_EID: chain.chainId, BRIDGE_REMOTE_EID: remoteOf(i).chainId, LZ_ENDPOINT_ADDRESS: realEndpoint ?? "" },
+          (service) => ensureGeneratedAddressFile(hostChainAddressesPath(chain.key), service, ["LZ_ENDPOINT_ADDRESS"]),
+        );
+      }
+
+      // Reload addresses so LZ_ENDPOINT_ADDRESS and the bridge proxies are in discovery.
+      const refreshed = await discoverContracts(state);
+      discovery.hosts = { ...discovery.hosts, ...refreshed.hosts };
+
+      // Pass 2: wire each chain to its remote.
+      for (let i = 0; i < chains.length; i++) {
+        const chain = chains[i];
+        const remote = remoteOf(i);
+        const localBridge = discovery.hosts[chain.key]?.CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS;
+        const remoteBridge = discovery.hosts[remote.key]?.CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS;
+        if (!localBridge || !remoteBridge) {
+          throw new PreflightError(`[bridge-deploy] missing bridge address for ${chain.key} or ${remote.key}`);
+        }
+        await runBridgeService(chain, "wire-bridge", {
+          BRIDGE_LOCAL_ADDRESS: localBridge,
+          BRIDGE_REMOTE_EID: remote.chainId,
+          BRIDGE_REMOTE_ADDRESS: remoteBridge,
+          BRIDGE_REMOTE_CHAIN_ID: remote.chainId,
+        });
+      }
       break;
     }
     case "regenerate":

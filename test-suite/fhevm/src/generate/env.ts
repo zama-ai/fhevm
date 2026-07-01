@@ -18,8 +18,9 @@ import {
   MINIO_INTERNAL_URL,
   POSTGRES_HOST,
   hostChainRuntimes,
+  realLzEndpointFor,
 } from "../layout";
-import { kmsConnectorDbName, kmsConnectorEnvName, kmsCoreName, kmsServicePort, reconstructionThreshold } from "../kms-party";
+import { kmsConnectorDbName, kmsConnectorEnvName, kmsCoreName, kmsMpcPort, kmsPublicPrefix, kmsServicePort, reconstructionThreshold } from "../kms-party";
 import type { State } from "../types";
 import { predictedCrsId, predictedKeyId } from "../utils/fs";
 
@@ -151,6 +152,11 @@ const applyDiscoveryEnv = (
     envs["gateway-sc"][`KMS_SIGNER_ADDRESS_${index}`] = address;
     envs["host-sc"][`KMS_SIGNER_ADDRESS_${index}`] = address;
   });
+  // Each node's serialized CA certificate (hex), discovered from its public vault
+  // alongside the VerfAddress. The host ProtocolConfig deploy reads it as KMS_NODE_CA_CERT_i.
+  (state.discovery?.kmsCaCerts ?? []).forEach((caCert, index) => {
+    envs["host-sc"][`KMS_NODE_CA_CERT_${index}`] = caCert;
+  });
   if (!state.discovery) {
     return;
   }
@@ -189,6 +195,7 @@ const applyDiscoveryEnv = (
     CIPHERTEXT_COMMITS_ADDRESS: state.discovery.gateway.CIPHERTEXT_COMMITS_ADDRESS,
     ...(requiresMultichainAclAddress(plan) ? { MULTICHAIN_ACL_ADDRESS: state.discovery.gateway.MULTICHAIN_ACL_ADDRESS } : {}),
     KMS_GENERATION_ADDRESS: coprocessorKmsGenerationAddress ?? "",
+    CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS: primaryHost.CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS ?? "",
   });
 
   const kmsHostChains = chains.map((chain) => {
@@ -204,6 +211,7 @@ const applyDiscoveryEnv = (
     KMS_CONNECTOR_DECRYPTION_CONTRACT__ADDRESS: state.discovery.gateway.DECRYPTION_ADDRESS,
     KMS_CONNECTOR_GATEWAY_CONFIG_CONTRACT__ADDRESS: state.discovery.gateway.GATEWAY_CONFIG_ADDRESS,
     KMS_CONNECTOR_KMS_GENERATION_CONTRACT__ADDRESS: connectorKmsGenerationAddress ?? "",
+    KMS_CONNECTOR_PROTOCOL_CONFIG_CONTRACT__ADDRESS: primaryHost.PROTOCOL_CONFIG_CONTRACT_ADDRESS,
     KMS_CONNECTOR_HOST_CHAINS: JSON.stringify(kmsHostChains),
   });
   updateContracts(envs["relayer"], {
@@ -220,10 +228,46 @@ const applyDiscoveryEnv = (
     FHEVM_EXECUTOR_CONTRACT_ADDRESS: primaryHost.FHEVM_EXECUTOR_CONTRACT_ADDRESS,
     PROTOCOL_CONFIG_CONTRACT_ADDRESS: primaryHost.PROTOCOL_CONFIG_CONTRACT_ADDRESS,
     KMS_GENERATION_CONTRACT_ADDRESS: primaryHost.KMS_GENERATION_CONTRACT_ADDRESS,
+    CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS: primaryHost.CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS,
+    LZ_ENDPOINT_ADDRESS: primaryHost.LZ_ENDPOINT_ADDRESS,
   });
+  envs["test-suite"].BRIDGE_REAL_LZ = chains.some((chain) => realLzEndpointFor(chain.key)) ? "true" : "";
 };
 
 export type KmsParty = { party: number; endpoint: string; privateKey: string; dbName: string };
+
+/**
+ * ProtocolConfig context globals the host deploy reads, shared by both KMS modes.
+ * mock_enclave skips PCR attestation, so zero PCRs suffice. softwareVersion must be valid semver
+ * (the KMS core parses it) — fall back to a placeholder when CORE_VERSION is a git-SHA tag.
+ */
+const applyProtocolConfigKmsGlobals = (hostSc: Record<string, string>, plan: StackSpec) => {
+  const zeroPcr = `0x${"00".repeat(48)}`;
+  const coreVersion = (plan.versions.env.CORE_VERSION ?? "").replace(/^v/, "");
+  hostSc.KMS_SOFTWARE_VERSION = /^\d+(\.\d+){0,2}(-[0-9A-Za-z.-]+)?$/.test(coreVersion) ? coreVersion : "0.1.0";
+  hostSc.KMS_PCR_VALUES = JSON.stringify([{ pcr0: zeroPcr, pcr1: zeroPcr, pcr2: zeroPcr }]);
+};
+
+/**
+ * Centralized mode: the single KMS node's ProtocolConfig params the threshold path sets per-node.
+ * The rest (tx-sender, IP, storage URL, signer, CA cert) already come from the templates and
+ * discovery. storagePrefix is "PUB" for the centralized core (PUB-p{i} is threshold-only), so it
+ * tracks the discovered minioKeyPrefix. Must run after applyDiscoveryEnv.
+ */
+const applyKmsCentralizedHostEnv = (
+  envs: Record<string, Record<string, string>>,
+  plan: StackSpec,
+  state: Pick<State, "discovery">,
+) => {
+  if (plan.kms.mode === "threshold") {
+    return;
+  }
+  const hostSc = envs["host-sc"];
+  applyProtocolConfigKmsGlobals(hostSc, plan);
+  hostSc.KMS_NODE_PARTY_ID_0 = "1";
+  hostSc.KMS_NODE_MPC_IDENTITY_0 = kmsCoreName(1);
+  hostSc.KMS_NODE_STORAGE_PREFIX_0 = state.discovery?.minioKeyPrefix ?? "PUB";
+};
 
 /**
  * Threshold mode only: sets gateway-sc KMS counts/thresholds + per-party
@@ -245,6 +289,7 @@ const applyKmsThresholdGatewayEnv = async (
     throw new Error(`KMS parties ${parties} exceeds supported ${KMS_NODE_WALLET_INDICES.length}`);
   }
   const gw = envs["gateway-sc"];
+  const hostSc = envs["host-sc"];
   const mnemonic = gw.MNEMONIC;
   if (!mnemonic) {
     throw new Error("Missing gateway mnemonic for threshold-mode KMS setup");
@@ -264,13 +309,23 @@ const applyKmsThresholdGatewayEnv = async (
   gw.USER_DECRYPTION_THRESHOLD = reconstruct;
   gw.KMS_GENERATION_THRESHOLD = reconstruct;
 
+  applyProtocolConfigKmsGlobals(hostSc, plan);
+
   const result: KmsParty[] = [];
   for (let party = 1; party <= parties; party += 1) {
     const idx = party - 1;
     const wallet = await deriveWallet(mnemonic, KMS_NODE_WALLET_INDICES[idx]);
     gw[`KMS_TX_SENDER_ADDRESS_${idx}`] = wallet.address;
-    gw[`KMS_NODE_IP_ADDRESS_${idx}`] = kmsCoreName(party);
+    // external_url: the core does url::Url::parse() and requires host+port, so it needs a scheme.
+    gw[`KMS_NODE_IP_ADDRESS_${idx}`] = `http://${kmsCoreName(party)}:${kmsMpcPort(party)}`;
     gw[`KMS_NODE_STORAGE_URL_${idx}`] = `${MINIO_INTERNAL_URL}/kms-public`;
+    // Per-node KmsNodeParams the host ProtocolConfig deploy reads. partyId is 1-based
+    // (the env index is 0-based), mpcIdentity must match the node's TLS cert CN (gen-keys sets
+    // --tls-subject to the core name), and storagePrefix is the node's public vault prefix. The
+    // signer address and CA cert are discovered post-boot (applyDiscoveryEnv).
+    hostSc[`KMS_NODE_PARTY_ID_${idx}`] = String(party);
+    hostSc[`KMS_NODE_MPC_IDENTITY_${idx}`] = kmsCoreName(party);
+    hostSc[`KMS_NODE_STORAGE_PREFIX_${idx}`] = kmsPublicPrefix(party);
     // KMS_SIGNER_ADDRESS_{idx} comes from per-party signing-key discovery.
     const endpoint = `http://${kmsCoreName(party)}:${kmsServicePort(party)}`;
     const dbName = kmsConnectorDbName(party);
@@ -374,6 +429,7 @@ export const renderEnvMaps = async (
   applyBaseRuntimeEnv(envs, state);
   applyCompatEnv(envs, plan);
   applyDiscoveryEnv(envs, state, plan);
+  applyKmsCentralizedHostEnv(envs, plan, state);
   envs["host-node"].RPC_URL = `http://${defaultChain.node}:${defaultChain.rpcPort}`;
   envs["host-node"].HOST_NODE_PORT = String(defaultChain.rpcPort);
   envs["host-node"].HOST_NODE_CHAIN_ID = defaultChain.chainId;
@@ -471,6 +527,7 @@ export const renderEnvMaps = async (
         coproChain.FHEVM_EXECUTOR_CONTRACT_ADDRESS = hostAddresses.FHEVM_EXECUTOR_CONTRACT_ADDRESS;
         coproChain.INPUT_VERIFIER_ADDRESS = hostAddresses.INPUT_VERIFIER_CONTRACT_ADDRESS;
       }
+      coproChain.CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS = hostAddresses.CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS ?? "";
       instanceEnvs[`coprocessor-${chain.key}.${index}`] = coproChain;
     }
 
@@ -480,6 +537,8 @@ export const renderEnvMaps = async (
     envs["test-suite"][`HOST_CHAIN_${chainIndex}_KMS_VERIFIER_CONTRACT_ADDRESS`] = hostAddresses.KMS_VERIFIER_CONTRACT_ADDRESS ?? "";
     envs["test-suite"][`HOST_CHAIN_${chainIndex}_INPUT_VERIFIER_CONTRACT_ADDRESS`] = hostAddresses.INPUT_VERIFIER_CONTRACT_ADDRESS ?? "";
     envs["test-suite"][`HOST_CHAIN_${chainIndex}_FHEVM_EXECUTOR_CONTRACT_ADDRESS`] = hostAddresses.FHEVM_EXECUTOR_CONTRACT_ADDRESS ?? "";
+    envs["test-suite"][`HOST_CHAIN_${chainIndex}_CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS`] = hostAddresses.CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS ?? "";
+    envs["test-suite"][`HOST_CHAIN_${chainIndex}_LZ_ENDPOINT_ADDRESS`] = hostAddresses.LZ_ENDPOINT_ADDRESS ?? "";
     envs["test-suite"][`HOST_CHAIN_${chainIndex}_PROTOCOL_CONFIG_CONTRACT_ADDRESS`] = hostAddresses.PROTOCOL_CONFIG_CONTRACT_ADDRESS ?? "";
   }
 

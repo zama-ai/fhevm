@@ -81,6 +81,7 @@ commonConfig:
 # Sets up the database schema for KMS connector
 kmsConnectorDbMigration:
   enabled: true
+  nameOverride:
   annotations:
 
   image:

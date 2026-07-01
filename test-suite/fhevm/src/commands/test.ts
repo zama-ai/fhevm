@@ -3,6 +3,7 @@
  */
 import { compatPolicyForState, supportsCoprocessorDbStateRevert } from "../compat/compat";
 import { type DecryptionRunner, runKmsGenerationProfile } from "./kms-generation";
+import { runKmsContextSwitchProfile } from "./kms-context-switch";
 import { DRIFT_CLEANUP_SQL, DRIFT_INSTALL_SQL, driftDatabaseName, parseDriftInstanceIndex, parsePositiveInteger } from "../drift";
 import { PreflightError, formatCliError } from "../errors";
 import { dockerInspect } from "../flow/readiness";
@@ -60,6 +61,7 @@ const TEST_PROFILE_NAMES = [
   "ciphertext-drift-auto-recovery",
   "coprocessor-db-state-revert",
   "heavy",
+  "kms-context-switch",
   "kms-generation",
   "light",
   "rollout-standard",
@@ -106,12 +108,15 @@ const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[numb
   erc20: "Run ERC20 transfer coverage.",
   "negative-acl": "Run negative ACL scenarios.",
   "multi-chain-isolation": "Run multi-chain state isolation coverage.",
+  "confidential-bridge": "Run confidential bridge cross-chain decrypt coverage (multi-chain).",
   "ciphertext-drift": "Run ciphertext drift detection checks (requires 2+ coprocessors).",
   "ciphertext-drift-auto-recovery":
     "Run ciphertext drift auto-recovery checks — services self-recover (requires 2+ coprocessors).",
   "coprocessor-db-state-revert": "Run coprocessor DB state revert checks.",
   "kms-generation":
     "Audit the on-chain key/CRS generation state (KMSGeneration contract) and prove the 2t+1 decryption quorum (threshold-mode KMS).",
+  "kms-context-switch":
+    "Drive RFC-005 NewKmsContext + NewKmsEpoch on the host ProtocolConfig and prove the KMS reshares, activates, and still decrypts under each (threshold-mode KMS).",
 };
 
 /** Validates whether a named profile supports an extra grep narrowing expression. */
@@ -132,6 +137,7 @@ export const listTestProfiles = () => {
     const topologyTags = [
       name === "ciphertext-drift" ? "2+ coprocessors" : undefined,
       name === "multi-chain-isolation" ? "multi-chain" : undefined,
+      name === "confidential-bridge" ? "multi-chain" : undefined,
     ].filter(Boolean);
     const suiteTags = [
       LIGHT_TEST_PROFILES.includes(name as (typeof LIGHT_TEST_PROFILES)[number]) ? "light" : undefined,
@@ -977,6 +983,9 @@ export const test = async (testName: string | undefined, options: TestOptions) =
     if (name === "kms-generation") {
       return runKmsGenerationProfile(state, runUserDecryption);
     }
+    if (name === "kms-context-switch") {
+      return runKmsContextSwitchProfile(state, runUserDecryption);
+    }
     if (name === "coprocessor-db-state-revert") {
       return runDbStateRevert(state, options);
     }
@@ -1261,10 +1270,10 @@ export const test = async (testName: string | undefined, options: TestOptions) =
     const started = Date.now();
     await runLogged("standard", started, async () => {
       for (const profile of STANDARD_TEST_PROFILES) {
-        if (profile === "multi-chain-isolation") {
+        if (profile === "multi-chain-isolation" || profile === "confidential-bridge") {
           const skipReason = multiChainIsolationSkipReason();
           if (skipReason) {
-            console.log(`[test] skipping multi-chain-isolation: ${skipReason}`);
+            console.log(`[test] skipping ${profile}: ${skipReason}`);
             continue;
           }
         }

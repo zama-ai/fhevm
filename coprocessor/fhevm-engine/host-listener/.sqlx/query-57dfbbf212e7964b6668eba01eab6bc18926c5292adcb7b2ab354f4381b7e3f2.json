@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT key_id, sequence_number, pks_key, COALESCE(compressed_xof_keyset, sks_key) AS \"server_key_blob!\", (compressed_xof_keyset IS NOT NULL) AS \"is_xof!\", cks_key FROM keys WHERE key_id = ANY($1)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "key_id",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "sequence_number",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "pks_key",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 3,
+        "name": "server_key_blob!",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 4,
+        "name": "is_xof!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 5,
+        "name": "cks_key",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "ByteaArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      null,
+      null,
+      true
+    ]
+  },
+  "hash": "57dfbbf212e7964b6668eba01eab6bc18926c5292adcb7b2ab354f4381b7e3f2"
+}

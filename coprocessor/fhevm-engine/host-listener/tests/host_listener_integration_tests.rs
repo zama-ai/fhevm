@@ -232,6 +232,7 @@ async fn setup_with_block_time(
         acl_contract_address: acl_contract.address().to_string(),
         tfhe_contract_address: tfhe_contract.address().to_string(),
         kms_generation_address: kms_generation_contract.address().to_string(),
+        confidential_bridge_address: String::new(),
         database_url: test_instance.db_url.clone(),
         start_at_block: None,
         end_at_block: None,
@@ -354,6 +355,7 @@ async fn ingest_blocks_for_receipts(
             &acl_address,
             &tfhe_address,
             &kms_generation_address,
+            &None,
             options,
         )
         .await?;
@@ -996,6 +998,7 @@ async fn test_only_catchup_loop_requires_negative_start_at_block(
         acl_contract_address: "".to_string(),
         tfhe_contract_address: "".to_string(),
         kms_generation_address: String::new(),
+        confidential_bridge_address: String::new(),
         database_url: fhevm_engine_common::utils::DatabaseURL::default(),
         start_at_block: Some(0),
         end_at_block: None,

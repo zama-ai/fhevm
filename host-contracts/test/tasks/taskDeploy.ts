@@ -1,4 +1,5 @@
 import { expect } from 'chai';
+import fs from 'fs';
 import hre, { ethers, run } from 'hardhat';
 
 import {
@@ -7,11 +8,19 @@ import {
   parseSnapshotArtifact,
   readCanonicalSnapshot,
 } from '../../tasks/protocolConfigMirror';
-import { CRS_COUNTER_BASE, KEY_COUNTER_BASE, PREP_KEYGEN_COUNTER_BASE } from '../../tasks/utils/kmsGenerationConstants';
+import {
+  CRS_COUNTER_BASE,
+  KEY_COUNTER_BASE,
+  KMS_CONTEXT_COUNTER_BASE,
+  PREP_KEYGEN_COUNTER_BASE,
+} from '../../tasks/utils/kmsGenerationConstants';
 import { getRequiredEnvVar } from '../../tasks/utils/loadVariables';
 import { executeUpgradeProposal } from '../../tasks/utils/upgradeProposal';
 import type { KMSGeneration, ProtocolConfig } from '../../types';
 import {
+  HOST_ADDRESSES_SOL_FILE,
+  HOST_ENV_FILE,
+  buildControllableKmsCommittee,
   buildProtocolConfigNodes,
   buildProtocolConfigThresholds,
   deployFreshEmptyUUPSProxy,
@@ -19,9 +28,55 @@ import {
   deployFreshProtocolConfigProxy,
   deployFreshUninitializedProtocolConfigProxy,
   readHostAddress,
+  rotateToNewKmsContext,
 } from './taskHelpers';
 
 describe('task:deployAllHostContracts', function () {
+  const canonicalSnapshotEnv = {
+    CANONICAL_KMS_CONTEXT_ID: (KMS_CONTEXT_COUNTER_BASE + 1n).toString(),
+    CANONICAL_PROTOCOL_CONFIG_ADDRESS: '0x0000000000000000000000000000000000C0FFEE',
+    KMS_PCR_VALUES: '[]',
+    KMS_SOFTWARE_VERSION: 'kms-v1',
+  };
+  let previousEnv: Partial<Record<keyof typeof canonicalSnapshotEnv, string | undefined>>;
+  let previousSolidityCoverage: string | undefined;
+  let originalEnvHost: string;
+  let originalAddressesSol: string;
+
+  beforeEach(function () {
+    previousEnv = {};
+    previousSolidityCoverage = process.env.SOLIDITY_COVERAGE;
+    // Snapshot .env.host: the fresh-deploy test rewrites PROTOCOL_CONFIG_CONTRACT_ADDRESS.
+    originalEnvHost = fs.readFileSync(HOST_ENV_FILE, 'utf-8');
+    // Snapshot FHEVMHostAddresses.sol: the withKmsGeneration=false path regenerates this shared
+    // file without kmsGenerationAdd, which would break the subsequent `forge test` compile of
+    // contracts that unconditionally import that constant.
+    originalAddressesSol = fs.readFileSync(HOST_ADDRESSES_SOL_FILE, 'utf-8');
+    for (const [key, value] of Object.entries(canonicalSnapshotEnv)) {
+      const envKey = key as keyof typeof canonicalSnapshotEnv;
+      previousEnv[envKey] = process.env[envKey];
+      process.env[envKey] = value;
+    }
+  });
+
+  afterEach(function () {
+    for (const key of Object.keys(canonicalSnapshotEnv) as (keyof typeof canonicalSnapshotEnv)[]) {
+      const previousValue = previousEnv[key];
+      if (previousValue === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = previousValue;
+      }
+    }
+    if (previousSolidityCoverage === undefined) {
+      delete process.env.SOLIDITY_COVERAGE;
+    } else {
+      process.env.SOLIDITY_COVERAGE = previousSolidityCoverage;
+    }
+    fs.writeFileSync(HOST_ENV_FILE, originalEnvHost);
+    fs.writeFileSync(HOST_ADDRESSES_SOL_FILE, originalAddressesSol);
+  });
+
   it('requires the KMSGeneration deployment role to be explicit', async function () {
     await expect(run('task:deployAllHostContracts')).to.be.rejectedWith(/withKmsGeneration/);
   });
@@ -29,7 +84,7 @@ describe('task:deployAllHostContracts', function () {
   it('rejects an invalid --protocol-config-source value before mutating state', async function () {
     await expect(
       run('task:deployAllHostContracts', { withKmsGeneration: false, protocolConfigSource: 'bogus' }),
-    ).to.be.rejectedWith(/Invalid --protocol-config-source "bogus"\. Allowed values: fresh, migration, canonical\./);
+    ).to.be.rejectedWith(/Invalid --protocol-config-source "bogus"\. Allowed values: fresh, canonical\./);
   });
 
   it('rejects --protocol-config-source canonical on a canonical host', async function () {
@@ -42,6 +97,19 @@ describe('task:deployAllHostContracts', function () {
     await expect(
       run('task:deployAllHostContracts', { withKmsGeneration: false, protocolConfigSource: 'canonical' }),
     ).to.be.rejectedWith(/requires --canonical-rpc-url and --canonical-protocol-config-address/);
+  });
+
+  it('deploys a fresh non-canonical host without a KMSGeneration proxy', async function () {
+    process.env.SOLIDITY_COVERAGE = 'true';
+    await run('task:deployAllHostContracts', { withKmsGeneration: false, protocolConfigSource: 'fresh' });
+
+    const protocolConfig = await ethers.getContractAt(
+      'ProtocolConfig',
+      readHostAddress('PROTOCOL_CONFIG_CONTRACT_ADDRESS'),
+    );
+
+    expect(await protocolConfig.getVersion()).to.equal('ProtocolConfig v0.2.0');
+    expect(await protocolConfig.getCurrentKmsContextId()).to.equal(KMS_CONTEXT_COUNTER_BASE + 1n);
   });
 });
 
@@ -72,7 +140,7 @@ describe('task:assertNoPendingKeyManagementRequest', function () {
     await expect(
       run('task:assertNoPendingKeyManagementRequest', { address: protocolConfigAddress }),
     ).to.be.rejectedWith(
-      `Contract at ${protocolConfigAddress} reports version "ProtocolConfig v0.1.0"; expected "KMSGeneration v…".`,
+      `Contract at ${protocolConfigAddress} reports version "ProtocolConfig v0.2.0"; expected "KMSGeneration v…".`,
     );
   });
 
@@ -151,6 +219,9 @@ describe('canonical snapshot apply (canonical → secondary deploy flow)', funct
     const secondaryContextId = await secondary.getCurrentKmsContextId();
     expect(snapshot.currentKmsContextId).to.equal(canonicalContextId);
     expect(secondaryContextId).to.equal(canonicalContextId);
+    const secondaryState = await secondary.getCurrentKmsContextAndEpoch();
+    expect(secondaryState[0]).to.equal(snapshot.currentKmsContextId);
+    expect(secondaryState[1]).to.equal(snapshot.currentEpochId);
 
     expect(snapshot.canonicalChainId).to.equal((await ethers.provider.getNetwork()).chainId);
     expect(snapshot.blockNumber).to.be.gte(blockBeforeMirror);
@@ -184,11 +255,9 @@ describe('canonical snapshot apply (canonical → secondary deploy flow)', funct
   });
 
   it('pins canonical reads to a historical block under a rotation', async function () {
-    const canonicalAddress = await deployFreshProtocolConfigProxy(
-      deployer,
-      buildProtocolConfigNodes(),
-      buildProtocolConfigThresholds(),
-    );
+    // A controllable committee lets us drive the epoch lifecycle so the active context actually advances.
+    const committee = await buildControllableKmsCommittee();
+    const canonicalAddress = await deployFreshProtocolConfigProxy(deployer, committee.nodes, committee.thresholds);
     const canonical = (await ethers.getContractAt(
       'ProtocolConfig',
       canonicalAddress,
@@ -199,15 +268,17 @@ describe('canonical snapshot apply (canonical → secondary deploy flow)', funct
     const snapshot = await readAndApply(canonicalAddress, secondaryProxyAddress);
     const pinnedBlock = snapshot.blockNumber;
     const pinnedContextId = snapshot.currentKmsContextId;
+    const pinnedEpochId = snapshot.currentEpochId;
 
-    const rotatedNodes = buildProtocolConfigNodes().slice(0, 2);
-    const rotatedThresholds = { publicDecryption: 1, userDecryption: 1, kmsGen: 1, mpc: 1 };
-    await canonical.defineNewKmsContext(rotatedNodes, rotatedThresholds);
+    await rotateToNewKmsContext(canonicalAddress, deployer, committee);
     const latestContextId = await canonical.getCurrentKmsContextId();
     expect(latestContextId).to.not.equal(pinnedContextId);
 
     const historicalContextId = await canonical.getCurrentKmsContextId({ blockTag: pinnedBlock });
     expect(historicalContextId).to.equal(pinnedContextId);
+    const historicalState = await canonical.getCurrentKmsContextAndEpoch({ blockTag: pinnedBlock });
+    expect(historicalState[0]).to.equal(pinnedContextId);
+    expect(historicalState[1]).to.equal(pinnedEpochId);
   });
 });
 
@@ -228,6 +299,7 @@ describe('canonical snapshot export (readCanonicalSnapshot)', function () {
     });
     expect(snapshot.kmsNodes.length).to.equal(canonicalNodes.length);
     expect(snapshot.currentKmsContextId).to.not.equal(0n);
+    expect(snapshot.currentEpochId).to.not.equal(0n);
     expect(snapshot.canonicalChainId).to.equal((await ethers.provider.getNetwork()).chainId);
 
     // The DAO's review check: re-reading the artifact's pinned block reproduces the snapshot exactly.
@@ -273,16 +345,8 @@ describe('canonical snapshot export (readCanonicalSnapshot)', function () {
   });
 
   it('reproduces a pinned snapshot after a rotation, while a latest re-read drifts', async function () {
-    const canonicalAddress = await deployFreshProtocolConfigProxy(
-      deployer,
-      buildProtocolConfigNodes(),
-      buildProtocolConfigThresholds(),
-    );
-    const canonical = (await ethers.getContractAt(
-      'ProtocolConfig',
-      canonicalAddress,
-      deployer,
-    )) as unknown as ProtocolConfig;
+    const committee = await buildControllableKmsCommittee();
+    const canonicalAddress = await deployFreshProtocolConfigProxy(deployer, committee.nodes, committee.thresholds);
 
     const exported = await readCanonicalSnapshot(hre, {
       canonicalProvider: ethers.provider,
@@ -290,12 +354,7 @@ describe('canonical snapshot export (readCanonicalSnapshot)', function () {
     });
 
     // Rotate the canonical committee so "latest" no longer matches the exported block.
-    await canonical.defineNewKmsContext(buildProtocolConfigNodes().slice(0, 2), {
-      publicDecryption: 1,
-      userDecryption: 1,
-      kmsGen: 1,
-      mpc: 1,
-    });
+    await rotateToNewKmsContext(canonicalAddress, deployer, committee);
 
     // Re-reading latest drifts: this is exactly what a signer would get with no block pin.
     const atLatest = await readCanonicalSnapshot(hre, {
