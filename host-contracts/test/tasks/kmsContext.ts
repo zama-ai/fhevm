@@ -1,5 +1,5 @@
 import { expect } from 'chai';
-import { Signer, Wallet } from 'ethers';
+import { Signer } from 'ethers';
 import hre, { ethers, run } from 'hardhat';
 
 import {
@@ -197,6 +197,7 @@ describe('KMS context tasks', function () {
     let proxyAddress: string;
     let protocolConfig: ProtocolConfig;
     let oldSigners: Signer[];
+    let oldTxSenders: Signer[];
     let newSigners: Signer[];
     let newTxSenders: Signer[];
     let newNodes: NodeConfig[];
@@ -236,15 +237,15 @@ describe('KMS context tasks', function () {
       return contextId;
     }
 
-    async function confirmCreation(contextId: bigint, signers: Signer[]): Promise<bigint | undefined> {
+    async function confirmCreation(contextId: bigint, txSenders: Signer[]): Promise<bigint | undefined> {
       let epochId: bigint | undefined;
-      for (const signer of signers) {
-        const asSigner = (await ethers.getContractAt(
+      for (const txSender of txSenders) {
+        const asTxSender = (await ethers.getContractAt(
           'ProtocolConfig',
           proxyAddress,
-          signer,
+          txSender,
         )) as unknown as ProtocolConfig;
-        const receipt = await (await asSigner.confirmKmsContextCreation(contextId)).wait();
+        const receipt = await (await asTxSender.confirmKmsContextCreation(contextId)).wait();
         epochId ??= parseEventArg(receipt!, 'NewKmsEpoch', 'epochId');
       }
       return epochId;
@@ -266,9 +267,12 @@ describe('KMS context tasks', function () {
       oldSigners = accounts.slice(1, 4);
       newSigners = accounts.slice(4, 6);
       newTxSenders = accounts.slice(6, 8);
+      oldTxSenders = accounts.slice(8, 11);
 
+      // confirmKmsContextCreation authorizes by tx-sender, so old-committee tx-senders must be real
+      // signable accounts (not throwaway addresses) for the confirmation calls below.
       const oldNodes = await Promise.all(
-        oldSigners.map(async (s, i) => makeNode(Wallet.createRandom().address, await s.getAddress(), i)),
+        oldSigners.map(async (s, i) => makeNode(await oldTxSenders[i].getAddress(), await s.getAddress(), i)),
       );
       newNodes = await Promise.all(
         newSigners.map(async (s, i) => makeNode(await newTxSenders[i].getAddress(), await s.getAddress(), i)),
@@ -291,7 +295,7 @@ describe('KMS context tasks', function () {
 
     it('reports PENDING with outstanding new signers part-way through creation', async function () {
       const contextId = await defineSwitch();
-      await confirmCreation(contextId, [newSigners[0]]);
+      await confirmCreation(contextId, [newTxSenders[0]]);
 
       const result = await inspectKmsContextSwitch(hre, proxyAddress, 0);
       expect(result.flow).to.equal('context-switch');
@@ -304,7 +308,7 @@ describe('KMS context tasks', function () {
 
     it('surfaces the (n - t + 1) old-side target and flags being stuck below it', async function () {
       const contextId = await defineSwitch();
-      await confirmCreation(contextId, [...newSigners, oldSigners[0]]);
+      await confirmCreation(contextId, [...newTxSenders, oldTxSenders[0]]);
 
       const result = await inspectKmsContextSwitch(hre, proxyAddress, 0);
       expect(result.contextState).to.equal('PENDING');
@@ -317,7 +321,7 @@ describe('KMS context tasks', function () {
 
     it('reports CREATED once the creation quorum is reached, with the epoch still PENDING', async function () {
       const contextId = await defineSwitch();
-      const epochId = await confirmCreation(contextId, [...newSigners, oldSigners[0], oldSigners[1]]);
+      const epochId = await confirmCreation(contextId, [...newTxSenders, oldTxSenders[0], oldTxSenders[1]]);
       expect(epochId, 'creation quorum should emit NewKmsEpoch').to.not.be.undefined;
 
       const result = await inspectKmsContextSwitch(hre, proxyAddress, 0);
@@ -331,7 +335,7 @@ describe('KMS context tasks', function () {
 
     it('reports fully live once the epoch is activated', async function () {
       const contextId = await defineSwitch();
-      const epochId = await confirmCreation(contextId, [...newSigners, oldSigners[0], oldSigners[1]]);
+      const epochId = await confirmCreation(contextId, [...newTxSenders, oldTxSenders[0], oldTxSenders[1]]);
       await confirmActivation(epochId!, newTxSenders);
 
       const result = await inspectKmsContextSwitch(hre, proxyAddress, 0);
@@ -345,7 +349,7 @@ describe('KMS context tasks', function () {
 
     it('distinguishes an aborted switch from one still in progress', async function () {
       const contextId = await defineSwitch();
-      await confirmCreation(contextId, [newSigners[0]]);
+      await confirmCreation(contextId, [newTxSenders[0]]);
 
       const inProgress = await inspectKmsContextSwitch(hre, proxyAddress, 0);
       expect(inProgress.aborted).to.equal(false);
