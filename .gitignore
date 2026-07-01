@@ -95,3 +95,5 @@ mochawesome-report/
 #-------------------------------------------------------------------------------
 # Build artifacts directory
 target/
+
+.solana-test-ledger

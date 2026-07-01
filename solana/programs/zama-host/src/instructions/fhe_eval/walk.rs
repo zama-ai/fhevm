@@ -286,8 +286,12 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor>(
                 assert_valid_bounded_rand_upper_bound(*upper_bound, *fhe_type)?;
                 let seed =
                     expected_rand_bounded_eval_seed(*upper_bound, handle_context, op_index, output);
-                let result =
-                    computed_rand_bounded_handle(*upper_bound, seed, *fhe_type, handle_context.chain_id);
+                let result = computed_rand_bounded_handle(
+                    *upper_bound,
+                    seed,
+                    *fhe_type,
+                    handle_context.chain_id,
+                );
                 visitor.record_op_event(EvalEvent::RandBounded(FheRandBoundedEvent {
                     version: EVENT_VERSION,
                     subject: subject.to_bytes(),
@@ -340,7 +344,8 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor>(
                     set_resolved.push(visitor.resolve_encrypted_operand(operand)?);
                 }
                 assert_is_in_operand_types(set, *fhe_type)?;
-                let mut all_refs: Vec<&ResolvedOperand> = Vec::with_capacity(1 + set_resolved.len());
+                let mut all_refs: Vec<&ResolvedOperand> =
+                    Vec::with_capacity(1 + set_resolved.len());
                 all_refs.push(&value_resolved);
                 all_refs.extend(set_resolved.iter());
                 let verified_input = combine_verified_input_binding(all_refs.as_slice())?;

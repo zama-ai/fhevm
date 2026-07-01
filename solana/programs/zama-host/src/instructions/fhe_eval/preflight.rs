@@ -108,27 +108,38 @@ fn preflight_eval_step(
         FheEvalStep::TrivialEncrypt { output, .. } | FheEvalStep::Rand { output, .. } => {
             preflight_output(output, preflight)?;
         }
-        FheEvalStep::Unary { operand, output, .. } => {
+        FheEvalStep::Unary {
+            operand, output, ..
+        } => {
             preflight_encrypted_operand(operand, step_index, preflight)?;
             preflight_output(output, preflight)?;
         }
         FheEvalStep::RandBounded { output, .. } => {
             preflight_output(output, preflight)?;
         }
-        FheEvalStep::Sum { operands, output, .. } => {
+        FheEvalStep::Sum {
+            operands, output, ..
+        } => {
             for operand in operands {
                 preflight_encrypted_operand(operand, step_index, preflight)?;
             }
             preflight_output(output, preflight)?;
         }
-        FheEvalStep::IsIn { value, set, output, .. } => {
+        FheEvalStep::IsIn {
+            value, set, output, ..
+        } => {
             preflight_encrypted_operand(value, step_index, preflight)?;
             for operand in set {
                 preflight_encrypted_operand(operand, step_index, preflight)?;
             }
             preflight_output(output, preflight)?;
         }
-        FheEvalStep::MulDiv { factor1, factor2, output, .. } => {
+        FheEvalStep::MulDiv {
+            factor1,
+            factor2,
+            output,
+            ..
+        } => {
             preflight_encrypted_operand(factor1, step_index, preflight)?;
             preflight_rhs_operand(factor2, step_index, preflight)?;
             preflight_output(output, preflight)?;

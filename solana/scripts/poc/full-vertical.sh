@@ -289,14 +289,14 @@ TH="$(echo "$tout" | grep -oE 'result handle 0x[0-9a-f]+' | grep -oE '0x[0-9a-f]
 [ -n "$TH" ] || fail "no ternary result handle"
 assert_decrypt "IfThenElse" "$TH" 42
 
-echo "==> [rand_bounded] fhe_eval RandBounded(upper=100)"
+echo "==> [rand_bounded] fhe_eval RandBounded(upper=128)"
 rbout="$(cd "$ROOT/solana/scripts/poc/live-client" && \
-  FHE_EVAL_RAND_BOUNDED=1 RAND_UPPER=100 RAND_FHE_TYPE=5 RAND_ALLOW=1 \
+  FHE_EVAL_RAND_BOUNDED=1 RAND_UPPER=128 RAND_FHE_TYPE=5 RAND_ALLOW=1 \
   ./target/debug/poc-live-client 2>&1)"
 echo "$rbout" | grep -qE 'allow_for_decryption' || fail "fhe_eval rand_bounded: $rbout"
 RBH="$(echo "$rbout" | grep -oE 'result handle 0x[0-9a-f]+' | grep -oE '0x[0-9a-f]+')"
 [ -n "$RBH" ] || fail "no rand_bounded result handle"
-assert_decrypt "RandBounded" "$RBH" "lt:100"
+assert_decrypt "RandBounded" "$RBH" "lt:128"
 
 echo "==> [composite/sum] fhe_eval sum(${SUM_A:-10} + ${SUM_B:-20})"
 SUM_A="${SUM_A:-10}"; SUM_B="${SUM_B:-20}"; EXPECTED_SUM=$((SUM_A + SUM_B))

@@ -1473,7 +1473,8 @@ pub fn to_fhe_mul_div_event(event: FheMulDivEvent) -> Log<TfheContractEvents> {
             factor1: Handle::from(event.factor1),
             factor2: Handle::from(event.factor2),
             divisor: FixedBytes::<32>::from(event.divisor),
-            scalarByte: FixedBytes::<1>::from([u8::from(event.scalar)]),
+            // fheMulDiv scalarByte bitmask (EVM parity): bit0 divisor (always) | bit1 factor2-scalar → 0x01 enc, 0x03 scalar.
+            scalarByte: FixedBytes::<1>::from([0x01 | (u8::from(event.scalar) << 1)]),
             result: Handle::from(event.result),
         }),
     }

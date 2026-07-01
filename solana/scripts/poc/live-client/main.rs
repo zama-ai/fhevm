@@ -1542,7 +1542,71 @@ fn is_comparison_op(op: zama_host::FheBinaryOpCode) -> bool {
     )
 }
 
-/// Generic binary fhe_eval: TrivialEncrypt(lhs) [+ TrivialEncrypt(rhs)] → Binary(op, AllowedDurable).
+/// Creates a durable, publicly-decryptable operand (TrivialEncrypt → AllowedDurable, `user` subject).
+/// Consumed as an `AllowedDurable` operand it propagates public-decrypt to a derived output;
+/// transient `AllowedLocal` operands don't and trip 6063. Returns (acl_record, handle).
+fn create_durable_public_decrypt_operand(
+    host: &Program<Rc<Keypair>>,
+    payer: &Rc<Keypair>,
+    host_config: Pubkey,
+    value: u64,
+    fhe_type: u8,
+    label: [u8; 32],
+) -> Result<(Pubkey, [u8; 32]), Box<dyn std::error::Error>> {
+    use anchor_lang::solana_program::instruction::AccountMeta;
+    let mut plaintext = [0u8; 32];
+    plaintext[24..32].copy_from_slice(&value.to_be_bytes());
+    let app_account = payer.pubkey();
+    let acl_domain_key = payer.pubkey();
+    let nonce_key = zama_host::acl_nonce_key(acl_domain_key, app_account, label);
+    let nonce_sequence: u64 = 0;
+    let (acl_record, _) = zama_host::acl_record_address(nonce_key, nonce_sequence);
+    let (zama_event_authority, _) =
+        Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
+    let subjects = vec![zama_host::AclSubjectEntry::user(payer.pubkey())];
+    let mut context_id = [0u8; 32];
+    context_id[0] = 0x0a;
+    context_id[1..9].copy_from_slice(&label[0..8]);
+    let args = zama_host::FheEvalArgs {
+        context_id,
+        steps: vec![zama_host::FheEvalStep::TrivialEncrypt {
+            plaintext,
+            fhe_type,
+            output: zama_host::FheEvalOutput::AllowedDurable {
+                output_acl_record_index: 0,
+                output_app_account_authority_index: None,
+                output_nonce_key: nonce_key,
+                output_nonce_sequence: nonce_sequence,
+                output_acl_domain_key: acl_domain_key,
+                output_app_account: app_account,
+                output_encrypted_value_label: label,
+                output_subjects: subjects,
+                output_public_decrypt: false,
+            },
+        }],
+    };
+    host.request()
+        .accounts(zama_host::accounts::FheEval {
+            payer: payer.pubkey(),
+            compute_subject: payer.pubkey(),
+            app_account_authority: payer.pubkey(),
+            host_config,
+            system_program: system_program::ID,
+            event_authority: zama_event_authority,
+            program: zama_host::ID,
+        })
+        .accounts(vec![AccountMeta::new(acl_record, false)])
+        .args(zama_host::instruction::FheEval { args })
+        .send_with_spinner_and_config(anchor_client::RpcSendTransactionConfig {
+            skip_preflight: true,
+            ..Default::default()
+        })?;
+    let record: zama_host::AclRecord = host.account(acl_record)?;
+    Ok((acl_record, record.handle))
+}
+
+/// Generic binary fhe_eval: encrypted operands become durable public-decrypt handles (so
+/// public-decrypt propagates to the output); scalar-RHS ops create only the LHS.
 /// Env: BINARY_OP, BINARY_A, BINARY_B, BINARY_B_SCALAR (flag), BINARY_FHE_TYPE, BINARY_ALLOW.
 /// Comparison ops (Eq/Ne/Ge/Gt/Le/Lt) automatically set output_fhe_type=0 (ebool).
 fn fhe_eval_binary(
@@ -1585,41 +1649,49 @@ fn fhe_eval_binary(
     context_id[8..16].copy_from_slice(&a.to_be_bytes());
     context_id[16..24].copy_from_slice(&b.to_be_bytes());
 
-    let mut plaintext_a = [0u8; 32];
-    plaintext_a[24..32].copy_from_slice(&a.to_be_bytes());
+    // Operand A. Label = marker 0x0a|op|type|pos|value → distinct PDA per operand/op (no collisions).
+    let mut operand_label_a = [0x0au8; 32];
+    operand_label_a[1] = op.as_u8();
+    operand_label_a[2] = in_fhe_type;
+    operand_label_a[3] = 0;
+    operand_label_a[8..16].copy_from_slice(&a.to_be_bytes());
+    let (acl_record_a, handle_a) =
+        create_durable_public_decrypt_operand(host, payer, host_config, a, in_fhe_type, operand_label_a)?;
 
-    let (rhs_operand, b_step) = if b_scalar {
+    // remaining_accounts: [operand A, (operand B), output] — indices below map to this order.
+    let mut operand_records = vec![acl_record_a];
+    let rhs_operand = if b_scalar {
         let mut scalar_b = [0u8; 32];
         scalar_b[24..32].copy_from_slice(&b.to_be_bytes());
-        (zama_host::FheEvalOperand::Scalar(scalar_b), None)
+        zama_host::FheEvalOperand::Scalar(scalar_b)
     } else {
-        let mut plaintext_b = [0u8; 32];
-        plaintext_b[24..32].copy_from_slice(&b.to_be_bytes());
-        (
-            zama_host::FheEvalOperand::AllowedLocal { producer_index: 1 },
-            Some(zama_host::FheEvalStep::TrivialEncrypt {
-                plaintext: plaintext_b,
-                fhe_type: in_fhe_type,
-                output: zama_host::FheEvalOutput::AllowedLocal,
-            }),
-        )
+        let mut operand_label_b = [0x0au8; 32];
+        operand_label_b[1] = op.as_u8();
+        operand_label_b[2] = in_fhe_type;
+        operand_label_b[3] = 1;
+        operand_label_b[8..16].copy_from_slice(&b.to_be_bytes());
+        let (acl_record_b, handle_b) =
+            create_durable_public_decrypt_operand(host, payer, host_config, b, in_fhe_type, operand_label_b)?;
+        operand_records.push(acl_record_b);
+        zama_host::FheEvalOperand::AllowedDurable {
+            handle: handle_b,
+            acl_record_index: 1,
+            permission_index: None,
+        }
     };
 
-    let mut steps = vec![zama_host::FheEvalStep::TrivialEncrypt {
-        plaintext: plaintext_a,
-        fhe_type: in_fhe_type,
-        output: zama_host::FheEvalOutput::AllowedLocal,
-    }];
-    if let Some(step) = b_step {
-        steps.push(step);
-    }
-    steps.push(zama_host::FheEvalStep::Binary {
+    let output_index = operand_records.len() as u16;
+    let steps = vec![zama_host::FheEvalStep::Binary {
         op,
-        lhs: zama_host::FheEvalOperand::AllowedLocal { producer_index: 0 },
+        lhs: zama_host::FheEvalOperand::AllowedDurable {
+            handle: handle_a,
+            acl_record_index: 0,
+            permission_index: None,
+        },
         rhs: rhs_operand,
         output_fhe_type,
         output: zama_host::FheEvalOutput::AllowedDurable {
-            output_acl_record_index: 0,
+            output_acl_record_index: output_index,
             output_app_account_authority_index: None,
             output_nonce_key,
             output_nonce_sequence,
@@ -1629,7 +1701,14 @@ fn fhe_eval_binary(
             output_subjects: subjects,
             output_public_decrypt: false,
         },
-    });
+    }];
+
+    // Operand records are read-only (role/handle checks); the output record is writable (created).
+    let mut remaining: Vec<AccountMeta> = operand_records
+        .iter()
+        .map(|record| AccountMeta::new_readonly(*record, false))
+        .collect();
+    remaining.push(AccountMeta::new(output_acl_record, false));
 
     let b_desc = if b_scalar { format!("scalar({b})") } else { format!("enc({b})") };
     let sig = host
@@ -1643,7 +1722,7 @@ fn fhe_eval_binary(
             event_authority: zama_event_authority,
             program: zama_host::ID,
         })
-        .accounts(vec![AccountMeta::new(output_acl_record, false)])
+        .accounts(remaining)
         .args(zama_host::instruction::FheEval { args: zama_host::FheEvalArgs { context_id, steps } })
         .send_with_spinner_and_config(anchor_client::RpcSendTransactionConfig {
             skip_preflight: true,
@@ -1716,34 +1795,37 @@ fn fhe_eval_unary(
     context_id[3] = out_fhe_type;
     context_id[24..32].copy_from_slice(&a.to_be_bytes());
 
-    let mut plaintext_a = [0u8; 32];
-    plaintext_a[24..32].copy_from_slice(&a.to_be_bytes());
+    // Encrypted operand as a durable public-decrypt handle (propagates to output; AllowedLocal → 6063).
+    let mut operand_label_a = [0x0bu8; 32];
+    operand_label_a[1] = op.as_u8();
+    operand_label_a[2] = in_fhe_type;
+    operand_label_a[3] = out_fhe_type;
+    operand_label_a[8..16].copy_from_slice(&a.to_be_bytes());
+    let (acl_record_a, handle_a) =
+        create_durable_public_decrypt_operand(host, payer, host_config, a, in_fhe_type, operand_label_a)?;
 
     let args = zama_host::FheEvalArgs {
         context_id,
-        steps: vec![
-            zama_host::FheEvalStep::TrivialEncrypt {
-                plaintext: plaintext_a,
-                fhe_type: in_fhe_type,
-                output: zama_host::FheEvalOutput::AllowedLocal,
+        steps: vec![zama_host::FheEvalStep::Unary {
+            op,
+            operand: zama_host::FheEvalOperand::AllowedDurable {
+                handle: handle_a,
+                acl_record_index: 0,
+                permission_index: None,
             },
-            zama_host::FheEvalStep::Unary {
-                op,
-                operand: zama_host::FheEvalOperand::AllowedLocal { producer_index: 0 },
-                output_fhe_type: out_fhe_type,
-                output: zama_host::FheEvalOutput::AllowedDurable {
-                    output_acl_record_index: 0,
-                    output_app_account_authority_index: None,
-                    output_nonce_key,
-                    output_nonce_sequence,
-                    output_acl_domain_key: acl_domain_key,
-                    output_app_account: app_account,
-                    output_encrypted_value_label: encrypted_value_label,
-                    output_subjects: subjects,
-                    output_public_decrypt: false,
-                },
+            output_fhe_type: out_fhe_type,
+            output: zama_host::FheEvalOutput::AllowedDurable {
+                output_acl_record_index: 1,
+                output_app_account_authority_index: None,
+                output_nonce_key,
+                output_nonce_sequence,
+                output_acl_domain_key: acl_domain_key,
+                output_app_account: app_account,
+                output_encrypted_value_label: encrypted_value_label,
+                output_subjects: subjects,
+                output_public_decrypt: false,
             },
-        ],
+        }],
     };
 
     let sig = host
@@ -1757,7 +1839,10 @@ fn fhe_eval_unary(
             event_authority: zama_event_authority,
             program: zama_host::ID,
         })
-        .accounts(vec![AccountMeta::new(output_acl_record, false)])
+        .accounts(vec![
+            AccountMeta::new_readonly(acl_record_a, false),
+            AccountMeta::new(output_acl_record, false),
+        ])
         .args(zama_host::instruction::FheEval { args })
         .send_with_spinner_and_config(anchor_client::RpcSendTransactionConfig {
             skip_preflight: true,
@@ -1830,51 +1915,61 @@ fn fhe_eval_ternary(
     context_id[8..16].copy_from_slice(&if_true.to_be_bytes());
     context_id[16..24].copy_from_slice(&if_false.to_be_bytes());
 
-    let mut pt_ctrl = [0u8; 32];
-    pt_ctrl[31] = ctrl as u8;
-    let mut pt_true = [0u8; 32];
-    pt_true[24..32].copy_from_slice(&if_true.to_be_bytes());
-    let mut pt_false = [0u8; 32];
-    pt_false[24..32].copy_from_slice(&if_false.to_be_bytes());
-
     let expected = if ctrl != 0 { if_true } else { if_false };
+
+    // Each operand a durable public-decrypt handle. remaining_accounts: [control, if_true, if_false, output].
+    let mut label_ctrl = [0x0cu8; 32];
+    label_ctrl[1] = ctrl as u8;
+    label_ctrl[3] = 0; // control is ebool (type 0)
+    label_ctrl[8..16].copy_from_slice(&ctrl.to_be_bytes());
+    let (rec_ctrl, h_ctrl) = create_durable_public_decrypt_operand(host, payer, host_config, ctrl, 0, label_ctrl)?;
+
+    let mut label_true = [0x0cu8; 32];
+    label_true[2] = fhe_type;
+    label_true[3] = 1;
+    label_true[8..16].copy_from_slice(&if_true.to_be_bytes());
+    let (rec_true, h_true) =
+        create_durable_public_decrypt_operand(host, payer, host_config, if_true, fhe_type, label_true)?;
+
+    let mut label_false = [0x0cu8; 32];
+    label_false[2] = fhe_type;
+    label_false[3] = 2;
+    label_false[8..16].copy_from_slice(&if_false.to_be_bytes());
+    let (rec_false, h_false) =
+        create_durable_public_decrypt_operand(host, payer, host_config, if_false, fhe_type, label_false)?;
+
     let args = zama_host::FheEvalArgs {
         context_id,
-        steps: vec![
-            zama_host::FheEvalStep::TrivialEncrypt {
-                plaintext: pt_ctrl,
-                fhe_type: 0, // ebool
-                output: zama_host::FheEvalOutput::AllowedLocal,
+        steps: vec![zama_host::FheEvalStep::Ternary {
+            op: zama_host::FheTernaryOpCode::IfThenElse,
+            control: zama_host::FheEvalOperand::AllowedDurable {
+                handle: h_ctrl,
+                acl_record_index: 0,
+                permission_index: None,
             },
-            zama_host::FheEvalStep::TrivialEncrypt {
-                plaintext: pt_true,
-                fhe_type,
-                output: zama_host::FheEvalOutput::AllowedLocal,
+            if_true: zama_host::FheEvalOperand::AllowedDurable {
+                handle: h_true,
+                acl_record_index: 1,
+                permission_index: None,
             },
-            zama_host::FheEvalStep::TrivialEncrypt {
-                plaintext: pt_false,
-                fhe_type,
-                output: zama_host::FheEvalOutput::AllowedLocal,
+            if_false: zama_host::FheEvalOperand::AllowedDurable {
+                handle: h_false,
+                acl_record_index: 2,
+                permission_index: None,
             },
-            zama_host::FheEvalStep::Ternary {
-                op: zama_host::FheTernaryOpCode::IfThenElse,
-                control: zama_host::FheEvalOperand::AllowedLocal { producer_index: 0 },
-                if_true: zama_host::FheEvalOperand::AllowedLocal { producer_index: 1 },
-                if_false: zama_host::FheEvalOperand::AllowedLocal { producer_index: 2 },
-                output_fhe_type: fhe_type,
-                output: zama_host::FheEvalOutput::AllowedDurable {
-                    output_acl_record_index: 0,
-                    output_app_account_authority_index: None,
-                    output_nonce_key,
-                    output_nonce_sequence,
-                    output_acl_domain_key: acl_domain_key,
-                    output_app_account: app_account,
-                    output_encrypted_value_label: encrypted_value_label,
-                    output_subjects: subjects,
-                    output_public_decrypt: false,
-                },
+            output_fhe_type: fhe_type,
+            output: zama_host::FheEvalOutput::AllowedDurable {
+                output_acl_record_index: 3,
+                output_app_account_authority_index: None,
+                output_nonce_key,
+                output_nonce_sequence,
+                output_acl_domain_key: acl_domain_key,
+                output_app_account: app_account,
+                output_encrypted_value_label: encrypted_value_label,
+                output_subjects: subjects,
+                output_public_decrypt: false,
             },
-        ],
+        }],
     };
 
     let sig = host
@@ -1888,7 +1983,12 @@ fn fhe_eval_ternary(
             event_authority: zama_event_authority,
             program: zama_host::ID,
         })
-        .accounts(vec![AccountMeta::new(output_acl_record, false)])
+        .accounts(vec![
+            AccountMeta::new_readonly(rec_ctrl, false),
+            AccountMeta::new_readonly(rec_true, false),
+            AccountMeta::new_readonly(rec_false, false),
+            AccountMeta::new(output_acl_record, false),
+        ])
         .args(zama_host::instruction::FheEval { args })
         .send_with_spinner_and_config(anchor_client::RpcSendTransactionConfig {
             skip_preflight: true,
@@ -2053,43 +2153,47 @@ fn fhe_eval_sum(
     context_id[16..24].copy_from_slice(&a.to_be_bytes());
     context_id[24..32].copy_from_slice(&b.to_be_bytes());
 
-    let mut plaintext_a = [0u8; 32];
-    plaintext_a[24..32].copy_from_slice(&a.to_be_bytes());
-    let mut plaintext_b = [0u8; 32];
-    plaintext_b[24..32].copy_from_slice(&b.to_be_bytes());
+    // Each addend a durable public-decrypt handle. remaining_accounts: [a, b, output].
+    let mut label_a = [0x0du8; 32];
+    label_a[2] = fhe_type;
+    label_a[3] = 0;
+    label_a[8..16].copy_from_slice(&a.to_be_bytes());
+    let (rec_a, h_a) = create_durable_public_decrypt_operand(host, payer, host_config, a, fhe_type, label_a)?;
+
+    let mut label_b = [0x0du8; 32];
+    label_b[2] = fhe_type;
+    label_b[3] = 1;
+    label_b[8..16].copy_from_slice(&b.to_be_bytes());
+    let (rec_b, h_b) = create_durable_public_decrypt_operand(host, payer, host_config, b, fhe_type, label_b)?;
 
     let args = zama_host::FheEvalArgs {
         context_id,
-        steps: vec![
-            zama_host::FheEvalStep::TrivialEncrypt {
-                plaintext: plaintext_a,
-                fhe_type,
-                output: zama_host::FheEvalOutput::AllowedLocal,
-            },
-            zama_host::FheEvalStep::TrivialEncrypt {
-                plaintext: plaintext_b,
-                fhe_type,
-                output: zama_host::FheEvalOutput::AllowedLocal,
-            },
-            zama_host::FheEvalStep::Sum {
-                operands: vec![
-                    zama_host::FheEvalOperand::AllowedLocal { producer_index: 0 },
-                    zama_host::FheEvalOperand::AllowedLocal { producer_index: 1 },
-                ],
-                fhe_type,
-                output: zama_host::FheEvalOutput::AllowedDurable {
-                    output_acl_record_index: 0,
-                    output_app_account_authority_index: None,
-                    output_nonce_key,
-                    output_nonce_sequence,
-                    output_acl_domain_key: acl_domain_key,
-                    output_app_account: app_account,
-                    output_encrypted_value_label: encrypted_value_label,
-                    output_subjects: subjects,
-                    output_public_decrypt: false,
+        steps: vec![zama_host::FheEvalStep::Sum {
+            operands: vec![
+                zama_host::FheEvalOperand::AllowedDurable {
+                    handle: h_a,
+                    acl_record_index: 0,
+                    permission_index: None,
                 },
+                zama_host::FheEvalOperand::AllowedDurable {
+                    handle: h_b,
+                    acl_record_index: 1,
+                    permission_index: None,
+                },
+            ],
+            fhe_type,
+            output: zama_host::FheEvalOutput::AllowedDurable {
+                output_acl_record_index: 2,
+                output_app_account_authority_index: None,
+                output_nonce_key,
+                output_nonce_sequence,
+                output_acl_domain_key: acl_domain_key,
+                output_app_account: app_account,
+                output_encrypted_value_label: encrypted_value_label,
+                output_subjects: subjects,
+                output_public_decrypt: false,
             },
-        ],
+        }],
     };
 
     let sig = host
@@ -2103,7 +2207,11 @@ fn fhe_eval_sum(
             event_authority: zama_event_authority,
             program: zama_host::ID,
         })
-        .accounts(vec![AccountMeta::new(output_acl_record, false)])
+        .accounts(vec![
+            AccountMeta::new_readonly(rec_a, false),
+            AccountMeta::new_readonly(rec_b, false),
+            AccountMeta::new(output_acl_record, false),
+        ])
         .args(zama_host::instruction::FheEval { args })
         .send_with_spinner_and_config(anchor_client::RpcSendTransactionConfig {
             skip_preflight: true,
@@ -2170,40 +2278,44 @@ fn fhe_eval_is_in(
     context_id[0] = 0xa1;
     context_id[24..32].copy_from_slice(&value.to_be_bytes());
 
-    let mut plaintext_value = [0u8; 32];
-    plaintext_value[24..32].copy_from_slice(&value.to_be_bytes());
+    // value + set as durable public-decrypt handles. remaining_accounts: [value, set.., output].
     let set_values: [u64; 3] = [10, 42, 100];
-    let plaintext_set: Vec<[u8; 32]> = set_values
-        .iter()
-        .map(|&v| {
-            let mut p = [0u8; 32];
-            p[24..32].copy_from_slice(&v.to_be_bytes());
-            p
-        })
-        .collect();
 
-    // Steps: TE(value) at producer 0, TE(set[0..2]) at producers 1..3, IsIn at producer 4.
-    let mut steps = vec![zama_host::FheEvalStep::TrivialEncrypt {
-        plaintext: plaintext_value,
-        fhe_type: elem_fhe_type,
-        output: zama_host::FheEvalOutput::AllowedLocal,
-    }];
-    for pt in &plaintext_set {
-        steps.push(zama_host::FheEvalStep::TrivialEncrypt {
-            plaintext: *pt,
-            fhe_type: elem_fhe_type,
-            output: zama_host::FheEvalOutput::AllowedLocal,
+    let mut label_value = [0x0eu8; 32];
+    label_value[2] = elem_fhe_type;
+    label_value[3] = 0;
+    label_value[8..16].copy_from_slice(&value.to_be_bytes());
+    let (rec_value, h_value) =
+        create_durable_public_decrypt_operand(host, payer, host_config, value, elem_fhe_type, label_value)?;
+
+    let mut operand_records = vec![rec_value];
+    let mut set_operands: Vec<zama_host::FheEvalOperand> = Vec::with_capacity(set_values.len());
+    for (i, &v) in set_values.iter().enumerate() {
+        let mut label = [0x0eu8; 32];
+        label[2] = elem_fhe_type;
+        label[3] = (i as u8) + 1;
+        label[8..16].copy_from_slice(&v.to_be_bytes());
+        let (rec, handle) =
+            create_durable_public_decrypt_operand(host, payer, host_config, v, elem_fhe_type, label)?;
+        set_operands.push(zama_host::FheEvalOperand::AllowedDurable {
+            handle,
+            acl_record_index: operand_records.len() as u16,
+            permission_index: None,
         });
+        operand_records.push(rec);
     }
-    let set_operands: Vec<zama_host::FheEvalOperand> = (1u16..=3)
-        .map(|i| zama_host::FheEvalOperand::AllowedLocal { producer_index: i })
-        .collect();
-    steps.push(zama_host::FheEvalStep::IsIn {
-        value: zama_host::FheEvalOperand::AllowedLocal { producer_index: 0 },
+    let output_index = operand_records.len() as u16;
+
+    let steps = vec![zama_host::FheEvalStep::IsIn {
+        value: zama_host::FheEvalOperand::AllowedDurable {
+            handle: h_value,
+            acl_record_index: 0,
+            permission_index: None,
+        },
         set: set_operands,
         fhe_type: elem_fhe_type,
         output: zama_host::FheEvalOutput::AllowedDurable {
-            output_acl_record_index: 0,
+            output_acl_record_index: output_index,
             output_app_account_authority_index: None,
             output_nonce_key,
             output_nonce_sequence,
@@ -2213,10 +2325,16 @@ fn fhe_eval_is_in(
             output_subjects: subjects,
             output_public_decrypt: false,
         },
-    });
+    }];
 
     let args = zama_host::FheEvalArgs { context_id, steps };
     let in_set = set_values.contains(&value);
+
+    let mut remaining: Vec<AccountMeta> = operand_records
+        .iter()
+        .map(|record| AccountMeta::new_readonly(*record, false))
+        .collect();
+    remaining.push(AccountMeta::new(output_acl_record, false));
 
     let sig = host
         .request()
@@ -2229,7 +2347,7 @@ fn fhe_eval_is_in(
             event_authority: zama_event_authority,
             program: zama_host::ID,
         })
-        .accounts(vec![AccountMeta::new(output_acl_record, false)])
+        .accounts(remaining)
         .args(zama_host::instruction::FheEval { args })
         .send_with_spinner_and_config(anchor_client::RpcSendTransactionConfig {
             skip_preflight: true,
@@ -2298,39 +2416,40 @@ fn fhe_eval_mul_div(
     context_id[16..24].copy_from_slice(&b.to_be_bytes());
     context_id[24..32].copy_from_slice(&d.to_be_bytes());
 
-    let mut plaintext_a = [0u8; 32];
-    plaintext_a[24..32].copy_from_slice(&a.to_be_bytes());
     let mut scalar_b = [0u8; 32];
     scalar_b[24..32].copy_from_slice(&b.to_be_bytes());
     let mut divisor = [0u8; 32];
     divisor[24..32].copy_from_slice(&d.to_be_bytes());
 
+    // factor1 as a durable public-decrypt handle (factor2/divisor are public scalars).
+    let mut label_a = [0x0fu8; 32];
+    label_a[2] = fhe_type;
+    label_a[8..16].copy_from_slice(&a.to_be_bytes());
+    let (rec_a, h_a) = create_durable_public_decrypt_operand(host, payer, host_config, a, fhe_type, label_a)?;
+
     let args = zama_host::FheEvalArgs {
         context_id,
-        steps: vec![
-            zama_host::FheEvalStep::TrivialEncrypt {
-                plaintext: plaintext_a,
-                fhe_type,
-                output: zama_host::FheEvalOutput::AllowedLocal,
+        steps: vec![zama_host::FheEvalStep::MulDiv {
+            factor1: zama_host::FheEvalOperand::AllowedDurable {
+                handle: h_a,
+                acl_record_index: 0,
+                permission_index: None,
             },
-            zama_host::FheEvalStep::MulDiv {
-                factor1: zama_host::FheEvalOperand::AllowedLocal { producer_index: 0 },
-                factor2: zama_host::FheEvalOperand::Scalar(scalar_b),
-                divisor,
-                output_fhe_type: fhe_type,
-                output: zama_host::FheEvalOutput::AllowedDurable {
-                    output_acl_record_index: 0,
-                    output_app_account_authority_index: None,
-                    output_nonce_key,
-                    output_nonce_sequence,
-                    output_acl_domain_key: acl_domain_key,
-                    output_app_account: app_account,
-                    output_encrypted_value_label: encrypted_value_label,
-                    output_subjects: subjects,
-                    output_public_decrypt: false,
-                },
+            factor2: zama_host::FheEvalOperand::Scalar(scalar_b),
+            divisor,
+            output_fhe_type: fhe_type,
+            output: zama_host::FheEvalOutput::AllowedDurable {
+                output_acl_record_index: 1,
+                output_app_account_authority_index: None,
+                output_nonce_key,
+                output_nonce_sequence,
+                output_acl_domain_key: acl_domain_key,
+                output_app_account: app_account,
+                output_encrypted_value_label: encrypted_value_label,
+                output_subjects: subjects,
+                output_public_decrypt: false,
             },
-        ],
+        }],
     };
 
     let expected = a * b / d;
@@ -2345,7 +2464,10 @@ fn fhe_eval_mul_div(
             event_authority: zama_event_authority,
             program: zama_host::ID,
         })
-        .accounts(vec![AccountMeta::new(output_acl_record, false)])
+        .accounts(vec![
+            AccountMeta::new_readonly(rec_a, false),
+            AccountMeta::new(output_acl_record, false),
+        ])
         .args(zama_host::instruction::FheEval { args })
         .send_with_spinner_and_config(anchor_client::RpcSendTransactionConfig {
             skip_preflight: true,

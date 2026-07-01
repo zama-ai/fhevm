@@ -618,15 +618,30 @@ pub fn assert_unary_operand_type(
 ) -> Result<()> {
     assert_supported_unary_output_type(op, output_fhe_type)?;
     let operand_type = handle_fhe_type(operand);
-    require!(is_supported_fhe_type(operand_type), ZamaHostError::UnsupportedFheType);
+    require!(
+        is_supported_fhe_type(operand_type),
+        ZamaHostError::UnsupportedFheType
+    );
     match op {
         FheUnaryOpCode::Neg => {
-            require!(matches!(operand_type, 2..=6), ZamaHostError::UnsupportedFheType);
-            require!(operand_type == output_fhe_type, ZamaHostError::BinaryOperandTypeMismatch);
+            require!(
+                matches!(operand_type, 2..=6),
+                ZamaHostError::UnsupportedFheType
+            );
+            require!(
+                operand_type == output_fhe_type,
+                ZamaHostError::BinaryOperandTypeMismatch
+            );
         }
         FheUnaryOpCode::Not => {
-            require!(matches!(operand_type, 0 | 2..=6), ZamaHostError::UnsupportedFheType);
-            require!(operand_type == output_fhe_type, ZamaHostError::BinaryOperandTypeMismatch);
+            require!(
+                matches!(operand_type, 0 | 2..=6),
+                ZamaHostError::UnsupportedFheType
+            );
+            require!(
+                operand_type == output_fhe_type,
+                ZamaHostError::BinaryOperandTypeMismatch
+            );
         }
         FheUnaryOpCode::Cast => {
             // cast: any valid type in, any valid type out; they may differ
@@ -643,12 +658,18 @@ pub fn assert_sum_operand_types(operands: &[FheEvalOperand], fhe_type: u8) -> Re
 
 pub fn assert_is_in_operand_types(set: &[FheEvalOperand], fhe_type: u8) -> Result<()> {
     require!(!set.is_empty(), ZamaHostError::InvalidFheEvalAccount);
-    require!(is_supported_fhe_type(fhe_type), ZamaHostError::UnsupportedFheType);
+    require!(
+        is_supported_fhe_type(fhe_type),
+        ZamaHostError::UnsupportedFheType
+    );
     Ok(())
 }
 
 pub fn assert_mul_div_operand_types(output_fhe_type: u8) -> Result<()> {
-    require!(matches!(output_fhe_type, 2..=6), ZamaHostError::UnsupportedFheType);
+    require!(
+        matches!(output_fhe_type, 2..=6),
+        ZamaHostError::UnsupportedFheType
+    );
     Ok(())
 }
 
@@ -1559,13 +1580,23 @@ pub fn computed_bound_eval_sum_handle(
 ) -> [u8; 32] {
     let sequence_bytes = output_nonce_sequence.to_be_bytes();
     let base_result = computed_eval_sum_handle(
-        operand_handles, fhe_type, chain_id, previous_bank_hash,
-        unix_timestamp, context_id, op_index,
+        operand_handles,
+        fhe_type,
+        chain_id,
+        previous_bank_hash,
+        unix_timestamp,
+        context_id,
+        op_index,
     );
     let mut result = base_result;
     result[..21].copy_from_slice(
-        &hashv(&[b"FHE_bound_eval_sum_output", &base_result, &output_nonce_key, &sequence_bytes])
-            .to_bytes()[..21],
+        &hashv(&[
+            b"FHE_bound_eval_sum_output",
+            &base_result,
+            &output_nonce_key,
+            &sequence_bytes,
+        ])
+        .to_bytes()[..21],
     );
     result
 }
@@ -1621,13 +1652,24 @@ pub fn computed_bound_eval_is_in_handle(
 ) -> [u8; 32] {
     let sequence_bytes = output_nonce_sequence.to_be_bytes();
     let base_result = computed_eval_is_in_handle(
-        value_handle, set_handles, fhe_type, chain_id, previous_bank_hash,
-        unix_timestamp, context_id, op_index,
+        value_handle,
+        set_handles,
+        fhe_type,
+        chain_id,
+        previous_bank_hash,
+        unix_timestamp,
+        context_id,
+        op_index,
     );
     let mut result = base_result;
     result[..21].copy_from_slice(
-        &hashv(&[b"FHE_bound_eval_is_in_output", &base_result, &output_nonce_key, &sequence_bytes])
-            .to_bytes()[..21],
+        &hashv(&[
+            b"FHE_bound_eval_is_in_output",
+            &base_result,
+            &output_nonce_key,
+            &sequence_bytes,
+        ])
+        .to_bytes()[..21],
     );
     result
 }
@@ -1686,13 +1728,26 @@ pub fn computed_bound_eval_mul_div_handle(
 ) -> [u8; 32] {
     let sequence_bytes = output_nonce_sequence.to_be_bytes();
     let base_result = computed_eval_mul_div_handle(
-        factor1, factor2, divisor, scalar, output_fhe_type, chain_id,
-        previous_bank_hash, unix_timestamp, context_id, op_index,
+        factor1,
+        factor2,
+        divisor,
+        scalar,
+        output_fhe_type,
+        chain_id,
+        previous_bank_hash,
+        unix_timestamp,
+        context_id,
+        op_index,
     );
     let mut result = base_result;
     result[..21].copy_from_slice(
-        &hashv(&[b"FHE_bound_eval_mul_div_output", &base_result, &output_nonce_key, &sequence_bytes])
-            .to_bytes()[..21],
+        &hashv(&[
+            b"FHE_bound_eval_mul_div_output",
+            &base_result,
+            &output_nonce_key,
+            &sequence_bytes,
+        ])
+        .to_bytes()[..21],
     );
     result
 }
@@ -1910,7 +1965,12 @@ pub fn computed_bound_unary_handle(
 ) -> [u8; 32] {
     let sequence_bytes = output_nonce_sequence.to_be_bytes();
     let base_result = computed_unary_handle(
-        op, operand, fhe_type, chain_id, previous_bank_hash, unix_timestamp,
+        op,
+        operand,
+        fhe_type,
+        chain_id,
+        previous_bank_hash,
+        unix_timestamp,
     );
     let mut result = base_result;
     result[..21].copy_from_slice(
@@ -1972,8 +2032,14 @@ pub fn computed_bound_eval_unary_handle(
 ) -> [u8; 32] {
     let sequence_bytes = output_nonce_sequence.to_be_bytes();
     let base_result = computed_eval_unary_handle(
-        op, operand, fhe_type, chain_id,
-        previous_bank_hash, unix_timestamp, context_id, op_index,
+        op,
+        operand,
+        fhe_type,
+        chain_id,
+        previous_bank_hash,
+        unix_timestamp,
+        context_id,
+        op_index,
     );
     let mut result = base_result;
     result[..21].copy_from_slice(

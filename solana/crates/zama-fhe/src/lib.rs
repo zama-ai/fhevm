@@ -1469,13 +1469,15 @@ impl EvalBuilder {
             return Err(EvalBuildError::TooManyOps);
         }
         validate_supported_rand_type(fhe_type)?;
-        let step_index =
-            u16::try_from(self.steps.len()).map_err(|_| EvalBuildError::TooManyOps)?;
+        let step_index = u16::try_from(self.steps.len()).map_err(|_| EvalBuildError::TooManyOps)?;
         let mut remaining_accounts = self.remaining_accounts.clone();
         let output = lower_output(&mut remaining_accounts, self.app_authority, output)?;
         self.remaining_accounts = remaining_accounts;
-        self.steps
-            .push(FheEvalStep::RandBounded { upper_bound, fhe_type, output });
+        self.steps.push(FheEvalStep::RandBounded {
+            upper_bound,
+            fhe_type,
+            output,
+        });
         self.produced_types.push(fhe_type);
         Ok(Operand::transient(step_index, self.context_id, self.scope))
     }
@@ -1779,8 +1781,13 @@ impl EvalBuilder {
         operand: Encrypted<FROM>,
         output: Output,
     ) -> Result<Encrypted<TO>> {
-        self.unary_op(FheUnaryOpCode::Cast, operand.operand(), TO::FHE_TYPE, output)
-            .map(Encrypted::from_operand)
+        self.unary_op(
+            FheUnaryOpCode::Cast,
+            operand.operand(),
+            TO::FHE_TYPE,
+            output,
+        )
+        .map(Encrypted::from_operand)
     }
 
     pub fn sum<T: FheUint>(
@@ -1802,8 +1809,7 @@ impl EvalBuilder {
         }
         let fhe_type = T::FHE_TYPE.byte();
         validate_uint_fhe_type(fhe_type)?;
-        let step_index =
-            u16::try_from(self.steps.len()).map_err(|_| EvalBuildError::TooManyOps)?;
+        let step_index = u16::try_from(self.steps.len()).map_err(|_| EvalBuildError::TooManyOps)?;
         let mut remaining_accounts = self.remaining_accounts.clone();
         let mut lowered: Vec<FheEvalOperand> = Vec::with_capacity(operand_ops.len());
         for op in operand_ops {
@@ -1854,8 +1860,7 @@ impl EvalBuilder {
         }
         let fhe_type = T::FHE_TYPE.byte();
         validate_supported_fhe_type(fhe_type)?;
-        let step_index =
-            u16::try_from(self.steps.len()).map_err(|_| EvalBuildError::TooManyOps)?;
+        let step_index = u16::try_from(self.steps.len()).map_err(|_| EvalBuildError::TooManyOps)?;
         let mut remaining_accounts = self.remaining_accounts.clone();
         let value_lowered = lower_operand(
             &mut remaining_accounts,
@@ -1908,8 +1913,7 @@ impl EvalBuilder {
         }
         let fhe_type = T::FHE_TYPE.byte();
         validate_uint_fhe_type(fhe_type)?;
-        let step_index =
-            u16::try_from(self.steps.len()).map_err(|_| EvalBuildError::TooManyOps)?;
+        let step_index = u16::try_from(self.steps.len()).map_err(|_| EvalBuildError::TooManyOps)?;
         let mut remaining_accounts = self.remaining_accounts.clone();
         let factor1 = lower_operand(
             &mut remaining_accounts,
@@ -1965,8 +1969,7 @@ impl EvalBuilder {
             self.scope,
             |index| self.produced_types.get(index as usize).copied(),
         )?;
-        let step_index =
-            u16::try_from(self.steps.len()).map_err(|_| EvalBuildError::TooManyOps)?;
+        let step_index = u16::try_from(self.steps.len()).map_err(|_| EvalBuildError::TooManyOps)?;
         let mut remaining_accounts = self.remaining_accounts.clone();
         let operand = lower_operand(
             &mut remaining_accounts,
@@ -2088,27 +2091,38 @@ fn validate_lowered_step(
         FheEvalStep::TrivialEncrypt { output, .. } | FheEvalStep::Rand { output, .. } => {
             validate_lowered_output(output, used_accounts)?;
         }
-        FheEvalStep::Unary { operand, output, .. } => {
+        FheEvalStep::Unary {
+            operand, output, ..
+        } => {
             validate_lowered_encrypted_operand(operand, step_index, used_accounts)?;
             validate_lowered_output(output, used_accounts)?;
         }
         FheEvalStep::RandBounded { output, .. } => {
             validate_lowered_output(output, used_accounts)?;
         }
-        FheEvalStep::Sum { operands, output, .. } => {
+        FheEvalStep::Sum {
+            operands, output, ..
+        } => {
             for operand in operands {
                 validate_lowered_encrypted_operand(operand, step_index, used_accounts)?;
             }
             validate_lowered_output(output, used_accounts)?;
         }
-        FheEvalStep::IsIn { value, set, output, .. } => {
+        FheEvalStep::IsIn {
+            value, set, output, ..
+        } => {
             validate_lowered_encrypted_operand(value, step_index, used_accounts)?;
             for operand in set {
                 validate_lowered_encrypted_operand(operand, step_index, used_accounts)?;
             }
             validate_lowered_output(output, used_accounts)?;
         }
-        FheEvalStep::MulDiv { factor1, factor2, output, .. } => {
+        FheEvalStep::MulDiv {
+            factor1,
+            factor2,
+            output,
+            ..
+        } => {
             validate_lowered_encrypted_operand(factor1, step_index, used_accounts)?;
             validate_lowered_rhs_operand(factor2, step_index, used_accounts)?;
             validate_lowered_output(output, used_accounts)?;

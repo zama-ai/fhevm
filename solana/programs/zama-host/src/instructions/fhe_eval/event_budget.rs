@@ -85,7 +85,7 @@ fn fhe_sum_event_bytes(operand_count: usize) -> usize {
         + EVENT_PUBKEY_BYTES           // subject
         + 4 + operand_count * EVENT_HANDLE_BYTES // Vec<[u8;32]> (4-byte length prefix)
         + EVENT_U8_BYTES               // fhe_type
-        + EVENT_HANDLE_BYTES           // result
+        + EVENT_HANDLE_BYTES // result
 }
 
 fn fhe_is_in_event_bytes(set_count: usize) -> usize {
@@ -94,7 +94,7 @@ fn fhe_is_in_event_bytes(set_count: usize) -> usize {
         + EVENT_HANDLE_BYTES           // value
         + 4 + set_count * EVENT_HANDLE_BYTES // Vec<[u8;32]>
         + EVENT_U8_BYTES               // fhe_type
-        + EVENT_HANDLE_BYTES           // result
+        + EVENT_HANDLE_BYTES // result
 }
 
 const FHE_MUL_DIV_EVENT_BYTES: usize = EVENT_VERSION_BYTES
