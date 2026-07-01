@@ -3,7 +3,7 @@ use crate::types::CoprocessorError;
 use fhevm_engine_common::database::{connect_pool_with_options, resolve_database_url_from_option};
 use fhevm_engine_common::db_keys::DbKeyCache;
 use fhevm_engine_common::material_version::{
-    MaterialVersion, MigrationScheduleCache, MIGRATION_SCHEDULE_CHANNEL,
+    CompressedKeyMigrationScheduleCache, MaterialVersion, COMPRESSED_KEY_MIGRATION_SCHEDULE_CHANNEL,
 };
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::tfhe_ops::check_fhe_operand_types;
@@ -106,12 +106,15 @@ async fn tfhe_worker_cycle(
         DbKeyCache::new(args.key_cache_size).map_err(|e| CoprocessorError::Other(e.into()))?;
     let mut listener = PgListener::connect_with(&pool).await?;
     listener.listen("work_available").await?;
-    listener.listen(MIGRATION_SCHEDULE_CHANNEL).await?;
+    listener
+        .listen(COMPRESSED_KEY_MIGRATION_SCHEDULE_CHANNEL)
+        .await?;
 
-    // The cutover schedule is published exactly once and is immutable
-    // thereafter, so load it once and refresh only when the listener signals a
-    // change (or a reconnect may have missed it). The happy path never polls.
-    let mut schedule = MigrationScheduleCache::load(&pool)
+    // The compressed-key migration schedule is published exactly once and is
+    // immutable thereafter, so load it once and refresh only when the listener
+    // signals a change (or a reconnect may have missed it). The happy path
+    // never polls.
+    let mut compressed_key_migration_schedule = CompressedKeyMigrationScheduleCache::load(&pool)
         .await
         .map_err(|e| CoprocessorError::Other(e.into()))?;
 
@@ -144,12 +147,12 @@ async fn tfhe_worker_cycle(
             tokio::select! {
                 notification = listener.try_recv() => {
                     match notification? {
-                        Some(n) if n.channel() == MIGRATION_SCHEDULE_CHANNEL => {
-                            // One-shot cutover schedule published/changed: reload once.
-                            schedule = MigrationScheduleCache::load(&pool)
+                        Some(n) if n.channel() == COMPRESSED_KEY_MIGRATION_SCHEDULE_CHANNEL => {
+                            // One-shot compressed-key migration schedule published/changed: reload once.
+                            compressed_key_migration_schedule = CompressedKeyMigrationScheduleCache::load(&pool)
                                 .await
                                 .map_err(|e| CoprocessorError::Other(e.into()))?;
-                            info!(target: "tfhe_worker", "Reloaded material-version cutover schedule");
+                            info!(target: "tfhe_worker", "Reloaded compressed-key migration schedule");
                         }
                         Some(_) => {
                             WORK_ITEMS_NOTIFICATIONS_COUNTER.inc();
@@ -158,7 +161,7 @@ async fn tfhe_worker_cycle(
                         None => {
                             // sqlx already reconnected the LISTEN connection; it may have
                             // missed a schedule NOTIFY, so refresh, then poll for work.
-                            schedule = MigrationScheduleCache::load(&pool)
+                            compressed_key_migration_schedule = CompressedKeyMigrationScheduleCache::load(&pool)
                                 .await
                                 .map_err(|e| CoprocessorError::Other(e.into()))?;
                             warn!(target: "tfhe_worker", "postgres LISTEN connection reset; reconnected");
@@ -190,7 +193,7 @@ async fn tfhe_worker_cycle(
             &mut trx,
             &mut dcid_mngr,
             &mut no_progress_cycles,
-            &schedule,
+            &compressed_key_migration_schedule,
         )
         .instrument(loop_span.clone())
         .await?;
@@ -329,7 +332,7 @@ async fn query_for_work<'a>(
     trx: &mut sqlx::Transaction<'a, Postgres>,
     deps_chain_mngr: &mut dependence_chain::LockMngr,
     no_progress_cycles: &mut u32,
-    schedule: &MigrationScheduleCache,
+    compressed_key_migration_schedule: &CompressedKeyMigrationScheduleCache,
 ) -> Result<
     (
         Vec<(MaterialVersion, Vec<ComponentNode>)>,
@@ -454,7 +457,10 @@ WHERE c.transaction_id IN (
             // resolves to the same version; an unparsable chain or NULL block falls back to LEGACY.
             let version = txwork
                 .first()
-                .map(|w| schedule.select_host_raw(w.host_chain_id, w.block_number))
+                .map(|w| {
+                    compressed_key_migration_schedule
+                        .host_compute_material_version(w.host_chain_id, w.block_number)
+                })
                 .unwrap_or(MaterialVersion::LEGACY);
             let mut ops = vec![];
             for w in txwork {

@@ -7,7 +7,7 @@ use tracing::{error, info, warn};
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::db_keys::write_large_object_in_chunks_tx;
 use fhevm_engine_common::material_version::{
-    MaterialMigrationStatus, MIGRATION_SCHEDULE_CHANNEL,
+    CompressedKeyMigrationStatus, COMPRESSED_KEY_MIGRATION_SCHEDULE_CHANNEL,
 };
 
 use crate::contracts::KMSGeneration;
@@ -131,19 +131,19 @@ pub(crate) async fn apply_key_material_migration_scheduled(
          WHERE key_id = $1",
     )
     .bind(key_id.to_vec())
-    .bind(MaterialMigrationStatus::SCHEDULED)
+    .bind(CompressedKeyMigrationStatus::SCHEDULED)
     .execute(tx.deref_mut())
     .await?;
 
     sqlx::query("SELECT pg_notify($1, '')")
-        .bind(MIGRATION_SCHEDULE_CHANNEL)
+        .bind(COMPRESSED_KEY_MIGRATION_SCHEDULE_CHANNEL)
         .execute(tx.deref_mut())
         .await?;
 
     info!(
         gateway_block,
         chains = host_chain_ids.len(),
-        "RFC-029 finalized migration schedule applied"
+        "RFC-029 finalized compressed-key migration schedule applied"
     );
     Ok(())
 }
@@ -238,7 +238,7 @@ pub(crate) async fn publish_key_material(
     .bind(&pending.block_hash)
     .bind(&pending.key_id)
     .bind(bytes)
-    .bind(MaterialMigrationStatus::MATERIAL_READY)
+    .bind(CompressedKeyMigrationStatus::MATERIAL_READY)
     .execute(tx.deref_mut())
     .await?;
     Ok(query.rows_affected())

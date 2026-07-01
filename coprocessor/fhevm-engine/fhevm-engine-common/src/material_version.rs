@@ -18,10 +18,10 @@ use anyhow::Result;
 use sqlx::{PgPool, Row};
 use std::collections::HashMap;
 
-/// Postgres `LISTEN`/`NOTIFY` channel signaling that the cutover schedule has
-/// been published. Workers load the schedule once and refresh only on this
-/// notify, so the happy path never polls.
-pub const MIGRATION_SCHEDULE_CHANNEL: &str = "migration_schedule_changed";
+/// Postgres `LISTEN`/`NOTIFY` channel signaling that the compressed-key
+/// migration schedule has been published. Workers load the schedule once and
+/// refresh only on this notify, so the happy path never polls.
+pub const COMPRESSED_KEY_MIGRATION_SCHEDULE_CHANNEL: &str = "migration_schedule_changed";
 
 /// Which key material an operation uses. `0` is the legacy material (today's
 /// behavior); `1` is the migrated `CompressedXofKeySet`. A thin `i16` newtype
@@ -36,15 +36,15 @@ impl MaterialVersion {
     pub const MIGRATED_V1: MaterialVersion = MaterialVersion(1);
 }
 
-/// `keys.material_migration_status` values.
-pub struct MaterialMigrationStatus;
+/// `keys.material_migration_status` values for the RFC-029 compressed-key migration.
+pub struct CompressedKeyMigrationStatus;
 
-impl MaterialMigrationStatus {
+impl CompressedKeyMigrationStatus {
     pub const MATERIAL_READY: i16 = 1;
     pub const SCHEDULED: i16 = 2;
 }
 
-/// The cutover rule for a single timeline: v1 once `observed` reaches the
+/// The compressed-key cutover rule for a single timeline: v1 once `observed` reaches the
 /// `cutover` block, else v0. An absent cutover (no schedule) or an unknown
 /// `observed` block (e.g. a pre-migration row) resolves to legacy.
 fn version_at(cutover: Option<i64>, observed: Option<i64>) -> MaterialVersion {
@@ -56,23 +56,27 @@ fn version_at(cutover: Option<i64>, observed: Option<i64>) -> MaterialVersion {
     }
 }
 
-/// In-memory snapshot of the published cutover schedule.
+/// In-memory snapshot of the compressed-key migration schedule.
 ///
 /// Loaded once at startup like [`crate::host_chains::HostChainsCache`] and
-/// refreshed on [`MIGRATION_SCHEDULE_CHANNEL`]. Uses runtime `sqlx::query`
-/// rather than the `query!` macro so a fresh schedule table doesn't require
-/// regenerating the offline query cache.
+/// refreshed on [`COMPRESSED_KEY_MIGRATION_SCHEDULE_CHANNEL`]. Uses runtime
+/// `sqlx::query` rather than the `query!` macro so a fresh schedule table
+/// doesn't require regenerating the offline query cache.
 #[derive(Clone, Default)]
-pub struct MigrationScheduleCache {
+pub struct CompressedKeyMigrationScheduleCache {
+    schedule: Option<CompressedKeyMigrationSchedule>,
+}
+
+#[derive(Clone)]
+struct CompressedKeyMigrationSchedule {
     /// Per host chain: the block at/after which that chain uses migrated material.
     host: HashMap<ChainId, i64>,
     /// The gateway cutover block (block at/after which inputs use migrated material), if scheduled.
     gateway: Option<i64>,
-    scheduled: bool,
 }
 
-impl MigrationScheduleCache {
-    /// An empty schedule. Every selector resolves to [`MaterialVersion::LEGACY`].
+impl CompressedKeyMigrationScheduleCache {
+    /// No compressed-key migration schedule has been applied.
     pub fn empty() -> Self {
         Self::default()
     }
@@ -96,33 +100,41 @@ impl MigrationScheduleCache {
                 .map(|row| row.try_get("target_block"))
                 .transpose()?;
 
-        Ok(Self {
-            scheduled: gateway.is_some() || !host.is_empty(),
-            host,
-            gateway,
-        })
+        let schedule = if gateway.is_some() || !host.is_empty() {
+            Some(CompressedKeyMigrationSchedule { host, gateway })
+        } else {
+            None
+        };
+
+        Ok(Self { schedule })
     }
 
-    /// Material version for an input-verification (zkpok) operation anchored at
-    /// gateway block `gw_block_number`.
-    pub fn select_gateway(&self, gw_block_number: Option<i64>) -> MaterialVersion {
-        version_at(self.gateway, gw_block_number)
+    /// Material version for an input-verification operation anchored at gateway
+    /// block `gw_block_number`.
+    pub fn gateway_input_material_version(&self, gw_block_number: Option<i64>) -> MaterialVersion {
+        self.schedule
+            .as_ref()
+            .map(|schedule| version_at(schedule.gateway, gw_block_number))
+            .unwrap_or(MaterialVersion::LEGACY)
     }
 
     /// Material version for a host-compute operation requested at `block_number`.
-    /// Once a migration schedule exists, a host chain with no row is treated as
-    /// post-migration and uses compressed material; this covers hosts added
-    /// after the migration.
-    pub fn select_host_raw(
+    /// Once the compressed-key migration schedule exists, a host chain with no
+    /// row is treated as post-migration and uses compressed material; this
+    /// covers hosts added after the migration.
+    pub fn host_compute_material_version(
         &self,
         host_chain_id: i64,
         block_number: Option<i64>,
     ) -> MaterialVersion {
+        let Some(schedule) = &self.schedule else {
+            return MaterialVersion::LEGACY;
+        };
+
         match ChainId::try_from(host_chain_id) {
-            Ok(chain_id) => match self.host.get(&chain_id).copied() {
+            Ok(chain_id) => match schedule.host.get(&chain_id).copied() {
                 Some(cutover) => version_at(Some(cutover), block_number),
-                None if self.scheduled => MaterialVersion::MIGRATED_V1,
-                None => MaterialVersion::LEGACY,
+                None => MaterialVersion::MIGRATED_V1,
             },
             Err(_) => MaterialVersion::LEGACY,
         }
@@ -167,9 +179,9 @@ mod tests {
 
     #[test]
     fn empty_cache_is_legacy() {
-        let cache = MigrationScheduleCache::empty();
-        assert_eq!(cache.select_host_raw(1, Some(10_000)), V0);
-        assert_eq!(cache.select_gateway(Some(10_000)), V0);
+        let cache = CompressedKeyMigrationScheduleCache::empty();
+        assert_eq!(cache.host_compute_material_version(1, Some(10_000)), V0);
+        assert_eq!(cache.gateway_input_material_version(Some(10_000)), V0);
     }
 
     #[test]
@@ -179,49 +191,55 @@ mod tests {
         // different block times / heights across chains cannot cross-contaminate.
         let mut host = HashMap::new();
         host.insert(chain(1), 100);
-        // chain 2 has no cutover scheduled.
-        let cache = MigrationScheduleCache {
-            host,
-            gateway: None,
-            scheduled: true,
+        // chain 2 has no compressed-key cutover scheduled.
+        let cache = CompressedKeyMigrationScheduleCache {
+            schedule: Some(CompressedKeyMigrationSchedule {
+                host,
+                gateway: None,
+            }),
         };
-        assert_eq!(cache.select_host_raw(1, Some(99)), V0);
-        assert_eq!(cache.select_host_raw(1, Some(100)), V1);
+        assert_eq!(cache.host_compute_material_version(1, Some(99)), V0);
+        assert_eq!(cache.host_compute_material_version(1, Some(100)), V1);
         // chain 2 has no row after scheduling, so it is a post-migration host.
-        assert_eq!(cache.select_host_raw(2, Some(100)), V1);
-        assert_eq!(cache.select_host_raw(999, Some(10_000)), V1);
+        assert_eq!(cache.host_compute_material_version(2, Some(100)), V1);
+        assert_eq!(cache.host_compute_material_version(999, Some(10_000)), V1);
     }
 
     #[test]
-    fn select_host_raw_resolves_per_chain_and_falls_back_to_legacy() {
+    fn host_compute_material_version_resolves_per_chain_and_falls_back_to_legacy() {
         let mut host = HashMap::new();
         host.insert(chain(1), 100);
-        let cache = MigrationScheduleCache {
-            host,
-            gateway: None,
-            scheduled: true,
+        let cache = CompressedKeyMigrationScheduleCache {
+            schedule: Some(CompressedKeyMigrationSchedule {
+                host,
+                gateway: None,
+            }),
         };
         // Valid chain id resolves against that chain's cutover block.
-        assert_eq!(cache.select_host_raw(1, Some(99)), V0);
-        assert_eq!(cache.select_host_raw(1, Some(100)), V1);
+        assert_eq!(cache.host_compute_material_version(1, Some(99)), V0);
+        assert_eq!(cache.host_compute_material_version(1, Some(100)), V1);
         // A chain not in the schedule is a post-migration host. An out-of-range
         // id still falls back to legacy because it cannot identify a host.
-        assert_eq!(cache.select_host_raw(2, Some(10_000)), V1);
-        assert_eq!(cache.select_host_raw(i64::MIN, Some(10_000)), V0);
+        assert_eq!(cache.host_compute_material_version(2, Some(10_000)), V1);
+        assert_eq!(
+            cache.host_compute_material_version(i64::MIN, Some(10_000)),
+            V0
+        );
     }
 
     #[test]
     fn cache_gateway_schedule_is_independent_of_host() {
-        let cache = MigrationScheduleCache {
-            host: HashMap::new(),
-            gateway: Some(500),
-            scheduled: true,
+        let cache = CompressedKeyMigrationScheduleCache {
+            schedule: Some(CompressedKeyMigrationSchedule {
+                host: HashMap::new(),
+                gateway: Some(500),
+            }),
         };
-        assert_eq!(cache.select_gateway(Some(499)), V0);
-        assert_eq!(cache.select_gateway(Some(500)), V1);
-        assert_eq!(cache.select_gateway(None), V0);
+        assert_eq!(cache.gateway_input_material_version(Some(499)), V0);
+        assert_eq!(cache.gateway_input_material_version(Some(500)), V1);
+        assert_eq!(cache.gateway_input_material_version(None), V0);
         // A scheduled migration with no host row means a post-migration host.
-        assert_eq!(cache.select_host_raw(1, Some(10_000)), V1);
+        assert_eq!(cache.host_compute_material_version(1, Some(10_000)), V1);
     }
 
     /// RFC-029 immutability guard. SnS and compute pin a ciphertext's `material_version` by reading

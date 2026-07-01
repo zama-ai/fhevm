@@ -5,7 +5,7 @@ use fhevm_engine_common::db_keys::DbKey;
 use fhevm_engine_common::db_keys::DbKeyCache;
 use fhevm_engine_common::host_chains::HostChainsCache;
 use fhevm_engine_common::material_version::{
-    MaterialVersion, MigrationScheduleCache, MIGRATION_SCHEDULE_CHANNEL,
+    CompressedKeyMigrationScheduleCache, MaterialVersion, COMPRESSED_KEY_MIGRATION_SCHEDULE_CHANNEL,
 };
 use fhevm_engine_common::pg_pool::{PostgresPoolManager, ServiceError};
 use fhevm_engine_common::telemetry;
@@ -214,7 +214,9 @@ async fn execute_worker(
 
     let mut listener = PgListener::connect_with(&pool).await?;
     listener.listen(&conf.listen_database_channel).await?;
-    listener.listen(MIGRATION_SCHEDULE_CHANNEL).await?;
+    listener
+        .listen(COMPRESSED_KEY_MIGRATION_SCHEDULE_CHANNEL)
+        .await?;
 
     let mut idle_event = interval(Duration::from_secs(conf.pg_polling_interval as u64));
 
@@ -225,11 +227,11 @@ async fn execute_worker(
             .map_err(|_| ExecutionError::DbError(sqlx::Error::RowNotFound))?,
     );
 
-    // RFC-029: the cutover schedule (loaded once, refreshed only on the publish
-    // NOTIFY or a reconnect -- no happy-path polling) and the lazily-fetched v1
-    // key, reused for the worker's life (one cutover, immutable). v0 selection
-    // keeps using `latest_key` exactly as today.
-    let mut schedule = MigrationScheduleCache::load(&pool)
+    // RFC-029: the compressed-key migration schedule (loaded once, refreshed
+    // only on the publish NOTIFY or a reconnect -- no happy-path polling) and
+    // the lazily-fetched v1 key, reused for the worker's life (one cutover,
+    // immutable). v0 selection keeps using `latest_key` exactly as today.
+    let mut compressed_key_migration_schedule = CompressedKeyMigrationScheduleCache::load(&pool)
         .await
         .map_err(|e| ExecutionError::Other(e.into()))?;
     let mut migrated_key: Option<Arc<DbKey>> = None;
@@ -261,7 +263,7 @@ async fn execute_worker(
             latest_key.clone(),
             &db_key_cache,
             &mut migrated_key,
-            &schedule,
+            &compressed_key_migration_schedule,
             latest_crs.clone(),
             host_chain_cache.as_ref(),
             &known_chain_ids,
@@ -278,17 +280,17 @@ async fn execute_worker(
             res = listener.try_recv() => {
                 let res = res?;
                 match res {
-                    Some(n) if n.channel() == MIGRATION_SCHEDULE_CHANNEL => {
-                        // One-shot cutover schedule published/changed: reload once.
-                        schedule = MigrationScheduleCache::load(&pool)
+                    Some(n) if n.channel() == COMPRESSED_KEY_MIGRATION_SCHEDULE_CHANNEL => {
+                        // One-shot compressed-key migration schedule published/changed: reload once.
+                        compressed_key_migration_schedule = CompressedKeyMigrationScheduleCache::load(&pool)
                             .await
                             .map_err(|e| ExecutionError::Other(e.into()))?;
-                        info!("Reloaded material-version cutover schedule");
+                        info!("Reloaded compressed-key migration schedule");
                     }
                     Some(notification) => info!( src = %notification.process_id(), "Received notification"),
                     None => {
                         // Reconnect may have missed a schedule NOTIFY; refresh, then keep going.
-                        schedule = MigrationScheduleCache::load(&pool)
+                        compressed_key_migration_schedule = CompressedKeyMigrationScheduleCache::load(&pool)
                             .await
                             .map_err(|e| ExecutionError::Other(e.into()))?;
                         warn!("postgres LISTEN connection reset; reconnected");
@@ -314,7 +316,7 @@ async fn execute_verify_proof_routine(
     db_key: Arc<DbKey>,
     db_key_cache: &DbKeyCache,
     migrated_key: &mut Option<Arc<DbKey>>,
-    schedule: &MigrationScheduleCache,
+    compressed_key_migration_schedule: &CompressedKeyMigrationScheduleCache,
     crs: Arc<Crs>,
     host_chain_cache: &HostChainsCache,
     known_chain_ids: &[i64],
@@ -386,7 +388,8 @@ async fn execute_verify_proof_routine(
         // no key copy); v1 uses the migrated key, fetched once and reused. If
         // v1 isn't published yet, defer this proof (txn rolls back, retried) --
         // never fall back to v0.
-        let material_version = schedule.select_gateway(row.gw_block_number);
+        let material_version =
+            compressed_key_migration_schedule.gateway_input_material_version(row.gw_block_number);
         let key = if material_version == MaterialVersion::LEGACY {
             db_key.clone()
         } else {
