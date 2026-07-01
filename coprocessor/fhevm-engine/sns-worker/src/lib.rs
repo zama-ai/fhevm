@@ -731,6 +731,7 @@ pub async fn run_all(
             Err(join_err) => Err(join_err.into()),
         },
     };
+    token.cancel();
 
     if let Err(err) = result {
         error!(error = %err, "SNS worker exited with a fatal error");
