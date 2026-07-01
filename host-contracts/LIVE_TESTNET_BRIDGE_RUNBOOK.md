@@ -635,7 +635,7 @@ cross-chain delivery status of each transfer. It fires one
 - `payloadLens  = [0, 1, 64, 256, 1024, 8192]`
 
 i.e. **36 bridging transactions** from the chosen source chain, then waits (max
-**10 minutes**, otherwise it throws a timeout error) while polling the destination
+**15 minutes**, otherwise it throws a timeout error) while polling the destination
 chain for the outcome of every transfer.
 
 The script keys everything off the LayerZero **guid**, derived on the source side
@@ -663,7 +663,7 @@ successful `lzReceive` is necessarily followed by a compose outcome
 > therefore treats **only `ComposeDelivered` as terminal SUCCESS**, just counts the
 > alerts (shown in the `alerts` column as `Nr/Mc` = lzReceive/lzCompose retries), and
 > falls back to the last alerting leg (`RECEIVE_FAILED` / `COMPOSE_FAILED`) **only** for
-> guids that never reach `SUCCESS` before the 10-minute deadline (those are genuine
+> guids that never reach `SUCCESS` before the 15-minute deadline (those are genuine
 > persistent failures, e.g. an `lzCompose` out-of-gas, which keeps re-alerting and never
 > delivers).
 
@@ -687,7 +687,7 @@ SEPOLIA_RPC_URL="$SEPOLIA_RPC_URL" POLYGON_AMOY_RPC_URL="$POLYGON_AMOY_RPC_URL" 
   pnpm stress:handlesList polygonAmoy
 ```
 
-When all 36 transfers reach `SUCCESS` (or the 10-minute deadline is hit), it prints a
+When all 36 transfers reach `SUCCESS` (or the 15-minute deadline is hit), it prints a
 table summarizing each transfer (row number `Tx#`, `count`, `payloadLen`, `composeGas`,
 `fee_wei`, `alerts`, short `guid`, `status`) plus a per-status tally, e.g.:
 
@@ -710,7 +710,7 @@ the row still ended `SUCCESS`. Only act on a row that ends `COMPOSE_FAILED` / `R
 (kept re-alerting until the deadline and never reached `SUCCESS`): inspect the failing leg's
 revert reason and, if it's an out-of-gas error, raise the gas
 budget for the failing leg, then re-run. A `TIMEOUT` row never produced any terminal event
-within 10 minutes (probably because the DVN or Executor service is unavailable).
+within 15 minutes (probably because the DVN or Executor service is unavailable).
 Finally, a row may also never leave the source chain: `SEND_FAILED`
 means the send tx reverted or never confirmed (e.g. insufficient native balance for the
 fee), and `NO_PACKET_SENT` means it was mined but no `PacketSent` log was found — this should never happen.

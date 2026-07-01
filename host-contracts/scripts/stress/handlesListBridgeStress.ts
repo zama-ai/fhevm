@@ -12,7 +12,7 @@
  *      derived from the EndpointV2 `PacketSent(encodedPayload, ...)` event (the guid
  *      is embedded in `encodedPayload` at byte offset 81).
  *
- *   2. Then waits (max 10 minutes, otherwise it throws a timeout error) while polling
+ *   2. Then waits (max 15 minutes, otherwise it throws a timeout error) while polling
  *      the *destination* chain's EndpointV2 for the outcome of each guid:
  *         - ComposeDelivered(guid) -> both lzReceive and lzCompose succeeded  (SUCCESS, terminal)
  *         - LzReceiveAlert(guid)   -> an lzReceive attempt failed             (transient)
@@ -84,7 +84,7 @@ const COMPOSE_GAS_PER_HANDLE = 100_000n;
 const COMPOSE_GAS_PER_PAYLOAD_BYTE = 50n;
 
 // Wait / polling knobs.
-const MAX_WAIT_MS = 10 * 60 * 1000; // 10 minutes
+const MAX_WAIT_MS = 15 * 60 * 1000; // 15 minutes
 const POLL_INTERVAL_MS = 15_000;
 const MAX_BLOCK_RANGE = 9_000; // keep eth_getLogs windows under common 10k RPC caps
 
