@@ -63,7 +63,7 @@ echo "==> [2/5] fresh validator + program deploy (reconstruct=$RECONSTRUCT)"
 # program IDs match each `declare_id!` (see scripts/poc/test-keypairs/README.md). `-n` keeps any
 # pre-existing local keypair; on a fresh checkout it seeds the committed test keys.
 mkdir -p "$SOLANA/target/deploy"
-for p in zama_host confidential_token confidential_token_receiver; do
+for p in zama_host confidential_token; do
   cp -n "$SOLANA/scripts/poc/test-keypairs/$p-keypair.json" "$SOLANA/target/deploy/$p-keypair.json" 2>/dev/null || true
 done
 # Ensure the deployer wallet exists. Created only if absent so a developer's existing wallet is
@@ -111,11 +111,10 @@ if [ "$RECONSTRUCT" = 1 ]; then
   echo "    building EMITLESS zama_host (--no-default-features) + default-feature deps"
   ( cd "$SOLANA" \
       && anchor build --ignore-keys --no-idl -p zama_host -- --no-default-features \
-      && anchor build --ignore-keys --no-idl -p confidential_token \
-      && anchor build --ignore-keys --no-idl -p confidential_token_receiver ) \
+      && anchor build --ignore-keys --no-idl -p confidential_token ) \
     || { echo "[setup] emitless anchor build failed" >&2; exit 1; }
   # --use-rpc: deploy over RPC (8899) since the container doesn't publish the TPU ports.
-  for p in zama_host confidential_token confidential_token_receiver; do
+  for p in zama_host confidential_token; do
     solana program deploy -u "$VALIDATOR_RPC" -k "$DEPLOYER_KEYPAIR" --use-rpc \
       --program-id "$SOLANA/target/deploy/$p-keypair.json" "$SOLANA/target/deploy/$p.so" >/dev/null
   done
@@ -139,7 +138,7 @@ else
   if [ "${SKIP_BUILD:-0}" != "1" ] || [ ! -f "$SOLANA/target/deploy/zama_host.so" ]; then
     ( cd "$SOLANA" && cargo build-sbf --tools-version v1.52 )
   fi
-  for p in zama_host confidential_token confidential_token_receiver; do
+  for p in zama_host confidential_token; do
     solana program deploy -u "$VALIDATOR_RPC" -k "$DEPLOYER_KEYPAIR" \
       --program-id "$SOLANA/target/deploy/$p-keypair.json" "$SOLANA/target/deploy/$p.so" >/dev/null
   done
