@@ -69,6 +69,16 @@ impl PostgresPoolManager {
                 .after_connect(move |conn, _meta| {
                     info!(auto_explain = ?auto_explain_with_min_duration, "New DB connection established");
                     Box::pin(async move {
+                        // Bound every statement on this pooled connection at 10s
+                        // so a pathological query cannot run (or hold row locks)
+                        // unbounded. Non-fatal: a failed SET just leaves the
+                        // connection without the bound.
+                        if let Err(err) = (&mut *conn)
+                            .execute("SET statement_timeout = '10s'")
+                            .await
+                        {
+                            error!(error=%err, "Failed to set statement_timeout on new DB connection");
+                        }
                         if let Some(min_duration) = auto_explain_with_min_duration {
                             if let Err(err) = enable_auto_explain(conn, min_duration).await {
                                 error!(error=%err, "Failed to enable auto_explain");

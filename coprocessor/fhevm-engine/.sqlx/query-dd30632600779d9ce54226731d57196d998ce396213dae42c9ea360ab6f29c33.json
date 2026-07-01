@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT dst_event.id, dst_event.src_handle, dst_event.dst_handle, dst_event.dst_chain_id\n        FROM handle_bridged_events dst_event\n        WHERE NOT dst_event.is_associated\n          AND NOT EXISTS (\n                SELECT 1 FROM ciphertexts dst_ct\n                WHERE dst_ct.handle = dst_event.dst_handle)\n          AND (\n                dst_event.block_hash = ''::bytea\n                OR EXISTS (\n                    SELECT 1 FROM host_chain_blocks_valid dst_block\n                    WHERE dst_block.chain_id = dst_event.dst_chain_id\n                      AND dst_block.block_hash = dst_event.block_hash\n                      AND dst_block.block_status = 'finalized'\n                )\n          )\n          AND EXISTS (\n                SELECT 1 FROM bridge_handle_events src_event\n                WHERE src_event.src_handle = dst_event.src_handle\n                  AND src_event.dst_chain_id = dst_event.dst_chain_id\n                  AND (\n                        src_event.block_hash = ''::bytea\n                        OR EXISTS (\n                            SELECT 1 FROM host_chain_blocks_valid src_block\n                            WHERE src_block.chain_id = src_event.src_chain_id\n                              AND src_block.block_hash = src_event.block_hash\n                              AND src_block.block_status = 'finalized'\n                        )\n                  ))\n          AND EXISTS (\n                SELECT 1 FROM ciphertexts src_ct\n                WHERE src_ct.handle = dst_event.src_handle)\n          AND EXISTS (\n                SELECT 1 FROM ciphertext_digest src_digest\n                WHERE src_digest.handle = dst_event.src_handle\n                  AND src_digest.ciphertext IS NOT NULL\n                  AND src_digest.ciphertext128 IS NOT NULL)\n        ORDER BY dst_event.id\n        FOR UPDATE OF dst_event SKIP LOCKED\n        LIMIT $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "src_handle",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 2,
+        "name": "dst_handle",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 3,
+        "name": "dst_chain_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "dd30632600779d9ce54226731d57196d998ce396213dae42c9ea360ab6f29c33"
+}
