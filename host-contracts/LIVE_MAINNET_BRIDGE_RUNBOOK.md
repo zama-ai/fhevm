@@ -17,8 +17,7 @@ Target chains used as the running example:
 | Polygon Mainnet  | `137`       | `30109`   |
 
 The procedure generalizes to any chain pair that has a canonical LayerZero V2
-endpoint. **WARNING: contrary to testnets, the LZ V2 endpoint address is NOT the
-same on every mainnet** — it just happens to be identical on Ethereum and Polygon
+endpoint. It just happens that the EndpointV2 contract address is identical on Ethereum and Polygon
 mainnet (`0x1a44076050125825900e736c501f859c50fE728c`). Always look up the
 EndpointV2 address for each target chain in the
 [LayerZero deployments table](https://docs.layerzero.network/v2/deployments/deployed-contracts)
@@ -28,11 +27,6 @@ before deploying.
 > mock coprocessor needed to make FHE operations observable in plaintext. The
 > production coprocessor (signers, KMS endpoints, …) is out of scope — see
 > the protocol RFCs for that.
-
-> **⚠️ Mainnet warning — real funds.** Every transaction below spends real ETH
-> and POL and deploys production contracts. Double-check addresses, EIDs and the
-> LayerZero endpoint before each broadcast. There is no faucet to recover from a
-> mistake.
 
 > **`BRIDGE_ENV=mainnet`.** The mock coprocessor daemon
 > (`scripts/mock-coprocessor/config.ts`) and the bridge stress test
@@ -64,12 +58,6 @@ Keep all the default values inside this newly created `.env` file, with the exce
 LZ_ENDPOINT_ADDRESS="0x1a44076050125825900e736c501f859c50fE728c"
 ```
 
-> **Why `LZ_ENDPOINT_ADDRESS` matters.** `task:deployAllHostContracts` only
-> upgrades the `ConfidentialBridge` past its empty-proxy stage when there is real
-> contract code at `LZ_ENDPOINT_ADDRESS` on the target chain. If you leave the
-> default testnet endpoint, the bridge will silently stay an empty proxy on
-> mainnet and Step 3 will have nothing to wire.
-
 ### RPC URLs
 
 Export the two mainnet RPC URLs once. Use **paid/dedicated** endpoints — the mock
@@ -80,10 +68,6 @@ that exceed free public rate limits:
 export ETHEREUM_MAINNET_RPC_URL=<YOUR_ETHEREUM_MAINNET_RPC_URL>
 export POLYGON_MAINNET_RPC_URL=<YOUR_POLYGON_MAINNET_RPC_URL>
 ```
-
-These same two variables feed the host hardhat tasks (via `RPC_URL`), the
-`ethereum-mainnet` / `polygon-mainnet` networks in `lz-wiring/hardhat.config.ts`
-(Step 3), the mock coprocessor daemon (Step 4) and the stress test (Step 7.6).
 
 ---
 
@@ -112,8 +96,7 @@ The `cp` is **critical** — the next chain's deploy overwrites `addresses/`.
 
 ## Step 2 — Deploy host stack on Polygon Mainnet
 
-Deploy all host contracts on Polygon mainnet with (the `polygon` network is
-defined in `hardhat.config.ts` with chainId `137`):
+Deploy all host contracts on Polygon mainnet with:
 
 ```bash
 RPC_URL="$POLYGON_MAINNET_RPC_URL" npx hardhat --network polygon task:deployAllHostContracts --with-kms-generation false
@@ -177,7 +160,7 @@ npx ts-node scripts/copyAbiToDeployments.ts
 
 ### 3.2 — Wiring the bridges
 
-While still in the `lz-wiring` directory, and after checking the config inside `layerzero.config.mainnet.ts`[./layerzero.config.mainnet.ts] is correct - it is crucial to double check the values for required DVNs and number of confirmations for security (the shipped config requires the `LayerZero Labs` DVN plus 2 of `[Nethermind, Luganodes, P2P]`, with `[15, 120]` confirmations), run:
+While still in the `lz-wiring` directory, and after checking the config inside `layerzero.config.mainnet.ts`[./layerzero.config.mainnet.ts] is correct - it is crucial to double check the values for required DVNs and number of confirmations for security, run:
 
 ```bash
 npx hardhat lz:oapp:wire --oapp-config layerzero.config.mainnet.ts
@@ -424,6 +407,7 @@ PROFILE_RECEIVER="$ETHEREUM_BRIDGE_ADDRESS" \
 PROFILE_SENDER="$POLYGON_BRIDGE_ADDRESS" \
 PROFILE_SRC_EID=30109 \
 PROFILE_DST_EID=30101 \
+PROFILE_ENDPOINT=0x1a44076050125825900e736c501f859c50fE728c \
 forge script scripts/HandlesReceiverProfiler.s.sol:HandlesReceiverProfilerExample -vv
 ```
 
@@ -435,6 +419,7 @@ PROFILE_RECEIVER="$POLYGON_BRIDGE_ADDRESS" \
 PROFILE_SENDER="$ETHEREUM_BRIDGE_ADDRESS" \
 PROFILE_SRC_EID=30101 \
 PROFILE_DST_EID=30109 \
+PROFILE_ENDPOINT=0x1a44076050125825900e736c501f859c50fE728c \
 forge script scripts/HandlesReceiverProfiler.s.sol:HandlesReceiverProfilerExample -vv
 ```
 
@@ -447,23 +432,25 @@ Pass the wiring exactly as for the profiler (the fork must be the **destination*
 ```bash
 # Polygon verifier command
 PROFILE_RPC_URL="$POLYGON_MAINNET_RPC_URL" \
+PROFILE_ENDPOINT=0x1a44076050125825900e736c501f859c50fE728c \
 PROFILE_RECEIVER="$POLYGON_BRIDGE_ADDRESS" \
 PROFILE_SENDER="$ETHEREUM_BRIDGE_ADDRESS" \
 PROFILE_SRC_EID=30101 PROFILE_DST_EID=30109 \
 VERIFY_BASE_GAS=<RECOMMENDED_LZ_RECEIVE_BASE_GAS> \
 VERIFY_PER_HANDLE_GAS=<RECOMMENDED_LZ_RECEIVE_PER_HANDLE_GAS> \
 VERIFY_PER_PAYLOAD_BYTE_GAS=<RECOMMENDED_LZ_RECEIVE_PER_PAYLOAD_BYTE_GAS> \
-scripts/verify_lzreceive_budget.sh
+bash scripts/verify_lzreceive_budget.sh
 
 # Ethereum verifier command
 PROFILE_RPC_URL="$ETHEREUM_MAINNET_RPC_URL" \
+PROFILE_ENDPOINT=0x1a44076050125825900e736c501f859c50fE728c \
 PROFILE_RECEIVER="$ETHEREUM_BRIDGE_ADDRESS" \
 PROFILE_SENDER="$POLYGON_BRIDGE_ADDRESS" \
 PROFILE_SRC_EID=30109 PROFILE_DST_EID=30101 \
 VERIFY_BASE_GAS=<RECOMMENDED_LZ_RECEIVE_BASE_GAS> \
 VERIFY_PER_HANDLE_GAS=<RECOMMENDED_LZ_RECEIVE_PER_HANDLE_GAS> \
 VERIFY_PER_PAYLOAD_BYTE_GAS=<RECOMMENDED_LZ_RECEIVE_PER_PAYLOAD_BYTE_GAS> \
-scripts/verify_lzreceive_budget.sh
+bash scripts/verify_lzreceive_budget.sh
 ```
 
 A clean run ends with `PASS: every cell ... is within budget`. If any cell exceeds the budget, the offending `(nHandles, payloadLen)` is printed and the script exits non-zero.

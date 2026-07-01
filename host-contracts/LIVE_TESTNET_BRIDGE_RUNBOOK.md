@@ -18,7 +18,7 @@ Target chains used as the running example:
 
 The procedure generalizes to any chain pair that has a canonical LayerZero V2
 endpoint. The LZ V2 endpoint address is the same on every chain -
-**WARNING: this is only true for testnets not for mainnets where the endpoint address changes depending on the chain**:
+**WARNING: this is only true for testnets not for mainnets where the endpoint address changes**:
 `0x6EDCE65403992e310A62460808c4b910D972f10f`.
 
 > **Scope.** This runbook covers the host-contract side of the stack plus the
