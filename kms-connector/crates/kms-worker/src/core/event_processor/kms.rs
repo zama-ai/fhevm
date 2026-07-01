@@ -6,6 +6,7 @@ use alloy::primitives::U256;
 use connector_utils::types::{KmsGrpcRequest, extra_data::parse_extra_data, u256_to_request_id};
 use fhevm_host_bindings::kms_generation::KMSGeneration::{
     CrsgenRequest, KeygenRequest, MigrationKeygenRequest, PrepKeygenRequest,
+    PrepMigrationKeygenRequest,
 };
 use kms_grpc::kms::v1::{
     CompressedKeyConfig, ComputeKeyType, CrsGenRequest, Eip712DomainMsg, KeyGenPreprocRequest,
@@ -62,6 +63,28 @@ where
             context_id: parsed_extra_data.context_id.map(u256_to_request_id),
             extra_data: prep_keygen_request.extraData.to_vec(),
             // Used to generate other types of key, but not planned to be supported by the Gateway
+            keyset_config: Some(UNCOMPRESSED_KEY_SET_CONFIG),
+        }))
+    }
+
+    pub async fn prepare_prep_migration_keygen_request(
+        &self,
+        request: &PrepMigrationKeygenRequest,
+    ) -> Result<KmsGrpcRequest, ProcessingError> {
+        let parsed_extra_data =
+            parse_extra_data(&request.extraData).map_err(ProcessingError::Irrecoverable)?;
+        self.context_manager
+            .validate_context(&parsed_extra_data)
+            .await
+            .map_err(RequestCheckError::record)?;
+
+        Ok(KmsGrpcRequest::PrepKeygen(KeyGenPreprocRequest {
+            request_id: Some(u256_to_request_id(request.prepKeygenId)),
+            domain: Some(self.domain.clone()),
+            params: request.paramsType as i32,
+            epoch_id: parsed_extra_data.epoch_id.map(u256_to_request_id),
+            context_id: parsed_extra_data.context_id.map(u256_to_request_id),
+            extra_data: request.extraData.to_vec(),
             keyset_config: Some(UNCOMPRESSED_KEY_SET_CONFIG),
         }))
     }

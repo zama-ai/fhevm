@@ -190,6 +190,11 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                     .prepare_prep_keygen_request(req)
                     .await
             }
+            ProtocolEventKind::PrepMigrationKeygen(req) => {
+                self.kms_generation_processor
+                    .prepare_prep_migration_keygen_request(req)
+                    .await
+            }
             ProtocolEventKind::Keygen(req) => {
                 self.kms_generation_processor
                     .prepare_keygen_request(req)
@@ -246,6 +251,15 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
 
         let processed_response =
             KmsResponseKind::process(grpc_response).map_err(ProcessingError::Irrecoverable)?;
+        let processed_response = match (&event.kind, processed_response) {
+            (ProtocolEventKind::PrepMigrationKeygen(_), KmsResponseKind::PrepKeygen(response)) => {
+                KmsResponseKind::PrepMigrationKeygen(response)
+            }
+            (ProtocolEventKind::MigrationKeygen(_), KmsResponseKind::Keygen(response)) => {
+                KmsResponseKind::MigrationKeygen(response)
+            }
+            (_, response) => response,
+        };
         Ok(Some(processed_response))
     }
 }

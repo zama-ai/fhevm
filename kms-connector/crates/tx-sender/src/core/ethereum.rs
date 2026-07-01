@@ -82,7 +82,13 @@ where
         info!("Sending response to Ethereum: {response:?}");
         let tx_result = match response {
             KmsResponseKind::PrepKeygen(response) => self.send_prep_keygen_response(response).await,
+            KmsResponseKind::PrepMigrationKeygen(response) => {
+                self.send_prep_migration_keygen_response(response).await
+            }
             KmsResponseKind::Keygen(response) => self.send_keygen_response(response).await,
+            KmsResponseKind::MigrationKeygen(response) => {
+                self.send_migration_keygen_response(response).await
+            }
             KmsResponseKind::Crsgen(response) => self.send_crsgen_response(response).await,
             KmsResponseKind::NewKmsContext(response) => {
                 self.send_new_kms_context_response(response).await
@@ -120,6 +126,19 @@ where
         self.send_tx_with_retry(call).await
     }
 
+    pub async fn send_prep_migration_keygen_response(
+        &self,
+        response: PrepKeygenResponse,
+    ) -> Result<TransactionReceipt, Error> {
+        let call_builder = self
+            .kms_generation_contract
+            .prepMigrationKeygenResponse(response.prep_keygen_id, response.signature.into());
+        debug!("Calldata length {}", call_builder.calldata().len());
+
+        let call = call_builder.into_transaction_request();
+        self.send_tx_with_retry(call).await
+    }
+
     pub async fn send_keygen_response(
         &self,
         response: KeygenResponse,
@@ -129,6 +148,21 @@ where
             response.key_digests.into_iter().map(|k| k.into()).collect(),
             response.signature.into(),
         );
+
+        let call = call_builder.into_transaction_request();
+        self.send_tx_with_retry(call).await
+    }
+
+    pub async fn send_migration_keygen_response(
+        &self,
+        response: KeygenResponse,
+    ) -> Result<TransactionReceipt, Error> {
+        let call_builder = self.kms_generation_contract.migrationKeygenResponse(
+            response.key_id,
+            response.key_digests.into_iter().map(|k| k.into()).collect(),
+            response.signature.into(),
+        );
+        debug!("Calldata length {}", call_builder.calldata().len());
 
         let call = call_builder.into_transaction_request();
         self.send_tx_with_retry(call).await

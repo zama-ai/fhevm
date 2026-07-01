@@ -555,6 +555,10 @@ pub async fn check_no_uncompleted_request_in_db(
             "SELECT COUNT(prep_keygen_id) FROM prep_keygen_requests
             WHERE status NOT IN ('completed', 'failed')"
         }
+        EventType::PrepMigrationKeygenRequest => {
+            "SELECT COUNT(prep_keygen_id) FROM prep_migration_keygen_requests
+            WHERE status NOT IN ('completed', 'failed')"
+        }
         EventType::KeygenRequest => {
             "SELECT COUNT(key_id) FROM keygen_requests WHERE status NOT IN ('completed', 'failed')"
         }
@@ -596,6 +600,9 @@ pub async fn check_request_failed_in_db(
         }
         EventType::PrepKeygenRequest => {
             "SELECT COUNT(prep_keygen_id) FROM prep_keygen_requests WHERE status = 'failed'"
+        }
+        EventType::PrepMigrationKeygenRequest => {
+            "SELECT COUNT(prep_keygen_id) FROM prep_migration_keygen_requests WHERE status = 'failed'"
         }
         EventType::KeygenRequest => {
             "SELECT COUNT(key_id) FROM keygen_requests WHERE status = 'failed'"

@@ -17,6 +17,7 @@ use fhevm_gateway_bindings::decryption::Decryption::{
 use fhevm_host_bindings::{
     kms_generation::KMSGeneration::{
         CrsgenRequest, KeygenRequest, MigrationKeygenRequest, PrepKeygenRequest,
+        PrepMigrationKeygenRequest,
     },
     protocol_config::ProtocolConfig::{NewKmsContext, NewKmsEpoch},
 };
@@ -84,6 +85,18 @@ async fn publish_event_inner<'e>(
             let params_type: ParamsTypeDb = e.paramsType.try_into()?;
             publish_prep_keygen_request(executor, e, params_type, tx_hash, created_at, otlp_ctx)
                 .await
+        }
+        ProtocolEventKind::PrepMigrationKeygen(e) => {
+            let params_type: ParamsTypeDb = e.paramsType.try_into()?;
+            publish_prep_migration_keygen_request(
+                executor,
+                e,
+                params_type,
+                tx_hash,
+                created_at,
+                otlp_ctx,
+            )
+            .await
         }
         ProtocolEventKind::Keygen(e) => {
             publish_keygen_request(executor, e, tx_hash, created_at, otlp_ctx).await
@@ -276,6 +289,33 @@ async fn publish_prep_keygen_request<'e>(
     .map_err(anyhow::Error::from)
 }
 
+async fn publish_prep_migration_keygen_request<'e>(
+    executor: impl PgExecutor<'e>,
+    request: PrepMigrationKeygenRequest,
+    params_type: ParamsTypeDb,
+    tx_hash: Option<FixedBytes<32>>,
+    created_at: DateTime<Utc>,
+    otlp_ctx: PropagationContext,
+) -> anyhow::Result<PgQueryResult> {
+    sqlx::query(
+        "INSERT INTO prep_migration_keygen_requests(
+            prep_keygen_id, key_id, existing_key_id, params_type, extra_data, tx_hash, created_at, otlp_context
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT DO NOTHING",
+    )
+    .bind(request.prepKeygenId.as_le_slice().to_vec())
+    .bind(request.keyId.as_le_slice().to_vec())
+    .bind(request.existingKeyId.as_le_slice().to_vec())
+    .bind(params_type)
+    .bind(request.extraData.to_vec())
+    .bind(tx_hash.map(|h| h.to_vec()))
+    .bind(created_at)
+    .bind(bc2wrap::serialize(&otlp_ctx)?)
+    .execute(executor)
+    .await
+    .map_err(anyhow::Error::from)
+}
+
 async fn publish_keygen_request<'e>(
     executor: impl PgExecutor<'e>,
     request: KeygenRequest,
@@ -298,12 +338,7 @@ async fn publish_keygen_request<'e>(
     .map_err(anyhow::Error::from)
 }
 
-/// RFC-029: persists a `MigrationKeygenRequest` (keygen-from-existing) into its own first-class
-/// table. The worker picks it as a typed `MigrationKeygen` event and builds a UseExisting keygen —
-/// the migration data rides the row itself, so there is no side table to join and no path where a
-/// migration silently runs as a normal keygen.
-///
-/// Runtime `sqlx::query` (not the `query!` macro) is used so no offline `.sqlx` cache is needed.
+/// RFC-029: stores the keygen-from-existing request with the source key id needed by the worker.
 async fn publish_migration_keygen_request<'e>(
     executor: impl PgExecutor<'e>,
     request: MigrationKeygenRequest,

@@ -174,11 +174,7 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         // ----------------------------------------------------------------------------------------------
         // RFC-029 material-migration state (append-only):
         // ----------------------------------------------------------------------------------------------
-        /// @notice Migration keygens (keygen-from-existing), keyed by the freshly generated keyId.
-        /// Presence (non-zero value) IS the "is a migration" flag: prepKeygenResponse emits the
-        /// typed MigrationKeygenRequest in place of KeygenRequest, and keygenResponse
-        /// publishes-not-activates (the throwaway key is never activated). The migrated material is
-        /// published under the existing key by governance (addKeyMaterials).
+        /// @notice Migration keygens (keygen-from-existing), keyed by the migration keyId.
         mapping(uint256 keyId => uint256 existingKeyId) migrationKeygens;
         /// @notice For an existing key, the migration keygen its published migrated material came from
         /// (0 = none published). Presence marks that v1 material exists under the key.
@@ -261,32 +257,26 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
      * @notice See {IKMSGeneration-keygen}.
      */
     function keygen(ParamsType paramsType) external virtual onlyACLOwner {
-        _keygen(paramsType);
+        (uint256 prepKeygenId, , bytes memory extraData) = _allocateKeygen(paramsType);
+        emit PrepKeygenRequest(prepKeygenId, paramsType, extraData);
     }
 
     /**
      * @notice See {IKMSGeneration-migrationKeygen}.
-     * @dev RFC-029: a keygen-from-existing that re-derives `existingKeyId`'s material in the migrated
-     * (CompressedXofKeySet) format. On-chain it is an ordinary keygen (normal v2 extraData, signed by
-     * the KMS as usual); recording it in `migrationKeygens` flags it so prepKeygenResponse emits the
-     * typed MigrationKeygenRequest (in place of KeygenRequest) and keygenResponse
-     * publishes-not-activates. The connector branches on that event to drive the keygen-from-existing
-     * (UseExisting + copy-to-original) on the KMS.
      */
     function migrationKeygen(ParamsType paramsType, uint256 existingKeyId) external virtual onlyACLOwner {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
-        // The key being migrated must already exist (reached consensus).
-        if (!$.isRequestDone[existingKeyId]) {
+        if (!$.isRequestDone[existingKeyId] || $.consensusDigest[existingKeyId] == bytes32(0)) {
             revert KeygenNotRequested(existingKeyId);
         }
-        (, uint256 keyId) = _keygen(paramsType);
+        (uint256 prepKeygenId, uint256 keyId, bytes memory extraData) = _allocateKeygen(paramsType);
         $.migrationKeygens[keyId] = existingKeyId;
+        emit PrepMigrationKeygenRequest(prepKeygenId, keyId, existingKeyId, paramsType, extraData);
     }
 
-    /// @dev Shared keygen-request body: allocates prepKeygenId/keyId, pins the v2 (context+epoch)
-    /// extraData, and emits PrepKeygenRequest. Returns the ids so callers can annotate the request
-    /// (e.g. migrationKeygen flagging it as a migration).
-    function _keygen(ParamsType paramsType) internal virtual returns (uint256 prepKeygenId, uint256 keyId) {
+    function _allocateKeygen(
+        ParamsType paramsType
+    ) internal virtual returns (uint256 prepKeygenId, uint256 keyId, bytes memory extraData) {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
 
         // Check that the previous keygen request has reached consensus
@@ -322,68 +312,81 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         $.requestParamsType[prepKeygenId] = paramsType;
 
         (uint256 contextId, uint256 epochId) = PROTOCOL_CONFIG.getCurrentKmsContextAndEpoch();
-        bytes memory extraData = _encodeRequestExtraDataV2(contextId, epochId);
+        extraData = _encodeRequestExtraDataV2(contextId, epochId);
         $.requestExtraData[prepKeygenId] = extraData;
         $.requestExtraData[keyId] = extraData;
-
-        emit PrepKeygenRequest(prepKeygenId, paramsType, extraData);
     }
 
     /**
      * @notice See {IKMSGeneration-prepKeygenResponse}.
      */
     function prepKeygenResponse(uint256 prepKeygenId, bytes calldata signature) external virtual {
+        uint256 keyId = _keygenIdForPrep(prepKeygenId);
+        if (_isMigrationKeygen(keyId)) {
+            revert WrongKeygenResponseType(keyId);
+        }
+        (bool reachedConsensus, bytes memory extraData) = _recordPrepKeygenResponse(prepKeygenId, signature, false);
+        if (reachedConsensus) {
+            emit KeygenRequest(prepKeygenId, keyId, extraData);
+        }
+    }
+
+    /**
+     * @notice See {IKMSGeneration-prepMigrationKeygenResponse}.
+     */
+    function prepMigrationKeygenResponse(uint256 prepKeygenId, bytes calldata signature) external virtual {
+        KMSGenerationStorage storage $ = _getKMSGenerationStorage();
+        uint256 keyId = _keygenIdForPrep(prepKeygenId);
+        uint256 existingKeyId = $.migrationKeygens[keyId];
+        if (existingKeyId == 0) {
+            revert WrongKeygenResponseType(keyId);
+        }
+        (bool reachedConsensus, bytes memory extraData) = _recordPrepKeygenResponse(prepKeygenId, signature, true);
+        if (reachedConsensus) {
+            emit MigrationKeygenRequest(prepKeygenId, keyId, existingKeyId, extraData);
+        }
+    }
+
+    function _keygenIdForPrep(uint256 prepKeygenId) internal view returns (uint256 keyId) {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
 
-        // Make sure the prepKeygenId corresponds to a generated preprocessing keygen request.
         if (prepKeygenId > $.prepKeygenCounter || prepKeygenId <= PREP_KEYGEN_COUNTER_BASE) {
             revert PrepKeygenNotRequested(prepKeygenId);
         }
+        keyId = $.keygenIdPairs[prepKeygenId];
+    }
 
-        (bytes memory extraData, uint256 contextId) = _loadExtraDataAndAuthorizeResponse(prepKeygenId);
+    function _recordPrepKeygenResponse(
+        uint256 prepKeygenId,
+        bytes calldata signature,
+        bool isMigration
+    ) internal returns (bool reachedConsensus, bytes memory extraData) {
+        KMSGenerationStorage storage $ = _getKMSGenerationStorage();
+        uint256 contextId;
+        (extraData, contextId) = _loadExtraDataAndAuthorizeResponse(prepKeygenId);
 
-        // Compute the digest of the PrepKeygenVerification struct.
         bytes32 digest = _hashPrepKeygenVerification(prepKeygenId, extraData);
-
-        // Recover the signer address from the signature and check that it is a KMS node.
         address kmsSigner = _validateEIP712Signature(contextId, digest, signature);
 
-        // Check that the signer has not already signed for this preprocessing keygen response
         if ($.kmsHasSignedForResponse[prepKeygenId][kmsSigner]) {
             revert KmsAlreadySignedForPrepKeygen(prepKeygenId, kmsSigner);
         }
 
         $.kmsHasSignedForResponse[prepKeygenId][kmsSigner] = true;
 
-        // Store the KMS transaction sender address for the preprocessing keygen response
-        // It is important to consider the same mapping fields used for the consensus
-        // A "late" valid KMS transaction sender address will still be added in the list
         address[] storage consensusTxSenders = $.consensusTxSenderAddresses[prepKeygenId][digest];
         consensusTxSenders.push(msg.sender);
 
-        // Emit the event at each call for monitoring purposes.
-        emit PrepKeygenResponse(prepKeygenId, signature, msg.sender);
+        if (isMigration) {
+            emit PrepMigrationKeygenResponse(prepKeygenId, signature, msg.sender);
+        } else {
+            emit PrepKeygenResponse(prepKeygenId, signature, msg.sender);
+        }
 
-        // Send the event if and only if the consensus is reached in the current response call.
-        // This means a "late" response will not be reverted, just ignored and no event will be emitted
         if (!$.isRequestDone[prepKeygenId] && _isKmsConsensusReachedForContext(contextId, consensusTxSenders.length)) {
             $.isRequestDone[prepKeygenId] = true;
-
-            // Store the digest on which consensus was reached for the preprocessing keygen request
             $.consensusDigest[prepKeygenId] = digest;
-
-            // Get the keyId associated to the prepKeygenId
-            uint256 keyId = $.keygenIdPairs[prepKeygenId];
-
-            // A migration keygen emits the typed MigrationKeygenRequest IN PLACE OF KeygenRequest, so
-            // the connector branches on the event type with no side table and no path where a migration
-            // silently runs as a normal keygen.
-            uint256 existingKeyId = $.migrationKeygens[keyId];
-            if (existingKeyId != 0) {
-                emit MigrationKeygenRequest(prepKeygenId, keyId, existingKeyId, extraData);
-            } else {
-                emit KeygenRequest(prepKeygenId, keyId, extraData);
-            }
+            reachedConsensus = true;
         }
     }
 
@@ -391,70 +394,81 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
      * @notice See {IKMSGeneration-keygenResponse}.
      */
     function keygenResponse(uint256 keyId, KeyDigest[] calldata keyDigests, bytes calldata signature) external virtual {
-        KMSGenerationStorage storage $ = _getKMSGenerationStorage();
+        if (_isMigrationKeygen(keyId)) {
+            revert WrongKeygenResponseType(keyId);
+        }
+        _recordKeygenResponse(keyId, keyDigests, signature, false);
+    }
 
-        // Make sure the keyId corresponds to a generated keygen request.
+    /**
+     * @notice See {IKMSGeneration-migrationKeygenResponse}.
+     */
+    function migrationKeygenResponse(
+        uint256 keyId,
+        KeyDigest[] calldata keyDigests,
+        bytes calldata signature
+    ) external virtual {
+        if (!_isMigrationKeygen(keyId)) {
+            revert WrongKeygenResponseType(keyId);
+        }
+        _recordKeygenResponse(keyId, keyDigests, signature, true);
+    }
+
+    function _isMigrationKeygen(uint256 keyId) internal view returns (bool) {
+        KMSGenerationStorage storage $ = _getKMSGenerationStorage();
+        return $.migrationKeygens[keyId] != 0;
+    }
+
+    function _recordKeygenResponse(
+        uint256 keyId,
+        KeyDigest[] calldata keyDigests,
+        bytes calldata signature,
+        bool isMigration
+    ) internal {
+        KMSGenerationStorage storage $ = _getKMSGenerationStorage();
         if (keyId > $.keyCounter || keyId <= KEY_COUNTER_BASE) {
             revert KeygenNotRequested(keyId);
         }
 
-        // Make sure the keygen response contains at least one key digest as keygen flow will always
-        // generate at least one key
         if (keyDigests.length == 0) {
             revert EmptyKeyDigests(keyId);
         }
 
-        (bytes memory extraData, uint256 contextId) = _loadExtraDataAndAuthorizeResponse(keyId);
+        bytes memory extraData;
+        uint256 contextId;
+        (extraData, contextId) = _loadExtraDataAndAuthorizeResponse(keyId);
 
         uint256 prepKeygenId = $.keygenIdPairs[keyId];
         if (!$.isRequestDone[prepKeygenId]) {
             revert KeyManagementRequestPending();
         }
 
-        // Compute the digest of the KeygenVerification struct.
         bytes32 digest = _hashKeygenVerification(prepKeygenId, keyId, keyDigests, extraData);
-
-        // Recover the signer address from the signature and check that it is a KMS node.
         address kmsSigner = _validateEIP712Signature(contextId, digest, signature);
 
-        // Check that the signer has not already signed for this key generation response
         if ($.kmsHasSignedForResponse[keyId][kmsSigner]) {
             revert KmsAlreadySignedForKeygen(keyId, kmsSigner);
         }
 
         $.kmsHasSignedForResponse[keyId][kmsSigner] = true;
 
-        // Store the KMS transaction sender address for the keygen response
-        // A "late" valid KMS transaction sender address or storage URL will still be added in the list
         address[] storage consensusTxSenders = $.consensusTxSenderAddresses[keyId][digest];
         consensusTxSenders.push(msg.sender);
 
-        // Emit the event at each call for monitoring purposes.
-        emit KeygenResponse(keyId, keyDigests, signature, msg.sender);
+        if (isMigration) {
+            emit MigrationKeygenResponse(keyId, keyDigests, signature, msg.sender);
+        } else {
+            emit KeygenResponse(keyId, keyDigests, signature, msg.sender);
+        }
 
-        // Send the event if and only if the consensus is reached in the current response call.
-        // This means a "late" response will not be reverted, just ignored and no event will be emitted
         if (!$.isRequestDone[keyId] && _isKmsConsensusReachedForContext(contextId, consensusTxSenders.length)) {
             $.isRequestDone[keyId] = true;
-
-            // Store the digests of the generated keys in order to retrieve them later
-            // Copy each calldata struct to storage, as copying calldata array of structs to storage
-            // is not yet supported
-            // We do not need to clean `$.keyDigests[keyId]` first as this should only happen once
-            // per keyId
             for (uint256 i = 0; i < keyDigests.length; i++) {
                 $.keyDigests[keyId].push(keyDigests[i]);
             }
-
-            // Store the digest on which consensus was reached for the keygen request
             $.consensusDigest[keyId] = digest;
             $.completedKeyIds.push(keyId);
-
-            // RFC-029 publish-not-activate: a migration keygen (keygen-from-existing) is NOT
-            // activated -- its freshly generated key is a throwaway used only to produce the
-            // migrated material; that material is published under the EXISTING key by governance
-            // (addKeyMaterials). So skip moving activeKeyId / emitting ActivateKey for migrations.
-            if ($.migrationKeygens[keyId] == 0) {
+            if (!isMigration) {
                 $.activeKeyId = keyId;
                 string[] memory consensusUrls = _buildConsensusStorageUrls(contextId, consensusTxSenders);
                 emit ActivateKey(keyId, consensusUrls, keyDigests);
@@ -528,12 +542,7 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         }
         $.migrationScheduled[keyId] = true;
 
-        emit KeyMaterialMigrationScheduled(
-            keyId,
-            hostChainIds,
-            hostMigrationBlocks,
-            gatewayMigrationBlock
-        );
+        emit KeyMaterialMigrationScheduled(keyId, hostChainIds, hostMigrationBlocks, gatewayMigrationBlock);
     }
 
     /**

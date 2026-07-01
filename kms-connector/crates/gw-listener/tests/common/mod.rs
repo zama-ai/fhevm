@@ -327,6 +327,9 @@ pub fn check_event_in_db(rows: &[PgRow], event: ProtocolEventKind) -> anyhow::Re
                 }
             }
         }
+        ProtocolEventKind::PrepMigrationKeygen(_) => {
+            unimplemented!("gw-listener test harness does not emit PrepMigrationKeygenRequest")
+        }
         ProtocolEventKind::Keygen(e) => {
             for r in rows {
                 if e.prepKeygenId

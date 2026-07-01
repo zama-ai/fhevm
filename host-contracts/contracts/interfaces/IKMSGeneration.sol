@@ -127,22 +127,46 @@ interface IKMSGeneration {
     event AbortCrsgen(uint256 crsId);
 
     /**
-     * @notice RFC-029: emitted at prep-keygen consensus IN PLACE OF {KeygenRequest} when the keygen is
-     * a migration (keygen-from-existing). The connector branches on this typed event to drive the KMS
-     * keygen-from-existing (UseExisting + copy-to-original) -- there is no side table and no path where
-     * a migration silently runs as a normal keygen. The keygen's extraData is the standard v2
-     * context+epoch, signed by the KMS exactly like a normal keygen.
+     * @notice RFC-029: emitted to trigger preprocessing for a migration keygen.
      * @param prepKeygenId The preprocessing keygen id.
-     * @param keyId The freshly generated (throwaway) key id; it is never activated.
+     * @param keyId The migration keygen id; it is never activated.
      * @param existingKeyId The existing key whose material is re-derived in migrated format.
-     * @param extraData The keygen's v2 context+epoch extra data (same as {KeygenRequest}).
+     * @param paramsType The FHE params type.
+     * @param extraData Additional context data.
      */
-    event MigrationKeygenRequest(
+    event PrepMigrationKeygenRequest(
         uint256 prepKeygenId,
         uint256 keyId,
         uint256 existingKeyId,
+        ParamsType paramsType,
         bytes extraData
     );
+
+    /**
+     * @notice RFC-029: emitted when a KMS node has responded to a migration preprocessing request.
+     * @param prepKeygenId The ID of the preprocessing keygen request.
+     * @param signature The signature of the KMS node that has responded.
+     * @param kmsTxSender The transaction sender of the KMS node that has called the function.
+     */
+    event PrepMigrationKeygenResponse(uint256 prepKeygenId, bytes signature, address kmsTxSender);
+
+    /**
+     * @notice RFC-029: emitted at migration prep consensus to trigger keygen-from-existing.
+     * @param prepKeygenId The preprocessing keygen id.
+     * @param keyId The migration keygen id; it is never activated.
+     * @param existingKeyId The existing key whose material is re-derived in migrated format.
+     * @param extraData Additional context data.
+     */
+    event MigrationKeygenRequest(uint256 prepKeygenId, uint256 keyId, uint256 existingKeyId, bytes extraData);
+
+    /**
+     * @notice RFC-029: emitted when a KMS node has responded to a migration keygen request.
+     * @param keyId The migration keygen id.
+     * @param keyDigests The digests of the generated migrated material.
+     * @param signature The signature of the KMS node that has responded.
+     * @param kmsTxSender The transaction sender of the KMS node that has called the function.
+     */
+    event MigrationKeygenResponse(uint256 keyId, KeyDigest[] keyDigests, bytes signature, address kmsTxSender);
 
     /**
      * @notice RFC-029: emitted when migrated key material is published under an EXISTING keyId
@@ -204,6 +228,10 @@ interface IKMSGeneration {
     /// @notice RFC-029: addKeyMaterials was given a migrationKeyId that is not a completed migration
     /// keygen bound to the supplied existingKeyId.
     error MigrationKeyNotForExistingKey(uint256 migrationKeyId, uint256 existingKeyId);
+
+    /// @notice RFC-029: a normal keygen response function was called for a migration request, or the
+    /// migration response function was called for a normal keygen request.
+    error WrongKeygenResponseType(uint256 keyId);
 
     /// @notice RFC-029: migrated material was already published under this key. The one-time cutover
     /// publishes exactly once, so a second addKeyMaterials is rejected (single-assignment).
@@ -349,12 +377,27 @@ interface IKMSGeneration {
     function prepKeygenResponse(uint256 prepKeygenId, bytes calldata signature) external;
 
     /**
+     * @notice RFC-029: handle the response of a migration preprocessing keygen request.
+     * @param prepKeygenId The ID of the preprocessing keygen request.
+     * @param signature The signature of the KMS node that has responded.
+     */
+    function prepMigrationKeygenResponse(uint256 prepKeygenId, bytes calldata signature) external;
+
+    /**
      * @notice Handle the response of a keygen request.
      * @param keyId The ID of the key.
      * @param keyDigests The digests of the generated keys.
      * @param signature The signature of the KMS node that has responded.
      */
     function keygenResponse(uint256 keyId, KeyDigest[] calldata keyDigests, bytes calldata signature) external;
+
+    /**
+     * @notice RFC-029: handle the response of a migration keygen request.
+     * @param keyId The migration keygen id.
+     * @param keyDigests The digests of the generated migrated material.
+     * @param signature The signature of the KMS node that has responded.
+     */
+    function migrationKeygenResponse(uint256 keyId, KeyDigest[] calldata keyDigests, bytes calldata signature) external;
 
     /**
      * @notice RFC-029: governance publishes migrated key material under an EXISTING key

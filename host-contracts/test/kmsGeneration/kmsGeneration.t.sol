@@ -240,6 +240,13 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         kmsGeneration.prepKeygenResponse(prepKeygenId, sig);
     }
 
+    function _doPrepMigrationKeygenResponse(uint256 prepKeygenId, uint256 pk, address sender) internal {
+        bytes32 digest = _hashPrepKeygen(prepKeygenId, _buildExtraData());
+        bytes memory sig = _computeSignature(pk, digest);
+        vm.prank(sender);
+        kmsGeneration.prepMigrationKeygenResponse(prepKeygenId, sig);
+    }
+
     /// @dev Hash + sign + prank + call keygenResponse for a single KMS node (uses _mockKeyDigests).
     function _doKeygenResponse(uint256 prepKeygenId, uint256 keyId, uint256 pk, address sender) internal {
         _doKeygenResponse(prepKeygenId, keyId, _buildExtraData(), pk, sender);
@@ -257,6 +264,14 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         bytes memory sig = _computeSignature(pk, digest);
         vm.prank(sender);
         kmsGeneration.keygenResponse(keyId, digests, sig);
+    }
+
+    function _doMigrationKeygenResponse(uint256 prepKeygenId, uint256 keyId, uint256 pk, address sender) internal {
+        IKMSGeneration.KeyDigest[] memory digests = _mockKeyDigests();
+        bytes32 digest = _hashKeygen(prepKeygenId, keyId, digests, _buildExtraData());
+        bytes memory sig = _computeSignature(pk, digest);
+        vm.prank(sender);
+        kmsGeneration.migrationKeygenResponse(keyId, digests, sig);
     }
 
     /// @dev Hash + sign + prank + call crsgenResponse for a single KMS node.
@@ -314,8 +329,8 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         kmsGeneration.migrationKeygen(IKMSGeneration.ParamsType.Default, existingKeyId);
         migrationKeyId = kmsGeneration.getKeyCounter();
         migrationPrepKeygenId = PREP_KEYGEN_COUNTER_BASE + (migrationKeyId - KEY_COUNTER_BASE);
-        _doPrepKeygenResponse(migrationPrepKeygenId, kmsPk0, kmsTxSender0);
-        _doKeygenResponse(migrationPrepKeygenId, migrationKeyId, kmsPk0, kmsTxSender0);
+        _doPrepMigrationKeygenResponse(migrationPrepKeygenId, kmsPk0, kmsTxSender0);
+        _doMigrationKeygenResponse(migrationPrepKeygenId, migrationKeyId, kmsPk0, kmsTxSender0);
         assertTrue(kmsGeneration.isRequestDone(migrationKeyId));
     }
 
@@ -1529,18 +1544,24 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
     // blocks). activeKeyId must never move.
     // -----------------------------------------------------------------------
 
-    /// @dev migrationKeygen() itself emits no migration event; the typed MigrationKeygenRequest is
-    ///      emitted later, at prep-keygen consensus, IN PLACE OF the normal KeygenRequest.
+    /// @dev migrationKeygen() emits a migration-specific prep request.
     function test_migrationKeygenEmitsRequestAtPrepConsensus() public {
         (, uint256 existingKeyId) = _runFullKeygenCycle();
 
-        vm.prank(owner);
-        kmsGeneration.migrationKeygen(IKMSGeneration.ParamsType.Default, existingKeyId);
-        uint256 migrationKeyId = kmsGeneration.getKeyCounter();
+        uint256 migrationKeyId = KEY_COUNTER_BASE + 2;
         uint256 migrationPrepKeygenId = PREP_KEYGEN_COUNTER_BASE + (migrationKeyId - KEY_COUNTER_BASE);
 
-        // The typed event carries the existing key + the keygen's standard v2 extraData,
-        // and is emitted exactly where a normal keygen would emit KeygenRequest.
+        vm.expectEmit(true, true, true, true, address(kmsGeneration));
+        emit IKMSGeneration.PrepMigrationKeygenRequest(
+            migrationPrepKeygenId,
+            migrationKeyId,
+            existingKeyId,
+            IKMSGeneration.ParamsType.Default,
+            _buildExtraData()
+        );
+        vm.prank(owner);
+        kmsGeneration.migrationKeygen(IKMSGeneration.ParamsType.Default, existingKeyId);
+
         vm.expectEmit(true, true, true, true, address(kmsGeneration));
         emit IKMSGeneration.MigrationKeygenRequest(
             migrationPrepKeygenId,
@@ -1548,7 +1569,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
             existingKeyId,
             _buildExtraData()
         );
-        _doPrepKeygenResponse(migrationPrepKeygenId, kmsPk0, kmsTxSender0);
+        _doPrepMigrationKeygenResponse(migrationPrepKeygenId, kmsPk0, kmsTxSender0);
     }
 
     /// @dev A normal keygen must still emit KeygenRequest (NOT MigrationKeygenRequest) at prep consensus.

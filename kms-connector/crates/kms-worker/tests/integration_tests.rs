@@ -204,6 +204,9 @@ fn prepare_mocks(req: &ProtocolEventKind, already_sent: bool) -> MockSet {
         ProtocolEventKind::PrepKeygen(r) => {
             (r.prepKeygenId, "KeyGenPreproc", "GetKeyGenPreprocResult")
         }
+        ProtocolEventKind::PrepMigrationKeygen(r) => {
+            (r.prepKeygenId, "KeyGenPreproc", "GetKeyGenPreprocResult")
+        }
         ProtocolEventKind::Keygen(r) => (r.keyId, "KeyGen", "GetKeyGenResult"),
         ProtocolEventKind::MigrationKeygen(r) => (r.keyId, "KeyGen", "GetKeyGenResult"),
         ProtocolEventKind::Crsgen(r) => (r.crsId, "CrsGen", "GetCrsGenResult"),
@@ -238,10 +241,11 @@ fn prepare_mocks(req: &ProtocolEventKind, already_sent: bool) -> MockSet {
                     payload: Some(UserDecryptionResponsePayload::default()),
                     ..Default::default()
                 }),
-            ProtocolEventKind::PrepKeygen(_) => then.pb(KeyGenPreprocResult {
-                preprocessing_id: request_id,
-                ..Default::default()
-            }),
+            ProtocolEventKind::PrepKeygen(_) | ProtocolEventKind::PrepMigrationKeygen(_) => then
+                .pb(KeyGenPreprocResult {
+                    preprocessing_id: request_id,
+                    ..Default::default()
+                }),
             ProtocolEventKind::Keygen(_) | ProtocolEventKind::MigrationKeygen(_) => {
                 then.pb(KeyGenResult {
                     request_id,
@@ -273,7 +277,9 @@ async fn wait_for_response_in_db(
         ProtocolEventKind::UserDecryption(_) | ProtocolEventKind::UserDecryptionV2(_) => {
             "SELECT * FROM user_decryption_responses"
         }
-        ProtocolEventKind::PrepKeygen(_) => "SELECT * FROM prep_keygen_responses",
+        ProtocolEventKind::PrepKeygen(_) | ProtocolEventKind::PrepMigrationKeygen(_) => {
+            "SELECT * FROM prep_keygen_responses"
+        }
         ProtocolEventKind::Keygen(_) | ProtocolEventKind::MigrationKeygen(_) => {
             "SELECT * FROM keygen_responses"
         }
@@ -295,7 +301,7 @@ async fn wait_for_response_in_db(
                 ProtocolEventKind::UserDecryption(_) | ProtocolEventKind::UserDecryptionV2(_) => {
                     break kms_response::from_user_decryption_row(&result[0])?;
                 }
-                ProtocolEventKind::PrepKeygen(_) => {
+                ProtocolEventKind::PrepKeygen(_) | ProtocolEventKind::PrepMigrationKeygen(_) => {
                     break kms_response::from_prep_keygen_row(&result[0])?;
                 }
                 ProtocolEventKind::Keygen(_) | ProtocolEventKind::MigrationKeygen(_) => {
@@ -345,6 +351,12 @@ fn check_response_data(request: &ProtocolEventKind, response: KmsResponse) -> an
             preprocessing_id: Some(u256_to_request_id(r.prepKeygenId)),
             ..Default::default()
         }),
+        ProtocolEventKind::PrepMigrationKeygen(r) => {
+            KmsGrpcResponse::PrepKeygen(KeyGenPreprocResult {
+                preprocessing_id: Some(u256_to_request_id(r.prepKeygenId)),
+                ..Default::default()
+            })
+        }
         ProtocolEventKind::Keygen(r) => KmsGrpcResponse::Keygen(KeyGenResult {
             request_id: Some(u256_to_request_id(r.keyId)),
             ..Default::default()
@@ -366,7 +378,17 @@ fn check_response_data(request: &ProtocolEventKind, response: KmsResponse) -> an
             grpc_response: GrpcEpochResultResponse::default(),
         },
     };
-    assert_eq!(response.kind, KmsResponseKind::process(expected_response)?);
+    let expected_kind = KmsResponseKind::process(expected_response)?;
+    let expected_kind = match (request, expected_kind) {
+        (ProtocolEventKind::PrepMigrationKeygen(_), KmsResponseKind::PrepKeygen(response)) => {
+            KmsResponseKind::PrepMigrationKeygen(response)
+        }
+        (ProtocolEventKind::MigrationKeygen(_), KmsResponseKind::Keygen(response)) => {
+            KmsResponseKind::MigrationKeygen(response)
+        }
+        (_, response) => response,
+    };
+    assert_eq!(response.kind, expected_kind);
     info!("OK!");
     Ok(())
 }

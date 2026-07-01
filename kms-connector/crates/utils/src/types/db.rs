@@ -12,7 +12,10 @@ use fhevm_gateway_bindings::decryption::Decryption::{
 use fhevm_host_bindings::{
     kms_generation::{
         IKMSGeneration::KeyDigest,
-        KMSGeneration::{CrsgenRequest, KeygenRequest, MigrationKeygenRequest, PrepKeygenRequest},
+        KMSGeneration::{
+            CrsgenRequest, KeygenRequest, MigrationKeygenRequest, PrepKeygenRequest,
+            PrepMigrationKeygenRequest,
+        },
     },
     protocol_config::ProtocolConfig::{NewKmsContext, NewKmsEpoch},
 };
@@ -143,6 +146,7 @@ pub enum EventType {
     UserDecryptionRequest,
     PrepKeygenRequest,
     KeygenRequest,
+    PrepMigrationKeygenRequest,
     MigrationKeygenRequest,
     CrsgenRequest,
     NewKmsContext,
@@ -156,6 +160,7 @@ impl Display for EventType {
             EventType::UserDecryptionRequest => write!(f, "UserDecryptionRequest"),
             EventType::PrepKeygenRequest => write!(f, "PrepKeygenRequest"),
             EventType::KeygenRequest => write!(f, "KeygenRequest"),
+            EventType::PrepMigrationKeygenRequest => write!(f, "PrepMigrationKeygenRequest"),
             EventType::MigrationKeygenRequest => write!(f, "MigrationKeygenRequest"),
             EventType::CrsgenRequest => write!(f, "CrsgenRequest"),
             EventType::NewKmsContext => write!(f, "NewKmsContext"),
@@ -175,6 +180,7 @@ impl From<&ProtocolEventKind> for EventType {
             }
             ProtocolEventKind::PrepKeygen(_) => Self::PrepKeygenRequest,
             ProtocolEventKind::Keygen(_) => Self::KeygenRequest,
+            ProtocolEventKind::PrepMigrationKeygen(_) => Self::PrepMigrationKeygenRequest,
             ProtocolEventKind::MigrationKeygen(_) => Self::MigrationKeygenRequest,
             ProtocolEventKind::Crsgen(_) => Self::CrsgenRequest,
             ProtocolEventKind::NewKmsContext(_) => Self::NewKmsContext,
@@ -192,6 +198,7 @@ impl TryFrom<PgNotification> for EventType {
             USER_DECRYPT_REQUEST_NOTIFICATION => Ok(Self::UserDecryptionRequest),
             PREP_KEYGEN_REQUEST_NOTIFICATION => Ok(Self::PrepKeygenRequest),
             KEYGEN_REQUEST_NOTIFICATION => Ok(Self::KeygenRequest),
+            PREP_MIGRATION_KEYGEN_REQUEST_NOTIFICATION => Ok(Self::PrepMigrationKeygenRequest),
             MIGRATION_KEYGEN_REQUEST_NOTIFICATION => Ok(Self::MigrationKeygenRequest),
             CRSGEN_REQUEST_NOTIFICATION => Ok(Self::CrsgenRequest),
             NEW_KMS_CONTEXT_NOTIFICATION => Ok(Self::NewKmsContext),
@@ -208,6 +215,7 @@ impl EventType {
             Self::UserDecryptionRequest => USER_DECRYPT_REQUEST_NOTIFICATION,
             Self::PrepKeygenRequest => PREP_KEYGEN_REQUEST_NOTIFICATION,
             Self::KeygenRequest => KEYGEN_REQUEST_NOTIFICATION,
+            Self::PrepMigrationKeygenRequest => PREP_MIGRATION_KEYGEN_REQUEST_NOTIFICATION,
             Self::MigrationKeygenRequest => MIGRATION_KEYGEN_REQUEST_NOTIFICATION,
             Self::CrsgenRequest => CRSGEN_REQUEST_NOTIFICATION,
             Self::NewKmsContext => NEW_KMS_CONTEXT_NOTIFICATION,
@@ -221,6 +229,7 @@ impl EventType {
             EventType::UserDecryptionRequest => "user_decryption_request",
             EventType::PrepKeygenRequest => "prep_keygen_request",
             EventType::KeygenRequest => "keygen_request",
+            EventType::PrepMigrationKeygenRequest => "prep_migration_keygen_request",
             EventType::MigrationKeygenRequest => "migration_keygen_request",
             EventType::CrsgenRequest => "crsgen_request",
             EventType::NewKmsContext => "new_kms_context",
@@ -234,6 +243,7 @@ impl EventType {
             EventType::UserDecryptionRequest => UserDecryptionRequest::SIGNATURE_HASH,
             EventType::PrepKeygenRequest => PrepKeygenRequest::SIGNATURE_HASH,
             EventType::KeygenRequest => KeygenRequest::SIGNATURE_HASH,
+            EventType::PrepMigrationKeygenRequest => PrepMigrationKeygenRequest::SIGNATURE_HASH,
             EventType::MigrationKeygenRequest => MigrationKeygenRequest::SIGNATURE_HASH,
             EventType::CrsgenRequest => CrsgenRequest::SIGNATURE_HASH,
             EventType::NewKmsContext => NewKmsContext::SIGNATURE_HASH,
@@ -262,6 +272,8 @@ pub const PUBLIC_DECRYPT_REQUEST_NOTIFICATION: &str = "public_decryption_request
 pub const USER_DECRYPT_REQUEST_NOTIFICATION: &str = "user_decryption_request_available";
 pub const PREP_KEYGEN_REQUEST_NOTIFICATION: &str = "prep_keygen_request_available";
 pub const KEYGEN_REQUEST_NOTIFICATION: &str = "keygen_request_available";
+pub const PREP_MIGRATION_KEYGEN_REQUEST_NOTIFICATION: &str =
+    "prep_migration_keygen_request_available";
 pub const MIGRATION_KEYGEN_REQUEST_NOTIFICATION: &str = "migration_keygen_request_available";
 pub const CRSGEN_REQUEST_NOTIFICATION: &str = "crsgen_request_available";
 pub const NEW_KMS_CONTEXT_NOTIFICATION: &str = "new_kms_context_available";
