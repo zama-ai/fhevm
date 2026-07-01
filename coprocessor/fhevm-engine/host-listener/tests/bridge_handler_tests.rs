@@ -407,12 +407,14 @@ async fn ingest_fallback_block(
         dependence_by_connexity: false,
         dependence_cross_block: true,
         dependent_ops_max_per_chain: 0,
+        is_protocol_config_listener: false,
     };
     let chain_id = db.chain_id;
     ingest_block_logs(
         chain_id,
         db,
         &block_logs,
+        &None,
         &None,
         &None,
         &None,
