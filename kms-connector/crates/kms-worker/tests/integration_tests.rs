@@ -207,6 +207,8 @@ fn prepare_mocks(req: &ProtocolEventKind, already_sent: bool) -> MockSet {
         ProtocolEventKind::Crsgen(r) => (r.crsId, "CrsGen", "GetCrsGenResult"),
         ProtocolEventKind::NewKmsContext(r) => (r.contextId, "NewMpcContext", "unreachable"),
         ProtocolEventKind::NewKmsEpoch(r) => (r.epochId, "NewMpcEpoch", "GetEpochResult"),
+        ProtocolEventKind::AbortKeygen(r) => (r.prepKeygenId, "AbortKeyGen", "unreachable"),
+        ProtocolEventKind::AbortCrsgen(r) => (r.crsId, "AbortCrsGen", "unreachable"),
     };
     let request_id = Some(u256_to_request_id(request_id_u256));
 
@@ -253,6 +255,10 @@ fn prepare_mocks(req: &ProtocolEventKind, already_sent: bool) -> MockSet {
                 "No response expected response from kms-core",
             ),
             ProtocolEventKind::NewKmsEpoch(_) => then.pb(GrpcEpochResultResponse::default()),
+            // Abort requests have no result-polling endpoint and are not exercised by this mock.
+            ProtocolEventKind::AbortKeygen(_) | ProtocolEventKind::AbortCrsgen(_) => {
+                unreachable!("abort events are not exercised by the KMS mock")
+            }
         };
     });
 
@@ -274,6 +280,9 @@ async fn wait_for_response_in_db(
         ProtocolEventKind::Crsgen(_) => "SELECT * FROM crsgen_responses",
         ProtocolEventKind::NewKmsContext(_) => "SELECT * FROM new_kms_context_responses",
         ProtocolEventKind::NewKmsEpoch(_) => "SELECT * FROM epoch_result_responses",
+        ProtocolEventKind::AbortKeygen(_) | ProtocolEventKind::AbortCrsgen(_) => {
+            unreachable!("abort events produce no response row")
+        }
     };
     let response = loop {
         let result = sqlx::query(query).fetch_all(db).await?;
@@ -303,6 +312,9 @@ async fn wait_for_response_in_db(
                 }
                 ProtocolEventKind::NewKmsEpoch(_) => {
                     break kms_response::from_epoch_result_row(&result[0])?;
+                }
+                ProtocolEventKind::AbortKeygen(_) | ProtocolEventKind::AbortCrsgen(_) => {
+                    unreachable!("abort events produce no response row")
                 }
             };
         }
@@ -355,8 +367,128 @@ fn check_response_data(request: &ProtocolEventKind, response: KmsResponse) -> an
             epoch_id: r.epochId,
             grpc_response: GrpcEpochResultResponse::default(),
         },
+        ProtocolEventKind::AbortKeygen(_) | ProtocolEventKind::AbortCrsgen(_) => {
+            unreachable!("abort events produce no response to check")
+        }
     };
     assert_eq!(response.kind, KmsResponseKind::process(expected_response)?);
     info!("OK!");
     Ok(())
+}
+
+/// Verifies the abort flow: an `AbortKeygen`/`AbortCrsgen` request stored in DB is relayed to the
+/// KMS Core (`AbortKeyGen`/`AbortCrsGen`, which return `Empty`). Unlike other events, abort produces
+/// no response row — instead the abort request itself is retired as `completed` once the relay
+/// succeeds. The `already_sent` case exercises the skip-send path (no Core call, still completed).
+#[rstest]
+#[case::abort_keygen(TestEventType::AbortKeygen, false)]
+#[case::abort_crsgen(TestEventType::AbortCrsgen, false)]
+#[case::abort_keygen_already_sent(TestEventType::AbortKeygen, true)]
+#[case::abort_crsgen_already_sent(TestEventType::AbortCrsgen, true)]
+#[timeout(Duration::from_secs(60))]
+#[tokio::test]
+async fn test_processing_abort_request(
+    #[case] event_type: TestEventType,
+    #[case] already_sent: bool,
+) -> anyhow::Result<()> {
+    let test_instance = TestInstanceBuilder::default()
+        .with_db(DbInstance::setup().await?)
+        .with_s3(S3Instance::setup().await?)
+        .build();
+
+    // The only Gateway/Ethereum RPC calls are the Coprocessor registry load performed when the
+    // `CiphertextManager` is built at worker startup. Abort processing itself makes no RPC calls.
+    let asserter = Asserter::new();
+    mock_copro_registry_load(&asserter, test_instance.s3_url());
+    let mock_provider = ProviderBuilder::new()
+        .disable_recommended_fillers()
+        .connect_mocked_client(asserter.clone());
+
+    // Abort processing performs no ACL checks, so no ACL responses are needed. A dummy 32-byte
+    // handle is passed only so the mock map has a valid chain-id key (never looked up here).
+    let acl_contracts_mock = init_host_chains_acl_contracts_mock(&[0u8; 32], vec![]);
+
+    // Insert the abort request in DB to trigger the kms_worker job.
+    let request = insert_rand_request(
+        test_instance.db(),
+        event_type,
+        InsertRequestOptions::new().with_already_sent(already_sent),
+    )
+    .await?;
+
+    // Mock the KMS Core abort endpoint (returns `Empty`; there is no result-polling endpoint).
+    let kms_mocks = prepare_abort_mocks(&request, already_sent);
+    let kms_mock_server =
+        MockServer::new_grpc("kms_service.v1.CoreServiceEndpoint").with_mocks(kms_mocks);
+    kms_mock_server.start().await?;
+    info!("KMS mock server started!");
+
+    let config = Config {
+        kms_core_endpoints: vec![kms_mock_server.base_url().unwrap().to_string()],
+        ct_attestation: testing_ct_attestation_config(true),
+        ..Default::default()
+    };
+    let kms_worker = init_kms_worker(
+        config,
+        mock_provider,
+        acl_contracts_mock,
+        test_instance.db(),
+    )
+    .await?;
+    let cancel_token = CancellationToken::new();
+    let kms_worker_task = tokio::spawn(kms_worker.start(cancel_token.clone()));
+    info!("KmsWorker started!");
+
+    // The abort relay yields no response; the abort request row is marked `completed` instead.
+    wait_for_abort_completed(test_instance.db(), event_type).await?;
+    check_no_uncompleted_request_in_db(test_instance.db(), event_type).await?;
+
+    cancel_token.cancel();
+    kms_worker_task.await.unwrap();
+    Ok(())
+}
+
+fn prepare_abort_mocks(req: &ProtocolEventKind, already_sent: bool) -> MockSet {
+    let mut kms_mocks = MockSet::new();
+    let endpoint = match req {
+        ProtocolEventKind::AbortKeygen(_) => "AbortKeyGen",
+        ProtocolEventKind::AbortCrsgen(_) => "AbortCrsGen",
+        _ => unreachable!("prepare_abort_mocks only handles abort events"),
+    };
+
+    // No mock if `already_sent`: the request should be skipped on the kms_worker side, and abort
+    // has no result-polling endpoint, so the Core is never contacted in that case.
+    if !already_sent {
+        kms_mocks.mock(|when, then| {
+            when.path(format!("/kms_service.v1.CoreServiceEndpoint/{endpoint}"));
+            then.pb(Empty::default());
+        });
+    }
+
+    kms_mocks
+}
+
+async fn wait_for_abort_completed(
+    db: &Pool<Postgres>,
+    event_type: TestEventType,
+) -> anyhow::Result<()> {
+    info!("Waiting for abort request to be marked as completed in DB...");
+    let query = match event_type {
+        TestEventType::AbortKeygen => {
+            "SELECT COUNT(prep_keygen_id) FROM abort_keygen_requests WHERE status = 'completed'"
+        }
+        TestEventType::AbortCrsgen => {
+            "SELECT COUNT(crs_id) FROM abort_crsgen_requests WHERE status = 'completed'"
+        }
+        _ => unreachable!("wait_for_abort_completed only handles abort events"),
+    };
+    loop {
+        let count: i64 = sqlx::query_scalar(query).fetch_one(db).await?;
+        if count > 0 {
+            info!("OK!");
+            return Ok(());
+        }
+        warn!("Not yet...");
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
 }
