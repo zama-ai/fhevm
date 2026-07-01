@@ -10,7 +10,7 @@ pub enum ProcessingError {
     Irrecoverable(anyhow::Error),
     #[error("Processing failed: {0}")]
     Recoverable(anyhow::Error),
-    /// Terminal, expected outcome: the KMS Core reported the an operation as aborted.
+    /// Terminal, expected outcome: the KMS Core reported an operation as aborted.
     #[error("Processing stopped: the operation was aborted on the KMS Core")]
     Aborted,
 }
