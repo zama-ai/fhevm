@@ -123,7 +123,7 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
      *                       protocol change. EVM callers pass
      *                       `bytes32(uint256(uint160(dstAppAddress)))`.
      * @param payload        Opaque app-level payload; encoding is fully app-defined.
-     * @param handleList     Source-chain handles referenced by `payload`. Order is
+     * @param handleList     Source-chain handles to bridge to `dstEid`. Order is
      *                       preserved on the destination, so apps can index into
      *                       `dstHandleList` by position.
      * @param lzComposeGas   Gas budget for the destination-side `lzCompose` (which runs
@@ -238,6 +238,16 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
      *                        to match the bytes32 wire format used by `send`.
      *  @param dstApp        Destination app on the destination chain, as bytes32. See
      *                        {send} for the encoding convention.
+     * @param payload        Opaque app-level payload; encoding is fully app-defined.
+     * @param handleList     Source-chain handles to bridge to `dstEid`. Order is
+     *                       preserved on the destination, so apps can index into
+     *                       `dstHandleList` by position.
+     * @param lzComposeGas   Gas budget for the destination-side `lzCompose` (which runs
+     *                       the destination app's `onConfidentialBridgeReceived`). Must be
+     *                       non-zero: a 0 budget reverts with {ZeroLzComposeGas}. The amount needed is
+     *                       app-specific, so the bridge enforces only this non-zero floor;
+     *                       apps should size it for their `onConfidentialBridgeReceived` work.
+     * @return fee           LayerZero messaging fee.
      */
     function quote(
         uint32 dstEid,
