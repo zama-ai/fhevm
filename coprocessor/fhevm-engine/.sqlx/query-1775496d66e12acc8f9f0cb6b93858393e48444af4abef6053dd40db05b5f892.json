@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT COUNT(*)::BIGINT AS \"count!\"\n         FROM ciphertext_digest\n         WHERE s3_format_version = $1\n           AND (ciphertext IS NOT NULL OR ciphertext128 IS NOT NULL)\n           AND s3_migration_failure_count > 0\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int2"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "1775496d66e12acc8f9f0cb6b93858393e48444af4abef6053dd40db05b5f892"
+}
