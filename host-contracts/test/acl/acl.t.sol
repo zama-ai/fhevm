@@ -883,17 +883,23 @@ contract ACLTest is HostContractsDeployerTestUtils {
     }
 
     /**
-     * @dev Tests that invalidation cannot be called if the contract is paused.
+     * @dev Tests that invalidation can still be called while the contract is paused, since it is a
+     * self-service revocation kill-switch that must remain available during a pause (see RFC016).
      */
-    function test_CannotInvalidateDecryptionSignaturesBeforeIfPaused() public {
+    function test_CanInvalidateDecryptionSignaturesBeforeIfPaused() public {
         address account = _oneRandomAddress();
+        vm.warp(100);
 
         vm.prank(pauser);
         acl.pause();
 
+        vm.expectEmit(address(acl));
+        emit ACLEvents.DecryptionSignaturesInvalidated(account, block.timestamp);
+
         vm.prank(account);
-        vm.expectRevert(PausableUpgradeable.EnforcedPause.selector);
         acl.invalidateDecryptionSignaturesBefore(block.timestamp);
+
+        assertEq(acl.decryptionSignatureInvalidatedBefore(account), block.timestamp);
     }
 
     /**
