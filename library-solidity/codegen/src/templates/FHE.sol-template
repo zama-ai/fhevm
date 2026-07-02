@@ -831,7 +831,8 @@ library FHE {
      * @param dstEid        Destination LayerZero endpoint id.
      * @param srcApp        Source app address (the contract that will call {sendLZConfidentialBridge}).
      * @param dstApp        Destination app as bytes32 (EVM address left-padded, or native id for other chains like Solana).
-     * @param payload       Opaque app payload; encoding is fully app-defined. Typically this will be abi-decoded in the destination app `onConfidentialBridgeReceived` callback.
+     * @param payload       Opaque app payload used only to size the quote. Like `handleList`, it does not need to equal the payload that will ultimately be sent
+     *                      (e.g. it can be zero-filled bytes); however it must match exactly the length of the payload that will be sent to get a correct fee estimation.
      * @param handleList    Raw `bytes32` handles used only to size the quote. It does not need to equal the list that will ultimately be sent, and its handles do not
      *                      need to be allowed to any account (e.g. it can be a list of null handles); however it should be of equal size to the list that will
      *                      be sent to get a correct fee estimation. Should be non-empty and contain a maximum of 32 handles.

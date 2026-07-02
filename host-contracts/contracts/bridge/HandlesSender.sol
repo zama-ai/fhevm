@@ -247,7 +247,13 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
      *                        to match the bytes32 wire format used by `send`.
      *  @param dstApp        Destination app on the destination chain, as bytes32. See
      *                        {send} for the encoding convention.
-     * @param payload        Opaque app-level payload; encoding is fully app-defined.
+     * @param payload        Bytes used only to size the quote. It does NOT need
+     *                       to equal the payload ultimately passed to {send}; only
+     *                       its length matters. It MUST, however, have the same length as
+     *                       the payload that will be sent to obtain a correct fee estimate,
+     *                       for the same reason as `handleList`: the fee is priced on the
+     *                       encoded message *size*, not its contents, and `payload.length`
+     *                       also feeds the destination `lzReceive` gas formula.
      * @param handleList     A `bytes32[]` used only to size the quote. It does NOT need to
      *                       equal the list ultimately passed to {send}, and its entries do
      *                       NOT need to be ACL-allowed to any account — it may be an array
