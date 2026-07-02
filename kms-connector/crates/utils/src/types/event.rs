@@ -82,10 +82,6 @@ impl ProtocolEvent {
     }
 
     /// Sets the event's `status` field to `aborted` in the database.
-    ///
-    /// Used when the KMS Core reports that a key/CRS generation was aborted (via
-    /// `tonic::Code::Aborted` on the result polling), so the request is retired as a terminal,
-    /// expected outcome rather than a failure.
     pub async fn mark_as_aborted(&self, db: &Pool<Postgres>) {
         info!(
             "Event was aborted on the KMS Core. Setting its `status` field to `aborted` in DB..."
@@ -151,10 +147,7 @@ pub enum ProtocolEventKind {
     PrepKeygen(PrepKeygenRequest),
     Keygen(KeygenRequest),
     Crsgen(CrsgenRequest),
-    /// Request to abort an ongoing key generation (preprocessing and/or keygen), identified by its
-    /// preprocessing keygen ID.
     AbortKeygen(AbortKeygen),
-    /// Request to abort an ongoing CRS generation, identified by its CRS ID.
     AbortCrsgen(AbortCrsgen),
     NewKmsContext(NewKmsContext),
     NewKmsEpoch(NewKmsEpoch),

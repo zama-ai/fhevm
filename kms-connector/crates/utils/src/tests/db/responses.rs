@@ -1,4 +1,5 @@
 use crate::{
+    monitoring::otlp::PropagationContext,
     tests::rand::{rand_digest, rand_signature, rand_u256},
     types::{
         CrsgenResponse, EpochResultResponse, KeygenResponse, KmsResponseKind,
@@ -9,7 +10,7 @@ use crate::{
 };
 use alloy::{primitives::U256, sol_types::SolValue};
 use fhevm_host_bindings::protocol_config::IProtocolConfig::{EpochCrsResult, EpochKeyResult};
-use sqlx::{Pool, Postgres};
+use sqlx::{Pool, Postgres, types::chrono::Utc};
 use std::fmt::Display;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]

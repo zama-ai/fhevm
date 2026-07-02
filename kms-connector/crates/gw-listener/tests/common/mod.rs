@@ -192,7 +192,6 @@ pub async fn mock_event_on_gw(
                 .await?;
             (tx, event.into())
         }
-        // TODO should this be changed to take a prepKeygenId as input?
         TestEventType::AbortKeygen => {
             let rand_prep_id = rand_u256();
             let event = AbortKeygen {
@@ -205,7 +204,6 @@ pub async fn mock_event_on_gw(
                 .await?;
             (tx, event.into())
         }
-        // TODO should this be changed to take a crsId as input?
         TestEventType::AbortCrsgen => {
             let rand_crs_id = rand_u256();
             let event = AbortCrsgen { crsId: rand_crs_id };
@@ -366,7 +364,6 @@ pub fn check_event_in_db(rows: &[PgRow], event: ProtocolEventKind) -> anyhow::Re
                 }
             }
         }
-        // TODO not completely sure this is the right approach since it is not used for prep key gen and crs gen
         ProtocolEventKind::AbortKeygen(e) => {
             for r in rows {
                 if e.prepKeygenId

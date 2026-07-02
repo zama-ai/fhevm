@@ -1,4 +1,5 @@
 use crate::{
+    monitoring::otlp::PropagationContext,
     tests::{
         rand::{rand_address, rand_public_key, rand_signature, rand_sns_ct, rand_u256},
         setup::{S3_CT_DIGEST, S3_CT_HANDLE},
@@ -12,6 +13,7 @@ use crate::{
 use alloy::{
     hex,
     primitives::{FixedBytes, U256},
+    sol_types::SolValue,
 };
 use anyhow::anyhow;
 use fhevm_gateway_bindings::decryption::{
@@ -568,10 +570,12 @@ pub async fn check_no_uncompleted_request_in_db(
             WHERE status NOT IN ('completed', 'failed')"
         }
         EventType::KeygenRequest => {
-            "SELECT COUNT(key_id) FROM keygen_requests WHERE status NOT IN ('completed', 'failed')"
+            "SELECT COUNT(key_id) FROM keygen_requests
+            WHERE status NOT IN ('aborted', 'completed', 'failed')"
         }
         EventType::CrsgenRequest => {
-            "SELECT COUNT(crs_id) FROM crsgen_requests WHERE status NOT IN ('completed', 'failed')"
+            "SELECT COUNT(crs_id) FROM crsgen_requests
+            WHERE status NOT IN ('aborted', 'completed', 'failed')"
         }
         EventType::AbortKeygenRequest => {
             "SELECT COUNT(prep_keygen_id) FROM abort_keygen_requests
