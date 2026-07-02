@@ -13,8 +13,9 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
 # Install AWS CLI v2 (self-contained bundle) for RDS IAM auth token generation.
 # prepare_database_url.sh shells out to `aws rds generate-db-auth-token`. The bundle
 # ships its own Python/libs and only depends on glibc, so it runs on the glibc-based
-# postgres runtime image below.
+# postgres runtime image below. Pinned to a specific version for reproducible builds.
 ARG TARGETARCH
+ARG AWS_CLI_VERSION="2.34.52"
 RUN set -eux; \
     apk add --no-cache unzip; \
     arch="${TARGETARCH:-}"; \
@@ -29,7 +30,7 @@ RUN set -eux; \
       arm64) aws_arch=aarch64 ;; \
       *) echo "unsupported architecture: ${arch}" >&2; exit 1 ;; \
     esac; \
-    curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-${aws_arch}.zip" -o /tmp/awscliv2.zip; \
+    curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-${aws_arch}-${AWS_CLI_VERSION}.zip" -o /tmp/awscliv2.zip; \
     unzip -q /tmp/awscliv2.zip -d /tmp; \
     /tmp/aws/install --install-dir /usr/local/aws-cli --bin-dir /usr/local/aws-cli-bin; \
     rm -rf /tmp/aws /tmp/awscliv2.zip
