@@ -77,7 +77,7 @@ spec:
             {{- if and (not (has "kms-generation-address" $disabled)) (or $chain.kmsGenerationContractAddress $chain.kmsGenerationContractAddressValueFrom) }}
             - --kms-generation-address=$(KMS_GENERATION_ADDRESS)
             {{- end }}
-            {{- if not (has "protocol-config-address" $disabled) }}
+            {{- if and (not (has "protocol-config-address" $disabled)) (or $chain.protocolConfigContractAddress $chain.protocolConfigContractAddressValueFrom) }}
             - --protocol-config-address=$(PROTOCOL_CONFIG_ADDRESS)
             {{- end }}
             {{- if not (has "health-port" $disabled) }}

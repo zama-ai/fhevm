@@ -74,7 +74,7 @@ spec:
             {{- if not (has "kms-generation-address" $disabled) }}
             - --kms-generation-address=$(KMS_GENERATION_ADDRESS)
             {{- end }}
-            {{- if not (has "protocol-config-address" $disabled) }}
+            {{- if and (not (has "protocol-config-address" $disabled)) (or $chain.protocolConfigContractAddress $chain.protocolConfigContractAddressValueFrom) }}
             - --protocol-config-address=$(PROTOCOL_CONFIG_ADDRESS)
             {{- end }}
             {{- if and $chain.chainId (not (has "chain-id" $disabled)) }}

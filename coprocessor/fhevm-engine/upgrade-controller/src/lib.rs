@@ -55,11 +55,11 @@ pub use fhevm_engine_common::versioning::EVENT_STACK_VERSION_UPGRADED;
 const READINESS_CONFIRMATIONS: i64 = 100;
 
 /// PostgreSQL advisory-lock key used to serialize cutover against in-flight
-/// BCS writes. `execute_cutover` takes the exclusive form; the BCS-mode
-/// tfhe-worker takes the shared form inside every write tx. Must match the
-/// constant of the same name in `tfhe_worker::tfhe_worker`. Chosen to be
-/// recognizable in logs (`hex(0x46484556_43555456) == "FHEV" || "CUTV"`).
-pub const CUTOVER_LOCK_ID: i64 = 0x4648_4556_4355_5456;
+/// BCS writes. `execute_cutover` takes the exclusive form; every BCS-mode
+/// compute worker takes the shared form inside its write tx via
+/// [`fhevm_engine_common::versioning::cutover_gate`]. Re-exported from the common
+/// crate so the controller and all workers agree on one canonical value.
+pub use fhevm_engine_common::versioning::CUTOVER_LOCK_ID;
 
 /// Returns the `upgrade_state.stack_role` value for a given `gcs_mode` flag:
 /// `true` → `"GCS"` (green), `false` (default) → `"BCS"` (blue).

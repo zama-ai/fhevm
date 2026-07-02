@@ -5,7 +5,7 @@ use crate::{
         event_picker::{DbEventPicker, EventPicker},
         event_processor::{
             CiphertextManager, DbContextManager, DbEventProcessor, DecryptionProcessor,
-            EventProcessor, KMSGenerationProcessor, KmsClient,
+            EventProcessor, KMSGenerationProcessor, KmsClient, ProtocolConfigProcessor,
         },
         kms_response_publisher::DbKmsResponsePublisher,
     },
@@ -114,7 +114,10 @@ where
 }
 
 impl
-    KmsWorker<DbEventPicker, DbEventProcessor<DefaultProvider, DefaultProvider, DbContextManager>>
+    KmsWorker<
+        DbEventPicker,
+        DbEventProcessor<DefaultProvider, DefaultProvider, DbContextManager<DefaultProvider>>,
+    >
 {
     /// Creates a new `KmsWorker` instance from a valid `Config`.
     pub async fn from_config(
@@ -125,6 +128,8 @@ impl
 
         let gateway_provider =
             connect_to_rpc_node(config.gateway_url.clone(), config.gateway_chain_id).await?;
+        let ethereum_provider =
+            connect_to_rpc_node(config.ethereum_url.clone(), config.ethereum_chain_id).await?;
 
         let mut acl_contracts = HashMap::new();
         for host_chain in &config.host_chains {
@@ -147,7 +152,8 @@ impl
 
         let event_picker = DbEventPicker::connect(db_pool.clone(), &config).await?;
 
-        let context_manager = DbContextManager::new(db_pool.clone());
+        let context_manager =
+            DbContextManager::new(db_pool.clone(), &config, ethereum_provider.clone());
         let ciphertext_manager =
             CiphertextManager::connect(gateway_provider.clone(), s3_client, &config, cancel_token)
                 .await?;
@@ -159,10 +165,12 @@ impl
             ciphertext_manager,
         );
         let kms_generation_processor = KMSGenerationProcessor::new(&config, context_manager);
+        let protocol_config_processor = ProtocolConfigProcessor::new(&config, ethereum_provider);
         let event_processor = DbEventProcessor::new(
             kms_client.clone(),
             decryption_processor,
             kms_generation_processor,
+            protocol_config_processor,
             config.max_decryption_attempts,
             db_pool.clone(),
         );
@@ -171,6 +179,8 @@ impl
         let state = State::new(
             db_pool,
             gateway_provider,
+            // TODO: add ethereum_provider (and each host-chain providers?)
+            // Tracking issue: https://github.com/zama-ai/fhevm-internal/issues/1465
             kms_health_client,
             config.healthcheck_timeout,
         );

@@ -21,7 +21,7 @@ use primitives::event::BlockFlow;
 use crate::cmd::block_history::BlockSummary;
 use crate::consumer::metrics::{
     inc_blocks_duplicated, inc_blocks_missing, inc_blocks_processed,
-    inc_db_errors,
+    inc_db_errors, observe_legacy_insert_delay_seconds,
 };
 use crate::database::ingest::{ingest_block_logs, BlockLogs, IngestOptions};
 use crate::database::tfhe_event_propagate::Database;
@@ -42,7 +42,7 @@ pub struct ConsumerConfig {
     pub acl_address: Address,
     pub tfhe_address: Address,
     pub kms_generation_address: Option<Address>,
-    pub protocol_config_address: Address,
+    pub protocol_config_address: Option<Address>,
     pub confidential_bridge_address: Option<Address>,
     pub database_url: DatabaseURL,
     pub database_retry_interval: Duration,
@@ -201,6 +201,31 @@ pub async fn promote_once_all_chains_to_fast(
     }
 }
 
+async fn observe_consumer_block_timing(
+    db: &Database,
+    chain_id: &str,
+    block_summary: &BlockSummary,
+    catchup: bool,
+) {
+    match db
+        .mark_block_as_seen_by_consumer(block_summary, catchup)
+        .await
+    {
+        Ok(delay_seconds) => {
+            observe_legacy_insert_delay_seconds(chain_id, delay_seconds)
+        }
+        Err(err) => {
+            inc_db_errors(chain_id, 1);
+            warn!(
+                block_number = block_summary.number,
+                block_hash = ?block_summary.hash,
+                error = %err,
+                "Failed to record host-listener consumer block timing"
+            );
+        }
+    }
+}
+
 async fn observe_consumer_stats(
     db: &Database,
     chain_id: &str,
@@ -274,11 +299,10 @@ async fn run_consumer_stats_observer(
 
 pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
     info!("Starting consumer with config: {:?}", config);
-    let mut contracts = vec![
-        config.acl_address,
-        config.tfhe_address,
-        config.protocol_config_address,
-    ];
+    let mut contracts = vec![config.acl_address, config.tfhe_address];
+    if let Some(protocol_config_address) = config.protocol_config_address {
+        contracts.push(protocol_config_address);
+    }
     if let Some(kms_generation_address) = config.kms_generation_address {
         contracts.push(kms_generation_address);
     }
@@ -422,9 +446,13 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
                 timestamp: payload.timestamp,
             };
             let catchup = payload.flow == BlockFlow::Catchup;
-            let _ = db
-                .mark_block_as_seen_by_consumer(&block_summary, catchup)
-                .await;
+            observe_consumer_block_timing(
+                &db,
+                &chain_id_str,
+                &block_summary,
+                catchup,
+            )
+            .await;
             let logs = collect_logs(&payload);
             info!(
                 chain_id = %payload.chain_id,
@@ -513,7 +541,7 @@ async fn ingest_with_retry(
     acl_address: Address,
     tfhe_address: Address,
     kms_generation_address: Option<Address>,
-    protocol_config_address: Address,
+    protocol_config_address: Option<Address>,
     confidential_bridge_address: Option<Address>,
     retry_interval: Duration,
     options: IngestOptions,
@@ -521,7 +549,7 @@ async fn ingest_with_retry(
     let mut errors = 0;
     let acl = Some(acl_address);
     let tfhe = Some(tfhe_address);
-    let protocol_config = Some(protocol_config_address);
+    let protocol_config = protocol_config_address;
     loop {
         match ingest_block_logs(
             chain_id,

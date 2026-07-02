@@ -216,15 +216,37 @@ pub struct StaleStackError {
     pub live: String,
 }
 
-/// Re-read the live stack version on `conn` and fail if this binary is strictly
-/// older (a retired stack). A missing `versioning` row is permissive, mirroring
-/// [`resolve_gcs_mode`]'s default, so a fresh/unseeded DB is not locked out.
-async fn assert_not_retired(conn: &mut PgConnection) -> Result<(), sqlx::Error> {
+/// Fetch the live stack version singleton, or `None` if the `versioning` row is
+/// absent (fresh/unseeded DB). Shared by the retirement checks below.
+async fn live_stack_version(conn: &mut PgConnection) -> Result<Option<String>, sqlx::Error> {
     let row: Option<(String,)> =
         sqlx::query_as("SELECT stack_version FROM versioning WHERE singleton = TRUE")
             .fetch_optional(conn)
             .await?;
-    if let Some((live,)) = row {
+    Ok(row.map(|(v,)| v))
+}
+
+/// Re-read the live stack version on `conn` and report whether this binary
+/// belongs to a retired stack (its [`STACK_VERSION`] is strictly older than the
+/// live `versioning.stack_version`). A missing `versioning` row is treated as
+/// not-retired, mirroring [`resolve_gcs_mode`]'s permissive default so a
+/// fresh/unseeded DB is not locked out.
+///
+/// This is the single source of truth for "should this stack stop touching the
+/// DB" — the same fence used by [`assert_not_retired`], [`resolve_gcs_mode`], and
+/// [`reconcile_stack_mode`]. Read it *after* taking the shared cutover lock (see
+/// [`cutover_gate`]) to close the begin-time TOCTOU window.
+pub async fn is_retired(conn: &mut PgConnection) -> Result<bool, sqlx::Error> {
+    Ok(live_stack_version(conn)
+        .await?
+        .is_some_and(|live| binary_is_older_than(&live)))
+}
+
+/// Re-read the live stack version on `conn` and fail if this binary is strictly
+/// older (a retired stack). A missing `versioning` row is permissive, mirroring
+/// [`resolve_gcs_mode`]'s default, so a fresh/unseeded DB is not locked out.
+async fn assert_not_retired(conn: &mut PgConnection) -> Result<(), sqlx::Error> {
+    if let Some(live) = live_stack_version(conn).await? {
         if binary_is_older_than(&live) {
             return Err(sqlx::Error::Configuration(Box::new(StaleStackError {
                 binary: STACK_VERSION,
@@ -256,6 +278,83 @@ pub async fn begin_guarded_conn(
     let mut tx = conn.begin().await?;
     assert_not_retired(&mut tx).await?;
     Ok(tx)
+}
+
+/// PostgreSQL advisory-lock key serializing BCS writes against `execute_cutover`.
+/// `execute_cutover` (upgrade-controller) takes the **exclusive** form; every BCS
+/// write transaction takes the **shared** form via [`cutover_gate`]. Chosen to be
+/// recognizable in logs (`0x4648_4556_4355_5456` ~ ASCII "FHEVCUTV").
+pub const CUTOVER_LOCK_ID: i64 = 0x4648_4556_4355_5456;
+
+/// Cutover safety gate for a BCS write transaction.
+///
+/// Takes the **shared** cutover advisory lock on `tx`, then re-checks the
+/// retirement fence ([`is_retired`]) now that this transaction is ordered
+/// against `execute_cutover` (which holds the **exclusive** form). Returns `true`
+/// if a committed cutover has retired this stack — the caller must roll back and
+/// stop, having written nothing into the now-live tables.
+///
+/// Why the lock, not just [`begin_guarded_pool`]'s BEGIN-time check:
+/// `assert_not_retired` runs only at BEGIN, so a transaction opened before
+/// cutover could otherwise commit *after* it (a time-of-check/time-of-use gap),
+/// injecting stale-format rows into the live green tables. The shared lock closes
+/// that window: either this tx holds the shared lock and cutover's exclusive
+/// request blocks until it commits, or cutover already committed and this check
+/// observes the bumped `versioning` and aborts. Shared locks are mutually
+/// compatible, so this does **not** serialize BCS worker replicas against each
+/// other — only against the one-shot cutover.
+///
+/// GCS-mode workers write to the `gcs-*` schema (never the cutover target), so
+/// the gate is a no-op for them: it returns `false` without taking the lock.
+pub async fn cutover_gate(
+    tx: &mut Transaction<'_, Postgres>,
+    gcs_mode: bool,
+) -> Result<bool, sqlx::Error> {
+    if gcs_mode {
+        return Ok(false);
+    }
+    sqlx::query("SELECT pg_advisory_xact_lock_shared($1)")
+        .bind(CUTOVER_LOCK_ID)
+        .execute(&mut **tx)
+        .await?;
+    is_retired(tx).await
+}
+
+/// Begin a **write** transaction fenced against cutover, in one call.
+///
+/// Combines [`begin_guarded_pool`] (BEGIN-time `assert_not_retired`) with
+/// [`cutover_gate`] (shared cutover lock + retirement re-check). Returns
+/// `Ok(None)` if a committed cutover has retired this stack — the caller should
+/// skip the write and stop cleanly, having written nothing.
+///
+/// Use this for every BCS write transaction. Keep [`begin_guarded_pool`] for
+/// **read-only** transactions: reads cannot corrupt merged state, so they should
+/// not take the shared cutover lock (which would make `execute_cutover` block
+/// behind every in-flight read).
+pub async fn begin_write_guarded(
+    pool: &Pool<Postgres>,
+    gcs_mode: bool,
+) -> Result<Option<Transaction<'static, Postgres>>, sqlx::Error> {
+    let mut tx = begin_guarded_pool(pool).await?;
+    if cutover_gate(&mut tx, gcs_mode).await? {
+        tx.rollback().await?;
+        return Ok(None);
+    }
+    Ok(Some(tx))
+}
+
+/// Like [`begin_write_guarded`] but begins on an already-acquired connection
+/// (mirrors [`begin_guarded_conn`]).
+pub async fn begin_write_guarded_conn(
+    conn: &mut PgConnection,
+    gcs_mode: bool,
+) -> Result<Option<Transaction<'_, Postgres>>, sqlx::Error> {
+    let mut tx = begin_guarded_conn(conn).await?;
+    if cutover_gate(&mut tx, gcs_mode).await? {
+        tx.rollback().await?;
+        return Ok(None);
+    }
+    Ok(Some(tx))
 }
 
 #[cfg(test)]

@@ -481,6 +481,19 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
             .transpose()
             .map_err(|err| anyhow::anyhow!("block_number does not fit in i64: {err}"))?;
 
+        // Cutover safety: fence this write behind the shared cutover lock +
+        // retirement re-check. `verify_proofs` is not a merge target, but this
+        // makes every BCS write uniformly stop the instant a cutover retires the
+        // stack. GCS-mode listeners skip the gate (they write the gcs schema).
+        let Some(mut tx) = fhevm_engine_common::versioning::begin_write_guarded(
+            db_pool,
+            self.stack_mode.gcs_mode(),
+        )
+        .await?
+        else {
+            info!("Cutover completed — gw-listener skipping verify_proofs insert (retired stack)");
+            return Ok(());
+        };
         // TODO: check if we can avoid the cast from u256 to i64
         sqlx::query!(
             "WITH ins AS (
@@ -499,8 +512,9 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
             block_number,
             self.conf.verify_proof_req_db_channel
         )
-        .execute(db_pool)
+        .execute(tx.as_mut())
         .await?;
+        tx.commit().await?;
         Ok(())
     }
 
@@ -553,6 +567,18 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
             .earliest_open_ct_commits_block
             .map(i64::try_from)
             .transpose()?;
+        // Cutover safety: gate the watermark write (+ its notify) behind the
+        // shared cutover lock + retirement re-check, so a retired BCS listener
+        // stops advancing the watermark the instant a cutover flips the stack.
+        let Some(mut tx) = fhevm_engine_common::versioning::begin_write_guarded(
+            db_pool,
+            self.stack_mode.gcs_mode(),
+        )
+        .await?
+        else {
+            info!("Cutover completed — gw-listener skipping watermark update (retired stack)");
+            return Ok(());
+        };
         sqlx::query(
             "INSERT into gw_listener_last_block (dummy_id, last_block_num, earliest_open_ct_commits_block)
             VALUES (true, $1, $2)
@@ -562,7 +588,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
         )
         .bind(last_block_num)
         .bind(earliest_open_ct_commits_block)
-        .execute(db_pool)
+        .execute(tx.as_mut())
         .await?;
 
         // Wake the upgrade-controller's Gateway-side readiness task so it can
@@ -575,9 +601,10 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
             sqlx::query("SELECT pg_notify($1, $2)")
                 .bind(EVENT_GW_NEW_BLOCK)
                 .bind(last_block_num.to_string())
-                .execute(db_pool)
+                .execute(tx.as_mut())
                 .await?;
         }
+        tx.commit().await?;
 
         *number_of_last_processed_updates += 1;
         if (*number_of_last_processed_updates)

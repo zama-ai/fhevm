@@ -81,6 +81,14 @@ To enforce honest behavior, coprocessors must stake $ZAMA tokens and are subject
 
 This model ensures correctness through transparency, resilience through decentralization, and integrity through economic incentives.
 
+### Drift auto-reversal and quorum
+
+Coprocessors can optionally run _drift auto-reversal_ (automatic drift recovery): when a coprocessor detects that its locally computed ciphertext digest disagrees with the digest the Gateway reached consensus on, it treats itself as the drifted node and automatically reverts its own state to before the offending computation.
+
+Because this action trusts the Gateway consensus as the source of truth, it is only safe when that consensus reflects a genuine honest majority — that is, when the coprocessor consensus threshold is high enough that a faulty minority cannot reach consensus on its own. Under the majority-honest model above, this requires **at least 3 registered coprocessors with the threshold set to a strict majority**. Drift auto-reversal must **not** be enabled with **2 or fewer coprocessors**, or with a non-majority threshold: with such a set there is no threshold at which a drifted node can be safely told apart from an honest majority — a two-node set either blocks recovery entirely or lets a single node dictate the result, so a correct coprocessor could end up reverting its own valid state.
+
+This is an operational requirement, not an on-chain invariant: the Gateway only enforces that the threshold is between 1 and the number of registered coprocessors. Operators and the DAO must ensure a proper majority quorum before enabling drift auto-reversal.
+
 ## Architecture & Scalability
 
 The coprocessor architecture includes:

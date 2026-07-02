@@ -19,6 +19,8 @@ use tracing::info;
 #[case::prep_keygen(TestEventType::PrepKeygen)]
 #[case::keygen(TestEventType::Keygen)]
 #[case::crsgen(TestEventType::Crsgen)]
+#[case::new_kms_context(TestEventType::NewKmsContext)]
+#[case::new_kms_epoch(TestEventType::NewKmsEpoch)]
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
 async fn test_parallel_request_picking(#[case] event_type: TestEventType) -> anyhow::Result<()> {

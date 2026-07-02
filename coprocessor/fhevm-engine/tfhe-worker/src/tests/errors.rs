@@ -74,7 +74,10 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
         listener_db,
     } = setup_event_harness().await?;
     let tx_id = next_handle();
-    let mut tx = listener_db.new_transaction().await?;
+    let mut tx = listener_db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
 
     let lhs = next_handle();
     let rhs = next_handle();
@@ -125,7 +128,10 @@ async fn test_type_mismatch_error() -> Result<(), Box<dyn std::error::Error>> {
     } = setup_event_harness().await?;
 
     let tx_id = next_handle();
-    let mut tx = listener_db.new_transaction().await?;
+    let mut tx = listener_db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
 
     let lhs = next_handle();
     let rhs = next_handle();
@@ -174,7 +180,10 @@ async fn test_binary_boolean_inputs_error() -> Result<(), Box<dyn std::error::Er
     } = setup_event_harness().await?;
 
     let tx_id = next_handle();
-    let mut tx = listener_db.new_transaction().await?;
+    let mut tx = listener_db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
 
     let lhs = next_handle();
     let rhs = next_handle();
@@ -223,7 +232,10 @@ async fn test_unary_boolean_inputs_error() -> Result<(), Box<dyn std::error::Err
     } = setup_event_harness().await?;
 
     let tx_id = next_handle();
-    let mut tx = listener_db.new_transaction().await?;
+    let mut tx = listener_db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
 
     let input = next_handle();
     insert_trivial_encrypt(&listener_db, &mut tx, tx_id, 1, 0, input, false).await?;

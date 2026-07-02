@@ -213,7 +213,10 @@ pub async fn ingest_block_logs(
     confidential_bridge_address: &Option<Address>,
     options: IngestOptions,
 ) -> Result<(), sqlx::Error> {
-    let mut tx = db.new_transaction().await?;
+    let Some(mut tx) = db.new_transaction().await? else {
+        info!("cutover completed — host-listener skipping block ingest (retired stack)");
+        return Ok(());
+    };
 
     // Queue `pg_notify('event_new_block', ...)` at the top of the transaction so
     // postgres defers delivery until `tx.commit()` below succeeds. Same
@@ -693,7 +696,11 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
 {
     info!(last_block_number, finality_lag, "Updating finalized blocks");
     let mut tx = match db.new_transaction().await {
-        Ok(tx) => tx,
+        Ok(Some(tx)) => tx,
+        Ok(None) => {
+            info!("cutover completed — skipping finalized-blocks update (retired stack)");
+            return;
+        }
         Err(err) => {
             error!(
                 ?err,

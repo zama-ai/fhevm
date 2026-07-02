@@ -463,7 +463,10 @@ where
     )
     .await?;
 
-    let mut tx = db.new_transaction().await?;
+    let mut tx = db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
     db.mark_block_as_valid(&mut tx, &block_logs.summary, true, 0, 0)
         .await?;
     tx.commit().await?;

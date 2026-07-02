@@ -368,8 +368,17 @@ async fn execute_verify_proof_routine(
     // failure. Enforces the invariant: "one unknown chain on the queue must
     // not stop processing for known chains" — workers simply don't see those
     // rows.
-    let mut txn: sqlx::Transaction<'_, sqlx::Postgres> =
-        fhevm_engine_common::versioning::begin_guarded_pool(pool).await?;
+    // Cutover safety (BCS only): begin a write tx fenced against cutover before
+    // inserting verified input ciphertexts into the `ciphertexts` table
+    // execute_cutover merges. `None` means a committed cutover retired this stack.
+    // See versioning::begin_write_guarded.
+    let Some(mut txn) =
+        fhevm_engine_common::versioning::begin_write_guarded(pool, conf.gcs_mode).await?
+    else {
+        info!("Cutover completed — zkproof BCS worker skipping cycle");
+        return Ok(());
+    };
+
     if let Ok(row) = sqlx::query!(
         "SELECT zk_proof_id, input, chain_id, contract_address, user_address, transaction_id, block_number
             FROM verify_proofs

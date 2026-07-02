@@ -800,7 +800,10 @@ async fn test_slow_lane_cross_block_parent_lookup_finds_known_slow_parent_locall
     .execute(&setup.db_pool)
     .await?;
 
-    let mut tx = db.new_transaction().await?;
+    let mut tx = db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
     let found = db
         .find_slow_dep_chain_ids(
             &mut tx,
