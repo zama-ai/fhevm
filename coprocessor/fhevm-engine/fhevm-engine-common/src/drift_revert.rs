@@ -362,7 +362,9 @@ pub async fn on_drift_detected(pool: &Pool<Postgres>, handle: &[u8], host_chain_
 
     // A copy-bridged handle has no `computations` row. Fall back to
     // the block where the `HandleBridged` event was observed so drift recovery
-    // still has a revert point.
+    // still has a revert point. Association does not wait for destination
+    // finality, so non-finalized (but not known-orphaned) observations are
+    // valid revert coordinates too.
     let host_block = match host_block {
         Some(block) => Some(block),
         None => match sqlx::query_scalar(
@@ -372,7 +374,7 @@ pub async fn on_drift_detected(pool: &Pool<Postgres>, handle: &[u8], host_chain_
                     SELECT 1 FROM host_chain_blocks_valid block \
                     WHERE block.chain_id = handle_bridged_events.dst_chain_id \
                       AND block.block_hash = handle_bridged_events.block_hash \
-                      AND block.block_status = 'finalized')) \
+                      AND block.block_status <> 'orphaned')) \
              ORDER BY (block_hash = ''::bytea) ASC, block_number ASC \
              LIMIT 1",
         )

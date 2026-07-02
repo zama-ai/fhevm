@@ -144,7 +144,7 @@ async fn count_unassociated_handles(pool: &PgPool) -> Result<i64, sqlx::Error> {
                     SELECT 1 FROM host_chain_blocks_valid dst_block
                     WHERE dst_block.chain_id = handle_bridged_events.dst_chain_id
                       AND dst_block.block_hash = handle_bridged_events.block_hash
-                      AND dst_block.block_status = 'finalized'
+                      AND dst_block.block_status <> 'orphaned'
                 )
           )
           AND created_at <= now() - make_interval(secs => $1::int)
@@ -162,6 +162,9 @@ async fn associate_batch(pool: &PgPool, batch_size: i64) -> Result<u64, sqlx::Er
     // - the destination handle is not already materialized by another path
     // - both validated events are present: the destination `HandleBridged`
     //   and the matching source `BridgeHandle` one
+    // - the source approval's block is finalized; the destination event is
+    //   consumed as observed (no finality wait), skipped only when its block
+    //   is already known orphaned
     // - the source ciphertext is fully materialized: its ct64 blob exists and
     //   both digests (ct64 and ct128) are computed
     // - it has not been associated yet
@@ -179,7 +182,7 @@ async fn associate_batch(pool: &PgPool, batch_size: i64) -> Result<u64, sqlx::Er
                     SELECT 1 FROM host_chain_blocks_valid dst_block
                     WHERE dst_block.chain_id = dst_event.dst_chain_id
                       AND dst_block.block_hash = dst_event.block_hash
-                      AND dst_block.block_status = 'finalized'
+                      AND dst_block.block_status <> 'orphaned'
                 )
           )
           AND EXISTS (
