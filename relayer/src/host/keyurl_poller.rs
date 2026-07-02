@@ -1,4 +1,4 @@
-//! Host-chain poller that keeps the `/v2/keyurl` response in sync with on-chain KMS state.
+//! Host-chain poller that keeps the `/v2/keyurl` response in sync with on-chain ProtocolConfig and KMSGeneration contracts' states.
 //!
 //! Polls the active key/CRS/context on an interval rather than subscribing to events: the
 //! activations are rare and unreliable to subscribe to, whereas periodic comparison is
