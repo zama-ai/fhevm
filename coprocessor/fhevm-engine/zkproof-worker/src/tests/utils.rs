@@ -1,6 +1,7 @@
+use anyhow::Context;
 use fhevm_engine_common::chain_id::ChainId;
-use fhevm_engine_common::crs::CrsCache;
-use fhevm_engine_common::db_keys::DbKeyCache;
+use fhevm_engine_common::crs::{Crs, CrsCache};
+use fhevm_engine_common::db_keys::{DbKey, DbKeyCache};
 use fhevm_engine_common::pg_pool::PostgresPoolManager;
 use fhevm_engine_common::tfhe_ops::{current_ciphertext_version, extract_ct_list};
 use fhevm_engine_common::types::SupportedFheCiphertexts;
@@ -15,7 +16,13 @@ use tokio::time::sleep;
 use crate::auxiliary::ZkData;
 use crate::verifier::MAX_CACHED_KEYS;
 
-pub async fn setup() -> anyhow::Result<(PostgresPoolManager, DBInstance)> {
+#[derive(Clone)]
+pub(crate) struct ProofMaterial {
+    key: DbKey,
+    crs: Crs,
+}
+
+pub async fn setup() -> anyhow::Result<(PostgresPoolManager, DBInstance, ProofMaterial)> {
     let _ = tracing_subscriber::fmt().json().with_level(true).try_init();
     let test_instance = test_harness::instance::setup_test_db(ImportMode::WithKeysNoSns)
         .await
@@ -28,7 +35,7 @@ pub async fn setup() -> anyhow::Result<(PostgresPoolManager, DBInstance)> {
         pg_pool_connections: 10,
         pg_polling_interval: 60,
         worker_thread_count: 1,
-        pg_timeout: Duration::from_secs(15),
+        pg_timeout: Duration::from_secs(60),
         pg_auto_explain_with_min_duration: None,
     };
 
@@ -50,6 +57,8 @@ pub async fn setup() -> anyhow::Result<(PostgresPoolManager, DBInstance)> {
         .await
         .unwrap();
 
+    let material = load_proof_material(&pmngr.pool()).await?;
+
     let last_active_at = Arc::new(RwLock::new(SystemTime::now()));
 
     tokio::spawn(async move {
@@ -60,7 +69,23 @@ pub async fn setup() -> anyhow::Result<(PostgresPoolManager, DBInstance)> {
 
     sleep(Duration::from_secs(2)).await;
 
-    Ok((pool_mngr, test_instance))
+    Ok((pool_mngr, test_instance, material))
+}
+
+pub(crate) async fn load_proof_material(pool: &sqlx::PgPool) -> anyhow::Result<ProofMaterial> {
+    let db_key_cache = DbKeyCache::new(MAX_CACHED_KEYS).context("create db key cache")?;
+    let key = db_key_cache
+        .fetch_latest_from_pool(pool)
+        .await
+        .context("fetch latest DB key")?;
+    let crs = CrsCache::load(pool)
+        .await
+        .context("load CRS cache")?
+        .get_latest()
+        .cloned()
+        .context("latest CRS")?;
+
+    Ok(ProofMaterial { key, crs })
 }
 
 /// Checks if the proof is valid by querying the database continuously.
@@ -164,11 +189,11 @@ pub(crate) async fn fetch_stored_ciphertexts(
 
 pub(crate) async fn decrypt_ciphertexts(
     pool: &sqlx::PgPool,
+    material: &ProofMaterial,
     handles: &[Vec<u8>],
 ) -> anyhow::Result<Vec<DecryptionResult>> {
     let stored = fetch_stored_ciphertexts(pool, handles).await?;
-    let db_key_cache = DbKeyCache::new(MAX_CACHED_KEYS).expect("create db key cache");
-    let key = db_key_cache.fetch_latest_from_pool(pool).await?;
+    let key = material.key.clone();
 
     tokio::task::spawn_blocking(move || {
         let client_key = key.cks.expect("client key available in tests");
@@ -194,16 +219,11 @@ pub(crate) async fn decrypt_ciphertexts(
 }
 
 pub(crate) async fn compress_inputs_without_rerandomization(
-    pool: &sqlx::PgPool,
+    material: &ProofMaterial,
     raw_ct: &[u8],
 ) -> anyhow::Result<Vec<Vec<u8>>> {
-    let db_key_cache = DbKeyCache::new(MAX_CACHED_KEYS).expect("create db key cache");
-    let latest_key = db_key_cache.fetch_latest_from_pool(pool).await?;
-    let latest_crs = CrsCache::load(pool)
-        .await?
-        .get_latest()
-        .cloned()
-        .expect("latest CRS");
+    let latest_key = material.key.clone();
+    let latest_crs = material.crs.clone();
 
     let verified_list: tfhe::ProvenCompactCiphertextList = safe_deserialize_conformant(
         raw_ct,
@@ -247,22 +267,11 @@ impl ZkInput {
 }
 
 pub(crate) async fn generate_zk_pok_with_inputs(
-    pool: &sqlx::PgPool,
+    material: &ProofMaterial,
     aux_data: &[u8],
     inputs: &[ZkInput],
 ) -> Vec<u8> {
-    let db_key_cache = DbKeyCache::new(MAX_CACHED_KEYS).expect("create db key cache");
-
-    let latest_key = db_key_cache.fetch_latest_from_pool(pool).await.unwrap();
-
-    let latest_crs = CrsCache::load(pool)
-        .await
-        .unwrap()
-        .get_latest()
-        .cloned()
-        .unwrap();
-
-    let mut builder = tfhe::ProvenCompactCiphertextList::builder(&latest_key.pks);
+    let mut builder = tfhe::ProvenCompactCiphertextList::builder(&material.key.pks);
     for v in inputs {
         match *v {
             ZkInput::Bool(b) => builder.push(b),
@@ -274,13 +283,13 @@ pub(crate) async fn generate_zk_pok_with_inputs(
     }
 
     let the_list = builder
-        .build_with_proof_packed(&latest_crs.crs, aux_data, tfhe::zk::ZkComputeLoad::Verify)
+        .build_with_proof_packed(&material.crs.crs, aux_data, tfhe::zk::ZkComputeLoad::Verify)
         .unwrap();
 
     safe_serialize(&the_list)
 }
 
-pub(crate) async fn generate_sample_zk_pok(pool: &sqlx::PgPool, aux_data: &[u8]) -> Vec<u8> {
+pub(crate) async fn generate_sample_zk_pok(material: &ProofMaterial, aux_data: &[u8]) -> Vec<u8> {
     let inputs = vec![
         ZkInput::Bool(true),
         ZkInput::U8(42),
@@ -288,12 +297,15 @@ pub(crate) async fn generate_sample_zk_pok(pool: &sqlx::PgPool, aux_data: &[u8])
         ZkInput::U32(67890),
         ZkInput::U64(1234567890),
     ];
-    generate_zk_pok_with_inputs(pool, aux_data, &inputs).await
+    generate_zk_pok_with_inputs(material, aux_data, &inputs).await
 }
 
-pub(crate) async fn generate_empty_input_list(pool: &sqlx::PgPool, aux_data: &[u8]) -> Vec<u8> {
+pub(crate) async fn generate_empty_input_list(
+    material: &ProofMaterial,
+    aux_data: &[u8],
+) -> Vec<u8> {
     let inputs = Vec::new();
-    generate_zk_pok_with_inputs(pool, aux_data, &inputs).await
+    generate_zk_pok_with_inputs(material, aux_data, &inputs).await
 }
 
 pub(crate) async fn insert_proof(
