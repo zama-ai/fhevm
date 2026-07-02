@@ -923,6 +923,22 @@ impl SupportedFheOperations {
         }
     }
 
+    /// Static output count for multi-output ops whose arity is known at compile time;
+    /// `None` for single-output ops AND for multi-output ops with dynamic arity
+    /// (where output count depends on the inputs — see `is_multi_output`).
+    /// No multi-output ops are wired up yet; returns `None` for everything.
+    pub fn multi_output_arity(&self) -> Option<u8> {
+        None
+    }
+
+    /// Whether this op produces multiple output ciphertexts. Includes both
+    /// static-arity multi-output ops (see `multi_output_arity`) and
+    /// dynamic-arity multi-output ops where the output count is derived from
+    /// the inputs at dispatch time.
+    pub fn is_multi_output(&self) -> bool {
+        false
+    }
+
     pub fn supports_bool_inputs(&self) -> bool {
         matches!(
             self,

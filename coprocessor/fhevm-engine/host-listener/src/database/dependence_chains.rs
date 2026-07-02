@@ -5,7 +5,7 @@ use tracing::{debug, error, info, warn};
 use union_find::{QuickUnionUf, UnionBySize, UnionFind};
 
 use crate::database::tfhe_event_propagate::{
-    tfhe_inputs_handle, tfhe_result_handle, ChainHash,
+    tfhe_inputs_handle, tfhe_result_handles, ChainHash,
 };
 use crate::database::tfhe_event_propagate::{
     Chain, ChainCache, Handle, LogTfhe, OrderedChains, TransactionHash,
@@ -66,7 +66,9 @@ fn scan_transactions(
             }
             Entry::Occupied(e) => e.into_mut(),
         };
-        tx.size += 1;
+        let outputs = tfhe_result_handles(&log.event);
+        // Count computation rows (multi-output op -> N rows); .max(1) for non-FHE events.
+        tx.size += outputs.len().max(1) as u64;
         let log_inputs = tfhe_inputs_handle(&log.event);
         for input in log_inputs {
             if tx.output_handle.contains(&input) {
@@ -75,7 +77,7 @@ fn scan_transactions(
             }
             tx.input_handle.push(input);
         }
-        if let Some(output) = tfhe_result_handle(&log.event) {
+        for output in outputs {
             tx.output_handle.push(output);
             if log.is_allowed {
                 tx.allowed_handle.push(output);
