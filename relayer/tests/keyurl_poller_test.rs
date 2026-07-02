@@ -155,9 +155,6 @@ async fn initialize_maps_chain_state_to_response() {
         response.response.crs["2048"].urls,
         vec![CRS_URL.to_string()]
     );
-    // contextId / epochId from getCurrentKmsContextAndEpoch.
-    assert_eq!(response.response.context_id, "1");
-    assert_eq!(response.response.epoch_id, "2");
 }
 
 #[tokio::test]

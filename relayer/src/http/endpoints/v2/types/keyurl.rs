@@ -22,12 +22,6 @@ pub struct KeyUrlResponseJson {
 pub struct Response {
     pub fhe_key_info: Vec<FheKeyInfo>,
     pub crs: HashMap<String, KeyData>,
-    /// Active KMS context id.
-    #[schema(example = "1")]
-    pub context_id: String,
-    /// Active epoch id.
-    #[schema(example = "1")]
-    pub epoch_id: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, ToSchema)]
@@ -49,12 +43,7 @@ pub struct KeyData {
 impl KeyUrlResponseJson {
     /// Build a chain-sourced `/v2/keyurl` response from the values the host-chain
     /// poller read on-chain.
-    pub fn new(
-        fhe_public_key: KeyData,
-        crs: KeyData,
-        context_id: String,
-        epoch_id: String,
-    ) -> Self {
+    pub fn new(fhe_public_key: KeyData, crs: KeyData) -> Self {
         let mut crs_map = HashMap::new();
         crs_map.insert(CRS_PARAM_SIZE_KEY.to_string(), crs);
 
@@ -63,8 +52,6 @@ impl KeyUrlResponseJson {
             response: Response {
                 fhe_key_info: vec![FheKeyInfo { fhe_public_key }],
                 crs: crs_map,
-                context_id,
-                epoch_id,
             },
         }
     }

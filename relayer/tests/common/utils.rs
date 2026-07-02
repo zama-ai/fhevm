@@ -993,7 +993,8 @@ pub fn register_host_acl_partial_deny(
 }
 
 /// Canned on-chain values the `/v2/keyurl` poller reads in tests. Exposed so test
-/// assertions can compare the served `dataId` / `contextId` / `epochId` against them.
+/// assertions can compare the served `dataId` against them. `contextId` / `epochId`
+/// are read by the poller (change detection) but not part of the served response.
 #[allow(dead_code)]
 pub const TEST_KEYURL_KEY_ID: u64 = 3;
 #[allow(dead_code)]

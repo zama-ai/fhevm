@@ -185,8 +185,6 @@ impl KeyUrlPoller {
                 data_id: ids.crs_id.to_string(),
                 urls: crs_materials._0,
             },
-            ids.context_id.to_string(),
-            ids.epoch_id.to_string(),
         ))
     }
 
