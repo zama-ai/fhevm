@@ -12,10 +12,12 @@ protocol_config:
   retry:
     max_attempts: 3
     retry_interval_ms: 100
+
+keyurl:
   kms_generation_address: "0x1234567890123456789012345678901234567890"
   # Ethereum block time is ~12s; the poller reads at the FINALIZED block tag.
   # (env override in relayer-test-env-only.env changes this to 12000)
-  keyurl_poll_interval_ms: 2000
+  poll_interval_ms: 2000
 
 user_decrypt_signature_check:
   erc1271_gas_limit: 100000

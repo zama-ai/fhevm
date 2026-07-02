@@ -17,7 +17,7 @@ use fhevm_gateway_bindings::decryption::IDecryption::{
 };
 use fhevm_host_bindings::acl::ACL;
 use fhevm_host_bindings::i_protocol_config::IProtocolConfig;
-use fhevm_host_bindings::kms_generation::KMSGeneration;
+use fhevm_host_bindings::ikms_generation::IKMSGeneration;
 use rand::{rng, RngExt};
 use std::str::FromStr;
 use tempfile::TempDir;
@@ -225,9 +225,8 @@ impl TestSetup {
 
         // Register KMSGeneration / ProtocolConfig getter responses so the /v2/keyurl poller's
         // startup fetch succeeds (the relayer gates startup on the first successful poll).
-        let kms_generation_addr =
-            Address::from_str(&settings.protocol_config.kms_generation_address)
-                .expect("Invalid kms_generation_address in test config");
+        let kms_generation_addr = Address::from_str(&settings.keyurl.kms_generation_address)
+            .expect("Invalid kms_generation_address in test config");
         let protocol_config_addr = Address::from_str(&settings.protocol_config.address)
             .expect("Invalid protocol_config address in test config");
         register_default_keyurl_poller_responses(
@@ -1035,14 +1034,14 @@ fn register_default_keyurl_poller_responses(
     register_call_response(
         host_server,
         kms_generation_address,
-        KMSGeneration::getActiveKeyIdCall::SELECTOR,
+        IKMSGeneration::getActiveKeyIdCall::SELECTOR,
         U256::from(TEST_KEYURL_KEY_ID).abi_encode(),
     );
     // getActiveCrsId() -> uint256
     register_call_response(
         host_server,
         kms_generation_address,
-        KMSGeneration::getActiveCrsIdCall::SELECTOR,
+        IKMSGeneration::getActiveCrsIdCall::SELECTOR,
         U256::from(TEST_KEYURL_CRS_ID).abi_encode(),
     );
     // getCurrentKmsContextAndEpoch() -> (uint256 contextId, uint256 epochId)
@@ -1064,7 +1063,7 @@ fn register_default_keyurl_poller_responses(
     register_call_response(
         host_server,
         kms_generation_address,
-        KMSGeneration::getKeyMaterialsCall::SELECTOR,
+        IKMSGeneration::getKeyMaterialsCall::SELECTOR,
         (key_urls, empty_digests).abi_encode_params(),
     );
     // getCrsMaterials(uint256) -> (string[] urls, bytes digest)
@@ -1072,7 +1071,7 @@ fn register_default_keyurl_poller_responses(
     register_call_response(
         host_server,
         kms_generation_address,
-        KMSGeneration::getCrsMaterialsCall::SELECTOR,
+        IKMSGeneration::getCrsMaterialsCall::SELECTOR,
         (crs_urls, Bytes::new()).abi_encode_params(),
     );
 }

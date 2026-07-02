@@ -178,8 +178,6 @@ mod tests {
                 max_attempts: 1,
                 retry_interval_ms: 10,
             },
-            kms_generation_address: "0x1234567890123456789012345678901234567890".to_string(),
-            keyurl_poll_interval_ms: 12000,
         };
         let resolver = ThresholdResolver::new(&config, 9u32, 100).await.unwrap();
 
@@ -197,8 +195,6 @@ mod tests {
                 max_attempts: 1,
                 retry_interval_ms: 10,
             },
-            kms_generation_address: "0x1234567890123456789012345678901234567890".to_string(),
-            keyurl_poll_interval_ms: 12000,
         };
         let resolver = ThresholdResolver::new(&config, 9u32, 100).await.unwrap();
 

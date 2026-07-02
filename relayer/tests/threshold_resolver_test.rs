@@ -36,8 +36,6 @@ fn make_config(port: u16) -> ProtocolConfigSettings {
             max_attempts: 3,
             retry_interval_ms: 50,
         },
-        kms_generation_address: PROTOCOL_CONFIG_ADDR.to_string(),
-        keyurl_poll_interval_ms: 12000,
     }
 }
 

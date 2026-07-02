@@ -14,17 +14,17 @@ use alloy::eips::BlockId;
 use alloy::primitives::{Address, U256};
 use fhevm_host_bindings::i_protocol_config::IProtocolConfig;
 use fhevm_host_bindings::i_protocol_config::IProtocolConfig::IProtocolConfigInstance;
-use fhevm_host_bindings::kms_generation::KMSGeneration;
-use fhevm_host_bindings::kms_generation::KMSGeneration::KMSGenerationInstance;
+use fhevm_host_bindings::ikms_generation::IKMSGeneration;
+use fhevm_host_bindings::ikms_generation::IKMSGeneration::IKMSGenerationInstance;
 use tokio::sync::watch;
 use tracing::{error, info, warn};
 
-use crate::config::settings::ProtocolConfigSettings;
+use crate::config::settings::{KeyUrlConfig, ProtocolConfigSettings};
 use crate::host::error_redact::redact_alloy_error;
 use crate::host::provider::{build_host_provider, Provider};
 use crate::http::endpoints::v2::types::keyurl::{KeyData, KeyUrlResponseJson};
 
-type HostKmsGeneration = KMSGenerationInstance<Arc<Provider>, alloy::network::AnyNetwork>;
+type HostKmsGeneration = IKMSGenerationInstance<Arc<Provider>, alloy::network::AnyNetwork>;
 type HostProtocolConfig = IProtocolConfigInstance<Arc<Provider>, alloy::network::AnyNetwork>;
 
 /// Read on-chain state at the finalized block tag to avoid serving a reorged-away activation.
@@ -100,20 +100,24 @@ pub struct KeyUrlPoller {
 }
 
 impl KeyUrlPoller {
-    /// Build the poller from the protocol-config settings.
-    pub fn new(settings: &ProtocolConfigSettings) -> anyhow::Result<Self> {
-        let provider = build_host_provider(&settings.ethereum_http_rpc_url)?;
+    /// Build the poller. Reads the KMSGeneration contract addressed by `keyurl` and the
+    /// ProtocolConfig contract from `protocol_config`, both over the same host-chain provider.
+    pub fn new(
+        protocol_config: &ProtocolConfigSettings,
+        keyurl: &KeyUrlConfig,
+    ) -> anyhow::Result<Self> {
+        let provider = build_host_provider(&protocol_config.ethereum_http_rpc_url)?;
 
-        let kms_generation_address = Address::from_str(&settings.kms_generation_address)
+        let kms_generation_address = Address::from_str(&keyurl.kms_generation_address)
             .map_err(|e| anyhow::anyhow!("Invalid kms_generation_address: {e}"))?;
-        let protocol_config_address = Address::from_str(&settings.address)
+        let protocol_config_address = Address::from_str(&protocol_config.address)
             .map_err(|e| anyhow::anyhow!("Invalid protocol_config address: {e}"))?;
 
         Ok(Self {
-            kms_generation: KMSGeneration::new(kms_generation_address, provider.clone()),
+            kms_generation: IKMSGeneration::new(kms_generation_address, provider.clone()),
             protocol_config: IProtocolConfig::new(protocol_config_address, provider),
-            poll_interval: Duration::from_millis(settings.keyurl_poll_interval_ms),
-            retry: settings.retry.clone(),
+            poll_interval: Duration::from_millis(keyurl.poll_interval_ms),
+            retry: protocol_config.retry.clone(),
             last_seen: None,
         })
     }

@@ -17,8 +17,8 @@ use alloy::primitives::{Address, Bytes, U256};
 use alloy::sol_types::{SolCall, SolValue};
 use ethereum_rpc_mock::{MockConfig, MockServer, Response, UsageLimit};
 use fhevm_host_bindings::i_protocol_config::IProtocolConfig;
-use fhevm_host_bindings::kms_generation::KMSGeneration;
-use fhevm_relayer::config::settings::{ProtocolConfigSettings, RetrySettings};
+use fhevm_host_bindings::ikms_generation::IKMSGeneration;
+use fhevm_relayer::config::settings::{KeyUrlConfig, ProtocolConfigSettings, RetrySettings};
 use fhevm_relayer::host::KeyUrlPoller;
 use tokio::sync::watch;
 
@@ -34,17 +34,20 @@ fn get_free_port() -> u16 {
         .port()
 }
 
-fn make_config(port: u16, poll_interval_ms: u64) -> ProtocolConfigSettings {
-    ProtocolConfigSettings {
+fn make_config(port: u16, poll_interval_ms: u64) -> (ProtocolConfigSettings, KeyUrlConfig) {
+    let protocol_config = ProtocolConfigSettings {
         ethereum_http_rpc_url: format!("http://localhost:{}", port),
         address: CONTRACT_ADDR.to_string(),
         retry: RetrySettings {
             max_attempts: 3,
             retry_interval_ms: 50,
         },
+    };
+    let keyurl = KeyUrlConfig {
         kms_generation_address: CONTRACT_ADDR.to_string(),
-        keyurl_poll_interval_ms: poll_interval_ms,
-    }
+        poll_interval_ms,
+    };
+    (protocol_config, keyurl)
 }
 
 fn addr() -> Address {
@@ -73,7 +76,7 @@ fn register_static_getters(server: &MockServer) {
         move |p| {
             p.to == contract
                 && p.input.len() >= 4
-                && p.input[0..4] == KMSGeneration::getActiveCrsIdCall::SELECTOR
+                && p.input[0..4] == IKMSGeneration::getActiveCrsIdCall::SELECTOR
         },
         Response::call_success(Bytes::from(U256::from(4u64).abi_encode())),
         UsageLimit::Unlimited,
@@ -93,7 +96,7 @@ fn register_static_getters(server: &MockServer) {
         move |p| {
             p.to == contract
                 && p.input.len() >= 4
-                && p.input[0..4] == KMSGeneration::getKeyMaterialsCall::SELECTOR
+                && p.input[0..4] == IKMSGeneration::getKeyMaterialsCall::SELECTOR
         },
         Response::call_success(key_materials_bytes()),
         UsageLimit::Unlimited,
@@ -102,7 +105,7 @@ fn register_static_getters(server: &MockServer) {
         move |p| {
             p.to == contract
                 && p.input.len() >= 4
-                && p.input[0..4] == KMSGeneration::getCrsMaterialsCall::SELECTOR
+                && p.input[0..4] == IKMSGeneration::getCrsMaterialsCall::SELECTOR
         },
         Response::call_success(crs_materials_bytes()),
         UsageLimit::Unlimited,
@@ -122,7 +125,7 @@ async fn initialize_maps_chain_state_to_response() {
         move |p| {
             p.to == contract
                 && p.input.len() >= 4
-                && p.input[0..4] == KMSGeneration::getActiveKeyIdCall::SELECTOR
+                && p.input[0..4] == IKMSGeneration::getActiveKeyIdCall::SELECTOR
         },
         Response::call_success(Bytes::from(U256::from(3u64).abi_encode())),
         UsageLimit::Unlimited,
@@ -130,7 +133,8 @@ async fn initialize_maps_chain_state_to_response() {
     register_static_getters(&mock);
     let _handle = mock.start().await.unwrap();
 
-    let mut poller = KeyUrlPoller::new(&make_config(port, 12_000)).unwrap();
+    let (protocol_config, keyurl) = make_config(port, 12_000);
+    let mut poller = KeyUrlPoller::new(&protocol_config, &keyurl).unwrap();
     let response = poller
         .initialize()
         .await
@@ -172,7 +176,7 @@ async fn run_pushes_updated_value_on_id_change() {
         move |p| {
             p.to == contract
                 && p.input.len() >= 4
-                && p.input[0..4] == KMSGeneration::getActiveKeyIdCall::SELECTOR
+                && p.input[0..4] == IKMSGeneration::getActiveKeyIdCall::SELECTOR
         },
         move |_params| {
             let id = active_key_id_for_mock.load(Ordering::SeqCst);
@@ -184,7 +188,8 @@ async fn run_pushes_updated_value_on_id_change() {
     let _handle = mock.start().await.unwrap();
 
     // Seed via the startup fetch (reads key id 3), then run the loop on a short interval.
-    let mut poller = KeyUrlPoller::new(&make_config(port, 100)).unwrap();
+    let (protocol_config, keyurl) = make_config(port, 100);
+    let mut poller = KeyUrlPoller::new(&protocol_config, &keyurl).unwrap();
     let initial = poller
         .initialize()
         .await
