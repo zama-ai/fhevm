@@ -417,6 +417,40 @@ async fn skips_events_from_orphaned_bridge_blocks() {
 
 #[tokio::test]
 #[serial]
+async fn associates_pending_destination_block() {
+    let (_db, pool) = fresh_db().await;
+    let src = handle(1);
+    let dst = handle(2);
+
+    insert_ciphertext(&pool, &src, CT64).await;
+    insert_digest(
+        &pool,
+        &src,
+        Some(CT64_DIGEST),
+        Some(CT128_DIGEST),
+        SRC_CHAIN,
+    )
+    .await;
+
+    // Source approval finalized; destination event still in a pending block.
+    insert_block_status(&pool, SRC_CHAIN, SRC_BLOCK_HASH, "finalized").await;
+    insert_block_status(&pool, DST_CHAIN, DST_BLOCK_HASH, "pending").await;
+    insert_src_event_with_block_hash(&pool, &src, SRC_CHAIN, DST_CHAIN, SRC_BLOCK_HASH).await;
+    insert_dst_event_with_block_hash(&pool, &src, &dst, DST_CHAIN, DST_BLOCK_HASH).await;
+
+    // Destination finality is not awaited: the pair associates immediately.
+    assert_eq!(
+        crate::bridge::drain_associations(&pool, 128, &CancellationToken::new())
+            .await
+            .unwrap(),
+        1
+    );
+    assert!(is_associated(&pool, &dst).await);
+    assert_eq!(digest_count(&pool, &dst).await, 1);
+}
+
+#[tokio::test]
+#[serial]
 async fn associates_only_when_source_fully_materialized() {
     let (_db, pool) = fresh_db().await;
     let src = handle(1);
