@@ -721,7 +721,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         bytes memory replaySig = _computeSignature(kmsPk0, replayDigest);
 
         vm.prank(kmsTxSender0);
-        vm.expectPartialRevert(IKMSGeneration.KmsSignerDoesNotMatchTxSender.selector);
+        vm.expectPartialRevert(IKMSGeneration.NotKmsSigner.selector);
         kmsGeneration.prepKeygenResponse(prepKeygenId, replaySig);
     }
 
@@ -749,7 +749,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         bytes memory replaySig = _computeSignature(kmsPk0, replayDigest);
 
         vm.prank(kmsTxSender0);
-        vm.expectPartialRevert(IKMSGeneration.KmsSignerDoesNotMatchTxSender.selector);
+        vm.expectPartialRevert(IKMSGeneration.NotKmsSigner.selector);
         kmsGeneration.keygenResponse(keyId, digests, replaySig);
     }
 
@@ -774,7 +774,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         bytes memory replaySig = _computeSignature(kmsPk0, replayDigest);
 
         vm.prank(kmsTxSender0);
-        vm.expectPartialRevert(IKMSGeneration.KmsSignerDoesNotMatchTxSender.selector);
+        vm.expectPartialRevert(IKMSGeneration.NotKmsSigner.selector);
         kmsGeneration.crsgenResponse(crsId, crsDigestData, replaySig);
     }
 
@@ -926,6 +926,28 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         vm.expectRevert(
             abi.encodeWithSelector(IKMSGeneration.KmsSignerDoesNotMatchTxSender.selector, kmsSigner1, kmsTxSender0)
         );
+        kmsGeneration.keygenResponse(keyId, digests, keySig);
+    }
+
+    function test_revertNotKmsSigner() public {
+        vm.prank(owner);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
+
+        uint256 prepKeygenId = PREP_KEYGEN_COUNTER_BASE + 1;
+        uint256 keyId = KEY_COUNTER_BASE + 1;
+
+        _doPrepKeygenResponse(prepKeygenId, kmsPk0, kmsTxSender0);
+
+        // Sign with a key that is not a registered KMS signer for the context
+        uint256 unknownPk = 0x999;
+        address unknownSigner = vm.addr(unknownPk);
+        IKMSGeneration.KeyDigest[] memory digests = _mockKeyDigests();
+        bytes memory extraData = _buildExtraData();
+        bytes32 keyDigest = _hashKeygen(prepKeygenId, keyId, digests, extraData);
+        bytes memory keySig = _computeSignature(unknownPk, keyDigest);
+
+        vm.prank(kmsTxSender0);
+        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.NotKmsSigner.selector, unknownSigner));
         kmsGeneration.keygenResponse(keyId, digests, keySig);
     }
 
