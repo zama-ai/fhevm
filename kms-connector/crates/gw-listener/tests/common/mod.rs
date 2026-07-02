@@ -177,6 +177,12 @@ pub async fn mock_event_on_gw(
                 .await?;
             (tx, event.into())
         }
+        TestEventType::MigrationKeygen => {
+            // RFC-029 migration keygen needs an existing completed key + the prep-consensus path to
+            // emit MigrationKeygenRequest; the worker-side type-branch is covered by kms-worker unit
+            // tests, so this gw-listener harness does not drive it.
+            unimplemented!("gw-listener test harness does not emit MigrationKeygenRequest")
+        }
         TestEventType::Crsgen => {
             let rand_max_bit_length = rand_u256();
             let event = CrsgenRequest {
@@ -258,6 +264,7 @@ pub async fn fetch_from_db(
         }
         TestEventType::PrepKeygen => "SELECT * FROM prep_keygen_requests",
         TestEventType::Keygen => "SELECT * FROM keygen_requests",
+        TestEventType::MigrationKeygen => "SELECT * FROM migration_keygen_requests",
         TestEventType::Crsgen => "SELECT * FROM crsgen_requests",
         TestEventType::NewKmsContext => "SELECT * FROM new_kms_context",
         TestEventType::NewKmsEpoch => "SELECT * FROM new_kms_epoch",
@@ -320,6 +327,9 @@ pub fn check_event_in_db(rows: &[PgRow], event: ProtocolEventKind) -> anyhow::Re
                 }
             }
         }
+        ProtocolEventKind::PrepMigrationKeygen(_) => {
+            unimplemented!("gw-listener test harness does not emit PrepMigrationKeygenRequest")
+        }
         ProtocolEventKind::Keygen(e) => {
             for r in rows {
                 if e.prepKeygenId
@@ -328,6 +338,9 @@ pub fn check_event_in_db(rows: &[PgRow], event: ProtocolEventKind) -> anyhow::Re
                     return Ok(());
                 }
             }
+        }
+        ProtocolEventKind::MigrationKeygen(_) => {
+            unimplemented!("gw-listener test harness does not emit MigrationKeygenRequest")
         }
         ProtocolEventKind::Crsgen(e) => {
             for r in rows {

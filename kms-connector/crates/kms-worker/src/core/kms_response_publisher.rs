@@ -50,10 +50,21 @@ impl KmsResponsePublisher for DbKmsResponsePublisher {
                     .await?
             }
             KmsResponseKind::PrepKeygen(r) => {
-                self.publish_prep_keygen(r, created_at, otlp_context)
+                self.publish_prep_keygen(r, created_at, otlp_context, false)
                     .await?
             }
-            KmsResponseKind::Keygen(r) => self.publish_keygen(r, created_at, otlp_context).await?,
+            KmsResponseKind::PrepMigrationKeygen(r) => {
+                self.publish_prep_keygen(r, created_at, otlp_context, true)
+                    .await?
+            }
+            KmsResponseKind::Keygen(r) => {
+                self.publish_keygen(r, created_at, otlp_context, false)
+                    .await?
+            }
+            KmsResponseKind::MigrationKeygen(r) => {
+                self.publish_keygen(r, created_at, otlp_context, true)
+                    .await?
+            }
             KmsResponseKind::Crsgen(r) => self.publish_crsgen(r, created_at, otlp_context).await?,
             KmsResponseKind::NewKmsContext(r) => {
                 self.publish_new_kms_context(r, created_at, otlp_context)
@@ -127,15 +138,17 @@ impl DbKmsResponsePublisher {
         response: PrepKeygenResponse,
         created_at: DateTime<Utc>,
         otlp_ctx: PropagationContext,
+        is_migration: bool,
     ) -> anyhow::Result<PgQueryResult> {
-        sqlx::query!(
-            "INSERT INTO prep_keygen_responses(prep_keygen_id, signature, created_at, otlp_context)
-            VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
-            response.prep_keygen_id.as_le_slice(),
-            response.signature,
-            created_at,
-            bc2wrap::serialize(&otlp_ctx)?
+        sqlx::query(
+            "INSERT INTO prep_keygen_responses(prep_keygen_id, signature, created_at, otlp_context, is_migration)
+            VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING",
         )
+        .bind(response.prep_keygen_id.as_le_slice().to_vec())
+        .bind(response.signature)
+        .bind(created_at)
+        .bind(bc2wrap::serialize(&otlp_ctx)?)
+        .bind(is_migration)
         .execute(&self.db_pool)
         .await
         .map_err(anyhow::Error::from)
@@ -146,16 +159,18 @@ impl DbKmsResponsePublisher {
         response: KeygenResponse,
         created_at: DateTime<Utc>,
         otlp_ctx: PropagationContext,
+        is_migration: bool,
     ) -> anyhow::Result<PgQueryResult> {
-        sqlx::query!(
-            "INSERT INTO keygen_responses(key_id, key_digests, signature, created_at, otlp_context)
-            VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING",
-            response.key_id.as_le_slice(),
-            response.key_digests as Vec<KeyDigestDbItem>,
-            response.signature,
-            created_at,
-            bc2wrap::serialize(&otlp_ctx)?
+        sqlx::query(
+            "INSERT INTO keygen_responses(key_id, key_digests, signature, created_at, otlp_context, is_migration)
+            VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING",
         )
+        .bind(response.key_id.as_le_slice().to_vec())
+        .bind(response.key_digests as Vec<KeyDigestDbItem>)
+        .bind(response.signature)
+        .bind(created_at)
+        .bind(bc2wrap::serialize(&otlp_ctx)?)
+        .bind(is_migration)
         .execute(&self.db_pool)
         .await
         .map_err(anyhow::Error::from)
