@@ -158,6 +158,20 @@ spec:
                 {{- toYaml .valueFrom | nindent 16 }}
               {{- end }}
             {{- end }}
+            {{- with .Values.snsWorker.config.s3Migration }}
+            {{- with .mode }}
+            - name: S3_MIGRATION_MODE
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .sleepDuration }}
+            - name: S3_MIGRATION_SLEEP_DURATION
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .maxRetries }}
+            - name: S3_MIGRATION_MAX_RETRIES
+              value: {{ . | quote }}
+            {{- end }}
+            {{- end }}
             {{- if .Values.snsWorker.wallet.enabled }}
             {{- if .Values.snsWorker.wallet.awsKms.enabled }}
             - name: AWS_KEY_ID
