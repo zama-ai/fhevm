@@ -111,6 +111,12 @@ impl FromStr for KeyType {
         match s {
             "ServerKey" => Ok(Self::Server),
             "PublicKey" => Ok(Self::Public),
+            // RFC-029 migration keygen (keygen-from-existing with compressed
+            // generation): kms-core types the digest after the blob it wrote,
+            // the CompressedXofKeySet. On-chain it occupies the Server slot —
+            // the digest of the server-side material — and coprocessors verify
+            // the downloaded compressed bytes against exactly this digest.
+            "CompressedXofKeySet" => Ok(Self::Server),
             _ => Err(anyhow!("Invalid KeyType value: {s}")),
         }
     }

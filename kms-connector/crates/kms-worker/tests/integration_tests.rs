@@ -30,9 +30,9 @@ use connector_utils::{
 };
 use fhevm_host_bindings::protocol_config::ProtocolConfig::NewKmsContext;
 use kms_grpc::kms::v1::{
-    CrsGenResult, Empty, EpochResultResponse as GrpcEpochResultResponse, KeyGenPreprocResult,
-    KeyGenResult, PublicDecryptionResponse, PublicDecryptionResponsePayload,
-    UserDecryptionResponse, UserDecryptionResponsePayload,
+    CrsGenResult, Empty, EpochResultResponse as GrpcEpochResultResponse,
+    KeyDigest as GrpcKeyDigest, KeyGenPreprocResult, KeyGenResult, PublicDecryptionResponse,
+    PublicDecryptionResponsePayload, UserDecryptionResponse, UserDecryptionResponsePayload,
 };
 use kms_worker::core::{Config, event_processor::compute_anchor_event_hash};
 use mocktail::{MockSet, StatusCode, server::MockServer};
@@ -244,12 +244,20 @@ fn prepare_mocks(req: &ProtocolEventKind, already_sent: bool) -> MockSet {
                 preprocessing_id: request_id,
                 ..Default::default()
             }),
-            ProtocolEventKind::Keygen(_) | ProtocolEventKind::CompressedKeyMigrationKeygen(_) => {
-                then.pb(KeyGenResult {
-                    request_id,
-                    ..Default::default()
-                })
-            }
+            ProtocolEventKind::Keygen(_) => then.pb(KeyGenResult {
+                request_id,
+                ..Default::default()
+            }),
+            // Lock in the real digest type the migration keygen returns:
+            // the connector must parse "CompressedXofKeySet".
+            ProtocolEventKind::CompressedKeyMigrationKeygen(_) => then.pb(KeyGenResult {
+                request_id,
+                key_digests: vec![GrpcKeyDigest {
+                    key_type: "CompressedXofKeySet".to_string(),
+                    digest: vec![0xC0, 0xFF, 0xEE],
+                }],
+                ..Default::default()
+            }),
             ProtocolEventKind::Crsgen(_) => then.pb(CrsGenResult {
                 request_id,
                 ..Default::default()
@@ -351,6 +359,10 @@ fn check_response_data(request: &ProtocolEventKind, response: KmsResponse) -> an
         ProtocolEventKind::CompressedKeyMigrationKeygen(r) => {
             KmsGrpcResponse::Keygen(KeyGenResult {
                 request_id: Some(u256_to_request_id(r.migrationRequestId)),
+                key_digests: vec![GrpcKeyDigest {
+                    key_type: "CompressedXofKeySet".to_string(),
+                    digest: vec![0xC0, 0xFF, 0xEE],
+                }],
                 ..Default::default()
             })
         }
