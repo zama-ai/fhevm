@@ -62,7 +62,6 @@ library FHE {
     /// @notice Returned if the deserializing of the decryption proof fails.
     error DeserializingDecryptionProofFail();
 
-
     /// @notice Returned if the decryption proof is empty.
     error EmptyDecryptionProof();
 
@@ -774,14 +773,14 @@ library FHE {
     //$$ -----------------------------------------------------------------------
 
     /**
-     * @dev Resolves the `ConfidentialBridge` from the ACL (`getConfidentialBridgeAddress`),
+     * @dev Resolves the `ConfidentialBridge` address from the ACL (`getConfidentialBridgeAddress`),
      *      reverting if the confidential bridge is not deployed on the current chain.
      */
-    function getConfidentialBridge() internal view returns (IConfidentialBridge) {
+    function getLZConfidentialBridgeAddress() internal view returns (address) {
         CoprocessorConfig storage $ = Impl.getCoprocessorConfig();
         address cBridgeAddr = IACL($.ACLAddress).getConfidentialBridgeAddress();
         if (cBridgeAddr == address(0)) revert ConfidentialBridgeNotDeployed();
-        return IConfidentialBridge(cBridgeAddr);
+        return cBridgeAddr;
     }
 
 
@@ -789,7 +788,7 @@ library FHE {
      * @notice Requests `ConfidentialBridge` to bridge an explicit list of `bytes32` handles to a `bytes32` destination app (`bytes32` instead of `address` to also support non-EVM destinations).
      * @dev    This function forwards `nativeFee` as msg.value, so the calling contract must be funded with at least that amount. If the developer wants the end
      *         user to pay for the bridge request, the function calling `sendLZConfidentialBridge` should be marked `payable` so the user can attach the native
-     *         fee (e.g. `msg.value`) when invoking it.
+     *         fee (e.g. msg.value) when invoking it.
      * @dev    The source app contract must already hold ACL allowance on every handle; `lzComposeGas` must be non-zero (the bridge reverts otherwise) 
      *         and should be set to a reasonable value after estimation of the gas needed by the destination app callback `onConfidentialBridgeReceived`.
      * @dev    If `lzComposeGas` is set to a too low value, the message will not be automatically relayed by LayerZero and will be stuck in the `lzCompose` queue. 
@@ -801,8 +800,9 @@ library FHE {
      * @param handleList    Raw `bytes32` handles to bridge, should be non-empty and contain a maximum of 32 handles. The source app contract calling this function must already hold ACL allowance on every handle.
      * @param lzComposeGas  Gas budget for the destination app callback `onConfidentialBridgeReceived` (lzCompose leg). The amount needed is
      *                      app-specific, apps should size it for their `onConfidentialBridgeReceived` workload.
-     * @param nativeFee     LayerZero native fee to forward as msg.value to the `ConfidentialBridge` contract (query {quoteLZConfidentialBridge} to fetch the fee 
-     *                      for a message with similar parameters before calling this function).
+     * @param nativeFee     LayerZero native fee to forward as msg.value to the `ConfidentialBridge` contract. This should be **exactly equal** to the value returned by {quoteLZConfidentialBridge} for
+     *                      a message with similar parameters - query it with similar parameters **right before** calling this function (to avoid race conditions in quoting, see {quoteLZConfidentialBridge} NatSpec), 
+     *                      otherwise it would revert with `NotEnoughNative(msg.value)` even if using a greater value than the quoted one (i.e no refund of excess sent funds, but revert also in this case).
      * @return guid         The LayerZero message guid.
      * @return nonce        The LayerZero message nonce.
      */
@@ -814,7 +814,7 @@ library FHE {
         uint64 lzComposeGas,
         uint256 nativeFee
     ) internal returns (bytes32 guid, uint64 nonce) {
-        MessagingReceiptLZ memory receipt = getConfidentialBridge().send{value: nativeFee}(dstEid, dstApp, payload, handleList, lzComposeGas);
+        MessagingReceiptLZ memory receipt = IConfidentialBridge(getLZConfidentialBridgeAddress()).send{value: nativeFee}(dstEid, dstApp, payload, handleList, lzComposeGas);
         guid = receipt.guid;
         nonce = receipt.nonce;
     }
@@ -823,6 +823,10 @@ library FHE {
      * @notice Quotes the LayerZero native fee required to bridge an explicit list of `bytes32` handles to a `bytes32` destination app via {sendLZConfidentialBridge}.
      * @dev    Call this before {sendLZConfidentialBridge} to size the `nativeFee` (msg.value) for a message with similar parameters.
      *         The returned fee depends on the destination endpoint, payload size, number of handles and the `lzComposeGas` budget, so pass values matching the intended send.
+     * @dev    The value returned here must be passed as the exact `nativeFee` argument to {sendLZConfidentialBridge} (not more, not less).
+     * @dev    RACE CONDITION: The quoted fee is only valid for the market conditions at the time of the call. LayerZero fees can change between the quote
+     *         and the send (e.g. gas price fluctuations leading to LZ price Oracle update). If the fee changes in between, `sendLZConfidentialBridge` may revert
+     *         so the quote should be refreshed as close as possible to the send and re-called if the send fails due to a wrong sent fee.
      * @dev    The function will revert if the `ConfidentialBridge` is not deployed on the current chain.
      * @param dstEid        Destination LayerZero endpoint id.
      * @param srcApp        Source app address (the contract that will call {sendLZConfidentialBridge}).
@@ -843,7 +847,7 @@ library FHE {
         bytes32[] memory handleList,
         uint64 lzComposeGas
     ) internal view returns (uint256 nativeFee) {
-        MessagingFeeLZ memory fee = getConfidentialBridge().quote(dstEid, srcApp, dstApp, payload, handleList, lzComposeGas);
+        MessagingFeeLZ memory fee = IConfidentialBridge(getLZConfidentialBridgeAddress()).quote(dstEid, srcApp, dstApp, payload, handleList, lzComposeGas);
         nativeFee = fee.nativeFee;
     }
 }
