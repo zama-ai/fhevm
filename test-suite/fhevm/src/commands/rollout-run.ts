@@ -14,7 +14,8 @@ import {
   up,
   upgradeRuntimeGroup as upgradeStackRuntimeGroup,
 } from "../flow/up-flow";
-import { STATE_DIR, composePath, hostChainRuntimes } from "../layout";
+import { DEFAULT_POSTGRES_USER, STATE_DIR, composePath, hostChainRuntimes } from "../layout";
+import { run } from "../utils/process";
 import { loadState } from "../state/state";
 import type { LocalOverride, State, UpOptions, VersionBundle, VersionTarget } from "../types";
 import { ensureDir, writeJson } from "../utils/fs";
@@ -61,6 +62,10 @@ export type RolloutRunContext = {
   runHostContractTaskOnChain(chainKey: string, command: string, options?: RolloutContractTaskOptions): Promise<void>;
   snapshotContracts(surface: "host" | "gateway"): Promise<void>;
   stateDir(): string;
+  // Runs a read-only SQL query against the coprocessor database and returns
+  // the unaligned (-t -A) psql output. For rollout assertions that must
+  // observe worker-side state directly (e.g. RFC-029 material-kind labels).
+  queryCoprocessorDb(sql: string): Promise<string>;
   test(profile?: string, options?: RolloutTestOptions): Promise<void>;
   up(options: RolloutUpOptions): Promise<void>;
   upgradeRuntimeGroup(group: string, options?: RolloutRuntimeUpgradeOptions): Promise<void>;
@@ -136,6 +141,15 @@ export const createRolloutContext = (receipt: RolloutReceipt = createRolloutRece
     await receipt.record("host-contract-task", `[chain ${chainKey}] ${command}`, {
       details: { chain: chainKey, envKeys: Object.keys(options.env ?? {}).sort() },
     });
+  },
+  async queryCoprocessorDb(sql) {
+    const user = process.env.POSTGRES_USER ?? DEFAULT_POSTGRES_USER;
+    const result = await run(
+      ["docker", "exec", "coprocessor-and-kms-db", "psql", "-U", user, "-d", "coprocessor", "-t", "-A", "-c", sql],
+      {},
+    );
+    await receipt.record("coprocessor-sql", sql, {});
+    return result.stdout.trim();
   },
   async snapshotContracts(surface) {
     await snapshotContractSources(surface);
