@@ -1650,8 +1650,7 @@ pub mod HCULimit {
     pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
         b"`\x80`@R`\x046\x10a\x02\x80W_5`\xE0\x1C\x80ck\xAD\x18\xB6\x11a\x01UW\x80c\xB5\x95G\xB8\x11a\0\xBEW\x80c\xC2w\xA96\x11a\0xW\x80c\xC2w\xA96\x14a\x07\xDDW\x80c\xC8\xDECR\x14a\x07\xFCW\x80c\xD5\xB8\xB8\xF3\x14a\x08\x1BW\x80c\xD63\xC9k\x14a\x08:W\x80c\xED\xE8wn\x14a\x08YW\x80c\xF7\xD1\x98\xF8\x14a\x08\xACW_\x80\xFD[\x80c\xB5\x95G\xB8\x14a\x07\nW\x80c\xB7\x8B\xEFY\x14a\x072W\x80c\xB9f%T\x14a\x07QW\x80c\xC0\xC5\xDF|\x14a\x07pW\x80c\xC19\x0C4\x14a\x07\x8FW\x80c\xC1<\x19q\x14a\x07\xAEW_\x80\xFD[\x80c\x9B?x\x1A\x11a\x01\x0FW\x80c\x9B?x\x1A\x14a\x06+W\x80c\x9FK\x997\x14a\x06JW\x80c\x9F\x92Y\xBB\x14a\x06}W\x80c\xA06\xEA.\x14a\x06\x9CW\x80c\xAB9GU\x14a\x06\xBBW\x80c\xAD<\xB1\xCC\x14a\x06\xDAW_\x80\xFD[\x80ck\xAD\x18\xB6\x14a\x05qW\x80cl\xF0\xBD%\x14a\x05\x90W\x80co\xD6^M\x14a\x05\xAFW\x80c\x81\x8FMi\x14a\x05\xCEW\x80c\x86)\xF5E\x14a\x05\xEDW\x80c\x96\x83\x02\xD7\x14a\x06\x0CW_\x80\xFD[\x80c3\x11\xB1\xBC\x11a\x01\xF7W\x80cO\x1E\xF2\x86\x11a\x01\xB1W\x80cO\x1E\xF2\x86\x14a\x04\xC0W\x80cR\xD1\x90-\x14a\x04\xD3W\x80c\\AKW\x14a\x04\xF5W\x80c_v\xEB0\x14a\x05\x14W\x80c`\xE1!\x89\x14a\x053W\x80ci\x93\x1A\xFB\x14a\x05RW_\x80\xFD[\x80c3\x11\xB1\xBC\x14a\x04\x06W\x80c8\xBD\x17\xE5\x14a\x04%W\x80c;\xB7\xD5\xA3\x14a\x04DW\x80c;\xBC\xC4\xB2\x14a\x04cW\x80cE\x8F\xB2w\x14a\x04\x82W\x80cI|\"\xC5\x14a\x04\xA1W_\x80\xFD[\x80c\x19jEm\x11a\x02HW\x80c\x19jEm\x14a\x03!W\x80c\x1E$\xAAI\x14a\x03@W\x80c&\x8Dm1\x14a\x03\x82W\x80c(g|\xA7\x14a\x03\xA9W\x80c-\xCB\xC5\xD1\x14a\x03\xC8W\x80c.<9\x06\x14a\x03\xE7W_\x80\xFD[\x80c\x04U?\xB6\x14a\x02\x84W\x80c\x07\xCC\xDFa\x14a\x02\xA5W\x80c\r\x81\xA3\xF1\x14a\x02\xC4W\x80c\r\x8En,\x14a\x02\xE3W\x80c\x12:\xBB(\x14a\x03\rW[_\x80\xFD[4\x80\x15a\x02\x8FW_\x80\xFD[Pa\x02\xA3a\x02\x9E6`\x04aH\xB0V[a\x08\xCBV[\0[4\x80\x15a\x02\xB0W_\x80\xFD[Pa\x02\xA3a\x02\xBF6`\x04aH\xB0V[a\n\xA8V[4\x80\x15a\x02\xCFW_\x80\xFD[Pa\x02\xA3a\x02\xDE6`\x04aH\xB0V[a\x0C\x89V[4\x80\x15a\x02\xEEW_\x80\xFD[Pa\x02\xF7a\r\xE4V[`@Qa\x03\x04\x91\x90aI?V[`@Q\x80\x91\x03\x90\xF3[4\x80\x15a\x03\x18W_\x80\xFD[Pa\x02\xA3a\x0EJV[4\x80\x15a\x03,W_\x80\xFD[Pa\x02\xA3a\x03;6`\x04aI\x86V[a\x0F\x15V[4\x80\x15a\x03KW_\x80\xFD[P_\x80Q` aN&\x839\x81Q\x91RT`\x01`\x90\x1B\x90\x04e\xFF\xFF\xFF\xFF\xFF\xFF\x16[`@Qe\xFF\xFF\xFF\xFF\xFF\xFF\x90\x91\x16\x81R` \x01a\x03\x04V[4\x80\x15a\x03\x8DW_\x80\xFD[P`@Q_\x80Q` aN\x06\x839\x81Q\x91R\x81R` \x01a\x03\x04V[4\x80\x15a\x03\xB4W_\x80\xFD[Pa\x02\xA3a\x03\xC36`\x04aI\xC6V[a\x10_V[4\x80\x15a\x03\xD3W_\x80\xFD[Pa\x02\xA3a\x03\xE26`\x04aI\xE1V[a\x11\xB4V[4\x80\x15a\x03\xF2W_\x80\xFD[Pa\x02\xA3a\x04\x016`\x04aJ&V[a\x12\xD7V[4\x80\x15a\x04\x11W_\x80\xFD[Pa\x02\xA3a\x04 6`\x04aH\xB0V[a\x14 V[4\x80\x15a\x040W_\x80\xFD[Pa\x02\xA3a\x04?6`\x04aH\xB0V[a\x153V[4\x80\x15a\x04OW_\x80\xFD[Pa\x02\xA3a\x04^6`\x04aH\xB0V[a\x16\xD1V[4\x80\x15a\x04nW_\x80\xFD[Pa\x02\xA3a\x04}6`\x04aJ\xB8V[a\x18oV[4\x80\x15a\x04\x8DW_\x80\xFD[Pa\x02\xA3a\x04\x9C6`\x04aH\xB0V[a\x1B|V[4\x80\x15a\x04\xACW_\x80\xFD[Pa\x02\xA3a\x04\xBB6`\x04aI\xE1V[a\x1C\xD4V[a\x02\xA3a\x04\xCE6`\x04aK3V[a\x1D\xD4V[4\x80\x15a\x04\xDEW_\x80\xFD[Pa\x04\xE7a\x1D\xF3V[`@Q\x90\x81R` \x01a\x03\x04V[4\x80\x15a\x05\0W_\x80\xFD[Pa\x02\xA3a\x05\x0F6`\x04aK\xF1V[a\x1E\x0EV[4\x80\x15a\x05\x1FW_\x80\xFD[Pa\x02\xA3a\x05.6`\x04aH\xB0V[a\x1E\xC1V[4\x80\x15a\x05>W_\x80\xFD[Pa\x02\xA3a\x05M6`\x04aH\xB0V[a \x1BV[4\x80\x15a\x05]W_\x80\xFD[Pa\x02\xA3a\x05l6`\x04aI\xE1V[a\"\x87V[4\x80\x15a\x05|W_\x80\xFD[Pa\x02\xA3a\x05\x8B6`\x04aH\xB0V[a#\x9BV[4\x80\x15a\x05\x9BW_\x80\xFD[Pa\x02\xA3a\x05\xAA6`\x04aL\nV[a&\x07V[4\x80\x15a\x05\xBAW_\x80\xFD[Pa\x02\xA3a\x05\xC96`\x04aI\xC6V[a'\x18V[4\x80\x15a\x05\xD9W_\x80\xFD[Pa\x02\xA3a\x05\xE86`\x04aH\xB0V[a(nV[4\x80\x15a\x05\xF8W_\x80\xFD[Pa\x02\xA3a\x06\x076`\x04aH\xB0V[a*\x0FV[4\x80\x15a\x06\x17W_\x80\xFD[Pa\x02\xA3a\x06&6`\x04aH\xB0V[a+\xF0V[4\x80\x15a\x066W_\x80\xFD[Pa\x02\xA3a\x06E6`\x04aH\xB0V[a-\x91V[4\x80\x15a\x06UW_\x80\xFD[Pa\x06^a.\x9CV[`@\x80Qe\xFF\xFF\xFF\xFF\xFF\xFF\x93\x84\x16\x81R\x92\x90\x91\x16` \x83\x01R\x01a\x03\x04V[4\x80\x15a\x06\x88W_\x80\xFD[Pa\x02\xA3a\x06\x976`\x04aH\xB0V[a.\xEDV[4\x80\x15a\x06\xA7W_\x80\xFD[Pa\x02\xA3a\x06\xB66`\x04aK\xF1V[a1\nV[4\x80\x15a\x06\xC6W_\x80\xFD[Pa\x02\xA3a\x06\xD56`\x04aK\xF1V[a1\xBAV[4\x80\x15a\x06\xE5W_\x80\xFD[Pa\x02\xF7`@Q\x80`@\x01`@R\x80`\x05\x81R` \x01d\x03R\xE3\x02\xE3`\xDC\x1B\x81RP\x81V[4\x80\x15a\x07\x15W_\x80\xFD[P_\x80Q` aN&\x839\x81Q\x91RTe\xFF\xFF\xFF\xFF\xFF\xFF\x16a\x03kV[4\x80\x15a\x07=W_\x80\xFD[Pa\x02\xA3a\x07L6`\x04aL\nV[a2jV[4\x80\x15a\x07\\W_\x80\xFD[Pa\x02\xA3a\x07k6`\x04aLGV[a3\x9FV[4\x80\x15a\x07{W_\x80\xFD[Pa\x02\xA3a\x07\x8A6`\x04aH\xB0V[a6\x06V[4\x80\x15a\x07\x9AW_\x80\xFD[Pa\x02\xA3a\x07\xA96`\x04aH\xB0V[a7\x9BV[4\x80\x15a\x07\xB9W_\x80\xFD[P_\x80Q` aN&\x839\x81Q\x91RT`\x01`\xC0\x1B\x90\x04e\xFF\xFF\xFF\xFF\xFF\xFF\x16a\x03kV[4\x80\x15a\x07\xE8W_\x80\xFD[Pa\x02\xA3a\x07\xF76`\x04aH\xB0V[a9=V[4\x80\x15a\x08\x07W_\x80\xFD[Pa\x02\xA3a\x08\x166`\x04aH\xB0V[a:\xB8V[4\x80\x15a\x08&W_\x80\xFD[Pa\x02\xA3a\x0856`\x04aL\nV[a;fV[4\x80\x15a\x08EW_\x80\xFD[Pa\x02\xA3a\x08T6`\x04aH\xB0V[a;\xBCV[4\x80\x15a\x08dW_\x80\xFD[Pa\x08\x9Ca\x08s6`\x04aI\xC6V[`\x01`\x01`\xA0\x1B\x03\x16_\x90\x81R_\x80Q` aM\xC6\x839\x81Q\x91R` R`@\x90 T`\xFF\x16\x90V[`@Q\x90\x15\x15\x81R` \x01a\x03\x04V[4\x80\x15a\x08\xB7W_\x80\xFD[Pa\x02\xA3a\x08\xC66`\x04aH\xB0V[a<\xB5V[3_\x80Q` aN\x06\x839\x81Q\x91R\x14a\x08\xF8W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a\t\xE7W`\x02\x87`S\x81\x11\x15a\t\"Wa\t\"aL\xB4V[\x03a\t1WPb\x01H a\t\xD6V[`\x03\x87`S\x81\x11\x15a\tEWa\tEaL\xB4V[\x03a\tTWPb\x01W\xC0a\t\xD6V[`\x04\x87`S\x81\x11\x15a\thWa\thaL\xB4V[\x03a\twWPb\x01\xC9\x08a\t\xD6V[`\x05\x87`S\x81\x11\x15a\t\x8BWa\t\x8BaL\xB4V[\x03a\t\x9AWPb\x02I\xF0a\t\xD6V[`\x06\x87`S\x81\x11\x15a\t\xAEWa\t\xAEaL\xB4V[\x03a\t\xBDWPb\x02\xD6\x90a\t\xD6V[`@Qc\x9B\xA6\x06\x1B`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[a\t\xE2\x81\x83\x87\x86a=\xEBV[a\n\x9FV[`\x02\x87`S\x81\x11\x15a\t\xFBWa\t\xFBaL\xB4V[\x03a\n\nWPb\x01\xD0\xD8a\n\x92V[`\x03\x87`S\x81\x11\x15a\n\x1EWa\n\x1EaL\xB4V[\x03a\n-WPb\x02:Pa\n\x92V[`\x04\x87`S\x81\x11\x15a\nAWa\nAaL\xB4V[\x03a\nPWPb\x02\xC6\xF0a\n\x92V[`\x05\x87`S\x81\x11\x15a\ndWa\ndaL\xB4V[\x03a\nsWPb\x03Wxa\n\x92V[`\x06\x87`S\x81\x11\x15a\n\x87Wa\n\x87aL\xB4V[\x03a\t\xBDWPb\x04h\xE8[a\n\x9F\x81\x83\x87\x87\x87a>SV[PPPPPPPV[3_\x80Q` aN\x06\x839\x81Q\x91R\x14a\n\xD5W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a\x0B\xB7W`\x02\x87`S\x81\x11\x15a\n\xFFWa\n\xFFaL\xB4V[\x03a\x0B\rWPa}\0a\t\xD6V[`\x03\x87`S\x81\x11\x15a\x0B!Wa\x0B!aL\xB4V[\x03a\x0B/WPa}\0a\t\xD6V[`\x04\x87`S\x81\x11\x15a\x0BCWa\x0BCaL\xB4V[\x03a\x0BQWPa}\0a\t\xD6V[`\x05\x87`S\x81\x11\x15a\x0BeWa\x0BeaL\xB4V[\x03a\x0BsWPa\x84\xD0a\t\xD6V[`\x06\x87`S\x81\x11\x15a\x0B\x87Wa\x0B\x87aL\xB4V[\x03a\x0B\x95WPa\x90\x88a\t\xD6V[`\x08\x87`S\x81\x11\x15a\x0B\xA9Wa\x0B\xA9aL\xB4V[\x03a\t\xBDWPa\x94pa\t\xD6V[`\x02\x87`S\x81\x11\x15a\x0B\xCBWa\x0B\xCBaL\xB4V[\x03a\x0B\xDAWPb\x01cxa\n\x92V[`\x03\x87`S\x81\x11\x15a\x0B\xEEWa\x0B\xEEaL\xB4V[\x03a\x0B\xFDWPb\x01\xE0xa\n\x92V[`\x04\x87`S\x81\x11\x15a\x0C\x11Wa\x0C\x11aL\xB4V[\x03a\x0C WPb\x02|\xB8a\n\x92V[`\x05\x87`S\x81\x11\x15a\x0C4Wa\x0C4aL\xB4V[\x03a\x0CCWPb\x030ha\n\x92V[`\x06\x87`S\x81\x11\x15a\x0CWWa\x0CWaL\xB4V[\x03a\x0CfWPb\x04&\x80a\n\x92V[`\x08\x87`S\x81\x11\x15a\x0CzWa\x0CzaL\xB4V[\x03a\t\xBDWPb\x05\xA1ha\n\x92V[3_\x80Q` aN\x06\x839\x81Q\x91R\x14a\x0C\xB6W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\xFD`\xF8\x1B`\x01`\x01`\xF8\x1B\x03\x19\x87\x16\x01a\rXW`\x02\x87`S\x81\x11\x15a\x0C\xE0Wa\x0C\xE0aL\xB4V[\x03a\x0C\xEFWPb\x07\x8D\x98a\t\xD6V[`\x03\x87`S\x81\x11\x15a\r\x03Wa\r\x03aL\xB4V[\x03a\r\x12WPb\n\xBA\x18a\t\xD6V[`\x04\x87`S\x81\x11\x15a\r&Wa\r&aL\xB4V[\x03a\r5WPb\x10z\xC0a\t\xD6V[`\x05\x87`S\x81\x11\x15a\rIWa\rIaL\xB4V[\x03a\t\xBDWPb\x1DO\xE8a\t\xD6V[`\x02\x87`S\x81\x11\x15a\rlWa\rlaL\xB4V[\x03a\r{WPb\x07\xFE\xE0a\n\x92V[`\x03\x87`S\x81\x11\x15a\r\x8FWa\r\x8FaL\xB4V[\x03a\r\x9EWPb\x0B\xB00a\n\x92V[`\x04\x87`S\x81\x11\x15a\r\xB2Wa\r\xB2aL\xB4V[\x03a\r\xC1WPb\x14\x01\x18a\n\x92V[`\x05\x87`S\x81\x11\x15a\r\xD5Wa\r\xD5aL\xB4V[\x03a\t\xBDWPb,k\x18a\n\x92V[```@Q\x80`@\x01`@R\x80`\x08\x81R` \x01g\x12\x10\xD5S\x1A[Z]`\xC2\x1B\x81RPa\x0E\x10_a>\xD4V[a\x0E\x1A`\x04a>\xD4V[a\x0E#_a>\xD4V[`@Q` \x01a\x0E6\x94\x93\x92\x91\x90aL\xC8V[`@Q` \x81\x83\x03\x03\x81R\x90`@R\x90P\x90V[\x7F\xF0\xC5~\x16\x84\r\xF0@\xF1P\x88\xDC/\x81\xFE9\x1C9#\xBE\xC7>#\xA9f.\xFC\x9C\"\x9Cj\0\x80T`\x05\x91\x90`\x01`@\x1B\x90\x04`\xFF\x16\x80a\x0E\x94WP\x80Tg\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x80\x84\x16\x91\x16\x10\x15[\x15a\x0E\xB2W`@Qc\xF9.\xE8\xA9`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[\x80Th\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x19\x16g\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x83\x16\x90\x81\x17`\x01`@\x1B\x17`\xFF`@\x1B\x19\x16\x82U`@Q\x90\x81R\x7F\xC7\xF5\x05\xB2\xF3q\xAE!u\xEEI\x13\xF4I\x9E\x1F&3\xA7\xB5\x93c!\xEE\xD1\xCD\xAE\xB6\x11Q\x81\xD2\x90` \x01[`@Q\x80\x91\x03\x90\xA1PPV[\x7F\xF0\xC5~\x16\x84\r\xF0@\xF1P\x88\xDC/\x81\xFE9\x1C9#\xBE\xC7>#\xA9f.\xFC\x9C\"\x9Cj\0Tg\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16g\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16`\x01\x14a\x0FkW`@QcoOs\x1F`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[\x7F\xF0\xC5~\x16\x84\r\xF0@\xF1P\x88\xDC/\x81\xFE9\x1C9#\xBE\xC7>#\xA9f.\xFC\x9C\"\x9Cj\0\x80T`\x05\x91\x90`\x01`@\x1B\x90\x04`\xFF\x16\x80a\x0F\xB5WP\x80Tg\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x80\x84\x16\x91\x16\x10\x15[\x15a\x0F\xD3W`@Qc\xF9.\xE8\xA9`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[\x80Th\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x19\x16g\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x83\x16\x17`\x01`@\x1B\x17\x81Ua\x0F\xFE\x85a?dV[a\x10\x07\x83a?\xF0V[a\x10\x10\x84a@\xB5V[\x80T`\xFF`@\x1B\x19\x16\x81U`@Qg\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x83\x16\x81R\x7F\xC7\xF5\x05\xB2\xF3q\xAE!u\xEEI\x13\xF4I\x9E\x1F&3\xA7\xB5\x93c!\xEE\xD1\xCD\xAE\xB6\x11Q\x81\xD2\x90` \x01`@Q\x80\x91\x03\x90\xA1PPPPPV[sP\x15|\xFF\xD6\xBB\xFA-\xEC\xE2\x04\xA8\x9E\xC4\x19\xC2>\xF5u]`\x01`\x01`\xA0\x1B\x03\x16c\x8D\xA5\xCB[`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a\x10\xAFW=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a\x10\xD3\x91\x90aMEV[`\x01`\x01`\xA0\x1B\x03\x163`\x01`\x01`\xA0\x1B\x03\x16\x14a\x11\x0BW`@Qc\x02\x1B\xFD\xA1`\xE4\x1B\x81R3`\x04\x82\x01R`$\x01[`@Q\x80\x91\x03\x90\xFD[`\x01`\x01`\xA0\x1B\x03\x81\x16_\x90\x81R_\x80Q` aM\xC6\x839\x81Q\x91R` R`@\x90 T_\x80Q` aN&\x839\x81Q\x91R\x90`\xFF\x16a\x11iW`@Qc\x1Cy\x86\x83`\xE3\x1B\x81R`\x01`\x01`\xA0\x1B\x03\x83\x16`\x04\x82\x01R`$\x01a\x11\x02V[`\x01`\x01`\xA0\x1B\x03\x82\x16_\x81\x81R`\x01\x83\x01` R`@\x80\x82 \x80T`\xFF\x19\x16\x90UQ\x7F\x92\xFC\x97\xAF\x15\0&F\xCE\xA6<v3\xBB7[\x82\xDB|\xDE{H\x0Cu\xFEcA\xDA\xCC),\x81\x91\x90\xA2PPV[3_\x80Q` aN\x06\x839\x81Q\x91R\x14a\x11\xE1W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_\x80\x85`S\x81\x11\x15a\x11\xF5Wa\x11\xF5aL\xB4V[\x03a\x12\x02WP`\x02a\x12\xC4V[`\x02\x85`S\x81\x11\x15a\x12\x16Wa\x12\x16aL\xB4V[\x03a\x12#WP`\ta\x12\xC4V[`\x03\x85`S\x81\x11\x15a\x127Wa\x127aL\xB4V[\x03a\x12DWP`\x10a\x12\xC4V[`\x04\x85`S\x81\x11\x15a\x12XWa\x12XaL\xB4V[\x03a\x12eWP` a\x12\xC4V[`\x05\x85`S\x81\x11\x15a\x12yWa\x12yaL\xB4V[\x03a\x12\x86WP`?a\x12\xC4V[`\x06\x85`S\x81\x11\x15a\x12\x9AWa\x12\x9AaL\xB4V[\x03a\x12\xA7WP`\x82a\x12\xC4V[`\x08\x85`S\x81\x11\x15a\x12\xBBWa\x12\xBBaL\xB4V[\x03a\t\xBDWP`\x82[a\x12\xD0\x81\x83\x86\x86a=\xEBV[PPPPPV[3_\x80Q` aN\x06\x839\x81Q\x91R\x14a\x13\x04W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_\x80\x87`S\x81\x11\x15a\x13\x18Wa\x13\x18aL\xB4V[\x03a\x13&WPa\xD6\xD8a\x14\x12V[`\x02\x87`S\x81\x11\x15a\x13:Wa\x13:aL\xB4V[\x03a\x13HWPa\xD6\xD8a\x14\x12V[`\x03\x87`S\x81\x11\x15a\x13\\Wa\x13\\aL\xB4V[\x03a\x13jWPa\xD6\xD8a\x14\x12V[`\x04\x87`S\x81\x11\x15a\x13~Wa\x13~aL\xB4V[\x03a\x13\x8CWPa\xD6\xD8a\x14\x12V[`\x05\x87`S\x81\x11\x15a\x13\xA0Wa\x13\xA0aL\xB4V[\x03a\x13\xAEWPa\xD6\xD8a\x14\x12V[`\x06\x87`S\x81\x11\x15a\x13\xC2Wa\x13\xC2aL\xB4V[\x03a\x13\xD0WPa\xDE\xA8a\x14\x12V[`\x07\x87`S\x81\x11\x15a\x13\xE4Wa\x13\xE4aL\xB4V[\x03a\x13\xF3WPb\x01D8a\x14\x12V[`\x08\x87`S\x81\x11\x15a\x14\x07Wa\x14\x07aL\xB4V[\x03a\t\xBDWPb\x01\xA5\xE0[a\n\x9F\x81\x83\x88\x88\x88\x88aALV[3_\x80Q` aN\x06\x839\x81Q\x91R\x14a\x14MW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\xF8\x1B`\x01`\x01`\xF8\x1B\x03\x19\x87\x16\x14a\x14|W`@Qcj\xA9\xEB\x05`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[`\x02\x87`S\x81\x11\x15a\x14\x90Wa\x14\x90aL\xB4V[\x03a\x14\x9FWPb\x06\xB6\xC0a\x15'V[`\x03\x87`S\x81\x11\x15a\x14\xB3Wa\x14\xB3aL\xB4V[\x03a\x14\xC2WPb\x08\xD9\xA0a\x15'V[`\x04\x87`S\x81\x11\x15a\x14\xD6Wa\x14\xD6aL\xB4V[\x03a\x14\xE5WPb\x0C\x15\xC0a\x15'V[`\x05\x87`S\x81\x11\x15a\x14\xF9Wa\x14\xF9aL\xB4V[\x03a\x15\x08WPb\x11\x97\xE8a\x15'V[`\x06\x87`S\x81\x11\x15a\x15\x1CWa\x15\x1CaL\xB4V[\x03a\t\xBDWPb\x1D\xA5\xD8[a\n\x9F\x81\x83\x87\x86a=\xEBV[3_\x80Q` aN\x06\x839\x81Q\x91R\x14a\x15`W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a\x16#W`\x02\x87`S\x81\x11\x15a\x15\x8AWa\x15\x8AaL\xB4V[\x03a\x15\x98WPa\xE2\x90a\t\xD6V[`\x03\x87`S\x81\x11\x15a\x15\xACWa\x15\xACaL\xB4V[\x03a\x15\xBAWPa\xE2\x90a\t\xD6V[`\x04\x87`S\x81\x11\x15a\x15\xCEWa\x15\xCEaL\xB4V[\x03a\x15\xDDWPb\x01H a\t\xD6V[`\x05\x87`S\x81\x11\x15a\x15\xF1Wa\x15\xF1aL\xB4V[\x03a\x16\0WPb\x01\xD0\xD8a\t\xD6V[`\x06\x87`S\x81\x11\x15a\x16\x14Wa\x16\x14aL\xB4V[\x03a\t\xBDWPb\x02I\xF0a\t\xD6V[`\x02\x87`S\x81\x11\x15a\x167Wa\x167aL\xB4V[\x03a\x16EWPa\xE2\x90a\n\x92V[`\x03\x87`S\x81\x11\x15a\x16YWa\x16YaL\xB4V[\x03a\x16hWPb\x01D8a\n\x92V[`\x04\x87`S\x81\x11\x15a\x16|Wa\x16|aL\xB4V[\x03a\x16\x8BWPb\x01\xC9\x08a\n\x92V[`\x05\x87`S\x81\x11\x15a\x16\x9FWa\x16\x9FaL\xB4V[\x03a\x16\xAEWPb\x02F\x08a\n\x92V[`\x06\x87`S\x81\x11\x15a\x16\xC2Wa\x16\xC2aL\xB4V[\x03a\t\xBDWPb\x03S\x90a\n\x92V[3_\x80Q` aN\x06\x839\x81Q\x91R\x14a\x16\xFEW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a\x17\xC1W`\x02\x87`S\x81\x11\x15a\x17(Wa\x17(aL\xB4V[\x03a\x176WPa\xCB a\t\xD6V[`\x03\x87`S\x81\x11\x15a\x17JWa\x17JaL\xB4V[\x03a\x17XWPa\xE2\x90a\t\xD6V[`\x04\x87`S\x81\x11\x15a\x17lWa\x17laL\xB4V[\x03a\x17{WPb\x01D8a\t\xD6V[`\x05\x87`S\x81\x11\x15a\x17\x8FWa\x17\x8FaL\xB4V[\x03a\x17\x9EWPb\x01\xCC\xF0a\t\xD6V[`\x06\x87`S\x81\x11\x15a\x17\xB2Wa\x17\xB2aL\xB4V[\x03a\t\xBDWPb\x02F\x08a\t\xD6V[`\x02\x87`S\x81\x11\x15a\x17\xD5Wa\x17\xD5aL\xB4V[\x03a\x17\xE3WPa\xE6xa\n\x92V[`\x03\x87`S\x81\x11\x15a\x17\xF7Wa\x17\xF7aL\xB4V[\x03a\x18\x06WPb\x01H a\n\x92V[`\x04\x87`S\x81\x11\x15a\x18\x1AWa\x18\x1AaL\xB4V[\x03a\x18)WPb\x01\xC9\x08a\n\x92V[`\x05\x87`S\x81\x11\x15a\x18=Wa\x18=aL\xB4V[\x03a\x18LWPb\x02:Pa\n\x92V[`\x06\x87`S\x81\x11\x15a\x18`Wa\x18`aL\xB4V[\x03a\t\xBDWPb\x03G\xD8a\n\x92V[3_\x80Q` aN\x06\x839\x81Q\x91R\x14a\x18\x9CW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[\x82_`\x02\x88`S\x81\x11\x15a\x18\xB2Wa\x18\xB2aL\xB4V[\x03a\x18\xF7W`\n\x82\x11a\x18\xC9WPb\x01\x16\x84a\x1A\xC1V[`\x1E\x82\x11a\x18\xDBWPb\x02B a\x1A\xC1V[`<\x82\x11a\x18\xEDWPb\x03\xC4\xD8a\x1A\xC1V[Pb\x05\xB4\xF0a\x1A\xC1V[`\x03\x88`S\x81\x11\x15a\x19\x0BWa\x19\x0BaL\xB4V[\x03a\x19PW`\n\x82\x11a\x19\"WPb\x01\x92Xa\x1A\xC1V[`\x1E\x82\x11a\x194WPb\x03S\x90a\x1A\xC1V[`<\x82\x11a\x19FWPb\x05\xC4\x90a\x1A\xC1V[Pb\t;Ha\x1A\xC1V[`\x04\x88`S\x81\x11\x15a\x19dWa\x19daL\xB4V[\x03a\x19\xA9W`\n\x82\x11a\x19{WPb\x02\x17(a\x1A\xC1V[`\x1E\x82\x11a\x19\x8DWPb\x04\x93\xE0a\x1A\xC1V[`<\x82\x11a\x19\x9FWPb\x08\x1A8a\x1A\xC1V[Pb\x0C\x9Exa\x1A\xC1V[`\x05\x88`S\x81\x11\x15a\x19\xBDWa\x19\xBDaL\xB4V[\x03a\x19\xF0W`\n\x82\x11a\x19\xD4WPb\x03S\x90a\x1A\xC1V[`\x1E\x82\x11a\x19\xE6WPb\x07\x81\xE0a\x1A\xC1V[Pb\ri\x98a\x1A\xC1V[`\x06\x88`S\x81\x11\x15a\x1A\x04Wa\x1A\x04aL\xB4V[\x03a\x1A7W`\n\x82\x11a\x1A\x1BWPb\x03\xE8\0a\x1A\xC1V[`\x1E\x82\x11a\x1A-WPb\x08)\xD8a\x1A\xC1V[Pb\x0E\r\xA8a\x1A\xC1V[`\x07\x88`S\x81\x11\x15a\x1AKWa\x1AKaL\xB4V[\x03a\x1A~W`\n\x82\x11a\x1AbWPb\x04]0a\x1A\xC1V[`\x1E\x82\x11a\x1AtWPb\x08\xE9@a\x1A\xC1V[Pb\r\x81\x08a\x1A\xC1V[`\x08\x88`S\x81\x11\x15a\x1A\x92Wa\x1A\x92aL\xB4V[\x03a\t\xBDW`\n\x82\x11a\x1A\xA9WPb\x04\xE5\xE8a\x1A\xC1V[`\x1E\x82\x11a\x1A\xBBWPb\x08\xF1\x10a\x1A\xC1V[Pb\x0Ec\x98[a\x1A\xCB\x81\x84aA\xCCV[_a\x1A\xD5\x88aB0V[\x90P_[\x86\x81\x10\x15a\x1B\x1AW_a\x1B\x03\x89\x89\x84\x81\x81\x10a\x1A\xF7Wa\x1A\xF7aM`V[\x90P` \x02\x015aB0V[\x90P\x82\x81\x11\x15a\x1B\x11W\x80\x92P[P`\x01\x01a\x1A\xD9V[P_a\x1B&\x82\x84aMtV[\x90P_\x80Q` aN&\x839\x81Q\x91RT`\x01`\x90\x1B\x90\x04e\xFF\xFF\xFF\xFF\xFF\xFF\x16\x81\x11\x15a\x1BfW`@Qc\x0F\xC3D\x87`\xE4\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[a\x1Bp\x86\x82aBTV[PPPPPPPPPPV[3_\x80Q` aN\x06\x839\x81Q\x91R\x14a\x1B\xA9W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a\x1CIW`\x02\x87`S\x81\x11\x15a\x1B\xD3Wa\x1B\xD3aL\xB4V[\x03a\x1B\xE1WPa\xCB a\t\xD6V[`\x03\x87`S\x81\x11\x15a\x1B\xF5Wa\x1B\xF5aL\xB4V[\x03a\x1C\x03WPa\xD6\xD8a\t\xD6V[`\x04\x87`S\x81\x11\x15a\x1C\x17Wa\x1C\x17aL\xB4V[\x03a\x1C&WPb\x01H a\t\xD6V[`\x05\x87`S\x81\x11\x15a\x1C:Wa\x1C:aL\xB4V[\x03a\x16\0WPb\x01\xC9\x08a\t\xD6V[`\x02\x87`S\x81\x11\x15a\x1C]Wa\x1C]aL\xB4V[\x03a\x1CkWPa\xE6xa\n\x92V[`\x03\x87`S\x81\x11\x15a\x1C\x7FWa\x1C\x7FaL\xB4V[\x03a\x1C\x8EWPb\x01H a\n\x92V[`\x04\x87`S\x81\x11\x15a\x1C\xA2Wa\x1C\xA2aL\xB4V[\x03a\x1C\xB1WPb\x01\xCC\xF0a\n\x92V[`\x05\x87`S\x81\x11\x15a\x1C\xC5Wa\x1C\xC5aL\xB4V[\x03a\x16\xAEWPb\x02Q\xC0a\n\x92V[3_\x80Q` aN\x06\x839\x81Q\x91R\x14a\x1D\x01W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x02\x85`S\x81\x11\x15a\x1D\x16Wa\x1D\x16aL\xB4V[\x03a\x1D%WPb\x014\x98a\x12\xC4V[`\x03\x85`S\x81\x11\x15a\x1D9Wa\x1D9aL\xB4V[\x03a\x1DHWPb\x01kHa\x12\xC4V[`\x04\x85`S\x81\x11\x15a\x1D\\Wa\x1D\\aL\xB4V[\x03a\x1DkWPb\x01s\x18a\x12\xC4V[`\x05\x85`S\x81\x11\x15a\x1D\x7FWa\x1D\x7FaL\xB4V[\x03a\x1D\x8EWPb\x01\xFF\xB8a\x12\xC4V[`\x06\x85`S\x81\x11\x15a\x1D\xA2Wa\x1D\xA2aL\xB4V[\x03a\x1D\xB1WPb\x02\x90@a\x12\xC4V[`\x08\x85`S\x81\x11\x15a\x1D\xC5Wa\x1D\xC5aL\xB4V[\x03a\t\xBDWPb\x04\x1A\xC8a\x12\xC4V[a\x1D\xDCaByV[a\x1D\xE5\x82aC\x1FV[a\x1D\xEF\x82\x82aC\xC6V[PPV[_a\x1D\xFCaD\x82V[P_\x80Q` aM\xE6\x839\x81Q\x91R\x90V[sP\x15|\xFF\xD6\xBB\xFA-\xEC\xE2\x04\xA8\x9E\xC4\x19\xC2>\xF5u]`\x01`\x01`\xA0\x1B\x03\x16c\x8D\xA5\xCB[`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a\x1E^W=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a\x1E\x82\x91\x90aMEV[`\x01`\x01`\xA0\x1B\x03\x163`\x01`\x01`\xA0\x1B\x03\x16\x14a\x1E\xB5W`@Qc\x02\x1B\xFD\xA1`\xE4\x1B\x81R3`\x04\x82\x01R`$\x01a\x11\x02V[a\x1E\xBE\x81a@\xB5V[PV[3_\x80Q` aN\x06\x839\x81Q\x91R\x14a\x1E\xEEW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a\x1FIW`\x02[\x87`S\x81\x11\x15a\x1F\x19Wa\x1F\x19aL\xB4V[\x03a\x1F'WPay\x18a\t\xD6V[`\x03\x87`S\x81\x11\x15a\x1F;Wa\x1F;aL\xB4V[\x03a\x0B/WPay\x18a\t\xD6V[`\x02\x87`S\x81\x11\x15a\x1F]Wa\x1F]aL\xB4V[\x03a\x1FlWPb\x01cxa\n\x92V[`\x03\x87`S\x81\x11\x15a\x1F\x80Wa\x1F\x80aL\xB4V[\x03a\x1F\x8FWPb\x01\xE8Ha\n\x92V[`\x04\x87`S\x81\x11\x15a\x1F\xA3Wa\x1F\xA3aL\xB4V[\x03a\x1F\xB2WPb\x02|\xB8a\n\x92V[`\x05\x87`S\x81\x11\x15a\x1F\xC6Wa\x1F\xC6aL\xB4V[\x03a\x1F\xD5WPb\x030ha\n\x92V[`\x06\x87`S\x81\x11\x15a\x1F\xE9Wa\x1F\xE9aL\xB4V[\x03a\x1F\xF8WPb\x04=\xF0a\n\x92V[`\x08\x87`S\x81\x11\x15a \x0CWa \x0CaL\xB4V[\x03a\t\xBDWPb\x05\xC4\x90a\n\x92V[3_\x80Q` aN\x06\x839\x81Q\x91R\x14a HW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a!rW_\x87`S\x81\x11\x15a qWa qaL\xB4V[\x03a \x7FWPaa\xA8a\t\xD6V[`\x02\x87`S\x81\x11\x15a \x93Wa \x93aL\xB4V[\x03a \xA1WPa\xD6\xD8a\t\xD6V[`\x03\x87`S\x81\x11\x15a \xB5Wa \xB5aL\xB4V[\x03a \xC3WPa\xD6\xD8a\t\xD6V[`\x04\x87`S\x81\x11\x15a \xD7Wa \xD7aL\xB4V[\x03a \xE6WPb\x01@Pa\t\xD6V[`\x05\x87`S\x81\x11\x15a \xFAWa \xFAaL\xB4V[\x03a!\tWPb\x01D8a\t\xD6V[`\x06\x87`S\x81\x11\x15a!\x1DWa!\x1DaL\xB4V[\x03a!,WPb\x01\xC9\x08a\t\xD6V[`\x07\x87`S\x81\x11\x15a!@Wa!@aL\xB4V[\x03a!OWPb\x01\xC9\x08a\t\xD6V[`\x08\x87`S\x81\x11\x15a!cWa!caL\xB4V[\x03a\t\xBDWPb\x01\xCC\xF0a\t\xD6V[_\x87`S\x81\x11\x15a!\x85Wa!\x85aL\xB4V[\x03a!\x93WPae\x90a\n\x92V[`\x02\x87`S\x81\x11\x15a!\xA7Wa!\xA7aL\xB4V[\x03a!\xB5WPa\xD6\xD8a\n\x92V[`\x03\x87`S\x81\x11\x15a!\xC9Wa!\xC9aL\xB4V[\x03a!\xD8WPb\x01D8a\n\x92V[`\x04\x87`S\x81\x11\x15a!\xECWa!\xECaL\xB4V[\x03a!\xFBWPb\x01O\xF0a\n\x92V[`\x05\x87`S\x81\x11\x15a\"\x0FWa\"\x0FaL\xB4V[\x03a\"\x1EWPb\x01\xD4\xC0a\n\x92V[`\x06\x87`S\x81\x11\x15a\"2Wa\"2aL\xB4V[\x03a\"AWPb\x01\xDC\x90a\n\x92V[`\x07\x87`S\x81\x11\x15a\"UWa\"UaL\xB4V[\x03a\"dWPb\x02\x17(a\n\x92V[`\x08\x87`S\x81\x11\x15a\"xWa\"xaL\xB4V[\x03a\t\xBDWPb\x02Q\xC0a\n\x92V[3_\x80Q` aN\x06\x839\x81Q\x91R\x14a\"\xB4W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_\x80\x85`S\x81\x11\x15a\"\xC8Wa\"\xC8aL\xB4V[\x03a\"\xD5WP` a\x12\xC4V[`\x02\x85`S\x81\x11\x15a\"\xE9Wa\"\xE9aL\xB4V[\x03a\"\xF6WP` a\x12\xC4V[`\x03\x85`S\x81\x11\x15a#\nWa#\naL\xB4V[\x03a#\x17WP` a\x12\xC4V[`\x04\x85`S\x81\x11\x15a#+Wa#+aL\xB4V[\x03a#8WP` a\x12\xC4V[`\x05\x85`S\x81\x11\x15a#LWa#LaL\xB4V[\x03a#YWP` a\x12\xC4V[`\x06\x85`S\x81\x11\x15a#mWa#maL\xB4V[\x03a#zWP` a\x12\xC4V[`\x08\x85`S\x81\x11\x15a#\x8EWa#\x8EaL\xB4V[\x03a\t\xBDWP` a\x12\xC4V[3_\x80Q` aN\x06\x839\x81Q\x91R\x14a#\xC8W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a$\xF2W_\x87`S\x81\x11\x15a#\xF1Wa#\xF1aL\xB4V[\x03a#\xFFWPaY\xD8a\t\xD6V[`\x02\x87`S\x81\x11\x15a$\x13Wa$\x13aL\xB4V[\x03a$!WPa\xD6\xD8a\t\xD6V[`\x03\x87`S\x81\x11\x15a$5Wa$5aL\xB4V[\x03a$CWPa\xD6\xD8a\t\xD6V[`\x04\x87`S\x81\x11\x15a$WWa$WaL\xB4V[\x03a$fWPb\x01D8a\t\xD6V[`\x05\x87`S\x81\x11\x15a$zWa$zaL\xB4V[\x03a$\x89WPb\x01H a\t\xD6V[`\x06\x87`S\x81\x11\x15a$\x9DWa$\x9DaL\xB4V[\x03a$\xACWPb\x01\xC9\x08a\t\xD6V[`\x07\x87`S\x81\x11\x15a$\xC0Wa$\xC0aL\xB4V[\x03a$\xCFWPb\x01\xC9\x08a\t\xD6V[`\x08\x87`S\x81\x11\x15a$\xE3Wa$\xE3aL\xB4V[\x03a\t\xBDWPb\x01\xC9\x08a\t\xD6V[_\x87`S\x81\x11\x15a%\x05Wa%\x05aL\xB4V[\x03a%\x13WPaY\xD8a\n\x92V[`\x02\x87`S\x81\x11\x15a%'Wa%'aL\xB4V[\x03a%5WPa\xD6\xD8a\n\x92V[`\x03\x87`S\x81\x11\x15a%IWa%IaL\xB4V[\x03a%XWPb\x01D8a\n\x92V[`\x04\x87`S\x81\x11\x15a%lWa%laL\xB4V[\x03a%{WPb\x01L\x08a\n\x92V[`\x05\x87`S\x81\x11\x15a%\x8FWa%\x8FaL\xB4V[\x03a%\x9EWPb\x01\xCC\xF0a\n\x92V[`\x06\x87`S\x81\x11\x15a%\xB2Wa%\xB2aL\xB4V[\x03a%\xC1WPb\x01\xDC\x90a\n\x92V[`\x07\x87`S\x81\x11\x15a%\xD5Wa%\xD5aL\xB4V[\x03a%\xE4WPb\x02\x13@a\n\x92V[`\x08\x87`S\x81\x11\x15a%\xF8Wa%\xF8aL\xB4V[\x03a\t\xBDWPb\x02I\xF0a\n\x92V[3_\x80Q` aN\x06\x839\x81Q\x91R\x14a&4W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x02[\x84`S\x81\x11\x15a&JWa&JaL\xB4V[\x03a&XWPaY\xD8a&\xFEV[`\x03\x84`S\x81\x11\x15a&lWa&laL\xB4V[\x03a&zWPaY\xD8a&\xFEV[`\x04\x84`S\x81\x11\x15a&\x8EWa&\x8EaL\xB4V[\x03a&\x9CWPa]\xC0a&\xFEV[`\x05\x84`S\x81\x11\x15a&\xB0Wa&\xB0aL\xB4V[\x03a&\xBEWPa]\xC0a&\xFEV[`\x06\x84`S\x81\x11\x15a&\xD2Wa&\xD2aL\xB4V[\x03a&\xE0WPaa\xA8a&\xFEV[`\x08\x84`S\x81\x11\x15a&\xF4Wa&\xF4aL\xB4V[\x03a\t\xBDWPau0[a'\x08\x81\x83aA\xCCV[a'\x12\x83\x82aBTV[PPPPV[sP\x15|\xFF\xD6\xBB\xFA-\xEC\xE2\x04\xA8\x9E\xC4\x19\xC2>\xF5u]`\x01`\x01`\xA0\x1B\x03\x16c\x8D\xA5\xCB[`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a'hW=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a'\x8C\x91\x90aMEV[`\x01`\x01`\xA0\x1B\x03\x163`\x01`\x01`\xA0\x1B\x03\x16\x14a'\xBFW`@Qc\x02\x1B\xFD\xA1`\xE4\x1B\x81R3`\x04\x82\x01R`$\x01a\x11\x02V[`\x01`\x01`\xA0\x1B\x03\x81\x16_\x90\x81R_\x80Q` aM\xC6\x839\x81Q\x91R` R`@\x90 T_\x80Q` aN&\x839\x81Q\x91R\x90`\xFF\x16\x15a(\x1EW`@Qc\xF9\x9CO\xD1`\xE0\x1B\x81R`\x01`\x01`\xA0\x1B\x03\x83\x16`\x04\x82\x01R`$\x01a\x11\x02V[`\x01`\x01`\xA0\x1B\x03\x82\x16_\x81\x81R`\x01\x83\x81\x01` R`@\x80\x83 \x80T`\xFF\x19\x16\x90\x92\x17\x90\x91UQ\x7F\xCC\xA1\xD4c\x84\xCD\xBB\xEE\xF2\xF9\xDA\xDD\xB7m\xB18\x10\x1C\x99\x05\xF8\x18\xD8g\xB60\x19\\\x12\x8D<f\x91\x90\xA2PPV[3_\x80Q` aN\x06\x839\x81Q\x91R\x14a(\x9BW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a)`W`\x02\x87`S\x81\x11\x15a(\xC5Wa(\xC5aL\xB4V[\x03a(\xD4WPb\x01\xDC\x90a\t\xD6V[`\x03\x87`S\x81\x11\x15a(\xE8Wa(\xE8aL\xB4V[\x03a(\xF7WPb\x02\xF1\xE8a\t\xD6V[`\x04\x87`S\x81\x11\x15a)\x0BWa)\x0BaL\xB4V[\x03a)\x1AWPb\x04\x0B(a\t\xD6V[`\x05\x87`S\x81\x11\x15a).Wa).aL\xB4V[\x03a)=WPb\x05\x91\xC8a\t\xD6V[`\x06\x87`S\x81\x11\x15a)QWa)QaL\xB4V[\x03a\t\xBDWPb\n\x9E\xC0a\t\xD6V[`\x02\x87`S\x81\x11\x15a)tWa)taL\xB4V[\x03a)\x83WPb\x02I\xF0a\n\x92V[`\x03\x87`S\x81\x11\x15a)\x97Wa)\x97aL\xB4V[\x03a)\xA6WPb\x03c0a\n\x92V[`\x04\x87`S\x81\x11\x15a)\xBAWa)\xBAaL\xB4V[\x03a)\xC9WPb\x05\x01@a\n\x92V[`\x05\x87`S\x81\x11\x15a)\xDDWa)\xDDaL\xB4V[\x03a)\xECWPb\t\x18 a\n\x92V[`\x06\x87`S\x81\x11\x15a*\0Wa*\0aL\xB4V[\x03a\t\xBDWPb\x19\xB9\xF0a\n\x92V[3_\x80Q` aN\x06\x839\x81Q\x91R\x14a*<W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a+\x1EW`\x02\x87`S\x81\x11\x15a*fWa*faL\xB4V[\x03a*tWPay\x18a\t\xD6V[`\x03\x87`S\x81\x11\x15a*\x88Wa*\x88aL\xB4V[\x03a*\x96WPay\x18a\t\xD6V[`\x04\x87`S\x81\x11\x15a*\xAAWa*\xAAaL\xB4V[\x03a*\xB8WPa}\0a\t\xD6V[`\x05\x87`S\x81\x11\x15a*\xCCWa*\xCCaL\xB4V[\x03a*\xDAWPa\x84\xD0a\t\xD6V[`\x06\x87`S\x81\x11\x15a*\xEEWa*\xEEaL\xB4V[\x03a*\xFCWPa\x90\x88a\t\xD6V[`\x08\x87`S\x81\x11\x15a+\x10Wa+\x10aL\xB4V[\x03a\t\xBDWPa\x9C@a\t\xD6V[`\x02\x87`S\x81\x11\x15a+2Wa+2aL\xB4V[\x03a+AWPb\x01kHa\n\x92V[`\x03\x87`S\x81\x11\x15a+UWa+UaL\xB4V[\x03a+dWPb\x01\xE8Ha\n\x92V[`\x04\x87`S\x81\x11\x15a+xWa+xaL\xB4V[\x03a+\x87WPb\x02q\0a\n\x92V[`\x05\x87`S\x81\x11\x15a+\x9BWa+\x9BaL\xB4V[\x03a+\xAAWPb\x030ha\n\x92V[`\x06\x87`S\x81\x11\x15a+\xBEWa+\xBEaL\xB4V[\x03a+\xCDWPb\x04Qxa\n\x92V[`\x08\x87`S\x81\x11\x15a+\xE1Wa+\xE1aL\xB4V[\x03a\t\xBDWPb\x05\xB8\xD8a\n\x92V[3_\x80Q` aN\x06\x839\x81Q\x91R\x14a,\x1DW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a,\xE2W`\x02\x87`S\x81\x11\x15a,GWa,GaL\xB4V[\x03a,VWPb\x01[\xA8a\t\xD6V[`\x03\x87`S\x81\x11\x15a,jWa,jaL\xB4V[\x03a,yWPb\x01[\xA8a\t\xD6V[`\x04\x87`S\x81\x11\x15a,\x8DWa,\x8DaL\xB4V[\x03a,\x9CWPb\x01\xC9\x08a\t\xD6V[`\x05\x87`S\x81\x11\x15a,\xB0Wa,\xB0aL\xB4V[\x03a,\xBFWPb\x02F\x08a\t\xD6V[`\x06\x87`S\x81\x11\x15a,\xD3Wa,\xD3aL\xB4V[\x03a\t\xBDWPb\x02\xBF a\t\xD6V[`\x02\x87`S\x81\x11\x15a,\xF6Wa,\xF6aL\xB4V[\x03a-\x05WPb\x01\xD8\xA8a\n\x92V[`\x03\x87`S\x81\x11\x15a-\x19Wa-\x19aL\xB4V[\x03a-(WPb\x026ha\n\x92V[`\x04\x87`S\x81\x11\x15a-<Wa-<aL\xB4V[\x03a-KWPb\x02\xBF a\n\x92V[`\x05\x87`S\x81\x11\x15a-_Wa-_aL\xB4V[\x03a-nWPb\x03S\x90a\n\x92V[`\x06\x87`S\x81\x11\x15a-\x82Wa-\x82aL\xB4V[\x03a\t\xBDWPb\x04l\xD0a\n\x92V[3_\x80Q` aN\x06\x839\x81Q\x91R\x14a-\xBEW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\xF8\x1B`\x01`\x01`\xF8\x1B\x03\x19\x87\x16\x14a-\xEDW`@Qcj\xA9\xEB\x05`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[`\x02\x87`S\x81\x11\x15a.\x01Wa.\x01aL\xB4V[\x03a.\x10WPb\x034Pa\x15'V[`\x03\x87`S\x81\x11\x15a.$Wa.$aL\xB4V[\x03a.3WPb\x04\x9B\xB0a\x15'V[`\x04\x87`S\x81\x11\x15a.GWa.GaL\xB4V[\x03a.VWPb\x06\xAE\xF0a\x15'V[`\x05\x87`S\x81\x11\x15a.jWa.jaL\xB4V[\x03a.yWPb\n\xE8\xF8a\x15'V[`\x06\x87`S\x81\x11\x15a.\x8DWa.\x8DaL\xB4V[\x03a\t\xBDWPb\x12\xB1(a\x15'V[_\x80Q` aN&\x839\x81Q\x91R\x80T_\x91\x82\x91C\x90e\xFF\xFF\xFF\xFF\xFF\xFF\x80\x83\x16`\x01``\x1B\x90\x92\x04\x16\x14a.\xD3W\x93_\x93P\x91PPV[\x90T\x90\x93`\x01`0\x1B\x90\x91\x04e\xFF\xFF\xFF\xFF\xFF\xFF\x16\x92P\x90PV[3_\x80Q` aN\x06\x839\x81Q\x91R\x14a/\x1AW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a0\x1DW_\x87`S\x81\x11\x15a/CWa/CaL\xB4V[\x03a/QWPaU\xF0a\t\xD6V[`\x02\x87`S\x81\x11\x15a/eWa/eaL\xB4V[\x03a/sWPay\x18a\t\xD6V[`\x03\x87`S\x81\x11\x15a/\x87Wa/\x87aL\xB4V[\x03a/\x95WPay\x18a\t\xD6V[`\x04\x87`S\x81\x11\x15a/\xA9Wa/\xA9aL\xB4V[\x03a/\xB7WPa}\0a\t\xD6V[`\x05\x87`S\x81\x11\x15a/\xCBWa/\xCBaL\xB4V[\x03a/\xD9WPa\x84\xD0a\t\xD6V[`\x06\x87`S\x81\x11\x15a/\xEDWa/\xEDaL\xB4V[\x03a/\xFBWPa\x90\x88a\t\xD6V[`\x08\x87`S\x81\x11\x15a0\x0FWa0\x0FaL\xB4V[\x03a\t\xBDWPa\x98Xa\t\xD6V[_\x87`S\x81\x11\x15a00Wa00aL\xB4V[\x03a0>WPaU\xF0a\n\x92V[`\x02\x87`S\x81\x11\x15a0RWa0RaL\xB4V[\x03a0`WPay\x18a\n\x92V[`\x03\x87`S\x81\x11\x15a0tWa0taL\xB4V[\x03a0\x82WPay\x18a\n\x92V[`\x04\x87`S\x81\x11\x15a0\x96Wa0\x96aL\xB4V[\x03a0\xA4WPa}\0a\n\x92V[`\x05\x87`S\x81\x11\x15a0\xB8Wa0\xB8aL\xB4V[\x03a0\xC6WPa\x84\xD0a\n\x92V[`\x06\x87`S\x81\x11\x15a0\xDAWa0\xDAaL\xB4V[\x03a0\xE8WPa\x90\x88a\n\x92V[`\x08\x87`S\x81\x11\x15a0\xFCWa0\xFCaL\xB4V[\x03a\t\xBDWPa\x98Xa\n\x92V[sP\x15|\xFF\xD6\xBB\xFA-\xEC\xE2\x04\xA8\x9E\xC4\x19\xC2>\xF5u]`\x01`\x01`\xA0\x1B\x03\x16c\x8D\xA5\xCB[`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a1ZW=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a1~\x91\x90aMEV[`\x01`\x01`\xA0\x1B\x03\x163`\x01`\x01`\xA0\x1B\x03\x16\x14a1\xB1W`@Qc\x02\x1B\xFD\xA1`\xE4\x1B\x81R3`\x04\x82\x01R`$\x01a\x11\x02V[a\x1E\xBE\x81a?dV[sP\x15|\xFF\xD6\xBB\xFA-\xEC\xE2\x04\xA8\x9E\xC4\x19\xC2>\xF5u]`\x01`\x01`\xA0\x1B\x03\x16c\x8D\xA5\xCB[`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a2\nW=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a2.\x91\x90aMEV[`\x01`\x01`\xA0\x1B\x03\x163`\x01`\x01`\xA0\x1B\x03\x16\x14a2aW`@Qc\x02\x1B\xFD\xA1`\xE4\x1B\x81R3`\x04\x82\x01R`$\x01a\x11\x02V[a\x1E\xBE\x81a?\xF0V[3_\x80Q` aN\x06\x839\x81Q\x91R\x14a2\x97W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_\x80\x84`S\x81\x11\x15a2\xABWa2\xABaL\xB4V[\x03a2\xB8WP` a&\xFEV[`\x02\x84`S\x81\x11\x15a2\xCCWa2\xCCaL\xB4V[\x03a2\xD9WP` a&\xFEV[`\x03\x84`S\x81\x11\x15a2\xEDWa2\xEDaL\xB4V[\x03a2\xFAWP` a&\xFEV[`\x04\x84`S\x81\x11\x15a3\x0EWa3\x0EaL\xB4V[\x03a3\x1BWP` a&\xFEV[`\x05\x84`S\x81\x11\x15a3/Wa3/aL\xB4V[\x03a3<WP` a&\xFEV[`\x06\x84`S\x81\x11\x15a3PWa3PaL\xB4V[\x03a3]WP` a&\xFEV[`\x07\x84`S\x81\x11\x15a3qWa3qaL\xB4V[\x03a3~WP` a&\xFEV[`\x08\x84`S\x81\x11\x15a3\x92Wa3\x92aL\xB4V[\x03a\t\xBDWP` a&\xFEV[3_\x80Q` aN\x06\x839\x81Q\x91R\x14a3\xCCW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[\x82_`\x02\x87`S\x81\x11\x15a3\xE2Wa3\xE2aL\xB4V[\x03a4'W`\n\x82\x11a3\xF9WPb\x01c\x14a5cV[`\x1E\x82\x11a4\x0BWPb\x01\xF0\x18a5cV[`<\x82\x11a4\x1DWPb\x02B a5cV[Pb\x02m\x18a5cV[`\x03\x87`S\x81\x11\x15a4;Wa4;aL\xB4V[\x03a4\x80W`\n\x82\x11a4RWPb\x01s\x18a5cV[`\x1E\x82\x11a4dWPb\x02\x13@a5cV[`<\x82\x11a4vWPb\x02x\xD0a5cV[Pb\x02\xCE\xC0a5cV[`\x04\x87`S\x81\x11\x15a4\x94Wa4\x94aL\xB4V[\x03a4\xD9W`\n\x82\x11a4\xABWPb\x01\xC5 a5cV[`\x1E\x82\x11a4\xBDWPb\x02\x80\xA0a5cV[`<\x82\x11a4\xCFWPb\x03 \xC8a5cV[Pb\x04I\xA8a5cV[`\x05\x87`S\x81\x11\x15a4\xEDWa4\xEDaL\xB4V[\x03a5 W`\n\x82\x11a5\x04WPb\x02\x1E\xF8a5cV[`\x1E\x82\x11a5\x16WPb\x03K\xC0a5cV[Pb\x04\xABPa5cV[`\x06\x87`S\x81\x11\x15a54Wa54aL\xB4V[\x03a\t\xBDW`\n\x82\x11a5KWPb\x03Wxa5cV[`\x1E\x82\x11a5]WPb\x05j\xB8a5cV[Pb\x08l@[a5m\x81\x84aA\xCCV[_\x80[\x86\x81\x10\x15a5\xA5W_a5\x8E\x89\x89\x84\x81\x81\x10a\x1A\xF7Wa\x1A\xF7aM`V[\x90P\x82\x81\x11\x15a5\x9CW\x80\x92P[P`\x01\x01a5pV[P_a5\xB1\x82\x84aMtV[\x90P_\x80Q` aN&\x839\x81Q\x91RT`\x01`\x90\x1B\x90\x04e\xFF\xFF\xFF\xFF\xFF\xFF\x16\x81\x11\x15a5\xF1W`@Qc\x0F\xC3D\x87`\xE4\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[a5\xFB\x86\x82aBTV[PPPPPPPPPV[3_\x80Q` aN\x06\x839\x81Q\x91R\x14a63W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a6\xAEW_\x87`S\x81\x11\x15a6\\Wa6\\aL\xB4V[\x03a6jWPaU\xF0a\t\xD6V[`\x02\x87`S\x81\x11\x15a6~Wa6~aL\xB4V[\x03a6\x8CWPau0a\t\xD6V[`\x03\x87`S\x81\x11\x15a6\xA0Wa6\xA0aL\xB4V[\x03a\x0B/WPau0a\t\xD6V[_\x87`S\x81\x11\x15a6\xC1Wa6\xC1aL\xB4V[\x03a6\xCFWPa]\xC0a\n\x92V[`\x02\x87`S\x81\x11\x15a6\xE3Wa6\xE3aL\xB4V[\x03a6\xF1WPau0a\n\x92V[`\x03\x87`S\x81\x11\x15a7\x05Wa7\x05aL\xB4V[\x03a7\x13WPay\x18a\n\x92V[`\x04\x87`S\x81\x11\x15a7'Wa7'aL\xB4V[\x03a75WPa}\0a\n\x92V[`\x05\x87`S\x81\x11\x15a7IWa7IaL\xB4V[\x03a7WWPa\x84\xD0a\n\x92V[`\x06\x87`S\x81\x11\x15a7kWa7kaL\xB4V[\x03a7yWPa\x90\x88a\n\x92V[`\x08\x87`S\x81\x11\x15a7\x8DWa7\x8DaL\xB4V[\x03a\t\xBDWPa\x94pa\n\x92V[3_\x80Q` aN\x06\x839\x81Q\x91R\x14a7\xC8W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a8\x8EW`\x02[\x87`S\x81\x11\x15a7\xF3Wa7\xF3aL\xB4V[\x03a8\x02WPb\x01H a\t\xD6V[`\x03\x87`S\x81\x11\x15a8\x16Wa8\x16aL\xB4V[\x03a8%WPb\x01kHa\t\xD6V[`\x04\x87`S\x81\x11\x15a89Wa89aL\xB4V[\x03a8HWPb\x01s\x18a\t\xD6V[`\x05\x87`S\x81\x11\x15a8\\Wa8\\aL\xB4V[\x03a8kWPb\x02\x07\x88a\t\xD6V[`\x06\x87`S\x81\x11\x15a8\x7FWa8\x7FaL\xB4V[\x03a\t\xBDWPb\x02\x9F\xE0a\t\xD6V[`\x02\x87`S\x81\x11\x15a8\xA2Wa8\xA2aL\xB4V[\x03a8\xB1WPb\x01W\xC0a\n\x92V[`\x03\x87`S\x81\x11\x15a8\xC5Wa8\xC5aL\xB4V[\x03a8\xD4WPb\x01kHa\n\x92V[`\x04\x87`S\x81\x11\x15a8\xE8Wa8\xE8aL\xB4V[\x03a8\xF7WPb\x01\xE8Ha\n\x92V[`\x05\x87`S\x81\x11\x15a9\x0BWa9\x0BaL\xB4V[\x03a9\x1AWPb\x02x\xD0a\n\x92V[`\x06\x87`S\x81\x11\x15a9.Wa9.aL\xB4V[\x03a\t\xBDWPb\x03\xF3\xB8a\n\x92V[3_\x80Q` aN\x06\x839\x81Q\x91R\x14a9jW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a:\nW`\x02\x87`S\x81\x11\x15a9\x94Wa9\x94aL\xB4V[\x03a9\xA2WPa\xCB a\t\xD6V[`\x03\x87`S\x81\x11\x15a9\xB6Wa9\xB6aL\xB4V[\x03a9\xC4WPa\xD6\xD8a\t\xD6V[`\x04\x87`S\x81\x11\x15a9\xD8Wa9\xD8aL\xB4V[\x03a9\xE7WPb\x01H a\t\xD6V[`\x05\x87`S\x81\x11\x15a9\xFBWa9\xFBaL\xB4V[\x03a\x17\x9EWPb\x01\xC5 a\t\xD6V[`\x02\x87`S\x81\x11\x15a:\x1EWa:\x1EaL\xB4V[\x03a:,WPa\xF6\x18a\n\x92V[`\x03\x87`S\x81\x11\x15a:@Wa:@aL\xB4V[\x03a:OWPb\x01H a\n\x92V[`\x04\x87`S\x81\x11\x15a:cWa:caL\xB4V[\x03a:rWPb\x01\xCC\xF0a\n\x92V[`\x05\x87`S\x81\x11\x15a:\x86Wa:\x86aL\xB4V[\x03a:\x95WPb\x02Q\xC0a\n\x92V[`\x06\x87`S\x81\x11\x15a:\xA9Wa:\xA9aL\xB4V[\x03a\t\xBDWPb\x034Pa\n\x92V[3_\x80Q` aN\x06\x839\x81Q\x91R\x14a:\xE5W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a;#W_\x87`S\x81\x11\x15a;\x0EWa;\x0EaL\xB4V[\x03a;\x1CWPaU\xF0a\t\xD6V[`\x02a\x1F\x07V[_\x87`S\x81\x11\x15a;6Wa;6aL\xB4V[\x03a;DWPaa\xA8a\n\x92V[`\x02\x87`S\x81\x11\x15a;XWa;XaL\xB4V[\x03a6\xF1WPay\x18a\n\x92V[3_\x80Q` aN\x06\x839\x81Q\x91R\x14a;\x93W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_\x80\x84`S\x81\x11\x15a;\xA7Wa;\xA7aL\xB4V[\x03a;\xB5WPaJ8a&\xFEV[`\x02a&8V[3_\x80Q` aN\x06\x839\x81Q\x91R\x14a;\xE9W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a<\x06W`\x02a7\xE1V[`\x02\x87`S\x81\x11\x15a<\x1AWa<\x1AaL\xB4V[\x03a<)WPb\x01cxa\n\x92V[`\x03\x87`S\x81\x11\x15a<=Wa<=aL\xB4V[\x03a<LWPb\x01kHa\n\x92V[`\x04\x87`S\x81\x11\x15a<`Wa<`aL\xB4V[\x03a<oWPb\x01\xE8Ha\n\x92V[`\x05\x87`S\x81\x11\x15a<\x83Wa<\x83aL\xB4V[\x03a<\x92WPb\x02x\xD0a\n\x92V[`\x06\x87`S\x81\x11\x15a<\xA6Wa<\xA6aL\xB4V[\x03a\t\xBDWPb\x03\xF7\xA0a\n\x92V[3_\x80Q` aN\x06\x839\x81Q\x91R\x14a<\xE2W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a=<W`\x02\x87`S\x81\x11\x15a=\x0CWa=\x0CaL\xB4V[\x03a=\x1AWPa}\0a\t\xD6V[`\x03\x87`S\x81\x11\x15a=.Wa=.aL\xB4V[\x03a/\x95WPa}\0a\t\xD6V[`\x02\x87`S\x81\x11\x15a=PWa=PaL\xB4V[\x03a=_WPb\x01g`a\n\x92V[`\x03\x87`S\x81\x11\x15a=sWa=saL\xB4V[\x03a=\x82WPb\x01\xE8Ha\n\x92V[`\x04\x87`S\x81\x11\x15a=\x96Wa=\x96aL\xB4V[\x03a=\xA5WPb\x02x\xD0a\n\x92V[`\x05\x87`S\x81\x11\x15a=\xB9Wa=\xB9aL\xB4V[\x03a=\xC8WPb\x03,\x80a\n\x92V[`\x06\x87`S\x81\x11\x15a=\xDCWa=\xDCaL\xB4V[\x03a\x1F\xF8WPb\x04&\x80a\n\x92V[a=\xF5\x84\x84aA\xCCV[_a=\xFF\x83aB0V[a>\t\x90\x86aMtV[\x90P_\x80Q` aN&\x839\x81Q\x91RT`\x01`\x90\x1B\x90\x04e\xFF\xFF\xFF\xFF\xFF\xFF\x16\x81\x11\x15a>IW`@Qc\x0F\xC3D\x87`\xE4\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[a\x12\xD0\x82\x82aBTV[a>]\x85\x85aA\xCCV[_a>xa>j\x85aB0V[a>s\x85aB0V[aD\xCBV[a>\x82\x90\x87aMtV[\x90P_\x80Q` aN&\x839\x81Q\x91RT`\x01`\x90\x1B\x90\x04e\xFF\xFF\xFF\xFF\xFF\xFF\x16\x81\x11\x15a>\xC2W`@Qc\x0F\xC3D\x87`\xE4\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[a>\xCC\x82\x82aBTV[PPPPPPV[``_a>\xE0\x83aD\xE5V[`\x01\x01\x90P_\x81g\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x81\x11\x15a>\xFFWa>\xFFaK\x1FV[`@Q\x90\x80\x82R\x80`\x1F\x01`\x1F\x19\x16` \x01\x82\x01`@R\x80\x15a?)W` \x82\x01\x81\x806\x837\x01\x90P[P\x90P\x81\x81\x01` \x01[_\x19\x01o\x18\x18\x99\x19\x9A\x1A\x9B\x1B\x9C\x1C\xB0\xB11\xB22\xB3`\x81\x1B`\n\x86\x06\x1A\x81S`\n\x85\x04\x94P\x84a?3WP\x93\x92PPPV[_\x80Q` aN&\x839\x81Q\x91R\x80T`\x01`\xC0\x1B\x90\x04e\xFF\xFF\xFF\xFF\xFF\xFF\x90\x81\x16\x90\x83\x16\x10\x15a?\xA7W`@Qc\x04\xAC\xCA/`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[\x80Te\xFF\xFF\xFF\xFF\xFF\xFF\x19\x16e\xFF\xFF\xFF\xFF\xFF\xFF\x83\x16\x90\x81\x17\x82U`@Q\x90\x81R\x7F\xC1\xF1\xFC\xAA\x89\x8A\xAE\"c\xDD\xEDq.\x17\x98\x08?\xCA\x92r\xFF\x80>\xE4\x15\x0C\xE4\x8F\x86\x19\x89\x1A\x90` \x01a\x0F\tV[_\x80Q` aN&\x839\x81Q\x91R\x80Te\xFF\xFF\xFF\xFF\xFF\xFF\x83\x81\x16\x91\x16\x10\x15a@+W`@Qc\x04\xAC\xCA/`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[\x80Te\xFF\xFF\xFF\xFF\xFF\xFF`\x01`\x90\x1B\x90\x91\x04\x81\x16\x90\x83\x16\x10\x15a@`W`@Qc+\xECX\xCF`\xE2\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[\x80Te\xFF\xFF\xFF\xFF\xFF\xFF`\xC0\x1B\x19\x16`\x01`\xC0\x1Be\xFF\xFF\xFF\xFF\xFF\xFF\x84\x16\x90\x81\x02\x91\x90\x91\x17\x82U`@Q\x90\x81R\x7Fd\xCB\x9Ez\xE6I|Y\x08\x0C\xDB\xC0HU.\x12=R\xAAB@\xE17u\x8A\x175\x82xia\xCA\x90` \x01a\x0F\tV[_\x80Q` aN&\x839\x81Q\x91R\x80Te\xFF\xFF\xFF\xFF\xFF\xFF\x83\x81\x16`\x01`\xC0\x1B\x90\x92\x04\x16\x10\x15a@\xF7W`@Qc+\xECX\xCF`\xE2\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[\x80Te\xFF\xFF\xFF\xFF\xFF\xFF`\x90\x1B\x19\x16`\x01`\x90\x1Be\xFF\xFF\xFF\xFF\xFF\xFF\x84\x16\x90\x81\x02\x91\x90\x91\x17\x82U`@Q\x90\x81R\x7FU\x11\xB1\x85\x1F\xC4\n&)\xC8U\xBA\xB7\xAD\xCE2v\xC4p\xD8\x19\x0E\xB0\x141\xE4\x18\xDC*\xF1>\x8E\x90` \x01a\x0F\tV[aAV\x86\x86aA\xCCV[_aAxaAc\x86aB0V[a>saAo\x87aB0V[a>s\x87aB0V[aA\x82\x90\x88aMtV[\x90P_\x80Q` aN&\x839\x81Q\x91RT`\x01`\x90\x1B\x90\x04e\xFF\xFF\xFF\xFF\xFF\xFF\x16\x81\x11\x15aA\xC2W`@Qc\x0F\xC3D\x87`\xE4\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[a\n\x9F\x82\x82aBTV[aA\xD6\x82\x82aE\xBCV[_aA\xE2\x81\\\x84aMtV[\x90P_\x80Q` aN&\x839\x81Q\x91RT`\x01`\xC0\x1B\x90\x04e\xFF\xFF\xFF\xFF\xFF\xFF\x16\x81\x11\x15aB\"W`@Qcw\xE3\xC2\x93`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[aB+\x81aF\xB2V[PPPV[_\x81aBOW`@Qc4\xE4]{`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[P\\\x90V[\x81aBrW`@Qc4\xE4]{`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[\x80\x82]PPV[0`\x01`\x01`\xA0\x1B\x03\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x16\x14\x80aB\xFFWP\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0`\x01`\x01`\xA0\x1B\x03\x16aB\xF3_\x80Q` aM\xE6\x839\x81Q\x91RT`\x01`\x01`\xA0\x1B\x03\x16\x90V[`\x01`\x01`\xA0\x1B\x03\x16\x14\x15[\x15aC\x1DW`@Qcp>F\xDD`\xE1\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[V[sP\x15|\xFF\xD6\xBB\xFA-\xEC\xE2\x04\xA8\x9E\xC4\x19\xC2>\xF5u]`\x01`\x01`\xA0\x1B\x03\x16c\x8D\xA5\xCB[`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15aCoW=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90aC\x93\x91\x90aMEV[`\x01`\x01`\xA0\x1B\x03\x163`\x01`\x01`\xA0\x1B\x03\x16\x14a\x1E\xBEW`@Qc\x02\x1B\xFD\xA1`\xE4\x1B\x81R3`\x04\x82\x01R`$\x01a\x11\x02V[\x81`\x01`\x01`\xA0\x1B\x03\x16cR\xD1\x90-`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x92PPP\x80\x15aD WP`@\x80Q`\x1F=\x90\x81\x01`\x1F\x19\x16\x82\x01\x90\x92RaD\x1D\x91\x81\x01\x90aM\x93V[`\x01[aDHW`@QcL\x9C\x8C\xE3`\xE0\x1B\x81R`\x01`\x01`\xA0\x1B\x03\x83\x16`\x04\x82\x01R`$\x01a\x11\x02V[_\x80Q` aM\xE6\x839\x81Q\x91R\x81\x14aDxW`@Qc*\x87Ri`\xE2\x1B\x81R`\x04\x81\x01\x82\x90R`$\x01a\x11\x02V[aB+\x83\x83aF\xB8V[0`\x01`\x01`\xA0\x1B\x03\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x16\x14aC\x1DW`@Qcp>F\xDD`\xE1\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_\x81\x83\x10\x15aD\xDAW\x81aD\xDCV[\x82[\x90P[\x92\x91PPV[_\x80r\x18O\x03\xE9?\xF9\xF4\xDA\xA7\x97\xEDn8\xEDd\xBFj\x1F\x01`@\x1B\x83\x10aE#Wr\x18O\x03\xE9?\xF9\xF4\xDA\xA7\x97\xEDn8\xEDd\xBFj\x1F\x01`@\x1B\x83\x04\x92P`@\x01[m\x04\xEE-mA[\x85\xAC\xEF\x81\0\0\0\0\x83\x10aEOWm\x04\xEE-mA[\x85\xAC\xEF\x81\0\0\0\0\x83\x04\x92P` \x01[f#\x86\xF2o\xC1\0\0\x83\x10aEmWf#\x86\xF2o\xC1\0\0\x83\x04\x92P`\x10\x01[c\x05\xF5\xE1\0\x83\x10aE\x85Wc\x05\xF5\xE1\0\x83\x04\x92P`\x08\x01[a'\x10\x83\x10aE\x99Wa'\x10\x83\x04\x92P`\x04\x01[`d\x83\x10aE\xABW`d\x83\x04\x92P`\x02\x01[`\n\x83\x10aD\xDFW`\x01\x01\x92\x91PPV[`\x01`\x01`\xA0\x1B\x03\x81\x16_\x90\x81R_\x80Q` aM\xC6\x839\x81Q\x91R` R`@\x90 T_\x80Q` aN&\x839\x81Q\x91R\x90`\xFF\x16\x15aE\xFCWPPPV[\x80TC\x90e\xFF\xFF\xFF\xFF\xFF\xFF`\x01`0\x1B\x82\x04\x81\x16\x91`\x01``\x1B\x90\x04\x81\x16\x90\x83\x16\x14aF%WP_[_aF8\x86e\xFF\xFF\xFF\xFF\xFF\xFF\x84\x16aMtV[\x84T\x90\x91Pe\xFF\xFF\xFF\xFF\xFF\xFF\x16\x81\x11\x15aFeW`@Qc+ID]`\xE2\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[\x83Tq\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\0\0\0\0\0\0\x19\x16`\x01`0\x1Be\xFF\xFF\xFF\xFF\xFF\xFF\x92\x83\x16\x02e\xFF\xFF\xFF\xFF\xFF\xFF``\x1B\x19\x16\x17`\x01``\x1B\x93\x90\x91\x16\x92\x90\x92\x02\x91\x90\x91\x17\x90\x91UPPPV[\x80_]PV[aF\xC1\x82aG\rV[`@Q`\x01`\x01`\xA0\x1B\x03\x83\x16\x90\x7F\xBC|\xD7Z \xEE'\xFD\x9A\xDE\xBA\xB3 A\xF7U!M\xBCk\xFF\xA9\x0C\xC0\"[9\xDA.\\-;\x90_\x90\xA2\x80Q\x15aG\x05WaB+\x82\x82aGpV[a\x1D\xEFaG\xE2V[\x80`\x01`\x01`\xA0\x1B\x03\x16;_\x03aGBW`@QcL\x9C\x8C\xE3`\xE0\x1B\x81R`\x01`\x01`\xA0\x1B\x03\x82\x16`\x04\x82\x01R`$\x01a\x11\x02V[_\x80Q` aM\xE6\x839\x81Q\x91R\x80T`\x01`\x01`\xA0\x1B\x03\x19\x16`\x01`\x01`\xA0\x1B\x03\x92\x90\x92\x16\x91\x90\x91\x17\x90UV[``_\x80\x84`\x01`\x01`\xA0\x1B\x03\x16\x84`@QaG\x8C\x91\x90aM\xAAV[_`@Q\x80\x83\x03\x81\x85Z\xF4\x91PP=\x80_\x81\x14aG\xC4W`@Q\x91P`\x1F\x19`?=\x01\x16\x82\x01`@R=\x82R=_` \x84\x01>aG\xC9V[``\x91P[P\x91P\x91PaG\xD9\x85\x83\x83aH\x01V[\x95\x94PPPPPV[4\x15aC\x1DW`@Qc\xB3\x98\x97\x9F`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[``\x82aH\x16WaH\x11\x82aH`V[aHYV[\x81Q\x15\x80\x15aH-WP`\x01`\x01`\xA0\x1B\x03\x84\x16;\x15[\x15aHVW`@Qc\x99\x96\xB3\x15`\xE0\x1B\x81R`\x01`\x01`\xA0\x1B\x03\x85\x16`\x04\x82\x01R`$\x01a\x11\x02V[P\x80[\x93\x92PPPV[\x80Q\x15aHpW\x80Q\x80\x82` \x01\xFD[`@Qc\xD6\xBD\xA2u`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[\x805`T\x81\x10aH\x97W_\x80\xFD[\x91\x90PV[`\x01`\x01`\xA0\x1B\x03\x81\x16\x81\x14a\x1E\xBEW_\x80\xFD[_\x80_\x80_\x80`\xC0\x87\x89\x03\x12\x15aH\xC5W_\x80\xFD[aH\xCE\x87aH\x89V[\x95P` \x87\x015`\x01`\x01`\xF8\x1B\x03\x19\x81\x16\x81\x14aH\xEAW_\x80\xFD[\x94P`@\x87\x015\x93P``\x87\x015\x92P`\x80\x87\x015\x91P`\xA0\x87\x015aI\x0F\x81aH\x9CV[\x80\x91PP\x92\x95P\x92\x95P\x92\x95V[_[\x83\x81\x10\x15aI7W\x81\x81\x01Q\x83\x82\x01R` \x01aI\x1FV[PP_\x91\x01RV[` \x81R_\x82Q\x80` \x84\x01RaI]\x81`@\x85\x01` \x87\x01aI\x1DV[`\x1F\x01`\x1F\x19\x16\x91\x90\x91\x01`@\x01\x92\x91PPV[\x805e\xFF\xFF\xFF\xFF\xFF\xFF\x81\x16\x81\x14aH\x97W_\x80\xFD[_\x80_``\x84\x86\x03\x12\x15aI\x98W_\x80\xFD[aI\xA1\x84aIqV[\x92PaI\xAF` \x85\x01aIqV[\x91PaI\xBD`@\x85\x01aIqV[\x90P\x92P\x92P\x92V[_` \x82\x84\x03\x12\x15aI\xD6W_\x80\xFD[\x815aHY\x81aH\x9CV[_\x80_\x80`\x80\x85\x87\x03\x12\x15aI\xF4W_\x80\xFD[aI\xFD\x85aH\x89V[\x93P` \x85\x015\x92P`@\x85\x015\x91P``\x85\x015aJ\x1B\x81aH\x9CV[\x93\x96\x92\x95P\x90\x93PPV[_\x80_\x80_\x80`\xC0\x87\x89\x03\x12\x15aJ;W_\x80\xFD[aJD\x87aH\x89V[\x95P` \x87\x015\x94P`@\x87\x015\x93P``\x87\x015\x92P`\x80\x87\x015\x91P`\xA0\x87\x015aI\x0F\x81aH\x9CV[_\x80\x83`\x1F\x84\x01\x12aJ\x80W_\x80\xFD[P\x815g\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x81\x11\x15aJ\x97W_\x80\xFD[` \x83\x01\x91P\x83` \x82`\x05\x1B\x85\x01\x01\x11\x15aJ\xB1W_\x80\xFD[\x92P\x92\x90PV[_\x80_\x80_\x80`\xA0\x87\x89\x03\x12\x15aJ\xCDW_\x80\xFD[aJ\xD6\x87aH\x89V[\x95P` \x87\x015\x94P`@\x87\x015g\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x81\x11\x15aJ\xF8W_\x80\xFD[aK\x04\x89\x82\x8A\x01aJpV[\x90\x95P\x93PP``\x87\x015\x91P`\x80\x87\x015aI\x0F\x81aH\x9CV[cNH{q`\xE0\x1B_R`A`\x04R`$_\xFD[_\x80`@\x83\x85\x03\x12\x15aKDW_\x80\xFD[\x825aKO\x81aH\x9CV[\x91P` \x83\x015g\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x80\x82\x11\x15aKkW_\x80\xFD[\x81\x85\x01\x91P\x85`\x1F\x83\x01\x12aK~W_\x80\xFD[\x815\x81\x81\x11\x15aK\x90WaK\x90aK\x1FV[`@Q`\x1F\x82\x01`\x1F\x19\x90\x81\x16`?\x01\x16\x81\x01\x90\x83\x82\x11\x81\x83\x10\x17\x15aK\xB8WaK\xB8aK\x1FV[\x81`@R\x82\x81R\x88` \x84\x87\x01\x01\x11\x15aK\xD0W_\x80\xFD[\x82` \x86\x01` \x83\x017_` \x84\x83\x01\x01R\x80\x95PPPPPP\x92P\x92\x90PV[_` \x82\x84\x03\x12\x15aL\x01W_\x80\xFD[aD\xDC\x82aIqV[_\x80_``\x84\x86\x03\x12\x15aL\x1CW_\x80\xFD[aL%\x84aH\x89V[\x92P` \x84\x015\x91P`@\x84\x015aL<\x81aH\x9CV[\x80\x91PP\x92P\x92P\x92V[_\x80_\x80_`\x80\x86\x88\x03\x12\x15aL[W_\x80\xFD[aLd\x86aH\x89V[\x94P` \x86\x015g\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x81\x11\x15aL\x7FW_\x80\xFD[aL\x8B\x88\x82\x89\x01aJpV[\x90\x95P\x93PP`@\x86\x015\x91P``\x86\x015aL\xA6\x81aH\x9CV[\x80\x91PP\x92\x95P\x92\x95\x90\x93PV[cNH{q`\xE0\x1B_R`!`\x04R`$_\xFD[_\x85QaL\xD9\x81\x84` \x8A\x01aI\x1DV[a\x10;`\xF1\x1B\x90\x83\x01\x90\x81R\x85QaL\xF8\x81`\x02\x84\x01` \x8A\x01aI\x1DV[\x80\x82\x01\x91PP`\x17`\xF9\x1B\x80`\x02\x83\x01R\x85QaM\x1C\x81`\x03\x85\x01` \x8A\x01aI\x1DV[`\x03\x92\x01\x91\x82\x01R\x83QaM7\x81`\x04\x84\x01` \x88\x01aI\x1DV[\x01`\x04\x01\x96\x95PPPPPPV[_` \x82\x84\x03\x12\x15aMUW_\x80\xFD[\x81QaHY\x81aH\x9CV[cNH{q`\xE0\x1B_R`2`\x04R`$_\xFD[\x80\x82\x01\x80\x82\x11\x15aD\xDFWcNH{q`\xE0\x1B_R`\x11`\x04R`$_\xFD[_` \x82\x84\x03\x12\x15aM\xA3W_\x80\xFD[PQ\x91\x90PV[_\x82QaM\xBB\x81\x84` \x87\x01aI\x1DV[\x91\x90\x91\x01\x92\x91PPV\xFE\xC1:\xF6\xC5\x14\xBF\xF8\x99\x7F0\xC9\0\x03\xBA\xA8+\xD0*\xAD\x97\x81y\xD1\xCEX\xD8\\C\x19\xADe\x016\x08\x94\xA1;\xA1\xA3!\x06g\xC8(I-\xB9\x8D\xCA> v\xCC75\xA9 \xA3\xCAP]8+\xBC\0\0\0\0\0\0\0\0\0\0\0\0\xE3\xA9\x10Z:\x93\"S\xA7\x0F\x12n\xB1\xE3\xB5\x89\xC6C\xDD$\xC1:\xF6\xC5\x14\xBF\xF8\x99\x7F0\xC9\0\x03\xBA\xA8+\xD0*\xAD\x97\x81y\xD1\xCEX\xD8\\C\x19\xADe\0",
     );
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct FheType(u8);
@@ -1662,34 +1661,27 @@ pub mod HCULimit {
             #[inline]
             fn stv_to_tokens(
                 &self,
-            ) -> <alloy::sol_types::sol_data::Uint<
-                8,
-            > as alloy_sol_types::SolType>::Token<'_> {
+            ) -> <alloy::sol_types::sol_data::Uint<8> as alloy_sol_types::SolType>::Token<'_>
+            {
                 alloy_sol_types::private::SolTypeValue::<
                     alloy::sol_types::sol_data::Uint<8>,
                 >::stv_to_tokens(self)
             }
             #[inline]
             fn stv_eip712_data_word(&self) -> alloy_sol_types::Word {
-                <alloy::sol_types::sol_data::Uint<
-                    8,
-                > as alloy_sol_types::SolType>::tokenize(self)
-                    .0
+                <alloy::sol_types::sol_data::Uint<8> as alloy_sol_types::SolType>::tokenize(self).0
             }
             #[inline]
-            fn stv_abi_encode_packed_to(
-                &self,
-                out: &mut alloy_sol_types::private::Vec<u8>,
-            ) {
+            fn stv_abi_encode_packed_to(&self, out: &mut alloy_sol_types::private::Vec<u8>) {
                 <alloy::sol_types::sol_data::Uint<
                     8,
                 > as alloy_sol_types::SolType>::abi_encode_packed_to(self, out)
             }
             #[inline]
             fn stv_abi_packed_encoded_size(&self) -> usize {
-                <alloy::sol_types::sol_data::Uint<
-                    8,
-                > as alloy_sol_types::SolType>::abi_encoded_size(self)
+                <alloy::sol_types::sol_data::Uint<8> as alloy_sol_types::SolType>::abi_encoded_size(
+                    self,
+                )
             }
         }
         #[automatically_derived]
@@ -1734,13 +1726,11 @@ pub mod HCULimit {
         #[automatically_derived]
         impl alloy_sol_types::SolType for FheType {
             type RustType = u8;
-            type Token<'a> = <alloy::sol_types::sol_data::Uint<
-                8,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> =
+                <alloy::sol_types::sol_data::Uint<8> as alloy_sol_types::SolType>::Token<'a>;
             const SOL_NAME: &'static str = Self::NAME;
-            const ENCODED_SIZE: Option<usize> = <alloy::sol_types::sol_data::Uint<
-                8,
-            > as alloy_sol_types::SolType>::ENCODED_SIZE;
+            const ENCODED_SIZE: Option<usize> =
+                <alloy::sol_types::sol_data::Uint<8> as alloy_sol_types::SolType>::ENCODED_SIZE;
             const PACKED_ENCODED_SIZE: Option<usize> = <alloy::sol_types::sol_data::Uint<
                 8,
             > as alloy_sol_types::SolType>::PACKED_ENCODED_SIZE;
@@ -1750,15 +1740,11 @@ pub mod HCULimit {
             }
             #[inline]
             fn type_check(token: &Self::Token<'_>) -> alloy_sol_types::Result<()> {
-                <alloy::sol_types::sol_data::Uint<
-                    8,
-                > as alloy_sol_types::SolType>::type_check(token)
+                <alloy::sol_types::sol_data::Uint<8> as alloy_sol_types::SolType>::type_check(token)
             }
             #[inline]
             fn detokenize(token: Self::Token<'_>) -> Self::RustType {
-                <alloy::sol_types::sol_data::Uint<
-                    8,
-                > as alloy_sol_types::SolType>::detokenize(token)
+                <alloy::sol_types::sol_data::Uint<8> as alloy_sol_types::SolType>::detokenize(token)
             }
         }
         #[automatically_derived]
@@ -1779,21 +1765,18 @@ pub mod HCULimit {
                 > as alloy_sol_types::EventTopic>::encode_topic_preimage(rust, out)
             }
             #[inline]
-            fn encode_topic(
-                rust: &Self::RustType,
-            ) -> alloy_sol_types::abi::token::WordToken {
-                <alloy::sol_types::sol_data::Uint<
-                    8,
-                > as alloy_sol_types::EventTopic>::encode_topic(rust)
+            fn encode_topic(rust: &Self::RustType) -> alloy_sol_types::abi::token::WordToken {
+                <alloy::sol_types::sol_data::Uint<8> as alloy_sol_types::EventTopic>::encode_topic(
+                    rust,
+                )
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `AddressEmptyCode(address)` and selector `0x9996b315`.
-```solidity
-error AddressEmptyCode(address target);
-```*/
+    ```solidity
+    error AddressEmptyCode(address target);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct AddressEmptyCode {
@@ -1814,9 +1797,7 @@ error AddressEmptyCode(address target);
         type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1840,9 +1821,7 @@ error AddressEmptyCode(address target);
         #[automatically_derived]
         impl alloy_sol_types::SolError for AddressEmptyCode {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "AddressEmptyCode(address)";
             const SELECTOR: [u8; 4] = [153u8, 150u8, 179u8, 21u8];
             #[inline]
@@ -1861,19 +1840,18 @@ error AddressEmptyCode(address target);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `AlreadyBlockHCUWhitelisted(address)` and selector `0xf99c4fd1`.
-```solidity
-error AlreadyBlockHCUWhitelisted(address account);
-```*/
+    ```solidity
+    error AlreadyBlockHCUWhitelisted(address account);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct AlreadyBlockHCUWhitelisted {
@@ -1894,9 +1872,7 @@ error AlreadyBlockHCUWhitelisted(address account);
         type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1905,16 +1881,14 @@ error AlreadyBlockHCUWhitelisted(address account);
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<AlreadyBlockHCUWhitelisted>
-        for UnderlyingRustTuple<'_> {
+        impl ::core::convert::From<AlreadyBlockHCUWhitelisted> for UnderlyingRustTuple<'_> {
             fn from(value: AlreadyBlockHCUWhitelisted) -> Self {
                 (value.account,)
             }
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>>
-        for AlreadyBlockHCUWhitelisted {
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for AlreadyBlockHCUWhitelisted {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self { account: tuple.0 }
             }
@@ -1922,9 +1896,7 @@ error AlreadyBlockHCUWhitelisted(address account);
         #[automatically_derived]
         impl alloy_sol_types::SolError for AlreadyBlockHCUWhitelisted {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "AlreadyBlockHCUWhitelisted(address)";
             const SELECTOR: [u8; 4] = [249u8, 156u8, 79u8, 209u8];
             #[inline]
@@ -1943,19 +1915,18 @@ error AlreadyBlockHCUWhitelisted(address account);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `CallerMustBeFHEVMExecutorContract()` and selector `0x31a81a81`.
-```solidity
-error CallerMustBeFHEVMExecutorContract();
-```*/
+    ```solidity
+    error CallerMustBeFHEVMExecutorContract();
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct CallerMustBeFHEVMExecutorContract;
@@ -1973,9 +1944,7 @@ error CallerMustBeFHEVMExecutorContract();
         type UnderlyingRustTuple<'a> = ();
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1984,16 +1953,14 @@ error CallerMustBeFHEVMExecutorContract();
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<CallerMustBeFHEVMExecutorContract>
-        for UnderlyingRustTuple<'_> {
+        impl ::core::convert::From<CallerMustBeFHEVMExecutorContract> for UnderlyingRustTuple<'_> {
             fn from(value: CallerMustBeFHEVMExecutorContract) -> Self {
                 ()
             }
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>>
-        for CallerMustBeFHEVMExecutorContract {
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for CallerMustBeFHEVMExecutorContract {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self
             }
@@ -2001,9 +1968,7 @@ error CallerMustBeFHEVMExecutorContract();
         #[automatically_derived]
         impl alloy_sol_types::SolError for CallerMustBeFHEVMExecutorContract {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "CallerMustBeFHEVMExecutorContract()";
             const SELECTOR: [u8; 4] = [49u8, 168u8, 26u8, 129u8];
             #[inline]
@@ -2018,19 +1983,18 @@ error CallerMustBeFHEVMExecutorContract();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `ERC1967InvalidImplementation(address)` and selector `0x4c9c8ce3`.
-```solidity
-error ERC1967InvalidImplementation(address implementation);
-```*/
+    ```solidity
+    error ERC1967InvalidImplementation(address implementation);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct ERC1967InvalidImplementation {
@@ -2051,9 +2015,7 @@ error ERC1967InvalidImplementation(address implementation);
         type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -2062,26 +2024,24 @@ error ERC1967InvalidImplementation(address implementation);
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<ERC1967InvalidImplementation>
-        for UnderlyingRustTuple<'_> {
+        impl ::core::convert::From<ERC1967InvalidImplementation> for UnderlyingRustTuple<'_> {
             fn from(value: ERC1967InvalidImplementation) -> Self {
                 (value.implementation,)
             }
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>>
-        for ERC1967InvalidImplementation {
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for ERC1967InvalidImplementation {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self { implementation: tuple.0 }
+                Self {
+                    implementation: tuple.0,
+                }
             }
         }
         #[automatically_derived]
         impl alloy_sol_types::SolError for ERC1967InvalidImplementation {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "ERC1967InvalidImplementation(address)";
             const SELECTOR: [u8; 4] = [76u8, 156u8, 140u8, 227u8];
             #[inline]
@@ -2100,19 +2060,18 @@ error ERC1967InvalidImplementation(address implementation);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `ERC1967NonPayable()` and selector `0xb398979f`.
-```solidity
-error ERC1967NonPayable();
-```*/
+    ```solidity
+    error ERC1967NonPayable();
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct ERC1967NonPayable;
@@ -2130,9 +2089,7 @@ error ERC1967NonPayable();
         type UnderlyingRustTuple<'a> = ();
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -2156,9 +2113,7 @@ error ERC1967NonPayable();
         #[automatically_derived]
         impl alloy_sol_types::SolError for ERC1967NonPayable {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "ERC1967NonPayable()";
             const SELECTOR: [u8; 4] = [179u8, 152u8, 151u8, 159u8];
             #[inline]
@@ -2173,19 +2128,18 @@ error ERC1967NonPayable();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `FailedCall()` and selector `0xd6bda275`.
-```solidity
-error FailedCall();
-```*/
+    ```solidity
+    error FailedCall();
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct FailedCall;
@@ -2203,9 +2157,7 @@ error FailedCall();
         type UnderlyingRustTuple<'a> = ();
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -2229,9 +2181,7 @@ error FailedCall();
         #[automatically_derived]
         impl alloy_sol_types::SolError for FailedCall {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "FailedCall()";
             const SELECTOR: [u8; 4] = [214u8, 189u8, 162u8, 117u8];
             #[inline]
@@ -2246,19 +2196,18 @@ error FailedCall();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `HCUBlockLimitExceeded()` and selector `0xad251174`.
-```solidity
-error HCUBlockLimitExceeded();
-```*/
+    ```solidity
+    error HCUBlockLimitExceeded();
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct HCUBlockLimitExceeded;
@@ -2276,9 +2225,7 @@ error HCUBlockLimitExceeded();
         type UnderlyingRustTuple<'a> = ();
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -2302,9 +2249,7 @@ error HCUBlockLimitExceeded();
         #[automatically_derived]
         impl alloy_sol_types::SolError for HCUBlockLimitExceeded {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "HCUBlockLimitExceeded()";
             const SELECTOR: [u8; 4] = [173u8, 37u8, 17u8, 116u8];
             #[inline]
@@ -2319,19 +2264,18 @@ error HCUBlockLimitExceeded();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `HCUPerBlockBelowMaxPerTx()` and selector `0x04acca2f`.
-```solidity
-error HCUPerBlockBelowMaxPerTx();
-```*/
+    ```solidity
+    error HCUPerBlockBelowMaxPerTx();
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct HCUPerBlockBelowMaxPerTx;
@@ -2349,9 +2293,7 @@ error HCUPerBlockBelowMaxPerTx();
         type UnderlyingRustTuple<'a> = ();
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -2360,16 +2302,14 @@ error HCUPerBlockBelowMaxPerTx();
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<HCUPerBlockBelowMaxPerTx>
-        for UnderlyingRustTuple<'_> {
+        impl ::core::convert::From<HCUPerBlockBelowMaxPerTx> for UnderlyingRustTuple<'_> {
             fn from(value: HCUPerBlockBelowMaxPerTx) -> Self {
                 ()
             }
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>>
-        for HCUPerBlockBelowMaxPerTx {
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for HCUPerBlockBelowMaxPerTx {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self
             }
@@ -2377,9 +2317,7 @@ error HCUPerBlockBelowMaxPerTx();
         #[automatically_derived]
         impl alloy_sol_types::SolError for HCUPerBlockBelowMaxPerTx {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "HCUPerBlockBelowMaxPerTx()";
             const SELECTOR: [u8; 4] = [4u8, 172u8, 202u8, 47u8];
             #[inline]
@@ -2394,19 +2332,18 @@ error HCUPerBlockBelowMaxPerTx();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `HCUTransactionDepthLimitExceeded()` and selector `0xfc344870`.
-```solidity
-error HCUTransactionDepthLimitExceeded();
-```*/
+    ```solidity
+    error HCUTransactionDepthLimitExceeded();
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct HCUTransactionDepthLimitExceeded;
@@ -2424,9 +2361,7 @@ error HCUTransactionDepthLimitExceeded();
         type UnderlyingRustTuple<'a> = ();
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -2435,16 +2370,14 @@ error HCUTransactionDepthLimitExceeded();
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<HCUTransactionDepthLimitExceeded>
-        for UnderlyingRustTuple<'_> {
+        impl ::core::convert::From<HCUTransactionDepthLimitExceeded> for UnderlyingRustTuple<'_> {
             fn from(value: HCUTransactionDepthLimitExceeded) -> Self {
                 ()
             }
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>>
-        for HCUTransactionDepthLimitExceeded {
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for HCUTransactionDepthLimitExceeded {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self
             }
@@ -2452,9 +2385,7 @@ error HCUTransactionDepthLimitExceeded();
         #[automatically_derived]
         impl alloy_sol_types::SolError for HCUTransactionDepthLimitExceeded {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "HCUTransactionDepthLimitExceeded()";
             const SELECTOR: [u8; 4] = [252u8, 52u8, 72u8, 112u8];
             #[inline]
@@ -2469,19 +2400,18 @@ error HCUTransactionDepthLimitExceeded();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `HCUTransactionLimitExceeded()` and selector `0x77e3c293`.
-```solidity
-error HCUTransactionLimitExceeded();
-```*/
+    ```solidity
+    error HCUTransactionLimitExceeded();
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct HCUTransactionLimitExceeded;
@@ -2499,9 +2429,7 @@ error HCUTransactionLimitExceeded();
         type UnderlyingRustTuple<'a> = ();
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -2510,16 +2438,14 @@ error HCUTransactionLimitExceeded();
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<HCUTransactionLimitExceeded>
-        for UnderlyingRustTuple<'_> {
+        impl ::core::convert::From<HCUTransactionLimitExceeded> for UnderlyingRustTuple<'_> {
             fn from(value: HCUTransactionLimitExceeded) -> Self {
                 ()
             }
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>>
-        for HCUTransactionLimitExceeded {
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for HCUTransactionLimitExceeded {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self
             }
@@ -2527,9 +2453,7 @@ error HCUTransactionLimitExceeded();
         #[automatically_derived]
         impl alloy_sol_types::SolError for HCUTransactionLimitExceeded {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "HCUTransactionLimitExceeded()";
             const SELECTOR: [u8; 4] = [119u8, 227u8, 194u8, 147u8];
             #[inline]
@@ -2544,19 +2468,18 @@ error HCUTransactionLimitExceeded();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `InvalidInitialization()` and selector `0xf92ee8a9`.
-```solidity
-error InvalidInitialization();
-```*/
+    ```solidity
+    error InvalidInitialization();
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct InvalidInitialization;
@@ -2574,9 +2497,7 @@ error InvalidInitialization();
         type UnderlyingRustTuple<'a> = ();
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -2600,9 +2521,7 @@ error InvalidInitialization();
         #[automatically_derived]
         impl alloy_sol_types::SolError for InvalidInitialization {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "InvalidInitialization()";
             const SELECTOR: [u8; 4] = [249u8, 46u8, 232u8, 169u8];
             #[inline]
@@ -2617,19 +2536,18 @@ error InvalidInitialization();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `InvalidZeroHandle()` and selector `0x34e45d7b`.
-```solidity
-error InvalidZeroHandle();
-```*/
+    ```solidity
+    error InvalidZeroHandle();
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct InvalidZeroHandle;
@@ -2647,9 +2565,7 @@ error InvalidZeroHandle();
         type UnderlyingRustTuple<'a> = ();
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -2673,9 +2589,7 @@ error InvalidZeroHandle();
         #[automatically_derived]
         impl alloy_sol_types::SolError for InvalidZeroHandle {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "InvalidZeroHandle()";
             const SELECTOR: [u8; 4] = [52u8, 228u8, 93u8, 123u8];
             #[inline]
@@ -2690,19 +2604,18 @@ error InvalidZeroHandle();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `MaxHCUPerTxBelowDepth()` and selector `0xafb1633c`.
-```solidity
-error MaxHCUPerTxBelowDepth();
-```*/
+    ```solidity
+    error MaxHCUPerTxBelowDepth();
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct MaxHCUPerTxBelowDepth;
@@ -2720,9 +2633,7 @@ error MaxHCUPerTxBelowDepth();
         type UnderlyingRustTuple<'a> = ();
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -2746,9 +2657,7 @@ error MaxHCUPerTxBelowDepth();
         #[automatically_derived]
         impl alloy_sol_types::SolError for MaxHCUPerTxBelowDepth {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "MaxHCUPerTxBelowDepth()";
             const SELECTOR: [u8; 4] = [175u8, 177u8, 99u8, 60u8];
             #[inline]
@@ -2763,19 +2672,18 @@ error MaxHCUPerTxBelowDepth();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `NotBlockHCUWhitelisted(address)` and selector `0xe3cc3418`.
-```solidity
-error NotBlockHCUWhitelisted(address account);
-```*/
+    ```solidity
+    error NotBlockHCUWhitelisted(address account);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct NotBlockHCUWhitelisted {
@@ -2796,9 +2704,7 @@ error NotBlockHCUWhitelisted(address account);
         type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -2822,9 +2728,7 @@ error NotBlockHCUWhitelisted(address account);
         #[automatically_derived]
         impl alloy_sol_types::SolError for NotBlockHCUWhitelisted {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "NotBlockHCUWhitelisted(address)";
             const SELECTOR: [u8; 4] = [227u8, 204u8, 52u8, 24u8];
             #[inline]
@@ -2843,19 +2747,18 @@ error NotBlockHCUWhitelisted(address account);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `NotHostOwner(address)` and selector `0x21bfda10`.
-```solidity
-error NotHostOwner(address sender);
-```*/
+    ```solidity
+    error NotHostOwner(address sender);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct NotHostOwner {
@@ -2876,9 +2779,7 @@ error NotHostOwner(address sender);
         type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -2902,9 +2803,7 @@ error NotHostOwner(address sender);
         #[automatically_derived]
         impl alloy_sol_types::SolError for NotHostOwner {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "NotHostOwner(address)";
             const SELECTOR: [u8; 4] = [33u8, 191u8, 218u8, 16u8];
             #[inline]
@@ -2923,19 +2822,18 @@ error NotHostOwner(address sender);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `NotInitializing()` and selector `0xd7e6bcf8`.
-```solidity
-error NotInitializing();
-```*/
+    ```solidity
+    error NotInitializing();
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct NotInitializing;
@@ -2953,9 +2851,7 @@ error NotInitializing();
         type UnderlyingRustTuple<'a> = ();
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -2979,9 +2875,7 @@ error NotInitializing();
         #[automatically_derived]
         impl alloy_sol_types::SolError for NotInitializing {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "NotInitializing()";
             const SELECTOR: [u8; 4] = [215u8, 230u8, 188u8, 248u8];
             #[inline]
@@ -2996,19 +2890,18 @@ error NotInitializing();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `NotInitializingFromEmptyProxy()` and selector `0x6f4f731f`.
-```solidity
-error NotInitializingFromEmptyProxy();
-```*/
+    ```solidity
+    error NotInitializingFromEmptyProxy();
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct NotInitializingFromEmptyProxy;
@@ -3026,9 +2919,7 @@ error NotInitializingFromEmptyProxy();
         type UnderlyingRustTuple<'a> = ();
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -3037,16 +2928,14 @@ error NotInitializingFromEmptyProxy();
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<NotInitializingFromEmptyProxy>
-        for UnderlyingRustTuple<'_> {
+        impl ::core::convert::From<NotInitializingFromEmptyProxy> for UnderlyingRustTuple<'_> {
             fn from(value: NotInitializingFromEmptyProxy) -> Self {
                 ()
             }
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>>
-        for NotInitializingFromEmptyProxy {
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for NotInitializingFromEmptyProxy {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self
             }
@@ -3054,9 +2943,7 @@ error NotInitializingFromEmptyProxy();
         #[automatically_derived]
         impl alloy_sol_types::SolError for NotInitializingFromEmptyProxy {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "NotInitializingFromEmptyProxy()";
             const SELECTOR: [u8; 4] = [111u8, 79u8, 115u8, 31u8];
             #[inline]
@@ -3071,19 +2958,18 @@ error NotInitializingFromEmptyProxy();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `OnlyScalarOperationsAreSupported()` and selector `0x6aa9eb05`.
-```solidity
-error OnlyScalarOperationsAreSupported();
-```*/
+    ```solidity
+    error OnlyScalarOperationsAreSupported();
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct OnlyScalarOperationsAreSupported;
@@ -3101,9 +2987,7 @@ error OnlyScalarOperationsAreSupported();
         type UnderlyingRustTuple<'a> = ();
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -3112,16 +2996,14 @@ error OnlyScalarOperationsAreSupported();
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<OnlyScalarOperationsAreSupported>
-        for UnderlyingRustTuple<'_> {
+        impl ::core::convert::From<OnlyScalarOperationsAreSupported> for UnderlyingRustTuple<'_> {
             fn from(value: OnlyScalarOperationsAreSupported) -> Self {
                 ()
             }
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>>
-        for OnlyScalarOperationsAreSupported {
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for OnlyScalarOperationsAreSupported {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self
             }
@@ -3129,9 +3011,7 @@ error OnlyScalarOperationsAreSupported();
         #[automatically_derived]
         impl alloy_sol_types::SolError for OnlyScalarOperationsAreSupported {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "OnlyScalarOperationsAreSupported()";
             const SELECTOR: [u8; 4] = [106u8, 169u8, 235u8, 5u8];
             #[inline]
@@ -3146,19 +3026,18 @@ error OnlyScalarOperationsAreSupported();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `UUPSUnauthorizedCallContext()` and selector `0xe07c8dba`.
-```solidity
-error UUPSUnauthorizedCallContext();
-```*/
+    ```solidity
+    error UUPSUnauthorizedCallContext();
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct UUPSUnauthorizedCallContext;
@@ -3176,9 +3055,7 @@ error UUPSUnauthorizedCallContext();
         type UnderlyingRustTuple<'a> = ();
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -3187,16 +3064,14 @@ error UUPSUnauthorizedCallContext();
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<UUPSUnauthorizedCallContext>
-        for UnderlyingRustTuple<'_> {
+        impl ::core::convert::From<UUPSUnauthorizedCallContext> for UnderlyingRustTuple<'_> {
             fn from(value: UUPSUnauthorizedCallContext) -> Self {
                 ()
             }
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>>
-        for UUPSUnauthorizedCallContext {
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for UUPSUnauthorizedCallContext {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self
             }
@@ -3204,9 +3079,7 @@ error UUPSUnauthorizedCallContext();
         #[automatically_derived]
         impl alloy_sol_types::SolError for UUPSUnauthorizedCallContext {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "UUPSUnauthorizedCallContext()";
             const SELECTOR: [u8; 4] = [224u8, 124u8, 141u8, 186u8];
             #[inline]
@@ -3221,19 +3094,18 @@ error UUPSUnauthorizedCallContext();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `UUPSUnsupportedProxiableUUID(bytes32)` and selector `0xaa1d49a4`.
-```solidity
-error UUPSUnsupportedProxiableUUID(bytes32 slot);
-```*/
+    ```solidity
+    error UUPSUnsupportedProxiableUUID(bytes32 slot);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct UUPSUnsupportedProxiableUUID {
@@ -3254,9 +3126,7 @@ error UUPSUnsupportedProxiableUUID(bytes32 slot);
         type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -3265,16 +3135,14 @@ error UUPSUnsupportedProxiableUUID(bytes32 slot);
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<UUPSUnsupportedProxiableUUID>
-        for UnderlyingRustTuple<'_> {
+        impl ::core::convert::From<UUPSUnsupportedProxiableUUID> for UnderlyingRustTuple<'_> {
             fn from(value: UUPSUnsupportedProxiableUUID) -> Self {
                 (value.slot,)
             }
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>>
-        for UUPSUnsupportedProxiableUUID {
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for UUPSUnsupportedProxiableUUID {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self { slot: tuple.0 }
             }
@@ -3282,9 +3150,7 @@ error UUPSUnsupportedProxiableUUID(bytes32 slot);
         #[automatically_derived]
         impl alloy_sol_types::SolError for UUPSUnsupportedProxiableUUID {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "UUPSUnsupportedProxiableUUID(bytes32)";
             const SELECTOR: [u8; 4] = [170u8, 29u8, 73u8, 164u8];
             #[inline]
@@ -3303,19 +3169,18 @@ error UUPSUnsupportedProxiableUUID(bytes32 slot);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `UnsupportedOperation()` and selector `0x9ba6061b`.
-```solidity
-error UnsupportedOperation();
-```*/
+    ```solidity
+    error UnsupportedOperation();
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct UnsupportedOperation;
@@ -3333,9 +3198,7 @@ error UnsupportedOperation();
         type UnderlyingRustTuple<'a> = ();
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -3359,9 +3222,7 @@ error UnsupportedOperation();
         #[automatically_derived]
         impl alloy_sol_types::SolError for UnsupportedOperation {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "UnsupportedOperation()";
             const SELECTOR: [u8; 4] = [155u8, 166u8, 6u8, 27u8];
             #[inline]
@@ -3376,19 +3237,18 @@ error UnsupportedOperation();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `BlockHCUWhitelistAdded(address)` and selector `0xcca1d46384cdbbeef2f9daddb76db138101c9905f818d867b630195c128d3c66`.
-```solidity
-event BlockHCUWhitelistAdded(address indexed account);
-```*/
+    ```solidity
+    event BlockHCUWhitelistAdded(address indexed account);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -3411,19 +3271,18 @@ event BlockHCUWhitelistAdded(address indexed account);
         #[automatically_derived]
         impl alloy_sol_types::SolEvent for BlockHCUWhitelistAdded {
             type DataTuple<'a> = ();
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
             const SIGNATURE: &'static str = "BlockHCUWhitelistAdded(address)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                204u8, 161u8, 212u8, 99u8, 132u8, 205u8, 187u8, 238u8, 242u8, 249u8,
-                218u8, 221u8, 183u8, 109u8, 177u8, 56u8, 16u8, 28u8, 153u8, 5u8, 248u8,
-                24u8, 216u8, 103u8, 182u8, 48u8, 25u8, 92u8, 18u8, 141u8, 60u8, 102u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    204u8, 161u8, 212u8, 99u8, 132u8, 205u8, 187u8, 238u8, 242u8, 249u8, 218u8,
+                    221u8, 183u8, 109u8, 177u8, 56u8, 16u8, 28u8, 153u8, 5u8, 248u8, 24u8, 216u8,
+                    103u8, 182u8, 48u8, 25u8, 92u8, 18u8, 141u8, 60u8, 102u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -3438,13 +3297,11 @@ event BlockHCUWhitelistAdded(address indexed account);
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -3464,9 +3321,7 @@ event BlockHCUWhitelistAdded(address indexed account);
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.account,
                 );
@@ -3490,12 +3345,11 @@ event BlockHCUWhitelistAdded(address indexed account);
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `BlockHCUWhitelistRemoved(address)` and selector `0x92fc97af15002646cea63c7633bb375b82db7cde7b480c75fe6341dacc292c81`.
-```solidity
-event BlockHCUWhitelistRemoved(address indexed account);
-```*/
+    ```solidity
+    event BlockHCUWhitelistRemoved(address indexed account);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -3518,19 +3372,18 @@ event BlockHCUWhitelistRemoved(address indexed account);
         #[automatically_derived]
         impl alloy_sol_types::SolEvent for BlockHCUWhitelistRemoved {
             type DataTuple<'a> = ();
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
             const SIGNATURE: &'static str = "BlockHCUWhitelistRemoved(address)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                146u8, 252u8, 151u8, 175u8, 21u8, 0u8, 38u8, 70u8, 206u8, 166u8, 60u8,
-                118u8, 51u8, 187u8, 55u8, 91u8, 130u8, 219u8, 124u8, 222u8, 123u8, 72u8,
-                12u8, 117u8, 254u8, 99u8, 65u8, 218u8, 204u8, 41u8, 44u8, 129u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    146u8, 252u8, 151u8, 175u8, 21u8, 0u8, 38u8, 70u8, 206u8, 166u8, 60u8, 118u8,
+                    51u8, 187u8, 55u8, 91u8, 130u8, 219u8, 124u8, 222u8, 123u8, 72u8, 12u8, 117u8,
+                    254u8, 99u8, 65u8, 218u8, 204u8, 41u8, 44u8, 129u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -3545,13 +3398,11 @@ event BlockHCUWhitelistRemoved(address indexed account);
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -3571,9 +3422,7 @@ event BlockHCUWhitelistRemoved(address indexed account);
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.account,
                 );
@@ -3592,19 +3441,16 @@ event BlockHCUWhitelistRemoved(address indexed account);
         #[automatically_derived]
         impl From<&BlockHCUWhitelistRemoved> for alloy_sol_types::private::LogData {
             #[inline]
-            fn from(
-                this: &BlockHCUWhitelistRemoved,
-            ) -> alloy_sol_types::private::LogData {
+            fn from(this: &BlockHCUWhitelistRemoved) -> alloy_sol_types::private::LogData {
                 alloy_sol_types::SolEvent::encode_log_data(this)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `HCUPerBlockSet(uint48)` and selector `0xc1f1fcaa898aae2263dded712e1798083fca9272ff803ee4150ce48f8619891a`.
-```solidity
-event HCUPerBlockSet(uint48 hcuPerBlock);
-```*/
+    ```solidity
+    event HCUPerBlockSet(uint48 hcuPerBlock);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -3627,16 +3473,15 @@ event HCUPerBlockSet(uint48 hcuPerBlock);
         #[automatically_derived]
         impl alloy_sol_types::SolEvent for HCUPerBlockSet {
             type DataTuple<'a> = (alloy::sol_types::sol_data::Uint<48>,);
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
             const SIGNATURE: &'static str = "HCUPerBlockSet(uint48)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                193u8, 241u8, 252u8, 170u8, 137u8, 138u8, 174u8, 34u8, 99u8, 221u8,
-                237u8, 113u8, 46u8, 23u8, 152u8, 8u8, 63u8, 202u8, 146u8, 114u8, 255u8,
-                128u8, 62u8, 228u8, 21u8, 12u8, 228u8, 143u8, 134u8, 25u8, 137u8, 26u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    193u8, 241u8, 252u8, 170u8, 137u8, 138u8, 174u8, 34u8, 99u8, 221u8, 237u8,
+                    113u8, 46u8, 23u8, 152u8, 8u8, 63u8, 202u8, 146u8, 114u8, 255u8, 128u8, 62u8,
+                    228u8, 21u8, 12u8, 228u8, 143u8, 134u8, 25u8, 137u8, 26u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -3644,29 +3489,29 @@ event HCUPerBlockSet(uint48 hcuPerBlock);
                 topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
                 data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
-                Self { hcuPerBlock: data.0 }
+                Self {
+                    hcuPerBlock: data.0,
+                }
             }
             #[inline]
             fn check_signature(
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
             #[inline]
             fn tokenize_body(&self) -> Self::DataToken<'_> {
                 (
-                    <alloy::sol_types::sol_data::Uint<
-                        48,
-                    > as alloy_sol_types::SolType>::tokenize(&self.hcuPerBlock),
+                    <alloy::sol_types::sol_data::Uint<48> as alloy_sol_types::SolType>::tokenize(
+                        &self.hcuPerBlock,
+                    ),
                 )
             }
             #[inline]
@@ -3681,9 +3526,7 @@ event HCUPerBlockSet(uint48 hcuPerBlock);
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 Ok(())
             }
         }
@@ -3704,12 +3547,11 @@ event HCUPerBlockSet(uint48 hcuPerBlock);
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `Initialized(uint64)` and selector `0xc7f505b2f371ae2175ee4913f4499e1f2633a7b5936321eed1cdaeb6115181d2`.
-```solidity
-event Initialized(uint64 version);
-```*/
+    ```solidity
+    event Initialized(uint64 version);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -3732,16 +3574,15 @@ event Initialized(uint64 version);
         #[automatically_derived]
         impl alloy_sol_types::SolEvent for Initialized {
             type DataTuple<'a> = (alloy::sol_types::sol_data::Uint<64>,);
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
             const SIGNATURE: &'static str = "Initialized(uint64)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                199u8, 245u8, 5u8, 178u8, 243u8, 113u8, 174u8, 33u8, 117u8, 238u8, 73u8,
-                19u8, 244u8, 73u8, 158u8, 31u8, 38u8, 51u8, 167u8, 181u8, 147u8, 99u8,
-                33u8, 238u8, 209u8, 205u8, 174u8, 182u8, 17u8, 81u8, 129u8, 210u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    199u8, 245u8, 5u8, 178u8, 243u8, 113u8, 174u8, 33u8, 117u8, 238u8, 73u8, 19u8,
+                    244u8, 73u8, 158u8, 31u8, 38u8, 51u8, 167u8, 181u8, 147u8, 99u8, 33u8, 238u8,
+                    209u8, 205u8, 174u8, 182u8, 17u8, 81u8, 129u8, 210u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -3756,22 +3597,20 @@ event Initialized(uint64 version);
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
             #[inline]
             fn tokenize_body(&self) -> Self::DataToken<'_> {
                 (
-                    <alloy::sol_types::sol_data::Uint<
-                        64,
-                    > as alloy_sol_types::SolType>::tokenize(&self.version),
+                    <alloy::sol_types::sol_data::Uint<64> as alloy_sol_types::SolType>::tokenize(
+                        &self.version,
+                    ),
                 )
             }
             #[inline]
@@ -3786,9 +3625,7 @@ event Initialized(uint64 version);
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 Ok(())
             }
         }
@@ -3809,12 +3646,11 @@ event Initialized(uint64 version);
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `MaxHCUDepthPerTxSet(uint48)` and selector `0x5511b1851fc40a2629c855bab7adce3276c470d8190eb01431e418dc2af13e8e`.
-```solidity
-event MaxHCUDepthPerTxSet(uint48 maxHCUDepthPerTx);
-```*/
+    ```solidity
+    event MaxHCUDepthPerTxSet(uint48 maxHCUDepthPerTx);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -3837,16 +3673,15 @@ event MaxHCUDepthPerTxSet(uint48 maxHCUDepthPerTx);
         #[automatically_derived]
         impl alloy_sol_types::SolEvent for MaxHCUDepthPerTxSet {
             type DataTuple<'a> = (alloy::sol_types::sol_data::Uint<48>,);
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
             const SIGNATURE: &'static str = "MaxHCUDepthPerTxSet(uint48)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                85u8, 17u8, 177u8, 133u8, 31u8, 196u8, 10u8, 38u8, 41u8, 200u8, 85u8,
-                186u8, 183u8, 173u8, 206u8, 50u8, 118u8, 196u8, 112u8, 216u8, 25u8, 14u8,
-                176u8, 20u8, 49u8, 228u8, 24u8, 220u8, 42u8, 241u8, 62u8, 142u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    85u8, 17u8, 177u8, 133u8, 31u8, 196u8, 10u8, 38u8, 41u8, 200u8, 85u8, 186u8,
+                    183u8, 173u8, 206u8, 50u8, 118u8, 196u8, 112u8, 216u8, 25u8, 14u8, 176u8, 20u8,
+                    49u8, 228u8, 24u8, 220u8, 42u8, 241u8, 62u8, 142u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -3854,29 +3689,29 @@ event MaxHCUDepthPerTxSet(uint48 maxHCUDepthPerTx);
                 topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
                 data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
-                Self { maxHCUDepthPerTx: data.0 }
+                Self {
+                    maxHCUDepthPerTx: data.0,
+                }
             }
             #[inline]
             fn check_signature(
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
             #[inline]
             fn tokenize_body(&self) -> Self::DataToken<'_> {
                 (
-                    <alloy::sol_types::sol_data::Uint<
-                        48,
-                    > as alloy_sol_types::SolType>::tokenize(&self.maxHCUDepthPerTx),
+                    <alloy::sol_types::sol_data::Uint<48> as alloy_sol_types::SolType>::tokenize(
+                        &self.maxHCUDepthPerTx,
+                    ),
                 )
             }
             #[inline]
@@ -3891,9 +3726,7 @@ event MaxHCUDepthPerTxSet(uint48 maxHCUDepthPerTx);
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 Ok(())
             }
         }
@@ -3914,12 +3747,11 @@ event MaxHCUDepthPerTxSet(uint48 maxHCUDepthPerTx);
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `MaxHCUPerTxSet(uint48)` and selector `0x64cb9e7ae6497c59080cdbc048552e123d52aa4240e137758a173582786961ca`.
-```solidity
-event MaxHCUPerTxSet(uint48 maxHCUPerTx);
-```*/
+    ```solidity
+    event MaxHCUPerTxSet(uint48 maxHCUPerTx);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -3942,16 +3774,15 @@ event MaxHCUPerTxSet(uint48 maxHCUPerTx);
         #[automatically_derived]
         impl alloy_sol_types::SolEvent for MaxHCUPerTxSet {
             type DataTuple<'a> = (alloy::sol_types::sol_data::Uint<48>,);
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
             const SIGNATURE: &'static str = "MaxHCUPerTxSet(uint48)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                100u8, 203u8, 158u8, 122u8, 230u8, 73u8, 124u8, 89u8, 8u8, 12u8, 219u8,
-                192u8, 72u8, 85u8, 46u8, 18u8, 61u8, 82u8, 170u8, 66u8, 64u8, 225u8,
-                55u8, 117u8, 138u8, 23u8, 53u8, 130u8, 120u8, 105u8, 97u8, 202u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    100u8, 203u8, 158u8, 122u8, 230u8, 73u8, 124u8, 89u8, 8u8, 12u8, 219u8, 192u8,
+                    72u8, 85u8, 46u8, 18u8, 61u8, 82u8, 170u8, 66u8, 64u8, 225u8, 55u8, 117u8,
+                    138u8, 23u8, 53u8, 130u8, 120u8, 105u8, 97u8, 202u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -3959,29 +3790,29 @@ event MaxHCUPerTxSet(uint48 maxHCUPerTx);
                 topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
                 data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
-                Self { maxHCUPerTx: data.0 }
+                Self {
+                    maxHCUPerTx: data.0,
+                }
             }
             #[inline]
             fn check_signature(
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
             #[inline]
             fn tokenize_body(&self) -> Self::DataToken<'_> {
                 (
-                    <alloy::sol_types::sol_data::Uint<
-                        48,
-                    > as alloy_sol_types::SolType>::tokenize(&self.maxHCUPerTx),
+                    <alloy::sol_types::sol_data::Uint<48> as alloy_sol_types::SolType>::tokenize(
+                        &self.maxHCUPerTx,
+                    ),
                 )
             }
             #[inline]
@@ -3996,9 +3827,7 @@ event MaxHCUPerTxSet(uint48 maxHCUPerTx);
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 Ok(())
             }
         }
@@ -4019,12 +3848,11 @@ event MaxHCUPerTxSet(uint48 maxHCUPerTx);
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `Upgraded(address)` and selector `0xbc7cd75a20ee27fd9adebab32041f755214dbc6bffa90cc0225b39da2e5c2d3b`.
-```solidity
-event Upgraded(address indexed implementation);
-```*/
+    ```solidity
+    event Upgraded(address indexed implementation);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -4047,19 +3875,18 @@ event Upgraded(address indexed implementation);
         #[automatically_derived]
         impl alloy_sol_types::SolEvent for Upgraded {
             type DataTuple<'a> = ();
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
             const SIGNATURE: &'static str = "Upgraded(address)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                188u8, 124u8, 215u8, 90u8, 32u8, 238u8, 39u8, 253u8, 154u8, 222u8, 186u8,
-                179u8, 32u8, 65u8, 247u8, 85u8, 33u8, 77u8, 188u8, 107u8, 255u8, 169u8,
-                12u8, 192u8, 34u8, 91u8, 57u8, 218u8, 46u8, 92u8, 45u8, 59u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    188u8, 124u8, 215u8, 90u8, 32u8, 238u8, 39u8, 253u8, 154u8, 222u8, 186u8,
+                    179u8, 32u8, 65u8, 247u8, 85u8, 33u8, 77u8, 188u8, 107u8, 255u8, 169u8, 12u8,
+                    192u8, 34u8, 91u8, 57u8, 218u8, 46u8, 92u8, 45u8, 59u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -4067,20 +3894,20 @@ event Upgraded(address indexed implementation);
                 topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
                 data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
-                Self { implementation: topics.1 }
+                Self {
+                    implementation: topics.1,
+                }
             }
             #[inline]
             fn check_signature(
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -4100,9 +3927,7 @@ event Upgraded(address indexed implementation);
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.implementation,
                 );
@@ -4127,9 +3952,9 @@ event Upgraded(address indexed implementation);
         }
     };
     /**Constructor`.
-```solidity
-constructor();
-```*/
+    ```solidity
+    constructor();
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct constructorCall {}
@@ -4142,9 +3967,7 @@ constructor();
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -4169,9 +3992,7 @@ constructor();
         #[automatically_derived]
         impl alloy_sol_types::SolConstructor for constructorCall {
             type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -4184,17 +4005,15 @@ constructor();
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `UPGRADE_INTERFACE_VERSION()` and selector `0xad3cb1cc`.
-```solidity
-function UPGRADE_INTERFACE_VERSION() external view returns (string memory);
-```*/
+    ```solidity
+    function UPGRADE_INTERFACE_VERSION() external view returns (string memory);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct UPGRADE_INTERFACE_VERSIONCall;
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`UPGRADE_INTERFACE_VERSION()`](UPGRADE_INTERFACE_VERSIONCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -4217,9 +4036,7 @@ function UPGRADE_INTERFACE_VERSION() external view returns (string memory);
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -4228,16 +4045,14 @@ function UPGRADE_INTERFACE_VERSION() external view returns (string memory);
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UPGRADE_INTERFACE_VERSIONCall>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<UPGRADE_INTERFACE_VERSIONCall> for UnderlyingRustTuple<'_> {
                 fn from(value: UPGRADE_INTERFACE_VERSIONCall) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for UPGRADE_INTERFACE_VERSIONCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for UPGRADE_INTERFACE_VERSIONCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self
                 }
@@ -4250,9 +4065,7 @@ function UPGRADE_INTERFACE_VERSION() external view returns (string memory);
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::String,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -4261,16 +4074,14 @@ function UPGRADE_INTERFACE_VERSION() external view returns (string memory);
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UPGRADE_INTERFACE_VERSIONReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<UPGRADE_INTERFACE_VERSIONReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: UPGRADE_INTERFACE_VERSIONReturn) -> Self {
                     (value._0,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for UPGRADE_INTERFACE_VERSIONReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for UPGRADE_INTERFACE_VERSIONReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { _0: tuple.0 }
                 }
@@ -4279,14 +4090,10 @@ function UPGRADE_INTERFACE_VERSION() external view returns (string memory);
         #[automatically_derived]
         impl alloy_sol_types::SolCall for UPGRADE_INTERFACE_VERSIONCall {
             type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy::sol_types::private::String;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::String,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "UPGRADE_INTERFACE_VERSION()";
             const SELECTOR: [u8; 4] = [173u8, 60u8, 177u8, 204u8];
             #[inline]
@@ -4301,42 +4108,34 @@ function UPGRADE_INTERFACE_VERSION() external view returns (string memory);
             }
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (
-                    <alloy::sol_types::sol_data::String as alloy_sol_types::SolType>::tokenize(
-                        ret,
-                    ),
-                )
+                (<alloy::sol_types::sol_data::String as alloy_sol_types::SolType>::tokenize(ret),)
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: UPGRADE_INTERFACE_VERSIONReturn = r.into();
                         r._0
-                    })
+                    },
+                )
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: UPGRADE_INTERFACE_VERSIONReturn = r.into();
-                        r._0
-                    })
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: UPGRADE_INTERFACE_VERSIONReturn = r.into();
+                    r._0
+                })
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `addToBlockHCUWhitelist(address)` and selector `0x6fd65e4d`.
-```solidity
-function addToBlockHCUWhitelist(address account) external;
-```*/
+    ```solidity
+    function addToBlockHCUWhitelist(address account) external;
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct addToBlockHCUWhitelistCall {
@@ -4362,9 +4161,7 @@ function addToBlockHCUWhitelist(address account) external;
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -4373,16 +4170,14 @@ function addToBlockHCUWhitelist(address account) external;
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<addToBlockHCUWhitelistCall>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<addToBlockHCUWhitelistCall> for UnderlyingRustTuple<'_> {
                 fn from(value: addToBlockHCUWhitelistCall) -> Self {
                     (value.account,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for addToBlockHCUWhitelistCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for addToBlockHCUWhitelistCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { account: tuple.0 }
                 }
@@ -4395,9 +4190,7 @@ function addToBlockHCUWhitelist(address account) external;
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -4406,16 +4199,14 @@ function addToBlockHCUWhitelist(address account) external;
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<addToBlockHCUWhitelistReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<addToBlockHCUWhitelistReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: addToBlockHCUWhitelistReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for addToBlockHCUWhitelistReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for addToBlockHCUWhitelistReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
@@ -4424,23 +4215,18 @@ function addToBlockHCUWhitelist(address account) external;
         impl addToBlockHCUWhitelistReturn {
             fn _tokenize(
                 &self,
-            ) -> <addToBlockHCUWhitelistCall as alloy_sol_types::SolCall>::ReturnToken<
-                '_,
-            > {
+            ) -> <addToBlockHCUWhitelistCall as alloy_sol_types::SolCall>::ReturnToken<'_>
+            {
                 ()
             }
         }
         #[automatically_derived]
         impl alloy_sol_types::SolCall for addToBlockHCUWhitelistCall {
             type Parameters<'a> = (alloy::sol_types::sol_data::Address,);
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = addToBlockHCUWhitelistReturn;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "addToBlockHCUWhitelist(address)";
             const SELECTOR: [u8; 4] = [111u8, 214u8, 94u8, 77u8];
             #[inline]
@@ -4463,28 +4249,23 @@ function addToBlockHCUWhitelist(address account) external;
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Into::into)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `checkHCUForCast(uint8,bytes32,bytes32,address)` and selector `0x69931afb`.
-```solidity
-function checkHCUForCast(FheType resultType, bytes32 ct, bytes32 result, address caller) external;
-```*/
+    ```solidity
+    function checkHCUForCast(FheType resultType, bytes32 ct, bytes32 result, address caller) external;
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct checkHCUForCastCall {
@@ -4526,9 +4307,7 @@ function checkHCUForCast(FheType resultType, bytes32 ct, bytes32 result, address
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -4562,9 +4341,7 @@ function checkHCUForCast(FheType resultType, bytes32 ct, bytes32 result, address
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -4573,16 +4350,14 @@ function checkHCUForCast(FheType resultType, bytes32 ct, bytes32 result, address
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<checkHCUForCastReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<checkHCUForCastReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: checkHCUForCastReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkHCUForCastReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for checkHCUForCastReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
@@ -4603,14 +4378,10 @@ function checkHCUForCast(FheType resultType, bytes32 ct, bytes32 result, address
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = checkHCUForCastReturn;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "checkHCUForCast(uint8,bytes32,bytes32,address)";
             const SELECTOR: [u8; 4] = [105u8, 147u8, 26u8, 251u8];
             #[inline]
@@ -4640,28 +4411,23 @@ function checkHCUForCast(FheType resultType, bytes32 ct, bytes32 result, address
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Into::into)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `checkHCUForFheAdd(uint8,bytes1,bytes32,bytes32,bytes32,address)` and selector `0xc1390c34`.
-```solidity
-function checkHCUForFheAdd(FheType resultType, bytes1 scalarByte, bytes32 lhs, bytes32 rhs, bytes32 result, address caller) external;
-```*/
+    ```solidity
+    function checkHCUForFheAdd(FheType resultType, bytes1 scalarByte, bytes32 lhs, bytes32 rhs, bytes32 result, address caller) external;
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct checkHCUForFheAddCall {
@@ -4711,9 +4477,7 @@ function checkHCUForFheAdd(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -4722,8 +4486,7 @@ function checkHCUForFheAdd(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<checkHCUForFheAddCall>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<checkHCUForFheAddCall> for UnderlyingRustTuple<'_> {
                 fn from(value: checkHCUForFheAddCall) -> Self {
                     (
                         value.resultType,
@@ -4737,8 +4500,7 @@ function checkHCUForFheAdd(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkHCUForFheAddCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for checkHCUForFheAddCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         resultType: tuple.0,
@@ -4758,9 +4520,7 @@ function checkHCUForFheAdd(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -4769,16 +4529,14 @@ function checkHCUForFheAdd(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<checkHCUForFheAddReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<checkHCUForFheAddReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: checkHCUForFheAddReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkHCUForFheAddReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for checkHCUForFheAddReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
@@ -4801,15 +4559,12 @@ function checkHCUForFheAdd(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = checkHCUForFheAddReturn;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "checkHCUForFheAdd(uint8,bytes1,bytes32,bytes32,bytes32,address)";
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str =
+                "checkHCUForFheAdd(uint8,bytes1,bytes32,bytes32,bytes32,address)";
             const SELECTOR: [u8; 4] = [193u8, 57u8, 12u8, 52u8];
             #[inline]
             fn new<'a>(
@@ -4844,28 +4599,23 @@ function checkHCUForFheAdd(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Into::into)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `checkHCUForFheBitAnd(uint8,bytes1,bytes32,bytes32,bytes32,address)` and selector `0xc8de4352`.
-```solidity
-function checkHCUForFheBitAnd(FheType resultType, bytes1 scalarByte, bytes32 lhs, bytes32 rhs, bytes32 result, address caller) external;
-```*/
+    ```solidity
+    function checkHCUForFheBitAnd(FheType resultType, bytes1 scalarByte, bytes32 lhs, bytes32 rhs, bytes32 result, address caller) external;
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct checkHCUForFheBitAndCall {
@@ -4915,9 +4665,7 @@ function checkHCUForFheBitAnd(FheType resultType, bytes1 scalarByte, bytes32 lhs
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -4926,8 +4674,7 @@ function checkHCUForFheBitAnd(FheType resultType, bytes1 scalarByte, bytes32 lhs
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<checkHCUForFheBitAndCall>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<checkHCUForFheBitAndCall> for UnderlyingRustTuple<'_> {
                 fn from(value: checkHCUForFheBitAndCall) -> Self {
                     (
                         value.resultType,
@@ -4941,8 +4688,7 @@ function checkHCUForFheBitAnd(FheType resultType, bytes1 scalarByte, bytes32 lhs
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkHCUForFheBitAndCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for checkHCUForFheBitAndCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         resultType: tuple.0,
@@ -4962,9 +4708,7 @@ function checkHCUForFheBitAnd(FheType resultType, bytes1 scalarByte, bytes32 lhs
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -4973,16 +4717,14 @@ function checkHCUForFheBitAnd(FheType resultType, bytes1 scalarByte, bytes32 lhs
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<checkHCUForFheBitAndReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<checkHCUForFheBitAndReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: checkHCUForFheBitAndReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkHCUForFheBitAndReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for checkHCUForFheBitAndReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
@@ -4991,9 +4733,8 @@ function checkHCUForFheBitAnd(FheType resultType, bytes1 scalarByte, bytes32 lhs
         impl checkHCUForFheBitAndReturn {
             fn _tokenize(
                 &self,
-            ) -> <checkHCUForFheBitAndCall as alloy_sol_types::SolCall>::ReturnToken<
-                '_,
-            > {
+            ) -> <checkHCUForFheBitAndCall as alloy_sol_types::SolCall>::ReturnToken<'_>
+            {
                 ()
             }
         }
@@ -5007,15 +4748,12 @@ function checkHCUForFheBitAnd(FheType resultType, bytes1 scalarByte, bytes32 lhs
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = checkHCUForFheBitAndReturn;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "checkHCUForFheBitAnd(uint8,bytes1,bytes32,bytes32,bytes32,address)";
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str =
+                "checkHCUForFheBitAnd(uint8,bytes1,bytes32,bytes32,bytes32,address)";
             const SELECTOR: [u8; 4] = [200u8, 222u8, 67u8, 82u8];
             #[inline]
             fn new<'a>(
@@ -5050,28 +4788,23 @@ function checkHCUForFheBitAnd(FheType resultType, bytes1 scalarByte, bytes32 lhs
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Into::into)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `checkHCUForFheBitOr(uint8,bytes1,bytes32,bytes32,bytes32,address)` and selector `0xc0c5df7c`.
-```solidity
-function checkHCUForFheBitOr(FheType resultType, bytes1 scalarByte, bytes32 lhs, bytes32 rhs, bytes32 result, address caller) external;
-```*/
+    ```solidity
+    function checkHCUForFheBitOr(FheType resultType, bytes1 scalarByte, bytes32 lhs, bytes32 rhs, bytes32 result, address caller) external;
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct checkHCUForFheBitOrCall {
@@ -5121,9 +4854,7 @@ function checkHCUForFheBitOr(FheType resultType, bytes1 scalarByte, bytes32 lhs,
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -5132,8 +4863,7 @@ function checkHCUForFheBitOr(FheType resultType, bytes1 scalarByte, bytes32 lhs,
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<checkHCUForFheBitOrCall>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<checkHCUForFheBitOrCall> for UnderlyingRustTuple<'_> {
                 fn from(value: checkHCUForFheBitOrCall) -> Self {
                     (
                         value.resultType,
@@ -5147,8 +4877,7 @@ function checkHCUForFheBitOr(FheType resultType, bytes1 scalarByte, bytes32 lhs,
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkHCUForFheBitOrCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for checkHCUForFheBitOrCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         resultType: tuple.0,
@@ -5168,9 +4897,7 @@ function checkHCUForFheBitOr(FheType resultType, bytes1 scalarByte, bytes32 lhs,
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -5179,16 +4906,14 @@ function checkHCUForFheBitOr(FheType resultType, bytes1 scalarByte, bytes32 lhs,
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<checkHCUForFheBitOrReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<checkHCUForFheBitOrReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: checkHCUForFheBitOrReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkHCUForFheBitOrReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for checkHCUForFheBitOrReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
@@ -5197,7 +4922,8 @@ function checkHCUForFheBitOr(FheType resultType, bytes1 scalarByte, bytes32 lhs,
         impl checkHCUForFheBitOrReturn {
             fn _tokenize(
                 &self,
-            ) -> <checkHCUForFheBitOrCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
+            ) -> <checkHCUForFheBitOrCall as alloy_sol_types::SolCall>::ReturnToken<'_>
+            {
                 ()
             }
         }
@@ -5211,15 +4937,12 @@ function checkHCUForFheBitOr(FheType resultType, bytes1 scalarByte, bytes32 lhs,
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = checkHCUForFheBitOrReturn;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "checkHCUForFheBitOr(uint8,bytes1,bytes32,bytes32,bytes32,address)";
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str =
+                "checkHCUForFheBitOr(uint8,bytes1,bytes32,bytes32,bytes32,address)";
             const SELECTOR: [u8; 4] = [192u8, 197u8, 223u8, 124u8];
             #[inline]
             fn new<'a>(
@@ -5254,28 +4977,23 @@ function checkHCUForFheBitOr(FheType resultType, bytes1 scalarByte, bytes32 lhs,
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Into::into)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `checkHCUForFheBitXor(uint8,bytes1,bytes32,bytes32,bytes32,address)` and selector `0x9f9259bb`.
-```solidity
-function checkHCUForFheBitXor(FheType resultType, bytes1 scalarByte, bytes32 lhs, bytes32 rhs, bytes32 result, address caller) external;
-```*/
+    ```solidity
+    function checkHCUForFheBitXor(FheType resultType, bytes1 scalarByte, bytes32 lhs, bytes32 rhs, bytes32 result, address caller) external;
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct checkHCUForFheBitXorCall {
@@ -5325,9 +5043,7 @@ function checkHCUForFheBitXor(FheType resultType, bytes1 scalarByte, bytes32 lhs
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -5336,8 +5052,7 @@ function checkHCUForFheBitXor(FheType resultType, bytes1 scalarByte, bytes32 lhs
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<checkHCUForFheBitXorCall>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<checkHCUForFheBitXorCall> for UnderlyingRustTuple<'_> {
                 fn from(value: checkHCUForFheBitXorCall) -> Self {
                     (
                         value.resultType,
@@ -5351,8 +5066,7 @@ function checkHCUForFheBitXor(FheType resultType, bytes1 scalarByte, bytes32 lhs
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkHCUForFheBitXorCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for checkHCUForFheBitXorCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         resultType: tuple.0,
@@ -5372,9 +5086,7 @@ function checkHCUForFheBitXor(FheType resultType, bytes1 scalarByte, bytes32 lhs
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -5383,16 +5095,14 @@ function checkHCUForFheBitXor(FheType resultType, bytes1 scalarByte, bytes32 lhs
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<checkHCUForFheBitXorReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<checkHCUForFheBitXorReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: checkHCUForFheBitXorReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkHCUForFheBitXorReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for checkHCUForFheBitXorReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
@@ -5401,9 +5111,8 @@ function checkHCUForFheBitXor(FheType resultType, bytes1 scalarByte, bytes32 lhs
         impl checkHCUForFheBitXorReturn {
             fn _tokenize(
                 &self,
-            ) -> <checkHCUForFheBitXorCall as alloy_sol_types::SolCall>::ReturnToken<
-                '_,
-            > {
+            ) -> <checkHCUForFheBitXorCall as alloy_sol_types::SolCall>::ReturnToken<'_>
+            {
                 ()
             }
         }
@@ -5417,15 +5126,12 @@ function checkHCUForFheBitXor(FheType resultType, bytes1 scalarByte, bytes32 lhs
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = checkHCUForFheBitXorReturn;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "checkHCUForFheBitXor(uint8,bytes1,bytes32,bytes32,bytes32,address)";
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str =
+                "checkHCUForFheBitXor(uint8,bytes1,bytes32,bytes32,bytes32,address)";
             const SELECTOR: [u8; 4] = [159u8, 146u8, 89u8, 187u8];
             #[inline]
             fn new<'a>(
@@ -5460,28 +5166,23 @@ function checkHCUForFheBitXor(FheType resultType, bytes1 scalarByte, bytes32 lhs
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Into::into)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `checkHCUForFheDiv(uint8,bytes1,bytes32,bytes32,bytes32,address)` and selector `0x9b3f781a`.
-```solidity
-function checkHCUForFheDiv(FheType resultType, bytes1 scalarByte, bytes32 lhs, bytes32, bytes32 result, address caller) external;
-```*/
+    ```solidity
+    function checkHCUForFheDiv(FheType resultType, bytes1 scalarByte, bytes32 lhs, bytes32, bytes32 result, address caller) external;
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct checkHCUForFheDivCall {
@@ -5531,9 +5232,7 @@ function checkHCUForFheDiv(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -5542,8 +5241,7 @@ function checkHCUForFheDiv(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<checkHCUForFheDivCall>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<checkHCUForFheDivCall> for UnderlyingRustTuple<'_> {
                 fn from(value: checkHCUForFheDivCall) -> Self {
                     (
                         value.resultType,
@@ -5557,8 +5255,7 @@ function checkHCUForFheDiv(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkHCUForFheDivCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for checkHCUForFheDivCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         resultType: tuple.0,
@@ -5578,9 +5275,7 @@ function checkHCUForFheDiv(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -5589,16 +5284,14 @@ function checkHCUForFheDiv(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<checkHCUForFheDivReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<checkHCUForFheDivReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: checkHCUForFheDivReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkHCUForFheDivReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for checkHCUForFheDivReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
@@ -5621,15 +5314,12 @@ function checkHCUForFheDiv(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = checkHCUForFheDivReturn;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "checkHCUForFheDiv(uint8,bytes1,bytes32,bytes32,bytes32,address)";
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str =
+                "checkHCUForFheDiv(uint8,bytes1,bytes32,bytes32,bytes32,address)";
             const SELECTOR: [u8; 4] = [155u8, 63u8, 120u8, 26u8];
             #[inline]
             fn new<'a>(
@@ -5664,28 +5354,23 @@ function checkHCUForFheDiv(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Into::into)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `checkHCUForFheEq(uint8,bytes1,bytes32,bytes32,bytes32,address)` and selector `0x60e12189`.
-```solidity
-function checkHCUForFheEq(FheType resultType, bytes1 scalarByte, bytes32 lhs, bytes32 rhs, bytes32 result, address caller) external;
-```*/
+    ```solidity
+    function checkHCUForFheEq(FheType resultType, bytes1 scalarByte, bytes32 lhs, bytes32 rhs, bytes32 result, address caller) external;
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct checkHCUForFheEqCall {
@@ -5735,9 +5420,7 @@ function checkHCUForFheEq(FheType resultType, bytes1 scalarByte, bytes32 lhs, by
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -5746,8 +5429,7 @@ function checkHCUForFheEq(FheType resultType, bytes1 scalarByte, bytes32 lhs, by
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<checkHCUForFheEqCall>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<checkHCUForFheEqCall> for UnderlyingRustTuple<'_> {
                 fn from(value: checkHCUForFheEqCall) -> Self {
                     (
                         value.resultType,
@@ -5761,8 +5443,7 @@ function checkHCUForFheEq(FheType resultType, bytes1 scalarByte, bytes32 lhs, by
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkHCUForFheEqCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for checkHCUForFheEqCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         resultType: tuple.0,
@@ -5782,9 +5463,7 @@ function checkHCUForFheEq(FheType resultType, bytes1 scalarByte, bytes32 lhs, by
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -5793,16 +5472,14 @@ function checkHCUForFheEq(FheType resultType, bytes1 scalarByte, bytes32 lhs, by
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<checkHCUForFheEqReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<checkHCUForFheEqReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: checkHCUForFheEqReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkHCUForFheEqReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for checkHCUForFheEqReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
@@ -5825,15 +5502,12 @@ function checkHCUForFheEq(FheType resultType, bytes1 scalarByte, bytes32 lhs, by
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = checkHCUForFheEqReturn;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "checkHCUForFheEq(uint8,bytes1,bytes32,bytes32,bytes32,address)";
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str =
+                "checkHCUForFheEq(uint8,bytes1,bytes32,bytes32,bytes32,address)";
             const SELECTOR: [u8; 4] = [96u8, 225u8, 33u8, 137u8];
             #[inline]
             fn new<'a>(
@@ -5868,28 +5542,23 @@ function checkHCUForFheEq(FheType resultType, bytes1 scalarByte, bytes32 lhs, by
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Into::into)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `checkHCUForFheGe(uint8,bytes1,bytes32,bytes32,bytes32,address)` and selector `0xc277a936`.
-```solidity
-function checkHCUForFheGe(FheType resultType, bytes1 scalarByte, bytes32 lhs, bytes32 rhs, bytes32 result, address caller) external;
-```*/
+    ```solidity
+    function checkHCUForFheGe(FheType resultType, bytes1 scalarByte, bytes32 lhs, bytes32 rhs, bytes32 result, address caller) external;
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct checkHCUForFheGeCall {
@@ -5939,9 +5608,7 @@ function checkHCUForFheGe(FheType resultType, bytes1 scalarByte, bytes32 lhs, by
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -5950,8 +5617,7 @@ function checkHCUForFheGe(FheType resultType, bytes1 scalarByte, bytes32 lhs, by
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<checkHCUForFheGeCall>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<checkHCUForFheGeCall> for UnderlyingRustTuple<'_> {
                 fn from(value: checkHCUForFheGeCall) -> Self {
                     (
                         value.resultType,
@@ -5965,8 +5631,7 @@ function checkHCUForFheGe(FheType resultType, bytes1 scalarByte, bytes32 lhs, by
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkHCUForFheGeCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for checkHCUForFheGeCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         resultType: tuple.0,
@@ -5986,9 +5651,7 @@ function checkHCUForFheGe(FheType resultType, bytes1 scalarByte, bytes32 lhs, by
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -5997,16 +5660,14 @@ function checkHCUForFheGe(FheType resultType, bytes1 scalarByte, bytes32 lhs, by
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<checkHCUForFheGeReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<checkHCUForFheGeReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: checkHCUForFheGeReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkHCUForFheGeReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for checkHCUForFheGeReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
@@ -6029,15 +5690,12 @@ function checkHCUForFheGe(FheType resultType, bytes1 scalarByte, bytes32 lhs, by
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = checkHCUForFheGeReturn;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "checkHCUForFheGe(uint8,bytes1,bytes32,bytes32,bytes32,address)";
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str =
+                "checkHCUForFheGe(uint8,bytes1,bytes32,bytes32,bytes32,address)";
             const SELECTOR: [u8; 4] = [194u8, 119u8, 169u8, 54u8];
             #[inline]
             fn new<'a>(
@@ -6072,28 +5730,23 @@ function checkHCUForFheGe(FheType resultType, bytes1 scalarByte, bytes32 lhs, by
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Into::into)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `checkHCUForFheGt(uint8,bytes1,bytes32,bytes32,bytes32,address)` and selector `0x458fb277`.
-```solidity
-function checkHCUForFheGt(FheType resultType, bytes1 scalarByte, bytes32 lhs, bytes32 rhs, bytes32 result, address caller) external;
-```*/
+    ```solidity
+    function checkHCUForFheGt(FheType resultType, bytes1 scalarByte, bytes32 lhs, bytes32 rhs, bytes32 result, address caller) external;
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct checkHCUForFheGtCall {
@@ -6143,9 +5796,7 @@ function checkHCUForFheGt(FheType resultType, bytes1 scalarByte, bytes32 lhs, by
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -6154,8 +5805,7 @@ function checkHCUForFheGt(FheType resultType, bytes1 scalarByte, bytes32 lhs, by
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<checkHCUForFheGtCall>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<checkHCUForFheGtCall> for UnderlyingRustTuple<'_> {
                 fn from(value: checkHCUForFheGtCall) -> Self {
                     (
                         value.resultType,
@@ -6169,8 +5819,7 @@ function checkHCUForFheGt(FheType resultType, bytes1 scalarByte, bytes32 lhs, by
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkHCUForFheGtCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for checkHCUForFheGtCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         resultType: tuple.0,
@@ -6190,9 +5839,7 @@ function checkHCUForFheGt(FheType resultType, bytes1 scalarByte, bytes32 lhs, by
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -6201,16 +5848,14 @@ function checkHCUForFheGt(FheType resultType, bytes1 scalarByte, bytes32 lhs, by
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<checkHCUForFheGtReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<checkHCUForFheGtReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: checkHCUForFheGtReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkHCUForFheGtReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for checkHCUForFheGtReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
@@ -6233,15 +5878,12 @@ function checkHCUForFheGt(FheType resultType, bytes1 scalarByte, bytes32 lhs, by
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = checkHCUForFheGtReturn;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "checkHCUForFheGt(uint8,bytes1,bytes32,bytes32,bytes32,address)";
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str =
+                "checkHCUForFheGt(uint8,bytes1,bytes32,bytes32,bytes32,address)";
             const SELECTOR: [u8; 4] = [69u8, 143u8, 178u8, 119u8];
             #[inline]
             fn new<'a>(
@@ -6276,28 +5918,23 @@ function checkHCUForFheGt(FheType resultType, bytes1 scalarByte, bytes32 lhs, by
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Into::into)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `checkHCUForFheIsIn(uint8,bytes32,bytes32[],bytes32,address)` and selector `0x3bbcc4b2`.
-```solidity
-function checkHCUForFheIsIn(FheType valueType, bytes32 value, bytes32[] memory values, bytes32 result, address caller) external;
-```*/
+    ```solidity
+    function checkHCUForFheIsIn(FheType valueType, bytes32 value, bytes32[] memory values, bytes32 result, address caller) external;
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct checkHCUForFheIsInCall {
@@ -6306,9 +5943,7 @@ function checkHCUForFheIsIn(FheType valueType, bytes32 value, bytes32[] memory v
         #[allow(missing_docs)]
         pub value: alloy::sol_types::private::FixedBytes<32>,
         #[allow(missing_docs)]
-        pub values: alloy::sol_types::private::Vec<
-            alloy::sol_types::private::FixedBytes<32>,
-        >,
+        pub values: alloy::sol_types::private::Vec<alloy::sol_types::private::FixedBytes<32>>,
         #[allow(missing_docs)]
         pub result: alloy::sol_types::private::FixedBytes<32>,
         #[allow(missing_docs)]
@@ -6331,9 +5966,7 @@ function checkHCUForFheIsIn(FheType valueType, bytes32 value, bytes32[] memory v
             type UnderlyingSolTuple<'a> = (
                 FheType,
                 alloy::sol_types::sol_data::FixedBytes<32>,
-                alloy::sol_types::sol_data::Array<
-                    alloy::sol_types::sol_data::FixedBytes<32>,
-                >,
+                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::FixedBytes<32>>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
@@ -6341,17 +5974,13 @@ function checkHCUForFheIsIn(FheType valueType, bytes32 value, bytes32[] memory v
             type UnderlyingRustTuple<'a> = (
                 <FheType as alloy::sol_types::SolType>::RustType,
                 alloy::sol_types::private::FixedBytes<32>,
-                alloy::sol_types::private::Vec<
-                    alloy::sol_types::private::FixedBytes<32>,
-                >,
+                alloy::sol_types::private::Vec<alloy::sol_types::private::FixedBytes<32>>,
                 alloy::sol_types::private::FixedBytes<32>,
                 alloy::sol_types::private::Address,
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -6360,8 +5989,7 @@ function checkHCUForFheIsIn(FheType valueType, bytes32 value, bytes32[] memory v
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<checkHCUForFheIsInCall>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<checkHCUForFheIsInCall> for UnderlyingRustTuple<'_> {
                 fn from(value: checkHCUForFheIsInCall) -> Self {
                     (
                         value.valueType,
@@ -6374,8 +6002,7 @@ function checkHCUForFheIsIn(FheType valueType, bytes32 value, bytes32[] memory v
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkHCUForFheIsInCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for checkHCUForFheIsInCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         valueType: tuple.0,
@@ -6394,9 +6021,7 @@ function checkHCUForFheIsIn(FheType valueType, bytes32 value, bytes32[] memory v
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -6405,16 +6030,14 @@ function checkHCUForFheIsIn(FheType valueType, bytes32 value, bytes32[] memory v
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<checkHCUForFheIsInReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<checkHCUForFheIsInReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: checkHCUForFheIsInReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkHCUForFheIsInReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for checkHCUForFheIsInReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
@@ -6432,21 +6055,16 @@ function checkHCUForFheIsIn(FheType valueType, bytes32 value, bytes32[] memory v
             type Parameters<'a> = (
                 FheType,
                 alloy::sol_types::sol_data::FixedBytes<32>,
-                alloy::sol_types::sol_data::Array<
-                    alloy::sol_types::sol_data::FixedBytes<32>,
-                >,
+                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::FixedBytes<32>>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = checkHCUForFheIsInReturn;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "checkHCUForFheIsIn(uint8,bytes32,bytes32[],bytes32,address)";
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str =
+                "checkHCUForFheIsIn(uint8,bytes32,bytes32[],bytes32,address)";
             const SELECTOR: [u8; 4] = [59u8, 188u8, 196u8, 178u8];
             #[inline]
             fn new<'a>(
@@ -6478,28 +6096,23 @@ function checkHCUForFheIsIn(FheType valueType, bytes32 value, bytes32[] memory v
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Into::into)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `checkHCUForFheLe(uint8,bytes1,bytes32,bytes32,bytes32,address)` and selector `0x38bd17e5`.
-```solidity
-function checkHCUForFheLe(FheType resultType, bytes1 scalarByte, bytes32 lhs, bytes32 rhs, bytes32 result, address caller) external;
-```*/
+    ```solidity
+    function checkHCUForFheLe(FheType resultType, bytes1 scalarByte, bytes32 lhs, bytes32 rhs, bytes32 result, address caller) external;
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct checkHCUForFheLeCall {
@@ -6549,9 +6162,7 @@ function checkHCUForFheLe(FheType resultType, bytes1 scalarByte, bytes32 lhs, by
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -6560,8 +6171,7 @@ function checkHCUForFheLe(FheType resultType, bytes1 scalarByte, bytes32 lhs, by
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<checkHCUForFheLeCall>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<checkHCUForFheLeCall> for UnderlyingRustTuple<'_> {
                 fn from(value: checkHCUForFheLeCall) -> Self {
                     (
                         value.resultType,
@@ -6575,8 +6185,7 @@ function checkHCUForFheLe(FheType resultType, bytes1 scalarByte, bytes32 lhs, by
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkHCUForFheLeCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for checkHCUForFheLeCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         resultType: tuple.0,
@@ -6596,9 +6205,7 @@ function checkHCUForFheLe(FheType resultType, bytes1 scalarByte, bytes32 lhs, by
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -6607,16 +6214,14 @@ function checkHCUForFheLe(FheType resultType, bytes1 scalarByte, bytes32 lhs, by
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<checkHCUForFheLeReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<checkHCUForFheLeReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: checkHCUForFheLeReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkHCUForFheLeReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for checkHCUForFheLeReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
@@ -6639,15 +6244,12 @@ function checkHCUForFheLe(FheType resultType, bytes1 scalarByte, bytes32 lhs, by
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = checkHCUForFheLeReturn;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "checkHCUForFheLe(uint8,bytes1,bytes32,bytes32,bytes32,address)";
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str =
+                "checkHCUForFheLe(uint8,bytes1,bytes32,bytes32,bytes32,address)";
             const SELECTOR: [u8; 4] = [56u8, 189u8, 23u8, 229u8];
             #[inline]
             fn new<'a>(
@@ -6682,28 +6284,23 @@ function checkHCUForFheLe(FheType resultType, bytes1 scalarByte, bytes32 lhs, by
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Into::into)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `checkHCUForFheLt(uint8,bytes1,bytes32,bytes32,bytes32,address)` and selector `0x3bb7d5a3`.
-```solidity
-function checkHCUForFheLt(FheType resultType, bytes1 scalarByte, bytes32 lhs, bytes32 rhs, bytes32 result, address caller) external;
-```*/
+    ```solidity
+    function checkHCUForFheLt(FheType resultType, bytes1 scalarByte, bytes32 lhs, bytes32 rhs, bytes32 result, address caller) external;
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct checkHCUForFheLtCall {
@@ -6753,9 +6350,7 @@ function checkHCUForFheLt(FheType resultType, bytes1 scalarByte, bytes32 lhs, by
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -6764,8 +6359,7 @@ function checkHCUForFheLt(FheType resultType, bytes1 scalarByte, bytes32 lhs, by
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<checkHCUForFheLtCall>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<checkHCUForFheLtCall> for UnderlyingRustTuple<'_> {
                 fn from(value: checkHCUForFheLtCall) -> Self {
                     (
                         value.resultType,
@@ -6779,8 +6373,7 @@ function checkHCUForFheLt(FheType resultType, bytes1 scalarByte, bytes32 lhs, by
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkHCUForFheLtCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for checkHCUForFheLtCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         resultType: tuple.0,
@@ -6800,9 +6393,7 @@ function checkHCUForFheLt(FheType resultType, bytes1 scalarByte, bytes32 lhs, by
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -6811,16 +6402,14 @@ function checkHCUForFheLt(FheType resultType, bytes1 scalarByte, bytes32 lhs, by
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<checkHCUForFheLtReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<checkHCUForFheLtReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: checkHCUForFheLtReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkHCUForFheLtReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for checkHCUForFheLtReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
@@ -6843,15 +6432,12 @@ function checkHCUForFheLt(FheType resultType, bytes1 scalarByte, bytes32 lhs, by
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = checkHCUForFheLtReturn;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "checkHCUForFheLt(uint8,bytes1,bytes32,bytes32,bytes32,address)";
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str =
+                "checkHCUForFheLt(uint8,bytes1,bytes32,bytes32,bytes32,address)";
             const SELECTOR: [u8; 4] = [59u8, 183u8, 213u8, 163u8];
             #[inline]
             fn new<'a>(
@@ -6886,28 +6472,23 @@ function checkHCUForFheLt(FheType resultType, bytes1 scalarByte, bytes32 lhs, by
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Into::into)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `checkHCUForFheMax(uint8,bytes1,bytes32,bytes32,bytes32,address)` and selector `0x968302d7`.
-```solidity
-function checkHCUForFheMax(FheType resultType, bytes1 scalarByte, bytes32 lhs, bytes32 rhs, bytes32 result, address caller) external;
-```*/
+    ```solidity
+    function checkHCUForFheMax(FheType resultType, bytes1 scalarByte, bytes32 lhs, bytes32 rhs, bytes32 result, address caller) external;
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct checkHCUForFheMaxCall {
@@ -6957,9 +6538,7 @@ function checkHCUForFheMax(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -6968,8 +6547,7 @@ function checkHCUForFheMax(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<checkHCUForFheMaxCall>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<checkHCUForFheMaxCall> for UnderlyingRustTuple<'_> {
                 fn from(value: checkHCUForFheMaxCall) -> Self {
                     (
                         value.resultType,
@@ -6983,8 +6561,7 @@ function checkHCUForFheMax(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkHCUForFheMaxCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for checkHCUForFheMaxCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         resultType: tuple.0,
@@ -7004,9 +6581,7 @@ function checkHCUForFheMax(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -7015,16 +6590,14 @@ function checkHCUForFheMax(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<checkHCUForFheMaxReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<checkHCUForFheMaxReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: checkHCUForFheMaxReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkHCUForFheMaxReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for checkHCUForFheMaxReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
@@ -7047,15 +6620,12 @@ function checkHCUForFheMax(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = checkHCUForFheMaxReturn;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "checkHCUForFheMax(uint8,bytes1,bytes32,bytes32,bytes32,address)";
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str =
+                "checkHCUForFheMax(uint8,bytes1,bytes32,bytes32,bytes32,address)";
             const SELECTOR: [u8; 4] = [150u8, 131u8, 2u8, 215u8];
             #[inline]
             fn new<'a>(
@@ -7090,28 +6660,23 @@ function checkHCUForFheMax(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Into::into)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `checkHCUForFheMin(uint8,bytes1,bytes32,bytes32,bytes32,address)` and selector `0x04553fb6`.
-```solidity
-function checkHCUForFheMin(FheType resultType, bytes1 scalarByte, bytes32 lhs, bytes32 rhs, bytes32 result, address caller) external;
-```*/
+    ```solidity
+    function checkHCUForFheMin(FheType resultType, bytes1 scalarByte, bytes32 lhs, bytes32 rhs, bytes32 result, address caller) external;
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct checkHCUForFheMinCall {
@@ -7161,9 +6726,7 @@ function checkHCUForFheMin(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -7172,8 +6735,7 @@ function checkHCUForFheMin(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<checkHCUForFheMinCall>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<checkHCUForFheMinCall> for UnderlyingRustTuple<'_> {
                 fn from(value: checkHCUForFheMinCall) -> Self {
                     (
                         value.resultType,
@@ -7187,8 +6749,7 @@ function checkHCUForFheMin(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkHCUForFheMinCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for checkHCUForFheMinCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         resultType: tuple.0,
@@ -7208,9 +6769,7 @@ function checkHCUForFheMin(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -7219,16 +6778,14 @@ function checkHCUForFheMin(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<checkHCUForFheMinReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<checkHCUForFheMinReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: checkHCUForFheMinReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkHCUForFheMinReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for checkHCUForFheMinReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
@@ -7251,15 +6808,12 @@ function checkHCUForFheMin(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = checkHCUForFheMinReturn;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "checkHCUForFheMin(uint8,bytes1,bytes32,bytes32,bytes32,address)";
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str =
+                "checkHCUForFheMin(uint8,bytes1,bytes32,bytes32,bytes32,address)";
             const SELECTOR: [u8; 4] = [4u8, 85u8, 63u8, 182u8];
             #[inline]
             fn new<'a>(
@@ -7294,28 +6848,23 @@ function checkHCUForFheMin(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Into::into)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `checkHCUForFheMul(uint8,bytes1,bytes32,bytes32,bytes32,address)` and selector `0x818f4d69`.
-```solidity
-function checkHCUForFheMul(FheType resultType, bytes1 scalarByte, bytes32 lhs, bytes32 rhs, bytes32 result, address caller) external;
-```*/
+    ```solidity
+    function checkHCUForFheMul(FheType resultType, bytes1 scalarByte, bytes32 lhs, bytes32 rhs, bytes32 result, address caller) external;
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct checkHCUForFheMulCall {
@@ -7365,9 +6914,7 @@ function checkHCUForFheMul(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -7376,8 +6923,7 @@ function checkHCUForFheMul(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<checkHCUForFheMulCall>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<checkHCUForFheMulCall> for UnderlyingRustTuple<'_> {
                 fn from(value: checkHCUForFheMulCall) -> Self {
                     (
                         value.resultType,
@@ -7391,8 +6937,7 @@ function checkHCUForFheMul(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkHCUForFheMulCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for checkHCUForFheMulCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         resultType: tuple.0,
@@ -7412,9 +6957,7 @@ function checkHCUForFheMul(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -7423,16 +6966,14 @@ function checkHCUForFheMul(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<checkHCUForFheMulReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<checkHCUForFheMulReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: checkHCUForFheMulReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkHCUForFheMulReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for checkHCUForFheMulReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
@@ -7455,15 +6996,12 @@ function checkHCUForFheMul(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = checkHCUForFheMulReturn;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "checkHCUForFheMul(uint8,bytes1,bytes32,bytes32,bytes32,address)";
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str =
+                "checkHCUForFheMul(uint8,bytes1,bytes32,bytes32,bytes32,address)";
             const SELECTOR: [u8; 4] = [129u8, 143u8, 77u8, 105u8];
             #[inline]
             fn new<'a>(
@@ -7498,28 +7036,23 @@ function checkHCUForFheMul(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Into::into)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `checkHCUForFheMulDiv(uint8,bytes1,bytes32,bytes32,bytes32,address)` and selector `0x0d81a3f1`.
-```solidity
-function checkHCUForFheMulDiv(FheType resultType, bytes1 scalarByte, bytes32 factor1, bytes32 factor2, bytes32 result, address caller) external;
-```*/
+    ```solidity
+    function checkHCUForFheMulDiv(FheType resultType, bytes1 scalarByte, bytes32 factor1, bytes32 factor2, bytes32 result, address caller) external;
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct checkHCUForFheMulDivCall {
@@ -7569,9 +7102,7 @@ function checkHCUForFheMulDiv(FheType resultType, bytes1 scalarByte, bytes32 fac
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -7580,8 +7111,7 @@ function checkHCUForFheMulDiv(FheType resultType, bytes1 scalarByte, bytes32 fac
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<checkHCUForFheMulDivCall>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<checkHCUForFheMulDivCall> for UnderlyingRustTuple<'_> {
                 fn from(value: checkHCUForFheMulDivCall) -> Self {
                     (
                         value.resultType,
@@ -7595,8 +7125,7 @@ function checkHCUForFheMulDiv(FheType resultType, bytes1 scalarByte, bytes32 fac
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkHCUForFheMulDivCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for checkHCUForFheMulDivCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         resultType: tuple.0,
@@ -7616,9 +7145,7 @@ function checkHCUForFheMulDiv(FheType resultType, bytes1 scalarByte, bytes32 fac
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -7627,16 +7154,14 @@ function checkHCUForFheMulDiv(FheType resultType, bytes1 scalarByte, bytes32 fac
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<checkHCUForFheMulDivReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<checkHCUForFheMulDivReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: checkHCUForFheMulDivReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkHCUForFheMulDivReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for checkHCUForFheMulDivReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
@@ -7645,9 +7170,8 @@ function checkHCUForFheMulDiv(FheType resultType, bytes1 scalarByte, bytes32 fac
         impl checkHCUForFheMulDivReturn {
             fn _tokenize(
                 &self,
-            ) -> <checkHCUForFheMulDivCall as alloy_sol_types::SolCall>::ReturnToken<
-                '_,
-            > {
+            ) -> <checkHCUForFheMulDivCall as alloy_sol_types::SolCall>::ReturnToken<'_>
+            {
                 ()
             }
         }
@@ -7661,15 +7185,12 @@ function checkHCUForFheMulDiv(FheType resultType, bytes1 scalarByte, bytes32 fac
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = checkHCUForFheMulDivReturn;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "checkHCUForFheMulDiv(uint8,bytes1,bytes32,bytes32,bytes32,address)";
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str =
+                "checkHCUForFheMulDiv(uint8,bytes1,bytes32,bytes32,bytes32,address)";
             const SELECTOR: [u8; 4] = [13u8, 129u8, 163u8, 241u8];
             #[inline]
             fn new<'a>(
@@ -7704,28 +7225,23 @@ function checkHCUForFheMulDiv(FheType resultType, bytes1 scalarByte, bytes32 fac
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Into::into)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `checkHCUForFheNe(uint8,bytes1,bytes32,bytes32,bytes32,address)` and selector `0x6bad18b6`.
-```solidity
-function checkHCUForFheNe(FheType resultType, bytes1 scalarByte, bytes32 lhs, bytes32 rhs, bytes32 result, address caller) external;
-```*/
+    ```solidity
+    function checkHCUForFheNe(FheType resultType, bytes1 scalarByte, bytes32 lhs, bytes32 rhs, bytes32 result, address caller) external;
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct checkHCUForFheNeCall {
@@ -7775,9 +7291,7 @@ function checkHCUForFheNe(FheType resultType, bytes1 scalarByte, bytes32 lhs, by
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -7786,8 +7300,7 @@ function checkHCUForFheNe(FheType resultType, bytes1 scalarByte, bytes32 lhs, by
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<checkHCUForFheNeCall>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<checkHCUForFheNeCall> for UnderlyingRustTuple<'_> {
                 fn from(value: checkHCUForFheNeCall) -> Self {
                     (
                         value.resultType,
@@ -7801,8 +7314,7 @@ function checkHCUForFheNe(FheType resultType, bytes1 scalarByte, bytes32 lhs, by
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkHCUForFheNeCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for checkHCUForFheNeCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         resultType: tuple.0,
@@ -7822,9 +7334,7 @@ function checkHCUForFheNe(FheType resultType, bytes1 scalarByte, bytes32 lhs, by
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -7833,16 +7343,14 @@ function checkHCUForFheNe(FheType resultType, bytes1 scalarByte, bytes32 lhs, by
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<checkHCUForFheNeReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<checkHCUForFheNeReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: checkHCUForFheNeReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkHCUForFheNeReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for checkHCUForFheNeReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
@@ -7865,15 +7373,12 @@ function checkHCUForFheNe(FheType resultType, bytes1 scalarByte, bytes32 lhs, by
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = checkHCUForFheNeReturn;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "checkHCUForFheNe(uint8,bytes1,bytes32,bytes32,bytes32,address)";
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str =
+                "checkHCUForFheNe(uint8,bytes1,bytes32,bytes32,bytes32,address)";
             const SELECTOR: [u8; 4] = [107u8, 173u8, 24u8, 182u8];
             #[inline]
             fn new<'a>(
@@ -7908,28 +7413,23 @@ function checkHCUForFheNe(FheType resultType, bytes1 scalarByte, bytes32 lhs, by
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Into::into)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `checkHCUForFheNeg(uint8,bytes32,bytes32,address)` and selector `0x497c22c5`.
-```solidity
-function checkHCUForFheNeg(FheType resultType, bytes32 ct, bytes32 result, address caller) external;
-```*/
+    ```solidity
+    function checkHCUForFheNeg(FheType resultType, bytes32 ct, bytes32 result, address caller) external;
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct checkHCUForFheNegCall {
@@ -7971,9 +7471,7 @@ function checkHCUForFheNeg(FheType resultType, bytes32 ct, bytes32 result, addre
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -7982,16 +7480,14 @@ function checkHCUForFheNeg(FheType resultType, bytes32 ct, bytes32 result, addre
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<checkHCUForFheNegCall>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<checkHCUForFheNegCall> for UnderlyingRustTuple<'_> {
                 fn from(value: checkHCUForFheNegCall) -> Self {
                     (value.resultType, value.ct, value.result, value.caller)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkHCUForFheNegCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for checkHCUForFheNegCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         resultType: tuple.0,
@@ -8009,9 +7505,7 @@ function checkHCUForFheNeg(FheType resultType, bytes32 ct, bytes32 result, addre
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -8020,16 +7514,14 @@ function checkHCUForFheNeg(FheType resultType, bytes32 ct, bytes32 result, addre
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<checkHCUForFheNegReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<checkHCUForFheNegReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: checkHCUForFheNegReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkHCUForFheNegReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for checkHCUForFheNegReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
@@ -8050,14 +7542,10 @@ function checkHCUForFheNeg(FheType resultType, bytes32 ct, bytes32 result, addre
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = checkHCUForFheNegReturn;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "checkHCUForFheNeg(uint8,bytes32,bytes32,address)";
             const SELECTOR: [u8; 4] = [73u8, 124u8, 34u8, 197u8];
             #[inline]
@@ -8087,28 +7575,23 @@ function checkHCUForFheNeg(FheType resultType, bytes32 ct, bytes32 result, addre
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Into::into)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `checkHCUForFheNot(uint8,bytes32,bytes32,address)` and selector `0x2dcbc5d1`.
-```solidity
-function checkHCUForFheNot(FheType resultType, bytes32 ct, bytes32 result, address caller) external;
-```*/
+    ```solidity
+    function checkHCUForFheNot(FheType resultType, bytes32 ct, bytes32 result, address caller) external;
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct checkHCUForFheNotCall {
@@ -8150,9 +7633,7 @@ function checkHCUForFheNot(FheType resultType, bytes32 ct, bytes32 result, addre
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -8161,16 +7642,14 @@ function checkHCUForFheNot(FheType resultType, bytes32 ct, bytes32 result, addre
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<checkHCUForFheNotCall>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<checkHCUForFheNotCall> for UnderlyingRustTuple<'_> {
                 fn from(value: checkHCUForFheNotCall) -> Self {
                     (value.resultType, value.ct, value.result, value.caller)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkHCUForFheNotCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for checkHCUForFheNotCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         resultType: tuple.0,
@@ -8188,9 +7667,7 @@ function checkHCUForFheNot(FheType resultType, bytes32 ct, bytes32 result, addre
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -8199,16 +7676,14 @@ function checkHCUForFheNot(FheType resultType, bytes32 ct, bytes32 result, addre
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<checkHCUForFheNotReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<checkHCUForFheNotReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: checkHCUForFheNotReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkHCUForFheNotReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for checkHCUForFheNotReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
@@ -8229,14 +7704,10 @@ function checkHCUForFheNot(FheType resultType, bytes32 ct, bytes32 result, addre
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = checkHCUForFheNotReturn;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "checkHCUForFheNot(uint8,bytes32,bytes32,address)";
             const SELECTOR: [u8; 4] = [45u8, 203u8, 197u8, 209u8];
             #[inline]
@@ -8266,28 +7737,23 @@ function checkHCUForFheNot(FheType resultType, bytes32 ct, bytes32 result, addre
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Into::into)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `checkHCUForFheRand(uint8,bytes32,address)` and selector `0xd5b8b8f3`.
-```solidity
-function checkHCUForFheRand(FheType resultType, bytes32 result, address caller) external;
-```*/
+    ```solidity
+    function checkHCUForFheRand(FheType resultType, bytes32 result, address caller) external;
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct checkHCUForFheRandCall {
@@ -8325,9 +7791,7 @@ function checkHCUForFheRand(FheType resultType, bytes32 result, address caller) 
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -8336,16 +7800,14 @@ function checkHCUForFheRand(FheType resultType, bytes32 result, address caller) 
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<checkHCUForFheRandCall>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<checkHCUForFheRandCall> for UnderlyingRustTuple<'_> {
                 fn from(value: checkHCUForFheRandCall) -> Self {
                     (value.resultType, value.result, value.caller)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkHCUForFheRandCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for checkHCUForFheRandCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         resultType: tuple.0,
@@ -8362,9 +7824,7 @@ function checkHCUForFheRand(FheType resultType, bytes32 result, address caller) 
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -8373,16 +7833,14 @@ function checkHCUForFheRand(FheType resultType, bytes32 result, address caller) 
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<checkHCUForFheRandReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<checkHCUForFheRandReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: checkHCUForFheRandReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkHCUForFheRandReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for checkHCUForFheRandReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
@@ -8402,14 +7860,10 @@ function checkHCUForFheRand(FheType resultType, bytes32 result, address caller) 
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = checkHCUForFheRandReturn;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "checkHCUForFheRand(uint8,bytes32,address)";
             const SELECTOR: [u8; 4] = [213u8, 184u8, 184u8, 243u8];
             #[inline]
@@ -8436,28 +7890,23 @@ function checkHCUForFheRand(FheType resultType, bytes32 result, address caller) 
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Into::into)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `checkHCUForFheRandBounded(uint8,bytes32,address)` and selector `0x6cf0bd25`.
-```solidity
-function checkHCUForFheRandBounded(FheType resultType, bytes32 result, address caller) external;
-```*/
+    ```solidity
+    function checkHCUForFheRandBounded(FheType resultType, bytes32 result, address caller) external;
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct checkHCUForFheRandBoundedCall {
@@ -8495,9 +7944,7 @@ function checkHCUForFheRandBounded(FheType resultType, bytes32 result, address c
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -8506,16 +7953,14 @@ function checkHCUForFheRandBounded(FheType resultType, bytes32 result, address c
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<checkHCUForFheRandBoundedCall>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<checkHCUForFheRandBoundedCall> for UnderlyingRustTuple<'_> {
                 fn from(value: checkHCUForFheRandBoundedCall) -> Self {
                     (value.resultType, value.result, value.caller)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkHCUForFheRandBoundedCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for checkHCUForFheRandBoundedCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         resultType: tuple.0,
@@ -8532,9 +7977,7 @@ function checkHCUForFheRandBounded(FheType resultType, bytes32 result, address c
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -8543,16 +7986,14 @@ function checkHCUForFheRandBounded(FheType resultType, bytes32 result, address c
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<checkHCUForFheRandBoundedReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<checkHCUForFheRandBoundedReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: checkHCUForFheRandBoundedReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkHCUForFheRandBoundedReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for checkHCUForFheRandBoundedReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
@@ -8561,9 +8002,8 @@ function checkHCUForFheRandBounded(FheType resultType, bytes32 result, address c
         impl checkHCUForFheRandBoundedReturn {
             fn _tokenize(
                 &self,
-            ) -> <checkHCUForFheRandBoundedCall as alloy_sol_types::SolCall>::ReturnToken<
-                '_,
-            > {
+            ) -> <checkHCUForFheRandBoundedCall as alloy_sol_types::SolCall>::ReturnToken<'_>
+            {
                 ()
             }
         }
@@ -8574,14 +8014,10 @@ function checkHCUForFheRandBounded(FheType resultType, bytes32 result, address c
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = checkHCUForFheRandBoundedReturn;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "checkHCUForFheRandBounded(uint8,bytes32,address)";
             const SELECTOR: [u8; 4] = [108u8, 240u8, 189u8, 37u8];
             #[inline]
@@ -8608,28 +8044,23 @@ function checkHCUForFheRandBounded(FheType resultType, bytes32 result, address c
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Into::into)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `checkHCUForFheRem(uint8,bytes1,bytes32,bytes32,bytes32,address)` and selector `0x3311b1bc`.
-```solidity
-function checkHCUForFheRem(FheType resultType, bytes1 scalarByte, bytes32 lhs, bytes32, bytes32 result, address caller) external;
-```*/
+    ```solidity
+    function checkHCUForFheRem(FheType resultType, bytes1 scalarByte, bytes32 lhs, bytes32, bytes32 result, address caller) external;
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct checkHCUForFheRemCall {
@@ -8679,9 +8110,7 @@ function checkHCUForFheRem(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -8690,8 +8119,7 @@ function checkHCUForFheRem(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<checkHCUForFheRemCall>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<checkHCUForFheRemCall> for UnderlyingRustTuple<'_> {
                 fn from(value: checkHCUForFheRemCall) -> Self {
                     (
                         value.resultType,
@@ -8705,8 +8133,7 @@ function checkHCUForFheRem(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkHCUForFheRemCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for checkHCUForFheRemCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         resultType: tuple.0,
@@ -8726,9 +8153,7 @@ function checkHCUForFheRem(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -8737,16 +8162,14 @@ function checkHCUForFheRem(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<checkHCUForFheRemReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<checkHCUForFheRemReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: checkHCUForFheRemReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkHCUForFheRemReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for checkHCUForFheRemReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
@@ -8769,15 +8192,12 @@ function checkHCUForFheRem(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = checkHCUForFheRemReturn;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "checkHCUForFheRem(uint8,bytes1,bytes32,bytes32,bytes32,address)";
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str =
+                "checkHCUForFheRem(uint8,bytes1,bytes32,bytes32,bytes32,address)";
             const SELECTOR: [u8; 4] = [51u8, 17u8, 177u8, 188u8];
             #[inline]
             fn new<'a>(
@@ -8812,28 +8232,23 @@ function checkHCUForFheRem(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Into::into)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `checkHCUForFheRotl(uint8,bytes1,bytes32,bytes32,bytes32,address)` and selector `0x5f76eb30`.
-```solidity
-function checkHCUForFheRotl(FheType resultType, bytes1 scalarByte, bytes32 lhs, bytes32 rhs, bytes32 result, address caller) external;
-```*/
+    ```solidity
+    function checkHCUForFheRotl(FheType resultType, bytes1 scalarByte, bytes32 lhs, bytes32 rhs, bytes32 result, address caller) external;
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct checkHCUForFheRotlCall {
@@ -8883,9 +8298,7 @@ function checkHCUForFheRotl(FheType resultType, bytes1 scalarByte, bytes32 lhs, 
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -8894,8 +8307,7 @@ function checkHCUForFheRotl(FheType resultType, bytes1 scalarByte, bytes32 lhs, 
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<checkHCUForFheRotlCall>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<checkHCUForFheRotlCall> for UnderlyingRustTuple<'_> {
                 fn from(value: checkHCUForFheRotlCall) -> Self {
                     (
                         value.resultType,
@@ -8909,8 +8321,7 @@ function checkHCUForFheRotl(FheType resultType, bytes1 scalarByte, bytes32 lhs, 
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkHCUForFheRotlCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for checkHCUForFheRotlCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         resultType: tuple.0,
@@ -8930,9 +8341,7 @@ function checkHCUForFheRotl(FheType resultType, bytes1 scalarByte, bytes32 lhs, 
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -8941,16 +8350,14 @@ function checkHCUForFheRotl(FheType resultType, bytes1 scalarByte, bytes32 lhs, 
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<checkHCUForFheRotlReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<checkHCUForFheRotlReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: checkHCUForFheRotlReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkHCUForFheRotlReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for checkHCUForFheRotlReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
@@ -8973,15 +8380,12 @@ function checkHCUForFheRotl(FheType resultType, bytes1 scalarByte, bytes32 lhs, 
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = checkHCUForFheRotlReturn;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "checkHCUForFheRotl(uint8,bytes1,bytes32,bytes32,bytes32,address)";
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str =
+                "checkHCUForFheRotl(uint8,bytes1,bytes32,bytes32,bytes32,address)";
             const SELECTOR: [u8; 4] = [95u8, 118u8, 235u8, 48u8];
             #[inline]
             fn new<'a>(
@@ -9016,28 +8420,23 @@ function checkHCUForFheRotl(FheType resultType, bytes1 scalarByte, bytes32 lhs, 
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Into::into)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `checkHCUForFheRotr(uint8,bytes1,bytes32,bytes32,bytes32,address)` and selector `0x8629f545`.
-```solidity
-function checkHCUForFheRotr(FheType resultType, bytes1 scalarByte, bytes32 lhs, bytes32 rhs, bytes32 result, address caller) external;
-```*/
+    ```solidity
+    function checkHCUForFheRotr(FheType resultType, bytes1 scalarByte, bytes32 lhs, bytes32 rhs, bytes32 result, address caller) external;
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct checkHCUForFheRotrCall {
@@ -9087,9 +8486,7 @@ function checkHCUForFheRotr(FheType resultType, bytes1 scalarByte, bytes32 lhs, 
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -9098,8 +8495,7 @@ function checkHCUForFheRotr(FheType resultType, bytes1 scalarByte, bytes32 lhs, 
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<checkHCUForFheRotrCall>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<checkHCUForFheRotrCall> for UnderlyingRustTuple<'_> {
                 fn from(value: checkHCUForFheRotrCall) -> Self {
                     (
                         value.resultType,
@@ -9113,8 +8509,7 @@ function checkHCUForFheRotr(FheType resultType, bytes1 scalarByte, bytes32 lhs, 
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkHCUForFheRotrCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for checkHCUForFheRotrCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         resultType: tuple.0,
@@ -9134,9 +8529,7 @@ function checkHCUForFheRotr(FheType resultType, bytes1 scalarByte, bytes32 lhs, 
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -9145,16 +8538,14 @@ function checkHCUForFheRotr(FheType resultType, bytes1 scalarByte, bytes32 lhs, 
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<checkHCUForFheRotrReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<checkHCUForFheRotrReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: checkHCUForFheRotrReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkHCUForFheRotrReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for checkHCUForFheRotrReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
@@ -9177,15 +8568,12 @@ function checkHCUForFheRotr(FheType resultType, bytes1 scalarByte, bytes32 lhs, 
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = checkHCUForFheRotrReturn;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "checkHCUForFheRotr(uint8,bytes1,bytes32,bytes32,bytes32,address)";
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str =
+                "checkHCUForFheRotr(uint8,bytes1,bytes32,bytes32,bytes32,address)";
             const SELECTOR: [u8; 4] = [134u8, 41u8, 245u8, 69u8];
             #[inline]
             fn new<'a>(
@@ -9220,28 +8608,23 @@ function checkHCUForFheRotr(FheType resultType, bytes1 scalarByte, bytes32 lhs, 
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Into::into)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `checkHCUForFheShl(uint8,bytes1,bytes32,bytes32,bytes32,address)` and selector `0xf7d198f8`.
-```solidity
-function checkHCUForFheShl(FheType resultType, bytes1 scalarByte, bytes32 lhs, bytes32 rhs, bytes32 result, address caller) external;
-```*/
+    ```solidity
+    function checkHCUForFheShl(FheType resultType, bytes1 scalarByte, bytes32 lhs, bytes32 rhs, bytes32 result, address caller) external;
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct checkHCUForFheShlCall {
@@ -9291,9 +8674,7 @@ function checkHCUForFheShl(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -9302,8 +8683,7 @@ function checkHCUForFheShl(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<checkHCUForFheShlCall>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<checkHCUForFheShlCall> for UnderlyingRustTuple<'_> {
                 fn from(value: checkHCUForFheShlCall) -> Self {
                     (
                         value.resultType,
@@ -9317,8 +8697,7 @@ function checkHCUForFheShl(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkHCUForFheShlCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for checkHCUForFheShlCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         resultType: tuple.0,
@@ -9338,9 +8717,7 @@ function checkHCUForFheShl(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -9349,16 +8726,14 @@ function checkHCUForFheShl(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<checkHCUForFheShlReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<checkHCUForFheShlReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: checkHCUForFheShlReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkHCUForFheShlReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for checkHCUForFheShlReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
@@ -9381,15 +8756,12 @@ function checkHCUForFheShl(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = checkHCUForFheShlReturn;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "checkHCUForFheShl(uint8,bytes1,bytes32,bytes32,bytes32,address)";
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str =
+                "checkHCUForFheShl(uint8,bytes1,bytes32,bytes32,bytes32,address)";
             const SELECTOR: [u8; 4] = [247u8, 209u8, 152u8, 248u8];
             #[inline]
             fn new<'a>(
@@ -9424,28 +8796,23 @@ function checkHCUForFheShl(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Into::into)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `checkHCUForFheShr(uint8,bytes1,bytes32,bytes32,bytes32,address)` and selector `0x07ccdf61`.
-```solidity
-function checkHCUForFheShr(FheType resultType, bytes1 scalarByte, bytes32 lhs, bytes32 rhs, bytes32 result, address caller) external;
-```*/
+    ```solidity
+    function checkHCUForFheShr(FheType resultType, bytes1 scalarByte, bytes32 lhs, bytes32 rhs, bytes32 result, address caller) external;
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct checkHCUForFheShrCall {
@@ -9495,9 +8862,7 @@ function checkHCUForFheShr(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -9506,8 +8871,7 @@ function checkHCUForFheShr(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<checkHCUForFheShrCall>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<checkHCUForFheShrCall> for UnderlyingRustTuple<'_> {
                 fn from(value: checkHCUForFheShrCall) -> Self {
                     (
                         value.resultType,
@@ -9521,8 +8885,7 @@ function checkHCUForFheShr(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkHCUForFheShrCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for checkHCUForFheShrCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         resultType: tuple.0,
@@ -9542,9 +8905,7 @@ function checkHCUForFheShr(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -9553,16 +8914,14 @@ function checkHCUForFheShr(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<checkHCUForFheShrReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<checkHCUForFheShrReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: checkHCUForFheShrReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkHCUForFheShrReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for checkHCUForFheShrReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
@@ -9585,15 +8944,12 @@ function checkHCUForFheShr(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = checkHCUForFheShrReturn;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "checkHCUForFheShr(uint8,bytes1,bytes32,bytes32,bytes32,address)";
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str =
+                "checkHCUForFheShr(uint8,bytes1,bytes32,bytes32,bytes32,address)";
             const SELECTOR: [u8; 4] = [7u8, 204u8, 223u8, 97u8];
             #[inline]
             fn new<'a>(
@@ -9628,28 +8984,23 @@ function checkHCUForFheShr(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Into::into)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `checkHCUForFheSub(uint8,bytes1,bytes32,bytes32,bytes32,address)` and selector `0xd633c96b`.
-```solidity
-function checkHCUForFheSub(FheType resultType, bytes1 scalarByte, bytes32 lhs, bytes32 rhs, bytes32 result, address caller) external;
-```*/
+    ```solidity
+    function checkHCUForFheSub(FheType resultType, bytes1 scalarByte, bytes32 lhs, bytes32 rhs, bytes32 result, address caller) external;
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct checkHCUForFheSubCall {
@@ -9699,9 +9050,7 @@ function checkHCUForFheSub(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -9710,8 +9059,7 @@ function checkHCUForFheSub(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<checkHCUForFheSubCall>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<checkHCUForFheSubCall> for UnderlyingRustTuple<'_> {
                 fn from(value: checkHCUForFheSubCall) -> Self {
                     (
                         value.resultType,
@@ -9725,8 +9073,7 @@ function checkHCUForFheSub(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkHCUForFheSubCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for checkHCUForFheSubCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         resultType: tuple.0,
@@ -9746,9 +9093,7 @@ function checkHCUForFheSub(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -9757,16 +9102,14 @@ function checkHCUForFheSub(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<checkHCUForFheSubReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<checkHCUForFheSubReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: checkHCUForFheSubReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkHCUForFheSubReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for checkHCUForFheSubReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
@@ -9789,15 +9132,12 @@ function checkHCUForFheSub(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = checkHCUForFheSubReturn;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "checkHCUForFheSub(uint8,bytes1,bytes32,bytes32,bytes32,address)";
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str =
+                "checkHCUForFheSub(uint8,bytes1,bytes32,bytes32,bytes32,address)";
             const SELECTOR: [u8; 4] = [214u8, 51u8, 201u8, 107u8];
             #[inline]
             fn new<'a>(
@@ -9832,37 +9172,30 @@ function checkHCUForFheSub(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Into::into)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `checkHCUForFheSum(uint8,bytes32[],bytes32,address)` and selector `0xb9662554`.
-```solidity
-function checkHCUForFheSum(FheType resultType, bytes32[] memory values, bytes32 result, address caller) external;
-```*/
+    ```solidity
+    function checkHCUForFheSum(FheType resultType, bytes32[] memory values, bytes32 result, address caller) external;
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct checkHCUForFheSumCall {
         #[allow(missing_docs)]
         pub resultType: <FheType as alloy::sol_types::SolType>::RustType,
         #[allow(missing_docs)]
-        pub values: alloy::sol_types::private::Vec<
-            alloy::sol_types::private::FixedBytes<32>,
-        >,
+        pub values: alloy::sol_types::private::Vec<alloy::sol_types::private::FixedBytes<32>>,
         #[allow(missing_docs)]
         pub result: alloy::sol_types::private::FixedBytes<32>,
         #[allow(missing_docs)]
@@ -9884,26 +9217,20 @@ function checkHCUForFheSum(FheType resultType, bytes32[] memory values, bytes32 
             #[doc(hidden)]
             type UnderlyingSolTuple<'a> = (
                 FheType,
-                alloy::sol_types::sol_data::Array<
-                    alloy::sol_types::sol_data::FixedBytes<32>,
-                >,
+                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::FixedBytes<32>>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (
                 <FheType as alloy::sol_types::SolType>::RustType,
-                alloy::sol_types::private::Vec<
-                    alloy::sol_types::private::FixedBytes<32>,
-                >,
+                alloy::sol_types::private::Vec<alloy::sol_types::private::FixedBytes<32>>,
                 alloy::sol_types::private::FixedBytes<32>,
                 alloy::sol_types::private::Address,
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -9912,16 +9239,14 @@ function checkHCUForFheSum(FheType resultType, bytes32[] memory values, bytes32 
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<checkHCUForFheSumCall>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<checkHCUForFheSumCall> for UnderlyingRustTuple<'_> {
                 fn from(value: checkHCUForFheSumCall) -> Self {
                     (value.resultType, value.values, value.result, value.caller)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkHCUForFheSumCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for checkHCUForFheSumCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         resultType: tuple.0,
@@ -9939,9 +9264,7 @@ function checkHCUForFheSum(FheType resultType, bytes32[] memory values, bytes32 
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -9950,16 +9273,14 @@ function checkHCUForFheSum(FheType resultType, bytes32[] memory values, bytes32 
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<checkHCUForFheSumReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<checkHCUForFheSumReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: checkHCUForFheSumReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkHCUForFheSumReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for checkHCUForFheSumReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
@@ -9976,20 +9297,14 @@ function checkHCUForFheSum(FheType resultType, bytes32[] memory values, bytes32 
         impl alloy_sol_types::SolCall for checkHCUForFheSumCall {
             type Parameters<'a> = (
                 FheType,
-                alloy::sol_types::sol_data::Array<
-                    alloy::sol_types::sol_data::FixedBytes<32>,
-                >,
+                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::FixedBytes<32>>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = checkHCUForFheSumReturn;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "checkHCUForFheSum(uint8,bytes32[],bytes32,address)";
             const SELECTOR: [u8; 4] = [185u8, 102u8, 37u8, 84u8];
             #[inline]
@@ -10019,28 +9334,23 @@ function checkHCUForFheSum(FheType resultType, bytes32[] memory values, bytes32 
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Into::into)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `checkHCUForIfThenElse(uint8,bytes32,bytes32,bytes32,bytes32,address)` and selector `0x2e3c3906`.
-```solidity
-function checkHCUForIfThenElse(FheType resultType, bytes32 lhs, bytes32 middle, bytes32 rhs, bytes32 result, address caller) external;
-```*/
+    ```solidity
+    function checkHCUForIfThenElse(FheType resultType, bytes32 lhs, bytes32 middle, bytes32 rhs, bytes32 result, address caller) external;
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct checkHCUForIfThenElseCall {
@@ -10090,9 +9400,7 @@ function checkHCUForIfThenElse(FheType resultType, bytes32 lhs, bytes32 middle, 
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -10101,8 +9409,7 @@ function checkHCUForIfThenElse(FheType resultType, bytes32 lhs, bytes32 middle, 
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<checkHCUForIfThenElseCall>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<checkHCUForIfThenElseCall> for UnderlyingRustTuple<'_> {
                 fn from(value: checkHCUForIfThenElseCall) -> Self {
                     (
                         value.resultType,
@@ -10116,8 +9423,7 @@ function checkHCUForIfThenElse(FheType resultType, bytes32 lhs, bytes32 middle, 
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkHCUForIfThenElseCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for checkHCUForIfThenElseCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         resultType: tuple.0,
@@ -10137,9 +9443,7 @@ function checkHCUForIfThenElse(FheType resultType, bytes32 lhs, bytes32 middle, 
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -10148,16 +9452,14 @@ function checkHCUForIfThenElse(FheType resultType, bytes32 lhs, bytes32 middle, 
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<checkHCUForIfThenElseReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<checkHCUForIfThenElseReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: checkHCUForIfThenElseReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkHCUForIfThenElseReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for checkHCUForIfThenElseReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
@@ -10166,9 +9468,8 @@ function checkHCUForIfThenElse(FheType resultType, bytes32 lhs, bytes32 middle, 
         impl checkHCUForIfThenElseReturn {
             fn _tokenize(
                 &self,
-            ) -> <checkHCUForIfThenElseCall as alloy_sol_types::SolCall>::ReturnToken<
-                '_,
-            > {
+            ) -> <checkHCUForIfThenElseCall as alloy_sol_types::SolCall>::ReturnToken<'_>
+            {
                 ()
             }
         }
@@ -10182,15 +9483,12 @@ function checkHCUForIfThenElse(FheType resultType, bytes32 lhs, bytes32 middle, 
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = checkHCUForIfThenElseReturn;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "checkHCUForIfThenElse(uint8,bytes32,bytes32,bytes32,bytes32,address)";
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str =
+                "checkHCUForIfThenElse(uint8,bytes32,bytes32,bytes32,bytes32,address)";
             const SELECTOR: [u8; 4] = [46u8, 60u8, 57u8, 6u8];
             #[inline]
             fn new<'a>(
@@ -10225,28 +9523,23 @@ function checkHCUForIfThenElse(FheType resultType, bytes32 lhs, bytes32 middle, 
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Into::into)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `checkHCUForTrivialEncrypt(uint8,bytes32,address)` and selector `0xb78bef59`.
-```solidity
-function checkHCUForTrivialEncrypt(FheType resultType, bytes32 result, address caller) external;
-```*/
+    ```solidity
+    function checkHCUForTrivialEncrypt(FheType resultType, bytes32 result, address caller) external;
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct checkHCUForTrivialEncryptCall {
@@ -10284,9 +9577,7 @@ function checkHCUForTrivialEncrypt(FheType resultType, bytes32 result, address c
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -10295,16 +9586,14 @@ function checkHCUForTrivialEncrypt(FheType resultType, bytes32 result, address c
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<checkHCUForTrivialEncryptCall>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<checkHCUForTrivialEncryptCall> for UnderlyingRustTuple<'_> {
                 fn from(value: checkHCUForTrivialEncryptCall) -> Self {
                     (value.resultType, value.result, value.caller)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkHCUForTrivialEncryptCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for checkHCUForTrivialEncryptCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         resultType: tuple.0,
@@ -10321,9 +9610,7 @@ function checkHCUForTrivialEncrypt(FheType resultType, bytes32 result, address c
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -10332,16 +9619,14 @@ function checkHCUForTrivialEncrypt(FheType resultType, bytes32 result, address c
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<checkHCUForTrivialEncryptReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<checkHCUForTrivialEncryptReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: checkHCUForTrivialEncryptReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkHCUForTrivialEncryptReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for checkHCUForTrivialEncryptReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
@@ -10350,9 +9635,8 @@ function checkHCUForTrivialEncrypt(FheType resultType, bytes32 result, address c
         impl checkHCUForTrivialEncryptReturn {
             fn _tokenize(
                 &self,
-            ) -> <checkHCUForTrivialEncryptCall as alloy_sol_types::SolCall>::ReturnToken<
-                '_,
-            > {
+            ) -> <checkHCUForTrivialEncryptCall as alloy_sol_types::SolCall>::ReturnToken<'_>
+            {
                 ()
             }
         }
@@ -10363,14 +9647,10 @@ function checkHCUForTrivialEncrypt(FheType resultType, bytes32 result, address c
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = checkHCUForTrivialEncryptReturn;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "checkHCUForTrivialEncrypt(uint8,bytes32,address)";
             const SELECTOR: [u8; 4] = [183u8, 139u8, 239u8, 89u8];
             #[inline]
@@ -10397,33 +9677,27 @@ function checkHCUForTrivialEncrypt(FheType resultType, bytes32 result, address c
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Into::into)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getBlockMeter()` and selector `0x9f4b9937`.
-```solidity
-function getBlockMeter() external view returns (uint48 blockNumber, uint48 usedHCU);
-```*/
+    ```solidity
+    function getBlockMeter() external view returns (uint48 blockNumber, uint48 usedHCU);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getBlockMeterCall;
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`getBlockMeter()`](getBlockMeterCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -10448,9 +9722,7 @@ function getBlockMeter() external view returns (uint48 blockNumber, uint48 usedH
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -10485,9 +9757,7 @@ function getBlockMeter() external view returns (uint48 blockNumber, uint48 usedH
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -10517,29 +9787,25 @@ function getBlockMeter() external view returns (uint48 blockNumber, uint48 usedH
                 &self,
             ) -> <getBlockMeterCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
                 (
-                    <alloy::sol_types::sol_data::Uint<
-                        48,
-                    > as alloy_sol_types::SolType>::tokenize(&self.blockNumber),
-                    <alloy::sol_types::sol_data::Uint<
-                        48,
-                    > as alloy_sol_types::SolType>::tokenize(&self.usedHCU),
+                    <alloy::sol_types::sol_data::Uint<48> as alloy_sol_types::SolType>::tokenize(
+                        &self.blockNumber,
+                    ),
+                    <alloy::sol_types::sol_data::Uint<48> as alloy_sol_types::SolType>::tokenize(
+                        &self.usedHCU,
+                    ),
                 )
             }
         }
         #[automatically_derived]
         impl alloy_sol_types::SolCall for getBlockMeterCall {
             type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = getBlockMeterReturn;
             type ReturnTuple<'a> = (
                 alloy::sol_types::sol_data::Uint<48>,
                 alloy::sol_types::sol_data::Uint<48>,
             );
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "getBlockMeter()";
             const SELECTOR: [u8; 4] = [159u8, 75u8, 153u8, 55u8];
             #[inline]
@@ -10558,33 +9824,27 @@ function getBlockMeter() external view returns (uint48 blockNumber, uint48 usedH
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Into::into)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getFHEVMExecutorAddress()` and selector `0x268d6d31`.
-```solidity
-function getFHEVMExecutorAddress() external view returns (address);
-```*/
+    ```solidity
+    function getFHEVMExecutorAddress() external view returns (address);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getFHEVMExecutorAddressCall;
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`getFHEVMExecutorAddress()`](getFHEVMExecutorAddressCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -10607,9 +9867,7 @@ function getFHEVMExecutorAddress() external view returns (address);
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -10618,16 +9876,14 @@ function getFHEVMExecutorAddress() external view returns (address);
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<getFHEVMExecutorAddressCall>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<getFHEVMExecutorAddressCall> for UnderlyingRustTuple<'_> {
                 fn from(value: getFHEVMExecutorAddressCall) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for getFHEVMExecutorAddressCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getFHEVMExecutorAddressCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self
                 }
@@ -10640,9 +9896,7 @@ function getFHEVMExecutorAddress() external view returns (address);
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -10651,16 +9905,14 @@ function getFHEVMExecutorAddress() external view returns (address);
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<getFHEVMExecutorAddressReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<getFHEVMExecutorAddressReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: getFHEVMExecutorAddressReturn) -> Self {
                     (value._0,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for getFHEVMExecutorAddressReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getFHEVMExecutorAddressReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { _0: tuple.0 }
                 }
@@ -10669,14 +9921,10 @@ function getFHEVMExecutorAddress() external view returns (address);
         #[automatically_derived]
         impl alloy_sol_types::SolCall for getFHEVMExecutorAddressCall {
             type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy::sol_types::private::Address;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::Address,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "getFHEVMExecutorAddress()";
             const SELECTOR: [u8; 4] = [38u8, 141u8, 109u8, 49u8];
             #[inline]
@@ -10699,39 +9947,34 @@ function getFHEVMExecutorAddress() external view returns (address);
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: getFHEVMExecutorAddressReturn = r.into();
                         r._0
-                    })
+                    },
+                )
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: getFHEVMExecutorAddressReturn = r.into();
-                        r._0
-                    })
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: getFHEVMExecutorAddressReturn = r.into();
+                    r._0
+                })
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getGlobalHCUCapPerBlock()` and selector `0xb59547b8`.
-```solidity
-function getGlobalHCUCapPerBlock() external view returns (uint48);
-```*/
+    ```solidity
+    function getGlobalHCUCapPerBlock() external view returns (uint48);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getGlobalHCUCapPerBlockCall;
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`getGlobalHCUCapPerBlock()`](getGlobalHCUCapPerBlockCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -10754,9 +9997,7 @@ function getGlobalHCUCapPerBlock() external view returns (uint48);
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -10765,16 +10006,14 @@ function getGlobalHCUCapPerBlock() external view returns (uint48);
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<getGlobalHCUCapPerBlockCall>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<getGlobalHCUCapPerBlockCall> for UnderlyingRustTuple<'_> {
                 fn from(value: getGlobalHCUCapPerBlockCall) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for getGlobalHCUCapPerBlockCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getGlobalHCUCapPerBlockCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self
                 }
@@ -10784,14 +10023,10 @@ function getGlobalHCUCapPerBlock() external view returns (uint48);
             #[doc(hidden)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<48>,);
             #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy::sol_types::private::primitives::aliases::U48,
-            );
+            type UnderlyingRustTuple<'a> = (alloy::sol_types::private::primitives::aliases::U48,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -10800,16 +10035,14 @@ function getGlobalHCUCapPerBlock() external view returns (uint48);
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<getGlobalHCUCapPerBlockReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<getGlobalHCUCapPerBlockReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: getGlobalHCUCapPerBlockReturn) -> Self {
                     (value._0,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for getGlobalHCUCapPerBlockReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getGlobalHCUCapPerBlockReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { _0: tuple.0 }
                 }
@@ -10818,14 +10051,10 @@ function getGlobalHCUCapPerBlock() external view returns (uint48);
         #[automatically_derived]
         impl alloy_sol_types::SolCall for getGlobalHCUCapPerBlockCall {
             type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy::sol_types::private::primitives::aliases::U48;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::Uint<48>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "getGlobalHCUCapPerBlock()";
             const SELECTOR: [u8; 4] = [181u8, 149u8, 71u8, 184u8];
             #[inline]
@@ -10841,46 +10070,41 @@ function getGlobalHCUCapPerBlock() external view returns (uint48);
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
                 (
-                    <alloy::sol_types::sol_data::Uint<
-                        48,
-                    > as alloy_sol_types::SolType>::tokenize(ret),
+                    <alloy::sol_types::sol_data::Uint<48> as alloy_sol_types::SolType>::tokenize(
+                        ret,
+                    ),
                 )
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: getGlobalHCUCapPerBlockReturn = r.into();
                         r._0
-                    })
+                    },
+                )
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: getGlobalHCUCapPerBlockReturn = r.into();
-                        r._0
-                    })
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: getGlobalHCUCapPerBlockReturn = r.into();
+                    r._0
+                })
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getMaxHCUDepthPerTx()` and selector `0x1e24aa49`.
-```solidity
-function getMaxHCUDepthPerTx() external view returns (uint48);
-```*/
+    ```solidity
+    function getMaxHCUDepthPerTx() external view returns (uint48);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getMaxHCUDepthPerTxCall;
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`getMaxHCUDepthPerTx()`](getMaxHCUDepthPerTxCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -10903,9 +10127,7 @@ function getMaxHCUDepthPerTx() external view returns (uint48);
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -10914,16 +10136,14 @@ function getMaxHCUDepthPerTx() external view returns (uint48);
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<getMaxHCUDepthPerTxCall>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<getMaxHCUDepthPerTxCall> for UnderlyingRustTuple<'_> {
                 fn from(value: getMaxHCUDepthPerTxCall) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for getMaxHCUDepthPerTxCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getMaxHCUDepthPerTxCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self
                 }
@@ -10933,14 +10153,10 @@ function getMaxHCUDepthPerTx() external view returns (uint48);
             #[doc(hidden)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<48>,);
             #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy::sol_types::private::primitives::aliases::U48,
-            );
+            type UnderlyingRustTuple<'a> = (alloy::sol_types::private::primitives::aliases::U48,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -10949,16 +10165,14 @@ function getMaxHCUDepthPerTx() external view returns (uint48);
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<getMaxHCUDepthPerTxReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<getMaxHCUDepthPerTxReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: getMaxHCUDepthPerTxReturn) -> Self {
                     (value._0,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for getMaxHCUDepthPerTxReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getMaxHCUDepthPerTxReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { _0: tuple.0 }
                 }
@@ -10967,14 +10181,10 @@ function getMaxHCUDepthPerTx() external view returns (uint48);
         #[automatically_derived]
         impl alloy_sol_types::SolCall for getMaxHCUDepthPerTxCall {
             type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy::sol_types::private::primitives::aliases::U48;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::Uint<48>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "getMaxHCUDepthPerTx()";
             const SELECTOR: [u8; 4] = [30u8, 36u8, 170u8, 73u8];
             #[inline]
@@ -10990,46 +10200,41 @@ function getMaxHCUDepthPerTx() external view returns (uint48);
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
                 (
-                    <alloy::sol_types::sol_data::Uint<
-                        48,
-                    > as alloy_sol_types::SolType>::tokenize(ret),
+                    <alloy::sol_types::sol_data::Uint<48> as alloy_sol_types::SolType>::tokenize(
+                        ret,
+                    ),
                 )
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: getMaxHCUDepthPerTxReturn = r.into();
                         r._0
-                    })
+                    },
+                )
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: getMaxHCUDepthPerTxReturn = r.into();
-                        r._0
-                    })
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: getMaxHCUDepthPerTxReturn = r.into();
+                    r._0
+                })
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getMaxHCUPerTx()` and selector `0xc13c1971`.
-```solidity
-function getMaxHCUPerTx() external view returns (uint48);
-```*/
+    ```solidity
+    function getMaxHCUPerTx() external view returns (uint48);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getMaxHCUPerTxCall;
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`getMaxHCUPerTx()`](getMaxHCUPerTxCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -11052,9 +10257,7 @@ function getMaxHCUPerTx() external view returns (uint48);
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -11080,14 +10283,10 @@ function getMaxHCUPerTx() external view returns (uint48);
             #[doc(hidden)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<48>,);
             #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy::sol_types::private::primitives::aliases::U48,
-            );
+            type UnderlyingRustTuple<'a> = (alloy::sol_types::private::primitives::aliases::U48,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -11096,16 +10295,14 @@ function getMaxHCUPerTx() external view returns (uint48);
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<getMaxHCUPerTxReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<getMaxHCUPerTxReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: getMaxHCUPerTxReturn) -> Self {
                     (value._0,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for getMaxHCUPerTxReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getMaxHCUPerTxReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { _0: tuple.0 }
                 }
@@ -11114,14 +10311,10 @@ function getMaxHCUPerTx() external view returns (uint48);
         #[automatically_derived]
         impl alloy_sol_types::SolCall for getMaxHCUPerTxCall {
             type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy::sol_types::private::primitives::aliases::U48;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::Uint<48>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "getMaxHCUPerTx()";
             const SELECTOR: [u8; 4] = [193u8, 60u8, 25u8, 113u8];
             #[inline]
@@ -11137,46 +10330,41 @@ function getMaxHCUPerTx() external view returns (uint48);
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
                 (
-                    <alloy::sol_types::sol_data::Uint<
-                        48,
-                    > as alloy_sol_types::SolType>::tokenize(ret),
+                    <alloy::sol_types::sol_data::Uint<48> as alloy_sol_types::SolType>::tokenize(
+                        ret,
+                    ),
                 )
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: getMaxHCUPerTxReturn = r.into();
                         r._0
-                    })
+                    },
+                )
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: getMaxHCUPerTxReturn = r.into();
-                        r._0
-                    })
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: getMaxHCUPerTxReturn = r.into();
+                    r._0
+                })
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getVersion()` and selector `0x0d8e6e2c`.
-```solidity
-function getVersion() external pure returns (string memory);
-```*/
+    ```solidity
+    function getVersion() external pure returns (string memory);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getVersionCall;
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`getVersion()`](getVersionCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -11199,9 +10387,7 @@ function getVersion() external pure returns (string memory);
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -11230,9 +10416,7 @@ function getVersion() external pure returns (string memory);
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::String,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -11257,14 +10441,10 @@ function getVersion() external pure returns (string memory);
         #[automatically_derived]
         impl alloy_sol_types::SolCall for getVersionCall {
             type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy::sol_types::private::String;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::String,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "getVersion()";
             const SELECTOR: [u8; 4] = [13u8, 142u8, 110u8, 44u8];
             #[inline]
@@ -11279,42 +10459,34 @@ function getVersion() external pure returns (string memory);
             }
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (
-                    <alloy::sol_types::sol_data::String as alloy_sol_types::SolType>::tokenize(
-                        ret,
-                    ),
-                )
+                (<alloy::sol_types::sol_data::String as alloy_sol_types::SolType>::tokenize(ret),)
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: getVersionReturn = r.into();
                         r._0
-                    })
+                    },
+                )
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: getVersionReturn = r.into();
-                        r._0
-                    })
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: getVersionReturn = r.into();
+                    r._0
+                })
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `initializeFromEmptyProxy(uint48,uint48,uint48)` and selector `0x196a456d`.
-```solidity
-function initializeFromEmptyProxy(uint48 hcuCapPerBlock, uint48 maxHCUDepthPerTx, uint48 maxHCUPerTx) external;
-```*/
+    ```solidity
+    function initializeFromEmptyProxy(uint48 hcuCapPerBlock, uint48 maxHCUDepthPerTx, uint48 maxHCUPerTx) external;
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct initializeFromEmptyProxyCall {
@@ -11352,9 +10524,7 @@ function initializeFromEmptyProxy(uint48 hcuCapPerBlock, uint48 maxHCUDepthPerTx
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -11363,16 +10533,18 @@ function initializeFromEmptyProxy(uint48 hcuCapPerBlock, uint48 maxHCUDepthPerTx
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<initializeFromEmptyProxyCall>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<initializeFromEmptyProxyCall> for UnderlyingRustTuple<'_> {
                 fn from(value: initializeFromEmptyProxyCall) -> Self {
-                    (value.hcuCapPerBlock, value.maxHCUDepthPerTx, value.maxHCUPerTx)
+                    (
+                        value.hcuCapPerBlock,
+                        value.maxHCUDepthPerTx,
+                        value.maxHCUPerTx,
+                    )
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for initializeFromEmptyProxyCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for initializeFromEmptyProxyCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         hcuCapPerBlock: tuple.0,
@@ -11389,9 +10561,7 @@ function initializeFromEmptyProxy(uint48 hcuCapPerBlock, uint48 maxHCUDepthPerTx
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -11400,16 +10570,14 @@ function initializeFromEmptyProxy(uint48 hcuCapPerBlock, uint48 maxHCUDepthPerTx
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<initializeFromEmptyProxyReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<initializeFromEmptyProxyReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: initializeFromEmptyProxyReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for initializeFromEmptyProxyReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for initializeFromEmptyProxyReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
@@ -11418,9 +10586,8 @@ function initializeFromEmptyProxy(uint48 hcuCapPerBlock, uint48 maxHCUDepthPerTx
         impl initializeFromEmptyProxyReturn {
             fn _tokenize(
                 &self,
-            ) -> <initializeFromEmptyProxyCall as alloy_sol_types::SolCall>::ReturnToken<
-                '_,
-            > {
+            ) -> <initializeFromEmptyProxyCall as alloy_sol_types::SolCall>::ReturnToken<'_>
+            {
                 ()
             }
         }
@@ -11431,14 +10598,10 @@ function initializeFromEmptyProxy(uint48 hcuCapPerBlock, uint48 maxHCUDepthPerTx
                 alloy::sol_types::sol_data::Uint<48>,
                 alloy::sol_types::sol_data::Uint<48>,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = initializeFromEmptyProxyReturn;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "initializeFromEmptyProxy(uint48,uint48,uint48)";
             const SELECTOR: [u8; 4] = [25u8, 106u8, 69u8, 109u8];
             #[inline]
@@ -11450,15 +10613,15 @@ function initializeFromEmptyProxy(uint48 hcuCapPerBlock, uint48 maxHCUDepthPerTx
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
-                    <alloy::sol_types::sol_data::Uint<
-                        48,
-                    > as alloy_sol_types::SolType>::tokenize(&self.hcuCapPerBlock),
-                    <alloy::sol_types::sol_data::Uint<
-                        48,
-                    > as alloy_sol_types::SolType>::tokenize(&self.maxHCUDepthPerTx),
-                    <alloy::sol_types::sol_data::Uint<
-                        48,
-                    > as alloy_sol_types::SolType>::tokenize(&self.maxHCUPerTx),
+                    <alloy::sol_types::sol_data::Uint<48> as alloy_sol_types::SolType>::tokenize(
+                        &self.hcuCapPerBlock,
+                    ),
+                    <alloy::sol_types::sol_data::Uint<48> as alloy_sol_types::SolType>::tokenize(
+                        &self.maxHCUDepthPerTx,
+                    ),
+                    <alloy::sol_types::sol_data::Uint<48> as alloy_sol_types::SolType>::tokenize(
+                        &self.maxHCUPerTx,
+                    ),
                 )
             }
             #[inline]
@@ -11467,36 +10630,30 @@ function initializeFromEmptyProxy(uint48 hcuCapPerBlock, uint48 maxHCUDepthPerTx
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Into::into)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `isBlockHCUWhitelisted(address)` and selector `0xede8776e`.
-```solidity
-function isBlockHCUWhitelisted(address account) external view returns (bool);
-```*/
+    ```solidity
+    function isBlockHCUWhitelisted(address account) external view returns (bool);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct isBlockHCUWhitelistedCall {
         #[allow(missing_docs)]
         pub account: alloy::sol_types::private::Address,
     }
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`isBlockHCUWhitelisted(address)`](isBlockHCUWhitelistedCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -11519,9 +10676,7 @@ function isBlockHCUWhitelisted(address account) external view returns (bool);
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -11530,16 +10685,14 @@ function isBlockHCUWhitelisted(address account) external view returns (bool);
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<isBlockHCUWhitelistedCall>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<isBlockHCUWhitelistedCall> for UnderlyingRustTuple<'_> {
                 fn from(value: isBlockHCUWhitelistedCall) -> Self {
                     (value.account,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for isBlockHCUWhitelistedCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for isBlockHCUWhitelistedCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { account: tuple.0 }
                 }
@@ -11552,9 +10705,7 @@ function isBlockHCUWhitelisted(address account) external view returns (bool);
             type UnderlyingRustTuple<'a> = (bool,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -11563,16 +10714,14 @@ function isBlockHCUWhitelisted(address account) external view returns (bool);
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<isBlockHCUWhitelistedReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<isBlockHCUWhitelistedReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: isBlockHCUWhitelistedReturn) -> Self {
                     (value._0,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for isBlockHCUWhitelistedReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for isBlockHCUWhitelistedReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { _0: tuple.0 }
                 }
@@ -11581,14 +10730,10 @@ function isBlockHCUWhitelisted(address account) external view returns (bool);
         #[automatically_derived]
         impl alloy_sol_types::SolCall for isBlockHCUWhitelistedCall {
             type Parameters<'a> = (alloy::sol_types::sol_data::Address,);
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = bool;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::Bool,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "isBlockHCUWhitelisted(address)";
             const SELECTOR: [u8; 4] = [237u8, 232u8, 119u8, 110u8];
             #[inline]
@@ -11607,47 +10752,38 @@ function isBlockHCUWhitelisted(address account) external view returns (bool);
             }
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (
-                    <alloy::sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(
-                        ret,
-                    ),
-                )
+                (<alloy::sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(ret),)
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: isBlockHCUWhitelistedReturn = r.into();
                         r._0
-                    })
+                    },
+                )
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: isBlockHCUWhitelistedReturn = r.into();
-                        r._0
-                    })
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: isBlockHCUWhitelistedReturn = r.into();
+                    r._0
+                })
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `proxiableUUID()` and selector `0x52d1902d`.
-```solidity
-function proxiableUUID() external view returns (bytes32);
-```*/
+    ```solidity
+    function proxiableUUID() external view returns (bytes32);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct proxiableUUIDCall;
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`proxiableUUID()`](proxiableUUIDCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -11670,9 +10806,7 @@ function proxiableUUID() external view returns (bytes32);
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -11701,9 +10835,7 @@ function proxiableUUID() external view returns (bytes32);
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -11728,14 +10860,10 @@ function proxiableUUID() external view returns (bytes32);
         #[automatically_derived]
         impl alloy_sol_types::SolCall for proxiableUUIDCall {
             type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy::sol_types::private::FixedBytes<32>;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "proxiableUUID()";
             const SELECTOR: [u8; 4] = [82u8, 209u8, 144u8, 45u8];
             #[inline]
@@ -11758,34 +10886,30 @@ function proxiableUUID() external view returns (bytes32);
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: proxiableUUIDReturn = r.into();
                         r._0
-                    })
+                    },
+                )
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: proxiableUUIDReturn = r.into();
-                        r._0
-                    })
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: proxiableUUIDReturn = r.into();
+                    r._0
+                })
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `reinitializeV4()` and selector `0x123abb28`.
-```solidity
-function reinitializeV4() external;
-```*/
+    ```solidity
+    function reinitializeV4() external;
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct reinitializeV4Call;
@@ -11808,9 +10932,7 @@ function reinitializeV4() external;
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -11839,9 +10961,7 @@ function reinitializeV4() external;
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -11850,16 +10970,14 @@ function reinitializeV4() external;
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<reinitializeV4Return>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<reinitializeV4Return> for UnderlyingRustTuple<'_> {
                 fn from(value: reinitializeV4Return) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for reinitializeV4Return {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for reinitializeV4Return {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
@@ -11875,14 +10993,10 @@ function reinitializeV4() external;
         #[automatically_derived]
         impl alloy_sol_types::SolCall for reinitializeV4Call {
             type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = reinitializeV4Return;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "reinitializeV4()";
             const SELECTOR: [u8; 4] = [18u8, 58u8, 187u8, 40u8];
             #[inline]
@@ -11901,28 +11015,23 @@ function reinitializeV4() external;
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Into::into)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `removeFromBlockHCUWhitelist(address)` and selector `0x28677ca7`.
-```solidity
-function removeFromBlockHCUWhitelist(address account) external;
-```*/
+    ```solidity
+    function removeFromBlockHCUWhitelist(address account) external;
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct removeFromBlockHCUWhitelistCall {
@@ -11948,9 +11057,7 @@ function removeFromBlockHCUWhitelist(address account) external;
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -11959,16 +11066,14 @@ function removeFromBlockHCUWhitelist(address account) external;
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<removeFromBlockHCUWhitelistCall>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<removeFromBlockHCUWhitelistCall> for UnderlyingRustTuple<'_> {
                 fn from(value: removeFromBlockHCUWhitelistCall) -> Self {
                     (value.account,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for removeFromBlockHCUWhitelistCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for removeFromBlockHCUWhitelistCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { account: tuple.0 }
                 }
@@ -11981,9 +11086,7 @@ function removeFromBlockHCUWhitelist(address account) external;
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -11992,16 +11095,14 @@ function removeFromBlockHCUWhitelist(address account) external;
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<removeFromBlockHCUWhitelistReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<removeFromBlockHCUWhitelistReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: removeFromBlockHCUWhitelistReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for removeFromBlockHCUWhitelistReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for removeFromBlockHCUWhitelistReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
@@ -12010,23 +11111,18 @@ function removeFromBlockHCUWhitelist(address account) external;
         impl removeFromBlockHCUWhitelistReturn {
             fn _tokenize(
                 &self,
-            ) -> <removeFromBlockHCUWhitelistCall as alloy_sol_types::SolCall>::ReturnToken<
-                '_,
-            > {
+            ) -> <removeFromBlockHCUWhitelistCall as alloy_sol_types::SolCall>::ReturnToken<'_>
+            {
                 ()
             }
         }
         #[automatically_derived]
         impl alloy_sol_types::SolCall for removeFromBlockHCUWhitelistCall {
             type Parameters<'a> = (alloy::sol_types::sol_data::Address,);
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = removeFromBlockHCUWhitelistReturn;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "removeFromBlockHCUWhitelist(address)";
             const SELECTOR: [u8; 4] = [40u8, 103u8, 124u8, 167u8];
             #[inline]
@@ -12049,28 +11145,23 @@ function removeFromBlockHCUWhitelist(address account) external;
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Into::into)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `setHCUPerBlock(uint48)` and selector `0xa036ea2e`.
-```solidity
-function setHCUPerBlock(uint48 hcuPerBlock) external;
-```*/
+    ```solidity
+    function setHCUPerBlock(uint48 hcuPerBlock) external;
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct setHCUPerBlockCall {
@@ -12093,14 +11184,10 @@ function setHCUPerBlock(uint48 hcuPerBlock) external;
             #[doc(hidden)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<48>,);
             #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy::sol_types::private::primitives::aliases::U48,
-            );
+            type UnderlyingRustTuple<'a> = (alloy::sol_types::private::primitives::aliases::U48,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -12118,7 +11205,9 @@ function setHCUPerBlock(uint48 hcuPerBlock) external;
             #[doc(hidden)]
             impl ::core::convert::From<UnderlyingRustTuple<'_>> for setHCUPerBlockCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { hcuPerBlock: tuple.0 }
+                    Self {
+                        hcuPerBlock: tuple.0,
+                    }
                 }
             }
         }
@@ -12129,9 +11218,7 @@ function setHCUPerBlock(uint48 hcuPerBlock) external;
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -12140,16 +11227,14 @@ function setHCUPerBlock(uint48 hcuPerBlock) external;
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<setHCUPerBlockReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<setHCUPerBlockReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: setHCUPerBlockReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for setHCUPerBlockReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for setHCUPerBlockReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
@@ -12165,14 +11250,10 @@ function setHCUPerBlock(uint48 hcuPerBlock) external;
         #[automatically_derived]
         impl alloy_sol_types::SolCall for setHCUPerBlockCall {
             type Parameters<'a> = (alloy::sol_types::sol_data::Uint<48>,);
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = setHCUPerBlockReturn;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "setHCUPerBlock(uint48)";
             const SELECTOR: [u8; 4] = [160u8, 54u8, 234u8, 46u8];
             #[inline]
@@ -12184,9 +11265,9 @@ function setHCUPerBlock(uint48 hcuPerBlock) external;
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
-                    <alloy::sol_types::sol_data::Uint<
-                        48,
-                    > as alloy_sol_types::SolType>::tokenize(&self.hcuPerBlock),
+                    <alloy::sol_types::sol_data::Uint<48> as alloy_sol_types::SolType>::tokenize(
+                        &self.hcuPerBlock,
+                    ),
                 )
             }
             #[inline]
@@ -12195,28 +11276,23 @@ function setHCUPerBlock(uint48 hcuPerBlock) external;
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Into::into)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `setMaxHCUDepthPerTx(uint48)` and selector `0x5c414b57`.
-```solidity
-function setMaxHCUDepthPerTx(uint48 maxHCUDepthPerTx) external;
-```*/
+    ```solidity
+    function setMaxHCUDepthPerTx(uint48 maxHCUDepthPerTx) external;
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct setMaxHCUDepthPerTxCall {
@@ -12239,14 +11315,10 @@ function setMaxHCUDepthPerTx(uint48 maxHCUDepthPerTx) external;
             #[doc(hidden)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<48>,);
             #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy::sol_types::private::primitives::aliases::U48,
-            );
+            type UnderlyingRustTuple<'a> = (alloy::sol_types::private::primitives::aliases::U48,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -12255,18 +11327,18 @@ function setMaxHCUDepthPerTx(uint48 maxHCUDepthPerTx) external;
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<setMaxHCUDepthPerTxCall>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<setMaxHCUDepthPerTxCall> for UnderlyingRustTuple<'_> {
                 fn from(value: setMaxHCUDepthPerTxCall) -> Self {
                     (value.maxHCUDepthPerTx,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for setMaxHCUDepthPerTxCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for setMaxHCUDepthPerTxCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { maxHCUDepthPerTx: tuple.0 }
+                    Self {
+                        maxHCUDepthPerTx: tuple.0,
+                    }
                 }
             }
         }
@@ -12277,9 +11349,7 @@ function setMaxHCUDepthPerTx(uint48 maxHCUDepthPerTx) external;
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -12288,16 +11358,14 @@ function setMaxHCUDepthPerTx(uint48 maxHCUDepthPerTx) external;
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<setMaxHCUDepthPerTxReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<setMaxHCUDepthPerTxReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: setMaxHCUDepthPerTxReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for setMaxHCUDepthPerTxReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for setMaxHCUDepthPerTxReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
@@ -12306,21 +11374,18 @@ function setMaxHCUDepthPerTx(uint48 maxHCUDepthPerTx) external;
         impl setMaxHCUDepthPerTxReturn {
             fn _tokenize(
                 &self,
-            ) -> <setMaxHCUDepthPerTxCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
+            ) -> <setMaxHCUDepthPerTxCall as alloy_sol_types::SolCall>::ReturnToken<'_>
+            {
                 ()
             }
         }
         #[automatically_derived]
         impl alloy_sol_types::SolCall for setMaxHCUDepthPerTxCall {
             type Parameters<'a> = (alloy::sol_types::sol_data::Uint<48>,);
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = setMaxHCUDepthPerTxReturn;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "setMaxHCUDepthPerTx(uint48)";
             const SELECTOR: [u8; 4] = [92u8, 65u8, 75u8, 87u8];
             #[inline]
@@ -12332,9 +11397,9 @@ function setMaxHCUDepthPerTx(uint48 maxHCUDepthPerTx) external;
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
-                    <alloy::sol_types::sol_data::Uint<
-                        48,
-                    > as alloy_sol_types::SolType>::tokenize(&self.maxHCUDepthPerTx),
+                    <alloy::sol_types::sol_data::Uint<48> as alloy_sol_types::SolType>::tokenize(
+                        &self.maxHCUDepthPerTx,
+                    ),
                 )
             }
             #[inline]
@@ -12343,28 +11408,23 @@ function setMaxHCUDepthPerTx(uint48 maxHCUDepthPerTx) external;
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Into::into)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `setMaxHCUPerTx(uint48)` and selector `0xab394755`.
-```solidity
-function setMaxHCUPerTx(uint48 maxHCUPerTx) external;
-```*/
+    ```solidity
+    function setMaxHCUPerTx(uint48 maxHCUPerTx) external;
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct setMaxHCUPerTxCall {
@@ -12387,14 +11447,10 @@ function setMaxHCUPerTx(uint48 maxHCUPerTx) external;
             #[doc(hidden)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<48>,);
             #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy::sol_types::private::primitives::aliases::U48,
-            );
+            type UnderlyingRustTuple<'a> = (alloy::sol_types::private::primitives::aliases::U48,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -12412,7 +11468,9 @@ function setMaxHCUPerTx(uint48 maxHCUPerTx) external;
             #[doc(hidden)]
             impl ::core::convert::From<UnderlyingRustTuple<'_>> for setMaxHCUPerTxCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { maxHCUPerTx: tuple.0 }
+                    Self {
+                        maxHCUPerTx: tuple.0,
+                    }
                 }
             }
         }
@@ -12423,9 +11481,7 @@ function setMaxHCUPerTx(uint48 maxHCUPerTx) external;
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -12434,16 +11490,14 @@ function setMaxHCUPerTx(uint48 maxHCUPerTx) external;
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<setMaxHCUPerTxReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<setMaxHCUPerTxReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: setMaxHCUPerTxReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for setMaxHCUPerTxReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for setMaxHCUPerTxReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
@@ -12459,14 +11513,10 @@ function setMaxHCUPerTx(uint48 maxHCUPerTx) external;
         #[automatically_derived]
         impl alloy_sol_types::SolCall for setMaxHCUPerTxCall {
             type Parameters<'a> = (alloy::sol_types::sol_data::Uint<48>,);
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = setMaxHCUPerTxReturn;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "setMaxHCUPerTx(uint48)";
             const SELECTOR: [u8; 4] = [171u8, 57u8, 71u8, 85u8];
             #[inline]
@@ -12478,9 +11528,9 @@ function setMaxHCUPerTx(uint48 maxHCUPerTx) external;
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
-                    <alloy::sol_types::sol_data::Uint<
-                        48,
-                    > as alloy_sol_types::SolType>::tokenize(&self.maxHCUPerTx),
+                    <alloy::sol_types::sol_data::Uint<48> as alloy_sol_types::SolType>::tokenize(
+                        &self.maxHCUPerTx,
+                    ),
                 )
             }
             #[inline]
@@ -12489,28 +11539,23 @@ function setMaxHCUPerTx(uint48 maxHCUPerTx) external;
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Into::into)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `upgradeToAndCall(address,bytes)` and selector `0x4f1ef286`.
-```solidity
-function upgradeToAndCall(address newImplementation, bytes memory data) external payable;
-```*/
+    ```solidity
+    function upgradeToAndCall(address newImplementation, bytes memory data) external payable;
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct upgradeToAndCallCall {
@@ -12544,9 +11589,7 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -12555,16 +11598,14 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<upgradeToAndCallCall>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<upgradeToAndCallCall> for UnderlyingRustTuple<'_> {
                 fn from(value: upgradeToAndCallCall) -> Self {
                     (value.newImplementation, value.data)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for upgradeToAndCallCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for upgradeToAndCallCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         newImplementation: tuple.0,
@@ -12580,9 +11621,7 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -12591,16 +11630,14 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<upgradeToAndCallReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<upgradeToAndCallReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: upgradeToAndCallReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for upgradeToAndCallReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for upgradeToAndCallReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
@@ -12619,14 +11656,10 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Bytes,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = upgradeToAndCallReturn;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "upgradeToAndCall(address,bytes)";
             const SELECTOR: [u8; 4] = [79u8, 30u8, 242u8, 134u8];
             #[inline]
@@ -12652,25 +11685,20 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Into::into)
             }
         }
     };
     ///Container for all the [`HCULimit`](self) function calls.
     #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive()]
     pub enum HCULimitCalls {
         #[allow(missing_docs)]
         UPGRADE_INTERFACE_VERSION(UPGRADE_INTERFACE_VERSIONCall),
@@ -12929,9 +11957,7 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 Self::checkHCUForTrivialEncrypt(_) => {
                     <checkHCUForTrivialEncryptCall as alloy_sol_types::SolCall>::SELECTOR
                 }
-                Self::getBlockMeter(_) => {
-                    <getBlockMeterCall as alloy_sol_types::SolCall>::SELECTOR
-                }
+                Self::getBlockMeter(_) => <getBlockMeterCall as alloy_sol_types::SolCall>::SELECTOR,
                 Self::getFHEVMExecutorAddress(_) => {
                     <getFHEVMExecutorAddressCall as alloy_sol_types::SolCall>::SELECTOR
                 }
@@ -12944,18 +11970,14 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 Self::getMaxHCUPerTx(_) => {
                     <getMaxHCUPerTxCall as alloy_sol_types::SolCall>::SELECTOR
                 }
-                Self::getVersion(_) => {
-                    <getVersionCall as alloy_sol_types::SolCall>::SELECTOR
-                }
+                Self::getVersion(_) => <getVersionCall as alloy_sol_types::SolCall>::SELECTOR,
                 Self::initializeFromEmptyProxy(_) => {
                     <initializeFromEmptyProxyCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::isBlockHCUWhitelisted(_) => {
                     <isBlockHCUWhitelistedCall as alloy_sol_types::SolCall>::SELECTOR
                 }
-                Self::proxiableUUID(_) => {
-                    <proxiableUUIDCall as alloy_sol_types::SolCall>::SELECTOR
-                }
+                Self::proxiableUUID(_) => <proxiableUUIDCall as alloy_sol_types::SolCall>::SELECTOR,
                 Self::reinitializeV4(_) => {
                     <reinitializeV4Call as alloy_sol_types::SolCall>::SELECTOR
                 }
@@ -12986,64 +12008,39 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
         }
         #[inline]
         #[allow(non_snake_case)]
-        fn abi_decode_raw(
-            selector: [u8; 4],
-            data: &[u8],
-        ) -> alloy_sol_types::Result<Self> {
-            static DECODE_SHIMS: &[fn(
-                &[u8],
-            ) -> alloy_sol_types::Result<HCULimitCalls>] = &[
+        fn abi_decode_raw(selector: [u8; 4], data: &[u8]) -> alloy_sol_types::Result<Self> {
+            static DECODE_SHIMS: &[fn(&[u8]) -> alloy_sol_types::Result<HCULimitCalls>] = &[
                 {
-                    fn checkHCUForFheMin(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <checkHCUForFheMinCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
+                    fn checkHCUForFheMin(data: &[u8]) -> alloy_sol_types::Result<HCULimitCalls> {
+                        <checkHCUForFheMinCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(HCULimitCalls::checkHCUForFheMin)
                     }
                     checkHCUForFheMin
                 },
                 {
-                    fn checkHCUForFheShr(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <checkHCUForFheShrCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
+                    fn checkHCUForFheShr(data: &[u8]) -> alloy_sol_types::Result<HCULimitCalls> {
+                        <checkHCUForFheShrCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(HCULimitCalls::checkHCUForFheShr)
                     }
                     checkHCUForFheShr
                 },
                 {
-                    fn checkHCUForFheMulDiv(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <checkHCUForFheMulDivCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
+                    fn checkHCUForFheMulDiv(data: &[u8]) -> alloy_sol_types::Result<HCULimitCalls> {
+                        <checkHCUForFheMulDivCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(HCULimitCalls::checkHCUForFheMulDiv)
                     }
                     checkHCUForFheMulDiv
                 },
                 {
-                    fn getVersion(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <getVersionCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
+                    fn getVersion(data: &[u8]) -> alloy_sol_types::Result<HCULimitCalls> {
+                        <getVersionCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(HCULimitCalls::getVersion)
                     }
                     getVersion
                 },
                 {
-                    fn reinitializeV4(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <reinitializeV4Call as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
+                    fn reinitializeV4(data: &[u8]) -> alloy_sol_types::Result<HCULimitCalls> {
+                        <reinitializeV4Call as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(HCULimitCalls::reinitializeV4)
                     }
                     reinitializeV4
@@ -13053,19 +12050,15 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HCULimitCalls> {
                         <initializeFromEmptyProxyCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(HCULimitCalls::initializeFromEmptyProxy)
+                            data,
+                        )
+                        .map(HCULimitCalls::initializeFromEmptyProxy)
                     }
                     initializeFromEmptyProxy
                 },
                 {
-                    fn getMaxHCUDepthPerTx(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <getMaxHCUDepthPerTxCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
+                    fn getMaxHCUDepthPerTx(data: &[u8]) -> alloy_sol_types::Result<HCULimitCalls> {
+                        <getMaxHCUDepthPerTxCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(HCULimitCalls::getMaxHCUDepthPerTx)
                     }
                     getMaxHCUDepthPerTx
@@ -13075,9 +12068,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HCULimitCalls> {
                         <getFHEVMExecutorAddressCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(HCULimitCalls::getFHEVMExecutorAddress)
+                            data,
+                        )
+                        .map(HCULimitCalls::getFHEVMExecutorAddress)
                     }
                     getFHEVMExecutorAddress
                 },
@@ -13093,12 +12086,8 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     removeFromBlockHCUWhitelist
                 },
                 {
-                    fn checkHCUForFheNot(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <checkHCUForFheNotCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
+                    fn checkHCUForFheNot(data: &[u8]) -> alloy_sol_types::Result<HCULimitCalls> {
+                        <checkHCUForFheNotCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(HCULimitCalls::checkHCUForFheNot)
                     }
                     checkHCUForFheNot
@@ -13108,151 +12097,99 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HCULimitCalls> {
                         <checkHCUForIfThenElseCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(HCULimitCalls::checkHCUForIfThenElse)
+                            data,
+                        )
+                        .map(HCULimitCalls::checkHCUForIfThenElse)
                     }
                     checkHCUForIfThenElse
                 },
                 {
-                    fn checkHCUForFheRem(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <checkHCUForFheRemCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
+                    fn checkHCUForFheRem(data: &[u8]) -> alloy_sol_types::Result<HCULimitCalls> {
+                        <checkHCUForFheRemCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(HCULimitCalls::checkHCUForFheRem)
                     }
                     checkHCUForFheRem
                 },
                 {
-                    fn checkHCUForFheLe(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <checkHCUForFheLeCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
+                    fn checkHCUForFheLe(data: &[u8]) -> alloy_sol_types::Result<HCULimitCalls> {
+                        <checkHCUForFheLeCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(HCULimitCalls::checkHCUForFheLe)
                     }
                     checkHCUForFheLe
                 },
                 {
-                    fn checkHCUForFheLt(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <checkHCUForFheLtCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
+                    fn checkHCUForFheLt(data: &[u8]) -> alloy_sol_types::Result<HCULimitCalls> {
+                        <checkHCUForFheLtCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(HCULimitCalls::checkHCUForFheLt)
                     }
                     checkHCUForFheLt
                 },
                 {
-                    fn checkHCUForFheIsIn(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <checkHCUForFheIsInCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
+                    fn checkHCUForFheIsIn(data: &[u8]) -> alloy_sol_types::Result<HCULimitCalls> {
+                        <checkHCUForFheIsInCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(HCULimitCalls::checkHCUForFheIsIn)
                     }
                     checkHCUForFheIsIn
                 },
                 {
-                    fn checkHCUForFheGt(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <checkHCUForFheGtCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
+                    fn checkHCUForFheGt(data: &[u8]) -> alloy_sol_types::Result<HCULimitCalls> {
+                        <checkHCUForFheGtCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(HCULimitCalls::checkHCUForFheGt)
                     }
                     checkHCUForFheGt
                 },
                 {
-                    fn checkHCUForFheNeg(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <checkHCUForFheNegCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
+                    fn checkHCUForFheNeg(data: &[u8]) -> alloy_sol_types::Result<HCULimitCalls> {
+                        <checkHCUForFheNegCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(HCULimitCalls::checkHCUForFheNeg)
                     }
                     checkHCUForFheNeg
                 },
                 {
-                    fn upgradeToAndCall(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <upgradeToAndCallCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
+                    fn upgradeToAndCall(data: &[u8]) -> alloy_sol_types::Result<HCULimitCalls> {
+                        <upgradeToAndCallCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(HCULimitCalls::upgradeToAndCall)
                     }
                     upgradeToAndCall
                 },
                 {
-                    fn proxiableUUID(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <proxiableUUIDCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
+                    fn proxiableUUID(data: &[u8]) -> alloy_sol_types::Result<HCULimitCalls> {
+                        <proxiableUUIDCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(HCULimitCalls::proxiableUUID)
                     }
                     proxiableUUID
                 },
                 {
-                    fn setMaxHCUDepthPerTx(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <setMaxHCUDepthPerTxCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
+                    fn setMaxHCUDepthPerTx(data: &[u8]) -> alloy_sol_types::Result<HCULimitCalls> {
+                        <setMaxHCUDepthPerTxCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(HCULimitCalls::setMaxHCUDepthPerTx)
                     }
                     setMaxHCUDepthPerTx
                 },
                 {
-                    fn checkHCUForFheRotl(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <checkHCUForFheRotlCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
+                    fn checkHCUForFheRotl(data: &[u8]) -> alloy_sol_types::Result<HCULimitCalls> {
+                        <checkHCUForFheRotlCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(HCULimitCalls::checkHCUForFheRotl)
                     }
                     checkHCUForFheRotl
                 },
                 {
-                    fn checkHCUForFheEq(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <checkHCUForFheEqCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
+                    fn checkHCUForFheEq(data: &[u8]) -> alloy_sol_types::Result<HCULimitCalls> {
+                        <checkHCUForFheEqCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(HCULimitCalls::checkHCUForFheEq)
                     }
                     checkHCUForFheEq
                 },
                 {
-                    fn checkHCUForCast(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <checkHCUForCastCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
+                    fn checkHCUForCast(data: &[u8]) -> alloy_sol_types::Result<HCULimitCalls> {
+                        <checkHCUForCastCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(HCULimitCalls::checkHCUForCast)
                     }
                     checkHCUForCast
                 },
                 {
-                    fn checkHCUForFheNe(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <checkHCUForFheNeCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
+                    fn checkHCUForFheNe(data: &[u8]) -> alloy_sol_types::Result<HCULimitCalls> {
+                        <checkHCUForFheNeCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(HCULimitCalls::checkHCUForFheNe)
                     }
                     checkHCUForFheNe
@@ -13262,9 +12199,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HCULimitCalls> {
                         <checkHCUForFheRandBoundedCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(HCULimitCalls::checkHCUForFheRandBounded)
+                            data,
+                        )
+                        .map(HCULimitCalls::checkHCUForFheRandBounded)
                     }
                     checkHCUForFheRandBounded
                 },
@@ -13273,96 +12210,64 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HCULimitCalls> {
                         <addToBlockHCUWhitelistCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(HCULimitCalls::addToBlockHCUWhitelist)
+                            data,
+                        )
+                        .map(HCULimitCalls::addToBlockHCUWhitelist)
                     }
                     addToBlockHCUWhitelist
                 },
                 {
-                    fn checkHCUForFheMul(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <checkHCUForFheMulCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
+                    fn checkHCUForFheMul(data: &[u8]) -> alloy_sol_types::Result<HCULimitCalls> {
+                        <checkHCUForFheMulCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(HCULimitCalls::checkHCUForFheMul)
                     }
                     checkHCUForFheMul
                 },
                 {
-                    fn checkHCUForFheRotr(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <checkHCUForFheRotrCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
+                    fn checkHCUForFheRotr(data: &[u8]) -> alloy_sol_types::Result<HCULimitCalls> {
+                        <checkHCUForFheRotrCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(HCULimitCalls::checkHCUForFheRotr)
                     }
                     checkHCUForFheRotr
                 },
                 {
-                    fn checkHCUForFheMax(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <checkHCUForFheMaxCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
+                    fn checkHCUForFheMax(data: &[u8]) -> alloy_sol_types::Result<HCULimitCalls> {
+                        <checkHCUForFheMaxCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(HCULimitCalls::checkHCUForFheMax)
                     }
                     checkHCUForFheMax
                 },
                 {
-                    fn checkHCUForFheDiv(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <checkHCUForFheDivCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
+                    fn checkHCUForFheDiv(data: &[u8]) -> alloy_sol_types::Result<HCULimitCalls> {
+                        <checkHCUForFheDivCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(HCULimitCalls::checkHCUForFheDiv)
                     }
                     checkHCUForFheDiv
                 },
                 {
-                    fn getBlockMeter(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <getBlockMeterCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
+                    fn getBlockMeter(data: &[u8]) -> alloy_sol_types::Result<HCULimitCalls> {
+                        <getBlockMeterCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(HCULimitCalls::getBlockMeter)
                     }
                     getBlockMeter
                 },
                 {
-                    fn checkHCUForFheBitXor(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <checkHCUForFheBitXorCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
+                    fn checkHCUForFheBitXor(data: &[u8]) -> alloy_sol_types::Result<HCULimitCalls> {
+                        <checkHCUForFheBitXorCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(HCULimitCalls::checkHCUForFheBitXor)
                     }
                     checkHCUForFheBitXor
                 },
                 {
-                    fn setHCUPerBlock(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <setHCUPerBlockCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
+                    fn setHCUPerBlock(data: &[u8]) -> alloy_sol_types::Result<HCULimitCalls> {
+                        <setHCUPerBlockCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(HCULimitCalls::setHCUPerBlock)
                     }
                     setHCUPerBlock
                 },
                 {
-                    fn setMaxHCUPerTx(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <setMaxHCUPerTxCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
+                    fn setMaxHCUPerTx(data: &[u8]) -> alloy_sol_types::Result<HCULimitCalls> {
+                        <setMaxHCUPerTxCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(HCULimitCalls::setMaxHCUPerTx)
                     }
                     setMaxHCUPerTx
@@ -13372,9 +12277,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HCULimitCalls> {
                         <UPGRADE_INTERFACE_VERSIONCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(HCULimitCalls::UPGRADE_INTERFACE_VERSION)
+                            data,
+                        )
+                        .map(HCULimitCalls::UPGRADE_INTERFACE_VERSION)
                     }
                     UPGRADE_INTERFACE_VERSION
                 },
@@ -13383,9 +12288,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HCULimitCalls> {
                         <getGlobalHCUCapPerBlockCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(HCULimitCalls::getGlobalHCUCapPerBlock)
+                            data,
+                        )
+                        .map(HCULimitCalls::getGlobalHCUCapPerBlock)
                     }
                     getGlobalHCUCapPerBlock
                 },
@@ -13394,96 +12299,64 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HCULimitCalls> {
                         <checkHCUForTrivialEncryptCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(HCULimitCalls::checkHCUForTrivialEncrypt)
+                            data,
+                        )
+                        .map(HCULimitCalls::checkHCUForTrivialEncrypt)
                     }
                     checkHCUForTrivialEncrypt
                 },
                 {
-                    fn checkHCUForFheSum(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <checkHCUForFheSumCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
+                    fn checkHCUForFheSum(data: &[u8]) -> alloy_sol_types::Result<HCULimitCalls> {
+                        <checkHCUForFheSumCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(HCULimitCalls::checkHCUForFheSum)
                     }
                     checkHCUForFheSum
                 },
                 {
-                    fn checkHCUForFheBitOr(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <checkHCUForFheBitOrCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
+                    fn checkHCUForFheBitOr(data: &[u8]) -> alloy_sol_types::Result<HCULimitCalls> {
+                        <checkHCUForFheBitOrCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(HCULimitCalls::checkHCUForFheBitOr)
                     }
                     checkHCUForFheBitOr
                 },
                 {
-                    fn checkHCUForFheAdd(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <checkHCUForFheAddCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
+                    fn checkHCUForFheAdd(data: &[u8]) -> alloy_sol_types::Result<HCULimitCalls> {
+                        <checkHCUForFheAddCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(HCULimitCalls::checkHCUForFheAdd)
                     }
                     checkHCUForFheAdd
                 },
                 {
-                    fn getMaxHCUPerTx(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <getMaxHCUPerTxCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
+                    fn getMaxHCUPerTx(data: &[u8]) -> alloy_sol_types::Result<HCULimitCalls> {
+                        <getMaxHCUPerTxCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(HCULimitCalls::getMaxHCUPerTx)
                     }
                     getMaxHCUPerTx
                 },
                 {
-                    fn checkHCUForFheGe(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <checkHCUForFheGeCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
+                    fn checkHCUForFheGe(data: &[u8]) -> alloy_sol_types::Result<HCULimitCalls> {
+                        <checkHCUForFheGeCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(HCULimitCalls::checkHCUForFheGe)
                     }
                     checkHCUForFheGe
                 },
                 {
-                    fn checkHCUForFheBitAnd(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <checkHCUForFheBitAndCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
+                    fn checkHCUForFheBitAnd(data: &[u8]) -> alloy_sol_types::Result<HCULimitCalls> {
+                        <checkHCUForFheBitAndCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(HCULimitCalls::checkHCUForFheBitAnd)
                     }
                     checkHCUForFheBitAnd
                 },
                 {
-                    fn checkHCUForFheRand(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <checkHCUForFheRandCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
+                    fn checkHCUForFheRand(data: &[u8]) -> alloy_sol_types::Result<HCULimitCalls> {
+                        <checkHCUForFheRandCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(HCULimitCalls::checkHCUForFheRand)
                     }
                     checkHCUForFheRand
                 },
                 {
-                    fn checkHCUForFheSub(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <checkHCUForFheSubCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
+                    fn checkHCUForFheSub(data: &[u8]) -> alloy_sol_types::Result<HCULimitCalls> {
+                        <checkHCUForFheSubCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(HCULimitCalls::checkHCUForFheSub)
                     }
                     checkHCUForFheSub
@@ -13493,31 +12366,25 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HCULimitCalls> {
                         <isBlockHCUWhitelistedCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(HCULimitCalls::isBlockHCUWhitelisted)
+                            data,
+                        )
+                        .map(HCULimitCalls::isBlockHCUWhitelisted)
                     }
                     isBlockHCUWhitelisted
                 },
                 {
-                    fn checkHCUForFheShl(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <checkHCUForFheShlCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
+                    fn checkHCUForFheShl(data: &[u8]) -> alloy_sol_types::Result<HCULimitCalls> {
+                        <checkHCUForFheShlCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(HCULimitCalls::checkHCUForFheShl)
                     }
                     checkHCUForFheShl
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(
-                    alloy_sol_types::Error::unknown_selector(
-                        <Self as alloy_sol_types::SolInterface>::NAME,
-                        selector,
-                    ),
-                );
+                return Err(alloy_sol_types::Error::unknown_selector(
+                    <Self as alloy_sol_types::SolInterface>::NAME,
+                    selector,
+                ));
             };
             DECODE_SHIMS[idx](data)
         }
@@ -13527,534 +12394,501 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
-            static DECODE_VALIDATE_SHIMS: &[fn(
-                &[u8],
-            ) -> alloy_sol_types::Result<HCULimitCalls>] = &[
-                {
-                    fn checkHCUForFheMin(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <checkHCUForFheMinCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+            static DECODE_VALIDATE_SHIMS: &[fn(&[u8]) -> alloy_sol_types::Result<HCULimitCalls>] =
+                &[
+                    {
+                        fn checkHCUForFheMin(
+                            data: &[u8],
+                        ) -> alloy_sol_types::Result<HCULimitCalls> {
+                            <checkHCUForFheMinCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
                             .map(HCULimitCalls::checkHCUForFheMin)
-                    }
-                    checkHCUForFheMin
-                },
-                {
-                    fn checkHCUForFheShr(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <checkHCUForFheShrCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                        }
+                        checkHCUForFheMin
+                    },
+                    {
+                        fn checkHCUForFheShr(
+                            data: &[u8],
+                        ) -> alloy_sol_types::Result<HCULimitCalls> {
+                            <checkHCUForFheShrCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
                             .map(HCULimitCalls::checkHCUForFheShr)
-                    }
-                    checkHCUForFheShr
-                },
-                {
-                    fn checkHCUForFheMulDiv(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <checkHCUForFheMulDivCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                        }
+                        checkHCUForFheShr
+                    },
+                    {
+                        fn checkHCUForFheMulDiv(
+                            data: &[u8],
+                        ) -> alloy_sol_types::Result<HCULimitCalls> {
+                            <checkHCUForFheMulDivCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
                             .map(HCULimitCalls::checkHCUForFheMulDiv)
-                    }
-                    checkHCUForFheMulDiv
-                },
-                {
-                    fn getVersion(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <getVersionCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                        }
+                        checkHCUForFheMulDiv
+                    },
+                    {
+                        fn getVersion(data: &[u8]) -> alloy_sol_types::Result<HCULimitCalls> {
+                            <getVersionCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
                             .map(HCULimitCalls::getVersion)
-                    }
-                    getVersion
-                },
-                {
-                    fn reinitializeV4(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <reinitializeV4Call as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                        }
+                        getVersion
+                    },
+                    {
+                        fn reinitializeV4(data: &[u8]) -> alloy_sol_types::Result<HCULimitCalls> {
+                            <reinitializeV4Call as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
                             .map(HCULimitCalls::reinitializeV4)
-                    }
-                    reinitializeV4
-                },
-                {
-                    fn initializeFromEmptyProxy(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <initializeFromEmptyProxyCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                        }
+                        reinitializeV4
+                    },
+                    {
+                        fn initializeFromEmptyProxy(
+                            data: &[u8],
+                        ) -> alloy_sol_types::Result<HCULimitCalls> {
+                            <initializeFromEmptyProxyCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
                             .map(HCULimitCalls::initializeFromEmptyProxy)
-                    }
-                    initializeFromEmptyProxy
-                },
-                {
-                    fn getMaxHCUDepthPerTx(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <getMaxHCUDepthPerTxCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                        }
+                        initializeFromEmptyProxy
+                    },
+                    {
+                        fn getMaxHCUDepthPerTx(
+                            data: &[u8],
+                        ) -> alloy_sol_types::Result<HCULimitCalls> {
+                            <getMaxHCUDepthPerTxCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
                             .map(HCULimitCalls::getMaxHCUDepthPerTx)
-                    }
-                    getMaxHCUDepthPerTx
-                },
-                {
-                    fn getFHEVMExecutorAddress(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <getFHEVMExecutorAddressCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                        }
+                        getMaxHCUDepthPerTx
+                    },
+                    {
+                        fn getFHEVMExecutorAddress(
+                            data: &[u8],
+                        ) -> alloy_sol_types::Result<HCULimitCalls> {
+                            <getFHEVMExecutorAddressCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
                             .map(HCULimitCalls::getFHEVMExecutorAddress)
-                    }
-                    getFHEVMExecutorAddress
-                },
-                {
-                    fn removeFromBlockHCUWhitelist(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <removeFromBlockHCUWhitelistCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                        }
+                        getFHEVMExecutorAddress
+                    },
+                    {
+                        fn removeFromBlockHCUWhitelist(
+                            data: &[u8],
+                        ) -> alloy_sol_types::Result<HCULimitCalls> {
+                            <removeFromBlockHCUWhitelistCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
                             .map(HCULimitCalls::removeFromBlockHCUWhitelist)
-                    }
-                    removeFromBlockHCUWhitelist
-                },
-                {
-                    fn checkHCUForFheNot(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <checkHCUForFheNotCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                        }
+                        removeFromBlockHCUWhitelist
+                    },
+                    {
+                        fn checkHCUForFheNot(
+                            data: &[u8],
+                        ) -> alloy_sol_types::Result<HCULimitCalls> {
+                            <checkHCUForFheNotCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
                             .map(HCULimitCalls::checkHCUForFheNot)
-                    }
-                    checkHCUForFheNot
-                },
-                {
-                    fn checkHCUForIfThenElse(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <checkHCUForIfThenElseCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                        }
+                        checkHCUForFheNot
+                    },
+                    {
+                        fn checkHCUForIfThenElse(
+                            data: &[u8],
+                        ) -> alloy_sol_types::Result<HCULimitCalls> {
+                            <checkHCUForIfThenElseCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
                             .map(HCULimitCalls::checkHCUForIfThenElse)
-                    }
-                    checkHCUForIfThenElse
-                },
-                {
-                    fn checkHCUForFheRem(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <checkHCUForFheRemCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                        }
+                        checkHCUForIfThenElse
+                    },
+                    {
+                        fn checkHCUForFheRem(
+                            data: &[u8],
+                        ) -> alloy_sol_types::Result<HCULimitCalls> {
+                            <checkHCUForFheRemCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
                             .map(HCULimitCalls::checkHCUForFheRem)
-                    }
-                    checkHCUForFheRem
-                },
-                {
-                    fn checkHCUForFheLe(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <checkHCUForFheLeCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                        }
+                        checkHCUForFheRem
+                    },
+                    {
+                        fn checkHCUForFheLe(data: &[u8]) -> alloy_sol_types::Result<HCULimitCalls> {
+                            <checkHCUForFheLeCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
                             .map(HCULimitCalls::checkHCUForFheLe)
-                    }
-                    checkHCUForFheLe
-                },
-                {
-                    fn checkHCUForFheLt(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <checkHCUForFheLtCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                        }
+                        checkHCUForFheLe
+                    },
+                    {
+                        fn checkHCUForFheLt(data: &[u8]) -> alloy_sol_types::Result<HCULimitCalls> {
+                            <checkHCUForFheLtCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
                             .map(HCULimitCalls::checkHCUForFheLt)
-                    }
-                    checkHCUForFheLt
-                },
-                {
-                    fn checkHCUForFheIsIn(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <checkHCUForFheIsInCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                        }
+                        checkHCUForFheLt
+                    },
+                    {
+                        fn checkHCUForFheIsIn(
+                            data: &[u8],
+                        ) -> alloy_sol_types::Result<HCULimitCalls> {
+                            <checkHCUForFheIsInCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
                             .map(HCULimitCalls::checkHCUForFheIsIn)
-                    }
-                    checkHCUForFheIsIn
-                },
-                {
-                    fn checkHCUForFheGt(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <checkHCUForFheGtCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                        }
+                        checkHCUForFheIsIn
+                    },
+                    {
+                        fn checkHCUForFheGt(data: &[u8]) -> alloy_sol_types::Result<HCULimitCalls> {
+                            <checkHCUForFheGtCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
                             .map(HCULimitCalls::checkHCUForFheGt)
-                    }
-                    checkHCUForFheGt
-                },
-                {
-                    fn checkHCUForFheNeg(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <checkHCUForFheNegCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                        }
+                        checkHCUForFheGt
+                    },
+                    {
+                        fn checkHCUForFheNeg(
+                            data: &[u8],
+                        ) -> alloy_sol_types::Result<HCULimitCalls> {
+                            <checkHCUForFheNegCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
                             .map(HCULimitCalls::checkHCUForFheNeg)
-                    }
-                    checkHCUForFheNeg
-                },
-                {
-                    fn upgradeToAndCall(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <upgradeToAndCallCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                        }
+                        checkHCUForFheNeg
+                    },
+                    {
+                        fn upgradeToAndCall(data: &[u8]) -> alloy_sol_types::Result<HCULimitCalls> {
+                            <upgradeToAndCallCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
                             .map(HCULimitCalls::upgradeToAndCall)
-                    }
-                    upgradeToAndCall
-                },
-                {
-                    fn proxiableUUID(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <proxiableUUIDCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                        }
+                        upgradeToAndCall
+                    },
+                    {
+                        fn proxiableUUID(data: &[u8]) -> alloy_sol_types::Result<HCULimitCalls> {
+                            <proxiableUUIDCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
                             .map(HCULimitCalls::proxiableUUID)
-                    }
-                    proxiableUUID
-                },
-                {
-                    fn setMaxHCUDepthPerTx(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <setMaxHCUDepthPerTxCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                        }
+                        proxiableUUID
+                    },
+                    {
+                        fn setMaxHCUDepthPerTx(
+                            data: &[u8],
+                        ) -> alloy_sol_types::Result<HCULimitCalls> {
+                            <setMaxHCUDepthPerTxCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
                             .map(HCULimitCalls::setMaxHCUDepthPerTx)
-                    }
-                    setMaxHCUDepthPerTx
-                },
-                {
-                    fn checkHCUForFheRotl(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <checkHCUForFheRotlCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                        }
+                        setMaxHCUDepthPerTx
+                    },
+                    {
+                        fn checkHCUForFheRotl(
+                            data: &[u8],
+                        ) -> alloy_sol_types::Result<HCULimitCalls> {
+                            <checkHCUForFheRotlCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
                             .map(HCULimitCalls::checkHCUForFheRotl)
-                    }
-                    checkHCUForFheRotl
-                },
-                {
-                    fn checkHCUForFheEq(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <checkHCUForFheEqCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                        }
+                        checkHCUForFheRotl
+                    },
+                    {
+                        fn checkHCUForFheEq(data: &[u8]) -> alloy_sol_types::Result<HCULimitCalls> {
+                            <checkHCUForFheEqCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
                             .map(HCULimitCalls::checkHCUForFheEq)
-                    }
-                    checkHCUForFheEq
-                },
-                {
-                    fn checkHCUForCast(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <checkHCUForCastCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                        }
+                        checkHCUForFheEq
+                    },
+                    {
+                        fn checkHCUForCast(data: &[u8]) -> alloy_sol_types::Result<HCULimitCalls> {
+                            <checkHCUForCastCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
                             .map(HCULimitCalls::checkHCUForCast)
-                    }
-                    checkHCUForCast
-                },
-                {
-                    fn checkHCUForFheNe(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <checkHCUForFheNeCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                        }
+                        checkHCUForCast
+                    },
+                    {
+                        fn checkHCUForFheNe(data: &[u8]) -> alloy_sol_types::Result<HCULimitCalls> {
+                            <checkHCUForFheNeCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
                             .map(HCULimitCalls::checkHCUForFheNe)
-                    }
-                    checkHCUForFheNe
-                },
-                {
-                    fn checkHCUForFheRandBounded(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <checkHCUForFheRandBoundedCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                        }
+                        checkHCUForFheNe
+                    },
+                    {
+                        fn checkHCUForFheRandBounded(
+                            data: &[u8],
+                        ) -> alloy_sol_types::Result<HCULimitCalls> {
+                            <checkHCUForFheRandBoundedCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
                             .map(HCULimitCalls::checkHCUForFheRandBounded)
-                    }
-                    checkHCUForFheRandBounded
-                },
-                {
-                    fn addToBlockHCUWhitelist(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <addToBlockHCUWhitelistCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                        }
+                        checkHCUForFheRandBounded
+                    },
+                    {
+                        fn addToBlockHCUWhitelist(
+                            data: &[u8],
+                        ) -> alloy_sol_types::Result<HCULimitCalls> {
+                            <addToBlockHCUWhitelistCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
                             .map(HCULimitCalls::addToBlockHCUWhitelist)
-                    }
-                    addToBlockHCUWhitelist
-                },
-                {
-                    fn checkHCUForFheMul(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <checkHCUForFheMulCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                        }
+                        addToBlockHCUWhitelist
+                    },
+                    {
+                        fn checkHCUForFheMul(
+                            data: &[u8],
+                        ) -> alloy_sol_types::Result<HCULimitCalls> {
+                            <checkHCUForFheMulCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
                             .map(HCULimitCalls::checkHCUForFheMul)
-                    }
-                    checkHCUForFheMul
-                },
-                {
-                    fn checkHCUForFheRotr(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <checkHCUForFheRotrCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                        }
+                        checkHCUForFheMul
+                    },
+                    {
+                        fn checkHCUForFheRotr(
+                            data: &[u8],
+                        ) -> alloy_sol_types::Result<HCULimitCalls> {
+                            <checkHCUForFheRotrCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
                             .map(HCULimitCalls::checkHCUForFheRotr)
-                    }
-                    checkHCUForFheRotr
-                },
-                {
-                    fn checkHCUForFheMax(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <checkHCUForFheMaxCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                        }
+                        checkHCUForFheRotr
+                    },
+                    {
+                        fn checkHCUForFheMax(
+                            data: &[u8],
+                        ) -> alloy_sol_types::Result<HCULimitCalls> {
+                            <checkHCUForFheMaxCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
                             .map(HCULimitCalls::checkHCUForFheMax)
-                    }
-                    checkHCUForFheMax
-                },
-                {
-                    fn checkHCUForFheDiv(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <checkHCUForFheDivCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                        }
+                        checkHCUForFheMax
+                    },
+                    {
+                        fn checkHCUForFheDiv(
+                            data: &[u8],
+                        ) -> alloy_sol_types::Result<HCULimitCalls> {
+                            <checkHCUForFheDivCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
                             .map(HCULimitCalls::checkHCUForFheDiv)
-                    }
-                    checkHCUForFheDiv
-                },
-                {
-                    fn getBlockMeter(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <getBlockMeterCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                        }
+                        checkHCUForFheDiv
+                    },
+                    {
+                        fn getBlockMeter(data: &[u8]) -> alloy_sol_types::Result<HCULimitCalls> {
+                            <getBlockMeterCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
                             .map(HCULimitCalls::getBlockMeter)
-                    }
-                    getBlockMeter
-                },
-                {
-                    fn checkHCUForFheBitXor(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <checkHCUForFheBitXorCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                        }
+                        getBlockMeter
+                    },
+                    {
+                        fn checkHCUForFheBitXor(
+                            data: &[u8],
+                        ) -> alloy_sol_types::Result<HCULimitCalls> {
+                            <checkHCUForFheBitXorCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
                             .map(HCULimitCalls::checkHCUForFheBitXor)
-                    }
-                    checkHCUForFheBitXor
-                },
-                {
-                    fn setHCUPerBlock(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <setHCUPerBlockCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                        }
+                        checkHCUForFheBitXor
+                    },
+                    {
+                        fn setHCUPerBlock(data: &[u8]) -> alloy_sol_types::Result<HCULimitCalls> {
+                            <setHCUPerBlockCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
                             .map(HCULimitCalls::setHCUPerBlock)
-                    }
-                    setHCUPerBlock
-                },
-                {
-                    fn setMaxHCUPerTx(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <setMaxHCUPerTxCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                        }
+                        setHCUPerBlock
+                    },
+                    {
+                        fn setMaxHCUPerTx(data: &[u8]) -> alloy_sol_types::Result<HCULimitCalls> {
+                            <setMaxHCUPerTxCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
                             .map(HCULimitCalls::setMaxHCUPerTx)
-                    }
-                    setMaxHCUPerTx
-                },
-                {
-                    fn UPGRADE_INTERFACE_VERSION(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <UPGRADE_INTERFACE_VERSIONCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                        }
+                        setMaxHCUPerTx
+                    },
+                    {
+                        fn UPGRADE_INTERFACE_VERSION(
+                            data: &[u8],
+                        ) -> alloy_sol_types::Result<HCULimitCalls> {
+                            <UPGRADE_INTERFACE_VERSIONCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
                             .map(HCULimitCalls::UPGRADE_INTERFACE_VERSION)
-                    }
-                    UPGRADE_INTERFACE_VERSION
-                },
-                {
-                    fn getGlobalHCUCapPerBlock(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <getGlobalHCUCapPerBlockCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                        }
+                        UPGRADE_INTERFACE_VERSION
+                    },
+                    {
+                        fn getGlobalHCUCapPerBlock(
+                            data: &[u8],
+                        ) -> alloy_sol_types::Result<HCULimitCalls> {
+                            <getGlobalHCUCapPerBlockCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
                             .map(HCULimitCalls::getGlobalHCUCapPerBlock)
-                    }
-                    getGlobalHCUCapPerBlock
-                },
-                {
-                    fn checkHCUForTrivialEncrypt(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <checkHCUForTrivialEncryptCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                        }
+                        getGlobalHCUCapPerBlock
+                    },
+                    {
+                        fn checkHCUForTrivialEncrypt(
+                            data: &[u8],
+                        ) -> alloy_sol_types::Result<HCULimitCalls> {
+                            <checkHCUForTrivialEncryptCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
                             .map(HCULimitCalls::checkHCUForTrivialEncrypt)
-                    }
-                    checkHCUForTrivialEncrypt
-                },
-                {
-                    fn checkHCUForFheSum(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <checkHCUForFheSumCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                        }
+                        checkHCUForTrivialEncrypt
+                    },
+                    {
+                        fn checkHCUForFheSum(
+                            data: &[u8],
+                        ) -> alloy_sol_types::Result<HCULimitCalls> {
+                            <checkHCUForFheSumCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
                             .map(HCULimitCalls::checkHCUForFheSum)
-                    }
-                    checkHCUForFheSum
-                },
-                {
-                    fn checkHCUForFheBitOr(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <checkHCUForFheBitOrCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                        }
+                        checkHCUForFheSum
+                    },
+                    {
+                        fn checkHCUForFheBitOr(
+                            data: &[u8],
+                        ) -> alloy_sol_types::Result<HCULimitCalls> {
+                            <checkHCUForFheBitOrCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
                             .map(HCULimitCalls::checkHCUForFheBitOr)
-                    }
-                    checkHCUForFheBitOr
-                },
-                {
-                    fn checkHCUForFheAdd(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <checkHCUForFheAddCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                        }
+                        checkHCUForFheBitOr
+                    },
+                    {
+                        fn checkHCUForFheAdd(
+                            data: &[u8],
+                        ) -> alloy_sol_types::Result<HCULimitCalls> {
+                            <checkHCUForFheAddCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
                             .map(HCULimitCalls::checkHCUForFheAdd)
-                    }
-                    checkHCUForFheAdd
-                },
-                {
-                    fn getMaxHCUPerTx(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <getMaxHCUPerTxCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                        }
+                        checkHCUForFheAdd
+                    },
+                    {
+                        fn getMaxHCUPerTx(data: &[u8]) -> alloy_sol_types::Result<HCULimitCalls> {
+                            <getMaxHCUPerTxCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
                             .map(HCULimitCalls::getMaxHCUPerTx)
-                    }
-                    getMaxHCUPerTx
-                },
-                {
-                    fn checkHCUForFheGe(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <checkHCUForFheGeCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                        }
+                        getMaxHCUPerTx
+                    },
+                    {
+                        fn checkHCUForFheGe(data: &[u8]) -> alloy_sol_types::Result<HCULimitCalls> {
+                            <checkHCUForFheGeCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
                             .map(HCULimitCalls::checkHCUForFheGe)
-                    }
-                    checkHCUForFheGe
-                },
-                {
-                    fn checkHCUForFheBitAnd(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <checkHCUForFheBitAndCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                        }
+                        checkHCUForFheGe
+                    },
+                    {
+                        fn checkHCUForFheBitAnd(
+                            data: &[u8],
+                        ) -> alloy_sol_types::Result<HCULimitCalls> {
+                            <checkHCUForFheBitAndCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
                             .map(HCULimitCalls::checkHCUForFheBitAnd)
-                    }
-                    checkHCUForFheBitAnd
-                },
-                {
-                    fn checkHCUForFheRand(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <checkHCUForFheRandCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                        }
+                        checkHCUForFheBitAnd
+                    },
+                    {
+                        fn checkHCUForFheRand(
+                            data: &[u8],
+                        ) -> alloy_sol_types::Result<HCULimitCalls> {
+                            <checkHCUForFheRandCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
                             .map(HCULimitCalls::checkHCUForFheRand)
-                    }
-                    checkHCUForFheRand
-                },
-                {
-                    fn checkHCUForFheSub(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <checkHCUForFheSubCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                        }
+                        checkHCUForFheRand
+                    },
+                    {
+                        fn checkHCUForFheSub(
+                            data: &[u8],
+                        ) -> alloy_sol_types::Result<HCULimitCalls> {
+                            <checkHCUForFheSubCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
                             .map(HCULimitCalls::checkHCUForFheSub)
-                    }
-                    checkHCUForFheSub
-                },
-                {
-                    fn isBlockHCUWhitelisted(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <isBlockHCUWhitelistedCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                        }
+                        checkHCUForFheSub
+                    },
+                    {
+                        fn isBlockHCUWhitelisted(
+                            data: &[u8],
+                        ) -> alloy_sol_types::Result<HCULimitCalls> {
+                            <isBlockHCUWhitelistedCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
                             .map(HCULimitCalls::isBlockHCUWhitelisted)
-                    }
-                    isBlockHCUWhitelisted
-                },
-                {
-                    fn checkHCUForFheShl(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <checkHCUForFheShlCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                        }
+                        isBlockHCUWhitelisted
+                    },
+                    {
+                        fn checkHCUForFheShl(
+                            data: &[u8],
+                        ) -> alloy_sol_types::Result<HCULimitCalls> {
+                            <checkHCUForFheShlCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
                             .map(HCULimitCalls::checkHCUForFheShl)
-                    }
-                    checkHCUForFheShl
-                },
-            ];
+                        }
+                        checkHCUForFheShl
+                    },
+                ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(
-                    alloy_sol_types::Error::unknown_selector(
-                        <Self as alloy_sol_types::SolInterface>::NAME,
-                        selector,
-                    ),
-                );
+                return Err(alloy_sol_types::Error::unknown_selector(
+                    <Self as alloy_sol_types::SolInterface>::NAME,
+                    selector,
+                ));
             };
             DECODE_VALIDATE_SHIMS[idx](data)
         }
@@ -14072,104 +12906,64 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     )
                 }
                 Self::checkHCUForCast(inner) => {
-                    <checkHCUForCastCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
+                    <checkHCUForCastCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::checkHCUForFheAdd(inner) => {
-                    <checkHCUForFheAddCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
+                    <checkHCUForFheAddCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::checkHCUForFheBitAnd(inner) => {
-                    <checkHCUForFheBitAndCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
+                    <checkHCUForFheBitAndCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::checkHCUForFheBitOr(inner) => {
-                    <checkHCUForFheBitOrCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
+                    <checkHCUForFheBitOrCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::checkHCUForFheBitXor(inner) => {
-                    <checkHCUForFheBitXorCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
+                    <checkHCUForFheBitXorCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::checkHCUForFheDiv(inner) => {
-                    <checkHCUForFheDivCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
+                    <checkHCUForFheDivCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::checkHCUForFheEq(inner) => {
-                    <checkHCUForFheEqCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
+                    <checkHCUForFheEqCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::checkHCUForFheGe(inner) => {
-                    <checkHCUForFheGeCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
+                    <checkHCUForFheGeCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::checkHCUForFheGt(inner) => {
-                    <checkHCUForFheGtCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
+                    <checkHCUForFheGtCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::checkHCUForFheIsIn(inner) => {
-                    <checkHCUForFheIsInCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
+                    <checkHCUForFheIsInCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::checkHCUForFheLe(inner) => {
-                    <checkHCUForFheLeCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
+                    <checkHCUForFheLeCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::checkHCUForFheLt(inner) => {
-                    <checkHCUForFheLtCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
+                    <checkHCUForFheLtCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::checkHCUForFheMax(inner) => {
-                    <checkHCUForFheMaxCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
+                    <checkHCUForFheMaxCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::checkHCUForFheMin(inner) => {
-                    <checkHCUForFheMinCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
+                    <checkHCUForFheMinCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::checkHCUForFheMul(inner) => {
-                    <checkHCUForFheMulCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
+                    <checkHCUForFheMulCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::checkHCUForFheMulDiv(inner) => {
-                    <checkHCUForFheMulDivCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
+                    <checkHCUForFheMulDivCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::checkHCUForFheNe(inner) => {
-                    <checkHCUForFheNeCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
+                    <checkHCUForFheNeCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::checkHCUForFheNeg(inner) => {
-                    <checkHCUForFheNegCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
+                    <checkHCUForFheNegCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::checkHCUForFheNot(inner) => {
-                    <checkHCUForFheNotCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
+                    <checkHCUForFheNotCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::checkHCUForFheRand(inner) => {
-                    <checkHCUForFheRandCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
+                    <checkHCUForFheRandCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::checkHCUForFheRandBounded(inner) => {
                     <checkHCUForFheRandBoundedCall as alloy_sol_types::SolCall>::abi_encoded_size(
@@ -14177,44 +12971,28 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     )
                 }
                 Self::checkHCUForFheRem(inner) => {
-                    <checkHCUForFheRemCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
+                    <checkHCUForFheRemCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::checkHCUForFheRotl(inner) => {
-                    <checkHCUForFheRotlCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
+                    <checkHCUForFheRotlCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::checkHCUForFheRotr(inner) => {
-                    <checkHCUForFheRotrCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
+                    <checkHCUForFheRotrCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::checkHCUForFheShl(inner) => {
-                    <checkHCUForFheShlCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
+                    <checkHCUForFheShlCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::checkHCUForFheShr(inner) => {
-                    <checkHCUForFheShrCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
+                    <checkHCUForFheShrCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::checkHCUForFheSub(inner) => {
-                    <checkHCUForFheSubCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
+                    <checkHCUForFheSubCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::checkHCUForFheSum(inner) => {
-                    <checkHCUForFheSumCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
+                    <checkHCUForFheSumCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::checkHCUForIfThenElse(inner) => {
-                    <checkHCUForIfThenElseCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
+                    <checkHCUForIfThenElseCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::checkHCUForTrivialEncrypt(inner) => {
                     <checkHCUForTrivialEncryptCall as alloy_sol_types::SolCall>::abi_encoded_size(
@@ -14222,9 +13000,7 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     )
                 }
                 Self::getBlockMeter(inner) => {
-                    <getBlockMeterCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
+                    <getBlockMeterCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::getFHEVMExecutorAddress(inner) => {
                     <getFHEVMExecutorAddressCall as alloy_sol_types::SolCall>::abi_encoded_size(
@@ -14237,14 +13013,10 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     )
                 }
                 Self::getMaxHCUDepthPerTx(inner) => {
-                    <getMaxHCUDepthPerTxCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
+                    <getMaxHCUDepthPerTxCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::getMaxHCUPerTx(inner) => {
-                    <getMaxHCUPerTxCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
+                    <getMaxHCUPerTxCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::getVersion(inner) => {
                     <getVersionCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
@@ -14255,19 +13027,13 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     )
                 }
                 Self::isBlockHCUWhitelisted(inner) => {
-                    <isBlockHCUWhitelistedCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
+                    <isBlockHCUWhitelistedCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::proxiableUUID(inner) => {
-                    <proxiableUUIDCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
+                    <proxiableUUIDCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::reinitializeV4(inner) => {
-                    <reinitializeV4Call as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
+                    <reinitializeV4Call as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::removeFromBlockHCUWhitelist(inner) => {
                     <removeFromBlockHCUWhitelistCall as alloy_sol_types::SolCall>::abi_encoded_size(
@@ -14275,24 +13041,16 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     )
                 }
                 Self::setHCUPerBlock(inner) => {
-                    <setHCUPerBlockCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
+                    <setHCUPerBlockCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::setMaxHCUDepthPerTx(inner) => {
-                    <setMaxHCUDepthPerTxCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
+                    <setMaxHCUDepthPerTxCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::setMaxHCUPerTx(inner) => {
-                    <setMaxHCUPerTxCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
+                    <setMaxHCUPerTxCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::upgradeToAndCall(inner) => {
-                    <upgradeToAndCallCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
+                    <upgradeToAndCallCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
             }
         }
@@ -14301,292 +13059,182 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
             match self {
                 Self::UPGRADE_INTERFACE_VERSION(inner) => {
                     <UPGRADE_INTERFACE_VERSIONCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
+                        inner, out,
                     )
                 }
                 Self::addToBlockHCUWhitelist(inner) => {
                     <addToBlockHCUWhitelistCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
+                        inner, out,
                     )
                 }
                 Self::checkHCUForCast(inner) => {
-                    <checkHCUForCastCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <checkHCUForCastCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
                 Self::checkHCUForFheAdd(inner) => {
-                    <checkHCUForFheAddCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <checkHCUForFheAddCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
                 Self::checkHCUForFheBitAnd(inner) => {
                     <checkHCUForFheBitAndCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
+                        inner, out,
                     )
                 }
                 Self::checkHCUForFheBitOr(inner) => {
                     <checkHCUForFheBitOrCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
+                        inner, out,
                     )
                 }
                 Self::checkHCUForFheBitXor(inner) => {
                     <checkHCUForFheBitXorCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
+                        inner, out,
                     )
                 }
                 Self::checkHCUForFheDiv(inner) => {
-                    <checkHCUForFheDivCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <checkHCUForFheDivCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
                 Self::checkHCUForFheEq(inner) => {
-                    <checkHCUForFheEqCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <checkHCUForFheEqCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
                 Self::checkHCUForFheGe(inner) => {
-                    <checkHCUForFheGeCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <checkHCUForFheGeCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
                 Self::checkHCUForFheGt(inner) => {
-                    <checkHCUForFheGtCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <checkHCUForFheGtCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
                 Self::checkHCUForFheIsIn(inner) => {
-                    <checkHCUForFheIsInCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <checkHCUForFheIsInCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
                 Self::checkHCUForFheLe(inner) => {
-                    <checkHCUForFheLeCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <checkHCUForFheLeCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
                 Self::checkHCUForFheLt(inner) => {
-                    <checkHCUForFheLtCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <checkHCUForFheLtCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
                 Self::checkHCUForFheMax(inner) => {
-                    <checkHCUForFheMaxCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <checkHCUForFheMaxCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
                 Self::checkHCUForFheMin(inner) => {
-                    <checkHCUForFheMinCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <checkHCUForFheMinCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
                 Self::checkHCUForFheMul(inner) => {
-                    <checkHCUForFheMulCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <checkHCUForFheMulCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
                 Self::checkHCUForFheMulDiv(inner) => {
                     <checkHCUForFheMulDivCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
+                        inner, out,
                     )
                 }
                 Self::checkHCUForFheNe(inner) => {
-                    <checkHCUForFheNeCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <checkHCUForFheNeCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
                 Self::checkHCUForFheNeg(inner) => {
-                    <checkHCUForFheNegCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <checkHCUForFheNegCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
                 Self::checkHCUForFheNot(inner) => {
-                    <checkHCUForFheNotCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <checkHCUForFheNotCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
                 Self::checkHCUForFheRand(inner) => {
-                    <checkHCUForFheRandCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <checkHCUForFheRandCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
                 Self::checkHCUForFheRandBounded(inner) => {
                     <checkHCUForFheRandBoundedCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
+                        inner, out,
                     )
                 }
                 Self::checkHCUForFheRem(inner) => {
-                    <checkHCUForFheRemCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <checkHCUForFheRemCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
                 Self::checkHCUForFheRotl(inner) => {
-                    <checkHCUForFheRotlCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <checkHCUForFheRotlCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
                 Self::checkHCUForFheRotr(inner) => {
-                    <checkHCUForFheRotrCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <checkHCUForFheRotrCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
                 Self::checkHCUForFheShl(inner) => {
-                    <checkHCUForFheShlCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <checkHCUForFheShlCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
                 Self::checkHCUForFheShr(inner) => {
-                    <checkHCUForFheShrCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <checkHCUForFheShrCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
                 Self::checkHCUForFheSub(inner) => {
-                    <checkHCUForFheSubCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <checkHCUForFheSubCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
                 Self::checkHCUForFheSum(inner) => {
-                    <checkHCUForFheSumCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <checkHCUForFheSumCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
                 Self::checkHCUForIfThenElse(inner) => {
                     <checkHCUForIfThenElseCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
+                        inner, out,
                     )
                 }
                 Self::checkHCUForTrivialEncrypt(inner) => {
                     <checkHCUForTrivialEncryptCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
+                        inner, out,
                     )
                 }
                 Self::getBlockMeter(inner) => {
-                    <getBlockMeterCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <getBlockMeterCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
                 Self::getFHEVMExecutorAddress(inner) => {
                     <getFHEVMExecutorAddressCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
+                        inner, out,
                     )
                 }
                 Self::getGlobalHCUCapPerBlock(inner) => {
                     <getGlobalHCUCapPerBlockCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
+                        inner, out,
                     )
                 }
                 Self::getMaxHCUDepthPerTx(inner) => {
                     <getMaxHCUDepthPerTxCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
+                        inner, out,
                     )
                 }
                 Self::getMaxHCUPerTx(inner) => {
-                    <getMaxHCUPerTxCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <getMaxHCUPerTxCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
                 Self::getVersion(inner) => {
-                    <getVersionCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <getVersionCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
                 Self::initializeFromEmptyProxy(inner) => {
                     <initializeFromEmptyProxyCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
+                        inner, out,
                     )
                 }
                 Self::isBlockHCUWhitelisted(inner) => {
                     <isBlockHCUWhitelistedCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
+                        inner, out,
                     )
                 }
                 Self::proxiableUUID(inner) => {
-                    <proxiableUUIDCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <proxiableUUIDCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
                 Self::reinitializeV4(inner) => {
-                    <reinitializeV4Call as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <reinitializeV4Call as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
                 Self::removeFromBlockHCUWhitelist(inner) => {
                     <removeFromBlockHCUWhitelistCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
+                        inner, out,
                     )
                 }
                 Self::setHCUPerBlock(inner) => {
-                    <setHCUPerBlockCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <setHCUPerBlockCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
                 Self::setMaxHCUDepthPerTx(inner) => {
                     <setMaxHCUDepthPerTxCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
+                        inner, out,
                     )
                 }
                 Self::setMaxHCUPerTx(inner) => {
-                    <setMaxHCUPerTxCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <setMaxHCUPerTxCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
                 Self::upgradeToAndCall(inner) => {
-                    <upgradeToAndCallCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <upgradeToAndCallCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
             }
         }
     }
     ///Container for all the [`HCULimit`](self) custom errors.
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Debug, PartialEq, Eq, Hash)]
     pub enum HCULimitErrors {
         #[allow(missing_docs)]
         AddressEmptyCode(AddressEmptyCode),
@@ -14686,9 +13334,7 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 Self::ERC1967NonPayable(_) => {
                     <ERC1967NonPayable as alloy_sol_types::SolError>::SELECTOR
                 }
-                Self::FailedCall(_) => {
-                    <FailedCall as alloy_sol_types::SolError>::SELECTOR
-                }
+                Self::FailedCall(_) => <FailedCall as alloy_sol_types::SolError>::SELECTOR,
                 Self::HCUBlockLimitExceeded(_) => {
                     <HCUBlockLimitExceeded as alloy_sol_types::SolError>::SELECTOR
                 }
@@ -14713,9 +13359,7 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 Self::NotBlockHCUWhitelisted(_) => {
                     <NotBlockHCUWhitelisted as alloy_sol_types::SolError>::SELECTOR
                 }
-                Self::NotHostOwner(_) => {
-                    <NotHostOwner as alloy_sol_types::SolError>::SELECTOR
-                }
+                Self::NotHostOwner(_) => <NotHostOwner as alloy_sol_types::SolError>::SELECTOR,
                 Self::NotInitializing(_) => {
                     <NotInitializing as alloy_sol_types::SolError>::SELECTOR
                 }
@@ -14746,28 +13390,21 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
         }
         #[inline]
         #[allow(non_snake_case)]
-        fn abi_decode_raw(
-            selector: [u8; 4],
-            data: &[u8],
-        ) -> alloy_sol_types::Result<Self> {
-            static DECODE_SHIMS: &[fn(
-                &[u8],
-            ) -> alloy_sol_types::Result<HCULimitErrors>] = &[
+        fn abi_decode_raw(selector: [u8; 4], data: &[u8]) -> alloy_sol_types::Result<Self> {
+            static DECODE_SHIMS: &[fn(&[u8]) -> alloy_sol_types::Result<HCULimitErrors>] = &[
                 {
                     fn HCUPerBlockBelowMaxPerTx(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HCULimitErrors> {
                         <HCUPerBlockBelowMaxPerTx as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
-                            .map(HCULimitErrors::HCUPerBlockBelowMaxPerTx)
+                            data,
+                        )
+                        .map(HCULimitErrors::HCUPerBlockBelowMaxPerTx)
                     }
                     HCUPerBlockBelowMaxPerTx
                 },
                 {
-                    fn NotHostOwner(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitErrors> {
+                    fn NotHostOwner(data: &[u8]) -> alloy_sol_types::Result<HCULimitErrors> {
                         <NotHostOwner as alloy_sol_types::SolError>::abi_decode_raw(data)
                             .map(HCULimitErrors::NotHostOwner)
                     }
@@ -14785,12 +13422,8 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     CallerMustBeFHEVMExecutorContract
                 },
                 {
-                    fn InvalidZeroHandle(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitErrors> {
-                        <InvalidZeroHandle as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
+                    fn InvalidZeroHandle(data: &[u8]) -> alloy_sol_types::Result<HCULimitErrors> {
+                        <InvalidZeroHandle as alloy_sol_types::SolError>::abi_decode_raw(data)
                             .map(HCULimitErrors::InvalidZeroHandle)
                     }
                     InvalidZeroHandle
@@ -14800,9 +13433,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HCULimitErrors> {
                         <ERC1967InvalidImplementation as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
-                            .map(HCULimitErrors::ERC1967InvalidImplementation)
+                            data,
+                        )
+                        .map(HCULimitErrors::ERC1967InvalidImplementation)
                     }
                     ERC1967InvalidImplementation
                 },
@@ -14833,19 +13466,15 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HCULimitErrors> {
                         <HCUTransactionLimitExceeded as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
-                            .map(HCULimitErrors::HCUTransactionLimitExceeded)
+                            data,
+                        )
+                        .map(HCULimitErrors::HCUTransactionLimitExceeded)
                     }
                     HCUTransactionLimitExceeded
                 },
                 {
-                    fn AddressEmptyCode(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitErrors> {
-                        <AddressEmptyCode as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
+                    fn AddressEmptyCode(data: &[u8]) -> alloy_sol_types::Result<HCULimitErrors> {
+                        <AddressEmptyCode as alloy_sol_types::SolError>::abi_decode_raw(data)
                             .map(HCULimitErrors::AddressEmptyCode)
                     }
                     AddressEmptyCode
@@ -14854,9 +13483,7 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     fn UnsupportedOperation(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HCULimitErrors> {
-                        <UnsupportedOperation as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
+                        <UnsupportedOperation as alloy_sol_types::SolError>::abi_decode_raw(data)
                             .map(HCULimitErrors::UnsupportedOperation)
                     }
                     UnsupportedOperation
@@ -14866,9 +13493,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HCULimitErrors> {
                         <UUPSUnsupportedProxiableUUID as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
-                            .map(HCULimitErrors::UUPSUnsupportedProxiableUUID)
+                            data,
+                        )
+                        .map(HCULimitErrors::UUPSUnsupportedProxiableUUID)
                     }
                     UUPSUnsupportedProxiableUUID
                 },
@@ -14876,9 +13503,7 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     fn HCUBlockLimitExceeded(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HCULimitErrors> {
-                        <HCUBlockLimitExceeded as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
+                        <HCUBlockLimitExceeded as alloy_sol_types::SolError>::abi_decode_raw(data)
                             .map(HCULimitErrors::HCUBlockLimitExceeded)
                     }
                     HCUBlockLimitExceeded
@@ -14887,40 +13512,28 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     fn MaxHCUPerTxBelowDepth(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HCULimitErrors> {
-                        <MaxHCUPerTxBelowDepth as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
+                        <MaxHCUPerTxBelowDepth as alloy_sol_types::SolError>::abi_decode_raw(data)
                             .map(HCULimitErrors::MaxHCUPerTxBelowDepth)
                     }
                     MaxHCUPerTxBelowDepth
                 },
                 {
-                    fn ERC1967NonPayable(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitErrors> {
-                        <ERC1967NonPayable as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
+                    fn ERC1967NonPayable(data: &[u8]) -> alloy_sol_types::Result<HCULimitErrors> {
+                        <ERC1967NonPayable as alloy_sol_types::SolError>::abi_decode_raw(data)
                             .map(HCULimitErrors::ERC1967NonPayable)
                     }
                     ERC1967NonPayable
                 },
                 {
-                    fn FailedCall(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitErrors> {
+                    fn FailedCall(data: &[u8]) -> alloy_sol_types::Result<HCULimitErrors> {
                         <FailedCall as alloy_sol_types::SolError>::abi_decode_raw(data)
                             .map(HCULimitErrors::FailedCall)
                     }
                     FailedCall
                 },
                 {
-                    fn NotInitializing(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitErrors> {
-                        <NotInitializing as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
+                    fn NotInitializing(data: &[u8]) -> alloy_sol_types::Result<HCULimitErrors> {
+                        <NotInitializing as alloy_sol_types::SolError>::abi_decode_raw(data)
                             .map(HCULimitErrors::NotInitializing)
                     }
                     NotInitializing
@@ -14930,9 +13543,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HCULimitErrors> {
                         <UUPSUnauthorizedCallContext as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
-                            .map(HCULimitErrors::UUPSUnauthorizedCallContext)
+                            data,
+                        )
+                        .map(HCULimitErrors::UUPSUnauthorizedCallContext)
                     }
                     UUPSUnauthorizedCallContext
                 },
@@ -14940,9 +13553,7 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     fn NotBlockHCUWhitelisted(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HCULimitErrors> {
-                        <NotBlockHCUWhitelisted as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
+                        <NotBlockHCUWhitelisted as alloy_sol_types::SolError>::abi_decode_raw(data)
                             .map(HCULimitErrors::NotBlockHCUWhitelisted)
                     }
                     NotBlockHCUWhitelisted
@@ -14951,9 +13562,7 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     fn InvalidInitialization(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HCULimitErrors> {
-                        <InvalidInitialization as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
+                        <InvalidInitialization as alloy_sol_types::SolError>::abi_decode_raw(data)
                             .map(HCULimitErrors::InvalidInitialization)
                     }
                     InvalidInitialization
@@ -14963,9 +13572,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HCULimitErrors> {
                         <AlreadyBlockHCUWhitelisted as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
-                            .map(HCULimitErrors::AlreadyBlockHCUWhitelisted)
+                            data,
+                        )
+                        .map(HCULimitErrors::AlreadyBlockHCUWhitelisted)
                     }
                     AlreadyBlockHCUWhitelisted
                 },
@@ -14982,12 +13591,10 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(
-                    alloy_sol_types::Error::unknown_selector(
-                        <Self as alloy_sol_types::SolInterface>::NAME,
-                        selector,
-                    ),
-                );
+                return Err(alloy_sol_types::Error::unknown_selector(
+                    <Self as alloy_sol_types::SolInterface>::NAME,
+                    selector,
+                ));
             };
             DECODE_SHIMS[idx](data)
         }
@@ -14999,7 +13606,8 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
         ) -> alloy_sol_types::Result<Self> {
             static DECODE_VALIDATE_SHIMS: &[fn(
                 &[u8],
-            ) -> alloy_sol_types::Result<HCULimitErrors>] = &[
+            )
+                -> alloy_sol_types::Result<HCULimitErrors>] = &[
                 {
                     fn HCUPerBlockBelowMaxPerTx(
                         data: &[u8],
@@ -15012,12 +13620,8 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     HCUPerBlockBelowMaxPerTx
                 },
                 {
-                    fn NotHostOwner(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitErrors> {
-                        <NotHostOwner as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
+                    fn NotHostOwner(data: &[u8]) -> alloy_sol_types::Result<HCULimitErrors> {
+                        <NotHostOwner as alloy_sol_types::SolError>::abi_decode_raw_validate(data)
                             .map(HCULimitErrors::NotHostOwner)
                     }
                     NotHostOwner
@@ -15034,13 +13638,11 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     CallerMustBeFHEVMExecutorContract
                 },
                 {
-                    fn InvalidZeroHandle(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitErrors> {
+                    fn InvalidZeroHandle(data: &[u8]) -> alloy_sol_types::Result<HCULimitErrors> {
                         <InvalidZeroHandle as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(HCULimitErrors::InvalidZeroHandle)
+                            data,
+                        )
+                        .map(HCULimitErrors::InvalidZeroHandle)
                     }
                     InvalidZeroHandle
                 },
@@ -15089,13 +13691,11 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     HCUTransactionLimitExceeded
                 },
                 {
-                    fn AddressEmptyCode(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitErrors> {
+                    fn AddressEmptyCode(data: &[u8]) -> alloy_sol_types::Result<HCULimitErrors> {
                         <AddressEmptyCode as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(HCULimitErrors::AddressEmptyCode)
+                            data,
+                        )
+                        .map(HCULimitErrors::AddressEmptyCode)
                     }
                     AddressEmptyCode
                 },
@@ -15144,35 +13744,27 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     MaxHCUPerTxBelowDepth
                 },
                 {
-                    fn ERC1967NonPayable(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitErrors> {
+                    fn ERC1967NonPayable(data: &[u8]) -> alloy_sol_types::Result<HCULimitErrors> {
                         <ERC1967NonPayable as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(HCULimitErrors::ERC1967NonPayable)
+                            data,
+                        )
+                        .map(HCULimitErrors::ERC1967NonPayable)
                     }
                     ERC1967NonPayable
                 },
                 {
-                    fn FailedCall(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitErrors> {
-                        <FailedCall as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
+                    fn FailedCall(data: &[u8]) -> alloy_sol_types::Result<HCULimitErrors> {
+                        <FailedCall as alloy_sol_types::SolError>::abi_decode_raw_validate(data)
                             .map(HCULimitErrors::FailedCall)
                     }
                     FailedCall
                 },
                 {
-                    fn NotInitializing(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitErrors> {
+                    fn NotInitializing(data: &[u8]) -> alloy_sol_types::Result<HCULimitErrors> {
                         <NotInitializing as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(HCULimitErrors::NotInitializing)
+                            data,
+                        )
+                        .map(HCULimitErrors::NotInitializing)
                     }
                     NotInitializing
                 },
@@ -15233,12 +13825,10 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(
-                    alloy_sol_types::Error::unknown_selector(
-                        <Self as alloy_sol_types::SolInterface>::NAME,
-                        selector,
-                    ),
-                );
+                return Err(alloy_sol_types::Error::unknown_selector(
+                    <Self as alloy_sol_types::SolInterface>::NAME,
+                    selector,
+                ));
             };
             DECODE_VALIDATE_SHIMS[idx](data)
         }
@@ -15352,134 +13942,95 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
         fn abi_encode_raw(&self, out: &mut alloy_sol_types::private::Vec<u8>) {
             match self {
                 Self::AddressEmptyCode(inner) => {
-                    <AddressEmptyCode as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <AddressEmptyCode as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
                 }
                 Self::AlreadyBlockHCUWhitelisted(inner) => {
                     <AlreadyBlockHCUWhitelisted as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
+                        inner, out,
                     )
                 }
                 Self::CallerMustBeFHEVMExecutorContract(inner) => {
                     <CallerMustBeFHEVMExecutorContract as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
+                        inner, out,
                     )
                 }
                 Self::ERC1967InvalidImplementation(inner) => {
                     <ERC1967InvalidImplementation as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
+                        inner, out,
                     )
                 }
                 Self::ERC1967NonPayable(inner) => {
-                    <ERC1967NonPayable as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <ERC1967NonPayable as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
                 }
                 Self::FailedCall(inner) => {
                     <FailedCall as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
                 }
                 Self::HCUBlockLimitExceeded(inner) => {
-                    <HCUBlockLimitExceeded as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <HCUBlockLimitExceeded as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
                 }
                 Self::HCUPerBlockBelowMaxPerTx(inner) => {
                     <HCUPerBlockBelowMaxPerTx as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
+                        inner, out,
                     )
                 }
                 Self::HCUTransactionDepthLimitExceeded(inner) => {
                     <HCUTransactionDepthLimitExceeded as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
+                        inner, out,
                     )
                 }
                 Self::HCUTransactionLimitExceeded(inner) => {
                     <HCUTransactionLimitExceeded as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
+                        inner, out,
                     )
                 }
                 Self::InvalidInitialization(inner) => {
-                    <InvalidInitialization as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <InvalidInitialization as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
                 }
                 Self::InvalidZeroHandle(inner) => {
-                    <InvalidZeroHandle as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <InvalidZeroHandle as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
                 }
                 Self::MaxHCUPerTxBelowDepth(inner) => {
-                    <MaxHCUPerTxBelowDepth as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <MaxHCUPerTxBelowDepth as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
                 }
                 Self::NotBlockHCUWhitelisted(inner) => {
                     <NotBlockHCUWhitelisted as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
+                        inner, out,
                     )
                 }
                 Self::NotHostOwner(inner) => {
-                    <NotHostOwner as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <NotHostOwner as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
                 }
                 Self::NotInitializing(inner) => {
-                    <NotInitializing as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <NotInitializing as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
                 }
                 Self::NotInitializingFromEmptyProxy(inner) => {
                     <NotInitializingFromEmptyProxy as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
+                        inner, out,
                     )
                 }
                 Self::OnlyScalarOperationsAreSupported(inner) => {
                     <OnlyScalarOperationsAreSupported as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
+                        inner, out,
                     )
                 }
                 Self::UUPSUnauthorizedCallContext(inner) => {
                     <UUPSUnauthorizedCallContext as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
+                        inner, out,
                     )
                 }
                 Self::UUPSUnsupportedProxiableUUID(inner) => {
                     <UUPSUnsupportedProxiableUUID as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
+                        inner, out,
                     )
                 }
                 Self::UnsupportedOperation(inner) => {
-                    <UnsupportedOperation as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <UnsupportedOperation as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
                 }
             }
         }
     }
     ///Container for all the [`HCULimit`](self) events.
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Debug, PartialEq, Eq, Hash)]
     pub enum HCULimitEvents {
         #[allow(missing_docs)]
         BlockHCUWhitelistAdded(BlockHCUWhitelistAdded),
@@ -15506,39 +14057,39 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 32usize]] = &[
             [
-                85u8, 17u8, 177u8, 133u8, 31u8, 196u8, 10u8, 38u8, 41u8, 200u8, 85u8,
-                186u8, 183u8, 173u8, 206u8, 50u8, 118u8, 196u8, 112u8, 216u8, 25u8, 14u8,
-                176u8, 20u8, 49u8, 228u8, 24u8, 220u8, 42u8, 241u8, 62u8, 142u8,
+                85u8, 17u8, 177u8, 133u8, 31u8, 196u8, 10u8, 38u8, 41u8, 200u8, 85u8, 186u8, 183u8,
+                173u8, 206u8, 50u8, 118u8, 196u8, 112u8, 216u8, 25u8, 14u8, 176u8, 20u8, 49u8,
+                228u8, 24u8, 220u8, 42u8, 241u8, 62u8, 142u8,
             ],
             [
-                100u8, 203u8, 158u8, 122u8, 230u8, 73u8, 124u8, 89u8, 8u8, 12u8, 219u8,
-                192u8, 72u8, 85u8, 46u8, 18u8, 61u8, 82u8, 170u8, 66u8, 64u8, 225u8,
-                55u8, 117u8, 138u8, 23u8, 53u8, 130u8, 120u8, 105u8, 97u8, 202u8,
+                100u8, 203u8, 158u8, 122u8, 230u8, 73u8, 124u8, 89u8, 8u8, 12u8, 219u8, 192u8,
+                72u8, 85u8, 46u8, 18u8, 61u8, 82u8, 170u8, 66u8, 64u8, 225u8, 55u8, 117u8, 138u8,
+                23u8, 53u8, 130u8, 120u8, 105u8, 97u8, 202u8,
             ],
             [
-                146u8, 252u8, 151u8, 175u8, 21u8, 0u8, 38u8, 70u8, 206u8, 166u8, 60u8,
-                118u8, 51u8, 187u8, 55u8, 91u8, 130u8, 219u8, 124u8, 222u8, 123u8, 72u8,
-                12u8, 117u8, 254u8, 99u8, 65u8, 218u8, 204u8, 41u8, 44u8, 129u8,
+                146u8, 252u8, 151u8, 175u8, 21u8, 0u8, 38u8, 70u8, 206u8, 166u8, 60u8, 118u8, 51u8,
+                187u8, 55u8, 91u8, 130u8, 219u8, 124u8, 222u8, 123u8, 72u8, 12u8, 117u8, 254u8,
+                99u8, 65u8, 218u8, 204u8, 41u8, 44u8, 129u8,
             ],
             [
-                188u8, 124u8, 215u8, 90u8, 32u8, 238u8, 39u8, 253u8, 154u8, 222u8, 186u8,
-                179u8, 32u8, 65u8, 247u8, 85u8, 33u8, 77u8, 188u8, 107u8, 255u8, 169u8,
-                12u8, 192u8, 34u8, 91u8, 57u8, 218u8, 46u8, 92u8, 45u8, 59u8,
+                188u8, 124u8, 215u8, 90u8, 32u8, 238u8, 39u8, 253u8, 154u8, 222u8, 186u8, 179u8,
+                32u8, 65u8, 247u8, 85u8, 33u8, 77u8, 188u8, 107u8, 255u8, 169u8, 12u8, 192u8, 34u8,
+                91u8, 57u8, 218u8, 46u8, 92u8, 45u8, 59u8,
             ],
             [
-                193u8, 241u8, 252u8, 170u8, 137u8, 138u8, 174u8, 34u8, 99u8, 221u8,
-                237u8, 113u8, 46u8, 23u8, 152u8, 8u8, 63u8, 202u8, 146u8, 114u8, 255u8,
-                128u8, 62u8, 228u8, 21u8, 12u8, 228u8, 143u8, 134u8, 25u8, 137u8, 26u8,
+                193u8, 241u8, 252u8, 170u8, 137u8, 138u8, 174u8, 34u8, 99u8, 221u8, 237u8, 113u8,
+                46u8, 23u8, 152u8, 8u8, 63u8, 202u8, 146u8, 114u8, 255u8, 128u8, 62u8, 228u8, 21u8,
+                12u8, 228u8, 143u8, 134u8, 25u8, 137u8, 26u8,
             ],
             [
-                199u8, 245u8, 5u8, 178u8, 243u8, 113u8, 174u8, 33u8, 117u8, 238u8, 73u8,
-                19u8, 244u8, 73u8, 158u8, 31u8, 38u8, 51u8, 167u8, 181u8, 147u8, 99u8,
-                33u8, 238u8, 209u8, 205u8, 174u8, 182u8, 17u8, 81u8, 129u8, 210u8,
+                199u8, 245u8, 5u8, 178u8, 243u8, 113u8, 174u8, 33u8, 117u8, 238u8, 73u8, 19u8,
+                244u8, 73u8, 158u8, 31u8, 38u8, 51u8, 167u8, 181u8, 147u8, 99u8, 33u8, 238u8,
+                209u8, 205u8, 174u8, 182u8, 17u8, 81u8, 129u8, 210u8,
             ],
             [
-                204u8, 161u8, 212u8, 99u8, 132u8, 205u8, 187u8, 238u8, 242u8, 249u8,
-                218u8, 221u8, 183u8, 109u8, 177u8, 56u8, 16u8, 28u8, 153u8, 5u8, 248u8,
-                24u8, 216u8, 103u8, 182u8, 48u8, 25u8, 92u8, 18u8, 141u8, 60u8, 102u8,
+                204u8, 161u8, 212u8, 99u8, 132u8, 205u8, 187u8, 238u8, 242u8, 249u8, 218u8, 221u8,
+                183u8, 109u8, 177u8, 56u8, 16u8, 28u8, 153u8, 5u8, 248u8, 24u8, 216u8, 103u8,
+                182u8, 48u8, 25u8, 92u8, 18u8, 141u8, 60u8, 102u8,
             ],
         ];
     }
@@ -15551,69 +14102,47 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
             match topics.first().copied() {
-                Some(
-                    <BlockHCUWhitelistAdded as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
-                ) => {
+                Some(<BlockHCUWhitelistAdded as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
                     <BlockHCUWhitelistAdded as alloy_sol_types::SolEvent>::decode_raw_log(
-                            topics,
-                            data,
-                        )
-                        .map(Self::BlockHCUWhitelistAdded)
+                        topics, data,
+                    )
+                    .map(Self::BlockHCUWhitelistAdded)
                 }
-                Some(
-                    <BlockHCUWhitelistRemoved as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
-                ) => {
+                Some(<BlockHCUWhitelistRemoved as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
                     <BlockHCUWhitelistRemoved as alloy_sol_types::SolEvent>::decode_raw_log(
-                            topics,
-                            data,
-                        )
-                        .map(Self::BlockHCUWhitelistRemoved)
+                        topics, data,
+                    )
+                    .map(Self::BlockHCUWhitelistRemoved)
                 }
                 Some(<HCUPerBlockSet as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
-                    <HCUPerBlockSet as alloy_sol_types::SolEvent>::decode_raw_log(
-                            topics,
-                            data,
-                        )
+                    <HCUPerBlockSet as alloy_sol_types::SolEvent>::decode_raw_log(topics, data)
                         .map(Self::HCUPerBlockSet)
                 }
                 Some(<Initialized as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
-                    <Initialized as alloy_sol_types::SolEvent>::decode_raw_log(
-                            topics,
-                            data,
-                        )
+                    <Initialized as alloy_sol_types::SolEvent>::decode_raw_log(topics, data)
                         .map(Self::Initialized)
                 }
-                Some(
-                    <MaxHCUDepthPerTxSet as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
-                ) => {
-                    <MaxHCUDepthPerTxSet as alloy_sol_types::SolEvent>::decode_raw_log(
-                            topics,
-                            data,
-                        )
+                Some(<MaxHCUDepthPerTxSet as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
+                    <MaxHCUDepthPerTxSet as alloy_sol_types::SolEvent>::decode_raw_log(topics, data)
                         .map(Self::MaxHCUDepthPerTxSet)
                 }
                 Some(<MaxHCUPerTxSet as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
-                    <MaxHCUPerTxSet as alloy_sol_types::SolEvent>::decode_raw_log(
-                            topics,
-                            data,
-                        )
+                    <MaxHCUPerTxSet as alloy_sol_types::SolEvent>::decode_raw_log(topics, data)
                         .map(Self::MaxHCUPerTxSet)
                 }
                 Some(<Upgraded as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
                     <Upgraded as alloy_sol_types::SolEvent>::decode_raw_log(topics, data)
                         .map(Self::Upgraded)
                 }
-                _ => {
-                    alloy_sol_types::private::Err(alloy_sol_types::Error::InvalidLog {
-                        name: <Self as alloy_sol_types::SolEventInterface>::NAME,
-                        log: alloy_sol_types::private::Box::new(
-                            alloy_sol_types::private::LogData::new_unchecked(
-                                topics.to_vec(),
-                                data.to_vec().into(),
-                            ),
+                _ => alloy_sol_types::private::Err(alloy_sol_types::Error::InvalidLog {
+                    name: <Self as alloy_sol_types::SolEventInterface>::NAME,
+                    log: alloy_sol_types::private::Box::new(
+                        alloy_sol_types::private::LogData::new_unchecked(
+                            topics.to_vec(),
+                            data.to_vec().into(),
                         ),
-                    })
-                }
+                    ),
+                }),
             }
         }
     }
@@ -15639,9 +14168,7 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 Self::MaxHCUPerTxSet(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
-                Self::Upgraded(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
+                Self::Upgraded(inner) => alloy_sol_types::private::IntoLogData::to_log_data(inner),
             }
         }
         fn into_log_data(self) -> alloy_sol_types::private::LogData {
@@ -15673,7 +14200,7 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
     use alloy::contract as alloy_contract;
     /**Creates a new wrapper around an on-chain [`HCULimit`](self) contract instance.
 
-See the [wrapper's documentation](`HCULimitInstance`) for more details.*/
+    See the [wrapper's documentation](`HCULimitInstance`) for more details.*/
     #[inline]
     pub const fn new<
         P: alloy_contract::private::Provider<N>,
@@ -15686,43 +14213,40 @@ See the [wrapper's documentation](`HCULimitInstance`) for more details.*/
     }
     /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
-Returns a new instance of the contract, if the deployment was successful.
+    Returns a new instance of the contract, if the deployment was successful.
 
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
+    For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
     #[inline]
-    pub fn deploy<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(
+    pub fn deploy<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>(
         provider: P,
-    ) -> impl ::core::future::Future<
-        Output = alloy_contract::Result<HCULimitInstance<P, N>>,
-    > {
+    ) -> impl ::core::future::Future<Output = alloy_contract::Result<HCULimitInstance<P, N>>> {
         HCULimitInstance::<P, N>::deploy(provider)
     }
     /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
+    and constructor arguments, if any.
 
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
+    This is a simple wrapper around creating a `RawCallBuilder` with the data set to
+    the bytecode concatenated with the constructor's ABI-encoded arguments.*/
     #[inline]
     pub fn deploy_builder<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
-    >(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
+    >(
+        provider: P,
+    ) -> alloy_contract::RawCallBuilder<P, N> {
         HCULimitInstance::<P, N>::deploy_builder(provider)
     }
     /**A [`HCULimit`](self) instance.
 
-Contains type-safe methods for interacting with an on-chain instance of the
-[`HCULimit`](self) contract located at a given `address`, using a given
-provider `P`.
+    Contains type-safe methods for interacting with an on-chain instance of the
+    [`HCULimit`](self) contract located at a given `address`, using a given
+    provider `P`.
 
-If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
-documentation on how to provide it), the `deploy` and `deploy_builder` methods can
-be used to deploy a new instance of the contract.
+    If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
+    documentation on how to provide it), the `deploy` and `deploy_builder` methods can
+    be used to deploy a new instance of the contract.
 
-See the [module-level documentation](self) for all the available methods.*/
+    See the [module-level documentation](self) for all the available methods.*/
     #[derive(Clone)]
     pub struct HCULimitInstance<P, N = alloy_contract::private::Ethereum> {
         address: alloy_sol_types::private::Address,
@@ -15733,23 +14257,21 @@ See the [module-level documentation](self) for all the available methods.*/
     impl<P, N> ::core::fmt::Debug for HCULimitInstance<P, N> {
         #[inline]
         fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-            f.debug_tuple("HCULimitInstance").field(&self.address).finish()
+            f.debug_tuple("HCULimitInstance")
+                .field(&self.address)
+                .finish()
         }
     }
     /// Instantiation and getters/setters.
     #[automatically_derived]
-    impl<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    > HCULimitInstance<P, N> {
+    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
+        HCULimitInstance<P, N>
+    {
         /**Creates a new wrapper around an on-chain [`HCULimit`](self) contract instance.
 
-See the [wrapper's documentation](`HCULimitInstance`) for more details.*/
+        See the [wrapper's documentation](`HCULimitInstance`) for more details.*/
         #[inline]
-        pub const fn new(
-            address: alloy_sol_types::private::Address,
-            provider: P,
-        ) -> Self {
+        pub const fn new(address: alloy_sol_types::private::Address, provider: P) -> Self {
             Self {
                 address,
                 provider,
@@ -15758,22 +14280,20 @@ See the [wrapper's documentation](`HCULimitInstance`) for more details.*/
         }
         /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
-Returns a new instance of the contract, if the deployment was successful.
+        Returns a new instance of the contract, if the deployment was successful.
 
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
+        For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
         #[inline]
-        pub async fn deploy(
-            provider: P,
-        ) -> alloy_contract::Result<HCULimitInstance<P, N>> {
+        pub async fn deploy(provider: P) -> alloy_contract::Result<HCULimitInstance<P, N>> {
             let call_builder = Self::deploy_builder(provider);
             let contract_address = call_builder.deploy().await?;
             Ok(Self::new(contract_address, call_builder.provider))
         }
         /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
+        and constructor arguments, if any.
 
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
+        This is a simple wrapper around creating a `RawCallBuilder` with the data set to
+        the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         #[inline]
         pub fn deploy_builder(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
             alloy_contract::RawCallBuilder::new_raw_deploy(
@@ -15815,10 +14335,9 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
     }
     /// Function calls.
     #[automatically_derived]
-    impl<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    > HCULimitInstance<P, N> {
+    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
+        HCULimitInstance<P, N>
+    {
         /// Creates a new call builder using this contract instance's provider and address.
         ///
         /// Note that the call can be any function call, not just those defined in this
@@ -15840,11 +14359,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             &self,
             account: alloy::sol_types::private::Address,
         ) -> alloy_contract::SolCallBuilder<&P, addToBlockHCUWhitelistCall, N> {
-            self.call_builder(
-                &addToBlockHCUWhitelistCall {
-                    account,
-                },
-            )
+            self.call_builder(&addToBlockHCUWhitelistCall { account })
         }
         ///Creates a new call builder for the [`checkHCUForCast`] function.
         pub fn checkHCUForCast(
@@ -15854,14 +14369,12 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             result: alloy::sol_types::private::FixedBytes<32>,
             caller: alloy::sol_types::private::Address,
         ) -> alloy_contract::SolCallBuilder<&P, checkHCUForCastCall, N> {
-            self.call_builder(
-                &checkHCUForCastCall {
-                    resultType,
-                    ct,
-                    result,
-                    caller,
-                },
-            )
+            self.call_builder(&checkHCUForCastCall {
+                resultType,
+                ct,
+                result,
+                caller,
+            })
         }
         ///Creates a new call builder for the [`checkHCUForFheAdd`] function.
         pub fn checkHCUForFheAdd(
@@ -15873,16 +14386,14 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             result: alloy::sol_types::private::FixedBytes<32>,
             caller: alloy::sol_types::private::Address,
         ) -> alloy_contract::SolCallBuilder<&P, checkHCUForFheAddCall, N> {
-            self.call_builder(
-                &checkHCUForFheAddCall {
-                    resultType,
-                    scalarByte,
-                    lhs,
-                    rhs,
-                    result,
-                    caller,
-                },
-            )
+            self.call_builder(&checkHCUForFheAddCall {
+                resultType,
+                scalarByte,
+                lhs,
+                rhs,
+                result,
+                caller,
+            })
         }
         ///Creates a new call builder for the [`checkHCUForFheBitAnd`] function.
         pub fn checkHCUForFheBitAnd(
@@ -15894,16 +14405,14 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             result: alloy::sol_types::private::FixedBytes<32>,
             caller: alloy::sol_types::private::Address,
         ) -> alloy_contract::SolCallBuilder<&P, checkHCUForFheBitAndCall, N> {
-            self.call_builder(
-                &checkHCUForFheBitAndCall {
-                    resultType,
-                    scalarByte,
-                    lhs,
-                    rhs,
-                    result,
-                    caller,
-                },
-            )
+            self.call_builder(&checkHCUForFheBitAndCall {
+                resultType,
+                scalarByte,
+                lhs,
+                rhs,
+                result,
+                caller,
+            })
         }
         ///Creates a new call builder for the [`checkHCUForFheBitOr`] function.
         pub fn checkHCUForFheBitOr(
@@ -15915,16 +14424,14 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             result: alloy::sol_types::private::FixedBytes<32>,
             caller: alloy::sol_types::private::Address,
         ) -> alloy_contract::SolCallBuilder<&P, checkHCUForFheBitOrCall, N> {
-            self.call_builder(
-                &checkHCUForFheBitOrCall {
-                    resultType,
-                    scalarByte,
-                    lhs,
-                    rhs,
-                    result,
-                    caller,
-                },
-            )
+            self.call_builder(&checkHCUForFheBitOrCall {
+                resultType,
+                scalarByte,
+                lhs,
+                rhs,
+                result,
+                caller,
+            })
         }
         ///Creates a new call builder for the [`checkHCUForFheBitXor`] function.
         pub fn checkHCUForFheBitXor(
@@ -15936,16 +14443,14 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             result: alloy::sol_types::private::FixedBytes<32>,
             caller: alloy::sol_types::private::Address,
         ) -> alloy_contract::SolCallBuilder<&P, checkHCUForFheBitXorCall, N> {
-            self.call_builder(
-                &checkHCUForFheBitXorCall {
-                    resultType,
-                    scalarByte,
-                    lhs,
-                    rhs,
-                    result,
-                    caller,
-                },
-            )
+            self.call_builder(&checkHCUForFheBitXorCall {
+                resultType,
+                scalarByte,
+                lhs,
+                rhs,
+                result,
+                caller,
+            })
         }
         ///Creates a new call builder for the [`checkHCUForFheDiv`] function.
         pub fn checkHCUForFheDiv(
@@ -15957,16 +14462,14 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             result: alloy::sol_types::private::FixedBytes<32>,
             caller: alloy::sol_types::private::Address,
         ) -> alloy_contract::SolCallBuilder<&P, checkHCUForFheDivCall, N> {
-            self.call_builder(
-                &checkHCUForFheDivCall {
-                    resultType,
-                    scalarByte,
-                    lhs,
-                    _3,
-                    result,
-                    caller,
-                },
-            )
+            self.call_builder(&checkHCUForFheDivCall {
+                resultType,
+                scalarByte,
+                lhs,
+                _3,
+                result,
+                caller,
+            })
         }
         ///Creates a new call builder for the [`checkHCUForFheEq`] function.
         pub fn checkHCUForFheEq(
@@ -15978,16 +14481,14 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             result: alloy::sol_types::private::FixedBytes<32>,
             caller: alloy::sol_types::private::Address,
         ) -> alloy_contract::SolCallBuilder<&P, checkHCUForFheEqCall, N> {
-            self.call_builder(
-                &checkHCUForFheEqCall {
-                    resultType,
-                    scalarByte,
-                    lhs,
-                    rhs,
-                    result,
-                    caller,
-                },
-            )
+            self.call_builder(&checkHCUForFheEqCall {
+                resultType,
+                scalarByte,
+                lhs,
+                rhs,
+                result,
+                caller,
+            })
         }
         ///Creates a new call builder for the [`checkHCUForFheGe`] function.
         pub fn checkHCUForFheGe(
@@ -15999,16 +14500,14 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             result: alloy::sol_types::private::FixedBytes<32>,
             caller: alloy::sol_types::private::Address,
         ) -> alloy_contract::SolCallBuilder<&P, checkHCUForFheGeCall, N> {
-            self.call_builder(
-                &checkHCUForFheGeCall {
-                    resultType,
-                    scalarByte,
-                    lhs,
-                    rhs,
-                    result,
-                    caller,
-                },
-            )
+            self.call_builder(&checkHCUForFheGeCall {
+                resultType,
+                scalarByte,
+                lhs,
+                rhs,
+                result,
+                caller,
+            })
         }
         ///Creates a new call builder for the [`checkHCUForFheGt`] function.
         pub fn checkHCUForFheGt(
@@ -16020,37 +14519,31 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             result: alloy::sol_types::private::FixedBytes<32>,
             caller: alloy::sol_types::private::Address,
         ) -> alloy_contract::SolCallBuilder<&P, checkHCUForFheGtCall, N> {
-            self.call_builder(
-                &checkHCUForFheGtCall {
-                    resultType,
-                    scalarByte,
-                    lhs,
-                    rhs,
-                    result,
-                    caller,
-                },
-            )
+            self.call_builder(&checkHCUForFheGtCall {
+                resultType,
+                scalarByte,
+                lhs,
+                rhs,
+                result,
+                caller,
+            })
         }
         ///Creates a new call builder for the [`checkHCUForFheIsIn`] function.
         pub fn checkHCUForFheIsIn(
             &self,
             valueType: <FheType as alloy::sol_types::SolType>::RustType,
             value: alloy::sol_types::private::FixedBytes<32>,
-            values: alloy::sol_types::private::Vec<
-                alloy::sol_types::private::FixedBytes<32>,
-            >,
+            values: alloy::sol_types::private::Vec<alloy::sol_types::private::FixedBytes<32>>,
             result: alloy::sol_types::private::FixedBytes<32>,
             caller: alloy::sol_types::private::Address,
         ) -> alloy_contract::SolCallBuilder<&P, checkHCUForFheIsInCall, N> {
-            self.call_builder(
-                &checkHCUForFheIsInCall {
-                    valueType,
-                    value,
-                    values,
-                    result,
-                    caller,
-                },
-            )
+            self.call_builder(&checkHCUForFheIsInCall {
+                valueType,
+                value,
+                values,
+                result,
+                caller,
+            })
         }
         ///Creates a new call builder for the [`checkHCUForFheLe`] function.
         pub fn checkHCUForFheLe(
@@ -16062,16 +14555,14 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             result: alloy::sol_types::private::FixedBytes<32>,
             caller: alloy::sol_types::private::Address,
         ) -> alloy_contract::SolCallBuilder<&P, checkHCUForFheLeCall, N> {
-            self.call_builder(
-                &checkHCUForFheLeCall {
-                    resultType,
-                    scalarByte,
-                    lhs,
-                    rhs,
-                    result,
-                    caller,
-                },
-            )
+            self.call_builder(&checkHCUForFheLeCall {
+                resultType,
+                scalarByte,
+                lhs,
+                rhs,
+                result,
+                caller,
+            })
         }
         ///Creates a new call builder for the [`checkHCUForFheLt`] function.
         pub fn checkHCUForFheLt(
@@ -16083,16 +14574,14 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             result: alloy::sol_types::private::FixedBytes<32>,
             caller: alloy::sol_types::private::Address,
         ) -> alloy_contract::SolCallBuilder<&P, checkHCUForFheLtCall, N> {
-            self.call_builder(
-                &checkHCUForFheLtCall {
-                    resultType,
-                    scalarByte,
-                    lhs,
-                    rhs,
-                    result,
-                    caller,
-                },
-            )
+            self.call_builder(&checkHCUForFheLtCall {
+                resultType,
+                scalarByte,
+                lhs,
+                rhs,
+                result,
+                caller,
+            })
         }
         ///Creates a new call builder for the [`checkHCUForFheMax`] function.
         pub fn checkHCUForFheMax(
@@ -16104,16 +14593,14 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             result: alloy::sol_types::private::FixedBytes<32>,
             caller: alloy::sol_types::private::Address,
         ) -> alloy_contract::SolCallBuilder<&P, checkHCUForFheMaxCall, N> {
-            self.call_builder(
-                &checkHCUForFheMaxCall {
-                    resultType,
-                    scalarByte,
-                    lhs,
-                    rhs,
-                    result,
-                    caller,
-                },
-            )
+            self.call_builder(&checkHCUForFheMaxCall {
+                resultType,
+                scalarByte,
+                lhs,
+                rhs,
+                result,
+                caller,
+            })
         }
         ///Creates a new call builder for the [`checkHCUForFheMin`] function.
         pub fn checkHCUForFheMin(
@@ -16125,16 +14612,14 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             result: alloy::sol_types::private::FixedBytes<32>,
             caller: alloy::sol_types::private::Address,
         ) -> alloy_contract::SolCallBuilder<&P, checkHCUForFheMinCall, N> {
-            self.call_builder(
-                &checkHCUForFheMinCall {
-                    resultType,
-                    scalarByte,
-                    lhs,
-                    rhs,
-                    result,
-                    caller,
-                },
-            )
+            self.call_builder(&checkHCUForFheMinCall {
+                resultType,
+                scalarByte,
+                lhs,
+                rhs,
+                result,
+                caller,
+            })
         }
         ///Creates a new call builder for the [`checkHCUForFheMul`] function.
         pub fn checkHCUForFheMul(
@@ -16146,16 +14631,14 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             result: alloy::sol_types::private::FixedBytes<32>,
             caller: alloy::sol_types::private::Address,
         ) -> alloy_contract::SolCallBuilder<&P, checkHCUForFheMulCall, N> {
-            self.call_builder(
-                &checkHCUForFheMulCall {
-                    resultType,
-                    scalarByte,
-                    lhs,
-                    rhs,
-                    result,
-                    caller,
-                },
-            )
+            self.call_builder(&checkHCUForFheMulCall {
+                resultType,
+                scalarByte,
+                lhs,
+                rhs,
+                result,
+                caller,
+            })
         }
         ///Creates a new call builder for the [`checkHCUForFheMulDiv`] function.
         pub fn checkHCUForFheMulDiv(
@@ -16167,16 +14650,14 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             result: alloy::sol_types::private::FixedBytes<32>,
             caller: alloy::sol_types::private::Address,
         ) -> alloy_contract::SolCallBuilder<&P, checkHCUForFheMulDivCall, N> {
-            self.call_builder(
-                &checkHCUForFheMulDivCall {
-                    resultType,
-                    scalarByte,
-                    factor1,
-                    factor2,
-                    result,
-                    caller,
-                },
-            )
+            self.call_builder(&checkHCUForFheMulDivCall {
+                resultType,
+                scalarByte,
+                factor1,
+                factor2,
+                result,
+                caller,
+            })
         }
         ///Creates a new call builder for the [`checkHCUForFheNe`] function.
         pub fn checkHCUForFheNe(
@@ -16188,16 +14669,14 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             result: alloy::sol_types::private::FixedBytes<32>,
             caller: alloy::sol_types::private::Address,
         ) -> alloy_contract::SolCallBuilder<&P, checkHCUForFheNeCall, N> {
-            self.call_builder(
-                &checkHCUForFheNeCall {
-                    resultType,
-                    scalarByte,
-                    lhs,
-                    rhs,
-                    result,
-                    caller,
-                },
-            )
+            self.call_builder(&checkHCUForFheNeCall {
+                resultType,
+                scalarByte,
+                lhs,
+                rhs,
+                result,
+                caller,
+            })
         }
         ///Creates a new call builder for the [`checkHCUForFheNeg`] function.
         pub fn checkHCUForFheNeg(
@@ -16207,14 +14686,12 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             result: alloy::sol_types::private::FixedBytes<32>,
             caller: alloy::sol_types::private::Address,
         ) -> alloy_contract::SolCallBuilder<&P, checkHCUForFheNegCall, N> {
-            self.call_builder(
-                &checkHCUForFheNegCall {
-                    resultType,
-                    ct,
-                    result,
-                    caller,
-                },
-            )
+            self.call_builder(&checkHCUForFheNegCall {
+                resultType,
+                ct,
+                result,
+                caller,
+            })
         }
         ///Creates a new call builder for the [`checkHCUForFheNot`] function.
         pub fn checkHCUForFheNot(
@@ -16224,14 +14701,12 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             result: alloy::sol_types::private::FixedBytes<32>,
             caller: alloy::sol_types::private::Address,
         ) -> alloy_contract::SolCallBuilder<&P, checkHCUForFheNotCall, N> {
-            self.call_builder(
-                &checkHCUForFheNotCall {
-                    resultType,
-                    ct,
-                    result,
-                    caller,
-                },
-            )
+            self.call_builder(&checkHCUForFheNotCall {
+                resultType,
+                ct,
+                result,
+                caller,
+            })
         }
         ///Creates a new call builder for the [`checkHCUForFheRand`] function.
         pub fn checkHCUForFheRand(
@@ -16240,13 +14715,11 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             result: alloy::sol_types::private::FixedBytes<32>,
             caller: alloy::sol_types::private::Address,
         ) -> alloy_contract::SolCallBuilder<&P, checkHCUForFheRandCall, N> {
-            self.call_builder(
-                &checkHCUForFheRandCall {
-                    resultType,
-                    result,
-                    caller,
-                },
-            )
+            self.call_builder(&checkHCUForFheRandCall {
+                resultType,
+                result,
+                caller,
+            })
         }
         ///Creates a new call builder for the [`checkHCUForFheRandBounded`] function.
         pub fn checkHCUForFheRandBounded(
@@ -16255,13 +14728,11 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             result: alloy::sol_types::private::FixedBytes<32>,
             caller: alloy::sol_types::private::Address,
         ) -> alloy_contract::SolCallBuilder<&P, checkHCUForFheRandBoundedCall, N> {
-            self.call_builder(
-                &checkHCUForFheRandBoundedCall {
-                    resultType,
-                    result,
-                    caller,
-                },
-            )
+            self.call_builder(&checkHCUForFheRandBoundedCall {
+                resultType,
+                result,
+                caller,
+            })
         }
         ///Creates a new call builder for the [`checkHCUForFheRem`] function.
         pub fn checkHCUForFheRem(
@@ -16273,16 +14744,14 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             result: alloy::sol_types::private::FixedBytes<32>,
             caller: alloy::sol_types::private::Address,
         ) -> alloy_contract::SolCallBuilder<&P, checkHCUForFheRemCall, N> {
-            self.call_builder(
-                &checkHCUForFheRemCall {
-                    resultType,
-                    scalarByte,
-                    lhs,
-                    _3,
-                    result,
-                    caller,
-                },
-            )
+            self.call_builder(&checkHCUForFheRemCall {
+                resultType,
+                scalarByte,
+                lhs,
+                _3,
+                result,
+                caller,
+            })
         }
         ///Creates a new call builder for the [`checkHCUForFheRotl`] function.
         pub fn checkHCUForFheRotl(
@@ -16294,16 +14763,14 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             result: alloy::sol_types::private::FixedBytes<32>,
             caller: alloy::sol_types::private::Address,
         ) -> alloy_contract::SolCallBuilder<&P, checkHCUForFheRotlCall, N> {
-            self.call_builder(
-                &checkHCUForFheRotlCall {
-                    resultType,
-                    scalarByte,
-                    lhs,
-                    rhs,
-                    result,
-                    caller,
-                },
-            )
+            self.call_builder(&checkHCUForFheRotlCall {
+                resultType,
+                scalarByte,
+                lhs,
+                rhs,
+                result,
+                caller,
+            })
         }
         ///Creates a new call builder for the [`checkHCUForFheRotr`] function.
         pub fn checkHCUForFheRotr(
@@ -16315,16 +14782,14 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             result: alloy::sol_types::private::FixedBytes<32>,
             caller: alloy::sol_types::private::Address,
         ) -> alloy_contract::SolCallBuilder<&P, checkHCUForFheRotrCall, N> {
-            self.call_builder(
-                &checkHCUForFheRotrCall {
-                    resultType,
-                    scalarByte,
-                    lhs,
-                    rhs,
-                    result,
-                    caller,
-                },
-            )
+            self.call_builder(&checkHCUForFheRotrCall {
+                resultType,
+                scalarByte,
+                lhs,
+                rhs,
+                result,
+                caller,
+            })
         }
         ///Creates a new call builder for the [`checkHCUForFheShl`] function.
         pub fn checkHCUForFheShl(
@@ -16336,16 +14801,14 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             result: alloy::sol_types::private::FixedBytes<32>,
             caller: alloy::sol_types::private::Address,
         ) -> alloy_contract::SolCallBuilder<&P, checkHCUForFheShlCall, N> {
-            self.call_builder(
-                &checkHCUForFheShlCall {
-                    resultType,
-                    scalarByte,
-                    lhs,
-                    rhs,
-                    result,
-                    caller,
-                },
-            )
+            self.call_builder(&checkHCUForFheShlCall {
+                resultType,
+                scalarByte,
+                lhs,
+                rhs,
+                result,
+                caller,
+            })
         }
         ///Creates a new call builder for the [`checkHCUForFheShr`] function.
         pub fn checkHCUForFheShr(
@@ -16357,16 +14820,14 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             result: alloy::sol_types::private::FixedBytes<32>,
             caller: alloy::sol_types::private::Address,
         ) -> alloy_contract::SolCallBuilder<&P, checkHCUForFheShrCall, N> {
-            self.call_builder(
-                &checkHCUForFheShrCall {
-                    resultType,
-                    scalarByte,
-                    lhs,
-                    rhs,
-                    result,
-                    caller,
-                },
-            )
+            self.call_builder(&checkHCUForFheShrCall {
+                resultType,
+                scalarByte,
+                lhs,
+                rhs,
+                result,
+                caller,
+            })
         }
         ///Creates a new call builder for the [`checkHCUForFheSub`] function.
         pub fn checkHCUForFheSub(
@@ -16378,35 +14839,29 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             result: alloy::sol_types::private::FixedBytes<32>,
             caller: alloy::sol_types::private::Address,
         ) -> alloy_contract::SolCallBuilder<&P, checkHCUForFheSubCall, N> {
-            self.call_builder(
-                &checkHCUForFheSubCall {
-                    resultType,
-                    scalarByte,
-                    lhs,
-                    rhs,
-                    result,
-                    caller,
-                },
-            )
+            self.call_builder(&checkHCUForFheSubCall {
+                resultType,
+                scalarByte,
+                lhs,
+                rhs,
+                result,
+                caller,
+            })
         }
         ///Creates a new call builder for the [`checkHCUForFheSum`] function.
         pub fn checkHCUForFheSum(
             &self,
             resultType: <FheType as alloy::sol_types::SolType>::RustType,
-            values: alloy::sol_types::private::Vec<
-                alloy::sol_types::private::FixedBytes<32>,
-            >,
+            values: alloy::sol_types::private::Vec<alloy::sol_types::private::FixedBytes<32>>,
             result: alloy::sol_types::private::FixedBytes<32>,
             caller: alloy::sol_types::private::Address,
         ) -> alloy_contract::SolCallBuilder<&P, checkHCUForFheSumCall, N> {
-            self.call_builder(
-                &checkHCUForFheSumCall {
-                    resultType,
-                    values,
-                    result,
-                    caller,
-                },
-            )
+            self.call_builder(&checkHCUForFheSumCall {
+                resultType,
+                values,
+                result,
+                caller,
+            })
         }
         ///Creates a new call builder for the [`checkHCUForIfThenElse`] function.
         pub fn checkHCUForIfThenElse(
@@ -16418,16 +14873,14 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             result: alloy::sol_types::private::FixedBytes<32>,
             caller: alloy::sol_types::private::Address,
         ) -> alloy_contract::SolCallBuilder<&P, checkHCUForIfThenElseCall, N> {
-            self.call_builder(
-                &checkHCUForIfThenElseCall {
-                    resultType,
-                    lhs,
-                    middle,
-                    rhs,
-                    result,
-                    caller,
-                },
-            )
+            self.call_builder(&checkHCUForIfThenElseCall {
+                resultType,
+                lhs,
+                middle,
+                rhs,
+                result,
+                caller,
+            })
         }
         ///Creates a new call builder for the [`checkHCUForTrivialEncrypt`] function.
         pub fn checkHCUForTrivialEncrypt(
@@ -16436,18 +14889,14 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             result: alloy::sol_types::private::FixedBytes<32>,
             caller: alloy::sol_types::private::Address,
         ) -> alloy_contract::SolCallBuilder<&P, checkHCUForTrivialEncryptCall, N> {
-            self.call_builder(
-                &checkHCUForTrivialEncryptCall {
-                    resultType,
-                    result,
-                    caller,
-                },
-            )
+            self.call_builder(&checkHCUForTrivialEncryptCall {
+                resultType,
+                result,
+                caller,
+            })
         }
         ///Creates a new call builder for the [`getBlockMeter`] function.
-        pub fn getBlockMeter(
-            &self,
-        ) -> alloy_contract::SolCallBuilder<&P, getBlockMeterCall, N> {
+        pub fn getBlockMeter(&self) -> alloy_contract::SolCallBuilder<&P, getBlockMeterCall, N> {
             self.call_builder(&getBlockMeterCall)
         }
         ///Creates a new call builder for the [`getFHEVMExecutorAddress`] function.
@@ -16469,15 +14918,11 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             self.call_builder(&getMaxHCUDepthPerTxCall)
         }
         ///Creates a new call builder for the [`getMaxHCUPerTx`] function.
-        pub fn getMaxHCUPerTx(
-            &self,
-        ) -> alloy_contract::SolCallBuilder<&P, getMaxHCUPerTxCall, N> {
+        pub fn getMaxHCUPerTx(&self) -> alloy_contract::SolCallBuilder<&P, getMaxHCUPerTxCall, N> {
             self.call_builder(&getMaxHCUPerTxCall)
         }
         ///Creates a new call builder for the [`getVersion`] function.
-        pub fn getVersion(
-            &self,
-        ) -> alloy_contract::SolCallBuilder<&P, getVersionCall, N> {
+        pub fn getVersion(&self) -> alloy_contract::SolCallBuilder<&P, getVersionCall, N> {
             self.call_builder(&getVersionCall)
         }
         ///Creates a new call builder for the [`initializeFromEmptyProxy`] function.
@@ -16487,35 +14932,25 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             maxHCUDepthPerTx: alloy::sol_types::private::primitives::aliases::U48,
             maxHCUPerTx: alloy::sol_types::private::primitives::aliases::U48,
         ) -> alloy_contract::SolCallBuilder<&P, initializeFromEmptyProxyCall, N> {
-            self.call_builder(
-                &initializeFromEmptyProxyCall {
-                    hcuCapPerBlock,
-                    maxHCUDepthPerTx,
-                    maxHCUPerTx,
-                },
-            )
+            self.call_builder(&initializeFromEmptyProxyCall {
+                hcuCapPerBlock,
+                maxHCUDepthPerTx,
+                maxHCUPerTx,
+            })
         }
         ///Creates a new call builder for the [`isBlockHCUWhitelisted`] function.
         pub fn isBlockHCUWhitelisted(
             &self,
             account: alloy::sol_types::private::Address,
         ) -> alloy_contract::SolCallBuilder<&P, isBlockHCUWhitelistedCall, N> {
-            self.call_builder(
-                &isBlockHCUWhitelistedCall {
-                    account,
-                },
-            )
+            self.call_builder(&isBlockHCUWhitelistedCall { account })
         }
         ///Creates a new call builder for the [`proxiableUUID`] function.
-        pub fn proxiableUUID(
-            &self,
-        ) -> alloy_contract::SolCallBuilder<&P, proxiableUUIDCall, N> {
+        pub fn proxiableUUID(&self) -> alloy_contract::SolCallBuilder<&P, proxiableUUIDCall, N> {
             self.call_builder(&proxiableUUIDCall)
         }
         ///Creates a new call builder for the [`reinitializeV4`] function.
-        pub fn reinitializeV4(
-            &self,
-        ) -> alloy_contract::SolCallBuilder<&P, reinitializeV4Call, N> {
+        pub fn reinitializeV4(&self) -> alloy_contract::SolCallBuilder<&P, reinitializeV4Call, N> {
             self.call_builder(&reinitializeV4Call)
         }
         ///Creates a new call builder for the [`removeFromBlockHCUWhitelist`] function.
@@ -16523,11 +14958,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             &self,
             account: alloy::sol_types::private::Address,
         ) -> alloy_contract::SolCallBuilder<&P, removeFromBlockHCUWhitelistCall, N> {
-            self.call_builder(
-                &removeFromBlockHCUWhitelistCall {
-                    account,
-                },
-            )
+            self.call_builder(&removeFromBlockHCUWhitelistCall { account })
         }
         ///Creates a new call builder for the [`setHCUPerBlock`] function.
         pub fn setHCUPerBlock(
@@ -16541,11 +14972,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             &self,
             maxHCUDepthPerTx: alloy::sol_types::private::primitives::aliases::U48,
         ) -> alloy_contract::SolCallBuilder<&P, setMaxHCUDepthPerTxCall, N> {
-            self.call_builder(
-                &setMaxHCUDepthPerTxCall {
-                    maxHCUDepthPerTx,
-                },
-            )
+            self.call_builder(&setMaxHCUDepthPerTxCall { maxHCUDepthPerTx })
         }
         ///Creates a new call builder for the [`setMaxHCUPerTx`] function.
         pub fn setMaxHCUPerTx(
@@ -16560,20 +14987,17 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             newImplementation: alloy::sol_types::private::Address,
             data: alloy::sol_types::private::Bytes,
         ) -> alloy_contract::SolCallBuilder<&P, upgradeToAndCallCall, N> {
-            self.call_builder(
-                &upgradeToAndCallCall {
-                    newImplementation,
-                    data,
-                },
-            )
+            self.call_builder(&upgradeToAndCallCall {
+                newImplementation,
+                data,
+            })
         }
     }
     /// Event filters.
     #[automatically_derived]
-    impl<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    > HCULimitInstance<P, N> {
+    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
+        HCULimitInstance<P, N>
+    {
         /// Creates a new event filter using this contract instance's provider and address.
         ///
         /// Note that the type can be any event, not just those defined in this contract.
@@ -16596,9 +15020,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             self.event_filter::<BlockHCUWhitelistRemoved>()
         }
         ///Creates a new event filter for the [`HCUPerBlockSet`] event.
-        pub fn HCUPerBlockSet_filter(
-            &self,
-        ) -> alloy_contract::Event<&P, HCUPerBlockSet, N> {
+        pub fn HCUPerBlockSet_filter(&self) -> alloy_contract::Event<&P, HCUPerBlockSet, N> {
             self.event_filter::<HCUPerBlockSet>()
         }
         ///Creates a new event filter for the [`Initialized`] event.
@@ -16612,9 +15034,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             self.event_filter::<MaxHCUDepthPerTxSet>()
         }
         ///Creates a new event filter for the [`MaxHCUPerTxSet`] event.
-        pub fn MaxHCUPerTxSet_filter(
-            &self,
-        ) -> alloy_contract::Event<&P, MaxHCUPerTxSet, N> {
+        pub fn MaxHCUPerTxSet_filter(&self) -> alloy_contract::Event<&P, MaxHCUPerTxSet, N> {
             self.event_filter::<MaxHCUPerTxSet>()
         }
         ///Creates a new event filter for the [`Upgraded`] event.

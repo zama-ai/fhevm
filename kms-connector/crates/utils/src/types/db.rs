@@ -88,18 +88,22 @@ pub enum KeyType {
     Server,
     #[default]
     Public,
+    /// Reserved by KMS Core's signing enum; no digest uses it yet.
+    CompressedPublic,
+    /// Digest over a CompressedXofKeySet blob (RFC-029 migration; compressed keygens).
+    CompressedKeyset,
 }
 
 impl TryFrom<u8> for KeyType {
     type Error = anyhow::Error;
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
-        if value == Self::Server as u8 {
-            Ok(Self::Server)
-        } else if value == Self::Public as u8 {
-            Ok(Self::Public)
-        } else {
-            Err(anyhow!("Invalid KeyType value: {value}"))
+        match value {
+            v if v == Self::Server as u8 => Ok(Self::Server),
+            v if v == Self::Public as u8 => Ok(Self::Public),
+            v if v == Self::CompressedPublic as u8 => Ok(Self::CompressedPublic),
+            v if v == Self::CompressedKeyset as u8 => Ok(Self::CompressedKeyset),
+            _ => Err(anyhow!("Invalid KeyType value: {value}")),
         }
     }
 }
@@ -111,12 +115,10 @@ impl FromStr for KeyType {
         match s {
             "ServerKey" => Ok(Self::Server),
             "PublicKey" => Ok(Self::Public),
-            // RFC-029 migration keygen (keygen-from-existing with compressed
-            // generation): kms-core types the digest after the blob it wrote,
-            // the CompressedXofKeySet. On-chain it occupies the Server slot —
-            // the digest of the server-side material — and coprocessors verify
-            // the downloaded compressed bytes against exactly this digest.
-            "CompressedXofKeySet" => Ok(Self::Server),
+            // KMS Core types the digest after the blob it wrote and SIGNS
+            // that type inside KeygenVerification — the enum value must
+            // round-trip unchanged or on-chain signature verification fails.
+            "CompressedXofKeySet" => Ok(Self::CompressedKeyset),
             _ => Err(anyhow!("Invalid KeyType value: {s}")),
         }
     }

@@ -1173,8 +1173,7 @@ pub mod FHEEvents {
     pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
         b"`\x80`@R_\x80\xFD",
     );
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct FheType(u8);
@@ -1185,34 +1184,27 @@ pub mod FHEEvents {
             #[inline]
             fn stv_to_tokens(
                 &self,
-            ) -> <alloy::sol_types::sol_data::Uint<
-                8,
-            > as alloy_sol_types::SolType>::Token<'_> {
+            ) -> <alloy::sol_types::sol_data::Uint<8> as alloy_sol_types::SolType>::Token<'_>
+            {
                 alloy_sol_types::private::SolTypeValue::<
                     alloy::sol_types::sol_data::Uint<8>,
                 >::stv_to_tokens(self)
             }
             #[inline]
             fn stv_eip712_data_word(&self) -> alloy_sol_types::Word {
-                <alloy::sol_types::sol_data::Uint<
-                    8,
-                > as alloy_sol_types::SolType>::tokenize(self)
-                    .0
+                <alloy::sol_types::sol_data::Uint<8> as alloy_sol_types::SolType>::tokenize(self).0
             }
             #[inline]
-            fn stv_abi_encode_packed_to(
-                &self,
-                out: &mut alloy_sol_types::private::Vec<u8>,
-            ) {
+            fn stv_abi_encode_packed_to(&self, out: &mut alloy_sol_types::private::Vec<u8>) {
                 <alloy::sol_types::sol_data::Uint<
                     8,
                 > as alloy_sol_types::SolType>::abi_encode_packed_to(self, out)
             }
             #[inline]
             fn stv_abi_packed_encoded_size(&self) -> usize {
-                <alloy::sol_types::sol_data::Uint<
-                    8,
-                > as alloy_sol_types::SolType>::abi_encoded_size(self)
+                <alloy::sol_types::sol_data::Uint<8> as alloy_sol_types::SolType>::abi_encoded_size(
+                    self,
+                )
             }
         }
         #[automatically_derived]
@@ -1257,13 +1249,11 @@ pub mod FHEEvents {
         #[automatically_derived]
         impl alloy_sol_types::SolType for FheType {
             type RustType = u8;
-            type Token<'a> = <alloy::sol_types::sol_data::Uint<
-                8,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> =
+                <alloy::sol_types::sol_data::Uint<8> as alloy_sol_types::SolType>::Token<'a>;
             const SOL_NAME: &'static str = Self::NAME;
-            const ENCODED_SIZE: Option<usize> = <alloy::sol_types::sol_data::Uint<
-                8,
-            > as alloy_sol_types::SolType>::ENCODED_SIZE;
+            const ENCODED_SIZE: Option<usize> =
+                <alloy::sol_types::sol_data::Uint<8> as alloy_sol_types::SolType>::ENCODED_SIZE;
             const PACKED_ENCODED_SIZE: Option<usize> = <alloy::sol_types::sol_data::Uint<
                 8,
             > as alloy_sol_types::SolType>::PACKED_ENCODED_SIZE;
@@ -1273,15 +1263,11 @@ pub mod FHEEvents {
             }
             #[inline]
             fn type_check(token: &Self::Token<'_>) -> alloy_sol_types::Result<()> {
-                <alloy::sol_types::sol_data::Uint<
-                    8,
-                > as alloy_sol_types::SolType>::type_check(token)
+                <alloy::sol_types::sol_data::Uint<8> as alloy_sol_types::SolType>::type_check(token)
             }
             #[inline]
             fn detokenize(token: Self::Token<'_>) -> Self::RustType {
-                <alloy::sol_types::sol_data::Uint<
-                    8,
-                > as alloy_sol_types::SolType>::detokenize(token)
+                <alloy::sol_types::sol_data::Uint<8> as alloy_sol_types::SolType>::detokenize(token)
             }
         }
         #[automatically_derived]
@@ -1302,21 +1288,18 @@ pub mod FHEEvents {
                 > as alloy_sol_types::EventTopic>::encode_topic_preimage(rust, out)
             }
             #[inline]
-            fn encode_topic(
-                rust: &Self::RustType,
-            ) -> alloy_sol_types::abi::token::WordToken {
-                <alloy::sol_types::sol_data::Uint<
-                    8,
-                > as alloy_sol_types::EventTopic>::encode_topic(rust)
+            fn encode_topic(rust: &Self::RustType) -> alloy_sol_types::abi::token::WordToken {
+                <alloy::sol_types::sol_data::Uint<8> as alloy_sol_types::EventTopic>::encode_topic(
+                    rust,
+                )
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `Cast(address,bytes32,uint8,bytes32)` and selector `0x31ccae6a2f8e3ced1692f77c8f668133e4afdaaa35afe844ff4659a6c27e627f`.
-```solidity
-event Cast(address indexed caller, bytes32 ct, FheType toType, bytes32 result);
-```*/
+    ```solidity
+    event Cast(address indexed caller, bytes32 ct, FheType toType, bytes32 result);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -1349,19 +1332,18 @@ event Cast(address indexed caller, bytes32 ct, FheType toType, bytes32 result);
                 FheType,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
             const SIGNATURE: &'static str = "Cast(address,bytes32,uint8,bytes32)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                49u8, 204u8, 174u8, 106u8, 47u8, 142u8, 60u8, 237u8, 22u8, 146u8, 247u8,
-                124u8, 143u8, 102u8, 129u8, 51u8, 228u8, 175u8, 218u8, 170u8, 53u8,
-                175u8, 232u8, 68u8, 255u8, 70u8, 89u8, 166u8, 194u8, 126u8, 98u8, 127u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    49u8, 204u8, 174u8, 106u8, 47u8, 142u8, 60u8, 237u8, 22u8, 146u8, 247u8, 124u8,
+                    143u8, 102u8, 129u8, 51u8, 228u8, 175u8, 218u8, 170u8, 53u8, 175u8, 232u8,
+                    68u8, 255u8, 70u8, 89u8, 166u8, 194u8, 126u8, 98u8, 127u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -1381,13 +1363,11 @@ event Cast(address indexed caller, bytes32 ct, FheType toType, bytes32 result);
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -1415,9 +1395,7 @@ event Cast(address indexed caller, bytes32 ct, FheType toType, bytes32 result);
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.caller,
                 );
@@ -1441,12 +1419,11 @@ event Cast(address indexed caller, bytes32 ct, FheType toType, bytes32 result);
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `FheAdd(address,bytes32,bytes32,bytes1,bytes32)` and selector `0xdb9050d65240431621d61d6f94b970e63f53a67a5766614ee6e5c5bbd41c8e2e`.
-```solidity
-event FheAdd(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
-```*/
+    ```solidity
+    event FheAdd(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -1482,19 +1459,18 @@ event FheAdd(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
                 alloy::sol_types::sol_data::FixedBytes<1>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
             const SIGNATURE: &'static str = "FheAdd(address,bytes32,bytes32,bytes1,bytes32)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                219u8, 144u8, 80u8, 214u8, 82u8, 64u8, 67u8, 22u8, 33u8, 214u8, 29u8,
-                111u8, 148u8, 185u8, 112u8, 230u8, 63u8, 83u8, 166u8, 122u8, 87u8, 102u8,
-                97u8, 78u8, 230u8, 229u8, 197u8, 187u8, 212u8, 28u8, 142u8, 46u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    219u8, 144u8, 80u8, 214u8, 82u8, 64u8, 67u8, 22u8, 33u8, 214u8, 29u8, 111u8,
+                    148u8, 185u8, 112u8, 230u8, 63u8, 83u8, 166u8, 122u8, 87u8, 102u8, 97u8, 78u8,
+                    230u8, 229u8, 197u8, 187u8, 212u8, 28u8, 142u8, 46u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -1515,13 +1491,11 @@ event FheAdd(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -1554,9 +1528,7 @@ event FheAdd(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.caller,
                 );
@@ -1580,12 +1552,11 @@ event FheAdd(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `FheBitAnd(address,bytes32,bytes32,bytes1,bytes32)` and selector `0xe42486b0ccdbef81a2075c48c8e515c079aea73c8b82429997c72a2fe1bf4fef`.
-```solidity
-event FheBitAnd(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
-```*/
+    ```solidity
+    event FheBitAnd(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -1621,19 +1592,18 @@ event FheBitAnd(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarB
                 alloy::sol_types::sol_data::FixedBytes<1>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
             const SIGNATURE: &'static str = "FheBitAnd(address,bytes32,bytes32,bytes1,bytes32)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                228u8, 36u8, 134u8, 176u8, 204u8, 219u8, 239u8, 129u8, 162u8, 7u8, 92u8,
-                72u8, 200u8, 229u8, 21u8, 192u8, 121u8, 174u8, 167u8, 60u8, 139u8, 130u8,
-                66u8, 153u8, 151u8, 199u8, 42u8, 47u8, 225u8, 191u8, 79u8, 239u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    228u8, 36u8, 134u8, 176u8, 204u8, 219u8, 239u8, 129u8, 162u8, 7u8, 92u8, 72u8,
+                    200u8, 229u8, 21u8, 192u8, 121u8, 174u8, 167u8, 60u8, 139u8, 130u8, 66u8,
+                    153u8, 151u8, 199u8, 42u8, 47u8, 225u8, 191u8, 79u8, 239u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -1654,13 +1624,11 @@ event FheBitAnd(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarB
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -1693,9 +1661,7 @@ event FheBitAnd(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarB
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.caller,
                 );
@@ -1719,12 +1685,11 @@ event FheBitAnd(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarB
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `FheBitOr(address,bytes32,bytes32,bytes1,bytes32)` and selector `0x56df279bbfb03d9ed097bbe2f28d520ca0c1161206327926e98664d70d2c24c4`.
-```solidity
-event FheBitOr(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
-```*/
+    ```solidity
+    event FheBitOr(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -1760,19 +1725,18 @@ event FheBitOr(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarBy
                 alloy::sol_types::sol_data::FixedBytes<1>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
             const SIGNATURE: &'static str = "FheBitOr(address,bytes32,bytes32,bytes1,bytes32)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                86u8, 223u8, 39u8, 155u8, 191u8, 176u8, 61u8, 158u8, 208u8, 151u8, 187u8,
-                226u8, 242u8, 141u8, 82u8, 12u8, 160u8, 193u8, 22u8, 18u8, 6u8, 50u8,
-                121u8, 38u8, 233u8, 134u8, 100u8, 215u8, 13u8, 44u8, 36u8, 196u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    86u8, 223u8, 39u8, 155u8, 191u8, 176u8, 61u8, 158u8, 208u8, 151u8, 187u8,
+                    226u8, 242u8, 141u8, 82u8, 12u8, 160u8, 193u8, 22u8, 18u8, 6u8, 50u8, 121u8,
+                    38u8, 233u8, 134u8, 100u8, 215u8, 13u8, 44u8, 36u8, 196u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -1793,13 +1757,11 @@ event FheBitOr(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarBy
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -1832,9 +1794,7 @@ event FheBitOr(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarBy
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.caller,
                 );
@@ -1858,12 +1818,11 @@ event FheBitOr(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarBy
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `FheBitXor(address,bytes32,bytes32,bytes1,bytes32)` and selector `0x4d32284bd3193ecaa44e1ceca32f41c5d6c32803a92e07967dd3ee4229721582`.
-```solidity
-event FheBitXor(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
-```*/
+    ```solidity
+    event FheBitXor(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -1899,19 +1858,18 @@ event FheBitXor(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarB
                 alloy::sol_types::sol_data::FixedBytes<1>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
             const SIGNATURE: &'static str = "FheBitXor(address,bytes32,bytes32,bytes1,bytes32)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                77u8, 50u8, 40u8, 75u8, 211u8, 25u8, 62u8, 202u8, 164u8, 78u8, 28u8,
-                236u8, 163u8, 47u8, 65u8, 197u8, 214u8, 195u8, 40u8, 3u8, 169u8, 46u8,
-                7u8, 150u8, 125u8, 211u8, 238u8, 66u8, 41u8, 114u8, 21u8, 130u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    77u8, 50u8, 40u8, 75u8, 211u8, 25u8, 62u8, 202u8, 164u8, 78u8, 28u8, 236u8,
+                    163u8, 47u8, 65u8, 197u8, 214u8, 195u8, 40u8, 3u8, 169u8, 46u8, 7u8, 150u8,
+                    125u8, 211u8, 238u8, 66u8, 41u8, 114u8, 21u8, 130u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -1932,13 +1890,11 @@ event FheBitXor(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarB
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -1971,9 +1927,7 @@ event FheBitXor(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarB
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.caller,
                 );
@@ -1997,12 +1951,11 @@ event FheBitXor(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarB
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `FheDiv(address,bytes32,bytes32,bytes1,bytes32)` and selector `0x3bab2ee0e2f90f4690c6a87bf63cf1a6b626086e95f231860b152966e8dabbf7`.
-```solidity
-event FheDiv(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
-```*/
+    ```solidity
+    event FheDiv(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -2038,19 +1991,18 @@ event FheDiv(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
                 alloy::sol_types::sol_data::FixedBytes<1>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
             const SIGNATURE: &'static str = "FheDiv(address,bytes32,bytes32,bytes1,bytes32)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                59u8, 171u8, 46u8, 224u8, 226u8, 249u8, 15u8, 70u8, 144u8, 198u8, 168u8,
-                123u8, 246u8, 60u8, 241u8, 166u8, 182u8, 38u8, 8u8, 110u8, 149u8, 242u8,
-                49u8, 134u8, 11u8, 21u8, 41u8, 102u8, 232u8, 218u8, 187u8, 247u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    59u8, 171u8, 46u8, 224u8, 226u8, 249u8, 15u8, 70u8, 144u8, 198u8, 168u8, 123u8,
+                    246u8, 60u8, 241u8, 166u8, 182u8, 38u8, 8u8, 110u8, 149u8, 242u8, 49u8, 134u8,
+                    11u8, 21u8, 41u8, 102u8, 232u8, 218u8, 187u8, 247u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -2071,13 +2023,11 @@ event FheDiv(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -2110,9 +2060,7 @@ event FheDiv(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.caller,
                 );
@@ -2136,12 +2084,11 @@ event FheDiv(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `FheEq(address,bytes32,bytes32,bytes1,bytes32)` and selector `0xb3d5c664ec86575818e8d75ff25c5f867250df8954088549c41c848cd10e76cb`.
-```solidity
-event FheEq(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
-```*/
+    ```solidity
+    event FheEq(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -2177,19 +2124,18 @@ event FheEq(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte,
                 alloy::sol_types::sol_data::FixedBytes<1>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
             const SIGNATURE: &'static str = "FheEq(address,bytes32,bytes32,bytes1,bytes32)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                179u8, 213u8, 198u8, 100u8, 236u8, 134u8, 87u8, 88u8, 24u8, 232u8, 215u8,
-                95u8, 242u8, 92u8, 95u8, 134u8, 114u8, 80u8, 223u8, 137u8, 84u8, 8u8,
-                133u8, 73u8, 196u8, 28u8, 132u8, 140u8, 209u8, 14u8, 118u8, 203u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    179u8, 213u8, 198u8, 100u8, 236u8, 134u8, 87u8, 88u8, 24u8, 232u8, 215u8, 95u8,
+                    242u8, 92u8, 95u8, 134u8, 114u8, 80u8, 223u8, 137u8, 84u8, 8u8, 133u8, 73u8,
+                    196u8, 28u8, 132u8, 140u8, 209u8, 14u8, 118u8, 203u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -2210,13 +2156,11 @@ event FheEq(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte,
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -2249,9 +2193,7 @@ event FheEq(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte,
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.caller,
                 );
@@ -2275,12 +2217,11 @@ event FheEq(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte,
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `FheGe(address,bytes32,bytes32,bytes1,bytes32)` and selector `0x38c3a63c4230de5b741f494ffb54e3087104030279bc7bccee8ad9ad31712b21`.
-```solidity
-event FheGe(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
-```*/
+    ```solidity
+    event FheGe(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -2316,19 +2257,18 @@ event FheGe(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte,
                 alloy::sol_types::sol_data::FixedBytes<1>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
             const SIGNATURE: &'static str = "FheGe(address,bytes32,bytes32,bytes1,bytes32)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                56u8, 195u8, 166u8, 60u8, 66u8, 48u8, 222u8, 91u8, 116u8, 31u8, 73u8,
-                79u8, 251u8, 84u8, 227u8, 8u8, 113u8, 4u8, 3u8, 2u8, 121u8, 188u8, 123u8,
-                204u8, 238u8, 138u8, 217u8, 173u8, 49u8, 113u8, 43u8, 33u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    56u8, 195u8, 166u8, 60u8, 66u8, 48u8, 222u8, 91u8, 116u8, 31u8, 73u8, 79u8,
+                    251u8, 84u8, 227u8, 8u8, 113u8, 4u8, 3u8, 2u8, 121u8, 188u8, 123u8, 204u8,
+                    238u8, 138u8, 217u8, 173u8, 49u8, 113u8, 43u8, 33u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -2349,13 +2289,11 @@ event FheGe(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte,
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -2388,9 +2326,7 @@ event FheGe(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte,
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.caller,
                 );
@@ -2414,12 +2350,11 @@ event FheGe(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte,
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `FheGt(address,bytes32,bytes32,bytes1,bytes32)` and selector `0xc9ff8f0d18a3f766ce5de3de216076050140e4fc2652f5e0e745f6fc836cda8b`.
-```solidity
-event FheGt(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
-```*/
+    ```solidity
+    event FheGt(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -2455,19 +2390,18 @@ event FheGt(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte,
                 alloy::sol_types::sol_data::FixedBytes<1>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
             const SIGNATURE: &'static str = "FheGt(address,bytes32,bytes32,bytes1,bytes32)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                201u8, 255u8, 143u8, 13u8, 24u8, 163u8, 247u8, 102u8, 206u8, 93u8, 227u8,
-                222u8, 33u8, 96u8, 118u8, 5u8, 1u8, 64u8, 228u8, 252u8, 38u8, 82u8,
-                245u8, 224u8, 231u8, 69u8, 246u8, 252u8, 131u8, 108u8, 218u8, 139u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    201u8, 255u8, 143u8, 13u8, 24u8, 163u8, 247u8, 102u8, 206u8, 93u8, 227u8,
+                    222u8, 33u8, 96u8, 118u8, 5u8, 1u8, 64u8, 228u8, 252u8, 38u8, 82u8, 245u8,
+                    224u8, 231u8, 69u8, 246u8, 252u8, 131u8, 108u8, 218u8, 139u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -2488,13 +2422,11 @@ event FheGt(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte,
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -2527,9 +2459,7 @@ event FheGt(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte,
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.caller,
                 );
@@ -2553,12 +2483,11 @@ event FheGt(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte,
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `FheIfThenElse(address,bytes32,bytes32,bytes32,bytes32)` and selector `0x60be9d61aad849facc28c38b048cb5c4be3420b8fa2233e08cfa06be1b6d1c3e`.
-```solidity
-event FheIfThenElse(address indexed caller, bytes32 control, bytes32 ifTrue, bytes32 ifFalse, bytes32 result);
-```*/
+    ```solidity
+    event FheIfThenElse(address indexed caller, bytes32 control, bytes32 ifTrue, bytes32 ifFalse, bytes32 result);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -2594,19 +2523,19 @@ event FheIfThenElse(address indexed caller, bytes32 control, bytes32 ifTrue, byt
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
-            const SIGNATURE: &'static str = "FheIfThenElse(address,bytes32,bytes32,bytes32,bytes32)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                96u8, 190u8, 157u8, 97u8, 170u8, 216u8, 73u8, 250u8, 204u8, 40u8, 195u8,
-                139u8, 4u8, 140u8, 181u8, 196u8, 190u8, 52u8, 32u8, 184u8, 250u8, 34u8,
-                51u8, 224u8, 140u8, 250u8, 6u8, 190u8, 27u8, 109u8, 28u8, 62u8,
-            ]);
+            const SIGNATURE: &'static str =
+                "FheIfThenElse(address,bytes32,bytes32,bytes32,bytes32)";
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    96u8, 190u8, 157u8, 97u8, 170u8, 216u8, 73u8, 250u8, 204u8, 40u8, 195u8, 139u8,
+                    4u8, 140u8, 181u8, 196u8, 190u8, 52u8, 32u8, 184u8, 250u8, 34u8, 51u8, 224u8,
+                    140u8, 250u8, 6u8, 190u8, 27u8, 109u8, 28u8, 62u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -2627,13 +2556,11 @@ event FheIfThenElse(address indexed caller, bytes32 control, bytes32 ifTrue, byt
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -2666,9 +2593,7 @@ event FheIfThenElse(address indexed caller, bytes32 control, bytes32 ifTrue, byt
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.caller,
                 );
@@ -2692,12 +2617,11 @@ event FheIfThenElse(address indexed caller, bytes32 control, bytes32 ifTrue, byt
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `FheIsIn(address,bytes32,bytes32[],bytes32)` and selector `0xa8b64ca323c46be8ad4087f46d85976cd3ab0bda32e171a8550a6c9b7c519a8a`.
-```solidity
-event FheIsIn(address indexed caller, bytes32 value, bytes32[] values, bytes32 result);
-```*/
+    ```solidity
+    event FheIsIn(address indexed caller, bytes32 value, bytes32[] values, bytes32 result);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -2711,9 +2635,7 @@ event FheIsIn(address indexed caller, bytes32 value, bytes32[] values, bytes32 r
         #[allow(missing_docs)]
         pub value: alloy::sol_types::private::FixedBytes<32>,
         #[allow(missing_docs)]
-        pub values: alloy::sol_types::private::Vec<
-            alloy::sol_types::private::FixedBytes<32>,
-        >,
+        pub values: alloy::sol_types::private::Vec<alloy::sol_types::private::FixedBytes<32>>,
         #[allow(missing_docs)]
         pub result: alloy::sol_types::private::FixedBytes<32>,
     }
@@ -2729,24 +2651,21 @@ event FheIsIn(address indexed caller, bytes32 value, bytes32[] values, bytes32 r
         impl alloy_sol_types::SolEvent for FheIsIn {
             type DataTuple<'a> = (
                 alloy::sol_types::sol_data::FixedBytes<32>,
-                alloy::sol_types::sol_data::Array<
-                    alloy::sol_types::sol_data::FixedBytes<32>,
-                >,
+                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::FixedBytes<32>>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
             const SIGNATURE: &'static str = "FheIsIn(address,bytes32,bytes32[],bytes32)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                168u8, 182u8, 76u8, 163u8, 35u8, 196u8, 107u8, 232u8, 173u8, 64u8, 135u8,
-                244u8, 109u8, 133u8, 151u8, 108u8, 211u8, 171u8, 11u8, 218u8, 50u8,
-                225u8, 113u8, 168u8, 85u8, 10u8, 108u8, 155u8, 124u8, 81u8, 154u8, 138u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    168u8, 182u8, 76u8, 163u8, 35u8, 196u8, 107u8, 232u8, 173u8, 64u8, 135u8,
+                    244u8, 109u8, 133u8, 151u8, 108u8, 211u8, 171u8, 11u8, 218u8, 50u8, 225u8,
+                    113u8, 168u8, 85u8, 10u8, 108u8, 155u8, 124u8, 81u8, 154u8, 138u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -2766,13 +2685,11 @@ event FheIsIn(address indexed caller, bytes32 value, bytes32[] values, bytes32 r
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -2802,9 +2719,7 @@ event FheIsIn(address indexed caller, bytes32 value, bytes32[] values, bytes32 r
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.caller,
                 );
@@ -2828,12 +2743,11 @@ event FheIsIn(address indexed caller, bytes32 value, bytes32[] values, bytes32 r
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `FheLe(address,bytes32,bytes32,bytes1,bytes32)` and selector `0xdef2e704a077284a07f3d0b436db88f5d981b69f58ab7c1ae623252718a6de01`.
-```solidity
-event FheLe(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
-```*/
+    ```solidity
+    event FheLe(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -2869,19 +2783,18 @@ event FheLe(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte,
                 alloy::sol_types::sol_data::FixedBytes<1>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
             const SIGNATURE: &'static str = "FheLe(address,bytes32,bytes32,bytes1,bytes32)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                222u8, 242u8, 231u8, 4u8, 160u8, 119u8, 40u8, 74u8, 7u8, 243u8, 208u8,
-                180u8, 54u8, 219u8, 136u8, 245u8, 217u8, 129u8, 182u8, 159u8, 88u8,
-                171u8, 124u8, 26u8, 230u8, 35u8, 37u8, 39u8, 24u8, 166u8, 222u8, 1u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    222u8, 242u8, 231u8, 4u8, 160u8, 119u8, 40u8, 74u8, 7u8, 243u8, 208u8, 180u8,
+                    54u8, 219u8, 136u8, 245u8, 217u8, 129u8, 182u8, 159u8, 88u8, 171u8, 124u8,
+                    26u8, 230u8, 35u8, 37u8, 39u8, 24u8, 166u8, 222u8, 1u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -2902,13 +2815,11 @@ event FheLe(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte,
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -2941,9 +2852,7 @@ event FheLe(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte,
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.caller,
                 );
@@ -2967,12 +2876,11 @@ event FheLe(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte,
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `FheLt(address,bytes32,bytes32,bytes1,bytes32)` and selector `0x0d483b100d8c73b208984ec697caa3091521ee5525ce69edcf97d7e395d3d059`.
-```solidity
-event FheLt(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
-```*/
+    ```solidity
+    event FheLt(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -3008,19 +2916,18 @@ event FheLt(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte,
                 alloy::sol_types::sol_data::FixedBytes<1>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
             const SIGNATURE: &'static str = "FheLt(address,bytes32,bytes32,bytes1,bytes32)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                13u8, 72u8, 59u8, 16u8, 13u8, 140u8, 115u8, 178u8, 8u8, 152u8, 78u8,
-                198u8, 151u8, 202u8, 163u8, 9u8, 21u8, 33u8, 238u8, 85u8, 37u8, 206u8,
-                105u8, 237u8, 207u8, 151u8, 215u8, 227u8, 149u8, 211u8, 208u8, 89u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    13u8, 72u8, 59u8, 16u8, 13u8, 140u8, 115u8, 178u8, 8u8, 152u8, 78u8, 198u8,
+                    151u8, 202u8, 163u8, 9u8, 21u8, 33u8, 238u8, 85u8, 37u8, 206u8, 105u8, 237u8,
+                    207u8, 151u8, 215u8, 227u8, 149u8, 211u8, 208u8, 89u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -3041,13 +2948,11 @@ event FheLt(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte,
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -3080,9 +2985,7 @@ event FheLt(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte,
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.caller,
                 );
@@ -3106,12 +3009,11 @@ event FheLt(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte,
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `FheMax(address,bytes32,bytes32,bytes1,bytes32)` and selector `0xfd7c9208f956bf0c6ab76a667f04361245ad3e0a2d0eff92eb827acfcca68ea9`.
-```solidity
-event FheMax(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
-```*/
+    ```solidity
+    event FheMax(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -3147,19 +3049,18 @@ event FheMax(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
                 alloy::sol_types::sol_data::FixedBytes<1>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
             const SIGNATURE: &'static str = "FheMax(address,bytes32,bytes32,bytes1,bytes32)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                253u8, 124u8, 146u8, 8u8, 249u8, 86u8, 191u8, 12u8, 106u8, 183u8, 106u8,
-                102u8, 127u8, 4u8, 54u8, 18u8, 69u8, 173u8, 62u8, 10u8, 45u8, 14u8,
-                255u8, 146u8, 235u8, 130u8, 122u8, 207u8, 204u8, 166u8, 142u8, 169u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    253u8, 124u8, 146u8, 8u8, 249u8, 86u8, 191u8, 12u8, 106u8, 183u8, 106u8, 102u8,
+                    127u8, 4u8, 54u8, 18u8, 69u8, 173u8, 62u8, 10u8, 45u8, 14u8, 255u8, 146u8,
+                    235u8, 130u8, 122u8, 207u8, 204u8, 166u8, 142u8, 169u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -3180,13 +3081,11 @@ event FheMax(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -3219,9 +3118,7 @@ event FheMax(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.caller,
                 );
@@ -3245,12 +3142,11 @@ event FheMax(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `FheMin(address,bytes32,bytes32,bytes1,bytes32)` and selector `0xc11d62b13c360a83082487064be1ec0878b2f0be4f012bf59f89e128063d47ff`.
-```solidity
-event FheMin(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
-```*/
+    ```solidity
+    event FheMin(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -3286,19 +3182,18 @@ event FheMin(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
                 alloy::sol_types::sol_data::FixedBytes<1>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
             const SIGNATURE: &'static str = "FheMin(address,bytes32,bytes32,bytes1,bytes32)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                193u8, 29u8, 98u8, 177u8, 60u8, 54u8, 10u8, 131u8, 8u8, 36u8, 135u8, 6u8,
-                75u8, 225u8, 236u8, 8u8, 120u8, 178u8, 240u8, 190u8, 79u8, 1u8, 43u8,
-                245u8, 159u8, 137u8, 225u8, 40u8, 6u8, 61u8, 71u8, 255u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    193u8, 29u8, 98u8, 177u8, 60u8, 54u8, 10u8, 131u8, 8u8, 36u8, 135u8, 6u8, 75u8,
+                    225u8, 236u8, 8u8, 120u8, 178u8, 240u8, 190u8, 79u8, 1u8, 43u8, 245u8, 159u8,
+                    137u8, 225u8, 40u8, 6u8, 61u8, 71u8, 255u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -3319,13 +3214,11 @@ event FheMin(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -3358,9 +3251,7 @@ event FheMin(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.caller,
                 );
@@ -3384,12 +3275,11 @@ event FheMin(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `FheMul(address,bytes32,bytes32,bytes1,bytes32)` and selector `0x215346a4f9f975e6d5484e290bd4e53ca14453a9d282ebd3ccedb2a0f171753d`.
-```solidity
-event FheMul(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
-```*/
+    ```solidity
+    event FheMul(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -3425,19 +3315,18 @@ event FheMul(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
                 alloy::sol_types::sol_data::FixedBytes<1>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
             const SIGNATURE: &'static str = "FheMul(address,bytes32,bytes32,bytes1,bytes32)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                33u8, 83u8, 70u8, 164u8, 249u8, 249u8, 117u8, 230u8, 213u8, 72u8, 78u8,
-                41u8, 11u8, 212u8, 229u8, 60u8, 161u8, 68u8, 83u8, 169u8, 210u8, 130u8,
-                235u8, 211u8, 204u8, 237u8, 178u8, 160u8, 241u8, 113u8, 117u8, 61u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    33u8, 83u8, 70u8, 164u8, 249u8, 249u8, 117u8, 230u8, 213u8, 72u8, 78u8, 41u8,
+                    11u8, 212u8, 229u8, 60u8, 161u8, 68u8, 83u8, 169u8, 210u8, 130u8, 235u8, 211u8,
+                    204u8, 237u8, 178u8, 160u8, 241u8, 113u8, 117u8, 61u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -3458,13 +3347,11 @@ event FheMul(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -3497,9 +3384,7 @@ event FheMul(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.caller,
                 );
@@ -3523,12 +3408,11 @@ event FheMul(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `FheMulDiv(address,bytes32,bytes32,bytes32,bytes1,bytes32)` and selector `0xe5ed6be31c35a5bc572746ab3347fc754669f58bc0e9eaa3257350f10a62321e`.
-```solidity
-event FheMulDiv(address indexed caller, bytes32 factor1, bytes32 factor2, bytes32 divisor, bytes1 scalarByte, bytes32 result);
-```*/
+    ```solidity
+    event FheMulDiv(address indexed caller, bytes32 factor1, bytes32 factor2, bytes32 divisor, bytes1 scalarByte, bytes32 result);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -3567,19 +3451,19 @@ event FheMulDiv(address indexed caller, bytes32 factor1, bytes32 factor2, bytes3
                 alloy::sol_types::sol_data::FixedBytes<1>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
-            const SIGNATURE: &'static str = "FheMulDiv(address,bytes32,bytes32,bytes32,bytes1,bytes32)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                229u8, 237u8, 107u8, 227u8, 28u8, 53u8, 165u8, 188u8, 87u8, 39u8, 70u8,
-                171u8, 51u8, 71u8, 252u8, 117u8, 70u8, 105u8, 245u8, 139u8, 192u8, 233u8,
-                234u8, 163u8, 37u8, 115u8, 80u8, 241u8, 10u8, 98u8, 50u8, 30u8,
-            ]);
+            const SIGNATURE: &'static str =
+                "FheMulDiv(address,bytes32,bytes32,bytes32,bytes1,bytes32)";
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    229u8, 237u8, 107u8, 227u8, 28u8, 53u8, 165u8, 188u8, 87u8, 39u8, 70u8, 171u8,
+                    51u8, 71u8, 252u8, 117u8, 70u8, 105u8, 245u8, 139u8, 192u8, 233u8, 234u8,
+                    163u8, 37u8, 115u8, 80u8, 241u8, 10u8, 98u8, 50u8, 30u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -3601,13 +3485,11 @@ event FheMulDiv(address indexed caller, bytes32 factor1, bytes32 factor2, bytes3
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -3643,9 +3525,7 @@ event FheMulDiv(address indexed caller, bytes32 factor1, bytes32 factor2, bytes3
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.caller,
                 );
@@ -3669,12 +3549,11 @@ event FheMulDiv(address indexed caller, bytes32 factor1, bytes32 factor2, bytes3
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `FheNe(address,bytes32,bytes32,bytes1,bytes32)` and selector `0x6960c1e88f61c352dba34d1bbf6753e302795264d5d8ae82f7983c7004651e5d`.
-```solidity
-event FheNe(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
-```*/
+    ```solidity
+    event FheNe(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -3710,19 +3589,18 @@ event FheNe(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte,
                 alloy::sol_types::sol_data::FixedBytes<1>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
             const SIGNATURE: &'static str = "FheNe(address,bytes32,bytes32,bytes1,bytes32)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                105u8, 96u8, 193u8, 232u8, 143u8, 97u8, 195u8, 82u8, 219u8, 163u8, 77u8,
-                27u8, 191u8, 103u8, 83u8, 227u8, 2u8, 121u8, 82u8, 100u8, 213u8, 216u8,
-                174u8, 130u8, 247u8, 152u8, 60u8, 112u8, 4u8, 101u8, 30u8, 93u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    105u8, 96u8, 193u8, 232u8, 143u8, 97u8, 195u8, 82u8, 219u8, 163u8, 77u8, 27u8,
+                    191u8, 103u8, 83u8, 227u8, 2u8, 121u8, 82u8, 100u8, 213u8, 216u8, 174u8, 130u8,
+                    247u8, 152u8, 60u8, 112u8, 4u8, 101u8, 30u8, 93u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -3743,13 +3621,11 @@ event FheNe(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte,
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -3782,9 +3658,7 @@ event FheNe(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte,
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.caller,
                 );
@@ -3808,12 +3682,11 @@ event FheNe(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte,
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `FheNeg(address,bytes32,bytes32)` and selector `0x8c664d3c3ca583fc5803b8a91c49644bbd9550bfa87967c73ad1de83027768c0`.
-```solidity
-event FheNeg(address indexed caller, bytes32 ct, bytes32 result);
-```*/
+    ```solidity
+    event FheNeg(address indexed caller, bytes32 ct, bytes32 result);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -3843,19 +3716,18 @@ event FheNeg(address indexed caller, bytes32 ct, bytes32 result);
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
             const SIGNATURE: &'static str = "FheNeg(address,bytes32,bytes32)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                140u8, 102u8, 77u8, 60u8, 60u8, 165u8, 131u8, 252u8, 88u8, 3u8, 184u8,
-                169u8, 28u8, 73u8, 100u8, 75u8, 189u8, 149u8, 80u8, 191u8, 168u8, 121u8,
-                103u8, 199u8, 58u8, 209u8, 222u8, 131u8, 2u8, 119u8, 104u8, 192u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    140u8, 102u8, 77u8, 60u8, 60u8, 165u8, 131u8, 252u8, 88u8, 3u8, 184u8, 169u8,
+                    28u8, 73u8, 100u8, 75u8, 189u8, 149u8, 80u8, 191u8, 168u8, 121u8, 103u8, 199u8,
+                    58u8, 209u8, 222u8, 131u8, 2u8, 119u8, 104u8, 192u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -3874,13 +3746,11 @@ event FheNeg(address indexed caller, bytes32 ct, bytes32 result);
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -3907,9 +3777,7 @@ event FheNeg(address indexed caller, bytes32 ct, bytes32 result);
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.caller,
                 );
@@ -3933,12 +3801,11 @@ event FheNeg(address indexed caller, bytes32 ct, bytes32 result);
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `FheNot(address,bytes32,bytes32)` and selector `0x55aff4cc7a3d160c83f1f15b818011ede841a0b4597fb14dcd3603df3a11e5e0`.
-```solidity
-event FheNot(address indexed caller, bytes32 ct, bytes32 result);
-```*/
+    ```solidity
+    event FheNot(address indexed caller, bytes32 ct, bytes32 result);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -3968,19 +3835,18 @@ event FheNot(address indexed caller, bytes32 ct, bytes32 result);
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
             const SIGNATURE: &'static str = "FheNot(address,bytes32,bytes32)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                85u8, 175u8, 244u8, 204u8, 122u8, 61u8, 22u8, 12u8, 131u8, 241u8, 241u8,
-                91u8, 129u8, 128u8, 17u8, 237u8, 232u8, 65u8, 160u8, 180u8, 89u8, 127u8,
-                177u8, 77u8, 205u8, 54u8, 3u8, 223u8, 58u8, 17u8, 229u8, 224u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    85u8, 175u8, 244u8, 204u8, 122u8, 61u8, 22u8, 12u8, 131u8, 241u8, 241u8, 91u8,
+                    129u8, 128u8, 17u8, 237u8, 232u8, 65u8, 160u8, 180u8, 89u8, 127u8, 177u8, 77u8,
+                    205u8, 54u8, 3u8, 223u8, 58u8, 17u8, 229u8, 224u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -3999,13 +3865,11 @@ event FheNot(address indexed caller, bytes32 ct, bytes32 result);
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -4032,9 +3896,7 @@ event FheNot(address indexed caller, bytes32 ct, bytes32 result);
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.caller,
                 );
@@ -4058,12 +3920,11 @@ event FheNot(address indexed caller, bytes32 ct, bytes32 result);
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `FheRand(address,uint8,bytes16,bytes32)` and selector `0x0c8aca6017003326051e19913ef02631f24b801125e1fa8a1d812e868319fda6`.
-```solidity
-event FheRand(address indexed caller, FheType randType, bytes16 seed, bytes32 result);
-```*/
+    ```solidity
+    event FheRand(address indexed caller, FheType randType, bytes16 seed, bytes32 result);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -4096,19 +3957,18 @@ event FheRand(address indexed caller, FheType randType, bytes16 seed, bytes32 re
                 alloy::sol_types::sol_data::FixedBytes<16>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
             const SIGNATURE: &'static str = "FheRand(address,uint8,bytes16,bytes32)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                12u8, 138u8, 202u8, 96u8, 23u8, 0u8, 51u8, 38u8, 5u8, 30u8, 25u8, 145u8,
-                62u8, 240u8, 38u8, 49u8, 242u8, 75u8, 128u8, 17u8, 37u8, 225u8, 250u8,
-                138u8, 29u8, 129u8, 46u8, 134u8, 131u8, 25u8, 253u8, 166u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    12u8, 138u8, 202u8, 96u8, 23u8, 0u8, 51u8, 38u8, 5u8, 30u8, 25u8, 145u8, 62u8,
+                    240u8, 38u8, 49u8, 242u8, 75u8, 128u8, 17u8, 37u8, 225u8, 250u8, 138u8, 29u8,
+                    129u8, 46u8, 134u8, 131u8, 25u8, 253u8, 166u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -4128,13 +3988,11 @@ event FheRand(address indexed caller, FheType randType, bytes16 seed, bytes32 re
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -4162,9 +4020,7 @@ event FheRand(address indexed caller, FheType randType, bytes16 seed, bytes32 re
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.caller,
                 );
@@ -4188,12 +4044,11 @@ event FheRand(address indexed caller, FheType randType, bytes16 seed, bytes32 re
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `FheRandBounded(address,uint256,uint8,bytes16,bytes32)` and selector `0x5222d96b836727a1d6fe1ee9aef27f9bb507bd41794defa376ff6c648aaf8ff1`.
-```solidity
-event FheRandBounded(address indexed caller, uint256 upperBound, FheType randType, bytes16 seed, bytes32 result);
-```*/
+    ```solidity
+    event FheRandBounded(address indexed caller, uint256 upperBound, FheType randType, bytes16 seed, bytes32 result);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -4229,19 +4084,18 @@ event FheRandBounded(address indexed caller, uint256 upperBound, FheType randTyp
                 alloy::sol_types::sol_data::FixedBytes<16>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
             const SIGNATURE: &'static str = "FheRandBounded(address,uint256,uint8,bytes16,bytes32)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                82u8, 34u8, 217u8, 107u8, 131u8, 103u8, 39u8, 161u8, 214u8, 254u8, 30u8,
-                233u8, 174u8, 242u8, 127u8, 155u8, 181u8, 7u8, 189u8, 65u8, 121u8, 77u8,
-                239u8, 163u8, 118u8, 255u8, 108u8, 100u8, 138u8, 175u8, 143u8, 241u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    82u8, 34u8, 217u8, 107u8, 131u8, 103u8, 39u8, 161u8, 214u8, 254u8, 30u8, 233u8,
+                    174u8, 242u8, 127u8, 155u8, 181u8, 7u8, 189u8, 65u8, 121u8, 77u8, 239u8, 163u8,
+                    118u8, 255u8, 108u8, 100u8, 138u8, 175u8, 143u8, 241u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -4262,13 +4116,11 @@ event FheRandBounded(address indexed caller, uint256 upperBound, FheType randTyp
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -4299,9 +4151,7 @@ event FheRandBounded(address indexed caller, uint256 upperBound, FheType randTyp
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.caller,
                 );
@@ -4325,12 +4175,11 @@ event FheRandBounded(address indexed caller, uint256 upperBound, FheType randTyp
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `FheRem(address,bytes32,bytes32,bytes1,bytes32)` and selector `0x0e691cd0bf8c4e9308e4ced1bb9c964117dc5c5bb9b9ab5bdfebf2c9b13a897c`.
-```solidity
-event FheRem(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
-```*/
+    ```solidity
+    event FheRem(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -4366,19 +4215,18 @@ event FheRem(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
                 alloy::sol_types::sol_data::FixedBytes<1>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
             const SIGNATURE: &'static str = "FheRem(address,bytes32,bytes32,bytes1,bytes32)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                14u8, 105u8, 28u8, 208u8, 191u8, 140u8, 78u8, 147u8, 8u8, 228u8, 206u8,
-                209u8, 187u8, 156u8, 150u8, 65u8, 23u8, 220u8, 92u8, 91u8, 185u8, 185u8,
-                171u8, 91u8, 223u8, 235u8, 242u8, 201u8, 177u8, 58u8, 137u8, 124u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    14u8, 105u8, 28u8, 208u8, 191u8, 140u8, 78u8, 147u8, 8u8, 228u8, 206u8, 209u8,
+                    187u8, 156u8, 150u8, 65u8, 23u8, 220u8, 92u8, 91u8, 185u8, 185u8, 171u8, 91u8,
+                    223u8, 235u8, 242u8, 201u8, 177u8, 58u8, 137u8, 124u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -4399,13 +4247,11 @@ event FheRem(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -4438,9 +4284,7 @@ event FheRem(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.caller,
                 );
@@ -4464,12 +4308,11 @@ event FheRem(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `FheRotl(address,bytes32,bytes32,bytes1,bytes32)` and selector `0xeb0e4f8dc74058194d0602425fe602f955c222200f7f10c6fe67992f7b24c7e9`.
-```solidity
-event FheRotl(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
-```*/
+    ```solidity
+    event FheRotl(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -4505,19 +4348,18 @@ event FheRotl(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByt
                 alloy::sol_types::sol_data::FixedBytes<1>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
             const SIGNATURE: &'static str = "FheRotl(address,bytes32,bytes32,bytes1,bytes32)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                235u8, 14u8, 79u8, 141u8, 199u8, 64u8, 88u8, 25u8, 77u8, 6u8, 2u8, 66u8,
-                95u8, 230u8, 2u8, 249u8, 85u8, 194u8, 34u8, 32u8, 15u8, 127u8, 16u8,
-                198u8, 254u8, 103u8, 153u8, 47u8, 123u8, 36u8, 199u8, 233u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    235u8, 14u8, 79u8, 141u8, 199u8, 64u8, 88u8, 25u8, 77u8, 6u8, 2u8, 66u8, 95u8,
+                    230u8, 2u8, 249u8, 85u8, 194u8, 34u8, 32u8, 15u8, 127u8, 16u8, 198u8, 254u8,
+                    103u8, 153u8, 47u8, 123u8, 36u8, 199u8, 233u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -4538,13 +4380,11 @@ event FheRotl(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByt
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -4577,9 +4417,7 @@ event FheRotl(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByt
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.caller,
                 );
@@ -4603,12 +4441,11 @@ event FheRotl(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByt
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `FheRotr(address,bytes32,bytes32,bytes1,bytes32)` and selector `0xc148675905d07ad5496f8ef4d8195c907503f3ec12fd10ed5f21240abc693634`.
-```solidity
-event FheRotr(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
-```*/
+    ```solidity
+    event FheRotr(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -4644,19 +4481,18 @@ event FheRotr(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByt
                 alloy::sol_types::sol_data::FixedBytes<1>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
             const SIGNATURE: &'static str = "FheRotr(address,bytes32,bytes32,bytes1,bytes32)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                193u8, 72u8, 103u8, 89u8, 5u8, 208u8, 122u8, 213u8, 73u8, 111u8, 142u8,
-                244u8, 216u8, 25u8, 92u8, 144u8, 117u8, 3u8, 243u8, 236u8, 18u8, 253u8,
-                16u8, 237u8, 95u8, 33u8, 36u8, 10u8, 188u8, 105u8, 54u8, 52u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    193u8, 72u8, 103u8, 89u8, 5u8, 208u8, 122u8, 213u8, 73u8, 111u8, 142u8, 244u8,
+                    216u8, 25u8, 92u8, 144u8, 117u8, 3u8, 243u8, 236u8, 18u8, 253u8, 16u8, 237u8,
+                    95u8, 33u8, 36u8, 10u8, 188u8, 105u8, 54u8, 52u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -4677,13 +4513,11 @@ event FheRotr(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByt
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -4716,9 +4550,7 @@ event FheRotr(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByt
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.caller,
                 );
@@ -4742,12 +4574,11 @@ event FheRotr(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByt
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `FheShl(address,bytes32,bytes32,bytes1,bytes32)` and selector `0xe84282aaebcca698443e39a2a948a345d0d2ebc654af5cb657a2d7e8053bf6cb`.
-```solidity
-event FheShl(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
-```*/
+    ```solidity
+    event FheShl(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -4783,19 +4614,18 @@ event FheShl(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
                 alloy::sol_types::sol_data::FixedBytes<1>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
             const SIGNATURE: &'static str = "FheShl(address,bytes32,bytes32,bytes1,bytes32)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                232u8, 66u8, 130u8, 170u8, 235u8, 204u8, 166u8, 152u8, 68u8, 62u8, 57u8,
-                162u8, 169u8, 72u8, 163u8, 69u8, 208u8, 210u8, 235u8, 198u8, 84u8, 175u8,
-                92u8, 182u8, 87u8, 162u8, 215u8, 232u8, 5u8, 59u8, 246u8, 203u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    232u8, 66u8, 130u8, 170u8, 235u8, 204u8, 166u8, 152u8, 68u8, 62u8, 57u8, 162u8,
+                    169u8, 72u8, 163u8, 69u8, 208u8, 210u8, 235u8, 198u8, 84u8, 175u8, 92u8, 182u8,
+                    87u8, 162u8, 215u8, 232u8, 5u8, 59u8, 246u8, 203u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -4816,13 +4646,11 @@ event FheShl(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -4855,9 +4683,7 @@ event FheShl(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.caller,
                 );
@@ -4881,12 +4707,11 @@ event FheShl(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `FheShr(address,bytes32,bytes32,bytes1,bytes32)` and selector `0x324220bfc9cb158b492991c03c309cd86e5345cac45aacae2092ddabe31fa3d8`.
-```solidity
-event FheShr(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
-```*/
+    ```solidity
+    event FheShr(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -4922,19 +4747,18 @@ event FheShr(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
                 alloy::sol_types::sol_data::FixedBytes<1>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
             const SIGNATURE: &'static str = "FheShr(address,bytes32,bytes32,bytes1,bytes32)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                50u8, 66u8, 32u8, 191u8, 201u8, 203u8, 21u8, 139u8, 73u8, 41u8, 145u8,
-                192u8, 60u8, 48u8, 156u8, 216u8, 110u8, 83u8, 69u8, 202u8, 196u8, 90u8,
-                172u8, 174u8, 32u8, 146u8, 221u8, 171u8, 227u8, 31u8, 163u8, 216u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    50u8, 66u8, 32u8, 191u8, 201u8, 203u8, 21u8, 139u8, 73u8, 41u8, 145u8, 192u8,
+                    60u8, 48u8, 156u8, 216u8, 110u8, 83u8, 69u8, 202u8, 196u8, 90u8, 172u8, 174u8,
+                    32u8, 146u8, 221u8, 171u8, 227u8, 31u8, 163u8, 216u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -4955,13 +4779,11 @@ event FheShr(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -4994,9 +4816,7 @@ event FheShr(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.caller,
                 );
@@ -5020,12 +4840,11 @@ event FheShr(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `FheSub(address,bytes32,bytes32,bytes1,bytes32)` and selector `0xeb6d37bd271abe1395b21d6d78f3487d6584862872c29ffd3f90736ee99b7393`.
-```solidity
-event FheSub(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
-```*/
+    ```solidity
+    event FheSub(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -5061,20 +4880,18 @@ event FheSub(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
                 alloy::sol_types::sol_data::FixedBytes<1>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
             const SIGNATURE: &'static str = "FheSub(address,bytes32,bytes32,bytes1,bytes32)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                235u8, 109u8, 55u8, 189u8, 39u8, 26u8, 190u8, 19u8, 149u8, 178u8, 29u8,
-                109u8, 120u8, 243u8, 72u8, 125u8, 101u8, 132u8, 134u8, 40u8, 114u8,
-                194u8, 159u8, 253u8, 63u8, 144u8, 115u8, 110u8, 233u8, 155u8, 115u8,
-                147u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    235u8, 109u8, 55u8, 189u8, 39u8, 26u8, 190u8, 19u8, 149u8, 178u8, 29u8, 109u8,
+                    120u8, 243u8, 72u8, 125u8, 101u8, 132u8, 134u8, 40u8, 114u8, 194u8, 159u8,
+                    253u8, 63u8, 144u8, 115u8, 110u8, 233u8, 155u8, 115u8, 147u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -5095,13 +4912,11 @@ event FheSub(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -5134,9 +4949,7 @@ event FheSub(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.caller,
                 );
@@ -5160,12 +4973,11 @@ event FheSub(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `FheSum(address,bytes32[],bytes32)` and selector `0xd24d1fc700ce6a96b04d0ef048cb74e4c9647351da21b84501d848e16c161deb`.
-```solidity
-event FheSum(address indexed caller, bytes32[] values, bytes32 result);
-```*/
+    ```solidity
+    event FheSum(address indexed caller, bytes32[] values, bytes32 result);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -5177,9 +4989,7 @@ event FheSum(address indexed caller, bytes32[] values, bytes32 result);
         #[allow(missing_docs)]
         pub caller: alloy::sol_types::private::Address,
         #[allow(missing_docs)]
-        pub values: alloy::sol_types::private::Vec<
-            alloy::sol_types::private::FixedBytes<32>,
-        >,
+        pub values: alloy::sol_types::private::Vec<alloy::sol_types::private::FixedBytes<32>>,
         #[allow(missing_docs)]
         pub result: alloy::sol_types::private::FixedBytes<32>,
     }
@@ -5194,24 +5004,21 @@ event FheSum(address indexed caller, bytes32[] values, bytes32 result);
         #[automatically_derived]
         impl alloy_sol_types::SolEvent for FheSum {
             type DataTuple<'a> = (
-                alloy::sol_types::sol_data::Array<
-                    alloy::sol_types::sol_data::FixedBytes<32>,
-                >,
+                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::FixedBytes<32>>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
             const SIGNATURE: &'static str = "FheSum(address,bytes32[],bytes32)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                210u8, 77u8, 31u8, 199u8, 0u8, 206u8, 106u8, 150u8, 176u8, 77u8, 14u8,
-                240u8, 72u8, 203u8, 116u8, 228u8, 201u8, 100u8, 115u8, 81u8, 218u8, 33u8,
-                184u8, 69u8, 1u8, 216u8, 72u8, 225u8, 108u8, 22u8, 29u8, 235u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    210u8, 77u8, 31u8, 199u8, 0u8, 206u8, 106u8, 150u8, 176u8, 77u8, 14u8, 240u8,
+                    72u8, 203u8, 116u8, 228u8, 201u8, 100u8, 115u8, 81u8, 218u8, 33u8, 184u8, 69u8,
+                    1u8, 216u8, 72u8, 225u8, 108u8, 22u8, 29u8, 235u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -5230,13 +5037,11 @@ event FheSum(address indexed caller, bytes32[] values, bytes32 result);
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -5263,9 +5068,7 @@ event FheSum(address indexed caller, bytes32[] values, bytes32 result);
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.caller,
                 );
@@ -5289,12 +5092,11 @@ event FheSum(address indexed caller, bytes32[] values, bytes32 result);
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `TrivialEncrypt(address,uint256,uint8,bytes32)` and selector `0x063ccd1bba45151d91f6a418065047a3d048d058a922535747bb2b575a01d236`.
-```solidity
-event TrivialEncrypt(address indexed caller, uint256 pt, FheType toType, bytes32 result);
-```*/
+    ```solidity
+    event TrivialEncrypt(address indexed caller, uint256 pt, FheType toType, bytes32 result);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -5327,19 +5129,18 @@ event TrivialEncrypt(address indexed caller, uint256 pt, FheType toType, bytes32
                 FheType,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
             const SIGNATURE: &'static str = "TrivialEncrypt(address,uint256,uint8,bytes32)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                6u8, 60u8, 205u8, 27u8, 186u8, 69u8, 21u8, 29u8, 145u8, 246u8, 164u8,
-                24u8, 6u8, 80u8, 71u8, 163u8, 208u8, 72u8, 208u8, 88u8, 169u8, 34u8,
-                83u8, 87u8, 71u8, 187u8, 43u8, 87u8, 90u8, 1u8, 210u8, 54u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    6u8, 60u8, 205u8, 27u8, 186u8, 69u8, 21u8, 29u8, 145u8, 246u8, 164u8, 24u8,
+                    6u8, 80u8, 71u8, 163u8, 208u8, 72u8, 208u8, 88u8, 169u8, 34u8, 83u8, 87u8,
+                    71u8, 187u8, 43u8, 87u8, 90u8, 1u8, 210u8, 54u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -5359,13 +5160,11 @@ event TrivialEncrypt(address indexed caller, uint256 pt, FheType toType, bytes32
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -5393,9 +5192,7 @@ event TrivialEncrypt(address indexed caller, uint256 pt, FheType toType, bytes32
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.caller,
                 );
@@ -5419,12 +5216,11 @@ event TrivialEncrypt(address indexed caller, uint256 pt, FheType toType, bytes32
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `VerifyInput(address,bytes32,address,bytes,uint8,bytes32)` and selector `0xdc370db33589e73371dc3ee42c789c003d336eefcb7c3f56fe0f51ae5b1d9702`.
-```solidity
-event VerifyInput(address indexed caller, bytes32 inputHandle, address userAddress, bytes inputProof, FheType inputType, bytes32 result);
-```*/
+    ```solidity
+    event VerifyInput(address indexed caller, bytes32 inputHandle, address userAddress, bytes inputProof, FheType inputType, bytes32 result);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -5463,19 +5259,19 @@ event VerifyInput(address indexed caller, bytes32 inputHandle, address userAddre
                 FheType,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
-            const SIGNATURE: &'static str = "VerifyInput(address,bytes32,address,bytes,uint8,bytes32)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                220u8, 55u8, 13u8, 179u8, 53u8, 137u8, 231u8, 51u8, 113u8, 220u8, 62u8,
-                228u8, 44u8, 120u8, 156u8, 0u8, 61u8, 51u8, 110u8, 239u8, 203u8, 124u8,
-                63u8, 86u8, 254u8, 15u8, 81u8, 174u8, 91u8, 29u8, 151u8, 2u8,
-            ]);
+            const SIGNATURE: &'static str =
+                "VerifyInput(address,bytes32,address,bytes,uint8,bytes32)";
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    220u8, 55u8, 13u8, 179u8, 53u8, 137u8, 231u8, 51u8, 113u8, 220u8, 62u8, 228u8,
+                    44u8, 120u8, 156u8, 0u8, 61u8, 51u8, 110u8, 239u8, 203u8, 124u8, 63u8, 86u8,
+                    254u8, 15u8, 81u8, 174u8, 91u8, 29u8, 151u8, 2u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -5497,13 +5293,11 @@ event VerifyInput(address indexed caller, bytes32 inputHandle, address userAddre
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -5537,9 +5331,7 @@ event VerifyInput(address indexed caller, bytes32 inputHandle, address userAddre
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.caller,
                 );
@@ -5564,8 +5356,7 @@ event VerifyInput(address indexed caller, bytes32 inputHandle, address userAddre
         }
     };
     ///Container for all the [`FHEEvents`](self) events.
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Debug, PartialEq, Eq, Hash)]
     pub enum FHEEventsEvents {
         #[allow(missing_docs)]
         Cast(Cast),
@@ -5640,160 +5431,159 @@ event VerifyInput(address indexed caller, bytes32 inputHandle, address userAddre
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 32usize]] = &[
             [
-                6u8, 60u8, 205u8, 27u8, 186u8, 69u8, 21u8, 29u8, 145u8, 246u8, 164u8,
-                24u8, 6u8, 80u8, 71u8, 163u8, 208u8, 72u8, 208u8, 88u8, 169u8, 34u8,
-                83u8, 87u8, 71u8, 187u8, 43u8, 87u8, 90u8, 1u8, 210u8, 54u8,
+                6u8, 60u8, 205u8, 27u8, 186u8, 69u8, 21u8, 29u8, 145u8, 246u8, 164u8, 24u8, 6u8,
+                80u8, 71u8, 163u8, 208u8, 72u8, 208u8, 88u8, 169u8, 34u8, 83u8, 87u8, 71u8, 187u8,
+                43u8, 87u8, 90u8, 1u8, 210u8, 54u8,
             ],
             [
-                12u8, 138u8, 202u8, 96u8, 23u8, 0u8, 51u8, 38u8, 5u8, 30u8, 25u8, 145u8,
-                62u8, 240u8, 38u8, 49u8, 242u8, 75u8, 128u8, 17u8, 37u8, 225u8, 250u8,
-                138u8, 29u8, 129u8, 46u8, 134u8, 131u8, 25u8, 253u8, 166u8,
+                12u8, 138u8, 202u8, 96u8, 23u8, 0u8, 51u8, 38u8, 5u8, 30u8, 25u8, 145u8, 62u8,
+                240u8, 38u8, 49u8, 242u8, 75u8, 128u8, 17u8, 37u8, 225u8, 250u8, 138u8, 29u8,
+                129u8, 46u8, 134u8, 131u8, 25u8, 253u8, 166u8,
             ],
             [
-                13u8, 72u8, 59u8, 16u8, 13u8, 140u8, 115u8, 178u8, 8u8, 152u8, 78u8,
-                198u8, 151u8, 202u8, 163u8, 9u8, 21u8, 33u8, 238u8, 85u8, 37u8, 206u8,
-                105u8, 237u8, 207u8, 151u8, 215u8, 227u8, 149u8, 211u8, 208u8, 89u8,
+                13u8, 72u8, 59u8, 16u8, 13u8, 140u8, 115u8, 178u8, 8u8, 152u8, 78u8, 198u8, 151u8,
+                202u8, 163u8, 9u8, 21u8, 33u8, 238u8, 85u8, 37u8, 206u8, 105u8, 237u8, 207u8,
+                151u8, 215u8, 227u8, 149u8, 211u8, 208u8, 89u8,
             ],
             [
-                14u8, 105u8, 28u8, 208u8, 191u8, 140u8, 78u8, 147u8, 8u8, 228u8, 206u8,
-                209u8, 187u8, 156u8, 150u8, 65u8, 23u8, 220u8, 92u8, 91u8, 185u8, 185u8,
-                171u8, 91u8, 223u8, 235u8, 242u8, 201u8, 177u8, 58u8, 137u8, 124u8,
+                14u8, 105u8, 28u8, 208u8, 191u8, 140u8, 78u8, 147u8, 8u8, 228u8, 206u8, 209u8,
+                187u8, 156u8, 150u8, 65u8, 23u8, 220u8, 92u8, 91u8, 185u8, 185u8, 171u8, 91u8,
+                223u8, 235u8, 242u8, 201u8, 177u8, 58u8, 137u8, 124u8,
             ],
             [
-                33u8, 83u8, 70u8, 164u8, 249u8, 249u8, 117u8, 230u8, 213u8, 72u8, 78u8,
-                41u8, 11u8, 212u8, 229u8, 60u8, 161u8, 68u8, 83u8, 169u8, 210u8, 130u8,
-                235u8, 211u8, 204u8, 237u8, 178u8, 160u8, 241u8, 113u8, 117u8, 61u8,
+                33u8, 83u8, 70u8, 164u8, 249u8, 249u8, 117u8, 230u8, 213u8, 72u8, 78u8, 41u8, 11u8,
+                212u8, 229u8, 60u8, 161u8, 68u8, 83u8, 169u8, 210u8, 130u8, 235u8, 211u8, 204u8,
+                237u8, 178u8, 160u8, 241u8, 113u8, 117u8, 61u8,
             ],
             [
-                49u8, 204u8, 174u8, 106u8, 47u8, 142u8, 60u8, 237u8, 22u8, 146u8, 247u8,
-                124u8, 143u8, 102u8, 129u8, 51u8, 228u8, 175u8, 218u8, 170u8, 53u8,
-                175u8, 232u8, 68u8, 255u8, 70u8, 89u8, 166u8, 194u8, 126u8, 98u8, 127u8,
+                49u8, 204u8, 174u8, 106u8, 47u8, 142u8, 60u8, 237u8, 22u8, 146u8, 247u8, 124u8,
+                143u8, 102u8, 129u8, 51u8, 228u8, 175u8, 218u8, 170u8, 53u8, 175u8, 232u8, 68u8,
+                255u8, 70u8, 89u8, 166u8, 194u8, 126u8, 98u8, 127u8,
             ],
             [
-                50u8, 66u8, 32u8, 191u8, 201u8, 203u8, 21u8, 139u8, 73u8, 41u8, 145u8,
-                192u8, 60u8, 48u8, 156u8, 216u8, 110u8, 83u8, 69u8, 202u8, 196u8, 90u8,
-                172u8, 174u8, 32u8, 146u8, 221u8, 171u8, 227u8, 31u8, 163u8, 216u8,
+                50u8, 66u8, 32u8, 191u8, 201u8, 203u8, 21u8, 139u8, 73u8, 41u8, 145u8, 192u8, 60u8,
+                48u8, 156u8, 216u8, 110u8, 83u8, 69u8, 202u8, 196u8, 90u8, 172u8, 174u8, 32u8,
+                146u8, 221u8, 171u8, 227u8, 31u8, 163u8, 216u8,
             ],
             [
-                56u8, 195u8, 166u8, 60u8, 66u8, 48u8, 222u8, 91u8, 116u8, 31u8, 73u8,
-                79u8, 251u8, 84u8, 227u8, 8u8, 113u8, 4u8, 3u8, 2u8, 121u8, 188u8, 123u8,
-                204u8, 238u8, 138u8, 217u8, 173u8, 49u8, 113u8, 43u8, 33u8,
+                56u8, 195u8, 166u8, 60u8, 66u8, 48u8, 222u8, 91u8, 116u8, 31u8, 73u8, 79u8, 251u8,
+                84u8, 227u8, 8u8, 113u8, 4u8, 3u8, 2u8, 121u8, 188u8, 123u8, 204u8, 238u8, 138u8,
+                217u8, 173u8, 49u8, 113u8, 43u8, 33u8,
             ],
             [
-                59u8, 171u8, 46u8, 224u8, 226u8, 249u8, 15u8, 70u8, 144u8, 198u8, 168u8,
-                123u8, 246u8, 60u8, 241u8, 166u8, 182u8, 38u8, 8u8, 110u8, 149u8, 242u8,
-                49u8, 134u8, 11u8, 21u8, 41u8, 102u8, 232u8, 218u8, 187u8, 247u8,
+                59u8, 171u8, 46u8, 224u8, 226u8, 249u8, 15u8, 70u8, 144u8, 198u8, 168u8, 123u8,
+                246u8, 60u8, 241u8, 166u8, 182u8, 38u8, 8u8, 110u8, 149u8, 242u8, 49u8, 134u8,
+                11u8, 21u8, 41u8, 102u8, 232u8, 218u8, 187u8, 247u8,
             ],
             [
-                77u8, 50u8, 40u8, 75u8, 211u8, 25u8, 62u8, 202u8, 164u8, 78u8, 28u8,
-                236u8, 163u8, 47u8, 65u8, 197u8, 214u8, 195u8, 40u8, 3u8, 169u8, 46u8,
-                7u8, 150u8, 125u8, 211u8, 238u8, 66u8, 41u8, 114u8, 21u8, 130u8,
+                77u8, 50u8, 40u8, 75u8, 211u8, 25u8, 62u8, 202u8, 164u8, 78u8, 28u8, 236u8, 163u8,
+                47u8, 65u8, 197u8, 214u8, 195u8, 40u8, 3u8, 169u8, 46u8, 7u8, 150u8, 125u8, 211u8,
+                238u8, 66u8, 41u8, 114u8, 21u8, 130u8,
             ],
             [
-                82u8, 34u8, 217u8, 107u8, 131u8, 103u8, 39u8, 161u8, 214u8, 254u8, 30u8,
-                233u8, 174u8, 242u8, 127u8, 155u8, 181u8, 7u8, 189u8, 65u8, 121u8, 77u8,
-                239u8, 163u8, 118u8, 255u8, 108u8, 100u8, 138u8, 175u8, 143u8, 241u8,
+                82u8, 34u8, 217u8, 107u8, 131u8, 103u8, 39u8, 161u8, 214u8, 254u8, 30u8, 233u8,
+                174u8, 242u8, 127u8, 155u8, 181u8, 7u8, 189u8, 65u8, 121u8, 77u8, 239u8, 163u8,
+                118u8, 255u8, 108u8, 100u8, 138u8, 175u8, 143u8, 241u8,
             ],
             [
-                85u8, 175u8, 244u8, 204u8, 122u8, 61u8, 22u8, 12u8, 131u8, 241u8, 241u8,
-                91u8, 129u8, 128u8, 17u8, 237u8, 232u8, 65u8, 160u8, 180u8, 89u8, 127u8,
-                177u8, 77u8, 205u8, 54u8, 3u8, 223u8, 58u8, 17u8, 229u8, 224u8,
+                85u8, 175u8, 244u8, 204u8, 122u8, 61u8, 22u8, 12u8, 131u8, 241u8, 241u8, 91u8,
+                129u8, 128u8, 17u8, 237u8, 232u8, 65u8, 160u8, 180u8, 89u8, 127u8, 177u8, 77u8,
+                205u8, 54u8, 3u8, 223u8, 58u8, 17u8, 229u8, 224u8,
             ],
             [
-                86u8, 223u8, 39u8, 155u8, 191u8, 176u8, 61u8, 158u8, 208u8, 151u8, 187u8,
-                226u8, 242u8, 141u8, 82u8, 12u8, 160u8, 193u8, 22u8, 18u8, 6u8, 50u8,
-                121u8, 38u8, 233u8, 134u8, 100u8, 215u8, 13u8, 44u8, 36u8, 196u8,
+                86u8, 223u8, 39u8, 155u8, 191u8, 176u8, 61u8, 158u8, 208u8, 151u8, 187u8, 226u8,
+                242u8, 141u8, 82u8, 12u8, 160u8, 193u8, 22u8, 18u8, 6u8, 50u8, 121u8, 38u8, 233u8,
+                134u8, 100u8, 215u8, 13u8, 44u8, 36u8, 196u8,
             ],
             [
-                96u8, 190u8, 157u8, 97u8, 170u8, 216u8, 73u8, 250u8, 204u8, 40u8, 195u8,
-                139u8, 4u8, 140u8, 181u8, 196u8, 190u8, 52u8, 32u8, 184u8, 250u8, 34u8,
-                51u8, 224u8, 140u8, 250u8, 6u8, 190u8, 27u8, 109u8, 28u8, 62u8,
+                96u8, 190u8, 157u8, 97u8, 170u8, 216u8, 73u8, 250u8, 204u8, 40u8, 195u8, 139u8,
+                4u8, 140u8, 181u8, 196u8, 190u8, 52u8, 32u8, 184u8, 250u8, 34u8, 51u8, 224u8,
+                140u8, 250u8, 6u8, 190u8, 27u8, 109u8, 28u8, 62u8,
             ],
             [
-                105u8, 96u8, 193u8, 232u8, 143u8, 97u8, 195u8, 82u8, 219u8, 163u8, 77u8,
-                27u8, 191u8, 103u8, 83u8, 227u8, 2u8, 121u8, 82u8, 100u8, 213u8, 216u8,
-                174u8, 130u8, 247u8, 152u8, 60u8, 112u8, 4u8, 101u8, 30u8, 93u8,
+                105u8, 96u8, 193u8, 232u8, 143u8, 97u8, 195u8, 82u8, 219u8, 163u8, 77u8, 27u8,
+                191u8, 103u8, 83u8, 227u8, 2u8, 121u8, 82u8, 100u8, 213u8, 216u8, 174u8, 130u8,
+                247u8, 152u8, 60u8, 112u8, 4u8, 101u8, 30u8, 93u8,
             ],
             [
-                140u8, 102u8, 77u8, 60u8, 60u8, 165u8, 131u8, 252u8, 88u8, 3u8, 184u8,
-                169u8, 28u8, 73u8, 100u8, 75u8, 189u8, 149u8, 80u8, 191u8, 168u8, 121u8,
-                103u8, 199u8, 58u8, 209u8, 222u8, 131u8, 2u8, 119u8, 104u8, 192u8,
+                140u8, 102u8, 77u8, 60u8, 60u8, 165u8, 131u8, 252u8, 88u8, 3u8, 184u8, 169u8, 28u8,
+                73u8, 100u8, 75u8, 189u8, 149u8, 80u8, 191u8, 168u8, 121u8, 103u8, 199u8, 58u8,
+                209u8, 222u8, 131u8, 2u8, 119u8, 104u8, 192u8,
             ],
             [
-                168u8, 182u8, 76u8, 163u8, 35u8, 196u8, 107u8, 232u8, 173u8, 64u8, 135u8,
-                244u8, 109u8, 133u8, 151u8, 108u8, 211u8, 171u8, 11u8, 218u8, 50u8,
-                225u8, 113u8, 168u8, 85u8, 10u8, 108u8, 155u8, 124u8, 81u8, 154u8, 138u8,
+                168u8, 182u8, 76u8, 163u8, 35u8, 196u8, 107u8, 232u8, 173u8, 64u8, 135u8, 244u8,
+                109u8, 133u8, 151u8, 108u8, 211u8, 171u8, 11u8, 218u8, 50u8, 225u8, 113u8, 168u8,
+                85u8, 10u8, 108u8, 155u8, 124u8, 81u8, 154u8, 138u8,
             ],
             [
-                179u8, 213u8, 198u8, 100u8, 236u8, 134u8, 87u8, 88u8, 24u8, 232u8, 215u8,
-                95u8, 242u8, 92u8, 95u8, 134u8, 114u8, 80u8, 223u8, 137u8, 84u8, 8u8,
-                133u8, 73u8, 196u8, 28u8, 132u8, 140u8, 209u8, 14u8, 118u8, 203u8,
+                179u8, 213u8, 198u8, 100u8, 236u8, 134u8, 87u8, 88u8, 24u8, 232u8, 215u8, 95u8,
+                242u8, 92u8, 95u8, 134u8, 114u8, 80u8, 223u8, 137u8, 84u8, 8u8, 133u8, 73u8, 196u8,
+                28u8, 132u8, 140u8, 209u8, 14u8, 118u8, 203u8,
             ],
             [
-                193u8, 29u8, 98u8, 177u8, 60u8, 54u8, 10u8, 131u8, 8u8, 36u8, 135u8, 6u8,
-                75u8, 225u8, 236u8, 8u8, 120u8, 178u8, 240u8, 190u8, 79u8, 1u8, 43u8,
-                245u8, 159u8, 137u8, 225u8, 40u8, 6u8, 61u8, 71u8, 255u8,
+                193u8, 29u8, 98u8, 177u8, 60u8, 54u8, 10u8, 131u8, 8u8, 36u8, 135u8, 6u8, 75u8,
+                225u8, 236u8, 8u8, 120u8, 178u8, 240u8, 190u8, 79u8, 1u8, 43u8, 245u8, 159u8,
+                137u8, 225u8, 40u8, 6u8, 61u8, 71u8, 255u8,
             ],
             [
-                193u8, 72u8, 103u8, 89u8, 5u8, 208u8, 122u8, 213u8, 73u8, 111u8, 142u8,
-                244u8, 216u8, 25u8, 92u8, 144u8, 117u8, 3u8, 243u8, 236u8, 18u8, 253u8,
-                16u8, 237u8, 95u8, 33u8, 36u8, 10u8, 188u8, 105u8, 54u8, 52u8,
+                193u8, 72u8, 103u8, 89u8, 5u8, 208u8, 122u8, 213u8, 73u8, 111u8, 142u8, 244u8,
+                216u8, 25u8, 92u8, 144u8, 117u8, 3u8, 243u8, 236u8, 18u8, 253u8, 16u8, 237u8, 95u8,
+                33u8, 36u8, 10u8, 188u8, 105u8, 54u8, 52u8,
             ],
             [
-                201u8, 255u8, 143u8, 13u8, 24u8, 163u8, 247u8, 102u8, 206u8, 93u8, 227u8,
-                222u8, 33u8, 96u8, 118u8, 5u8, 1u8, 64u8, 228u8, 252u8, 38u8, 82u8,
-                245u8, 224u8, 231u8, 69u8, 246u8, 252u8, 131u8, 108u8, 218u8, 139u8,
+                201u8, 255u8, 143u8, 13u8, 24u8, 163u8, 247u8, 102u8, 206u8, 93u8, 227u8, 222u8,
+                33u8, 96u8, 118u8, 5u8, 1u8, 64u8, 228u8, 252u8, 38u8, 82u8, 245u8, 224u8, 231u8,
+                69u8, 246u8, 252u8, 131u8, 108u8, 218u8, 139u8,
             ],
             [
-                210u8, 77u8, 31u8, 199u8, 0u8, 206u8, 106u8, 150u8, 176u8, 77u8, 14u8,
-                240u8, 72u8, 203u8, 116u8, 228u8, 201u8, 100u8, 115u8, 81u8, 218u8, 33u8,
-                184u8, 69u8, 1u8, 216u8, 72u8, 225u8, 108u8, 22u8, 29u8, 235u8,
+                210u8, 77u8, 31u8, 199u8, 0u8, 206u8, 106u8, 150u8, 176u8, 77u8, 14u8, 240u8, 72u8,
+                203u8, 116u8, 228u8, 201u8, 100u8, 115u8, 81u8, 218u8, 33u8, 184u8, 69u8, 1u8,
+                216u8, 72u8, 225u8, 108u8, 22u8, 29u8, 235u8,
             ],
             [
-                219u8, 144u8, 80u8, 214u8, 82u8, 64u8, 67u8, 22u8, 33u8, 214u8, 29u8,
-                111u8, 148u8, 185u8, 112u8, 230u8, 63u8, 83u8, 166u8, 122u8, 87u8, 102u8,
-                97u8, 78u8, 230u8, 229u8, 197u8, 187u8, 212u8, 28u8, 142u8, 46u8,
+                219u8, 144u8, 80u8, 214u8, 82u8, 64u8, 67u8, 22u8, 33u8, 214u8, 29u8, 111u8, 148u8,
+                185u8, 112u8, 230u8, 63u8, 83u8, 166u8, 122u8, 87u8, 102u8, 97u8, 78u8, 230u8,
+                229u8, 197u8, 187u8, 212u8, 28u8, 142u8, 46u8,
             ],
             [
-                220u8, 55u8, 13u8, 179u8, 53u8, 137u8, 231u8, 51u8, 113u8, 220u8, 62u8,
-                228u8, 44u8, 120u8, 156u8, 0u8, 61u8, 51u8, 110u8, 239u8, 203u8, 124u8,
-                63u8, 86u8, 254u8, 15u8, 81u8, 174u8, 91u8, 29u8, 151u8, 2u8,
+                220u8, 55u8, 13u8, 179u8, 53u8, 137u8, 231u8, 51u8, 113u8, 220u8, 62u8, 228u8,
+                44u8, 120u8, 156u8, 0u8, 61u8, 51u8, 110u8, 239u8, 203u8, 124u8, 63u8, 86u8, 254u8,
+                15u8, 81u8, 174u8, 91u8, 29u8, 151u8, 2u8,
             ],
             [
-                222u8, 242u8, 231u8, 4u8, 160u8, 119u8, 40u8, 74u8, 7u8, 243u8, 208u8,
-                180u8, 54u8, 219u8, 136u8, 245u8, 217u8, 129u8, 182u8, 159u8, 88u8,
-                171u8, 124u8, 26u8, 230u8, 35u8, 37u8, 39u8, 24u8, 166u8, 222u8, 1u8,
+                222u8, 242u8, 231u8, 4u8, 160u8, 119u8, 40u8, 74u8, 7u8, 243u8, 208u8, 180u8, 54u8,
+                219u8, 136u8, 245u8, 217u8, 129u8, 182u8, 159u8, 88u8, 171u8, 124u8, 26u8, 230u8,
+                35u8, 37u8, 39u8, 24u8, 166u8, 222u8, 1u8,
             ],
             [
-                228u8, 36u8, 134u8, 176u8, 204u8, 219u8, 239u8, 129u8, 162u8, 7u8, 92u8,
-                72u8, 200u8, 229u8, 21u8, 192u8, 121u8, 174u8, 167u8, 60u8, 139u8, 130u8,
-                66u8, 153u8, 151u8, 199u8, 42u8, 47u8, 225u8, 191u8, 79u8, 239u8,
+                228u8, 36u8, 134u8, 176u8, 204u8, 219u8, 239u8, 129u8, 162u8, 7u8, 92u8, 72u8,
+                200u8, 229u8, 21u8, 192u8, 121u8, 174u8, 167u8, 60u8, 139u8, 130u8, 66u8, 153u8,
+                151u8, 199u8, 42u8, 47u8, 225u8, 191u8, 79u8, 239u8,
             ],
             [
-                229u8, 237u8, 107u8, 227u8, 28u8, 53u8, 165u8, 188u8, 87u8, 39u8, 70u8,
-                171u8, 51u8, 71u8, 252u8, 117u8, 70u8, 105u8, 245u8, 139u8, 192u8, 233u8,
-                234u8, 163u8, 37u8, 115u8, 80u8, 241u8, 10u8, 98u8, 50u8, 30u8,
+                229u8, 237u8, 107u8, 227u8, 28u8, 53u8, 165u8, 188u8, 87u8, 39u8, 70u8, 171u8,
+                51u8, 71u8, 252u8, 117u8, 70u8, 105u8, 245u8, 139u8, 192u8, 233u8, 234u8, 163u8,
+                37u8, 115u8, 80u8, 241u8, 10u8, 98u8, 50u8, 30u8,
             ],
             [
-                232u8, 66u8, 130u8, 170u8, 235u8, 204u8, 166u8, 152u8, 68u8, 62u8, 57u8,
-                162u8, 169u8, 72u8, 163u8, 69u8, 208u8, 210u8, 235u8, 198u8, 84u8, 175u8,
-                92u8, 182u8, 87u8, 162u8, 215u8, 232u8, 5u8, 59u8, 246u8, 203u8,
+                232u8, 66u8, 130u8, 170u8, 235u8, 204u8, 166u8, 152u8, 68u8, 62u8, 57u8, 162u8,
+                169u8, 72u8, 163u8, 69u8, 208u8, 210u8, 235u8, 198u8, 84u8, 175u8, 92u8, 182u8,
+                87u8, 162u8, 215u8, 232u8, 5u8, 59u8, 246u8, 203u8,
             ],
             [
-                235u8, 14u8, 79u8, 141u8, 199u8, 64u8, 88u8, 25u8, 77u8, 6u8, 2u8, 66u8,
-                95u8, 230u8, 2u8, 249u8, 85u8, 194u8, 34u8, 32u8, 15u8, 127u8, 16u8,
-                198u8, 254u8, 103u8, 153u8, 47u8, 123u8, 36u8, 199u8, 233u8,
+                235u8, 14u8, 79u8, 141u8, 199u8, 64u8, 88u8, 25u8, 77u8, 6u8, 2u8, 66u8, 95u8,
+                230u8, 2u8, 249u8, 85u8, 194u8, 34u8, 32u8, 15u8, 127u8, 16u8, 198u8, 254u8, 103u8,
+                153u8, 47u8, 123u8, 36u8, 199u8, 233u8,
             ],
             [
-                235u8, 109u8, 55u8, 189u8, 39u8, 26u8, 190u8, 19u8, 149u8, 178u8, 29u8,
-                109u8, 120u8, 243u8, 72u8, 125u8, 101u8, 132u8, 134u8, 40u8, 114u8,
-                194u8, 159u8, 253u8, 63u8, 144u8, 115u8, 110u8, 233u8, 155u8, 115u8,
-                147u8,
+                235u8, 109u8, 55u8, 189u8, 39u8, 26u8, 190u8, 19u8, 149u8, 178u8, 29u8, 109u8,
+                120u8, 243u8, 72u8, 125u8, 101u8, 132u8, 134u8, 40u8, 114u8, 194u8, 159u8, 253u8,
+                63u8, 144u8, 115u8, 110u8, 233u8, 155u8, 115u8, 147u8,
             ],
             [
-                253u8, 124u8, 146u8, 8u8, 249u8, 86u8, 191u8, 12u8, 106u8, 183u8, 106u8,
-                102u8, 127u8, 4u8, 54u8, 18u8, 69u8, 173u8, 62u8, 10u8, 45u8, 14u8,
-                255u8, 146u8, 235u8, 130u8, 122u8, 207u8, 204u8, 166u8, 142u8, 169u8,
+                253u8, 124u8, 146u8, 8u8, 249u8, 86u8, 191u8, 12u8, 106u8, 183u8, 106u8, 102u8,
+                127u8, 4u8, 54u8, 18u8, 69u8, 173u8, 62u8, 10u8, 45u8, 14u8, 255u8, 146u8, 235u8,
+                130u8, 122u8, 207u8, 204u8, 166u8, 142u8, 169u8,
             ],
         ];
     }
@@ -5815,10 +5605,7 @@ event VerifyInput(address indexed caller, bytes32 inputHandle, address userAddre
                         .map(Self::FheAdd)
                 }
                 Some(<FheBitAnd as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
-                    <FheBitAnd as alloy_sol_types::SolEvent>::decode_raw_log(
-                            topics,
-                            data,
-                        )
+                    <FheBitAnd as alloy_sol_types::SolEvent>::decode_raw_log(topics, data)
                         .map(Self::FheBitAnd)
                 }
                 Some(<FheBitOr as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
@@ -5826,10 +5613,7 @@ event VerifyInput(address indexed caller, bytes32 inputHandle, address userAddre
                         .map(Self::FheBitOr)
                 }
                 Some(<FheBitXor as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
-                    <FheBitXor as alloy_sol_types::SolEvent>::decode_raw_log(
-                            topics,
-                            data,
-                        )
+                    <FheBitXor as alloy_sol_types::SolEvent>::decode_raw_log(topics, data)
                         .map(Self::FheBitXor)
                 }
                 Some(<FheDiv as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
@@ -5849,10 +5633,7 @@ event VerifyInput(address indexed caller, bytes32 inputHandle, address userAddre
                         .map(Self::FheGt)
                 }
                 Some(<FheIfThenElse as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
-                    <FheIfThenElse as alloy_sol_types::SolEvent>::decode_raw_log(
-                            topics,
-                            data,
-                        )
+                    <FheIfThenElse as alloy_sol_types::SolEvent>::decode_raw_log(topics, data)
                         .map(Self::FheIfThenElse)
                 }
                 Some(<FheIsIn as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
@@ -5880,10 +5661,7 @@ event VerifyInput(address indexed caller, bytes32 inputHandle, address userAddre
                         .map(Self::FheMul)
                 }
                 Some(<FheMulDiv as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
-                    <FheMulDiv as alloy_sol_types::SolEvent>::decode_raw_log(
-                            topics,
-                            data,
-                        )
+                    <FheMulDiv as alloy_sol_types::SolEvent>::decode_raw_log(topics, data)
                         .map(Self::FheMulDiv)
                 }
                 Some(<FheNe as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
@@ -5903,10 +5681,7 @@ event VerifyInput(address indexed caller, bytes32 inputHandle, address userAddre
                         .map(Self::FheRand)
                 }
                 Some(<FheRandBounded as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
-                    <FheRandBounded as alloy_sol_types::SolEvent>::decode_raw_log(
-                            topics,
-                            data,
-                        )
+                    <FheRandBounded as alloy_sol_types::SolEvent>::decode_raw_log(topics, data)
                         .map(Self::FheRandBounded)
                 }
                 Some(<FheRem as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
@@ -5938,30 +5713,22 @@ event VerifyInput(address indexed caller, bytes32 inputHandle, address userAddre
                         .map(Self::FheSum)
                 }
                 Some(<TrivialEncrypt as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
-                    <TrivialEncrypt as alloy_sol_types::SolEvent>::decode_raw_log(
-                            topics,
-                            data,
-                        )
+                    <TrivialEncrypt as alloy_sol_types::SolEvent>::decode_raw_log(topics, data)
                         .map(Self::TrivialEncrypt)
                 }
                 Some(<VerifyInput as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
-                    <VerifyInput as alloy_sol_types::SolEvent>::decode_raw_log(
-                            topics,
-                            data,
-                        )
+                    <VerifyInput as alloy_sol_types::SolEvent>::decode_raw_log(topics, data)
                         .map(Self::VerifyInput)
                 }
-                _ => {
-                    alloy_sol_types::private::Err(alloy_sol_types::Error::InvalidLog {
-                        name: <Self as alloy_sol_types::SolEventInterface>::NAME,
-                        log: alloy_sol_types::private::Box::new(
-                            alloy_sol_types::private::LogData::new_unchecked(
-                                topics.to_vec(),
-                                data.to_vec().into(),
-                            ),
+                _ => alloy_sol_types::private::Err(alloy_sol_types::Error::InvalidLog {
+                    name: <Self as alloy_sol_types::SolEventInterface>::NAME,
+                    log: alloy_sol_types::private::Box::new(
+                        alloy_sol_types::private::LogData::new_unchecked(
+                            topics.to_vec(),
+                            data.to_vec().into(),
                         ),
-                    })
-                }
+                    ),
+                }),
             }
         }
     }
@@ -5969,93 +5736,39 @@ event VerifyInput(address indexed caller, bytes32 inputHandle, address userAddre
     impl alloy_sol_types::private::IntoLogData for FHEEventsEvents {
         fn to_log_data(&self) -> alloy_sol_types::private::LogData {
             match self {
-                Self::Cast(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
-                Self::FheAdd(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
-                Self::FheBitAnd(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
-                Self::FheBitOr(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
-                Self::FheBitXor(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
-                Self::FheDiv(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
-                Self::FheEq(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
-                Self::FheGe(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
-                Self::FheGt(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
+                Self::Cast(inner) => alloy_sol_types::private::IntoLogData::to_log_data(inner),
+                Self::FheAdd(inner) => alloy_sol_types::private::IntoLogData::to_log_data(inner),
+                Self::FheBitAnd(inner) => alloy_sol_types::private::IntoLogData::to_log_data(inner),
+                Self::FheBitOr(inner) => alloy_sol_types::private::IntoLogData::to_log_data(inner),
+                Self::FheBitXor(inner) => alloy_sol_types::private::IntoLogData::to_log_data(inner),
+                Self::FheDiv(inner) => alloy_sol_types::private::IntoLogData::to_log_data(inner),
+                Self::FheEq(inner) => alloy_sol_types::private::IntoLogData::to_log_data(inner),
+                Self::FheGe(inner) => alloy_sol_types::private::IntoLogData::to_log_data(inner),
+                Self::FheGt(inner) => alloy_sol_types::private::IntoLogData::to_log_data(inner),
                 Self::FheIfThenElse(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
-                Self::FheIsIn(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
-                Self::FheLe(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
-                Self::FheLt(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
-                Self::FheMax(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
-                Self::FheMin(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
-                Self::FheMul(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
-                Self::FheMulDiv(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
-                Self::FheNe(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
-                Self::FheNeg(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
-                Self::FheNot(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
-                Self::FheRand(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
+                Self::FheIsIn(inner) => alloy_sol_types::private::IntoLogData::to_log_data(inner),
+                Self::FheLe(inner) => alloy_sol_types::private::IntoLogData::to_log_data(inner),
+                Self::FheLt(inner) => alloy_sol_types::private::IntoLogData::to_log_data(inner),
+                Self::FheMax(inner) => alloy_sol_types::private::IntoLogData::to_log_data(inner),
+                Self::FheMin(inner) => alloy_sol_types::private::IntoLogData::to_log_data(inner),
+                Self::FheMul(inner) => alloy_sol_types::private::IntoLogData::to_log_data(inner),
+                Self::FheMulDiv(inner) => alloy_sol_types::private::IntoLogData::to_log_data(inner),
+                Self::FheNe(inner) => alloy_sol_types::private::IntoLogData::to_log_data(inner),
+                Self::FheNeg(inner) => alloy_sol_types::private::IntoLogData::to_log_data(inner),
+                Self::FheNot(inner) => alloy_sol_types::private::IntoLogData::to_log_data(inner),
+                Self::FheRand(inner) => alloy_sol_types::private::IntoLogData::to_log_data(inner),
                 Self::FheRandBounded(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
-                Self::FheRem(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
-                Self::FheRotl(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
-                Self::FheRotr(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
-                Self::FheShl(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
-                Self::FheShr(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
-                Self::FheSub(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
-                Self::FheSum(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
+                Self::FheRem(inner) => alloy_sol_types::private::IntoLogData::to_log_data(inner),
+                Self::FheRotl(inner) => alloy_sol_types::private::IntoLogData::to_log_data(inner),
+                Self::FheRotr(inner) => alloy_sol_types::private::IntoLogData::to_log_data(inner),
+                Self::FheShl(inner) => alloy_sol_types::private::IntoLogData::to_log_data(inner),
+                Self::FheShr(inner) => alloy_sol_types::private::IntoLogData::to_log_data(inner),
+                Self::FheSub(inner) => alloy_sol_types::private::IntoLogData::to_log_data(inner),
+                Self::FheSum(inner) => alloy_sol_types::private::IntoLogData::to_log_data(inner),
                 Self::TrivialEncrypt(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
@@ -6066,12 +5779,8 @@ event VerifyInput(address indexed caller, bytes32 inputHandle, address userAddre
         }
         fn into_log_data(self) -> alloy_sol_types::private::LogData {
             match self {
-                Self::Cast(inner) => {
-                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
-                }
-                Self::FheAdd(inner) => {
-                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
-                }
+                Self::Cast(inner) => alloy_sol_types::private::IntoLogData::into_log_data(inner),
+                Self::FheAdd(inner) => alloy_sol_types::private::IntoLogData::into_log_data(inner),
                 Self::FheBitAnd(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
@@ -6081,78 +5790,36 @@ event VerifyInput(address indexed caller, bytes32 inputHandle, address userAddre
                 Self::FheBitXor(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
-                Self::FheDiv(inner) => {
-                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
-                }
-                Self::FheEq(inner) => {
-                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
-                }
-                Self::FheGe(inner) => {
-                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
-                }
-                Self::FheGt(inner) => {
-                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
-                }
+                Self::FheDiv(inner) => alloy_sol_types::private::IntoLogData::into_log_data(inner),
+                Self::FheEq(inner) => alloy_sol_types::private::IntoLogData::into_log_data(inner),
+                Self::FheGe(inner) => alloy_sol_types::private::IntoLogData::into_log_data(inner),
+                Self::FheGt(inner) => alloy_sol_types::private::IntoLogData::into_log_data(inner),
                 Self::FheIfThenElse(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
-                Self::FheIsIn(inner) => {
-                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
-                }
-                Self::FheLe(inner) => {
-                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
-                }
-                Self::FheLt(inner) => {
-                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
-                }
-                Self::FheMax(inner) => {
-                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
-                }
-                Self::FheMin(inner) => {
-                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
-                }
-                Self::FheMul(inner) => {
-                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
-                }
+                Self::FheIsIn(inner) => alloy_sol_types::private::IntoLogData::into_log_data(inner),
+                Self::FheLe(inner) => alloy_sol_types::private::IntoLogData::into_log_data(inner),
+                Self::FheLt(inner) => alloy_sol_types::private::IntoLogData::into_log_data(inner),
+                Self::FheMax(inner) => alloy_sol_types::private::IntoLogData::into_log_data(inner),
+                Self::FheMin(inner) => alloy_sol_types::private::IntoLogData::into_log_data(inner),
+                Self::FheMul(inner) => alloy_sol_types::private::IntoLogData::into_log_data(inner),
                 Self::FheMulDiv(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
-                Self::FheNe(inner) => {
-                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
-                }
-                Self::FheNeg(inner) => {
-                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
-                }
-                Self::FheNot(inner) => {
-                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
-                }
-                Self::FheRand(inner) => {
-                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
-                }
+                Self::FheNe(inner) => alloy_sol_types::private::IntoLogData::into_log_data(inner),
+                Self::FheNeg(inner) => alloy_sol_types::private::IntoLogData::into_log_data(inner),
+                Self::FheNot(inner) => alloy_sol_types::private::IntoLogData::into_log_data(inner),
+                Self::FheRand(inner) => alloy_sol_types::private::IntoLogData::into_log_data(inner),
                 Self::FheRandBounded(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
-                Self::FheRem(inner) => {
-                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
-                }
-                Self::FheRotl(inner) => {
-                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
-                }
-                Self::FheRotr(inner) => {
-                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
-                }
-                Self::FheShl(inner) => {
-                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
-                }
-                Self::FheShr(inner) => {
-                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
-                }
-                Self::FheSub(inner) => {
-                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
-                }
-                Self::FheSum(inner) => {
-                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
-                }
+                Self::FheRem(inner) => alloy_sol_types::private::IntoLogData::into_log_data(inner),
+                Self::FheRotl(inner) => alloy_sol_types::private::IntoLogData::into_log_data(inner),
+                Self::FheRotr(inner) => alloy_sol_types::private::IntoLogData::into_log_data(inner),
+                Self::FheShl(inner) => alloy_sol_types::private::IntoLogData::into_log_data(inner),
+                Self::FheShr(inner) => alloy_sol_types::private::IntoLogData::into_log_data(inner),
+                Self::FheSub(inner) => alloy_sol_types::private::IntoLogData::into_log_data(inner),
+                Self::FheSum(inner) => alloy_sol_types::private::IntoLogData::into_log_data(inner),
                 Self::TrivialEncrypt(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
@@ -6165,7 +5832,7 @@ event VerifyInput(address indexed caller, bytes32 inputHandle, address userAddre
     use alloy::contract as alloy_contract;
     /**Creates a new wrapper around an on-chain [`FHEEvents`](self) contract instance.
 
-See the [wrapper's documentation](`FHEEventsInstance`) for more details.*/
+    See the [wrapper's documentation](`FHEEventsInstance`) for more details.*/
     #[inline]
     pub const fn new<
         P: alloy_contract::private::Provider<N>,
@@ -6178,43 +5845,40 @@ See the [wrapper's documentation](`FHEEventsInstance`) for more details.*/
     }
     /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
-Returns a new instance of the contract, if the deployment was successful.
+    Returns a new instance of the contract, if the deployment was successful.
 
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
+    For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
     #[inline]
-    pub fn deploy<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(
+    pub fn deploy<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>(
         provider: P,
-    ) -> impl ::core::future::Future<
-        Output = alloy_contract::Result<FHEEventsInstance<P, N>>,
-    > {
+    ) -> impl ::core::future::Future<Output = alloy_contract::Result<FHEEventsInstance<P, N>>> {
         FHEEventsInstance::<P, N>::deploy(provider)
     }
     /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
+    and constructor arguments, if any.
 
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
+    This is a simple wrapper around creating a `RawCallBuilder` with the data set to
+    the bytecode concatenated with the constructor's ABI-encoded arguments.*/
     #[inline]
     pub fn deploy_builder<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
-    >(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
+    >(
+        provider: P,
+    ) -> alloy_contract::RawCallBuilder<P, N> {
         FHEEventsInstance::<P, N>::deploy_builder(provider)
     }
     /**A [`FHEEvents`](self) instance.
 
-Contains type-safe methods for interacting with an on-chain instance of the
-[`FHEEvents`](self) contract located at a given `address`, using a given
-provider `P`.
+    Contains type-safe methods for interacting with an on-chain instance of the
+    [`FHEEvents`](self) contract located at a given `address`, using a given
+    provider `P`.
 
-If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
-documentation on how to provide it), the `deploy` and `deploy_builder` methods can
-be used to deploy a new instance of the contract.
+    If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
+    documentation on how to provide it), the `deploy` and `deploy_builder` methods can
+    be used to deploy a new instance of the contract.
 
-See the [module-level documentation](self) for all the available methods.*/
+    See the [module-level documentation](self) for all the available methods.*/
     #[derive(Clone)]
     pub struct FHEEventsInstance<P, N = alloy_contract::private::Ethereum> {
         address: alloy_sol_types::private::Address,
@@ -6225,23 +5889,21 @@ See the [module-level documentation](self) for all the available methods.*/
     impl<P, N> ::core::fmt::Debug for FHEEventsInstance<P, N> {
         #[inline]
         fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-            f.debug_tuple("FHEEventsInstance").field(&self.address).finish()
+            f.debug_tuple("FHEEventsInstance")
+                .field(&self.address)
+                .finish()
         }
     }
     /// Instantiation and getters/setters.
     #[automatically_derived]
-    impl<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    > FHEEventsInstance<P, N> {
+    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
+        FHEEventsInstance<P, N>
+    {
         /**Creates a new wrapper around an on-chain [`FHEEvents`](self) contract instance.
 
-See the [wrapper's documentation](`FHEEventsInstance`) for more details.*/
+        See the [wrapper's documentation](`FHEEventsInstance`) for more details.*/
         #[inline]
-        pub const fn new(
-            address: alloy_sol_types::private::Address,
-            provider: P,
-        ) -> Self {
+        pub const fn new(address: alloy_sol_types::private::Address, provider: P) -> Self {
             Self {
                 address,
                 provider,
@@ -6250,22 +5912,20 @@ See the [wrapper's documentation](`FHEEventsInstance`) for more details.*/
         }
         /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
-Returns a new instance of the contract, if the deployment was successful.
+        Returns a new instance of the contract, if the deployment was successful.
 
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
+        For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
         #[inline]
-        pub async fn deploy(
-            provider: P,
-        ) -> alloy_contract::Result<FHEEventsInstance<P, N>> {
+        pub async fn deploy(provider: P) -> alloy_contract::Result<FHEEventsInstance<P, N>> {
             let call_builder = Self::deploy_builder(provider);
             let contract_address = call_builder.deploy().await?;
             Ok(Self::new(contract_address, call_builder.provider))
         }
         /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
+        and constructor arguments, if any.
 
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
+        This is a simple wrapper around creating a `RawCallBuilder` with the data set to
+        the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         #[inline]
         pub fn deploy_builder(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
             alloy_contract::RawCallBuilder::new_raw_deploy(
@@ -6307,10 +5967,9 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
     }
     /// Function calls.
     #[automatically_derived]
-    impl<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    > FHEEventsInstance<P, N> {
+    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
+        FHEEventsInstance<P, N>
+    {
         /// Creates a new call builder using this contract instance's provider and address.
         ///
         /// Note that the call can be any function call, not just those defined in this
@@ -6324,10 +5983,9 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
     }
     /// Event filters.
     #[automatically_derived]
-    impl<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    > FHEEventsInstance<P, N> {
+    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
+        FHEEventsInstance<P, N>
+    {
         /// Creates a new event filter using this contract instance's provider and address.
         ///
         /// Note that the type can be any event, not just those defined in this contract.
@@ -6374,9 +6032,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             self.event_filter::<FheGt>()
         }
         ///Creates a new event filter for the [`FheIfThenElse`] event.
-        pub fn FheIfThenElse_filter(
-            &self,
-        ) -> alloy_contract::Event<&P, FheIfThenElse, N> {
+        pub fn FheIfThenElse_filter(&self) -> alloy_contract::Event<&P, FheIfThenElse, N> {
             self.event_filter::<FheIfThenElse>()
         }
         ///Creates a new event filter for the [`FheIsIn`] event.
@@ -6424,9 +6080,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             self.event_filter::<FheRand>()
         }
         ///Creates a new event filter for the [`FheRandBounded`] event.
-        pub fn FheRandBounded_filter(
-            &self,
-        ) -> alloy_contract::Event<&P, FheRandBounded, N> {
+        pub fn FheRandBounded_filter(&self) -> alloy_contract::Event<&P, FheRandBounded, N> {
             self.event_filter::<FheRandBounded>()
         }
         ///Creates a new event filter for the [`FheRem`] event.
@@ -6458,9 +6112,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             self.event_filter::<FheSum>()
         }
         ///Creates a new event filter for the [`TrivialEncrypt`] event.
-        pub fn TrivialEncrypt_filter(
-            &self,
-        ) -> alloy_contract::Event<&P, TrivialEncrypt, N> {
+        pub fn TrivialEncrypt_filter(&self) -> alloy_contract::Event<&P, TrivialEncrypt, N> {
             self.event_filter::<TrivialEncrypt>()
         }
         ///Creates a new event filter for the [`VerifyInput`] event.

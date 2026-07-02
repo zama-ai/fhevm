@@ -1435,40 +1435,15 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
     // RFC-029 one-time compressed-key migration
     // -----------------------------------------------------------------------
 
-    bytes32 internal constant EIP712_COMPRESSED_KEY_MATERIALS_TYPE_HASH =
-        keccak256(
-            "CompressedKeyMaterialsVerification(uint256 prepKeygenId,uint256 migrationRequestId,uint256 keyId,KeyDigest[] keyDigests,bytes extraData)KeyDigest(uint8 keyType,bytes digest)"
-        );
-
-    function _hashCompressedKeyMaterials(
-        uint256 prepKeygenId,
-        uint256 migrationRequestId,
-        uint256 keyId,
-        IKMSGeneration.KeyDigest[] memory keyDigests,
-        bytes memory extraData
-    ) internal view returns (bytes32) {
-        bytes32[] memory digestHashes = new bytes32[](keyDigests.length);
-        for (uint256 i = 0; i < keyDigests.length; i++) {
-            digestHashes[i] = keccak256(
-                abi.encode(EIP712_KEY_DIGEST_TYPE_HASH, keyDigests[i].keyType, keccak256(keyDigests[i].digest))
-            );
-        }
-        bytes32 structHash = keccak256(
-            abi.encode(
-                EIP712_COMPRESSED_KEY_MATERIALS_TYPE_HASH,
-                prepKeygenId,
-                migrationRequestId,
-                keyId,
-                keccak256(abi.encodePacked(digestHashes)),
-                keccak256(extraData)
-            )
-        );
-        return MessageHashUtils.toTypedDataHash(_computeDomainSeparator(kmsGenerationAdd), structHash);
-    }
-
+    /// @dev Mirrors KMS Core's KeygenVerification::new_compressed digest set:
+    /// [PUBLIC over the untouched public key, COMPRESSED_KEYSET over the new blob].
     function _mockCompressedKeyDigests() internal pure returns (IKMSGeneration.KeyDigest[] memory) {
-        IKMSGeneration.KeyDigest[] memory digests = new IKMSGeneration.KeyDigest[](1);
-        digests[0] = IKMSGeneration.KeyDigest({keyType: IKMSGeneration.KeyType.Server, digest: hex"c0ffee00"});
+        IKMSGeneration.KeyDigest[] memory digests = new IKMSGeneration.KeyDigest[](2);
+        digests[0] = IKMSGeneration.KeyDigest({keyType: IKMSGeneration.KeyType.Public, digest: hex"deadbeef"});
+        digests[1] = IKMSGeneration.KeyDigest({
+            keyType: IKMSGeneration.KeyType.CompressedKeyset,
+            digest: hex"c0ffee00"
+        });
         return digests;
     }
 
@@ -1481,13 +1456,9 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         address sender
     ) internal {
         IKMSGeneration.KeyDigest[] memory digests = _mockCompressedKeyDigests();
-        bytes32 digest = _hashCompressedKeyMaterials(
-            prepKeygenId,
-            migrationRequestId,
-            keyId,
-            digests,
-            _buildExtraData()
-        );
+        // KMS Core signs KeygenVerification with the migration request ID
+        // in the keyId slot — the contract must verify exactly that.
+        bytes32 digest = _hashKeygen(prepKeygenId, migrationRequestId, digests, _buildExtraData());
         bytes memory sig = _computeSignature(pk, digest);
         vm.prank(sender);
         kmsGeneration.addCompressedKeyMaterials(migrationRequestId, digests, sig);
@@ -1548,8 +1519,9 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
             keyId
         );
         assertEq(urls.length, 1);
-        assertEq(digests.length, 1);
-        assertEq(digests[0].digest, hex"c0ffee00");
+        assertEq(digests.length, 2);
+        assertEq(uint256(digests[1].keyType), uint256(IKMSGeneration.KeyType.CompressedKeyset));
+        assertEq(digests[1].digest, hex"c0ffee00");
 
         // The original key materials are untouched.
         (, IKMSGeneration.KeyDigest[] memory originalDigests) = kmsGeneration.getKeyMaterials(keyId);
@@ -1582,7 +1554,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         _doPrepKeygenResponse(prepKeygenId, kmsPk0, kmsTxSender0);
 
         IKMSGeneration.KeyDigest[] memory digests = _mockCompressedKeyDigests();
-        bytes32 digest = _hashCompressedKeyMaterials(prepKeygenId, keyId, keyId, digests, _buildExtraData());
+        bytes32 digest = _hashKeygen(prepKeygenId, keyId, digests, _buildExtraData());
         bytes memory sig = _computeSignature(kmsPk0, digest);
         vm.prank(kmsTxSender0);
         vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.WrongKeygenResponseEndpoint.selector, keyId));

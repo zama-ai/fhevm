@@ -20,7 +20,11 @@ interface IKMSGeneration {
      */
     enum KeyType {
         Server, // 0
-        Public // 1
+        Public, // 1
+        /// @dev Reserved by KMS Core's signing enum; no digest uses it yet.
+        CompressedPublic, // 2
+        /// @dev Digest over a CompressedXofKeySet blob (RFC-029 migration; RFC-028 flows).
+        CompressedKeyset // 3
     }
 
     /**

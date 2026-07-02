@@ -745,10 +745,13 @@ pub(crate) async fn insert_compressed_key_material_event(
     block_hash: &[u8],
     block_number: u64,
 ) -> Result<(), sqlx::Error> {
+    // Migration publications carry [Public = 1, CompressedKeyset = 3];
+    // the compressed digest is what the downloaded blob must hash to.
+    const COMPRESSED_KEYSET_KEY_TYPE: u8 = 3;
     let digest_server = event
         .keyDigests
         .iter()
-        .filter(|d| d.keyType == 0)
+        .filter(|d| d.keyType == COMPRESSED_KEYSET_KEY_TYPE)
         .map(|d| d.digest.to_vec())
         .next();
     sqlx::query!(

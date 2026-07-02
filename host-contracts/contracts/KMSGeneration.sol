@@ -65,26 +65,6 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
     bytes32 private constant EIP712_KEYGEN_TYPE_HASH = keccak256(bytes(EIP712_KEYGEN_TYPE));
 
     /**
-     * @notice The CompressedKeyMaterialsVerification typed definition (RFC-029 one-time
-     * compressed-key migration). Deliberately distinct from KeygenVerification so a digest
-     * set signed for one flow can never be replayed into the other.
-     * @dev The following fields are used for the CompressedKeyMaterialsVerification struct:
-     * - prepKeygenId: The ID of the migration preprocessing request.
-     * - migrationRequestId: The migration keygen request ID.
-     * - keyId: The ID of the existing key whose material is re-materialized.
-     * - keyDigests: The digests of the compressed key material.
-     * - extraData: Additional context data.
-     */
-    string private constant EIP712_COMPRESSED_KEY_MATERIALS_TYPE =
-        "CompressedKeyMaterialsVerification(uint256 prepKeygenId,uint256 migrationRequestId,uint256 keyId,KeyDigest[] keyDigests,bytes extraData)KeyDigest(uint8 keyType,bytes digest)";
-
-    /**
-     * @notice The hash of the CompressedKeyMaterialsVerification typed definition.
-     */
-    bytes32 private constant EIP712_COMPRESSED_KEY_MATERIALS_TYPE_HASH =
-        keccak256(bytes(EIP712_COMPRESSED_KEY_MATERIALS_TYPE));
-
-    /**
      * @notice The CrsgenVerification typed definition.
      * @dev The following fields are used for the CrsgenVerification struct:
      * - crsId: The ID of the generated CRS.
@@ -529,16 +509,12 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
             revert KeyManagementRequestPending();
         }
 
-        // Compute the digest of the CompressedKeyMaterialsVerification struct. The distinct
-        // typed payload binds the digests to this migration request and the existing key, so
-        // a set signed for the normal keygen flow can never be replayed here (and vice versa).
-        bytes32 digest = _hashCompressedKeyMaterialsVerification(
-            prepKeygenId,
-            migrationRequestId,
-            keyId,
-            keyDigests,
-            extraData
-        );
+        // KMS Core signs the same KeygenVerification struct for every keygen, with the
+        // migration request ID in the keyId field and the compressed digest typed
+        // CompressedKeyset. Verify exactly that payload: request IDs are globally unique
+        // and the endpoints are mutually exclusive by request kind, so a signature from
+        // one flow can never be accepted by the other.
+        bytes32 digest = _hashKeygenVerification(prepKeygenId, migrationRequestId, keyDigests, extraData);
 
         address kmsSigner = _validateEIP712Signature(contextId, digest, signature);
 
@@ -1075,44 +1051,6 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
                     abi.encode(
                         EIP712_KEYGEN_TYPE_HASH,
                         prepKeygenId,
-                        keyId,
-                        keccak256(abi.encodePacked(keyDigestHashes)),
-                        keccak256(extraData)
-                    )
-                )
-            );
-    }
-
-    /**
-     * @notice Computes the hash of a CompressedKeyMaterialsVerification struct
-     * @param prepKeygenId The ID of the migration preprocessing request.
-     * @param migrationRequestId The migration keygen request ID.
-     * @param keyId The ID of the existing key.
-     * @param keyDigests The digests of the compressed key material.
-     * @param extraData The extra data for replay protection.
-     * @return The hash of the CompressedKeyMaterialsVerification struct
-     */
-    function _hashCompressedKeyMaterialsVerification(
-        uint256 prepKeygenId,
-        uint256 migrationRequestId,
-        uint256 keyId,
-        KeyDigest[] calldata keyDigests,
-        bytes memory extraData
-    ) internal view virtual returns (bytes32) {
-        bytes32[] memory keyDigestHashes = new bytes32[](keyDigests.length);
-        for (uint256 i = 0; i < keyDigests.length; i++) {
-            keyDigestHashes[i] = keccak256(
-                abi.encode(EIP712_KEY_DIGEST_TYPE_HASH, keyDigests[i].keyType, keccak256(keyDigests[i].digest))
-            );
-        }
-
-        return
-            _hashTypedDataV4(
-                keccak256(
-                    abi.encode(
-                        EIP712_COMPRESSED_KEY_MATERIALS_TYPE_HASH,
-                        prepKeygenId,
-                        migrationRequestId,
                         keyId,
                         keccak256(abi.encodePacked(keyDigestHashes)),
                         keccak256(extraData)

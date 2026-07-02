@@ -80,12 +80,11 @@ pub mod IDstApp {
     pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
         b"",
     );
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `onConfidentialBridgeReceived(uint32,bytes32,bytes,bytes32[],bytes32[],bytes32)` and selector `0x6bd6bc8a`.
-```solidity
-function onConfidentialBridgeReceived(uint32 srcEid, bytes32 srcApp, bytes memory payload, bytes32[] memory srcHandleList, bytes32[] memory dstHandleList, bytes32 guid) external;
-```*/
+    ```solidity
+    function onConfidentialBridgeReceived(uint32 srcEid, bytes32 srcApp, bytes memory payload, bytes32[] memory srcHandleList, bytes32[] memory dstHandleList, bytes32 guid) external;
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct onConfidentialBridgeReceivedCall {
@@ -96,13 +95,11 @@ function onConfidentialBridgeReceived(uint32 srcEid, bytes32 srcApp, bytes memor
         #[allow(missing_docs)]
         pub payload: alloy::sol_types::private::Bytes,
         #[allow(missing_docs)]
-        pub srcHandleList: alloy::sol_types::private::Vec<
-            alloy::sol_types::private::FixedBytes<32>,
-        >,
+        pub srcHandleList:
+            alloy::sol_types::private::Vec<alloy::sol_types::private::FixedBytes<32>>,
         #[allow(missing_docs)]
-        pub dstHandleList: alloy::sol_types::private::Vec<
-            alloy::sol_types::private::FixedBytes<32>,
-        >,
+        pub dstHandleList:
+            alloy::sol_types::private::Vec<alloy::sol_types::private::FixedBytes<32>>,
         #[allow(missing_docs)]
         pub guid: alloy::sol_types::private::FixedBytes<32>,
     }
@@ -124,12 +121,8 @@ function onConfidentialBridgeReceived(uint32 srcEid, bytes32 srcApp, bytes memor
                 alloy::sol_types::sol_data::Uint<32>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Bytes,
-                alloy::sol_types::sol_data::Array<
-                    alloy::sol_types::sol_data::FixedBytes<32>,
-                >,
-                alloy::sol_types::sol_data::Array<
-                    alloy::sol_types::sol_data::FixedBytes<32>,
-                >,
+                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::FixedBytes<32>>,
+                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::FixedBytes<32>>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
             #[doc(hidden)]
@@ -137,19 +130,13 @@ function onConfidentialBridgeReceived(uint32 srcEid, bytes32 srcApp, bytes memor
                 u32,
                 alloy::sol_types::private::FixedBytes<32>,
                 alloy::sol_types::private::Bytes,
-                alloy::sol_types::private::Vec<
-                    alloy::sol_types::private::FixedBytes<32>,
-                >,
-                alloy::sol_types::private::Vec<
-                    alloy::sol_types::private::FixedBytes<32>,
-                >,
+                alloy::sol_types::private::Vec<alloy::sol_types::private::FixedBytes<32>>,
+                alloy::sol_types::private::Vec<alloy::sol_types::private::FixedBytes<32>>,
                 alloy::sol_types::private::FixedBytes<32>,
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -158,8 +145,7 @@ function onConfidentialBridgeReceived(uint32 srcEid, bytes32 srcApp, bytes memor
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<onConfidentialBridgeReceivedCall>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<onConfidentialBridgeReceivedCall> for UnderlyingRustTuple<'_> {
                 fn from(value: onConfidentialBridgeReceivedCall) -> Self {
                     (
                         value.srcEid,
@@ -173,8 +159,7 @@ function onConfidentialBridgeReceived(uint32 srcEid, bytes32 srcApp, bytes memor
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for onConfidentialBridgeReceivedCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for onConfidentialBridgeReceivedCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         srcEid: tuple.0,
@@ -194,9 +179,7 @@ function onConfidentialBridgeReceived(uint32 srcEid, bytes32 srcApp, bytes memor
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -205,16 +188,14 @@ function onConfidentialBridgeReceived(uint32 srcEid, bytes32 srcApp, bytes memor
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<onConfidentialBridgeReceivedReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<onConfidentialBridgeReceivedReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: onConfidentialBridgeReceivedReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for onConfidentialBridgeReceivedReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for onConfidentialBridgeReceivedReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
@@ -223,9 +204,8 @@ function onConfidentialBridgeReceived(uint32 srcEid, bytes32 srcApp, bytes memor
         impl onConfidentialBridgeReceivedReturn {
             fn _tokenize(
                 &self,
-            ) -> <onConfidentialBridgeReceivedCall as alloy_sol_types::SolCall>::ReturnToken<
-                '_,
-            > {
+            ) -> <onConfidentialBridgeReceivedCall as alloy_sol_types::SolCall>::ReturnToken<'_>
+            {
                 ()
             }
         }
@@ -235,23 +215,16 @@ function onConfidentialBridgeReceived(uint32 srcEid, bytes32 srcApp, bytes memor
                 alloy::sol_types::sol_data::Uint<32>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Bytes,
-                alloy::sol_types::sol_data::Array<
-                    alloy::sol_types::sol_data::FixedBytes<32>,
-                >,
-                alloy::sol_types::sol_data::Array<
-                    alloy::sol_types::sol_data::FixedBytes<32>,
-                >,
+                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::FixedBytes<32>>,
+                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::FixedBytes<32>>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = onConfidentialBridgeReceivedReturn;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "onConfidentialBridgeReceived(uint32,bytes32,bytes,bytes32[],bytes32[],bytes32)";
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str =
+                "onConfidentialBridgeReceived(uint32,bytes32,bytes,bytes32[],bytes32[],bytes32)";
             const SELECTOR: [u8; 4] = [107u8, 214u8, 188u8, 138u8];
             #[inline]
             fn new<'a>(
@@ -288,25 +261,20 @@ function onConfidentialBridgeReceived(uint32 srcEid, bytes32 srcApp, bytes memor
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Into::into)
             }
         }
     };
     ///Container for all the [`IDstApp`](self) function calls.
     #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive()]
     pub enum IDstAppCalls {
         #[allow(missing_docs)]
         onConfidentialBridgeReceived(onConfidentialBridgeReceivedCall),
@@ -344,30 +312,23 @@ function onConfidentialBridgeReceived(uint32 srcEid, bytes32 srcApp, bytes memor
         }
         #[inline]
         #[allow(non_snake_case)]
-        fn abi_decode_raw(
-            selector: [u8; 4],
-            data: &[u8],
-        ) -> alloy_sol_types::Result<Self> {
-            static DECODE_SHIMS: &[fn(&[u8]) -> alloy_sol_types::Result<IDstAppCalls>] = &[
-                {
-                    fn onConfidentialBridgeReceived(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IDstAppCalls> {
-                        <onConfidentialBridgeReceivedCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(IDstAppCalls::onConfidentialBridgeReceived)
-                    }
-                    onConfidentialBridgeReceived
-                },
-            ];
+        fn abi_decode_raw(selector: [u8; 4], data: &[u8]) -> alloy_sol_types::Result<Self> {
+            static DECODE_SHIMS: &[fn(&[u8]) -> alloy_sol_types::Result<IDstAppCalls>] = &[{
+                fn onConfidentialBridgeReceived(
+                    data: &[u8],
+                ) -> alloy_sol_types::Result<IDstAppCalls> {
+                    <onConfidentialBridgeReceivedCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        data,
+                    )
+                    .map(IDstAppCalls::onConfidentialBridgeReceived)
+                }
+                onConfidentialBridgeReceived
+            }];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(
-                    alloy_sol_types::Error::unknown_selector(
-                        <Self as alloy_sol_types::SolInterface>::NAME,
-                        selector,
-                    ),
-                );
+                return Err(alloy_sol_types::Error::unknown_selector(
+                    <Self as alloy_sol_types::SolInterface>::NAME,
+                    selector,
+                ));
             };
             DECODE_SHIMS[idx](data)
         }
@@ -377,9 +338,7 @@ function onConfidentialBridgeReceived(uint32 srcEid, bytes32 srcApp, bytes memor
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
-            static DECODE_VALIDATE_SHIMS: &[fn(
-                &[u8],
-            ) -> alloy_sol_types::Result<IDstAppCalls>] = &[
+            static DECODE_VALIDATE_SHIMS: &[fn(&[u8]) -> alloy_sol_types::Result<IDstAppCalls>] = &[
                 {
                     fn onConfidentialBridgeReceived(
                         data: &[u8],
@@ -393,12 +352,10 @@ function onConfidentialBridgeReceived(uint32 srcEid, bytes32 srcApp, bytes memor
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(
-                    alloy_sol_types::Error::unknown_selector(
-                        <Self as alloy_sol_types::SolInterface>::NAME,
-                        selector,
-                    ),
-                );
+                return Err(alloy_sol_types::Error::unknown_selector(
+                    <Self as alloy_sol_types::SolInterface>::NAME,
+                    selector,
+                ));
             };
             DECODE_VALIDATE_SHIMS[idx](data)
         }
@@ -417,8 +374,7 @@ function onConfidentialBridgeReceived(uint32 srcEid, bytes32 srcApp, bytes memor
             match self {
                 Self::onConfidentialBridgeReceived(inner) => {
                     <onConfidentialBridgeReceivedCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
+                        inner, out,
                     )
                 }
             }
@@ -427,53 +383,53 @@ function onConfidentialBridgeReceived(uint32 srcEid, bytes32 srcApp, bytes memor
     use alloy::contract as alloy_contract;
     /**Creates a new wrapper around an on-chain [`IDstApp`](self) contract instance.
 
-See the [wrapper's documentation](`IDstAppInstance`) for more details.*/
+    See the [wrapper's documentation](`IDstAppInstance`) for more details.*/
     #[inline]
     pub const fn new<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
-    >(address: alloy_sol_types::private::Address, provider: P) -> IDstAppInstance<P, N> {
+    >(
+        address: alloy_sol_types::private::Address,
+        provider: P,
+    ) -> IDstAppInstance<P, N> {
         IDstAppInstance::<P, N>::new(address, provider)
     }
     /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
-Returns a new instance of the contract, if the deployment was successful.
+    Returns a new instance of the contract, if the deployment was successful.
 
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
+    For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
     #[inline]
-    pub fn deploy<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(
+    pub fn deploy<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>(
         provider: P,
-    ) -> impl ::core::future::Future<
-        Output = alloy_contract::Result<IDstAppInstance<P, N>>,
-    > {
+    ) -> impl ::core::future::Future<Output = alloy_contract::Result<IDstAppInstance<P, N>>> {
         IDstAppInstance::<P, N>::deploy(provider)
     }
     /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
+    and constructor arguments, if any.
 
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
+    This is a simple wrapper around creating a `RawCallBuilder` with the data set to
+    the bytecode concatenated with the constructor's ABI-encoded arguments.*/
     #[inline]
     pub fn deploy_builder<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
-    >(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
+    >(
+        provider: P,
+    ) -> alloy_contract::RawCallBuilder<P, N> {
         IDstAppInstance::<P, N>::deploy_builder(provider)
     }
     /**A [`IDstApp`](self) instance.
 
-Contains type-safe methods for interacting with an on-chain instance of the
-[`IDstApp`](self) contract located at a given `address`, using a given
-provider `P`.
+    Contains type-safe methods for interacting with an on-chain instance of the
+    [`IDstApp`](self) contract located at a given `address`, using a given
+    provider `P`.
 
-If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
-documentation on how to provide it), the `deploy` and `deploy_builder` methods can
-be used to deploy a new instance of the contract.
+    If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
+    documentation on how to provide it), the `deploy` and `deploy_builder` methods can
+    be used to deploy a new instance of the contract.
 
-See the [module-level documentation](self) for all the available methods.*/
+    See the [module-level documentation](self) for all the available methods.*/
     #[derive(Clone)]
     pub struct IDstAppInstance<P, N = alloy_contract::private::Ethereum> {
         address: alloy_sol_types::private::Address,
@@ -484,23 +440,21 @@ See the [module-level documentation](self) for all the available methods.*/
     impl<P, N> ::core::fmt::Debug for IDstAppInstance<P, N> {
         #[inline]
         fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-            f.debug_tuple("IDstAppInstance").field(&self.address).finish()
+            f.debug_tuple("IDstAppInstance")
+                .field(&self.address)
+                .finish()
         }
     }
     /// Instantiation and getters/setters.
     #[automatically_derived]
-    impl<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    > IDstAppInstance<P, N> {
+    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
+        IDstAppInstance<P, N>
+    {
         /**Creates a new wrapper around an on-chain [`IDstApp`](self) contract instance.
 
-See the [wrapper's documentation](`IDstAppInstance`) for more details.*/
+        See the [wrapper's documentation](`IDstAppInstance`) for more details.*/
         #[inline]
-        pub const fn new(
-            address: alloy_sol_types::private::Address,
-            provider: P,
-        ) -> Self {
+        pub const fn new(address: alloy_sol_types::private::Address, provider: P) -> Self {
             Self {
                 address,
                 provider,
@@ -509,22 +463,20 @@ See the [wrapper's documentation](`IDstAppInstance`) for more details.*/
         }
         /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
-Returns a new instance of the contract, if the deployment was successful.
+        Returns a new instance of the contract, if the deployment was successful.
 
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
+        For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
         #[inline]
-        pub async fn deploy(
-            provider: P,
-        ) -> alloy_contract::Result<IDstAppInstance<P, N>> {
+        pub async fn deploy(provider: P) -> alloy_contract::Result<IDstAppInstance<P, N>> {
             let call_builder = Self::deploy_builder(provider);
             let contract_address = call_builder.deploy().await?;
             Ok(Self::new(contract_address, call_builder.provider))
         }
         /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
+        and constructor arguments, if any.
 
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
+        This is a simple wrapper around creating a `RawCallBuilder` with the data set to
+        the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         #[inline]
         pub fn deploy_builder(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
             alloy_contract::RawCallBuilder::new_raw_deploy(
@@ -566,10 +518,9 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
     }
     /// Function calls.
     #[automatically_derived]
-    impl<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    > IDstAppInstance<P, N> {
+    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
+        IDstAppInstance<P, N>
+    {
         /// Creates a new call builder using this contract instance's provider and address.
         ///
         /// Note that the call can be any function call, not just those defined in this
@@ -594,24 +545,21 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             >,
             guid: alloy::sol_types::private::FixedBytes<32>,
         ) -> alloy_contract::SolCallBuilder<&P, onConfidentialBridgeReceivedCall, N> {
-            self.call_builder(
-                &onConfidentialBridgeReceivedCall {
-                    srcEid,
-                    srcApp,
-                    payload,
-                    srcHandleList,
-                    dstHandleList,
-                    guid,
-                },
-            )
+            self.call_builder(&onConfidentialBridgeReceivedCall {
+                srcEid,
+                srcApp,
+                payload,
+                srcHandleList,
+                dstHandleList,
+                guid,
+            })
         }
     }
     /// Event filters.
     #[automatically_derived]
-    impl<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    > IDstAppInstance<P, N> {
+    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
+        IDstAppInstance<P, N>
+    {
         /// Creates a new event filter using this contract instance's provider and address.
         ///
         /// Note that the type can be any event, not just those defined in this contract.

@@ -12,3 +12,9 @@ ALTER TABLE keygen_requests
 -- tx-sender to addCompressedKeyMaterials instead of keygenResponse.
 ALTER TABLE keygen_responses
     ADD COLUMN is_migration BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- KMS Core's signing enum has four values; the digest type is part of
+-- the signed KeygenVerification payload, so the labels must round-trip
+-- unchanged through the connector.
+ALTER TYPE key_type ADD VALUE IF NOT EXISTS 'CompressedPublic';
+ALTER TYPE key_type ADD VALUE IF NOT EXISTS 'CompressedKeyset';
