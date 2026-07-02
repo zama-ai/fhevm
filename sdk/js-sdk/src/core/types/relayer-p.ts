@@ -355,7 +355,7 @@ export type RelayerApiError400 = RelayerApiError400NoDetails | RelayerApiError40
  * Status: 400 (no details)
  */
 export type RelayerApiError400NoDetails = {
-  label: 'malformed_json' | 'request_error' | 'not_ready_for_decryption';
+  label: 'malformed_json' | 'request_error' | 'not_ready_for_decryption' | 'not_allowed_on_host_acl';
   message: string;
 };
 
@@ -409,7 +409,13 @@ export type RelayerApiError500 = {
  * Status: 503
  */
 export type RelayerApiError503 = {
-  label: 'protocol_paused' | 'gateway_not_reachable' | 'readiness_check_timed_out' | 'response_timed_out';
+  label:
+    | 'protocol_paused'
+    | 'insufficient_balance'
+    | 'insufficient_allowance'
+    | 'gateway_not_reachable'
+    | 'readiness_check_timed_out'
+    | 'response_timed_out';
   message: string;
 };
 
