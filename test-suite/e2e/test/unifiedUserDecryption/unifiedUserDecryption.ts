@@ -391,6 +391,7 @@ describe('Unified user decryption (RFC-016)', function () {
       // getCurrentKmsContextAndEpoch(). The connector rejects any epochId
       // that is not the active epoch of the context (including 0).
       expect(currentContextId, 'stack reports no current KMS context id').to.not.equal(0n);
+      expect(currentEpochId, 'stack reports no active KMS epoch id').to.not.equal(0n);
       const handle = await aliceContract.xUint16();
       const req: UnifiedDecryptRequest = {
         handles: [directHandle(handle, aliceContractAddress, signers.alice.address)],

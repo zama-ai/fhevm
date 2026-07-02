@@ -217,8 +217,21 @@ function messageOf(req: UnifiedDecryptRequest): Record<string, unknown> {
  * `isValidSignature` receive. Exposed so Safe-style mocks can pre-approve it via
  * `approveHash(digest)` before an empty-signature request.
  */
+/**
+ * Chain id of the request, derived from its first handle. Fails with a clear
+ * error on an empty `handles` array instead of an opaque TypeError — the
+ * relayer requires at least one handle anyway.
+ */
+function requestChainId(req: UnifiedDecryptRequest): number {
+  const first = req.handles[0];
+  if (!first) {
+    throw new Error('UnifiedDecryptRequest.handles must be non-empty');
+  }
+  return chainIdFromHandle(first.ctHandle);
+}
+
 export function computeUnifiedDigest(cfg: UnifiedConfig, req: UnifiedDecryptRequest): string {
-  const chainId = chainIdFromHandle(req.handles[0].ctHandle);
+  const chainId = requestChainId(req);
   return TypedDataEncoder.hash(domainOf(cfg, chainId), UNIFIED_USER_DECRYPT_TYPES, messageOf(req));
 }
 
@@ -227,7 +240,7 @@ async function signRequest(cfg: UnifiedConfig, req: UnifiedDecryptRequest, mode:
     return '0x';
   }
   const signer = mode.kind === 'eoa' ? mode.signer : mode.ownerSigner;
-  const chainId = chainIdFromHandle(req.handles[0].ctHandle);
+  const chainId = requestChainId(req);
   return signer.signTypedData(domainOf(cfg, chainId), UNIFIED_USER_DECRYPT_TYPES, messageOf(req));
 }
 
