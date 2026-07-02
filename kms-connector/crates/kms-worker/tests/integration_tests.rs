@@ -235,14 +235,6 @@ fn prepare_mocks(req: &ProtocolEventKind, already_sent: bool) -> MockSet {
         });
     }
 
-    // Abort endpoints return `Empty` directly and have no result-polling endpoint
-    if matches!(
-        req,
-        ProtocolEventKind::AbortKeygen(_) | ProtocolEventKind::AbortCrsgen(_)
-    ) {
-        return kms_mocks;
-    }
-
     // Mock response of result polling
     kms_mocks.mock(|when, then| {
         when.path(format!(
@@ -270,14 +262,13 @@ fn prepare_mocks(req: &ProtocolEventKind, already_sent: bool) -> MockSet {
                 request_id,
                 ..Default::default()
             }),
-            ProtocolEventKind::NewKmsContext(_) => then.error(
+            ProtocolEventKind::NewKmsEpoch(_) => then.pb(GrpcEpochResultResponse::default()),
+            ProtocolEventKind::NewKmsContext(_)
+            | ProtocolEventKind::AbortKeygen(_)
+            | ProtocolEventKind::AbortCrsgen(_) => then.error(
                 StatusCode::BAD_REQUEST,
                 "No response expected response from kms-core",
             ),
-            ProtocolEventKind::NewKmsEpoch(_) => then.pb(GrpcEpochResultResponse::default()),
-            ProtocolEventKind::AbortKeygen(_) | ProtocolEventKind::AbortCrsgen(_) => {
-                unreachable!("handled by the early return above")
-            }
         };
     });
 

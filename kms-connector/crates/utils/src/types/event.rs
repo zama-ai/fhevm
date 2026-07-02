@@ -212,6 +212,18 @@ impl PartialEq for ProtocolEventKind {
     }
 }
 
+fn tx_hash_from_row(row: &PgRow) -> Option<FixedBytes<32>> {
+    row.try_get::<Vec<u8>, _>("tx_hash")
+        .ok()
+        .and_then(|h| FixedBytes::try_from(h.as_slice()).ok())
+}
+
+fn otlp_context_from_row(row: &PgRow) -> anyhow::Result<PropagationContext> {
+    Ok(bc2wrap::deserialize_slice(
+        &row.try_get::<Vec<u8>, _>("otlp_context")?,
+    )?)
+}
+
 pub fn from_public_decryption_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
     let sns_ct_materials = row
         .try_get::<Vec<SnsCiphertextMaterialDbItem>, _>("sns_ct_materials")?
@@ -226,14 +238,11 @@ pub fn from_public_decryption_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> 
     });
     Ok(ProtocolEvent {
         kind,
-        tx_hash: row
-            .try_get::<Vec<u8>, _>("tx_hash")
-            .ok()
-            .and_then(|h| FixedBytes::try_from(h.as_slice()).ok()),
+        tx_hash: tx_hash_from_row(row),
         already_sent: row.try_get::<bool, _>("already_sent")?,
         error_counter: row.try_get::<i16, _>("error_counter")?,
         created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
-        otlp_context: bc2wrap::deserialize_slice(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+        otlp_context: otlp_context_from_row(row)?,
     })
 }
 
@@ -321,14 +330,11 @@ pub fn from_user_decryption_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
 
     Ok(ProtocolEvent {
         kind,
-        tx_hash: row
-            .try_get::<Vec<u8>, _>("tx_hash")
-            .ok()
-            .and_then(|h| FixedBytes::try_from(h.as_slice()).ok()),
+        tx_hash: tx_hash_from_row(row),
         already_sent: row.try_get::<bool, _>("already_sent")?,
         error_counter: row.try_get::<i16, _>("error_counter")?,
         created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
-        otlp_context: bc2wrap::deserialize_slice(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+        otlp_context: otlp_context_from_row(row)?,
     })
 }
 
@@ -340,14 +346,11 @@ pub fn from_prep_keygen_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
     });
     Ok(ProtocolEvent {
         kind,
-        tx_hash: row
-            .try_get::<Vec<u8>, _>("tx_hash")
-            .ok()
-            .and_then(|h| FixedBytes::try_from(h.as_slice()).ok()),
+        tx_hash: tx_hash_from_row(row),
         already_sent: row.try_get::<bool, _>("already_sent")?,
         error_counter: 0,
         created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
-        otlp_context: bc2wrap::deserialize_slice(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+        otlp_context: otlp_context_from_row(row)?,
     })
 }
 
@@ -359,14 +362,11 @@ pub fn from_keygen_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
     });
     Ok(ProtocolEvent {
         kind,
-        tx_hash: row
-            .try_get::<Vec<u8>, _>("tx_hash")
-            .ok()
-            .and_then(|h| FixedBytes::try_from(h.as_slice()).ok()),
+        tx_hash: tx_hash_from_row(row),
         already_sent: row.try_get::<bool, _>("already_sent")?,
         error_counter: 0,
         created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
-        otlp_context: bc2wrap::deserialize_slice(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+        otlp_context: otlp_context_from_row(row)?,
     })
 }
 
@@ -390,14 +390,11 @@ pub fn from_new_kms_context_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
     });
     Ok(ProtocolEvent {
         kind,
-        tx_hash: row
-            .try_get::<Vec<u8>, _>("tx_hash")
-            .ok()
-            .and_then(|h| FixedBytes::try_from(h.as_slice()).ok()),
+        tx_hash: tx_hash_from_row(row),
         already_sent: row.try_get::<bool, _>("already_sent")?,
         error_counter: 0,
         created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
-        otlp_context: bc2wrap::deserialize_slice(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+        otlp_context: otlp_context_from_row(row)?,
     })
 }
 
@@ -413,14 +410,11 @@ pub fn from_new_kms_epoch_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
     });
     Ok(ProtocolEvent {
         kind,
-        tx_hash: row
-            .try_get::<Vec<u8>, _>("tx_hash")
-            .ok()
-            .and_then(|h| FixedBytes::try_from(h.as_slice()).ok()),
+        tx_hash: tx_hash_from_row(row),
         already_sent: row.try_get::<bool, _>("already_sent")?,
         error_counter: 0,
         created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
-        otlp_context: bc2wrap::deserialize_slice(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+        otlp_context: otlp_context_from_row(row)?,
     })
 }
 
@@ -433,14 +427,11 @@ pub fn from_crsgen_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
     });
     Ok(ProtocolEvent {
         kind,
-        tx_hash: row
-            .try_get::<Vec<u8>, _>("tx_hash")
-            .ok()
-            .and_then(|h| FixedBytes::try_from(h.as_slice()).ok()),
+        tx_hash: tx_hash_from_row(row),
         already_sent: row.try_get::<bool, _>("already_sent")?,
         error_counter: 0,
         created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
-        otlp_context: bc2wrap::deserialize_slice(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+        otlp_context: otlp_context_from_row(row)?,
     })
 }
 
@@ -450,14 +441,11 @@ pub fn from_abort_keygen_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
     });
     Ok(ProtocolEvent {
         kind,
-        tx_hash: row
-            .try_get::<Vec<u8>, _>("tx_hash")
-            .ok()
-            .and_then(|h| FixedBytes::try_from(h.as_slice()).ok()),
+        tx_hash: tx_hash_from_row(row),
         already_sent: row.try_get::<bool, _>("already_sent")?,
         error_counter: 0,
         created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
-        otlp_context: bc2wrap::deserialize_slice(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+        otlp_context: otlp_context_from_row(row)?,
     })
 }
 
@@ -467,14 +455,11 @@ pub fn from_abort_crsgen_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
     });
     Ok(ProtocolEvent {
         kind,
-        tx_hash: row
-            .try_get::<Vec<u8>, _>("tx_hash")
-            .ok()
-            .and_then(|h| FixedBytes::try_from(h.as_slice()).ok()),
+        tx_hash: tx_hash_from_row(row),
         already_sent: row.try_get::<bool, _>("already_sent")?,
         error_counter: 0,
         created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
-        otlp_context: bc2wrap::deserialize_slice(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+        otlp_context: otlp_context_from_row(row)?,
     })
 }
 
