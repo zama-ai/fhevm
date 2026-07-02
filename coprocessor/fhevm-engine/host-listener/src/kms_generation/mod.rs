@@ -3,19 +3,23 @@ use alloy::rpc::types::Log;
 use anyhow::anyhow;
 use fhevm_engine_common::chain_id::ChainId;
 use sqlx::{Pool, Postgres, Transaction};
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::contracts::KMSGeneration::{self, KMSGenerationEvents};
 use crate::kms_generation::aws_s3::{download_key_from_s3, AwsS3Interface};
 use crate::kms_generation::database::{
     activate_ready_crs_activations, activate_ready_key_activations,
     all_pending_crs_activations_to_download,
-    all_pending_key_activations_to_download, cancel_orphaned_crs_activations,
-    cancel_orphaned_key_activations, count_crs_activation_remaining_pending,
+    all_pending_key_activations_to_download,
+    all_pending_key_material_to_download, apply_legacy_key_cutover,
+    cancel_orphaned_crs_activations, cancel_orphaned_key_activations,
+    count_crs_activation_remaining_pending,
     count_key_activation_remaining_pending, insert_crs_activation_event,
-    insert_key_activation_event, mark_crs_activation_error,
-    mark_key_activation_error, set_ready_crs_activation,
+    insert_key_activation_event, insert_key_material_added,
+    mark_crs_activation_error, mark_key_activation_error,
+    mark_key_material_error, publish_key_material, set_ready_crs_activation,
     set_ready_key_activation, PendingCrsActivation, PendingKeyActivation,
+    PendingKeyMaterial,
 };
 use crate::kms_generation::digest::{digest_crs, digest_key};
 use crate::kms_generation::metrics::{
@@ -108,6 +112,7 @@ pub async fn insert_kms_generation_events_tx(
     chain_id: ChainId,
     block_hash: &[u8],
     block_number: u64,
+    finalized: bool,
 ) -> Result<(), sqlx::Error> {
     for (event, log) in events {
         match event {
@@ -133,6 +138,33 @@ pub async fn insert_kms_generation_events_tx(
                 )
                 .await?;
             }
+            KMSGeneration::KMSGenerationEvents::KeyMaterialAdded(added) => {
+                if !finalized {
+                    debug!(
+                        key_id = ?added.keyId,
+                        "RFC-029 KeyMaterialAdded skipped until finalized ingestion"
+                    );
+                    continue;
+                }
+                info!(
+                    key_id = ?added.keyId,
+                    urls = added.kmsNodeStorageUrls.len(),
+                    "RFC-029 KeyMaterialAdded observed"
+                );
+                insert_key_material_added(tx, added, chain_id, block_hash, block_number).await?;
+            }
+            KMSGeneration::KMSGenerationEvents::KeyMaterialMigrationScheduled(
+                scheduled,
+            ) => {
+                if !finalized {
+                    debug!(
+                        key_id = ?scheduled.keyId,
+                        "RFC-029 KeyMaterialMigrationScheduled skipped until finalized ingestion"
+                    );
+                    continue;
+                }
+                apply_legacy_key_cutover(tx, scheduled).await?;
+            }
             _ => {
                 warn!(
                     ?log,
@@ -151,7 +183,7 @@ pub async fn process_kms_generation_activations<
     db_pool: Pool<Postgres>,
     s3_client: A,
 ) -> anyhow::Result<u64> {
-    //first we handle every thing that is ready to be cancelled or activated
+    // First handle finalized activation state.
     let mut tx = db_pool.begin().await?;
     cancel_orphaned_key_activations(&mut tx).await?;
     cancel_orphaned_crs_activations(&mut tx).await?;
@@ -159,8 +191,22 @@ pub async fn process_kms_generation_activations<
     activate_ready_crs_activations(&mut tx).await?;
     tx.commit().await?;
 
-    // second we download and check keys and preprocess in background in advance so it's ready when block is finalized
-    // rows are locked so there's no double work
+    // RFC-029 compressed-key material is downloaded only after a finalized
+    // `KeyMaterialAdded` event has been queued.
+    let mut tx = db_pool.begin().await?;
+    let pending_material =
+        all_pending_key_material_to_download(&mut tx).await?;
+    if !pending_material.is_empty() {
+        info!(
+            count = pending_material.len(),
+            "RFC-029: pending compressed key material to download"
+        );
+        download_and_store_key_material(&mut tx, &s3_client, pending_material)
+            .await?;
+    }
+    tx.commit().await?;
+
+    // Then download pending activations. Rows are locked so there is no double work.
     let mut tx = db_pool.begin().await?;
     let key_activations =
         all_pending_key_activations_to_download(&mut tx).await?;
@@ -178,7 +224,7 @@ pub async fn process_kms_generation_activations<
         "Pending {} CRS activation to download",
         crs_activations.len()
     );
-    // do all downloads
+    // Do all downloads.
     download_and_store_key_activations(&mut tx, &s3_client, key_activations)
         .await?;
     download_and_store_crs_activations(&mut tx, &s3_client, crs_activations)
@@ -235,6 +281,58 @@ async fn download_and_store_crs_activations<
         }
     }
     Ok(())
+}
+
+/// Download migrated compressed material from S3 and publish it to `keys`.
+async fn download_and_store_key_material<
+    A: AwsS3Interface + Clone + 'static,
+>(
+    tx: &mut Transaction<'_, Postgres>,
+    s3_client: &A,
+    pending: Vec<PendingKeyMaterial>,
+) -> anyhow::Result<()> {
+    for material in pending {
+        match download_migrated_key_material(&material, s3_client).await {
+            Ok(bytes) => {
+                if publish_key_material(tx, &material, &bytes).await? == 0 {
+                    warn!(
+                        key_id = ?material.key_id,
+                        "RFC-029: downloaded migrated keyset but no matching key row exists"
+                    );
+                } else {
+                    info!(
+                        key_id = ?material.key_id,
+                        "RFC-029: downloaded and published migrated keyset"
+                    );
+                }
+            }
+            Err(err) => {
+                error!(
+                    error = %err,
+                    key_id = ?material.key_id,
+                    "RFC-029: failed to download migrated key material"
+                );
+                mark_key_material_error(tx, &err.to_string(), material).await;
+            }
+        }
+    }
+    Ok(())
+}
+
+async fn download_migrated_key_material<A: AwsS3Interface + Clone + 'static>(
+    material: &PendingKeyMaterial,
+    s3_client: &A,
+) -> anyhow::Result<Vec<u8>> {
+    let key_id = key_id_from_database_bytes(&material.key_id)?;
+    let path =
+        format!("{}/{}", XOF_KEY_SET_S3_PREFIX, key_id_to_aws_key(key_id));
+    let bytes =
+        download_key_from_s3(s3_client, &material.storage_urls, path, 0)
+            .await?;
+    if let Some(expected) = &material.key_digest {
+        verify_server_key_digest(&bytes, expected, &key_id)?;
+    }
+    Ok(bytes.to_vec())
 }
 
 /// Server-key payload pulled from S3, tagged with the format kms-core

@@ -489,6 +489,7 @@ pub async fn ingest_block_logs(
         chain_id,
         block_hash.as_ref(),
         block_number,
+        block_logs.finalized,
     )
     .await?;
     db.mark_block_as_valid(&mut tx, &block_logs.summary, block_logs.finalized)

@@ -8,6 +8,7 @@ pub mod drift_revert;
 pub mod gpu_memory;
 pub mod healthz_server;
 pub mod host_chains;
+pub mod key_material_policy;
 pub mod keys;
 pub mod metrics_server;
 pub mod pg_pool;
