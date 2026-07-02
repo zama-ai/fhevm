@@ -260,7 +260,7 @@ async fn tfhe_worker_cycle(
 
         let mut has_progressed = false;
         for (pinned_kind, mut group) in groups.drain(..) {
-            let mut tx_graph = build_transaction_graph_and_execute(
+            let (mut tx_graph, loaded_kind) = build_transaction_graph_and_execute(
                 &mut group,
                 db_key_cache.clone(),
                 &health_check,
@@ -274,7 +274,7 @@ async fn tfhe_worker_cycle(
                 &mut tx_graph,
                 &mut trx,
                 &mut dcid_mngr,
-                pinned_kind,
+                loaded_kind,
             )
             .instrument(loop_span.clone())
             .await?;
@@ -544,14 +544,14 @@ async fn build_transaction_graph_and_execute<'a>(
     trx: &mut sqlx::Transaction<'a, Postgres>,
     dcid_mngr: &dependence_chain::LockMngr,
     pinned_kind: Option<KeyMaterialKind>,
-) -> Result<DFComponentGraph, CoprocessorError> {
+) -> Result<(DFComponentGraph, KeyMaterialKind), CoprocessorError> {
     let mut tx_graph = DFComponentGraph::default();
     if let Err(e) = tx_graph.build(txs) {
         // If we had an error while building the graph, we don't
         // execute anything and return to allow any set results
         // (essentially errors) to be set in DB.
         warn!(target: "tfhe_worker", { error = %e }, "error while building transaction graph");
-        return Ok(tx_graph);
+        return Ok((tx_graph, KeyMaterialKind::Legacy));
     }
     let cts_to_query = tx_graph.needed_map.keys().cloned().collect::<Vec<_>>();
     let ciphertext_map = query_ciphertexts(&cts_to_query, trx).await?;
@@ -581,11 +581,11 @@ async fn build_transaction_graph_and_execute<'a>(
     // remaining edges are added after cycle detection.
     if let Err(e) = tx_graph.resolve_dependences(&fetched_handles) {
         warn!(target: "tfhe_worker", { error = %e }, "error resolving cross-transaction dependences");
-        return Ok(tx_graph);
+        return Ok((tx_graph, KeyMaterialKind::Legacy));
     }
     // Execute the DFG
     let s_compute = tracing::info_span!("compute_fhe_ops");
-    async {
+    let loaded_kind = async {
         // Fetch the latest key from the database, pinned to the
         // cutover-selected material when a cutover is scheduled.
         let fetched = match pinned_kind {
@@ -634,11 +634,11 @@ async fn build_transaction_graph_and_execute<'a>(
             .schedule()
             .await
             .map_err(|e| CoprocessorError::Other(e.into()))?;
-        Ok::<(), CoprocessorError>(())
+        Ok::<KeyMaterialKind, CoprocessorError>(keys.material_kind)
     }
     .instrument(s_compute)
     .await?;
-    Ok(tx_graph)
+    Ok((tx_graph, loaded_kind))
 }
 
 #[tracing::instrument(name = "upload_results", skip_all)]
@@ -646,7 +646,7 @@ async fn upload_transaction_graph_results<'a>(
     tx_graph: &mut DFComponentGraph,
     trx: &mut sqlx::Transaction<'a, Postgres>,
     deps_mngr: &mut dependence_chain::LockMngr,
-    pinned_kind: Option<KeyMaterialKind>,
+    loaded_kind: KeyMaterialKind,
 ) -> Result<bool, CoprocessorError> {
     // Get computation results
     let graph_results = tx_graph.get_results();
@@ -726,11 +726,11 @@ async fn upload_transaction_graph_results<'a>(
                 Vec<_>,
                 (Vec<_>, (Vec<_>, Vec<_>)),
             ) = cts_to_insert.into_iter().unzip();
-            // Outputs are labeled with the material kind that produced
-            // them (RFC-029); 0 = legacy on the pre-cutover path.
-            let key_material_kind = pinned_kind
-                .unwrap_or(KeyMaterialKind::Legacy)
-                .as_i16();
+            // Outputs are labeled with the material kind that ACTUALLY
+            // produced them (RFC-029) — the kind of the loaded key, so
+            // the label stays truthful on no-cutover deployments where
+            // the default read resolves to native compressed material.
+            let key_material_kind = loaded_kind.as_i16();
             let cts_inserted = query!(
                 "
             INSERT INTO ciphertexts(handle, ciphertext, ciphertext_version, ciphertext_type, key_material_kind)

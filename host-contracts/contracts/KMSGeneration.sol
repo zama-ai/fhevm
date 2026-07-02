@@ -454,6 +454,14 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
             revert KeyAborted(keyId);
         }
 
+        // RFC-029 migrates the ACTIVE key: binding the migration (and,
+        // transitively, the cutover schedule) to activeKeyId prevents a
+        // schedule for a dormant key from steering coprocessors that
+        // load material for the live one.
+        if (keyId != $.activeKeyId) {
+            revert NotActiveKey(keyId);
+        }
+
         // The migration is one-time per key: once compressed materials exist, they are immutable.
         if ($.compressedMaterialRequests[keyId] != 0) {
             revert CompressedKeyMaterialsAlreadyAdded(keyId);

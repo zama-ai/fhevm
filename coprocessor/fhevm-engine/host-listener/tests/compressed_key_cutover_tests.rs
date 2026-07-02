@@ -324,3 +324,39 @@ async fn orphaned_migration_events_are_cancelled() -> anyhow::Result<()> {
     assert_eq!(cutover_rows, 0);
     Ok(())
 }
+
+/// A staged material event whose key has no keys row must stay 'ready'
+/// (retryable), never be consumed as 'applied' with nothing updated.
+#[tokio::test]
+#[serial(db)]
+async fn material_for_unknown_key_is_not_consumed() -> anyhow::Result<()> {
+    let env = setup().await?;
+    let unknown_key = vec![0x77u8; 32];
+    let s3 = s3_with_material(&unknown_key);
+
+    let block_a = vec![0x1A_u8; 32];
+    insert_block(&env.pool, &block_a, 150, "finalized").await?;
+    insert_material_event(&env.pool, &unknown_key, &block_a, 150).await?;
+    let block_b = vec![0x1B_u8; 32];
+    insert_block(&env.pool, &block_b, 151, "finalized").await?;
+    insert_cutover_event(&env.pool, &unknown_key, &block_b, 151, 500).await?;
+
+    // Several passes: download+stage, apply schedule, attempt material apply.
+    for _ in 0..3 {
+        process_kms_generation_activations(env.pool.clone(), s3.clone())
+            .await?;
+    }
+
+    let status: String = sqlx::query(
+        "SELECT status FROM compressed_key_material_events WHERE key_id = $1",
+    )
+    .bind(&unknown_key)
+    .fetch_one(&env.pool)
+    .await?
+    .try_get("status")?;
+    assert_eq!(
+        status, "ready",
+        "material without a matching keys row must stay staged, not be consumed"
+    );
+    Ok(())
+}

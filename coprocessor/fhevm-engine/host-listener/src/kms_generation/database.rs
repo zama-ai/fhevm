@@ -992,12 +992,16 @@ pub(crate) async fn apply_finalized_compressed_key_materials(
             WHERE keys.key_id_gw = applicable.key_id
             RETURNING keys.key_id_gw
         )
+        -- Only consume the staged event if a keys row was actually
+        -- updated; otherwise it stays 'ready' and retries, instead of
+        -- being silently consumed and halting workers forever.
         UPDATE compressed_key_material_events AS e
         SET status = 'applied', last_updated_at = NOW()
         FROM applicable
         WHERE e.chain_id = applicable.chain_id
             AND e.block_hash = applicable.block_hash
             AND e.key_id = applicable.key_id
+            AND e.key_id IN (SELECT key_id_gw FROM updated_keys)
         "#
     )
     .execute(tx.deref_mut())

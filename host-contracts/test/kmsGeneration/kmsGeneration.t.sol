@@ -1728,4 +1728,21 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         (, IKMSGeneration.KeyDigest[] memory digests) = kmsGeneration.getKeyMaterials(keyId);
         assertEq(digests.length, 1);
     }
+    function test_revertMigrationKeygenForNonActiveKey() public {
+        (, uint256 keyId1) = _runFullKeygenCycle();
+
+        // Rotate: a second keygen makes keyId2 the active key.
+        vm.prank(owner);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
+        uint256 prepKeygenId2 = PREP_KEYGEN_COUNTER_BASE + 2;
+        uint256 keyId2 = KEY_COUNTER_BASE + 2;
+        _doPrepKeygenResponse(prepKeygenId2, kmsPk0, kmsTxSender0);
+        _doKeygenResponse(prepKeygenId2, keyId2, kmsPk0, kmsTxSender0);
+        assertEq(kmsGeneration.getActiveKeyId(), keyId2);
+
+        // RFC-029 migrates the ACTIVE key only.
+        vm.prank(owner);
+        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.NotActiveKey.selector, keyId1));
+        kmsGeneration.compressedKeyMigrationKeygen(keyId1);
+    }
 }

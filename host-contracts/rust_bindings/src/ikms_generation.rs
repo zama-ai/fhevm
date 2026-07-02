@@ -45,6 +45,7 @@ interface IKMSGeneration {
     error KmsAlreadySignedForKeygen(uint256 keyId, address kmsSigner);
     error KmsAlreadySignedForPrepKeygen(uint256 prepKeygenId, address kmsSigner);
     error KmsSignerDoesNotMatchTxSender(address signerAddress, address txSenderAddress);
+    error NotActiveKey(uint256 keyId);
     error NotKmsSigner(address signerAddress);
     error NotKmsTxSender(address txSenderAddress);
     error PrepKeygenNotRequested(uint256 prepKeygenId);
@@ -1387,6 +1388,17 @@ interface IKMSGeneration {
         "name": "txSenderAddress",
         "type": "address",
         "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "NotActiveKey",
+    "inputs": [
+      {
+        "name": "keyId",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ]
   },
@@ -4538,6 +4550,88 @@ error KmsSignerDoesNotMatchTxSender(address signerAddress, address txSenderAddre
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self.txSenderAddress,
                     ),
+                )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `NotActiveKey(uint256)` and selector `0xe84e01b5`.
+```solidity
+error NotActiveKey(uint256 keyId);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct NotActiveKey {
+        #[allow(missing_docs)]
+        pub keyId: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (
+            alloy::sol_types::private::primitives::aliases::U256,
+        );
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<NotActiveKey> for UnderlyingRustTuple<'_> {
+            fn from(value: NotActiveKey) -> Self {
+                (value.keyId,)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for NotActiveKey {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self { keyId: tuple.0 }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for NotActiveKey {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "NotActiveKey(uint256)";
+            const SELECTOR: [u8; 4] = [232u8, 78u8, 1u8, 181u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.keyId),
                 )
             }
             #[inline]
@@ -12097,6 +12191,8 @@ function scheduleCompressedKeyCutover(uint256 keyId, HostChainCutover[] memory h
         #[allow(missing_docs)]
         KmsSignerDoesNotMatchTxSender(KmsSignerDoesNotMatchTxSender),
         #[allow(missing_docs)]
+        NotActiveKey(NotActiveKey),
+        #[allow(missing_docs)]
         NotKmsSigner(NotKmsSigner),
         #[allow(missing_docs)]
         NotKmsTxSender(NotKmsTxSender),
@@ -12143,6 +12239,7 @@ function scheduleCompressedKeyCutover(uint256 keyId, HostChainCutover[] memory h
             [218u8, 50u8, 208u8, 15u8],
             [223u8, 13u8, 181u8, 251u8],
             [230u8, 249u8, 8u8, 59u8],
+            [232u8, 78u8, 1u8, 181u8],
             [249u8, 22u8, 238u8, 66u8],
             [252u8, 242u8, 219u8, 122u8],
             [252u8, 245u8, 166u8, 233u8],
@@ -12152,7 +12249,7 @@ function scheduleCompressedKeyCutover(uint256 keyId, HostChainCutover[] memory h
     impl alloy_sol_types::SolInterface for IKMSGenerationErrors {
         const NAME: &'static str = "IKMSGenerationErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 30usize;
+        const COUNT: usize = 31usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -12230,6 +12327,9 @@ function scheduleCompressedKeyCutover(uint256 keyId, HostChainCutover[] memory h
                 }
                 Self::KmsSignerDoesNotMatchTxSender(_) => {
                     <KmsSignerDoesNotMatchTxSender as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::NotActiveKey(_) => {
+                    <NotActiveKey as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::NotKmsSigner(_) => {
                     <NotKmsSigner as alloy_sol_types::SolError>::SELECTOR
@@ -12559,6 +12659,15 @@ function scheduleCompressedKeyCutover(uint256 keyId, HostChainCutover[] memory h
                             .map(IKMSGenerationErrors::EmptyKeyDigests)
                     }
                     EmptyKeyDigests
+                },
+                {
+                    fn NotActiveKey(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
+                        <NotActiveKey as alloy_sol_types::SolError>::abi_decode_raw(data)
+                            .map(IKMSGenerationErrors::NotActiveKey)
+                    }
+                    NotActiveKey
                 },
                 {
                     fn CompressedKeyMaterialsNotAdded(
@@ -12915,6 +13024,17 @@ function scheduleCompressedKeyCutover(uint256 keyId, HostChainCutover[] memory h
                     EmptyKeyDigests
                 },
                 {
+                    fn NotActiveKey(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
+                        <NotActiveKey as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IKMSGenerationErrors::NotActiveKey)
+                    }
+                    NotActiveKey
+                },
+                {
                     fn CompressedKeyMaterialsNotAdded(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
@@ -13077,6 +13197,9 @@ function scheduleCompressedKeyCutover(uint256 keyId, HostChainCutover[] memory h
                     <KmsSignerDoesNotMatchTxSender as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
                     )
+                }
+                Self::NotActiveKey(inner) => {
+                    <NotActiveKey as alloy_sol_types::SolError>::abi_encoded_size(inner)
                 }
                 Self::NotKmsSigner(inner) => {
                     <NotKmsSigner as alloy_sol_types::SolError>::abi_encoded_size(inner)
@@ -13246,6 +13369,12 @@ function scheduleCompressedKeyCutover(uint256 keyId, HostChainCutover[] memory h
                 }
                 Self::KmsSignerDoesNotMatchTxSender(inner) => {
                     <KmsSignerDoesNotMatchTxSender as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::NotActiveKey(inner) => {
+                    <NotActiveKey as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )

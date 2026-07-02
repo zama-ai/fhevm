@@ -81,7 +81,7 @@ impl CompressedKeyCutover {
 
 /// Selection entry points for workers. `None` cutover means no
 /// migration is scheduled: callers must use the default key-loading
-/// path (pre-feature behavior), signalled by returning `None`.
+/// path (pre-feature behavior), signaled by returning `None`.
 pub fn select_host_kind(
     cutover: Option<&CompressedKeyCutover>,
     chain_id: u64,
