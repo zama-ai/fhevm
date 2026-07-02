@@ -364,9 +364,6 @@ impl KmsClient {
         .await;
 
         match grpc_result {
-            Err(status) if status.code() == Code::Aborted => {
-                (error_count, Err(ProcessingError::Aborted))
-            }
             Err(status) => (
                 error_count,
                 Err(ProcessingError::from_response_status(status)),
@@ -404,9 +401,6 @@ impl KmsClient {
         .await;
 
         match grpc_result {
-            Err(status) if status.code() == Code::Aborted => {
-                (error_count, Err(ProcessingError::Aborted))
-            }
             Err(status) => (
                 error_count,
                 Err(ProcessingError::from_response_status(status)),
@@ -439,9 +433,6 @@ impl KmsClient {
         .await;
 
         match grpc_result {
-            Err(status) if status.code() == Code::Aborted => {
-                (error_count, Err(ProcessingError::Aborted))
-            }
             Err(status) => (
                 error_count,
                 Err(ProcessingError::from_response_status(status)),

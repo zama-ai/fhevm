@@ -18,12 +18,53 @@ pub enum ProcessingError {
 impl ProcessingError {
     /// Converts GRPC status of the polling of a KMS Response into a `ProcessingError`.
     pub fn from_response_status(value: tonic::Status) -> Self {
-        let anyhow_error = anyhow!("KMS GRPC error: {value}");
         match value.code() {
+            Code::Aborted => Self::Aborted,
             Code::DeadlineExceeded | Code::Unavailable | Code::ResourceExhausted => {
-                Self::Recoverable(anyhow_error)
+                Self::Recoverable(anyhow!("KMS GRPC error: {value}"))
             }
-            _ => Self::Irrecoverable(anyhow_error),
+            _ => Self::Irrecoverable(anyhow!("KMS GRPC error: {value}")),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ProcessingError;
+    use tonic::{Code, Status};
+
+    #[test]
+    fn from_response_status_maps_aborted_to_terminal_aborted() {
+        let err = ProcessingError::from_response_status(Status::aborted("operation aborted"));
+        assert!(
+            matches!(err, ProcessingError::Aborted),
+            "Code::Aborted must map to the terminal ProcessingError::Aborted, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn from_response_status_maps_transient_codes_to_recoverable() {
+        for code in [
+            Code::DeadlineExceeded,
+            Code::Unavailable,
+            Code::ResourceExhausted,
+        ] {
+            let err = ProcessingError::from_response_status(Status::new(code, "transient"));
+            assert!(
+                matches!(err, ProcessingError::Recoverable(_)),
+                "{code:?} must map to Recoverable, got {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn from_response_status_maps_other_codes_to_irrecoverable() {
+        for code in [Code::Internal, Code::InvalidArgument, Code::NotFound] {
+            let err = ProcessingError::from_response_status(Status::new(code, "fatal"));
+            assert!(
+                matches!(err, ProcessingError::Irrecoverable(_)),
+                "{code:?} must map to Irrecoverable, got {err:?}"
+            );
         }
     }
 }

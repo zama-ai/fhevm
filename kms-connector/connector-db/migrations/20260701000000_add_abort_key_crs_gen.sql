@@ -10,7 +10,8 @@
 --      the original keygen/crsgen request row (see `OperationStatus::Aborted`).
 
 -- New terminal status, distinct from `'failed'`, for requests retired by an abort.
--- Added on its own so the value is committed before any runtime code uses it.
+-- The new value is only referenced at runtime, never within this migration (the tables below
+-- default to `'pending'`), so adding it in the same transaction is safe on PostgreSQL 12+.
 ALTER TYPE operation_status ADD VALUE IF NOT EXISTS 'aborted';
 
 -- `abort_keygen_requests` is keyed by `prep_keygen_id` (the ID carried by the `AbortKeygen` event),
