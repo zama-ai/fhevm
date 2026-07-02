@@ -49,7 +49,11 @@ async fn ingest(
         address: Address::ZERO,
         data: event,
     };
-    let mut tx = db.new_transaction().await.expect("tx");
+    let mut tx = db
+        .new_transaction()
+        .await
+        .expect("tx")
+        .expect("new_transaction() returns Some on a live stack");
     let inserted = db
         .handle_bridge_event(
             &mut tx,

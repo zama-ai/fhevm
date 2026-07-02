@@ -126,7 +126,10 @@ async fn counter_increment(
     let tx_id = next_handle(&mut handle_counter);
     let initial_counter = next_handle(&mut handle_counter);
     let increment_by = next_handle(&mut handle_counter);
-    let mut tx = listener_db.new_transaction().await?;
+    let mut tx = listener_db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
 
     utils::insert_tfhe_event(
         &listener_db,
@@ -236,7 +239,10 @@ async fn tree_reduction(
     let caller = zero_address();
     let num_samples = sample_count(num_tx).max(2);
     let tx_id = next_handle(&mut handle_counter);
-    let mut tx = listener_db.new_transaction().await?;
+    let mut tx = listener_db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
 
     let mut current_level = Vec::with_capacity(num_samples);
     for _ in 0..num_samples {

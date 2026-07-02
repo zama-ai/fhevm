@@ -256,17 +256,24 @@ pub(crate) async fn run_loop(
         // `gcs_mode == false` from the start, so this is always true for it.
         let uploads_enabled = !mode.gcs_mode();
 
-        let result =
-            fetch_and_execute_sns_tasks(&pool, &tx, keys, &conf, &token, uploads_enabled, mode.gcs_mode())
-                .await
-                .inspect(|res| {
-                    if let Some((_, tasks_processed)) = res {
-                        TASK_EXECUTE_SUCCESS_COUNTER.inc_by(*tasks_processed as u64);
-                    }
-                })
-                .inspect_err(|_| {
-                    TASK_EXECUTE_FAILURE_COUNTER.inc();
-                })?;
+        let result = fetch_and_execute_sns_tasks(
+            &pool,
+            &tx,
+            keys,
+            &conf,
+            &token,
+            uploads_enabled,
+            mode.gcs_mode(),
+        )
+        .await
+        .inspect(|res| {
+            if let Some((_, tasks_processed)) = res {
+                TASK_EXECUTE_SUCCESS_COUNTER.inc_by(*tasks_processed as u64);
+            }
+        })
+        .inspect_err(|_| {
+            TASK_EXECUTE_FAILURE_COUNTER.inc();
+        })?;
         let Some((maybe_remaining, _tasks_processed)) = result else {
             info!("Cutover completed — SnS BCS worker stopping");
             return Ok(());
@@ -415,18 +422,18 @@ async fn fetch_and_execute_sns_tasks(
     // writing any ct128 / digest rows into the tables execute_cutover merges.
     // `None` means a committed cutover retired this stack. See
     // versioning::begin_write_guarded.
-    let mut db_txn = match fhevm_engine_common::versioning::begin_write_guarded(pool, gcs_mode).await
-    {
-        Ok(Some(txn)) => txn,
-        Ok(None) => {
-            info!("Cutover completed — SnS BCS worker stopping");
-            return Ok(None);
-        }
-        Err(err) => {
-            error!(error = %err, "Failed to begin transaction");
-            return Err(err.into());
-        }
-    };
+    let mut db_txn =
+        match fhevm_engine_common::versioning::begin_write_guarded(pool, gcs_mode).await {
+            Ok(Some(txn)) => txn,
+            Ok(None) => {
+                info!("Cutover completed — SnS BCS worker stopping");
+                return Ok(None);
+            }
+            Err(err) => {
+                error!(error = %err, "Failed to begin transaction");
+                return Err(err.into());
+            }
+        };
 
     let order = if conf.db.lifo {
         Order::Desc

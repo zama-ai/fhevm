@@ -346,9 +346,15 @@ impl Database {
     /// retired this stack — the caller must skip the write. GCS-mode connections
     /// (`self.gcs_mode`) skip the gate: they write the gcs schema, not the cutover
     /// target. See `versioning::cutover_gate`.
-    pub async fn new_transaction(&self) -> Result<Option<Transaction<'_>>, SqlxError> {
+    pub async fn new_transaction(
+        &self,
+    ) -> Result<Option<Transaction<'_>>, SqlxError> {
         let pool = self.pool().await;
-        fhevm_engine_common::versioning::begin_write_guarded(&pool, self.gcs_mode).await
+        fhevm_engine_common::versioning::begin_write_guarded(
+            &pool,
+            self.gcs_mode,
+        )
+        .await
     }
 
     pub async fn pool(&self) -> sqlx::Pool<Postgres> {
