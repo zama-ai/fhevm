@@ -38,18 +38,47 @@ const PUBLIC_AMOY_RPC = 'https://rpc-amoy.polygon.technology';
 export const ENVIRONMENTS: Record<string, EnvironmentDef> = {
   devnet: {
     chains: [
-      { chainId: 11155111, label: 'sepolia', fallbackBlockTimeSeconds: 12, rpcUrlEnv: 'RPC_URL_SEPOLIA', defaultRpcUrl: PUBLIC_SEPOLIA_RPC },
-      { chainId: 80002, label: 'amoy', fallbackBlockTimeSeconds: 1.5, rpcUrlEnv: 'RPC_URL_AMOY', defaultRpcUrl: PUBLIC_AMOY_RPC },
+      {
+        chainId: 11155111,
+        label: 'sepolia',
+        fallbackBlockTimeSeconds: 12,
+        rpcUrlEnv: 'RPC_URL_SEPOLIA',
+        defaultRpcUrl: PUBLIC_SEPOLIA_RPC,
+      },
+      {
+        chainId: 80002,
+        label: 'amoy',
+        fallbackBlockTimeSeconds: 1.5,
+        rpcUrlEnv: 'RPC_URL_AMOY',
+        defaultRpcUrl: PUBLIC_AMOY_RPC,
+      },
     ],
     // Devnet gateway is a Zama-internal endpoint — no public default; env var required.
     gateway: { label: 'gateway-devnet', fallbackBlockTimeSeconds: 2, rpcUrlEnv: 'RPC_URL_GATEWAY_DEVNET' },
   },
   testnet: {
     chains: [
-      { chainId: 11155111, label: 'sepolia', fallbackBlockTimeSeconds: 12, rpcUrlEnv: 'RPC_URL_SEPOLIA', defaultRpcUrl: PUBLIC_SEPOLIA_RPC },
-      { chainId: 80002, label: 'amoy', fallbackBlockTimeSeconds: 1.5, rpcUrlEnv: 'RPC_URL_AMOY', defaultRpcUrl: PUBLIC_AMOY_RPC },
+      {
+        chainId: 11155111,
+        label: 'sepolia',
+        fallbackBlockTimeSeconds: 12,
+        rpcUrlEnv: 'RPC_URL_SEPOLIA',
+        defaultRpcUrl: PUBLIC_SEPOLIA_RPC,
+      },
+      {
+        chainId: 80002,
+        label: 'amoy',
+        fallbackBlockTimeSeconds: 1.5,
+        rpcUrlEnv: 'RPC_URL_AMOY',
+        defaultRpcUrl: PUBLIC_AMOY_RPC,
+      },
     ],
-    gateway: { label: 'gateway-testnet', fallbackBlockTimeSeconds: 2, rpcUrlEnv: 'RPC_URL_GATEWAY_TESTNET', defaultRpcUrl: 'https://rpc.testnet.zama.org' },
+    gateway: {
+      label: 'gateway-testnet',
+      fallbackBlockTimeSeconds: 2,
+      rpcUrlEnv: 'RPC_URL_GATEWAY_TESTNET',
+      defaultRpcUrl: 'https://rpc.testnet.zama.org',
+    },
   },
   // No defaults — production RPCs are private; env vars required.
   mainnet: {
