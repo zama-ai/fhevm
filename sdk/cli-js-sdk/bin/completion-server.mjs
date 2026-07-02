@@ -192,6 +192,26 @@ const root = command(
         ),
       ],
     ),
+    command(
+      "token",
+      "ERC-7984 confidential token utilities",
+      [],
+      [
+        command("transfer", "Confidential ERC-7984 transfer; amount is base units encrypted as euint64", [
+          opt("--contract", "confidential token contract address"),
+          opt("--to", "recipient address"),
+          opt("--amount", "amount in base units (0 < amount < 2^64)"),
+          opt("--from", "operator transferFrom source; spends an existing allowance"),
+          ...walletOptions,
+        ]),
+        command("balance", "Read the confidential ERC-7984 balance handle for an account", [
+          opt("--contract", "confidential token contract address"),
+          opt("--account", "account to read; defaults to wallet address"),
+          opt("--private-key", "wallet private key for default account; falls back to PRIVATE_KEY"),
+          opt("--mnemonic", "wallet mnemonic for default account; falls back to MNEMONIC"),
+        ]),
+      ],
+    ),
     completionCommand,
   ],
 );

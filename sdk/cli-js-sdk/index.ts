@@ -10,6 +10,7 @@ import { registerDelegatedUserDecryptCommands } from "./src/cli/commands/delegat
 import { registerFheTestCommands } from "./src/cli/commands/fhe-test";
 import { registerInputProofCommand } from "./src/cli/commands/input-proof";
 import { registerPublicDecryptCommands } from "./src/cli/commands/public-decrypt";
+import { registerTokenCommands } from "./src/cli/commands/token";
 import { registerUserDecryptCommands } from "./src/cli/commands/user-decrypt";
 import { DEFAULT_NETWORK, NETWORKS } from "./src/types";
 
@@ -33,6 +34,7 @@ registerPublicDecryptCommands(program);
 registerUserDecryptCommands(program);
 registerDelegatedUserDecryptCommands(program);
 registerFheTestCommands(program);
+registerTokenCommands(program);
 registerCompletionCommands(program);
 
 program.parseAsync().catch((error: unknown) => {

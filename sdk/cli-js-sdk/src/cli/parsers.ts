@@ -34,6 +34,21 @@ export const parsePositiveInteger = (value: string): number => {
   throw new InvalidArgumentError(`Invalid positive integer: ${value}`);
 };
 
+const EUINT64_UPPER_BOUND = 1n << 64n;
+
+export const parseTokenAmount = (value: string): bigint => {
+  let parsed: bigint;
+  try {
+    parsed = BigInt(value);
+  } catch {
+    throw new InvalidArgumentError(`Invalid amount: ${value}`);
+  }
+  if (parsed > 0n && parsed < EUINT64_UPPER_BOUND) return parsed;
+  throw new InvalidArgumentError(
+    `Amount must be greater than 0 and less than 2^64: ${value}`,
+  );
+};
+
 export const collectHandle = (value: string, previous: Hex[] = []): Hex[] => [
   ...previous,
   parseBytes32(value),
