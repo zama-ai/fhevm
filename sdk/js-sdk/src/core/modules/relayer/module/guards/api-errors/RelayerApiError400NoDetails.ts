@@ -14,7 +14,8 @@ export function isRelayerApiError400NoDetails(error: unknown): error is RelayerA
     !(
       error.label === ('malformed_json' satisfies T['label']) ||
       error.label === ('request_error' satisfies T['label']) ||
-      error.label === ('not_ready_for_decryption' satisfies T['label'])
+      error.label === ('not_ready_for_decryption' satisfies T['label']) ||
+      error.label === ('not_allowed_on_host_acl' satisfies T['label'])
     )
   ) {
     return false;
@@ -26,7 +27,7 @@ export function isRelayerApiError400NoDetails(error: unknown): error is RelayerA
  * Asserts that a value matches the {@link RelayerApiError400NoDetails} schema:
  * ```json
  * {
- *   "label": "malformed_json" | "request_error" | "not_ready_for_decryption",
+ *   "label": "malformed_json" | "request_error" | "not_ready_for_decryption" | "not_allowed_on_host_acl",
  *   "message": "string"
  * }
  * ```
@@ -42,7 +43,8 @@ export function assertIsRelayerApiError400NoDetails(
     !(
       value.label === ('malformed_json' satisfies T['label']) ||
       value.label === ('request_error' satisfies T['label']) ||
-      value.label === ('not_ready_for_decryption' satisfies T['label'])
+      value.label === ('not_ready_for_decryption' satisfies T['label']) ||
+      value.label === ('not_allowed_on_host_acl' satisfies T['label'])
     )
   ) {
     throw new InvalidPropertyError(
@@ -54,6 +56,7 @@ export function assertIsRelayerApiError400NoDetails(
           'malformed_json' satisfies T['label'],
           'request_error' satisfies T['label'],
           'not_ready_for_decryption' satisfies T['label'],
+          'not_allowed_on_host_acl' satisfies T['label'],
         ],
         type: typeof value.label, // === "string"
         value: value.label,

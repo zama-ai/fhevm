@@ -57,17 +57,13 @@
  */
 
 ////////////////////////////////////////////////////////////////////////////////
-// Runtime detection and load modes
+// Load modes
 ////////////////////////////////////////////////////////////////////////////////
 
-function __isBrowserLike() {
-  return (
-    typeof Bun === 'undefined' &&
-    typeof process === 'undefined' &&
-    typeof addEventListener === 'function' &&
-    typeof removeEventListener === 'function'
-  );
-}
+// Environment detection (browser vs Node) is NOT done here: the SDK resolves it
+// once on the main thread (via environment.ts isBrowserLike, robust to bundler
+// `process` shims) and injects it through setWorkerUrlConfig({ isBrowserLike }).
+// See `_isBrowserLike` below.
 
 const __wasmAssetLoadModes = ['embedded-base64', 'verified-blob', 'precheck-direct-url', 'trusted-direct-url', 'auto'];
 
@@ -89,7 +85,7 @@ function __bytesToHex(bytes) {
  * @returns {Promise<string>} Lowercase hexadecimal SHA-256 digest without a `0x` prefix.
  */
 async function __sha256(bytes) {
-  if (__isBrowserLike()) {
+  if (_isBrowserLike) {
     if (typeof crypto === 'undefined' || !crypto.subtle || typeof crypto.subtle.digest !== 'function') {
       throw new Error('Web Crypto SHA-256 digest is not available');
     }
@@ -100,7 +96,9 @@ async function __sha256(bytes) {
 
   const nodeModuleName = 'crypto';
   const nodeModuleId = `node:${nodeModuleName}`;
-  const { createHash } = await import(/* @vite-ignore */ nodeModuleId);
+  const { createHash } = await import(
+    /* @vite-ignore */ /* webpackIgnore: true */ /* turbopackIgnore: true */ nodeModuleId
+  );
   return createHash('sha256').update(new Uint8Array(bytes)).digest('hex');
 }
 
@@ -152,13 +150,17 @@ async function __fetchAndVerifyWorkerUrlBytes(url, expectedSha256) {
  * @returns {Promise<ArrayBuffer | Uint8Array>} Raw worker script bytes.
  */
 async function __readWorkerUrlBytes(url) {
-  if (!__isBrowserLike() && url.protocol === 'file:') {
+  if (!_isBrowserLike && url.protocol === 'file:') {
     const fsModuleName = 'fs/promises';
     const fsModuleId = `node:${fsModuleName}`;
     const urlModuleName = 'url';
     const urlModuleId = `node:${urlModuleName}`;
-    const { readFile } = await import(/* @vite-ignore */ fsModuleId);
-    const { fileURLToPath } = await import(/* @vite-ignore */ urlModuleId);
+    const { readFile } = await import(
+      /* @vite-ignore */ /* webpackIgnore: true */ /* turbopackIgnore: true */ fsModuleId
+    );
+    const { fileURLToPath } = await import(
+      /* @vite-ignore */ /* webpackIgnore: true */ /* turbopackIgnore: true */ urlModuleId
+    );
     return await readFile(fileURLToPath(url));
   }
 
@@ -203,7 +205,7 @@ async function __newBrowserWorkerFromBlob(blob) {
  * @returns {Promise<Worker>} Created worker.
  */
 async function __newIsomorphicWorkerFromUrl(url) {
-  if (__isBrowserLike()) {
+  if (_isBrowserLike) {
     return new Worker(url, {
       type: 'module',
       name: 'wasm_bindgen_worker',
@@ -212,14 +214,18 @@ async function __newIsomorphicWorkerFromUrl(url) {
 
   const nodeModuleName = 'worker_threads';
   const nodeModuleId = `node:${nodeModuleName}`;
-  const { Worker: NodeWorker } = await import(/* @vite-ignore */ nodeModuleId);
+  const { Worker: NodeWorker } = await import(
+    /* @vite-ignore */ /* webpackIgnore: true */ /* turbopackIgnore: true */ nodeModuleId
+  );
   return new NodeWorker(url);
 }
 
 async function __newNodeWorkerFromJsCode(jsCode) {
   const nodeModuleName = 'worker_threads';
   const nodeModuleId = `node:${nodeModuleName}`;
-  const { Worker: NodeWorker } = await import(/* @vite-ignore */ nodeModuleId);
+  const { Worker: NodeWorker } = await import(
+    /* @vite-ignore */ /* webpackIgnore: true */ /* turbopackIgnore: true */ nodeModuleId
+  );
   return { worker: new NodeWorker(jsCode, { eval: true }), blobUrl: undefined };
 }
 
@@ -232,7 +238,7 @@ async function __newNodeWorkerFromJsCode(jsCode) {
  * @returns {Promise<{ worker: Worker, blobUrl: string | undefined }>} Created worker and optional Blob URL to revoke.
  */
 async function __newIsomorphicWorkerFromVerifiedJsCodeBytes(verifiedJsCodeBytes) {
-  if (__isBrowserLike()) {
+  if (_isBrowserLike) {
     return await __newBrowserWorkerFromBlob(
       new Blob([verifiedJsCodeBytes], {
         type: 'application/javascript',
@@ -251,7 +257,7 @@ async function __newIsomorphicWorkerFromVerifiedJsCodeBytes(verifiedJsCodeBytes)
  * @returns {Promise<{ worker: Worker, blobUrl: string | undefined }>} Created worker and optional Blob URL to revoke.
  */
 async function __newWorkerFromJsCodeBase64(jsCodeBase64) {
-  if (__isBrowserLike()) {
+  if (_isBrowserLike) {
     const blob = new Blob([atob(jsCodeBase64)], {
       type: 'application/javascript',
     });
@@ -338,6 +344,9 @@ let _terminating;
 let _configSet = false;
 let _workerUrl = undefined;
 let _wasmAssetLoadMode = 'auto';
+// Injected by the SDK (the main thread) via setWorkerUrlConfig — the single
+// source of truth for browser-vs-Node, replacing local detection.
+let _isBrowserLike = undefined;
 const _workerUrlSha256 = __TFHE_WORKER_URL_SHA256_JSON__;
 let _verifiedWorkerUrlBytesPromise = undefined;
 let _logger = undefined;
@@ -381,7 +390,18 @@ function setWorkerUrlConfig(parameters = {}) {
     throw new TypeError('setWorkerUrlConfig parameters must be an object');
   }
 
-  const { workerUrl = undefined, wasmAssetLoadMode = 'auto', logger = undefined } = parameters;
+  const {
+    workerUrl = undefined,
+    wasmAssetLoadMode = 'auto',
+    logger = undefined,
+    isBrowserLike = undefined,
+  } = parameters;
+
+  // Check `isBrowserLike` (required: the SDK injects the resolved runtime kind;
+  // the worker bootstrap never detects it itself).
+  if (typeof isBrowserLike !== 'boolean') {
+    throw new TypeError('setWorkerUrlConfig: isBrowserLike (boolean) is required');
+  }
 
   // Check `wasmAssetLoadMode`
   if (!__isWasmAssetLoadMode(wasmAssetLoadMode)) {
@@ -409,6 +429,7 @@ function setWorkerUrlConfig(parameters = {}) {
 
   _wasmAssetLoadMode = wasmAssetLoadMode;
   _logger = logger;
+  _isBrowserLike = isBrowserLike;
   _configSet = true;
 }
 
