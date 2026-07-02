@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import { IConfidentialBridge } from "../Impl.sol";
-import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
-import { FHE } from "../FHE.sol";
+import {IConfidentialBridge} from "../Impl.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {FHE} from "../FHE.sol";
 
 interface IConfidentialOAppCore {
     /// @notice No peer is configured for the requested endpoint id.
@@ -34,13 +34,12 @@ interface IConfidentialOAppCore {
      * @param peer The address of the peer to be associated with the corresponding endpoint.
      */
     function setPeer(uint32 eid, bytes32 peer) external;
-
 }
 
 /**
  * @title   ConfidentialOAppCore
- * @notice  Shared peer registry for a confidential omnichain app (cOApp) relying on a LayerZero-enabled ConfidentialBridge. 
- *          A "peer" is the trusted counterpart instance of this cOApp on another chain, addressed by its LayerZero endpoint id (`eid`). 
+ * @notice  Shared peer registry for a confidential omnichain app (cOApp) relying on a LayerZero-enabled ConfidentialBridge.
+ *          A "peer" is the trusted counterpart instance of this cOApp on another chain, addressed by its LayerZero endpoint id (`eid`).
  *          The same registry is used by both the send side ({ConfidentialOAppSender}) and the receive side ({ConfidentialOAppReceiver}), so an
  *          app configures each peer once and it applies in both directions.
  * @dev     App identifiers are `bytes32` so non-EVM peers (e.g. Solana program ids) fit; EVM
