@@ -56,7 +56,7 @@ async fn test_parallel_request_picking(#[case] event_type: TestEventType) -> any
 
     info!("Data OK! Releasing first {event_type}...");
     for event in events0 {
-        event.mark_as_pending(test_instance.db()).await;
+        event.mark_as_pending(test_instance.db()).await?;
     }
 
     info!("Done! Picking first {event_type} again...");
@@ -69,10 +69,10 @@ async fn test_parallel_request_picking(#[case] event_type: TestEventType) -> any
 
     info!("Data OK! Marking all events as completed...");
     for event in events0 {
-        event.mark_as_completed(test_instance.db()).await;
+        event.mark_as_completed(test_instance.db()).await?;
     }
     for event in events1 {
-        event.mark_as_completed(test_instance.db()).await;
+        event.mark_as_completed(test_instance.db()).await?;
     }
     info!("Done! Checking there is no uncompleted request in DB...");
     check_no_uncompleted_request_in_db(test_instance.db(), event_type).await?;
