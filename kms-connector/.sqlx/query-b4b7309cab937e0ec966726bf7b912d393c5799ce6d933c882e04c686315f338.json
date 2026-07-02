@@ -1,16 +1,10 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO epoch_result_responses(\n            context_id, epoch_id, keys, crs_list, created_at, otlp_context, status\n        )\n        VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING",
+  "query": "UPDATE abort_crsgen_requests SET status = $1, already_sent = $2 WHERE crs_id = $3",
   "describe": {
     "columns": [],
     "parameters": {
       "Left": [
-        "Bytea",
-        "Bytea",
-        "Bytea",
-        "Bytea",
-        "Timestamptz",
-        "Bytea",
         {
           "Custom": {
             "name": "operation_status",
@@ -24,10 +18,12 @@
               ]
             }
           }
-        }
+        },
+        "Bool",
+        "Bytea"
       ]
     },
     "nullable": []
   },
-  "hash": "24d78ed632ef19c6bf392a219f90257d77c464152f8f7a43c7a853379fdb471d"
+  "hash": "b4b7309cab937e0ec966726bf7b912d393c5799ce6d933c882e04c686315f338"
 }
