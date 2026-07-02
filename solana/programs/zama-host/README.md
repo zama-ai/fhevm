@@ -100,15 +100,27 @@ Admission invariants for `fhe_eval`:
 The `FheEvalOperand::VerifiedInput` operand is the production encrypted-input path (the Solana
 `FHE.fromExternal` analog). When an `fhe_eval` step consumes it, the host re-verifies the
 **coprocessor's EIP-712 `CiphertextVerification` attestation on-chain via secp256k1** (recovering the
-EVM coprocessor signers and threshold-checking them against the configured coprocessor signer set) and
-transient-allows the input for that eval only — no persistent ACL, matching `FHEVMExecutor.verifyInput`
-+ `allowTransient(result, msg.sender)`. The "caller is the attested contract" check is enforced at
-consumption (`attestation.contract_address` must equal the eval's `compute_subject`, the msg.sender
-analog); derived durable outputs are then unconstrained, exactly like EVM. This mirrors the EVM
-`InputVerification` coprocessor-threshold model; the gateway counterpart is the RFC-021 bytes32 path
-`InputVerification.verifyProofRequestSolana`. The host-listener reconstruct path resolves the operand
-from `attestation.input_handle`. The redundant standalone `verify_coprocessor_input` instruction and
-its `InputVerifiedEvent` were removed.
+EVM coprocessor signers and threshold-checking them against the configured coprocessor signer set),
+asserts the attested `contract_chain_id` equals the host chain id (EVM's `contractChainId ==
+block.chainid`), and transient-allows the input for that eval only — no persistent ACL, matching
+`FHEVMExecutor.verifyInput` + `allowTransient(result, msg.sender)`. The "caller is the attested
+contract" check is enforced at consumption (`attestation.contract_address` must equal the eval's
+`compute_subject`, the msg.sender analog); derived durable outputs are **not tainted** by the input —
+any durable output ACL is the app's separate explicit choice, exactly like EVM.
+
+The EVM `contractAddress` analog is the consuming program's **compute-authority PDA** — a PDA the
+program signs with via `invoke_signed` (in confidential-token, the `[b"fhe-compute", mint]` compute
+signer), never a user key and never the bare program id (program ids cannot sign). The host only
+enforces `contract_address == compute_subject` (any signer); binding the attestation to that PDA and
+checking the attested `user_address` are **app policy** (confidential-token checks the attested user
+equals the token account owner), mirroring EVM where `userAddress` is attested but the contract
+decides its meaning. Per-state-account (per-mint) scoping is deliberate and finer-grained than EVM's
+per-contract binding.
+
+This mirrors the EVM `InputVerification` coprocessor-threshold model; the gateway counterpart is the
+RFC-021 bytes32 path `InputVerification.verifyProofRequestSolana`. The host-listener reconstruct path
+resolves the operand from `attestation.input_handle`. The earlier standalone `verify_coprocessor_input`
+instruction and its `InputVerifiedEvent` receipt were removed.
 
 `mock_input_verified_and_bind` remains local-PoC test-only glue, chain-id confined (DD-014). The
 removed `verify_input_and_bind` (native Ed25519 over `SolanaInputProof` + `SolanaInputBindIntent`,

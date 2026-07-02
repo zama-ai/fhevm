@@ -142,7 +142,6 @@ Host listener consumes only generic ZamaHost events:
   TrivialEncryptEvent
   FheRandEvent
   AclAllowedEvent
-  InputVerifiedEvent
 
 Those event decoders are generated at host-listener build time from the checked-in ZamaHost Anchor
 IDL snapshot. Use `solana/scripts/check-zama-host-idl.sh` to catch drift and
@@ -194,6 +193,12 @@ Input path:
     allowTransient(input, msg.sender). The caller-is-contract gate is enforced at consumption
     (attestation.contract_address == compute_subject); derived durable outputs are unconstrained.
     confidential_transfer / confidential_burn consume an attested external amount via this operand.
+  The EVM contractAddress analog is the app's compute-authority PDA — the PDA the program signs with
+    via invoke_signed (in confidential-token: [b"fhe-compute", mint]). Never a user key, never the bare
+    program id. The host only checks attestation.contract_address == compute_subject; binding the
+    attestation to that PDA and checking the attested user_address are app policy (confidential-token
+    checks attested user == token account owner), mirroring EVM where userAddress's meaning is the
+    contract's to decide.
   The redundant standalone verify_coprocessor_input instruction + InputVerifiedEvent were removed;
     the shared verifier lives in zama_host::instructions::input_verification.
   The removed verify_input_and_bind Ed25519 verifier-set path is the superseded design in DD-007.

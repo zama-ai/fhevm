@@ -195,27 +195,34 @@ was a Solana-only trust root divorced from the EVM coprocessor trust model.
 
 Decision:
 
-> **Update (fromExternal wiring — closes the follow-up below).** Inputs now enter compute through the
-> `FheEvalOperand::VerifiedInput` operand consumed inside `fhe_eval` (the Solana `FHE.fromExternal`
-> analog): the coprocessor attestation is re-verified in-frame and the input is transient-allowed for
-> that eval only. The "caller is the attested contract" gate moved to input-consumption time
-> (`attestation.contract_address == compute_subject`, the msg.sender analog) and derived durable
-> outputs are unconstrained — exactly EVM parity, and stricter output-binding was removed. The
-> redundant standalone `verify_coprocessor_input` instruction and its `InputVerifiedEvent` were
-> **deleted**; the shared `verify_input_attestation` verifier moved to `instructions::input_verification`.
-> `confidential_transfer` / `confidential_burn` consume an attested external amount via this operand.
-> The rest of this entry is the prior (verify-and-receipt) design, kept for the record.
+Inputs enter compute through the `FheEvalOperand::VerifiedInput` operand consumed inside `fhe_eval`
+— the Solana `FHE.fromExternal` analog. The operand carries the coprocessor's EIP-712
+`CiphertextVerification` attestation; the shared `verify_input_attestation` verifier
+(`zama_host::instructions::input_verification`) re-verifies it **in-frame** by recovering the EVM
+coprocessor signer via `secp256k1_recover` and threshold-checking it against the configured signer
+set, and asserts the attested `contract_chain_id` equals the host chain id (EVM's
+`contractChainId == block.chainid`). On success the input is *transient-allowed for that eval only* —
+there is no persistent `AclRecord` for the input, mirroring EVM `FHEVMExecutor.verifyInput` (verify ≠
+allow). Solana has no transient-storage analog (DD-008); the transient allow lives only for the
+duration of the frame.
 
-Inputs are verified via an on-chain secp256k1 verification of the **coprocessor's EIP-712
-`CiphertextVerification` attestation**. `zama_host::instructions::verify_coprocessor_input`
-recovers the EVM coprocessor signer(s) from the attestation (`secp256k1_recover`), checks them
-against the configured coprocessor signer set, and — on success — emits a signed `InputVerifiedEvent`
-receipt. It does **not** create any persistent ACL (`AclRecord`) and carries no `output_*` /
-ACL-binding parameters. This mirrors the EVM `FHEVMExecutor.verifyInput`, which grants only a
-tx-scoped *transient* allow and creates no persistent ACL. Solana has no transient-storage analog
-(DD-008), so the verified input is surfaced solely as the signed `InputVerifiedEvent` receipt; any
-*durable* permission on an input-derived handle is a SEPARATE, explicit app grant. The gateway side
-is the RFC-021 bytes32 input path:
+**Binding model (the `contractAddress` analog).** EVM binds an attestation to a `contractAddress`.
+The Solana equivalent is the consuming program's **compute-authority PDA** — a PDA the program signs
+with via `invoke_signed`. In confidential-token this is the `[b"fhe-compute", mint]` compute signer.
+It is never a user key and never the bare program id (program ids cannot sign). The host layer only
+enforces `attestation.contract_address == compute_subject` (whatever signer consumes the input, the
+msg.sender analog); the PDA convention is **app policy** — apps MUST bind attestations to their
+compute-authority PDA, and MUST check the attested `user_address` themselves. Confidential-token
+checks the attested user equals the token account owner. This mirrors EVM, where `userAddress` is
+attested but the contract decides its meaning. Per-state-account (per-mint) scoping is deliberate and
+finer-grained than EVM's per-contract binding.
+
+**Derived outputs are NOT tainted by the input attestation.** Once verified, the input is an ordinary
+operand; any *durable* ACL on an input-derived handle is the app's separate, explicit choice at
+output-binding time — exactly EVM parity, where the input gets a transient allow and durable output
+ACLs are the contract's decision. There is no output-taint from the input.
+
+The gateway side is the RFC-021 bytes32 input path:
 `InputVerification.verifyProofRequestSolana(contractChainId, bytes32 contractAddress,
 bytes32 userAddress, ciphertextWithZKProof, extraData)` + `event VerifyProofRequestSolana`, which
 shares the zkProofId counter and consensus state with the EVM path and stores the request in a
@@ -227,29 +234,26 @@ Why:
 
 Reusing the coprocessor attestation makes Solana input trust identical to EVM input trust — one
 trust root, recovered and threshold-checked on-chain — instead of a parallel verifier-set subsystem
-that could drift. Making it verify-and-receipt (not verify-and-bind) restores EVM parity (verify ≠
-allow) and removes one persistent ACL account per input — one of the "3 ACLs" that inflated per-tx
-cost — so it is also a cost win.
+that could drift. Consuming it as an in-frame eval operand (rather than a standalone verify + durable
+receipt) restores EVM parity (verify ≠ allow) and removes a persistent ACL account per input — one of
+the "3 ACLs" that inflated per-tx cost — so it is also a cost win.
 
 What changed:
 
 - The bespoke input verifier-set and the `verify_input_and_bind` Ed25519 path were REMOVED.
-- `verify_coprocessor_input_and_bind` was RENAMED to `verify_coprocessor_input` and GUTTED: it now
-  verifies the attestation and emits `InputVerifiedEvent` only. The persistent `AclRecord` write and
-  all `output_*` parameters (output_nonce_key, output_acl_domain_key, output_app_account,
-  output_subjects, output_public_decrypt, …) plus the ACL-binding security checks were dropped.
-- The `FheEvalStep::Input` eval variant was REMOVED; eval steps are now Binary/Ternary/
-  TrivialEncrypt/Rand only. Input verification is its own instruction, not an eval step.
+- Inputs are now the `FheEvalOperand::VerifiedInput` operand of `fhe_eval`. The earlier standalone
+  `verify_coprocessor_input` instruction and its `InputVerifiedEvent` receipt were **deleted**, along
+  with the short-lived output-taint binding (`VerifiedInputBinding` / output-ACL constraints): derived
+  outputs are unconstrained by the input.
+- The "caller is the attested contract" gate is enforced at input-consumption time
+  (`attestation.contract_address == compute_subject`, the msg.sender analog).
 - `mock_input_verified_and_bind` remains test-only glue, chain-id confined (DD-014).
 
 Open for debate / follow-up:
 
 The PoC input proof / ZKPoK / transciphering validation behind the attestation is still a harness
-shortcut; real ZKPoK + transciphering is production work (see Next steps). Fully exercising
-input→compute still requires the host-listener to **consume** `InputVerifiedEvent` (it currently
-ignores it); the PoC does not yet use inputs as compute operands. This is a follow-up. The input
-identity is a plain bytes32 host address; the input's `extraData` is the coprocessor cert's
-extraData (DD-026).
+shortcut; real ZKPoK + transciphering is production work (see Next steps). The input identity is a
+plain bytes32 host address; the input's `extraData` is the coprocessor cert's extraData (DD-026).
 
 ### Superseded design (for the debate record)
 
@@ -1153,8 +1157,6 @@ Each is phrased as a decision to make in the room.
   feature/solana, so #2758's upgrade checks clear.
 - **Keep the PoC ↔ RFC mirror in sync** — RFC-021 / RFC-024 were updated this cycle; reflect any further
   reconciliation back into the RFCs.
-- **Wire the host-listener to consume `InputVerifiedEvent`** so verified inputs become compute operands
-  (currently ignored; input→compute is a follow-up — DD-007).
 - **Keep the user-decrypt surface typed** (DD-026, RESOLVED via `userDecryptionRequestSolana`) and the
   KMS-cert extraData version registry coherent (DD-021).
 - **Compile out** (not just chain-confine) `mock_input_verified_and_bind` / `test_emit_*` /
