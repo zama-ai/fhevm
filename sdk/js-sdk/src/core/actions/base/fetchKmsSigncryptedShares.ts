@@ -58,13 +58,19 @@ export async function fetchKmsSigncryptedShares(
     };
   });
 
+  const options = parameters.options as RelayerUserDecryptOptions | undefined;
+
   if (signedPermit.version === 1) {
-    return fetchKmsSigncryptedSharesV1_(fhevm, { ...parameters, pairs: sanitizedPairs });
+    return fetchKmsSigncryptedSharesV1_(fhevm, {
+      ...parameters,
+      pairs: sanitizedPairs,
+      options,
+    });
   }
 
   return fetchKmsSigncryptedSharesV2_(fhevm, {
     ...parameters,
     pairs: sanitizedPairs,
-    options: parameters.options as RelayerUserDecryptOptions | undefined,
+    options,
   });
 }

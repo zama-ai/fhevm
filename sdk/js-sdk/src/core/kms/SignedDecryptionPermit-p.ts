@@ -9,15 +9,16 @@ import { InvalidTypeError } from '../base/errors/InvalidTypeError.js';
 import { getResolvedProtocolVersion } from '../runtime/CoreFhevm-p.js';
 import { isSemverStrictlyBefore } from '../base/semver.js';
 import {
+  isSignedDecryptionPermitV1,
   parseSignedDecryptionPermitV1,
   signDecryptionPermitV1,
-  SignedDecryptionPermitV1BaseImpl,
 } from './SignedDecryptionPermitV1-p.js';
 import {
+  isSignedDecryptionPermitV2,
   parseSignedDecryptionPermitV2,
   signDecryptionPermitV2,
-  SignedDecryptionPermitV2Impl,
 } from './SignedDecryptionPermitV2-p.js';
+import { isRecordUintNumberProperty } from '../base/uint.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -28,13 +29,39 @@ import {
  * `toJSON()` is intentionally not on the class to prevent accidental
  * serialization of sensitive data via `JSON.stringify(permit)`.
  */
-export function serializeSignedDecryptionPermitToJSON(permit: SignedDecryptionPermit): {
-  eip712: KmsUserDecryptEip712V1 | KmsDelegatedUserDecryptEip712V1 | KmsUserDecryptEip712V2;
-  signature: string;
-  signerAddress: string;
-} {
+export function serializeSignedDecryptionPermitToJSON(permit: SignedDecryptionPermit):
+  | {
+      version: 1;
+      eip712: KmsUserDecryptEip712V1 | KmsDelegatedUserDecryptEip712V1;
+      signature: string;
+      signerAddress: string;
+    }
+  | {
+      version: 2;
+      eip712: KmsUserDecryptEip712V2;
+      signature: string;
+      signerAddress: string;
+    } {
   assertIsSignedDecryptionPermit(permit, {});
+
+  // Defensive check
+  const version = permit.version as unknown as number;
+  if (version !== 1 && version !== 2) {
+    throw new Error(`Unsupported permit version: ${version}. Supported versions are 1 and 2.`);
+  }
+
+  // This if branch is needed for tsc
+  if (permit.version === 1) {
+    return {
+      version: 1,
+      eip712: permit.eip712,
+      signature: permit.signature,
+      signerAddress: permit.signerAddress,
+    };
+  }
+
   return {
+    version: 2,
     eip712: permit.eip712,
     signature: permit.signature,
     signerAddress: permit.signerAddress,
@@ -46,7 +73,7 @@ export function serializeSignedDecryptionPermitToJSON(permit: SignedDecryptionPe
 ////////////////////////////////////////////////////////////////////////////////
 
 export function isSignedDecryptionPermit(value: unknown): value is SignedDecryptionPermit {
-  return value instanceof SignedDecryptionPermitV1BaseImpl || value instanceof SignedDecryptionPermitV2Impl;
+  return isSignedDecryptionPermitV1(value) || isSignedDecryptionPermitV2(value);
 }
 
 /** Throws {@link InvalidTypeError} if value is not a valid {@link SignedDecryptionPermit}. */
@@ -124,16 +151,18 @@ export async function parseSignedDecryptionPermit(
   transportKeyPair: TransportKeyPair,
   permit: unknown,
 ): Promise<SignedDecryptionPermit> {
-  const protocolVersion = getResolvedProtocolVersion(context);
-  if (protocolVersion === undefined) {
-    throw new Error(
-      'Unable to resolve protocol version from context, ensure proper initialization of the FhevmRuntime and FhevmChain.',
-    );
-  }
+  const hasVersion = isRecordUintNumberProperty(permit, 'version');
 
-  if (isSemverStrictlyBefore(protocolVersion.version, '0.14.0')) {
+  // if no version, interpret as permit v1
+  const version: number = hasVersion ? permit.version : 1;
+
+  if (version === 1) {
     return await parseSignedDecryptionPermitV1(context, transportKeyPair, permit);
   }
 
-  return await parseSignedDecryptionPermitV2(context, transportKeyPair, permit);
+  if (version === 2) {
+    return await parseSignedDecryptionPermitV2(context, transportKeyPair, permit);
+  }
+
+  throw new Error(`Unsupported permit version: ${version}. Supported versions are 1 and 2.`);
 }

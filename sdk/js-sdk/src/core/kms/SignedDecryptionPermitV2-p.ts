@@ -12,9 +12,10 @@ import { assertRecordStringProperty } from '../base/string.js';
 import { assertIsTransportKeyPair, type TransportKeyPair } from './TransportKeyPair-p.js';
 import { readKmsSignersContext } from '../host-contracts/readKmsSignersContext-p.js';
 import { kmsSignersContextToExtraData } from '../host-contracts/KmsSignersContext-p.js';
-import { fromKmsExtraData } from './kmsExtraData.js';
+import { EXTRA_DATA_V2, fromKmsExtraData } from './kmsExtraData.js';
 import { assertIsKmsUserDecryptEip712V2, createKmsUserDecryptEip712V2 } from './createKmsUserDecryptEip712V2.js';
 import { verifyKmsUserDecryptEip712V2 } from '../utils-p/decrypt/verifyKmsUserDecryptEip712V2.js';
+import { assert } from '../base/errors/InternalError.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -51,7 +52,7 @@ function assertKmsEip712V2DeadlineValidity({
 // SignedDecryptionPermitV2Impl
 ////////////////////////////////////////////////////////////////////////////////
 
-export class SignedDecryptionPermitV2Impl implements SignedDecryptionPermitV2 {
+class SignedDecryptionPermitV2Impl implements SignedDecryptionPermitV2 {
   readonly #eip712: KmsUserDecryptEip712V2;
   readonly #signature: Bytes65Hex;
   readonly #signerAddress: ChecksummedAddress;
@@ -130,7 +131,13 @@ Object.freeze(SignedDecryptionPermitV2Impl);
 Object.freeze(SignedDecryptionPermitV2Impl.prototype);
 
 ////////////////////////////////////////////////////////////////////////////////
-// createSignedDecryptionPermitV2
+
+export function isSignedDecryptionPermitV2(value: unknown): value is SignedDecryptionPermitV2 {
+  return value instanceof SignedDecryptionPermitV2Impl;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// _createSignedDecryptionPermitV2
 ////////////////////////////////////////////////////////////////////////////////
 
 async function _createSignedDecryptionPermitV2(
@@ -153,6 +160,10 @@ async function _createSignedDecryptionPermitV2(
   return new SignedDecryptionPermitV2Impl(PRIVATE_TOKEN, parameters);
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// signDecryptionPermitV2
+////////////////////////////////////////////////////////////////////////////////
+
 export async function signDecryptionPermitV2(
   context: SignDecryptionPermitContext,
   parameters: SignDecryptionPermitParameters,
@@ -163,6 +174,15 @@ export async function signDecryptionPermitV2(
   });
 
   const extraData: BytesHex = kmsSignersContextToExtraData(kmsSignersContext);
+
+  // For debug purpose only:
+  // -----------------------
+  // In theory, it should not be possible to produce a unified eip712 (protocol v14+)
+  // with an extraData coming from an old protocol v11/12/13
+  assert(
+    fromKmsExtraData(extraData).version >= EXTRA_DATA_V2,
+    `signDecryptionPermitV2 error: Invalid extraData version extraData=${extraData}`,
+  );
 
   const {
     contractAddresses,

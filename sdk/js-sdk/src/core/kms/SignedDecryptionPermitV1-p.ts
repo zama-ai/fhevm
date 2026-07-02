@@ -84,7 +84,7 @@ function assertKmsEip712V1DeadlineValidity(
  * `SignedDecryptionPermit` (verified via `instanceof`) can safely trust
  * its contents without re-verification.
  */
-export abstract class SignedDecryptionPermitV1BaseImpl {
+class SignedDecryptionPermitV1Impl implements SignedDecryptionPermitV1 {
   readonly #eip712: KmsUserDecryptEip712V1 | KmsDelegatedUserDecryptEip712V1;
   readonly #signature: Bytes65Hex;
   readonly #signerAddress: ChecksummedAddress;
@@ -118,8 +118,6 @@ export abstract class SignedDecryptionPermitV1BaseImpl {
   }
 
   public readonly version = 1 as const;
-
-  public abstract get encryptedDataOwnerAddress(): ChecksummedAddress;
 
   public assertNotExpired(): void {
     assertKmsEip712V1DeadlineValidity(this.#eip712.message, MAX_USER_DECRYPT_DURATION_DAYS);
@@ -162,14 +160,8 @@ export abstract class SignedDecryptionPermitV1BaseImpl {
   public get kmsEpochId(): Uint256BigInt {
     return fromKmsExtraData(this.#eip712.message.extraData).kmsEpochId;
   }
-}
 
-////////////////////////////////////////////////////////////////////////////////
-// SignedDecryptionPermitV1Impl
-////////////////////////////////////////////////////////////////////////////////
-
-class SignedDecryptionPermitV1Impl extends SignedDecryptionPermitV1BaseImpl implements SignedDecryptionPermitV1 {
-  public override get encryptedDataOwnerAddress(): ChecksummedAddress {
+  public get encryptedDataOwnerAddress(): ChecksummedAddress {
     if (this.eip712.primaryType === 'DelegatedUserDecryptRequestVerification') {
       return this.eip712.message.delegatorAddress;
     }
@@ -183,13 +175,17 @@ class SignedDecryptionPermitV1Impl extends SignedDecryptionPermitV1BaseImpl impl
 
 ////////////////////////////////////////////////////////////////////////////////
 
-Object.freeze(SignedDecryptionPermitV1BaseImpl);
-Object.freeze(SignedDecryptionPermitV1BaseImpl.prototype);
 Object.freeze(SignedDecryptionPermitV1Impl);
 Object.freeze(SignedDecryptionPermitV1Impl.prototype);
 
 ////////////////////////////////////////////////////////////////////////////////
-// createSignedDecryptionPermitV1
+
+export function isSignedDecryptionPermitV1(value: unknown): value is SignedDecryptionPermitV1 {
+  return value instanceof SignedDecryptionPermitV1Impl;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// _createSignedDecryptionPermitV1
 ////////////////////////////////////////////////////////////////////////////////
 
 async function _createSignedDecryptionPermitV1(
@@ -230,6 +226,10 @@ async function _createSignedDecryptionPermitV1(
     return new SignedDecryptionPermitV1Impl(PRIVATE_TOKEN, parameters);
   }
 }
+
+////////////////////////////////////////////////////////////////////////////////
+// signDecryptionPermitV1
+////////////////////////////////////////////////////////////////////////////////
 
 export async function signDecryptionPermitV1(
   context: SignDecryptionPermitContext,
