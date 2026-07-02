@@ -447,7 +447,13 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         IKMSGeneration.KeyDigest[] memory digests = _mockKeyDigests();
 
         vm.expectEmit(true, true, true, true, address(kmsGeneration));
-        emit IKMSGeneration.PrepKeygenRequest(prepKeygenId, IKMSGeneration.ParamsType.Default, IKMSGeneration.KeygenMode.Fresh, 0, extraData);
+        emit IKMSGeneration.PrepKeygenRequest(
+            prepKeygenId,
+            IKMSGeneration.ParamsType.Default,
+            IKMSGeneration.KeygenMode.Fresh,
+            0,
+            extraData
+        );
         vm.prank(owner);
         kmsGeneration.keygen(IKMSGeneration.ParamsType.Default, IKMSGeneration.KeygenMode.Fresh, 0);
 
@@ -1558,7 +1564,11 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         // Never requested.
         vm.prank(owner);
         vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.KeyNotGenerated.selector, KEY_COUNTER_BASE + 1));
-        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default, IKMSGeneration.KeygenMode.FromExisting, KEY_COUNTER_BASE + 1);
+        kmsGeneration.keygen(
+            IKMSGeneration.ParamsType.Default,
+            IKMSGeneration.KeygenMode.FromExisting,
+            KEY_COUNTER_BASE + 1
+        );
 
         // Aborted key.
         vm.prank(owner);
@@ -1567,7 +1577,11 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         kmsGeneration.abortKeygen(PREP_KEYGEN_COUNTER_BASE + 1);
         vm.prank(owner);
         vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.KeyAborted.selector, KEY_COUNTER_BASE + 1));
-        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default, IKMSGeneration.KeygenMode.FromExisting, KEY_COUNTER_BASE + 1);
+        kmsGeneration.keygen(
+            IKMSGeneration.ParamsType.Default,
+            IKMSGeneration.KeygenMode.FromExisting,
+            KEY_COUNTER_BASE + 1
+        );
     }
 
     function test_revertSecondMigrationForSameKey() public {
@@ -1731,5 +1745,4 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.NotActiveKey.selector, keyIdA));
         kmsGeneration.scheduleCompressedKeyCutover(keyIdA, cutovers, 500);
     }
-
 }

@@ -242,11 +242,7 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
     /**
      * @notice See {IKMSGeneration-keygen}.
      */
-    function keygen(
-        ParamsType paramsType,
-        KeygenMode mode,
-        uint256 existingKeyId
-    ) external virtual onlyACLOwner {
+    function keygen(ParamsType paramsType, KeygenMode mode, uint256 existingKeyId) external virtual onlyACLOwner {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
 
         // Check that the previous keygen request has reached consensus
