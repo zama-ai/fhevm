@@ -1,4 +1,5 @@
 use fhevm_engine_common::db_keys::DbKeyCache;
+use fhevm_engine_common::key_material_policy::{KeyMaterialKind, KeyMaterialUnavailable};
 use serial_test::serial;
 use sqlx::postgres::PgPoolOptions;
 use test_harness::instance::{setup_test_db, ImportMode};
@@ -97,6 +98,76 @@ async fn test_fetch_latest_refreshes_cache_after_key_rotation(
     let rotated = cache.fetch_latest_from_pool(&pool).await?;
     assert_eq!(rotated.key_id, new_key_id);
     assert!(rotated.sequence_number > initial.sequence_number);
+
+    Ok(())
+}
+
+/// RFC-029: pinned fetches load exactly the requested material kind,
+/// and both kinds of the same key coexist in the cache.
+#[tokio::test]
+#[serial(db)]
+async fn test_fetch_latest_pinned_loads_exactly_the_requested_kind(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let db = setup_test_db(ImportMode::WithKeysNoSns).await?;
+    let pool = PgPoolOptions::new()
+        .max_connections(4)
+        .connect(db.db_url())
+        .await?;
+    let cache = DbKeyCache::new(4)?;
+
+    let mut conn = pool.acquire().await?;
+    let legacy = cache
+        .fetch_latest_pinned(&mut conn, KeyMaterialKind::Legacy)
+        .await?;
+    assert_eq!(legacy.material_kind, KeyMaterialKind::Legacy);
+
+    let compressed = cache
+        .fetch_latest_pinned(&mut conn, KeyMaterialKind::CompressedXof)
+        .await?;
+    assert_eq!(compressed.material_kind, KeyMaterialKind::CompressedXof);
+
+    assert_eq!(legacy.key_id, compressed.key_id);
+    assert_eq!(legacy.sequence_number, compressed.sequence_number);
+
+    Ok(())
+}
+
+/// RFC-029: a pinned fetch for material the row does not carry fails
+/// with the retryable `KeyMaterialUnavailable` error — it never
+/// substitutes the other kind.
+#[tokio::test]
+#[serial(db)]
+async fn test_fetch_latest_pinned_halts_when_material_is_missing(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let db = setup_test_db(ImportMode::WithKeysNoSns).await?;
+    let pool = PgPoolOptions::new()
+        .max_connections(4)
+        .connect(db.db_url())
+        .await?;
+    let cache = DbKeyCache::new(4)?;
+
+    sqlx::query!("UPDATE keys SET compressed_xof_keyset = NULL")
+        .execute(&pool)
+        .await?;
+
+    let mut conn = pool.acquire().await?;
+    let err = match cache
+        .fetch_latest_pinned(&mut conn, KeyMaterialKind::CompressedXof)
+        .await
+    {
+        Ok(_) => panic!("missing compressed material must not fall back to legacy"),
+        Err(err) => err,
+    };
+    let unavailable = err
+        .downcast_ref::<KeyMaterialUnavailable>()
+        .expect("error must be the typed retryable KeyMaterialUnavailable");
+    assert_eq!(unavailable.kind, KeyMaterialKind::CompressedXof);
+
+    // The legacy kind stays loadable.
+    let legacy = cache
+        .fetch_latest_pinned(&mut conn, KeyMaterialKind::Legacy)
+        .await?;
+    assert_eq!(legacy.material_kind, KeyMaterialKind::Legacy);
 
     Ok(())
 }

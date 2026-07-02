@@ -1,3 +1,4 @@
+use crate::key_material_policy::{KeyMaterialKind, KeyMaterialUnavailable};
 use crate::utils::safe_deserialize_key;
 use bytesize::ByteSize;
 use sqlx::{
@@ -31,9 +32,13 @@ struct DbKeyRow {
     cks_key: Option<Vec<u8>>,
 }
 
+/// Cache entries are keyed by `(key_id, material_kind)` so both byte
+/// representations of the same key can coexist during the RFC-029
+/// cutover window. The kind is an opaque second dimension here; all
+/// cutover logic lives in `key_material_policy`.
 #[derive(Clone)]
 pub struct DbKeyCache {
-    cache: Arc<RwLock<lru::LruCache<DbKeyId, DbKey>>>,
+    cache: Arc<RwLock<lru::LruCache<(DbKeyId, KeyMaterialKind), DbKey>>>,
 }
 
 impl DbKeyCache {
@@ -53,15 +58,22 @@ impl DbKeyCache {
         loop {
             {
                 let mut w = self.cache.write().await;
-                if let Some(key) = w.get(db_key_id) {
-                    return Ok(key.clone());
+                // Default (no-cutover) reads mirror the SQL COALESCE
+                // preference: compressed material first, legacy second.
+                for kind in [KeyMaterialKind::CompressedXof, KeyMaterialKind::Legacy] {
+                    if let Some(key) = w.get(&(db_key_id.clone(), kind)) {
+                        return Ok(key.clone());
+                    }
                 }
             }
             self.populate(vec![db_key_id.clone()], executor).await?;
         }
     }
 
-    /// Fetches the latest key by sequence_number.
+    /// Fetches the latest key by sequence_number, loading whichever
+    /// material the row carries (compressed preferred). Pre-cutover
+    /// behavior; workers under an active cutover use
+    /// [`Self::fetch_latest_pinned`] instead.
     pub async fn fetch_latest(&self, executor: &mut PgConnection) -> anyhow::Result<DbKey> {
         let row = sqlx::query!(
             "SELECT key_id, sequence_number FROM keys ORDER BY sequence_number DESC LIMIT 1",
@@ -73,12 +85,16 @@ impl DbKeyCache {
         let key_id: DbKeyId = row.key_id;
         let sequence_number = row.sequence_number;
 
-        // Check if already in cache
+        // Check if already in cache under either material kind,
+        // compressed first to mirror the SQL COALESCE preference. The
+        // light query above deliberately touches only metadata columns.
         {
             let mut cache = self.cache.write().await;
-            if let Some(key) = cache.get(&key_id) {
-                if key.sequence_number == sequence_number {
-                    return Ok(key.clone());
+            for kind in [KeyMaterialKind::CompressedXof, KeyMaterialKind::Legacy] {
+                if let Some(key) = cache.get(&(key_id.clone(), kind)) {
+                    if key.sequence_number == sequence_number {
+                        return Ok(key.clone());
+                    }
                 }
             }
         }
@@ -97,19 +113,90 @@ impl DbKeyCache {
         .await?
         .ok_or_else(|| anyhow::anyhow!("Latest key disappeared from database"))?;
         let result = Self::deserialize_db_key_row(row)?;
+        self.cache_and_log(&result).await;
+        Ok(result)
+    }
 
-        // Insert into cache
+    /// Fetches the latest key by sequence_number with the material
+    /// kind pinned by the RFC-029 cutover policy. Loads exactly the
+    /// requested material; if the row does not carry it yet, returns
+    /// [`KeyMaterialUnavailable`] (retryable) — never the other kind.
+    pub async fn fetch_latest_pinned(
+        &self,
+        executor: &mut PgConnection,
+        kind: KeyMaterialKind,
+    ) -> anyhow::Result<DbKey> {
+        let row = sqlx::query!(
+            "SELECT key_id, sequence_number FROM keys ORDER BY sequence_number DESC LIMIT 1",
+        )
+        .fetch_optional(&mut *executor)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("No keys found in database"))?;
+
+        let key_id: DbKeyId = row.key_id;
+        let sequence_number = row.sequence_number;
+
         {
             let mut cache = self.cache.write().await;
-            cache.put(result.key_id.clone(), result.clone());
+            if let Some(key) = cache.get(&(key_id.clone(), kind)) {
+                if key.sequence_number == sequence_number {
+                    return Ok(key.clone());
+                }
+            }
         }
 
-        info!(
-            "Latest key cached: key_id={:?}, seq={}",
-            hex::encode(&result.key_id),
-            result.sequence_number
-        );
+        let row = match kind {
+            KeyMaterialKind::CompressedXof => {
+                sqlx::query_as!(
+                    DbKeyRow,
+                    "SELECT key_id, sequence_number, pks_key, \
+                     compressed_xof_keyset AS \"server_key_blob!\", \
+                     TRUE AS \"is_xof!\", cks_key \
+                     FROM keys WHERE sequence_number = $1 \
+                     AND compressed_xof_keyset IS NOT NULL",
+                    sequence_number
+                )
+                .fetch_optional(&mut *executor)
+                .await?
+            }
+            KeyMaterialKind::Legacy => {
+                sqlx::query_as!(
+                    DbKeyRow,
+                    "SELECT key_id, sequence_number, pks_key, \
+                     sks_key AS \"server_key_blob!\", \
+                     FALSE AS \"is_xof!\", cks_key \
+                     FROM keys WHERE sequence_number = $1 \
+                     AND sks_key IS NOT NULL",
+                    sequence_number
+                )
+                .fetch_optional(&mut *executor)
+                .await?
+            }
+        };
+        let row = row.ok_or_else(|| KeyMaterialUnavailable {
+            key_id: hex::encode(&key_id),
+            kind,
+        })?;
+
+        let result = Self::deserialize_db_key_row(row)?;
+        self.cache_and_log(&result).await;
         Ok(result)
+    }
+
+    async fn cache_and_log(&self, result: &DbKey) {
+        {
+            let mut cache = self.cache.write().await;
+            cache.put(
+                (result.key_id.clone(), result.material_kind),
+                result.clone(),
+            );
+        }
+        info!(
+            "Key cached: key_id={:?}, seq={}, kind={:?}",
+            hex::encode(&result.key_id),
+            result.sequence_number,
+            result.material_kind
+        );
     }
 
     pub async fn fetch_latest_from_pool(&self, pool: &PgPool) -> anyhow::Result<DbKey> {
@@ -127,10 +214,14 @@ impl DbKeyCache {
     {
         if !db_key_ids_to_query.is_empty() {
             let mut key_cache = self.cache.write().await;
-            if db_key_ids_to_query
-                .iter()
-                .all(|id| key_cache.get(id).is_some())
-            {
+            if db_key_ids_to_query.iter().all(|id| {
+                key_cache
+                    .get(&(id.clone(), KeyMaterialKind::CompressedXof))
+                    .is_some()
+                    || key_cache
+                        .get(&(id.clone(), KeyMaterialKind::Legacy))
+                        .is_some()
+            }) {
                 return Ok(());
             }
 
@@ -148,7 +239,7 @@ impl DbKeyCache {
             }
 
             for key in keys {
-                key_cache.put(key.key_id.clone(), key);
+                key_cache.put((key.key_id.clone(), key.material_kind), key);
             }
         }
 
@@ -212,6 +303,11 @@ impl DbKeyCache {
             .as_ref()
             .map(|k| safe_deserialize_key(k))
             .transpose()?;
+        let material_kind = if is_xof {
+            KeyMaterialKind::CompressedXof
+        } else {
+            KeyMaterialKind::Legacy
+        };
 
         #[cfg(not(feature = "gpu"))]
         {
@@ -248,6 +344,7 @@ impl DbKeyCache {
             Ok(DbKey {
                 key_id,
                 sequence_number,
+                material_kind,
                 sks,
                 pks,
                 cks,
@@ -310,6 +407,7 @@ impl DbKeyCache {
             Ok(DbKey {
                 key_id,
                 sequence_number,
+                material_kind,
                 sks,
                 gpu_sks,
                 pks,
@@ -354,6 +452,9 @@ fn strip_ns_from_server_key(server_key: tfhe::ServerKey) -> tfhe::ServerKey {
 pub struct DbKey {
     pub key_id: DbKeyId,
     pub sequence_number: i64,
+
+    /// Which byte representation this entry was loaded from.
+    pub material_kind: KeyMaterialKind,
 
     pub sks: tfhe::ServerKey,
 
@@ -434,6 +535,49 @@ pub async fn read_compressed_xof_keyset_by_sequence_number_with_fallback(
     info!("Retrieved legacy sns_pk oid: {:?}", legacy);
     let bytes = read_large_object_in_chunks(pool, legacy, CHUNK_SIZE, legacy_capacity).await?;
     Ok((bytes, CompressedXofKeysetEncoding::Legacy))
+}
+
+/// Reads the SnS server-key blob for `sequence_number` with the
+/// material kind pinned by the RFC-029 cutover policy (SnS tasks pin
+/// their source ciphertext's kind). `Legacy` reads the decompressed
+/// `sns_pk` LOB; `CompressedXof` reads the `compressed_xof_keyset`
+/// BYTEA. A missing column for the requested kind returns
+/// [`KeyMaterialUnavailable`] (retryable) — never the other kind.
+pub async fn read_sns_key_blob_by_sequence_number_pinned(
+    pool: &PgPool,
+    sequence_number: i64,
+    kind: KeyMaterialKind,
+    legacy_capacity: usize,
+) -> anyhow::Result<(Vec<u8>, CompressedXofKeysetEncoding)> {
+    let row = sqlx::query!(
+        "SELECT key_id, compressed_xof_keyset, sns_pk FROM keys WHERE sequence_number = $1",
+        sequence_number
+    )
+    .fetch_one(pool)
+    .await?;
+
+    let unavailable = || KeyMaterialUnavailable {
+        key_id: hex::encode(&row.key_id),
+        kind,
+    };
+
+    match kind {
+        KeyMaterialKind::CompressedXof => {
+            let bytes = row.compressed_xof_keyset.ok_or_else(unavailable)?;
+            info!(
+                bytes_len = bytes.len(),
+                "Retrieved pinned compressed_xof_keyset BYTEA"
+            );
+            Ok((bytes, CompressedXofKeysetEncoding::CompressedXof))
+        }
+        KeyMaterialKind::Legacy => {
+            let legacy = row.sns_pk.ok_or_else(unavailable)?;
+            info!("Retrieved pinned legacy sns_pk oid: {:?}", legacy);
+            let bytes =
+                read_large_object_in_chunks(pool, legacy, CHUNK_SIZE, legacy_capacity).await?;
+            Ok((bytes, CompressedXofKeysetEncoding::Legacy))
+        }
+    }
 }
 
 // Read a large object by Oid from the database in chunks

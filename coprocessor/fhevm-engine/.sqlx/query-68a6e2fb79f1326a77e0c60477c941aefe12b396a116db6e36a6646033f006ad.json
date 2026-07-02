@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT key_id, compressed_xof_keyset, sns_pk FROM keys WHERE sequence_number = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "key_id",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "compressed_xof_keyset",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 2,
+        "name": "sns_pk",
+        "type_info": "Oid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "68a6e2fb79f1326a77e0c60477c941aefe12b396a116db6e36a6646033f006ad"
+}

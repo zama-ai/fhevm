@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT key_id, sequence_number, pks_key, compressed_xof_keyset AS \"server_key_blob!\", TRUE AS \"is_xof!\", cks_key FROM keys WHERE sequence_number = $1 AND compressed_xof_keyset IS NOT NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "key_id",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "sequence_number",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "pks_key",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 3,
+        "name": "server_key_blob!",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 4,
+        "name": "is_xof!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 5,
+        "name": "cks_key",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      null,
+      true
+    ]
+  },
+  "hash": "9238d62b082f6c49d9fc6ca6b69405e8010edd92dda41d4dfb2ad52296fc7765"
+}

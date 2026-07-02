@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE keys SET compressed_xof_keyset = NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "0ef6084a43c28f787e49283a403e0904400c61130f9628b3bacdcf50adddb93a"
+}
