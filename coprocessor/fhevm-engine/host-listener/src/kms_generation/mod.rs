@@ -9,13 +9,21 @@ use crate::contracts::KMSGeneration::{self, KMSGenerationEvents};
 use crate::kms_generation::aws_s3::{download_key_from_s3, AwsS3Interface};
 use crate::kms_generation::database::{
     activate_ready_crs_activations, activate_ready_key_activations,
+    all_pending_compressed_key_materials_to_download,
     all_pending_crs_activations_to_download,
-    all_pending_key_activations_to_download, cancel_orphaned_crs_activations,
-    cancel_orphaned_key_activations, count_crs_activation_remaining_pending,
-    count_key_activation_remaining_pending, insert_crs_activation_event,
-    insert_key_activation_event, mark_crs_activation_error,
-    mark_key_activation_error, set_ready_crs_activation,
-    set_ready_key_activation, PendingCrsActivation, PendingKeyActivation,
+    all_pending_key_activations_to_download,
+    apply_finalized_compressed_key_materials,
+    apply_finalized_cutover_schedules, cancel_orphaned_crs_activations,
+    cancel_orphaned_key_activations, cancel_orphaned_migration_events,
+    count_compressed_key_material_remaining_pending,
+    count_crs_activation_remaining_pending,
+    count_key_activation_remaining_pending,
+    insert_compressed_key_cutover_event, insert_compressed_key_material_event,
+    insert_crs_activation_event, insert_key_activation_event,
+    mark_compressed_key_material_error, mark_crs_activation_error,
+    mark_key_activation_error, set_ready_compressed_key_material,
+    set_ready_crs_activation, set_ready_key_activation,
+    PendingCompressedKeyMaterial, PendingCrsActivation, PendingKeyActivation,
 };
 use crate::kms_generation::digest::{digest_crs, digest_key};
 use crate::kms_generation::metrics::{
@@ -29,7 +37,7 @@ use crate::kms_generation::sks_key::{
 
 pub mod aws_s3;
 pub(crate) mod database;
-pub(crate) mod digest;
+pub mod digest;
 pub(crate) mod metrics;
 pub(crate) mod sks_key;
 
@@ -133,6 +141,32 @@ pub async fn insert_kms_generation_events_tx(
                 )
                 .await?;
             }
+            KMSGeneration::KMSGenerationEvents::CompressedKeyMaterialAdded(
+                event,
+            ) => {
+                insert_compressed_key_material_event(
+                    tx,
+                    event,
+                    log,
+                    chain_id,
+                    block_hash,
+                    block_number,
+                )
+                .await?;
+            }
+            KMSGeneration::KMSGenerationEvents::CompressedKeyCutoverScheduled(
+                event,
+            ) => {
+                insert_compressed_key_cutover_event(
+                    tx,
+                    event,
+                    log,
+                    chain_id,
+                    block_hash,
+                    block_number,
+                )
+                .await?;
+            }
             _ => {
                 warn!(
                     ?log,
@@ -155,8 +189,14 @@ pub async fn process_kms_generation_activations<
     let mut tx = db_pool.begin().await?;
     cancel_orphaned_key_activations(&mut tx).await?;
     cancel_orphaned_crs_activations(&mut tx).await?;
+    cancel_orphaned_migration_events(&mut tx).await?;
     activate_ready_key_activations(&mut tx).await?;
     activate_ready_crs_activations(&mut tx).await?;
+    // RFC-029: the cutover schedule is applied before any compressed
+    // material lands in `keys`, so the selection policy is always
+    // visible to workers before the material could influence reads.
+    apply_finalized_cutover_schedules(&mut tx).await?;
+    apply_finalized_compressed_key_materials(&mut tx).await?;
     tx.commit().await?;
 
     // second we download and check keys and preprocess in background in advance so it's ready when block is finalized
@@ -166,7 +206,12 @@ pub async fn process_kms_generation_activations<
         all_pending_key_activations_to_download(&mut tx).await?;
     let crs_activations =
         all_pending_crs_activations_to_download(&mut tx).await?;
-    if key_activations.is_empty() && crs_activations.is_empty() {
+    let compressed_materials =
+        all_pending_compressed_key_materials_to_download(&mut tx).await?;
+    if key_activations.is_empty()
+        && crs_activations.is_empty()
+        && compressed_materials.is_empty()
+    {
         info!("No pending KMSGeneration activation to download");
         return Ok(0);
     }
@@ -183,11 +228,18 @@ pub async fn process_kms_generation_activations<
         .await?;
     download_and_store_crs_activations(&mut tx, &s3_client, crs_activations)
         .await?;
+    download_and_stage_compressed_key_materials(
+        &mut tx,
+        &s3_client,
+        compressed_materials,
+    )
+    .await?;
     info!("Downloading succeeded for KMSGeneration and CRS");
     tx.commit().await?;
     let remain_pending = count_key_activation_remaining_pending(&db_pool)
         .await?
-        + count_crs_activation_remaining_pending(&db_pool).await?;
+        + count_crs_activation_remaining_pending(&db_pool).await?
+        + count_compressed_key_material_remaining_pending(&db_pool).await?;
     Ok(remain_pending)
 }
 
@@ -235,6 +287,62 @@ async fn download_and_store_crs_activations<
         }
     }
     Ok(())
+}
+
+async fn download_and_stage_compressed_key_materials<
+    A: AwsS3Interface + Clone + 'static,
+>(
+    tx: &mut Transaction<'_, Postgres>,
+    s3_client: &A,
+    pending: Vec<PendingCompressedKeyMaterial>,
+) -> anyhow::Result<()> {
+    for material in pending {
+        if let Err(err) =
+            download_and_stage_compressed_key_material(tx, s3_client, &material)
+                .await
+        {
+            error!(error = %err, key_id = ?material.key_id, "Failed to download compressed key material");
+            mark_compressed_key_material_error(tx, &err.to_string(), material)
+                .await;
+            ACTIVATE_KEY_FAIL_COUNTER.inc();
+        } else {
+            ACTIVATE_KEY_SUCCESS_COUNTER.inc();
+        }
+    }
+    Ok(())
+}
+
+/// RFC-029: downloads the re-materialized CompressedXofKeySet from the
+/// EXISTING key's storage path (kms-core copies it there), verifies it
+/// against the on-chain digest with the same trust model as key
+/// activation, and stages the bytes in the event row. No legacy
+/// fallback exists on this path: the material is compressed by
+/// definition, and a failed download is a retryable availability
+/// condition.
+async fn download_and_stage_compressed_key_material<
+    A: AwsS3Interface + Clone + 'static,
+>(
+    tx: &mut Transaction<'_, Postgres>,
+    s3_client: &A,
+    material: &PendingCompressedKeyMaterial,
+) -> anyhow::Result<()> {
+    let expected_digest = material.digest_server.as_ref().ok_or_else(|| {
+        anyhow!("Compressed key material event carries no server digest")
+    })?;
+    let key_id = key_id_from_database_bytes(&material.key_id)?;
+    info!(
+        key_id = key_id.to_string(),
+        bucket_urls = ?material.storage_urls,
+        "Received CompressedKeyMaterialAdded event"
+    );
+
+    let xof_path =
+        format!("{}/{}", XOF_KEY_SET_S3_PREFIX, key_id_to_aws_key(key_id));
+    let bytes =
+        download_key_from_s3(s3_client, &material.storage_urls, xof_path, 0)
+            .await?;
+    verify_server_key_digest(&bytes, expected_digest, &key_id)?;
+    set_ready_compressed_key_material(tx, material, bytes.to_vec()).await
 }
 
 /// Server-key payload pulled from S3, tagged with the format kms-core

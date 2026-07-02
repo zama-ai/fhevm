@@ -723,3 +723,378 @@ mod tests {
         Ok(())
     }
 }
+
+// ----------------------------------------------------------------------------
+// RFC-029 one-time compressed-key migration
+// ----------------------------------------------------------------------------
+
+#[derive(Debug, Clone)]
+pub(crate) struct PendingCompressedKeyMaterial {
+    pub chain_id: ChainId,
+    pub block_hash: Vec<u8>,
+    pub key_id: Vec<u8>,
+    pub digest_server: Option<Vec<u8>>,
+    pub storage_urls: Vec<String>,
+}
+
+pub(crate) async fn insert_compressed_key_material_event(
+    tx: &mut Transaction<'_, Postgres>,
+    event: KMSGeneration::CompressedKeyMaterialAdded,
+    log: Log,
+    chain_id: ChainId,
+    block_hash: &[u8],
+    block_number: u64,
+) -> Result<(), sqlx::Error> {
+    let digest_server = event
+        .keyDigests
+        .iter()
+        .filter(|d| d.keyType == 0)
+        .map(|d| d.digest.to_vec())
+        .next();
+    sqlx::query!(
+        r#"
+        INSERT INTO compressed_key_material_events (
+            chain_id, block_hash, block_number, transaction_hash,
+            key_id, key_digest_server, storage_urls
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        ON CONFLICT (chain_id, block_hash, key_id) DO NOTHING
+        "#,
+        chain_id.as_i64(),
+        block_hash,
+        block_number as i64,
+        log.transaction_hash.map(|txh| txh.to_vec()),
+        &key_id_to_database_bytes(event.keyId),
+        digest_server,
+        &event.kmsNodeStorageUrls,
+    )
+    .execute(tx.deref_mut())
+    .await?;
+    Ok(())
+}
+
+pub(crate) async fn insert_compressed_key_cutover_event(
+    tx: &mut Transaction<'_, Postgres>,
+    event: KMSGeneration::CompressedKeyCutoverScheduled,
+    log: Log,
+    chain_id: ChainId,
+    block_hash: &[u8],
+    block_number: u64,
+) -> Result<(), sqlx::Error> {
+    let host_cutovers = serde_json::to_string(
+        &event
+            .hostChainCutovers
+            .iter()
+            .map(|c| {
+                serde_json::json!({
+                    "chain_id": c.chainId.to_string(),
+                    "cutover_block": c.cutoverBlock,
+                })
+            })
+            .collect::<Vec<_>>(),
+    )
+    .expect("static json shape");
+    sqlx::query!(
+        r#"
+        INSERT INTO compressed_key_cutover_events (
+            chain_id, block_hash, block_number, transaction_hash,
+            key_id, gateway_cutover_block, host_cutovers
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        ON CONFLICT (chain_id, block_hash, key_id) DO NOTHING
+        "#,
+        chain_id.as_i64(),
+        block_hash,
+        block_number as i64,
+        log.transaction_hash.map(|txh| txh.to_vec()),
+        &key_id_to_database_bytes(event.keyId),
+        event.gatewayCutoverBlock as i64,
+        host_cutovers,
+    )
+    .execute(tx.deref_mut())
+    .await?;
+    Ok(())
+}
+
+pub(crate) async fn cancel_orphaned_migration_events(
+    tx: &mut Transaction<'_, Postgres>,
+) -> anyhow::Result<u64> {
+    let materials = sqlx::query!(
+        "
+        UPDATE compressed_key_material_events AS e
+        SET status = 'cancelled'
+        FROM host_chain_blocks_valid AS b
+        WHERE
+            e.status IN ('pending', 'ready')
+            AND e.chain_id = b.chain_id
+            AND e.block_hash = b.block_hash
+            AND b.block_status = 'orphaned'
+        "
+    )
+    .execute(tx.deref_mut())
+    .await?;
+    let cutovers = sqlx::query!(
+        "
+        UPDATE compressed_key_cutover_events AS e
+        SET status = 'cancelled'
+        FROM host_chain_blocks_valid AS b
+        WHERE
+            e.status = 'pending'
+            AND e.chain_id = b.chain_id
+            AND e.block_hash = b.block_hash
+            AND b.block_status = 'orphaned'
+        "
+    )
+    .execute(tx.deref_mut())
+    .await?;
+    let total = materials.rows_affected() + cutovers.rows_affected();
+    if total > 0 {
+        info!(
+            "Marked {total} pending compressed-key migration events as cancelled due to orphaned blocks"
+        );
+    }
+    Ok(total)
+}
+
+/// Promotes finalized cutover schedules into the canonical
+/// `compressed_key_cutover` tables. The schedule is single-assignment:
+/// a second, different schedule for the same key is a loud error
+/// (never silently swallowed); an identical replay is a no-op.
+pub(crate) async fn apply_finalized_cutover_schedules(
+    tx: &mut Transaction<'_, Postgres>,
+) -> anyhow::Result<u64> {
+    let to_apply = sqlx::query!(
+        r#"
+        SELECT e.chain_id, e.block_hash, e.key_id,
+               e.gateway_cutover_block, e.host_cutovers
+        FROM compressed_key_cutover_events AS e
+        INNER JOIN host_chain_blocks_valid AS b
+            ON e.chain_id = b.chain_id AND e.block_hash = b.block_hash
+        WHERE e.status = 'pending' AND b.block_status = 'finalized'
+        FOR UPDATE OF e SKIP LOCKED
+        "#
+    )
+    .fetch_all(tx.deref_mut())
+    .await?;
+
+    let mut done = 0;
+    for row in to_apply {
+        let existing = sqlx::query!(
+            "SELECT gateway_cutover_block FROM compressed_key_cutover WHERE key_id = $1",
+            &row.key_id,
+        )
+        .fetch_optional(tx.deref_mut())
+        .await?;
+
+        if let Some(existing) = existing {
+            if existing.gateway_cutover_block == row.gateway_cutover_block {
+                info!(key_id = ?row.key_id, "Compressed-key cutover schedule already applied, ignoring replay");
+            } else {
+                // Should be unreachable: the contract enforces
+                // single-assignment. Refuse to overwrite and scream.
+                error!(
+                    key_id = ?row.key_id,
+                    stored = existing.gateway_cutover_block,
+                    incoming = row.gateway_cutover_block,
+                    "CONFLICTING compressed-key cutover schedule observed; keeping the stored schedule"
+                );
+                sqlx::query!(
+                    "UPDATE compressed_key_cutover_events SET status = 'error',
+                     last_error = 'conflicting schedule', last_updated_at = NOW()
+                     WHERE chain_id = $1 AND block_hash = $2 AND key_id = $3",
+                    row.chain_id,
+                    &row.block_hash,
+                    &row.key_id,
+                )
+                .execute(tx.deref_mut())
+                .await?;
+                continue;
+            }
+        } else {
+            sqlx::query!(
+                "INSERT INTO compressed_key_cutover (key_id, gateway_cutover_block)
+                 VALUES ($1, $2)",
+                &row.key_id,
+                row.gateway_cutover_block,
+            )
+            .execute(tx.deref_mut())
+            .await?;
+            let host_cutovers: Vec<serde_json::Value> =
+                serde_json::from_str(&row.host_cutovers)?;
+            for cutover in host_cutovers {
+                let host_chain_id: i64 = cutover["chain_id"]
+                    .as_str()
+                    .ok_or_else(|| anyhow::anyhow!("missing chain_id"))?
+                    .parse()?;
+                let cutover_block = cutover["cutover_block"]
+                    .as_i64()
+                    .ok_or_else(|| anyhow::anyhow!("missing cutover_block"))?;
+                sqlx::query!(
+                    "INSERT INTO compressed_key_cutover_hosts (key_id, chain_id, cutover_block)
+                     VALUES ($1, $2, $3)",
+                    &row.key_id,
+                    host_chain_id,
+                    cutover_block,
+                )
+                .execute(tx.deref_mut())
+                .await?;
+            }
+            info!(key_id = ?row.key_id, "Applied compressed-key cutover schedule");
+        }
+
+        sqlx::query!(
+            "UPDATE compressed_key_cutover_events SET status = 'applied',
+             last_updated_at = NOW()
+             WHERE chain_id = $1 AND block_hash = $2 AND key_id = $3",
+            row.chain_id,
+            &row.block_hash,
+            &row.key_id,
+        )
+        .execute(tx.deref_mut())
+        .await?;
+        done += 1;
+
+        // Wake workers so they observe the new selection policy.
+        sqlx::query!("SELECT pg_notify('work_available', 'cutover_scheduled')")
+            .execute(tx.deref_mut())
+            .await?;
+    }
+    Ok(done)
+}
+
+/// Copies verified, finalized compressed material into
+/// `keys.compressed_xof_keyset` — but only for keys whose cutover
+/// schedule is already applied. Until then the bytes stay staged in
+/// the event row: filling the keys column earlier would flip the
+/// default (COALESCE) read path on local ingestion timing.
+pub(crate) async fn apply_finalized_compressed_key_materials(
+    tx: &mut Transaction<'_, Postgres>,
+) -> anyhow::Result<u64> {
+    let query = sqlx::query!(
+        r#"
+        WITH applicable AS (
+            SELECT e.chain_id, e.block_hash, e.key_id,
+                   e.key_content_compressed_xof_keyset AS blob
+            FROM compressed_key_material_events AS e
+            INNER JOIN host_chain_blocks_valid AS b
+                ON e.chain_id = b.chain_id AND e.block_hash = b.block_hash
+            INNER JOIN compressed_key_cutover AS c
+                ON c.key_id = e.key_id
+            WHERE e.status = 'ready'
+                AND b.block_status = 'finalized'
+                AND e.key_content_compressed_xof_keyset IS NOT NULL
+            FOR UPDATE OF e SKIP LOCKED
+        ),
+        updated_keys AS (
+            UPDATE keys
+            SET compressed_xof_keyset = applicable.blob
+            FROM applicable
+            WHERE keys.key_id_gw = applicable.key_id
+            RETURNING keys.key_id_gw
+        )
+        UPDATE compressed_key_material_events AS e
+        SET status = 'applied', last_updated_at = NOW()
+        FROM applicable
+        WHERE e.chain_id = applicable.chain_id
+            AND e.block_hash = applicable.block_hash
+            AND e.key_id = applicable.key_id
+        "#
+    )
+    .execute(tx.deref_mut())
+    .await?;
+    if query.rows_affected() > 0 {
+        info!(
+            "Applied {} compressed-key materials to the keys table",
+            query.rows_affected()
+        );
+        sqlx::query!(
+            "SELECT pg_notify('work_available', 'compressed_material_applied')"
+        )
+        .execute(tx.deref_mut())
+        .await?;
+    }
+    Ok(query.rows_affected())
+}
+
+pub(crate) async fn all_pending_compressed_key_materials_to_download(
+    tx: &mut Transaction<'_, Postgres>,
+) -> anyhow::Result<Vec<PendingCompressedKeyMaterial>> {
+    let rows = sqlx::query!(
+        r#"
+        SELECT chain_id, block_hash, key_id, key_digest_server, storage_urls
+        FROM compressed_key_material_events
+        WHERE status = 'pending'
+        FOR UPDATE SKIP LOCKED
+        "#
+    )
+    .fetch_all(tx.deref_mut())
+    .await?;
+    rows.into_iter()
+        .map(|row| {
+            Ok(PendingCompressedKeyMaterial {
+                chain_id: ChainId::try_from(row.chain_id)?,
+                block_hash: row.block_hash,
+                key_id: row.key_id,
+                digest_server: row.key_digest_server,
+                storage_urls: row.storage_urls,
+            })
+        })
+        .collect()
+}
+
+pub(crate) async fn set_ready_compressed_key_material(
+    tx: &mut Transaction<'_, Postgres>,
+    pending: &PendingCompressedKeyMaterial,
+    blob: Vec<u8>,
+) -> anyhow::Result<()> {
+    sqlx::query!(
+        r#"
+        UPDATE compressed_key_material_events
+        SET status = 'ready', key_content_compressed_xof_keyset = $4,
+            last_updated_at = NOW()
+        WHERE chain_id = $1 AND block_hash = $2 AND key_id = $3
+        "#,
+        pending.chain_id.as_i64(),
+        &pending.block_hash,
+        &pending.key_id,
+        blob,
+    )
+    .execute(tx.deref_mut())
+    .await?;
+    Ok(())
+}
+
+pub(crate) async fn mark_compressed_key_material_error(
+    tx: &mut Transaction<'_, Postgres>,
+    error_message: &str,
+    pending: PendingCompressedKeyMaterial,
+) {
+    let result = sqlx::query!(
+        r#"
+        UPDATE compressed_key_material_events
+        SET status = 'pending', retry_count = retry_count + 1,
+            last_error = $4, last_updated_at = NOW()
+        WHERE chain_id = $1 AND block_hash = $2 AND key_id = $3
+        "#,
+        pending.chain_id.as_i64(),
+        &pending.block_hash,
+        &pending.key_id,
+        error_message,
+    )
+    .execute(tx.deref_mut())
+    .await;
+    if let Err(err) = result {
+        error!(error = %err, "Failed to mark compressed key material error");
+    }
+}
+
+pub(crate) async fn count_compressed_key_material_remaining_pending(
+    db_pool: &sqlx::Pool<Postgres>,
+) -> anyhow::Result<u64> {
+    let row = sqlx::query_scalar!(
+        "SELECT COUNT(*) FROM compressed_key_material_events WHERE status = 'pending'",
+    )
+    .fetch_one(db_pool)
+    .await?;
+    Ok(row.unwrap_or(0) as u64)
+}

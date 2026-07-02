@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO compressed_key_cutover_hosts (key_id, chain_id, cutover_block)\n                     VALUES ($1, $2, $3)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d0ebe9443a8d2d00f2cec803740325ad120b3380b6de40c3429a81fe685a2d0e"
+}

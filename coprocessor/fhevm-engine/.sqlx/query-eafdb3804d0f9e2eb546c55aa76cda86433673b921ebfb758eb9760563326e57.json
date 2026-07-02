@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO compressed_key_cutover (key_id, gateway_cutover_block)\n                 VALUES ($1, $2)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "eafdb3804d0f9e2eb546c55aa76cda86433673b921ebfb758eb9760563326e57"
+}

@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT gateway_cutover_block FROM compressed_key_cutover WHERE key_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "gateway_cutover_block",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "1a9b13ee3d93d9f01e6ef0c5d2ec6d8d1b707c72365ff37f120e33a303b09f8f"
+}

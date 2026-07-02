@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO compressed_key_cutover_events (\n            chain_id, block_hash, block_number, transaction_hash,\n            key_id, gateway_cutover_block, host_cutovers\n        )\n        VALUES ($1, $2, $3, $4, $5, $6, $7)\n        ON CONFLICT (chain_id, block_hash, key_id) DO NOTHING\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bytea",
+        "Int8",
+        "Bytea",
+        "Bytea",
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c5d445605ffbfdf10103e7fb38247248847639e6d31611b4fcc029d2530972e9"
+}

@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE compressed_key_material_events\n        SET status = 'ready', key_content_compressed_xof_keyset = $4,\n            last_updated_at = NOW()\n        WHERE chain_id = $1 AND block_hash = $2 AND key_id = $3\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bytea",
+        "Bytea",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "bb6c694633a0e3fd2d235931ad3d469289af5fbfb0b96b4b31fcffe91d2ac411"
+}

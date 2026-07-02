@@ -1,0 +1,44 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT chain_id, block_hash, key_id, key_digest_server, storage_urls\n        FROM compressed_key_material_events\n        WHERE status = 'pending'\n        FOR UPDATE SKIP LOCKED\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "chain_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "block_hash",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 2,
+        "name": "key_id",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 3,
+        "name": "key_digest_server",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 4,
+        "name": "storage_urls",
+        "type_info": "TextArray"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "03b16bf87ebe3fd68bd0e54fa5fc939b19b0a293a50aecf31c6c3269a5b0b7ff"
+}
