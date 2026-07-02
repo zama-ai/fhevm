@@ -41,6 +41,8 @@ use tracing::{info, warn};
 #[case::crsgen_processing_not_removed_on_error(TestEventType::Crsgen)]
 #[case::new_kms_context_processing_not_removed_on_error(TestEventType::NewKmsContext)]
 #[case::new_kms_epoch_processing_not_removed_on_error(TestEventType::NewKmsEpoch)]
+#[case::abort_keygen_processing_not_removed_on_error(TestEventType::AbortKeygen)]
+#[case::abort_crsgen_processing_not_removed_on_error(TestEventType::AbortCrsgen)]
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
 async fn test_request_processing(#[case] event_type: TestEventType) -> anyhow::Result<()> {
@@ -189,8 +191,21 @@ fn prepare_mocks(req: &ProtocolEventKind) -> MockSet {
             return kms_mocks;
         }
         ProtocolEventKind::NewKmsEpoch(_) => ("NewMpcEpoch", "GetEpochResult"),
-        ProtocolEventKind::AbortKeygen(_) | ProtocolEventKind::AbortCrsgen(_) => {
-            unreachable!("abort events are not exercised by the attempt-limit test")
+        // Like `NewKmsContext`, abort events have no result-polling endpoint, so the error is
+        // mocked at request time.
+        ProtocolEventKind::AbortKeygen(_) => {
+            kms_mocks.mock(|when, then| {
+                when.path("/kms_service.v1.CoreServiceEndpoint/AbortKeyGen");
+                then.error(StatusCode::SERVICE_UNAVAILABLE, "unavailable");
+            });
+            return kms_mocks;
+        }
+        ProtocolEventKind::AbortCrsgen(_) => {
+            kms_mocks.mock(|when, then| {
+                when.path("/kms_service.v1.CoreServiceEndpoint/AbortCrsGen");
+                then.error(StatusCode::SERVICE_UNAVAILABLE, "unavailable");
+            });
+            return kms_mocks;
         }
     };
 

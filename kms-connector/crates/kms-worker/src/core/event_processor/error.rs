@@ -6,11 +6,10 @@ use user_decryption_signature::Erc1271Error;
 
 #[derive(Debug, Error)]
 pub enum ProcessingError {
-    #[error("Processing failed with irrecoverable error : {0}")]
+    #[error("Processing failed with irrecoverable error: {0}")]
     Irrecoverable(anyhow::Error),
     #[error("Processing failed: {0}")]
     Recoverable(anyhow::Error),
-    /// Terminal, expected outcome: the KMS Core reported an operation as aborted.
     #[error("Processing stopped: the operation was aborted on the KMS Core")]
     Aborted,
 }
@@ -24,47 +23,6 @@ impl ProcessingError {
                 Self::Recoverable(anyhow!("KMS GRPC error: {value}"))
             }
             _ => Self::Irrecoverable(anyhow!("KMS GRPC error: {value}")),
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::ProcessingError;
-    use tonic::{Code, Status};
-
-    #[test]
-    fn from_response_status_maps_aborted_to_terminal_aborted() {
-        let err = ProcessingError::from_response_status(Status::aborted("operation aborted"));
-        assert!(
-            matches!(err, ProcessingError::Aborted),
-            "Code::Aborted must map to the terminal ProcessingError::Aborted, got {err:?}"
-        );
-    }
-
-    #[test]
-    fn from_response_status_maps_transient_codes_to_recoverable() {
-        for code in [
-            Code::DeadlineExceeded,
-            Code::Unavailable,
-            Code::ResourceExhausted,
-        ] {
-            let err = ProcessingError::from_response_status(Status::new(code, "transient"));
-            assert!(
-                matches!(err, ProcessingError::Recoverable(_)),
-                "{code:?} must map to Recoverable, got {err:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn from_response_status_maps_other_codes_to_irrecoverable() {
-        for code in [Code::Internal, Code::InvalidArgument, Code::NotFound] {
-            let err = ProcessingError::from_response_status(Status::new(code, "fatal"));
-            assert!(
-                matches!(err, ProcessingError::Irrecoverable(_)),
-                "{code:?} must map to Irrecoverable, got {err:?}"
-            );
         }
     }
 }

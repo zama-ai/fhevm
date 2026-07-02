@@ -9,9 +9,10 @@ use alloy::providers::Provider;
 use anyhow::anyhow;
 use connector_utils::types::{
     KmsGrpcRequest, KmsGrpcResponse, KmsResponseKind, ProtocolEvent, ProtocolEventKind,
+    u256_to_request_id,
 };
 use sqlx::{Pool, Postgres};
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 /// Interface used to process Gateway's events.
 pub trait EventProcessor: Send {
@@ -66,12 +67,8 @@ where
                 event.mark_as_failed(&self.db_pool).await;
                 None
             }
-            // The KMS Core reported that the operation was aborted (e.g. an operator
-            // called `abortKeygen`/`abortCrsgen` on-chain, which we relayed to the Core). This is a
-            // terminal, expected outcome: retire the request as `aborted` rather than `failed`, and
-            // don't retry or emit a response.
             (Err(ProcessingError::Aborted), _) => {
-                info!("{}", ProcessingError::Aborted);
+                warn!("{}", ProcessingError::Aborted);
                 event.mark_as_aborted(&self.db_pool).await;
                 None
             }
@@ -209,12 +206,12 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                     .prepare_crsgen_request(req)
                     .await
             }
-            ProtocolEventKind::AbortKeygen(req) => Ok(self
-                .kms_generation_processor
-                .prepare_abort_keygen_request(req)),
-            ProtocolEventKind::AbortCrsgen(req) => Ok(self
-                .kms_generation_processor
-                .prepare_abort_crsgen_request(req)),
+            ProtocolEventKind::AbortKeygen(req) => Ok(KmsGrpcRequest::AbortKeygen(
+                u256_to_request_id(req.prepKeygenId),
+            )),
+            ProtocolEventKind::AbortCrsgen(req) => {
+                Ok(KmsGrpcRequest::AbortCrsgen(u256_to_request_id(req.crsId)))
+            }
             ProtocolEventKind::NewKmsContext(req) => {
                 self.protocol_config_processor
                     .prepare_new_kms_context_request(req)

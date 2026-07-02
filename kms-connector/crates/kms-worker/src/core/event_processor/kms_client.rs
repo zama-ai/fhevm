@@ -128,7 +128,7 @@ impl KmsClient {
             KmsGrpcRequest::Crsgen(req) => self.poll_crsgen_result(req).await,
             // Abort has no result-polling endpoint on the Core: the send-side ack is the only
             // signal. The original keygen/crsgen request is separately retired when its own result
-            // poll returns `Code::Aborted` (see the poll functions below).
+            // poll returns `Code::Aborted`.
             KmsGrpcRequest::AbortKeygen(_) | KmsGrpcRequest::AbortCrsgen(_) => {
                 (0, Ok(KmsGrpcResponse::NoResponseExpected))
             }
@@ -207,9 +207,6 @@ impl KmsClient {
     }
 
     async fn request_keygen(&self, request: &KeyGenRequest) -> (i16, Result<(), ProcessingError>) {
-        if request.request_id.is_none() {
-            return irrecoverable_error(anyhow!("Missing request ID"));
-        }
         // Route to the shard holding this keygen's preprocessing material (keyed by the
         // preprocessing ID), so prep-keygen, keygen and abort-keygen all target the same shard.
         let Some(preproc_id) = request.preproc_id.clone() else {

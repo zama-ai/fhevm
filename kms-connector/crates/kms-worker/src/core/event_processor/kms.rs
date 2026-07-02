@@ -5,7 +5,7 @@ use crate::core::{
 use alloy::primitives::U256;
 use connector_utils::types::{KmsGrpcRequest, extra_data::parse_extra_data, u256_to_request_id};
 use fhevm_host_bindings::kms_generation::KMSGeneration::{
-    AbortCrsgen, AbortKeygen, CrsgenRequest, KeygenRequest, PrepKeygenRequest,
+    CrsgenRequest, KeygenRequest, PrepKeygenRequest,
 };
 use kms_grpc::kms::v1::{
     CompressedKeyConfig, ComputeKeyType, CrsGenRequest, Eip712DomainMsg, KeyGenPreprocRequest,
@@ -121,20 +121,6 @@ where
             epoch_id: parsed_extra_data.epoch_id.map(u256_to_request_id),
             context_id: parsed_extra_data.context_id.map(u256_to_request_id),
         }))
-    }
-
-    pub fn prepare_abort_keygen_request(
-        &self,
-        abort_keygen_request: &AbortKeygen,
-    ) -> KmsGrpcRequest {
-        KmsGrpcRequest::AbortKeygen(u256_to_request_id(abort_keygen_request.prepKeygenId))
-    }
-
-    pub fn prepare_abort_crsgen_request(
-        &self,
-        abort_crsgen_request: &AbortCrsgen,
-    ) -> KmsGrpcRequest {
-        KmsGrpcRequest::AbortCrsgen(u256_to_request_id(abort_crsgen_request.crsId))
     }
 }
 
