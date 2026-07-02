@@ -18,13 +18,13 @@ mod utils;
 #[tokio::test]
 #[serial(db)]
 async fn test_verify_proof() {
-    let (pool_mngr, _instance) = utils::setup().await.expect("valid setup");
+    let (pool_mngr, _instance, material) = utils::setup().await.expect("valid setup");
     let pool = pool_mngr.pool();
 
     // Generate Valid ZkPok
     let aux: (crate::auxiliary::ZkData, [u8; 92]) =
         utils::aux_fixture(ACL_CONTRACT_ADDR.to_owned());
-    let zk_pok = utils::generate_sample_zk_pok(&pool, &aux.1).await;
+    let zk_pok = utils::generate_sample_zk_pok(&material, &aux.1).await;
     // Insert ZkPok into database
     let request_id_valid = utils::insert_proof(&pool, 101, &zk_pok, &aux.0)
         .await
@@ -53,11 +53,11 @@ async fn test_verify_proof() {
 #[tokio::test]
 #[serial(db)]
 async fn test_rolled_back_claim_is_reprocessed_exactly_once() {
-    let (pool_mngr, _instance) = utils::setup().await.expect("valid setup");
+    let (pool_mngr, _instance, material) = utils::setup().await.expect("valid setup");
     let pool = pool_mngr.pool();
 
     let aux = utils::aux_fixture(ACL_CONTRACT_ADDR.to_owned());
-    let zk_pok = utils::generate_sample_zk_pok(&pool, &aux.1).await;
+    let zk_pok = utils::generate_sample_zk_pok(&material, &aux.1).await;
     let request_id: i64 = 201;
 
     // Insert WITHOUT notifying so the idle worker doesn't race us to the row.
@@ -162,7 +162,10 @@ async fn test_worker_recovers_after_backend_termination() {
     // keyset and CRS; doing that while the worker is also loading them contends
     // for the shared pool and can exhaust the acquire timeout on a slow runner.
     let aux = utils::aux_fixture(ACL_CONTRACT_ADDR.to_owned());
-    let zk_pok = utils::generate_sample_zk_pok(&pool, &aux.1).await;
+    let material = utils::load_proof_material(&pool)
+        .await
+        .expect("proof material should load");
+    let zk_pok = utils::generate_sample_zk_pok(&material, &aux.1).await;
 
     let _service_task = tokio::spawn(crate::verifier::execute_verify_proofs_loop(
         pool_mngr,
@@ -210,12 +213,12 @@ async fn test_worker_recovers_after_backend_termination() {
 #[tokio::test]
 #[serial(db)]
 async fn test_verify_empty_input_list() {
-    let (pool_mngr, _instance) = utils::setup().await.expect("valid setup");
+    let (pool_mngr, _instance, material) = utils::setup().await.expect("valid setup");
     let pool = pool_mngr.pool();
 
     let aux: (crate::auxiliary::ZkData, [u8; 92]) =
         utils::aux_fixture(ACL_CONTRACT_ADDR.to_owned());
-    let input = utils::generate_empty_input_list(&pool, &aux.1).await;
+    let input = utils::generate_empty_input_list(&material, &aux.1).await;
     let request_id = utils::insert_proof(&pool, 101, &input, &aux.0)
         .await
         .unwrap();
@@ -239,7 +242,7 @@ async fn test_verify_empty_input_list() {
 #[tokio::test]
 #[serial(db)]
 async fn test_max_input_index() {
-    let (pool_mngr, _instance) = utils::setup().await.expect("valid setup");
+    let (pool_mngr, _instance, material) = utils::setup().await.expect("valid setup");
     let pool = pool_mngr.pool();
 
     let aux: (crate::auxiliary::ZkData, [u8; 92]) =
@@ -253,7 +256,7 @@ async fn test_max_input_index() {
         utils::insert_proof(
             &pool,
             101,
-            &utils::generate_zk_pok_with_inputs(&pool, &aux.1, &inputs).await,
+            &utils::generate_zk_pok_with_inputs(&material, &aux.1, &inputs).await,
             &aux.0
         )
         .await
@@ -268,7 +271,7 @@ async fn test_max_input_index() {
     let request_id = utils::insert_proof(
         &pool,
         102,
-        &utils::generate_zk_pok_with_inputs(&pool, &aux.1, &inputs).await,
+        &utils::generate_zk_pok_with_inputs(&material, &aux.1, &inputs).await,
         &aux.0,
     )
     .await
@@ -296,7 +299,7 @@ async fn test_max_input_index() {
 #[tokio::test]
 #[serial(db)]
 async fn test_verify_proof_rerandomises_ciphertexts_before_storage() {
-    let (pool_mngr, _instance) = utils::setup().await.expect("valid setup");
+    let (pool_mngr, _instance, material) = utils::setup().await.expect("valid setup");
     let pool = pool_mngr.pool();
 
     let aux: (crate::auxiliary::ZkData, [u8; 92]) =
@@ -308,7 +311,7 @@ async fn test_verify_proof_rerandomises_ciphertexts_before_storage() {
         utils::ZkInput::U32(67890),
         utils::ZkInput::U64(1234567890),
     ];
-    let zk_pok = utils::generate_zk_pok_with_inputs(&pool, &aux.1, &inputs).await;
+    let zk_pok = utils::generate_zk_pok_with_inputs(&material, &aux.1, &inputs).await;
     let request_id = utils::insert_proof(&pool, 103, &zk_pok, &aux.0)
         .await
         .unwrap();
@@ -348,7 +351,7 @@ async fn test_verify_proof_rerandomises_ciphertexts_before_storage() {
             .collect::<Vec<_>>()
     );
 
-    let baseline = utils::compress_inputs_without_rerandomization(&pool, &zk_pok)
+    let baseline = utils::compress_inputs_without_rerandomization(&material, &zk_pok)
         .await
         .unwrap();
     assert_eq!(baseline.len(), stored.len());
@@ -360,7 +363,9 @@ async fn test_verify_proof_rerandomises_ciphertexts_before_storage() {
         "stored ciphertexts should differ from the pre-rerandomization compression"
     );
 
-    let decrypted = utils::decrypt_ciphertexts(&pool, &handles).await.unwrap();
+    let decrypted = utils::decrypt_ciphertexts(&pool, &material, &handles)
+        .await
+        .unwrap();
     assert_eq!(
         decrypted
             .iter()
@@ -390,12 +395,12 @@ async fn test_verify_proof_rerandomises_ciphertexts_before_storage() {
 async fn test_unknown_chain_id_does_not_stop_known_chain_processing() {
     use sqlx::Row;
 
-    let (pool_mngr, _instance) = utils::setup().await.expect("valid setup");
+    let (pool_mngr, _instance, material) = utils::setup().await.expect("valid setup");
     let pool = pool_mngr.pool();
 
     let aux: (crate::auxiliary::ZkData, [u8; 92]) =
         utils::aux_fixture(ACL_CONTRACT_ADDR.to_owned());
-    let zk_pok = utils::generate_sample_zk_pok(&pool, &aux.1).await;
+    let zk_pok = utils::generate_sample_zk_pok(&material, &aux.1).await;
 
     // Request 1 (LOWER zk_proof_id): chain_id 99_999, not in host_chains.
     // Before the filter, this would be the first row the worker fetched and
