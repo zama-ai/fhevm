@@ -19,6 +19,8 @@ const OPERATION_TABLES: &[&str] = &[
     "prep_keygen_requests",
     "keygen_requests",
     "crsgen_requests",
+    "abort_keygen_requests",
+    "abort_crsgen_requests",
     "prep_keygen_responses",
     "keygen_responses",
     "crsgen_responses",

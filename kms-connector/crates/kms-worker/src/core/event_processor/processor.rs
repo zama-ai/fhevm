@@ -9,9 +9,10 @@ use alloy::providers::Provider;
 use anyhow::anyhow;
 use connector_utils::types::{
     KmsGrpcRequest, KmsGrpcResponse, KmsResponseKind, ProtocolEvent, ProtocolEventKind,
+    u256_to_request_id,
 };
 use sqlx::{Pool, Postgres};
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 /// Interface used to process Gateway's events.
 pub trait EventProcessor: Send {
@@ -63,7 +64,16 @@ where
             }
             (Err(ProcessingError::Irrecoverable(e)), _) => {
                 error!("{}", ProcessingError::Irrecoverable(e));
-                event.mark_as_failed(&self.db_pool).await;
+                if let Err(e) = event.mark_as_failed(&self.db_pool).await {
+                    warn!("{e}");
+                }
+                None
+            }
+            (Err(ProcessingError::Aborted), _) => {
+                warn!("{}", ProcessingError::Aborted);
+                if let Err(e) = event.mark_as_aborted(&self.db_pool).await {
+                    warn!("{e}");
+                }
                 None
             }
             // For now, we only check the error counter for public and user decryptions as they are
@@ -82,12 +92,16 @@ where
                     ProcessingError::Irrecoverable(e),
                     event.error_counter
                 );
-                event.mark_as_failed(&self.db_pool).await;
+                if let Err(e) = event.mark_as_failed(&self.db_pool).await {
+                    warn!("{e}");
+                }
                 None
             }
             (Err(ProcessingError::Recoverable(e)), _) => {
                 error!("{}", ProcessingError::Recoverable(e));
-                event.mark_as_pending(&self.db_pool).await;
+                if let Err(e) = event.mark_as_pending(&self.db_pool).await {
+                    warn!("{e}");
+                }
                 None
             }
         }
@@ -200,6 +214,12 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                     .prepare_crsgen_request(req)
                     .await
             }
+            ProtocolEventKind::AbortKeygen(req) => Ok(KmsGrpcRequest::AbortKeygen(
+                u256_to_request_id(req.prepKeygenId),
+            )),
+            ProtocolEventKind::AbortCrsgen(req) => {
+                Ok(KmsGrpcRequest::AbortCrsgen(u256_to_request_id(req.crsId)))
+            }
             ProtocolEventKind::NewKmsContext(req) => {
                 self.protocol_config_processor
                     .prepare_new_kms_context_request(req)
@@ -235,7 +255,9 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
         let grpc_response = grpc_result?;
 
         if let KmsGrpcResponse::NoResponseExpected = &grpc_response {
-            event.mark_as_completed(&self.db_pool).await;
+            if let Err(e) = event.mark_as_completed(&self.db_pool).await {
+                warn!("{e}");
+            }
             return Ok(None);
         }
 
