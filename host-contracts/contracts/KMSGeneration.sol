@@ -502,6 +502,11 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
             revert EmptyKeyDigests(migrationRequestId);
         }
 
+        // The publication is only useful if it carries the digest coprocessors
+        // verify the downloaded blob against; without it, ingestion could only
+        // retry forever.
+        _checkHasCompressedKeysetDigest(migrationRequestId, keyDigests);
+
         (bytes memory extraData, uint256 contextId) = _loadExtraDataAndAuthorizeResponse(migrationRequestId);
 
         uint256 prepKeygenId = $.keygenIdPairs[migrationRequestId];
@@ -559,6 +564,13 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         uint64 gatewayCutoverBlock
     ) external virtual onlyACLOwner {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
+
+        // Re-check at scheduling time: a normal keygen may have activated
+        // another key between publication and scheduling, and a schedule for
+        // a dormant key must never steer coprocessors loading the live one.
+        if (keyId != $.activeKeyId) {
+            revert NotActiveKey(keyId);
+        }
 
         // The cutover can only be scheduled once the compressed materials are published, so
         // coprocessors always observe the material before any boundary can be reached.
@@ -963,6 +975,21 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
                     Strings.toString(PATCH_VERSION)
                 )
             );
+    }
+
+    /**
+     * @notice Reverts unless the digest set carries a CompressedKeyset-typed entry.
+     */
+    function _checkHasCompressedKeysetDigest(
+        uint256 migrationRequestId,
+        KeyDigest[] calldata keyDigests
+    ) internal pure virtual {
+        for (uint256 i = 0; i < keyDigests.length; i++) {
+            if (keyDigests[i].keyType == KeyType.CompressedKeyset) {
+                return;
+            }
+        }
+        revert MissingCompressedKeysetDigest(migrationRequestId);
     }
 
     /**

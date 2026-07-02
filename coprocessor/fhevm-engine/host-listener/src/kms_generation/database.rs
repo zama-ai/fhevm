@@ -1071,6 +1071,32 @@ pub(crate) async fn set_ready_compressed_key_material(
     Ok(())
 }
 
+/// Terminal failure: the event itself is unusable (e.g. no
+/// CompressedKeyset digest to verify against). Never retried; requires
+/// a corrected on-chain publication.
+pub(crate) async fn mark_compressed_key_material_unusable(
+    tx: &mut Transaction<'_, Postgres>,
+    error_message: &str,
+    pending: &PendingCompressedKeyMaterial,
+) {
+    let result = sqlx::query!(
+        r#"
+        UPDATE compressed_key_material_events
+        SET status = 'error', last_error = $4, last_updated_at = NOW()
+        WHERE chain_id = $1 AND block_hash = $2 AND key_id = $3
+        "#,
+        pending.chain_id.as_i64(),
+        &pending.block_hash,
+        &pending.key_id,
+        error_message,
+    )
+    .execute(tx.deref_mut())
+    .await;
+    if let Err(err) = result {
+        error!(error = %err, "Failed to mark compressed key material unusable");
+    }
+}
+
 pub(crate) async fn mark_compressed_key_material_error(
     tx: &mut Transaction<'_, Postgres>,
     error_message: &str,

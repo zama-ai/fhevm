@@ -1717,4 +1717,46 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.NotActiveKey.selector, keyId1));
         kmsGeneration.compressedKeyMigrationKeygen(keyId1);
     }
+    function test_revertScheduleCutoverForNoLongerActiveKey() public {
+        (, uint256 keyIdA) = _runFullKeygenCycle();
+        _runFullMigrationCycle(keyIdA);
+
+        // A normal keygen activates key B after A's materials were published.
+        vm.prank(owner);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
+        uint256 prepKeygenIdB = PREP_KEYGEN_COUNTER_BASE + 3;
+        uint256 keyIdB = KEY_COUNTER_BASE + 3;
+        _doPrepKeygenResponse(prepKeygenIdB, kmsPk0, kmsTxSender0);
+        _doKeygenResponse(prepKeygenIdB, keyIdB, kmsPk0, kmsTxSender0);
+        assertEq(kmsGeneration.getActiveKeyId(), keyIdB);
+
+        // Scheduling the dormant key must revert: a stale schedule could
+        // steer coprocessors that load material for the live key.
+        IKMSGeneration.HostChainCutover[] memory cutovers = new IKMSGeneration.HostChainCutover[](1);
+        cutovers[0] = IKMSGeneration.HostChainCutover({chainId: 1, cutoverBlock: 1000});
+        vm.prank(owner);
+        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.NotActiveKey.selector, keyIdA));
+        kmsGeneration.scheduleCompressedKeyCutover(keyIdA, cutovers, 500);
+    }
+
+    function test_revertAddCompressedKeyMaterialsWithoutCompressedDigest() public {
+        (, uint256 keyId) = _runFullKeygenCycle();
+        vm.prank(owner);
+        kmsGeneration.compressedKeyMigrationKeygen(keyId);
+        uint256 migrationPrepId = PREP_KEYGEN_COUNTER_BASE + 2;
+        uint256 migrationRequestId = KEY_COUNTER_BASE + 2;
+        _doPrepKeygenResponse(migrationPrepId, kmsPk0, kmsTxSender0);
+
+        // A digest set without a CompressedKeyset entry is useless to
+        // coprocessors and must be rejected up front.
+        IKMSGeneration.KeyDigest[] memory digests = new IKMSGeneration.KeyDigest[](1);
+        digests[0] = IKMSGeneration.KeyDigest({keyType: IKMSGeneration.KeyType.Public, digest: hex"deadbeef"});
+        bytes32 digest = _hashKeygen(migrationPrepId, migrationRequestId, digests, _buildExtraData());
+        bytes memory sig = _computeSignature(kmsPk0, digest);
+        vm.prank(kmsTxSender0);
+        vm.expectRevert(
+            abi.encodeWithSelector(IKMSGeneration.MissingCompressedKeysetDigest.selector, migrationRequestId)
+        );
+        kmsGeneration.addCompressedKeyMaterials(migrationRequestId, digests, sig);
+    }
 }

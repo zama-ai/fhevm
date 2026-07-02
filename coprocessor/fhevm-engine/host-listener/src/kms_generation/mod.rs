@@ -20,10 +20,11 @@ use crate::kms_generation::database::{
     count_key_activation_remaining_pending,
     insert_compressed_key_cutover_event, insert_compressed_key_material_event,
     insert_crs_activation_event, insert_key_activation_event,
-    mark_compressed_key_material_error, mark_crs_activation_error,
-    mark_key_activation_error, set_ready_compressed_key_material,
-    set_ready_crs_activation, set_ready_key_activation,
-    PendingCompressedKeyMaterial, PendingCrsActivation, PendingKeyActivation,
+    mark_compressed_key_material_error, mark_compressed_key_material_unusable,
+    mark_crs_activation_error, mark_key_activation_error,
+    set_ready_compressed_key_material, set_ready_crs_activation,
+    set_ready_key_activation, PendingCompressedKeyMaterial,
+    PendingCrsActivation, PendingKeyActivation,
 };
 use crate::kms_generation::digest::{digest_crs, digest_key};
 use crate::kms_generation::metrics::{
@@ -297,6 +298,19 @@ async fn download_and_stage_compressed_key_materials<
     pending: Vec<PendingCompressedKeyMaterial>,
 ) -> anyhow::Result<()> {
     for material in pending {
+        // An event without a CompressedKeyset digest can never verify:
+        // fail it terminally instead of retrying forever.
+        if material.digest_server.is_none() {
+            error!(key_id = ?material.key_id, "Compressed key material event carries no CompressedKeyset digest; marking unusable");
+            mark_compressed_key_material_unusable(
+                tx,
+                "no CompressedKeyset digest in the on-chain publication",
+                &material,
+            )
+            .await;
+            ACTIVATE_KEY_FAIL_COUNTER.inc();
+            continue;
+        }
         if let Err(err) =
             download_and_stage_compressed_key_material(tx, s3_client, &material)
                 .await

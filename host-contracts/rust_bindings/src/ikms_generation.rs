@@ -45,6 +45,7 @@ interface IKMSGeneration {
     error KmsAlreadySignedForKeygen(uint256 keyId, address kmsSigner);
     error KmsAlreadySignedForPrepKeygen(uint256 prepKeygenId, address kmsSigner);
     error KmsSignerDoesNotMatchTxSender(address signerAddress, address txSenderAddress);
+    error MissingCompressedKeysetDigest(uint256 migrationRequestId);
     error NotActiveKey(uint256 keyId);
     error NotKmsSigner(address signerAddress);
     error NotKmsTxSender(address txSenderAddress);
@@ -1388,6 +1389,17 @@ interface IKMSGeneration {
         "name": "txSenderAddress",
         "type": "address",
         "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "MissingCompressedKeysetDigest",
+    "inputs": [
+      {
+        "name": "migrationRequestId",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ]
   },
@@ -4550,6 +4562,92 @@ error KmsSignerDoesNotMatchTxSender(address signerAddress, address txSenderAddre
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self.txSenderAddress,
                     ),
+                )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `MissingCompressedKeysetDigest(uint256)` and selector `0x130bfb00`.
+```solidity
+error MissingCompressedKeysetDigest(uint256 migrationRequestId);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct MissingCompressedKeysetDigest {
+        #[allow(missing_docs)]
+        pub migrationRequestId: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (
+            alloy::sol_types::private::primitives::aliases::U256,
+        );
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<MissingCompressedKeysetDigest>
+        for UnderlyingRustTuple<'_> {
+            fn from(value: MissingCompressedKeysetDigest) -> Self {
+                (value.migrationRequestId,)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>>
+        for MissingCompressedKeysetDigest {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self {
+                    migrationRequestId: tuple.0,
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for MissingCompressedKeysetDigest {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "MissingCompressedKeysetDigest(uint256)";
+            const SELECTOR: [u8; 4] = [19u8, 11u8, 251u8, 0u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.migrationRequestId),
                 )
             }
             #[inline]
@@ -12191,6 +12289,8 @@ function scheduleCompressedKeyCutover(uint256 keyId, HostChainCutover[] memory h
         #[allow(missing_docs)]
         KmsSignerDoesNotMatchTxSender(KmsSignerDoesNotMatchTxSender),
         #[allow(missing_docs)]
+        MissingCompressedKeysetDigest(MissingCompressedKeysetDigest),
+        #[allow(missing_docs)]
         NotActiveKey(NotActiveKey),
         #[allow(missing_docs)]
         NotKmsSigner(NotKmsSigner),
@@ -12215,6 +12315,7 @@ function scheduleCompressedKeyCutover(uint256 keyId, HostChainCutover[] memory h
             [6u8, 26u8, 198u8, 29u8],
             [10u8, 183u8, 246u8, 135u8],
             [13u8, 134u8, 245u8, 33u8],
+            [19u8, 11u8, 251u8, 0u8],
             [33u8, 57u8, 204u8, 44u8],
             [42u8, 124u8, 110u8, 246u8],
             [51u8, 202u8, 31u8, 227u8],
@@ -12249,7 +12350,7 @@ function scheduleCompressedKeyCutover(uint256 keyId, HostChainCutover[] memory h
     impl alloy_sol_types::SolInterface for IKMSGenerationErrors {
         const NAME: &'static str = "IKMSGenerationErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 31usize;
+        const COUNT: usize = 32usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -12328,6 +12429,9 @@ function scheduleCompressedKeyCutover(uint256 keyId, HostChainCutover[] memory h
                 Self::KmsSignerDoesNotMatchTxSender(_) => {
                     <KmsSignerDoesNotMatchTxSender as alloy_sol_types::SolError>::SELECTOR
                 }
+                Self::MissingCompressedKeysetDigest(_) => {
+                    <MissingCompressedKeysetDigest as alloy_sol_types::SolError>::SELECTOR
+                }
                 Self::NotActiveKey(_) => {
                     <NotActiveKey as alloy_sol_types::SolError>::SELECTOR
                 }
@@ -12397,6 +12501,17 @@ function scheduleCompressedKeyCutover(uint256 keyId, HostChainCutover[] memory h
                             .map(IKMSGenerationErrors::KmsSignerDoesNotMatchTxSender)
                     }
                     KmsSignerDoesNotMatchTxSender
+                },
+                {
+                    fn MissingCompressedKeysetDigest(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
+                        <MissingCompressedKeysetDigest as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IKMSGenerationErrors::MissingCompressedKeysetDigest)
+                    }
+                    MissingCompressedKeysetDigest
                 },
                 {
                     fn UnsupportedExtraDataVersion(
@@ -12754,6 +12869,17 @@ function scheduleCompressedKeyCutover(uint256 keyId, HostChainCutover[] memory h
                             .map(IKMSGenerationErrors::KmsSignerDoesNotMatchTxSender)
                     }
                     KmsSignerDoesNotMatchTxSender
+                },
+                {
+                    fn MissingCompressedKeysetDigest(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
+                        <MissingCompressedKeysetDigest as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IKMSGenerationErrors::MissingCompressedKeysetDigest)
+                    }
+                    MissingCompressedKeysetDigest
                 },
                 {
                     fn UnsupportedExtraDataVersion(
@@ -13198,6 +13324,11 @@ function scheduleCompressedKeyCutover(uint256 keyId, HostChainCutover[] memory h
                         inner,
                     )
                 }
+                Self::MissingCompressedKeysetDigest(inner) => {
+                    <MissingCompressedKeysetDigest as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
                 Self::NotActiveKey(inner) => {
                     <NotActiveKey as alloy_sol_types::SolError>::abi_encoded_size(inner)
                 }
@@ -13369,6 +13500,12 @@ function scheduleCompressedKeyCutover(uint256 keyId, HostChainCutover[] memory h
                 }
                 Self::KmsSignerDoesNotMatchTxSender(inner) => {
                     <KmsSignerDoesNotMatchTxSender as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::MissingCompressedKeysetDigest(inner) => {
+                    <MissingCompressedKeysetDigest as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )
