@@ -252,12 +252,6 @@
           ]
         },
         {
-          "name": "amount_compute_acl",
-          "docs": [
-            "Encrypted burn amount ACL record."
-          ]
-        },
-        {
           "name": "output_acl",
           "writable": true
         },
@@ -301,538 +295,11 @@
       ],
       "args": [
         {
-          "name": "amount_handle",
+          "name": "amount_attestation",
           "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        }
-      ]
-    },
-    {
-      "name": "confidential_call_transfer_receiver",
-      "docs": [
-        "Calls an arbitrary receiver hook and verifies its encrypted callback-success result."
-      ],
-      "discriminator": [
-        188,
-        77,
-        160,
-        76,
-        56,
-        143,
-        205,
-        231
-      ],
-      "accounts": [
-        {
-          "name": "caller",
-          "docs": [
-            "Original sender owner and rent payer for the hook invocation transaction."
-          ],
-          "writable": true,
-          "signer": true
-        },
-        {
-          "name": "mint",
-          "docs": [
-            "Confidential mint."
-          ]
-        },
-        {
-          "name": "from_account",
-          "docs": [
-            "Original sender token account."
-          ]
-        },
-        {
-          "name": "to_account",
-          "docs": [
-            "Original recipient token account."
-          ]
-        },
-        {
-          "name": "compute_signer",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  102,
-                  104,
-                  101,
-                  45,
-                  99,
-                  111,
-                  109,
-                  112,
-                  117,
-                  116,
-                  101
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "mint"
-              }
-            ]
-          }
-        },
-        {
-          "name": "sent_amount_acl",
-          "docs": [
-            "ACL record for the prior transfer's all-or-zero sent amount."
-          ]
-        },
-        {
-          "name": "callback_success_acl",
-          "docs": [
-            "ACL record for the receiver-produced encrypted callback success bit."
-          ]
-        },
-        {
-          "name": "receiver_program"
-        },
-        {
-          "name": "instructions_sysvar",
-          "address": "Sysvar1nstructions1111111111111111111111111"
-        },
-        {
-          "name": "hook_record",
-          "docs": [
-            "One-shot marker for this receiver hook invocation."
-          ],
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  116,
-                  114,
-                  97,
-                  110,
-                  115,
-                  102,
-                  101,
-                  114,
-                  45,
-                  104,
-                  111,
-                  111,
-                  107
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "mint"
-              },
-              {
-                "kind": "arg",
-                "path": "sent_handle"
-              }
-            ]
-          }
-        },
-        {
-          "name": "system_program",
-          "docs": [
-            "System program used to create the one-shot hook marker."
-          ],
-          "address": "11111111111111111111111111111111"
-        }
-      ],
-      "args": [
-        {
-          "name": "sent_handle",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        },
-        {
-          "name": "callback_success_handle",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        },
-        {
-          "name": "receiver_instruction_data",
-          "type": "bytes"
-        }
-      ]
-    },
-    {
-      "name": "confidential_finalize_transfer_callback",
-      "docs": [
-        "Finalizes a prepared callback settlement by crediting refund and recording final transfer."
-      ],
-      "discriminator": [
-        183,
-        241,
-        151,
-        179,
-        74,
-        145,
-        123,
-        69
-      ],
-      "accounts": [
-        {
-          "name": "payer",
-          "docs": [
-            "Rent payer for final callback-settlement output accounts."
-          ],
-          "writable": true,
-          "signer": true
-        },
-        {
-          "name": "mint",
-          "docs": [
-            "Confidential mint."
-          ]
-        },
-        {
-          "name": "from_account",
-          "docs": [
-            "Original sender token account; receives any best-effort refund in this finalize step."
-          ],
-          "writable": true
-        },
-        {
-          "name": "to_account",
-          "docs": [
-            "Original recipient token account; must match the prepared settlement."
-          ]
-        },
-        {
-          "name": "compute_signer",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  102,
-                  104,
-                  101,
-                  45,
-                  99,
-                  111,
-                  109,
-                  112,
-                  117,
-                  116,
-                  101
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "mint"
-              }
-            ]
-          }
-        },
-        {
-          "name": "from_current_compute_acl",
-          "docs": [
-            "Original sender current balance ACL record."
-          ]
-        },
-        {
-          "name": "sent_amount_acl",
-          "docs": [
-            "ACL record for the prior transfer's all-or-zero sent amount."
-          ]
-        },
-        {
-          "name": "settlement_record",
-          "docs": [
-            "Prepared callback settlement."
-          ],
-          "writable": true
-        },
-        {
-          "name": "refund_amount_acl",
-          "docs": [
-            "ACL record for the prepared refund amount."
-          ]
-        },
-        {
-          "name": "from_output_acl",
-          "writable": true
-        },
-        {
-          "name": "transferred_amount_acl",
-          "writable": true
-        },
-        {
-          "name": "zama_event_authority"
-        },
-        {
-          "name": "zama_program",
-          "docs": [
-            "ZamaHost program used for FHE operations."
-          ],
-          "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
-        },
-        {
-          "name": "host_config",
-          "docs": [
-            "ZamaHost config used for handle derivation."
-          ]
-        },
-        {
-          "name": "system_program",
-          "docs": [
-            "System program used for ACL account creation."
-          ],
-          "address": "11111111111111111111111111111111"
-        },
-        {
-          "name": "event_authority"
-        },
-        {
-          "name": "program"
-        }
-      ],
-      "args": []
-    },
-    {
-      "name": "confidential_prepare_transfer_callback",
-      "docs": [
-        "Prepares receiver callback settlement by computing the encrypted refund."
-      ],
-      "discriminator": [
-        151,
-        109,
-        203,
-        43,
-        64,
-        245,
-        132,
-        149
-      ],
-      "accounts": [
-        {
-          "name": "payer",
-          "docs": [
-            "Rent payer for callback-settlement output accounts."
-          ],
-          "writable": true,
-          "signer": true
-        },
-        {
-          "name": "callback_authority",
-          "docs": [
-            "",
-            "This authority is already enforced by the callback-success ACL record; it",
-            "does not sign settlement so a failed callback can be refunded without",
-            "recipient cooperation after the hook."
-          ]
-        },
-        {
-          "name": "mint",
-          "docs": [
-            "Confidential mint."
-          ]
-        },
-        {
-          "name": "from_account",
-          "docs": [
-            "Original sender token account."
-          ]
-        },
-        {
-          "name": "to_account",
-          "docs": [
-            "Original recipient token account; pays any best-effort refund in this prepare step."
-          ],
-          "writable": true
-        },
-        {
-          "name": "compute_signer",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  102,
-                  104,
-                  101,
-                  45,
-                  99,
-                  111,
-                  109,
-                  112,
-                  117,
-                  116,
-                  101
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "mint"
-              }
-            ]
-          }
-        },
-        {
-          "name": "to_current_compute_acl",
-          "docs": [
-            "Original recipient current balance ACL record."
-          ]
-        },
-        {
-          "name": "sent_amount_acl",
-          "docs": [
-            "ACL record for the prior transfer's all-or-zero sent amount."
-          ]
-        },
-        {
-          "name": "callback_success_acl",
-          "docs": [
-            "ACL record for the encrypted callback success bit."
-          ]
-        },
-        {
-          "name": "hook_record",
-          "docs": [
-            "Verified receiver-hook invocation for this sent amount."
-          ],
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  116,
-                  114,
-                  97,
-                  110,
-                  115,
-                  102,
-                  101,
-                  114,
-                  45,
-                  104,
-                  111,
-                  111,
-                  107
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "mint"
-              },
-              {
-                "kind": "arg",
-                "path": "sent_handle"
-              }
-            ]
-          }
-        },
-        {
-          "name": "settlement_record",
-          "docs": [
-            "Replay marker for this callback settlement."
-          ],
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  116,
-                  114,
-                  97,
-                  110,
-                  115,
-                  102,
-                  101,
-                  114,
-                  45,
-                  99,
-                  97,
-                  108,
-                  108,
-                  98,
-                  97,
-                  99,
-                  107
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "mint"
-              },
-              {
-                "kind": "arg",
-                "path": "sent_handle"
-              }
-            ]
-          }
-        },
-        {
-          "name": "to_output_acl",
-          "writable": true
-        },
-        {
-          "name": "refund_amount_acl",
-          "writable": true
-        },
-        {
-          "name": "zama_event_authority"
-        },
-        {
-          "name": "zama_program",
-          "docs": [
-            "ZamaHost program used for FHE operations."
-          ],
-          "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
-        },
-        {
-          "name": "host_config",
-          "docs": [
-            "ZamaHost config used for handle derivation."
-          ]
-        },
-        {
-          "name": "system_program",
-          "docs": [
-            "System program used for ACL and replay-marker account creation."
-          ],
-          "address": "11111111111111111111111111111111"
-        },
-        {
-          "name": "event_authority"
-        },
-        {
-          "name": "program"
-        }
-      ],
-      "args": [
-        {
-          "name": "sent_handle",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        },
-        {
-          "name": "callback_success_handle",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
+            "defined": {
+              "name": "CoprocessorInputAttestation"
+            }
           }
         }
       ]
@@ -925,12 +392,6 @@
           ]
         },
         {
-          "name": "amount_compute_acl",
-          "docs": [
-            "Encrypted amount ACL record."
-          ]
-        },
-        {
           "name": "from_output_acl",
           "writable": true
         },
@@ -974,239 +435,11 @@
       ],
       "args": [
         {
-          "name": "amount_handle",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        }
-      ]
-    },
-    {
-      "name": "create_random_amount",
-      "docs": [
-        "Creates a token-scoped random encrypted amount for transfer or burn flows."
-      ],
-      "discriminator": [
-        205,
-        99,
-        135,
-        216,
-        17,
-        157,
-        31,
-        197
-      ],
-      "accounts": [
-        {
-          "name": "owner",
-          "docs": [
-            "Token account owner and rent payer."
-          ],
-          "writable": true,
-          "signer": true
-        },
-        {
-          "name": "mint",
-          "docs": [
-            "Confidential mint that scopes the encrypted amount."
-          ]
-        },
-        {
-          "name": "token_account",
-          "docs": [
-            "Owner's confidential token account carrying the amount nonce allocator."
-          ],
-          "writable": true
-        },
-        {
-          "name": "compute_signer",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  102,
-                  104,
-                  101,
-                  45,
-                  99,
-                  111,
-                  109,
-                  112,
-                  117,
-                  116,
-                  101
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "mint"
-              }
-            ]
-          }
-        },
-        {
-          "name": "amount_acl_record",
-          "writable": true
-        },
-        {
-          "name": "zama_event_authority"
-        },
-        {
-          "name": "zama_program",
-          "docs": [
-            "ZamaHost program used to create the random handle."
-          ],
-          "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
-        },
-        {
-          "name": "host_config",
-          "docs": [
-            "ZamaHost config used for handle derivation."
-          ]
-        },
-        {
-          "name": "system_program",
-          "docs": [
-            "System program used for ACL account creation."
-          ],
-          "address": "11111111111111111111111111111111"
-        },
-        {
-          "name": "event_authority"
-        },
-        {
-          "name": "program"
-        }
-      ],
-      "args": [
-        {
-          "name": "amount_kind",
+          "name": "amount_attestation",
           "type": {
             "defined": {
-              "name": "ConfidentialAmountKind"
+              "name": "CoprocessorInputAttestation"
             }
-          }
-        }
-      ]
-    },
-    {
-      "name": "create_random_bounded_amount",
-      "docs": [
-        "Creates a token-scoped bounded random encrypted amount for transfer or burn flows."
-      ],
-      "discriminator": [
-        208,
-        143,
-        226,
-        186,
-        110,
-        188,
-        41,
-        175
-      ],
-      "accounts": [
-        {
-          "name": "owner",
-          "docs": [
-            "Token account owner and rent payer."
-          ],
-          "writable": true,
-          "signer": true
-        },
-        {
-          "name": "mint",
-          "docs": [
-            "Confidential mint that scopes the encrypted amount."
-          ]
-        },
-        {
-          "name": "token_account",
-          "docs": [
-            "Owner's confidential token account carrying the amount nonce allocator."
-          ],
-          "writable": true
-        },
-        {
-          "name": "compute_signer",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  102,
-                  104,
-                  101,
-                  45,
-                  99,
-                  111,
-                  109,
-                  112,
-                  117,
-                  116,
-                  101
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "mint"
-              }
-            ]
-          }
-        },
-        {
-          "name": "amount_acl_record",
-          "writable": true
-        },
-        {
-          "name": "zama_event_authority"
-        },
-        {
-          "name": "zama_program",
-          "docs": [
-            "ZamaHost program used to create the random handle."
-          ],
-          "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
-        },
-        {
-          "name": "host_config",
-          "docs": [
-            "ZamaHost config used for handle derivation."
-          ]
-        },
-        {
-          "name": "system_program",
-          "docs": [
-            "System program used for ACL account creation."
-          ],
-          "address": "11111111111111111111111111111111"
-        },
-        {
-          "name": "event_authority"
-        },
-        {
-          "name": "program"
-        }
-      ],
-      "args": [
-        {
-          "name": "amount_kind",
-          "type": {
-            "defined": {
-              "name": "ConfidentialAmountKind"
-            }
-          }
-        },
-        {
-          "name": "upper_bound",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
           }
         }
       ]
@@ -2803,32 +2036,6 @@
         153,
         227
       ]
-    },
-    {
-      "name": "TransferCallbackSettlement",
-      "discriminator": [
-        206,
-        27,
-        140,
-        3,
-        83,
-        219,
-        146,
-        61
-      ]
-    },
-    {
-      "name": "TransferReceiverHookCall",
-      "discriminator": [
-        180,
-        50,
-        17,
-        17,
-        52,
-        29,
-        39,
-        180
-      ]
     }
   ],
   "events": [
@@ -3064,96 +2271,106 @@
     },
     {
       "code": 6017,
+      "name": "AttestationUserMismatch",
+      "msg": "attested input user does not match owner"
+    },
+    {
+      "code": 6018,
+      "name": "AttestationContractMismatch",
+      "msg": "attested input contract does not match compute signer"
+    },
+    {
+      "code": 6019,
       "name": "TotalSupplyAuthorityMismatch",
       "msg": "total supply authority does not match mint"
     },
     {
-      "code": 6018,
+      "code": 6020,
       "name": "InvalidKmsCertificate",
       "msg": "KMS public-decrypt certificate is invalid"
     },
     {
-      "code": 6019,
+      "code": 6021,
       "name": "GatewayVerifierConfigUnset",
       "msg": "gateway verifier config is not set"
     },
     {
-      "code": 6020,
+      "code": 6022,
       "name": "InvalidKmsContext",
       "msg": "KMS context is not valid for this request"
     },
     {
-      "code": 6021,
+      "code": 6023,
       "name": "RequestWitnessMismatch",
       "msg": "request witness does not match"
     },
     {
-      "code": 6022,
+      "code": 6024,
       "name": "RequestWitnessUnavailable",
       "msg": "request witness is expired or already consumed"
     },
     {
-      "code": 6023,
+      "code": 6025,
       "name": "MaterialCommitmentMismatch",
       "msg": "material commitment witness does not match"
     },
     {
-      "code": 6024,
+      "code": 6026,
       "name": "PublicDecryptNotReleased",
       "msg": "handle is not released for public decrypt"
     },
     {
-      "code": 6025,
+      "code": 6027,
       "name": "CallbackSettlementMismatch",
       "msg": "transfer callback settlement accounts are invalid"
     },
     {
-      "code": 6026,
+      "code": 6028,
       "name": "ReceiverHookMismatch",
       "msg": "receiver hook return data is invalid"
     },
     {
-      "code": 6027,
+      "code": 6029,
       "name": "ReceiverHookInputTooLarge",
       "msg": "receiver hook input exceeds program limits"
     },
     {
-      "code": 6028,
+      "code": 6030,
       "name": "InvalidFheEvalPlan",
       "msg": "FHE eval plan is invalid"
     },
     {
-      "code": 6029,
+      "code": 6031,
       "name": "DuplicateFheEvalAccount",
       "msg": "FHE eval account list contains a duplicate account"
     },
     {
-      "code": 6030,
+      "code": 6032,
       "name": "UnexpectedFheEvalAccount",
       "msg": "FHE eval account list contains an unexpected account"
     },
     {
-      "code": 6031,
+      "code": 6033,
       "name": "MissingFheEvalAccount",
       "msg": "FHE eval plan is missing a required dynamic account"
     },
     {
-      "code": 6032,
+      "code": 6034,
       "name": "FheEvalAccountNotWritable",
       "msg": "FHE eval dynamic account must be writable"
     },
     {
-      "code": 6033,
+      "code": 6035,
       "name": "DuplicateFheOutputAuthority",
       "msg": "FHE eval output authority list contains a duplicate authority"
     },
     {
-      "code": 6034,
+      "code": 6036,
       "name": "UnexpectedFheOutputAuthority",
       "msg": "FHE eval output authority list contains an unexpected authority"
     },
     {
-      "code": 6035,
+      "code": 6037,
       "name": "MissingFheOutputAuthority",
       "msg": "FHE eval plan is missing a required output authority"
     }
@@ -4476,6 +3693,103 @@
       }
     },
     {
+      "name": "CoprocessorInputAttestation",
+      "docs": [
+        "A coprocessor input attestation carried inline by a [`FheEvalOperand::VerifiedInput`], re-verified",
+        "in-frame (no account, no PDA) — the instruction-local analog of EVM `allowTransient(input, contract)`."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "input_handle",
+            "docs": [
+              "The verified input handle used as the operand."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "ct_handles",
+            "docs": [
+              "All ciphertext handles covered by the proof."
+            ],
+            "type": {
+              "vec": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
+            }
+          },
+          {
+            "name": "handle_index",
+            "docs": [
+              "Index of `input_handle` within `ct_handles`."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "user_address",
+            "docs": [
+              "Attested user identity (bytes32)."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "contract_address",
+            "docs": [
+              "Attested contract identity — the input's ACL domain key (bytes32)."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "contract_chain_id",
+            "docs": [
+              "Gateway-side contract chain id the attestation binds."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "extra_data",
+            "docs": [
+              "Opaque extra data covered by the attestation."
+            ],
+            "type": "bytes"
+          },
+          {
+            "name": "signatures",
+            "docs": [
+              "Coprocessor EIP-712 signatures (65-byte secp256k1)."
+            ],
+            "type": {
+              "vec": {
+                "array": [
+                  "u8",
+                  65
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
       "name": "DisclosureRequest",
       "docs": [
         "Account-backed witness for a public disclosure request."
@@ -5199,271 +4513,6 @@
           },
           {
             "name": "Burn"
-          }
-        ]
-      }
-    },
-    {
-      "name": "TransferCallbackSettlement",
-      "docs": [
-        "Replay marker for a transfer callback settlement."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "mint",
-            "docs": [
-              "Confidential mint whose transfer was settled."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "from_owner",
-            "docs": [
-              "Original sender owner."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "from_token_account",
-            "docs": [
-              "Original sender token account."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "to_owner",
-            "docs": [
-              "Original recipient owner."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "to_token_account",
-            "docs": [
-              "Original recipient token account."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "sent_handle",
-            "docs": [
-              "Prior transfer's encrypted all-or-zero sent handle."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "sent_acl_record",
-            "docs": [
-              "ACL record for `sent_handle`."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "callback_success_handle",
-            "docs": [
-              "Encrypted receiver callback success bit."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "callback_success_acl_record",
-            "docs": [
-              "ACL record for `callback_success_handle`."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "refund_handle",
-            "docs": [
-              "Encrypted amount actually refunded."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "refund_acl_record",
-            "docs": [
-              "ACL record for `refund_handle`."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "to_balance_handle",
-            "docs": [
-              "Recipient balance handle after the prepared refund debit."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "to_balance_acl_record",
-            "docs": [
-              "ACL record for `to_balance_handle`."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "from_balance_handle",
-            "docs": [
-              "Sender balance handle after the finalized refund credit."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "from_balance_acl_record",
-            "docs": [
-              "ACL record for `from_balance_handle`."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "transferred_handle",
-            "docs": [
-              "Encrypted amount that remains transferred after refund."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "transferred_acl_record",
-            "docs": [
-              "ACL record for `transferred_handle`."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "status",
-            "docs": [
-              "Settlement lifecycle status."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "bump",
-            "docs": [
-              "PDA bump for `(mint, sent_handle)`."
-            ],
-            "type": "u8"
-          }
-        ]
-      }
-    },
-    {
-      "name": "TransferReceiverHookCall",
-      "docs": [
-        "One-shot marker for a receiver hook call."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "mint",
-            "docs": [
-              "Confidential mint whose transfer reached the receiver hook."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "from_token_account",
-            "docs": [
-              "Original sender token account."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "to_token_account",
-            "docs": [
-              "Original recipient token account."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "sent_handle",
-            "docs": [
-              "Prior transfer's encrypted all-or-zero sent handle."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "sent_acl_record",
-            "docs": [
-              "ACL record for `sent_handle`."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "callback_success_handle",
-            "docs": [
-              "Encrypted receiver callback success bit."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "callback_success_acl_record",
-            "docs": [
-              "ACL record for `callback_success_handle`."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "receiver_program",
-            "docs": [
-              "Receiver hook program that returned the callback witness."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "caller",
-            "docs": [
-              "Sender that invoked the hook."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "bump",
-            "docs": [
-              "PDA bump for `(mint, sent_handle)`."
-            ],
-            "type": "u8"
           }
         ]
       }

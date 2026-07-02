@@ -79,9 +79,11 @@ Admission invariants for `fhe_eval`:
 - Transient operands may only reference outputs produced by earlier steps in the same frame.
 - Only the RHS of a binary operation may be scalar; encrypted operands must match the operator's FHE
   type rules.
-- There is no verified-input eval step; input verification is the separate `verify_coprocessor_input`
-  instruction, which verifies the coprocessor attestation and emits a receipt only — it creates no ACL
-  (DD-007).
+- External encrypted inputs enter compute through the `FheEvalOperand::VerifiedInput` operand: the
+  coprocessor attestation is re-verified in-frame and the input is transient-allowed for that eval only
+  (the EVM `fromExternal` / `allowTransient(input, msg.sender)` analog). The caller-is-contract gate is
+  checked at input consumption (`attestation.contract_address == compute_subject`); derived outputs are
+  unconstrained. The redundant standalone `verify_coprocessor_input` instruction was removed (DD-007).
 - Durable outputs must be born with `public_decrypt = false`; public decrypt is granted later through
   the dedicated role-aware instruction path. `ACL_ROLE_PUBLIC_DECRYPT` in output subjects authorizes
   that later explicit path; it does not set the durable record's `public_decrypt` flag at birth.
@@ -92,24 +94,33 @@ Admission invariants for `fhe_eval`:
 
 ## External Inputs
 
-> Superseded (reconciliation, June 2026): the Ed25519 verifier-set path described in older revisions
-> was REMOVED. See `solana/docs/DESIGN_DECISIONS.md` DD-007.
+The `FheEvalOperand::VerifiedInput` operand is the production encrypted-input path (the Solana
+`FHE.fromExternal` analog). When an `fhe_eval` step consumes it, the host re-verifies the
+**coprocessor's EIP-712 `CiphertextVerification` attestation on-chain via secp256k1** (recovering the
+EVM coprocessor signers and threshold-checking them against the configured coprocessor signer set),
+asserts the attested `contract_chain_id` equals the host chain id (EVM's `contractChainId ==
+block.chainid`), and transient-allows the input for that eval only — no persistent ACL, matching
+`FHEVMExecutor.verifyInput` + `allowTransient(result, msg.sender)`. The "caller is the attested
+contract" check is enforced at consumption (`attestation.contract_address` must equal the eval's
+`compute_subject`, the msg.sender analog); derived durable outputs are **not tainted** by the input —
+any durable output ACL is the app's separate explicit choice, exactly like EVM.
 
-`verify_coprocessor_input` is the production-shaped encrypted-input *verification* path. It verifies
-the **coprocessor's EIP-712 `CiphertextVerification` attestation on-chain via secp256k1** (recovering
-the EVM coprocessor signers and threshold-checking them against the configured coprocessor signer set),
-then emits an `InputVerifiedEvent` receipt. It does **not** create a persistent ACL record and takes no
-`output_*` / ACL-binding parameters — matching the EVM `FHEVMExecutor.verifyInput`, which grants only a
-tx-scoped transient allow. Solana has no transient-storage analog, so the verified input is surfaced
-solely as the signed receipt; durable permission on an input handle is a separate explicit app grant.
+The EVM `contractAddress` analog is the consuming program's **compute-authority PDA** — a PDA the
+program signs with via `invoke_signed` (in confidential-token, the `[b"fhe-compute", mint]` compute
+signer), never a user key and never the bare program id (program ids cannot sign). The host only
+enforces `contract_address == compute_subject` (any signer); binding the attestation to that PDA and
+checking the attested `user_address` are **app policy** (confidential-token checks the attested user
+equals the token account owner), mirroring EVM where `userAddress` is attested but the contract
+decides its meaning. Per-state-account (per-mint) scoping is deliberate and finer-grained than EVM's
+per-contract binding.
+
 This mirrors the EVM `InputVerification` coprocessor-threshold model; the gateway counterpart is the
-RFC-021 bytes32 path `InputVerification.verifyProofRequestSolana`. There is no `FheEvalStep::Input` —
-input verification is its own instruction, not an eval step. (Fully using a verified input as a compute
-operand still needs the host-listener to consume `InputVerifiedEvent`, a follow-up.)
-
-`mock_input_verified_and_bind` remains local-PoC test-only glue, chain-id confined (DD-014). The
-removed `verify_input_and_bind` (native Ed25519 over `SolanaInputProof` + `SolanaInputBindIntent`,
-anchored to a Solana input verifier set) is retained only as the superseded design in DD-007.
+RFC-021 bytes32 path `InputVerification.verifyProofRequestSolana`. The host-listener reconstruct path
+resolves the operand from `attestation.input_handle`. The shared verifier is
+`eip712::verify_coprocessor_input` (via `instructions::input_verification::verify_input_attestation`);
+the earlier standalone `verify_coprocessor_input`/`verify_input_and_bind`/`mock_input_verified_and_bind`
+instructions and the `InputVerifiedEvent` receipt were removed. The former Ed25519 verifier-set path
+is retained only as the superseded-design stub in DD-007.
 
 ## Roles
 
@@ -130,15 +141,17 @@ remain full ACL subjects. Persistent grants require `ACL_ROLE_GRANT`. Public dec
 
 ## Test-Only Entrypoints
 
-`mock_input_verified_and_bind` and `test_emit_*` are not protocol APIs. They require `HostConfig`
-feature gates and the configured authority signer:
+`test_emit_*` (and `set_test_shims_enabled` / `set_mock_input_enabled`) are not protocol APIs. They are
+`#[cfg(feature = "poc")]` — compiled out of default/production builds — and additionally require a
+`HostConfig` feature gate and the configured authority signer:
 
 ```text
-mock_input_verified_and_bind -> mock_input_enabled + local PoC chain id (DD-014)
-test_emit_*                  -> test_shims_enabled + test_authority
+test_emit_*  ->  poc feature + test_shims_enabled + test_authority
 ```
 
-Threshold policy and real proof/transciphering validation are still external/open design items.
+The zero-birth-entropy fallback is the only surviving state relaxation; it is confined to the local
+PoC chain id (`HostConfig::zero_birth_entropy_allowed`, DD-014). Registered-signer threshold policy and
+real proof/transciphering validation are still external/open design items.
 Trivial and random handle birth paths include output nonce metadata in handle derivation before
 binding the result into a canonical ACL record. Random handle birth is covered by
 `fhe_rand_and_bind` and `fhe_rand_bounded_and_bind`, which derive the event seed on-chain.

@@ -5,16 +5,12 @@ pub mod burn_redemption_request;
 pub mod confidential_mint;
 pub mod confidential_token_account;
 pub mod disclosure_request;
-pub mod transfer_callback_settlement;
-pub mod transfer_receiver_hook_call;
 
 pub use burn_redemption::*;
 pub use burn_redemption_request::*;
 pub use confidential_mint::*;
 pub use confidential_token_account::*;
 pub use disclosure_request::*;
-pub use transfer_callback_settlement::*;
-pub use transfer_receiver_hook_call::*;
 
 pub use crate::constants::*;
 
@@ -64,22 +60,6 @@ pub fn burn_redemption_address(mint: Pubkey, burned_handle: [u8; 32]) -> (Pubkey
     )
 }
 
-/// Returns the replay-marker PDA for a transfer callback settlement.
-pub fn transfer_callback_settlement_address(mint: Pubkey, sent_handle: [u8; 32]) -> (Pubkey, u8) {
-    Pubkey::find_program_address(
-        &[b"transfer-callback", mint.as_ref(), sent_handle.as_ref()],
-        &crate::ID,
-    )
-}
-
-/// Returns the one-shot marker PDA for a transfer receiver hook call.
-pub fn transfer_receiver_hook_address(mint: Pubkey, sent_handle: [u8; 32]) -> (Pubkey, u8) {
-    Pubkey::find_program_address(
-        &[b"transfer-hook", mint.as_ref(), sent_handle.as_ref()],
-        &crate::ID,
-    )
-}
-
 /// Returns the ZamaHost nonce key for a token balance field.
 pub fn balance_nonce_key(acl_domain_key: Pubkey, app_account: Pubkey) -> [u8; 32] {
     nonce_key(acl_domain_key, app_account, balance_label())
@@ -115,19 +95,9 @@ pub fn transfer_amount_label() -> [u8; 32] {
     *b"transfer_amount_________________"
 }
 
-/// Fixed encrypted value label for burn success bits.
-pub fn burn_success_label() -> [u8; 32] {
-    *b"burn_success____________________"
-}
-
 /// Fixed encrypted value label for transfer success bits.
 pub fn transfer_success_label() -> [u8; 32] {
     *b"transfer_success________________"
-}
-
-/// Fixed encrypted value label for unchecked burn debit candidates.
-pub fn burn_debit_candidate_label() -> [u8; 32] {
-    *b"burn_debit_candidate____________"
 }
 
 /// Fixed encrypted value label for unchecked debit candidates.
@@ -143,36 +113,6 @@ pub fn burned_amount_label() -> [u8; 32] {
 /// Fixed encrypted value label for the all-or-zero transferred amount.
 pub fn transferred_amount_label() -> [u8; 32] {
     *b"transferred_amount______________"
-}
-
-/// Fixed encrypted value label for receiver callback success bits.
-pub fn callback_success_label() -> [u8; 32] {
-    *b"callback_success________________"
-}
-
-/// Fixed encrypted value label for callback-settlement zero constants.
-pub fn callback_zero_label() -> [u8; 32] {
-    *b"callback_zero___________________"
-}
-
-/// Fixed encrypted value label for callback refund balance checks.
-pub fn callback_refund_success_label() -> [u8; 32] {
-    *b"callback_refund_success_________"
-}
-
-/// Fixed encrypted value label for callback refund debit candidates.
-pub fn callback_refund_debit_candidate_label() -> [u8; 32] {
-    *b"callback_refund_debit_candidate_"
-}
-
-/// Fixed encrypted value label for callback actual refunds.
-pub fn callback_refund_amount_label() -> [u8; 32] {
-    *b"callback_refund_amount__________"
-}
-
-/// Fixed encrypted value label for final transfer amounts after callback refunds.
-pub fn callback_final_transferred_label() -> [u8; 32] {
-    *b"callback_final_transferred______"
 }
 
 /// Delegates nonce-key derivation to ZamaHost so app and host agree exactly.
@@ -204,13 +144,5 @@ mod space_invariants {
             ConfidentialTokenAccount::INIT_SPACE
         );
         assert_eq!(DisclosureRequest::SPACE, DisclosureRequest::INIT_SPACE);
-        assert_eq!(
-            TransferCallbackSettlement::SPACE,
-            TransferCallbackSettlement::INIT_SPACE
-        );
-        assert_eq!(
-            TransferReceiverHookCall::SPACE,
-            TransferReceiverHookCall::INIT_SPACE
-        );
     }
 }

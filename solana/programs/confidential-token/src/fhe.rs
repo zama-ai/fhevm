@@ -159,6 +159,8 @@ impl<'info> ComputeAuthority<'info> {
 /// Signer model for a durable output authority required by an eval frame.
 #[derive(Clone)]
 pub(crate) enum OutputAuthoritySigner {
+    // Only constructed by the `poc`-gated create_random_amount helpers.
+    #[cfg_attr(not(feature = "poc"), allow(dead_code))]
     Transaction,
     TokenAccount {
         mint: Pubkey,
@@ -172,6 +174,7 @@ pub(crate) enum OutputAuthoritySigner {
 }
 
 impl OutputAuthoritySigner {
+    #[cfg_attr(not(feature = "poc"), allow(dead_code))]
     pub(crate) fn transaction_signer() -> Self {
         Self::Transaction
     }
@@ -214,6 +217,7 @@ pub(crate) struct OutputAuthority<'info> {
 }
 
 impl<'info> OutputAuthority<'info> {
+    #[cfg_attr(not(feature = "poc"), allow(dead_code))]
     pub(crate) fn transaction_signer(account: &Signer<'info>) -> Self {
         Self {
             account: account.to_account_info(),
@@ -442,6 +446,8 @@ pub(crate) fn eval<'info>(request: Eval<'_, 'info>) -> Result<()> {
 }
 
 /// Inputs required for bounded random `euint64` amount creation plus ACL record birth.
+// Only constructed by the `poc`-gated create_random_amount helpers.
+#[cfg_attr(not(feature = "poc"), allow(dead_code))]
 pub struct BoundedRandU64<'a, 'info> {
     /// Transaction payer and rent payer for the output ACL record.
     pub payer: &'a Signer<'info>,
@@ -462,6 +468,7 @@ pub struct BoundedRandU64<'a, 'info> {
 }
 
 /// Performs host-owned bounded random amount creation and returns the created handle.
+#[cfg_attr(not(feature = "poc"), allow(dead_code))]
 pub fn rand_bounded_u64<'info>(
     request: BoundedRandU64<'_, 'info>,
     upper_bound: zama_fhe::BoundedU64UpperBound,

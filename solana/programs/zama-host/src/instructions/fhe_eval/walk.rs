@@ -52,7 +52,6 @@ pub(super) trait EvalStepVisitor {
         output: &FheEvalOutput,
         output_public_decrypt_allowed: bool,
         enforce_public_decrypt_role_propagation: bool,
-        verified_input: Option<VerifiedInputBinding>,
     ) -> Result<()>;
 
     /// Resolves an operand that must be encrypted (rejects scalars).
@@ -69,6 +68,15 @@ pub(super) trait EvalStepVisitor {
                 .map(ResolvedOperand::from_produced)
                 .ok_or_else(|| error!(ZamaHostError::FheEvalAllowedLocalMissing)),
             FheEvalOperand::VerifiedInput { attestation } => {
+                // EVM `fromExternal` parity: only the attested contract may consume the input.
+                // Enforced here (the `msg.sender` analog) — not by constraining derived outputs.
+                // `subject()` is the eval's `compute_subject`; a copied attestation is useless
+                // unless the caller can sign as `contract_address`.
+                require_keys_eq!(
+                    Pubkey::new_from_array(attestation.contract_address),
+                    self.subject(),
+                    ZamaHostError::InputBindContractMismatch
+                );
                 self.resolve_verified_input_operand(attestation)
             }
             FheEvalOperand::Scalar(_) => Err(error!(ZamaHostError::InvalidFheEvalAccount)),
@@ -124,7 +132,6 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor>(
             } => {
                 let lhs = visitor.resolve_lhs_operand(lhs)?;
                 let rhs = visitor.resolve_rhs_operand(rhs)?;
-                let verified_input = combine_verified_input_binding(&[&lhs, &rhs])?;
                 assert_binary_operand_types(
                     *op,
                     lhs.handle,
@@ -157,7 +164,6 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor>(
                     output,
                     inputs_allow_public_decrypt(&lhs, &rhs),
                     true,
-                    verified_input,
                 )?;
             }
             FheEvalStep::Ternary {
@@ -171,8 +177,6 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor>(
                 let control = visitor.resolve_encrypted_operand(control)?;
                 let if_true = visitor.resolve_encrypted_operand(if_true)?;
                 let if_false = visitor.resolve_encrypted_operand(if_false)?;
-                let verified_input =
-                    combine_verified_input_binding(&[&control, &if_true, &if_false])?;
                 assert_ternary_operand_types(
                     control.handle,
                     if_true.handle,
@@ -204,7 +208,6 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor>(
                     output,
                     inputs3_allow_public_decrypt(&control, &if_true, &if_false),
                     true,
-                    verified_input,
                 )?;
             }
             FheEvalStep::TrivialEncrypt {
@@ -227,7 +230,7 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor>(
                     fhe_type: *fhe_type,
                     result,
                 }));
-                visitor.accept_output(ctx, result, output, false, false, None)?;
+                visitor.accept_output(ctx, result, output, false, false)?;
             }
             FheEvalStep::Rand { fhe_type, output } => {
                 assert_supported_rand_type(*fhe_type)?;
@@ -240,7 +243,7 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor>(
                     fhe_type: *fhe_type,
                     result,
                 }));
-                visitor.accept_output(ctx, result, output, false, false, None)?;
+                visitor.accept_output(ctx, result, output, false, false)?;
             }
         }
     }

@@ -485,8 +485,7 @@ fn decode_solana_host_events(event: ZamaHostEvent) -> Vec<SolanaHostEvent> {
                 "public_decrypt_allowed",
             ))]
         }
-        ZamaHostEvent::InputVerified(_)
-        | ZamaHostEvent::DenySubjectUpdated(_)
+        ZamaHostEvent::DenySubjectUpdated(_)
         | ZamaHostEvent::HostConfigInitialized(_)
         | ZamaHostEvent::HostConfigUpdated(_)
         | ZamaHostEvent::NewKmsContext(_)
@@ -651,7 +650,6 @@ fn zama_host_event_version(event: &ZamaHostEvent) -> u8 {
         ZamaHostEvent::HandleMaterialSealed(event) => event.version,
         ZamaHostEvent::HostConfigInitialized(event) => event.version,
         ZamaHostEvent::HostConfigUpdated(event) => event.version,
-        ZamaHostEvent::InputVerified(event) => event.version,
         ZamaHostEvent::KmsContextDestroyed(event) => event.version,
         ZamaHostEvent::NewKmsContext(event) => event.version,
         ZamaHostEvent::PublicDecryptAllowed(event) => event.version,
@@ -1610,62 +1608,6 @@ mod tests {
     }
 
     #[test]
-    fn input_verified_events_are_not_worker_compute_events() {
-        let cpi_encoded = anchor_event_cpi(
-            "InputVerifiedEvent",
-            input_verified_payload([7; 32]),
-        );
-        let log_encoded =
-            anchor_event("InputVerifiedEvent", input_verified_payload([8; 32]));
-
-        assert!(decode_anchor_cpi_event(&cpi_encoded).is_none());
-        assert!(decode_anchor_event(&log_encoded).is_none());
-    }
-
-    #[test]
-    fn input_verified_logs_do_not_hide_acl_allowances() {
-        let host_program = "ZamaHost111111111111111111111111111111111";
-        let logs = vec![
-            format!("Program {host_program} invoke [1]"),
-            program_data_log(
-                "InputVerifiedEvent",
-                input_verified_payload([7; 32]),
-            ),
-            program_data_log(
-                "AclAllowedEvent",
-                acl_allowed_payload([7; 32], [8; 32]),
-            ),
-            format!("Program {host_program} success"),
-        ];
-
-        let events = decode_solana_transaction_events(&logs, [], host_program)
-            .expect("input frame log transport should decode");
-
-        assert!(matches!(
-            events.as_slice(),
-            [SolanaHostEvent::AclAllowed(event)]
-                if event.handle == handle(7)
-                    && event.subject == "0x0808080808080808080808080808080808080808080808080808080808080808"
-        ));
-
-        let block_timestamp = PrimitiveDateTime::new(
-            Date::from_calendar_date(2026, Month::May, 9).unwrap(),
-            Time::MIDNIGHT,
-        );
-        let (tfhe_logs, acl_events) = normalize_solana_events_for_db(
-            events,
-            solana_transaction_id(&[4_u8; 64]),
-            SolanaBlockMeta {
-                block_number: 42,
-                block_timestamp,
-            },
-        );
-
-        assert!(tfhe_logs.is_empty());
-        assert!(acl_events.is_empty());
-    }
-
-    #[test]
     fn raw_log_event_lines_are_bounded() {
         let events = [
             anchor_event(
@@ -2481,15 +2423,6 @@ mod tests {
         let mut payload = vec![EVENT_VERSION];
         payload.extend_from_slice(&handle);
         payload.extend_from_slice(&subject);
-        payload
-    }
-
-    fn input_verified_payload(handle: [u8; 32]) -> Vec<u8> {
-        let mut payload = vec![EVENT_VERSION];
-        payload.extend_from_slice(&handle);
-        payload.extend_from_slice(&handle);
-        payload.extend_from_slice(&[8; 32]);
-        payload.extend_from_slice(&[9; 32]);
         payload
     }
 

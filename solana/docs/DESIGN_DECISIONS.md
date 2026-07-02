@@ -1,8 +1,8 @@
 # Solana PoC Design Decisions
 
-This document is the stable rationale index for the Solana FHEVM PoC. It intentionally avoids
-command logs and transient audit state. Use `DEVELOPMENT_ISSUES.md` and `DEVELOPMENT_LOGBOOK.md`
-for implementation history; use this file to understand why the current design exists.
+This document is the stable rationale index for the Solana FHEVM PoC: why the current design exists.
+Every statement here is true against the code on this branch. For the EVM mapping see
+[`EVM_PARITY.md`](./EVM_PARITY.md); for forward requirements see [`FUTURE_DESIGN.md`](./FUTURE_DESIGN.md).
 
 Status meanings:
 
@@ -195,16 +195,34 @@ was a Solana-only trust root divorced from the EVM coprocessor trust model.
 
 Decision:
 
-Inputs are verified via an on-chain secp256k1 verification of the **coprocessor's EIP-712
-`CiphertextVerification` attestation**. `zama_host::instructions::verify_coprocessor_input`
-recovers the EVM coprocessor signer(s) from the attestation (`secp256k1_recover`), checks them
-against the configured coprocessor signer set, and — on success — emits a signed `InputVerifiedEvent`
-receipt. It does **not** create any persistent ACL (`AclRecord`) and carries no `output_*` /
-ACL-binding parameters. This mirrors the EVM `FHEVMExecutor.verifyInput`, which grants only a
-tx-scoped *transient* allow and creates no persistent ACL. Solana has no transient-storage analog
-(DD-008), so the verified input is surfaced solely as the signed `InputVerifiedEvent` receipt; any
-*durable* permission on an input-derived handle is a SEPARATE, explicit app grant. The gateway side
-is the RFC-021 bytes32 input path:
+Inputs enter compute through the `FheEvalOperand::VerifiedInput` operand consumed inside `fhe_eval`
+— the Solana `FHE.fromExternal` analog. The operand carries the coprocessor's EIP-712
+`CiphertextVerification` attestation; the shared `verify_input_attestation` verifier
+(`zama_host::instructions::input_verification`) re-verifies it **in-frame** by recovering the EVM
+coprocessor signer via `secp256k1_recover` and threshold-checking it against the configured signer
+set, and asserts the attested `contract_chain_id` equals the host chain id (EVM's
+`contractChainId == block.chainid`). On success the input is *transient-allowed for that eval only* —
+there is no persistent `AclRecord` for the input, mirroring EVM `FHEVMExecutor.verifyInput` (verify ≠
+allow). Solana has no transient-storage analog (DD-008); the transient allow lives only for the
+duration of the frame.
+
+**Binding model (the `contractAddress` analog).** EVM binds an attestation to a `contractAddress`.
+The Solana equivalent is the consuming program's **compute-authority PDA** — a PDA the program signs
+with via `invoke_signed`. In confidential-token this is the `[b"fhe-compute", mint]` compute signer.
+It is never a user key and never the bare program id (program ids cannot sign). The host layer only
+enforces `attestation.contract_address == compute_subject` (whatever signer consumes the input, the
+msg.sender analog); the PDA convention is **app policy** — apps MUST bind attestations to their
+compute-authority PDA, and MUST check the attested `user_address` themselves. Confidential-token
+checks the attested user equals the token account owner. This mirrors EVM, where `userAddress` is
+attested but the contract decides its meaning. Per-state-account (per-mint) scoping is deliberate and
+finer-grained than EVM's per-contract binding.
+
+**Derived outputs are NOT tainted by the input attestation.** Once verified, the input is an ordinary
+operand; any *durable* ACL on an input-derived handle is the app's separate, explicit choice at
+output-binding time — exactly EVM parity, where the input gets a transient allow and durable output
+ACLs are the contract's decision. There is no output-taint from the input.
+
+The gateway side is the RFC-021 bytes32 input path:
 `InputVerification.verifyProofRequestSolana(contractChainId, bytes32 contractAddress,
 bytes32 userAddress, ciphertextWithZKProof, extraData)` + `event VerifyProofRequestSolana`, which
 shares the zkProofId counter and consensus state with the EVM path and stores the request in a
@@ -216,37 +234,29 @@ Why:
 
 Reusing the coprocessor attestation makes Solana input trust identical to EVM input trust — one
 trust root, recovered and threshold-checked on-chain — instead of a parallel verifier-set subsystem
-that could drift. Making it verify-and-receipt (not verify-and-bind) restores EVM parity (verify ≠
-allow) and removes one persistent ACL account per input — one of the "3 ACLs" that inflated per-tx
-cost — so it is also a cost win.
+that could drift. Consuming it as an in-frame eval operand (rather than a standalone verify + durable
+receipt) restores EVM parity (verify ≠ allow) and removes a persistent ACL account per input — one of
+the "3 ACLs" that inflated per-tx cost — so it is also a cost win.
 
 What changed:
 
 - The bespoke input verifier-set and the `verify_input_and_bind` Ed25519 path were REMOVED.
-- `verify_coprocessor_input_and_bind` was RENAMED to `verify_coprocessor_input` and GUTTED: it now
-  verifies the attestation and emits `InputVerifiedEvent` only. The persistent `AclRecord` write and
-  all `output_*` parameters (output_nonce_key, output_acl_domain_key, output_app_account,
-  output_subjects, output_public_decrypt, …) plus the ACL-binding security checks were dropped.
-- The `FheEvalStep::Input` eval variant was REMOVED; eval steps are now Binary/Ternary/
-  TrivialEncrypt/Rand only. Input verification is its own instruction, not an eval step.
-- `mock_input_verified_and_bind` remains test-only glue, chain-id confined (DD-014).
+- Inputs are now the `FheEvalOperand::VerifiedInput` operand of `fhe_eval`. The earlier standalone
+  `verify_coprocessor_input` instruction and its `InputVerifiedEvent` receipt were **deleted**, along
+  with the short-lived output-taint binding (`VerifiedInputBinding` / output-ACL constraints): derived
+  outputs are unconstrained by the input.
+- The "caller is the attested contract" gate is enforced at input-consumption time
+  (`attestation.contract_address == compute_subject`, the msg.sender analog).
+- The `verify_input_and_bind` and standalone `mock_input_verified_and_bind` instructions were removed;
+  the shared verifier `zama_host::eip712::verify_coprocessor_input` (via
+  `instructions::input_verification::verify_input_attestation`) is invoked in-frame by `fhe_eval`.
 
-Open for debate / follow-up:
+Superseded design (stub): the earlier `verify_input_and_bind` bound inputs with a native Ed25519
+"input verifier set" signing a `SolanaInputBindIntent`. Reversed because it was a Solana-only trust
+root divorced from the EVM coprocessor; the coprocessor attestation is the canonical trust root.
 
-The PoC input proof / ZKPoK / transciphering validation behind the attestation is still a harness
-shortcut; real ZKPoK + transciphering is production work (see Next steps). Fully exercising
-input→compute still requires the host-listener to **consume** `InputVerifiedEvent` (it currently
-ignores it); the PoC does not yet use inputs as compute operands. This is a follow-up. The input
-identity is a plain bytes32 host address; the input's `extraData` is the coprocessor cert's
-extraData (DD-026).
-
-### Superseded design (for the debate record)
-
-> The previous decision (`verify_input_and_bind`): a native Ed25519 verifier pre-instruction over
-> canonical `SolanaInputProof` + `SolanaInputBindIntent`, anchored to an on-chain input verifier
-> set. Rationale at the time: the host should verify witness shape, not pretend to be the proof
-> system, and the signed bind intent bridged verifier policy to ACL birth. Reversed because it was
-> a Solana-only trust root; the coprocessor attestation is the canonical one.
+Open for debate / follow-up: the input proof / ZKPoK / transciphering behind the attestation is still
+a harness shortcut; real ZKPoK + transciphering is production work.
 
 ## DD-008: Model Transient Allow As Explicit Solana Evidence
 
@@ -259,24 +269,33 @@ that a later instruction can read.
 
 Decision:
 
-Prefer, in order:
+The lifetime model is `{AllowedLocal, AllowedDurable}`:
 
 ```text
-1. instruction-local intermediates for expression graphs
-2. signer propagation for CPI-chain authority over existing inputs
-3. one-shot transient capability accounts for cross-instruction or cross-program handoff
+AllowedLocal   an fhe_eval-local value (FheEvalOperand::AllowedLocal): produced by an earlier step,
+               consumed by a later step in the same instruction. No AclRecord, no AclAllowedEvent.
+AllowedDurable a durable ACL record (Output::durable()) bound with the nonce-key model (DD-001).
 ```
+
+EVM `allowTransient(handle, account)` (tx-scoped) maps to `AllowedLocal` **plus CPI signer
+propagation within one instruction's CPI tree**: the compute subject carried through the CPI chain
+authorizes existing allowed inputs. A verified external input is transient-allowed for one eval this
+way (DD-007). There is no mechanism to pass a not-yet-durable value across separate top-level
+instructions — if a value must persist, it becomes `AllowedDurable`.
 
 Rationale:
 
-Temporary permission must be explicit evidence on Solana. A one-shot capability is real state, not
-"transient storage", and must not become durable ACL or decrypt authority by accident.
+Solana has no hidden transaction-local map a later instruction can read; temporary permission must be
+explicit. Keeping intermediates instruction-local avoids rent and prevents a temporary compute grant
+from silently becoming durable ACL or decrypt authority.
 
 Consequences:
 
-Transient capability consume must prove a matching earlier top-level creation instruction in the
-same transaction. Same-slot expiry is defense in depth, not the transaction boundary. See
-[`TRANSIENT_ALLOW.md`](TRANSIENT_ALLOW.md) for the detailed design.
+The earlier persisted one-shot `TransientSession` / capability-account tier (a cross-instruction
+handoff account with same-transaction creation proof) was **removed** (zama-ai/fhevm#2834): it was
+real rent-bearing state that added a durable-ACL leak surface for no path the PoC needed. Any durable
+output derived from transient inputs still passes explicit output-policy binding (output ACL domain,
+app account, allowed roles) and is born with `public_decrypt = false`.
 
 ## DD-009: Operator Transfer Model Removed
 
@@ -329,31 +348,22 @@ Consequences:
 Disclosure fixtures and KMS tests must seed amount-shaped ACL records when testing amount
 disclosure. Balance disclosure remains a separate path.
 
-## DD-011: Transfer-And-Call Uses Split Settlement
+## DD-011: Transfer-And-Call Removed In Favor Of App-Driven CPI Composition
 
-Status: product-open
+Status: superseded (issue #1593; supersedes DD-018)
 
-Context:
+Was: a ported multi-leg transfer-and-call callback flow (`confidential_transfer` →
+`confidential_call_transfer_receiver` → `confidential_prepare_transfer_callback` →
+`confidential_finalize_transfer_callback`) plus a `confidential-token-receiver` program + SDK.
 
-The EVM-style single-instruction callback settlement does not map cleanly to Solana. SBF heap and
-CPI/instruction-stack limits make deep token -> host -> receiver -> settlement flows expensive and
-fragile.
-
-Decision:
-
-Use a split receiver-hook and callback-settlement flow. The hook returns an encrypted callback
-success handle. Settlement verifies hook causality, recipient ACL binding, and replay markers, then
-prepares and finalizes refund or transferred amount state.
-
-Rationale:
-
-The split design keeps Solana execution bounded and makes hook causality explicit instead of
-assuming an EVM-like call stack.
-
-Consequences:
-
-The final transfer-and-call product/API shape remains open, but any production path must preserve
-hook causality, replay protection, and recipient-signature-free refund relaying.
+Replaced because it transliterated an EVM workaround Solana doesn't need: a contract can't observe an
+incoming transfer on EVM, so the token calls it back. On Solana signer authority propagates through
+CPI, so a receiving app drives its **own** atomic `deposit` that CPIs `confidential_transfer` — the
+user signs once, no operator, no callback, no refund leg (the all-or-zero transferred amount is the
+accept signal). See the `confidential-deposit-app` reference program. Token-2022 transfer hooks were
+rejected as a substitute: they are privilege-stripped veto tools, not receiver callbacks
+(FUTURE_DESIGN §4). Some enum/error/event variants from the old flow remain inert to preserve Anchor
+discriminants (FUTURE_DESIGN §6).
 
 ## DD-012: Solana User-Decrypt REUSES The Gateway/EVM Stack (REVERSED)
 
@@ -403,20 +413,14 @@ The reconciliation initially relaxed EVM input validation unconditionally to adm
 which weakened EVM (CI caught empty-contracts / wrong-sig being accepted). Fixed with the chain-aware
 cross-field validator (DD-027).
 
-Open for debate:
+Superseded design (stub): the earlier decision kept a Solana-native KMS request/response subsystem
+(`native-v0`) out of EVM Gateway routing, on the theory the data models were too different to share.
+Reversed to reuse one decrypt trust model and routing path. Some `native-v0` library/store code still
+exists in the connector but is no longer the chosen path.
 
-This is the core reversal to litigate. Is unifying on the EVM/Gateway stack the right long-term call,
-or does a second non-EVM chain eventually justify a native path after all? The KMS-connector decrypt
-is exercised in the harness, not full production KMS wiring (see Boundaries / DD-028).
-
-### Superseded design (for the debate record)
-
-> The previous decision: keep Solana `native-v0` request admission, storage, response verification,
-> and tx-sender picking in Solana-specific boundaries; do not route verified native Solana response
-> rows through the EVM Gateway response sender. Rationale at the time: shared plumbing is useful only
-> below the point where the data model is genuinely shared, and reusing EVM publication for Solana
-> rows would hide missing Solana-specific routing/status/replay/certificate checks. The native-v0
-> library/store boundary still exists in the connector but is no longer the chosen production path.
+Open for debate: is unifying on the EVM/Gateway stack the right long-term call, or does a second
+non-EVM chain eventually justify a native path? The KMS-connector decrypt is exercised in the harness,
+not full production KMS wiring (DD-028).
 
 ## DD-013: Prefer Fail-Closed Chain Boundaries
 
@@ -441,43 +445,42 @@ Consequences:
 Tests should cover both positive Solana witness acceptance and negative cases where EVM-shaped
 checks are unavailable or inappropriate.
 
-## DD-014: Local-PoC Relaxations Are Chain-Id Confined
+## DD-014: Local-PoC Relaxations Are Compile-Gated And Chain-Id Confined
 
 Status: adopted
 
 Context:
 
-Two relaxations exist for local testing: the zero birth-entropy fallback (used when the Mollusk
-slot-hash sysvar is empty) and the `mock_input_verified_and_bind` short-circuit for the real signed
-input-verifier path. Both were gated only by admin-toggled `HostConfig` flags
-(`test_shims_enabled`, `mock_input_enabled`). `test_shims_enabled` also gates the `test_emit_*` event
-shims, so enabling test events silently also re-opened the zero-entropy hole, and nothing bound either
-relaxation to a non-production chain.
+Local testing needs a zero birth-entropy fallback (used when the Mollusk slot-hash sysvar is empty)
+and the `test_emit_*` event shims. Earlier these were gated only by admin-toggled `HostConfig` flags,
+so enabling test events could silently re-open the zero-entropy hole, and nothing bound them to a
+non-production chain.
 
 Decision:
 
-Gate both relaxations at the consumption site on the local PoC chain id, via
-`HostConfig::zero_birth_entropy_allowed()` (`test_shims_enabled && chain_id == SOLANA_POC_CHAIN_ID`)
-and `HostConfig::mock_input_allowed()` (`mock_input_enabled && chain_id == SOLANA_POC_CHAIN_ID`). A
-deployed (non-PoC) chain always takes the production branch — handle birth fails closed with
-`PreviousBankHashUnavailable`, and the mock bind rejects — regardless of any admin flag.
+Two defenses stack. (1) The shim instructions (`test_emit_*`, `set_test_shims_enabled`,
+`set_mock_input_enabled`) are `#[cfg(feature = "poc")]` — compiled out of default/production builds.
+(2) The surviving state relaxation, the zero-entropy fallback, is gated at the consumption site by
+`HostConfig::zero_birth_entropy_allowed()` (`test_shims_enabled && is_local_poc_chain()`, where
+`is_local_poc_chain() = POC_FEATURE_ENABLED && chain_id == SOLANA_POC_CHAIN_ID`). A default build, or
+any non-PoC chain id, always takes the production branch — handle birth fails closed with
+`PreviousBankHashUnavailable`.
+
+The former `mock_input_verified_and_bind` input short-circuit (and the never-consumed `mock_input_allowed`
+gate) were **removed** — input mocking no longer exists; the real path is the in-frame secp256k1
+attestation verify (DD-007). The vestigial `mock_input_enabled` flag on `HostConfig` remains only for
+account-layout stability and should be dropped at the next ABI break.
 
 Rationale:
 
-The security boundary belongs at the point of use, not only at the setter, so the property holds even
-if a future config path forgets a guard. Confining to the PoC sentinel chain id also decouples the
-birth-entropy fallback from the `test_emit_*` shim concern on real chains: toggling test events can no
-longer degrade entropy.
+The security boundary belongs at the point of use *and* is compiled out entirely by default, so the
+property holds even if a future config path forgets a guard.
 
 Consequences:
 
 The host and app (`confidential-token`) derive the same gate from the same `HostConfig`, so
 app-precomputed and host-verified handles stay in agreement. The `PreviousBankHashUnavailable`
 negative test runs on the PoC chain with `test_shims_enabled = false` to exercise fail-closed birth.
-`test_emit_*` event shims (no state mutation) are now also chain-confined via
-`assert_test_shim_authority` (`test_shims_enabled && is_local_poc_chain()`), so an admin flag alone
-cannot enable them on a deployed chain; they should still be compiled out for mainnet as defense in
-depth.
 
 ## DD-015: Handle Birth Entropy Policy — RESOLVED: Keep The Entropy
 
@@ -563,11 +566,10 @@ Decision:
 
 The host exposes per-handle-class binding instructions — `fhe_binary_op_and_bind_output`,
 `fhe_ternary_op_and_bind_output`, `trivial_encrypt_and_bind`, `fhe_rand_and_bind`,
-`fhe_rand_bounded_and_bind`, `verify_input_and_bind`, `mock_input_verified_and_bind` — plus one batched
-eval instruction for composed plans: `fhe_eval`. The eval instruction accepts mixed binary/ternary,
-trivial-encrypt, and rand steps with instruction-local transients; verified-input steps are
-durable-output-only because input birth must bind ACL state immediately. It is the practical
-successor to `execute_frame`. Every durable-output path takes a signer witness: either the fixed
+`fhe_rand_bounded_and_bind` — plus one batched eval instruction for composed plans: `fhe_eval`. The
+eval instruction accepts mixed binary/ternary, trivial-encrypt, rand, and verified-input steps with
+instruction-local transients. It is the practical successor to `execute_frame`. (Input birth is not a
+separate instruction: external inputs enter through the `fhe_eval` `VerifiedInput` operand, DD-007.) Every durable-output path takes a signer witness: either the fixed
 `app_account_authority: Signer` account, or an explicit per-output authority account in
 `remaining_accounts` that must be a signer and match `output_app_account`. The host then validates the
 metadata with `assert_output_acl_metadata` (`instructions/common.rs`). This reinstates and now
@@ -606,37 +608,14 @@ expressed as one eval frame with per-output authority witnesses rather than one 
 `authorized_app_accounts[]`. Future multi-app eval extensions should keep that signer-witness model
 and should not resurrect unsigned `authorized_app_accounts[]`.
 
-## DD-018: Transfer-And-Call Refund Finalize Is Recoverable, Not Atomic With Prepare
+## DD-018: Transfer-And-Call Refund Prepare/Finalize (superseded)
 
-Status: adopted (atomicity hardening product-open)
+Status: superseded (with DD-011, issue #1593)
 
-Context:
-
-`confidential_prepare_transfer_callback` debits the recipient's refund and records a `PREPARED`
-settlement; `confidential_finalize_transfer_callback` credits the sender from the durable
-`refund_handle` snapshot and flips the settlement to `FINALIZED`. The two are separate instructions
-with no same-transaction binding.
-
-Decision:
-
-Finalize does not require the recipient's live balance to still equal the prepare-time snapshot. It
-credits the sender from the durable refund snapshot and is permissionless, so the credit is always
-recoverable by anyone after prepare. An earlier `to.balance_handle == settlement.to_balance_handle`
-guard was removed because it was unused by the credit math and would permanently strand the refund if
-the recipient performed any balance op between prepare and finalize.
-
-Rationale:
-
-The refund is a sender credit; the recipient's balance after prepare is irrelevant to it. Pinning
-settlement identity through the `(mint, sent_handle)` PDA seeds plus the `status` flip prevents double
-finalize without coupling the credit to a frozen recipient balance.
-
-Consequences:
-
-Between prepare and finalize the system is in a temporary, recoverable imbalance (recipient debited,
-sender not yet credited) rather than atomic. A future hardening may fuse prepare+finalize into one
-instruction (CU/account budget permitting) or add an instructions-sysvar same-transaction binding; this
-is tracked under Open Product Decisions.
+Was: the split refund legs (`confidential_prepare_transfer_callback` /
+`confidential_finalize_transfer_callback`) of the transfer-and-call flow, with a recoverable
+(non-atomic) sender credit from a durable refund snapshot. Removed with the whole callback flow — apps
+now compose deposits by CPI (DD-011), so there is no refund leg.
 
 ## DD-019: Confidential Transfer Persists Only Final Balance And Transferred-Amount ACL Records
 
@@ -682,9 +661,8 @@ Consequences:
 
 Indexers that replay transfer math must read the host `FheBinaryOpEvent` and `FheTernaryOpEvent` stream
 for the scratch handles; there is intentionally no ACL permission record for decrypting the scratch
-success/debit values after the transaction. Burn and transfer-callback settlement flows still use their
-own durable scratch records today and should be considered separately if their rent profile becomes a
-product issue.
+success/debit values after the transaction. The burn flow still uses its own durable scratch records
+today and should be considered separately if its rent profile becomes a product issue.
 
 ## DD-020: VerifierSet Removed → Canonical KMS Context Singleton
 
@@ -793,8 +771,9 @@ RFC-024 `execute_frame` sketch. The reconciliation realized it end-to-end.
 
 Decision:
 
-`fhe_eval` is the composed-eval executor with steps **Binary / Ternary / TrivialEncrypt / Rand** (no
-`Input` step — input birth is its own instruction, DD-007). Intermediate results can be `Output::transient()`
+`fhe_eval` is the composed-eval executor with steps **Binary / Ternary / TrivialEncrypt / Rand**.
+External encrypted inputs are not a step type: they enter as the `FheEvalOperand::VerifiedInput`
+operand of a step and are verified in-frame (DD-007). Intermediate results can be `Output::transient()`
 (instruction-local, **no durable ACL record / no `AclAllowedEvent`**) and consumed by later steps; only
 `Output::durable()` results bind an `AclRecord`. The app-facing `zama-fhe` crate
 (`solana/crates/zama-fhe`) exposes a typed `EvalBuilder` DSL returning `Encrypted<T>` for transients,
@@ -1035,104 +1014,27 @@ Open for debate:
 
 Revisit `verifyProofRequestV2` as a coordinated multi-step change when a 2nd non-EVM chain or an
 EVM-migration lands.
-
 ## Open Product Decisions
 
-These are not settled by the PoC design decisions above:
+Not settled by the decisions above. Forward requirements and the finality/reorg debate are detailed
+in [`FUTURE_DESIGN.md`](./FUTURE_DESIGN.md); this list is the short index.
 
-- Whether to change handle birth entropy/idempotency policy at the native-v0 freeze (DD-015).
+- Coprocessor input trust: single `coprocessor_signer` at threshold 1 → registered n-of-m set
+  (FUTURE_DESIGN §1).
+- Where the finality gate sits and the decrypt-release commitment level (DD-024/DD-025); wiring the
+  Solana poller into the EVM reorg substrate (DD-028).
+- Handle birth entropy/idempotency policy is RESOLVED (keep per-block entropy, DD-015); reorg-unstable
+  handles are accepted on every chain.
 - Whether confidential balances move to the staged inbound-credit profile (DD-016).
-- Fusing or same-transaction-binding transfer-and-call prepare/finalize (DD-018).
-- Reclaiming rent for superseded durable `AclRecord` PDAs: there is no `close_acl_record` instruction
-  today. Plain transfer scratch has been removed via DD-019, but burn/callback scratch and old balance
-  history still need an archival/compaction policy if their rent profile becomes a product issue.
-- Rejecting the PoC sentinel `chain_id` (`SOLANA_POC_CHAIN_ID = 12345`) in production builds. The
-  relaxations already fail closed on every non-sentinel chain id; a compile-time `poc` cargo feature
-  that both refuses 12345 at init and compiles out the mock/zero-entropy/`test_emit_*` paths would
-  remove the residual misconfiguration risk entirely.
-- `HostConfig` now stores the active input verifier set and version, with a one-time migration for
-  legacy accounts. General config-version rotation semantics beyond verifier-set pointers remain
-  product-open.
-- Compiling out (not just chain-confining) the remaining `test_emit_*` shim for mainnet builds.
-
-- External input verifier service integration, threshold policy, and real proof/transciphering.
-- Live native-v0 KMS Core dispatch and protobuf/API shape.
-- Concrete native Solana response publisher and relayer target.
-- Durable archival and compaction policy for ACL, material, delegation, and replay evidence.
+- Rejecting the PoC sentinel `chain_id` (`SOLANA_POC_CHAIN_ID = 12345`) unconditionally in production
+  builds; the `poc` feature already compiles out the shims and confines the zero-entropy fallback.
+- Reclaiming rent for superseded durable `AclRecord` PDAs: no `close_acl_record` today; burn scratch
+  and old balance history need an archival/compaction policy if rent becomes a product issue.
+- Dropping the vestigial `mock_input_enabled` flag and dead callback-flow enum variants at the next
+  deliberate ABI break (FUTURE_DESIGN §6).
+- General `HostConfig` config-version rotation semantics beyond the KMS-context pointer.
+- Full production KMS-connector wiring and real ZKPoK / transciphering behind the input attestation
+  (both PoC shortcuts today, DD-028).
+- Production Yellowstone/Geyser provider finality/replay/reconnect/backfill policy (DD-003).
 - Historical handle discovery conventions for apps and indexers.
-- Production Yellowstone/Geyser provider, finality, replay, reconnect, and backfill policy.
-- Production role and governance names for public decrypt and grant authority.
-- Final transfer-and-call product/API shape.
-- Transient-session SDK ergonomics.
-- Frozen native-v0 request/response encodings and unsupported-version behavior.
-
-## Open questions for the e2e flow debate
-
-Each is phrased as a decision to make in the room.
-
-1. **Decrypt routing: unify on the Gateway/EVM stack, or keep a native Solana path?** (DD-012, reversal)
-   The reconciliation routes Solana user-decrypt through the unified Gateway V2 bytes32 path and verifies
-   the KMS cert on-chain via secp256k1, instead of the prior Solana-native KMS flow. **Decide:** is
-   unifying on the EVM/Gateway stack the long-term call, or does a 2nd non-EVM chain justify reviving a
-   native path? The native-v0 connector subsystem still exists but is no longer the chosen path.
-
-2. **Where does the finality gate sit? (A/B/C/D)** (DD-025) Today: computations are inserted DORMANT
-   (`is_allowed=false`/`is_completed=true`) and activated per finalized-allow, which does NOT compose
-   with transient eval intermediates (a burn's released handle depends on never-individually-allowed
-   sub-handles). **Decide one:**
-   - **(A) Eager-materialize like EVM; gate only the decrypt RELEASE on finality. [recommended]** — reuses
-     the existing EVM block-status substrate (`host_chain_blocks_valid` + `block_history.rs`), which the
-     Solana poller is not yet wired into.
-   - (B) Keep two-step dormant + transitive subgraph activation via a recursive CTE.
-   - (C) Slot-level finality gate.
-   - (D) Ingest only at finalized (+~13s latency).
-
-3. **What commitment level releases a decrypt?** (DD-024/DD-025) `finalized` (~13s, reorg-safe) vs
-   `confirmed` (~1–2s, but a confirmed-then-reorged release is an *irreversible* decrypt). Most Solana
-   dapps run at `confirmed`. **Decide** the release commitment level and accept its irreversibility
-   tradeoff.
-
-4. **Accept block-bound (reorg-unstable) handles on every chain?** (DD-015, RESOLVED-keep-entropy) Handles
-   mix per-block entropy (Solana `previous_bank_hash`; EVM `blockhash(block.number-1)`), so a
-   resubmitted/reorged tx yields a *different* handle. **Decide:** confirm we accept this everywhere and
-   that the listener reorg handling is the reconciliation — noting Solana's reorg handling is an open gap
-   (Q2/Q5).
-
-5. **When do we wire the Solana poller into the EVM reorg substrate?** (DD-025/DD-028) The poller polls at
-   `confirmed` and inserts directly, bypassing the block-status machine; reorg correctness is an open gap.
-   This is the foundation for option A in Q2. **Decide** scheduling: gate merge on it, or fast-follow?
-
-6. **User-decrypt auth encoding** (DD-026, RESOLVED) — the `0x03` extraData blob was replaced by the
-   typed `userDecryptionRequestSolana` gateway entrypoint (extraData reduced to context-only `0x01`).
-   Input identities are plain bytes32 and the input's extraData is the coprocessor cert's extraData,
-   distinct from the KMS-cert extraData versions 0/1 (DD-021). **Confirm** the typed surface; no `0x03`
-   layout remains to freeze.
-
-7. **`verifyProofRequestV2` rename — now or later?** (DD-030, DECIDED: later) Kept `verifyProofRequestSolana`
-   because the rename is an ABI break and cascades across pinned cross-repo gateway-binding consumers.
-   **Confirm** we defer V2 to a coordinated multi-step change triggered by a 2nd non-EVM chain / EVM
-   migration.
-
-8. **How much KMS realism before merge?** (DD-028) The KMS-connector decrypt is exercised in the harness,
-   not full production wiring; input proofs are PoC shortcuts (no real ZKPoK/transciphering). **Decide**
-   what must be real before merge vs fast-follow.
-
-## Next steps after merge
-
-- **Wire the Solana poller into the EVM block-status reorg substrate** (`host_chain_blocks_valid` +
-  `cmd/block_history.rs`) — option A's foundation (DD-025/DD-028).
-- **Decide + implement the compute-gate / finality model (A/B/C/D)** and the **release commitment level**
-  (DD-024/DD-025).
-- **Production KMS-connector wiring beyond the harness**; replace the PoC input-proof shortcuts with real
-  ZKPoK / transciphering (DD-007/DD-028).
-- **`verifyProofRequestV2` rename** as a coordinated multi-step change, *if pursued* (DD-030).
-- **Coordinate the #2773 sync** (GatewayConfig version + KMSGeneration upgrade-manifest) → main →
-  feature/solana, so #2758's upgrade checks clear.
-- **Keep the PoC ↔ RFC mirror in sync** — RFC-021 / RFC-024 were updated this cycle; reflect any further
-  reconciliation back into the RFCs.
-- **Wire the host-listener to consume `InputVerifiedEvent`** so verified inputs become compute operands
-  (currently ignored; input→compute is a follow-up — DD-007).
-- **Keep the user-decrypt surface typed** (DD-026, RESOLVED via `userDecryptionRequestSolana`) and the
-  KMS-cert extraData version registry coherent (DD-021).
-- **Compile out** (not just chain-confine) `mock_input_verified_and_bind` / `test_emit_*` /
-  zero-birth-entropy for mainnet builds (DD-014/DD-028).
+- Production role and governance names for public-decrypt and grant authority.

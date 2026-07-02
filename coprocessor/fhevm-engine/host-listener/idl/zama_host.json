@@ -2315,116 +2315,6 @@
           "type": "bool"
         }
       ]
-    },
-    {
-      "name": "verify_coprocessor_input",
-      "discriminator": [
-        179,
-        79,
-        160,
-        129,
-        222,
-        44,
-        88,
-        188
-      ],
-      "accounts": [
-        {
-          "name": "host_config",
-          "docs": [
-            "Singleton config PDA holding the gateway verifier trust config."
-          ],
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  104,
-                  111,
-                  115,
-                  116,
-                  45,
-                  99,
-                  111,
-                  110,
-                  102,
-                  105,
-                  103
-                ]
-              }
-            ]
-          }
-        },
-        {
-          "name": "event_authority"
-        },
-        {
-          "name": "program"
-        }
-      ],
-      "args": [
-        {
-          "name": "input_handle",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        },
-        {
-          "name": "ct_handles",
-          "type": {
-            "vec": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          }
-        },
-        {
-          "name": "handle_index",
-          "type": "u8"
-        },
-        {
-          "name": "user_address",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        },
-        {
-          "name": "contract_address",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        },
-        {
-          "name": "contract_chain_id",
-          "type": "u64"
-        },
-        {
-          "name": "extra_data",
-          "type": "bytes"
-        },
-        {
-          "name": "signatures",
-          "type": {
-            "vec": {
-              "array": [
-                "u8",
-                65
-              ]
-            }
-          }
-        }
-      ]
     }
   ],
   "accounts": [
@@ -2649,19 +2539,6 @@
         234,
         56,
         138
-      ]
-    },
-    {
-      "name": "InputVerifiedEvent",
-      "discriminator": [
-        72,
-        163,
-        95,
-        202,
-        108,
-        26,
-        145,
-        216
       ]
     },
     {
@@ -3085,6 +2962,11 @@
       "code": 6070,
       "name": "HcuLimitOrderingInvalid",
       "msg": "HCU limits violate max_hcu_per_tx >= max_hcu_depth_per_tx"
+    },
+    {
+      "code": 6071,
+      "name": "AttestationChainIdMismatch",
+      "msg": "attested contract chain id does not match the host chain id"
     }
   ],
   "types": [
@@ -5113,72 +4995,6 @@
               "Whether persistent grants must include a deny-list witness."
             ],
             "type": "bool"
-          }
-        ]
-      }
-    },
-    {
-      "name": "InputVerifiedEvent",
-      "docs": [
-        "Test/mock event for encrypted input verification."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "version",
-            "docs": [
-              "Event schema version."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "input_handle",
-            "docs": [
-              "Input handle supplied to the verifier boundary."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "result_handle",
-            "docs": [
-              "Result handle emitted to the worker/listener path."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "user",
-            "docs": [
-              "User pubkey bytes associated with the input."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "acl_domain_key",
-            "docs": [
-              "ACL domain key bytes associated with the input."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
           }
         ]
       }

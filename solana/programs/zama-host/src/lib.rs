@@ -203,31 +203,6 @@ pub mod zama_host {
         )
     }
 
-    #[allow(clippy::too_many_arguments)]
-    pub fn verify_coprocessor_input(
-        ctx: Context<VerifyCoprocessorInput>,
-        input_handle: [u8; 32],
-        ct_handles: Vec<[u8; 32]>,
-        handle_index: u8,
-        user_address: [u8; 32],
-        contract_address: [u8; 32],
-        contract_chain_id: u64,
-        extra_data: Vec<u8>,
-        signatures: Vec<[u8; 65]>,
-    ) -> Result<()> {
-        instructions::verify_coprocessor_input(
-            ctx,
-            input_handle,
-            ct_handles,
-            handle_index,
-            user_address,
-            contract_address,
-            contract_chain_id,
-            extra_data,
-            signatures,
-        )
-    }
-
     pub fn fhe_binary_op(
         ctx: Context<FheBinaryOp>,
         op: FheBinaryOpCode,
@@ -382,22 +357,5 @@ pub mod zama_host {
         result: [u8; 32],
     ) -> Result<()> {
         instructions::test_emit_fhe_rand(ctx, subject, seed, fhe_type, result)
-    }
-
-    #[cfg(feature = "poc")]
-    pub fn test_emit_input_verified(
-        ctx: Context<TestEmitProtocolEvent>,
-        input_handle: [u8; 32],
-        result_handle: [u8; 32],
-        user: Pubkey,
-        acl_domain_key: Pubkey,
-    ) -> Result<()> {
-        instructions::test_emit_input_verified(
-            ctx,
-            input_handle,
-            result_handle,
-            user,
-            acl_domain_key,
-        )
     }
 }

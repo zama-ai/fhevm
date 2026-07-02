@@ -141,15 +141,9 @@ impl EvalStepVisitor for AdmissionState<'_, '_> {
     ) -> Result<ResolvedOperand> {
         // Structural only — the handle is known from the operand; execution re-verifies the
         // attestation authoritatively (matches how transient-session consume is execution-gated).
-        // The attested identities are still tracked so admission rejects an output that does not
-        // bind them.
-        Ok(ResolvedOperand::verified_input(
-            attestation.input_handle,
-            VerifiedInputBinding {
-                user_address: Pubkey::new_from_array(attestation.user_address),
-                contract_address: Pubkey::new_from_array(attestation.contract_address),
-            },
-        ))
+        // The caller-is-contract gate runs in the shared `resolve_encrypted_operand`; derived
+        // outputs are unconstrained (EVM `fromExternal` parity).
+        Ok(ResolvedOperand::encrypted(attestation.input_handle, true))
     }
 
     fn record_op_event(&mut self, _event: EvalEvent) {}
@@ -161,7 +155,6 @@ impl EvalStepVisitor for AdmissionState<'_, '_> {
         output: &FheEvalOutput,
         output_public_decrypt_allowed: bool,
         enforce_public_decrypt_role_propagation: bool,
-        verified_input: Option<VerifiedInputBinding>,
     ) -> Result<()> {
         require!(
             !self.produced.iter().any(|value| value.handle == result),
@@ -181,14 +174,6 @@ impl EvalStepVisitor for AdmissionState<'_, '_> {
                 output_subjects,
                 output_public_decrypt,
             } => {
-                if let Some(binding) = verified_input {
-                    assert_verified_input_output_binding(
-                        &binding,
-                        *output_acl_domain_key,
-                        *output_app_account,
-                        output_subjects,
-                    )?;
-                }
                 let app_account_authority = admit_durable_output_authority(
                     ctx,
                     *output_app_account_authority_index,
@@ -222,7 +207,6 @@ impl EvalStepVisitor for AdmissionState<'_, '_> {
         self.produced.push(ProducedValue {
             handle: result,
             public_decrypt_allowed: output_public_decrypt_allowed,
-            verified_input,
         });
         Ok(())
     }

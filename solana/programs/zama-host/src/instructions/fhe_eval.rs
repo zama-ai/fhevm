@@ -3,7 +3,7 @@
 use anchor_lang::prelude::*;
 
 use super::common::*;
-use super::verify_coprocessor_input::{verify_input_attestation, InputVerifierParams};
+use super::input_verification::{verify_input_attestation, InputVerifierParams};
 use crate::{
     errors::ZamaHostError,
     events::{
@@ -203,8 +203,11 @@ impl EvalStepVisitor for EvalExecutionState<'_, '_> {
         attestation: &CoprocessorInputAttestation,
     ) -> Result<ResolvedOperand> {
         // Authoritative in-frame verification: re-run the coprocessor attestation. No account, no
-        // PDA — the "allow" exists only for this instruction's execution. public_decrypt is NOT
-        // implied by a verified input; the durable output gets an explicit allow_for_decryption.
+        // PDA — the "allow" exists only for this instruction's execution (the EVM
+        // `allowTransient(input, msg.sender)` analog). The caller-is-contract gate is enforced in
+        // `resolve_encrypted_operand`; derived outputs are then unconstrained, exactly like EVM.
+        // public_decrypt propagates like a public scalar (the app controls decryptability of
+        // results via an explicit allow_for_decryption; it is not blocked by the input itself).
         verify_input_attestation(
             &self.verifier_params,
             attestation.input_handle,
@@ -216,13 +219,7 @@ impl EvalStepVisitor for EvalExecutionState<'_, '_> {
             &attestation.extra_data,
             &attestation.signatures,
         )?;
-        Ok(ResolvedOperand::verified_input(
-            attestation.input_handle,
-            VerifiedInputBinding {
-                user_address: Pubkey::new_from_array(attestation.user_address),
-                contract_address: Pubkey::new_from_array(attestation.contract_address),
-            },
-        ))
+        Ok(ResolvedOperand::encrypted(attestation.input_handle, true))
     }
 
     fn record_op_event(&mut self, event: EvalEvent) {
@@ -237,7 +234,6 @@ impl EvalStepVisitor for EvalExecutionState<'_, '_> {
         output: &FheEvalOutput,
         output_public_decrypt_allowed: bool,
         enforce_public_decrypt_role_propagation: bool,
-        verified_input: Option<VerifiedInputBinding>,
     ) -> Result<()> {
         accept_eval_output(
             ctx,
@@ -248,7 +244,6 @@ impl EvalStepVisitor for EvalExecutionState<'_, '_> {
             output,
             output_public_decrypt_allowed,
             enforce_public_decrypt_role_propagation,
-            verified_input,
             self.current_slot,
         )
     }
@@ -280,7 +275,6 @@ fn accept_eval_output<'info>(
     output: &FheEvalOutput,
     output_public_decrypt_allowed: bool,
     enforce_public_decrypt_role_propagation: bool,
-    verified_input: Option<VerifiedInputBinding>,
     current_slot: u64,
 ) -> Result<()> {
     require!(
@@ -301,14 +295,6 @@ fn accept_eval_output<'info>(
             output_subjects,
             output_public_decrypt,
         } => {
-            if let Some(binding) = verified_input {
-                assert_verified_input_output_binding(
-                    &binding,
-                    *output_acl_domain_key,
-                    *output_app_account,
-                    output_subjects,
-                )?;
-            }
             let app_account_authority = durable_output_authority(
                 ctx,
                 remaining_accounts_used,
@@ -344,39 +330,7 @@ fn accept_eval_output<'info>(
     produced.push(ProducedValue {
         handle: result,
         public_decrypt_allowed: output_public_decrypt_allowed,
-        verified_input,
     });
-    Ok(())
-}
-
-/// A durable output derived from a verified external input must bind the attested identities: the
-/// output domain and app account must both be the attested `contract_address` (so the attested
-/// domain owns the output — and since the output app account must itself sign, the attested domain
-/// must sign, the EVM `contractAddress == msg.sender` invariant), and the attested `user_address`
-/// must be one of the output subjects. This stops a copied (public) attestation from being turned
-/// into a decryptable derived value by any signer other than the attested domain.
-fn assert_verified_input_output_binding(
-    binding: &VerifiedInputBinding,
-    output_acl_domain_key: Pubkey,
-    output_app_account: Pubkey,
-    output_subjects: &[AclSubjectEntry],
-) -> Result<()> {
-    require_keys_eq!(
-        output_acl_domain_key,
-        binding.contract_address,
-        ZamaHostError::AclDomainKeyMismatch
-    );
-    require_keys_eq!(
-        output_app_account,
-        binding.contract_address,
-        ZamaHostError::InputBindContractMismatch
-    );
-    require!(
-        output_subjects
-            .iter()
-            .any(|subject| subject.pubkey == binding.user_address),
-        ZamaHostError::InputBindUserNotSubject
-    );
     Ok(())
 }
 
@@ -406,19 +360,6 @@ fn durable_output_authority<'info>(
 pub(super) struct ProducedValue {
     handle: [u8; 32],
     public_decrypt_allowed: bool,
-    verified_input: Option<VerifiedInputBinding>,
-}
-
-/// The coprocessor-attested identities a verified external input carries forward. A durable output
-/// derived from it must bind these: `output_acl_domain_key` and `output_app_account` must equal the
-/// attested `contract_address` (so the attested domain — which `app_account` must sign for — owns
-/// the output, the EVM `contractAddress == msg.sender` invariant), and the attested `user_address`
-/// must be one of the output subjects. This makes a copied (public) attestation unusable by any
-/// signer other than the attested domain.
-#[derive(Clone, Copy)]
-pub(super) struct VerifiedInputBinding {
-    pub(super) user_address: Pubkey,
-    pub(super) contract_address: Pubkey,
 }
 
 #[derive(Clone)]
@@ -426,9 +367,6 @@ pub(super) struct ResolvedOperand {
     pub(super) handle: [u8; 32],
     pub(super) scalar: bool,
     pub(super) public_decrypt_allowed: bool,
-    /// Set when this value traces back to a verified external input: the attested identities its
-    /// derived durable outputs must bind to (see [`VerifiedInputBinding`]).
-    pub(super) verified_input: Option<VerifiedInputBinding>,
 }
 
 impl ResolvedOperand {
@@ -437,7 +375,6 @@ impl ResolvedOperand {
             handle,
             scalar: false,
             public_decrypt_allowed,
-            verified_input: None,
         }
     }
 
@@ -446,21 +383,6 @@ impl ResolvedOperand {
             handle,
             scalar: true,
             public_decrypt_allowed: true,
-            verified_input: None,
-        }
-    }
-
-    /// Builds an operand from an in-frame verified external input, carrying the attested identities
-    /// its derived durable outputs must bind to. The input is authorized by its provider for that
-    /// domain, so it propagates public-decrypt like a public scalar (EVM `fromExternal` parity: the
-    /// app that received the input controls whether results are made publicly decryptable, via an
-    /// explicit allow_for_decryption — it is not blocked by the input itself).
-    fn verified_input(handle: [u8; 32], binding: VerifiedInputBinding) -> Self {
-        Self {
-            handle,
-            scalar: false,
-            public_decrypt_allowed: true,
-            verified_input: Some(binding),
         }
     }
 
@@ -469,7 +391,6 @@ impl ResolvedOperand {
             handle: value.handle,
             scalar: false,
             public_decrypt_allowed: value.public_decrypt_allowed,
-            verified_input: value.verified_input,
         }
     }
 }
@@ -484,35 +405,6 @@ fn inputs3_allow_public_decrypt(
     third: &ResolvedOperand,
 ) -> bool {
     first.public_decrypt_allowed && second.public_decrypt_allowed && third.public_decrypt_allowed
-}
-
-/// The verified-input binding a derived output must satisfy. Folds the operands' taints: at most one
-/// attested input may flow into a single op (mixing two distinct attestations would be ambiguous),
-/// and a durable output derived from it must bind the attested domain/user (see [`accept_eval_output`]).
-fn combine_verified_input_binding(
-    operands: &[&ResolvedOperand],
-) -> Result<Option<VerifiedInputBinding>> {
-    let mut binding: Option<VerifiedInputBinding> = None;
-    for operand in operands {
-        if let Some(input) = operand.verified_input {
-            match binding {
-                None => binding = Some(input),
-                Some(existing) => {
-                    require_keys_eq!(
-                        existing.contract_address,
-                        input.contract_address,
-                        ZamaHostError::AclDomainKeyMismatch
-                    );
-                    require_keys_eq!(
-                        existing.user_address,
-                        input.user_address,
-                        ZamaHostError::InputBindUserNotSubject
-                    );
-                }
-            }
-        }
-    }
-    Ok(binding)
 }
 
 #[inline(never)]

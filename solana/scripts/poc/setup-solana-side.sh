@@ -63,7 +63,7 @@ echo "==> [2/5] fresh validator + program deploy (reconstruct=$RECONSTRUCT)"
 # program IDs match each `declare_id!` (see scripts/poc/test-keypairs/README.md). `-n` keeps any
 # pre-existing local keypair; on a fresh checkout it seeds the committed test keys.
 mkdir -p "$SOLANA/target/deploy"
-for p in zama_host confidential_token confidential_token_receiver; do
+for p in zama_host confidential_token; do
   cp -n "$SOLANA/scripts/poc/test-keypairs/$p-keypair.json" "$SOLANA/target/deploy/$p-keypair.json" 2>/dev/null || true
 done
 # Ensure the deployer wallet exists. Created only if absent so a developer's existing wallet is
@@ -109,13 +109,14 @@ if [ "$RECONSTRUCT" = 1 ]; then
   # workspace, so it can't disable defaults for just one crate); anchor-cli is installed by
   # the workflow. The other programs keep their defaults, matching the emit-decode run.
   echo "    building EMITLESS zama_host (--no-default-features) + default-feature deps"
+  # confidential_token is built with `--features poc`: the e2e drives the create_random_amount
+  # demo helper, which is gated out of production builds.
   ( cd "$SOLANA" \
       && anchor build --ignore-keys --no-idl -p zama_host -- --no-default-features \
-      && anchor build --ignore-keys --no-idl -p confidential_token \
-      && anchor build --ignore-keys --no-idl -p confidential_token_receiver ) \
+      && anchor build --ignore-keys --no-idl -p confidential_token -- --features poc ) \
     || { echo "[setup] emitless anchor build failed" >&2; exit 1; }
   # --use-rpc: deploy over RPC (8899) since the container doesn't publish the TPU ports.
-  for p in zama_host confidential_token confidential_token_receiver; do
+  for p in zama_host confidential_token; do
     solana program deploy -u "$VALIDATOR_RPC" -k "$DEPLOYER_KEYPAIR" --use-rpc \
       --program-id "$SOLANA/target/deploy/$p-keypair.json" "$SOLANA/target/deploy/$p.so" >/dev/null
   done
@@ -137,9 +138,13 @@ else
   # But a fresh machine (CI) has no prebuilt .so, so build anyway when it is absent —
   # SKIP_BUILD is an optimization, not a reason to deploy a nonexistent program.
   if [ "${SKIP_BUILD:-0}" != "1" ] || [ ! -f "$SOLANA/target/deploy/zama_host.so" ]; then
-    ( cd "$SOLANA" && cargo build-sbf --tools-version v1.52 )
+    # Rebuild confidential_token with `--features poc` so the deployed program exposes the
+    # create_random_amount demo helper the e2e drives (gated out of production builds).
+    ( cd "$SOLANA" \
+        && cargo build-sbf --tools-version v1.52 \
+        && cargo build-sbf --tools-version v1.52 -- -p confidential-token --features poc )
   fi
-  for p in zama_host confidential_token confidential_token_receiver; do
+  for p in zama_host confidential_token; do
     solana program deploy -u "$VALIDATOR_RPC" -k "$DEPLOYER_KEYPAIR" \
       --program-id "$SOLANA/target/deploy/$p-keypair.json" "$SOLANA/target/deploy/$p.so" >/dev/null
   done

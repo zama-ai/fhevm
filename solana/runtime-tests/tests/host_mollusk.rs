@@ -26,8 +26,7 @@ use zama_host::{
     self as host,
     events::{
         AclAllowedEvent, FheRandBoundedEvent, FheRandEvent, HandleMaterialCommittedEvent,
-        HandleMaterialSealedEvent, InputVerifiedEvent, PublicDecryptAllowedEvent,
-        TrivialEncryptEvent,
+        HandleMaterialSealedEvent, PublicDecryptAllowedEvent, TrivialEncryptEvent,
     },
     AclPermission, AclRecord, AclSubjectEntry, CoprocessorInputAttestation, DenySubjectRecord,
     FheBinaryOpCode, FheEvalArgs, FheEvalOperand, FheEvalOutput, FheEvalStep, FheTernaryOpCode,
@@ -5259,153 +5258,6 @@ fn host_config_account_with_verifier(
     )
 }
 
-#[allow(clippy::too_many_arguments)]
-fn verify_coprocessor_input_ix(
-    program_id: Pubkey,
-    host_config: Pubkey,
-    input_handle: [u8; 32],
-    ct_handles: Vec<[u8; 32]>,
-    user_address: [u8; 32],
-    contract_address: [u8; 32],
-    extra_data: Vec<u8>,
-    signatures: Vec<[u8; 65]>,
-) -> Instruction {
-    Instruction {
-        program_id,
-        accounts: host::accounts::VerifyCoprocessorInput {
-            host_config,
-            event_authority: event_authority(program_id),
-            program: program_id,
-        }
-        .to_account_metas(None),
-        data: host::instruction::VerifyCoprocessorInput {
-            input_handle,
-            ct_handles,
-            handle_index: 0,
-            user_address,
-            contract_address,
-            contract_chain_id: 12345,
-            extra_data,
-            signatures,
-        }
-        .data(),
-    }
-}
-
-/// A real coprocessor secp256k1 EIP-712 attestation verifies and emits the input receipt.
-/// EVM parity (`FHEVMExecutor.verifyInput`): verification creates NO persistent ACL — the
-/// only effect is the signed `InputVerifiedEvent`.
-#[test]
-fn mollusk_verify_coprocessor_input_accepts_real_secp256k1_attestation() {
-    let program_id = host::id();
-    let authority = Pubkey::new_unique();
-    let key = k256::ecdsa::SigningKey::from_bytes(&[0x44u8; 32].into()).unwrap();
-    let (host_config, host_config_account) =
-        host_config_account_with_verifier(authority, evm_address_of(&key));
-
-    let input_handle = input_handle_for_chain(0x01, 0, 5);
-    let ct_handles = vec![input_handle];
-    let user = Pubkey::new_unique();
-    let user_address = user.to_bytes();
-    let contract = Pubkey::new_unique();
-    let contract_address = contract.to_bytes();
-    let extra_data = vec![0x00u8];
-
-    let digest = host::eip712::typed_data_digest(
-        &host::eip712::domain_separator(
-            b"InputVerification",
-            b"1",
-            GATEWAY_CHAIN_ID,
-            &INPUT_VERIFICATION_CONTRACT,
-        ),
-        &host::eip712::ciphertext_verification_struct_hash(
-            &ct_handles,
-            &user_address,
-            &contract_address,
-            12345,
-            &extra_data,
-        ),
-    );
-    let signatures = vec![sign_eip712(&key, &digest)];
-
-    let context = mollusk_eval_context(authority, vec![(host_config, host_config_account)]);
-    let ix = verify_coprocessor_input_ix(
-        program_id,
-        host_config,
-        input_handle,
-        ct_handles,
-        user_address,
-        contract_address,
-        extra_data,
-        signatures,
-    );
-
-    let result = context.process_and_validate_instruction(&ix, &[Check::success()]);
-
-    // The sole effect is the signed verified-input receipt; no ACL account is created.
-    let input_events: Vec<InputVerifiedEvent> = result
-        .inner_instructions
-        .iter()
-        .filter_map(|inner| decode_anchor_event(&inner.instruction.data))
-        .collect();
-    assert_eq!(input_events.len(), 1);
-    assert_eq!(input_events[0].version, host::EVENT_VERSION);
-    assert_eq!(input_events[0].input_handle, input_handle);
-    assert_eq!(input_events[0].result_handle, input_handle);
-    assert_eq!(input_events[0].user, user_address);
-    // No app-chosen ACL domain: the receipt carries the attested contract identity.
-    assert_eq!(input_events[0].acl_domain_key, contract_address);
-}
-
-/// A signature from a key not in the configured signer set is rejected.
-#[test]
-fn mollusk_verify_coprocessor_input_rejects_unauthorized_signer() {
-    let program_id = host::id();
-    let authority = Pubkey::new_unique();
-    let configured = k256::ecdsa::SigningKey::from_bytes(&[0x44u8; 32].into()).unwrap();
-    let attacker = k256::ecdsa::SigningKey::from_bytes(&[0x99u8; 32].into()).unwrap();
-    let (host_config, host_config_account) =
-        host_config_account_with_verifier(authority, evm_address_of(&configured));
-
-    let input_handle = input_handle_for_chain(0x01, 0, 5);
-    let ct_handles = vec![input_handle];
-    let user_address = [0x07u8; 32];
-    let contract_address = [0x08u8; 32];
-    let extra_data = vec![0x00u8];
-
-    let digest = host::eip712::typed_data_digest(
-        &host::eip712::domain_separator(
-            b"InputVerification",
-            b"1",
-            GATEWAY_CHAIN_ID,
-            &INPUT_VERIFICATION_CONTRACT,
-        ),
-        &host::eip712::ciphertext_verification_struct_hash(
-            &ct_handles,
-            &user_address,
-            &contract_address,
-            12345,
-            &extra_data,
-        ),
-    );
-    let signatures = vec![sign_eip712(&attacker, &digest)];
-
-    let context = mollusk_eval_context(authority, vec![(host_config, host_config_account)]);
-    let ix = verify_coprocessor_input_ix(
-        program_id,
-        host_config,
-        input_handle,
-        ct_handles,
-        user_address,
-        contract_address,
-        extra_data,
-        signatures,
-    );
-
-    let result = context.process_instruction(&ix);
-    assert!(result.raw_result.is_err());
-}
-
 // --- KMS context lifecycle (mirror of ProtocolConfig define/destroy) — #1494 ---
 
 fn read_kms_context(
@@ -5683,8 +5535,25 @@ fn verified_input_attestation(
     user_address: [u8; 32],
     contract_address: [u8; 32],
 ) -> CoprocessorInputAttestation {
+    verified_input_attestation_with_chain_id(
+        key,
+        input_handle,
+        user_address,
+        contract_address,
+        host::SOLANA_POC_CHAIN_ID,
+    )
+}
+
+/// Like [`verified_input_attestation`] but with an explicit attested `contract_chain_id`, so tests
+/// can forge a validly-signed attestation whose chain id does not match the host chain id.
+fn verified_input_attestation_with_chain_id(
+    key: &k256::ecdsa::SigningKey,
+    input_handle: [u8; 32],
+    user_address: [u8; 32],
+    contract_address: [u8; 32],
+    contract_chain_id: u64,
+) -> CoprocessorInputAttestation {
     let ct_handles = vec![input_handle];
-    let contract_chain_id = 12345u64;
     let extra_data = vec![0x00u8];
     let digest = host::eip712::typed_data_digest(
         &host::eip712::domain_separator(
@@ -6011,11 +5880,13 @@ fn mollusk_fhe_eval_verified_input_does_not_leak_to_a_later_instruction() {
     );
 }
 
-/// (d) The output of a verified input must bind the acl_domain_key the input was attested for.
-/// Binding the output under a different domain (a cross-domain move) is rejected — the only
-/// violation here is attested-domain != bound-domain (the output metadata is otherwise consistent).
+/// (d) EVM `fromExternal` parity: a verified input only requires the *caller* to be the attested
+/// contract (enforced at consumption against `compute_subject`, the `msg.sender` analog); the
+/// derived durable outputs are then unconstrained — exactly like EVM `allowTransient(input,
+/// msg.sender)` followed by free `FHE.allow`. Here the output is bound under a domain distinct from
+/// the attested contract and still succeeds.
 #[test]
-fn mollusk_fhe_eval_verified_input_rejects_wrong_output_acl_domain_key() {
+fn mollusk_fhe_eval_verified_input_allows_output_in_other_domain() {
     let program_id = host::id();
     let authority = Pubkey::new_unique();
     let key = k256::ecdsa::SigningKey::from_bytes(&[0x44u8; 32].into()).unwrap();
@@ -6023,12 +5894,11 @@ fn mollusk_fhe_eval_verified_input_rejects_wrong_output_acl_domain_key() {
         host_config_account_with_verifier(authority, evm_address_of(&key));
 
     let user = Pubkey::new_unique();
-    let wrong_domain = Pubkey::new_unique();
+    let other_domain = Pubkey::new_unique();
     let value_label = label("verified-input-domain");
-    // The attested contract is the app authority (`authority`); the output is bound under a WRONG
-    // domain. Output metadata is internally consistent with the wrong domain, isolating the failure
-    // to the verified-input domain binding rather than a nonce-key / metadata mismatch.
-    let nonce_key = host::acl_nonce_key(wrong_domain, authority, value_label);
+    // Attested contract == `authority` == compute_subject, so the caller gate passes; the output is
+    // bound under a DIFFERENT domain, which is allowed (outputs are free, EVM parity).
+    let nonce_key = host::acl_nonce_key(other_domain, authority, value_label);
     let input_handle = input_handle_for_chain(0x01, 0, 5);
     let attestation =
         verified_input_attestation(&key, input_handle, user.to_bytes(), authority.to_bytes());
@@ -6049,15 +5919,14 @@ fn mollusk_fhe_eval_verified_input_rejects_wrong_output_acl_domain_key() {
         attestation,
         amount_plaintext(2),
         label("verified-input-frame"),
-        wrong_domain,
+        other_domain,
         nonce_key,
         value_label,
         output_acl_record,
         vec![AclSubjectEntry::use_only(user)],
     );
 
-    let result = context.process_instruction(&eval_ix);
-    assert_instruction_custom_error(&result, host::errors::ZamaHostError::AclDomainKeyMismatch);
+    assert_transaction_success(&context, &[eval_ix]);
 }
 
 /// (e) A verified input is authorized by its provider for the attested domain, so it propagates
@@ -6136,12 +6005,12 @@ fn mollusk_fhe_eval_verified_input_propagates_public_decrypt_to_durable_output()
     );
 }
 
-/// (f) Replay guard: a copied (public) attestation cannot be consumed by a signer other than the
-/// attested app authority. An attacker who lifts a victim's on-chain attestation and submits their
-/// own `fhe_eval` — claiming the derived output for themselves — is rejected because the output app
-/// account is forced to equal the attested `contract_address`, and the output app account must
-/// itself sign (here the attacker signs as themselves, not as the attested app). This is the
-/// non-replayable binding: only the attested app (signing directly or via CPI) can consume.
+/// (f) Replay guard (EVM `msg.sender` analog): a copied (public) attestation cannot be consumed by
+/// a caller other than the attested contract. An attacker who lifts a victim's on-chain attestation
+/// and submits their own `fhe_eval` — claiming the derived output for themselves — is rejected at
+/// input consumption because the attested `contract_address` must equal `compute_subject`, and the
+/// attacker cannot sign as the attested contract. Only the attested contract (signing directly or
+/// via CPI) can consume; derived outputs are otherwise free.
 #[test]
 fn mollusk_fhe_eval_verified_input_rejects_consumption_by_non_attested_app() {
     let program_id = host::id();
@@ -6189,5 +6058,60 @@ fn mollusk_fhe_eval_verified_input_rejects_consumption_by_non_attested_app() {
     assert_instruction_custom_error(
         &result,
         host::errors::ZamaHostError::InputBindContractMismatch,
+    );
+}
+
+/// (g) EVM parity with InputVerifier's `contractChainId == block.chainid`: a validly-signed
+/// attestation whose attested `contract_chain_id` is not the host chain id is rejected. The
+/// signature verifies (the digest is over the wrong chain id too), but the host asserts the chain id
+/// before trusting it.
+#[test]
+fn mollusk_fhe_eval_verified_input_rejects_wrong_contract_chain_id() {
+    let program_id = host::id();
+    let authority = Pubkey::new_unique();
+    let key = k256::ecdsa::SigningKey::from_bytes(&[0x44u8; 32].into()).unwrap();
+    let (host_config, host_config_account) =
+        host_config_account_with_verifier(authority, evm_address_of(&key));
+
+    let user = Pubkey::new_unique();
+    let value_label = label("verified-input-wrong-chain");
+    let nonce_key = host::acl_nonce_key(authority, authority, value_label);
+    let input_handle = input_handle_for_chain(0x01, 0, 5);
+    // Validly signed, but for a chain id that is not the host chain id.
+    let attestation = verified_input_attestation_with_chain_id(
+        &key,
+        input_handle,
+        user.to_bytes(),
+        authority.to_bytes(),
+        host::SOLANA_POC_CHAIN_ID + 1,
+    );
+
+    let output_acl_record = host::acl_record_address(nonce_key, 0).0;
+    let context = mollusk_eval_context(
+        authority,
+        vec![
+            (host_config, host_config_account),
+            (output_acl_record, system_account(0)),
+        ],
+    );
+
+    let eval_ix = verified_input_add_eval_ix(
+        program_id,
+        authority,
+        host_config,
+        attestation,
+        amount_plaintext(2),
+        label("verified-input-frame"),
+        authority,
+        nonce_key,
+        value_label,
+        output_acl_record,
+        vec![AclSubjectEntry::use_only(user)],
+    );
+
+    let result = context.process_instruction(&eval_ix);
+    assert_instruction_custom_error(
+        &result,
+        host::errors::ZamaHostError::AttestationChainIdMismatch,
     );
 }
