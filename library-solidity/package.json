@@ -35,7 +35,6 @@
   },
   "homepage": "https://github.com/zama-ai/fhevm",
   "devDependencies": {
-    "@zama-fhe/relayer-sdk": "^0.3.0-2",
     "@fhevm/host-contracts": "*",
     "@nomicfoundation/hardhat-chai-matchers": "^2.0.0",
     "@nomicfoundation/hardhat-ethers": "^3.0.4",
@@ -56,6 +55,7 @@
     "@types/node": "^20.14.9",
     "@typescript-eslint/eslint-plugin": "^5.44.0",
     "@typescript-eslint/parser": "^5.44.0",
+    "@zama-fhe/relayer-sdk": "^0.3.0-2",
     "bigint-buffer": "^1.1.5",
     "chai": "^4.3.7",
     "chalk": "^4.1.2",
@@ -79,6 +79,7 @@
     "solidity-coverage": "0.8.15",
     "sqlite3": "^5.1.7",
     "ts-generator": "^0.1.1",
+    "ts-node": "^10.9.2",
     "typechain": "^8.2.0",
     "typescript": "^5.1.6",
     "web3-validator": "^2.0.6"
