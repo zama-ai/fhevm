@@ -1,8 +1,9 @@
 use fhevm_engine_common::{
     db_keys::{
-        read_compressed_xof_keyset_by_sequence_number_with_fallback, CompressedXofKeysetEncoding,
-        DbKeyId,
+        read_compressed_xof_keyset_by_sequence_number_with_fallback,
+        read_sns_key_blob_by_sequence_number_pinned, CompressedXofKeysetEncoding, DbKeyId,
     },
+    key_material_policy::KeyMaterialKind,
     utils::safe_deserialize_sns_key,
 };
 use sqlx::PgPool;
@@ -77,40 +78,76 @@ async fn fetch_latest_key_id_gw(pool: &PgPool) -> Result<Option<(DbKeyId, i64)>,
     }
 }
 
+/// Cache entries are keyed by `(key_id_gw, material kind)` so both
+/// byte representations of the same key coexist during the RFC-029
+/// cutover window (long-tail legacy SnS + post-cutover work).
+pub(crate) type KeySetCache = Arc<RwLock<lru::LruCache<(DbKeyId, i16), KeySet>>>;
+
 pub(crate) async fn fetch_latest_keyset(
-    cache: &Arc<RwLock<lru::LruCache<DbKeyId, KeySet>>>,
+    cache: &KeySetCache,
     pool: &PgPool,
+) -> Result<Option<(DbKeyId, KeySet)>, ExecutionError> {
+    fetch_latest_keyset_inner(cache, pool, None).await
+}
+
+/// RFC-029: loads exactly the pinned material for the latest key. A
+/// missing pinned material surfaces as an error (retryable
+/// availability), never as the other kind.
+pub(crate) async fn fetch_latest_keyset_pinned(
+    cache: &KeySetCache,
+    pool: &PgPool,
+    kind: KeyMaterialKind,
+) -> Result<Option<(DbKeyId, KeySet)>, ExecutionError> {
+    fetch_latest_keyset_inner(cache, pool, Some(kind)).await
+}
+
+async fn fetch_latest_keyset_inner(
+    cache: &KeySetCache,
+    pool: &PgPool,
+    pinned: Option<KeyMaterialKind>,
 ) -> Result<Option<(DbKeyId, KeySet)>, ExecutionError> {
     let Some((key_id_gw, sequence_number)) = fetch_latest_key_id_gw(pool).await? else {
         return Ok(None);
     };
 
-    let keyset = fetch_keyset_by_id(cache, pool, &key_id_gw, sequence_number).await?;
+    let keyset = fetch_keyset_by_id(cache, pool, &key_id_gw, sequence_number, pinned).await?;
     Ok(keyset.map(|keys| (key_id_gw, keys)))
 }
 
 async fn fetch_keyset_by_id(
-    cache: &Arc<RwLock<lru::LruCache<DbKeyId, KeySet>>>,
+    cache: &KeySetCache,
     pool: &PgPool,
     key_id_gw: &DbKeyId,
     sequence_number: i64,
+    pinned: Option<KeyMaterialKind>,
 ) -> Result<Option<KeySet>, ExecutionError> {
+    // The default (no-cutover) read mirrors the SQL COALESCE
+    // preference: compressed first, legacy second.
+    let probe_kinds = match pinned {
+        Some(kind) => vec![kind.as_i16()],
+        None => vec![
+            KeyMaterialKind::CompressedXof.as_i16(),
+            KeyMaterialKind::Legacy.as_i16(),
+        ],
+    };
     {
         let mut cache = cache.write().await;
-        if let Some(keys) = cache.get(key_id_gw) {
-            if keys.sequence_number == sequence_number {
+        for kind in &probe_kinds {
+            if let Some(keys) = cache.get(&(key_id_gw.clone(), *kind)) {
+                if keys.sequence_number == sequence_number {
+                    info!(
+                        key_id_gw = hex::encode(key_id_gw),
+                        sequence_number, "Cache hit"
+                    );
+                    return Ok(Some(keys.clone()));
+                }
                 info!(
                     key_id_gw = hex::encode(key_id_gw),
-                    sequence_number, "Cache hit"
+                    cached_sequence_number = keys.sequence_number,
+                    latest_sequence_number = sequence_number,
+                    "Cache entry is stale"
                 );
-                return Ok(Some(keys.clone()));
             }
-            info!(
-                key_id_gw = hex::encode(key_id_gw),
-                cached_sequence_number = keys.sequence_number,
-                latest_sequence_number = sequence_number,
-                "Cache entry is stale"
-            );
         }
     }
 
@@ -119,12 +156,25 @@ async fn fetch_keyset_by_id(
         sequence_number, "Cache miss"
     );
 
-    let (blob, encoding) = read_compressed_xof_keyset_by_sequence_number_with_fallback(
-        pool,
-        sequence_number,
-        SKS_KEY_WITH_NOISE_SQUASHING_SIZE,
-    )
-    .await?;
+    let (blob, encoding) = match pinned {
+        Some(kind) => {
+            read_sns_key_blob_by_sequence_number_pinned(
+                pool,
+                sequence_number,
+                kind,
+                SKS_KEY_WITH_NOISE_SQUASHING_SIZE,
+            )
+            .await?
+        }
+        None => {
+            read_compressed_xof_keyset_by_sequence_number_with_fallback(
+                pool,
+                sequence_number,
+                SKS_KEY_WITH_NOISE_SQUASHING_SIZE,
+            )
+            .await?
+        }
+    };
     info!(
         bytes_len = blob.len(),
         ?encoding,
@@ -139,6 +189,11 @@ async fn fetch_keyset_by_id(
     // Optionally retrieve the ClientKey for testing purposes
     let client_key = fetch_client_key_by_sequence_number(pool, sequence_number).await?;
 
+    let loaded_kind = match encoding {
+        CompressedXofKeysetEncoding::CompressedXof => KeyMaterialKind::CompressedXof,
+        CompressedXofKeysetEncoding::Legacy => KeyMaterialKind::Legacy,
+    };
+
     let key_set = KeySet {
         key_id_gw: key_id_gw.clone(),
         sequence_number,
@@ -147,7 +202,7 @@ async fn fetch_keyset_by_id(
     };
 
     let mut cache = cache.write().await;
-    cache.put(key_id_gw.clone(), key_set.clone());
+    cache.put((key_id_gw.clone(), loaded_kind.as_i16()), key_set.clone());
     Ok(Some(key_set))
 }
 

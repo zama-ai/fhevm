@@ -537,6 +537,57 @@ pub async fn read_compressed_xof_keyset_by_sequence_number_with_fallback(
     Ok((bytes, CompressedXofKeysetEncoding::Legacy))
 }
 
+/// Loads the RFC-029 compressed-key cutover schedule (the migration is
+/// one-time: the contract enforces at most one schedule per key and
+/// only one key is live). If several rows ever exist, the first by key
+/// order is used — deterministic across coprocessors either way.
+pub async fn load_active_compressed_key_cutover(
+    conn: &mut PgConnection,
+) -> anyhow::Result<Option<crate::key_material_policy::CompressedKeyCutover>> {
+    let Some(key_id) =
+        sqlx::query_scalar!("SELECT key_id FROM compressed_key_cutover ORDER BY key_id LIMIT 1")
+            .fetch_optional(&mut *conn)
+            .await?
+    else {
+        return Ok(None);
+    };
+    load_compressed_key_cutover(conn, &key_id).await
+}
+
+/// Loads the RFC-029 compressed-key cutover schedule for `key_id`, if
+/// one has been ingested. `None` means no cutover is scheduled and all
+/// key loading keeps its pre-feature behavior. The schedule is
+/// immutable once present, so callers may cache a `Some` result.
+pub async fn load_compressed_key_cutover(
+    conn: &mut PgConnection,
+    key_id: &[u8],
+) -> anyhow::Result<Option<crate::key_material_policy::CompressedKeyCutover>> {
+    let Some(gateway_cutover_block) = sqlx::query_scalar!(
+        "SELECT gateway_cutover_block FROM compressed_key_cutover WHERE key_id = $1",
+        key_id
+    )
+    .fetch_optional(&mut *conn)
+    .await?
+    else {
+        return Ok(None);
+    };
+
+    let hosts = sqlx::query!(
+        "SELECT chain_id, cutover_block FROM compressed_key_cutover_hosts WHERE key_id = $1",
+        key_id
+    )
+    .fetch_all(&mut *conn)
+    .await?;
+
+    Ok(Some(crate::key_material_policy::CompressedKeyCutover {
+        host_cutover_blocks: hosts
+            .into_iter()
+            .map(|row| (row.chain_id as u64, row.cutover_block as u64))
+            .collect(),
+        gateway_cutover_block: gateway_cutover_block as u64,
+    }))
+}
+
 /// Reads the SnS server-key blob for `sequence_number` with the
 /// material kind pinned by the RFC-029 cutover policy (SnS tasks pin
 /// their source ciphertext's kind). `Legacy` reads the decompressed

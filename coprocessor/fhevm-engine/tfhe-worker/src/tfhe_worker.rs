@@ -1,7 +1,8 @@
 use crate::dependence_chain::{self};
 use crate::types::CoprocessorError;
 use fhevm_engine_common::database::{connect_pool_with_options, resolve_database_url_from_option};
-use fhevm_engine_common::db_keys::DbKeyCache;
+use fhevm_engine_common::db_keys::{load_active_compressed_key_cutover, DbKeyCache};
+use fhevm_engine_common::key_material_policy::{KeyMaterialKind, KeyMaterialUnavailable};
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::tfhe_ops::check_fhe_operand_types;
 use fhevm_engine_common::types::{FhevmError, Handle, SupportedFheCiphertexts};
@@ -162,7 +163,7 @@ async fn tfhe_worker_cycle(
         let mut trx = conn.begin().instrument(txn_span).await?;
 
         // Query for transactions to execute
-        let (mut transactions, earliest_computation, has_more_work) = query_for_work(
+        let (transactions, block_context, earliest_computation, has_more_work) = query_for_work(
             args,
             &health_check,
             &mut trx,
@@ -171,6 +172,44 @@ async fn tfhe_worker_cycle(
         )
         .instrument(loop_span.clone())
         .await?;
+
+        // RFC-029: under a scheduled cutover, partition the batch by
+        // the material kind selected from each transaction's block
+        // anchor, and execute the groups sequentially in a fixed order
+        // (legacy first). Without a cutover, everything runs on the
+        // default (pre-feature) key-loading path.
+        let cutover = load_active_compressed_key_cutover(trx.as_mut())
+            .await
+            .map_err(|e| CoprocessorError::Other(e.into()))?;
+        let mut groups: Vec<(Option<KeyMaterialKind>, Vec<ComponentNode>)> = match &cutover {
+            None => vec![(None, transactions)],
+            Some(cutover) => {
+                let mut legacy = vec![];
+                let mut compressed = vec![];
+                for node in transactions {
+                    let kind = match block_context.get(&node.transaction_id) {
+                        // A missing block number predates the feature
+                        // and thus any cutover: legacy by construction.
+                        Some((chain_id, block_number)) => {
+                            cutover.kind_for_host_block(*chain_id, block_number.unwrap_or(0))
+                        }
+                        None => KeyMaterialKind::Legacy,
+                    };
+                    match kind {
+                        KeyMaterialKind::Legacy => legacy.push(node),
+                        KeyMaterialKind::CompressedXof => compressed.push(node),
+                    }
+                }
+                let mut groups = vec![];
+                if !legacy.is_empty() {
+                    groups.push((Some(KeyMaterialKind::Legacy), legacy));
+                }
+                if !compressed.is_empty() {
+                    groups.push((Some(KeyMaterialKind::CompressedXof), compressed));
+                }
+                groups
+            }
+        };
         if has_more_work {
             // We've fetched work, so we'll poll again without waiting
             // for a notification after this cycle.
@@ -219,19 +258,27 @@ async fn tfhe_worker_cycle(
             }
         }
 
-        let mut tx_graph = build_transaction_graph_and_execute(
-            &mut transactions,
-            db_key_cache.clone(),
-            &health_check,
-            &mut trx,
-            &dcid_mngr,
-        )
-        .instrument(loop_span.clone())
-        .await?;
-        let has_progressed =
-            upload_transaction_graph_results(&mut tx_graph, &mut trx, &mut dcid_mngr)
-                .instrument(loop_span.clone())
-                .await?;
+        let mut has_progressed = false;
+        for (pinned_kind, mut group) in groups.drain(..) {
+            let mut tx_graph = build_transaction_graph_and_execute(
+                &mut group,
+                db_key_cache.clone(),
+                &health_check,
+                &mut trx,
+                &dcid_mngr,
+                pinned_kind,
+            )
+            .instrument(loop_span.clone())
+            .await?;
+            has_progressed |= upload_transaction_graph_results(
+                &mut tx_graph,
+                &mut trx,
+                &mut dcid_mngr,
+                pinned_kind,
+            )
+            .instrument(loop_span.clone())
+            .await?;
+        }
         if has_progressed {
             no_progress_cycles = 0;
         } else {
@@ -290,6 +337,10 @@ async fn query_ciphertexts<'a>(
     Ok(ciphertext_map)
 }
 
+/// The (host chain, block) anchor of each transaction in a batch,
+/// used to select the key material kind under a scheduled cutover.
+type BlockContextByTransaction = HashMap<Vec<u8>, (u64, Option<u64>)>;
+
 #[tracing::instrument(skip_all)]
 async fn query_for_work<'a>(
     args: &crate::daemon_cli::Args,
@@ -297,7 +348,15 @@ async fn query_for_work<'a>(
     trx: &mut sqlx::Transaction<'a, Postgres>,
     deps_chain_mngr: &mut dependence_chain::LockMngr,
     no_progress_cycles: &mut u32,
-) -> Result<(Vec<ComponentNode>, PrimitiveDateTime, bool), CoprocessorError> {
+) -> Result<
+    (
+        Vec<ComponentNode>,
+        BlockContextByTransaction,
+        PrimitiveDateTime,
+        bool,
+    ),
+    CoprocessorError,
+> {
     let s_dcid = tracing::info_span!(
         "query_dependence_chain",
         dependence_chain_id = tracing::field::Empty
@@ -327,7 +386,7 @@ async fn query_for_work<'a>(
         health_check.update_db_access();
         health_check.update_activity();
         info!(target: "tfhe_worker", "No dcid found to process");
-        return Ok((vec![], PrimitiveDateTime::MAX, false));
+        return Ok((vec![], HashMap::new(), PrimitiveDateTime::MAX, false));
     }
     s_dcid.record(
         "dependence_chain_id",
@@ -352,7 +411,9 @@ SELECT
   c.is_allowed, 
   c.dependence_chain_id,
   c.transaction_id,
-  c.schedule_order
+  c.schedule_order,
+  c.host_chain_id,
+  c.block_number
 FROM computations c
 WHERE c.transaction_id IN (
     SELECT DISTINCT
@@ -388,18 +449,31 @@ WHERE c.transaction_id IN (
             info!(target: "tfhe_worker", dcid = %hex::encode(dependence_chain_id), locking = ?locking_reason, "No work items found to process");
         }
         health_check.update_activity();
-        return Ok((vec![], PrimitiveDateTime::MAX, false));
+        return Ok((vec![], HashMap::new(), PrimitiveDateTime::MAX, false));
     }
     WORK_ITEMS_FOUND_COUNTER.inc_by(the_work.len() as u64);
     info!(target: "tfhe_worker", { count = the_work.len(), dcid = ?dependence_chain_id.as_ref().map(hex::encode),
 				    locking = ?locking_reason }, "Processing work items");
     let s_prep = tracing::info_span!("prepare_dataflow_graphs", work_items = the_work.len());
-    let (transactions, earliest_schedule_order) = async {
+    let (transactions, block_context, earliest_schedule_order) = async {
         let mut earliest_schedule_order = the_work.first().unwrap().schedule_order;
         // Partition work directly by transaction
         let work_by_transaction: HashMap<Handle, Vec<_>> = the_work
             .into_iter()
             .into_group_map_by(|k| k.transaction_id.clone());
+        // RFC-029: the (host chain, block) anchor of each transaction,
+        // used to select the key material kind under a scheduled
+        // cutover. All computations of a transaction share a block.
+        let block_context: BlockContextByTransaction = work_by_transaction
+            .iter()
+            .map(|(txid, work)| {
+                let w = work.first().expect("non-empty transaction group");
+                (
+                    txid.clone(),
+                    (w.host_chain_id as u64, w.block_number.map(|b| b as u64)),
+                )
+            })
+            .collect();
         // Traverse transactions and build transaction nodes
         let mut transactions: Vec<ComponentNode> = vec![];
         for (transaction_id, txwork) in work_by_transaction.iter() {
@@ -455,11 +529,11 @@ WHERE c.transaction_id IN (
                 .map_err(|e| CoprocessorError::Other(e.into()))?;
             transactions.append(&mut components);
         }
-        Ok::<_, CoprocessorError>((transactions, earliest_schedule_order))
+        Ok::<_, CoprocessorError>((transactions, block_context, earliest_schedule_order))
     }
     .instrument(s_prep)
     .await?;
-    Ok((transactions, earliest_schedule_order, true))
+    Ok((transactions, block_context, earliest_schedule_order, true))
 }
 
 #[tracing::instrument(name = "build_and_execute", skip_all)]
@@ -469,6 +543,7 @@ async fn build_transaction_graph_and_execute<'a>(
     health_check: &crate::health_check::HealthCheck,
     trx: &mut sqlx::Transaction<'a, Postgres>,
     dcid_mngr: &dependence_chain::LockMngr,
+    pinned_kind: Option<KeyMaterialKind>,
 ) -> Result<DFComponentGraph, CoprocessorError> {
     let mut tx_graph = DFComponentGraph::default();
     if let Err(e) = tx_graph.build(txs) {
@@ -511,9 +586,23 @@ async fn build_transaction_graph_and_execute<'a>(
     // Execute the DFG
     let s_compute = tracing::info_span!("compute_fhe_ops");
     async {
-        // Fetch the latest key from the database
-        let keys = match db_key_cache.fetch_latest(trx.as_mut()).await {
+        // Fetch the latest key from the database, pinned to the
+        // cutover-selected material when a cutover is scheduled.
+        let fetched = match pinned_kind {
+            Some(kind) => db_key_cache.fetch_latest_pinned(trx.as_mut(), kind).await,
+            None => db_key_cache.fetch_latest(trx.as_mut()).await,
+        };
+        let keys = match fetched {
             Ok(k) => k,
+            Err(err) if err.downcast_ref::<KeyMaterialUnavailable>().is_some() => {
+                // RFC-029: availability incident, never a consensus
+                // one. Fail the cycle so the worker retries shortly;
+                // it must never substitute the other material.
+                warn!(target: "tfhe_worker", { error = %err }, "selected key material unavailable; retrying");
+                return Err(CoprocessorError::MissingKeys {
+                    reason: err.to_string(),
+                });
+            }
             Err(err) => {
                 // Extract the sqlx error from anyhow so it classifies as a
                 // fatal connection (fail fast) instead of looking like missing keys.
@@ -557,6 +646,7 @@ async fn upload_transaction_graph_results<'a>(
     tx_graph: &mut DFComponentGraph,
     trx: &mut sqlx::Transaction<'a, Postgres>,
     deps_mngr: &mut dependence_chain::LockMngr,
+    pinned_kind: Option<KeyMaterialKind>,
 ) -> Result<bool, CoprocessorError> {
     // Get computation results
     let graph_results = tx_graph.get_results();
@@ -636,19 +726,36 @@ async fn upload_transaction_graph_results<'a>(
                 Vec<_>,
                 (Vec<_>, (Vec<_>, Vec<_>)),
             ) = cts_to_insert.into_iter().unzip();
+            // Outputs are labeled with the material kind that produced
+            // them (RFC-029); 0 = legacy on the pre-cutover path.
+            let key_material_kind = pinned_kind
+                .unwrap_or(KeyMaterialKind::Legacy)
+                .as_i16();
             let cts_inserted = query!(
                 "
-            INSERT INTO ciphertexts(handle, ciphertext, ciphertext_version, ciphertext_type)
-            SELECT * FROM UNNEST($1::BYTEA[], $2::BYTEA[], $3::SMALLINT[], $4::SMALLINT[])
+            INSERT INTO ciphertexts(handle, ciphertext, ciphertext_version, ciphertext_type, key_material_kind)
+            SELECT *, $5::SMALLINT FROM UNNEST($1::BYTEA[], $2::BYTEA[], $3::SMALLINT[], $4::SMALLINT[])
             ON CONFLICT (handle, ciphertext_version) DO NOTHING
             ",
-                &handles, &ciphertexts, &ciphertext_versions, &ciphertext_types
+                &handles, &ciphertexts, &ciphertext_versions, &ciphertext_types,
+                key_material_kind
             )
                 .execute(trx.as_mut())
                 .await.map_err(|err| {
                     error!(target: "tfhe_worker", { error = %err }, "error while inserting new ciphertexts");
                     err
                 })?.rows_affected();
+            // Pin the SnS tasks of these handles to the source
+            // ciphertext's material kind (RFC-029: the task row is the
+            // sns-worker's only selection authority).
+            let _ = query!(
+                "UPDATE pbs_computations SET key_material_kind = $2
+                 WHERE handle = ANY($1::BYTEA[]) AND is_completed = false",
+                &handles,
+                key_material_kind
+            )
+            .execute(trx.as_mut())
+            .await?;
             // Notify all workers that new ciphertext is inserted
             // For now, it's only the SnS workers that are listening for these events
             let _ = sqlx::query!("SELECT pg_notify($1, '')", EVENT_CIPHERTEXT_COMPUTED)

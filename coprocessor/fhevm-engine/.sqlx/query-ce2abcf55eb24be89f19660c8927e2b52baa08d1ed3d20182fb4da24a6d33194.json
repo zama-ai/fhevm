@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE pbs_computations SET key_material_kind = $2\n                 WHERE handle = ANY($1::BYTEA[]) AND is_completed = false",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "ByteaArray",
+        "Int2"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ce2abcf55eb24be89f19660c8927e2b52baa08d1ed3d20182fb4da24a6d33194"
+}

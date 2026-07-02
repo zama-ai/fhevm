@@ -1,5 +1,5 @@
 use crate::aws_upload::check_is_ready;
-use crate::keyset::fetch_latest_keyset;
+use crate::keyset::{fetch_latest_keyset, fetch_latest_keyset_pinned, KeySetCache};
 use crate::metrics::SNS_LATENCY_OP_HISTOGRAM;
 use crate::metrics::TASK_EXECUTE_FAILURE_COUNTER;
 use crate::metrics::TASK_EXECUTE_SUCCESS_COUNTER;
@@ -14,8 +14,10 @@ use crate::UploadJob;
 use crate::{Config, ExecutionError};
 use aws_sdk_s3::Client;
 use fhevm_engine_common::chain_id::ChainId;
+use fhevm_engine_common::db_keys::load_active_compressed_key_cutover;
 use fhevm_engine_common::db_keys::DbKeyId;
 use fhevm_engine_common::healthz_server::{HealthCheckService, HealthStatus, Version};
+use fhevm_engine_common::key_material_policy::KeyMaterialKind;
 use fhevm_engine_common::pg_pool::PostgresPoolManager;
 use fhevm_engine_common::pg_pool::ServiceError;
 use fhevm_engine_common::telemetry;
@@ -146,9 +148,9 @@ impl SwitchNSquashService {
     }
 
     pub async fn run(&self, pool_mngr: &PostgresPoolManager) -> Result<(), ServiceError> {
-        let keys_cache: Arc<RwLock<lru::LruCache<DbKeyId, KeySet>>> = Arc::new(RwLock::new(
-            lru::LruCache::new(NonZeroUsize::new(10).unwrap()),
-        ));
+        let keys_cache: KeySetCache = Arc::new(RwLock::new(lru::LruCache::new(
+            NonZeroUsize::new(10).unwrap(),
+        )));
 
         let op = |pool: Pool<Postgres>, token: CancellationToken| {
             let conf = self.conf.clone();
@@ -179,9 +181,13 @@ impl SwitchNSquashService {
 #[tracing::instrument(name = "fetch_keyset", skip_all)]
 async fn get_keyset(
     pool: PgPool,
-    keys_cache: Arc<RwLock<lru::LruCache<DbKeyId, KeySet>>>,
+    keys_cache: KeySetCache,
+    pinned: Option<KeyMaterialKind>,
 ) -> Result<Option<(DbKeyId, KeySet)>, ExecutionError> {
-    fetch_latest_keyset(&keys_cache, &pool).await
+    match pinned {
+        Some(kind) => fetch_latest_keyset_pinned(&keys_cache, &pool, kind).await,
+        None => fetch_latest_keyset(&keys_cache, &pool).await,
+    }
 }
 
 /// Executes the worker logic for the SnS task.
@@ -191,7 +197,7 @@ pub(crate) async fn run_loop(
     pool: PgPool,
     token: CancellationToken,
     last_active_at: Arc<RwLock<SystemTime>>,
-    keys_cache: Arc<RwLock<lru::LruCache<DbKeyId, KeySet>>>,
+    keys_cache: KeySetCache,
     events_tx: InternalEvents,
 ) -> Result<(), ExecutionError> {
     update_last_active(last_active_at.clone()).await;
@@ -212,8 +218,41 @@ pub(crate) async fn run_loop(
         // Continue looping until the service is cancelled or a critical error occurs
         update_last_active(last_active_at.clone()).await;
 
-        let latest_keys = get_keyset(pool.clone(), keys_cache.clone()).await?;
-        if let Some((key_id_gw, keyset)) = latest_keys {
+        // RFC-029: under a scheduled cutover, SnS tasks are processed
+        // in per-kind passes (legacy first), each pass loading exactly
+        // the pinned material of the tasks it selects. Without a
+        // cutover, a single pass keeps the pre-feature behavior.
+        let cutover = {
+            let mut conn = pool.acquire().await?;
+            load_active_compressed_key_cutover(&mut conn)
+                .await
+                .map_err(ExecutionError::from)?
+        };
+        let passes: Vec<Option<KeyMaterialKind>> = match cutover {
+            None => vec![None],
+            Some(_) => vec![
+                Some(KeyMaterialKind::Legacy),
+                Some(KeyMaterialKind::CompressedXof),
+            ],
+        };
+
+        let mut maybe_remaining = false;
+        let mut any_keys_available = false;
+        for pinned in passes {
+            let latest_keys = match get_keyset(pool.clone(), keys_cache.clone(), pinned).await {
+                Ok(keys) => keys,
+                Err(err) if pinned.is_some() => {
+                    // Availability incident, never a consensus one:
+                    // this pass's tasks stay queued and retry later.
+                    warn!(?pinned, error = %err, "Pinned key material unavailable; skipping pass");
+                    continue;
+                }
+                Err(err) => return Err(err),
+            };
+            let Some((key_id_gw, keyset)) = latest_keys else {
+                continue;
+            };
+            any_keys_available = true;
             let key_changed = keys
                 .as_ref()
                 .map(|(current_key_id_gw, _)| current_key_id_gw != &key_id_gw)
@@ -226,7 +265,26 @@ pub(crate) async fn run_loop(
                 }
             }
             keys = Some((key_id_gw, keyset));
-        } else {
+            let (_, keys) = keys.as_ref().expect("keyset was just stored");
+
+            let (pass_remaining, _tasks_processed) = fetch_and_execute_sns_tasks(
+                &pool,
+                &tx,
+                keys,
+                pinned.map(|k| k.as_i16()),
+                &conf,
+                &token,
+            )
+            .await
+            .inspect(|(_, tasks_processed)| {
+                TASK_EXECUTE_SUCCESS_COUNTER.inc_by(*tasks_processed as u64);
+            })
+            .inspect_err(|_| {
+                TASK_EXECUTE_FAILURE_COUNTER.inc();
+            })?;
+            maybe_remaining |= pass_remaining;
+        }
+        if !any_keys_available {
             warn!("No keys available, retrying in 5 seconds");
             tokio::time::sleep(Duration::from_secs(5)).await;
             if token.is_cancelled() {
@@ -234,19 +292,6 @@ pub(crate) async fn run_loop(
             }
             continue;
         }
-
-        // keys is guaranteed by the branch above; panic here if that invariant ever regresses.
-        let (_, keys) = keys.as_ref().expect("keyset should be available");
-
-        let (maybe_remaining, _tasks_processed) =
-            fetch_and_execute_sns_tasks(&pool, &tx, keys, &conf, &token)
-                .await
-                .inspect(|(_, tasks_processed)| {
-                    TASK_EXECUTE_SUCCESS_COUNTER.inc_by(*tasks_processed as u64);
-                })
-                .inspect_err(|_| {
-                    TASK_EXECUTE_FAILURE_COUNTER.inc();
-                })?;
         if maybe_remaining {
             if token.is_cancelled() {
                 return Ok(());
@@ -366,6 +411,7 @@ async fn fetch_and_execute_sns_tasks(
     pool: &PgPool,
     tx: &Sender<UploadJob>,
     keys: &KeySet,
+    kind_filter: Option<i16>,
     conf: &Config,
     token: &CancellationToken,
 ) -> Result<(bool, usize), ExecutionError> {
@@ -387,8 +433,14 @@ async fn fetch_and_execute_sns_tasks(
 
     let mut maybe_remaining = false;
     let tasks_processed;
-    if let Some(mut tasks) =
-        query_sns_tasks(trx, conf.db.batch_limit, order, &keys.key_id_gw).await?
+    if let Some(mut tasks) = query_sns_tasks(
+        trx,
+        conf.db.batch_limit,
+        order,
+        &keys.key_id_gw,
+        kind_filter,
+    )
+    .await?
     {
         maybe_remaining = conf.db.batch_limit as usize == tasks.len();
         tasks_processed = tasks.len();
@@ -454,7 +506,11 @@ pub async fn query_sns_tasks(
     limit: u32,
     order: Order,
     key_id_gw: &DbKeyId,
+    kind_filter: Option<i16>,
 ) -> Result<Option<Vec<HandleItem>>, ExecutionError> {
+    // RFC-029: under a scheduled cutover each pass selects only the
+    // tasks pinned to its material kind; the task row is the only
+    // selection authority (never re-derived from ciphertexts).
     let query = format!(
         "
         SELECT a.*, c.ciphertext
@@ -463,6 +519,7 @@ pub async fn query_sns_tasks(
         ON a.handle = c.handle
         WHERE c.ciphertext IS NOT NULL
         AND a.is_completed = FALSE
+        AND ($2::SMALLINT IS NULL OR a.key_material_kind = $2)
         ORDER BY a.created_at {}
         FOR UPDATE SKIP LOCKED
         LIMIT $1;
@@ -472,6 +529,7 @@ pub async fn query_sns_tasks(
 
     let records = sqlx::query(&query)
         .bind(limit as i64)
+        .bind(kind_filter)
         .fetch_all(db_txn.as_mut())
         .await?;
 

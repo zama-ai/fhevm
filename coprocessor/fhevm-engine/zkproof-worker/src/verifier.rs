@@ -1,9 +1,9 @@
 use alloy_primitives::Address;
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::crs::{Crs, CrsCache};
-use fhevm_engine_common::db_keys::DbKey;
-use fhevm_engine_common::db_keys::DbKeyCache;
+use fhevm_engine_common::db_keys::{load_compressed_key_cutover, DbKey, DbKeyCache};
 use fhevm_engine_common::host_chains::HostChainsCache;
+use fhevm_engine_common::key_material_policy::KeyMaterialUnavailable;
 use fhevm_engine_common::pg_pool::{PostgresPoolManager, ServiceError};
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::tfhe_ops::{current_ciphertext_version, extract_ct_list};
@@ -245,6 +245,7 @@ async fn execute_worker(
 
         execute_verify_proof_routine(
             &pool,
+            &db_key_cache,
             latest_key.clone(),
             latest_crs.clone(),
             host_chain_cache.as_ref(),
@@ -284,6 +285,7 @@ async fn execute_worker(
 /// Fetch, verify a single proof and then compute signature
 async fn execute_verify_proof_routine(
     pool: &PgPool,
+    db_key_cache: &DbKeyCache,
     db_key: Arc<DbKey>,
     crs: Arc<Crs>,
     host_chain_cache: &HostChainsCache,
@@ -306,7 +308,8 @@ async fn execute_verify_proof_routine(
     // rows.
     let mut txn: sqlx::Transaction<'_, sqlx::Postgres> = pool.begin().await?;
     if let Ok(row) = sqlx::query!(
-        "SELECT zk_proof_id, input, chain_id, contract_address, user_address, transaction_id
+        "SELECT zk_proof_id, input, chain_id, contract_address, user_address, transaction_id,
+                gateway_block_number
             FROM verify_proofs
             WHERE verified IS NULL
               AND chain_id = ANY($1::bigint[])
@@ -350,6 +353,40 @@ async fn execute_verify_proof_routine(
         let contract_address = row.contract_address;
         let user_address = row.user_address;
         let transaction_id: Option<Vec<u8>> = row.transaction_id;
+
+        // RFC-029: with a scheduled cutover, the material is pinned by
+        // the finalized Gateway block of the request. Rows without a
+        // block number predate the feature and thus any cutover; they
+        // select legacy material. Without a cutover, key loading keeps
+        // its pre-feature behavior.
+        let mut cutover_conn = pool.acquire().await?;
+        let db_key = match load_compressed_key_cutover(&mut cutover_conn, &db_key.key_id)
+            .await
+            .map_err(|err| ExecutionError::Other(err.into()))?
+        {
+            Some(cutover) => {
+                let gateway_block = row.gateway_block_number.unwrap_or(0).max(0) as u64;
+                let kind = cutover.kind_for_gateway_block(gateway_block);
+                let mut conn = pool.acquire().await?;
+                match db_key_cache.fetch_latest_pinned(&mut conn, kind).await {
+                    Ok(key) => Arc::new(key),
+                    Err(err) if err.downcast_ref::<KeyMaterialUnavailable>().is_some() => {
+                        // Availability incident, never a consensus one:
+                        // leave the request pending and retry later.
+                        warn!(
+                            request_id,
+                            ?kind,
+                            "Selected key material unavailable; leaving request pending"
+                        );
+                        txn.rollback().await?;
+                        tokio::time::sleep(Duration::from_secs(2)).await;
+                        return Ok(());
+                    }
+                    Err(err) => return Err(ExecutionError::Other(err.into())),
+                }
+            }
+            None => db_key,
+        };
 
         info!(
             message = "Process zk-verify request",
@@ -785,6 +822,18 @@ pub(crate) async fn insert_ciphertexts(
             i as i32,
             key_material_kind,
             gateway_block_number,
+        )
+        .execute(db_txn.as_mut())
+        .await?;
+
+        // Pin any SnS task of this handle to the material kind that
+        // produced the canonical input ciphertext (RFC-029: the task
+        // row is the sns-worker's only selection authority).
+        sqlx::query!(
+            "UPDATE pbs_computations SET key_material_kind = $2
+             WHERE handle = $1 AND is_completed = false",
+            &ct.handle,
+            key_material_kind,
         )
         .execute(db_txn.as_mut())
         .await?;

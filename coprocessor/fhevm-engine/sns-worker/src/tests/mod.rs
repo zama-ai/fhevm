@@ -268,7 +268,7 @@ async fn test_lifo_mode() {
 
     let mut trx = pool.begin().await.unwrap();
     if let Result::Ok(Some(tasks)) =
-        query_sns_tasks(&mut trx, BATCH_SIZE as u32, Order::Desc, &key_id_gw).await
+        query_sns_tasks(&mut trx, BATCH_SIZE as u32, Order::Desc, &key_id_gw, None).await
     {
         assert!(
             tasks.len() == BATCH_SIZE,
@@ -292,7 +292,7 @@ async fn test_lifo_mode() {
 
     let mut trx = pool.begin().await.unwrap();
     if let Result::Ok(Some(tasks)) =
-        query_sns_tasks(&mut trx, BATCH_SIZE as u32, Order::Asc, &key_id_gw).await
+        query_sns_tasks(&mut trx, BATCH_SIZE as u32, Order::Asc, &key_id_gw, None).await
     {
         assert!(
             tasks.len() == BATCH_SIZE,

@@ -444,8 +444,8 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
         // TODO: check if we can avoid the cast from u256 to i64
         sqlx::query!(
             "WITH ins AS (
-                INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, input, extra_data, transaction_id)
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, input, extra_data, transaction_id, gateway_block_number)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $9)
                 ON CONFLICT(zk_proof_id) DO NOTHING
             )
             SELECT pg_notify($8, '')",
@@ -456,7 +456,8 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
             Some(request.ciphertextWithZKProof.as_ref()),
             request.extraData.as_ref(),
             transaction_id,
-            self.conf.verify_proof_req_db_channel
+            self.conf.verify_proof_req_db_channel,
+            log.block_number.map(|n| n as i64),
         )
         .execute(db_pool)
         .await?;
