@@ -15,7 +15,6 @@ import {ConfidentialOAppCore} from "./ConfidentialOAppCore.sol";
  *          as raw `bytes32`, wrapping each to its known encrypted type (e.g.
  *          `euint64.wrap(dstHandleList[i])`). The local bridge has already granted transient ACL
  *          allowance for every `dstHandleList[i]` before this callback is invoked.
- * @dev     The trusted bridge is resolved from the ACL, so the app must have configured the ACL via `FHE.setCoprocessor(...)`.
  */
 abstract contract ConfidentialOAppReceiver is ConfidentialOAppCore, IDstApp {
     /// @notice The callback was not invoked by the trusted local `ConfidentialBridge`.

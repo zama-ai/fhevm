@@ -44,6 +44,7 @@ interface IConfidentialOAppCore {
  *          app configures each peer once and it applies in both directions.
  * @dev     App identifiers are `bytes32` so non-EVM peers (e.g. Solana program ids) fit; EVM
  *          peers are the address left-padded to `bytes32`.
+ * @dev     The trusted bridge is resolved from the ACL, so the app must have configured the ACL via `FHE.setCoprocessor(...)`.
  */
 abstract contract ConfidentialOAppCore is IConfidentialOAppCore, Ownable {
     /// @notice The trusted peer app per endpoint id (`bytes32(0)` if unset).

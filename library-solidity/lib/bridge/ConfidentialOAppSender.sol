@@ -23,7 +23,7 @@ abstract contract ConfidentialOAppSender is ConfidentialOAppCore {
      *         one-element list; the destination receiver references it at index 0. Forwards `msg.value` as the
      *         LayerZero native fee, so the calling entrypoint must be `payable` and funded with
      *         the amount returned by {_quoteSendSingleHandleToPeer}.
-     * @dev   Reverts {NoPeer} if no peer is configured for `dstEid`.
+     * @dev    Reverts {NoPeer} if no peer is configured for `dstEid`.
      * @param dstEid        Destination LayerZero endpoint id (must have a configured peer).
      * @param payload       Opaque app payload; decoded by the destination receiver, which references the handle by index.
      * @param handle        Raw `bytes32` handle to bridge; this contract must hold ACL allowance on it.
@@ -162,26 +162,21 @@ abstract contract ConfidentialOAppSender is ConfidentialOAppCore {
 
     /**
      * @notice Quotes the LayerZero native fee to bridge a single handle to the peer configured for `dstEid`.
-     * @dev    *Private* core behind the per-type {_quoteSendSingleHandleToPeer} overloads. Call before
-     *         {_sendSingleHandleToPeer} and forward the result as `msg.value`. Only the handle count affects
-     *         the fee, so `handle` may hold any value (including a null handle).
-     * @dev   Reverts {NoPeer} if no peer is configured for `dstEid`.
-     * @dev   See {FHE-quoteLZConfidentialBridge} for the race-condition caveat.
-     * @param dstEid        Destination LayerZero endpoint id (must have a configured peer).
-     * @param payload       Opaque app payload matching the intended send (only its length affects the fee).
-     * @param handle        Raw `bytes32` handle used only to size the quote (its value is irrelevant).
-     * @param lzComposeGas  Gas budget for the destination app callback `onConfidentialBridgeReceived` (lzCompose leg). The amount needed is
-     *                      app-specific, apps should size it for their `onConfidentialBridgeReceived` workload.
-     * @return nativeFee    The native fee to forward as `msg.value` to {_sendSingleHandleToPeer}.
+     * @dev    Call this function before calling {_sendSingleHandleToPeer} and forward the result as `msg.value`.
+     * @dev    Reverts {NoPeer} if no peer is configured for `dstEid`.
+     * @dev    See {FHE-quoteLZConfidentialBridge} for the race-condition caveat.
+     * @param  dstEid        Destination LayerZero endpoint id (must have a configured peer).
+     * @param  payload       Opaque app payload matching the intended send (only its length affects the fee).
+     * @param  lzComposeGas  Gas budget for the destination app callback `onConfidentialBridgeReceived` (lzCompose leg). The amount needed is
+     *                       app-specific, apps should size it for their `onConfidentialBridgeReceived` workload.
+     * @return nativeFee     The native fee to forward as `msg.value` to {_sendSingleHandleToPeer}.
      */
     function _quoteSendSingleHandleToPeer(
         uint32 dstEid,
         bytes memory payload,
-        bytes32 handle,
         uint64 lzComposeGas
-    ) private view returns (uint256 nativeFee) {
-        bytes32[] memory handles = new bytes32[](1);
-        handles[0] = handle;
+    ) internal view returns (uint256 nativeFee) {
+        bytes32[] memory handles = new bytes32[](1); // null handle works for the quote
         nativeFee = FHE.quoteLZConfidentialBridge(
             dstEid,
             address(this),
@@ -192,86 +187,6 @@ abstract contract ConfidentialOAppSender is ConfidentialOAppCore {
         );
     }
 
-    /// @notice Type-safe {ebool} overload of the single-handle {_quoteSendSingleHandleToPeer} private core. See it for the full semantics.
-    function _quoteSendSingleHandleToPeer(
-        uint32 dstEid,
-        bytes memory payload,
-        ebool handle,
-        uint64 lzComposeGas
-    ) internal view returns (uint256 nativeFee) {
-        nativeFee = _quoteSendSingleHandleToPeer(dstEid, payload, FHE.toBytes32(handle), lzComposeGas);
-    }
-
-    /// @notice Type-safe {euint8} overload of the single-handle {_quoteSendSingleHandleToPeer} private core. See it for the full semantics.
-    function _quoteSendSingleHandleToPeer(
-        uint32 dstEid,
-        bytes memory payload,
-        euint8 handle,
-        uint64 lzComposeGas
-    ) internal view returns (uint256 nativeFee) {
-        nativeFee = _quoteSendSingleHandleToPeer(dstEid, payload, FHE.toBytes32(handle), lzComposeGas);
-    }
-
-    /// @notice Type-safe {euint16} overload of the single-handle {_quoteSendSingleHandleToPeer} private core. See it for the full semantics.
-    function _quoteSendSingleHandleToPeer(
-        uint32 dstEid,
-        bytes memory payload,
-        euint16 handle,
-        uint64 lzComposeGas
-    ) internal view returns (uint256 nativeFee) {
-        nativeFee = _quoteSendSingleHandleToPeer(dstEid, payload, FHE.toBytes32(handle), lzComposeGas);
-    }
-
-    /// @notice Type-safe {euint32} overload of the single-handle {_quoteSendSingleHandleToPeer} private core. See it for the full semantics.
-    function _quoteSendSingleHandleToPeer(
-        uint32 dstEid,
-        bytes memory payload,
-        euint32 handle,
-        uint64 lzComposeGas
-    ) internal view returns (uint256 nativeFee) {
-        nativeFee = _quoteSendSingleHandleToPeer(dstEid, payload, FHE.toBytes32(handle), lzComposeGas);
-    }
-
-    /// @notice Type-safe {euint64} overload of the single-handle {_quoteSendSingleHandleToPeer} private core. See it for the full semantics.
-    function _quoteSendSingleHandleToPeer(
-        uint32 dstEid,
-        bytes memory payload,
-        euint64 handle,
-        uint64 lzComposeGas
-    ) internal view returns (uint256 nativeFee) {
-        nativeFee = _quoteSendSingleHandleToPeer(dstEid, payload, FHE.toBytes32(handle), lzComposeGas);
-    }
-
-    /// @notice Type-safe {euint128} overload of the single-handle {_quoteSendSingleHandleToPeer} private core. See it for the full semantics.
-    function _quoteSendSingleHandleToPeer(
-        uint32 dstEid,
-        bytes memory payload,
-        euint128 handle,
-        uint64 lzComposeGas
-    ) internal view returns (uint256 nativeFee) {
-        nativeFee = _quoteSendSingleHandleToPeer(dstEid, payload, FHE.toBytes32(handle), lzComposeGas);
-    }
-
-    /// @notice Type-safe {euint256} overload of the single-handle {_quoteSendSingleHandleToPeer} private core. See it for the full semantics.
-    function _quoteSendSingleHandleToPeer(
-        uint32 dstEid,
-        bytes memory payload,
-        euint256 handle,
-        uint64 lzComposeGas
-    ) internal view returns (uint256 nativeFee) {
-        nativeFee = _quoteSendSingleHandleToPeer(dstEid, payload, FHE.toBytes32(handle), lzComposeGas);
-    }
-
-    /// @notice Type-safe {eaddress} overload of the single-handle {_quoteSendSingleHandleToPeer} private core. See it for the full semantics.
-    function _quoteSendSingleHandleToPeer(
-        uint32 dstEid,
-        bytes memory payload,
-        eaddress handle,
-        uint64 lzComposeGas
-    ) internal view returns (uint256 nativeFee) {
-        nativeFee = _quoteSendSingleHandleToPeer(dstEid, payload, FHE.toBytes32(handle), lzComposeGas);
-    }
-
     /**
      * @notice Quotes the LayerZero native fee for a multi-handle send to the peer configured for `dstEid`.
      * @dev    Call before {_sendHandlesToPeer} and forward the result as `msg.value`. Null handles are used for
@@ -279,7 +194,7 @@ abstract contract ConfidentialOAppSender is ConfidentialOAppCore {
      *         equal to the size of the list you intend to send. Reverts {NoPeer} if no peer is configured for
      *         `dstEid`. See {FHE-quoteLZConfidentialBridge} for the race-condition caveat.
      * @param dstEid        Destination LayerZero endpoint id (must have a configured peer).
-     * @param payload       Opaque app payload matching the intended send.
+     * @param payload       Opaque app payload matching the intended send (only its length affects the fee).
      * @param numHandles    Number of handles the intended send will carry (must match for a correct estimate).
      * @param lzComposeGas  Gas budget for the destination app callback `onConfidentialBridgeReceived` (lzCompose leg). The amount needed is
      *                      app-specific, apps should size it for their `onConfidentialBridgeReceived` workload.

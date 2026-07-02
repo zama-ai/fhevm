@@ -76,7 +76,7 @@ contract ConfidentialOFT is Ownable2Step, IDstApp {
 
         euint64 actualAmount = _burn(msg.sender, amount);
 
-        // `_burn` granted persistent ACL allowance to this contract on `actualAmount`,
+        // `_burn` granted ACL allowance to this contract on `actualAmount`,
         // so the bridge's `isAllowed(actualAmount, srcApp=this)` check passes.
         bytes memory payload = abi.encode(recipient, actualAmount);
         bytes32[] memory handleList = new bytes32[](1);
