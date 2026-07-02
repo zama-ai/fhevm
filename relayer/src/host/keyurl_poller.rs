@@ -1,6 +1,6 @@
 //! Host-chain poller that keeps the `/v2/keyurl` response in sync with on-chain ProtocolConfig and KMSGeneration contracts' states.
 //!
-//! Polls the active key/CRS/context on an interval rather than subscribing to events: the
+//! Polls the active key/CRS/KMS context on an interval rather than subscribing to events: the
 //! activations are rare and unreliable to subscribe to, whereas periodic comparison is
 //! idempotent and self-healing. State lives in memory only (repopulated from chain on
 //! restart); on each change the new value is pushed into the [`tokio::sync::watch`] channel
