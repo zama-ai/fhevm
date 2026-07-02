@@ -222,4 +222,7 @@ pub enum ZamaHostError {
     /// A limit setter would violate the ordering invariant `max_hcu_per_tx >= max_hcu_depth_per_tx`.
     #[msg("HCU limits violate max_hcu_per_tx >= max_hcu_depth_per_tx")]
     HcuLimitOrderingInvalid,
+    /// The attested `contract_chain_id` does not match the host chain id (EVM `contractChainId == block.chainid`).
+    #[msg("attested contract chain id does not match the host chain id")]
+    AttestationChainIdMismatch,
 }

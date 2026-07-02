@@ -2962,6 +2962,11 @@
       "code": 6070,
       "name": "HcuLimitOrderingInvalid",
       "msg": "HCU limits violate max_hcu_per_tx >= max_hcu_depth_per_tx"
+    },
+    {
+      "code": 6071,
+      "name": "AttestationChainIdMismatch",
+      "msg": "attested contract chain id does not match the host chain id"
     }
   ],
   "types": [

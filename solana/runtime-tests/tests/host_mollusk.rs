@@ -5535,8 +5535,25 @@ fn verified_input_attestation(
     user_address: [u8; 32],
     contract_address: [u8; 32],
 ) -> CoprocessorInputAttestation {
+    verified_input_attestation_with_chain_id(
+        key,
+        input_handle,
+        user_address,
+        contract_address,
+        host::SOLANA_POC_CHAIN_ID,
+    )
+}
+
+/// Like [`verified_input_attestation`] but with an explicit attested `contract_chain_id`, so tests
+/// can forge a validly-signed attestation whose chain id does not match the host chain id.
+fn verified_input_attestation_with_chain_id(
+    key: &k256::ecdsa::SigningKey,
+    input_handle: [u8; 32],
+    user_address: [u8; 32],
+    contract_address: [u8; 32],
+    contract_chain_id: u64,
+) -> CoprocessorInputAttestation {
     let ct_handles = vec![input_handle];
-    let contract_chain_id = 12345u64;
     let extra_data = vec![0x00u8];
     let digest = host::eip712::typed_data_digest(
         &host::eip712::domain_separator(
@@ -6042,5 +6059,60 @@ fn mollusk_fhe_eval_verified_input_rejects_consumption_by_non_attested_app() {
     assert_instruction_custom_error(
         &result,
         host::errors::ZamaHostError::InputBindContractMismatch,
+    );
+}
+
+/// (g) EVM parity with InputVerifier's `contractChainId == block.chainid`: a validly-signed
+/// attestation whose attested `contract_chain_id` is not the host chain id is rejected. The
+/// signature verifies (the digest is over the wrong chain id too), but the host asserts the chain id
+/// before trusting it.
+#[test]
+fn mollusk_fhe_eval_verified_input_rejects_wrong_contract_chain_id() {
+    let program_id = host::id();
+    let authority = Pubkey::new_unique();
+    let key = k256::ecdsa::SigningKey::from_bytes(&[0x44u8; 32].into()).unwrap();
+    let (host_config, host_config_account) =
+        host_config_account_with_verifier(authority, evm_address_of(&key));
+
+    let user = Pubkey::new_unique();
+    let value_label = label("verified-input-wrong-chain");
+    let nonce_key = host::acl_nonce_key(authority, authority, value_label);
+    let input_handle = input_handle_for_chain(0x01, 0, 5);
+    // Validly signed, but for a chain id that is not the host chain id.
+    let attestation = verified_input_attestation_with_chain_id(
+        &key,
+        input_handle,
+        user.to_bytes(),
+        authority.to_bytes(),
+        host::SOLANA_POC_CHAIN_ID + 1,
+    );
+
+    let output_acl_record = host::acl_record_address(nonce_key, 0).0;
+    let context = mollusk_eval_context(
+        authority,
+        vec![
+            (host_config, host_config_account),
+            (output_acl_record, system_account(0)),
+        ],
+    );
+
+    let eval_ix = verified_input_add_eval_ix(
+        program_id,
+        authority,
+        host_config,
+        attestation,
+        amount_plaintext(2),
+        label("verified-input-frame"),
+        authority,
+        nonce_key,
+        value_label,
+        output_acl_record,
+        vec![AclSubjectEntry::use_only(user)],
+    );
+
+    let result = context.process_instruction(&eval_ix);
+    assert_instruction_custom_error(
+        &result,
+        host::errors::ZamaHostError::AttestationChainIdMismatch,
     );
 }
