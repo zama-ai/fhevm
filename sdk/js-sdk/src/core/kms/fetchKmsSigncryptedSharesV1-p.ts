@@ -72,7 +72,7 @@ export function assertPermitV1IncludesContractAddresses(
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// fetchKmsSigncryptedShares
+// fetchKmsSigncryptedSharesV1
 ////////////////////////////////////////////////////////////////////////////////
 
 export async function fetchKmsSigncryptedSharesV1(context: Context, parameters: Parameters): Promise<ReturnType> {
