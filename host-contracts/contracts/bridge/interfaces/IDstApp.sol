@@ -14,6 +14,12 @@ pragma solidity ^0.8.24;
 interface IDstApp {
     /**
      * @notice Receive a bridged payload from a source chain.
+     * @dev **SECURITY WARNING**: When `onConfidentialBridgeReceived` is called, the implementing app MUST verify that:
+     *      (1) `msg.sender` is the `ConfidentialBridge`, and
+     *      (2) `srcApp` on the `srcEid` source chain has been registered as a trusted peer by the app.
+     *      Failing to enforce both checks is a security vulnerability: any caller could otherwise invoke
+     *      this callback, or a malicious/unauthorized source app could deliver forged payloads and handles,
+     *      leading to spoofed cross-chain messages and app-level state corruption.
      * @param srcEid          The LayerZero endpoint id of the source chain.
      * @param srcApp          The source app that initiated the bridge on the source chain,
      *                        as bytes32. For EVM source chains this is a left-zero-padded
@@ -35,13 +41,6 @@ interface IDstApp {
      *      committed on-chain and the coprocessor's association is unaffected.
      *      Note that `lzCompose` can be retried. If the app determines the source app is
      *      untrusted, it should revert here to prevent app-level state changes.
-     *
-     * @dev SECURITY: When `onConfidentialBridgeReceived` is called, the implementing app MUST verify that:
-     *      (1) `msg.sender` is the `ConfidentialBridge`, and
-     *      (2) `srcApp` on the `srcEid` source chain has been registered as a trusted peer by the app.
-     *      Failing to enforce both checks is a security vulnerability: any caller could otherwise invoke
-     *      this callback, or a malicious/unauthorized source app could deliver forged payloads and handles,
-     *      leading to spoofed cross-chain messages and app-level state corruption.
      */
     function onConfidentialBridgeReceived(
         uint32 srcEid,

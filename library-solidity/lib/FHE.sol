@@ -10128,6 +10128,9 @@ library FHE {
 
     /**
      * @notice Requests `ConfidentialBridge` to bridge an explicit list of `bytes32` handles to a `bytes32` destination app (`bytes32` instead of `address` to also support non-EVM destinations).
+     * @dev    This function forwards `nativeFee` as msg.value, so the calling contract must be funded with at least that amount. If the developer wants the end
+     *         user to pay for the bridge request, the function calling `sendLZConfidentialBridge` should be marked `payable` so the user can attach the native
+     *         fee (e.g. `msg.value`) when invoking it.
      * @dev    The source app contract must already hold ACL allowance on every handle; `lzComposeGas` must be non-zero (the bridge reverts otherwise)
      *         and should be set to a reasonable value after estimation of the gas needed by the destination app callback `onConfidentialBridgeReceived`.
      * @dev    If `lzComposeGas` is set to a too low value, the message will not be automatically relayed by LayerZero and will be stuck in the `lzCompose` queue.
