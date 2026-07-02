@@ -21,6 +21,7 @@ interface HandlesSender {
     error InvalidInitialization();
     error InvalidOptionType(uint16 optionType);
     error LzTokenUnavailable();
+    error MsgValueMustEqualQuotedFee(uint256 provided, uint256 required);
     error NoPeer(uint32 eid);
     error NotEnoughNative(uint256 msgValue);
     error NotHostOwner(address sender);
@@ -789,6 +790,22 @@ interface HandlesSender {
     "type": "error",
     "name": "LzTokenUnavailable",
     "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "MsgValueMustEqualQuotedFee",
+    "inputs": [
+      {
+        "name": "provided",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "required",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
   },
   {
     "type": "error",
@@ -2033,6 +2050,102 @@ error LzTokenUnavailable();
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 ()
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `MsgValueMustEqualQuotedFee(uint256,uint256)` and selector `0xf2470340`.
+```solidity
+error MsgValueMustEqualQuotedFee(uint256 provided, uint256 required);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct MsgValueMustEqualQuotedFee {
+        #[allow(missing_docs)]
+        pub provided: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub required: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = (
+            alloy::sol_types::sol_data::Uint<256>,
+            alloy::sol_types::sol_data::Uint<256>,
+        );
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (
+            alloy::sol_types::private::primitives::aliases::U256,
+            alloy::sol_types::private::primitives::aliases::U256,
+        );
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<MsgValueMustEqualQuotedFee>
+        for UnderlyingRustTuple<'_> {
+            fn from(value: MsgValueMustEqualQuotedFee) -> Self {
+                (value.provided, value.required)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>>
+        for MsgValueMustEqualQuotedFee {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self {
+                    provided: tuple.0,
+                    required: tuple.1,
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for MsgValueMustEqualQuotedFee {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "MsgValueMustEqualQuotedFee(uint256,uint256)";
+            const SELECTOR: [u8; 4] = [242u8, 71u8, 3u8, 64u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.provided),
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.required),
+                )
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
@@ -8763,6 +8876,8 @@ function transferOwnership(address newOwner) external;
         #[allow(missing_docs)]
         LzTokenUnavailable(LzTokenUnavailable),
         #[allow(missing_docs)]
+        MsgValueMustEqualQuotedFee(MsgValueMustEqualQuotedFee),
+        #[allow(missing_docs)]
         NoPeer(NoPeer),
         #[allow(missing_docs)]
         NotEnoughNative(NotEnoughNative),
@@ -8814,6 +8929,7 @@ function transferOwnership(address newOwner) external;
             [194u8, 107u8, 235u8, 204u8],
             [212u8, 243u8, 198u8, 5u8],
             [215u8, 230u8, 188u8, 248u8],
+            [242u8, 71u8, 3u8, 64u8],
             [246u8, 255u8, 79u8, 183u8],
             [249u8, 46u8, 232u8, 169u8],
         ];
@@ -8822,7 +8938,7 @@ function transferOwnership(address newOwner) external;
     impl alloy_sol_types::SolInterface for HandlesSenderErrors {
         const NAME: &'static str = "HandlesSenderErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 20usize;
+        const COUNT: usize = 21usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -8847,6 +8963,9 @@ function transferOwnership(address newOwner) external;
                 }
                 Self::LzTokenUnavailable(_) => {
                     <LzTokenUnavailable as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::MsgValueMustEqualQuotedFee(_) => {
+                    <MsgValueMustEqualQuotedFee as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::NoPeer(_) => <NoPeer as alloy_sol_types::SolError>::SELECTOR,
                 Self::NotEnoughNative(_) => {
@@ -9092,6 +9211,17 @@ function transferOwnership(address newOwner) external;
                     NotInitializing
                 },
                 {
+                    fn MsgValueMustEqualQuotedFee(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<HandlesSenderErrors> {
+                        <MsgValueMustEqualQuotedFee as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
+                            .map(HandlesSenderErrors::MsgValueMustEqualQuotedFee)
+                    }
+                    MsgValueMustEqualQuotedFee
+                },
+                {
                     fn NoPeer(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HandlesSenderErrors> {
@@ -9330,6 +9460,17 @@ function transferOwnership(address newOwner) external;
                     NotInitializing
                 },
                 {
+                    fn MsgValueMustEqualQuotedFee(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<HandlesSenderErrors> {
+                        <MsgValueMustEqualQuotedFee as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(HandlesSenderErrors::MsgValueMustEqualQuotedFee)
+                    }
+                    MsgValueMustEqualQuotedFee
+                },
+                {
                     fn NoPeer(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HandlesSenderErrors> {
@@ -9400,6 +9541,11 @@ function transferOwnership(address newOwner) external;
                 }
                 Self::LzTokenUnavailable(inner) => {
                     <LzTokenUnavailable as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::MsgValueMustEqualQuotedFee(inner) => {
+                    <MsgValueMustEqualQuotedFee as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -9501,6 +9647,12 @@ function transferOwnership(address newOwner) external;
                 }
                 Self::LzTokenUnavailable(inner) => {
                     <LzTokenUnavailable as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::MsgValueMustEqualQuotedFee(inner) => {
+                    <MsgValueMustEqualQuotedFee as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )

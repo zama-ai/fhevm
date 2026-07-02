@@ -57,6 +57,15 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
     ///         mandatory.
     error ZeroLzComposeGas();
 
+    /// @notice Returned when `msg.value` does not exactly equal the LayerZero native fee
+    ///         quoted internally for the call. The fee is computed via {quote}; callers
+    ///         must send exactly that amount. Both underpayment and overpayment revert —
+    ///         there is no refund path. Replaces LayerZero's {NotEnoughNative}, whose name
+    ///         misleadingly implies only underpayment fails.
+    /// @param provided The `msg.value` supplied by the caller.
+    /// @param required The exact native fee required (the quoted `nativeFee`).
+    error MsgValueMustEqualQuotedFee(uint256 provided, uint256 required);
+
     /// @notice Maximum number of handles per bridge call.
     uint256 public constant MAX_HANDLES = 32;
 
@@ -149,9 +158,9 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
      *         halted alongside the ACL so no new cross-chain handle approvals are created
      *         while the host is stopped.
      * @dev    Reverts if any handle is not ACL-allowed for `msg.sender` on this chain.
-     *         The native fee is computed internally via `_quote`, so `msg.value` must
-     *         equal it exactly; otherwise the call reverts with `NotEnoughNative`. Use
-     *         {quote} to obtain the required `msg.value` beforehand.
+     * @dev    The native fee is computed internally via `_quote`, so `msg.value` must
+     *         equal it exactly; otherwise the call reverts with {MsgValueMustEqualQuotedFee(msg.value, requiredFee)}
+     *         i.e. there is no refund path. Use {quote} to obtain the required `msg.value` beforehand.
      */
     function send(
         uint32 dstEid,
@@ -239,9 +248,15 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
      *  @param dstApp        Destination app on the destination chain, as bytes32. See
      *                        {send} for the encoding convention.
      * @param payload        Opaque app-level payload; encoding is fully app-defined.
-     * @param handleList     Source-chain handles to bridge to `dstEid`. Order is
-     *                       preserved on the destination, so apps can index into
-     *                       `dstHandleList` by position.
+     * @param handleList     A `bytes32[]` used only to size the quote. It does NOT need to
+     *                       equal the list ultimately passed to {send}, and its entries do
+     *                       NOT need to be ACL-allowed to any account — it may be an array
+     *                       of arbitrary or null handles. It MUST, however, have the same
+     *                       length as the list that will be sent to obtain a correct fee
+     *                       estimate: the LayerZero SendUln302 message library quotes on the
+     *                       encoded message *size* only, not its contents, so the fee
+     *                       depends on the number of handles (and payload length) rather
+     *                       than the specific handle values.
      * @param lzComposeGas   Gas budget for the destination-side `lzCompose` (which runs
      *                       the destination app's `onConfidentialBridgeReceived`). Must be
      *                       non-zero: a 0 budget reverts with {ZeroLzComposeGas}. The amount needed is
@@ -364,6 +379,20 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
         bytes memory message = abi.encode(srcApp, dstApp, payload, handleList);
         MessagingFee memory fee = _quote(dstEid, message, finalOptions, false);
         receipt = _lzSend(dstEid, message, finalOptions, fee, payable(msg.sender));
+    }
+
+    /**
+     * @dev Overrides LayerZero's `_payNative`, preserving its exact-match semantics
+     *      (`msg.value` must equal the quoted `nativeFee`) but reverting with the clearer
+     *      {MsgValueMustEqualQuotedFee} instead of the original {NotEnoughNative}, whose name
+     *      misleadingly implies that only underpayment fails. Overpayment reverts too:
+     *      keeping the exact-match invariant means the endpoint's refund branch is never
+     *      reached, avoiding a failure mode where a caller that cannot receive native
+     *      would have its overpaid `send` revert deep inside the endpoint.
+     */
+    function _payNative(uint256 _nativeFee) internal virtual override returns (uint256 nativeFee) {
+        if (msg.value != _nativeFee) revert MsgValueMustEqualQuotedFee(msg.value, _nativeFee);
+        return _nativeFee;
     }
 
     /**

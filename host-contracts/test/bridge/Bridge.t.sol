@@ -380,6 +380,74 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
     }
 
     ////////////////////////////////////////////////////////////////////////////////
+    // Native-fee payment: msg.value must exactly equal the quoted nativeFee
+    ////////////////////////////////////////////////////////////////////////////////
+
+    /// @dev Sets up a single ACL-allowed handle and returns the handle list plus the
+    ///      native fee quoted for bridging it with `composeGas`.
+    function _sendableHandleAndFee(
+        uint64 composeGas
+    ) internal returns (bytes32[] memory handleList, uint256 nativeFee) {
+        bytes32 h = _makeHandle(0);
+        handleList = new bytes32[](1);
+        handleList[0] = h;
+        _allow(h, srcApp);
+
+        MessagingFee memory fee = srcBridge.quote(
+            DST_EID,
+            srcApp,
+            _addressToBytes32(address(dstApp)),
+            "",
+            handleList,
+            composeGas
+        );
+        nativeFee = fee.nativeFee;
+    }
+
+    /// @dev Paying exactly the quoted native fee succeeds and produces a LayerZero GUID.
+    function test_Send_SucceedsWhenMsgValueEqualsQuotedFee() public {
+        uint64 composeGas = 200_000;
+        (bytes32[] memory handleList, uint256 nativeFee) = _sendableHandleAndFee(composeGas);
+        assertGt(nativeFee, 0, "quote should return a positive native fee");
+
+        vm.prank(srcApp);
+        MessagingReceipt memory receipt = srcBridge.send{value: nativeFee}(
+            DST_EID,
+            _addressToBytes32(address(dstApp)),
+            "",
+            handleList,
+            composeGas
+        );
+        assertTrue(receipt.guid != bytes32(0), "exact-fee send should produce a LayerZero GUID");
+    }
+
+    /// @dev Overpaying by 1 wei reverts with {MsgValueMustEqualQuotedFee}, confirming the
+    ///      exact-match override rejects excess (no refund path) rather than forwarding it.
+    function test_Send_RevertsWhenMsgValueOverpaysQuotedFee() public {
+        uint64 composeGas = 200_000;
+        (bytes32[] memory handleList, uint256 nativeFee) = _sendableHandleAndFee(composeGas);
+
+        uint256 overpaid = nativeFee + 1;
+        vm.prank(srcApp);
+        vm.expectRevert(abi.encodeWithSelector(HandlesSender.MsgValueMustEqualQuotedFee.selector, overpaid, nativeFee));
+        srcBridge.send{value: overpaid}(DST_EID, _addressToBytes32(address(dstApp)), "", handleList, composeGas);
+    }
+
+    /// @dev Underpaying by 1 wei reverts with {MsgValueMustEqualQuotedFee}, carrying the
+    ///      supplied and required amounts.
+    function test_Send_RevertsWhenMsgValueUnderpaysQuotedFee() public {
+        uint64 composeGas = 200_000;
+        (bytes32[] memory handleList, uint256 nativeFee) = _sendableHandleAndFee(composeGas);
+
+        uint256 underpaid = nativeFee - 1;
+        vm.prank(srcApp);
+        vm.expectRevert(
+            abi.encodeWithSelector(HandlesSender.MsgValueMustEqualQuotedFee.selector, underpaid, nativeFee)
+        );
+        srcBridge.send{value: underpaid}(DST_EID, _addressToBytes32(address(dstApp)), "", handleList, composeGas);
+    }
+
+    ////////////////////////////////////////////////////////////////////////////////
     // quote: mirrors send's input validation, except the ACL allowance check
     ////////////////////////////////////////////////////////////////////////////////
 

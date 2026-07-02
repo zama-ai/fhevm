@@ -802,7 +802,7 @@ library FHE {
      *                      app-specific, apps should size it for their `onConfidentialBridgeReceived` workload.
      * @param nativeFee     LayerZero native fee to forward as msg.value to the `ConfidentialBridge` contract. This should be **exactly equal** to the value returned by {quoteLZConfidentialBridge} for
      *                      a message with similar parameters - query it with similar parameters **right before** calling this function (to avoid race conditions in quoting, see {quoteLZConfidentialBridge} NatSpec), 
-     *                      otherwise it would revert with `NotEnoughNative(msg.value)` even if using a greater value than the quoted one (i.e no refund of excess sent funds, but revert also in this case).
+     *                      otherwise it would revert with {MsgValueMustEqualQuotedFee(msg.value, requiredFee)} even if sending more value than the quote (i.e no refund in case of overpayment, but revert also in this case).
      * @return guid         The LayerZero message guid.
      * @return nonce        The LayerZero message nonce.
      */
