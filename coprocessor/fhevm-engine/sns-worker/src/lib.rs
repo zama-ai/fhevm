@@ -29,6 +29,7 @@ use fhevm_engine_common::{
     db_keys::DbKeyId,
     drift_revert,
     healthz_server::{self},
+    key_material_policy::MaterialVersion,
     metrics_server,
     pg_pool::{PostgresPoolManager, ServiceError},
     types::{CoproSigner, FhevmError, SignerType},
@@ -245,6 +246,9 @@ impl std::fmt::Display for Ciphertext128Format {
 pub struct HandleItem {
     pub host_chain_id: ChainId,
     pub key_id_gw: DbKeyId,
+    /// RFC-029 material version of the SOURCE ciphertext. SnS squashes under
+    /// this version's keyset (pinned, never recomputed from a block).
+    pub material_version: MaterialVersion,
     pub handle: Vec<u8>,
 
     /// Compressed 64-bit ciphertext

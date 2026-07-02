@@ -18,6 +18,7 @@ use ciphertext_attestation::{
 };
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::database::EVENT_CIPHERTEXTS_UPLOADED;
+use fhevm_engine_common::key_material_policy::MaterialVersion;
 use fhevm_engine_common::pg_pool::{is_fatal_connection_error, PostgresPoolManager, ServiceError};
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::types::CoproSigner;
@@ -1057,6 +1058,9 @@ async fn fetch_pending_uploads(
                 host_chain_id: ChainId::try_from(row.host_chain_id)
                     .map_err(|e| ExecutionError::ConversionError(e.into()))?,
                 key_id_gw: row.key_id_gw,
+                // Recovery re-uploads an already-computed ct128; the version is
+                // informational here (the squash is done), so LEGACY is fine.
+                material_version: MaterialVersion::LEGACY,
                 handle: handle.clone(),
                 ct64_compressed,
                 ct128: Arc::new(ct128),
@@ -1410,6 +1414,7 @@ mod tests {
 
         HandleItem {
             host_chain_id: ChainId::try_from(1_i64).unwrap(),
+            material_version: MaterialVersion::LEGACY,
             key_id_gw: vec![7; 32],
             handle: vec![2; 32],
             ct64_compressed: Arc::new(vec![1, 2, 3]),
@@ -1512,6 +1517,7 @@ mod tests {
         let ct64 = vec![1, 2, 3];
         let task = HandleItem {
             host_chain_id: ChainId::try_from(1_i64).unwrap(),
+            material_version: MaterialVersion::LEGACY,
             key_id_gw: vec![1],
             handle: vec![2; 32],
             ct64_compressed: Arc::new(ct64.clone()),
@@ -1547,6 +1553,7 @@ mod tests {
 
         let task = HandleItem {
             host_chain_id: ChainId::try_from(42_i64).unwrap(),
+            material_version: MaterialVersion::LEGACY,
             key_id_gw: vec![7; 32],
             handle: vec![0xDE, 0xAD, 0xBE, 0xEF],
             ct64_compressed: Arc::new(ct64.clone()),
@@ -1578,6 +1585,7 @@ mod tests {
         let real_ct128_digest = vec![0x11; 32];
         let task = HandleItem {
             host_chain_id: ChainId::try_from(42_i64).unwrap(),
+            material_version: MaterialVersion::LEGACY,
             key_id_gw: vec![7; 32],
             handle: vec![0xDE, 0xAD, 0xBE, 0xEF],
             ct64_compressed: Arc::new(ct64),
@@ -1604,6 +1612,7 @@ mod tests {
         let real_ct128_digest = vec![0x11; 32];
         let task = HandleItem {
             host_chain_id: ChainId::try_from(42_i64).unwrap(),
+            material_version: MaterialVersion::LEGACY,
             key_id_gw: vec![7; 32],
             handle: vec![0xDE, 0xAD, 0xBE, 0xEF],
             ct64_compressed: Arc::new(vec![0xAA, 0xBB, 0xCC]),
@@ -1674,6 +1683,7 @@ mod tests {
 
         let task = HandleItem {
             host_chain_id: ChainId::try_from(1_i64).unwrap(),
+            material_version: MaterialVersion::LEGACY,
             key_id_gw,
             handle: handle.clone(),
             ct64_compressed: Arc::new(ct64.clone()),

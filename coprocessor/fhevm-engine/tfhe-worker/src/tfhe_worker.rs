@@ -2,6 +2,10 @@ use crate::dependence_chain::{self};
 use crate::types::CoprocessorError;
 use fhevm_engine_common::database::{connect_pool_with_options, resolve_database_url_from_option};
 use fhevm_engine_common::db_keys::DbKeyCache;
+use fhevm_engine_common::key_material_policy::{
+    KeyMaterialSelection, KeySelection, LegacyKeyCutoverPolicy, MaterialVersion,
+    LEGACY_KEY_CUTOVER_CHANNEL,
+};
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::tfhe_ops::check_fhe_operand_types;
 use fhevm_engine_common::types::{FhevmError, Handle, SupportedFheCiphertexts};
@@ -103,6 +107,14 @@ async fn tfhe_worker_cycle(
         DbKeyCache::new(args.key_cache_size).map_err(|e| CoprocessorError::Other(e.into()))?;
     let mut listener = PgListener::connect_with(&pool).await?;
     listener.listen("work_available").await?;
+    listener.listen(LEGACY_KEY_CUTOVER_CHANNEL).await?;
+
+    // The legacy-key cutover is published exactly once and is immutable
+    // thereafter, so load it once and refresh only when the listener signals a
+    // change (or a reconnect may have missed it). The happy path never polls.
+    let mut legacy_key_cutover = LegacyKeyCutoverPolicy::load(&pool)
+        .await
+        .map_err(|e| CoprocessorError::Other(e.into()))?;
 
     let mut dcid_mngr = dependence_chain::LockMngr::new_with_conf(
         worker_id,
@@ -133,12 +145,23 @@ async fn tfhe_worker_cycle(
             tokio::select! {
                 notification = listener.try_recv() => {
                     match notification? {
+                        Some(n) if n.channel() == LEGACY_KEY_CUTOVER_CHANNEL => {
+                            // One-shot legacy-key cutover published/changed: reload once.
+                            legacy_key_cutover = LegacyKeyCutoverPolicy::load(&pool)
+                                .await
+                                .map_err(|e| CoprocessorError::Other(e.into()))?;
+                            info!(target: "tfhe_worker", "Reloaded legacy-key cutover policy");
+                        }
                         Some(_) => {
                             WORK_ITEMS_NOTIFICATIONS_COUNTER.inc();
                             info!(target: "tfhe_worker", "Received work_available notification from postgres");
                         }
                         None => {
-                            // sqlx already reconnected the LISTEN connection; poll for work.
+                            // sqlx already reconnected the LISTEN connection; it may have
+                            // missed a schedule NOTIFY, so refresh, then poll for work.
+                            legacy_key_cutover = LegacyKeyCutoverPolicy::load(&pool)
+                                .await
+                                .map_err(|e| CoprocessorError::Other(e.into()))?;
                             warn!(target: "tfhe_worker", "postgres LISTEN connection reset; reconnected");
                         }
                     }
@@ -161,13 +184,14 @@ async fn tfhe_worker_cycle(
         let txn_span = tracing::info_span!(parent: &loop_span, "begin_transaction");
         let mut trx = conn.begin().instrument(txn_span).await?;
 
-        // Query for transactions to execute
-        let (mut transactions, earliest_computation, has_more_work) = query_for_work(
+        // Query for transactions to execute, grouped by key selection.
+        let (groups, earliest_computation, has_more_work) = query_for_work(
             args,
             &health_check,
             &mut trx,
             &mut dcid_mngr,
             &mut no_progress_cycles,
+            &legacy_key_cutover,
         )
         .instrument(loop_span.clone())
         .await?;
@@ -219,19 +243,31 @@ async fn tfhe_worker_cycle(
             }
         }
 
-        let mut tx_graph = build_transaction_graph_and_execute(
-            &mut transactions,
-            db_key_cache.clone(),
-            &health_check,
-            &mut trx,
-            &dcid_mngr,
-        )
-        .instrument(loop_span.clone())
-        .await?;
-        let has_progressed =
-            upload_transaction_graph_results(&mut tx_graph, &mut trx, &mut dcid_mngr)
-                .instrument(loop_span.clone())
-                .await?;
+        // Execute legacy-overridden work before default compressed work. One
+        // key material per execution keeps the global server key correct
+        // across the cutover; unavailable default material halts rather than
+        // substituting legacy.
+        let mut has_progressed = false;
+        for mut group in groups {
+            let mut tx_graph = build_transaction_graph_and_execute(
+                &mut group.transactions,
+                group.key_read,
+                db_key_cache.clone(),
+                &health_check,
+                &mut trx,
+                &dcid_mngr,
+            )
+            .instrument(loop_span.clone())
+            .await?;
+            has_progressed |= upload_transaction_graph_results(
+                &mut tx_graph,
+                group.output_label,
+                &mut trx,
+                &mut dcid_mngr,
+            )
+            .instrument(loop_span.clone())
+            .await?;
+        }
         if has_progressed {
             no_progress_cycles = 0;
         } else {
@@ -290,6 +326,13 @@ async fn query_ciphertexts<'a>(
     Ok(ciphertext_map)
 }
 
+struct ExecutionGroup {
+    key_read: KeyMaterialSelection,
+    output_label: MaterialVersion,
+    transactions: Vec<ComponentNode>,
+}
+
+#[allow(clippy::type_complexity)]
 #[tracing::instrument(skip_all)]
 async fn query_for_work<'a>(
     args: &crate::daemon_cli::Args,
@@ -297,7 +340,8 @@ async fn query_for_work<'a>(
     trx: &mut sqlx::Transaction<'a, Postgres>,
     deps_chain_mngr: &mut dependence_chain::LockMngr,
     no_progress_cycles: &mut u32,
-) -> Result<(Vec<ComponentNode>, PrimitiveDateTime, bool), CoprocessorError> {
+    legacy_key_cutover: &LegacyKeyCutoverPolicy,
+) -> Result<(Vec<ExecutionGroup>, PrimitiveDateTime, bool), CoprocessorError> {
     let s_dcid = tracing::info_span!(
         "query_dependence_chain",
         dependence_chain_id = tracing::field::Empty
@@ -345,14 +389,16 @@ async fn query_for_work<'a>(
         "
 -- Acquire all computations from a transaction set
 SELECT
-  c.output_handle, 
-  c.dependencies, 
-  c.fhe_operation, 
+  c.output_handle,
+  c.dependencies,
+  c.fhe_operation,
   c.is_scalar,
-  c.is_allowed, 
+  c.is_allowed,
   c.dependence_chain_id,
   c.transaction_id,
-  c.schedule_order
+  c.schedule_order,
+  c.host_chain_id,
+  c.block_number
 FROM computations c
 WHERE c.transaction_id IN (
     SELECT DISTINCT
@@ -394,16 +440,29 @@ WHERE c.transaction_id IN (
     info!(target: "tfhe_worker", { count = the_work.len(), dcid = ?dependence_chain_id.as_ref().map(hex::encode),
 				    locking = ?locking_reason }, "Processing work items");
     let s_prep = tracing::info_span!("prepare_dataflow_graphs", work_items = the_work.len());
-    let (transactions, earliest_schedule_order) = async {
+    let (groups, earliest_schedule_order) = async {
         let mut earliest_schedule_order = the_work.first().unwrap().schedule_order;
         // Partition work directly by transaction
         let work_by_transaction: HashMap<Handle, Vec<_>> = the_work
             .into_iter()
             .into_group_map_by(|k| k.transaction_id.clone());
-        // Traverse transactions and build transaction nodes
-        let mut transactions: Vec<ComponentNode> = vec![];
+        // Group whole transactions by the worker key material they need. A
+        // transaction is one (host_chain_id, block_number), so every
+        // computation in it resolves to the same persisted material label; we
+        // never split a transaction across materials. Keep explicit buckets so
+        // legacy override work runs before default compressed work.
+        let mut force_legacy = Vec::new();
+        let mut default_material = Vec::new();
         for (transaction_id, txwork) in work_by_transaction.iter() {
             let transaction_id: &Vec<u8> = transaction_id;
+            // A transaction is one (host_chain_id, block_number), so every
+            // computation in it gets the same key selection.
+            let selection = txwork
+                .first()
+                .map(|w| {
+                    legacy_key_cutover.host_compute_selection(w.host_chain_id, w.block_number)
+                })
+                .unwrap_or_else(KeySelection::force_legacy);
             let mut ops = vec![];
             for w in txwork {
                 let fhe_op: SupportedFheOperations = match w.fhe_operation.try_into() {
@@ -453,18 +512,37 @@ WHERE c.transaction_id IN (
             }
             let (mut components, _) = build_component_nodes(ops, transaction_id)
                 .map_err(|e| CoprocessorError::Other(e.into()))?;
-            transactions.append(&mut components);
+            match selection.key_read {
+                KeyMaterialSelection::ForceLegacy => force_legacy.append(&mut components),
+                KeyMaterialSelection::Default => default_material.append(&mut components),
+            }
         }
-        Ok::<_, CoprocessorError>((transactions, earliest_schedule_order))
+        let mut groups = Vec::with_capacity(2);
+        if !force_legacy.is_empty() {
+            groups.push(ExecutionGroup {
+                key_read: KeyMaterialSelection::ForceLegacy,
+                output_label: MaterialVersion::LEGACY,
+                transactions: force_legacy,
+            });
+        }
+        if !default_material.is_empty() {
+            groups.push(ExecutionGroup {
+                key_read: KeyMaterialSelection::Default,
+                output_label: MaterialVersion::MIGRATED_V1,
+                transactions: default_material,
+            });
+        }
+        Ok::<_, CoprocessorError>((groups, earliest_schedule_order))
     }
     .instrument(s_prep)
     .await?;
-    Ok((transactions, earliest_schedule_order, true))
+    Ok((groups, earliest_schedule_order, true))
 }
 
 #[tracing::instrument(name = "build_and_execute", skip_all)]
 async fn build_transaction_graph_and_execute<'a>(
     txs: &mut Vec<ComponentNode>,
+    key_read: KeyMaterialSelection,
     db_key_cache: DbKeyCache,
     health_check: &crate::health_check::HealthCheck,
     trx: &mut sqlx::Transaction<'a, Postgres>,
@@ -511,10 +589,19 @@ async fn build_transaction_graph_and_execute<'a>(
     // Execute the DFG
     let s_compute = tracing::info_span!("compute_fhe_ops");
     async {
-        // Fetch the latest key from the database
-        let keys = match db_key_cache.fetch_latest(trx.as_mut()).await {
+        // Fetch the key material for this execution group.
+        let keys = match db_key_cache.fetch_key_for(key_read, trx.as_mut()).await {
             Ok(k) => k,
             Err(err) => {
+                if key_read == KeyMaterialSelection::Default {
+                    // Default compressed material is not ingested yet: halt-and-retry
+                    // this group (its computations stay unclaimed). NEVER fall
+                    // back to legacy -- a downgrade would diverge
+                    // from the rest of the fleet.
+                    warn!(target: "tfhe_worker", { error = %err },
+                        "default compressed key material unavailable; deferring work");
+                    return Ok::<(), CoprocessorError>(());
+                }
                 // Extract the sqlx error from anyhow so it classifies as a
                 // fatal connection (fail fast) instead of looking like missing keys.
                 let cerr: CoprocessorError = match err.downcast::<sqlx::Error>() {
@@ -555,6 +642,7 @@ async fn build_transaction_graph_and_execute<'a>(
 #[tracing::instrument(name = "upload_results", skip_all)]
 async fn upload_transaction_graph_results<'a>(
     tx_graph: &mut DFComponentGraph,
+    output_label: MaterialVersion,
     trx: &mut sqlx::Transaction<'a, Postgres>,
     deps_mngr: &mut dependence_chain::LockMngr,
 ) -> Result<bool, CoprocessorError> {
@@ -636,13 +724,15 @@ async fn upload_transaction_graph_results<'a>(
                 Vec<_>,
                 (Vec<_>, (Vec<_>, Vec<_>)),
             ) = cts_to_insert.into_iter().unzip();
+            // Stamp the output material label so the squash stage can pin to it.
+            let material_versions: Vec<i16> = vec![output_label.0; handles.len()];
             let cts_inserted = query!(
                 "
-            INSERT INTO ciphertexts(handle, ciphertext, ciphertext_version, ciphertext_type)
-            SELECT * FROM UNNEST($1::BYTEA[], $2::BYTEA[], $3::SMALLINT[], $4::SMALLINT[])
+            INSERT INTO ciphertexts(handle, ciphertext, ciphertext_version, ciphertext_type, material_version)
+            SELECT * FROM UNNEST($1::BYTEA[], $2::BYTEA[], $3::SMALLINT[], $4::SMALLINT[], $5::SMALLINT[])
             ON CONFLICT (handle, ciphertext_version) DO NOTHING
             ",
-                &handles, &ciphertexts, &ciphertext_versions, &ciphertext_types
+                &handles, &ciphertexts, &ciphertext_versions, &ciphertext_types, &material_versions
             )
                 .execute(trx.as_mut())
                 .await.map_err(|err| {
