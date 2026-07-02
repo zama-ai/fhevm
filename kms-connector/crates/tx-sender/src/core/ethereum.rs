@@ -83,6 +83,9 @@ where
         let tx_result = match response {
             KmsResponseKind::PrepKeygen(response) => self.send_prep_keygen_response(response).await,
             KmsResponseKind::Keygen(response) => self.send_keygen_response(response).await,
+            KmsResponseKind::CompressedKeyMigration(response) => {
+                self.send_compressed_key_materials(response).await
+            }
             KmsResponseKind::Crsgen(response) => self.send_crsgen_response(response).await,
             KmsResponseKind::NewKmsContext(response) => {
                 self.send_new_kms_context_response(response).await
@@ -125,6 +128,22 @@ where
         response: KeygenResponse,
     ) -> Result<TransactionReceipt, Error> {
         let call_builder = self.kms_generation_contract.keygenResponse(
+            response.key_id,
+            response.key_digests.into_iter().map(|k| k.into()).collect(),
+            response.signature.into(),
+        );
+
+        let call = call_builder.into_transaction_request();
+        self.send_tx_with_retry(call).await
+    }
+
+    /// RFC-029: migration keygen responses are routed to the typed migration endpoint;
+    /// `keygenResponse` would revert for a migration request ID (and vice versa).
+    pub async fn send_compressed_key_materials(
+        &self,
+        response: KeygenResponse,
+    ) -> Result<TransactionReceipt, Error> {
+        let call_builder = self.kms_generation_contract.addCompressedKeyMaterials(
             response.key_id,
             response.key_digests.into_iter().map(|k| k.into()).collect(),
             response.signature.into(),

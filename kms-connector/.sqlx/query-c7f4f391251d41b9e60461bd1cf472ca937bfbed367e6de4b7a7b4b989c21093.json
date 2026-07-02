@@ -1,0 +1,51 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO keygen_responses(key_id, key_digests, signature, created_at, otlp_context, is_migration)\n            VALUES ($1, $2, $3, $4, $5,\n                EXISTS(SELECT 1 FROM keygen_requests WHERE key_id = $1 AND migrated_key_id IS NOT NULL)\n            ) ON CONFLICT DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        {
+          "Custom": {
+            "name": "key_digest[]",
+            "kind": {
+              "Array": {
+                "Custom": {
+                  "name": "key_digest",
+                  "kind": {
+                    "Composite": [
+                      [
+                        "key_type",
+                        {
+                          "Custom": {
+                            "name": "key_type",
+                            "kind": {
+                              "Enum": [
+                                "Server",
+                                "Public"
+                              ]
+                            }
+                          }
+                        }
+                      ],
+                      [
+                        "digest",
+                        "Bytea"
+                      ]
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "Bytea",
+        "Timestamptz",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c7f4f391251d41b9e60461bd1cf472ca937bfbed367e6de4b7a7b4b989c21093"
+}

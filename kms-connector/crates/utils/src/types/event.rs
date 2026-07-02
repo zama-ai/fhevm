@@ -17,6 +17,7 @@ use fhevm_gateway_bindings::decryption::{
 };
 use fhevm_host_bindings::{
     kms_generation::KMSGeneration::{
+        CompressedKeyMigrationKeygenRequest, CompressedKeyMigrationPrepKeygenRequest,
         CrsgenRequest, KMSGenerationEvents, KeygenRequest, PrepKeygenRequest,
     },
     protocol_config::{
@@ -102,6 +103,9 @@ impl ProtocolEvent {
             ProtocolEventKind::Keygen(e) => {
                 update_keygen_status(db, e.keyId, status, already_sent).await
             }
+            ProtocolEventKind::CompressedKeyMigrationKeygen(e) => {
+                update_keygen_status(db, e.migrationRequestId, status, already_sent).await
+            }
             ProtocolEventKind::Crsgen(e) => {
                 update_crsgen_status(db, e.crsId, status, already_sent).await
             }
@@ -131,6 +135,9 @@ pub enum ProtocolEventKind {
     UserDecryptionV2(UserDecryptionRequestV2),
     PrepKeygen(PrepKeygenRequest),
     Keygen(KeygenRequest),
+    /// RFC-029 one-time compressed-key migration keygen for an existing key. Rides the keygen
+    /// pipeline (same table, same notifications) but is processed as a keygen-from-existing.
+    CompressedKeyMigrationKeygen(CompressedKeyMigrationKeygenRequest),
     Crsgen(CrsgenRequest),
     NewKmsContext(NewKmsContext),
     NewKmsEpoch(NewKmsEpoch),
@@ -150,6 +157,10 @@ impl std::fmt::Debug for ProtocolEventKind {
                 .finish(),
             Self::PrepKeygen(e) => f.debug_tuple("PrepKeygen").field(e).finish(),
             Self::Keygen(e) => f.debug_tuple("Keygen").field(e).finish(),
+            Self::CompressedKeyMigrationKeygen(e) => f
+                .debug_tuple("CompressedKeyMigrationKeygen")
+                .field(e)
+                .finish(),
             Self::Crsgen(e) => f.debug_tuple("Crsgen").field(e).finish(),
             Self::NewKmsContext(e) => f.debug_tuple("NewKmsContext").field(e).finish(),
             Self::NewKmsEpoch(e) => f
@@ -177,6 +188,9 @@ impl PartialEq for ProtocolEventKind {
             }
             (Self::PrepKeygen(a), Self::PrepKeygen(b)) => a == b,
             (Self::Keygen(a), Self::Keygen(b)) => a == b,
+            (Self::CompressedKeyMigrationKeygen(a), Self::CompressedKeyMigrationKeygen(b)) => {
+                a == b
+            }
             (Self::Crsgen(a), Self::Crsgen(b)) => a == b,
             (Self::NewKmsContext(a), Self::NewKmsContext(b)) => a == b,
             (Self::NewKmsEpoch(a), Self::NewKmsEpoch(b)) => {
@@ -331,11 +345,24 @@ pub fn from_prep_keygen_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
 }
 
 pub fn from_keygen_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
-    let kind = ProtocolEventKind::Keygen(KeygenRequest {
-        prepKeygenId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("prep_keygen_id")?),
-        keyId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("key_id")?),
-        extraData: row.try_get::<Vec<u8>, _>("extra_data")?.into(),
-    });
+    let prep_keygen_id = U256::from_le_bytes(row.try_get::<[u8; 32], _>("prep_keygen_id")?);
+    let key_id = U256::from_le_bytes(row.try_get::<[u8; 32], _>("key_id")?);
+    let extra_data: alloy::primitives::Bytes = row.try_get::<Vec<u8>, _>("extra_data")?.into();
+    let kind = match row.try_get::<Option<[u8; 32]>, _>("migrated_key_id")? {
+        Some(migrated_key_id) => {
+            ProtocolEventKind::CompressedKeyMigrationKeygen(CompressedKeyMigrationKeygenRequest {
+                prepKeygenId: prep_keygen_id,
+                migrationRequestId: key_id,
+                keyId: U256::from_le_bytes(migrated_key_id),
+                extraData: extra_data,
+            })
+        }
+        None => ProtocolEventKind::Keygen(KeygenRequest {
+            prepKeygenId: prep_keygen_id,
+            keyId: key_id,
+            extraData: extra_data,
+        }),
+    };
     Ok(ProtocolEvent {
         kind,
         tx_hash: row
@@ -568,6 +595,13 @@ impl Display for ProtocolEventKind {
             ProtocolEventKind::Keygen(e) => {
                 write!(f, "KeygenRequest #{:#066x}", e.keyId)
             }
+            ProtocolEventKind::CompressedKeyMigrationKeygen(e) => {
+                write!(
+                    f,
+                    "CompressedKeyMigrationKeygenRequest #{:#066x}",
+                    e.migrationRequestId
+                )
+            }
             ProtocolEventKind::Crsgen(e) => {
                 write!(f, "CrsgenRequest #{:#066x}", e.crsId)
             }
@@ -611,6 +645,24 @@ impl From<KeygenRequest> for ProtocolEventKind {
     }
 }
 
+impl From<CompressedKeyMigrationKeygenRequest> for ProtocolEventKind {
+    fn from(value: CompressedKeyMigrationKeygenRequest) -> Self {
+        Self::CompressedKeyMigrationKeygen(value)
+    }
+}
+
+/// The migration preprocessing round is identical to the normal one for the connector and the
+/// KMS: only the on-chain event is typed. Fold it into the existing prep pipeline.
+impl From<CompressedKeyMigrationPrepKeygenRequest> for ProtocolEventKind {
+    fn from(value: CompressedKeyMigrationPrepKeygenRequest) -> Self {
+        Self::PrepKeygen(PrepKeygenRequest {
+            prepKeygenId: value.prepKeygenId,
+            paramsType: value.paramsType,
+            extraData: value.extraData,
+        })
+    }
+}
+
 impl From<CrsgenRequest> for ProtocolEventKind {
     fn from(value: CrsgenRequest) -> Self {
         Self::Crsgen(value)
@@ -651,6 +703,8 @@ impl TryFrom<KMSGenerationEvents> for ProtocolEventKind {
         match value {
             KMSGenerationEvents::PrepKeygenRequest(e) => Ok(e.into()),
             KMSGenerationEvents::KeygenRequest(e) => Ok(e.into()),
+            KMSGenerationEvents::CompressedKeyMigrationPrepKeygenRequest(e) => Ok(e.into()),
+            KMSGenerationEvents::CompressedKeyMigrationKeygenRequest(e) => Ok(e.into()),
             KMSGenerationEvents::CrsgenRequest(e) => Ok(e.into()),
             _ => Err(anyhow!("Unexpected KMSGeneration event")),
         }

@@ -15,7 +15,9 @@ use fhevm_gateway_bindings::decryption::Decryption::{
     UserDecryptionRequest_1 as UserDecryptionRequestV2,
 };
 use fhevm_host_bindings::{
-    kms_generation::KMSGeneration::{CrsgenRequest, KeygenRequest, PrepKeygenRequest},
+    kms_generation::KMSGeneration::{
+        CompressedKeyMigrationKeygenRequest, CrsgenRequest, KeygenRequest, PrepKeygenRequest,
+    },
     protocol_config::ProtocolConfig::{NewKmsContext, NewKmsEpoch},
 };
 use sqlx::{
@@ -85,6 +87,12 @@ async fn publish_event_inner<'e>(
         }
         ProtocolEventKind::Keygen(e) => {
             publish_keygen_request(executor, e, tx_hash, created_at, otlp_ctx).await
+        }
+        ProtocolEventKind::CompressedKeyMigrationKeygen(e) => {
+            publish_compressed_key_migration_keygen_request(
+                executor, e, tx_hash, created_at, otlp_ctx,
+            )
+            .await
         }
         ProtocolEventKind::Crsgen(e) => {
             let params_type: ParamsTypeDb = e.paramsType.try_into()?;
@@ -282,6 +290,33 @@ async fn publish_keygen_request<'e>(
         "INSERT INTO keygen_requests(prep_keygen_id, key_id, extra_data, tx_hash, created_at, otlp_context)
             VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING",
         request.prepKeygenId.as_le_slice(),
+        request.keyId.as_le_slice(),
+        request.extraData.as_ref(),
+        tx_hash.map(|h| h.to_vec()),
+        created_at,
+        bc2wrap::serialize(&otlp_ctx)?,
+    )
+    .execute(executor)
+    .await
+    .map_err(anyhow::Error::from)
+}
+
+/// RFC-029: the migration keygen rides the keygen_requests table, discriminated by
+/// `migrated_key_id` (the existing key being re-materialized).
+async fn publish_compressed_key_migration_keygen_request<'e>(
+    executor: impl PgExecutor<'e>,
+    request: CompressedKeyMigrationKeygenRequest,
+    tx_hash: Option<FixedBytes<32>>,
+    created_at: DateTime<Utc>,
+    otlp_ctx: PropagationContext,
+) -> anyhow::Result<PgQueryResult> {
+    sqlx::query!(
+        "INSERT INTO keygen_requests(
+            prep_keygen_id, key_id, migrated_key_id, extra_data, tx_hash, created_at, otlp_context
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING",
+        request.prepKeygenId.as_le_slice(),
+        request.migrationRequestId.as_le_slice(),
         request.keyId.as_le_slice(),
         request.extraData.as_ref(),
         tx_hash.map(|h| h.to_vec()),

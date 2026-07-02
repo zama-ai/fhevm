@@ -19,6 +19,7 @@ use tracing::info;
 #[case::user_decryption_v2(TestEventType::UserDecryptionV2)]
 #[case::prep_keygen(TestEventType::PrepKeygen)]
 #[case::keygen(TestEventType::Keygen)]
+#[case::compressed_key_migration(TestEventType::CompressedKeyMigrationKeygen)]
 #[case::crsgen(TestEventType::Crsgen)]
 #[case::new_kms_context(TestEventType::NewKmsContext)]
 #[case::new_kms_epoch(TestEventType::NewKmsEpoch)]

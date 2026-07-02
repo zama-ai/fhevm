@@ -41,6 +41,9 @@ pub enum KmsResponseKind {
     UserDecryption(UserDecryptionResponse),
     PrepKeygen(PrepKeygenResponse),
     Keygen(KeygenResponse),
+    /// RFC-029: response to a compressed-key migration keygen. Same row shape as a keygen
+    /// response, but routed to `addCompressedKeyMaterials` on-chain.
+    CompressedKeyMigration(KeygenResponse),
     Crsgen(CrsgenResponse),
     NewKmsContext(NewKmsContextResponse),
     EpochResult(EpochResultResponse),
@@ -145,11 +148,13 @@ impl KmsResponse {
                 status as OperationStatus,
                 r.prep_keygen_id.as_le_slice()
             ),
-            KmsResponseKind::Keygen(r) => sqlx::query!(
-                "UPDATE keygen_responses SET status = $1 WHERE key_id = $2",
-                status as OperationStatus,
-                r.key_id.as_le_slice()
-            ),
+            KmsResponseKind::Keygen(r) | KmsResponseKind::CompressedKeyMigration(r) => {
+                sqlx::query!(
+                    "UPDATE keygen_responses SET status = $1 WHERE key_id = $2",
+                    status as OperationStatus,
+                    r.key_id.as_le_slice()
+                )
+            }
             KmsResponseKind::Crsgen(r) => sqlx::query!(
                 "UPDATE crsgen_responses SET status = $1 WHERE crs_id = $2",
                 status as OperationStatus,
@@ -308,13 +313,19 @@ pub fn from_prep_keygen_row(row: &PgRow) -> anyhow::Result<KmsResponse> {
 }
 
 pub fn from_keygen_row(row: &PgRow) -> anyhow::Result<KmsResponse> {
+    let response = KeygenResponse {
+        key_id: U256::from_le_bytes(row.try_get::<[u8; 32], _>("key_id")?),
+        key_digests: row.try_get("key_digests")?,
+        signature: row.try_get("signature")?,
+    };
+    let kind = if row.try_get::<bool, _>("is_migration")? {
+        KmsResponseKind::CompressedKeyMigration(response)
+    } else {
+        KmsResponseKind::Keygen(response)
+    };
     Ok(KmsResponse {
         otlp_context: bc2wrap::deserialize_slice(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
-        kind: KmsResponseKind::Keygen(KeygenResponse {
-            key_id: U256::from_le_bytes(row.try_get::<[u8; 32], _>("key_id")?),
-            key_digests: row.try_get("key_digests")?,
-            signature: row.try_get("signature")?,
-        }),
+        kind,
         created_at: row.try_get("created_at")?,
     })
 }
@@ -498,6 +509,9 @@ impl Display for KmsResponseKind {
             KmsResponseKind::Keygen(r) => {
                 write!(f, "KeygenResponse #{}", r.key_id)
             }
+            KmsResponseKind::CompressedKeyMigration(r) => {
+                write!(f, "CompressedKeyMaterialResponse #{}", r.key_id)
+            }
             KmsResponseKind::Crsgen(r) => {
                 write!(f, "CrsgenResponse #{}", r.crs_id)
             }
@@ -521,6 +535,7 @@ impl KmsResponseKind {
             KmsResponseKind::UserDecryption(_) => USER_DECRYPTION_RESPONSE_STR,
             KmsResponseKind::PrepKeygen(_) => PREP_KEYGEN_RESPONSE_STR,
             KmsResponseKind::Keygen(_) => KEYGEN_RESPONSE_STR,
+            KmsResponseKind::CompressedKeyMigration(_) => COMPRESSED_KEY_MIGRATION_RESPONSE_STR,
             KmsResponseKind::Crsgen(_) => CRSGEN_RESPONSE_STR,
             KmsResponseKind::NewKmsContext(_) => NEW_KMS_CONTEXT_RESPONSE_STR,
             KmsResponseKind::EpochResult(_) => EPOCH_RESULT_RESPONSE_STR,
@@ -532,6 +547,7 @@ pub const PUBLIC_DECRYPTION_RESPONSE_STR: &str = "public_decryption_response";
 pub const USER_DECRYPTION_RESPONSE_STR: &str = "user_decryption_response";
 pub const PREP_KEYGEN_RESPONSE_STR: &str = "prep_keygen_response";
 pub const KEYGEN_RESPONSE_STR: &str = "keygen_response";
+pub const COMPRESSED_KEY_MIGRATION_RESPONSE_STR: &str = "compressed_key_migration_response";
 pub const CRSGEN_RESPONSE_STR: &str = "crsgen_response";
 pub const NEW_KMS_CONTEXT_RESPONSE_STR: &str = "new_kms_context_response";
 pub const EPOCH_RESULT_RESPONSE_STR: &str = "epoch_result_response";

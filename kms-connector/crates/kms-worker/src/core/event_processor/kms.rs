@@ -5,11 +5,12 @@ use crate::core::{
 use alloy::primitives::U256;
 use connector_utils::types::{KmsGrpcRequest, extra_data::parse_extra_data, u256_to_request_id};
 use fhevm_host_bindings::kms_generation::KMSGeneration::{
-    CrsgenRequest, KeygenRequest, PrepKeygenRequest,
+    CompressedKeyMigrationKeygenRequest, CrsgenRequest, KeygenRequest, PrepKeygenRequest,
 };
 use kms_grpc::kms::v1::{
     CompressedKeyConfig, ComputeKeyType, CrsGenRequest, Eip712DomainMsg, KeyGenPreprocRequest,
-    KeyGenRequest, KeyGenSecretKeyConfig, KeySetConfig, KeySetType, StandardKeySetConfig,
+    KeyGenRequest, KeyGenSecretKeyConfig, KeySetAddedInfo, KeySetConfig, KeySetType,
+    StandardKeySetConfig,
 };
 use tracing::error;
 
@@ -90,6 +91,40 @@ where
         }))
     }
 
+    /// RFC-029: keygen-from-existing for the one-time compressed-key migration. The KMS
+    /// reuses the existing secret key shares, generates the compressed keyset, keeps the
+    /// existing key's tag, and copies the compressed material to the original key ID's
+    /// storage slot so coprocessors download it from the existing key's path.
+    pub async fn prepare_compressed_key_migration_request(
+        &self,
+        request: &CompressedKeyMigrationKeygenRequest,
+    ) -> Result<KmsGrpcRequest, ProcessingError> {
+        let parsed_extra_data =
+            parse_extra_data(&request.extraData).map_err(ProcessingError::Irrecoverable)?;
+        self.context_manager
+            .validate_context(&parsed_extra_data)
+            .await
+            .map_err(RequestCheckError::record)?;
+
+        Ok(KmsGrpcRequest::Keygen(KeyGenRequest {
+            request_id: Some(u256_to_request_id(request.migrationRequestId)),
+            preproc_id: Some(u256_to_request_id(request.prepKeygenId)),
+            domain: Some(self.domain.clone()),
+            params: None,
+            epoch_id: parsed_extra_data.epoch_id.map(u256_to_request_id),
+            context_id: parsed_extra_data.context_id.map(u256_to_request_id),
+            extra_data: request.extraData.to_vec(),
+            keyset_config: Some(COMPRESSED_MIGRATION_KEY_SET_CONFIG),
+            keyset_added_info: Some(KeySetAddedInfo {
+                from_keyset_id_decompression_only: None,
+                to_keyset_id_decompression_only: None,
+                existing_keyset_id: Some(u256_to_request_id(request.keyId)),
+                use_existing_key_tag: true,
+                copy_compressed_key_to_original: true,
+            }),
+        }))
+    }
+
     pub async fn prepare_crsgen_request(
         &self,
         crsgen_request: &CrsgenRequest,
@@ -123,6 +158,15 @@ where
         }))
     }
 }
+
+const COMPRESSED_MIGRATION_KEY_SET_CONFIG: KeySetConfig = KeySetConfig {
+    keyset_type: KeySetType::Standard as i32,
+    standard_keyset_config: Some(StandardKeySetConfig {
+        compute_key_type: ComputeKeyType::Cpu as i32,
+        secret_key_config: KeyGenSecretKeyConfig::UseExisting as i32,
+        compressed_key_config: CompressedKeyConfig::CompressedAll as i32,
+    }),
+};
 
 const UNCOMPRESSED_KEY_SET_CONFIG: KeySetConfig = KeySetConfig {
     keyset_type: KeySetType::Standard as i32,

@@ -26,7 +26,9 @@ use fhevm_gateway_bindings::decryption::{
     },
 };
 use fhevm_host_bindings::{
-    kms_generation::KMSGeneration::{CrsgenRequest, KeygenRequest, PrepKeygenRequest},
+    kms_generation::KMSGeneration::{
+        CompressedKeyMigrationKeygenRequest, CrsgenRequest, KeygenRequest, PrepKeygenRequest,
+    },
     protocol_config::ProtocolConfig::{NewKmsContext, NewKmsEpoch},
 };
 
@@ -177,6 +179,19 @@ pub async fn mock_event_on_gw(
                 .await?;
             (tx, event.into())
         }
+        TestEventType::CompressedKeyMigrationKeygen => {
+            let rand_migrated_key_id = rand_u256();
+            let event = CompressedKeyMigrationKeygenRequest {
+                keyId: rand_migrated_key_id,
+                ..Default::default()
+            };
+            let tx = test_instance
+                .kms_generation_contract()
+                .compressedKeyMigrationKeygen(rand_migrated_key_id)
+                .send()
+                .await?;
+            (tx, event.into())
+        }
         TestEventType::Crsgen => {
             let rand_max_bit_length = rand_u256();
             let event = CrsgenRequest {
@@ -257,7 +272,9 @@ pub async fn fetch_from_db(
             "SELECT * FROM user_decryption_requests"
         }
         TestEventType::PrepKeygen => "SELECT * FROM prep_keygen_requests",
-        TestEventType::Keygen => "SELECT * FROM keygen_requests",
+        TestEventType::Keygen | TestEventType::CompressedKeyMigrationKeygen => {
+            "SELECT * FROM keygen_requests"
+        }
         TestEventType::Crsgen => "SELECT * FROM crsgen_requests",
         TestEventType::NewKmsContext => "SELECT * FROM new_kms_context",
         TestEventType::NewKmsEpoch => "SELECT * FROM new_kms_epoch",
@@ -316,6 +333,16 @@ pub fn check_event_in_db(rows: &[PgRow], event: ProtocolEventKind) -> anyhow::Re
         ProtocolEventKind::PrepKeygen(_) => {
             for r in rows {
                 if r.try_get::<ParamsTypeDb, _>("params_type")? == ParamsTypeDb::Test {
+                    return Ok(());
+                }
+            }
+        }
+        ProtocolEventKind::CompressedKeyMigrationKeygen(e) => {
+            for r in rows {
+                if Some(e.keyId)
+                    == r.try_get::<Option<[u8; 32]>, _>("migrated_key_id")?
+                        .map(U256::from_le_bytes)
+                {
                     return Ok(());
                 }
             }

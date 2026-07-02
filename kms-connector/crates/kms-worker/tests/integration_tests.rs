@@ -48,6 +48,7 @@ use tracing::{info, warn};
 #[case::user_decryption_v2(TestEventType::UserDecryptionV2, false)]
 #[case::prep_keygen(TestEventType::PrepKeygen, false)]
 #[case::keygen(TestEventType::Keygen, false)]
+#[case::compressed_key_migration(TestEventType::CompressedKeyMigrationKeygen, false)]
 #[case::crsgen(TestEventType::Crsgen, false)]
 #[case::new_kms_context(TestEventType::NewKmsContext, false)]
 #[case::new_kms_epoch(TestEventType::NewKmsEpoch, false)]
@@ -204,6 +205,9 @@ fn prepare_mocks(req: &ProtocolEventKind, already_sent: bool) -> MockSet {
             (r.prepKeygenId, "KeyGenPreproc", "GetKeyGenPreprocResult")
         }
         ProtocolEventKind::Keygen(r) => (r.keyId, "KeyGen", "GetKeyGenResult"),
+        ProtocolEventKind::CompressedKeyMigrationKeygen(r) => {
+            (r.migrationRequestId, "KeyGen", "GetKeyGenResult")
+        }
         ProtocolEventKind::Crsgen(r) => (r.crsId, "CrsGen", "GetCrsGenResult"),
         ProtocolEventKind::NewKmsContext(r) => (r.contextId, "NewMpcContext", "unreachable"),
         ProtocolEventKind::NewKmsEpoch(r) => (r.epochId, "NewMpcEpoch", "GetEpochResult"),
@@ -240,10 +244,12 @@ fn prepare_mocks(req: &ProtocolEventKind, already_sent: bool) -> MockSet {
                 preprocessing_id: request_id,
                 ..Default::default()
             }),
-            ProtocolEventKind::Keygen(_) => then.pb(KeyGenResult {
-                request_id,
-                ..Default::default()
-            }),
+            ProtocolEventKind::Keygen(_) | ProtocolEventKind::CompressedKeyMigrationKeygen(_) => {
+                then.pb(KeyGenResult {
+                    request_id,
+                    ..Default::default()
+                })
+            }
             ProtocolEventKind::Crsgen(_) => then.pb(CrsGenResult {
                 request_id,
                 ..Default::default()
@@ -270,7 +276,9 @@ async fn wait_for_response_in_db(
             "SELECT * FROM user_decryption_responses"
         }
         ProtocolEventKind::PrepKeygen(_) => "SELECT * FROM prep_keygen_responses",
-        ProtocolEventKind::Keygen(_) => "SELECT * FROM keygen_responses",
+        ProtocolEventKind::Keygen(_) | ProtocolEventKind::CompressedKeyMigrationKeygen(_) => {
+            "SELECT * FROM keygen_responses"
+        }
         ProtocolEventKind::Crsgen(_) => "SELECT * FROM crsgen_responses",
         ProtocolEventKind::NewKmsContext(_) => "SELECT * FROM new_kms_context_responses",
         ProtocolEventKind::NewKmsEpoch(_) => "SELECT * FROM epoch_result_responses",
@@ -292,7 +300,8 @@ async fn wait_for_response_in_db(
                 ProtocolEventKind::PrepKeygen(_) => {
                     break kms_response::from_prep_keygen_row(&result[0])?;
                 }
-                ProtocolEventKind::Keygen(_) => {
+                ProtocolEventKind::Keygen(_)
+                | ProtocolEventKind::CompressedKeyMigrationKeygen(_) => {
                     break kms_response::from_keygen_row(&result[0])?;
                 }
                 ProtocolEventKind::Crsgen(_) => {
@@ -339,6 +348,12 @@ fn check_response_data(request: &ProtocolEventKind, response: KmsResponse) -> an
             preprocessing_id: Some(u256_to_request_id(r.prepKeygenId)),
             ..Default::default()
         }),
+        ProtocolEventKind::CompressedKeyMigrationKeygen(r) => {
+            KmsGrpcResponse::Keygen(KeyGenResult {
+                request_id: Some(u256_to_request_id(r.migrationRequestId)),
+                ..Default::default()
+            })
+        }
         ProtocolEventKind::Keygen(r) => KmsGrpcResponse::Keygen(KeyGenResult {
             request_id: Some(u256_to_request_id(r.keyId)),
             ..Default::default()
@@ -356,7 +371,15 @@ fn check_response_data(request: &ProtocolEventKind, response: KmsResponse) -> an
             grpc_response: GrpcEpochResultResponse::default(),
         },
     };
-    assert_eq!(response.kind, KmsResponseKind::process(expected_response)?);
+    let mut expected_kind = KmsResponseKind::process(expected_response)?;
+    // The gRPC layer is migration-agnostic; the kind is re-typed from the request row when
+    // read back from the DB (RFC-029).
+    if matches!(request, ProtocolEventKind::CompressedKeyMigrationKeygen(_))
+        && let KmsResponseKind::Keygen(r) = expected_kind
+    {
+        expected_kind = KmsResponseKind::CompressedKeyMigration(r);
+    }
+    assert_eq!(response.kind, expected_kind);
     info!("OK!");
     Ok(())
 }

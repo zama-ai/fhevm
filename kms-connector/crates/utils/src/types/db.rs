@@ -169,7 +169,10 @@ impl From<&ProtocolEventKind> for EventType {
                 Self::UserDecryptionRequest
             }
             ProtocolEventKind::PrepKeygen(_) => Self::PrepKeygenRequest,
-            ProtocolEventKind::Keygen(_) => Self::KeygenRequest,
+            // Migration keygen shares the keygen table and notification channel.
+            ProtocolEventKind::Keygen(_) | ProtocolEventKind::CompressedKeyMigrationKeygen(_) => {
+                Self::KeygenRequest
+            }
             ProtocolEventKind::Crsgen(_) => Self::CrsgenRequest,
             ProtocolEventKind::NewKmsContext(_) => Self::NewKmsContext,
             ProtocolEventKind::NewKmsEpoch(_) => Self::NewKmsEpoch,

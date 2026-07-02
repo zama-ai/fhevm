@@ -177,7 +177,9 @@ fn prepare_mocks(req: &ProtocolEventKind) -> MockSet {
             ("UserDecrypt", "GetUserDecryptionResult")
         }
         ProtocolEventKind::PrepKeygen(_) => ("KeyGenPreproc", "GetKeyGenPreprocResult"),
-        ProtocolEventKind::Keygen(_) => ("KeyGen", "GetKeyGenResult"),
+        ProtocolEventKind::Keygen(_) | ProtocolEventKind::CompressedKeyMigrationKeygen(_) => {
+            ("KeyGen", "GetKeyGenResult")
+        }
         ProtocolEventKind::Crsgen(_) => ("CrsGen", "GetCrsGenResult"),
         ProtocolEventKind::NewKmsContext(_) => {
             // Mock error at the request time for `NewKmsContext` as we don't poll any result from
