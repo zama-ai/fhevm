@@ -298,7 +298,7 @@ async fn wait_for_response_in_db(
         let result = sqlx::query(query).fetch_all(db).await?;
 
         if result.is_empty() {
-            warn!("Not yet...");
+            warn!("Response not yet stored in DB...");
             tokio::time::sleep(Duration::from_millis(200)).await;
         } else {
             match req {
@@ -329,7 +329,7 @@ async fn wait_for_response_in_db(
             };
         }
     };
-    info!("OK!");
+    info!("Response successfully stored in DB!");
     Ok(response)
 }
 
@@ -382,7 +382,7 @@ fn check_response_data(request: &ProtocolEventKind, response: KmsResponse) -> an
         }
     };
     assert_eq!(response.kind, KmsResponseKind::process(expected_response)?);
-    info!("OK!");
+    info!("Response data validated!");
     Ok(())
 }
 
@@ -403,10 +403,10 @@ async fn wait_for_abort_completed(
     loop {
         let count: i64 = sqlx::query_scalar(query).fetch_one(db).await?;
         if count > 0 {
-            info!("OK!");
+            info!("Abort request marked as completed in DB!");
             return Ok(());
         }
-        warn!("Not yet...");
+        warn!("Abort request not yet marked as completed in DB...");
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
 }
