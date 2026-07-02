@@ -14,10 +14,10 @@ export function createTestLogger() {
   const logs = [];
   const log = (message) => logs.push(message);
   const logger = {
-    debug: (m) => log(`  [debug] ${m}`),
-    info: (m) => log(`  [info] ${m}`),
-    warn: (m) => log(`  [warn] ${m}`),
-    error: (m, cause) => log(`  [error] ${m}${cause !== undefined ? `: ${String(cause)}` : ''}`),
+    debug: (m) => log(`[debug] ${m}`),
+    info: (m) => log(`[info] ${m}`),
+    warn: (m) => log(`[warn] ${m}`),
+    error: (m, cause) => log(`[error] ${m}${cause !== undefined ? `: ${String(cause)}` : ''}`),
   };
   return { logs, log, logger };
 }

@@ -42,11 +42,12 @@ export default function Page() {
           setFhevmRuntimeConfig({
             singleThread: !true,
             logger: {
-              debug: (message) => log(`  [debug] ${message}`),
+              debug: (message) => log(`[debug] ${message}`),
+              warn: (message) => log(`[warn] ${message}`),
               error: (message, cause) => {
-                log(`  [error] ${message}`);
+                log(`[error] ${message}`);
                 if (cause !== undefined) {
-                  log(`  [error] ${errorMessage(cause)}`);
+                  log(`[error] ${errorMessage(cause)}`);
                 }
               },
             },

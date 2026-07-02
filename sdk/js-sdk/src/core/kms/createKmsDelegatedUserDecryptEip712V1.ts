@@ -1,4 +1,4 @@
-import type { KmsDelegatedUserDecryptEip712 } from '../types/kms.js';
+import type { KmsDelegatedUserDecryptEip712V1 } from '../types/kms.js';
 import type { BytesHex } from '../types/primitives.js';
 import type { ErrorMetadataParams } from '../base/errors/ErrorBase.js';
 import {
@@ -11,13 +11,13 @@ import { asBytesHex, assertIsBytesHex, bytesToHexLarge } from '../base/bytes.js'
 import { ensure0x } from '../base/string.js';
 import { assertIsUintNumber } from '../base/uint.js';
 import { createKmsEip712Domain } from './createKmsEip712Domain.js';
-import { _assertIsKmsUserDecryptEip712Base } from './createKmsUserDecryptEip712.js';
-import { kmsDelegatedUserDecryptEip712Types } from './kmsDelegatedUserDecryptEip712Types.js';
+import { _assertIsKmsUserDecryptEip712V1Base } from './createKmsUserDecryptEip712V1.js';
+import { kmsDelegatedUserDecryptEip712V1Types } from './kmsDelegatedUserDecryptEip712V1Types.js';
 import { assertIsKmsExtraData } from './kmsExtraData.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export type CreateKmsDelegatedUserDecryptEip712Parameters = {
+export type CreateKmsDelegatedUserDecryptEip712V1Parameters = {
   readonly verifyingContractAddressDecryption: string;
   readonly chainId: number | bigint;
   readonly publicKey: string | Uint8Array;
@@ -29,12 +29,12 @@ export type CreateKmsDelegatedUserDecryptEip712Parameters = {
 };
 
 ////////////////////////////////////////////////////////////////////////////////
-// createKmsDelegatedUserDecryptEip712
+// createKmsDelegatedUserDecryptEip712V1
 ////////////////////////////////////////////////////////////////////////////////
 
-export function createKmsDelegatedUserDecryptEip712(
-  parameters: CreateKmsDelegatedUserDecryptEip712Parameters,
-): KmsDelegatedUserDecryptEip712 {
+export function createKmsDelegatedUserDecryptEip712V1(
+  parameters: CreateKmsDelegatedUserDecryptEip712V1Parameters,
+): KmsDelegatedUserDecryptEip712V1 {
   const {
     verifyingContractAddressDecryption,
     chainId,
@@ -58,15 +58,15 @@ export function createKmsDelegatedUserDecryptEip712(
 
   const checksummedDelegatorAddress = addressToChecksummedAddress(delegatorAddress);
 
-  const primaryType: KmsDelegatedUserDecryptEip712['primaryType'] = 'DelegatedUserDecryptRequestVerification';
+  const primaryType: KmsDelegatedUserDecryptEip712V1['primaryType'] = 'DelegatedUserDecryptRequestVerification';
 
   const domain = createKmsEip712Domain({
     chainId,
     verifyingContractAddressDecryption,
   });
 
-  const eip712: KmsDelegatedUserDecryptEip712 = {
-    types: kmsDelegatedUserDecryptEip712Types,
+  const eip712: KmsDelegatedUserDecryptEip712V1 = {
+    types: kmsDelegatedUserDecryptEip712V1Types,
     primaryType,
     domain,
     message: {
@@ -92,21 +92,21 @@ export function createKmsDelegatedUserDecryptEip712(
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export function assertIsKmsDelegatedUserDecryptEip712(
+export function assertIsKmsDelegatedUserDecryptEip712V1(
   value: unknown,
   name: string,
   options: ErrorMetadataParams,
-): asserts value is KmsDelegatedUserDecryptEip712 {
-  _assertIsKmsUserDecryptEip712Base(
+): asserts value is KmsDelegatedUserDecryptEip712V1 {
+  _assertIsKmsUserDecryptEip712V1Base(
     value,
     name,
-    'DelegatedUserDecryptRequestVerification' satisfies KmsDelegatedUserDecryptEip712['primaryType'],
+    'DelegatedUserDecryptRequestVerification' satisfies KmsDelegatedUserDecryptEip712V1['primaryType'],
     options,
   );
 
   assertRecordChecksummedAddressProperty(
     value.message,
-    'delegatorAddress' satisfies keyof KmsDelegatedUserDecryptEip712['message'],
+    'delegatorAddress' satisfies keyof KmsDelegatedUserDecryptEip712V1['message'],
     `${name}.message`,
     options,
   );

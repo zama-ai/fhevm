@@ -5,12 +5,12 @@ import type { KmsSignersContext } from '../types/kmsSignersContext.js';
 import type { ChecksummedAddress, Uint64BigInt } from '../types/primitives.js';
 import type { FhevmChain } from '../types/fhevmChain.js';
 import type { RelayerDelegatedUserDecryptOptions, RelayerUserDecryptOptions } from '../types/relayer.js';
-import type { SignedDelegatedDecryptionPermit, SignedSelfDecryptionPermit } from '../types/signedDecryptionPermit.js';
+import type { SignedDecryptionPermit, SignedDecryptionPermitV1 } from '../types/signedDecryptionPermit.js';
 import type { Handle } from '../types/encryptedTypes-p.js';
 import { assertHandlesBelongToSameChainId } from '../handle/FhevmHandle.js';
-import { createKmsSigncryptedShares } from '../kms/KmsSigncryptedShares-p.js';
+import { createKmsSigncryptedShares } from './KmsSigncryptedShares-p.js';
 import { readKmsSignersContext } from '../host-contracts/readKmsSignersContext-p.js';
-import { assertIsSignedDecryptionPermit, assertPermitIncludesContractAddresses } from './SignedDecryptionPermit-p.js';
+import { assertIsSignedDecryptionPermit } from './SignedDecryptionPermit-p.js';
 import { assertKmsDecryptionBitLimit } from './utils.js';
 import { checkPersistAllowed } from '../host-contracts/checkPersistAllowed.js';
 import { assertExtraDataMatchesKmsSingersContext } from '../host-contracts/KmsSignersContext-p.js';
@@ -40,23 +40,14 @@ type Context = {
   readonly options: { readonly batchRpcCalls: boolean };
 };
 
-type Parameters =
-  | {
-      readonly pairs: ReadonlyArray<{
-        readonly handle: Handle;
-        readonly contractAddress: ChecksummedAddress;
-      }>;
-      readonly signedPermit: SignedSelfDecryptionPermit;
-      readonly options?: RelayerUserDecryptOptions | undefined;
-    }
-  | {
-      readonly pairs: ReadonlyArray<{
-        readonly handle: Handle;
-        readonly contractAddress: ChecksummedAddress;
-      }>;
-      readonly signedPermit: SignedDelegatedDecryptionPermit;
-      readonly options?: RelayerDelegatedUserDecryptOptions | undefined;
-    };
+type Parameters = {
+  readonly pairs: ReadonlyArray<{
+    readonly handle: Handle;
+    readonly contractAddress: ChecksummedAddress;
+  }>;
+  readonly signedPermit: SignedDecryptionPermit;
+  readonly options?: RelayerUserDecryptOptions | RelayerDelegatedUserDecryptOptions | undefined;
+};
 
 type ReturnType = KmsSigncryptedShares;
 
@@ -64,19 +55,36 @@ type ReturnType = KmsSigncryptedShares;
 
 const MAX_USER_DECRYPT_CONTRACT_ADDRESSES = 10;
 
+/**
+ * Asserts that every address in {@link contractAddresses} is listed in the
+ * permit's `contractAddresses` (case-insensitive comparison).
+ */
+export function assertPermitV1IncludesContractAddresses(
+  permit: SignedDecryptionPermitV1,
+  contractAddresses: readonly string[],
+): void {
+  const permitAddresses = permit.eip712.message.contractAddresses;
+  for (const address of contractAddresses) {
+    if (!permitAddresses.some((a) => a.toLowerCase() === address.toLowerCase())) {
+      throw Error(`contract address ${address} is not listed in the permit's contractAddresses`);
+    }
+  }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // fetchKmsSigncryptedShares
 ////////////////////////////////////////////////////////////////////////////////
 
-export async function fetchKmsSigncryptedShares(context: Context, parameters: Parameters): Promise<ReturnType> {
-  const { signedPermit, options, pairs } = parameters;
+export async function fetchKmsSigncryptedSharesV1(context: Context, parameters: Parameters): Promise<ReturnType> {
+  const { options, pairs } = parameters;
+  const signedPermit = parameters.signedPermit as SignedDecryptionPermitV1;
 
   // This helper must support base clients, where TKMS is not mandatory
   // and tkmsVersion may not be initialized in the CoreFhevm instance yet.
   const tkmsVersion = await resolveFhevmTkmsVersion(context);
 
   // Check: every requested contractAddress is listed in the permit
-  assertPermitIncludesContractAddresses(
+  assertPermitV1IncludesContractAddresses(
     signedPermit,
     pairs.map((p) => p.contractAddress),
   );
@@ -124,7 +132,7 @@ export async function fetchKmsSigncryptedShares(context: Context, parameters: Pa
   signedPermit.assertNotExpired();
 
   // 7. Check: ACL permissions (user is signer or delegatorAddress)
-  if (signedPermit.isDelegated) {
+  if (signedPermit.eip712.primaryType === 'DelegatedUserDecryptRequestVerification') {
     await checkDelegation(context, {
       aclAddress: context.chain.fhevm.contracts.acl.address as ChecksummedAddress,
       delegate: signerAddress,
@@ -139,7 +147,7 @@ export async function fetchKmsSigncryptedShares(context: Context, parameters: Pa
     });
   }
 
-  // 8. Verify the EIP712 signature
+  // 8. Verify the Eip712 signature
   // Not required because a signedPermit is guaranteed to be verified.
 
   // 9. Fetch `KmsSignersContext` on-chain (cached)
@@ -170,12 +178,9 @@ export async function fetchKmsSigncryptedShares(context: Context, parameters: Pa
   );
 
   // 10. Fetch `KmsSigncryptedShares` from the relayer
-  // Safe casts: the discriminated union on parameters guarantees
-  // that options type matches signedPermit type, but TS can't prove
-  // it after destructuring (nested discriminant limitation).
   let shares: readonly KmsSigncryptedShare[];
 
-  if (signedPermit.isDelegated) {
+  if (signedPermit.eip712.primaryType === 'DelegatedUserDecryptRequestVerification') {
     shares = await context.runtime.relayer.fetchDelegatedUserDecrypt(context, {
       payload: {
         handleContractPairs,

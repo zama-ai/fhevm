@@ -1,7 +1,7 @@
 import type { ErrorMetadataParams } from '../base/errors/ErrorBase.js';
-import type { KmsEip712Domain, KmsUserDecryptEip712 } from '../types/kms.js';
+import type { KmsEip712Domain, KmsUserDecryptEip712V1 } from '../types/kms.js';
 import type { BytesHex } from '../types/primitives.js';
-import type { KmsUserDecryptEip712Message } from '../types/kms.js';
+import type { KmsUserDecryptEip712V1Message } from '../types/kms.js';
 import {
   addressToChecksummedAddress,
   assertIsAddress,
@@ -14,13 +14,13 @@ import { assertRecordNonNullableProperty } from '../base/record.js';
 import { assertRecordStringProperty, ensure0x } from '../base/string.js';
 import { assertIsUint64, assertIsUintNumber } from '../base/uint.js';
 import { assertIsKmsExtraData } from './kmsExtraData.js';
-import { kmsUserDecryptEip712Types } from './kmsUserDecryptEip712Types.js';
+import { kmsUserDecryptEip712V1Types } from './kmsUserDecryptEip712V1Types.js';
+import { kmsDelegatedUserDecryptEip712V1Types } from './kmsDelegatedUserDecryptEip712V1Types.js';
 import { isDeepEqual } from '../base/object.js';
-import { kmsDelegatedUserDecryptEip712Types } from './kmsDelegatedUserDecryptEip712Types.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export type CreateKmsUserDecryptEip712Parameters = {
+export type CreateKmsUserDecryptEip712V1Parameters = {
   readonly verifyingContractAddressDecryption: string;
   readonly chainId: number | bigint;
   readonly publicKey: string | Uint8Array;
@@ -31,10 +31,12 @@ export type CreateKmsUserDecryptEip712Parameters = {
 };
 
 ////////////////////////////////////////////////////////////////////////////////
-// createKmsUserDecryptEip712
+// createKmsUserDecryptEip712V1
 ////////////////////////////////////////////////////////////////////////////////
 
-export function createKmsUserDecryptEip712(parameters: CreateKmsUserDecryptEip712Parameters): KmsUserDecryptEip712 {
+export function createKmsUserDecryptEip712V1(
+  parameters: CreateKmsUserDecryptEip712V1Parameters,
+): KmsUserDecryptEip712V1 {
   const {
     verifyingContractAddressDecryption,
     chainId,
@@ -56,7 +58,7 @@ export function createKmsUserDecryptEip712(parameters: CreateKmsUserDecryptEip71
 
   const checksummedContractAddresses = contractAddresses.map(addressToChecksummedAddress);
 
-  const primaryType: KmsUserDecryptEip712['primaryType'] = 'UserDecryptRequestVerification';
+  const primaryType: KmsUserDecryptEip712V1['primaryType'] = 'UserDecryptRequestVerification';
 
   const domain = createKmsEip712Domain({
     chainId,
@@ -65,7 +67,7 @@ export function createKmsUserDecryptEip712(parameters: CreateKmsUserDecryptEip71
 
   const eip712 = {
     domain,
-    types: kmsUserDecryptEip712Types,
+    types: kmsUserDecryptEip712V1Types,
     primaryType,
     message: {
       publicKey: publicKeyBytesHex,
@@ -89,25 +91,25 @@ export function createKmsUserDecryptEip712(parameters: CreateKmsUserDecryptEip71
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export function assertIsKmsUserDecryptEip712(
+export function assertIsKmsUserDecryptEip712V1(
   value: unknown,
   name: string,
   options: ErrorMetadataParams,
-): asserts value is KmsUserDecryptEip712 {
-  _assertIsKmsUserDecryptEip712Base(
+): asserts value is KmsUserDecryptEip712V1 {
+  _assertIsKmsUserDecryptEip712V1Base(
     value,
     name,
-    'UserDecryptRequestVerification' satisfies KmsUserDecryptEip712['primaryType'],
+    'UserDecryptRequestVerification' satisfies KmsUserDecryptEip712V1['primaryType'],
     options,
   );
 }
 
 /**
  * Validates the common structure shared by both
- * {@link KmsUserDecryptEip712} and {@link KmsDelegatedUserDecryptEIP712}:
+ * {@link KmsUserDecryptEip712V1} and {@link KmsDelegatedUserDecryptEip712V1}:
  * domain, types, primaryType, and base message fields.
  */
-export function _assertIsKmsUserDecryptEip712Base(
+export function _assertIsKmsUserDecryptEip712V1Base(
   value: unknown,
   name: string,
   primaryType: string,
@@ -116,7 +118,7 @@ export function _assertIsKmsUserDecryptEip712Base(
   readonly domain: KmsEip712Domain;
   readonly types: object;
   readonly primaryType: string;
-  readonly message: KmsUserDecryptEip712Message;
+  readonly message: KmsUserDecryptEip712V1Message;
 } {
   assertRecordNonNullableProperty(value, 'domain', name, options);
   assertIsKmsEip712Domain((value as Record<string, unknown>).domain, `${name}.domain`, options);
@@ -125,11 +127,11 @@ export function _assertIsKmsUserDecryptEip712Base(
 
   const expectedTypes =
     primaryType === 'DelegatedUserDecryptRequestVerification'
-      ? kmsDelegatedUserDecryptEip712Types
-      : kmsUserDecryptEip712Types;
+      ? kmsDelegatedUserDecryptEip712V1Types
+      : kmsUserDecryptEip712V1Types;
 
   if (!isDeepEqual(value.types, expectedTypes)) {
-    throw new Error('Unexpected KmsUserDecryptEip712Types');
+    throw new Error('Unexpected KmsUserDecryptEip712V1Types');
   }
 
   assertRecordStringProperty(value, 'primaryType', name, {
@@ -139,19 +141,19 @@ export function _assertIsKmsUserDecryptEip712Base(
 
   assertRecordNonNullableProperty(value, 'message', name, options);
   const msg = (value as Record<string, unknown>).message as Record<string, unknown>;
-  _assertIsKmsUserDecryptEip712Message(msg, `${name}.message`, options);
+  _assertIsKmsUserDecryptEip712V1Message(msg, `${name}.message`, options);
 }
 
 /**
  * Validates the common message fields shared by both
- * {@link KmsUserDecryptEip712} and {@link KmsDelegatedUserDecryptEIP712}.
+ * {@link KmsUserDecryptEip712V1} and {@link KmsDelegatedUserDecryptEip712V1}.
  */
-function _assertIsKmsUserDecryptEip712Message(
+function _assertIsKmsUserDecryptEip712V1Message(
   msg: unknown,
   msgName: string,
   options: ErrorMetadataParams,
-): asserts msg is KmsUserDecryptEip712Message {
-  type MessageType = KmsUserDecryptEip712['message'];
+): asserts msg is KmsUserDecryptEip712V1Message {
+  type MessageType = KmsUserDecryptEip712V1['message'];
   assertRecordBytesHexProperty(msg, 'publicKey' satisfies keyof MessageType, msgName, options);
   assertRecordChecksummedAddressArrayProperty(msg, 'contractAddresses' satisfies keyof MessageType, msgName, options);
   assertRecordStringProperty(msg, 'startTimestamp' satisfies keyof MessageType, msgName, options);

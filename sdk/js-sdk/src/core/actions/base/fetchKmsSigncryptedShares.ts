@@ -1,34 +1,23 @@
-/* eslint-disable @typescript-eslint/unified-signatures */
 import type { Fhevm } from '../../types/coreFhevmClient.js';
 import type { KmsSigncryptedShares } from '../../types/kms.js';
 import type { FhevmChain } from '../../types/fhevmChain.js';
 import type { RelayerDelegatedUserDecryptOptions, RelayerUserDecryptOptions } from '../../types/relayer.js';
-import type {
-  SignedDelegatedDecryptionPermit,
-  SignedSelfDecryptionPermit,
-} from '../../types/signedDecryptionPermit.js';
+import type { SignedDecryptionPermit } from '../../types/signedDecryptionPermit.js';
 import type { EncryptedValueLike } from '../../types/encryptedTypes.js';
-import { fetchKmsSigncryptedShares as fetchKmsSigncryptedShares_ } from '../../kms/fetchKmsSigncryptedShares-p.js';
+import { fetchKmsSigncryptedSharesV1 as fetchKmsSigncryptedSharesV1_ } from '../../kms/fetchKmsSigncryptedSharesV1-p.js';
+import { fetchKmsSigncryptedSharesV2 as fetchKmsSigncryptedSharesV2_ } from '../../kms/fetchKmsSigncryptedSharesV2-p.js';
 import { assertIsEncryptedValueLike, toFhevmHandle } from '../../handle/FhevmHandle.js';
 import { addressToChecksummedAddress, assertIsAddress } from '../../base/address.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
-type FetchKmsSigncryptedSharesParametersBase = {
+export type FetchKmsSigncryptedSharesParameters = {
   readonly pairs: ReadonlyArray<{
     readonly encryptedValue: EncryptedValueLike;
     readonly contractAddress: string;
   }>;
-};
-
-export type FetchSelfKmsSigncryptedSharesParameters = FetchKmsSigncryptedSharesParametersBase & {
-  readonly signedPermit: SignedSelfDecryptionPermit;
-  readonly options?: RelayerUserDecryptOptions | undefined;
-};
-
-export type FetchDelegatedKmsSigncryptedSharesParameters = FetchKmsSigncryptedSharesParametersBase & {
-  readonly signedPermit: SignedDelegatedDecryptionPermit;
-  readonly options?: RelayerDelegatedUserDecryptOptions | undefined;
+  readonly signedPermit: SignedDecryptionPermit;
+  readonly options?: RelayerUserDecryptOptions | RelayerDelegatedUserDecryptOptions | undefined;
 };
 
 export type FetchKmsSigncryptedSharesReturnType = KmsSigncryptedShares;
@@ -55,19 +44,9 @@ export type FetchKmsSigncryptedSharesReturnType = KmsSigncryptedShares;
  */
 export async function fetchKmsSigncryptedShares(
   fhevm: Fhevm<FhevmChain>,
-  parameters: FetchSelfKmsSigncryptedSharesParameters,
-): Promise<FetchKmsSigncryptedSharesReturnType>;
-
-export async function fetchKmsSigncryptedShares(
-  fhevm: Fhevm<FhevmChain>,
-  parameters: FetchDelegatedKmsSigncryptedSharesParameters,
-): Promise<FetchKmsSigncryptedSharesReturnType>;
-
-export async function fetchKmsSigncryptedShares(
-  fhevm: Fhevm<FhevmChain>,
-  parameters: FetchSelfKmsSigncryptedSharesParameters | FetchDelegatedKmsSigncryptedSharesParameters,
+  parameters: FetchKmsSigncryptedSharesParameters,
 ): Promise<FetchKmsSigncryptedSharesReturnType> {
-  const { pairs } = parameters;
+  const { pairs, signedPermit } = parameters;
 
   // Validate & sanitize `pairs` parameter
   const sanitizedPairs = pairs.map((p, i) => {
@@ -79,5 +58,19 @@ export async function fetchKmsSigncryptedShares(
     };
   });
 
-  return fetchKmsSigncryptedShares_(fhevm, { ...parameters, pairs: sanitizedPairs });
+  const options = parameters.options as RelayerUserDecryptOptions | undefined;
+
+  if (signedPermit.version === 1) {
+    return fetchKmsSigncryptedSharesV1_(fhevm, {
+      ...parameters,
+      pairs: sanitizedPairs,
+      options,
+    });
+  }
+
+  return fetchKmsSigncryptedSharesV2_(fhevm, {
+    ...parameters,
+    pairs: sanitizedPairs,
+    options,
+  });
 }

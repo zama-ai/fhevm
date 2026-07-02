@@ -1,23 +1,23 @@
 import type { FhevmRuntime } from '../../types/coreFhevmRuntime.js';
 import type { FhevmChain } from '../../types/fhevmChain.js';
-import type { KmsDelegatedUserDecryptEip712, KmsDelegatedUserDecryptEip712Message } from '../../types/kms.js';
+import type { KmsUserDecryptEip712V1, KmsUserDecryptEip712V1Message } from '../../types/kms.js';
 import type { Bytes65Hex, ChecksummedAddress } from '../../types/primitives.js';
-import { kmsDelegatedUserDecryptEip712Types } from '../../kms/kmsDelegatedUserDecryptEip712Types.js';
 import { ThresholdSignerError, UnknownSignerError } from '../../errors/SignersError.js';
 import { createKmsEip712Domain } from '../../kms/createKmsEip712Domain.js';
+import { kmsUserDecryptEip712V1Types } from '../../kms/kmsUserDecryptEip712V1Types.js';
 import { recoverSigners } from '../runtime/recoverSigners.js';
 
-export type VerifyKmsDelegatedUserDecryptEip712Parameters = {
+export type VerifyKmsUserDecryptEip712V1Parameters = {
   readonly signer: ChecksummedAddress;
-  readonly message: KmsDelegatedUserDecryptEip712Message;
+  readonly message: KmsUserDecryptEip712V1Message;
   readonly signature: Bytes65Hex;
 };
 
-export async function verifyKmsDelegatedUserDecryptEip712(
+export async function verifyKmsUserDecryptEip712V1(
   context: { readonly chain: FhevmChain; readonly runtime: FhevmRuntime },
-  parameters: VerifyKmsDelegatedUserDecryptEip712Parameters,
+  parameters: VerifyKmsUserDecryptEip712V1Parameters,
 ): Promise<void> {
-  // A 'DelegatedUserDecryptRequestVerification' KmsEIP712Domain (for signed permit)
+  // A 'UserDecryptRequestVerification' KmsEip712Domain (for signed permit)
   // uses `chain.id` (NOT fhevm.gateway.id!!)
   const domain = createKmsEip712Domain({
     chainId: context.chain.id,
@@ -26,8 +26,8 @@ export async function verifyKmsDelegatedUserDecryptEip712(
 
   const recoveredAddresses = await recoverSigners(context, {
     domain,
-    types: kmsDelegatedUserDecryptEip712Types,
-    primaryType: 'DelegatedUserDecryptRequestVerification' satisfies KmsDelegatedUserDecryptEip712['primaryType'],
+    types: kmsUserDecryptEip712V1Types,
+    primaryType: 'UserDecryptRequestVerification' satisfies KmsUserDecryptEip712V1['primaryType'],
     signatures: [parameters.signature],
     message: parameters.message,
   });
