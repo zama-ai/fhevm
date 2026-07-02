@@ -95,19 +95,9 @@ pub fn transfer_amount_label() -> [u8; 32] {
     *b"transfer_amount_________________"
 }
 
-/// Fixed encrypted value label for burn success bits.
-pub fn burn_success_label() -> [u8; 32] {
-    *b"burn_success____________________"
-}
-
 /// Fixed encrypted value label for transfer success bits.
 pub fn transfer_success_label() -> [u8; 32] {
     *b"transfer_success________________"
-}
-
-/// Fixed encrypted value label for unchecked burn debit candidates.
-pub fn burn_debit_candidate_label() -> [u8; 32] {
-    *b"burn_debit_candidate____________"
 }
 
 /// Fixed encrypted value label for unchecked debit candidates.

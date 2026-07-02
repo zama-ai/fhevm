@@ -23,7 +23,6 @@ use confidential_token::cpi::accounts::ConfidentialTransfer as CtConfidentialTra
 use confidential_token::program::ConfidentialToken;
 use zama_host::{program::ZamaHost, CoprocessorInputAttestation};
 
-// Program id recycled from the removed `confidential-token-receiver` PoC program.
 declare_id!("8JdZ2wLbRJtc969bcY6rqSRUKFovxHeKhWPmQaLhHojd");
 
 #[program]
