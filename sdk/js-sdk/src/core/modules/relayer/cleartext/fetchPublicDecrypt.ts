@@ -46,7 +46,7 @@ export async function fetchPublicDecrypt(
   const signersAddress = res[2] as readonly ChecksummedAddress[];
   const signers = getKmsSignersPrivateKeyMap(relayerClient);
 
-  const kmsPublicDecryptEIP712Signatures: Bytes65Hex[] = [];
+  const kmsPublicDecryptEip712Signatures: Bytes65Hex[] = [];
 
   for (let i = 0; i < signersAddress.length; ++i) {
     // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
@@ -56,12 +56,12 @@ export async function fetchPublicDecrypt(
     }
 
     const signature = await cleartextEthereumModule.sign({ hash: digest, privateKey });
-    kmsPublicDecryptEIP712Signatures.push(signature);
+    kmsPublicDecryptEip712Signatures.push(signature);
   }
 
   return {
     orderedAbiEncodedClearValues: res[0] as BytesHex,
-    kmsPublicDecryptEIP712Signatures,
+    kmsPublicDecryptEip712Signatures,
     extraData: res[4] as BytesHex,
   };
 }

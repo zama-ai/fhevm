@@ -7,7 +7,7 @@ import {
   type FheTestEthersConfig,
   getEthersTestConfig,
 } from '../setup-ethers.js';
-import { safeJSONstringify } from '../setupCommon.js';
+import { createLogger, safeJSONstringify } from '../setupCommon.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -32,6 +32,7 @@ export function defineClientBaseChainTests(parameters: {
           type: 'ApiKeyHeader',
           value: config.zamaApiKey,
         },
+        logger: createLogger(console.log),
       });
     });
 
