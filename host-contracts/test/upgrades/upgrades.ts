@@ -83,7 +83,7 @@ describe('Upgrades', function () {
     await expectInitialState(kg);
     const kg2 = await upgrades.upgradeProxy(kg, factoryUpgraded);
     await kg2.waitForDeployment();
-    expect(await kg2.getVersion()).to.equal('KMSGeneration v0.3.0');
+    expect(await kg2.getVersion()).to.equal('KMSGeneration v0.4.0');
     await expectInitialState(kg2);
   });
 
