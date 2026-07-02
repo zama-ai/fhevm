@@ -284,3 +284,15 @@ pub enum OperationStatus {
     Failed,
     Aborted,
 }
+
+impl std::fmt::Display for OperationStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Pending => "pending",
+            Self::UnderProcess => "under_process",
+            Self::Completed => "completed",
+            Self::Failed => "failed",
+            Self::Aborted => "aborted",
+        })
+    }
+}

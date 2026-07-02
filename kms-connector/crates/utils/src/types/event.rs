@@ -64,35 +64,39 @@ impl ProtocolEvent {
     }
 
     /// Sets the event's `status` field to `pending` in the database.
-    pub async fn mark_as_pending(&self, db: &Pool<Postgres>) {
+    pub async fn mark_as_pending(&self, db: &Pool<Postgres>) -> anyhow::Result<()> {
         warn!("Failed to process event. Restoring `status` field to `pending` in DB...");
         self.update_status(db, OperationStatus::Pending).await
     }
 
     /// Sets the event's `status` field to `completed` in the database.
-    pub async fn mark_as_completed(&self, db: &Pool<Postgres>) {
+    pub async fn mark_as_completed(&self, db: &Pool<Postgres>) -> anyhow::Result<()> {
         info!("Event successfully processed. Setting its `status` field to `completed` in DB...");
         self.update_status(db, OperationStatus::Completed).await
     }
 
     /// Sets the event's `status` field to `failed` in the database.
-    pub async fn mark_as_failed(&self, db: &Pool<Postgres>) {
+    pub async fn mark_as_failed(&self, db: &Pool<Postgres>) -> anyhow::Result<()> {
         warn!("Failed to process event. Restoring `status` field to `failed` in DB...");
         self.update_status(db, OperationStatus::Failed).await
     }
 
     /// Sets the event's `status` field to `aborted` in the database.
-    pub async fn mark_as_aborted(&self, db: &Pool<Postgres>) {
+    pub async fn mark_as_aborted(&self, db: &Pool<Postgres>) -> anyhow::Result<()> {
         info!(
             "Event was aborted on the KMS Core. Setting its `status` field to `aborted` in DB..."
         );
         self.update_status(db, OperationStatus::Aborted).await
     }
 
-    async fn update_status(&self, db: &Pool<Postgres>, status: OperationStatus) {
+    async fn update_status(
+        &self,
+        db: &Pool<Postgres>,
+        status: OperationStatus,
+    ) -> anyhow::Result<()> {
         let already_sent = self.already_sent;
         let err_count = self.error_counter;
-        match &self.kind {
+        let result = match &self.kind {
             ProtocolEventKind::PublicDecryption(e) => {
                 update_public_decryption_status(db, e.decryptionId, status, already_sent, err_count)
                     .await
@@ -126,7 +130,13 @@ impl ProtocolEvent {
             ProtocolEventKind::NewKmsEpoch(e) => {
                 update_new_kms_epoch_status(db, e.epochId, status, already_sent).await
             }
-        }
+        };
+        result.map_err(|e| {
+            anyhow!(
+                "Failed to set {} status to `{status}` in DB: {e:#}",
+                self.kind
+            )
+        })
     }
 }
 
@@ -469,7 +479,7 @@ async fn update_public_decryption_status(
     status: OperationStatus,
     already_sent: bool,
     error_counter: i16,
-) {
+) -> anyhow::Result<()> {
     let query = sqlx::query!(
         "UPDATE public_decryption_requests SET status = $1, already_sent = $2, error_counter = $3
         WHERE decryption_id = $4",
@@ -478,7 +488,7 @@ async fn update_public_decryption_status(
         error_counter,
         id.as_le_slice()
     );
-    execute_update_event_query(db, query).await;
+    execute_update_event_query(db, query).await
 }
 
 async fn update_user_decryption_status(
@@ -487,7 +497,7 @@ async fn update_user_decryption_status(
     status: OperationStatus,
     already_sent: bool,
     error_counter: i16,
-) {
+) -> anyhow::Result<()> {
     let query = sqlx::query!(
         "UPDATE user_decryption_requests SET status = $1, already_sent = $2, error_counter = $3
         WHERE decryption_id = $4",
@@ -496,7 +506,7 @@ async fn update_user_decryption_status(
         error_counter,
         id.as_le_slice()
     );
-    execute_update_event_query(db, query).await;
+    execute_update_event_query(db, query).await
 }
 
 async fn update_prep_keygen_status(
@@ -504,14 +514,14 @@ async fn update_prep_keygen_status(
     id: U256,
     status: OperationStatus,
     already_sent: bool,
-) {
+) -> anyhow::Result<()> {
     let query = sqlx::query!(
         "UPDATE prep_keygen_requests SET status = $1, already_sent = $2 WHERE prep_keygen_id = $3",
         status as OperationStatus,
         already_sent,
         id.as_le_slice()
     );
-    execute_update_event_query(db, query).await;
+    execute_update_event_query(db, query).await
 }
 
 async fn update_keygen_status(
@@ -519,14 +529,14 @@ async fn update_keygen_status(
     id: U256,
     status: OperationStatus,
     already_sent: bool,
-) {
+) -> anyhow::Result<()> {
     let query = sqlx::query!(
         "UPDATE keygen_requests SET status = $1, already_sent = $2 WHERE key_id = $3",
         status as OperationStatus,
         already_sent,
         id.as_le_slice()
     );
-    execute_update_event_query(db, query).await;
+    execute_update_event_query(db, query).await
 }
 
 async fn update_crsgen_status(
@@ -534,14 +544,14 @@ async fn update_crsgen_status(
     id: U256,
     status: OperationStatus,
     already_sent: bool,
-) {
+) -> anyhow::Result<()> {
     let query = sqlx::query!(
         "UPDATE crsgen_requests SET status = $1, already_sent = $2 WHERE crs_id = $3",
         status as OperationStatus,
         already_sent,
         id.as_le_slice()
     );
-    execute_update_event_query(db, query).await;
+    execute_update_event_query(db, query).await
 }
 
 async fn update_abort_keygen_status(
@@ -549,14 +559,14 @@ async fn update_abort_keygen_status(
     id: U256,
     status: OperationStatus,
     already_sent: bool,
-) {
+) -> anyhow::Result<()> {
     let query = sqlx::query!(
         "UPDATE abort_keygen_requests SET status = $1, already_sent = $2 WHERE prep_keygen_id = $3",
         status as OperationStatus,
         already_sent,
         id.as_le_slice(),
     );
-    execute_update_event_query(db, query).await;
+    execute_update_event_query(db, query).await
 }
 
 async fn update_abort_crsgen_status(
@@ -564,14 +574,14 @@ async fn update_abort_crsgen_status(
     id: U256,
     status: OperationStatus,
     already_sent: bool,
-) {
+) -> anyhow::Result<()> {
     let query = sqlx::query!(
         "UPDATE abort_crsgen_requests SET status = $1, already_sent = $2 WHERE crs_id = $3",
         status as OperationStatus,
         already_sent,
         id.as_le_slice(),
     );
-    execute_update_event_query(db, query).await;
+    execute_update_event_query(db, query).await
 }
 
 async fn update_new_kms_context_status(
@@ -579,14 +589,14 @@ async fn update_new_kms_context_status(
     context_id: U256,
     status: OperationStatus,
     already_sent: bool,
-) {
+) -> anyhow::Result<()> {
     let query = sqlx::query!(
         "UPDATE new_kms_context SET status = $1, already_sent = $2 WHERE context_id = $3",
         status as OperationStatus,
         already_sent,
         context_id.as_le_slice()
     );
-    execute_update_event_query(db, query).await;
+    execute_update_event_query(db, query).await
 }
 
 async fn update_new_kms_epoch_status(
@@ -594,29 +604,26 @@ async fn update_new_kms_epoch_status(
     epoch_id: U256,
     status: OperationStatus,
     already_sent: bool,
-) {
+) -> anyhow::Result<()> {
     let query = sqlx::query!(
         "UPDATE new_kms_epoch SET status = $1, already_sent = $2 WHERE epoch_id = $3",
         status as OperationStatus,
         already_sent,
         epoch_id.as_le_slice()
     );
-    execute_update_event_query(db, query).await;
+    execute_update_event_query(db, query).await
 }
 
-async fn execute_update_event_query(db: &Pool<Postgres>, query: Query<'_, Postgres, PgArguments>) {
-    let query_result = match query.execute(db).await {
-        Ok(result) => result,
-        Err(e) => return warn!("Failed to update event: {e}"),
-    };
-
+async fn execute_update_event_query(
+    db: &Pool<Postgres>,
+    query: Query<'_, Postgres, PgArguments>,
+) -> anyhow::Result<()> {
+    let query_result = query.execute(db).await?;
     if query_result.rows_affected() == 1 {
         info!("Successfully updated event in DB!");
+        Ok(())
     } else {
-        warn!(
-            "Unexpected query result while updating event: {:?}",
-            query_result
-        )
+        Err(anyhow!("unexpected query result: {query_result:?}"))
     }
 }
 

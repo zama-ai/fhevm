@@ -64,12 +64,16 @@ where
             }
             (Err(ProcessingError::Irrecoverable(e)), _) => {
                 error!("{}", ProcessingError::Irrecoverable(e));
-                event.mark_as_failed(&self.db_pool).await;
+                if let Err(e) = event.mark_as_failed(&self.db_pool).await {
+                    warn!("{e}");
+                }
                 None
             }
             (Err(ProcessingError::Aborted), _) => {
                 warn!("{}", ProcessingError::Aborted);
-                event.mark_as_aborted(&self.db_pool).await;
+                if let Err(e) = event.mark_as_aborted(&self.db_pool).await {
+                    warn!("{e}");
+                }
                 None
             }
             // For now, we only check the error counter for public and user decryptions as they are
@@ -88,12 +92,16 @@ where
                     ProcessingError::Irrecoverable(e),
                     event.error_counter
                 );
-                event.mark_as_failed(&self.db_pool).await;
+                if let Err(e) = event.mark_as_failed(&self.db_pool).await {
+                    warn!("{e}");
+                }
                 None
             }
             (Err(ProcessingError::Recoverable(e)), _) => {
                 error!("{}", ProcessingError::Recoverable(e));
-                event.mark_as_pending(&self.db_pool).await;
+                if let Err(e) = event.mark_as_pending(&self.db_pool).await {
+                    warn!("{e}");
+                }
                 None
             }
         }
@@ -247,7 +255,9 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
         let grpc_response = grpc_result?;
 
         if let KmsGrpcResponse::NoResponseExpected = &grpc_response {
-            event.mark_as_completed(&self.db_pool).await;
+            if let Err(e) = event.mark_as_completed(&self.db_pool).await {
+                warn!("{e}");
+            }
             return Ok(None);
         }
 
