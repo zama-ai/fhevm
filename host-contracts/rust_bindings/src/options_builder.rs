@@ -70,11 +70,12 @@ pub mod OptionsBuilder {
     pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
         b"s\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x000\x14`\x80`@R_\x80\xFD",
     );
-    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `InvalidOptionType(uint16)` and selector `0x3a51740d`.
-    ```solidity
-    error InvalidOptionType(uint16 optionType);
-    ```*/
+```solidity
+error InvalidOptionType(uint16 optionType);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct InvalidOptionType {
@@ -95,7 +96,9 @@ pub mod OptionsBuilder {
         type UnderlyingRustTuple<'a> = (u16,);
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -113,15 +116,15 @@ pub mod OptionsBuilder {
         #[doc(hidden)]
         impl ::core::convert::From<UnderlyingRustTuple<'_>> for InvalidOptionType {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self {
-                    optionType: tuple.0,
-                }
+                Self { optionType: tuple.0 }
             }
         }
         #[automatically_derived]
         impl alloy_sol_types::SolError for InvalidOptionType {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "InvalidOptionType(uint16)";
             const SELECTOR: [u8; 4] = [58u8, 81u8, 116u8, 13u8];
             #[inline]
@@ -133,25 +136,26 @@ pub mod OptionsBuilder {
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
-                    <alloy::sol_types::sol_data::Uint<16> as alloy_sol_types::SolType>::tokenize(
-                        &self.optionType,
-                    ),
+                    <alloy::sol_types::sol_data::Uint<
+                        16,
+                    > as alloy_sol_types::SolType>::tokenize(&self.optionType),
                 )
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(Self::new)
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `InvalidSize(uint256,uint256)` and selector `0x3256c04c`.
-    ```solidity
-    error InvalidSize(uint256 max, uint256 actual);
-    ```*/
+```solidity
+error InvalidSize(uint256 max, uint256 actual);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct InvalidSize {
@@ -180,7 +184,9 @@ pub mod OptionsBuilder {
         );
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -207,7 +213,9 @@ pub mod OptionsBuilder {
         #[automatically_derived]
         impl alloy_sol_types::SolError for InvalidSize {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "InvalidSize(uint256,uint256)";
             const SELECTOR: [u8; 4] = [50u8, 86u8, 192u8, 76u8];
             #[inline]
@@ -219,25 +227,26 @@ pub mod OptionsBuilder {
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
-                    <alloy::sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
-                        &self.max,
-                    ),
-                    <alloy::sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
-                        &self.actual,
-                    ),
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.max),
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.actual),
                 )
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(Self::new)
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
     ///Container for all the [`OptionsBuilder`](self) custom errors.
-    #[derive(serde::Serialize, serde::Deserialize, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum OptionsBuilderErrors {
         #[allow(missing_docs)]
         InvalidOptionType(InvalidOptionType),
@@ -252,8 +261,10 @@ pub mod OptionsBuilder {
         /// No guarantees are made about the order of the selectors.
         ///
         /// Prefer using `SolInterface` methods instead.
-        pub const SELECTORS: &'static [[u8; 4usize]] =
-            &[[50u8, 86u8, 192u8, 76u8], [58u8, 81u8, 116u8, 13u8]];
+        pub const SELECTORS: &'static [[u8; 4usize]] = &[
+            [50u8, 86u8, 192u8, 76u8],
+            [58u8, 81u8, 116u8, 13u8],
+        ];
     }
     #[automatically_derived]
     impl alloy_sol_types::SolInterface for OptionsBuilderErrors {
@@ -266,7 +277,9 @@ pub mod OptionsBuilder {
                 Self::InvalidOptionType(_) => {
                     <InvalidOptionType as alloy_sol_types::SolError>::SELECTOR
                 }
-                Self::InvalidSize(_) => <InvalidSize as alloy_sol_types::SolError>::SELECTOR,
+                Self::InvalidSize(_) => {
+                    <InvalidSize as alloy_sol_types::SolError>::SELECTOR
+                }
             }
         }
         #[inline]
@@ -279,10 +292,17 @@ pub mod OptionsBuilder {
         }
         #[inline]
         #[allow(non_snake_case)]
-        fn abi_decode_raw(selector: [u8; 4], data: &[u8]) -> alloy_sol_types::Result<Self> {
-            static DECODE_SHIMS: &[fn(&[u8]) -> alloy_sol_types::Result<OptionsBuilderErrors>] = &[
+        fn abi_decode_raw(
+            selector: [u8; 4],
+            data: &[u8],
+        ) -> alloy_sol_types::Result<Self> {
+            static DECODE_SHIMS: &[fn(
+                &[u8],
+            ) -> alloy_sol_types::Result<OptionsBuilderErrors>] = &[
                 {
-                    fn InvalidSize(data: &[u8]) -> alloy_sol_types::Result<OptionsBuilderErrors> {
+                    fn InvalidSize(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<OptionsBuilderErrors> {
                         <InvalidSize as alloy_sol_types::SolError>::abi_decode_raw(data)
                             .map(OptionsBuilderErrors::InvalidSize)
                     }
@@ -292,17 +312,21 @@ pub mod OptionsBuilder {
                     fn InvalidOptionType(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<OptionsBuilderErrors> {
-                        <InvalidOptionType as alloy_sol_types::SolError>::abi_decode_raw(data)
+                        <InvalidOptionType as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
                             .map(OptionsBuilderErrors::InvalidOptionType)
                     }
                     InvalidOptionType
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(alloy_sol_types::Error::unknown_selector(
-                    <Self as alloy_sol_types::SolInterface>::NAME,
-                    selector,
-                ));
+                return Err(
+                    alloy_sol_types::Error::unknown_selector(
+                        <Self as alloy_sol_types::SolInterface>::NAME,
+                        selector,
+                    ),
+                );
             };
             DECODE_SHIMS[idx](data)
         }
@@ -314,11 +338,14 @@ pub mod OptionsBuilder {
         ) -> alloy_sol_types::Result<Self> {
             static DECODE_VALIDATE_SHIMS: &[fn(
                 &[u8],
-            )
-                -> alloy_sol_types::Result<OptionsBuilderErrors>] = &[
+            ) -> alloy_sol_types::Result<OptionsBuilderErrors>] = &[
                 {
-                    fn InvalidSize(data: &[u8]) -> alloy_sol_types::Result<OptionsBuilderErrors> {
-                        <InvalidSize as alloy_sol_types::SolError>::abi_decode_raw_validate(data)
+                    fn InvalidSize(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<OptionsBuilderErrors> {
+                        <InvalidSize as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
                             .map(OptionsBuilderErrors::InvalidSize)
                     }
                     InvalidSize
@@ -328,18 +355,20 @@ pub mod OptionsBuilder {
                         data: &[u8],
                     ) -> alloy_sol_types::Result<OptionsBuilderErrors> {
                         <InvalidOptionType as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                            data,
-                        )
-                        .map(OptionsBuilderErrors::InvalidOptionType)
+                                data,
+                            )
+                            .map(OptionsBuilderErrors::InvalidOptionType)
                     }
                     InvalidOptionType
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(alloy_sol_types::Error::unknown_selector(
-                    <Self as alloy_sol_types::SolInterface>::NAME,
-                    selector,
-                ));
+                return Err(
+                    alloy_sol_types::Error::unknown_selector(
+                        <Self as alloy_sol_types::SolInterface>::NAME,
+                        selector,
+                    ),
+                );
             };
             DECODE_VALIDATE_SHIMS[idx](data)
         }
@@ -347,7 +376,9 @@ pub mod OptionsBuilder {
         fn abi_encoded_size(&self) -> usize {
             match self {
                 Self::InvalidOptionType(inner) => {
-                    <InvalidOptionType as alloy_sol_types::SolError>::abi_encoded_size(inner)
+                    <InvalidOptionType as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
                 }
                 Self::InvalidSize(inner) => {
                     <InvalidSize as alloy_sol_types::SolError>::abi_encoded_size(inner)
@@ -358,10 +389,16 @@ pub mod OptionsBuilder {
         fn abi_encode_raw(&self, out: &mut alloy_sol_types::private::Vec<u8>) {
             match self {
                 Self::InvalidOptionType(inner) => {
-                    <InvalidOptionType as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
+                    <InvalidOptionType as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
                 }
                 Self::InvalidSize(inner) => {
-                    <InvalidSize as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
+                    <InvalidSize as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
                 }
             }
         }
@@ -369,7 +406,7 @@ pub mod OptionsBuilder {
     use alloy::contract as alloy_contract;
     /**Creates a new wrapper around an on-chain [`OptionsBuilder`](self) contract instance.
 
-    See the [wrapper's documentation](`OptionsBuilderInstance`) for more details.*/
+See the [wrapper's documentation](`OptionsBuilderInstance`) for more details.*/
     #[inline]
     pub const fn new<
         P: alloy_contract::private::Provider<N>,
@@ -382,41 +419,43 @@ pub mod OptionsBuilder {
     }
     /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
-    Returns a new instance of the contract, if the deployment was successful.
+Returns a new instance of the contract, if the deployment was successful.
 
-    For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
+For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
     #[inline]
-    pub fn deploy<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>(
-        provider: P,
-    ) -> impl ::core::future::Future<Output = alloy_contract::Result<OptionsBuilderInstance<P, N>>>
-    {
-        OptionsBuilderInstance::<P, N>::deploy(provider)
-    }
-    /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-    and constructor arguments, if any.
-
-    This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-    the bytecode concatenated with the constructor's ABI-encoded arguments.*/
-    #[inline]
-    pub fn deploy_builder<
+    pub fn deploy<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
     >(
         provider: P,
-    ) -> alloy_contract::RawCallBuilder<P, N> {
+    ) -> impl ::core::future::Future<
+        Output = alloy_contract::Result<OptionsBuilderInstance<P, N>>,
+    > {
+        OptionsBuilderInstance::<P, N>::deploy(provider)
+    }
+    /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
+and constructor arguments, if any.
+
+This is a simple wrapper around creating a `RawCallBuilder` with the data set to
+the bytecode concatenated with the constructor's ABI-encoded arguments.*/
+    #[inline]
+    pub fn deploy_builder<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    >(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
         OptionsBuilderInstance::<P, N>::deploy_builder(provider)
     }
     /**A [`OptionsBuilder`](self) instance.
 
-    Contains type-safe methods for interacting with an on-chain instance of the
-    [`OptionsBuilder`](self) contract located at a given `address`, using a given
-    provider `P`.
+Contains type-safe methods for interacting with an on-chain instance of the
+[`OptionsBuilder`](self) contract located at a given `address`, using a given
+provider `P`.
 
-    If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
-    documentation on how to provide it), the `deploy` and `deploy_builder` methods can
-    be used to deploy a new instance of the contract.
+If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
+documentation on how to provide it), the `deploy` and `deploy_builder` methods can
+be used to deploy a new instance of the contract.
 
-    See the [module-level documentation](self) for all the available methods.*/
+See the [module-level documentation](self) for all the available methods.*/
     #[derive(Clone)]
     pub struct OptionsBuilderInstance<P, N = alloy_contract::private::Ethereum> {
         address: alloy_sol_types::private::Address,
@@ -427,21 +466,23 @@ pub mod OptionsBuilder {
     impl<P, N> ::core::fmt::Debug for OptionsBuilderInstance<P, N> {
         #[inline]
         fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-            f.debug_tuple("OptionsBuilderInstance")
-                .field(&self.address)
-                .finish()
+            f.debug_tuple("OptionsBuilderInstance").field(&self.address).finish()
         }
     }
     /// Instantiation and getters/setters.
     #[automatically_derived]
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        OptionsBuilderInstance<P, N>
-    {
+    impl<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    > OptionsBuilderInstance<P, N> {
         /**Creates a new wrapper around an on-chain [`OptionsBuilder`](self) contract instance.
 
-        See the [wrapper's documentation](`OptionsBuilderInstance`) for more details.*/
+See the [wrapper's documentation](`OptionsBuilderInstance`) for more details.*/
         #[inline]
-        pub const fn new(address: alloy_sol_types::private::Address, provider: P) -> Self {
+        pub const fn new(
+            address: alloy_sol_types::private::Address,
+            provider: P,
+        ) -> Self {
             Self {
                 address,
                 provider,
@@ -450,20 +491,22 @@ pub mod OptionsBuilder {
         }
         /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
-        Returns a new instance of the contract, if the deployment was successful.
+Returns a new instance of the contract, if the deployment was successful.
 
-        For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
+For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
         #[inline]
-        pub async fn deploy(provider: P) -> alloy_contract::Result<OptionsBuilderInstance<P, N>> {
+        pub async fn deploy(
+            provider: P,
+        ) -> alloy_contract::Result<OptionsBuilderInstance<P, N>> {
             let call_builder = Self::deploy_builder(provider);
             let contract_address = call_builder.deploy().await?;
             Ok(Self::new(contract_address, call_builder.provider))
         }
         /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-        and constructor arguments, if any.
+and constructor arguments, if any.
 
-        This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-        the bytecode concatenated with the constructor's ABI-encoded arguments.*/
+This is a simple wrapper around creating a `RawCallBuilder` with the data set to
+the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         #[inline]
         pub fn deploy_builder(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
             alloy_contract::RawCallBuilder::new_raw_deploy(
@@ -505,9 +548,10 @@ pub mod OptionsBuilder {
     }
     /// Function calls.
     #[automatically_derived]
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        OptionsBuilderInstance<P, N>
-    {
+    impl<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    > OptionsBuilderInstance<P, N> {
         /// Creates a new call builder using this contract instance's provider and address.
         ///
         /// Note that the call can be any function call, not just those defined in this
@@ -521,9 +565,10 @@ pub mod OptionsBuilder {
     }
     /// Event filters.
     #[automatically_derived]
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        OptionsBuilderInstance<P, N>
-    {
+    impl<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    > OptionsBuilderInstance<P, N> {
         /// Creates a new event filter using this contract instance's provider and address.
         ///
         /// Note that the type can be any event, not just those defined in this contract.

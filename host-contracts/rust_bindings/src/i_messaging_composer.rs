@@ -283,11 +283,12 @@ pub mod IMessagingComposer {
     pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
         b"",
     );
-    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `ComposeDelivered(address,address,bytes32,uint16)` and selector `0x0036c98efcf9e6641dfbc9051f66f405253e8e0c2ab4a24dccda15595b7378c8`.
-    ```solidity
-    event ComposeDelivered(address from, address to, bytes32 guid, uint16 index);
-    ```*/
+```solidity
+event ComposeDelivered(address from, address to, bytes32 guid, uint16 index);
+```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -321,15 +322,16 @@ pub mod IMessagingComposer {
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Uint<16>,
             );
-            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
             const SIGNATURE: &'static str = "ComposeDelivered(address,address,bytes32,uint16)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
-                alloy_sol_types::private::B256::new([
-                    0u8, 54u8, 201u8, 142u8, 252u8, 249u8, 230u8, 100u8, 29u8, 251u8, 201u8, 5u8,
-                    31u8, 102u8, 244u8, 5u8, 37u8, 62u8, 142u8, 12u8, 42u8, 180u8, 162u8, 77u8,
-                    204u8, 218u8, 21u8, 89u8, 91u8, 115u8, 120u8, 200u8,
-                ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
+                0u8, 54u8, 201u8, 142u8, 252u8, 249u8, 230u8, 100u8, 29u8, 251u8, 201u8,
+                5u8, 31u8, 102u8, 244u8, 5u8, 37u8, 62u8, 142u8, 12u8, 42u8, 180u8,
+                162u8, 77u8, 204u8, 218u8, 21u8, 89u8, 91u8, 115u8, 120u8, 200u8,
+            ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -349,11 +351,13 @@ pub mod IMessagingComposer {
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
-                        Self::SIGNATURE,
-                        topics.0,
-                        Self::SIGNATURE_HASH,
-                    ));
+                    return Err(
+                        alloy_sol_types::Error::invalid_event_signature_hash(
+                            Self::SIGNATURE,
+                            topics.0,
+                            Self::SIGNATURE_HASH,
+                        ),
+                    );
                 }
                 Ok(())
             }
@@ -386,7 +390,9 @@ pub mod IMessagingComposer {
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
+                out[0usize] = alloy_sol_types::abi::token::WordToken(
+                    Self::SIGNATURE_HASH,
+                );
                 Ok(())
             }
         }
@@ -407,11 +413,12 @@ pub mod IMessagingComposer {
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `ComposeSent(address,address,bytes32,uint16,bytes)` and selector `0x3d52ff888d033fd3dd1d8057da59e850c91d91a72c41dfa445b247dfedeb6dc1`.
-    ```solidity
-    event ComposeSent(address from, address to, bytes32 guid, uint16 index, bytes message);
-    ```*/
+```solidity
+event ComposeSent(address from, address to, bytes32 guid, uint16 index, bytes message);
+```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -448,15 +455,16 @@ pub mod IMessagingComposer {
                 alloy::sol_types::sol_data::Uint<16>,
                 alloy::sol_types::sol_data::Bytes,
             );
-            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
             const SIGNATURE: &'static str = "ComposeSent(address,address,bytes32,uint16,bytes)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
-                alloy_sol_types::private::B256::new([
-                    61u8, 82u8, 255u8, 136u8, 141u8, 3u8, 63u8, 211u8, 221u8, 29u8, 128u8, 87u8,
-                    218u8, 89u8, 232u8, 80u8, 201u8, 29u8, 145u8, 167u8, 44u8, 65u8, 223u8, 164u8,
-                    69u8, 178u8, 71u8, 223u8, 237u8, 235u8, 109u8, 193u8,
-                ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
+                61u8, 82u8, 255u8, 136u8, 141u8, 3u8, 63u8, 211u8, 221u8, 29u8, 128u8,
+                87u8, 218u8, 89u8, 232u8, 80u8, 201u8, 29u8, 145u8, 167u8, 44u8, 65u8,
+                223u8, 164u8, 69u8, 178u8, 71u8, 223u8, 237u8, 235u8, 109u8, 193u8,
+            ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -477,11 +485,13 @@ pub mod IMessagingComposer {
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
-                        Self::SIGNATURE,
-                        topics.0,
-                        Self::SIGNATURE_HASH,
-                    ));
+                    return Err(
+                        alloy_sol_types::Error::invalid_event_signature_hash(
+                            Self::SIGNATURE,
+                            topics.0,
+                            Self::SIGNATURE_HASH,
+                        ),
+                    );
                 }
                 Ok(())
             }
@@ -517,7 +527,9 @@ pub mod IMessagingComposer {
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
+                out[0usize] = alloy_sol_types::abi::token::WordToken(
+                    Self::SIGNATURE_HASH,
+                );
                 Ok(())
             }
         }
@@ -538,11 +550,12 @@ pub mod IMessagingComposer {
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `LzComposeAlert(address,address,address,bytes32,uint16,uint256,uint256,bytes,bytes,bytes)` and selector `0x8a0b1dce321c5c5fb42349bce46d18087c04140de520917661fb923e44a904b9`.
-    ```solidity
-    event LzComposeAlert(address indexed from, address indexed to, address indexed executor, bytes32 guid, uint16 index, uint256 gas, uint256 value, bytes message, bytes extraData, bytes reason);
-    ```*/
+```solidity
+event LzComposeAlert(address indexed from, address indexed to, address indexed executor, bytes32 guid, uint16 index, uint256 gas, uint256 value, bytes message, bytes extraData, bytes reason);
+```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -591,7 +604,9 @@ pub mod IMessagingComposer {
                 alloy::sol_types::sol_data::Bytes,
                 alloy::sol_types::sol_data::Bytes,
             );
-            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
@@ -599,12 +614,11 @@ pub mod IMessagingComposer {
                 alloy::sol_types::sol_data::Address,
             );
             const SIGNATURE: &'static str = "LzComposeAlert(address,address,address,bytes32,uint16,uint256,uint256,bytes,bytes,bytes)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
-                alloy_sol_types::private::B256::new([
-                    138u8, 11u8, 29u8, 206u8, 50u8, 28u8, 92u8, 95u8, 180u8, 35u8, 73u8, 188u8,
-                    228u8, 109u8, 24u8, 8u8, 124u8, 4u8, 20u8, 13u8, 229u8, 32u8, 145u8, 118u8,
-                    97u8, 251u8, 146u8, 62u8, 68u8, 169u8, 4u8, 185u8,
-                ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
+                138u8, 11u8, 29u8, 206u8, 50u8, 28u8, 92u8, 95u8, 180u8, 35u8, 73u8,
+                188u8, 228u8, 109u8, 24u8, 8u8, 124u8, 4u8, 20u8, 13u8, 229u8, 32u8,
+                145u8, 118u8, 97u8, 251u8, 146u8, 62u8, 68u8, 169u8, 4u8, 185u8,
+            ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -630,11 +644,13 @@ pub mod IMessagingComposer {
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
-                        Self::SIGNATURE,
-                        topics.0,
-                        Self::SIGNATURE_HASH,
-                    ));
+                    return Err(
+                        alloy_sol_types::Error::invalid_event_signature_hash(
+                            Self::SIGNATURE,
+                            topics.0,
+                            Self::SIGNATURE_HASH,
+                        ),
+                    );
                 }
                 Ok(())
             }
@@ -681,7 +697,9 @@ pub mod IMessagingComposer {
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
+                out[0usize] = alloy_sol_types::abi::token::WordToken(
+                    Self::SIGNATURE_HASH,
+                );
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.from,
                 );
@@ -711,11 +729,12 @@ pub mod IMessagingComposer {
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `composeQueue(address,address,bytes32,uint16)` and selector `0x35d330b0`.
-    ```solidity
-    function composeQueue(address _from, address _to, bytes32 _guid, uint16 _index) external view returns (bytes32 messageHash);
-    ```*/
+```solidity
+function composeQueue(address _from, address _to, bytes32 _guid, uint16 _index) external view returns (bytes32 messageHash);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct composeQueueCall {
@@ -728,7 +747,8 @@ pub mod IMessagingComposer {
         #[allow(missing_docs)]
         pub _index: u16,
     }
-    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`composeQueue(address,address,bytes32,uint16)`](composeQueueCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -761,7 +781,9 @@ pub mod IMessagingComposer {
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -795,7 +817,9 @@ pub mod IMessagingComposer {
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -813,9 +837,7 @@ pub mod IMessagingComposer {
             #[doc(hidden)]
             impl ::core::convert::From<UnderlyingRustTuple<'_>> for composeQueueReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {
-                        messageHash: tuple.0,
-                    }
+                    Self { messageHash: tuple.0 }
                 }
             }
         }
@@ -827,10 +849,14 @@ pub mod IMessagingComposer {
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Uint<16>,
             );
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy::sol_types::private::FixedBytes<32>;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "composeQueue(address,address,bytes32,uint16)";
             const SELECTOR: [u8; 4] = [53u8, 211u8, 48u8, 176u8];
             #[inline]
@@ -866,30 +892,34 @@ pub mod IMessagingComposer {
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
-                    |r| {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
                         let r: composeQueueReturn = r.into();
                         r.messageHash
-                    },
-                )
+                    })
             }
             #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(|r| {
-                    let r: composeQueueReturn = r.into();
-                    r.messageHash
-                })
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: composeQueueReturn = r.into();
+                        r.messageHash
+                    })
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `lzCompose(address,address,bytes32,uint16,bytes,bytes)` and selector `0x91d20fa1`.
-    ```solidity
-    function lzCompose(address _from, address _to, bytes32 _guid, uint16 _index, bytes memory _message, bytes memory _extraData) external payable;
-    ```*/
+```solidity
+function lzCompose(address _from, address _to, bytes32 _guid, uint16 _index, bytes memory _message, bytes memory _extraData) external payable;
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct lzComposeCall {
@@ -939,7 +969,9 @@ pub mod IMessagingComposer {
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -982,7 +1014,9 @@ pub mod IMessagingComposer {
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1005,7 +1039,9 @@ pub mod IMessagingComposer {
             }
         }
         impl lzComposeReturn {
-            fn _tokenize(&self) -> <lzComposeCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
+            fn _tokenize(
+                &self,
+            ) -> <lzComposeCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
                 ()
             }
         }
@@ -1019,10 +1055,14 @@ pub mod IMessagingComposer {
                 alloy::sol_types::sol_data::Bytes,
                 alloy::sol_types::sol_data::Bytes,
             );
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = lzComposeReturn;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "lzCompose(address,address,bytes32,uint16,bytes,bytes)";
             const SELECTOR: [u8; 4] = [145u8, 210u8, 15u8, 161u8];
             #[inline]
@@ -1060,23 +1100,28 @@ pub mod IMessagingComposer {
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(Into::into)
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Into::into)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `sendCompose(address,bytes32,uint16,bytes)` and selector `0x7cb59012`.
-    ```solidity
-    function sendCompose(address _to, bytes32 _guid, uint16 _index, bytes memory _message) external;
-    ```*/
+```solidity
+function sendCompose(address _to, bytes32 _guid, uint16 _index, bytes memory _message) external;
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct sendComposeCall {
@@ -1118,7 +1163,9 @@ pub mod IMessagingComposer {
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1152,7 +1199,9 @@ pub mod IMessagingComposer {
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1175,7 +1224,9 @@ pub mod IMessagingComposer {
             }
         }
         impl sendComposeReturn {
-            fn _tokenize(&self) -> <sendComposeCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
+            fn _tokenize(
+                &self,
+            ) -> <sendComposeCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
                 ()
             }
         }
@@ -1187,10 +1238,14 @@ pub mod IMessagingComposer {
                 alloy::sol_types::sol_data::Uint<16>,
                 alloy::sol_types::sol_data::Bytes,
             );
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = sendComposeReturn;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "sendCompose(address,bytes32,uint16,bytes)";
             const SELECTOR: [u8; 4] = [124u8, 181u8, 144u8, 18u8];
             #[inline]
@@ -1222,20 +1277,25 @@ pub mod IMessagingComposer {
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(Into::into)
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Into::into)
             }
         }
     };
     ///Container for all the [`IMessagingComposer`](self) function calls.
     #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive()]
     pub enum IMessagingComposerCalls {
         #[allow(missing_docs)]
         composeQueue(composeQueueCall),
@@ -1266,9 +1326,15 @@ pub mod IMessagingComposer {
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
-                Self::composeQueue(_) => <composeQueueCall as alloy_sol_types::SolCall>::SELECTOR,
-                Self::lzCompose(_) => <lzComposeCall as alloy_sol_types::SolCall>::SELECTOR,
-                Self::sendCompose(_) => <sendComposeCall as alloy_sol_types::SolCall>::SELECTOR,
+                Self::composeQueue(_) => {
+                    <composeQueueCall as alloy_sol_types::SolCall>::SELECTOR
+                }
+                Self::lzCompose(_) => {
+                    <lzComposeCall as alloy_sol_types::SolCall>::SELECTOR
+                }
+                Self::sendCompose(_) => {
+                    <sendComposeCall as alloy_sol_types::SolCall>::SELECTOR
+                }
             }
         }
         #[inline]
@@ -1281,16 +1347,20 @@ pub mod IMessagingComposer {
         }
         #[inline]
         #[allow(non_snake_case)]
-        fn abi_decode_raw(selector: [u8; 4], data: &[u8]) -> alloy_sol_types::Result<Self> {
+        fn abi_decode_raw(
+            selector: [u8; 4],
+            data: &[u8],
+        ) -> alloy_sol_types::Result<Self> {
             static DECODE_SHIMS: &[fn(
                 &[u8],
-            )
-                -> alloy_sol_types::Result<IMessagingComposerCalls>] = &[
+            ) -> alloy_sol_types::Result<IMessagingComposerCalls>] = &[
                 {
                     fn composeQueue(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IMessagingComposerCalls> {
-                        <composeQueueCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                        <composeQueueCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
                             .map(IMessagingComposerCalls::composeQueue)
                     }
                     composeQueue
@@ -1299,13 +1369,17 @@ pub mod IMessagingComposer {
                     fn sendCompose(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IMessagingComposerCalls> {
-                        <sendComposeCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                        <sendComposeCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
                             .map(IMessagingComposerCalls::sendCompose)
                     }
                     sendCompose
                 },
                 {
-                    fn lzCompose(data: &[u8]) -> alloy_sol_types::Result<IMessagingComposerCalls> {
+                    fn lzCompose(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IMessagingComposerCalls> {
                         <lzComposeCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(IMessagingComposerCalls::lzCompose)
                     }
@@ -1313,10 +1387,12 @@ pub mod IMessagingComposer {
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(alloy_sol_types::Error::unknown_selector(
-                    <Self as alloy_sol_types::SolInterface>::NAME,
-                    selector,
-                ));
+                return Err(
+                    alloy_sol_types::Error::unknown_selector(
+                        <Self as alloy_sol_types::SolInterface>::NAME,
+                        selector,
+                    ),
+                );
             };
             DECODE_SHIMS[idx](data)
         }
@@ -1328,17 +1404,15 @@ pub mod IMessagingComposer {
         ) -> alloy_sol_types::Result<Self> {
             static DECODE_VALIDATE_SHIMS: &[fn(
                 &[u8],
-            ) -> alloy_sol_types::Result<
-                IMessagingComposerCalls,
-            >] = &[
+            ) -> alloy_sol_types::Result<IMessagingComposerCalls>] = &[
                 {
                     fn composeQueue(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IMessagingComposerCalls> {
                         <composeQueueCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                            data,
-                        )
-                        .map(IMessagingComposerCalls::composeQueue)
+                                data,
+                            )
+                            .map(IMessagingComposerCalls::composeQueue)
                     }
                     composeQueue
                 },
@@ -1346,24 +1420,32 @@ pub mod IMessagingComposer {
                     fn sendCompose(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IMessagingComposerCalls> {
-                        <sendComposeCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
+                        <sendComposeCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
                             .map(IMessagingComposerCalls::sendCompose)
                     }
                     sendCompose
                 },
                 {
-                    fn lzCompose(data: &[u8]) -> alloy_sol_types::Result<IMessagingComposerCalls> {
-                        <lzComposeCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
+                    fn lzCompose(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IMessagingComposerCalls> {
+                        <lzComposeCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
                             .map(IMessagingComposerCalls::lzCompose)
                     }
                     lzCompose
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(alloy_sol_types::Error::unknown_selector(
-                    <Self as alloy_sol_types::SolInterface>::NAME,
-                    selector,
-                ));
+                return Err(
+                    alloy_sol_types::Error::unknown_selector(
+                        <Self as alloy_sol_types::SolInterface>::NAME,
+                        selector,
+                    ),
+                );
             };
             DECODE_VALIDATE_SHIMS[idx](data)
         }
@@ -1371,13 +1453,17 @@ pub mod IMessagingComposer {
         fn abi_encoded_size(&self) -> usize {
             match self {
                 Self::composeQueue(inner) => {
-                    <composeQueueCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
+                    <composeQueueCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
                 }
                 Self::lzCompose(inner) => {
                     <lzComposeCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::sendCompose(inner) => {
-                    <sendComposeCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
+                    <sendComposeCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
                 }
             }
         }
@@ -1385,19 +1471,29 @@ pub mod IMessagingComposer {
         fn abi_encode_raw(&self, out: &mut alloy_sol_types::private::Vec<u8>) {
             match self {
                 Self::composeQueue(inner) => {
-                    <composeQueueCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
+                    <composeQueueCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
                 }
                 Self::lzCompose(inner) => {
-                    <lzComposeCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
+                    <lzComposeCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
                 }
                 Self::sendCompose(inner) => {
-                    <sendComposeCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
+                    <sendComposeCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
                 }
             }
         }
     }
     ///Container for all the [`IMessagingComposer`](self) events.
-    #[derive(serde::Serialize, serde::Deserialize, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum IMessagingComposerEvents {
         #[allow(missing_docs)]
         ComposeDelivered(ComposeDelivered),
@@ -1416,19 +1512,19 @@ pub mod IMessagingComposer {
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 32usize]] = &[
             [
-                0u8, 54u8, 201u8, 142u8, 252u8, 249u8, 230u8, 100u8, 29u8, 251u8, 201u8, 5u8, 31u8,
-                102u8, 244u8, 5u8, 37u8, 62u8, 142u8, 12u8, 42u8, 180u8, 162u8, 77u8, 204u8, 218u8,
-                21u8, 89u8, 91u8, 115u8, 120u8, 200u8,
+                0u8, 54u8, 201u8, 142u8, 252u8, 249u8, 230u8, 100u8, 29u8, 251u8, 201u8,
+                5u8, 31u8, 102u8, 244u8, 5u8, 37u8, 62u8, 142u8, 12u8, 42u8, 180u8,
+                162u8, 77u8, 204u8, 218u8, 21u8, 89u8, 91u8, 115u8, 120u8, 200u8,
             ],
             [
-                61u8, 82u8, 255u8, 136u8, 141u8, 3u8, 63u8, 211u8, 221u8, 29u8, 128u8, 87u8, 218u8,
-                89u8, 232u8, 80u8, 201u8, 29u8, 145u8, 167u8, 44u8, 65u8, 223u8, 164u8, 69u8,
-                178u8, 71u8, 223u8, 237u8, 235u8, 109u8, 193u8,
+                61u8, 82u8, 255u8, 136u8, 141u8, 3u8, 63u8, 211u8, 221u8, 29u8, 128u8,
+                87u8, 218u8, 89u8, 232u8, 80u8, 201u8, 29u8, 145u8, 167u8, 44u8, 65u8,
+                223u8, 164u8, 69u8, 178u8, 71u8, 223u8, 237u8, 235u8, 109u8, 193u8,
             ],
             [
-                138u8, 11u8, 29u8, 206u8, 50u8, 28u8, 92u8, 95u8, 180u8, 35u8, 73u8, 188u8, 228u8,
-                109u8, 24u8, 8u8, 124u8, 4u8, 20u8, 13u8, 229u8, 32u8, 145u8, 118u8, 97u8, 251u8,
-                146u8, 62u8, 68u8, 169u8, 4u8, 185u8,
+                138u8, 11u8, 29u8, 206u8, 50u8, 28u8, 92u8, 95u8, 180u8, 35u8, 73u8,
+                188u8, 228u8, 109u8, 24u8, 8u8, 124u8, 4u8, 20u8, 13u8, 229u8, 32u8,
+                145u8, 118u8, 97u8, 251u8, 146u8, 62u8, 68u8, 169u8, 4u8, 185u8,
             ],
         ];
     }
@@ -1442,26 +1538,37 @@ pub mod IMessagingComposer {
         ) -> alloy_sol_types::Result<Self> {
             match topics.first().copied() {
                 Some(<ComposeDelivered as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
-                    <ComposeDelivered as alloy_sol_types::SolEvent>::decode_raw_log(topics, data)
+                    <ComposeDelivered as alloy_sol_types::SolEvent>::decode_raw_log(
+                            topics,
+                            data,
+                        )
                         .map(Self::ComposeDelivered)
                 }
                 Some(<ComposeSent as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
-                    <ComposeSent as alloy_sol_types::SolEvent>::decode_raw_log(topics, data)
+                    <ComposeSent as alloy_sol_types::SolEvent>::decode_raw_log(
+                            topics,
+                            data,
+                        )
                         .map(Self::ComposeSent)
                 }
                 Some(<LzComposeAlert as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
-                    <LzComposeAlert as alloy_sol_types::SolEvent>::decode_raw_log(topics, data)
+                    <LzComposeAlert as alloy_sol_types::SolEvent>::decode_raw_log(
+                            topics,
+                            data,
+                        )
                         .map(Self::LzComposeAlert)
                 }
-                _ => alloy_sol_types::private::Err(alloy_sol_types::Error::InvalidLog {
-                    name: <Self as alloy_sol_types::SolEventInterface>::NAME,
-                    log: alloy_sol_types::private::Box::new(
-                        alloy_sol_types::private::LogData::new_unchecked(
-                            topics.to_vec(),
-                            data.to_vec().into(),
+                _ => {
+                    alloy_sol_types::private::Err(alloy_sol_types::Error::InvalidLog {
+                        name: <Self as alloy_sol_types::SolEventInterface>::NAME,
+                        log: alloy_sol_types::private::Box::new(
+                            alloy_sol_types::private::LogData::new_unchecked(
+                                topics.to_vec(),
+                                data.to_vec().into(),
+                            ),
                         ),
-                    ),
-                }),
+                    })
+                }
             }
         }
     }
@@ -1497,7 +1604,7 @@ pub mod IMessagingComposer {
     use alloy::contract as alloy_contract;
     /**Creates a new wrapper around an on-chain [`IMessagingComposer`](self) contract instance.
 
-    See the [wrapper's documentation](`IMessagingComposerInstance`) for more details.*/
+See the [wrapper's documentation](`IMessagingComposerInstance`) for more details.*/
     #[inline]
     pub const fn new<
         P: alloy_contract::private::Provider<N>,
@@ -1510,41 +1617,43 @@ pub mod IMessagingComposer {
     }
     /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
-    Returns a new instance of the contract, if the deployment was successful.
+Returns a new instance of the contract, if the deployment was successful.
 
-    For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
+For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
     #[inline]
-    pub fn deploy<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>(
-        provider: P,
-    ) -> impl ::core::future::Future<Output = alloy_contract::Result<IMessagingComposerInstance<P, N>>>
-    {
-        IMessagingComposerInstance::<P, N>::deploy(provider)
-    }
-    /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-    and constructor arguments, if any.
-
-    This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-    the bytecode concatenated with the constructor's ABI-encoded arguments.*/
-    #[inline]
-    pub fn deploy_builder<
+    pub fn deploy<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
     >(
         provider: P,
-    ) -> alloy_contract::RawCallBuilder<P, N> {
+    ) -> impl ::core::future::Future<
+        Output = alloy_contract::Result<IMessagingComposerInstance<P, N>>,
+    > {
+        IMessagingComposerInstance::<P, N>::deploy(provider)
+    }
+    /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
+and constructor arguments, if any.
+
+This is a simple wrapper around creating a `RawCallBuilder` with the data set to
+the bytecode concatenated with the constructor's ABI-encoded arguments.*/
+    #[inline]
+    pub fn deploy_builder<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    >(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
         IMessagingComposerInstance::<P, N>::deploy_builder(provider)
     }
     /**A [`IMessagingComposer`](self) instance.
 
-    Contains type-safe methods for interacting with an on-chain instance of the
-    [`IMessagingComposer`](self) contract located at a given `address`, using a given
-    provider `P`.
+Contains type-safe methods for interacting with an on-chain instance of the
+[`IMessagingComposer`](self) contract located at a given `address`, using a given
+provider `P`.
 
-    If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
-    documentation on how to provide it), the `deploy` and `deploy_builder` methods can
-    be used to deploy a new instance of the contract.
+If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
+documentation on how to provide it), the `deploy` and `deploy_builder` methods can
+be used to deploy a new instance of the contract.
 
-    See the [module-level documentation](self) for all the available methods.*/
+See the [module-level documentation](self) for all the available methods.*/
     #[derive(Clone)]
     pub struct IMessagingComposerInstance<P, N = alloy_contract::private::Ethereum> {
         address: alloy_sol_types::private::Address,
@@ -1555,21 +1664,23 @@ pub mod IMessagingComposer {
     impl<P, N> ::core::fmt::Debug for IMessagingComposerInstance<P, N> {
         #[inline]
         fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-            f.debug_tuple("IMessagingComposerInstance")
-                .field(&self.address)
-                .finish()
+            f.debug_tuple("IMessagingComposerInstance").field(&self.address).finish()
         }
     }
     /// Instantiation and getters/setters.
     #[automatically_derived]
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        IMessagingComposerInstance<P, N>
-    {
+    impl<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    > IMessagingComposerInstance<P, N> {
         /**Creates a new wrapper around an on-chain [`IMessagingComposer`](self) contract instance.
 
-        See the [wrapper's documentation](`IMessagingComposerInstance`) for more details.*/
+See the [wrapper's documentation](`IMessagingComposerInstance`) for more details.*/
         #[inline]
-        pub const fn new(address: alloy_sol_types::private::Address, provider: P) -> Self {
+        pub const fn new(
+            address: alloy_sol_types::private::Address,
+            provider: P,
+        ) -> Self {
             Self {
                 address,
                 provider,
@@ -1578,9 +1689,9 @@ pub mod IMessagingComposer {
         }
         /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
-        Returns a new instance of the contract, if the deployment was successful.
+Returns a new instance of the contract, if the deployment was successful.
 
-        For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
+For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
         #[inline]
         pub async fn deploy(
             provider: P,
@@ -1590,10 +1701,10 @@ pub mod IMessagingComposer {
             Ok(Self::new(contract_address, call_builder.provider))
         }
         /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-        and constructor arguments, if any.
+and constructor arguments, if any.
 
-        This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-        the bytecode concatenated with the constructor's ABI-encoded arguments.*/
+This is a simple wrapper around creating a `RawCallBuilder` with the data set to
+the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         #[inline]
         pub fn deploy_builder(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
             alloy_contract::RawCallBuilder::new_raw_deploy(
@@ -1635,9 +1746,10 @@ pub mod IMessagingComposer {
     }
     /// Function calls.
     #[automatically_derived]
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        IMessagingComposerInstance<P, N>
-    {
+    impl<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    > IMessagingComposerInstance<P, N> {
         /// Creates a new call builder using this contract instance's provider and address.
         ///
         /// Note that the call can be any function call, not just those defined in this
@@ -1656,12 +1768,14 @@ pub mod IMessagingComposer {
             _guid: alloy::sol_types::private::FixedBytes<32>,
             _index: u16,
         ) -> alloy_contract::SolCallBuilder<&P, composeQueueCall, N> {
-            self.call_builder(&composeQueueCall {
-                _from,
-                _to,
-                _guid,
-                _index,
-            })
+            self.call_builder(
+                &composeQueueCall {
+                    _from,
+                    _to,
+                    _guid,
+                    _index,
+                },
+            )
         }
         ///Creates a new call builder for the [`lzCompose`] function.
         pub fn lzCompose(
@@ -1673,14 +1787,16 @@ pub mod IMessagingComposer {
             _message: alloy::sol_types::private::Bytes,
             _extraData: alloy::sol_types::private::Bytes,
         ) -> alloy_contract::SolCallBuilder<&P, lzComposeCall, N> {
-            self.call_builder(&lzComposeCall {
-                _from,
-                _to,
-                _guid,
-                _index,
-                _message,
-                _extraData,
-            })
+            self.call_builder(
+                &lzComposeCall {
+                    _from,
+                    _to,
+                    _guid,
+                    _index,
+                    _message,
+                    _extraData,
+                },
+            )
         }
         ///Creates a new call builder for the [`sendCompose`] function.
         pub fn sendCompose(
@@ -1690,19 +1806,22 @@ pub mod IMessagingComposer {
             _index: u16,
             _message: alloy::sol_types::private::Bytes,
         ) -> alloy_contract::SolCallBuilder<&P, sendComposeCall, N> {
-            self.call_builder(&sendComposeCall {
-                _to,
-                _guid,
-                _index,
-                _message,
-            })
+            self.call_builder(
+                &sendComposeCall {
+                    _to,
+                    _guid,
+                    _index,
+                    _message,
+                },
+            )
         }
     }
     /// Event filters.
     #[automatically_derived]
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        IMessagingComposerInstance<P, N>
-    {
+    impl<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    > IMessagingComposerInstance<P, N> {
         /// Creates a new event filter using this contract instance's provider and address.
         ///
         /// Note that the type can be any event, not just those defined in this contract.
@@ -1713,7 +1832,9 @@ pub mod IMessagingComposer {
             alloy_contract::Event::new_sol(&self.provider, &self.address)
         }
         ///Creates a new event filter for the [`ComposeDelivered`] event.
-        pub fn ComposeDelivered_filter(&self) -> alloy_contract::Event<&P, ComposeDelivered, N> {
+        pub fn ComposeDelivered_filter(
+            &self,
+        ) -> alloy_contract::Event<&P, ComposeDelivered, N> {
             self.event_filter::<ComposeDelivered>()
         }
         ///Creates a new event filter for the [`ComposeSent`] event.
@@ -1721,7 +1842,9 @@ pub mod IMessagingComposer {
             self.event_filter::<ComposeSent>()
         }
         ///Creates a new event filter for the [`LzComposeAlert`] event.
-        pub fn LzComposeAlert_filter(&self) -> alloy_contract::Event<&P, LzComposeAlert, N> {
+        pub fn LzComposeAlert_filter(
+            &self,
+        ) -> alloy_contract::Event<&P, LzComposeAlert, N> {
             self.event_filter::<LzComposeAlert>()
         }
     }

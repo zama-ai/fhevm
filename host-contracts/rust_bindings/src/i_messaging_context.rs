@@ -74,15 +74,17 @@ pub mod IMessagingContext {
     pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
         b"",
     );
-    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getSendContext()` and selector `0x14f651a9`.
-    ```solidity
-    function getSendContext() external view returns (uint32 dstEid, address sender);
-    ```*/
+```solidity
+function getSendContext() external view returns (uint32 dstEid, address sender);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getSendContextCall;
-    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`getSendContext()`](getSendContextCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -107,7 +109,9 @@ pub mod IMessagingContext {
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -139,7 +143,9 @@ pub mod IMessagingContext {
             type UnderlyingRustTuple<'a> = (u32, alloy::sol_types::private::Address);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -148,14 +154,16 @@ pub mod IMessagingContext {
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<getSendContextReturn> for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<getSendContextReturn>
+            for UnderlyingRustTuple<'_> {
                 fn from(value: getSendContextReturn) -> Self {
                     (value.dstEid, value.sender)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getSendContextReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for getSendContextReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         dstEid: tuple.0,
@@ -169,9 +177,9 @@ pub mod IMessagingContext {
                 &self,
             ) -> <getSendContextCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
                 (
-                    <alloy::sol_types::sol_data::Uint<32> as alloy_sol_types::SolType>::tokenize(
-                        &self.dstEid,
-                    ),
+                    <alloy::sol_types::sol_data::Uint<
+                        32,
+                    > as alloy_sol_types::SolType>::tokenize(&self.dstEid),
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self.sender,
                     ),
@@ -181,13 +189,17 @@ pub mod IMessagingContext {
         #[automatically_derived]
         impl alloy_sol_types::SolCall for getSendContextCall {
             type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = getSendContextReturn;
             type ReturnTuple<'a> = (
                 alloy::sol_types::sol_data::Uint<32>,
                 alloy::sol_types::sol_data::Address,
             );
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "getSendContext()";
             const SELECTOR: [u8; 4] = [20u8, 246u8, 81u8, 169u8];
             #[inline]
@@ -206,27 +218,33 @@ pub mod IMessagingContext {
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(Into::into)
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Into::into)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `isSendingMessage()` and selector `0x79624ca9`.
-    ```solidity
-    function isSendingMessage() external view returns (bool);
-    ```*/
+```solidity
+function isSendingMessage() external view returns (bool);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct isSendingMessageCall;
-    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`isSendingMessage()`](isSendingMessageCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -249,7 +267,9 @@ pub mod IMessagingContext {
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -258,14 +278,16 @@ pub mod IMessagingContext {
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<isSendingMessageCall> for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<isSendingMessageCall>
+            for UnderlyingRustTuple<'_> {
                 fn from(value: isSendingMessageCall) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for isSendingMessageCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for isSendingMessageCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self
                 }
@@ -278,7 +300,9 @@ pub mod IMessagingContext {
             type UnderlyingRustTuple<'a> = (bool,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -287,14 +311,16 @@ pub mod IMessagingContext {
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<isSendingMessageReturn> for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<isSendingMessageReturn>
+            for UnderlyingRustTuple<'_> {
                 fn from(value: isSendingMessageReturn) -> Self {
                     (value._0,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for isSendingMessageReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for isSendingMessageReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { _0: tuple.0 }
                 }
@@ -303,10 +329,14 @@ pub mod IMessagingContext {
         #[automatically_derived]
         impl alloy_sol_types::SolCall for isSendingMessageCall {
             type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = bool;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::Bool,);
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "isSendingMessage()";
             const SELECTOR: [u8; 4] = [121u8, 98u8, 76u8, 169u8];
             #[inline]
@@ -321,31 +351,39 @@ pub mod IMessagingContext {
             }
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (<alloy::sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(ret),)
+                (
+                    <alloy::sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(
+                        ret,
+                    ),
+                )
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
-                    |r| {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
                         let r: isSendingMessageReturn = r.into();
                         r._0
-                    },
-                )
+                    })
             }
             #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(|r| {
-                    let r: isSendingMessageReturn = r.into();
-                    r._0
-                })
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: isSendingMessageReturn = r.into();
+                        r._0
+                    })
             }
         }
     };
     ///Container for all the [`IMessagingContext`](self) function calls.
     #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive()]
     pub enum IMessagingContextCalls {
         #[allow(missing_docs)]
         getSendContext(getSendContextCall),
@@ -360,8 +398,10 @@ pub mod IMessagingContext {
         /// No guarantees are made about the order of the selectors.
         ///
         /// Prefer using `SolInterface` methods instead.
-        pub const SELECTORS: &'static [[u8; 4usize]] =
-            &[[20u8, 246u8, 81u8, 169u8], [121u8, 98u8, 76u8, 169u8]];
+        pub const SELECTORS: &'static [[u8; 4usize]] = &[
+            [20u8, 246u8, 81u8, 169u8],
+            [121u8, 98u8, 76u8, 169u8],
+        ];
     }
     #[automatically_derived]
     impl alloy_sol_types::SolInterface for IMessagingContextCalls {
@@ -389,35 +429,43 @@ pub mod IMessagingContext {
         }
         #[inline]
         #[allow(non_snake_case)]
-        fn abi_decode_raw(selector: [u8; 4], data: &[u8]) -> alloy_sol_types::Result<Self> {
-            static DECODE_SHIMS: &[fn(&[u8]) -> alloy_sol_types::Result<IMessagingContextCalls>] =
-                &[
-                    {
-                        fn getSendContext(
-                            data: &[u8],
-                        ) -> alloy_sol_types::Result<IMessagingContextCalls>
-                        {
-                            <getSendContextCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
-                                .map(IMessagingContextCalls::getSendContext)
-                        }
-                        getSendContext
-                    },
-                    {
-                        fn isSendingMessage(
-                            data: &[u8],
-                        ) -> alloy_sol_types::Result<IMessagingContextCalls>
-                        {
-                            <isSendingMessageCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
-                                .map(IMessagingContextCalls::isSendingMessage)
-                        }
-                        isSendingMessage
-                    },
-                ];
+        fn abi_decode_raw(
+            selector: [u8; 4],
+            data: &[u8],
+        ) -> alloy_sol_types::Result<Self> {
+            static DECODE_SHIMS: &[fn(
+                &[u8],
+            ) -> alloy_sol_types::Result<IMessagingContextCalls>] = &[
+                {
+                    fn getSendContext(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IMessagingContextCalls> {
+                        <getSendContextCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IMessagingContextCalls::getSendContext)
+                    }
+                    getSendContext
+                },
+                {
+                    fn isSendingMessage(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IMessagingContextCalls> {
+                        <isSendingMessageCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IMessagingContextCalls::isSendingMessage)
+                    }
+                    isSendingMessage
+                },
+            ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(alloy_sol_types::Error::unknown_selector(
-                    <Self as alloy_sol_types::SolInterface>::NAME,
-                    selector,
-                ));
+                return Err(
+                    alloy_sol_types::Error::unknown_selector(
+                        <Self as alloy_sol_types::SolInterface>::NAME,
+                        selector,
+                    ),
+                );
             };
             DECODE_SHIMS[idx](data)
         }
@@ -429,17 +477,15 @@ pub mod IMessagingContext {
         ) -> alloy_sol_types::Result<Self> {
             static DECODE_VALIDATE_SHIMS: &[fn(
                 &[u8],
-            ) -> alloy_sol_types::Result<
-                IMessagingContextCalls,
-            >] = &[
+            ) -> alloy_sol_types::Result<IMessagingContextCalls>] = &[
                 {
                     fn getSendContext(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IMessagingContextCalls> {
                         <getSendContextCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                            data,
-                        )
-                        .map(IMessagingContextCalls::getSendContext)
+                                data,
+                            )
+                            .map(IMessagingContextCalls::getSendContext)
                     }
                     getSendContext
                 },
@@ -448,18 +494,20 @@ pub mod IMessagingContext {
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IMessagingContextCalls> {
                         <isSendingMessageCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                            data,
-                        )
-                        .map(IMessagingContextCalls::isSendingMessage)
+                                data,
+                            )
+                            .map(IMessagingContextCalls::isSendingMessage)
                     }
                     isSendingMessage
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(alloy_sol_types::Error::unknown_selector(
-                    <Self as alloy_sol_types::SolInterface>::NAME,
-                    selector,
-                ));
+                return Err(
+                    alloy_sol_types::Error::unknown_selector(
+                        <Self as alloy_sol_types::SolInterface>::NAME,
+                        selector,
+                    ),
+                );
             };
             DECODE_VALIDATE_SHIMS[idx](data)
         }
@@ -467,10 +515,14 @@ pub mod IMessagingContext {
         fn abi_encoded_size(&self) -> usize {
             match self {
                 Self::getSendContext(inner) => {
-                    <getSendContextCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
+                    <getSendContextCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
                 }
                 Self::isSendingMessage(inner) => {
-                    <isSendingMessageCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
+                    <isSendingMessageCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
                 }
             }
         }
@@ -478,10 +530,16 @@ pub mod IMessagingContext {
         fn abi_encode_raw(&self, out: &mut alloy_sol_types::private::Vec<u8>) {
             match self {
                 Self::getSendContext(inner) => {
-                    <getSendContextCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
+                    <getSendContextCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
                 }
                 Self::isSendingMessage(inner) => {
-                    <isSendingMessageCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
+                    <isSendingMessageCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
                 }
             }
         }
@@ -489,7 +547,7 @@ pub mod IMessagingContext {
     use alloy::contract as alloy_contract;
     /**Creates a new wrapper around an on-chain [`IMessagingContext`](self) contract instance.
 
-    See the [wrapper's documentation](`IMessagingContextInstance`) for more details.*/
+See the [wrapper's documentation](`IMessagingContextInstance`) for more details.*/
     #[inline]
     pub const fn new<
         P: alloy_contract::private::Provider<N>,
@@ -502,41 +560,43 @@ pub mod IMessagingContext {
     }
     /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
-    Returns a new instance of the contract, if the deployment was successful.
+Returns a new instance of the contract, if the deployment was successful.
 
-    For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
+For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
     #[inline]
-    pub fn deploy<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>(
-        provider: P,
-    ) -> impl ::core::future::Future<Output = alloy_contract::Result<IMessagingContextInstance<P, N>>>
-    {
-        IMessagingContextInstance::<P, N>::deploy(provider)
-    }
-    /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-    and constructor arguments, if any.
-
-    This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-    the bytecode concatenated with the constructor's ABI-encoded arguments.*/
-    #[inline]
-    pub fn deploy_builder<
+    pub fn deploy<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
     >(
         provider: P,
-    ) -> alloy_contract::RawCallBuilder<P, N> {
+    ) -> impl ::core::future::Future<
+        Output = alloy_contract::Result<IMessagingContextInstance<P, N>>,
+    > {
+        IMessagingContextInstance::<P, N>::deploy(provider)
+    }
+    /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
+and constructor arguments, if any.
+
+This is a simple wrapper around creating a `RawCallBuilder` with the data set to
+the bytecode concatenated with the constructor's ABI-encoded arguments.*/
+    #[inline]
+    pub fn deploy_builder<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    >(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
         IMessagingContextInstance::<P, N>::deploy_builder(provider)
     }
     /**A [`IMessagingContext`](self) instance.
 
-    Contains type-safe methods for interacting with an on-chain instance of the
-    [`IMessagingContext`](self) contract located at a given `address`, using a given
-    provider `P`.
+Contains type-safe methods for interacting with an on-chain instance of the
+[`IMessagingContext`](self) contract located at a given `address`, using a given
+provider `P`.
 
-    If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
-    documentation on how to provide it), the `deploy` and `deploy_builder` methods can
-    be used to deploy a new instance of the contract.
+If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
+documentation on how to provide it), the `deploy` and `deploy_builder` methods can
+be used to deploy a new instance of the contract.
 
-    See the [module-level documentation](self) for all the available methods.*/
+See the [module-level documentation](self) for all the available methods.*/
     #[derive(Clone)]
     pub struct IMessagingContextInstance<P, N = alloy_contract::private::Ethereum> {
         address: alloy_sol_types::private::Address,
@@ -547,21 +607,23 @@ pub mod IMessagingContext {
     impl<P, N> ::core::fmt::Debug for IMessagingContextInstance<P, N> {
         #[inline]
         fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-            f.debug_tuple("IMessagingContextInstance")
-                .field(&self.address)
-                .finish()
+            f.debug_tuple("IMessagingContextInstance").field(&self.address).finish()
         }
     }
     /// Instantiation and getters/setters.
     #[automatically_derived]
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        IMessagingContextInstance<P, N>
-    {
+    impl<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    > IMessagingContextInstance<P, N> {
         /**Creates a new wrapper around an on-chain [`IMessagingContext`](self) contract instance.
 
-        See the [wrapper's documentation](`IMessagingContextInstance`) for more details.*/
+See the [wrapper's documentation](`IMessagingContextInstance`) for more details.*/
         #[inline]
-        pub const fn new(address: alloy_sol_types::private::Address, provider: P) -> Self {
+        pub const fn new(
+            address: alloy_sol_types::private::Address,
+            provider: P,
+        ) -> Self {
             Self {
                 address,
                 provider,
@@ -570,9 +632,9 @@ pub mod IMessagingContext {
         }
         /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
-        Returns a new instance of the contract, if the deployment was successful.
+Returns a new instance of the contract, if the deployment was successful.
 
-        For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
+For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
         #[inline]
         pub async fn deploy(
             provider: P,
@@ -582,10 +644,10 @@ pub mod IMessagingContext {
             Ok(Self::new(contract_address, call_builder.provider))
         }
         /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-        and constructor arguments, if any.
+and constructor arguments, if any.
 
-        This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-        the bytecode concatenated with the constructor's ABI-encoded arguments.*/
+This is a simple wrapper around creating a `RawCallBuilder` with the data set to
+the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         #[inline]
         pub fn deploy_builder(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
             alloy_contract::RawCallBuilder::new_raw_deploy(
@@ -627,9 +689,10 @@ pub mod IMessagingContext {
     }
     /// Function calls.
     #[automatically_derived]
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        IMessagingContextInstance<P, N>
-    {
+    impl<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    > IMessagingContextInstance<P, N> {
         /// Creates a new call builder using this contract instance's provider and address.
         ///
         /// Note that the call can be any function call, not just those defined in this
@@ -641,7 +704,9 @@ pub mod IMessagingContext {
             alloy_contract::SolCallBuilder::new_sol(&self.provider, &self.address, call)
         }
         ///Creates a new call builder for the [`getSendContext`] function.
-        pub fn getSendContext(&self) -> alloy_contract::SolCallBuilder<&P, getSendContextCall, N> {
+        pub fn getSendContext(
+            &self,
+        ) -> alloy_contract::SolCallBuilder<&P, getSendContextCall, N> {
             self.call_builder(&getSendContextCall)
         }
         ///Creates a new call builder for the [`isSendingMessage`] function.
@@ -653,9 +718,10 @@ pub mod IMessagingContext {
     }
     /// Event filters.
     #[automatically_derived]
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        IMessagingContextInstance<P, N>
-    {
+    impl<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    > IMessagingContextInstance<P, N> {
         /// Creates a new event filter using this contract instance's provider and address.
         ///
         /// Note that the type can be any event, not just those defined in this contract.

@@ -160,10 +160,11 @@ pub mod ILayerZeroReceiver {
     pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
         b"",
     );
-    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**```solidity
-    struct Origin { uint32 srcEid; bytes32 sender; uint64 nonce; }
-    ```*/
+struct Origin { uint32 srcEid; bytes32 sender; uint64 nonce; }
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct Origin {
@@ -189,10 +190,16 @@ pub mod ILayerZeroReceiver {
             alloy::sol_types::sol_data::Uint<64>,
         );
         #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = (u32, alloy::sol_types::private::FixedBytes<32>, u64);
+        type UnderlyingRustTuple<'a> = (
+            u32,
+            alloy::sol_types::private::FixedBytes<32>,
+            u64,
+        );
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -242,50 +249,64 @@ pub mod ILayerZeroReceiver {
                 if let Some(size) = <Self as alloy_sol_types::SolType>::ENCODED_SIZE {
                     return size;
                 }
-                let tuple =
-                    <UnderlyingRustTuple<'_> as ::core::convert::From<Self>>::from(self.clone());
-                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::abi_encoded_size(&tuple)
+                let tuple = <UnderlyingRustTuple<
+                    '_,
+                > as ::core::convert::From<Self>>::from(self.clone());
+                <UnderlyingSolTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_encoded_size(&tuple)
             }
             #[inline]
             fn stv_eip712_data_word(&self) -> alloy_sol_types::Word {
                 <Self as alloy_sol_types::SolStruct>::eip712_hash_struct(self)
             }
             #[inline]
-            fn stv_abi_encode_packed_to(&self, out: &mut alloy_sol_types::private::Vec<u8>) {
-                let tuple =
-                    <UnderlyingRustTuple<'_> as ::core::convert::From<Self>>::from(self.clone());
-                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::abi_encode_packed_to(
-                    &tuple, out,
-                )
+            fn stv_abi_encode_packed_to(
+                &self,
+                out: &mut alloy_sol_types::private::Vec<u8>,
+            ) {
+                let tuple = <UnderlyingRustTuple<
+                    '_,
+                > as ::core::convert::From<Self>>::from(self.clone());
+                <UnderlyingSolTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_encode_packed_to(&tuple, out)
             }
             #[inline]
             fn stv_abi_packed_encoded_size(&self) -> usize {
                 if let Some(size) = <Self as alloy_sol_types::SolType>::PACKED_ENCODED_SIZE {
                     return size;
                 }
-                let tuple =
-                    <UnderlyingRustTuple<'_> as ::core::convert::From<Self>>::from(self.clone());
-                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::abi_packed_encoded_size(
-                    &tuple,
-                )
+                let tuple = <UnderlyingRustTuple<
+                    '_,
+                > as ::core::convert::From<Self>>::from(self.clone());
+                <UnderlyingSolTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_packed_encoded_size(&tuple)
             }
         }
         #[automatically_derived]
         impl alloy_sol_types::SolType for Origin {
             type RustType = Self;
-            type Token<'a> = <UnderlyingSolTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <UnderlyingSolTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SOL_NAME: &'static str = <Self as alloy_sol_types::SolStruct>::NAME;
-            const ENCODED_SIZE: Option<usize> =
-                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::ENCODED_SIZE;
-            const PACKED_ENCODED_SIZE: Option<usize> =
-                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::PACKED_ENCODED_SIZE;
+            const ENCODED_SIZE: Option<usize> = <UnderlyingSolTuple<
+                '_,
+            > as alloy_sol_types::SolType>::ENCODED_SIZE;
+            const PACKED_ENCODED_SIZE: Option<usize> = <UnderlyingSolTuple<
+                '_,
+            > as alloy_sol_types::SolType>::PACKED_ENCODED_SIZE;
             #[inline]
             fn valid_token(token: &Self::Token<'_>) -> bool {
                 <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::valid_token(token)
             }
             #[inline]
             fn detokenize(token: Self::Token<'_>) -> Self::RustType {
-                let tuple = <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::detokenize(token);
+                let tuple = <UnderlyingSolTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::detokenize(token);
                 <Self as ::core::convert::From<UnderlyingRustTuple<'_>>>::from(tuple)
             }
         }
@@ -299,9 +320,9 @@ pub mod ILayerZeroReceiver {
                 )
             }
             #[inline]
-            fn eip712_components()
-            -> alloy_sol_types::private::Vec<alloy_sol_types::private::Cow<'static, str>>
-            {
+            fn eip712_components() -> alloy_sol_types::private::Vec<
+                alloy_sol_types::private::Cow<'static, str>,
+            > {
                 alloy_sol_types::private::Vec::new()
             }
             #[inline]
@@ -351,7 +372,9 @@ pub mod ILayerZeroReceiver {
                 rust: &Self::RustType,
                 out: &mut alloy_sol_types::private::Vec<u8>,
             ) {
-                out.reserve(<Self as alloy_sol_types::EventTopic>::topic_preimage_length(rust));
+                out.reserve(
+                    <Self as alloy_sol_types::EventTopic>::topic_preimage_length(rust),
+                );
                 <alloy::sol_types::sol_data::Uint<
                     32,
                 > as alloy_sol_types::EventTopic>::encode_topic_preimage(
@@ -372,25 +395,34 @@ pub mod ILayerZeroReceiver {
                 );
             }
             #[inline]
-            fn encode_topic(rust: &Self::RustType) -> alloy_sol_types::abi::token::WordToken {
+            fn encode_topic(
+                rust: &Self::RustType,
+            ) -> alloy_sol_types::abi::token::WordToken {
                 let mut out = alloy_sol_types::private::Vec::new();
-                <Self as alloy_sol_types::EventTopic>::encode_topic_preimage(rust, &mut out);
-                alloy_sol_types::abi::token::WordToken(alloy_sol_types::private::keccak256(out))
+                <Self as alloy_sol_types::EventTopic>::encode_topic_preimage(
+                    rust,
+                    &mut out,
+                );
+                alloy_sol_types::abi::token::WordToken(
+                    alloy_sol_types::private::keccak256(out),
+                )
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `allowInitializePath((uint32,bytes32,uint64))` and selector `0xff7bd03d`.
-    ```solidity
-    function allowInitializePath(Origin memory _origin) external view returns (bool);
-    ```*/
+```solidity
+function allowInitializePath(Origin memory _origin) external view returns (bool);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct allowInitializePathCall {
         #[allow(missing_docs)]
         pub _origin: <Origin as alloy::sol_types::SolType>::RustType,
     }
-    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`allowInitializePath((uint32,bytes32,uint64))`](allowInitializePathCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -410,10 +442,14 @@ pub mod ILayerZeroReceiver {
             #[doc(hidden)]
             type UnderlyingSolTuple<'a> = (Origin,);
             #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (<Origin as alloy::sol_types::SolType>::RustType,);
+            type UnderlyingRustTuple<'a> = (
+                <Origin as alloy::sol_types::SolType>::RustType,
+            );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -422,14 +458,16 @@ pub mod ILayerZeroReceiver {
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<allowInitializePathCall> for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<allowInitializePathCall>
+            for UnderlyingRustTuple<'_> {
                 fn from(value: allowInitializePathCall) -> Self {
                     (value._origin,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for allowInitializePathCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for allowInitializePathCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { _origin: tuple.0 }
                 }
@@ -442,7 +480,9 @@ pub mod ILayerZeroReceiver {
             type UnderlyingRustTuple<'a> = (bool,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -451,14 +491,16 @@ pub mod ILayerZeroReceiver {
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<allowInitializePathReturn> for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<allowInitializePathReturn>
+            for UnderlyingRustTuple<'_> {
                 fn from(value: allowInitializePathReturn) -> Self {
                     (value._0,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for allowInitializePathReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for allowInitializePathReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { _0: tuple.0 }
                 }
@@ -467,10 +509,14 @@ pub mod ILayerZeroReceiver {
         #[automatically_derived]
         impl alloy_sol_types::SolCall for allowInitializePathCall {
             type Parameters<'a> = (Origin,);
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = bool;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::Bool,);
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "allowInitializePath((uint32,bytes32,uint64))";
             const SELECTOR: [u8; 4] = [255u8, 123u8, 208u8, 61u8];
             #[inline]
@@ -481,40 +527,46 @@ pub mod ILayerZeroReceiver {
             }
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
-                (<Origin as alloy_sol_types::SolType>::tokenize(
-                    &self._origin,
-                ),)
+                (<Origin as alloy_sol_types::SolType>::tokenize(&self._origin),)
             }
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (<alloy::sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(ret),)
+                (
+                    <alloy::sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(
+                        ret,
+                    ),
+                )
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
-                    |r| {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
                         let r: allowInitializePathReturn = r.into();
                         r._0
-                    },
-                )
+                    })
             }
             #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(|r| {
-                    let r: allowInitializePathReturn = r.into();
-                    r._0
-                })
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: allowInitializePathReturn = r.into();
+                        r._0
+                    })
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `lzReceive((uint32,bytes32,uint64),bytes32,bytes,address,bytes)` and selector `0x13137d65`.
-    ```solidity
-    function lzReceive(Origin memory _origin, bytes32 _guid, bytes memory _message, address _executor, bytes memory _extraData) external payable;
-    ```*/
+```solidity
+function lzReceive(Origin memory _origin, bytes32 _guid, bytes memory _message, address _executor, bytes memory _extraData) external payable;
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct lzReceiveCall {
@@ -560,7 +612,9 @@ pub mod ILayerZeroReceiver {
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -601,7 +655,9 @@ pub mod ILayerZeroReceiver {
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -624,7 +680,9 @@ pub mod ILayerZeroReceiver {
             }
         }
         impl lzReceiveReturn {
-            fn _tokenize(&self) -> <lzReceiveCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
+            fn _tokenize(
+                &self,
+            ) -> <lzReceiveCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
                 ()
             }
         }
@@ -637,12 +695,15 @@ pub mod ILayerZeroReceiver {
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Bytes,
             );
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = lzReceiveReturn;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str =
-                "lzReceive((uint32,bytes32,uint64),bytes32,bytes,address,bytes)";
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "lzReceive((uint32,bytes32,uint64),bytes32,bytes,address,bytes)";
             const SELECTOR: [u8; 4] = [19u8, 19u8, 125u8, 101u8];
             #[inline]
             fn new<'a>(
@@ -674,23 +735,28 @@ pub mod ILayerZeroReceiver {
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(Into::into)
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Into::into)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `nextNonce(uint32,bytes32)` and selector `0x7d25a05e`.
-    ```solidity
-    function nextNonce(uint32 _eid, bytes32 _sender) external view returns (uint64);
-    ```*/
+```solidity
+function nextNonce(uint32 _eid, bytes32 _sender) external view returns (uint64);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct nextNonceCall {
@@ -699,7 +765,8 @@ pub mod ILayerZeroReceiver {
         #[allow(missing_docs)]
         pub _sender: alloy::sol_types::private::FixedBytes<32>,
     }
-    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`nextNonce(uint32,bytes32)`](nextNonceCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -722,10 +789,15 @@ pub mod ILayerZeroReceiver {
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
             #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (u32, alloy::sol_types::private::FixedBytes<32>);
+            type UnderlyingRustTuple<'a> = (
+                u32,
+                alloy::sol_types::private::FixedBytes<32>,
+            );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -757,7 +829,9 @@ pub mod ILayerZeroReceiver {
             type UnderlyingRustTuple<'a> = (u64,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -785,10 +859,14 @@ pub mod ILayerZeroReceiver {
                 alloy::sol_types::sol_data::Uint<32>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = u64;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::Uint<64>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "nextNonce(uint32,bytes32)";
             const SELECTOR: [u8; 4] = [125u8, 37u8, 160u8, 94u8];
             #[inline]
@@ -811,34 +889,38 @@ pub mod ILayerZeroReceiver {
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
                 (
-                    <alloy::sol_types::sol_data::Uint<64> as alloy_sol_types::SolType>::tokenize(
-                        ret,
-                    ),
+                    <alloy::sol_types::sol_data::Uint<
+                        64,
+                    > as alloy_sol_types::SolType>::tokenize(ret),
                 )
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
-                    |r| {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
                         let r: nextNonceReturn = r.into();
                         r._0
-                    },
-                )
+                    })
             }
             #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(|r| {
-                    let r: nextNonceReturn = r.into();
-                    r._0
-                })
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: nextNonceReturn = r.into();
+                        r._0
+                    })
             }
         }
     };
     ///Container for all the [`ILayerZeroReceiver`](self) function calls.
     #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive()]
     pub enum ILayerZeroReceiverCalls {
         #[allow(missing_docs)]
         allowInitializePath(allowInitializePathCall),
@@ -872,8 +954,12 @@ pub mod ILayerZeroReceiver {
                 Self::allowInitializePath(_) => {
                     <allowInitializePathCall as alloy_sol_types::SolCall>::SELECTOR
                 }
-                Self::lzReceive(_) => <lzReceiveCall as alloy_sol_types::SolCall>::SELECTOR,
-                Self::nextNonce(_) => <nextNonceCall as alloy_sol_types::SolCall>::SELECTOR,
+                Self::lzReceive(_) => {
+                    <lzReceiveCall as alloy_sol_types::SolCall>::SELECTOR
+                }
+                Self::nextNonce(_) => {
+                    <nextNonceCall as alloy_sol_types::SolCall>::SELECTOR
+                }
             }
         }
         #[inline]
@@ -886,20 +972,26 @@ pub mod ILayerZeroReceiver {
         }
         #[inline]
         #[allow(non_snake_case)]
-        fn abi_decode_raw(selector: [u8; 4], data: &[u8]) -> alloy_sol_types::Result<Self> {
+        fn abi_decode_raw(
+            selector: [u8; 4],
+            data: &[u8],
+        ) -> alloy_sol_types::Result<Self> {
             static DECODE_SHIMS: &[fn(
                 &[u8],
-            )
-                -> alloy_sol_types::Result<ILayerZeroReceiverCalls>] = &[
+            ) -> alloy_sol_types::Result<ILayerZeroReceiverCalls>] = &[
                 {
-                    fn lzReceive(data: &[u8]) -> alloy_sol_types::Result<ILayerZeroReceiverCalls> {
+                    fn lzReceive(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<ILayerZeroReceiverCalls> {
                         <lzReceiveCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(ILayerZeroReceiverCalls::lzReceive)
                     }
                     lzReceive
                 },
                 {
-                    fn nextNonce(data: &[u8]) -> alloy_sol_types::Result<ILayerZeroReceiverCalls> {
+                    fn nextNonce(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<ILayerZeroReceiverCalls> {
                         <nextNonceCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(ILayerZeroReceiverCalls::nextNonce)
                     }
@@ -909,17 +1001,21 @@ pub mod ILayerZeroReceiver {
                     fn allowInitializePath(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<ILayerZeroReceiverCalls> {
-                        <allowInitializePathCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                        <allowInitializePathCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
                             .map(ILayerZeroReceiverCalls::allowInitializePath)
                     }
                     allowInitializePath
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(alloy_sol_types::Error::unknown_selector(
-                    <Self as alloy_sol_types::SolInterface>::NAME,
-                    selector,
-                ));
+                return Err(
+                    alloy_sol_types::Error::unknown_selector(
+                        <Self as alloy_sol_types::SolInterface>::NAME,
+                        selector,
+                    ),
+                );
             };
             DECODE_SHIMS[idx](data)
         }
@@ -931,19 +1027,25 @@ pub mod ILayerZeroReceiver {
         ) -> alloy_sol_types::Result<Self> {
             static DECODE_VALIDATE_SHIMS: &[fn(
                 &[u8],
-            ) -> alloy_sol_types::Result<
-                ILayerZeroReceiverCalls,
-            >] = &[
+            ) -> alloy_sol_types::Result<ILayerZeroReceiverCalls>] = &[
                 {
-                    fn lzReceive(data: &[u8]) -> alloy_sol_types::Result<ILayerZeroReceiverCalls> {
-                        <lzReceiveCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
+                    fn lzReceive(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<ILayerZeroReceiverCalls> {
+                        <lzReceiveCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
                             .map(ILayerZeroReceiverCalls::lzReceive)
                     }
                     lzReceive
                 },
                 {
-                    fn nextNonce(data: &[u8]) -> alloy_sol_types::Result<ILayerZeroReceiverCalls> {
-                        <nextNonceCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
+                    fn nextNonce(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<ILayerZeroReceiverCalls> {
+                        <nextNonceCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
                             .map(ILayerZeroReceiverCalls::nextNonce)
                     }
                     nextNonce
@@ -961,10 +1063,12 @@ pub mod ILayerZeroReceiver {
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(alloy_sol_types::Error::unknown_selector(
-                    <Self as alloy_sol_types::SolInterface>::NAME,
-                    selector,
-                ));
+                return Err(
+                    alloy_sol_types::Error::unknown_selector(
+                        <Self as alloy_sol_types::SolInterface>::NAME,
+                        selector,
+                    ),
+                );
             };
             DECODE_VALIDATE_SHIMS[idx](data)
         }
@@ -972,7 +1076,9 @@ pub mod ILayerZeroReceiver {
         fn abi_encoded_size(&self) -> usize {
             match self {
                 Self::allowInitializePath(inner) => {
-                    <allowInitializePathCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
+                    <allowInitializePathCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
                 }
                 Self::lzReceive(inner) => {
                     <lzReceiveCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
@@ -987,14 +1093,21 @@ pub mod ILayerZeroReceiver {
             match self {
                 Self::allowInitializePath(inner) => {
                     <allowInitializePathCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner, out,
+                        inner,
+                        out,
                     )
                 }
                 Self::lzReceive(inner) => {
-                    <lzReceiveCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
+                    <lzReceiveCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
                 }
                 Self::nextNonce(inner) => {
-                    <nextNonceCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
+                    <nextNonceCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
                 }
             }
         }
@@ -1002,7 +1115,7 @@ pub mod ILayerZeroReceiver {
     use alloy::contract as alloy_contract;
     /**Creates a new wrapper around an on-chain [`ILayerZeroReceiver`](self) contract instance.
 
-    See the [wrapper's documentation](`ILayerZeroReceiverInstance`) for more details.*/
+See the [wrapper's documentation](`ILayerZeroReceiverInstance`) for more details.*/
     #[inline]
     pub const fn new<
         P: alloy_contract::private::Provider<N>,
@@ -1015,41 +1128,43 @@ pub mod ILayerZeroReceiver {
     }
     /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
-    Returns a new instance of the contract, if the deployment was successful.
+Returns a new instance of the contract, if the deployment was successful.
 
-    For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
+For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
     #[inline]
-    pub fn deploy<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>(
-        provider: P,
-    ) -> impl ::core::future::Future<Output = alloy_contract::Result<ILayerZeroReceiverInstance<P, N>>>
-    {
-        ILayerZeroReceiverInstance::<P, N>::deploy(provider)
-    }
-    /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-    and constructor arguments, if any.
-
-    This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-    the bytecode concatenated with the constructor's ABI-encoded arguments.*/
-    #[inline]
-    pub fn deploy_builder<
+    pub fn deploy<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
     >(
         provider: P,
-    ) -> alloy_contract::RawCallBuilder<P, N> {
+    ) -> impl ::core::future::Future<
+        Output = alloy_contract::Result<ILayerZeroReceiverInstance<P, N>>,
+    > {
+        ILayerZeroReceiverInstance::<P, N>::deploy(provider)
+    }
+    /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
+and constructor arguments, if any.
+
+This is a simple wrapper around creating a `RawCallBuilder` with the data set to
+the bytecode concatenated with the constructor's ABI-encoded arguments.*/
+    #[inline]
+    pub fn deploy_builder<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    >(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
         ILayerZeroReceiverInstance::<P, N>::deploy_builder(provider)
     }
     /**A [`ILayerZeroReceiver`](self) instance.
 
-    Contains type-safe methods for interacting with an on-chain instance of the
-    [`ILayerZeroReceiver`](self) contract located at a given `address`, using a given
-    provider `P`.
+Contains type-safe methods for interacting with an on-chain instance of the
+[`ILayerZeroReceiver`](self) contract located at a given `address`, using a given
+provider `P`.
 
-    If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
-    documentation on how to provide it), the `deploy` and `deploy_builder` methods can
-    be used to deploy a new instance of the contract.
+If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
+documentation on how to provide it), the `deploy` and `deploy_builder` methods can
+be used to deploy a new instance of the contract.
 
-    See the [module-level documentation](self) for all the available methods.*/
+See the [module-level documentation](self) for all the available methods.*/
     #[derive(Clone)]
     pub struct ILayerZeroReceiverInstance<P, N = alloy_contract::private::Ethereum> {
         address: alloy_sol_types::private::Address,
@@ -1060,21 +1175,23 @@ pub mod ILayerZeroReceiver {
     impl<P, N> ::core::fmt::Debug for ILayerZeroReceiverInstance<P, N> {
         #[inline]
         fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-            f.debug_tuple("ILayerZeroReceiverInstance")
-                .field(&self.address)
-                .finish()
+            f.debug_tuple("ILayerZeroReceiverInstance").field(&self.address).finish()
         }
     }
     /// Instantiation and getters/setters.
     #[automatically_derived]
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        ILayerZeroReceiverInstance<P, N>
-    {
+    impl<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    > ILayerZeroReceiverInstance<P, N> {
         /**Creates a new wrapper around an on-chain [`ILayerZeroReceiver`](self) contract instance.
 
-        See the [wrapper's documentation](`ILayerZeroReceiverInstance`) for more details.*/
+See the [wrapper's documentation](`ILayerZeroReceiverInstance`) for more details.*/
         #[inline]
-        pub const fn new(address: alloy_sol_types::private::Address, provider: P) -> Self {
+        pub const fn new(
+            address: alloy_sol_types::private::Address,
+            provider: P,
+        ) -> Self {
             Self {
                 address,
                 provider,
@@ -1083,9 +1200,9 @@ pub mod ILayerZeroReceiver {
         }
         /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
-        Returns a new instance of the contract, if the deployment was successful.
+Returns a new instance of the contract, if the deployment was successful.
 
-        For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
+For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
         #[inline]
         pub async fn deploy(
             provider: P,
@@ -1095,10 +1212,10 @@ pub mod ILayerZeroReceiver {
             Ok(Self::new(contract_address, call_builder.provider))
         }
         /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-        and constructor arguments, if any.
+and constructor arguments, if any.
 
-        This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-        the bytecode concatenated with the constructor's ABI-encoded arguments.*/
+This is a simple wrapper around creating a `RawCallBuilder` with the data set to
+the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         #[inline]
         pub fn deploy_builder(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
             alloy_contract::RawCallBuilder::new_raw_deploy(
@@ -1140,9 +1257,10 @@ pub mod ILayerZeroReceiver {
     }
     /// Function calls.
     #[automatically_derived]
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        ILayerZeroReceiverInstance<P, N>
-    {
+    impl<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    > ILayerZeroReceiverInstance<P, N> {
         /// Creates a new call builder using this contract instance's provider and address.
         ///
         /// Note that the call can be any function call, not just those defined in this
@@ -1169,13 +1287,15 @@ pub mod ILayerZeroReceiver {
             _executor: alloy::sol_types::private::Address,
             _extraData: alloy::sol_types::private::Bytes,
         ) -> alloy_contract::SolCallBuilder<&P, lzReceiveCall, N> {
-            self.call_builder(&lzReceiveCall {
-                _origin,
-                _guid,
-                _message,
-                _executor,
-                _extraData,
-            })
+            self.call_builder(
+                &lzReceiveCall {
+                    _origin,
+                    _guid,
+                    _message,
+                    _executor,
+                    _extraData,
+                },
+            )
         }
         ///Creates a new call builder for the [`nextNonce`] function.
         pub fn nextNonce(
@@ -1188,9 +1308,10 @@ pub mod ILayerZeroReceiver {
     }
     /// Event filters.
     #[automatically_derived]
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        ILayerZeroReceiverInstance<P, N>
-    {
+    impl<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    > ILayerZeroReceiverInstance<P, N> {
         /// Creates a new event filter using this contract instance's provider and address.
         ///
         /// Note that the type can be any event, not just those defined in this contract.
