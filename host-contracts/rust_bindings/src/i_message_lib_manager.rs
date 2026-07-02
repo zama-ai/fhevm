@@ -710,11 +710,10 @@ pub mod IMessageLibManager {
     pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
         b"",
     );
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**```solidity
-struct SetConfigParam { uint32 eid; uint32 configType; bytes config; }
-```*/
+    struct SetConfigParam { uint32 eid; uint32 configType; bytes config; }
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct SetConfigParam {
@@ -743,9 +742,7 @@ struct SetConfigParam { uint32 eid; uint32 configType; bytes config; }
         type UnderlyingRustTuple<'a> = (u32, u32, alloy::sol_types::private::Bytes);
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -779,12 +776,12 @@ struct SetConfigParam { uint32 eid; uint32 configType; bytes config; }
             #[inline]
             fn stv_to_tokens(&self) -> <Self as alloy_sol_types::SolType>::Token<'_> {
                 (
-                    <alloy::sol_types::sol_data::Uint<
-                        32,
-                    > as alloy_sol_types::SolType>::tokenize(&self.eid),
-                    <alloy::sol_types::sol_data::Uint<
-                        32,
-                    > as alloy_sol_types::SolType>::tokenize(&self.configType),
+                    <alloy::sol_types::sol_data::Uint<32> as alloy_sol_types::SolType>::tokenize(
+                        &self.eid,
+                    ),
+                    <alloy::sol_types::sol_data::Uint<32> as alloy_sol_types::SolType>::tokenize(
+                        &self.configType,
+                    ),
                     <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
                         &self.config,
                     ),
@@ -795,64 +792,50 @@ struct SetConfigParam { uint32 eid; uint32 configType; bytes config; }
                 if let Some(size) = <Self as alloy_sol_types::SolType>::ENCODED_SIZE {
                     return size;
                 }
-                let tuple = <UnderlyingRustTuple<
-                    '_,
-                > as ::core::convert::From<Self>>::from(self.clone());
-                <UnderlyingSolTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_encoded_size(&tuple)
+                let tuple =
+                    <UnderlyingRustTuple<'_> as ::core::convert::From<Self>>::from(self.clone());
+                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::abi_encoded_size(&tuple)
             }
             #[inline]
             fn stv_eip712_data_word(&self) -> alloy_sol_types::Word {
                 <Self as alloy_sol_types::SolStruct>::eip712_hash_struct(self)
             }
             #[inline]
-            fn stv_abi_encode_packed_to(
-                &self,
-                out: &mut alloy_sol_types::private::Vec<u8>,
-            ) {
-                let tuple = <UnderlyingRustTuple<
-                    '_,
-                > as ::core::convert::From<Self>>::from(self.clone());
-                <UnderlyingSolTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_encode_packed_to(&tuple, out)
+            fn stv_abi_encode_packed_to(&self, out: &mut alloy_sol_types::private::Vec<u8>) {
+                let tuple =
+                    <UnderlyingRustTuple<'_> as ::core::convert::From<Self>>::from(self.clone());
+                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::abi_encode_packed_to(
+                    &tuple, out,
+                )
             }
             #[inline]
             fn stv_abi_packed_encoded_size(&self) -> usize {
                 if let Some(size) = <Self as alloy_sol_types::SolType>::PACKED_ENCODED_SIZE {
                     return size;
                 }
-                let tuple = <UnderlyingRustTuple<
-                    '_,
-                > as ::core::convert::From<Self>>::from(self.clone());
-                <UnderlyingSolTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_packed_encoded_size(&tuple)
+                let tuple =
+                    <UnderlyingRustTuple<'_> as ::core::convert::From<Self>>::from(self.clone());
+                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::abi_packed_encoded_size(
+                    &tuple,
+                )
             }
         }
         #[automatically_derived]
         impl alloy_sol_types::SolType for SetConfigParam {
             type RustType = Self;
-            type Token<'a> = <UnderlyingSolTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <UnderlyingSolTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SOL_NAME: &'static str = <Self as alloy_sol_types::SolStruct>::NAME;
-            const ENCODED_SIZE: Option<usize> = <UnderlyingSolTuple<
-                '_,
-            > as alloy_sol_types::SolType>::ENCODED_SIZE;
-            const PACKED_ENCODED_SIZE: Option<usize> = <UnderlyingSolTuple<
-                '_,
-            > as alloy_sol_types::SolType>::PACKED_ENCODED_SIZE;
+            const ENCODED_SIZE: Option<usize> =
+                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::ENCODED_SIZE;
+            const PACKED_ENCODED_SIZE: Option<usize> =
+                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::PACKED_ENCODED_SIZE;
             #[inline]
             fn valid_token(token: &Self::Token<'_>) -> bool {
                 <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::valid_token(token)
             }
             #[inline]
             fn detokenize(token: Self::Token<'_>) -> Self::RustType {
-                let tuple = <UnderlyingSolTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::detokenize(token);
+                let tuple = <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::detokenize(token);
                 <Self as ::core::convert::From<UnderlyingRustTuple<'_>>>::from(tuple)
             }
         }
@@ -866,9 +849,9 @@ struct SetConfigParam { uint32 eid; uint32 configType; bytes config; }
                 )
             }
             #[inline]
-            fn eip712_components() -> alloy_sol_types::private::Vec<
-                alloy_sol_types::private::Cow<'static, str>,
-            > {
+            fn eip712_components()
+            -> alloy_sol_types::private::Vec<alloy_sol_types::private::Cow<'static, str>>
+            {
                 alloy_sol_types::private::Vec::new()
             }
             #[inline]
@@ -916,9 +899,7 @@ struct SetConfigParam { uint32 eid; uint32 configType; bytes config; }
                 rust: &Self::RustType,
                 out: &mut alloy_sol_types::private::Vec<u8>,
             ) {
-                out.reserve(
-                    <Self as alloy_sol_types::EventTopic>::topic_preimage_length(rust),
-                );
+                out.reserve(<Self as alloy_sol_types::EventTopic>::topic_preimage_length(rust));
                 <alloy::sol_types::sol_data::Uint<
                     32,
                 > as alloy_sol_types::EventTopic>::encode_topic_preimage(&rust.eid, out);
@@ -934,26 +915,18 @@ struct SetConfigParam { uint32 eid; uint32 configType; bytes config; }
                 );
             }
             #[inline]
-            fn encode_topic(
-                rust: &Self::RustType,
-            ) -> alloy_sol_types::abi::token::WordToken {
+            fn encode_topic(rust: &Self::RustType) -> alloy_sol_types::abi::token::WordToken {
                 let mut out = alloy_sol_types::private::Vec::new();
-                <Self as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    rust,
-                    &mut out,
-                );
-                alloy_sol_types::abi::token::WordToken(
-                    alloy_sol_types::private::keccak256(out),
-                )
+                <Self as alloy_sol_types::EventTopic>::encode_topic_preimage(rust, &mut out);
+                alloy_sol_types::abi::token::WordToken(alloy_sol_types::private::keccak256(out))
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `DefaultReceiveLibrarySet(uint32,address)` and selector `0xc16891855cffb4a5ac51ac11864a3f3c96ba816cc45fe686c987ae36277de5ec`.
-```solidity
-event DefaultReceiveLibrarySet(uint32 eid, address newLib);
-```*/
+    ```solidity
+    event DefaultReceiveLibrarySet(uint32 eid, address newLib);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -981,16 +954,15 @@ event DefaultReceiveLibrarySet(uint32 eid, address newLib);
                 alloy::sol_types::sol_data::Uint<32>,
                 alloy::sol_types::sol_data::Address,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
             const SIGNATURE: &'static str = "DefaultReceiveLibrarySet(uint32,address)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                193u8, 104u8, 145u8, 133u8, 92u8, 255u8, 180u8, 165u8, 172u8, 81u8,
-                172u8, 17u8, 134u8, 74u8, 63u8, 60u8, 150u8, 186u8, 129u8, 108u8, 196u8,
-                95u8, 230u8, 134u8, 201u8, 135u8, 174u8, 54u8, 39u8, 125u8, 229u8, 236u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    193u8, 104u8, 145u8, 133u8, 92u8, 255u8, 180u8, 165u8, 172u8, 81u8, 172u8,
+                    17u8, 134u8, 74u8, 63u8, 60u8, 150u8, 186u8, 129u8, 108u8, 196u8, 95u8, 230u8,
+                    134u8, 201u8, 135u8, 174u8, 54u8, 39u8, 125u8, 229u8, 236u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -1008,22 +980,20 @@ event DefaultReceiveLibrarySet(uint32 eid, address newLib);
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
             #[inline]
             fn tokenize_body(&self) -> Self::DataToken<'_> {
                 (
-                    <alloy::sol_types::sol_data::Uint<
-                        32,
-                    > as alloy_sol_types::SolType>::tokenize(&self.eid),
+                    <alloy::sol_types::sol_data::Uint<32> as alloy_sol_types::SolType>::tokenize(
+                        &self.eid,
+                    ),
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self.newLib,
                     ),
@@ -1041,9 +1011,7 @@ event DefaultReceiveLibrarySet(uint32 eid, address newLib);
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 Ok(())
             }
         }
@@ -1059,19 +1027,16 @@ event DefaultReceiveLibrarySet(uint32 eid, address newLib);
         #[automatically_derived]
         impl From<&DefaultReceiveLibrarySet> for alloy_sol_types::private::LogData {
             #[inline]
-            fn from(
-                this: &DefaultReceiveLibrarySet,
-            ) -> alloy_sol_types::private::LogData {
+            fn from(this: &DefaultReceiveLibrarySet) -> alloy_sol_types::private::LogData {
                 alloy_sol_types::SolEvent::encode_log_data(this)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `DefaultReceiveLibraryTimeoutSet(uint32,address,uint256)` and selector `0x55b28633cdb29709386f555dfc54418592ad475ce7a65a78ac5928af60ffb8f8`.
-```solidity
-event DefaultReceiveLibraryTimeoutSet(uint32 eid, address oldLib, uint256 expiry);
-```*/
+    ```solidity
+    event DefaultReceiveLibraryTimeoutSet(uint32 eid, address oldLib, uint256 expiry);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -1102,16 +1067,16 @@ event DefaultReceiveLibraryTimeoutSet(uint32 eid, address oldLib, uint256 expiry
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Uint<256>,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
-            const SIGNATURE: &'static str = "DefaultReceiveLibraryTimeoutSet(uint32,address,uint256)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                85u8, 178u8, 134u8, 51u8, 205u8, 178u8, 151u8, 9u8, 56u8, 111u8, 85u8,
-                93u8, 252u8, 84u8, 65u8, 133u8, 146u8, 173u8, 71u8, 92u8, 231u8, 166u8,
-                90u8, 120u8, 172u8, 89u8, 40u8, 175u8, 96u8, 255u8, 184u8, 248u8,
-            ]);
+            const SIGNATURE: &'static str =
+                "DefaultReceiveLibraryTimeoutSet(uint32,address,uint256)";
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    85u8, 178u8, 134u8, 51u8, 205u8, 178u8, 151u8, 9u8, 56u8, 111u8, 85u8, 93u8,
+                    252u8, 84u8, 65u8, 133u8, 146u8, 173u8, 71u8, 92u8, 231u8, 166u8, 90u8, 120u8,
+                    172u8, 89u8, 40u8, 175u8, 96u8, 255u8, 184u8, 248u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -1130,28 +1095,26 @@ event DefaultReceiveLibraryTimeoutSet(uint32 eid, address oldLib, uint256 expiry
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
             #[inline]
             fn tokenize_body(&self) -> Self::DataToken<'_> {
                 (
-                    <alloy::sol_types::sol_data::Uint<
-                        32,
-                    > as alloy_sol_types::SolType>::tokenize(&self.eid),
+                    <alloy::sol_types::sol_data::Uint<32> as alloy_sol_types::SolType>::tokenize(
+                        &self.eid,
+                    ),
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self.oldLib,
                     ),
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.expiry),
+                    <alloy::sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
+                        &self.expiry,
+                    ),
                 )
             }
             #[inline]
@@ -1166,9 +1129,7 @@ event DefaultReceiveLibraryTimeoutSet(uint32 eid, address oldLib, uint256 expiry
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 Ok(())
             }
         }
@@ -1182,22 +1143,18 @@ event DefaultReceiveLibraryTimeoutSet(uint32 eid, address oldLib, uint256 expiry
             }
         }
         #[automatically_derived]
-        impl From<&DefaultReceiveLibraryTimeoutSet>
-        for alloy_sol_types::private::LogData {
+        impl From<&DefaultReceiveLibraryTimeoutSet> for alloy_sol_types::private::LogData {
             #[inline]
-            fn from(
-                this: &DefaultReceiveLibraryTimeoutSet,
-            ) -> alloy_sol_types::private::LogData {
+            fn from(this: &DefaultReceiveLibraryTimeoutSet) -> alloy_sol_types::private::LogData {
                 alloy_sol_types::SolEvent::encode_log_data(this)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `DefaultSendLibrarySet(uint32,address)` and selector `0x16aa0f528038ab41019e95bae5b418a50ba8532c5800e3b7ea2f517d3fa625f5`.
-```solidity
-event DefaultSendLibrarySet(uint32 eid, address newLib);
-```*/
+    ```solidity
+    event DefaultSendLibrarySet(uint32 eid, address newLib);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -1225,16 +1182,15 @@ event DefaultSendLibrarySet(uint32 eid, address newLib);
                 alloy::sol_types::sol_data::Uint<32>,
                 alloy::sol_types::sol_data::Address,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
             const SIGNATURE: &'static str = "DefaultSendLibrarySet(uint32,address)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                22u8, 170u8, 15u8, 82u8, 128u8, 56u8, 171u8, 65u8, 1u8, 158u8, 149u8,
-                186u8, 229u8, 180u8, 24u8, 165u8, 11u8, 168u8, 83u8, 44u8, 88u8, 0u8,
-                227u8, 183u8, 234u8, 47u8, 81u8, 125u8, 63u8, 166u8, 37u8, 245u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    22u8, 170u8, 15u8, 82u8, 128u8, 56u8, 171u8, 65u8, 1u8, 158u8, 149u8, 186u8,
+                    229u8, 180u8, 24u8, 165u8, 11u8, 168u8, 83u8, 44u8, 88u8, 0u8, 227u8, 183u8,
+                    234u8, 47u8, 81u8, 125u8, 63u8, 166u8, 37u8, 245u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -1252,22 +1208,20 @@ event DefaultSendLibrarySet(uint32 eid, address newLib);
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
             #[inline]
             fn tokenize_body(&self) -> Self::DataToken<'_> {
                 (
-                    <alloy::sol_types::sol_data::Uint<
-                        32,
-                    > as alloy_sol_types::SolType>::tokenize(&self.eid),
+                    <alloy::sol_types::sol_data::Uint<32> as alloy_sol_types::SolType>::tokenize(
+                        &self.eid,
+                    ),
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self.newLib,
                     ),
@@ -1285,9 +1239,7 @@ event DefaultSendLibrarySet(uint32 eid, address newLib);
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 Ok(())
             }
         }
@@ -1308,12 +1260,11 @@ event DefaultSendLibrarySet(uint32 eid, address newLib);
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `LibraryRegistered(address)` and selector `0x6b374d56679ca9463f27c85c6311e2bb7fde69bf201d3da39d53f10bd9d78af5`.
-```solidity
-event LibraryRegistered(address newLib);
-```*/
+    ```solidity
+    event LibraryRegistered(address newLib);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -1336,16 +1287,15 @@ event LibraryRegistered(address newLib);
         #[automatically_derived]
         impl alloy_sol_types::SolEvent for LibraryRegistered {
             type DataTuple<'a> = (alloy::sol_types::sol_data::Address,);
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
             const SIGNATURE: &'static str = "LibraryRegistered(address)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                107u8, 55u8, 77u8, 86u8, 103u8, 156u8, 169u8, 70u8, 63u8, 39u8, 200u8,
-                92u8, 99u8, 17u8, 226u8, 187u8, 127u8, 222u8, 105u8, 191u8, 32u8, 29u8,
-                61u8, 163u8, 157u8, 83u8, 241u8, 11u8, 217u8, 215u8, 138u8, 245u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    107u8, 55u8, 77u8, 86u8, 103u8, 156u8, 169u8, 70u8, 63u8, 39u8, 200u8, 92u8,
+                    99u8, 17u8, 226u8, 187u8, 127u8, 222u8, 105u8, 191u8, 32u8, 29u8, 61u8, 163u8,
+                    157u8, 83u8, 241u8, 11u8, 217u8, 215u8, 138u8, 245u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -1360,13 +1310,11 @@ event LibraryRegistered(address newLib);
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -1390,9 +1338,7 @@ event LibraryRegistered(address newLib);
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 Ok(())
             }
         }
@@ -1413,12 +1359,11 @@ event LibraryRegistered(address newLib);
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `ReceiveLibrarySet(address,uint32,address)` and selector `0xcd6f92f5ac6185a5acfa02c92090746cec64d777269cbcd0ed031e396657a1c2`.
-```solidity
-event ReceiveLibrarySet(address receiver, uint32 eid, address newLib);
-```*/
+    ```solidity
+    event ReceiveLibrarySet(address receiver, uint32 eid, address newLib);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -1449,16 +1394,15 @@ event ReceiveLibrarySet(address receiver, uint32 eid, address newLib);
                 alloy::sol_types::sol_data::Uint<32>,
                 alloy::sol_types::sol_data::Address,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
             const SIGNATURE: &'static str = "ReceiveLibrarySet(address,uint32,address)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                205u8, 111u8, 146u8, 245u8, 172u8, 97u8, 133u8, 165u8, 172u8, 250u8, 2u8,
-                201u8, 32u8, 144u8, 116u8, 108u8, 236u8, 100u8, 215u8, 119u8, 38u8,
-                156u8, 188u8, 208u8, 237u8, 3u8, 30u8, 57u8, 102u8, 87u8, 161u8, 194u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    205u8, 111u8, 146u8, 245u8, 172u8, 97u8, 133u8, 165u8, 172u8, 250u8, 2u8,
+                    201u8, 32u8, 144u8, 116u8, 108u8, 236u8, 100u8, 215u8, 119u8, 38u8, 156u8,
+                    188u8, 208u8, 237u8, 3u8, 30u8, 57u8, 102u8, 87u8, 161u8, 194u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -1477,13 +1421,11 @@ event ReceiveLibrarySet(address receiver, uint32 eid, address newLib);
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -1493,9 +1435,9 @@ event ReceiveLibrarySet(address receiver, uint32 eid, address newLib);
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self.receiver,
                     ),
-                    <alloy::sol_types::sol_data::Uint<
-                        32,
-                    > as alloy_sol_types::SolType>::tokenize(&self.eid),
+                    <alloy::sol_types::sol_data::Uint<32> as alloy_sol_types::SolType>::tokenize(
+                        &self.eid,
+                    ),
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self.newLib,
                     ),
@@ -1513,9 +1455,7 @@ event ReceiveLibrarySet(address receiver, uint32 eid, address newLib);
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 Ok(())
             }
         }
@@ -1536,12 +1476,11 @@ event ReceiveLibrarySet(address receiver, uint32 eid, address newLib);
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `ReceiveLibraryTimeoutSet(address,uint32,address,uint256)` and selector `0x4e0a5bbfa0c11a64effb1ada324b5437a17272e1aed9320398715ef71bb20928`.
-```solidity
-event ReceiveLibraryTimeoutSet(address receiver, uint32 eid, address oldLib, uint256 timeout);
-```*/
+    ```solidity
+    event ReceiveLibraryTimeoutSet(address receiver, uint32 eid, address oldLib, uint256 timeout);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -1575,16 +1514,16 @@ event ReceiveLibraryTimeoutSet(address receiver, uint32 eid, address oldLib, uin
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Uint<256>,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
-            const SIGNATURE: &'static str = "ReceiveLibraryTimeoutSet(address,uint32,address,uint256)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                78u8, 10u8, 91u8, 191u8, 160u8, 193u8, 26u8, 100u8, 239u8, 251u8, 26u8,
-                218u8, 50u8, 75u8, 84u8, 55u8, 161u8, 114u8, 114u8, 225u8, 174u8, 217u8,
-                50u8, 3u8, 152u8, 113u8, 94u8, 247u8, 27u8, 178u8, 9u8, 40u8,
-            ]);
+            const SIGNATURE: &'static str =
+                "ReceiveLibraryTimeoutSet(address,uint32,address,uint256)";
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    78u8, 10u8, 91u8, 191u8, 160u8, 193u8, 26u8, 100u8, 239u8, 251u8, 26u8, 218u8,
+                    50u8, 75u8, 84u8, 55u8, 161u8, 114u8, 114u8, 225u8, 174u8, 217u8, 50u8, 3u8,
+                    152u8, 113u8, 94u8, 247u8, 27u8, 178u8, 9u8, 40u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -1604,13 +1543,11 @@ event ReceiveLibraryTimeoutSet(address receiver, uint32 eid, address oldLib, uin
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -1620,15 +1557,15 @@ event ReceiveLibraryTimeoutSet(address receiver, uint32 eid, address oldLib, uin
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self.receiver,
                     ),
-                    <alloy::sol_types::sol_data::Uint<
-                        32,
-                    > as alloy_sol_types::SolType>::tokenize(&self.eid),
+                    <alloy::sol_types::sol_data::Uint<32> as alloy_sol_types::SolType>::tokenize(
+                        &self.eid,
+                    ),
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self.oldLib,
                     ),
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.timeout),
+                    <alloy::sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
+                        &self.timeout,
+                    ),
                 )
             }
             #[inline]
@@ -1643,9 +1580,7 @@ event ReceiveLibraryTimeoutSet(address receiver, uint32 eid, address oldLib, uin
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 Ok(())
             }
         }
@@ -1661,19 +1596,16 @@ event ReceiveLibraryTimeoutSet(address receiver, uint32 eid, address oldLib, uin
         #[automatically_derived]
         impl From<&ReceiveLibraryTimeoutSet> for alloy_sol_types::private::LogData {
             #[inline]
-            fn from(
-                this: &ReceiveLibraryTimeoutSet,
-            ) -> alloy_sol_types::private::LogData {
+            fn from(this: &ReceiveLibraryTimeoutSet) -> alloy_sol_types::private::LogData {
                 alloy_sol_types::SolEvent::encode_log_data(this)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `SendLibrarySet(address,uint32,address)` and selector `0x4cff966ebee29a156dcb34cf72c1d06231fb1777f6bdf6e8089819232f002b1c`.
-```solidity
-event SendLibrarySet(address sender, uint32 eid, address newLib);
-```*/
+    ```solidity
+    event SendLibrarySet(address sender, uint32 eid, address newLib);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -1704,16 +1636,15 @@ event SendLibrarySet(address sender, uint32 eid, address newLib);
                 alloy::sol_types::sol_data::Uint<32>,
                 alloy::sol_types::sol_data::Address,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
             const SIGNATURE: &'static str = "SendLibrarySet(address,uint32,address)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                76u8, 255u8, 150u8, 110u8, 190u8, 226u8, 154u8, 21u8, 109u8, 203u8, 52u8,
-                207u8, 114u8, 193u8, 208u8, 98u8, 49u8, 251u8, 23u8, 119u8, 246u8, 189u8,
-                246u8, 232u8, 8u8, 152u8, 25u8, 35u8, 47u8, 0u8, 43u8, 28u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    76u8, 255u8, 150u8, 110u8, 190u8, 226u8, 154u8, 21u8, 109u8, 203u8, 52u8,
+                    207u8, 114u8, 193u8, 208u8, 98u8, 49u8, 251u8, 23u8, 119u8, 246u8, 189u8,
+                    246u8, 232u8, 8u8, 152u8, 25u8, 35u8, 47u8, 0u8, 43u8, 28u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -1732,13 +1663,11 @@ event SendLibrarySet(address sender, uint32 eid, address newLib);
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -1748,9 +1677,9 @@ event SendLibrarySet(address sender, uint32 eid, address newLib);
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self.sender,
                     ),
-                    <alloy::sol_types::sol_data::Uint<
-                        32,
-                    > as alloy_sol_types::SolType>::tokenize(&self.eid),
+                    <alloy::sol_types::sol_data::Uint<32> as alloy_sol_types::SolType>::tokenize(
+                        &self.eid,
+                    ),
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self.newLib,
                     ),
@@ -1768,9 +1697,7 @@ event SendLibrarySet(address sender, uint32 eid, address newLib);
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 Ok(())
             }
         }
@@ -1791,20 +1718,18 @@ event SendLibrarySet(address sender, uint32 eid, address newLib);
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `defaultReceiveLibrary(uint32)` and selector `0x6f50a803`.
-```solidity
-function defaultReceiveLibrary(uint32 _eid) external view returns (address);
-```*/
+    ```solidity
+    function defaultReceiveLibrary(uint32 _eid) external view returns (address);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct defaultReceiveLibraryCall {
         #[allow(missing_docs)]
         pub _eid: u32,
     }
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`defaultReceiveLibrary(uint32)`](defaultReceiveLibraryCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -1827,9 +1752,7 @@ function defaultReceiveLibrary(uint32 _eid) external view returns (address);
             type UnderlyingRustTuple<'a> = (u32,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1838,16 +1761,14 @@ function defaultReceiveLibrary(uint32 _eid) external view returns (address);
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<defaultReceiveLibraryCall>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<defaultReceiveLibraryCall> for UnderlyingRustTuple<'_> {
                 fn from(value: defaultReceiveLibraryCall) -> Self {
                     (value._eid,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for defaultReceiveLibraryCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for defaultReceiveLibraryCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { _eid: tuple.0 }
                 }
@@ -1860,9 +1781,7 @@ function defaultReceiveLibrary(uint32 _eid) external view returns (address);
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1871,16 +1790,14 @@ function defaultReceiveLibrary(uint32 _eid) external view returns (address);
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<defaultReceiveLibraryReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<defaultReceiveLibraryReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: defaultReceiveLibraryReturn) -> Self {
                     (value._0,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for defaultReceiveLibraryReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for defaultReceiveLibraryReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { _0: tuple.0 }
                 }
@@ -1889,14 +1806,10 @@ function defaultReceiveLibrary(uint32 _eid) external view returns (address);
         #[automatically_derived]
         impl alloy_sol_types::SolCall for defaultReceiveLibraryCall {
             type Parameters<'a> = (alloy::sol_types::sol_data::Uint<32>,);
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy::sol_types::private::Address;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::Address,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "defaultReceiveLibrary(uint32)";
             const SELECTOR: [u8; 4] = [111u8, 80u8, 168u8, 3u8];
             #[inline]
@@ -1908,9 +1821,9 @@ function defaultReceiveLibrary(uint32 _eid) external view returns (address);
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
-                    <alloy::sol_types::sol_data::Uint<
-                        32,
-                    > as alloy_sol_types::SolType>::tokenize(&self._eid),
+                    <alloy::sol_types::sol_data::Uint<32> as alloy_sol_types::SolType>::tokenize(
+                        &self._eid,
+                    ),
                 )
             }
             #[inline]
@@ -1923,42 +1836,37 @@ function defaultReceiveLibrary(uint32 _eid) external view returns (address);
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: defaultReceiveLibraryReturn = r.into();
                         r._0
-                    })
+                    },
+                )
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: defaultReceiveLibraryReturn = r.into();
-                        r._0
-                    })
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: defaultReceiveLibraryReturn = r.into();
+                    r._0
+                })
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `defaultReceiveLibraryTimeout(uint32)` and selector `0x6e83f5bb`.
-```solidity
-function defaultReceiveLibraryTimeout(uint32 _eid) external view returns (address lib, uint256 expiry);
-```*/
+    ```solidity
+    function defaultReceiveLibraryTimeout(uint32 _eid) external view returns (address lib, uint256 expiry);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct defaultReceiveLibraryTimeoutCall {
         #[allow(missing_docs)]
         pub _eid: u32,
     }
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`defaultReceiveLibraryTimeout(uint32)`](defaultReceiveLibraryTimeoutCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -1983,9 +1891,7 @@ function defaultReceiveLibraryTimeout(uint32 _eid) external view returns (addres
             type UnderlyingRustTuple<'a> = (u32,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1994,16 +1900,14 @@ function defaultReceiveLibraryTimeout(uint32 _eid) external view returns (addres
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<defaultReceiveLibraryTimeoutCall>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<defaultReceiveLibraryTimeoutCall> for UnderlyingRustTuple<'_> {
                 fn from(value: defaultReceiveLibraryTimeoutCall) -> Self {
                     (value._eid,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for defaultReceiveLibraryTimeoutCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for defaultReceiveLibraryTimeoutCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { _eid: tuple.0 }
                 }
@@ -2022,9 +1926,7 @@ function defaultReceiveLibraryTimeout(uint32 _eid) external view returns (addres
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -2033,16 +1935,14 @@ function defaultReceiveLibraryTimeout(uint32 _eid) external view returns (addres
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<defaultReceiveLibraryTimeoutReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<defaultReceiveLibraryTimeoutReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: defaultReceiveLibraryTimeoutReturn) -> Self {
                     (value.lib, value.expiry)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for defaultReceiveLibraryTimeoutReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for defaultReceiveLibraryTimeoutReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         lib: tuple.0,
@@ -2054,33 +1954,28 @@ function defaultReceiveLibraryTimeout(uint32 _eid) external view returns (addres
         impl defaultReceiveLibraryTimeoutReturn {
             fn _tokenize(
                 &self,
-            ) -> <defaultReceiveLibraryTimeoutCall as alloy_sol_types::SolCall>::ReturnToken<
-                '_,
-            > {
+            ) -> <defaultReceiveLibraryTimeoutCall as alloy_sol_types::SolCall>::ReturnToken<'_>
+            {
                 (
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self.lib,
                     ),
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.expiry),
+                    <alloy::sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
+                        &self.expiry,
+                    ),
                 )
             }
         }
         #[automatically_derived]
         impl alloy_sol_types::SolCall for defaultReceiveLibraryTimeoutCall {
             type Parameters<'a> = (alloy::sol_types::sol_data::Uint<32>,);
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = defaultReceiveLibraryTimeoutReturn;
             type ReturnTuple<'a> = (
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Uint<256>,
             );
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "defaultReceiveLibraryTimeout(uint32)";
             const SELECTOR: [u8; 4] = [110u8, 131u8, 245u8, 187u8];
             #[inline]
@@ -2092,9 +1987,9 @@ function defaultReceiveLibraryTimeout(uint32 _eid) external view returns (addres
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
-                    <alloy::sol_types::sol_data::Uint<
-                        32,
-                    > as alloy_sol_types::SolType>::tokenize(&self._eid),
+                    <alloy::sol_types::sol_data::Uint<32> as alloy_sol_types::SolType>::tokenize(
+                        &self._eid,
+                    ),
                 )
             }
             #[inline]
@@ -2103,36 +1998,30 @@ function defaultReceiveLibraryTimeout(uint32 _eid) external view returns (addres
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Into::into)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `defaultSendLibrary(uint32)` and selector `0xf64be4c7`.
-```solidity
-function defaultSendLibrary(uint32 _eid) external view returns (address);
-```*/
+    ```solidity
+    function defaultSendLibrary(uint32 _eid) external view returns (address);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct defaultSendLibraryCall {
         #[allow(missing_docs)]
         pub _eid: u32,
     }
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`defaultSendLibrary(uint32)`](defaultSendLibraryCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -2155,9 +2044,7 @@ function defaultSendLibrary(uint32 _eid) external view returns (address);
             type UnderlyingRustTuple<'a> = (u32,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -2166,16 +2053,14 @@ function defaultSendLibrary(uint32 _eid) external view returns (address);
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<defaultSendLibraryCall>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<defaultSendLibraryCall> for UnderlyingRustTuple<'_> {
                 fn from(value: defaultSendLibraryCall) -> Self {
                     (value._eid,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for defaultSendLibraryCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for defaultSendLibraryCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { _eid: tuple.0 }
                 }
@@ -2188,9 +2073,7 @@ function defaultSendLibrary(uint32 _eid) external view returns (address);
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -2199,16 +2082,14 @@ function defaultSendLibrary(uint32 _eid) external view returns (address);
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<defaultSendLibraryReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<defaultSendLibraryReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: defaultSendLibraryReturn) -> Self {
                     (value._0,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for defaultSendLibraryReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for defaultSendLibraryReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { _0: tuple.0 }
                 }
@@ -2217,14 +2098,10 @@ function defaultSendLibrary(uint32 _eid) external view returns (address);
         #[automatically_derived]
         impl alloy_sol_types::SolCall for defaultSendLibraryCall {
             type Parameters<'a> = (alloy::sol_types::sol_data::Uint<32>,);
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy::sol_types::private::Address;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::Address,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "defaultSendLibrary(uint32)";
             const SELECTOR: [u8; 4] = [246u8, 75u8, 228u8, 199u8];
             #[inline]
@@ -2236,9 +2113,9 @@ function defaultSendLibrary(uint32 _eid) external view returns (address);
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
-                    <alloy::sol_types::sol_data::Uint<
-                        32,
-                    > as alloy_sol_types::SolType>::tokenize(&self._eid),
+                    <alloy::sol_types::sol_data::Uint<32> as alloy_sol_types::SolType>::tokenize(
+                        &self._eid,
+                    ),
                 )
             }
             #[inline]
@@ -2251,34 +2128,30 @@ function defaultSendLibrary(uint32 _eid) external view returns (address);
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: defaultSendLibraryReturn = r.into();
                         r._0
-                    })
+                    },
+                )
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: defaultSendLibraryReturn = r.into();
-                        r._0
-                    })
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: defaultSendLibraryReturn = r.into();
+                    r._0
+                })
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getConfig(address,address,uint32,uint32)` and selector `0x2b3197b9`.
-```solidity
-function getConfig(address _oapp, address _lib, uint32 _eid, uint32 _configType) external view returns (bytes memory config);
-```*/
+    ```solidity
+    function getConfig(address _oapp, address _lib, uint32 _eid, uint32 _configType) external view returns (bytes memory config);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getConfigCall {
@@ -2291,8 +2164,7 @@ function getConfig(address _oapp, address _lib, uint32 _eid, uint32 _configType)
         #[allow(missing_docs)]
         pub _configType: u32,
     }
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`getConfig(address,address,uint32,uint32)`](getConfigCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -2325,9 +2197,7 @@ function getConfig(address _oapp, address _lib, uint32 _eid, uint32 _configType)
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -2361,9 +2231,7 @@ function getConfig(address _oapp, address _lib, uint32 _eid, uint32 _configType)
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Bytes,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -2393,14 +2261,10 @@ function getConfig(address _oapp, address _lib, uint32 _eid, uint32 _configType)
                 alloy::sol_types::sol_data::Uint<32>,
                 alloy::sol_types::sol_data::Uint<32>,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy::sol_types::private::Bytes;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::Bytes,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "getConfig(address,address,uint32,uint32)";
             const SELECTOR: [u8; 4] = [43u8, 49u8, 151u8, 185u8];
             #[inline]
@@ -2418,52 +2282,44 @@ function getConfig(address _oapp, address _lib, uint32 _eid, uint32 _configType)
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self._lib,
                     ),
-                    <alloy::sol_types::sol_data::Uint<
-                        32,
-                    > as alloy_sol_types::SolType>::tokenize(&self._eid),
-                    <alloy::sol_types::sol_data::Uint<
-                        32,
-                    > as alloy_sol_types::SolType>::tokenize(&self._configType),
-                )
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (
-                    <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
-                        ret,
+                    <alloy::sol_types::sol_data::Uint<32> as alloy_sol_types::SolType>::tokenize(
+                        &self._eid,
+                    ),
+                    <alloy::sol_types::sol_data::Uint<32> as alloy_sol_types::SolType>::tokenize(
+                        &self._configType,
                     ),
                 )
             }
             #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
-                        let r: getConfigReturn = r.into();
-                        r.config
-                    })
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                (<alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(ret),)
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: getConfigReturn = r.into();
                         r.config
-                    })
+                    },
+                )
+            }
+            #[inline]
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: getConfigReturn = r.into();
+                    r.config
+                })
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getReceiveLibrary(address,uint32)` and selector `0x402f8468`.
-```solidity
-function getReceiveLibrary(address _receiver, uint32 _eid) external view returns (address lib, bool isDefault);
-```*/
+    ```solidity
+    function getReceiveLibrary(address _receiver, uint32 _eid) external view returns (address lib, bool isDefault);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getReceiveLibraryCall {
@@ -2472,8 +2328,7 @@ function getReceiveLibrary(address _receiver, uint32 _eid) external view returns
         #[allow(missing_docs)]
         pub _eid: u32,
     }
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`getReceiveLibrary(address,uint32)`](getReceiveLibraryCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -2501,9 +2356,7 @@ function getReceiveLibrary(address _receiver, uint32 _eid) external view returns
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address, u32);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -2512,16 +2365,14 @@ function getReceiveLibrary(address _receiver, uint32 _eid) external view returns
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<getReceiveLibraryCall>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<getReceiveLibraryCall> for UnderlyingRustTuple<'_> {
                 fn from(value: getReceiveLibraryCall) -> Self {
                     (value._receiver, value._eid)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for getReceiveLibraryCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getReceiveLibraryCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         _receiver: tuple.0,
@@ -2540,9 +2391,7 @@ function getReceiveLibrary(address _receiver, uint32 _eid) external view returns
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address, bool);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -2551,16 +2400,14 @@ function getReceiveLibrary(address _receiver, uint32 _eid) external view returns
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<getReceiveLibraryReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<getReceiveLibraryReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: getReceiveLibraryReturn) -> Self {
                     (value.lib, value.isDefault)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for getReceiveLibraryReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getReceiveLibraryReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         lib: tuple.0,
@@ -2589,17 +2436,13 @@ function getReceiveLibrary(address _receiver, uint32 _eid) external view returns
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Uint<32>,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = getReceiveLibraryReturn;
             type ReturnTuple<'a> = (
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Bool,
             );
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "getReceiveLibrary(address,uint32)";
             const SELECTOR: [u8; 4] = [64u8, 47u8, 132u8, 104u8];
             #[inline]
@@ -2614,9 +2457,9 @@ function getReceiveLibrary(address _receiver, uint32 _eid) external view returns
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self._receiver,
                     ),
-                    <alloy::sol_types::sol_data::Uint<
-                        32,
-                    > as alloy_sol_types::SolType>::tokenize(&self._eid),
+                    <alloy::sol_types::sol_data::Uint<32> as alloy_sol_types::SolType>::tokenize(
+                        &self._eid,
+                    ),
                 )
             }
             #[inline]
@@ -2625,33 +2468,27 @@ function getReceiveLibrary(address _receiver, uint32 _eid) external view returns
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Into::into)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getRegisteredLibraries()` and selector `0x9132e5c3`.
-```solidity
-function getRegisteredLibraries() external view returns (address[] memory);
-```*/
+    ```solidity
+    function getRegisteredLibraries() external view returns (address[] memory);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getRegisteredLibrariesCall;
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`getRegisteredLibraries()`](getRegisteredLibrariesCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -2674,9 +2511,7 @@ function getRegisteredLibraries() external view returns (address[] memory);
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -2685,16 +2520,14 @@ function getRegisteredLibraries() external view returns (address[] memory);
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<getRegisteredLibrariesCall>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<getRegisteredLibrariesCall> for UnderlyingRustTuple<'_> {
                 fn from(value: getRegisteredLibrariesCall) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for getRegisteredLibrariesCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getRegisteredLibrariesCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self
                 }
@@ -2702,18 +2535,14 @@ function getRegisteredLibraries() external view returns (address[] memory);
         }
         {
             #[doc(hidden)]
-            type UnderlyingSolTuple<'a> = (
-                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
-            );
+            type UnderlyingSolTuple<'a> =
+                (alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,);
             #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy::sol_types::private::Vec<alloy::sol_types::private::Address>,
-            );
+            type UnderlyingRustTuple<'a> =
+                (alloy::sol_types::private::Vec<alloy::sol_types::private::Address>,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -2722,16 +2551,14 @@ function getRegisteredLibraries() external view returns (address[] memory);
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<getRegisteredLibrariesReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<getRegisteredLibrariesReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: getRegisteredLibrariesReturn) -> Self {
                     (value._0,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for getRegisteredLibrariesReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getRegisteredLibrariesReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { _0: tuple.0 }
                 }
@@ -2740,18 +2567,11 @@ function getRegisteredLibraries() external view returns (address[] memory);
         #[automatically_derived]
         impl alloy_sol_types::SolCall for getRegisteredLibrariesCall {
             type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = alloy::sol_types::private::Vec<
-                alloy::sol_types::private::Address,
-            >;
-            type ReturnTuple<'a> = (
-                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
-            );
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Return = alloy::sol_types::private::Vec<alloy::sol_types::private::Address>;
+            type ReturnTuple<'a> =
+                (alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,);
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "getRegisteredLibraries()";
             const SELECTOR: [u8; 4] = [145u8, 50u8, 229u8, 195u8];
             #[inline]
@@ -2766,42 +2586,36 @@ function getRegisteredLibraries() external view returns (address[] memory);
             }
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (
-                    <alloy::sol_types::sol_data::Array<
-                        alloy::sol_types::sol_data::Address,
-                    > as alloy_sol_types::SolType>::tokenize(ret),
-                )
+                (<alloy::sol_types::sol_data::Array<
+                    alloy::sol_types::sol_data::Address,
+                > as alloy_sol_types::SolType>::tokenize(ret),)
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: getRegisteredLibrariesReturn = r.into();
                         r._0
-                    })
+                    },
+                )
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: getRegisteredLibrariesReturn = r.into();
-                        r._0
-                    })
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: getRegisteredLibrariesReturn = r.into();
+                    r._0
+                })
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getSendLibrary(address,uint32)` and selector `0xb96a277f`.
-```solidity
-function getSendLibrary(address _sender, uint32 _eid) external view returns (address lib);
-```*/
+    ```solidity
+    function getSendLibrary(address _sender, uint32 _eid) external view returns (address lib);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getSendLibraryCall {
@@ -2810,8 +2624,7 @@ function getSendLibrary(address _sender, uint32 _eid) external view returns (add
         #[allow(missing_docs)]
         pub _eid: u32,
     }
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`getSendLibrary(address,uint32)`](getSendLibraryCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -2837,9 +2650,7 @@ function getSendLibrary(address _sender, uint32 _eid) external view returns (add
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address, u32);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -2871,9 +2682,7 @@ function getSendLibrary(address _sender, uint32 _eid) external view returns (add
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -2882,16 +2691,14 @@ function getSendLibrary(address _sender, uint32 _eid) external view returns (add
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<getSendLibraryReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<getSendLibraryReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: getSendLibraryReturn) -> Self {
                     (value.lib,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for getSendLibraryReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getSendLibraryReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { lib: tuple.0 }
                 }
@@ -2903,14 +2710,10 @@ function getSendLibrary(address _sender, uint32 _eid) external view returns (add
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Uint<32>,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy::sol_types::private::Address;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::Address,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "getSendLibrary(address,uint32)";
             const SELECTOR: [u8; 4] = [185u8, 106u8, 39u8, 127u8];
             #[inline]
@@ -2925,9 +2728,9 @@ function getSendLibrary(address _sender, uint32 _eid) external view returns (add
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self._sender,
                     ),
-                    <alloy::sol_types::sol_data::Uint<
-                        32,
-                    > as alloy_sol_types::SolType>::tokenize(&self._eid),
+                    <alloy::sol_types::sol_data::Uint<32> as alloy_sol_types::SolType>::tokenize(
+                        &self._eid,
+                    ),
                 )
             }
             #[inline]
@@ -2940,34 +2743,30 @@ function getSendLibrary(address _sender, uint32 _eid) external view returns (add
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: getSendLibraryReturn = r.into();
                         r.lib
-                    })
+                    },
+                )
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: getSendLibraryReturn = r.into();
-                        r.lib
-                    })
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: getSendLibraryReturn = r.into();
+                    r.lib
+                })
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `isDefaultSendLibrary(address,uint32)` and selector `0xdc93c8a2`.
-```solidity
-function isDefaultSendLibrary(address _sender, uint32 _eid) external view returns (bool);
-```*/
+    ```solidity
+    function isDefaultSendLibrary(address _sender, uint32 _eid) external view returns (bool);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct isDefaultSendLibraryCall {
@@ -2976,8 +2775,7 @@ function isDefaultSendLibrary(address _sender, uint32 _eid) external view return
         #[allow(missing_docs)]
         pub _eid: u32,
     }
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`isDefaultSendLibrary(address,uint32)`](isDefaultSendLibraryCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -3003,9 +2801,7 @@ function isDefaultSendLibrary(address _sender, uint32 _eid) external view return
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address, u32);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -3014,16 +2810,14 @@ function isDefaultSendLibrary(address _sender, uint32 _eid) external view return
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<isDefaultSendLibraryCall>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<isDefaultSendLibraryCall> for UnderlyingRustTuple<'_> {
                 fn from(value: isDefaultSendLibraryCall) -> Self {
                     (value._sender, value._eid)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for isDefaultSendLibraryCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for isDefaultSendLibraryCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         _sender: tuple.0,
@@ -3039,9 +2833,7 @@ function isDefaultSendLibrary(address _sender, uint32 _eid) external view return
             type UnderlyingRustTuple<'a> = (bool,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -3050,16 +2842,14 @@ function isDefaultSendLibrary(address _sender, uint32 _eid) external view return
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<isDefaultSendLibraryReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<isDefaultSendLibraryReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: isDefaultSendLibraryReturn) -> Self {
                     (value._0,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for isDefaultSendLibraryReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for isDefaultSendLibraryReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { _0: tuple.0 }
                 }
@@ -3071,14 +2861,10 @@ function isDefaultSendLibrary(address _sender, uint32 _eid) external view return
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Uint<32>,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = bool;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::Bool,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "isDefaultSendLibrary(address,uint32)";
             const SELECTOR: [u8; 4] = [220u8, 147u8, 200u8, 162u8];
             #[inline]
@@ -3093,57 +2879,48 @@ function isDefaultSendLibrary(address _sender, uint32 _eid) external view return
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self._sender,
                     ),
-                    <alloy::sol_types::sol_data::Uint<
-                        32,
-                    > as alloy_sol_types::SolType>::tokenize(&self._eid),
-                )
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (
-                    <alloy::sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(
-                        ret,
+                    <alloy::sol_types::sol_data::Uint<32> as alloy_sol_types::SolType>::tokenize(
+                        &self._eid,
                     ),
                 )
             }
             #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
-                        let r: isDefaultSendLibraryReturn = r.into();
-                        r._0
-                    })
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                (<alloy::sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(ret),)
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: isDefaultSendLibraryReturn = r.into();
                         r._0
-                    })
+                    },
+                )
+            }
+            #[inline]
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: isDefaultSendLibraryReturn = r.into();
+                    r._0
+                })
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `isRegisteredLibrary(address)` and selector `0xdc706a62`.
-```solidity
-function isRegisteredLibrary(address _lib) external view returns (bool);
-```*/
+    ```solidity
+    function isRegisteredLibrary(address _lib) external view returns (bool);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct isRegisteredLibraryCall {
         #[allow(missing_docs)]
         pub _lib: alloy::sol_types::private::Address,
     }
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`isRegisteredLibrary(address)`](isRegisteredLibraryCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -3166,9 +2943,7 @@ function isRegisteredLibrary(address _lib) external view returns (bool);
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -3177,16 +2952,14 @@ function isRegisteredLibrary(address _lib) external view returns (bool);
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<isRegisteredLibraryCall>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<isRegisteredLibraryCall> for UnderlyingRustTuple<'_> {
                 fn from(value: isRegisteredLibraryCall) -> Self {
                     (value._lib,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for isRegisteredLibraryCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for isRegisteredLibraryCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { _lib: tuple.0 }
                 }
@@ -3199,9 +2972,7 @@ function isRegisteredLibrary(address _lib) external view returns (bool);
             type UnderlyingRustTuple<'a> = (bool,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -3210,16 +2981,14 @@ function isRegisteredLibrary(address _lib) external view returns (bool);
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<isRegisteredLibraryReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<isRegisteredLibraryReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: isRegisteredLibraryReturn) -> Self {
                     (value._0,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for isRegisteredLibraryReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for isRegisteredLibraryReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { _0: tuple.0 }
                 }
@@ -3228,14 +2997,10 @@ function isRegisteredLibrary(address _lib) external view returns (bool);
         #[automatically_derived]
         impl alloy_sol_types::SolCall for isRegisteredLibraryCall {
             type Parameters<'a> = (alloy::sol_types::sol_data::Address,);
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = bool;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::Bool,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "isRegisteredLibrary(address)";
             const SELECTOR: [u8; 4] = [220u8, 112u8, 106u8, 98u8];
             #[inline]
@@ -3254,50 +3019,41 @@ function isRegisteredLibrary(address _lib) external view returns (bool);
             }
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (
-                    <alloy::sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(
-                        ret,
-                    ),
-                )
+                (<alloy::sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(ret),)
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: isRegisteredLibraryReturn = r.into();
                         r._0
-                    })
+                    },
+                )
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: isRegisteredLibraryReturn = r.into();
-                        r._0
-                    })
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: isRegisteredLibraryReturn = r.into();
+                    r._0
+                })
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `isSupportedEid(uint32)` and selector `0x6750cd4c`.
-```solidity
-function isSupportedEid(uint32 _eid) external view returns (bool);
-```*/
+    ```solidity
+    function isSupportedEid(uint32 _eid) external view returns (bool);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct isSupportedEidCall {
         #[allow(missing_docs)]
         pub _eid: u32,
     }
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`isSupportedEid(uint32)`](isSupportedEidCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -3320,9 +3076,7 @@ function isSupportedEid(uint32 _eid) external view returns (bool);
             type UnderlyingRustTuple<'a> = (u32,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -3351,9 +3105,7 @@ function isSupportedEid(uint32 _eid) external view returns (bool);
             type UnderlyingRustTuple<'a> = (bool,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -3362,16 +3114,14 @@ function isSupportedEid(uint32 _eid) external view returns (bool);
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<isSupportedEidReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<isSupportedEidReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: isSupportedEidReturn) -> Self {
                     (value._0,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for isSupportedEidReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for isSupportedEidReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { _0: tuple.0 }
                 }
@@ -3380,14 +3130,10 @@ function isSupportedEid(uint32 _eid) external view returns (bool);
         #[automatically_derived]
         impl alloy_sol_types::SolCall for isSupportedEidCall {
             type Parameters<'a> = (alloy::sol_types::sol_data::Uint<32>,);
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = bool;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::Bool,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "isSupportedEid(uint32)";
             const SELECTOR: [u8; 4] = [103u8, 80u8, 205u8, 76u8];
             #[inline]
@@ -3399,49 +3145,41 @@ function isSupportedEid(uint32 _eid) external view returns (bool);
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
-                    <alloy::sol_types::sol_data::Uint<
-                        32,
-                    > as alloy_sol_types::SolType>::tokenize(&self._eid),
-                )
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (
-                    <alloy::sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(
-                        ret,
+                    <alloy::sol_types::sol_data::Uint<32> as alloy_sol_types::SolType>::tokenize(
+                        &self._eid,
                     ),
                 )
             }
             #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
-                        let r: isSupportedEidReturn = r.into();
-                        r._0
-                    })
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                (<alloy::sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(ret),)
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: isSupportedEidReturn = r.into();
                         r._0
-                    })
+                    },
+                )
+            }
+            #[inline]
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: isSupportedEidReturn = r.into();
+                    r._0
+                })
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `isValidReceiveLibrary(address,uint32,address)` and selector `0x9d7f9775`.
-```solidity
-function isValidReceiveLibrary(address _receiver, uint32 _eid, address _lib) external view returns (bool);
-```*/
+    ```solidity
+    function isValidReceiveLibrary(address _receiver, uint32 _eid, address _lib) external view returns (bool);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct isValidReceiveLibraryCall {
@@ -3452,8 +3190,7 @@ function isValidReceiveLibrary(address _receiver, uint32 _eid, address _lib) ext
         #[allow(missing_docs)]
         pub _lib: alloy::sol_types::private::Address,
     }
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`isValidReceiveLibrary(address,uint32,address)`](isValidReceiveLibraryCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -3484,9 +3221,7 @@ function isValidReceiveLibrary(address _receiver, uint32 _eid, address _lib) ext
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -3495,16 +3230,14 @@ function isValidReceiveLibrary(address _receiver, uint32 _eid, address _lib) ext
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<isValidReceiveLibraryCall>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<isValidReceiveLibraryCall> for UnderlyingRustTuple<'_> {
                 fn from(value: isValidReceiveLibraryCall) -> Self {
                     (value._receiver, value._eid, value._lib)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for isValidReceiveLibraryCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for isValidReceiveLibraryCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         _receiver: tuple.0,
@@ -3521,9 +3254,7 @@ function isValidReceiveLibrary(address _receiver, uint32 _eid, address _lib) ext
             type UnderlyingRustTuple<'a> = (bool,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -3532,16 +3263,14 @@ function isValidReceiveLibrary(address _receiver, uint32 _eid, address _lib) ext
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<isValidReceiveLibraryReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<isValidReceiveLibraryReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: isValidReceiveLibraryReturn) -> Self {
                     (value._0,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for isValidReceiveLibraryReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for isValidReceiveLibraryReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { _0: tuple.0 }
                 }
@@ -3554,14 +3283,10 @@ function isValidReceiveLibrary(address _receiver, uint32 _eid, address _lib) ext
                 alloy::sol_types::sol_data::Uint<32>,
                 alloy::sol_types::sol_data::Address,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = bool;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::Bool,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "isValidReceiveLibrary(address,uint32,address)";
             const SELECTOR: [u8; 4] = [157u8, 127u8, 151u8, 117u8];
             #[inline]
@@ -3576,9 +3301,9 @@ function isValidReceiveLibrary(address _receiver, uint32 _eid, address _lib) ext
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self._receiver,
                     ),
-                    <alloy::sol_types::sol_data::Uint<
-                        32,
-                    > as alloy_sol_types::SolType>::tokenize(&self._eid),
+                    <alloy::sol_types::sol_data::Uint<32> as alloy_sol_types::SolType>::tokenize(
+                        &self._eid,
+                    ),
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self._lib,
                     ),
@@ -3586,42 +3311,34 @@ function isValidReceiveLibrary(address _receiver, uint32 _eid, address _lib) ext
             }
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (
-                    <alloy::sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(
-                        ret,
-                    ),
-                )
+                (<alloy::sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(ret),)
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: isValidReceiveLibraryReturn = r.into();
                         r._0
-                    })
+                    },
+                )
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: isValidReceiveLibraryReturn = r.into();
-                        r._0
-                    })
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: isValidReceiveLibraryReturn = r.into();
+                    r._0
+                })
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `receiveLibraryTimeout(address,uint32)` and selector `0xef667aa1`.
-```solidity
-function receiveLibraryTimeout(address _receiver, uint32 _eid) external view returns (address lib, uint256 expiry);
-```*/
+    ```solidity
+    function receiveLibraryTimeout(address _receiver, uint32 _eid) external view returns (address lib, uint256 expiry);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct receiveLibraryTimeoutCall {
@@ -3630,8 +3347,7 @@ function receiveLibraryTimeout(address _receiver, uint32 _eid) external view ret
         #[allow(missing_docs)]
         pub _eid: u32,
     }
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`receiveLibraryTimeout(address,uint32)`](receiveLibraryTimeoutCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -3659,9 +3375,7 @@ function receiveLibraryTimeout(address _receiver, uint32 _eid) external view ret
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address, u32);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -3670,16 +3384,14 @@ function receiveLibraryTimeout(address _receiver, uint32 _eid) external view ret
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<receiveLibraryTimeoutCall>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<receiveLibraryTimeoutCall> for UnderlyingRustTuple<'_> {
                 fn from(value: receiveLibraryTimeoutCall) -> Self {
                     (value._receiver, value._eid)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for receiveLibraryTimeoutCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for receiveLibraryTimeoutCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         _receiver: tuple.0,
@@ -3701,9 +3413,7 @@ function receiveLibraryTimeout(address _receiver, uint32 _eid) external view ret
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -3712,16 +3422,14 @@ function receiveLibraryTimeout(address _receiver, uint32 _eid) external view ret
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<receiveLibraryTimeoutReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<receiveLibraryTimeoutReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: receiveLibraryTimeoutReturn) -> Self {
                     (value.lib, value.expiry)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for receiveLibraryTimeoutReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for receiveLibraryTimeoutReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         lib: tuple.0,
@@ -3733,16 +3441,15 @@ function receiveLibraryTimeout(address _receiver, uint32 _eid) external view ret
         impl receiveLibraryTimeoutReturn {
             fn _tokenize(
                 &self,
-            ) -> <receiveLibraryTimeoutCall as alloy_sol_types::SolCall>::ReturnToken<
-                '_,
-            > {
+            ) -> <receiveLibraryTimeoutCall as alloy_sol_types::SolCall>::ReturnToken<'_>
+            {
                 (
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self.lib,
                     ),
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.expiry),
+                    <alloy::sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
+                        &self.expiry,
+                    ),
                 )
             }
         }
@@ -3752,17 +3459,13 @@ function receiveLibraryTimeout(address _receiver, uint32 _eid) external view ret
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Uint<32>,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = receiveLibraryTimeoutReturn;
             type ReturnTuple<'a> = (
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Uint<256>,
             );
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "receiveLibraryTimeout(address,uint32)";
             const SELECTOR: [u8; 4] = [239u8, 102u8, 122u8, 161u8];
             #[inline]
@@ -3777,9 +3480,9 @@ function receiveLibraryTimeout(address _receiver, uint32 _eid) external view ret
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self._receiver,
                     ),
-                    <alloy::sol_types::sol_data::Uint<
-                        32,
-                    > as alloy_sol_types::SolType>::tokenize(&self._eid),
+                    <alloy::sol_types::sol_data::Uint<32> as alloy_sol_types::SolType>::tokenize(
+                        &self._eid,
+                    ),
                 )
             }
             #[inline]
@@ -3788,28 +3491,23 @@ function receiveLibraryTimeout(address _receiver, uint32 _eid) external view ret
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Into::into)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `registerLibrary(address)` and selector `0xe8964e81`.
-```solidity
-function registerLibrary(address _lib) external;
-```*/
+    ```solidity
+    function registerLibrary(address _lib) external;
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct registerLibraryCall {
@@ -3835,9 +3533,7 @@ function registerLibrary(address _lib) external;
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -3866,9 +3562,7 @@ function registerLibrary(address _lib) external;
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -3877,16 +3571,14 @@ function registerLibrary(address _lib) external;
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<registerLibraryReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<registerLibraryReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: registerLibraryReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for registerLibraryReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for registerLibraryReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
@@ -3902,14 +3594,10 @@ function registerLibrary(address _lib) external;
         #[automatically_derived]
         impl alloy_sol_types::SolCall for registerLibraryCall {
             type Parameters<'a> = (alloy::sol_types::sol_data::Address,);
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = registerLibraryReturn;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "registerLibrary(address)";
             const SELECTOR: [u8; 4] = [232u8, 150u8, 78u8, 129u8];
             #[inline]
@@ -3932,28 +3620,23 @@ function registerLibrary(address _lib) external;
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Into::into)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `setConfig(address,address,(uint32,uint32,bytes)[])` and selector `0x6dbd9f90`.
-```solidity
-function setConfig(address _oapp, address _lib, SetConfigParam[] memory _params) external;
-```*/
+    ```solidity
+    function setConfig(address _oapp, address _lib, SetConfigParam[] memory _params) external;
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct setConfigCall {
@@ -3962,9 +3645,8 @@ function setConfig(address _oapp, address _lib, SetConfigParam[] memory _params)
         #[allow(missing_docs)]
         pub _lib: alloy::sol_types::private::Address,
         #[allow(missing_docs)]
-        pub _params: alloy::sol_types::private::Vec<
-            <SetConfigParam as alloy::sol_types::SolType>::RustType,
-        >,
+        pub _params:
+            alloy::sol_types::private::Vec<<SetConfigParam as alloy::sol_types::SolType>::RustType>,
     }
     ///Container type for the return parameters of the [`setConfig(address,address,(uint32,uint32,bytes)[])`](setConfigCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
@@ -3995,9 +3677,7 @@ function setConfig(address _oapp, address _lib, SetConfigParam[] memory _params)
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -4030,9 +3710,7 @@ function setConfig(address _oapp, address _lib, SetConfigParam[] memory _params)
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -4055,9 +3733,7 @@ function setConfig(address _oapp, address _lib, SetConfigParam[] memory _params)
             }
         }
         impl setConfigReturn {
-            fn _tokenize(
-                &self,
-            ) -> <setConfigCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
+            fn _tokenize(&self) -> <setConfigCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
                 ()
             }
         }
@@ -4068,14 +3744,10 @@ function setConfig(address _oapp, address _lib, SetConfigParam[] memory _params)
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Array<SetConfigParam>,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = setConfigReturn;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "setConfig(address,address,(uint32,uint32,bytes)[])";
             const SELECTOR: [u8; 4] = [109u8, 189u8, 159u8, 144u8];
             #[inline]
@@ -4104,28 +3776,23 @@ function setConfig(address _oapp, address _lib, SetConfigParam[] memory _params)
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Into::into)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `setDefaultReceiveLibrary(uint32,address,uint256)` and selector `0xa718531b`.
-```solidity
-function setDefaultReceiveLibrary(uint32 _eid, address _newLib, uint256 _gracePeriod) external;
-```*/
+    ```solidity
+    function setDefaultReceiveLibrary(uint32 _eid, address _newLib, uint256 _gracePeriod) external;
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct setDefaultReceiveLibraryCall {
@@ -4163,9 +3830,7 @@ function setDefaultReceiveLibrary(uint32 _eid, address _newLib, uint256 _gracePe
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -4174,16 +3839,14 @@ function setDefaultReceiveLibrary(uint32 _eid, address _newLib, uint256 _gracePe
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<setDefaultReceiveLibraryCall>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<setDefaultReceiveLibraryCall> for UnderlyingRustTuple<'_> {
                 fn from(value: setDefaultReceiveLibraryCall) -> Self {
                     (value._eid, value._newLib, value._gracePeriod)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for setDefaultReceiveLibraryCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for setDefaultReceiveLibraryCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         _eid: tuple.0,
@@ -4200,9 +3863,7 @@ function setDefaultReceiveLibrary(uint32 _eid, address _newLib, uint256 _gracePe
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -4211,16 +3872,14 @@ function setDefaultReceiveLibrary(uint32 _eid, address _newLib, uint256 _gracePe
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<setDefaultReceiveLibraryReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<setDefaultReceiveLibraryReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: setDefaultReceiveLibraryReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for setDefaultReceiveLibraryReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for setDefaultReceiveLibraryReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
@@ -4229,9 +3888,8 @@ function setDefaultReceiveLibrary(uint32 _eid, address _newLib, uint256 _gracePe
         impl setDefaultReceiveLibraryReturn {
             fn _tokenize(
                 &self,
-            ) -> <setDefaultReceiveLibraryCall as alloy_sol_types::SolCall>::ReturnToken<
-                '_,
-            > {
+            ) -> <setDefaultReceiveLibraryCall as alloy_sol_types::SolCall>::ReturnToken<'_>
+            {
                 ()
             }
         }
@@ -4242,14 +3900,10 @@ function setDefaultReceiveLibrary(uint32 _eid, address _newLib, uint256 _gracePe
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Uint<256>,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = setDefaultReceiveLibraryReturn;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "setDefaultReceiveLibrary(uint32,address,uint256)";
             const SELECTOR: [u8; 4] = [167u8, 24u8, 83u8, 27u8];
             #[inline]
@@ -4261,15 +3915,15 @@ function setDefaultReceiveLibrary(uint32 _eid, address _newLib, uint256 _gracePe
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
-                    <alloy::sol_types::sol_data::Uint<
-                        32,
-                    > as alloy_sol_types::SolType>::tokenize(&self._eid),
+                    <alloy::sol_types::sol_data::Uint<32> as alloy_sol_types::SolType>::tokenize(
+                        &self._eid,
+                    ),
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self._newLib,
                     ),
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self._gracePeriod),
+                    <alloy::sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
+                        &self._gracePeriod,
+                    ),
                 )
             }
             #[inline]
@@ -4278,28 +3932,23 @@ function setDefaultReceiveLibrary(uint32 _eid, address _newLib, uint256 _gracePe
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Into::into)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `setDefaultReceiveLibraryTimeout(uint32,address,uint256)` and selector `0xd4b4ec8f`.
-```solidity
-function setDefaultReceiveLibraryTimeout(uint32 _eid, address _lib, uint256 _expiry) external;
-```*/
+    ```solidity
+    function setDefaultReceiveLibraryTimeout(uint32 _eid, address _lib, uint256 _expiry) external;
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct setDefaultReceiveLibraryTimeoutCall {
@@ -4337,9 +3986,7 @@ function setDefaultReceiveLibraryTimeout(uint32 _eid, address _lib, uint256 _exp
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -4348,16 +3995,14 @@ function setDefaultReceiveLibraryTimeout(uint32 _eid, address _lib, uint256 _exp
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<setDefaultReceiveLibraryTimeoutCall>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<setDefaultReceiveLibraryTimeoutCall> for UnderlyingRustTuple<'_> {
                 fn from(value: setDefaultReceiveLibraryTimeoutCall) -> Self {
                     (value._eid, value._lib, value._expiry)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for setDefaultReceiveLibraryTimeoutCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for setDefaultReceiveLibraryTimeoutCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         _eid: tuple.0,
@@ -4374,9 +4019,7 @@ function setDefaultReceiveLibraryTimeout(uint32 _eid, address _lib, uint256 _exp
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -4385,16 +4028,14 @@ function setDefaultReceiveLibraryTimeout(uint32 _eid, address _lib, uint256 _exp
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<setDefaultReceiveLibraryTimeoutReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<setDefaultReceiveLibraryTimeoutReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: setDefaultReceiveLibraryTimeoutReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for setDefaultReceiveLibraryTimeoutReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for setDefaultReceiveLibraryTimeoutReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
@@ -4403,9 +4044,8 @@ function setDefaultReceiveLibraryTimeout(uint32 _eid, address _lib, uint256 _exp
         impl setDefaultReceiveLibraryTimeoutReturn {
             fn _tokenize(
                 &self,
-            ) -> <setDefaultReceiveLibraryTimeoutCall as alloy_sol_types::SolCall>::ReturnToken<
-                '_,
-            > {
+            ) -> <setDefaultReceiveLibraryTimeoutCall as alloy_sol_types::SolCall>::ReturnToken<'_>
+            {
                 ()
             }
         }
@@ -4416,15 +4056,12 @@ function setDefaultReceiveLibraryTimeout(uint32 _eid, address _lib, uint256 _exp
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Uint<256>,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = setDefaultReceiveLibraryTimeoutReturn;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "setDefaultReceiveLibraryTimeout(uint32,address,uint256)";
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str =
+                "setDefaultReceiveLibraryTimeout(uint32,address,uint256)";
             const SELECTOR: [u8; 4] = [212u8, 180u8, 236u8, 143u8];
             #[inline]
             fn new<'a>(
@@ -4435,15 +4072,15 @@ function setDefaultReceiveLibraryTimeout(uint32 _eid, address _lib, uint256 _exp
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
-                    <alloy::sol_types::sol_data::Uint<
-                        32,
-                    > as alloy_sol_types::SolType>::tokenize(&self._eid),
+                    <alloy::sol_types::sol_data::Uint<32> as alloy_sol_types::SolType>::tokenize(
+                        &self._eid,
+                    ),
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self._lib,
                     ),
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self._expiry),
+                    <alloy::sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
+                        &self._expiry,
+                    ),
                 )
             }
             #[inline]
@@ -4452,28 +4089,23 @@ function setDefaultReceiveLibraryTimeout(uint32 _eid, address _lib, uint256 _exp
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Into::into)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `setDefaultSendLibrary(uint32,address)` and selector `0xaafea312`.
-```solidity
-function setDefaultSendLibrary(uint32 _eid, address _newLib) external;
-```*/
+    ```solidity
+    function setDefaultSendLibrary(uint32 _eid, address _newLib) external;
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct setDefaultSendLibraryCall {
@@ -4504,9 +4136,7 @@ function setDefaultSendLibrary(uint32 _eid, address _newLib) external;
             type UnderlyingRustTuple<'a> = (u32, alloy::sol_types::private::Address);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -4515,16 +4145,14 @@ function setDefaultSendLibrary(uint32 _eid, address _newLib) external;
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<setDefaultSendLibraryCall>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<setDefaultSendLibraryCall> for UnderlyingRustTuple<'_> {
                 fn from(value: setDefaultSendLibraryCall) -> Self {
                     (value._eid, value._newLib)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for setDefaultSendLibraryCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for setDefaultSendLibraryCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         _eid: tuple.0,
@@ -4540,9 +4168,7 @@ function setDefaultSendLibrary(uint32 _eid, address _newLib) external;
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -4551,16 +4177,14 @@ function setDefaultSendLibrary(uint32 _eid, address _newLib) external;
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<setDefaultSendLibraryReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<setDefaultSendLibraryReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: setDefaultSendLibraryReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for setDefaultSendLibraryReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for setDefaultSendLibraryReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
@@ -4569,9 +4193,8 @@ function setDefaultSendLibrary(uint32 _eid, address _newLib) external;
         impl setDefaultSendLibraryReturn {
             fn _tokenize(
                 &self,
-            ) -> <setDefaultSendLibraryCall as alloy_sol_types::SolCall>::ReturnToken<
-                '_,
-            > {
+            ) -> <setDefaultSendLibraryCall as alloy_sol_types::SolCall>::ReturnToken<'_>
+            {
                 ()
             }
         }
@@ -4581,14 +4204,10 @@ function setDefaultSendLibrary(uint32 _eid, address _newLib) external;
                 alloy::sol_types::sol_data::Uint<32>,
                 alloy::sol_types::sol_data::Address,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = setDefaultSendLibraryReturn;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "setDefaultSendLibrary(uint32,address)";
             const SELECTOR: [u8; 4] = [170u8, 254u8, 163u8, 18u8];
             #[inline]
@@ -4600,9 +4219,9 @@ function setDefaultSendLibrary(uint32 _eid, address _newLib) external;
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
-                    <alloy::sol_types::sol_data::Uint<
-                        32,
-                    > as alloy_sol_types::SolType>::tokenize(&self._eid),
+                    <alloy::sol_types::sol_data::Uint<32> as alloy_sol_types::SolType>::tokenize(
+                        &self._eid,
+                    ),
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self._newLib,
                     ),
@@ -4614,28 +4233,23 @@ function setDefaultSendLibrary(uint32 _eid, address _newLib) external;
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Into::into)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `setReceiveLibrary(address,uint32,address,uint256)` and selector `0x6a14d715`.
-```solidity
-function setReceiveLibrary(address _oapp, uint32 _eid, address _newLib, uint256 _gracePeriod) external;
-```*/
+    ```solidity
+    function setReceiveLibrary(address _oapp, uint32 _eid, address _newLib, uint256 _gracePeriod) external;
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct setReceiveLibraryCall {
@@ -4677,9 +4291,7 @@ function setReceiveLibrary(address _oapp, uint32 _eid, address _newLib, uint256 
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -4688,16 +4300,14 @@ function setReceiveLibrary(address _oapp, uint32 _eid, address _newLib, uint256 
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<setReceiveLibraryCall>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<setReceiveLibraryCall> for UnderlyingRustTuple<'_> {
                 fn from(value: setReceiveLibraryCall) -> Self {
                     (value._oapp, value._eid, value._newLib, value._gracePeriod)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for setReceiveLibraryCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for setReceiveLibraryCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         _oapp: tuple.0,
@@ -4715,9 +4325,7 @@ function setReceiveLibrary(address _oapp, uint32 _eid, address _newLib, uint256 
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -4726,16 +4334,14 @@ function setReceiveLibrary(address _oapp, uint32 _eid, address _newLib, uint256 
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<setReceiveLibraryReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<setReceiveLibraryReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: setReceiveLibraryReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for setReceiveLibraryReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for setReceiveLibraryReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
@@ -4756,14 +4362,10 @@ function setReceiveLibrary(address _oapp, uint32 _eid, address _newLib, uint256 
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Uint<256>,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = setReceiveLibraryReturn;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "setReceiveLibrary(address,uint32,address,uint256)";
             const SELECTOR: [u8; 4] = [106u8, 20u8, 215u8, 21u8];
             #[inline]
@@ -4778,15 +4380,15 @@ function setReceiveLibrary(address _oapp, uint32 _eid, address _newLib, uint256 
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self._oapp,
                     ),
-                    <alloy::sol_types::sol_data::Uint<
-                        32,
-                    > as alloy_sol_types::SolType>::tokenize(&self._eid),
+                    <alloy::sol_types::sol_data::Uint<32> as alloy_sol_types::SolType>::tokenize(
+                        &self._eid,
+                    ),
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self._newLib,
                     ),
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self._gracePeriod),
+                    <alloy::sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
+                        &self._gracePeriod,
+                    ),
                 )
             }
             #[inline]
@@ -4795,28 +4397,23 @@ function setReceiveLibrary(address _oapp, uint32 _eid, address _newLib, uint256 
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Into::into)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `setReceiveLibraryTimeout(address,uint32,address,uint256)` and selector `0x183c834f`.
-```solidity
-function setReceiveLibraryTimeout(address _oapp, uint32 _eid, address _lib, uint256 _expiry) external;
-```*/
+    ```solidity
+    function setReceiveLibraryTimeout(address _oapp, uint32 _eid, address _lib, uint256 _expiry) external;
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct setReceiveLibraryTimeoutCall {
@@ -4858,9 +4455,7 @@ function setReceiveLibraryTimeout(address _oapp, uint32 _eid, address _lib, uint
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -4869,16 +4464,14 @@ function setReceiveLibraryTimeout(address _oapp, uint32 _eid, address _lib, uint
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<setReceiveLibraryTimeoutCall>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<setReceiveLibraryTimeoutCall> for UnderlyingRustTuple<'_> {
                 fn from(value: setReceiveLibraryTimeoutCall) -> Self {
                     (value._oapp, value._eid, value._lib, value._expiry)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for setReceiveLibraryTimeoutCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for setReceiveLibraryTimeoutCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         _oapp: tuple.0,
@@ -4896,9 +4489,7 @@ function setReceiveLibraryTimeout(address _oapp, uint32 _eid, address _lib, uint
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -4907,16 +4498,14 @@ function setReceiveLibraryTimeout(address _oapp, uint32 _eid, address _lib, uint
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<setReceiveLibraryTimeoutReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<setReceiveLibraryTimeoutReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: setReceiveLibraryTimeoutReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for setReceiveLibraryTimeoutReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for setReceiveLibraryTimeoutReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
@@ -4925,9 +4514,8 @@ function setReceiveLibraryTimeout(address _oapp, uint32 _eid, address _lib, uint
         impl setReceiveLibraryTimeoutReturn {
             fn _tokenize(
                 &self,
-            ) -> <setReceiveLibraryTimeoutCall as alloy_sol_types::SolCall>::ReturnToken<
-                '_,
-            > {
+            ) -> <setReceiveLibraryTimeoutCall as alloy_sol_types::SolCall>::ReturnToken<'_>
+            {
                 ()
             }
         }
@@ -4939,15 +4527,12 @@ function setReceiveLibraryTimeout(address _oapp, uint32 _eid, address _lib, uint
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Uint<256>,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = setReceiveLibraryTimeoutReturn;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "setReceiveLibraryTimeout(address,uint32,address,uint256)";
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str =
+                "setReceiveLibraryTimeout(address,uint32,address,uint256)";
             const SELECTOR: [u8; 4] = [24u8, 60u8, 131u8, 79u8];
             #[inline]
             fn new<'a>(
@@ -4961,15 +4546,15 @@ function setReceiveLibraryTimeout(address _oapp, uint32 _eid, address _lib, uint
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self._oapp,
                     ),
-                    <alloy::sol_types::sol_data::Uint<
-                        32,
-                    > as alloy_sol_types::SolType>::tokenize(&self._eid),
+                    <alloy::sol_types::sol_data::Uint<32> as alloy_sol_types::SolType>::tokenize(
+                        &self._eid,
+                    ),
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self._lib,
                     ),
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self._expiry),
+                    <alloy::sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
+                        &self._expiry,
+                    ),
                 )
             }
             #[inline]
@@ -4978,28 +4563,23 @@ function setReceiveLibraryTimeout(address _oapp, uint32 _eid, address _lib, uint
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Into::into)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `setSendLibrary(address,uint32,address)` and selector `0x9535ff30`.
-```solidity
-function setSendLibrary(address _oapp, uint32 _eid, address _newLib) external;
-```*/
+    ```solidity
+    function setSendLibrary(address _oapp, uint32 _eid, address _newLib) external;
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct setSendLibraryCall {
@@ -5037,9 +4617,7 @@ function setSendLibrary(address _oapp, uint32 _eid, address _newLib) external;
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -5072,9 +4650,7 @@ function setSendLibrary(address _oapp, uint32 _eid, address _newLib) external;
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -5083,16 +4659,14 @@ function setSendLibrary(address _oapp, uint32 _eid, address _newLib) external;
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<setSendLibraryReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<setSendLibraryReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: setSendLibraryReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for setSendLibraryReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for setSendLibraryReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
@@ -5112,14 +4686,10 @@ function setSendLibrary(address _oapp, uint32 _eid, address _newLib) external;
                 alloy::sol_types::sol_data::Uint<32>,
                 alloy::sol_types::sol_data::Address,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = setSendLibraryReturn;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "setSendLibrary(address,uint32,address)";
             const SELECTOR: [u8; 4] = [149u8, 53u8, 255u8, 48u8];
             #[inline]
@@ -5134,9 +4704,9 @@ function setSendLibrary(address _oapp, uint32 _eid, address _newLib) external;
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self._oapp,
                     ),
-                    <alloy::sol_types::sol_data::Uint<
-                        32,
-                    > as alloy_sol_types::SolType>::tokenize(&self._eid),
+                    <alloy::sol_types::sol_data::Uint<32> as alloy_sol_types::SolType>::tokenize(
+                        &self._eid,
+                    ),
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self._newLib,
                     ),
@@ -5148,25 +4718,20 @@ function setSendLibrary(address _oapp, uint32 _eid, address _newLib) external;
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Into::into)
             }
         }
     };
     ///Container for all the [`IMessageLibManager`](self) function calls.
     #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive()]
     pub enum IMessageLibManagerCalls {
         #[allow(missing_docs)]
         defaultReceiveLibrary(defaultReceiveLibraryCall),
@@ -5257,9 +4822,7 @@ function setSendLibrary(address _oapp, uint32 _eid, address _newLib) external;
                 Self::defaultSendLibrary(_) => {
                     <defaultSendLibraryCall as alloy_sol_types::SolCall>::SELECTOR
                 }
-                Self::getConfig(_) => {
-                    <getConfigCall as alloy_sol_types::SolCall>::SELECTOR
-                }
+                Self::getConfig(_) => <getConfigCall as alloy_sol_types::SolCall>::SELECTOR,
                 Self::getReceiveLibrary(_) => {
                     <getReceiveLibraryCall as alloy_sol_types::SolCall>::SELECTOR
                 }
@@ -5287,9 +4850,7 @@ function setSendLibrary(address _oapp, uint32 _eid, address _newLib) external;
                 Self::registerLibrary(_) => {
                     <registerLibraryCall as alloy_sol_types::SolCall>::SELECTOR
                 }
-                Self::setConfig(_) => {
-                    <setConfigCall as alloy_sol_types::SolCall>::SELECTOR
-                }
+                Self::setConfig(_) => <setConfigCall as alloy_sol_types::SolCall>::SELECTOR,
                 Self::setDefaultReceiveLibrary(_) => {
                     <setDefaultReceiveLibraryCall as alloy_sol_types::SolCall>::SELECTOR
                 }
@@ -5320,28 +4881,24 @@ function setSendLibrary(address _oapp, uint32 _eid, address _newLib) external;
         }
         #[inline]
         #[allow(non_snake_case)]
-        fn abi_decode_raw(
-            selector: [u8; 4],
-            data: &[u8],
-        ) -> alloy_sol_types::Result<Self> {
+        fn abi_decode_raw(selector: [u8; 4], data: &[u8]) -> alloy_sol_types::Result<Self> {
             static DECODE_SHIMS: &[fn(
                 &[u8],
-            ) -> alloy_sol_types::Result<IMessageLibManagerCalls>] = &[
+            )
+                -> alloy_sol_types::Result<IMessageLibManagerCalls>] = &[
                 {
                     fn setReceiveLibraryTimeout(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
                         <setReceiveLibraryTimeoutCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(IMessageLibManagerCalls::setReceiveLibraryTimeout)
+                            data,
+                        )
+                        .map(IMessageLibManagerCalls::setReceiveLibraryTimeout)
                     }
                     setReceiveLibraryTimeout
                 },
                 {
-                    fn getConfig(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
+                    fn getConfig(data: &[u8]) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
                         <getConfigCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(IMessageLibManagerCalls::getConfig)
                     }
@@ -5351,9 +4908,7 @@ function setSendLibrary(address _oapp, uint32 _eid, address _newLib) external;
                     fn getReceiveLibrary(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
-                        <getReceiveLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
+                        <getReceiveLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(IMessageLibManagerCalls::getReceiveLibrary)
                     }
                     getReceiveLibrary
@@ -5362,9 +4917,7 @@ function setSendLibrary(address _oapp, uint32 _eid, address _newLib) external;
                     fn isSupportedEid(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
-                        <isSupportedEidCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
+                        <isSupportedEidCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(IMessageLibManagerCalls::isSupportedEid)
                     }
                     isSupportedEid
@@ -5373,17 +4926,13 @@ function setSendLibrary(address _oapp, uint32 _eid, address _newLib) external;
                     fn setReceiveLibrary(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
-                        <setReceiveLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
+                        <setReceiveLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(IMessageLibManagerCalls::setReceiveLibrary)
                     }
                     setReceiveLibrary
                 },
                 {
-                    fn setConfig(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
+                    fn setConfig(data: &[u8]) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
                         <setConfigCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(IMessageLibManagerCalls::setConfig)
                     }
@@ -5405,9 +4954,9 @@ function setSendLibrary(address _oapp, uint32 _eid, address _newLib) external;
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
                         <defaultReceiveLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(IMessageLibManagerCalls::defaultReceiveLibrary)
+                            data,
+                        )
+                        .map(IMessageLibManagerCalls::defaultReceiveLibrary)
                     }
                     defaultReceiveLibrary
                 },
@@ -5416,9 +4965,9 @@ function setSendLibrary(address _oapp, uint32 _eid, address _newLib) external;
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
                         <getRegisteredLibrariesCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(IMessageLibManagerCalls::getRegisteredLibraries)
+                            data,
+                        )
+                        .map(IMessageLibManagerCalls::getRegisteredLibraries)
                     }
                     getRegisteredLibraries
                 },
@@ -5426,9 +4975,7 @@ function setSendLibrary(address _oapp, uint32 _eid, address _newLib) external;
                     fn setSendLibrary(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
-                        <setSendLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
+                        <setSendLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(IMessageLibManagerCalls::setSendLibrary)
                     }
                     setSendLibrary
@@ -5438,9 +4985,9 @@ function setSendLibrary(address _oapp, uint32 _eid, address _newLib) external;
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
                         <isValidReceiveLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(IMessageLibManagerCalls::isValidReceiveLibrary)
+                            data,
+                        )
+                        .map(IMessageLibManagerCalls::isValidReceiveLibrary)
                     }
                     isValidReceiveLibrary
                 },
@@ -5449,9 +4996,9 @@ function setSendLibrary(address _oapp, uint32 _eid, address _newLib) external;
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
                         <setDefaultReceiveLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(IMessageLibManagerCalls::setDefaultReceiveLibrary)
+                            data,
+                        )
+                        .map(IMessageLibManagerCalls::setDefaultReceiveLibrary)
                     }
                     setDefaultReceiveLibrary
                 },
@@ -5460,9 +5007,9 @@ function setSendLibrary(address _oapp, uint32 _eid, address _newLib) external;
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
                         <setDefaultSendLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(IMessageLibManagerCalls::setDefaultSendLibrary)
+                            data,
+                        )
+                        .map(IMessageLibManagerCalls::setDefaultSendLibrary)
                     }
                     setDefaultSendLibrary
                 },
@@ -5470,9 +5017,7 @@ function setSendLibrary(address _oapp, uint32 _eid, address _newLib) external;
                     fn getSendLibrary(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
-                        <getSendLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
+                        <getSendLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(IMessageLibManagerCalls::getSendLibrary)
                     }
                     getSendLibrary
@@ -5494,9 +5039,7 @@ function setSendLibrary(address _oapp, uint32 _eid, address _newLib) external;
                     fn isRegisteredLibrary(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
-                        <isRegisteredLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
+                        <isRegisteredLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(IMessageLibManagerCalls::isRegisteredLibrary)
                     }
                     isRegisteredLibrary
@@ -5505,9 +5048,7 @@ function setSendLibrary(address _oapp, uint32 _eid, address _newLib) external;
                     fn isDefaultSendLibrary(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
-                        <isDefaultSendLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
+                        <isDefaultSendLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(IMessageLibManagerCalls::isDefaultSendLibrary)
                     }
                     isDefaultSendLibrary
@@ -5516,9 +5057,7 @@ function setSendLibrary(address _oapp, uint32 _eid, address _newLib) external;
                     fn registerLibrary(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
-                        <registerLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
+                        <registerLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(IMessageLibManagerCalls::registerLibrary)
                     }
                     registerLibrary
@@ -5528,9 +5067,9 @@ function setSendLibrary(address _oapp, uint32 _eid, address _newLib) external;
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
                         <receiveLibraryTimeoutCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(IMessageLibManagerCalls::receiveLibraryTimeout)
+                            data,
+                        )
+                        .map(IMessageLibManagerCalls::receiveLibraryTimeout)
                     }
                     receiveLibraryTimeout
                 },
@@ -5538,21 +5077,17 @@ function setSendLibrary(address _oapp, uint32 _eid, address _newLib) external;
                     fn defaultSendLibrary(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
-                        <defaultSendLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
+                        <defaultSendLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(IMessageLibManagerCalls::defaultSendLibrary)
                     }
                     defaultSendLibrary
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(
-                    alloy_sol_types::Error::unknown_selector(
-                        <Self as alloy_sol_types::SolInterface>::NAME,
-                        selector,
-                    ),
-                );
+                return Err(alloy_sol_types::Error::unknown_selector(
+                    <Self as alloy_sol_types::SolInterface>::NAME,
+                    selector,
+                ));
             };
             DECODE_SHIMS[idx](data)
         }
@@ -5564,7 +5099,9 @@ function setSendLibrary(address _oapp, uint32 _eid, address _newLib) external;
         ) -> alloy_sol_types::Result<Self> {
             static DECODE_VALIDATE_SHIMS: &[fn(
                 &[u8],
-            ) -> alloy_sol_types::Result<IMessageLibManagerCalls>] = &[
+            ) -> alloy_sol_types::Result<
+                IMessageLibManagerCalls,
+            >] = &[
                 {
                     fn setReceiveLibraryTimeout(
                         data: &[u8],
@@ -5577,12 +5114,8 @@ function setSendLibrary(address _oapp, uint32 _eid, address _newLib) external;
                     setReceiveLibraryTimeout
                 },
                 {
-                    fn getConfig(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
-                        <getConfigCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
+                    fn getConfig(data: &[u8]) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
+                        <getConfigCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
                             .map(IMessageLibManagerCalls::getConfig)
                     }
                     getConfig
@@ -5603,9 +5136,9 @@ function setSendLibrary(address _oapp, uint32 _eid, address _newLib) external;
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
                         <isSupportedEidCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IMessageLibManagerCalls::isSupportedEid)
+                            data,
+                        )
+                        .map(IMessageLibManagerCalls::isSupportedEid)
                     }
                     isSupportedEid
                 },
@@ -5621,12 +5154,8 @@ function setSendLibrary(address _oapp, uint32 _eid, address _newLib) external;
                     setReceiveLibrary
                 },
                 {
-                    fn setConfig(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
-                        <setConfigCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
+                    fn setConfig(data: &[u8]) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
+                        <setConfigCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
                             .map(IMessageLibManagerCalls::setConfig)
                     }
                     setConfig
@@ -5669,9 +5198,9 @@ function setSendLibrary(address _oapp, uint32 _eid, address _newLib) external;
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
                         <setSendLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IMessageLibManagerCalls::setSendLibrary)
+                            data,
+                        )
+                        .map(IMessageLibManagerCalls::setSendLibrary)
                     }
                     setSendLibrary
                 },
@@ -5713,9 +5242,9 @@ function setSendLibrary(address _oapp, uint32 _eid, address _newLib) external;
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
                         <getSendLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IMessageLibManagerCalls::getSendLibrary)
+                            data,
+                        )
+                        .map(IMessageLibManagerCalls::getSendLibrary)
                     }
                     getSendLibrary
                 },
@@ -5759,9 +5288,9 @@ function setSendLibrary(address _oapp, uint32 _eid, address _newLib) external;
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IMessageLibManagerCalls> {
                         <registerLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IMessageLibManagerCalls::registerLibrary)
+                            data,
+                        )
+                        .map(IMessageLibManagerCalls::registerLibrary)
                     }
                     registerLibrary
                 },
@@ -5789,12 +5318,10 @@ function setSendLibrary(address _oapp, uint32 _eid, address _newLib) external;
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(
-                    alloy_sol_types::Error::unknown_selector(
-                        <Self as alloy_sol_types::SolInterface>::NAME,
-                        selector,
-                    ),
-                );
+                return Err(alloy_sol_types::Error::unknown_selector(
+                    <Self as alloy_sol_types::SolInterface>::NAME,
+                    selector,
+                ));
             };
             DECODE_VALIDATE_SHIMS[idx](data)
         }
@@ -6026,8 +5553,7 @@ function setSendLibrary(address _oapp, uint32 _eid, address _newLib) external;
         }
     }
     ///Container for all the [`IMessageLibManager`](self) events.
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Debug, PartialEq, Eq, Hash)]
     pub enum IMessageLibManagerEvents {
         #[allow(missing_docs)]
         DefaultReceiveLibrarySet(DefaultReceiveLibrarySet),
@@ -6054,39 +5580,39 @@ function setSendLibrary(address _oapp, uint32 _eid, address _newLib) external;
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 32usize]] = &[
             [
-                22u8, 170u8, 15u8, 82u8, 128u8, 56u8, 171u8, 65u8, 1u8, 158u8, 149u8,
-                186u8, 229u8, 180u8, 24u8, 165u8, 11u8, 168u8, 83u8, 44u8, 88u8, 0u8,
-                227u8, 183u8, 234u8, 47u8, 81u8, 125u8, 63u8, 166u8, 37u8, 245u8,
+                22u8, 170u8, 15u8, 82u8, 128u8, 56u8, 171u8, 65u8, 1u8, 158u8, 149u8, 186u8, 229u8,
+                180u8, 24u8, 165u8, 11u8, 168u8, 83u8, 44u8, 88u8, 0u8, 227u8, 183u8, 234u8, 47u8,
+                81u8, 125u8, 63u8, 166u8, 37u8, 245u8,
             ],
             [
-                76u8, 255u8, 150u8, 110u8, 190u8, 226u8, 154u8, 21u8, 109u8, 203u8, 52u8,
-                207u8, 114u8, 193u8, 208u8, 98u8, 49u8, 251u8, 23u8, 119u8, 246u8, 189u8,
-                246u8, 232u8, 8u8, 152u8, 25u8, 35u8, 47u8, 0u8, 43u8, 28u8,
+                76u8, 255u8, 150u8, 110u8, 190u8, 226u8, 154u8, 21u8, 109u8, 203u8, 52u8, 207u8,
+                114u8, 193u8, 208u8, 98u8, 49u8, 251u8, 23u8, 119u8, 246u8, 189u8, 246u8, 232u8,
+                8u8, 152u8, 25u8, 35u8, 47u8, 0u8, 43u8, 28u8,
             ],
             [
-                78u8, 10u8, 91u8, 191u8, 160u8, 193u8, 26u8, 100u8, 239u8, 251u8, 26u8,
-                218u8, 50u8, 75u8, 84u8, 55u8, 161u8, 114u8, 114u8, 225u8, 174u8, 217u8,
-                50u8, 3u8, 152u8, 113u8, 94u8, 247u8, 27u8, 178u8, 9u8, 40u8,
+                78u8, 10u8, 91u8, 191u8, 160u8, 193u8, 26u8, 100u8, 239u8, 251u8, 26u8, 218u8,
+                50u8, 75u8, 84u8, 55u8, 161u8, 114u8, 114u8, 225u8, 174u8, 217u8, 50u8, 3u8, 152u8,
+                113u8, 94u8, 247u8, 27u8, 178u8, 9u8, 40u8,
             ],
             [
-                85u8, 178u8, 134u8, 51u8, 205u8, 178u8, 151u8, 9u8, 56u8, 111u8, 85u8,
-                93u8, 252u8, 84u8, 65u8, 133u8, 146u8, 173u8, 71u8, 92u8, 231u8, 166u8,
-                90u8, 120u8, 172u8, 89u8, 40u8, 175u8, 96u8, 255u8, 184u8, 248u8,
+                85u8, 178u8, 134u8, 51u8, 205u8, 178u8, 151u8, 9u8, 56u8, 111u8, 85u8, 93u8, 252u8,
+                84u8, 65u8, 133u8, 146u8, 173u8, 71u8, 92u8, 231u8, 166u8, 90u8, 120u8, 172u8,
+                89u8, 40u8, 175u8, 96u8, 255u8, 184u8, 248u8,
             ],
             [
-                107u8, 55u8, 77u8, 86u8, 103u8, 156u8, 169u8, 70u8, 63u8, 39u8, 200u8,
-                92u8, 99u8, 17u8, 226u8, 187u8, 127u8, 222u8, 105u8, 191u8, 32u8, 29u8,
-                61u8, 163u8, 157u8, 83u8, 241u8, 11u8, 217u8, 215u8, 138u8, 245u8,
+                107u8, 55u8, 77u8, 86u8, 103u8, 156u8, 169u8, 70u8, 63u8, 39u8, 200u8, 92u8, 99u8,
+                17u8, 226u8, 187u8, 127u8, 222u8, 105u8, 191u8, 32u8, 29u8, 61u8, 163u8, 157u8,
+                83u8, 241u8, 11u8, 217u8, 215u8, 138u8, 245u8,
             ],
             [
-                193u8, 104u8, 145u8, 133u8, 92u8, 255u8, 180u8, 165u8, 172u8, 81u8,
-                172u8, 17u8, 134u8, 74u8, 63u8, 60u8, 150u8, 186u8, 129u8, 108u8, 196u8,
-                95u8, 230u8, 134u8, 201u8, 135u8, 174u8, 54u8, 39u8, 125u8, 229u8, 236u8,
+                193u8, 104u8, 145u8, 133u8, 92u8, 255u8, 180u8, 165u8, 172u8, 81u8, 172u8, 17u8,
+                134u8, 74u8, 63u8, 60u8, 150u8, 186u8, 129u8, 108u8, 196u8, 95u8, 230u8, 134u8,
+                201u8, 135u8, 174u8, 54u8, 39u8, 125u8, 229u8, 236u8,
             ],
             [
-                205u8, 111u8, 146u8, 245u8, 172u8, 97u8, 133u8, 165u8, 172u8, 250u8, 2u8,
-                201u8, 32u8, 144u8, 116u8, 108u8, 236u8, 100u8, 215u8, 119u8, 38u8,
-                156u8, 188u8, 208u8, 237u8, 3u8, 30u8, 57u8, 102u8, 87u8, 161u8, 194u8,
+                205u8, 111u8, 146u8, 245u8, 172u8, 97u8, 133u8, 165u8, 172u8, 250u8, 2u8, 201u8,
+                32u8, 144u8, 116u8, 108u8, 236u8, 100u8, 215u8, 119u8, 38u8, 156u8, 188u8, 208u8,
+                237u8, 3u8, 30u8, 57u8, 102u8, 87u8, 161u8, 194u8,
             ],
         ];
     }
@@ -6099,78 +5625,53 @@ function setSendLibrary(address _oapp, uint32 _eid, address _newLib) external;
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
             match topics.first().copied() {
-                Some(
-                    <DefaultReceiveLibrarySet as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
-                ) => {
+                Some(<DefaultReceiveLibrarySet as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
                     <DefaultReceiveLibrarySet as alloy_sol_types::SolEvent>::decode_raw_log(
-                            topics,
-                            data,
-                        )
-                        .map(Self::DefaultReceiveLibrarySet)
+                        topics, data,
+                    )
+                    .map(Self::DefaultReceiveLibrarySet)
                 }
                 Some(
                     <DefaultReceiveLibraryTimeoutSet as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
                 ) => {
                     <DefaultReceiveLibraryTimeoutSet as alloy_sol_types::SolEvent>::decode_raw_log(
-                            topics,
-                            data,
-                        )
-                        .map(Self::DefaultReceiveLibraryTimeoutSet)
+                        topics, data,
+                    )
+                    .map(Self::DefaultReceiveLibraryTimeoutSet)
                 }
-                Some(
-                    <DefaultSendLibrarySet as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
-                ) => {
+                Some(<DefaultSendLibrarySet as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
                     <DefaultSendLibrarySet as alloy_sol_types::SolEvent>::decode_raw_log(
-                            topics,
-                            data,
-                        )
-                        .map(Self::DefaultSendLibrarySet)
+                        topics, data,
+                    )
+                    .map(Self::DefaultSendLibrarySet)
                 }
-                Some(
-                    <LibraryRegistered as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
-                ) => {
-                    <LibraryRegistered as alloy_sol_types::SolEvent>::decode_raw_log(
-                            topics,
-                            data,
-                        )
+                Some(<LibraryRegistered as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
+                    <LibraryRegistered as alloy_sol_types::SolEvent>::decode_raw_log(topics, data)
                         .map(Self::LibraryRegistered)
                 }
-                Some(
-                    <ReceiveLibrarySet as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
-                ) => {
-                    <ReceiveLibrarySet as alloy_sol_types::SolEvent>::decode_raw_log(
-                            topics,
-                            data,
-                        )
+                Some(<ReceiveLibrarySet as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
+                    <ReceiveLibrarySet as alloy_sol_types::SolEvent>::decode_raw_log(topics, data)
                         .map(Self::ReceiveLibrarySet)
                 }
-                Some(
-                    <ReceiveLibraryTimeoutSet as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
-                ) => {
+                Some(<ReceiveLibraryTimeoutSet as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
                     <ReceiveLibraryTimeoutSet as alloy_sol_types::SolEvent>::decode_raw_log(
-                            topics,
-                            data,
-                        )
-                        .map(Self::ReceiveLibraryTimeoutSet)
+                        topics, data,
+                    )
+                    .map(Self::ReceiveLibraryTimeoutSet)
                 }
                 Some(<SendLibrarySet as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
-                    <SendLibrarySet as alloy_sol_types::SolEvent>::decode_raw_log(
-                            topics,
-                            data,
-                        )
+                    <SendLibrarySet as alloy_sol_types::SolEvent>::decode_raw_log(topics, data)
                         .map(Self::SendLibrarySet)
                 }
-                _ => {
-                    alloy_sol_types::private::Err(alloy_sol_types::Error::InvalidLog {
-                        name: <Self as alloy_sol_types::SolEventInterface>::NAME,
-                        log: alloy_sol_types::private::Box::new(
-                            alloy_sol_types::private::LogData::new_unchecked(
-                                topics.to_vec(),
-                                data.to_vec().into(),
-                            ),
+                _ => alloy_sol_types::private::Err(alloy_sol_types::Error::InvalidLog {
+                    name: <Self as alloy_sol_types::SolEventInterface>::NAME,
+                    log: alloy_sol_types::private::Box::new(
+                        alloy_sol_types::private::LogData::new_unchecked(
+                            topics.to_vec(),
+                            data.to_vec().into(),
                         ),
-                    })
-                }
+                    ),
+                }),
             }
         }
     }
@@ -6230,7 +5731,7 @@ function setSendLibrary(address _oapp, uint32 _eid, address _newLib) external;
     use alloy::contract as alloy_contract;
     /**Creates a new wrapper around an on-chain [`IMessageLibManager`](self) contract instance.
 
-See the [wrapper's documentation](`IMessageLibManagerInstance`) for more details.*/
+    See the [wrapper's documentation](`IMessageLibManagerInstance`) for more details.*/
     #[inline]
     pub const fn new<
         P: alloy_contract::private::Provider<N>,
@@ -6243,43 +5744,41 @@ See the [wrapper's documentation](`IMessageLibManagerInstance`) for more details
     }
     /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
-Returns a new instance of the contract, if the deployment was successful.
+    Returns a new instance of the contract, if the deployment was successful.
 
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
+    For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
     #[inline]
-    pub fn deploy<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(
+    pub fn deploy<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>(
         provider: P,
-    ) -> impl ::core::future::Future<
-        Output = alloy_contract::Result<IMessageLibManagerInstance<P, N>>,
-    > {
+    ) -> impl ::core::future::Future<Output = alloy_contract::Result<IMessageLibManagerInstance<P, N>>>
+    {
         IMessageLibManagerInstance::<P, N>::deploy(provider)
     }
     /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
+    and constructor arguments, if any.
 
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
+    This is a simple wrapper around creating a `RawCallBuilder` with the data set to
+    the bytecode concatenated with the constructor's ABI-encoded arguments.*/
     #[inline]
     pub fn deploy_builder<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
-    >(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
+    >(
+        provider: P,
+    ) -> alloy_contract::RawCallBuilder<P, N> {
         IMessageLibManagerInstance::<P, N>::deploy_builder(provider)
     }
     /**A [`IMessageLibManager`](self) instance.
 
-Contains type-safe methods for interacting with an on-chain instance of the
-[`IMessageLibManager`](self) contract located at a given `address`, using a given
-provider `P`.
+    Contains type-safe methods for interacting with an on-chain instance of the
+    [`IMessageLibManager`](self) contract located at a given `address`, using a given
+    provider `P`.
 
-If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
-documentation on how to provide it), the `deploy` and `deploy_builder` methods can
-be used to deploy a new instance of the contract.
+    If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
+    documentation on how to provide it), the `deploy` and `deploy_builder` methods can
+    be used to deploy a new instance of the contract.
 
-See the [module-level documentation](self) for all the available methods.*/
+    See the [module-level documentation](self) for all the available methods.*/
     #[derive(Clone)]
     pub struct IMessageLibManagerInstance<P, N = alloy_contract::private::Ethereum> {
         address: alloy_sol_types::private::Address,
@@ -6290,23 +5789,21 @@ See the [module-level documentation](self) for all the available methods.*/
     impl<P, N> ::core::fmt::Debug for IMessageLibManagerInstance<P, N> {
         #[inline]
         fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-            f.debug_tuple("IMessageLibManagerInstance").field(&self.address).finish()
+            f.debug_tuple("IMessageLibManagerInstance")
+                .field(&self.address)
+                .finish()
         }
     }
     /// Instantiation and getters/setters.
     #[automatically_derived]
-    impl<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    > IMessageLibManagerInstance<P, N> {
+    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
+        IMessageLibManagerInstance<P, N>
+    {
         /**Creates a new wrapper around an on-chain [`IMessageLibManager`](self) contract instance.
 
-See the [wrapper's documentation](`IMessageLibManagerInstance`) for more details.*/
+        See the [wrapper's documentation](`IMessageLibManagerInstance`) for more details.*/
         #[inline]
-        pub const fn new(
-            address: alloy_sol_types::private::Address,
-            provider: P,
-        ) -> Self {
+        pub const fn new(address: alloy_sol_types::private::Address, provider: P) -> Self {
             Self {
                 address,
                 provider,
@@ -6315,9 +5812,9 @@ See the [wrapper's documentation](`IMessageLibManagerInstance`) for more details
         }
         /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
-Returns a new instance of the contract, if the deployment was successful.
+        Returns a new instance of the contract, if the deployment was successful.
 
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
+        For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
         #[inline]
         pub async fn deploy(
             provider: P,
@@ -6327,10 +5824,10 @@ For more fine-grained control over the deployment process, use [`deploy_builder`
             Ok(Self::new(contract_address, call_builder.provider))
         }
         /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
+        and constructor arguments, if any.
 
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
+        This is a simple wrapper around creating a `RawCallBuilder` with the data set to
+        the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         #[inline]
         pub fn deploy_builder(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
             alloy_contract::RawCallBuilder::new_raw_deploy(
@@ -6372,10 +5869,9 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
     }
     /// Function calls.
     #[automatically_derived]
-    impl<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    > IMessageLibManagerInstance<P, N> {
+    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
+        IMessageLibManagerInstance<P, N>
+    {
         /// Creates a new call builder using this contract instance's provider and address.
         ///
         /// Note that the call can be any function call, not just those defined in this
@@ -6398,11 +5894,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             &self,
             _eid: u32,
         ) -> alloy_contract::SolCallBuilder<&P, defaultReceiveLibraryTimeoutCall, N> {
-            self.call_builder(
-                &defaultReceiveLibraryTimeoutCall {
-                    _eid,
-                },
-            )
+            self.call_builder(&defaultReceiveLibraryTimeoutCall { _eid })
         }
         ///Creates a new call builder for the [`defaultSendLibrary`] function.
         pub fn defaultSendLibrary(
@@ -6419,14 +5911,12 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             _eid: u32,
             _configType: u32,
         ) -> alloy_contract::SolCallBuilder<&P, getConfigCall, N> {
-            self.call_builder(
-                &getConfigCall {
-                    _oapp,
-                    _lib,
-                    _eid,
-                    _configType,
-                },
-            )
+            self.call_builder(&getConfigCall {
+                _oapp,
+                _lib,
+                _eid,
+                _configType,
+            })
         }
         ///Creates a new call builder for the [`getReceiveLibrary`] function.
         pub fn getReceiveLibrary(
@@ -6434,12 +5924,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             _receiver: alloy::sol_types::private::Address,
             _eid: u32,
         ) -> alloy_contract::SolCallBuilder<&P, getReceiveLibraryCall, N> {
-            self.call_builder(
-                &getReceiveLibraryCall {
-                    _receiver,
-                    _eid,
-                },
-            )
+            self.call_builder(&getReceiveLibraryCall { _receiver, _eid })
         }
         ///Creates a new call builder for the [`getRegisteredLibraries`] function.
         pub fn getRegisteredLibraries(
@@ -6453,12 +5938,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             _sender: alloy::sol_types::private::Address,
             _eid: u32,
         ) -> alloy_contract::SolCallBuilder<&P, getSendLibraryCall, N> {
-            self.call_builder(
-                &getSendLibraryCall {
-                    _sender,
-                    _eid,
-                },
-            )
+            self.call_builder(&getSendLibraryCall { _sender, _eid })
         }
         ///Creates a new call builder for the [`isDefaultSendLibrary`] function.
         pub fn isDefaultSendLibrary(
@@ -6466,12 +5946,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             _sender: alloy::sol_types::private::Address,
             _eid: u32,
         ) -> alloy_contract::SolCallBuilder<&P, isDefaultSendLibraryCall, N> {
-            self.call_builder(
-                &isDefaultSendLibraryCall {
-                    _sender,
-                    _eid,
-                },
-            )
+            self.call_builder(&isDefaultSendLibraryCall { _sender, _eid })
         }
         ///Creates a new call builder for the [`isRegisteredLibrary`] function.
         pub fn isRegisteredLibrary(
@@ -6494,13 +5969,11 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             _eid: u32,
             _lib: alloy::sol_types::private::Address,
         ) -> alloy_contract::SolCallBuilder<&P, isValidReceiveLibraryCall, N> {
-            self.call_builder(
-                &isValidReceiveLibraryCall {
-                    _receiver,
-                    _eid,
-                    _lib,
-                },
-            )
+            self.call_builder(&isValidReceiveLibraryCall {
+                _receiver,
+                _eid,
+                _lib,
+            })
         }
         ///Creates a new call builder for the [`receiveLibraryTimeout`] function.
         pub fn receiveLibraryTimeout(
@@ -6508,12 +5981,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             _receiver: alloy::sol_types::private::Address,
             _eid: u32,
         ) -> alloy_contract::SolCallBuilder<&P, receiveLibraryTimeoutCall, N> {
-            self.call_builder(
-                &receiveLibraryTimeoutCall {
-                    _receiver,
-                    _eid,
-                },
-            )
+            self.call_builder(&receiveLibraryTimeoutCall { _receiver, _eid })
         }
         ///Creates a new call builder for the [`registerLibrary`] function.
         pub fn registerLibrary(
@@ -6531,13 +5999,11 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
                 <SetConfigParam as alloy::sol_types::SolType>::RustType,
             >,
         ) -> alloy_contract::SolCallBuilder<&P, setConfigCall, N> {
-            self.call_builder(
-                &setConfigCall {
-                    _oapp,
-                    _lib,
-                    _params,
-                },
-            )
+            self.call_builder(&setConfigCall {
+                _oapp,
+                _lib,
+                _params,
+            })
         }
         ///Creates a new call builder for the [`setDefaultReceiveLibrary`] function.
         pub fn setDefaultReceiveLibrary(
@@ -6546,13 +6012,11 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             _newLib: alloy::sol_types::private::Address,
             _gracePeriod: alloy::sol_types::private::primitives::aliases::U256,
         ) -> alloy_contract::SolCallBuilder<&P, setDefaultReceiveLibraryCall, N> {
-            self.call_builder(
-                &setDefaultReceiveLibraryCall {
-                    _eid,
-                    _newLib,
-                    _gracePeriod,
-                },
-            )
+            self.call_builder(&setDefaultReceiveLibraryCall {
+                _eid,
+                _newLib,
+                _gracePeriod,
+            })
         }
         ///Creates a new call builder for the [`setDefaultReceiveLibraryTimeout`] function.
         pub fn setDefaultReceiveLibraryTimeout(
@@ -6561,13 +6025,11 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             _lib: alloy::sol_types::private::Address,
             _expiry: alloy::sol_types::private::primitives::aliases::U256,
         ) -> alloy_contract::SolCallBuilder<&P, setDefaultReceiveLibraryTimeoutCall, N> {
-            self.call_builder(
-                &setDefaultReceiveLibraryTimeoutCall {
-                    _eid,
-                    _lib,
-                    _expiry,
-                },
-            )
+            self.call_builder(&setDefaultReceiveLibraryTimeoutCall {
+                _eid,
+                _lib,
+                _expiry,
+            })
         }
         ///Creates a new call builder for the [`setDefaultSendLibrary`] function.
         pub fn setDefaultSendLibrary(
@@ -6575,12 +6037,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             _eid: u32,
             _newLib: alloy::sol_types::private::Address,
         ) -> alloy_contract::SolCallBuilder<&P, setDefaultSendLibraryCall, N> {
-            self.call_builder(
-                &setDefaultSendLibraryCall {
-                    _eid,
-                    _newLib,
-                },
-            )
+            self.call_builder(&setDefaultSendLibraryCall { _eid, _newLib })
         }
         ///Creates a new call builder for the [`setReceiveLibrary`] function.
         pub fn setReceiveLibrary(
@@ -6590,14 +6047,12 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             _newLib: alloy::sol_types::private::Address,
             _gracePeriod: alloy::sol_types::private::primitives::aliases::U256,
         ) -> alloy_contract::SolCallBuilder<&P, setReceiveLibraryCall, N> {
-            self.call_builder(
-                &setReceiveLibraryCall {
-                    _oapp,
-                    _eid,
-                    _newLib,
-                    _gracePeriod,
-                },
-            )
+            self.call_builder(&setReceiveLibraryCall {
+                _oapp,
+                _eid,
+                _newLib,
+                _gracePeriod,
+            })
         }
         ///Creates a new call builder for the [`setReceiveLibraryTimeout`] function.
         pub fn setReceiveLibraryTimeout(
@@ -6607,14 +6062,12 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             _lib: alloy::sol_types::private::Address,
             _expiry: alloy::sol_types::private::primitives::aliases::U256,
         ) -> alloy_contract::SolCallBuilder<&P, setReceiveLibraryTimeoutCall, N> {
-            self.call_builder(
-                &setReceiveLibraryTimeoutCall {
-                    _oapp,
-                    _eid,
-                    _lib,
-                    _expiry,
-                },
-            )
+            self.call_builder(&setReceiveLibraryTimeoutCall {
+                _oapp,
+                _eid,
+                _lib,
+                _expiry,
+            })
         }
         ///Creates a new call builder for the [`setSendLibrary`] function.
         pub fn setSendLibrary(
@@ -6623,21 +6076,18 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             _eid: u32,
             _newLib: alloy::sol_types::private::Address,
         ) -> alloy_contract::SolCallBuilder<&P, setSendLibraryCall, N> {
-            self.call_builder(
-                &setSendLibraryCall {
-                    _oapp,
-                    _eid,
-                    _newLib,
-                },
-            )
+            self.call_builder(&setSendLibraryCall {
+                _oapp,
+                _eid,
+                _newLib,
+            })
         }
     }
     /// Event filters.
     #[automatically_derived]
-    impl<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    > IMessageLibManagerInstance<P, N> {
+    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
+        IMessageLibManagerInstance<P, N>
+    {
         /// Creates a new event filter using this contract instance's provider and address.
         ///
         /// Note that the type can be any event, not just those defined in this contract.
@@ -6666,15 +6116,11 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             self.event_filter::<DefaultSendLibrarySet>()
         }
         ///Creates a new event filter for the [`LibraryRegistered`] event.
-        pub fn LibraryRegistered_filter(
-            &self,
-        ) -> alloy_contract::Event<&P, LibraryRegistered, N> {
+        pub fn LibraryRegistered_filter(&self) -> alloy_contract::Event<&P, LibraryRegistered, N> {
             self.event_filter::<LibraryRegistered>()
         }
         ///Creates a new event filter for the [`ReceiveLibrarySet`] event.
-        pub fn ReceiveLibrarySet_filter(
-            &self,
-        ) -> alloy_contract::Event<&P, ReceiveLibrarySet, N> {
+        pub fn ReceiveLibrarySet_filter(&self) -> alloy_contract::Event<&P, ReceiveLibrarySet, N> {
             self.event_filter::<ReceiveLibrarySet>()
         }
         ///Creates a new event filter for the [`ReceiveLibraryTimeoutSet`] event.
@@ -6684,9 +6130,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             self.event_filter::<ReceiveLibraryTimeoutSet>()
         }
         ///Creates a new event filter for the [`SendLibrarySet`] event.
-        pub fn SendLibrarySet_filter(
-            &self,
-        ) -> alloy_contract::Event<&P, SendLibrarySet, N> {
+        pub fn SendLibrarySet_filter(&self) -> alloy_contract::Event<&P, SendLibrarySet, N> {
             self.event_filter::<SendLibrarySet>()
         }
     }

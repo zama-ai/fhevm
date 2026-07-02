@@ -26,9 +26,7 @@ use fhevm_gateway_bindings::decryption::{
     },
 };
 use fhevm_host_bindings::{
-    kms_generation::KMSGeneration::{
-        CompressedKeyMigrationKeygenRequest, CrsgenRequest, KeygenRequest, PrepKeygenRequest,
-    },
+    kms_generation::KMSGeneration::{CrsgenRequest, KeygenRequest, PrepKeygenRequest},
     protocol_config::ProtocolConfig::{NewKmsContext, NewKmsEpoch},
 };
 
@@ -161,7 +159,7 @@ pub async fn mock_event_on_gw(
             };
             let tx = test_instance
                 .kms_generation_contract()
-                .keygen(ParamsTypeDb::Test as u8)
+                .keygen(ParamsTypeDb::Test as u8, 0, U256::ZERO)
                 .send()
                 .await?;
             (tx, event.into())
@@ -181,13 +179,14 @@ pub async fn mock_event_on_gw(
         }
         TestEventType::CompressedKeyMigrationKeygen => {
             let rand_migrated_key_id = rand_u256();
-            let event = CompressedKeyMigrationKeygenRequest {
-                keyId: rand_migrated_key_id,
+            let event = KeygenRequest {
+                mode: 1,
+                existingKeyId: rand_migrated_key_id,
                 ..Default::default()
             };
             let tx = test_instance
                 .kms_generation_contract()
-                .compressedKeyMigrationKeygen(rand_migrated_key_id)
+                .keygen(ParamsTypeDb::Test as u8, 1, rand_migrated_key_id)
                 .send()
                 .await?;
             (tx, event.into())
@@ -337,9 +336,9 @@ pub fn check_event_in_db(rows: &[PgRow], event: ProtocolEventKind) -> anyhow::Re
                 }
             }
         }
-        ProtocolEventKind::CompressedKeyMigrationKeygen(e) => {
+        ProtocolEventKind::Keygen(e) if e.mode == 1 => {
             for r in rows {
-                if Some(e.keyId)
+                if Some(e.existingKeyId)
                     == r.try_get::<Option<[u8; 32]>, _>("migrated_key_id")?
                         .map(U256::from_le_bytes)
                 {

@@ -16,6 +16,17 @@ interface IKMSGeneration {
     }
 
     /**
+     * @notice How a keygen produces its material (RFC-029).
+     * Fresh mints a new key and activates it on consensus; FromExisting
+     * re-materializes compressed material for the existing active key and
+     * only publishes digests — it never activates anything.
+     */
+    enum KeygenMode {
+        Fresh, // 0
+        FromExisting // 1
+    }
+
+    /**
      * @notice The type of the generated key.
      */
     enum KeyType {
@@ -57,7 +68,13 @@ interface IKMSGeneration {
      * @param paramsType The type of the parameters to use.
      * @param extraData Additional context data (0x01 || contextId, or 0x02 || contextId || epochId).
      */
-    event PrepKeygenRequest(uint256 prepKeygenId, ParamsType paramsType, bytes extraData);
+    event PrepKeygenRequest(
+        uint256 prepKeygenId,
+        ParamsType paramsType,
+        KeygenMode mode,
+        uint256 existingKeyId,
+        bytes extraData
+    );
 
     /**
      * @notice Emitted when a KMS node has responded to a preprocessing keygen request.
@@ -73,7 +90,7 @@ interface IKMSGeneration {
      * @param keyId The ID of the key to generate.
      * @param extraData Additional context data.
      */
-    event KeygenRequest(uint256 prepKeygenId, uint256 keyId, bytes extraData);
+    event KeygenRequest(uint256 prepKeygenId, uint256 keyId, KeygenMode mode, uint256 existingKeyId, bytes extraData);
 
     /**
      * @notice Emitted when a KMS node has responded to a keygen request.
@@ -102,53 +119,6 @@ interface IKMSGeneration {
         uint256 chainId;
         uint64 cutoverBlock;
     }
-
-    /**
-     * @notice Emitted to trigger the preprocessing round of the one-time compressed-key
-     * migration keygen (RFC-029): re-materializing compressed key material for an existing,
-     * already-active key. Not a key rotation: the key and its ID never change, and this flow
-     * never activates anything.
-     * @param prepKeygenId The ID of the preprocessing request.
-     * @param keyId The ID of the existing key whose material is being re-materialized.
-     * @param paramsType The parameters type of the existing key.
-     * @param extraData Additional context data.
-     */
-    event CompressedKeyMigrationPrepKeygenRequest(
-        uint256 prepKeygenId,
-        uint256 keyId,
-        ParamsType paramsType,
-        bytes extraData
-    );
-
-    /**
-     * @notice Emitted when the migration preprocessing reaches consensus, triggering the
-     * compressed-key migration keygen itself.
-     * @param prepKeygenId The ID of the preprocessing request.
-     * @param migrationRequestId The migration keygen request ID. This is a request correlation
-     * handle, never a key identity: it must not appear anywhere outside this request lifecycle.
-     * @param keyId The ID of the existing key whose material is being re-materialized.
-     * @param extraData Additional context data.
-     */
-    event CompressedKeyMigrationKeygenRequest(
-        uint256 prepKeygenId,
-        uint256 migrationRequestId,
-        uint256 keyId,
-        bytes extraData
-    );
-
-    /**
-     * @notice Emitted when a KMS node has responded to a compressed-key migration keygen request.
-     * @param migrationRequestId The migration keygen request ID.
-     * @param keyDigests The digests of the re-materialized compressed key material.
-     * @param signature The signature of the KMS node that has responded.
-     * @param kmsTxSender The transaction sender of the KMS node that has called the function.
-     */
-    event CompressedKeyMaterialResponse(
-        uint256 migrationRequestId,
-        KeyDigest[] keyDigests,
-        bytes signature,
-        address kmsTxSender
-    );
 
     /**
      * @notice Emitted when KMS consensus is reached on the re-materialized compressed key
@@ -352,13 +322,6 @@ interface IKMSGeneration {
     error AbortCrsgenAlreadyDone(uint256 crsId);
 
     /**
-     * @notice Error thrown when a response is sent to the wrong endpoint: a normal keygen
-     * response for a migration request, or a migration response for a normal keygen request.
-     * @param requestId The mismatched request ID.
-     */
-    error WrongKeygenResponseEndpoint(uint256 requestId);
-
-    /**
      * @notice Error thrown when compressed key materials already exist for the key.
      * @param keyId The ID of the key.
      */
@@ -399,6 +362,12 @@ interface IKMSGeneration {
     error NotActiveKey(uint256 keyId);
 
     /**
+     * @notice Error thrown when a Fresh keygen is given a non-zero existing key.
+     * @param existingKeyId The unexpected existing key ID.
+     */
+    error InvalidExistingKeyId(uint256 existingKeyId);
+
+    /**
      * @notice Error thrown when a compressed-key materials response carries no
      * CompressedKeyset-typed digest.
      * @param migrationRequestId The migration keygen request ID.
@@ -407,9 +376,15 @@ interface IKMSGeneration {
 
     /**
      * @notice Trigger an FHE key generation.
-     * @param paramsType The type of FHE parameters to use.
+     * @param paramsType The type of FHE parameters to use. Ignored for
+     * FromExisting, which inherits the existing key's parameters.
+     * @param mode Fresh mints and (on consensus) activates a new key;
+     * FromExisting re-materializes compressed material for the active key
+     * (RFC-029) and only publishes digests via {CompressedKeyMaterialAdded}.
+     * @param existingKeyId The active key to re-materialize (FromExisting);
+     * MUST be 0 for Fresh.
      */
-    function keygen(ParamsType paramsType) external;
+    function keygen(ParamsType paramsType, KeygenMode mode, uint256 existingKeyId) external;
 
     /**
      * @notice Handle the response of a preprocessing keygen request.
@@ -425,28 +400,6 @@ interface IKMSGeneration {
      * @param signature The signature of the KMS node that has responded.
      */
     function keygenResponse(uint256 keyId, KeyDigest[] calldata keyDigests, bytes calldata signature) external;
-
-    /**
-     * @notice Trigger the one-time compressed-key migration keygen for an existing key
-     * (RFC-029). The key and its ID are unchanged; only new material bytes are produced.
-     * This flow never emits {ActivateKey} and never changes the active key.
-     * @param keyId The ID of the existing, generated key.
-     */
-    function compressedKeyMigrationKeygen(uint256 keyId) external;
-
-    /**
-     * @notice Handle a KMS node's response to a compressed-key migration keygen request and,
-     * on consensus, publish the compressed key material digests for the existing key.
-     * Reverts for normal keygen request IDs; see {WrongKeygenResponseEndpoint}.
-     * @param migrationRequestId The migration keygen request ID.
-     * @param keyDigests The digests of the compressed key material.
-     * @param signature The signature of the KMS node that has responded.
-     */
-    function addCompressedKeyMaterials(
-        uint256 migrationRequestId,
-        KeyDigest[] calldata keyDigests,
-        bytes calldata signature
-    ) external;
 
     /**
      * @notice Schedule the one-time compressed-key cutover for an existing key whose

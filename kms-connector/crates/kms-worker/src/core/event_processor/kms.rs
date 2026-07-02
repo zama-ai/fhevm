@@ -5,7 +5,7 @@ use crate::core::{
 use alloy::primitives::U256;
 use connector_utils::types::{KmsGrpcRequest, extra_data::parse_extra_data, u256_to_request_id};
 use fhevm_host_bindings::kms_generation::KMSGeneration::{
-    CompressedKeyMigrationKeygenRequest, CrsgenRequest, KeygenRequest, PrepKeygenRequest,
+    CrsgenRequest, KeygenRequest, PrepKeygenRequest,
 };
 use kms_grpc::kms::v1::{
     CompressedKeyConfig, ComputeKeyType, CrsGenRequest, Eip712DomainMsg, KeyGenPreprocRequest,
@@ -77,6 +77,27 @@ where
             .await
             .map_err(RequestCheckError::record)?;
 
+        // RFC-029 FromExisting: keygen-from-existing reuses the secret key
+        // shares, generates the compressed keyset, keeps the existing key's
+        // tag, and copies the compressed material to the original key's
+        // storage slot so coprocessors download it from the existing path.
+        let from_existing = keygen_request.mode == 1;
+        let (keyset_config, keyset_added_info) = if from_existing {
+            (
+                COMPRESSED_MIGRATION_KEY_SET_CONFIG,
+                Some(KeySetAddedInfo {
+                    from_keyset_id_decompression_only: None,
+                    to_keyset_id_decompression_only: None,
+                    existing_keyset_id: Some(u256_to_request_id(keygen_request.existingKeyId)),
+                    use_existing_key_tag: true,
+                    copy_compressed_key_to_original: true,
+                }),
+            )
+        } else {
+            // Used to generate other types of key, but not planned to be supported by the Gateway
+            (UNCOMPRESSED_KEY_SET_CONFIG, None)
+        };
+
         Ok(KmsGrpcRequest::Keygen(KeyGenRequest {
             request_id: Some(u256_to_request_id(keygen_request.keyId)),
             preproc_id: Some(u256_to_request_id(keygen_request.prepKeygenId)),
@@ -85,43 +106,8 @@ where
             epoch_id: parsed_extra_data.epoch_id.map(u256_to_request_id),
             context_id: parsed_extra_data.context_id.map(u256_to_request_id),
             extra_data: keygen_request.extraData.to_vec(),
-            // Used to generate other types of key, but not planned to be supported by the Gateway
-            keyset_config: Some(UNCOMPRESSED_KEY_SET_CONFIG),
-            keyset_added_info: None,
-        }))
-    }
-
-    /// RFC-029: keygen-from-existing for the one-time compressed-key migration. The KMS
-    /// reuses the existing secret key shares, generates the compressed keyset, keeps the
-    /// existing key's tag, and copies the compressed material to the original key ID's
-    /// storage slot so coprocessors download it from the existing key's path.
-    pub async fn prepare_compressed_key_migration_request(
-        &self,
-        request: &CompressedKeyMigrationKeygenRequest,
-    ) -> Result<KmsGrpcRequest, ProcessingError> {
-        let parsed_extra_data =
-            parse_extra_data(&request.extraData).map_err(ProcessingError::Irrecoverable)?;
-        self.context_manager
-            .validate_context(&parsed_extra_data)
-            .await
-            .map_err(RequestCheckError::record)?;
-
-        Ok(KmsGrpcRequest::Keygen(KeyGenRequest {
-            request_id: Some(u256_to_request_id(request.migrationRequestId)),
-            preproc_id: Some(u256_to_request_id(request.prepKeygenId)),
-            domain: Some(self.domain.clone()),
-            params: None,
-            epoch_id: parsed_extra_data.epoch_id.map(u256_to_request_id),
-            context_id: parsed_extra_data.context_id.map(u256_to_request_id),
-            extra_data: request.extraData.to_vec(),
-            keyset_config: Some(COMPRESSED_MIGRATION_KEY_SET_CONFIG),
-            keyset_added_info: Some(KeySetAddedInfo {
-                from_keyset_id_decompression_only: None,
-                to_keyset_id_decompression_only: None,
-                existing_keyset_id: Some(u256_to_request_id(request.keyId)),
-                use_existing_key_tag: true,
-                copy_compressed_key_to_original: true,
-            }),
+            keyset_config: Some(keyset_config),
+            keyset_added_info,
         }))
     }
 

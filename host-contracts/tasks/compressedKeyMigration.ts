@@ -35,7 +35,8 @@ task(
     const completedBefore: bigint[] = [...(await contract.getCompletedKeyIds())];
     console.info(`Triggering compressed-key migration keygen for key ${migratedKeyId}`);
 
-    const tx = await contract.compressedKeyMigrationKeygen(migratedKeyId);
+    // KeygenMode.FromExisting = 1: re-materialize the active key's material.
+    const tx = await contract.keygen(0, 1, migratedKeyId);
     await tx.wait();
 
     // The KMS runs a real (potentially long) MPC keygen-from-existing;

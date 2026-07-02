@@ -53,9 +53,7 @@ impl KmsResponsePublisher for DbKmsResponsePublisher {
                 self.publish_prep_keygen(r, created_at, otlp_context)
                     .await?
             }
-            KmsResponseKind::Keygen(r) | KmsResponseKind::CompressedKeyMigration(r) => {
-                self.publish_keygen(r, created_at, otlp_context).await?
-            }
+            KmsResponseKind::Keygen(r) => self.publish_keygen(r, created_at, otlp_context).await?,
             KmsResponseKind::Crsgen(r) => self.publish_crsgen(r, created_at, otlp_context).await?,
             KmsResponseKind::NewKmsContext(r) => {
                 self.publish_new_kms_context(r, created_at, otlp_context)
@@ -149,13 +147,9 @@ impl DbKmsResponsePublisher {
         created_at: DateTime<Utc>,
         otlp_ctx: PropagationContext,
     ) -> anyhow::Result<PgQueryResult> {
-        // is_migration is derived from the request row (RFC-029): the migration keygen rides
-        // the same pipeline, and the DB is the authority on which kind this response answers.
         sqlx::query!(
-            "INSERT INTO keygen_responses(key_id, key_digests, signature, created_at, otlp_context, is_migration)
-            VALUES ($1, $2, $3, $4, $5,
-                EXISTS(SELECT 1 FROM keygen_requests WHERE key_id = $1 AND migrated_key_id IS NOT NULL)
-            ) ON CONFLICT DO NOTHING",
+            "INSERT INTO keygen_responses(key_id, key_digests, signature, created_at, otlp_context)
+            VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING",
             response.key_id.as_le_slice(),
             response.key_digests as Vec<KeyDigestDbItem>,
             response.signature,

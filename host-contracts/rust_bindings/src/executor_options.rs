@@ -65,12 +65,11 @@ pub mod ExecutorOptions {
     pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
         b"s\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x000\x14`\x80`@R_\x80\xFD",
     );
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `Executor_InvalidLzComposeOption()` and selector `0x8b4aa70b`.
-```solidity
-error Executor_InvalidLzComposeOption();
-```*/
+    ```solidity
+    error Executor_InvalidLzComposeOption();
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct Executor_InvalidLzComposeOption;
@@ -88,9 +87,7 @@ error Executor_InvalidLzComposeOption();
         type UnderlyingRustTuple<'a> = ();
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -99,16 +96,14 @@ error Executor_InvalidLzComposeOption();
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<Executor_InvalidLzComposeOption>
-        for UnderlyingRustTuple<'_> {
+        impl ::core::convert::From<Executor_InvalidLzComposeOption> for UnderlyingRustTuple<'_> {
             fn from(value: Executor_InvalidLzComposeOption) -> Self {
                 ()
             }
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>>
-        for Executor_InvalidLzComposeOption {
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for Executor_InvalidLzComposeOption {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self
             }
@@ -116,9 +111,7 @@ error Executor_InvalidLzComposeOption();
         #[automatically_derived]
         impl alloy_sol_types::SolError for Executor_InvalidLzComposeOption {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "Executor_InvalidLzComposeOption()";
             const SELECTOR: [u8; 4] = [139u8, 74u8, 167u8, 11u8];
             #[inline]
@@ -133,19 +126,18 @@ error Executor_InvalidLzComposeOption();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `Executor_InvalidLzReadOption()` and selector `0xdeb7fe42`.
-```solidity
-error Executor_InvalidLzReadOption();
-```*/
+    ```solidity
+    error Executor_InvalidLzReadOption();
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct Executor_InvalidLzReadOption;
@@ -163,9 +155,7 @@ error Executor_InvalidLzReadOption();
         type UnderlyingRustTuple<'a> = ();
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -174,16 +164,14 @@ error Executor_InvalidLzReadOption();
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<Executor_InvalidLzReadOption>
-        for UnderlyingRustTuple<'_> {
+        impl ::core::convert::From<Executor_InvalidLzReadOption> for UnderlyingRustTuple<'_> {
             fn from(value: Executor_InvalidLzReadOption) -> Self {
                 ()
             }
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>>
-        for Executor_InvalidLzReadOption {
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for Executor_InvalidLzReadOption {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self
             }
@@ -191,9 +179,7 @@ error Executor_InvalidLzReadOption();
         #[automatically_derived]
         impl alloy_sol_types::SolError for Executor_InvalidLzReadOption {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "Executor_InvalidLzReadOption()";
             const SELECTOR: [u8; 4] = [222u8, 183u8, 254u8, 66u8];
             #[inline]
@@ -208,19 +194,18 @@ error Executor_InvalidLzReadOption();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `Executor_InvalidLzReceiveOption()` and selector `0x4796aee1`.
-```solidity
-error Executor_InvalidLzReceiveOption();
-```*/
+    ```solidity
+    error Executor_InvalidLzReceiveOption();
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct Executor_InvalidLzReceiveOption;
@@ -238,9 +223,7 @@ error Executor_InvalidLzReceiveOption();
         type UnderlyingRustTuple<'a> = ();
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -249,16 +232,14 @@ error Executor_InvalidLzReceiveOption();
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<Executor_InvalidLzReceiveOption>
-        for UnderlyingRustTuple<'_> {
+        impl ::core::convert::From<Executor_InvalidLzReceiveOption> for UnderlyingRustTuple<'_> {
             fn from(value: Executor_InvalidLzReceiveOption) -> Self {
                 ()
             }
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>>
-        for Executor_InvalidLzReceiveOption {
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for Executor_InvalidLzReceiveOption {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self
             }
@@ -266,9 +247,7 @@ error Executor_InvalidLzReceiveOption();
         #[automatically_derived]
         impl alloy_sol_types::SolError for Executor_InvalidLzReceiveOption {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "Executor_InvalidLzReceiveOption()";
             const SELECTOR: [u8; 4] = [71u8, 150u8, 174u8, 225u8];
             #[inline]
@@ -283,19 +262,18 @@ error Executor_InvalidLzReceiveOption();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `Executor_InvalidNativeDropOption()` and selector `0xc3a1858e`.
-```solidity
-error Executor_InvalidNativeDropOption();
-```*/
+    ```solidity
+    error Executor_InvalidNativeDropOption();
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct Executor_InvalidNativeDropOption;
@@ -313,9 +291,7 @@ error Executor_InvalidNativeDropOption();
         type UnderlyingRustTuple<'a> = ();
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -324,16 +300,14 @@ error Executor_InvalidNativeDropOption();
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<Executor_InvalidNativeDropOption>
-        for UnderlyingRustTuple<'_> {
+        impl ::core::convert::From<Executor_InvalidNativeDropOption> for UnderlyingRustTuple<'_> {
             fn from(value: Executor_InvalidNativeDropOption) -> Self {
                 ()
             }
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>>
-        for Executor_InvalidNativeDropOption {
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for Executor_InvalidNativeDropOption {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self
             }
@@ -341,9 +315,7 @@ error Executor_InvalidNativeDropOption();
         #[automatically_derived]
         impl alloy_sol_types::SolError for Executor_InvalidNativeDropOption {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "Executor_InvalidNativeDropOption()";
             const SELECTOR: [u8; 4] = [195u8, 161u8, 133u8, 142u8];
             #[inline]
@@ -358,16 +330,15 @@ error Executor_InvalidNativeDropOption();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
     ///Container for all the [`ExecutorOptions`](self) custom errors.
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Debug, PartialEq, Eq, Hash)]
     pub enum ExecutorOptionsErrors {
         #[allow(missing_docs)]
         Executor_InvalidLzComposeOption(Executor_InvalidLzComposeOption),
@@ -425,13 +396,8 @@ error Executor_InvalidNativeDropOption();
         }
         #[inline]
         #[allow(non_snake_case)]
-        fn abi_decode_raw(
-            selector: [u8; 4],
-            data: &[u8],
-        ) -> alloy_sol_types::Result<Self> {
-            static DECODE_SHIMS: &[fn(
-                &[u8],
-            ) -> alloy_sol_types::Result<ExecutorOptionsErrors>] = &[
+        fn abi_decode_raw(selector: [u8; 4], data: &[u8]) -> alloy_sol_types::Result<Self> {
+            static DECODE_SHIMS: &[fn(&[u8]) -> alloy_sol_types::Result<ExecutorOptionsErrors>] = &[
                 {
                     fn Executor_InvalidLzReceiveOption(
                         data: &[u8],
@@ -470,20 +436,18 @@ error Executor_InvalidNativeDropOption();
                         data: &[u8],
                     ) -> alloy_sol_types::Result<ExecutorOptionsErrors> {
                         <Executor_InvalidLzReadOption as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
-                            .map(ExecutorOptionsErrors::Executor_InvalidLzReadOption)
+                            data,
+                        )
+                        .map(ExecutorOptionsErrors::Executor_InvalidLzReadOption)
                     }
                     Executor_InvalidLzReadOption
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(
-                    alloy_sol_types::Error::unknown_selector(
-                        <Self as alloy_sol_types::SolInterface>::NAME,
-                        selector,
-                    ),
-                );
+                return Err(alloy_sol_types::Error::unknown_selector(
+                    <Self as alloy_sol_types::SolInterface>::NAME,
+                    selector,
+                ));
             };
             DECODE_SHIMS[idx](data)
         }
@@ -495,7 +459,9 @@ error Executor_InvalidNativeDropOption();
         ) -> alloy_sol_types::Result<Self> {
             static DECODE_VALIDATE_SHIMS: &[fn(
                 &[u8],
-            ) -> alloy_sol_types::Result<ExecutorOptionsErrors>] = &[
+            ) -> alloy_sol_types::Result<
+                ExecutorOptionsErrors,
+            >] = &[
                 {
                     fn Executor_InvalidLzReceiveOption(
                         data: &[u8],
@@ -542,12 +508,10 @@ error Executor_InvalidNativeDropOption();
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(
-                    alloy_sol_types::Error::unknown_selector(
-                        <Self as alloy_sol_types::SolInterface>::NAME,
-                        selector,
-                    ),
-                );
+                return Err(alloy_sol_types::Error::unknown_selector(
+                    <Self as alloy_sol_types::SolInterface>::NAME,
+                    selector,
+                ));
             };
             DECODE_VALIDATE_SHIMS[idx](data)
         }
@@ -581,26 +545,22 @@ error Executor_InvalidNativeDropOption();
             match self {
                 Self::Executor_InvalidLzComposeOption(inner) => {
                     <Executor_InvalidLzComposeOption as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
+                        inner, out,
                     )
                 }
                 Self::Executor_InvalidLzReadOption(inner) => {
                     <Executor_InvalidLzReadOption as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
+                        inner, out,
                     )
                 }
                 Self::Executor_InvalidLzReceiveOption(inner) => {
                     <Executor_InvalidLzReceiveOption as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
+                        inner, out,
                     )
                 }
                 Self::Executor_InvalidNativeDropOption(inner) => {
                     <Executor_InvalidNativeDropOption as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
+                        inner, out,
                     )
                 }
             }
@@ -609,7 +569,7 @@ error Executor_InvalidNativeDropOption();
     use alloy::contract as alloy_contract;
     /**Creates a new wrapper around an on-chain [`ExecutorOptions`](self) contract instance.
 
-See the [wrapper's documentation](`ExecutorOptionsInstance`) for more details.*/
+    See the [wrapper's documentation](`ExecutorOptionsInstance`) for more details.*/
     #[inline]
     pub const fn new<
         P: alloy_contract::private::Provider<N>,
@@ -622,43 +582,41 @@ See the [wrapper's documentation](`ExecutorOptionsInstance`) for more details.*/
     }
     /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
-Returns a new instance of the contract, if the deployment was successful.
+    Returns a new instance of the contract, if the deployment was successful.
 
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
+    For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
     #[inline]
-    pub fn deploy<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(
+    pub fn deploy<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>(
         provider: P,
-    ) -> impl ::core::future::Future<
-        Output = alloy_contract::Result<ExecutorOptionsInstance<P, N>>,
-    > {
+    ) -> impl ::core::future::Future<Output = alloy_contract::Result<ExecutorOptionsInstance<P, N>>>
+    {
         ExecutorOptionsInstance::<P, N>::deploy(provider)
     }
     /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
+    and constructor arguments, if any.
 
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
+    This is a simple wrapper around creating a `RawCallBuilder` with the data set to
+    the bytecode concatenated with the constructor's ABI-encoded arguments.*/
     #[inline]
     pub fn deploy_builder<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
-    >(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
+    >(
+        provider: P,
+    ) -> alloy_contract::RawCallBuilder<P, N> {
         ExecutorOptionsInstance::<P, N>::deploy_builder(provider)
     }
     /**A [`ExecutorOptions`](self) instance.
 
-Contains type-safe methods for interacting with an on-chain instance of the
-[`ExecutorOptions`](self) contract located at a given `address`, using a given
-provider `P`.
+    Contains type-safe methods for interacting with an on-chain instance of the
+    [`ExecutorOptions`](self) contract located at a given `address`, using a given
+    provider `P`.
 
-If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
-documentation on how to provide it), the `deploy` and `deploy_builder` methods can
-be used to deploy a new instance of the contract.
+    If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
+    documentation on how to provide it), the `deploy` and `deploy_builder` methods can
+    be used to deploy a new instance of the contract.
 
-See the [module-level documentation](self) for all the available methods.*/
+    See the [module-level documentation](self) for all the available methods.*/
     #[derive(Clone)]
     pub struct ExecutorOptionsInstance<P, N = alloy_contract::private::Ethereum> {
         address: alloy_sol_types::private::Address,
@@ -669,23 +627,21 @@ See the [module-level documentation](self) for all the available methods.*/
     impl<P, N> ::core::fmt::Debug for ExecutorOptionsInstance<P, N> {
         #[inline]
         fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-            f.debug_tuple("ExecutorOptionsInstance").field(&self.address).finish()
+            f.debug_tuple("ExecutorOptionsInstance")
+                .field(&self.address)
+                .finish()
         }
     }
     /// Instantiation and getters/setters.
     #[automatically_derived]
-    impl<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    > ExecutorOptionsInstance<P, N> {
+    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
+        ExecutorOptionsInstance<P, N>
+    {
         /**Creates a new wrapper around an on-chain [`ExecutorOptions`](self) contract instance.
 
-See the [wrapper's documentation](`ExecutorOptionsInstance`) for more details.*/
+        See the [wrapper's documentation](`ExecutorOptionsInstance`) for more details.*/
         #[inline]
-        pub const fn new(
-            address: alloy_sol_types::private::Address,
-            provider: P,
-        ) -> Self {
+        pub const fn new(address: alloy_sol_types::private::Address, provider: P) -> Self {
             Self {
                 address,
                 provider,
@@ -694,22 +650,20 @@ See the [wrapper's documentation](`ExecutorOptionsInstance`) for more details.*/
         }
         /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
-Returns a new instance of the contract, if the deployment was successful.
+        Returns a new instance of the contract, if the deployment was successful.
 
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
+        For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
         #[inline]
-        pub async fn deploy(
-            provider: P,
-        ) -> alloy_contract::Result<ExecutorOptionsInstance<P, N>> {
+        pub async fn deploy(provider: P) -> alloy_contract::Result<ExecutorOptionsInstance<P, N>> {
             let call_builder = Self::deploy_builder(provider);
             let contract_address = call_builder.deploy().await?;
             Ok(Self::new(contract_address, call_builder.provider))
         }
         /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
+        and constructor arguments, if any.
 
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
+        This is a simple wrapper around creating a `RawCallBuilder` with the data set to
+        the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         #[inline]
         pub fn deploy_builder(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
             alloy_contract::RawCallBuilder::new_raw_deploy(
@@ -751,10 +705,9 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
     }
     /// Function calls.
     #[automatically_derived]
-    impl<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    > ExecutorOptionsInstance<P, N> {
+    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
+        ExecutorOptionsInstance<P, N>
+    {
         /// Creates a new call builder using this contract instance's provider and address.
         ///
         /// Note that the call can be any function call, not just those defined in this
@@ -768,10 +721,9 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
     }
     /// Event filters.
     #[automatically_derived]
-    impl<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    > ExecutorOptionsInstance<P, N> {
+    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
+        ExecutorOptionsInstance<P, N>
+    {
         /// Creates a new event filter using this contract instance's provider and address.
         ///
         /// Note that the type can be any event, not just those defined in this contract.

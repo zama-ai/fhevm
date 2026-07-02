@@ -8,11 +8,6 @@
 ALTER TABLE keygen_requests
     ADD COLUMN migrated_key_id BYTEA;
 
--- Whether the response answers a migration keygen; routes the
--- tx-sender to addCompressedKeyMaterials instead of keygenResponse.
-ALTER TABLE keygen_responses
-    ADD COLUMN is_migration BOOLEAN NOT NULL DEFAULT FALSE;
-
 -- KMS Core's signing enum has four values; the digest type is part of
 -- the signed KeygenVerification payload, so the labels must round-trip
 -- unchanged through the connector.

@@ -25,9 +25,7 @@ use fhevm_gateway_bindings::decryption::{
     IDecryption::{RequestValiditySeconds, UserDecryptionRequestPayload},
 };
 use fhevm_host_bindings::{
-    kms_generation::KMSGeneration::{
-        CompressedKeyMigrationKeygenRequest, CrsgenRequest, KeygenRequest, PrepKeygenRequest,
-    },
+    kms_generation::KMSGeneration::{CrsgenRequest, KeygenRequest, PrepKeygenRequest},
     protocol_config::{
         IProtocolConfig::KmsThresholds,
         ProtocolConfig::{KmsNodeParams, NewKmsContext, NewKmsEpoch, PcrValues},
@@ -334,6 +332,8 @@ pub async fn insert_rand_prep_keygen_request(
     .await?;
 
     Ok(PrepKeygenRequest {
+        mode: 0,
+        existingKeyId: alloy::primitives::U256::ZERO,
         prepKeygenId: prep_keygen_request_id,
         paramsType: params_type as u8,
         extraData: extra_data.into(),
@@ -368,6 +368,8 @@ pub async fn insert_rand_keygen_request(
     Ok(KeygenRequest {
         prepKeygenId: prep_key_id,
         keyId: key_id,
+        mode: 0,
+        existingKeyId: alloy::primitives::U256::ZERO,
         extraData: extra_data.into(),
     })
 }
@@ -375,7 +377,7 @@ pub async fn insert_rand_keygen_request(
 pub async fn insert_rand_compressed_key_migration_request(
     db: &Pool<Postgres>,
     options: InsertRequestOptions,
-) -> anyhow::Result<CompressedKeyMigrationKeygenRequest> {
+) -> anyhow::Result<KeygenRequest> {
     let migration_request_id = options.id.unwrap_or_else(rand_u256);
     let migrated_key_id = rand_u256();
     let prep_key_id = rand_u256();
@@ -400,10 +402,11 @@ pub async fn insert_rand_compressed_key_migration_request(
     .execute(db)
     .await?;
 
-    Ok(CompressedKeyMigrationKeygenRequest {
+    Ok(KeygenRequest {
         prepKeygenId: prep_key_id,
-        migrationRequestId: migration_request_id,
-        keyId: migrated_key_id,
+        keyId: migration_request_id,
+        mode: 1,
+        existingKeyId: migrated_key_id,
         extraData: extra_data.into(),
     })
 }
