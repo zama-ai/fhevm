@@ -9,6 +9,7 @@ The CLI can:
 - user decrypt private FHETest handles
 - delegated user decrypt handles owned by another account
 - initialize, inspect, and run operation demos on FHETest
+- send ERC-7984 confidential token transfers and read confidential balance handles
 - install shell completion for commands, options, and choice values
 
 Progress logs go to stderr. Final results go to stdout as JSON, so commands are pipeable.
@@ -74,6 +75,8 @@ Global options such as `-n devnet`, `--rpc-url`, and `--relayer-url` can be plac
 | `fhe-test inspect` | Reads FHETest state for a raw handle, an explicit account/type slot, or the wallet's default account/type slot. | Only when using the wallet default |
 | `fhe-test init` | Creates public FHETest handles for one, several, or all supported types. | Yes |
 | `fhe-test op <operation>` | Runs an FHETest operation against the caller's stored handle. | Yes |
+| `token transfer` | Encrypts an amount and runs an ERC-7984 confidential transfer, or `--from` for `confidentialTransferFrom`. | Yes |
+| `token balance` | Reads the confidential ERC-7984 balance handle for the wallet or an explicit account. | Only when using the wallet default |
 | `completion install` | Installs shell completion. | No |
 | `completion uninstall` | Uninstalls shell completion. | No |
 
@@ -256,6 +259,41 @@ fhevm-sdk fhe-test op eq-address --value 0x0000000000000000000000000000000000000
 ```
 
 Supported operations are `xor-bool`, `add-uint8`, `add-uint16`, `add-uint32`, `add-uint64`, `add-uint128`, `xor-uint256`, and `eq-address`.
+
+### Token Utilities
+
+`token transfer` and `token balance` target ERC-7984 confidential tokens rather than FHETest, so `--contract` is required on every invocation; there is no per-network default token address.
+
+Transfer an encrypted amount. The amount is base units (0 < amount < 2^64), encrypted client-side as `euint64` with an input proof:
+
+```bash
+fhevm-sdk token transfer --contract 0x... --to 0x... --amount 1000
+```
+
+Add `--from` to spend an existing operator allowance via `confidentialTransferFrom` instead of transferring from the loaded wallet's own balance:
+
+```bash
+fhevm-sdk token transfer --contract 0x... --from 0x... --to 0x... --amount 1000
+```
+
+Because ERC-7984 does not revert on insufficient balance, the transfer result includes `transferredHandle`, the encrypted amount actually moved. Decrypt it with the existing user-decrypt command to confirm the transfer went through as expected:
+
+```bash
+fhevm-sdk user-decrypt cached --handle <transferredHandle>
+```
+
+Read a confidential balance handle. `--account` defaults to the wallet address loaded from `PRIVATE_KEY`/`MNEMONIC`:
+
+```bash
+fhevm-sdk token balance --contract 0x...
+fhevm-sdk token balance --contract 0x... --account 0x...
+```
+
+Pipe the returned `balanceHandle` into user-decrypt to see the plaintext balance:
+
+```bash
+fhevm-sdk user-decrypt cached --handle $(fhevm-sdk token balance --contract 0x... | jq -r .balanceHandle)
+```
 
 ## Shell Completion
 

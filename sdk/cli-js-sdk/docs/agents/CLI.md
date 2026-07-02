@@ -19,7 +19,7 @@ Behavioral guidance:
 - `completion-server` is invoked by tabtab's shell templates; the binary routes it to `bin/completion-server.mjs` before loading `tsx` or runtime flow modules. Keep its stdout limited to completion items.
 - Keep completion metadata in `bin/completion-server.mjs` aligned with command help whenever changing commands, options, choices, or descriptions.
 - Keep CLI command modules free of top-level flow imports. Runtime flow modules should be loaded with dynamic imports inside `.action()` handlers so help and completion startup stay fast.
-- FHETest is the only contract target.
+- FHETest is the only contract target, except `token transfer`/`token balance`, which target ERC-7984 confidential tokens and require `--contract` since there is no per-network token default.
 - Networks may target different host chains; do not assume Ethereum Sepolia for every network.
 - Keep `fresh` and `cached` naming consistent across decrypt workflows.
 - `fresh` creates or stores a new FHETest handle before decrypting.
@@ -33,3 +33,6 @@ Behavioral guidance:
 - `fhe-test init --type <type>` may be repeated to initialize selected types without bulk mode.
 - `fhe-test init` returns `transactionHashes` as an array because non-bulk initialization may send one transaction per initialized type.
 - `fhe-test op` exposes FHETest operator demos as explicit subcommands, not as a generic `--type` flag. Keep operation names aligned with the underlying behavior, such as `add-uint64` and `xor-uint256`.
+- `token transfer` uses `confidentialTransferFrom` when `--from` is set, spending an existing operator allowance instead of the loaded wallet's own balance.
+- `token transfer` returns `transferredHandle` because ERC-7984 does not revert on insufficient balance; decrypt it with `user-decrypt` to confirm the transfer amount.
+- `token balance --account` defaults to the wallet address loaded from `PRIVATE_KEY`/`MNEMONIC` when omitted.
