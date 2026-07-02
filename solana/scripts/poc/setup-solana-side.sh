@@ -142,7 +142,7 @@ else
     # create_random_amount demo helper the e2e drives (gated out of production builds).
     ( cd "$SOLANA" \
         && cargo build-sbf --tools-version v1.52 \
-        && cargo build-sbf --tools-version v1.52 -p confidential_token -- --features poc )
+        && cargo build-sbf --tools-version v1.52 -- -p confidential-token --features poc )
   fi
   for p in zama_host confidential_token; do
     solana program deploy -u "$VALIDATOR_RPC" -k "$DEPLOYER_KEYPAIR" \
