@@ -74,6 +74,10 @@ pub mod confidential_deposit_app {
             zama_program: ctx.accounts.zama_program.to_account_info(),
             host_config: ctx.accounts.host_config.to_account_info(),
             system_program: ctx.accounts.system_program.to_account_info(),
+            // This path does not thread the block-cap accounts; behavior-neutral while the host cap
+            // is unrestricted (its default). Threading is a separate rollout step.
+            hcu_block_meter: None,
+            hcu_trusted_app_record: None,
             event_authority: ctx
                 .accounts
                 .confidential_token_event_authority

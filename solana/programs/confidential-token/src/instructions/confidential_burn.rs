@@ -207,6 +207,10 @@ pub fn confidential_burn(
             host_config: &ctx.accounts.host_config,
             compute_authority,
             system_program: &ctx.accounts.system_program,
+            // This instruction does not thread the block-cap accounts; behavior-neutral while the
+            // host cap is unrestricted (its default). Threading is a separate rollout step.
+            hcu_block_meter: None,
+            hcu_trusted_app_record: None,
         },
         accounts: &eval_accounts,
         plan,

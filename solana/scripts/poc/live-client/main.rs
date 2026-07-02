@@ -278,6 +278,10 @@ fn trivial_encrypt_eval(
             app_account_authority: payer.pubkey(),
             host_config,
             system_program: system_program::ID,
+            // Block-cap optional accounts: default cap is unrestricted, so existing flows
+            // pass None/None and behave exactly as before the feature.
+            hcu_block_meter: None,
+            hcu_trusted_app_record: None,
             event_authority: zama_event_authority,
             program: zama_host::ID,
         })
@@ -400,7 +404,9 @@ fn fhe_eval_verified_input_add(
         context_id,
         steps: vec![zama_host::FheEvalStep::Binary {
             op: zama_host::FheBinaryOpCode::Add,
-            lhs: zama_host::FheEvalOperand::VerifiedInput { attestation },
+            lhs: zama_host::FheEvalOperand::VerifiedInput {
+                attestation: Box::new(attestation),
+            },
             rhs: zama_host::FheEvalOperand::Scalar(scalar),
             output_fhe_type: fhe_type,
             output: zama_host::FheEvalOutput::AllowedDurable {
@@ -427,6 +433,10 @@ fn fhe_eval_verified_input_add(
             app_account_authority: payer.pubkey(),
             host_config,
             system_program: system_program::ID,
+            // Block-cap optional accounts: default cap is unrestricted, so existing flows
+            // pass None/None and behave exactly as before the feature.
+            hcu_block_meter: None,
+            hcu_trusted_app_record: None,
             event_authority: zama_event_authority,
             program: zama_host::ID,
         })

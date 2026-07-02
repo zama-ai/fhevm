@@ -44,6 +44,13 @@ pub struct ConfidentialTransfer<'info> {
     pub host_config: Box<Account<'info, zama_host::HostConfig>>,
     /// System program used for ACL account creation.
     pub system_program: Program<'info, System>,
+    /// CHECK: forwarded verbatim into the ZamaHost `fhe_eval` CPI, which validates it. The per-app
+    /// HCU block meter — supplied by an untrusted app under a metering-band cap, omitted otherwise.
+    #[account(mut)]
+    pub hcu_block_meter: Option<UncheckedAccount<'info>>,
+    /// CHECK: forwarded verbatim into the ZamaHost `fhe_eval` CPI, which validates it. The HCU
+    /// trust witness — present + valid bypasses the cap; absent means untrusted (metered).
+    pub hcu_trusted_app_record: Option<UncheckedAccount<'info>>,
 }
 
 impl<'info> ConfidentialTransfer<'info> {
@@ -64,6 +71,14 @@ impl<'info> ConfidentialTransfer<'info> {
             zama_program: &self.zama_program,
             host_config: &self.host_config,
             system_program: &self.system_program,
+            hcu_block_meter: self
+                .hcu_block_meter
+                .as_ref()
+                .map(|account| account.to_account_info()),
+            hcu_trusted_app_record: self
+                .hcu_trusted_app_record
+                .as_ref()
+                .map(|account| account.to_account_info()),
         }
     }
 }

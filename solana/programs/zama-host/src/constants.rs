@@ -25,6 +25,10 @@ pub const ACL_RECORD_SEED: &[u8] = b"acl-record";
 pub const ACL_PERMISSION_SEED: &[u8] = b"acl-permission";
 /// Seed prefix for grant deny-list records.
 pub const DENY_SUBJECT_SEED: &[u8] = b"deny-subject";
+/// Seed prefix for HCU trust-registry records (per-app block-cap bypass).
+pub const HCU_TRUSTED_APP_SEED: &[u8] = b"hcu-trusted";
+/// Seed prefix for per-app HCU block meter PDAs.
+pub const HCU_BLOCK_METER_SEED: &[u8] = b"hcu-block-meter";
 /// Seed prefix for user-decryption delegation records.
 pub const DELEGATION_SEED: &[u8] = b"user-decryption-delegation";
 /// Reserved app-context sentinel for wildcard user-decryption delegation rows.

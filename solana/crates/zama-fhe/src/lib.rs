@@ -1920,7 +1920,9 @@ fn lower_operand(
                 .get(attestation_index as usize)
                 .ok_or(EvalBuildError::MissingVerifiedInput)?
                 .clone();
-            Ok(FheEvalOperand::VerifiedInput { attestation })
+            Ok(FheEvalOperand::VerifiedInput {
+                attestation: Box::new(attestation),
+            })
         }
         OperandKind::Scalar(value) => Ok(FheEvalOperand::Scalar(value)),
     }
@@ -2047,6 +2049,11 @@ pub struct EvalCpiAccounts<'info> {
     pub app_account_authority: AccountInfo<'info>,
     pub host_config: AccountInfo<'info>,
     pub system_program: AccountInfo<'info>,
+    /// Per-app HCU block meter (mut). Untrusted apps in the metering band supply it; trusted apps
+    /// and the unrestricted default pass `None`.
+    pub hcu_block_meter: Option<AccountInfo<'info>>,
+    /// HCU trust witness (read-only). `Some` + valid ⇒ bypass; `None` ⇒ untrusted (metered).
+    pub hcu_trusted_app_record: Option<AccountInfo<'info>>,
     pub event_authority: AccountInfo<'info>,
     pub program: AccountInfo<'info>,
 }
@@ -2189,6 +2196,8 @@ where
         app_account_authority: accounts.app_account_authority,
         host_config: accounts.host_config,
         system_program: accounts.system_program,
+        hcu_block_meter: accounts.hcu_block_meter,
+        hcu_trusted_app_record: accounts.hcu_trusted_app_record,
         event_authority: accounts.event_authority,
         program: accounts.program,
     };
@@ -2293,6 +2302,8 @@ mod tests {
             app_account_authority: account_info(app_authority, false),
             host_config: account_info(Pubkey::new_unique(), false),
             system_program: account_info(Pubkey::new_unique(), false),
+            hcu_block_meter: None,
+            hcu_trusted_app_record: None,
             event_authority: account_info(Pubkey::new_unique(), false),
             program: account_info(Pubkey::new_unique(), false),
         }
@@ -2368,7 +2379,7 @@ mod tests {
                 assert_eq!(
                     *lhs,
                     FheEvalOperand::VerifiedInput {
-                        attestation: attestation.clone()
+                        attestation: Box::new(attestation.clone())
                     }
                 );
                 assert_eq!(

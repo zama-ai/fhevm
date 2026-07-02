@@ -95,6 +95,20 @@ pub mod zama_host {
         instructions::set_max_hcu_depth_per_tx(ctx, value)
     }
 
+    /// Sets the per-app, per-slot HCU block cap enforced in `fhe_eval`.
+    pub fn set_hcu_block_cap_per_app(ctx: Context<HostAdmin>, value: u64) -> Result<()> {
+        instructions::set_hcu_block_cap_per_app(ctx, value)
+    }
+
+    /// Registers or clears an app's block-cap bypass in the HCU trust registry (admin-only).
+    pub fn set_hcu_app_trusted(
+        ctx: Context<SetHcuAppTrusted>,
+        app: Pubkey,
+        trusted: bool,
+    ) -> Result<()> {
+        instructions::set_hcu_app_trusted(ctx, app, trusted)
+    }
+
     pub fn set_deny_subject(
         ctx: Context<SetDenySubject>,
         subject: Pubkey,

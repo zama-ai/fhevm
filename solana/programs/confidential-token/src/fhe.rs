@@ -354,6 +354,11 @@ pub(crate) struct EvalContext<'a, 'info> {
     pub compute_authority: ComputeAuthority<'info>,
     /// System program used for output ACL creation.
     pub system_program: &'a Program<'info, System>,
+    /// Per-app HCU block meter forwarded into the host `fhe_eval` CPI (`None` unless the caller
+    /// threads it; behavior-neutral while the host cap is unrestricted).
+    pub hcu_block_meter: Option<AccountInfo<'info>>,
+    /// HCU trust witness forwarded into the host `fhe_eval` CPI (`None` unless threaded).
+    pub hcu_trusted_app_record: Option<AccountInfo<'info>>,
 }
 
 /// Inputs required to evaluate an instruction-local FHE plan.
@@ -436,6 +441,8 @@ pub(crate) fn eval<'info>(request: Eval<'_, 'info>) -> Result<()> {
             app_account_authority: app_authority.account.clone(),
             host_config: request.context.host_config.to_account_info(),
             system_program: request.context.system_program.to_account_info(),
+            hcu_block_meter: request.context.hcu_block_meter.clone(),
+            hcu_trusted_app_record: request.context.hcu_trusted_app_record.clone(),
             event_authority: request.context.event_authority.to_account_info(),
             program: request.context.zama_program.to_account_info(),
         },

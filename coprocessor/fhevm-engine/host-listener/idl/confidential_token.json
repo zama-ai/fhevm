@@ -427,6 +427,21 @@
           "address": "11111111111111111111111111111111"
         },
         {
+          "name": "hcu_block_meter",
+          "docs": [
+            "HCU block meter — supplied by an untrusted app under a metering-band cap, omitted otherwise."
+          ],
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "hcu_trusted_app_record",
+          "docs": [
+            "trust witness — present + valid bypasses the cap; absent means untrusted (metered)."
+          ],
+          "optional": true
+        },
+        {
           "name": "event_authority"
         },
         {
@@ -4208,6 +4223,15 @@
             "name": "max_hcu_depth_per_tx",
             "docs": [
               "Max critical-path (depth) HCU within one `fhe_eval` plan. `0` = unlimited."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "hcu_block_cap_per_app",
+            "docs": [
+              "Per-app HCU budget per slot, enforced in `fhe_eval`. `u64::MAX` = unrestricted (the ship",
+              "default; short-circuits, touching no meter); `0` = ban untrusted apps (trusted still bypass);",
+              "any other value is the metering band (must be `>= max_hcu_per_tx` unless that is `0`)."
             ],
             "type": "u64"
           },

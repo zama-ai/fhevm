@@ -204,6 +204,10 @@ fn solana_fhe_eval_replays_threshold_logs_from_litesvm_metadata() {
             )
             .0,
             system_program: system_program::ID,
+            // Block-cap optional accounts: default cap is unrestricted, so existing flows
+            // pass None/None and behave exactly as before the feature.
+            hcu_block_meter: None,
+            hcu_trusted_app_record: None,
             event_authority: event_authority(fixture.host_program_id),
             program: fixture.host_program_id,
         }
@@ -783,6 +787,9 @@ fn seed_host_config(
                 grant_deny_list_enabled: false,
                 max_hcu_per_tx: 0,
                 max_hcu_depth_per_tx: 0,
+                // Unrestricted (the ship default): the block cap short-circuits without
+                // requiring the optional meter/trust accounts.
+                hcu_block_cap_per_app: u64::MAX,
                 updated_slot: 0,
                 bump,
             }),
@@ -1008,6 +1015,10 @@ fn transfer_ix(
     Instruction {
         program_id: fixture.token_program_id,
         accounts: token::accounts::ConfidentialTransfer {
+            // Block-cap optional accounts threaded through the transfer CPI; the default
+            // unrestricted cap means None/None here.
+            hcu_block_meter: None,
+            hcu_trusted_app_record: None,
             owner: fixture.alice.pubkey(),
             payer: fixture.alice.pubkey(),
             mint: fixture.mint.pubkey(),

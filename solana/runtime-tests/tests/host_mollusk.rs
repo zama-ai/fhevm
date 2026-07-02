@@ -1685,6 +1685,10 @@ fn mollusk_fhe_eval_rejects_public_decrypt_output_without_input_role() {
     let mut ix = anchor_ix(
         program_id,
         host::accounts::FheEval {
+            // Block-cap optional accounts: default cap is unrestricted, so existing flows
+            // pass None/None and behave exactly as before the feature.
+            hcu_block_meter: None,
+            hcu_trusted_app_record: None,
             payer: authority,
             compute_subject: authority,
             app_account_authority: authority,
@@ -1765,6 +1769,10 @@ fn mollusk_fhe_eval_rejects_system_account_public_decrypt_role_grant_without_inp
     let mut ix = anchor_ix(
         program_id,
         host::accounts::FheEval {
+            // Block-cap optional accounts: default cap is unrestricted, so existing flows
+            // pass None/None and behave exactly as before the feature.
+            hcu_block_meter: None,
+            hcu_trusted_app_record: None,
             payer: authority,
             compute_subject: authority,
             app_account_authority: authority,
@@ -1856,6 +1864,10 @@ fn mollusk_fhe_eval_allows_app_owned_public_decrypt_role_grant_without_input_rol
     let mut ix = anchor_ix(
         program_id,
         host::accounts::FheEval {
+            // Block-cap optional accounts: default cap is unrestricted, so existing flows
+            // pass None/None and behave exactly as before the feature.
+            hcu_block_meter: None,
+            hcu_trusted_app_record: None,
             payer: authority,
             compute_subject: authority,
             app_account_authority: authority,
@@ -1984,6 +1996,10 @@ fn mollusk_fhe_eval_composes_transient_binary_ops_into_durable_ternary_output() 
     let mut ix = anchor_ix(
         program_id,
         host::accounts::FheEval {
+            // Block-cap optional accounts: default cap is unrestricted, so existing flows
+            // pass None/None and behave exactly as before the feature.
+            hcu_block_meter: None,
+            hcu_trusted_app_record: None,
             payer: authority,
             compute_subject: authority,
             app_account_authority: app_account,
@@ -2180,6 +2196,10 @@ fn mollusk_fhe_eval_identical_steps_derive_unique_transient_handles() {
     let mut ix = anchor_ix(
         program_id,
         host::accounts::FheEval {
+            // Block-cap optional accounts: default cap is unrestricted, so existing flows
+            // pass None/None and behave exactly as before the feature.
+            hcu_block_meter: None,
+            hcu_trusted_app_record: None,
             payer: authority,
             compute_subject: authority,
             app_account_authority: app_account,
@@ -2279,6 +2299,10 @@ fn mollusk_fhe_eval_binds_multiple_durable_outputs_with_distinct_authorities() {
     let mut ix = anchor_ix(
         program_id,
         host::accounts::FheEval {
+            // Block-cap optional accounts: default cap is unrestricted, so existing flows
+            // pass None/None and behave exactly as before the feature.
+            hcu_block_meter: None,
+            hcu_trusted_app_record: None,
             payer: authority,
             compute_subject: authority,
             app_account_authority: authority,
@@ -2431,6 +2455,10 @@ fn mollusk_fhe_eval_rolls_back_first_durable_output_when_second_output_exists() 
     let mut ix = anchor_ix(
         program_id,
         host::accounts::FheEval {
+            // Block-cap optional accounts: default cap is unrestricted, so existing flows
+            // pass None/None and behave exactly as before the feature.
+            hcu_block_meter: None,
+            hcu_trusted_app_record: None,
             payer: authority,
             compute_subject: authority,
             app_account_authority: app_account,
@@ -2542,6 +2570,10 @@ fn mollusk_fhe_eval_rejects_duplicate_durable_output_reference_without_partial_b
     let mut ix = anchor_ix(
         program_id,
         host::accounts::FheEval {
+            // Block-cap optional accounts: default cap is unrestricted, so existing flows
+            // pass None/None and behave exactly as before the feature.
+            hcu_block_meter: None,
+            hcu_trusted_app_record: None,
             payer: authority,
             compute_subject: authority,
             app_account_authority: app_account,
@@ -2677,6 +2709,10 @@ fn mollusk_fhe_eval_switches_event_transport_above_cpi_threshold() {
         let mut ix = anchor_ix(
             program_id,
             host::accounts::FheEval {
+                // Block-cap optional accounts: default cap is unrestricted, so existing flows
+                // pass None/None and behave exactly as before the feature.
+                hcu_block_meter: None,
+                hcu_trusted_app_record: None,
                 payer: authority,
                 compute_subject: authority,
                 app_account_authority: app_account,
@@ -2766,6 +2802,10 @@ fn mollusk_fhe_eval_rejects_scalar_lhs_before_events() {
     let ix = anchor_ix(
         fixture.program_id,
         host::accounts::FheEval {
+            // Block-cap optional accounts: default cap is unrestricted, so existing flows
+            // pass None/None and behave exactly as before the feature.
+            hcu_block_meter: None,
+            hcu_trusted_app_record: None,
             payer: fixture.authority,
             compute_subject: fixture.authority,
             app_account_authority: fixture.app_account,
@@ -2840,6 +2880,10 @@ fn mollusk_fhe_eval_rejects_binary_rhs_type_mismatch_before_output() {
     let mut ix = anchor_ix(
         program_id,
         host::accounts::FheEval {
+            // Block-cap optional accounts: default cap is unrestricted, so existing flows
+            // pass None/None and behave exactly as before the feature.
+            hcu_block_meter: None,
+            hcu_trusted_app_record: None,
             payer: authority,
             compute_subject: authority,
             app_account_authority: app_account,
@@ -3074,6 +3118,10 @@ impl EvalFixture {
         let mut ix = anchor_ix(
             self.program_id,
             host::accounts::FheEval {
+                // Block-cap optional accounts: default cap is unrestricted, so existing flows
+                // pass None/None and behave exactly as before the feature.
+                hcu_block_meter: None,
+                hcu_trusted_app_record: None,
                 payer: self.authority,
                 compute_subject: self.authority,
                 app_account_authority: self.app_account,
@@ -3136,6 +3184,10 @@ fn mollusk_fhe_eval_rejects_unused_dynamic_accounts_without_events() {
         anchor_ix(
             program_id,
             host::accounts::FheEval {
+                // Block-cap optional accounts: default cap is unrestricted, so existing flows
+                // pass None/None and behave exactly as before the feature.
+                hcu_block_meter: None,
+                hcu_trusted_app_record: None,
                 payer: authority,
                 compute_subject: authority,
                 app_account_authority: app_account,
@@ -3183,6 +3235,10 @@ fn mollusk_fhe_eval_rejects_unused_dynamic_accounts_without_events() {
     let mut durable_extra_ix = anchor_ix(
         program_id,
         host::accounts::FheEval {
+            // Block-cap optional accounts: default cap is unrestricted, so existing flows
+            // pass None/None and behave exactly as before the feature.
+            hcu_block_meter: None,
+            hcu_trusted_app_record: None,
             payer: authority,
             compute_subject: authority,
             app_account_authority: app_account,
@@ -3657,6 +3713,8 @@ fn host_config_account_with_options(
                 grant_deny_list_enabled,
                 max_hcu_per_tx: 0,
                 max_hcu_depth_per_tx: 0,
+                // Ships unrestricted; existing flows are unaffected by the block cap.
+                hcu_block_cap_per_app: u64::MAX,
                 updated_slot: 0,
                 bump,
             }),
@@ -4339,6 +4397,8 @@ fn host_config_account_with_verifier(
                 grant_deny_list_enabled: false,
                 max_hcu_per_tx: 0,
                 max_hcu_depth_per_tx: 0,
+                // Ships unrestricted; existing flows are unaffected by the block cap.
+                hcu_block_cap_per_app: u64::MAX,
                 updated_slot: 0,
                 bump,
             }),
@@ -4692,6 +4752,10 @@ fn verified_input_add_eval_ix(
     let mut eval_ix = anchor_ix(
         program_id,
         host::accounts::FheEval {
+            // Block-cap optional accounts: default cap is unrestricted, so existing flows
+            // pass None/None and behave exactly as before the feature.
+            hcu_block_meter: None,
+            hcu_trusted_app_record: None,
             payer: authority,
             compute_subject: authority,
             app_account_authority: authority,
@@ -4705,7 +4769,9 @@ fn verified_input_add_eval_ix(
                 context_id,
                 steps: vec![FheEvalStep::Binary {
                     op: FheBinaryOpCode::Add,
-                    lhs: FheEvalOperand::VerifiedInput { attestation },
+                    lhs: FheEvalOperand::VerifiedInput {
+                        attestation: Box::new(attestation),
+                    },
                     rhs: FheEvalOperand::Scalar(scalar),
                     output_fhe_type: 5,
                     output: FheEvalOutput::AllowedDurable {
@@ -4820,6 +4886,10 @@ fn durable_input_add_eval_ix(
     let mut eval_ix = anchor_ix(
         program_id,
         host::accounts::FheEval {
+            // Block-cap optional accounts: default cap is unrestricted, so existing flows
+            // pass None/None and behave exactly as before the feature.
+            hcu_block_meter: None,
+            hcu_trusted_app_record: None,
             payer: authority,
             compute_subject: authority,
             app_account_authority: authority,
@@ -5205,4 +5275,1093 @@ fn mollusk_fhe_eval_verified_input_rejects_wrong_contract_chain_id() {
         &result,
         host::errors::ZamaHostError::AttestationChainIdMismatch,
     );
+}
+
+// ===========================================================================
+// HCU per-app block cap: trust registry, per-slot meter, two-pass enforcement.
+//
+// TDD spec: the block-cap feature is not yet implemented in `zama-host`, so the
+// symbols referenced below (the two setters, `HcuBlockMeter`, `HcuTrustedAppRecord`,
+// the new error variants, and the two optional `FheEval` accounts) do not exist
+// yet. These tests are the executable contract for the code stage — they stay RED
+// until the feature lands.
+// ===========================================================================
+
+/// Exact HCU cost of the shared `EvalFixture::success_steps` plan, from the frame
+/// cost model: `Ge` at ebool (21_000) + `Sub` at euint64 (38_000) + `IfThenElse`
+/// at euint64 (45_000). The block meter must accumulate exactly this per frame.
+const FIXTURE_FRAME_HCU: u64 = 21_000 + 38_000 + 45_000; // 104_000
+
+// ---- Block-cap instruction builders ----
+
+fn set_hcu_block_cap_per_app_ix(
+    program_id: Pubkey,
+    admin: Pubkey,
+    host_config: Pubkey,
+    value: u64,
+) -> Instruction {
+    anchor_ix(
+        program_id,
+        host::accounts::HostAdmin { admin, host_config },
+        host::instruction::SetHcuBlockCapPerApp { value },
+    )
+}
+
+fn set_hcu_app_trusted_ix(
+    program_id: Pubkey,
+    payer: Pubkey,
+    admin: Pubkey,
+    host_config: Pubkey,
+    app: Pubkey,
+    trusted: bool,
+) -> Instruction {
+    let record = host::hcu_trusted_app_address(app).0;
+    set_hcu_app_trusted_ix_with_record(program_id, payer, admin, host_config, record, app, trusted)
+}
+
+fn set_hcu_app_trusted_ix_with_record(
+    program_id: Pubkey,
+    payer: Pubkey,
+    admin: Pubkey,
+    host_config: Pubkey,
+    record: Pubkey,
+    app: Pubkey,
+    trusted: bool,
+) -> Instruction {
+    anchor_ix(
+        program_id,
+        host::accounts::SetHcuAppTrusted {
+            payer,
+            admin,
+            host_config,
+            hcu_trusted_app_record: record,
+            system_program: system_program::ID,
+        },
+        host::instruction::SetHcuAppTrusted { app, trusted },
+    )
+}
+
+// ---- Block-cap account fixtures ----
+
+/// A base config with the per-app block cap overridden to `cap` (per-frame limits
+/// stay disabled so these tests isolate the block cap). Seeded directly, bypassing
+/// the setter ordering guard.
+fn host_config_account_with_block_cap(admin: Pubkey, cap: u64) -> (Pubkey, Account) {
+    let (key, mut account) = host_config_account(admin);
+    let mut config = {
+        let mut data = account.data.as_slice();
+        HostConfig::try_deserialize(&mut data).expect("valid host config")
+    };
+    config.hcu_block_cap_per_app = cap;
+    account.data = serialized_account(config);
+    (key, account)
+}
+
+/// A program-owned trust record at the canonical `("hcu-trusted", app)` PDA.
+fn hcu_trusted_app_record_account(app: Pubkey, trusted: bool) -> (Pubkey, Account) {
+    let (key, bump) = host::hcu_trusted_app_address(app);
+    (
+        key,
+        Account {
+            lamports: 1_000_000_000,
+            data: serialized_account(host::HcuTrustedAppRecord { app, trusted, bump }),
+            owner: host::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    )
+}
+
+/// A program-owned meter at the canonical `("hcu-block-meter", app)` PDA, pre-loaded
+/// with `used_hcu` as of `last_seen_slot`.
+fn hcu_block_meter_account(app: Pubkey, last_seen_slot: u64, used_hcu: u64) -> (Pubkey, Account) {
+    let (key, bump) = host::hcu_block_meter_address(app);
+    (
+        key,
+        Account {
+            lamports: 1_000_000_000,
+            data: serialized_account(host::HcuBlockMeter {
+                app,
+                last_seen_slot,
+                used_hcu,
+                bump,
+            }),
+            owner: host::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    )
+}
+
+fn read_hcu_block_meter(
+    context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
+    address: Pubkey,
+) -> Option<host::HcuBlockMeter> {
+    let store = context.account_store.borrow();
+    let account = store.get(&address)?;
+    if account.owner != host::id() {
+        return None;
+    }
+    let mut data = account.data.as_slice();
+    host::HcuBlockMeter::try_deserialize(&mut data).ok()
+}
+
+fn read_hcu_trusted_app_record(
+    context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
+    address: Pubkey,
+) -> Option<host::HcuTrustedAppRecord> {
+    let store = context.account_store.borrow();
+    let account = store.get(&address)?;
+    if account.owner != host::id() {
+        return None;
+    }
+    let mut data = account.data.as_slice();
+    host::HcuTrustedAppRecord::try_deserialize(&mut data).ok()
+}
+
+// ---- EvalFixture: block-cap threading ----
+
+impl EvalFixture {
+    /// A fixture whose config carries a per-app block cap; per-frame HCU limits stay off.
+    fn with_block_cap(cap: u64) -> Self {
+        let fixture = Self::with_hcu_limits(0, 0);
+        let (host_config, account) = host_config_account_with_block_cap(fixture.authority, cap);
+        fixture
+            .context
+            .account_store
+            .borrow_mut()
+            .insert(host_config, account);
+        fixture
+    }
+
+    /// The app identity both new PDAs are keyed on (the frame's `app_account_authority`).
+    fn block_cap_app(&self) -> Pubkey {
+        self.app_account
+    }
+
+    fn meter_pda(&self) -> Pubkey {
+        host::hcu_block_meter_address(self.app_account).0
+    }
+
+    fn trust_pda(&self) -> Pubkey {
+        host::hcu_trusted_app_address(self.app_account).0
+    }
+
+    fn seed_account(&self, key: Pubkey, account: Account) {
+        self.context.account_store.borrow_mut().insert(key, account);
+    }
+
+    /// The standard durable-output frame, threading the two optional block-cap accounts.
+    fn block_cap_instruction(&self, meter: Option<Pubkey>, trust: Option<Pubkey>) -> Instruction {
+        let context_id = label("block-cap-frame");
+        let steps = self.success_steps(context_id, self.app_account, false);
+        let mut ix = anchor_ix(
+            self.program_id,
+            host::accounts::FheEval {
+                payer: self.authority,
+                compute_subject: self.authority,
+                app_account_authority: self.app_account,
+                host_config: self.host_config,
+                system_program: system_program::ID,
+                hcu_block_meter: meter,
+                hcu_trusted_app_record: trust,
+                event_authority: event_authority(self.program_id),
+                program: self.program_id,
+            },
+            host::instruction::FheEval {
+                args: FheEvalArgs { context_id, steps },
+            },
+        );
+        ix.accounts
+            .push(AccountMeta::new_readonly(self.balance_acl_record, false));
+        ix.accounts
+            .push(AccountMeta::new_readonly(self.amount_acl_record, false));
+        ix.accounts
+            .push(AccountMeta::new(self.output_acl_record, false));
+        ix
+    }
+
+    /// A transient-only frame (single step, `AllowedLocal` output) — produces no durable
+    /// ACL record, so nothing welds `app_account_authority` on-chain.
+    fn transient_only_instruction(
+        &self,
+        meter: Option<Pubkey>,
+        trust: Option<Pubkey>,
+    ) -> Instruction {
+        let context_id = label("transient-only");
+        let steps = vec![FheEvalStep::Binary {
+            op: FheBinaryOpCode::Ge,
+            lhs: self.balance_operand(0),
+            rhs: self.amount_operand(1),
+            output_fhe_type: 0,
+            output: FheEvalOutput::AllowedLocal,
+        }];
+        let mut ix = anchor_ix(
+            self.program_id,
+            host::accounts::FheEval {
+                payer: self.authority,
+                compute_subject: self.authority,
+                app_account_authority: self.app_account,
+                host_config: self.host_config,
+                system_program: system_program::ID,
+                hcu_block_meter: meter,
+                hcu_trusted_app_record: trust,
+                event_authority: event_authority(self.program_id),
+                program: self.program_id,
+            },
+            host::instruction::FheEval {
+                args: FheEvalArgs { context_id, steps },
+            },
+        );
+        ix.accounts
+            .push(AccountMeta::new_readonly(self.balance_acl_record, false));
+        ix.accounts
+            .push(AccountMeta::new_readonly(self.amount_acl_record, false));
+        ix
+    }
+}
+
+// ---- set_hcu_block_cap_per_app (admin cap setter) ----
+
+#[test]
+fn mollusk_set_hcu_block_cap_metering_band_persists_and_advances_slot() {
+    // With the per-frame cap disabled, any positive band value is accepted, persisted,
+    // and stamps updated_slot.
+    let program_id = host::id();
+    let admin = Pubkey::new_unique();
+    let (host_config, account) = host_config_account(admin);
+    let context = mollusk_eval_context(admin, vec![(host_config, account)]);
+
+    let result = context.process_instruction(&set_hcu_block_cap_per_app_ix(
+        program_id,
+        admin,
+        host_config,
+        500_000,
+    ));
+    assert!(result.raw_result.is_ok(), "{:?}", result.raw_result);
+    let config = read_host_config(&context, host_config).expect("config");
+    assert_eq!(config.hcu_block_cap_per_app, 500_000);
+    assert_eq!(config.updated_slot, context.mollusk.sysvars.clock.slot);
+}
+
+#[test]
+fn mollusk_set_hcu_block_cap_at_max_per_tx_boundary_is_accepted() {
+    // A band value exactly equal to max_hcu_per_tx is the tightest legal cap: it must be
+    // accepted so a single max-cost frame stays possible on a fresh meter.
+    let program_id = host::id();
+    let admin = Pubkey::new_unique();
+    let (host_config, account) = host_config_account_with_hcu_limits(admin, 20_000_000, 0);
+    let context = mollusk_eval_context(admin, vec![(host_config, account)]);
+
+    let result = context.process_instruction(&set_hcu_block_cap_per_app_ix(
+        program_id,
+        admin,
+        host_config,
+        20_000_000,
+    ));
+    assert!(result.raw_result.is_ok(), "{:?}", result.raw_result);
+    assert_eq!(
+        read_host_config(&context, host_config)
+            .expect("config")
+            .hcu_block_cap_per_app,
+        20_000_000
+    );
+}
+
+#[test]
+fn mollusk_set_hcu_block_cap_below_max_per_tx_is_rejected() {
+    // A band value under max_hcu_per_tx would make a single legal max-per-tx frame
+    // structurally impossible (other than the deliberate ban); reject without mutation.
+    let program_id = host::id();
+    let admin = Pubkey::new_unique();
+    let (host_config, account) = host_config_account_with_hcu_limits(admin, 20_000_000, 0);
+    let context = mollusk_eval_context(admin, vec![(host_config, account)]);
+
+    let result = context.process_instruction(&set_hcu_block_cap_per_app_ix(
+        program_id,
+        admin,
+        host_config,
+        19_000_000,
+    ));
+    assert_instruction_custom_error(
+        &result,
+        host::errors::ZamaHostError::HcuBlockCapBelowMaxPerTx,
+    );
+    assert_eq!(
+        read_host_config(&context, host_config)
+            .expect("config")
+            .hcu_block_cap_per_app,
+        u64::MAX
+    );
+}
+
+#[test]
+fn mollusk_set_hcu_block_cap_with_max_per_tx_unlimited_accepts_any_band_value() {
+    // max_hcu_per_tx == 0 means the per-frame cap is unlimited, so the ordering guard is
+    // vacuous and even a tiny band value is accepted.
+    let program_id = host::id();
+    let admin = Pubkey::new_unique();
+    let (host_config, account) = host_config_account(admin);
+    let context = mollusk_eval_context(admin, vec![(host_config, account)]);
+
+    let result = context.process_instruction(&set_hcu_block_cap_per_app_ix(
+        program_id,
+        admin,
+        host_config,
+        1,
+    ));
+    assert!(result.raw_result.is_ok(), "{:?}", result.raw_result);
+    assert_eq!(
+        read_host_config(&context, host_config)
+            .expect("config")
+            .hcu_block_cap_per_app,
+        1
+    );
+}
+
+#[test]
+fn mollusk_set_hcu_block_cap_ban_and_unrestricted_sentinels_bypass_ordering() {
+    // The two sentinels — 0 (ban untrusted apps) and u64::MAX (unrestricted) — are always
+    // accepted, even below max_hcu_per_tx, because neither is a metering-band value.
+    let program_id = host::id();
+    let admin = Pubkey::new_unique();
+    let (host_config, account) = host_config_account_with_hcu_limits(admin, 20_000_000, 0);
+    let context = mollusk_eval_context(admin, vec![(host_config, account)]);
+
+    let ban = context.process_instruction(&set_hcu_block_cap_per_app_ix(
+        program_id,
+        admin,
+        host_config,
+        0,
+    ));
+    assert!(ban.raw_result.is_ok(), "{:?}", ban.raw_result);
+    assert_eq!(
+        read_host_config(&context, host_config)
+            .expect("config")
+            .hcu_block_cap_per_app,
+        0
+    );
+
+    let unrestricted = context.process_instruction(&set_hcu_block_cap_per_app_ix(
+        program_id,
+        admin,
+        host_config,
+        u64::MAX,
+    ));
+    assert!(
+        unrestricted.raw_result.is_ok(),
+        "{:?}",
+        unrestricted.raw_result
+    );
+    assert_eq!(
+        read_host_config(&context, host_config)
+            .expect("config")
+            .hcu_block_cap_per_app,
+        u64::MAX
+    );
+}
+
+#[test]
+fn mollusk_set_hcu_block_cap_is_idempotent() {
+    // Setting the current value is a no-op: it does not advance updated_slot (mirrors the
+    // other admin setters).
+    let program_id = host::id();
+    let admin = Pubkey::new_unique();
+    let (host_config, account) = host_config_account_with_block_cap(admin, 750_000);
+    let context = mollusk_eval_context(admin, vec![(host_config, account)]);
+
+    let result = context.process_instruction(&set_hcu_block_cap_per_app_ix(
+        program_id,
+        admin,
+        host_config,
+        750_000,
+    ));
+    assert!(result.raw_result.is_ok(), "{:?}", result.raw_result);
+    let config = read_host_config(&context, host_config).expect("config");
+    assert_eq!(config.hcu_block_cap_per_app, 750_000);
+    assert_eq!(config.updated_slot, 0);
+}
+
+#[test]
+fn mollusk_set_hcu_block_cap_rejects_wrong_admin() {
+    // A valid signer that is not the stored admin cannot change the cap.
+    let program_id = host::id();
+    let admin = Pubkey::new_unique();
+    let wrong_admin = Pubkey::new_unique();
+    let (host_config, account) = host_config_account(admin);
+    let context = mollusk_eval_context(admin, vec![(host_config, account)]);
+
+    let result = context.process_instruction(&set_hcu_block_cap_per_app_ix(
+        program_id,
+        wrong_admin,
+        host_config,
+        500_000,
+    ));
+    assert_instruction_custom_error(
+        &result,
+        host::errors::ZamaHostError::HostConfigAdminMismatch,
+    );
+    assert_eq!(
+        read_host_config(&context, host_config)
+            .expect("config")
+            .hcu_block_cap_per_app,
+        u64::MAX
+    );
+}
+
+#[test]
+fn mollusk_set_hcu_block_cap_rejects_remaining_accounts() {
+    // A trailing account meta is rejected before any mutation.
+    let program_id = host::id();
+    let admin = Pubkey::new_unique();
+    let (host_config, account) = host_config_account(admin);
+    let context = mollusk_eval_context(admin, vec![(host_config, account)]);
+
+    let mut ix = set_hcu_block_cap_per_app_ix(program_id, admin, host_config, 500_000);
+    ix.accounts
+        .push(AccountMeta::new_readonly(Pubkey::new_unique(), false));
+    let result = context.process_instruction(&ix);
+    assert_instruction_custom_error(
+        &result,
+        host::errors::ZamaHostError::UnexpectedRemainingAccounts,
+    );
+    assert_eq!(
+        read_host_config(&context, host_config)
+            .expect("config")
+            .hcu_block_cap_per_app,
+        u64::MAX
+    );
+}
+
+// ---- set_hcu_app_trusted (admin trust registry) ----
+
+#[test]
+fn mollusk_set_hcu_app_trusted_creates_trusted_record() {
+    // A first trust-set lazy-creates the canonical record with trusted = true.
+    let program_id = host::id();
+    let admin = Pubkey::new_unique();
+    let app = Pubkey::new_unique();
+    let (host_config, account) = host_config_account(admin);
+    let context = mollusk_eval_context(admin, vec![(host_config, account)]);
+
+    let result = context.process_instruction(&set_hcu_app_trusted_ix(
+        program_id,
+        admin,
+        admin,
+        host_config,
+        app,
+        true,
+    ));
+    assert!(result.raw_result.is_ok(), "{:?}", result.raw_result);
+    let record = read_hcu_trusted_app_record(&context, host::hcu_trusted_app_address(app).0)
+        .expect("record");
+    assert_eq!(record.app, app);
+    assert!(record.trusted);
+}
+
+#[test]
+fn mollusk_set_hcu_app_trusted_writes_untrusted_false_record() {
+    // A well-formed record may carry trusted = false; that is an explicit "metered", not an error.
+    let program_id = host::id();
+    let admin = Pubkey::new_unique();
+    let app = Pubkey::new_unique();
+    let (host_config, account) = host_config_account(admin);
+    let context = mollusk_eval_context(admin, vec![(host_config, account)]);
+
+    // Register trusted, then clear it back to false.
+    assert!(context
+        .process_instruction(&set_hcu_app_trusted_ix(
+            program_id,
+            admin,
+            admin,
+            host_config,
+            app,
+            true
+        ))
+        .raw_result
+        .is_ok());
+    let result = context.process_instruction(&set_hcu_app_trusted_ix(
+        program_id,
+        admin,
+        admin,
+        host_config,
+        app,
+        false,
+    ));
+    assert!(result.raw_result.is_ok(), "{:?}", result.raw_result);
+    let record = read_hcu_trusted_app_record(&context, host::hcu_trusted_app_address(app).0)
+        .expect("record");
+    assert!(!record.trusted);
+}
+
+#[test]
+fn mollusk_set_hcu_app_trusted_is_idempotent() {
+    // Re-setting the current trust value is a no-op and leaves the record intact.
+    let program_id = host::id();
+    let admin = Pubkey::new_unique();
+    let app = Pubkey::new_unique();
+    let (host_config, account) = host_config_account(admin);
+    let context = mollusk_eval_context(admin, vec![(host_config, account)]);
+
+    assert!(context
+        .process_instruction(&set_hcu_app_trusted_ix(
+            program_id,
+            admin,
+            admin,
+            host_config,
+            app,
+            true
+        ))
+        .raw_result
+        .is_ok());
+    let result = context.process_instruction(&set_hcu_app_trusted_ix(
+        program_id,
+        admin,
+        admin,
+        host_config,
+        app,
+        true,
+    ));
+    assert!(result.raw_result.is_ok(), "{:?}", result.raw_result);
+    assert!(
+        read_hcu_trusted_app_record(&context, host::hcu_trusted_app_address(app).0)
+            .expect("record")
+            .trusted
+    );
+}
+
+#[test]
+fn mollusk_set_hcu_app_trusted_rejects_wrong_record_pda() {
+    // A record account that is not the canonical ("hcu-trusted", app) PDA is rejected.
+    let program_id = host::id();
+    let admin = Pubkey::new_unique();
+    let app = Pubkey::new_unique();
+    let (host_config, account) = host_config_account(admin);
+    let context = mollusk_eval_context(admin, vec![(host_config, account)]);
+
+    // A record derived for a *different* app is the wrong PDA for `app`.
+    let wrong_record = host::hcu_trusted_app_address(Pubkey::new_unique()).0;
+    let result = context.process_instruction(&set_hcu_app_trusted_ix_with_record(
+        program_id,
+        admin,
+        admin,
+        host_config,
+        wrong_record,
+        app,
+        true,
+    ));
+    assert_instruction_custom_error(
+        &result,
+        host::errors::ZamaHostError::HcuTrustedAppRecordMismatch,
+    );
+    assert!(read_hcu_trusted_app_record(&context, host::hcu_trusted_app_address(app).0).is_none());
+}
+
+#[test]
+fn mollusk_set_hcu_app_trusted_rejects_wrong_admin() {
+    // Only the stored admin may register trust — an app cannot self-trust.
+    let program_id = host::id();
+    let admin = Pubkey::new_unique();
+    let wrong_admin = Pubkey::new_unique();
+    let app = Pubkey::new_unique();
+    let (host_config, account) = host_config_account(admin);
+    let context = mollusk_eval_context(admin, vec![(host_config, account)]);
+
+    let result = context.process_instruction(&set_hcu_app_trusted_ix(
+        program_id,
+        wrong_admin,
+        wrong_admin,
+        host_config,
+        app,
+        true,
+    ));
+    assert_instruction_custom_error(
+        &result,
+        host::errors::ZamaHostError::HostConfigAdminMismatch,
+    );
+    assert!(read_hcu_trusted_app_record(&context, host::hcu_trusted_app_address(app).0).is_none());
+}
+
+#[test]
+fn mollusk_set_hcu_app_trusted_rejects_remaining_accounts() {
+    // A trailing account meta is rejected before any write.
+    let program_id = host::id();
+    let admin = Pubkey::new_unique();
+    let app = Pubkey::new_unique();
+    let (host_config, account) = host_config_account(admin);
+    let context = mollusk_eval_context(admin, vec![(host_config, account)]);
+
+    let mut ix = set_hcu_app_trusted_ix(program_id, admin, admin, host_config, app, true);
+    ix.accounts
+        .push(AccountMeta::new_readonly(Pubkey::new_unique(), false));
+    let result = context.process_instruction(&ix);
+    assert_instruction_custom_error(
+        &result,
+        host::errors::ZamaHostError::UnexpectedRemainingAccounts,
+    );
+    assert!(read_hcu_trusted_app_record(&context, host::hcu_trusted_app_address(app).0).is_none());
+}
+
+#[test]
+fn mollusk_initialize_host_config_defaults_block_cap_to_unrestricted() {
+    // A freshly initialized config ships unrestricted (u64::MAX), not banned (0).
+    let program_id = host::id();
+    let payer = Pubkey::new_unique();
+    let admin = Pubkey::new_unique();
+    let (host_config, _) = host::host_config_address();
+    let args = host::InitializeHostConfigArgs {
+        chain_id: host::SOLANA_POC_CHAIN_ID,
+        input_verifier_authority: Pubkey::new_unique(),
+        gateway_chain_id: 0,
+        input_verification_contract: [0u8; 20],
+        coprocessor_signer: [0u8; 20],
+        decryption_contract: [0u8; 20],
+        material_authority: Pubkey::new_unique(),
+        test_authority: Pubkey::new_unique(),
+        mock_input_enabled: false,
+        test_shims_enabled: false,
+        grant_deny_list_enabled: false,
+    };
+    let context = mollusk_eval_context(payer, vec![(host_config, system_account(0))]);
+
+    let result = context.process_instruction(&initialize_host_config_ix(
+        program_id,
+        payer,
+        admin,
+        host_config,
+        args,
+    ));
+    assert!(result.raw_result.is_ok(), "{:?}", result.raw_result);
+    assert_eq!(
+        read_host_config(&context, host_config)
+            .expect("config")
+            .hcu_block_cap_per_app,
+        u64::MAX
+    );
+}
+
+// ---- fhe_eval block-cap enforcement ----
+
+#[test]
+fn mollusk_fhe_eval_unrestricted_cap_none_none_succeeds() {
+    // The default (u64::MAX) short-circuits: a caller passing neither optional account
+    // behaves exactly as before the feature — the frame binds its durable output and no
+    // meter is ever created.
+    let fixture = EvalFixture::with_block_cap(u64::MAX);
+    let result = fixture
+        .context
+        .process_instruction(&fixture.block_cap_instruction(None, None));
+    assert!(result.raw_result.is_ok(), "{:?}", result.raw_result);
+    assert!(read_acl_record(&fixture.context, fixture.output_acl_record).is_some());
+    assert!(read_hcu_block_meter(&fixture.context, fixture.meter_pda()).is_none());
+}
+
+#[test]
+fn mollusk_fhe_eval_unrestricted_cap_ignores_supplied_accounts() {
+    // Even when both optional accounts are supplied, the unrestricted short-circuit touches
+    // neither: a pre-loaded meter is left byte-for-byte unchanged.
+    let fixture = EvalFixture::with_block_cap(u64::MAX);
+    let slot = fixture.context.mollusk.sysvars.clock.slot;
+    let (meter_pda, meter_account) = hcu_block_meter_account(fixture.block_cap_app(), slot, 999);
+    fixture.seed_account(meter_pda, meter_account);
+    let (trust_pda, trust_account) = hcu_trusted_app_record_account(fixture.block_cap_app(), true);
+    fixture.seed_account(trust_pda, trust_account);
+
+    let result = fixture
+        .context
+        .process_instruction(&fixture.block_cap_instruction(Some(meter_pda), Some(trust_pda)));
+    assert!(result.raw_result.is_ok(), "{:?}", result.raw_result);
+    assert_eq!(
+        read_hcu_block_meter(&fixture.context, meter_pda)
+            .expect("meter")
+            .used_hcu,
+        999
+    );
+}
+
+#[test]
+fn mollusk_fhe_eval_ban_cap_zero_untrusted_no_meter_is_rejected() {
+    // cap == 0 bans untrusted apps outright — rejected even with no meter supplied, and no
+    // durable output is created.
+    let fixture = EvalFixture::with_block_cap(0);
+    let result = fixture
+        .context
+        .process_instruction(&fixture.block_cap_instruction(None, None));
+    assert_instruction_custom_error(&result, host::errors::ZamaHostError::HcuBlockLimitExceeded);
+    fixture.assert_no_output();
+}
+
+#[test]
+fn mollusk_fhe_eval_ban_cap_zero_untrusted_with_meter_is_rejected_unchanged() {
+    // The ban trips before the meter is consulted: a supplied meter is left unchanged.
+    let fixture = EvalFixture::with_block_cap(0);
+    let slot = fixture.context.mollusk.sysvars.clock.slot;
+    let (meter_pda, meter_account) = hcu_block_meter_account(fixture.block_cap_app(), slot, 0);
+    fixture.seed_account(meter_pda, meter_account);
+
+    let result = fixture
+        .context
+        .process_instruction(&fixture.block_cap_instruction(Some(meter_pda), None));
+    assert_instruction_custom_error(&result, host::errors::ZamaHostError::HcuBlockLimitExceeded);
+    assert_eq!(
+        read_hcu_block_meter(&fixture.context, meter_pda)
+            .expect("meter")
+            .used_hcu,
+        0
+    );
+    fixture.assert_no_output();
+}
+
+#[test]
+fn mollusk_fhe_eval_ban_cap_zero_trusted_witness_bypasses() {
+    // Trusted apps are never banned: with a valid trust witness the frame succeeds even at
+    // cap == 0, without any meter.
+    let fixture = EvalFixture::with_block_cap(0);
+    let (trust_pda, trust_account) = hcu_trusted_app_record_account(fixture.block_cap_app(), true);
+    fixture.seed_account(trust_pda, trust_account);
+
+    let result = fixture
+        .context
+        .process_instruction(&fixture.block_cap_instruction(None, Some(trust_pda)));
+    assert!(result.raw_result.is_ok(), "{:?}", result.raw_result);
+    assert!(read_acl_record(&fixture.context, fixture.output_acl_record).is_some());
+}
+
+#[test]
+fn mollusk_fhe_eval_untrusted_missing_meter_fails_closed() {
+    // In the metering band, an untrusted app that forwards neither a meter nor a trust
+    // witness is rejected — never silently un-metered. (This is also the CPI rollout hazard:
+    // a caller that forwards neither account breaks, rather than bypassing the cap.)
+    let fixture = EvalFixture::with_block_cap(500_000);
+    let result = fixture
+        .context
+        .process_instruction(&fixture.block_cap_instruction(None, None));
+    assert_instruction_custom_error(&result, host::errors::ZamaHostError::HcuBlockMeterMissing);
+    fixture.assert_no_output();
+}
+
+#[test]
+fn mollusk_fhe_eval_trusted_witness_bypasses_and_creates_no_meter() {
+    // A valid trust witness bypasses metering entirely: the frame succeeds with no meter and
+    // none is lazily created (contention-free trusted path).
+    let fixture = EvalFixture::with_block_cap(500_000);
+    let (trust_pda, trust_account) = hcu_trusted_app_record_account(fixture.block_cap_app(), true);
+    fixture.seed_account(trust_pda, trust_account);
+
+    let result = fixture
+        .context
+        .process_instruction(&fixture.block_cap_instruction(None, Some(trust_pda)));
+    assert!(result.raw_result.is_ok(), "{:?}", result.raw_result);
+    assert!(read_acl_record(&fixture.context, fixture.output_acl_record).is_some());
+    assert!(read_hcu_block_meter(&fixture.context, fixture.meter_pda()).is_none());
+}
+
+#[test]
+fn mollusk_fhe_eval_untrusted_false_witness_requires_meter() {
+    // A well-formed record with trusted == false is not a bypass — it falls through to the
+    // metering path, so a missing meter still fails closed.
+    let fixture = EvalFixture::with_block_cap(500_000);
+    let (trust_pda, trust_account) = hcu_trusted_app_record_account(fixture.block_cap_app(), false);
+    fixture.seed_account(trust_pda, trust_account);
+
+    let result = fixture
+        .context
+        .process_instruction(&fixture.block_cap_instruction(None, Some(trust_pda)));
+    assert_instruction_custom_error(&result, host::errors::ZamaHostError::HcuBlockMeterMissing);
+    fixture.assert_no_output();
+}
+
+#[test]
+fn mollusk_fhe_eval_wrong_pda_trust_witness_is_rejected() {
+    // A witness for a different app (wrong PDA) cannot bypass this app's cap.
+    let fixture = EvalFixture::with_block_cap(500_000);
+    let (other_trust_pda, other_trust_account) =
+        hcu_trusted_app_record_account(Pubkey::new_unique(), true);
+    fixture.seed_account(other_trust_pda, other_trust_account);
+
+    let result = fixture
+        .context
+        .process_instruction(&fixture.block_cap_instruction(None, Some(other_trust_pda)));
+    assert_instruction_custom_error(
+        &result,
+        host::errors::ZamaHostError::HcuTrustedAppRecordMismatch,
+    );
+    fixture.assert_no_output();
+}
+
+#[test]
+fn mollusk_fhe_eval_malformed_trust_witness_is_rejected() {
+    // A witness at the canonical PDA but not program-owned (self-made) is rejected — an app
+    // cannot forge its own trust. Only an *absent* witness is benign.
+    let fixture = EvalFixture::with_block_cap(500_000);
+    let trust_pda = fixture.trust_pda();
+    fixture.seed_account(
+        trust_pda,
+        Account {
+            lamports: 1_000_000,
+            data: vec![1u8; 8],
+            owner: system_program::ID,
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
+
+    let result = fixture
+        .context
+        .process_instruction(&fixture.block_cap_instruction(None, Some(trust_pda)));
+    assert_instruction_custom_error(
+        &result,
+        host::errors::ZamaHostError::HcuTrustedAppRecordMismatch,
+    );
+    fixture.assert_no_output();
+}
+
+#[test]
+fn mollusk_fhe_eval_wrong_app_meter_is_rejected() {
+    // A meter that belongs to a different app (wrong PDA / record.app) cannot be charged for
+    // this app.
+    let fixture = EvalFixture::with_block_cap(500_000);
+    let slot = fixture.context.mollusk.sysvars.clock.slot;
+    let (other_meter_pda, other_meter_account) =
+        hcu_block_meter_account(Pubkey::new_unique(), slot, 0);
+    fixture.seed_account(other_meter_pda, other_meter_account);
+
+    let result = fixture
+        .context
+        .process_instruction(&fixture.block_cap_instruction(Some(other_meter_pda), None));
+    assert_instruction_custom_error(&result, host::errors::ZamaHostError::HcuBlockMeterMismatch);
+    fixture.assert_no_output();
+}
+
+#[test]
+fn mollusk_fhe_eval_squatted_meter_is_rejected() {
+    // A pre-squatted (system-owned, non-empty) account at the meter PDA fails lazy-creation
+    // rather than being adopted as a counter.
+    let fixture = EvalFixture::with_block_cap(500_000);
+    let meter_pda = fixture.meter_pda();
+    fixture.seed_account(
+        meter_pda,
+        Account {
+            lamports: 1_000_000,
+            data: vec![7u8; 16],
+            owner: system_program::ID,
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
+
+    let result = fixture
+        .context
+        .process_instruction(&fixture.block_cap_instruction(Some(meter_pda), None));
+    assert_instruction_custom_error(&result, host::errors::ZamaHostError::PdaCreationMismatch);
+    fixture.assert_no_output();
+}
+
+#[test]
+fn mollusk_fhe_eval_trust_pda_supplied_as_meter_is_rejected() {
+    // Role confusion: the trust record's PDA is not the meter PDA, so passing it in the meter
+    // slot fails the meter's PDA check.
+    let fixture = EvalFixture::with_block_cap(500_000);
+    let trust_pda = fixture.trust_pda();
+    let (_, trust_account) = hcu_trusted_app_record_account(fixture.block_cap_app(), true);
+    fixture.seed_account(trust_pda, trust_account);
+
+    let result = fixture
+        .context
+        .process_instruction(&fixture.block_cap_instruction(Some(trust_pda), None));
+    assert_instruction_custom_error(&result, host::errors::ZamaHostError::HcuBlockMeterMismatch);
+    fixture.assert_no_output();
+}
+
+#[test]
+fn mollusk_fhe_eval_over_cap_trips_in_admission_without_output_or_mutation() {
+    // A frame whose cost exceeds the cap trips in the read-only admission pass: no durable
+    // output is created and the meter is left unchanged (breach before any write).
+    let fixture = EvalFixture::with_block_cap(FIXTURE_FRAME_HCU - 1);
+    let slot = fixture.context.mollusk.sysvars.clock.slot;
+    let (meter_pda, meter_account) = hcu_block_meter_account(fixture.block_cap_app(), slot, 0);
+    fixture.seed_account(meter_pda, meter_account);
+
+    let result = fixture
+        .context
+        .process_instruction(&fixture.block_cap_instruction(Some(meter_pda), None));
+    assert_instruction_custom_error(&result, host::errors::ZamaHostError::HcuBlockLimitExceeded);
+    assert_eq!(
+        read_hcu_block_meter(&fixture.context, meter_pda)
+            .expect("meter")
+            .used_hcu,
+        0
+    );
+    fixture.assert_no_output();
+}
+
+#[test]
+fn mollusk_fhe_eval_charge_accumulates_onto_prior_slot_usage() {
+    // Within a slot, a successful charge adds the frame cost onto the meter's existing usage
+    // (monotonic; the meter is reused, not reset).
+    let fixture = EvalFixture::with_block_cap(500_000);
+    let slot = fixture.context.mollusk.sysvars.clock.slot;
+    let (meter_pda, meter_account) = hcu_block_meter_account(fixture.block_cap_app(), slot, 50_000);
+    fixture.seed_account(meter_pda, meter_account);
+
+    let result = fixture
+        .context
+        .process_instruction(&fixture.block_cap_instruction(Some(meter_pda), None));
+    assert!(result.raw_result.is_ok(), "{:?}", result.raw_result);
+    let meter = read_hcu_block_meter(&fixture.context, meter_pda).expect("meter");
+    assert_eq!(meter.used_hcu, 50_000 + FIXTURE_FRAME_HCU);
+    assert_eq!(meter.last_seen_slot, slot);
+    assert!(read_acl_record(&fixture.context, fixture.output_acl_record).is_some());
+}
+
+#[test]
+fn mollusk_fhe_eval_over_cap_with_prior_usage_is_rejected_unchanged() {
+    // Prior in-slot usage plus this frame exceeds the cap -> rejected, meter unchanged.
+    let fixture = EvalFixture::with_block_cap(150_000);
+    let slot = fixture.context.mollusk.sysvars.clock.slot;
+    let (meter_pda, meter_account) =
+        hcu_block_meter_account(fixture.block_cap_app(), slot, 100_000);
+    fixture.seed_account(meter_pda, meter_account);
+
+    let result = fixture
+        .context
+        .process_instruction(&fixture.block_cap_instruction(Some(meter_pda), None));
+    assert_instruction_custom_error(&result, host::errors::ZamaHostError::HcuBlockLimitExceeded);
+    assert_eq!(
+        read_hcu_block_meter(&fixture.context, meter_pda)
+            .expect("meter")
+            .used_hcu,
+        100_000
+    );
+    fixture.assert_no_output();
+}
+
+#[test]
+fn mollusk_fhe_eval_lazy_reset_zeroes_prior_slot_usage() {
+    // A meter last written in a different slot is treated as used = 0 for this slot's frame:
+    // even a value that would exceed the cap in-slot no longer blocks, and the meter is
+    // rewritten at the current slot with just this frame's cost.
+    let fixture = EvalFixture::with_block_cap(150_000);
+    let slot = fixture.context.mollusk.sysvars.clock.slot;
+    // Seed as-of a different slot with usage that would exceed the cap if it carried over.
+    let (meter_pda, meter_account) =
+        hcu_block_meter_account(fixture.block_cap_app(), slot.wrapping_add(1), 140_000);
+    fixture.seed_account(meter_pda, meter_account);
+
+    let result = fixture
+        .context
+        .process_instruction(&fixture.block_cap_instruction(Some(meter_pda), None));
+    assert!(result.raw_result.is_ok(), "{:?}", result.raw_result);
+    let meter = read_hcu_block_meter(&fixture.context, meter_pda).expect("meter");
+    assert_eq!(meter.used_hcu, FIXTURE_FRAME_HCU);
+    assert_eq!(meter.last_seen_slot, slot);
+}
+
+#[test]
+fn mollusk_fhe_eval_clean_first_call_lazy_creates_meter_at_frame_cost() {
+    // A first metered frame lazy-creates a program-owned meter initialized to exactly the
+    // frame's cost, stamped at the current slot and keyed on this app.
+    let fixture = EvalFixture::with_block_cap(500_000);
+    let meter_pda = fixture.meter_pda();
+
+    let result = fixture
+        .context
+        .process_instruction(&fixture.block_cap_instruction(Some(meter_pda), None));
+    assert!(result.raw_result.is_ok(), "{:?}", result.raw_result);
+    let meter = read_hcu_block_meter(&fixture.context, meter_pda).expect("meter created");
+    assert_eq!(meter.app, fixture.block_cap_app());
+    assert_eq!(meter.used_hcu, FIXTURE_FRAME_HCU);
+    assert_eq!(
+        meter.last_seen_slot,
+        fixture.context.mollusk.sysvars.clock.slot
+    );
+    assert!(read_acl_record(&fixture.context, fixture.output_acl_record).is_some());
+}
+
+#[test]
+fn mollusk_fhe_eval_per_app_meters_are_isolated_under_uniform_cap() {
+    // The cap is uniform, but each app has its own meter: one app being maxed out this slot
+    // does not throttle a different app, and does not draw down its budget.
+    let fixture = EvalFixture::with_block_cap(150_000);
+    let slot = fixture.context.mollusk.sysvars.clock.slot;
+    // A different app is maxed out for the slot.
+    let (other_meter_pda, other_meter_account) =
+        hcu_block_meter_account(Pubkey::new_unique(), slot, 150_000);
+    fixture.seed_account(other_meter_pda, other_meter_account);
+
+    // The fixture app's own frame still succeeds against its own fresh meter.
+    let meter_pda = fixture.meter_pda();
+    let result = fixture
+        .context
+        .process_instruction(&fixture.block_cap_instruction(Some(meter_pda), None));
+    assert!(result.raw_result.is_ok(), "{:?}", result.raw_result);
+    assert_eq!(
+        read_hcu_block_meter(&fixture.context, other_meter_pda)
+            .expect("other meter")
+            .used_hcu,
+        150_000
+    );
+    assert_eq!(
+        read_hcu_block_meter(&fixture.context, meter_pda)
+            .expect("meter")
+            .used_hcu,
+        FIXTURE_FRAME_HCU
+    );
+}
+
+#[test]
+fn mollusk_fhe_eval_extra_remaining_account_still_rejected_with_block_cap() {
+    // The two block-cap accounts are named context accounts, not remaining_accounts, so the
+    // "every remaining account is used" invariant is preserved: a trailing extra account is
+    // still rejected.
+    let fixture = EvalFixture::with_block_cap(u64::MAX);
+    let mut ix = fixture.block_cap_instruction(None, None);
+    ix.accounts
+        .push(AccountMeta::new_readonly(Pubkey::new_unique(), false));
+    let result = fixture.context.process_instruction(&ix);
+    assert_instruction_custom_error(&result, host::errors::ZamaHostError::InvalidFheEvalAccount);
+}
+
+#[test]
+fn doc_transient_only_frame_has_no_durable_identity_to_meter() {
+    // Documentation test (not a guard): a transient-only frame (all AllowedLocal outputs)
+    // creates no durable ACL record, so nothing welds `app_account_authority` on-chain. That
+    // is precisely why per-app metering cannot bind identity for such frames — a throwaway
+    // authority escapes the cap. On-chain metering of transient-only work is a deliberate,
+    // specified-but-deferred follow-up (a payer-fallback meter); it is NOT enforced in v1.
+    // Asserted under the unrestricted default, where the block cap is short-circuited
+    // regardless of frame shape, so the absence of a durable footprint is unambiguous.
+    let fixture = EvalFixture::with_block_cap(u64::MAX);
+    let result = fixture
+        .context
+        .process_instruction(&fixture.transient_only_instruction(None, None));
+    assert!(result.raw_result.is_ok(), "{:?}", result.raw_result);
+    // No durable output ACL record: nothing binds the app identity.
+    fixture.assert_no_output();
+    // No per-app meter is created for a transient-only frame.
+    assert!(read_hcu_block_meter(&fixture.context, fixture.meter_pda()).is_none());
+}
+
+#[test]
+fn mollusk_fhe_eval_meter_accumulation_overflow_fails_closed() {
+    // Accumulating this frame onto a near-max in-slot usage would overflow u64. The checked
+    // add must fail closed (reject, never wrap), and the meter is left unchanged. The cap is a
+    // huge band value so it is the overflow — not the cap comparison — that trips.
+    let fixture = EvalFixture::with_block_cap(u64::MAX - 1);
+    let slot = fixture.context.mollusk.sysvars.clock.slot;
+    let (meter_pda, meter_account) =
+        hcu_block_meter_account(fixture.block_cap_app(), slot, u64::MAX - 1_000);
+    fixture.seed_account(meter_pda, meter_account);
+
+    let result = fixture
+        .context
+        .process_instruction(&fixture.block_cap_instruction(Some(meter_pda), None));
+    assert_instruction_custom_error(&result, host::errors::ZamaHostError::HcuBlockLimitExceeded);
+    assert_eq!(
+        read_hcu_block_meter(&fixture.context, meter_pda)
+            .expect("meter")
+            .used_hcu,
+        u64::MAX - 1_000
+    );
+    fixture.assert_no_output();
 }

@@ -12,8 +12,14 @@ use mollusk_svm::{
     Mollusk,
 };
 use solana_sdk::{
-    account::Account, ed25519_program, instruction::Instruction, native_loader,
-    program_option::COption, program_pack::Pack, pubkey::Pubkey, sysvar,
+    account::Account,
+    ed25519_program,
+    instruction::{Instruction, InstructionError},
+    native_loader,
+    program_option::COption,
+    program_pack::Pack,
+    pubkey::Pubkey,
+    sysvar,
 };
 use std::{
     collections::{HashMap, HashSet},
@@ -1936,6 +1942,10 @@ fn self_transfer_ix(
     anchor_ix(
         token::id(),
         token::accounts::ConfidentialTransfer {
+            // Block-cap optional accounts threaded through the transfer CPI; the default
+            // unrestricted cap means None/None here.
+            hcu_block_meter: None,
+            hcu_trusted_app_record: None,
             owner: fixture.owner,
             payer: fixture.owner,
             mint: fixture.mint,
@@ -1991,6 +2001,10 @@ fn direct_transfer_ix_with_attestation(
     anchor_ix(
         token::id(),
         token::accounts::ConfidentialTransfer {
+            // Block-cap optional accounts threaded through the transfer CPI; the default
+            // unrestricted cap means None/None here.
+            hcu_block_meter: None,
+            hcu_trusted_app_record: None,
             owner: fixture.owner,
             payer,
             mint: fixture.mint,
@@ -2471,6 +2485,8 @@ fn kms_host_config_account(authority: Pubkey) -> Account {
             grant_deny_list_enabled: false,
             max_hcu_per_tx: 0,
             max_hcu_depth_per_tx: 0,
+            // Ships unrestricted; existing flows are unaffected by the block cap.
+            hcu_block_cap_per_app: u64::MAX,
             updated_slot: 0,
             bump: host::host_config_address().1,
         }),
@@ -3196,6 +3212,8 @@ fn host_config_account(authority: Pubkey) -> Account {
             grant_deny_list_enabled: false,
             max_hcu_per_tx: 0,
             max_hcu_depth_per_tx: 0,
+            // Ships unrestricted; existing flows are unaffected by the block cap.
+            hcu_block_cap_per_app: u64::MAX,
             updated_slot: 0,
             bump: host::host_config_address().1,
         }),
@@ -4070,4 +4088,59 @@ fn system_account(lamports: u64) -> Account {
         executable: false,
         rent_epoch: 0,
     }
+}
+
+/// The transfer fixture's host config with the per-app block cap overridden to `cap`.
+fn host_config_account_with_block_cap(authority: Pubkey, cap: u64) -> Account {
+    let mut account = host_config_account(authority);
+    let mut config = {
+        let mut data = account.data.as_slice();
+        host::HostConfig::try_deserialize(&mut data).expect("valid host config")
+    };
+    config.hcu_block_cap_per_app = cap;
+    account.data = serialized_account(config);
+    account
+}
+
+// ---- Block cap enforced through the confidential-token -> fhe_eval CPI ----
+
+#[test]
+fn mollusk_confidential_transfer_block_cap_ban_is_enforced_through_cpi() {
+    // A confidential transfer reaches fhe_eval only by CPI. With the calling app untrusted
+    // and the cap at the ban sentinel (0), the block-cap breach must surface through the CPI
+    // and roll the whole transfer back — exactly as a direct fhe_eval call is rejected. The
+    // underlying HcuBlockLimitExceeded propagates cleanly through the CPI as the top-level
+    // InstructionError::Custom code (not wrapped), and the transfer's durable outputs are never
+    // created (atomic revert).
+    let fixture = TokenMolluskFixture::new();
+    let amount_handle = handle_for_chain(200, BALANCE_FHE_TYPE);
+    let output = DirectTransferOutputAccounts::canonical(&fixture, 1, 1);
+    // `direct_transfer_ix` threads the two optional block-cap accounts as None/None — the
+    // untrusted, no-meter (fail-closed) CPI shape.
+    let ix = direct_transfer_ix(&fixture, output, amount_handle);
+    let context = fixture.context_with_input_amount(amount_handle);
+    // Ban untrusted apps via the block cap (overrides the fixture's unrestricted default).
+    seed_account(
+        &context,
+        fixture.host_config,
+        host_config_account_with_block_cap(fixture.owner, 0),
+    );
+
+    let result = context.process_instruction(&ix);
+
+    // Rejected via CPI with the exact host error code; the transfer's durable outputs are never
+    // created (atomic revert).
+    let expected_code: u32 = host::errors::ZamaHostError::HcuBlockLimitExceeded.into();
+    assert_eq!(
+        result.raw_result,
+        Err(InstructionError::Custom(expected_code))
+    );
+    assert_empty_system_account(&context, output.from_output);
+    assert_empty_system_account(&context, output.transferred);
+    assert_empty_system_account(&context, output.to_output);
+    // Balances are unchanged.
+    assert_eq!(
+        read_token_account(&context, fixture.alice_token).balance_handle,
+        fixture.alice_initial
+    );
 }

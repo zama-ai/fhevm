@@ -14,6 +14,7 @@ use crate::{
 };
 
 mod admission;
+mod block_cap;
 mod event_budget;
 mod event_transport;
 mod handles;
@@ -42,11 +43,21 @@ pub struct FheEval<'info> {
     pub compute_subject: Signer<'info>,
     /// App account signer authorizing any durable output ACL metadata.
     pub app_account_authority: Signer<'info>,
-    /// Singleton config PDA.
+    /// Singleton config PDA. Read-only: the cap is read from here, but the writable per-slot
+    /// counter is the separate `hcu_block_meter`, never this singleton — so the hot path takes no
+    /// write lock on the config.
     #[account(seeds = [HOST_CONFIG_SEED], bump = host_config.bump)]
     pub host_config: Account<'info, HostConfig>,
     /// System program used for durable output ACL creation.
     pub system_program: Program<'info, System>,
+    /// Per-app HCU block meter (written once in the execution `charge`). Untrusted apps in the
+    /// metering band MUST supply it; trusted apps and the unrestricted default omit it. An
+    /// `UncheckedAccount` because it may be uninitialized (lazy-created) and is validated manually.
+    #[account(mut)]
+    pub hcu_block_meter: Option<UncheckedAccount<'info>>,
+    /// Trust witness (read-only). Present + program-owned + `trusted == true` ⇒ bypass the cap;
+    /// absent (`None`) ⇒ untrusted, fall through to the meter; present-but-malformed ⇒ reject.
+    pub hcu_trusted_app_record: Option<UncheckedAccount<'info>>,
 }
 
 /// Executes an ordered FHE plan with instruction-local transient outputs.
@@ -78,7 +89,10 @@ pub fn fhe_eval<'info>(ctx: Context<'info, FheEval<'info>>, args: FheEvalArgs) -
         unix_timestamp: clock.unix_timestamp,
         context_id: &args.context_id,
     };
-    admit_eval_frame(&ctx, &args, subject, &handle_context)?;
+    // Admission (walk #1) computes the frame's HCU total; the read-only block-cap check then trips
+    // an over-budget frame before execution burns CU or creates any ACL record.
+    let frame_total = admit_eval_frame(&ctx, &args, subject, &handle_context)?;
+    block_cap::check(&ctx, frame_total, current_slot)?;
     let events = execute_eval_frame(&ctx, &args, subject, current_slot, &handle_context)?;
     emit_eval_events(&ctx, events)?;
     Ok(())
@@ -101,7 +115,10 @@ fn execute_eval_frame<'info>(
         current_slot,
         InputVerifierParams::from_config(&ctx.accounts.host_config),
     );
-    walk_eval_frame(&mut execution, ctx, args, handle_context)?;
+    // Execution (walk #2) recomputes the same frame total; the block-cap charge is the single meter
+    // write — lazy-create/reset, checked accumulate, cap assert, write once.
+    let frame_total = walk_eval_frame(&mut execution, ctx, args, handle_context)?;
+    block_cap::charge(ctx, frame_total, current_slot)?;
     execution.finish()
 }
 
