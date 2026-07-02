@@ -1174,6 +1174,17 @@ snsWorker:
     #         name: coprocessor-infra
     #         key: s3BucketName
     s3BucketName: {}
+    # S3 object format migration parameters. Rendered as env vars instead of
+    # CLI flags so old pre-feature images ignore them during mixed-version
+    # rollouts.
+    # mode maps to S3_MIGRATION_MODE. Valid values: no, before,
+    # before-and-quit, concurrent, dry-run.
+    # sleepDuration maps to S3_MIGRATION_SLEEP_DURATION.
+    # maxRetries maps to S3_MIGRATION_MAX_RETRIES.
+    s3Migration:
+      mode: concurrent
+      sleepDuration: 5m
+      maxRetries: 100
 
   # Additional environment variables
   env: []
@@ -1210,6 +1221,9 @@ snsWorker:
   # Full sns_worker CLI for v0.11 / v0.12 images:
   #   built-in via template: --database-url, --bucket-name-ct64,
   #     --bucket-name-ct128, --metrics-addr, --health-check-port
+  #   built-in via env from snsWorker.config.s3Migration:
+  #     S3_MIGRATION_MODE, S3_MIGRATION_SLEEP_DURATION,
+  #     S3_MIGRATION_MAX_RETRIES
   #   built-in when wallet.enabled=true: --signer-type
   #   built-in when wallet.enabled=true and wallet.awsKms.enabled=false: --private-key
   #   v0.11 built-in when commonConfig.tenantApiKey is set: --tenant-api-key

@@ -1,6 +1,6 @@
 import type { RelayerModuleFactory } from '../types.js';
 import { fetchCoprocessorSignatures } from './fetchCoprocessorSignatures.js';
-import { fetchDelegatedUserDecrypt } from './fetchDelegatedUserDecrypt.js';
+import { fetchDelegatedUserDecrypt } from './fetchDelegatedUserDecryptV1.js';
 import { fetchPublicDecrypt } from './fetchPublicDecrypt.js';
 import { fetchFheEncryptionKeyBytes } from './fetchFheEncryptionKeyBytes.js';
 import { fetchFheEncryptionKeySource } from './fetchFheEncryptionKeySource.js';

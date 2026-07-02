@@ -15,32 +15,32 @@ export type {
   ProvenCompactCiphertextList,
   TfheCompactPublicKey,
   ZkComputeLoad,
-} from './v1.6.1/tfhe.js';
+} from './v1.6.2/tfhe.js';
 
 /** The subset you actually use - the runtime contract callers depend on. */
 export interface TfheLibApi {
-  initAsync: typeof import('./v1.6.1/tfhe.js').initAsync;
+  initAsync: typeof import('./v1.6.2/tfhe.js').initAsync;
 
   // --- Free functions used by encrypt/init-p.ts -----------------------------
-  init_panic_hook: typeof import('./v1.6.1/tfhe.js').init_panic_hook;
-  initThreadPool: typeof import('./v1.6.1/tfhe.js').initThreadPool;
-  setWorkerUrlConfig: typeof import('./v1.6.1/tfhe.js').setWorkerUrlConfig;
-  getWasmInfo: typeof import('./v1.6.1/tfhe.js').getWasmInfo;
+  init_panic_hook: typeof import('./v1.6.2/tfhe.js').init_panic_hook;
+  initThreadPool: typeof import('./v1.6.2/tfhe.js').initThreadPool;
+  setWorkerUrlConfig: typeof import('./v1.6.2/tfhe.js').setWorkerUrlConfig;
+  getWasmInfo: typeof import('./v1.6.2/tfhe.js').getWasmInfo;
 
   // --- Class constructors used as values in encrypt/api-p.ts ----------------
   // These are imported as runtime values: instanceof checks, static methods
   // (safe_deserialize), factory calls (CompactCiphertextList.builder()).
-  CompactCiphertextList: typeof import('./v1.6.1/tfhe.js').CompactCiphertextList;
-  CompactPkeCrs: typeof import('./v1.6.1/tfhe.js').CompactPkeCrs;
-  ProvenCompactCiphertextList: typeof import('./v1.6.1/tfhe.js').ProvenCompactCiphertextList;
-  TfheCompactPublicKey: typeof import('./v1.6.1/tfhe.js').TfheCompactPublicKey;
+  CompactCiphertextList: typeof import('./v1.6.2/tfhe.js').CompactCiphertextList;
+  CompactPkeCrs: typeof import('./v1.6.2/tfhe.js').CompactPkeCrs;
+  ProvenCompactCiphertextList: typeof import('./v1.6.2/tfhe.js').ProvenCompactCiphertextList;
+  TfheCompactPublicKey: typeof import('./v1.6.2/tfhe.js').TfheCompactPublicKey;
 
   // --- Enum used as a value (e.g. ZkComputeLoad.Verify) ---------------------
-  ZkComputeLoad: typeof import('./v1.6.1/tfhe.js').ZkComputeLoad;
+  ZkComputeLoad: typeof import('./v1.6.2/tfhe.js').ZkComputeLoad;
 }
 
 // Default version
-export type TfheVersion = '1.5.3' | '1.6.1';
+export type TfheVersion = '1.5.3' | '1.6.2';
 
 export type TfheWasmBase64 = {
   readonly tfheWasmBase64: string;
