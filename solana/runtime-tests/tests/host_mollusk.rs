@@ -5884,8 +5884,7 @@ fn mollusk_fhe_eval_verified_input_does_not_leak_to_a_later_instruction() {
 /// contract (enforced at consumption against `compute_subject`, the `msg.sender` analog); the
 /// derived durable outputs are then unconstrained — exactly like EVM `allowTransient(input,
 /// msg.sender)` followed by free `FHE.allow`. Here the output is bound under a domain distinct from
-/// the attested contract and still succeeds; before the parity fix this was rejected as a
-/// cross-domain move.
+/// the attested contract and still succeeds.
 #[test]
 fn mollusk_fhe_eval_verified_input_allows_output_in_other_domain() {
     let program_id = host::id();
@@ -5898,7 +5897,7 @@ fn mollusk_fhe_eval_verified_input_allows_output_in_other_domain() {
     let other_domain = Pubkey::new_unique();
     let value_label = label("verified-input-domain");
     // Attested contract == `authority` == compute_subject, so the caller gate passes; the output is
-    // bound under a DIFFERENT domain, which is now allowed (outputs are free, EVM parity).
+    // bound under a DIFFERENT domain, which is allowed (outputs are free, EVM parity).
     let nonce_key = host::acl_nonce_key(other_domain, authority, value_label);
     let input_handle = input_handle_for_chain(0x01, 0, 5);
     let attestation =

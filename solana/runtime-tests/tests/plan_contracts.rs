@@ -60,8 +60,7 @@ fn host_idl_drops_verifier_set_and_keeps_secp_kms_context_path() {
         );
     }
     // Encrypted inputs are verified in-frame by the `fhe_eval` `VerifiedInput` operand
-    // (the fromExternal path); the redundant standalone verify_coprocessor_input instruction
-    // and its InputVerifiedEvent were removed.
+    // (the fromExternal path); there is no standalone verify_coprocessor_input instruction.
     assert!(
         !instructions
             .iter()
@@ -109,8 +108,8 @@ fn token_idl_removed_operator_surface_and_splits_payer_from_owner() {
         owner_index, payer_index,
         "owner authority and payer must be separate account metas even when callers pass the same key"
     );
-    // fromExternal: the transfer amount is now a coprocessor-attested instruction argument, so the
-    // durable amount_compute_acl witness account is gone.
+    // fromExternal: the transfer amount is a coprocessor-attested instruction argument, not a
+    // durable amount_compute_acl witness account.
     assert!(
         !transfer_accounts
             .iter()
@@ -118,7 +117,7 @@ fn token_idl_removed_operator_surface_and_splits_payer_from_owner() {
         "confidential_transfer amount is an attested external input, not a durable amount_compute_acl account"
     );
 
-    // The per-mint verifier-set rotation surface is gone; disclosure/redemption requests pin a
+    // There is no per-mint verifier-set rotation surface; disclosure/redemption requests pin a
     // KMS context id and the response verifies a secp256k1 cert against that context.
     for removed in ["update_mint_verifier_sets", "migrate_mint_verifier_sets"] {
         assert!(

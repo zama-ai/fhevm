@@ -1646,8 +1646,8 @@ impl TokenMolluskFixture {
         &self,
         _amount_handle: [u8; 32],
     ) -> mollusk_svm::MolluskContext<HashMap<Pubkey, Account>> {
-        // The transfer amount now flows through a coprocessor attestation argument rather than a
-        // seeded amount ACL account, so the context only needs the base + output-record accounts.
+        // The transfer amount flows through a coprocessor attestation argument, not a seeded
+        // amount ACL account, so the context only needs the base + output-record accounts.
         let mut accounts = self.base_accounts();
         for account in SelfTransferOutputAccounts::canonical(self, 1).all_accounts() {
             accounts.entry(account).or_insert_with(|| system_account(0));

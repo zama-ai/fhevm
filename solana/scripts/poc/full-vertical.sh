@@ -78,8 +78,8 @@ isig="$(echo "$ir" | python3 -c "import sys,json;print(json.load(sys.stdin)['res
 iextra="$(echo "$ir" | python3 -c "import sys,json;print(json.load(sys.stdin)['result'].get('extraData','0x00'))")"
 echo "    input handle=$ih (coprocessor EIP-712 attestation $isig)"
 # The coprocessor attestation is verified in-frame when consumed as an FheEvalOperand::VerifiedInput
-# (the fromExternal path) — exercised by the FHE_EVAL_VERIFIED_INPUT step below. The redundant
-# standalone verify_coprocessor_input instruction was removed.
+# (the fromExternal path) — exercised by the FHE_EVAL_VERIFIED_INPUT step below. There is no
+# standalone verify_coprocessor_input instruction.
 
 echo "==> [compute] eval-based fhe_eval trivial_encrypt $VALUE on zama-host (#2755 eval executor + ACL allow)"
 out="$(cd "$ROOT/solana/scripts/poc/live-client" && TRIVIAL_ENCRYPT_EVAL=1 TE_VALUE="$VALUE" TE_ALLOW=1 ./target/debug/poc-live-client 2>&1)"

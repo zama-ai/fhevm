@@ -204,7 +204,7 @@ pub enum ZamaHostError {
     /// A KMS context was defined with a duplicate signer address.
     #[msg("KMS context signer set contains a duplicate address")]
     DuplicateKmsSigner,
-    /// The coprocessor-attested contract does not match the output ACL app account.
+    /// The coprocessor-attested contract does not match the `fhe_eval` compute subject.
     #[msg("attested contract address does not match the output app account")]
     InputBindContractMismatch,
     /// The coprocessor-attested user is not among the output ACL subjects.
